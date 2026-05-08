@@ -50,16 +50,21 @@ Stack: **React 18 + Vite + Tailwind v4 + shadcn/ui + i18next** (24 lingue UE).
 
 ### Courses (dominio principale)
 
-Documentazione dedicata della feature **Corsi** — pipeline AI a 5 fasi (oggi
-implementate Pre-processing + Fase 1) + CRUD manuale di moduli/lezioni:
+Documentazione dedicata della feature **Corsi** — pipeline AI a 5 fasi
+(implementate: Pre-processing + Fase 1 + Fase 2 + Fase 3 + glossario +
+export PDF; pendenti: Fase 4 slide + Fase 5 discorso) + CRUD manuale di
+moduli/lezioni:
 
 - [Courses overview](courses/README.md)
 - [01 — Data model](courses/01-data-model.md): course, course_document, course_module, course_lesson, course_taxonomy_term, language.
 - [02 — Document pre-processing](courses/02-document-preprocessing.md): worker estrazione testo + summarize OpenAI (Appendice A).
 - [03 — Architecture generation (Fase 1)](courses/03-architecture-generation.md): worker AI con progress tracking + materializzazione moduli/lezioni.
 - [04 — Manual editing & AI lesson generation](courses/04-manual-editing.md): CRUD inline + auto-trigger AI sui moduli aggiunti manualmente.
-- [05 — API reference (corsi)](courses/05-api-reference.md): 21 endpoint sotto `/orgs/{org_id}/courses`.
-- [06 — Frontend](courses/06-frontend.md): pages, dialog, optimistic update, KaTeX, i18n.
+- [05 — API reference (corsi)](courses/05-api-reference.md): endpoint sotto `/orgs/{org_id}/courses`.
+- [06 — Frontend](courses/06-frontend.md): pages, dialog, optimistic update, ETA display, KaTeX, i18n.
+- [07 — Lesson structure (Fase 2)](courses/07-lesson-structure.md): worker parallelo per generare struttura lezioni (obiettivi, temi, prerequisiti, scaletta).
+- [08 — Lesson content (Fase 3) + Glossario](courses/08-lesson-content.md): worker parallelo per testo lezione + asset visivi (Mermaid + LaTeX + tabelle), glossario corso, editor TipTap user-friendly.
+- [09 — PDF export (§7)](courses/09-pdf-export.md): export PDF lezione via WeasyPrint (CSS Paged Media completo) + Playwright pre-render Mermaid + latex2mathml.
 
 ### Database & API
 

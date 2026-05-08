@@ -89,11 +89,12 @@ Differenze chiave dal worker di Fase 1 (`course_architecture_worker.py`):
 | Coordinamento | — | `_inflight: set[UUID]` + `asyncio.Semaphore` |
 | Cancellazione | Singolo `task.cancel()` | `asyncio.gather(*_active_tasks)` su shutdown |
 
-Pattern del worker:
+Pattern del worker (claim atomico in `_tick`, dispatch poi):
 
 ```python
 _semaphore: asyncio.Semaphore | None = None
 _inflight: set[uuid.UUID] = set()
+_inflight_lock = asyncio.Lock()
 _active_tasks: set[asyncio.Task] = set()
 
 async def _tick() -> None:
@@ -105,29 +106,40 @@ async def _tick() -> None:
         )
         module_ids = [row[0] for row in result.all()]
 
-    for module_id in module_ids:
-        if module_id in _inflight:
-            continue
+    # Dedup + claim ATOMICO sotto lock. Il claim DEVE avvenire qui (e
+    # non dentro `_bound_process` dopo aver acquisito il semaforo) per
+    # evitare che il tick successivo ridispatchi le task ancora in coda
+    # dietro al semaforo (cap=5 ma `pending_count > 5` è normale durante
+    # un batch grosso). Senza claim qui → storm di skip log.
+    async with _inflight_lock:
+        new_ids = [mid for mid in module_ids if mid not in _inflight]
+        for mid in new_ids:
+            _inflight.add(mid)
+
+    for module_id in new_ids:
         task = asyncio.create_task(_bound_process(module_id))
         _active_tasks.add(task)
         task.add_done_callback(_active_tasks.discard)
 
 async def _bound_process(module_id: uuid.UUID) -> None:
     assert _semaphore is not None
-    async with _semaphore:
-        _inflight.add(module_id)
-        try:
+    try:
+        async with _semaphore:
             async with AsyncSessionLocal() as task_db:
                 await _process_one(task_db, module_id)
-        finally:
+    finally:
+        async with _inflight_lock:
             _inflight.discard(module_id)
 ```
 
 Vantaggi:
-- **Throughput**: 6 moduli con cap=5 → ~80s totali invece di ~3-4 min sequenziali
-- **Sessioni DB indipendenti**: nessuna race su `flush`/`commit`
-- **Doppio dispatch evitato**: `_inflight` filtra i moduli già in lavorazione localmente
-- **Shutdown pulito**: `stop_worker()` cancella tutti i task in flight via `asyncio.gather`
+- **Throughput**: 6 moduli con cap=5 → ~80s totali invece di ~3-4 min sequenziali.
+- **Sessioni DB indipendenti**: nessuna race su `flush`/`commit`.
+- **Doppio dispatch evitato anche con coda satura**: il claim atomico in `_tick`
+  marca tutti i nuovi `module_id` come inflight prima del dispatch, così il
+  tick successivo li dedupa anche se sono ancora in coda dietro al semaforo.
+- **Shutdown pulito**: `stop_worker()` cancella tutti i task in flight via
+  `asyncio.gather`.
 
 Il **ticker di progresso** (`_progress_ticker`) ha la sua sessione DB autonoma per
 non bloccare la transazione del task durante l'attesa OpenAI:
@@ -249,8 +261,15 @@ rolled-back l'approvazione di Fase 1 — fuori scope qui).
 - **JSON schema strict**: §5.3 verbatim, passato come `response_format`
   con `type: json_schema` e `strict: true`.
 - **Modello**: `settings.openai_lesson_structure_model` (default `gpt-5.5`).
-- **Token cap**: `settings.openai_lesson_structure_max_tokens` (default 6000).
-  Niente `temperature` (gpt-5.5 non lo supporta).
+- **Token cap**: `settings.openai_lesson_structure_max_tokens` (default 16000).
+  Niente `temperature` (gpt-5.5 non lo supporta). gpt-5.5 consuma molti
+  token in reasoning prima del JSON: alza ulteriormente se vedi
+  `lessons_structure_output_truncated` nei log.
+- **Reasoning effort**: `settings.openai_lesson_structure_reasoning_effort`
+  (default `medium`). Iniettato via `apply_reasoning_effort()` solo se il
+  modello è reasoning (`gpt-5.x`/`o1*`/`o3*`/`o4*`); su modelli classici
+  il parametro è omesso. Vedi
+  [04 — Configuration](../04-configuration.md#reasoning-effort-gpt-5x--o1--o3--o4).
 - **Errori**: `OpenAILessonStructureError(OpenAIError)` per HTTPx fail, JSON
   decode, schema validation. `OpenAINotConfiguredError` riusato.
 
@@ -332,6 +351,11 @@ Layout principale del tab:
   - Etichetta `{n_completed}/{n_total} moduli completati ({percent}%)`
   - `percent = avg(progress per modulo)` (i moduli `ready/approved` contano 100%)
   - Conteggio moduli `failed` con messaggio destructive
+  - **ETA + tempo medio per modulo** durante un batch attivo: `useBatchEta`
+    (vedi [Frontend 08 — Hooks](../frontend/08-hooks.md)) deriva la velocità
+    dai timestamp `lessons_structure_generated_at` dei moduli completati
+    nella recent window (90 min) e stima il tempo rimanente come
+    `avgPerModule × remaining`
 - **Lista moduli** (una card per modulo): badge stato + pulsante azione contestuale
   - Stato `empty` → "Genera"
   - Stato `pending|processing` → spinner + Progress bar + label fase + percentuale
@@ -365,15 +389,17 @@ Per "regenerate-*", textarea per `regeneration_hint` (max 2000 char).
 
 ## Configurazione
 
-`backend/app/core/config.py` — 4 nuovi setting:
+`backend/app/core/config.py` — settings dedicati Fase 2:
 
 | Setting | Default | Descrizione |
 |---|---|---|
 | `openai_lesson_structure_model` | `gpt-5.5` | Modello OpenAI per Fase 2 |
-| `openai_lesson_structure_max_tokens` | `6000` | Cap token completion |
+| `openai_lesson_structure_max_tokens` | `16000` | Cap token completion (gpt-5.5 reasoning + ~5 lezioni × 4 sezioni) |
+| `openai_lesson_structure_reasoning_effort` | `medium` | `[minimal, low, medium, high]` per gpt-5.x/o1/o3/o4; ignorato su modelli classici |
 | `course_lesson_structure_poll_interval_seconds` | `4` | Intervallo polling worker |
 | `course_lesson_structure_max_concurrency` | `5` | Cap moduli paralleli (semaforo) |
 | `course_lesson_structure_documents_context_max_chars` | `30000` | Budget contesto documenti |
+| `course_lesson_structure_auto_retry_max` | `5` | Retry trasparenti prima di transitare a `failed` |
 
 ## Audit log
 
@@ -396,8 +422,9 @@ Eventi emessi (vedi `services/audit_service.py`):
    Fasi 3-5 una volta esistenti. Per ora solo placeholder commentato in
    `materialize_module_structure`.
 3. **Rate-limit OpenAI**: il semaforo a 5 è un compromesso safe per gpt-5.5
-   tier standard. Se OpenAI risponde 429, il task fallisce e l'utente fa Riprova.
-   Niente backoff automatico in questa iterazione.
+   tier standard. Su 429 il worker auto-retry-a in trasparenza fino a
+   `course_lesson_structure_auto_retry_max` (default 5); oltre, transita a
+   `failed` e l'utente fa "Riprova". Per tier 2+ alza il cap (vedi
+   tempi stimati in [04 — Configuration](../04-configuration.md)).
 4. **Versioning storico**: ogni rigenerazione **sovrascrive** lo stato del modulo.
    `lessons_structure_raw` è snapshot dell'ultima versione.
-5. **Glossario corso (§10.1)**: rinviato. Sarà richiesto da Fase 3 (§6.3).

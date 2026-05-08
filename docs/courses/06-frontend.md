@@ -112,7 +112,7 @@ in `CourseEditorPage` (gated su `editable = canEdit && status ∈ {ready, approv
 Stati di rendering:
 
 - **Vuoto** (status≠pending, no modules): testo "Nessuna architettura ancora generata" + pulsante "Aggiungi modulo" (se editable)
-- **Pending**: spinner + label fase + percentuale + `<Progress />`
+- **Pending**: spinner + label fase + percentuale + `<Progress />` + **ETA + tempo trascorso** (via `useTaskEta`, vedi [Frontend 08 — Hooks](../frontend/08-hooks.md): persiste lo `started_at` su `sessionStorage` keyed dal course id, stima ETA come `elapsed × (100 - progress) / progress` quando `progress ≥ 5%`)
 - **Errore senza moduli**: card destructive con messaggio
 - **Popolato**: overview/rationale + lista modules con CRUD inline
 
@@ -213,6 +213,7 @@ Layout:
   - Etichetta `{n_completed}/{n_total} moduli completati ({percent}%)`
   - `percent = avg(progress per modulo)` (i moduli `ready/approved` contano 100%)
   - Progress bar Radix
+  - **ETA + tempo medio per modulo** (via `useBatchEta`) durante un batch attivo
   - Conteggio moduli `failed` con messaggio destructive
 - **Lista moduli** (una card per modulo): badge stato + pulsante azione
   contestuale (Generate / Regenerate / Retry / Approve), label fase, percentuale
@@ -318,7 +319,9 @@ Tab content per i contenuti delle lezioni. Per dettagli completi vedi
 Layout:
 
 - **Header card**: aggregate progress + pulsanti "Genera tutti i contenuti" /
-  "Approva tutti" + "Esporta tutti i PDF" / "Annulla export PDF" (§7).
+  "Approva tutti" + "Esporta tutti i PDF" / "Annulla export PDF" (§7). Durante
+  un batch attivo mostra **ETA + tempo medio per lezione** sotto la progress bar
+  (via `useBatchEta`).
 - **Sub-pannello Glossario** (collapsible, hidden behind icon): chip dei
   termini con tooltip su `usage_note` + pulsante Rigenera.
 - **Lista per modulo**: card per ogni lezione con:

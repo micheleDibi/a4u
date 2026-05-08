@@ -185,15 +185,24 @@ Dialog di conferma con `<Textarea>` opzionale per il `regeneration_hint`
 In `ArchitectureSection`, durante `architecture_pending`:
 
 ```tsx
-<Loader2 spinning /> 
+<Loader2 spinning />
 {phase ? t(`courses.architecture.phases.${phase}`) : ...}
 {progress}%
 <Progress value={progress} />
+{archEta.etaMs && <span>{t("courses.architecture.eta", { time: formatDuration(archEta.etaMs) })}</span>}
+{archEta.elapsedMs && <span>{t("courses.architecture.elapsed", { time: formatDuration(archEta.elapsedMs) })}</span>}
 ```
 
 Le chiavi i18n delle fasi: `preparing_prompt`, `calling_openai`,
 `materializing`. `defaultValue` fallback al messaggio generico
 `pendingMessage` per fasi non riconosciute.
+
+**ETA + tempo trascorso**: la sezione usa `useTaskEta(\`arch:${course.id}\`,
+isPending, archPct)` che persiste lo `started_at` in `sessionStorage`
+(sopravvive a refresh / navigation), calcola elapsed = `now - started`,
+ed estrapola ETA come `elapsed × (100 - progress) / progress` quando
+`progress ≥ 5%`. Sotto soglia mostra solo "trascorso". Vedi
+[Frontend 08 — Hooks](../frontend/08-hooks.md#usetasketa-taskkey-isactive-progress--srchooksusetasketa).
 
 ### `CourseArchitectureView.tsx`
 
@@ -206,7 +215,8 @@ operazioni CRUD sopra l'output AI.
 | Var | Default | Descrizione |
 |---|---|---|
 | `openai_modules_lessons_model` | `gpt-5.5` | Modello per Fase 1 + lezioni single-modulo |
-| `openai_architecture_max_tokens` | `8000` | Cap su completion per architettura |
+| `openai_architecture_max_tokens` | `8000` | Cap su completion per architettura (alza a 16000 se vedi `finish_reason=length`) |
+| `openai_architecture_reasoning_effort` | `medium` | `[minimal, low, medium, high]` per gpt-5.x/o1/o3/o4; ignorato su modelli classici |
 | `course_architecture_poll_interval_seconds` | `4` | Worker tick |
 | `course_architecture_documents_context_max_chars` | `60000` | Budget context documenti nel prompt |
 

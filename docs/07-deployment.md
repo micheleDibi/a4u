@@ -13,8 +13,10 @@ fa proxy verso il backend).
 ### Prerequisiti server
 
 - Linux con Docker Engine 24+ e Docker Compose plugin v2.
-- Almeno **2 GB RAM** (Chromium di Playwright + WeasyPrint sono CPU+RAM
-  intensivi durante l'export PDF; in idle ~400 MB).
+- Almeno **4 GB RAM** consigliata (idle ~600 MB; durante batch PDF il pre-render
+  Mermaid carica un'istanza Chromium per lezione → 150-300 MB ognuna, con
+  `COURSE_LESSON_PDF_MAX_CONCURRENCY=2` di default servono ~800 MB extra in
+  picco; WeasyPrint stesso è leggero ~50 MB/render).
 - Almeno **5 GB disco** per immagini Docker, browser Chromium di
   Playwright (~300 MB), generated PDFs e uploads.
 - Una porta pubblica (80 e/o 443) e un dominio con DNS che punta al server.
@@ -190,17 +192,28 @@ BACKEND_PORT=9001
 - Build da `backend/Dockerfile` (multi-stage, user non-root).
 - Env: `ENV=production`, `LOG_FORMAT=json`, `COOKIE_SECURE=true`.
 - `DATABASE_URL` punta a `postgres` (rete docker).
-- Volume `uploads:/app/uploads` per persistenza upload (loghi PDF
-  template, avatar, materiali corso).
+- Volumi persistenti:
+  - `uploads:/app/uploads` — loghi org + PDF template, avatar, materiali corso.
+  - `generated_pdfs:/app/generated_pdfs` — PDF lezioni renderizzati (sovrascritti ad ogni rigenerazione).
 - Chromium di Playwright in `/ms-playwright` (path condiviso, env
-  `PLAYWRIGHT_BROWSERS_PATH`).
+  `PLAYWRIGHT_BROWSERS_PATH`). Usato solo per pre-render Mermaid → SVG
+  (il PDF finale è prodotto da WeasyPrint, vedi
+  [09 — PDF export](courses/09-pdf-export.md)).
+- Tutti gli env knob significativi (MiniMax, OpenAI per ogni fase,
+  worker concurrency/auto-retry, reasoning_effort) sono forwardati con
+  `${VAR:-default}` → puoi sovrascriverli in `.env` senza toccare il
+  compose file.
 - Healthcheck su `/api/v1/system/health`.
 
 #### `frontend`
 - Build da `frontend/Dockerfile` (`node:20` build → `nginx:alpine` runtime).
 - Serve `dist/` con `nginx.conf` (gzip, header di sicurezza, SPA fallback).
 - Proxy `/api/` e `/uploads/` verso `backend:8000`.
-- Esporre porta 80 (poi reverse proxy esterno per TLS).
+- Limite upload: `client_max_body_size 25m` configurato in
+  `frontend/nginx.conf` (file più grandi servono per documenti corso DOC/PDF
+  voluminosi). Se devi alzare il limite, modifica anche `COURSE_DOCUMENT_MAX_MB`
+  + `UPLOAD_MAX_MB` lato backend per coerenza.
+- Esporre porta `${FRONTEND_PORT:-80}` (poi reverse proxy esterno per TLS).
 
 ### Reverse proxy esterno (consigliato)
 
@@ -377,6 +390,12 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T postgres
 docker run --rm -v a4u_uploads:/data -v /backup:/backup alpine \
     tar czf /backup/uploads-$(date +%F).tar.gz -C /data .
 
+# (Opzionale) Backup dei PDF generati. NB: i PDF sono ricostruibili
+# dal contenuto lezione → backup non strettamente necessario, ma utile
+# se vuoi evitare al cliente l'attesa del re-rendering.
+docker run --rm -v a4u_generated_pdfs:/data -v /backup:/backup alpine \
+    tar czf /backup/generated_pdfs-$(date +%F).tar.gz -C /data .
+
 # Ripristino DB
 gunzip -c /backup/a4u-2026-04-26.sql.gz \
     | docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T postgres psql -U a4u -d a4u
@@ -489,3 +508,47 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml logs backend --t
 
 Il frontend usa `proxy_pass http://backend:8000` (DNS interno docker
 compose). Se il backend non è healthy, nginx restituisce 502.
+
+### `Permission denied` su `/app/generated_pdfs/...` durante export PDF
+
+Il `Dockerfile` deve creare la directory + chown ad app prima dello
+`USER app`. Verifica nel Dockerfile:
+
+```dockerfile
+RUN mkdir -p /app/uploads/organizations /app/uploads/avatars /app/uploads/templates \
+             /app/generated_pdfs \
+    && chown -R app:app /app/uploads /app/generated_pdfs
+```
+
+Se hai upgradato un container vecchio dove la dir non esisteva, ricrea il
+volume:
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml down
+docker volume rm a4u_generated_pdfs
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# Le lezioni con pdf_status='failed' a causa della permission errata
+# vanno resettate via SQL:
+docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T postgres \
+    psql -U a4u -d a4u -c "UPDATE course_lesson SET pdf_status='empty', pdf_attempts=0, pdf_error=NULL WHERE pdf_status='failed' AND pdf_error LIKE '%Permission denied%';"
+```
+
+### Storm di log `lesson_*_skip_not_pending` ad alto rate
+
+Era un bug del worker risolto in `87fbf70`. Se vedi questi log su un
+deploy vecchio, esegui `git pull` + `docker compose ... up -d --build`
+per applicare il fix (claim atomico in `_tick` invece che dentro
+`async with _semaphore`).
+
+### Generazione architettura/lezioni si blocca con OpenAI 200 + content vuoto
+
+Causa tipica: `max_completion_tokens` insufficiente per il reasoning del
+modello. I gpt-5.x consumano molti token nel "pensiero interno" prima di
+emettere JSON, e se il cap è troppo basso il provider risponde con
+`finish_reason="length"` e content vuoto. Soluzioni:
+
+1. Alza `OPENAI_*_MAX_TOKENS` (vedi default in
+   [04 — Configuration](04-configuration.md)).
+2. Abbassa `OPENAI_*_REASONING_EFFORT` (es. `high → medium`): meno token
+   in reasoning, più budget per il JSON.
+3. Switch a un modello classico non-reasoning (`gpt-4o`): più veloce,
+   meno qualità sui prompt complessi, ma niente "reasoning tokens".

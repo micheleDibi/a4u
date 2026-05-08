@@ -90,6 +90,14 @@ empty → pending → processing ────────► ready ────�
   §6.4, `OpenAILessonContentError`. Timeout 600s (lezione completa
   60-120s di reasoning).
 
+Entrambi inseriscono `reasoning_effort` nel body via
+`apply_reasoning_effort()` (`openai_client.py`) — solo per modelli
+reasoning, omesso su `gpt-4o`/`gpt-4o-mini`. Default
+`OPENAI_LESSON_CONTENT_REASONING_EFFORT=high` (task più complesso del
+pipeline). Lever per accelerare: abbassare a `medium` riduce il tempo
+per lezione del ~40%, qualità leggermente inferiore. Vedi
+[04 — Configuration](../04-configuration.md#reasoning-effort-gpt-5x--o1--o3--o4).
+
 ### Servizi orchestrazione
 
 - `course_glossary_service.py` — sync, single-shot:
@@ -120,7 +128,8 @@ empty → pending → processing ────────► ready ────�
 
 `course_lesson_content_worker.py` — speculare al worker Fase 2 ma
 scoped a livello LEZIONE:
-- `_inflight: set[UUID]` su `lesson_id`
+- `_inflight: set[UUID]` su `lesson_id` (claim atomico in `_tick`,
+  vedi [02 — Architecture](../02-architecture.md#pattern-batch-parallelo-lesson_structure-lesson_content-lesson_pdf))
 - `_semaphore = asyncio.Semaphore(course_lesson_content_max_concurrency)`
   (default `3`, output 5x più grande di Fase 2)
 - Polling: `course_lesson_content_poll_interval_seconds` (default `4`)
@@ -167,7 +176,16 @@ lifespan `app/main.py`.
   riconosce. Le classi tipografiche sono `lesson-prose` (custom CSS in
   `index.css`, niente `@tailwindcss/typography`).
 - `MermaidDiagram.tsx` — lazy-load di `mermaid` (dynamic import) +
-  init + render SVG. Fallback testuale su errore.
+  init + render SVG. **Pre-validazione con `mermaid.parse(code,
+  { suppressErrors: true })` PRIMA del render**: se la sintassi è
+  invalida, mostra una error UI controllata (icona ⚠ ambra +
+  collapsible "Mostra dettagli" col messaggio di parse). Senza la
+  pre-validazione, `mermaid.render()` su syntax invalida inietta nel
+  DOM una grossa SVG bomb-icon che rompe il layout della pagina.
+  Strip programmaticamente l'attributo `max-width` inline dell'SVG
+  generato (mermaid lo emette di default a ~150px) e applica
+  `[&_svg]:!w-full [&_svg]:!max-w-none` Tailwind per fillare il
+  container.
 
 ### Componenti shared (editing) — editor user-friendly
 
@@ -207,6 +225,10 @@ backend, schema e renderer di vista invariati.
 
 `CourseLessonContentView.tsx` (Tab 6 dell'editor):
 - Header con aggregate progress (0..100%) + pulsanti Generate/Approve all
+- **ETA + tempo medio per lezione** durante un batch attivo: `useBatchEta`
+  (vedi [Frontend 08 — Hooks](../frontend/08-hooks.md)) deriva la velocità
+  dai timestamp `content_generated_at` delle lezioni completate nella
+  recent window (90 min) e stima il rimanente come `avgPerLesson × remaining`
 - **Sub-pannello Glossario** (collapsible): chip dei termini con
   tooltip su `usage_note` + pulsante Rigenera
 - Lista per modulo con sub-card per lezione (status badge + Progress
@@ -284,6 +306,7 @@ COURSE_GLOSSARY_DOCUMENTS_CONTEXT_MAX_CHARS=20000
 # Fase 3 — Contenuti
 OPENAI_LESSON_CONTENT_MODEL=gpt-5.5
 OPENAI_LESSON_CONTENT_MAX_TOKENS=32000
+OPENAI_LESSON_CONTENT_REASONING_EFFORT=high   # [minimal, low, medium, high]
 COURSE_LESSON_CONTENT_POLL_INTERVAL_SECONDS=4
 COURSE_LESSON_CONTENT_MAX_CONCURRENCY=3
 COURSE_LESSON_CONTENT_DOCUMENTS_CONTEXT_MAX_CHARS=20000
@@ -296,6 +319,11 @@ COURSE_LESSON_STRUCTURE_AUTO_RETRY_MAX=5
 `OPENAI_LESSON_CONTENT_MAX_TOKENS=32000` è calibrato per output
 8-15k token + reasoning gpt-5.5. Aumentare se viene osservato
 `finish_reason="length"` con `reasoning_tokens` alti.
+
+`OPENAI_LESSON_CONTENT_REASONING_EFFORT=high` di default — è il task più
+complesso del pipeline (markdown lungo + asset + bibliografia + JSON
+schema strict). Per accelerare drasticamente un corso grande, abbassare a
+`medium` taglia ~40% dei tempi con qualità leggermente inferiore.
 
 ## Cosa NON fa questa iterazione (out of scope)
 

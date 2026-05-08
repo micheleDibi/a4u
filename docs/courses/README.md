@@ -13,7 +13,7 @@ iterazioni a partire dalla foundation. Ogni file di codice rilevante è document
 - [06 — Frontend](06-frontend.md): pagine, componenti, dialog, polling.
 - [07 — Lesson structure (Fase 2)](07-lesson-structure.md): generazione AI parallela della struttura delle lezioni (obiettivi, temi, prerequisiti, scaletta) — §5 di `prompt_generazione_corsi.md`.
 - [08 — Lesson content (Fase 3) + Glossario](08-lesson-content.md): generazione AI parallela del testo completo delle lezioni con asset visivi (Mermaid + LaTeX + tabelle), glossario corso, **editor user-friendly** (TipTap + custom Table/Latex/Mermaid editors) — §6 + §10.1 di `prompt_generazione_corsi.md`.
-- [09 — PDF export (§7)](09-pdf-export.md): export PDF per lezione tramite Playwright + Jinja2 + markdown-it-py, applicando il `pdf_templates` dell'organizzazione — §7 di `prompt_generazione_corsi.md`.
+- [09 — PDF export (§7)](09-pdf-export.md): export PDF per lezione tramite WeasyPrint (CSS Paged Media completo) + Jinja2 + markdown-it-py + Playwright (pre-render Mermaid → SVG) + latex2mathml, applicando il `pdf_templates` dell'organizzazione — §7 di `prompt_generazione_corsi.md`.
 
 ## Stato pipeline AI (5 fasi)
 

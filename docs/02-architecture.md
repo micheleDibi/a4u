@@ -5,7 +5,8 @@
 ```
                      ┌─────────────────────────────────┐
                      │           Browser               │
-                     │  React app (Vite/MUI)           │
+                     │  React 18 SPA (Vite + Tailwind +│
+                     │  shadcn/ui + Radix primitives)  │
                      │  cookie: access_token (HttpOnly)│
                      │  cookie: refresh_token (HttpOnly│
                      │          path=/api/v1/auth/refresh)
@@ -183,25 +184,27 @@ FastAPI. Vivono come `asyncio.Task` di lungo periodo, condividono il
 process del backend, e si fermano sullo shutdown.
 
 ```
-app.main lifespan:
-   await avatar_clip_worker.start_worker()       # MiniMax video gen
-   await course_document_worker.start_worker()   # Pre-processing AI doc
-   await course_architecture_worker.start_worker()  # Fase 1 architettura
+app.main lifespan startup:
+   avatar_clip_worker.start_worker()                # MiniMax video gen
+   course_document_worker.start_worker()            # Pre-processing AI documenti corso
+   course_architecture_worker.start_worker()        # Fase 1 architettura
+   course_lesson_structure_worker.start_worker()    # Fase 2 struttura lezioni (parallelo)
+   course_lesson_content_worker.start_worker()      # Fase 3 contenuto lezione (parallelo)
+   course_lesson_pdf_worker.start_worker()          # §7 export PDF (parallelo)
    yield
-   await course_architecture_worker.stop_worker()
-   await course_document_worker.stop_worker()
-   await avatar_clip_worker.stop_worker()
+   # shutdown in ordine inverso
 ```
 
-**Pattern condiviso** (vedi `app/services/avatar_clip_worker.py` per il
-template):
+### Pattern "single-task" (avatar, document, architecture)
+
+Worker che processano UNA risorsa alla volta. Vedi
+`app/services/avatar_clip_worker.py` come template:
 
 ```python
 _task: asyncio.Task | None = None
 _stop_event = asyncio.Event()
 
 async def start_worker():
-    global _task
     _stop_event.clear()
     _task = asyncio.create_task(_run_loop())
 
@@ -218,10 +221,65 @@ async def _run_loop():
         await asyncio.wait_for(_stop_event.wait(), timeout=POLL_INTERVAL)
 ```
 
-`_tick()` apre la propria `AsyncSession` (i worker non sono dentro un
-contesto request, quindi non possono usare il dep `get_db`). Ogni worker
-gestisce la sua tabella di stato `pending`/`processing`/`ready`/`failed`,
-con auto-resume al boot delle righe non terminali.
+### Pattern "batch parallelo" (lesson_structure, lesson_content, lesson_pdf)
+
+Worker che processano N task in parallelo con cap di concorrenza
+(`asyncio.Semaphore`) e dedup (`_inflight: set[UUID]`). Default cap:
+5/3/2 (Fase 2 / Fase 3 / PDF). Vedi
+`app/services/course_lesson_content_worker.py` come template.
+
+```python
+_inflight: set[UUID] = set()
+_inflight_lock = asyncio.Lock()
+_semaphore: asyncio.Semaphore | None = None
+_active_tasks: set[asyncio.Task] = set()
+
+async def _tick():
+    # 1. Query righe pending dal DB
+    async with async_session_factory() as db:
+        ids = (await db.execute(
+            select(Model.id).where(Model.status == "pending")
+        )).scalars().all()
+
+    # 2. Dedup + claim ATOMICO sotto lock: filtra le nuove e marcale
+    #    come inflight nello stesso lock, PRIMA di asyncio.create_task.
+    #    Senza il claim qui, le task accodate dietro al semaforo non
+    #    sarebbero in `_inflight` finché non lo acquisiscono → il tick
+    #    successivo le ridispatcherebbe duplicate (storm di skip log).
+    async with _inflight_lock:
+        new_ids = [i for i in ids if i not in _inflight]
+        for i in new_ids:
+            _inflight.add(i)
+
+    # 3. Dispatch
+    for i in new_ids:
+        task = asyncio.create_task(_bound_process(i))
+        _active_tasks.add(task)
+        task.add_done_callback(_active_tasks.discard)
+
+async def _bound_process(item_id):
+    try:
+        async with _semaphore:
+            await _process_one(item_id)
+    finally:
+        async with _inflight_lock:
+            _inflight.discard(item_id)
+```
+
+Ogni `_process_one` apre la **propria** `AsyncSession` (i worker non sono
+dentro un contesto request, quindi non possono usare il dep `get_db`) ed
+è completamente indipendente dagli altri task — niente race su `flush`
+o `commit`. Ogni worker gestisce la sua tabella di stato
+`pending → processing → ready/failed` con auto-retry trasparente
+(`*_AUTO_RETRY_MAX` config) e auto-resume al boot delle righe non
+terminali.
+
+> **Auto-retry trasparente**: in caso di errore recuperabile (timeout,
+> rate-limit, validazione transitoria) il worker riporta status a
+> `pending` e azzera l'errore — la UI vede solo "in elaborazione".
+> Solo dopo `auto_retry_max` esauriti `→ failed` (terminale).
+> Errori non recuperabili (`OpenAINotConfiguredError`, config issue) vanno
+> a `failed` immediatamente.
 
 > **Single-instance**: i worker assumono un solo backend istanziato. Per
 > scalare in orizzontale serviranno lock distribuiti (advisory lock di
