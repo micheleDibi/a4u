@@ -60,11 +60,15 @@ class Settings(BaseSettings):
     openai_summarize_max_tokens: int = 8000
     openai_modules_lessons_model: str = "gpt-5.5"
     openai_architecture_max_tokens: int = 8000
+    # Reasoning effort: vedi `.env.example` per spiegazione + valori validi.
+    # Su modelli non-reasoning il backend NON invia il parametro (no error).
+    openai_architecture_reasoning_effort: str = "medium"
     openai_lesson_structure_model: str = "gpt-5.5"
     # gpt-5.5 consuma molti token nel reasoning prima di emettere il JSON.
     # 16000 lascia margine per ~5 lezioni × 4 sezioni con rationale lunghi
     # + reasoning. Se vedi `lessons_structure_output_truncated`, alza ancora.
     openai_lesson_structure_max_tokens: int = 16000
+    openai_lesson_structure_reasoning_effort: str = "medium"
     course_document_max_chars: int = 120_000
     course_document_poll_interval_seconds: int = 4
     course_architecture_poll_interval_seconds: int = 4
@@ -87,6 +91,9 @@ class Settings(BaseSettings):
     # Output lezione 8-15k tokens + reasoning gpt-5.5 → cap alto (32000).
     openai_lesson_content_model: str = "gpt-5.5"
     openai_lesson_content_max_tokens: int = 32_000
+    # Default `high` perché il task contenuto lezione è il più complesso del
+    # pipeline (markdown lungo + asset + bibliografia + JSON schema strict).
+    openai_lesson_content_reasoning_effort: str = "high"
     course_lesson_content_poll_interval_seconds: int = 4
     # Cap=3: output 5x più grande di Fase 2, evita rate-limit OpenAI.
     course_lesson_content_max_concurrency: int = 3

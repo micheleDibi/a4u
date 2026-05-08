@@ -22,6 +22,7 @@ from app.schemas.course_lesson_structure import LessonStructureModuleOutput
 from app.services.openai_client import (
     OpenAIError,
     OpenAINotConfiguredError,
+    apply_reasoning_effort,
     get_client,
 )
 
@@ -212,11 +213,17 @@ async def generate_lesson_structure(
         },
         "max_completion_tokens": settings.openai_lesson_structure_max_tokens,
     }
+    apply_reasoning_effort(
+        body,
+        settings.openai_lesson_structure_model,
+        settings.openai_lesson_structure_reasoning_effort,
+    )
     log.info(
         "openai_lesson_structure_request",
         chars=len(user_prompt),
         regeneration=is_regeneration,
         model=settings.openai_lesson_structure_model,
+        reasoning_effort=body.get("reasoning_effort"),
     )
     try:
         async with get_client(timeout=300.0) as client:

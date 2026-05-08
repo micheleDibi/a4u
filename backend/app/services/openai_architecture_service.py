@@ -19,6 +19,7 @@ from app.schemas.course_architecture import ArchitectureOutput
 from app.services.openai_client import (
     OpenAIError,
     OpenAINotConfiguredError,
+    apply_reasoning_effort,
     get_client,
 )
 
@@ -210,11 +211,17 @@ async def generate_architecture(
         },
         "max_completion_tokens": settings.openai_architecture_max_tokens,
     }
+    apply_reasoning_effort(
+        body,
+        settings.openai_modules_lessons_model,
+        settings.openai_architecture_reasoning_effort,
+    )
     log.info(
         "openai_architecture_request",
         chars=len(user_prompt),
         regeneration=is_regeneration,
         model=settings.openai_modules_lessons_model,
+        reasoning_effort=body.get("reasoning_effort"),
     )
     try:
         async with get_client(timeout=300.0) as client:

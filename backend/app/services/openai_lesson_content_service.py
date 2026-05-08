@@ -22,6 +22,7 @@ from app.schemas.course_lesson_content import LessonContentOutput
 from app.services.openai_client import (
     OpenAIError,
     OpenAINotConfiguredError,
+    apply_reasoning_effort,
     get_client,
 )
 
@@ -395,11 +396,17 @@ async def generate_lesson_content(
         },
         "max_completion_tokens": settings.openai_lesson_content_max_tokens,
     }
+    apply_reasoning_effort(
+        body,
+        settings.openai_lesson_content_model,
+        settings.openai_lesson_content_reasoning_effort,
+    )
     log.info(
         "openai_lesson_content_request",
         chars=len(user_prompt),
         regeneration=is_regeneration,
         model=settings.openai_lesson_content_model,
+        reasoning_effort=body.get("reasoning_effort"),
     )
     try:
         # Timeout esteso: lezione completa può richiedere 60-120s di reasoning.

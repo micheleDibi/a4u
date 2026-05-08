@@ -22,6 +22,7 @@ from app.core.logging import get_logger
 from app.services.openai_client import (
     OpenAIError,
     OpenAINotConfiguredError,
+    apply_reasoning_effort,
     get_client,
 )
 
@@ -103,12 +104,18 @@ async def generate_module_lessons(
         },
         "max_completion_tokens": settings.openai_architecture_max_tokens,
     }
+    apply_reasoning_effort(
+        body,
+        settings.openai_modules_lessons_model,
+        settings.openai_architecture_reasoning_effort,
+    )
 
     log.info(
         "openai_module_lessons_request",
         chars=len(user_prompt),
         expected_count=expected_count,
         model=settings.openai_modules_lessons_model,
+        reasoning_effort=body.get("reasoning_effort"),
     )
 
     try:
