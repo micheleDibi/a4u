@@ -246,17 +246,14 @@
     }
     /* Le figure mermaid usano padding ridotto per dare più spazio
        al diagramma: la fig-body normale ha 3mm, qui scende a 1mm.
-       In più, estendiamo la figure OLTRE i margini laterali del @page
-       (offset negativi pari a `margin_side_cm`) — i flowchart densi
-       (LR, molti nodi) hanno bisogno di tutta la larghezza del foglio
-       per restare leggibili. WeasyPrint supporta correttamente
-       l'extension oltre il content area, come per `.page-background`. */
+       NB la figure resta dentro i margini di testo del documento
+       (no offset negativi): il diagramma deve allinearsi al body
+       come gli altri elementi. La leggibilità su flowchart densi
+       è già migliorata dallo stripping del `max-width` inline di
+       mermaid — l'SVG riempie tutto il content-area invece di
+       fermarsi alla sua dimensione naturale (~340px). */
     figure.visual:has(.mermaid-svg) .figure-body {
       padding: 1mm;
-    }
-    figure.visual:has(.mermaid-svg) {
-      margin-left: -{{ margin_side_cm }}cm;
-      margin-right: -{{ margin_side_cm }}cm;
     }
 
     /* === Math === */
