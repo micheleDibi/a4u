@@ -473,6 +473,13 @@ mermaid.initialize({
 });
 window.__renderMermaid = async (id, code) => {
   try {
+    // Pre-validate: se la parse fallisce, NON chiamiamo render(),
+    // altrimenti mermaid emette nel DOM un'icona "bomba" + scritta
+    // "Syntax error in text" che finirebbe nell'SVG ritornato.
+    // Con `suppressErrors: true`, parse ritorna `false` invece di
+    // throware e senza side-effects nel DOM.
+    const ok = await mermaid.parse(code, { suppressErrors: true });
+    if (!ok) return null;
     const { svg } = await mermaid.render(id, code);
     return svg;
   } catch (e) {
