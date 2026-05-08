@@ -83,11 +83,57 @@ MINIMAX_API_KEY=...
 
 # Error monitoring (opzionale)
 SENTRY_DSN=
+
+# Porte
+FRONTEND_PORT=80
+BACKEND_PORT=127.0.0.1:8000   # vedi sezione "Configurare le porte" sotto
 ```
 
 > **NB su `JWT_SECRET`**: rigenerare il secret invalida tutte le
 > sessioni attive. Se cambi `JWT_SECRET` su un sistema con utenti
 > loggati, dovranno fare nuovamente login.
+
+### Configurare le porte (frontend e backend)
+
+Lo stack espone due servizi sul host. Entrambi sono configurabili via env.
+
+| Variabile | Default | Effetto |
+|---|---|---|
+| `FRONTEND_PORT` | `80` | Porta pubblica del frontend nginx (serve dist + proxy a `/api/`). |
+| `BACKEND_PORT` | `127.0.0.1:8000` | Backend FastAPI. Default = solo localhost del server (NON pubblico). |
+
+**Casi tipici per `FRONTEND_PORT`:**
+
+```env
+FRONTEND_PORT=80         # default — produzione standard
+FRONTEND_PORT=8080       # se la 80 è occupata da altro
+FRONTEND_PORT=443        # solo se gestisci TLS dentro nginx (raro: meglio reverse proxy esterno)
+```
+
+**Casi tipici per `BACKEND_PORT`:**
+
+```env
+# Default: NON esposto pubblicamente, solo accessibile dal server stesso.
+# Adatto al 95% dei casi: il traffico passa via il proxy nginx del frontend.
+BACKEND_PORT=127.0.0.1:8000
+
+# Esposizione su tutte le interfacce, porta 8000.
+# Necessario se webhook esterni o app mobile devono colpire il backend
+# direttamente, scavalcando il frontend.
+BACKEND_PORT=8000
+
+# Solo su una specifica interfaccia di rete (multi-homed server).
+BACKEND_PORT=192.168.1.10:8000
+
+# Porta non standard, su tutte le interfacce.
+BACKEND_PORT=9001
+```
+
+> ⚠️ Esporre il backend pubblicamente (`BACKEND_PORT=8000`) bypassa
+> il reverse proxy nginx, che attua header `X-Forwarded-*`, gzip,
+> SPA fallback. Assicurati che `FRONTEND_ORIGIN` e `COOKIE_DOMAIN`
+> siano coerenti, e considera comunque di metterci un proxy davanti
+> per TLS.
 
 ### Servizi del compose
 
