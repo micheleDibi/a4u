@@ -56,18 +56,17 @@ export function ModuleEditDialog({
   const titleRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (open) {
-      setDraft({
-        title: initial?.title ?? "",
-        description: initial?.description ?? "",
-      });
-      // Autofocus dopo l'animazione di apertura del Dialog Radix.
-      const id = window.setTimeout(() => {
-        titleRef.current?.focus();
-        titleRef.current?.select();
-      }, 80);
-      return () => window.clearTimeout(id);
-    }
+    if (!open) return;
+    setDraft({
+      title: initial?.title ?? "",
+      description: initial?.description ?? "",
+    });
+    // Autofocus dopo l'animazione di apertura del Dialog Radix.
+    const id = window.setTimeout(() => {
+      titleRef.current?.focus();
+      titleRef.current?.select();
+    }, 80);
+    return () => window.clearTimeout(id);
   }, [open, initial]);
 
   const trimmedTitle = draft.title.trim();

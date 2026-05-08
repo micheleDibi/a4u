@@ -83,19 +83,18 @@ export function LessonEditDialog({
   const titleRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (open) {
-      setDraft({
-        title: initial?.title ?? "",
-        summary: initial?.summary ?? "",
-        is_introductory: initial?.is_introductory ?? false,
-        recommended_bibliography: initial?.recommended_bibliography ?? [],
-      });
-      const id = window.setTimeout(() => {
-        titleRef.current?.focus();
-        titleRef.current?.select();
-      }, 80);
-      return () => window.clearTimeout(id);
-    }
+    if (!open) return;
+    setDraft({
+      title: initial?.title ?? "",
+      summary: initial?.summary ?? "",
+      is_introductory: initial?.is_introductory ?? false,
+      recommended_bibliography: initial?.recommended_bibliography ?? [],
+    });
+    const id = window.setTimeout(() => {
+      titleRef.current?.focus();
+      titleRef.current?.select();
+    }, 80);
+    return () => window.clearTimeout(id);
   }, [open, initial]);
 
   const trimmedTitle = draft.title.trim();
