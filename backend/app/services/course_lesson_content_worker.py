@@ -460,23 +460,26 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
 
 
 async def _bound_process(lesson_id: uuid.UUID) -> None:
-    """Wrap `_process_one` con cap concorrenza e inflight tracking."""
+    """Wrap `_process_one` con cap concorrenza.
+
+    NB: il task viene aggiunto a `_inflight` da `_tick` PRIMA del dispatch
+    (non qui) per evitare race con i tick successivi mentre la task è in
+    coda dietro al semaforo. Qui ci occupiamo solo del discard finale.
+    """
     assert _semaphore is not None
-    async with _semaphore:
-        async with _inflight_lock:
-            _inflight.add(lesson_id)
-        try:
+    try:
+        async with _semaphore:
             await _process_one(lesson_id)
-        except Exception as exc:  # pragma: no cover
-            log.error(
-                "lesson_content_worker_unexpected",
-                lesson_id=str(lesson_id),
-                error=str(exc),
-                exc_info=True,
-            )
-        finally:
-            async with _inflight_lock:
-                _inflight.discard(lesson_id)
+    except Exception as exc:  # pragma: no cover
+        log.error(
+            "lesson_content_worker_unexpected",
+            lesson_id=str(lesson_id),
+            error=str(exc),
+            exc_info=True,
+        )
+    finally:
+        async with _inflight_lock:
+            _inflight.discard(lesson_id)
 
 
 # ---------------------------------------------------------------------------
@@ -505,8 +508,16 @@ async def _tick() -> None:
     if not lesson_ids:
         return
 
+    # Dedup + claim ATOMICO: filtriamo le lezioni nuove e le marchiamo come
+    # inflight nello stesso lock. Senza il claim qui, le task accodate dietro
+    # il semaforo non risultano in `_inflight` finché non lo acquisiscono →
+    # il tick successivo (4s dopo) le ridispatcherebbe duplicate, generando
+    # uno storm di `lesson_content_skip_not_pending` quando finalmente
+    # eseguono e trovano `status=processing` settato dal vincitore.
     async with _inflight_lock:
         new_ids = [lid for lid in lesson_ids if lid not in _inflight]
+        for lid in new_ids:
+            _inflight.add(lid)
 
     for lid in new_ids:
         task = asyncio.create_task(

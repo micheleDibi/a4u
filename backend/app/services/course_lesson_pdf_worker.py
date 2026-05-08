@@ -282,22 +282,26 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
 
 
 async def _bound_process(lesson_id: uuid.UUID) -> None:
+    """Wrap `_process_one` con cap concorrenza.
+
+    NB: il task viene aggiunto a `_inflight` da `_tick` PRIMA del dispatch
+    (non qui) per evitare race con i tick successivi mentre la task è in
+    coda dietro al semaforo. Qui ci occupiamo solo del discard finale.
+    """
     assert _semaphore is not None
-    async with _semaphore:
-        async with _inflight_lock:
-            _inflight.add(lesson_id)
-        try:
+    try:
+        async with _semaphore:
             await _process_one(lesson_id)
-        except Exception as exc:  # pragma: no cover
-            log.error(
-                "lesson_pdf_worker_unexpected",
-                lesson_id=str(lesson_id),
-                error=str(exc),
-                exc_info=True,
-            )
-        finally:
-            async with _inflight_lock:
-                _inflight.discard(lesson_id)
+    except Exception as exc:  # pragma: no cover
+        log.error(
+            "lesson_pdf_worker_unexpected",
+            lesson_id=str(lesson_id),
+            error=str(exc),
+            exc_info=True,
+        )
+    finally:
+        async with _inflight_lock:
+            _inflight.discard(lesson_id)
 
 
 async def _tick() -> None:
@@ -316,8 +320,14 @@ async def _tick() -> None:
     if not lesson_ids:
         return
 
+    # Dedup + claim ATOMICO: vedi commento in
+    # `course_lesson_content_worker._tick`. Senza il claim qui, le lezioni
+    # accodate dietro al semaforo verrebbero ridispatchate ad ogni tick
+    # generando uno storm di `lesson_pdf_skip_not_pending`.
     async with _inflight_lock:
         new_ids = [lid for lid in lesson_ids if lid not in _inflight]
+        for lid in new_ids:
+            _inflight.add(lid)
 
     for lid in new_ids:
         task = asyncio.create_task(

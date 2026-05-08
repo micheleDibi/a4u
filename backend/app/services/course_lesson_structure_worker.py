@@ -404,23 +404,26 @@ async def _process_one(module_id: uuid.UUID) -> None:
 
 
 async def _bound_process(module_id: uuid.UUID) -> None:
-    """Wrap `_process_one` con cap concorrenza e inflight tracking."""
+    """Wrap `_process_one` con cap concorrenza.
+
+    NB: il task viene aggiunto a `_inflight` da `_tick` PRIMA del dispatch
+    (non qui) per evitare race con i tick successivi mentre la task è in
+    coda dietro al semaforo. Qui ci occupiamo solo del discard finale.
+    """
     assert _semaphore is not None
-    async with _semaphore:
-        async with _inflight_lock:
-            _inflight.add(module_id)
-        try:
+    try:
+        async with _semaphore:
             await _process_one(module_id)
-        except Exception as exc:  # pragma: no cover
-            log.error(
-                "lesson_structure_worker_unexpected",
-                module_id=str(module_id),
-                error=str(exc),
-                exc_info=True,
-            )
-        finally:
-            async with _inflight_lock:
-                _inflight.discard(module_id)
+    except Exception as exc:  # pragma: no cover
+        log.error(
+            "lesson_structure_worker_unexpected",
+            module_id=str(module_id),
+            error=str(exc),
+            exc_info=True,
+        )
+    finally:
+        async with _inflight_lock:
+            _inflight.discard(module_id)
 
 
 # ---------------------------------------------------------------------------
@@ -450,8 +453,14 @@ async def _tick() -> None:
     if not module_ids:
         return
 
+    # Dedup + claim ATOMICO: vedi commento in
+    # `course_lesson_content_worker._tick`. Senza il claim qui, i moduli
+    # accodati dietro al semaforo verrebbero ridispatchati ad ogni tick
+    # generando uno storm di `lesson_structure_skip_not_pending`.
     async with _inflight_lock:
         new_ids = [mid for mid in module_ids if mid not in _inflight]
+        for mid in new_ids:
+            _inflight.add(mid)
 
     for mid in new_ids:
         task = asyncio.create_task(
