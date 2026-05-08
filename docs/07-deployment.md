@@ -69,18 +69,34 @@ cd a4u
 cp .env.example .env
 # Edita .env con valori reali — vedi sotto la checklist
 
-# 3. Build delle immagini + avvio di tutto lo stack
-docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env up -d --build
+# 3. Avvia SOLO Postgres (deve essere healthy prima delle migrazioni)
+docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env up -d --build postgres
 
-# 4. Migrazioni Alembic (crea schema + seed permessi/ruoli/admin)
-docker compose -f docker-compose.yml -f docker-compose.prod.yml exec backend alembic upgrade head
+# 4. Aspetta che postgres sia healthy
+until docker compose -f docker-compose.yml -f docker-compose.prod.yml ps postgres | grep -q healthy; do sleep 2; done
 
-# 5. (Opzionale) Restore del DB seed — vedi sezione dedicata sotto
+# 5. Migrazioni Alembic in container EFFIMERO (`run --rm` non `exec`).
+#    L'app fa seed delle tabelle al boot via lifespan, quindi il backend
+#    NON può partire finché lo schema non è creato — chicken-and-egg.
+docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm backend alembic upgrade head
+
+# 6. (Opzionale) Restore del DB seed PRIMA di avviare il backend
 gunzip -c /tmp/db_seed.sql.gz | docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T postgres psql -U a4u -d a4u
 
-# 6. Healthcheck
-curl http://localhost/api/v1/system/health
+# 7. Avvia backend + frontend
+docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env up -d
+
+# 8. Healthcheck (sostituisci :PORT con il valore di FRONTEND_PORT in .env)
+curl http://localhost:${FRONTEND_PORT:-80}/api/v1/system/health
 ```
+
+> **NB sul `run --rm` vs `exec`** — al primissimo deploy il container
+> `backend` crasha al boot perché `ensure_seed()` in `lifespan` interroga
+> tabelle che non esistono ancora. `docker compose exec` fallisce
+> ("Container is restarting"). `run --rm backend alembic upgrade head`
+> avvia un container effimero, esegue le migrazioni, esce — niente
+> dipendenza dal backend running. Per migrazioni successive (dopo che
+> il backend è healthy) puoi usare sia `run --rm` sia `exec`.
 
 ### `.env` di produzione — checklist minima
 
