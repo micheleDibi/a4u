@@ -223,13 +223,40 @@
       background: rgba(0, 0, 0, 0.04);
       color: rgba(0, 0, 0, 0.55); font-size: 9.5pt;
     }
+    /* Mermaid SVG: forza il riempimento della larghezza del container
+       (override del max-width:Xpx che mermaid mette inline — anche se
+       lo strippiamo lato Python, ribadiamo qui per safety). Il SVG
+       conserva l'aspect ratio via viewBox, quindi `height: auto`. */
+    .mermaid-svg {
+      /* Stretch del container a tutta la figure-body, senza padding
+         orizzontale aggiuntivo: lasciamo il diagramma usare il
+         massimo possibile della larghezza pagina. */
+      margin: 0 -1mm;
+    }
     .mermaid-svg svg {
-      max-width: 100%; height: auto;
-      display: block; margin: 0 auto;
+      max-width: 100% !important;
+      width: 100% !important;
+      height: auto;
+      display: block;
+      margin: 0 auto;
     }
     .mermaid-fallback {
       font-family: "Menlo", "Consolas", monospace; font-size: 9pt;
       white-space: pre-wrap;
+    }
+    /* Le figure mermaid usano padding ridotto per dare più spazio
+       al diagramma: la fig-body normale ha 3mm, qui scende a 1mm.
+       In più, estendiamo la figure OLTRE i margini laterali del @page
+       (offset negativi pari a `margin_side_cm`) — i flowchart densi
+       (LR, molti nodi) hanno bisogno di tutta la larghezza del foglio
+       per restare leggibili. WeasyPrint supporta correttamente
+       l'extension oltre il content area, come per `.page-background`. */
+    figure.visual:has(.mermaid-svg) .figure-body {
+      padding: 1mm;
+    }
+    figure.visual:has(.mermaid-svg) {
+      margin-left: -{{ margin_side_cm }}cm;
+      margin-right: -{{ margin_side_cm }}cm;
     }
 
     /* === Math === */

@@ -42,7 +42,17 @@ export function MermaidDiagram({ code, className }: MermaidDiagramProps) {
         const id = `mermaid-${renderCounter}-${Date.now()}`;
         const { svg: rendered } = await mermaid.render(id, code);
         if (!cancelled) {
-          setSvg(rendered);
+          // Mermaid imposta `style="max-width: <natural_px>"` sull'SVG.
+          // Questo impedisce al diagramma di crescere oltre la sua
+          // dimensione naturale (~300-400px), anche se il container è
+          // molto più largo — risultato: testo illeggibile.
+          // Strippiamo quel max-width così l'SVG riempie tutto il
+          // container disponibile.
+          const cleaned = rendered.replace(
+            /max-width\s*:\s*[\d.]+px\s*;?/gi,
+            "",
+          );
+          setSvg(cleaned);
         }
       } catch (exc) {
         if (!cancelled) {
@@ -80,7 +90,12 @@ export function MermaidDiagram({ code, className }: MermaidDiagramProps) {
     <div
       ref={containerRef}
       className={cn(
-        "flex justify-center overflow-x-auto rounded bg-background p-2 [&_svg]:max-w-full [&_svg]:h-auto",
+        // Diagramma a tutta larghezza: l'SVG fillsa il container così
+        // i nodi e le label restano leggibili anche su flowchart densi.
+        // overflow-x-auto come fallback se qualche diagramma ha una
+        // larghezza minima > container (mai dovrebbe accadere ora che
+        // il max-width inline è strippato, ma resta come safety net).
+        "overflow-x-auto rounded bg-background p-2 [&_svg]:!w-full [&_svg]:!max-w-none [&_svg]:h-auto",
         className,
       )}
       dangerouslySetInnerHTML={{ __html: svg }}

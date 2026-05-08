@@ -438,6 +438,20 @@ def _build_asset_html_map(
 # `<foreignObject>` con HTML per le label dei nodi, ma WeasyPrint non
 # supporta foreignObject. Forzando le label come SVG `<text>` puro,
 # il diagramma si renderizza correttamente nel PDF.
+# Mermaid imposta `style="max-width: <natural_px>;"` sull'SVG generato
+# (con `useMaxWidth: true`). Questo IMPEDISCE all'SVG di crescere
+# oltre la sua dimensione naturale (tipicamente ~300-400px), anche
+# se il container del PDF è molto più largo (un foglio A4 ha ~170mm
+# di content area = ~640px). Risultato: il diagramma rimane piccolo
+# e le label illeggibili. Strippiamo quel `max-width:Xpx` lasciando
+# tutto il resto dello stile così l'SVG riempie il container.
+_MERMAID_MAX_WIDTH_RE = re.compile(r"max-width\s*:\s*[\d.]+px\s*;?", re.IGNORECASE)
+
+
+def _strip_mermaid_max_width(svg: str) -> str:
+    return _MERMAID_MAX_WIDTH_RE.sub("", svg)
+
+
 _MERMAID_RENDERER_HTML = """<!doctype html>
 <html><head><meta charset="utf-8"><style>body{margin:0;padding:0;}</style></head>
 <body>
@@ -518,7 +532,7 @@ async def _prerender_mermaid_to_svg_batch_async(
                         [f"mmd-{i}", code],
                     )
                     if isinstance(svg, str) and svg.strip():
-                        results.append(svg)
+                        results.append(_strip_mermaid_max_width(svg))
                     else:
                         log.warning(
                             "mermaid_render_returned_empty",
