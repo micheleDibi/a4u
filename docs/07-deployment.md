@@ -19,6 +19,33 @@ fa proxy verso il backend).
   Playwright (~300 MB), generated PDFs e uploads.
 - Una porta pubblica (80 e/o 443) e un dominio con DNS che punta al server.
 
+#### Installare Docker (server senza Docker)
+
+Se `docker --version` risponde `command not found`, installa con lo
+script ufficiale (funziona su Ubuntu, Debian, Rocky, AlmaLinux,
+Fedora, openSUSE, ecc.):
+
+```bash
+# Install Docker Engine + Compose plugin
+curl -fsSL https://get.docker.com | sudo sh
+
+# Aggiungi l'utente al gruppo docker (no sudo per i comandi successivi)
+sudo usermod -aG docker $USER
+newgrp docker
+
+# Autostart al boot + avvio immediato
+sudo systemctl enable --now docker
+
+# Verifica
+docker --version
+docker compose version
+docker run --rm hello-world
+```
+
+In alternativa segui la procedura manuale da
+<https://docs.docker.com/engine/install/> per la tua distro
+specifica.
+
 ### Servizi e relativi runtime requirements
 
 | Servizio | Immagine base | Runtime extra |
