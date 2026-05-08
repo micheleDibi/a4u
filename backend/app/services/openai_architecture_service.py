@@ -250,7 +250,9 @@ async def generate_architecture(
 
     data = resp.json()
     try:
-        content = data["choices"][0]["message"]["content"]
+        choice = data["choices"][0]
+        message = choice["message"]
+        content = message.get("content") or ""
     except (KeyError, IndexError, TypeError) as exc:
         log.error("openai_architecture_unexpected_response", payload=data)
         raise OpenAIArchitectureError(
@@ -258,6 +260,46 @@ async def generate_architecture(
             message="Risposta OpenAI in formato inatteso.",
             payload=data,
         ) from exc
+
+    # Diagnostica per content vuoto: spesso accade per finish_reason
+    # `length` (max_tokens troppo basso, il reasoning ha consumato tutto
+    # il budget prima di emettere JSON), `content_filter` (safety guard
+    # OpenAI), o `refusal` (il modello rifiuta esplicitamente).
+    if not content.strip():
+        finish_reason = choice.get("finish_reason")
+        refusal = message.get("refusal")
+        usage = data.get("usage", {})
+        log.error(
+            "openai_architecture_empty_content",
+            finish_reason=finish_reason,
+            refusal=refusal,
+            usage=usage,
+            model=data.get("model"),
+        )
+        if finish_reason == "length":
+            hint = (
+                " — finish_reason=length: il modello ha esaurito i token "
+                "prima di emettere il JSON. Aumenta "
+                "OPENAI_ARCHITECTURE_MAX_TOKENS nel .env (consigliato "
+                "16000+) o usa un modello con context window più ampia."
+            )
+        elif finish_reason == "content_filter":
+            hint = (
+                " — finish_reason=content_filter: il safety filter OpenAI "
+                "ha bloccato la risposta. Riformula prompt/documenti."
+            )
+        elif refusal:
+            hint = f" — il modello ha rifiutato: {refusal[:200]}"
+        else:
+            hint = (
+                f" — finish_reason={finish_reason}. Verifica modello "
+                f"({data.get('model')}) e usage: {usage}."
+            )
+        raise OpenAIArchitectureError(
+            status=resp.status_code,
+            message=f"OpenAI ha restituito una risposta vuota{hint}",
+            payload=data,
+        )
 
     try:
         parsed = json.loads(content)

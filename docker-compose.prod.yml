@@ -36,11 +36,25 @@ services:
       MINIMAX_CLIP_DURATION: ${MINIMAX_CLIP_DURATION:-6}
       MINIMAX_CLIP_RESOLUTION: ${MINIMAX_CLIP_RESOLUTION:-1080P}
       MINIMAX_POLL_INTERVAL_SECONDS: ${MINIMAX_POLL_INTERVAL_SECONDS:-10}
-      # OpenAI (traduzione automatica i18n + generazione contenuti AI).
+      # OpenAI (traduzione i18n + summarization + generazione corso AI).
+      # Ogni fase del pipeline corso usa un modello configurabile a parte:
+      # _model: name del modello, _max_tokens: budget di output.
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
       OPENAI_TRANSLATE_BATCH_SIZE: ${OPENAI_TRANSLATE_BATCH_SIZE:-40}
+      OPENAI_SUMMARIZE_MODEL: ${OPENAI_SUMMARIZE_MODEL:-gpt-4o-mini}
+      OPENAI_SUMMARIZE_MAX_TOKENS: ${OPENAI_SUMMARIZE_MAX_TOKENS:-8000}
+      # Architettura corso (moduli + lezioni). Default gpt-5.5: se hai
+      # accesso a un modello reasoning più potente, va bene; altrimenti
+      # passa a gpt-4o (8000 tokens normalmente bastano per un'architettura
+      # corso a 5-10 lezioni; sali a 16000 se vedi `finish_reason=length`).
+      OPENAI_MODULES_LESSONS_MODEL: ${OPENAI_MODULES_LESSONS_MODEL:-gpt-5.5}
+      OPENAI_ARCHITECTURE_MAX_TOKENS: ${OPENAI_ARCHITECTURE_MAX_TOKENS:-8000}
+      OPENAI_LESSON_STRUCTURE_MODEL: ${OPENAI_LESSON_STRUCTURE_MODEL:-gpt-5.5}
+      OPENAI_LESSON_STRUCTURE_MAX_TOKENS: ${OPENAI_LESSON_STRUCTURE_MAX_TOKENS:-16000}
+      OPENAI_LESSON_CONTENT_MODEL: ${OPENAI_LESSON_CONTENT_MODEL:-gpt-5.5}
+      OPENAI_LESSON_CONTENT_MAX_TOKENS: ${OPENAI_LESSON_CONTENT_MAX_TOKENS:-32000}
       # Rate limiting login
       RATE_LIMIT_LOGIN_PER_MIN: ${RATE_LIMIT_LOGIN_PER_MIN:-5}
       LOGIN_LOCKOUT_THRESHOLD: ${LOGIN_LOCKOUT_THRESHOLD:-10}
