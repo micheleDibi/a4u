@@ -226,16 +226,17 @@
     /* Mermaid SVG: forza il riempimento della larghezza del container
        (override del max-width:Xpx che mermaid mette inline — anche se
        lo strippiamo lato Python, ribadiamo qui per safety). Il SVG
-       conserva l'aspect ratio via viewBox, quindi `height: auto`. */
+       conserva l'aspect ratio via viewBox + preserveAspectRatio.
+       `max-height` evita che diagrammi TD (verticali, molti nodi)
+       eccedano l'altezza utile della pagina e vengano tagliati dal
+       page-break: WeasyPrint scala l'SVG per farlo entrare. */
     .mermaid-svg {
-      /* Stretch del container a tutta la figure-body, senza padding
-         orizzontale aggiuntivo: lasciamo il diagramma usare il
-         massimo possibile della larghezza pagina. */
       margin: 0 -1mm;
     }
     .mermaid-svg svg {
       max-width: 100% !important;
       width: 100% !important;
+      max-height: {{ max_figure_height_cm }}cm;
       height: auto;
       display: block;
       margin: 0 auto;

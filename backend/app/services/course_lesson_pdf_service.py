@@ -809,6 +809,20 @@ def _default_template_dict(*, language: str) -> dict[str, Any]:
     }
 
 
+# Altezza fisica del foglio in cm per ciascuna page-size supportata.
+# Usata da `_compute_template_margins_cm` per derivare l'altezza utile
+# del content-area (paper - top - bottom margin) e quindi il
+# `max-height` di figure mermaid alte (TD flowchart con molti nodi)
+# che altrimenti vengono tagliate dal page-break.
+_PAGE_HEIGHTS_CM: dict[str, float] = {
+    "A4": 29.7,
+    "A3": 42.0,
+    "Letter": 27.94,
+    "letter": 27.94,
+    "LETTER": 27.94,
+}
+
+
 def _compute_template_margins_cm(tpl_dict: dict[str, Any]) -> dict[str, float]:
     """Converte `margin_mm` + `header_height_mm` + `footer_height_mm` del
     template in cm per il CSS `@page`.
@@ -819,6 +833,12 @@ def _compute_template_margins_cm(tpl_dict: dict[str, Any]) -> dict[str, float]:
       spazio al page counter senza schiacciarlo sui contenuti.
     - side: sempre `margin_mm` (il watermark è gestito via offset
       negativi sul `.page-background`).
+
+    Calcola anche `max_figure_height_cm` = altezza utile del content
+    area meno una safety di ~1.5cm (per padding figure + caption +
+    breathing room). Le figure mermaid usano questo valore come
+    `max-height` per scalarsi automaticamente entro la pagina invece
+    di farsi tagliare dal page-break.
     """
     margin_mm = max(5, int(tpl_dict.get("margin_mm", 20)))
     header_h_mm = int(tpl_dict.get("header_height_mm", 0))
@@ -834,10 +854,15 @@ def _compute_template_margins_cm(tpl_dict: dict[str, Any]) -> dict[str, float]:
     # footer_height_mm > 0, lasciamo almeno `margin_mm` di spazio.
     bottom_mm = max(margin_mm, footer_h_mm + 5) if footer_h_mm > 0 else margin_mm
 
+    paper_h_cm = _PAGE_HEIGHTS_CM.get(tpl_dict.get("page_size", "A4"), 29.7)
+    content_h_cm = paper_h_cm - (top_mm / 10.0) - (bottom_mm / 10.0)
+    max_figure_height_cm = max(5.0, round(content_h_cm - 1.5, 2))
+
     return {
         "margin_top_cm": round(top_mm / 10.0, 3),
         "margin_side_cm": round(margin_mm / 10.0, 3),
         "margin_bottom_cm": round(bottom_mm / 10.0, 3),
+        "max_figure_height_cm": max_figure_height_cm,
     }
 
 
@@ -917,6 +942,7 @@ def render_lesson_html(
         margin_top_cm=margins_cm["margin_top_cm"],
         margin_side_cm=margins_cm["margin_side_cm"],
         margin_bottom_cm=margins_cm["margin_bottom_cm"],
+        max_figure_height_cm=margins_cm["max_figure_height_cm"],
         body_html=body_html,
         key_takeaways=raw.get("key_takeaways") or [],
         references=raw.get("references") or [],
