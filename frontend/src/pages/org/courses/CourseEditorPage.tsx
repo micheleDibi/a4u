@@ -48,8 +48,10 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useLanguages } from "@/hooks/useLanguages";
+import { useTaskEta } from "@/hooks/useTaskEta";
 import { flagFor } from "@/i18n/flags";
 import { extractApiError } from "@/lib/errors";
+import { formatDuration } from "@/lib/formatDuration";
 import { P } from "@/lib/permissions";
 import { CourseArchitectureView } from "./components/CourseArchitectureView";
 import { CourseDocumentUploader } from "./components/CourseDocumentUploader";
@@ -1014,8 +1016,11 @@ function ArchitectureSection({
 }) {
   const { t } = useTranslation();
 
-  if (course.status === "architecture_pending") {
-    const pct = Math.max(0, Math.min(100, course.architecture_progress ?? 0));
+  const isPending = course.status === "architecture_pending";
+  const archPct = Math.max(0, Math.min(100, course.architecture_progress ?? 0));
+  const archEta = useTaskEta(`arch:${course.id}`, isPending, archPct);
+
+  if (isPending) {
     const phase = course.architecture_progress_phase;
     return (
       <div className="space-y-3 rounded-lg border border-dashed border-border p-6">
@@ -1029,10 +1034,28 @@ function ArchitectureSection({
               : t("courses.architecture.pendingMessage")}
           </span>
           <span className="ms-auto font-mono text-xs tabular-nums text-muted-foreground">
-            {pct}%
+            {archPct}%
           </span>
         </div>
-        <Progress value={pct} />
+        <Progress value={archPct} />
+        {(archEta.etaMs !== null || archEta.elapsedMs !== null) && (
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            {archEta.etaMs !== null && (
+              <span className="font-medium text-foreground">
+                {t("courses.architecture.eta", {
+                  time: formatDuration(archEta.etaMs),
+                })}
+              </span>
+            )}
+            {archEta.elapsedMs !== null && archEta.elapsedMs > 1_000 && (
+              <span>
+                {t("courses.architecture.elapsed", {
+                  time: formatDuration(archEta.elapsedMs),
+                })}
+              </span>
+            )}
+          </div>
+        )}
       </div>
     );
   }

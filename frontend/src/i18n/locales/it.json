@@ -266,6 +266,8 @@
         "calling_openai": "Generazione AI in corso…",
         "materializing": "Salvataggio dell'architettura…"
       },
+      "eta": "Tempo rimanente: ~{{time}}",
+      "elapsed": "Trascorso: {{time}}",
       "moduleLabel": "Modulo {{n}}",
       "lessonLabel": "Lezione {{n}}",
       "moduleGenerating": "Generazione lezioni in corso…",
@@ -377,7 +379,9 @@
       "aggregate": {
         "label": "{{completed}}/{{total}} moduli completati",
         "failed_one": "{{count}} modulo fallito — usa \"Riprova\".",
-        "failed_other": "{{count}} moduli falliti — usa \"Riprova\"."
+        "failed_other": "{{count}} moduli falliti — usa \"Riprova\".",
+        "eta": "Tempo rimanente: ~{{time}}",
+        "avgPerTask": "~{{time}} per modulo"
       },
       "statuses": {
         "empty": "Vuoto",
@@ -518,7 +522,9 @@
       "aggregate": {
         "label": "{{completed}}/{{total}} lezioni completate",
         "failed_one": "{{count}} lezione fallita — usa \"Riprova\".",
-        "failed_other": "{{count}} lezioni fallite — usa \"Riprova\"."
+        "failed_other": "{{count}} lezioni fallite — usa \"Riprova\".",
+        "eta": "Tempo rimanente: ~{{time}}",
+        "avgPerTask": "~{{time}} per lezione"
       },
       "statuses": {
         "empty": "Vuoto",

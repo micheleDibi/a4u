@@ -266,6 +266,8 @@
         "calling_openai": "AI generation in progress…",
         "materializing": "Saving the architecture…"
       },
+      "eta": "Remaining: ~{{time}}",
+      "elapsed": "Elapsed: {{time}}",
       "moduleLabel": "Module {{n}}",
       "lessonLabel": "Lesson {{n}}",
       "moduleGenerating": "Generating lessons…",
@@ -377,7 +379,9 @@
       "aggregate": {
         "label": "{{completed}}/{{total}} modules completed",
         "failed_one": "{{count}} module failed — use \"Retry\".",
-        "failed_other": "{{count}} modules failed — use \"Retry\"."
+        "failed_other": "{{count}} modules failed — use \"Retry\".",
+        "eta": "Remaining: ~{{time}}",
+        "avgPerTask": "~{{time}} per module"
       },
       "statuses": {
         "empty": "Empty",
@@ -518,7 +522,9 @@
       "aggregate": {
         "label": "{{completed}}/{{total}} lessons completed",
         "failed_one": "{{count}} lesson failed — use \"Retry\".",
-        "failed_other": "{{count}} lessons failed — use \"Retry\"."
+        "failed_other": "{{count}} lessons failed — use \"Retry\".",
+        "eta": "Remaining: ~{{time}}",
+        "avgPerTask": "~{{time}} per lesson"
       },
       "statuses": {
         "empty": "Empty",

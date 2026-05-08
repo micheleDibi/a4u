@@ -30,7 +30,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { useBatchEta } from "@/hooks/useBatchEta";
 import { extractApiError } from "@/lib/errors";
+import { formatDuration } from "@/lib/formatDuration";
 import { LessonStructureEditDialog } from "./LessonStructureEditDialog";
 import {
   LessonsStructureGenerateDialog,
@@ -125,6 +127,15 @@ export function CourseLessonStructureView({
   }, [course.modules]);
 
   const anyActive = (aggregate.activeCount ?? 0) > 0;
+
+  // ETA del batch struttura: derivata dai timestamp di completamento dei
+  // moduli (`lessons_structure_generated_at`).
+  const eta = useBatchEta(
+    course.modules.map((m) => ({
+      status: m.lessons_structure_status,
+      completedAt: m.lessons_structure_generated_at,
+    })),
+  );
   const allReadyOrApproved =
     course.modules.length > 0 &&
     course.modules.every(
@@ -309,6 +320,24 @@ export function CourseLessonStructureView({
               </span>
             </div>
             <Progress value={aggregate.percent} />
+            {anyActive && (eta.etaMs !== null || eta.avgPerTaskMs !== null) && (
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                {eta.etaMs !== null && (
+                  <span className="font-medium text-foreground">
+                    {t("courses.lessonsStructure.aggregate.eta", {
+                      time: formatDuration(eta.etaMs),
+                    })}
+                  </span>
+                )}
+                {eta.avgPerTaskMs !== null && (
+                  <span>
+                    {t("courses.lessonsStructure.aggregate.avgPerTask", {
+                      time: formatDuration(eta.avgPerTaskMs),
+                    })}
+                  </span>
+                )}
+              </div>
+            )}
             {aggregate.failedCount && aggregate.failedCount > 0 ? (
               <div className="flex items-center gap-2 text-xs text-destructive">
                 <AlertCircle className="size-3.5" />

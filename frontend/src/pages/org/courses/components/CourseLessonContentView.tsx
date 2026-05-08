@@ -30,7 +30,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { useBatchEta } from "@/hooks/useBatchEta";
 import { extractApiError } from "@/lib/errors";
+import { formatDuration } from "@/lib/formatDuration";
 
 import { LessonContentEditDialog } from "./LessonContentEditDialog";
 import {
@@ -153,6 +155,15 @@ export function CourseLessonContentView({
   }, [allLessons]);
 
   const anyActive = aggregate.activeCount > 0;
+
+  // ETA del batch contenuti: derivata dai timestamp di completamento delle
+  // lezioni (`content_generated_at`).
+  const eta = useBatchEta(
+    allLessons.map((l) => ({
+      status: l.content_status,
+      completedAt: l.content_generated_at,
+    })),
+  );
   const allReadyOrApproved =
     allLessons.length > 0 &&
     allLessons.every(
@@ -467,6 +478,24 @@ export function CourseLessonContentView({
               </span>
             </div>
             <Progress value={aggregate.percent} />
+            {anyActive && (eta.etaMs !== null || eta.avgPerTaskMs !== null) && (
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                {eta.etaMs !== null && (
+                  <span className="font-medium text-foreground">
+                    {t("courses.lessonsContent.aggregate.eta", {
+                      time: formatDuration(eta.etaMs),
+                    })}
+                  </span>
+                )}
+                {eta.avgPerTaskMs !== null && (
+                  <span>
+                    {t("courses.lessonsContent.aggregate.avgPerTask", {
+                      time: formatDuration(eta.avgPerTaskMs),
+                    })}
+                  </span>
+                )}
+              </div>
+            )}
             {aggregate.failedCount > 0 && (
               <div className="flex items-center gap-2 text-xs text-destructive">
                 <AlertCircle className="size-3.5" />
