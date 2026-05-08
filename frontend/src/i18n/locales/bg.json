@@ -1,0 +1,516 @@
+{
+  "app": {
+    "name": "a4u",
+    "tagline": "Платформа за университетски курсове"
+  },
+  "common": {
+    "save": "Запази",
+    "cancel": "Отказ",
+    "delete": "Изтрий",
+    "edit": "Редактирай",
+    "add": "Добави",
+    "loading": "Зареждане…",
+    "saving": "Запазване…",
+    "creating": "Създаване…",
+    "remove": "Премахни",
+    "confirm": "Потвърди",
+    "close": "Затвори",
+    "search": "Търсене",
+    "back": "Назад",
+    "next": "Напред",
+    "actions": "Действия",
+    "of": "от",
+    "noResults": "Няма резултати",
+    "copy": "Копирай",
+    "copied": "Копирано!",
+    "yes": "Да",
+    "no": "Не",
+    "all": "Всички",
+    "optional": "по избор",
+    "required": "задължително",
+    "moreInfo": "Повече информация"
+  },
+  "auth": {
+    "login": {
+      "title": "Добре дошли отново",
+      "subtitle": "Влезте в работното си пространство a4u",
+      "email": "Имейл",
+      "password": "Парола",
+      "submit": "Вход",
+      "submitting": "Влизане…"
+    },
+    "logout": "Изход",
+    "invitation": {
+      "title": "Приеми покана",
+      "subtitle": "Поканен си в {{org}} като {{role}}",
+      "fullName": "Пълно име",
+      "passwordHint": "Мин. 10 знака, една главна буква, една цифра",
+      "submit": "Приеми поканата",
+      "submitting": "Потвърждаване…",
+      "alreadyRegistered": "Вече си регистриран. Натисни \"Приеми\", за да бъдеш добавен.",
+      "invalidOrExpired": "Поканата е невалидна, изтекла или вече използвана."
+    }
+  },
+  "theme": {
+    "label": "Тема",
+    "light": "Светла",
+    "dark": "Тъмна",
+    "system": "Системна"
+  },
+  "language": {
+    "label": "Език"
+  },
+  "nav": {
+    "platform": "Платформа",
+    "organization": "Организация",
+    "configurazioni": "Конфигурация",
+    "personal": "Лични",
+    "dashboard": "Табло",
+    "organizations": "Организации",
+    "users": "Потребители",
+    "permissions": "Глобални права",
+    "i18n": "Езици",
+    "members": "Членове",
+    "templatesSlide": "Шаблони на слайдове",
+    "templatesPdf": "PDF шаблони",
+    "avatarConfig": "Аватар",
+    "courseSettings": "Параметри на курс"
+  },
+  "courseSettings": {
+    "title": "Параметри на курс",
+    "subtitle": "Стойности по подразбиране за генериране на структурата на нов курс в тази организация.",
+    "dirtyBanner": "Незапазени промени",
+    "saved": "Параметрите са запазени",
+    "sections": {
+      "structure": {
+        "title": "Структура на курса",
+        "subtitle": "Колко модула и уроци се генерират за всеки кредит."
+      },
+      "duration": {
+        "title": "Продължителност на уроците",
+        "subtitle": "Стандартна продължителност на всеки урок от курса."
+      },
+      "assessment": {
+        "subtitle": "Последният урок на всеки модул е автоматично генерирана оценка на знанията.",
+        "disabledHint": "Не се генерира финална оценка. Всеки модул завършва с обичайния последен урок."
+      }
+    },
+    "fields": {
+      "modulesPerCfu": "Модули на кредит",
+      "lessonsPerModule": "Уроци на модул",
+      "lessonDuration": "Продължителност на урока",
+      "assessment": "Финална оценка на знанията",
+      "assessmentHelp": "Ако е активирано, последният урок на всеки модул е автоматично генерирана оценка на знанията: генерира се набор от въпроси (с избор и отворени) за проверка на придобитите компетенции. Платформата генерира само съдържание; доставката към студентите е извън обхвата.",
+      "mcq": "Въпроси с избор",
+      "openQuestions": "Отворени въпроси"
+    },
+    "units": {
+      "modules": "модула",
+      "lessons": "уроци",
+      "minutes": "минути",
+      "questions": "въпроси"
+    },
+    "summary": {
+      "title": "Обобщение за кредит",
+      "modulesPerCfu": "Модули",
+      "lessonsPerModule": "Уроци на модул",
+      "lessonDuration": "Продължителност на урока",
+      "totalLessonsPerCfu": "Общо уроци",
+      "totalDurationPerCfu": "Обща продължителност",
+      "mcq": "Въпроси с избор",
+      "openQuestions": "Отворени въпроси",
+      "totalQuestions": "Общо въпроси за оценка",
+      "noAssessment": "Не се генерира финална оценка.",
+      "minutesValue_one": "{{count}} минута",
+      "minutesValue_other": "{{count}} минути",
+      "hours_one": "{{count}} час",
+      "hours_other": "{{count}} часа",
+      "hoursAndMinutes": "{{hours}}ч {{minutes}}м"
+    }
+  },
+  "command": {
+    "placeholder": "Търси команда или страница…",
+    "navigation": "Навигация",
+    "actions": "Действия",
+    "preferences": "Настройки",
+    "openCommandPalette": "Отвори палитра с команди",
+    "newOrganization": "Нова организация",
+    "logout": "Изход",
+    "noResults": "Няма резултати",
+    "switchTheme": "Смени тема",
+    "switchLanguage": "Смени език"
+  },
+  "user": {
+    "profile": "Профил",
+    "menu": "Меню на потребителя",
+    "myAvatar": "Моят аватар"
+  },
+  "orgSwitcher": {
+    "label": "Организация",
+    "search": "Търси организация…",
+    "noOrgs": "Без организации",
+    "select": "Избери организация"
+  },
+  "organizations": {
+    "title": "Организации",
+    "subtitle": "Управлявай всички организации в платформата",
+    "new": "Нова организация",
+    "edit": "Редактирай организация",
+    "search": "Търси по име",
+    "empty": "Няма организации",
+    "members": "Членове",
+    "openDashboard": "Apri dashboard",
+    "deleted": "Организацията е изтрита",
+    "created": "Организацията е създадена",
+    "updated": "Организацията е актуализирана",
+    "fields": {
+      "logo": "Лого на организацията",
+      "logoHint": "PNG / JPEG / WEBP, макс 5 MB",
+      "name": "Име",
+      "email": "Имейл",
+      "phone": "Телефон",
+      "website": "Уебсайт",
+      "vatNumber": "ДДС номер",
+      "fiscalCode": "Данъчен код",
+      "country": "Държава",
+      "address": "Адрес",
+      "city": "Град",
+      "province": "Област",
+      "postalCode": "Пощенски код"
+    },
+    "deleteConfirm": {
+      "title": "Изтрий организацията?",
+      "message": "Ще изтриеш \"{{name}}\". Действието е обратимо от администрацията."
+    }
+  },
+  "members": {
+    "title": "Членове",
+    "subtitle": "Преглед и управление на членовете на организацията",
+    "subtitleAdmin": "Запиши потребители директно като членове",
+    "invite": "Покани",
+    "invited": "Член поканен",
+    "removed": "Член премахнат",
+    "roleChanged": "Ролята е актуализирана",
+    "transferConfirmed": "Ролята creator е прехвърлена",
+    "enroll": "Запиши потребител",
+    "enrollSubmit": "Запиши",
+    "userPicker": "Потребител",
+    "rolePicker": "Роля",
+    "fields": {
+      "name": "Име",
+      "email": "Имейл",
+      "role": "Роля"
+    },
+    "inviteDialog": {
+      "title": "Покани член",
+      "email": "Имейл",
+      "role": "Роля",
+      "submit": "Създай покана",
+      "submitting": "Създаване…",
+      "tokenLabel": "Сподели тази връзка (валидна 7 дни):",
+      "successTitle": "Поканата е създадена"
+    },
+    "removeConfirm": {
+      "title": "Премахване на члена?",
+      "message": "{{name}} ще бъде премахнат от организацията."
+    },
+    "transferConfirm": {
+      "title": "Прехвърляне на ролята creator?",
+      "message": "Ще станеш админ на организацията, а {{name}} ще стане creator. Само новият creator може да отмени."
+    },
+    "actions": {
+      "permissions": "Права",
+      "transfer": "Прехвърли creator",
+      "remove": "Премахни"
+    }
+  },
+  "memberPermissions": {
+    "title": "Права на {{name}}",
+    "subtitle": "За всяко право остави стойността по подразбиране на ролята или форсирай grant/revoke за този член.",
+    "default": "По подразбиране",
+    "grant": "Дай",
+    "revoke": "Отнеми",
+    "saved": "Правата на члена са актуализирани"
+  },
+  "users": {
+    "title": "Потребители",
+    "subtitle": "Управление на потребители и админи на платформата",
+    "new": "Нов потребител",
+    "search": "Търси по име или имейл",
+    "created": "Потребителят е създаден",
+    "fields": {
+      "name": "Име",
+      "email": "Имейл",
+      "active": "Активен",
+      "platformAdmin": "Админ на платформата"
+    },
+    "createDialog": {
+      "title": "Нов потребител",
+      "name": "Пълно име",
+      "email": "Имейл",
+      "password": "Парола (≥10 знака, 1 главна, 1 цифра)",
+      "platformAdmin": "Админ на платформата",
+      "submit": "Създай",
+      "submitting": "Създаване…"
+    }
+  },
+  "globalPermissions": {
+    "title": "Глобални права",
+    "subtitle": "Редактирай правата по подразбиране за всяка роля. Прилагат се за всички организации, освен ако не са изрично заменени.",
+    "rolePicker": "Роля",
+    "saved": "Правата са запазени",
+    "save": "Запази правата"
+  },
+  "templates": {
+    "preview": {
+      "lessonTag": "Lezione 01",
+      "chapter": "Capitolo introduttivo",
+      "title": "Argomento principale della lezione",
+      "subtitle": "Una breve descrizione del contesto: cosa vedremo, perché è importante e quali competenze sviluppiamo.",
+      "bullet1": "Obiettivi di apprendimento e prerequisiti",
+      "bullet2": "Concetti chiave con esempi pratici",
+      "bullet3": "Esercizi guidati e materiale di riferimento",
+      "author": "Prof. Mario Rossi",
+      "role": "Cattedra di Informatica",
+      "date": "12 marzo 2026",
+      "live": "Live"
+    },
+    "slide": {
+      "title": "Шаблони за слайдове",
+      "subtitle": "Създавай и редактирай шаблони за слайдове на курсове",
+      "new": "Нов шаблон",
+      "newPage": "Нов шаблон за слайдове",
+      "editPage": "Редактирай: {{name}}",
+      "previewLive": "Преглед в реално време",
+      "previewHint": "Прегледът се актуализира в реално време при редактиране.",
+      "deleted": "Шаблонът е изтрит",
+      "created": "Шаблонът е създаден",
+      "updated": "Шаблонът е актуализиран",
+      "empty": "Все още няма шаблони"
+    },
+    "pdf": {
+      "title": "PDF шаблони",
+      "subtitle": "Създавай и редактирай шаблони за PDF документи",
+      "new": "Нов шаблон",
+      "newPage": "Нов PDF шаблон",
+      "editPage": "Редактирай: {{name}}",
+      "previewLive": "Преглед в реално време",
+      "previewHint": "Прегледът се актуализира в реално време при редактиране.",
+      "deleted": "Шаблонът е изтрит",
+      "created": "Шаблонът е създаден",
+      "updated": "Шаблонът е актуализиран",
+      "empty": "Все още няма шаблони"
+    },
+    "fields": {
+      "name": "Име на шаблона",
+      "size": "Формат на слайда",
+      "pageSize": "Размер на страницата",
+      "font": "Шрифт",
+      "textColor": "Цвят на текста",
+      "primaryColor": "Основен цвят",
+      "secondaryColor": "Вторичен цвят",
+      "background": "Фоново изображение",
+      "logoLeft": "Лого горе ляво",
+      "logoRight": "Лого горе дясно",
+      "headerHeight": "Височина на хедъра (mm)",
+      "footerHeight": "Височина на футъра (mm)",
+      "margin": "Поле на страницата (mm)",
+      "backgroundOpacity": "Opacità sfondo (%)"
+    },
+    "deleteConfirm": {
+      "title": "Изтрий шаблона?",
+      "message": "Ще изтриеш \"{{name}}\"."
+    },
+    "default": "Default",
+    "setDefault": "Imposta come default",
+    "defaultSet": "Template impostato come default"
+  },
+  "myAvatar": {
+    "title": "Il mio avatar",
+    "subtitle": "Carica una foto frontale e un audio. Da questi verranno generati automaticamente dei clip video.",
+    "tabs": {
+      "image": "Immagine",
+      "audio": "Audio",
+      "next": "Avanti",
+      "back": "Indietro"
+    },
+    "create": "Crea avatar",
+    "unsavedChanges": "Modifiche non salvate",
+    "statusReady": "Avatar attivo",
+    "statusSummary": "{{ready}}/{{total}} clip pronte · {{failed}} errori",
+    "playAudio": "Ascolta audio",
+    "clipsCount_one": "{{count}} clip in totale",
+    "clipsCount_other": "{{count}} clip in totale",
+    "image": "Foto frontale",
+    "imageHint": "PNG / JPEG / WEBP. L'immagine verrà ritagliata in formato quadrato (1:1).",
+    "imageEmpty": "Nessuna immagine",
+    "recrop": "Ritaglia di nuovo",
+    "cropTitle": "Ritaglia l'immagine",
+    "cropHint": "Trascina e ridimensiona l'area di selezione. Il rapporto è fissato a 1:1.",
+    "cropConfirm": "Applica ritaglio",
+    "slidePreviewTitle": "Anteprima nella slide",
+    "slidePreviewHint": "Esempio di come l'avatar apparirà in basso a destra in un template slide.",
+    "audio": "Audio personale",
+    "audioHint": "Leggi ad alta voce il testo qui sopra. La registrazione servirà ad addestrare un modello vocale fedele alla tua voce.",
+    "audioUpload": "Carica file",
+    "audioRecord": "Registra adesso",
+    "recordStart": "Avvia registrazione",
+    "recordStop": "Stop",
+    "audioLang": "Lingua audio",
+    "scriptTitle": "Testo da leggere",
+    "scriptHint": "Leggi questo testo a voce naturale durante la registrazione. Più la lettura è chiara e rilassata, migliore sarà il modello vocale.",
+    "scriptFallback": "Per la lingua selezionata non è ancora configurato un testo specifico: viene mostrato quello in {{lang}}.",
+    "scriptMissing": "Nessun testo da leggere è configurato per questa lingua. Contatta un amministratore.",
+    "saveWarn": "Modificare l'immagine rigenererà tutti i clip.",
+    "regenerate": "Rigenera clip",
+    "regenerated": "Generazione clip riavviata",
+    "clipsTitle": "Clip generate",
+    "clipsEmpty": "Nessun clip configurato. Definisci almeno un prompt nella sezione admin Configurazioni → Avatar.",
+    "clipPending": "In attesa…",
+    "clipProcessing": "Generazione…",
+    "clipReady": "Pronto",
+    "clipFailed": "Errore",
+    "allReady": "Tutti pronti",
+    "allFailed": "Tutti falliti",
+    "partial": "Parziale",
+    "pending": "In attesa",
+    "processing": "Generazione",
+    "saved": "Avatar salvato",
+    "deleted": "Avatar eliminato",
+    "deleteConfirm": {
+      "title": "Eliminare l'avatar?",
+      "message": "Verranno eliminati immagine, audio e tutti i clip generati."
+    }
+  },
+  "avatarConfig": {
+    "title": "Configurazioni — Avatar",
+    "subtitle": "Gestisci i prompt video per la generazione dei clip MiniMax e i testi di trascrizione che gli utenti leggeranno per la registrazione vocale.",
+    "tabs": {
+      "prompts": "Prompt video",
+      "scripts": "Lingue trascrizione"
+    },
+    "addPrompt": "Aggiungi prompt",
+    "empty": "Nessun prompt configurato. Aggiungine almeno uno per abilitare la generazione clip.",
+    "fields": {
+      "label": "Etichetta",
+      "labelPlaceholder": "Es. \"Cenno di pensiero\"",
+      "prompt": "Prompt MiniMax (inglese, max 2000 caratteri)",
+      "active": "Attivo"
+    },
+    "moveUp": "Sposta su",
+    "moveDown": "Sposta giù",
+    "unsavedHint": "Modifiche non salvate — fai blur del campo per salvare.",
+    "count_one": "{{count}} clip configurato",
+    "count_other": "{{count}} clip configurati",
+    "created": "Prompt creato",
+    "updated": "Prompt aggiornato",
+    "deleted": "Prompt eliminato",
+    "deleteConfirm": {
+      "title": "Eliminare il prompt?",
+      "message": "Il prompt \"{{name}}\" sarà rimosso dalla configurazione."
+    },
+    "voiceScript": {
+      "title": "Testo da leggere durante la registrazione",
+      "subtitle": "Per ogni lingua, definisci il testo che l'utente vedrà e dovrà leggere ad alta voce mentre registra l'audio. Serve a ottenere un campione vocale standardizzato per il voice cloning.",
+      "empty": "Nessun testo configurato. Aggiungine almeno uno per la lingua di default.",
+      "add": "Aggiungi testo per una lingua",
+      "selectLang": "Seleziona lingua",
+      "placeholder": "Buongiorno, mi presento e leggo questo breve testo…",
+      "text": "Testo",
+      "saved": "Testo salvato",
+      "deleted": "Testo eliminato",
+      "deleteConfirm": {
+        "title": "Eliminare il testo?",
+        "message": "Verrà rimosso il testo da leggere per la lingua {{lang}}."
+      }
+    }
+  },
+  "permissions": {
+    "member:view": "Виж членове",
+    "member:invite": "Покани потребители",
+    "member:assign_role": "Назначавай роли",
+    "member:remove": "Премахвай членове",
+    "template:slide:manage": "Управлявай шаблони за слайдове",
+    "template:pdf:manage": "Управлявай PDF шаблони",
+    "permission:manage": "Управлявай права",
+    "org:transfer_creator": "Прехвърляй ролята creator",
+    "org:update": "Редактирай организация",
+    "course_config:manage": "Gestisci parametri corsi"
+  },
+  "permissionDescriptions": {
+    "member:view": "Vedere l'elenco dei membri dell'organizzazione con nome, email, ruolo e data di iscrizione. Prerequisito per quasi tutte le altre azioni sui membri.",
+    "member:invite": "Creare inviti via email per nuovi membri scegliendo il ruolo iniziale. Ogni invito è un link monouso con scadenza a 7 giorni.",
+    "member:assign_role": "Cambiare il ruolo di un membro esistente, ma solo fino al proprio livello di rank: un Org Admin non può promuovere a Creator né modificare un membro di rango superiore.",
+    "member:remove": "Rimuovere un membro dall'organizzazione. Il Creator non è rimovibile direttamente: va prima trasferito ad un altro membro.",
+    "template:slide:manage": "Creare, modificare, eliminare e scegliere come default i template per le slide dei corsi (formato 16:9 / 4:3, colori, font, logo, immagine di sfondo).",
+    "template:pdf:manage": "Creare, modificare, eliminare e scegliere come default i template per i documenti PDF (formato A4/Letter, header/footer/margini in mm, colori, logo, sfondo).",
+    "permission:manage": "Modificare i permessi dell'organizzazione: override per ruolo (es. concedere a tutti i Manager un permesso non default) e override per singolo membro (concedi/revoca puntuale).",
+    "org:transfer_creator": "Trasferire il ruolo di Creator a un altro membro. Chi era Creator diventa Org Admin. Azione riservata al Creator e irreversibile senza un nuovo trasferimento.",
+    "org:update": "Modificare i dati anagrafici dell'organizzazione: nome, partita IVA, codice fiscale, indirizzo, contatti, logo.",
+    "course_config:manage": "Configurare i parametri di default per la generazione dei corsi: numero di moduli per CFU, lezioni per modulo, durata delle lezioni e attivazione della verifica di apprendimento finale (con il numero di domande a scelta multipla e aperte da generare). Questi valori vengono usati per pre-popolare la struttura di un nuovo corso."
+  },
+  "roles": {
+    "creator": "Създател",
+    "org_admin": "Администратор на организация",
+    "manager": "Manager",
+    "member": "Член"
+  },
+  "errors": {
+    "generic": "Възникна грешка",
+    "loadingFailed": "Зареждането не успя",
+    "saveFailed": "Запазването не успя"
+  },
+  "i18n": {
+    "title": "Gestione lingue",
+    "subtitle": "Crea, modifica e cancella le lingue e le traduzioni della piattaforma",
+    "new": "Nuova lingua",
+    "edit": "Modifica lingua",
+    "editTranslations": "Modifica traduzioni",
+    "fields": {
+      "code": "Codice",
+      "codeHint": "ISO 639-1 (es. it, en) o regionale (es. pt-BR)",
+      "nameNative": "Nome nativo",
+      "flagCountry": "Bandiera (codice paese ISO, es. IT)",
+      "rtl": "Right-to-left",
+      "active": "Attiva",
+      "default": "Default",
+      "copyFrom": "Copia traduzioni da"
+    },
+    "stats": {
+      "translations_one": "{{count}} traduzione",
+      "translations_other": "{{count}} traduzioni"
+    },
+    "created": "Lingua creata",
+    "updated": "Lingua aggiornata",
+    "deleted": "Lingua eliminata",
+    "translationsSaved": "Traduzioni salvate ({{count}})",
+    "deleteConfirm": {
+      "title": "Eliminare la lingua?",
+      "message": "Stai per eliminare \"{{name}}\" e tutte le sue traduzioni."
+    },
+    "editor": {
+      "title": "Traduzioni — {{name}}",
+      "search": "Cerca chiave o valore",
+      "empty": "Nessuna traduzione",
+      "save": "Salva traduzioni",
+      "reference": "Riferimento {{lang}}",
+      "modifiedCount_one": "{{count}} chiave modificata",
+      "modifiedCount_other": "{{count}} chiavi modificate",
+      "noChanges": "Nessuna modifica"
+    }
+  },
+  "dashboard": {
+    "admin": {
+      "title": "Админ панел",
+      "subtitle": "Глобално управление на платформата a4u"
+    },
+    "org": {
+      "subtitle": "Роля: {{role}}",
+      "platformAdmin": "Admin piattaforma"
+    },
+    "noOrg": {
+      "title": "Добре дошъл",
+      "message": "Все още не си член на организация. Изчакай покана или се свържи с администратор."
+    }
+  }
+}

@@ -1,0 +1,516 @@
+{
+  "app": {
+    "name": "a4u",
+    "tagline": "Pjattaforma għal korsijiet universitarji"
+  },
+  "common": {
+    "save": "Issejvja",
+    "cancel": "Ikkanċella",
+    "delete": "Ħassar",
+    "edit": "Editja",
+    "add": "Żid",
+    "loading": "Qed jitlogħob…",
+    "saving": "Qed jissejvja…",
+    "creating": "Qed jinħoloq…",
+    "remove": "Neħħi",
+    "confirm": "Ikkonferma",
+    "close": "Agħlaq",
+    "search": "Fittex",
+    "back": "Lura",
+    "next": "Li jmiss",
+    "actions": "Azzjonijiet",
+    "of": "minn",
+    "noResults": "L-ebda riżultat",
+    "copy": "Ikkopja",
+    "copied": "Ikkopjat!",
+    "yes": "Iva",
+    "no": "Le",
+    "all": "Kollha",
+    "optional": "fakultattiv",
+    "required": "obbligatorju",
+    "moreInfo": "Aktar informazzjoni"
+  },
+  "auth": {
+    "login": {
+      "title": "Merħba lura",
+      "subtitle": "Idħol fl-ispazju tax-xogħol a4u tiegħek",
+      "email": "Email",
+      "password": "Password",
+      "submit": "Idħol",
+      "submitting": "Qed jiġi loggjat…"
+    },
+    "logout": "Oħroġ",
+    "invitation": {
+      "title": "Aċċetta stedina",
+      "subtitle": "Inti mistieden f'{{org}} bħala {{role}}",
+      "fullName": "Isem sħiħ",
+      "passwordHint": "Tal-anqas 10 karattri, ittra kbira, numru wieħed",
+      "submit": "Aċċetta stedina",
+      "submitting": "Qed tiġi kkonfermata…",
+      "alreadyRegistered": "Inti diġà rreġistrat. Ikklikkja \"Aċċetta\" biex tiġi miżjud.",
+      "invalidOrExpired": "L-istedina mhix valida, skadiet jew diġà ntużat."
+    }
+  },
+  "theme": {
+    "label": "Tema",
+    "light": "Imdawla",
+    "dark": "Skura",
+    "system": "Sistema"
+  },
+  "language": {
+    "label": "Lingwa"
+  },
+  "nav": {
+    "platform": "Pjattaforma",
+    "organization": "Organizzazzjoni",
+    "configurazioni": "Konfigurazzjoni",
+    "personal": "Personali",
+    "dashboard": "Dashboard",
+    "organizations": "Organizzazzjonijiet",
+    "users": "Utenti",
+    "permissions": "Permessi globali",
+    "i18n": "Lingwi",
+    "members": "Membri",
+    "templatesSlide": "Mudelli ta' slajds",
+    "templatesPdf": "Mudelli PDF",
+    "avatarConfig": "Avatar",
+    "courseSettings": "Parametri tal-kors"
+  },
+  "courseSettings": {
+    "title": "Parametri tal-kors",
+    "subtitle": "Valuri prestabbiliti użati biex tiġi ġġenerata l-istruttura ta' kors ġdid f'din l-organizzazzjoni.",
+    "dirtyBanner": "Bidliet mhux issejvjati",
+    "saved": "Parametri ssejvjati",
+    "sections": {
+      "structure": {
+        "title": "Struttura tal-kors",
+        "subtitle": "Kemm moduli u lezzjonijiet jiġu ġġenerati għal kull kreditu."
+      },
+      "duration": {
+        "title": "Tul tal-lezzjonijiet",
+        "subtitle": "Tul standard ta' kull lezzjoni tal-kors."
+      },
+      "assessment": {
+        "subtitle": "L-aħħar lezzjoni ta' kull modulu hi evalwazzjoni tal-għarfien iġġenerata awtomatikament.",
+        "disabledHint": "L-ebda evalwazzjoni finali ma tiġi ġġenerata. Kull modulu jintemm bl-aħħar lezzjoni regolari tiegħu."
+      }
+    },
+    "fields": {
+      "modulesPerCfu": "Moduli għal kull kreditu",
+      "lessonsPerModule": "Lezzjonijiet għal kull modulu",
+      "lessonDuration": "Tul tal-lezzjoni",
+      "assessment": "Evalwazzjoni finali tal-għarfien",
+      "assessmentHelp": "Jekk attivat, l-aħħar lezzjoni ta' kull modulu hi evalwazzjoni tal-għarfien iġġenerata awtomatikament: tinħoloq sett ta' mistoqsijiet (multiple-choice u miftuħa) biex tivverifika l-kompetenzi miksuba. Il-pjattaforma tiġġenera l-kontenut biss; il-konsenja lill-istudenti hi barra mill-kamp.",
+      "mcq": "Mistoqsijiet multiple-choice",
+      "openQuestions": "Mistoqsijiet miftuħa"
+    },
+    "units": {
+      "modules": "moduli",
+      "lessons": "lezzjonijiet",
+      "minutes": "minuti",
+      "questions": "mistoqsijiet"
+    },
+    "summary": {
+      "title": "Sommarju għal kull kreditu",
+      "modulesPerCfu": "Moduli",
+      "lessonsPerModule": "Lezzjonijiet għal kull modulu",
+      "lessonDuration": "Tul tal-lezzjoni",
+      "totalLessonsPerCfu": "Total ta' lezzjonijiet",
+      "totalDurationPerCfu": "Tul totali",
+      "mcq": "Mistoqsijiet multiple-choice",
+      "openQuestions": "Mistoqsijiet miftuħa",
+      "totalQuestions": "Total ta' mistoqsijiet ta' evalwazzjoni",
+      "noAssessment": "Ebda evalwazzjoni finali ma ġiet ġġenerata.",
+      "minutesValue_one": "{{count}} minuta",
+      "minutesValue_other": "{{count}} minuti",
+      "hours_one": "{{count}} siegħa",
+      "hours_other": "{{count}} sigħat",
+      "hoursAndMinutes": "{{hours}}s {{minutes}}m"
+    }
+  },
+  "command": {
+    "placeholder": "Fittex kmand jew paġna…",
+    "navigation": "Navigazzjoni",
+    "actions": "Azzjonijiet",
+    "preferences": "Preferenzi",
+    "openCommandPalette": "Iftaħ command palette",
+    "newOrganization": "Organizzazzjoni ġdida",
+    "logout": "Oħroġ",
+    "noResults": "L-ebda riżultat",
+    "switchTheme": "Ibdel tema",
+    "switchLanguage": "Ibdel lingwa"
+  },
+  "user": {
+    "profile": "Profil",
+    "menu": "Menu tal-utent",
+    "myAvatar": "L-avatar tiegħi"
+  },
+  "orgSwitcher": {
+    "label": "Organizzazzjoni",
+    "search": "Fittex organizzazzjoni…",
+    "noOrgs": "L-ebda organizzazzjoni",
+    "select": "Agħżel organizzazzjoni"
+  },
+  "organizations": {
+    "title": "Organizzazzjonijiet",
+    "subtitle": "Immaniġġja l-organizzazzjonijiet kollha tal-pjattaforma",
+    "new": "Organizzazzjoni ġdida",
+    "edit": "Editja organizzazzjoni",
+    "search": "Fittex bl-isem",
+    "empty": "L-ebda organizzazzjoni",
+    "members": "Membri",
+    "openDashboard": "Apri dashboard",
+    "deleted": "Organizzazzjoni mħassra",
+    "created": "Organizzazzjoni maħluqa",
+    "updated": "Organizzazzjoni aġġornata",
+    "fields": {
+      "logo": "Logo tal-organizzazzjoni",
+      "logoHint": "PNG / JPEG / WEBP, massimu 5 MB",
+      "name": "Isem",
+      "email": "Email",
+      "phone": "Telefon",
+      "website": "Sit elettroniku",
+      "vatNumber": "Numru tal-VAT",
+      "fiscalCode": "Kodiċi fiskali",
+      "country": "Pajjiż",
+      "address": "Indirizz",
+      "city": "Belt",
+      "province": "Reġjun",
+      "postalCode": "Kodiċi postali"
+    },
+    "deleteConfirm": {
+      "title": "Ħassar l-organizzazzjoni?",
+      "message": "Inti ser tħassar \"{{name}}\". L-azzjoni hija reversibbli mill-amministrazzjoni."
+    }
+  },
+  "members": {
+    "title": "Membri",
+    "subtitle": "Ara u immaniġġja l-membri tal-organizzazzjoni",
+    "subtitleAdmin": "Irreġistra utenti direttament bħala membri",
+    "invite": "Stieden",
+    "invited": "Membru mistieden",
+    "removed": "Membru mneħħi",
+    "roleChanged": "Rwol aġġornat",
+    "transferConfirmed": "Rwol creator trasferit",
+    "enroll": "Irreġistra utent",
+    "enrollSubmit": "Irreġistra",
+    "userPicker": "Utent",
+    "rolePicker": "Rwol",
+    "fields": {
+      "name": "Isem",
+      "email": "Email",
+      "role": "Rwol"
+    },
+    "inviteDialog": {
+      "title": "Stieden membru",
+      "email": "Email",
+      "role": "Rwol",
+      "submit": "Oħloq stedina",
+      "submitting": "Qed tinħoloq…",
+      "tokenLabel": "Aqsam dan il-link (validu 7 ijiem):",
+      "successTitle": "Stedina maħluqa"
+    },
+    "removeConfirm": {
+      "title": "Neħħi l-membru?",
+      "message": "{{name}} jitneħħa mill-organizzazzjoni."
+    },
+    "transferConfirm": {
+      "title": "Ittrasferixxi r-rwol creator?",
+      "message": "Int issir admin tal-organizzazzjoni u {{name}} isir creator. Biss il-creator il-ġdid jista' jirreverti."
+    },
+    "actions": {
+      "permissions": "Permessi",
+      "transfer": "Ittrasferixxi creator",
+      "remove": "Neħħi"
+    }
+  },
+  "memberPermissions": {
+    "title": "Permessi ta' {{name}}",
+    "subtitle": "Għal kull permess ħalli l-valur default tar-rwol jew imponi grant/revoke speċifiku għal dan il-membru.",
+    "default": "Default",
+    "grant": "Agħti",
+    "revoke": "Irrevoka",
+    "saved": "Permessi tal-membru aġġornati"
+  },
+  "users": {
+    "title": "Utenti",
+    "subtitle": "Immaniġġja utenti u admins tal-pjattaforma",
+    "new": "Utent ġdid",
+    "search": "Fittex bl-isem jew email",
+    "created": "Utent maħluq",
+    "fields": {
+      "name": "Isem",
+      "email": "Email",
+      "active": "Attiv",
+      "platformAdmin": "Admin tal-pjattaforma"
+    },
+    "createDialog": {
+      "title": "Utent ġdid",
+      "name": "Isem sħiħ",
+      "email": "Email",
+      "password": "Password (≥10 karattri, 1 ittra kbira, 1 numru)",
+      "platformAdmin": "Admin tal-pjattaforma",
+      "submit": "Oħloq",
+      "submitting": "Qed jinħoloq…"
+    }
+  },
+  "globalPermissions": {
+    "title": "Permessi globali",
+    "subtitle": "Editja l-permessi default għal kull rwol. Japplikaw għal kull organizzazzjoni ħlief jekk ikun hemm override espliċitu.",
+    "rolePicker": "Rwol",
+    "saved": "Permessi ssejvjati",
+    "save": "Issejvja permessi"
+  },
+  "templates": {
+    "preview": {
+      "lessonTag": "Lezione 01",
+      "chapter": "Capitolo introduttivo",
+      "title": "Argomento principale della lezione",
+      "subtitle": "Una breve descrizione del contesto: cosa vedremo, perché è importante e quali competenze sviluppiamo.",
+      "bullet1": "Obiettivi di apprendimento e prerequisiti",
+      "bullet2": "Concetti chiave con esempi pratici",
+      "bullet3": "Esercizi guidati e materiale di riferimento",
+      "author": "Prof. Mario Rossi",
+      "role": "Cattedra di Informatica",
+      "date": "12 marzo 2026",
+      "live": "Live"
+    },
+    "slide": {
+      "title": "Templates għal slides",
+      "subtitle": "Oħloq u editja templates għas-slides tal-korsijiet",
+      "new": "Template ġdid",
+      "newPage": "Template ġdid għas-slides",
+      "editPage": "Editja: {{name}}",
+      "previewLive": "Anteprima fil-ħin",
+      "previewHint": "L-anteprima taġġorna fil-ħin reali waqt l-editjar.",
+      "deleted": "Template imħassar",
+      "created": "Template maħluq",
+      "updated": "Template aġġornat",
+      "empty": "Għad m'hemmx templates"
+    },
+    "pdf": {
+      "title": "Templates PDF",
+      "subtitle": "Oħloq u editja templates għad-dokumenti PDF",
+      "new": "Template ġdid",
+      "newPage": "Template PDF ġdid",
+      "editPage": "Editja: {{name}}",
+      "previewLive": "Anteprima fil-ħin",
+      "previewHint": "L-anteprima taġġorna fil-ħin reali waqt l-editjar.",
+      "deleted": "Template imħassar",
+      "created": "Template maħluq",
+      "updated": "Template aġġornat",
+      "empty": "Għad m'hemmx templates"
+    },
+    "fields": {
+      "name": "Isem tat-template",
+      "size": "Format tas-slide",
+      "pageSize": "Daqs tal-paġna",
+      "font": "Font",
+      "textColor": "Kulur tat-test",
+      "primaryColor": "Kulur primarju",
+      "secondaryColor": "Kulur sekondarju",
+      "background": "Stampa tal-isfond",
+      "logoLeft": "Logo fuq xellug",
+      "logoRight": "Logo fuq lemin",
+      "headerHeight": "Għoli tal-header (mm)",
+      "footerHeight": "Għoli tal-footer (mm)",
+      "margin": "Marġini tal-paġna (mm)",
+      "backgroundOpacity": "Opacità sfondo (%)"
+    },
+    "deleteConfirm": {
+      "title": "Ħassar it-template?",
+      "message": "Inti ser tħassar \"{{name}}\"."
+    },
+    "default": "Default",
+    "setDefault": "Imposta come default",
+    "defaultSet": "Template impostato come default"
+  },
+  "myAvatar": {
+    "title": "Il mio avatar",
+    "subtitle": "Carica una foto frontale e un audio. Da questi verranno generati automaticamente dei clip video.",
+    "tabs": {
+      "image": "Immagine",
+      "audio": "Audio",
+      "next": "Avanti",
+      "back": "Indietro"
+    },
+    "create": "Crea avatar",
+    "unsavedChanges": "Modifiche non salvate",
+    "statusReady": "Avatar attivo",
+    "statusSummary": "{{ready}}/{{total}} clip pronte · {{failed}} errori",
+    "playAudio": "Ascolta audio",
+    "clipsCount_one": "{{count}} clip in totale",
+    "clipsCount_other": "{{count}} clip in totale",
+    "image": "Foto frontale",
+    "imageHint": "PNG / JPEG / WEBP. L'immagine verrà ritagliata in formato quadrato (1:1).",
+    "imageEmpty": "Nessuna immagine",
+    "recrop": "Ritaglia di nuovo",
+    "cropTitle": "Ritaglia l'immagine",
+    "cropHint": "Trascina e ridimensiona l'area di selezione. Il rapporto è fissato a 1:1.",
+    "cropConfirm": "Applica ritaglio",
+    "slidePreviewTitle": "Anteprima nella slide",
+    "slidePreviewHint": "Esempio di come l'avatar apparirà in basso a destra in un template slide.",
+    "audio": "Audio personale",
+    "audioHint": "Leggi ad alta voce il testo qui sopra. La registrazione servirà ad addestrare un modello vocale fedele alla tua voce.",
+    "audioUpload": "Carica file",
+    "audioRecord": "Registra adesso",
+    "recordStart": "Avvia registrazione",
+    "recordStop": "Stop",
+    "audioLang": "Lingua audio",
+    "scriptTitle": "Testo da leggere",
+    "scriptHint": "Leggi questo testo a voce naturale durante la registrazione. Più la lettura è chiara e rilassata, migliore sarà il modello vocale.",
+    "scriptFallback": "Per la lingua selezionata non è ancora configurato un testo specifico: viene mostrato quello in {{lang}}.",
+    "scriptMissing": "Nessun testo da leggere è configurato per questa lingua. Contatta un amministratore.",
+    "saveWarn": "Modificare l'immagine rigenererà tutti i clip.",
+    "regenerate": "Rigenera clip",
+    "regenerated": "Generazione clip riavviata",
+    "clipsTitle": "Clip generate",
+    "clipsEmpty": "Nessun clip configurato. Definisci almeno un prompt nella sezione admin Configurazioni → Avatar.",
+    "clipPending": "In attesa…",
+    "clipProcessing": "Generazione…",
+    "clipReady": "Pronto",
+    "clipFailed": "Errore",
+    "allReady": "Tutti pronti",
+    "allFailed": "Tutti falliti",
+    "partial": "Parziale",
+    "pending": "In attesa",
+    "processing": "Generazione",
+    "saved": "Avatar salvato",
+    "deleted": "Avatar eliminato",
+    "deleteConfirm": {
+      "title": "Eliminare l'avatar?",
+      "message": "Verranno eliminati immagine, audio e tutti i clip generati."
+    }
+  },
+  "avatarConfig": {
+    "title": "Configurazioni — Avatar",
+    "subtitle": "Gestisci i prompt video per la generazione dei clip MiniMax e i testi di trascrizione che gli utenti leggeranno per la registrazione vocale.",
+    "tabs": {
+      "prompts": "Prompt video",
+      "scripts": "Lingue trascrizione"
+    },
+    "addPrompt": "Aggiungi prompt",
+    "empty": "Nessun prompt configurato. Aggiungine almeno uno per abilitare la generazione clip.",
+    "fields": {
+      "label": "Etichetta",
+      "labelPlaceholder": "Es. \"Cenno di pensiero\"",
+      "prompt": "Prompt MiniMax (inglese, max 2000 caratteri)",
+      "active": "Attivo"
+    },
+    "moveUp": "Sposta su",
+    "moveDown": "Sposta giù",
+    "unsavedHint": "Modifiche non salvate — fai blur del campo per salvare.",
+    "count_one": "{{count}} clip configurato",
+    "count_other": "{{count}} clip configurati",
+    "created": "Prompt creato",
+    "updated": "Prompt aggiornato",
+    "deleted": "Prompt eliminato",
+    "deleteConfirm": {
+      "title": "Eliminare il prompt?",
+      "message": "Il prompt \"{{name}}\" sarà rimosso dalla configurazione."
+    },
+    "voiceScript": {
+      "title": "Testo da leggere durante la registrazione",
+      "subtitle": "Per ogni lingua, definisci il testo che l'utente vedrà e dovrà leggere ad alta voce mentre registra l'audio. Serve a ottenere un campione vocale standardizzato per il voice cloning.",
+      "empty": "Nessun testo configurato. Aggiungine almeno uno per la lingua di default.",
+      "add": "Aggiungi testo per una lingua",
+      "selectLang": "Seleziona lingua",
+      "placeholder": "Buongiorno, mi presento e leggo questo breve testo…",
+      "text": "Testo",
+      "saved": "Testo salvato",
+      "deleted": "Testo eliminato",
+      "deleteConfirm": {
+        "title": "Eliminare il testo?",
+        "message": "Verrà rimosso il testo da leggere per la lingua {{lang}}."
+      }
+    }
+  },
+  "permissions": {
+    "member:view": "Ara membri",
+    "member:invite": "Stieden utenti",
+    "member:assign_role": "Assenja rwoli",
+    "member:remove": "Neħħi membri",
+    "template:slide:manage": "Immaniġġja templates għas-slides",
+    "template:pdf:manage": "Immaniġġja templates PDF",
+    "permission:manage": "Immaniġġja permessi",
+    "org:transfer_creator": "Ittrasferixxi rwol creator",
+    "org:update": "Editja organizzazzjoni",
+    "course_config:manage": "Gestisci parametri corsi"
+  },
+  "permissionDescriptions": {
+    "member:view": "Vedere l'elenco dei membri dell'organizzazione con nome, email, ruolo e data di iscrizione. Prerequisito per quasi tutte le altre azioni sui membri.",
+    "member:invite": "Creare inviti via email per nuovi membri scegliendo il ruolo iniziale. Ogni invito è un link monouso con scadenza a 7 giorni.",
+    "member:assign_role": "Cambiare il ruolo di un membro esistente, ma solo fino al proprio livello di rank: un Org Admin non può promuovere a Creator né modificare un membro di rango superiore.",
+    "member:remove": "Rimuovere un membro dall'organizzazione. Il Creator non è rimovibile direttamente: va prima trasferito ad un altro membro.",
+    "template:slide:manage": "Creare, modificare, eliminare e scegliere come default i template per le slide dei corsi (formato 16:9 / 4:3, colori, font, logo, immagine di sfondo).",
+    "template:pdf:manage": "Creare, modificare, eliminare e scegliere come default i template per i documenti PDF (formato A4/Letter, header/footer/margini in mm, colori, logo, sfondo).",
+    "permission:manage": "Modificare i permessi dell'organizzazione: override per ruolo (es. concedere a tutti i Manager un permesso non default) e override per singolo membro (concedi/revoca puntuale).",
+    "org:transfer_creator": "Trasferire il ruolo di Creator a un altro membro. Chi era Creator diventa Org Admin. Azione riservata al Creator e irreversibile senza un nuovo trasferimento.",
+    "org:update": "Modificare i dati anagrafici dell'organizzazione: nome, partita IVA, codice fiscale, indirizzo, contatti, logo.",
+    "course_config:manage": "Configurare i parametri di default per la generazione dei corsi: numero di moduli per CFU, lezioni per modulo, durata delle lezioni e attivazione della verifica di apprendimento finale (con il numero di domande a scelta multipla e aperte da generare). Questi valori vengono usati per pre-popolare la struttura di un nuovo corso."
+  },
+  "roles": {
+    "creator": "Kreatur",
+    "org_admin": "Amministratur tal-organizzazzjoni",
+    "manager": "Manager",
+    "member": "Membru"
+  },
+  "errors": {
+    "generic": "Seħħ żball",
+    "loadingFailed": "It-tagħbija falliet",
+    "saveFailed": "L-issejvjar falla"
+  },
+  "i18n": {
+    "title": "Gestione lingue",
+    "subtitle": "Crea, modifica e cancella le lingue e le traduzioni della piattaforma",
+    "new": "Nuova lingua",
+    "edit": "Modifica lingua",
+    "editTranslations": "Modifica traduzioni",
+    "fields": {
+      "code": "Codice",
+      "codeHint": "ISO 639-1 (es. it, en) o regionale (es. pt-BR)",
+      "nameNative": "Nome nativo",
+      "flagCountry": "Bandiera (codice paese ISO, es. IT)",
+      "rtl": "Right-to-left",
+      "active": "Attiva",
+      "default": "Default",
+      "copyFrom": "Copia traduzioni da"
+    },
+    "stats": {
+      "translations_one": "{{count}} traduzione",
+      "translations_other": "{{count}} traduzioni"
+    },
+    "created": "Lingua creata",
+    "updated": "Lingua aggiornata",
+    "deleted": "Lingua eliminata",
+    "translationsSaved": "Traduzioni salvate ({{count}})",
+    "deleteConfirm": {
+      "title": "Eliminare la lingua?",
+      "message": "Stai per eliminare \"{{name}}\" e tutte le sue traduzioni."
+    },
+    "editor": {
+      "title": "Traduzioni — {{name}}",
+      "search": "Cerca chiave o valore",
+      "empty": "Nessuna traduzione",
+      "save": "Salva traduzioni",
+      "reference": "Riferimento {{lang}}",
+      "modifiedCount_one": "{{count}} chiave modificata",
+      "modifiedCount_other": "{{count}} chiavi modificate",
+      "noChanges": "Nessuna modifica"
+    }
+  },
+  "dashboard": {
+    "admin": {
+      "title": "Pannell tal-amministrazzjoni",
+      "subtitle": "Ġestjoni globali tal-pjattaforma a4u"
+    },
+    "org": {
+      "subtitle": "Rwol: {{role}}",
+      "platformAdmin": "Admin piattaforma"
+    },
+    "noOrg": {
+      "title": "Merħba",
+      "message": "Għadek mhux membru ta' ebda organizzazzjoni. Stenna stedina jew ikkuntattja amministratur."
+    }
+  }
+}

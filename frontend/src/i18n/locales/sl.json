@@ -1,0 +1,516 @@
+{
+  "app": {
+    "name": "a4u",
+    "tagline": "Platforma za univerzitetne tečaje"
+  },
+  "common": {
+    "save": "Shrani",
+    "cancel": "Prekliči",
+    "delete": "Izbriši",
+    "edit": "Uredi",
+    "add": "Dodaj",
+    "loading": "Nalaganje…",
+    "saving": "Shranjevanje…",
+    "creating": "Ustvarjanje…",
+    "remove": "Odstrani",
+    "confirm": "Potrdi",
+    "close": "Zapri",
+    "search": "Iskanje",
+    "back": "Nazaj",
+    "next": "Naprej",
+    "actions": "Dejanja",
+    "of": "od",
+    "noResults": "Brez rezultatov",
+    "copy": "Kopiraj",
+    "copied": "Kopirano!",
+    "yes": "Da",
+    "no": "Ne",
+    "all": "Vse",
+    "optional": "neobvezno",
+    "required": "obvezno",
+    "moreInfo": "Več informacij"
+  },
+  "auth": {
+    "login": {
+      "title": "Pozdravljeni nazaj",
+      "subtitle": "Prijavite se v svoj a4u prostor",
+      "email": "E-pošta",
+      "password": "Geslo",
+      "submit": "Prijava",
+      "submitting": "Prijavljanje…"
+    },
+    "logout": "Odjava",
+    "invitation": {
+      "title": "Sprejmi vabilo",
+      "subtitle": "Povabljeni ste v {{org}} kot {{role}}",
+      "fullName": "Polno ime",
+      "passwordHint": "Najmanj 10 znakov, ena velika črka, ena številka",
+      "submit": "Sprejmi vabilo",
+      "submitting": "Potrjevanje…",
+      "alreadyRegistered": "Že ste registrirani. Kliknite \"Sprejmi\" za pridružitev.",
+      "invalidOrExpired": "Vabilo ni veljavno, je poteklo ali je že bilo uporabljeno."
+    }
+  },
+  "theme": {
+    "label": "Tema",
+    "light": "Svetla",
+    "dark": "Temna",
+    "system": "Sistem"
+  },
+  "language": {
+    "label": "Jezik"
+  },
+  "nav": {
+    "platform": "Platforma",
+    "organization": "Organizacija",
+    "configurazioni": "Konfiguracija",
+    "personal": "Osebno",
+    "dashboard": "Nadzorna plošča",
+    "organizations": "Organizacije",
+    "users": "Uporabniki",
+    "permissions": "Globalna dovoljenja",
+    "i18n": "Jeziki",
+    "members": "Člani",
+    "templatesSlide": "Predloge prosojnic",
+    "templatesPdf": "Predloge PDF",
+    "avatarConfig": "Avatar",
+    "courseSettings": "Parametri tečaja"
+  },
+  "courseSettings": {
+    "title": "Parametri tečaja",
+    "subtitle": "Privzete vrednosti za ustvarjanje strukture novega tečaja v tej organizaciji.",
+    "dirtyBanner": "Neshranjene spremembe",
+    "saved": "Parametri shranjeni",
+    "sections": {
+      "structure": {
+        "title": "Struktura tečaja",
+        "subtitle": "Koliko modulov in lekcij se ustvari na točko."
+      },
+      "duration": {
+        "title": "Trajanje lekcij",
+        "subtitle": "Standardno trajanje vsake lekcije tečaja."
+      },
+      "assessment": {
+        "subtitle": "Zadnja lekcija vsakega modula je samodejno ustvarjeno preverjanje znanja.",
+        "disabledHint": "Zaključno preverjanje se ne ustvari. Vsak modul se konča s svojo redno zadnjo lekcijo."
+      }
+    },
+    "fields": {
+      "modulesPerCfu": "Moduli na točko",
+      "lessonsPerModule": "Lekcije na modul",
+      "lessonDuration": "Trajanje lekcije",
+      "assessment": "Zaključno preverjanje znanja",
+      "assessmentHelp": "Če je omogočeno, je zadnja lekcija vsakega modula samodejno ustvarjeno preverjanje znanja: ustvari se nabor vprašanj (z izbiro in odprta), da se preverijo pridobljene kompetence. Platforma ustvarja le vsebino; dostava študentom ni v obsegu.",
+      "mcq": "Vprašanja z izbiro",
+      "openQuestions": "Odprta vprašanja"
+    },
+    "units": {
+      "modules": "moduli",
+      "lessons": "lekcije",
+      "minutes": "minute",
+      "questions": "vprašanja"
+    },
+    "summary": {
+      "title": "Povzetek na točko",
+      "modulesPerCfu": "Moduli",
+      "lessonsPerModule": "Lekcije na modul",
+      "lessonDuration": "Trajanje lekcije",
+      "totalLessonsPerCfu": "Skupaj lekcij",
+      "totalDurationPerCfu": "Skupno trajanje",
+      "mcq": "Vprašanja z izbiro",
+      "openQuestions": "Odprta vprašanja",
+      "totalQuestions": "Skupaj vprašanj preverjanja",
+      "noAssessment": "Brez zaključnega preverjanja.",
+      "minutesValue_one": "{{count}} minuta",
+      "minutesValue_other": "{{count}} minut",
+      "hours_one": "{{count}} ura",
+      "hours_other": "{{count}} ur",
+      "hoursAndMinutes": "{{hours}}h {{minutes}}m"
+    }
+  },
+  "command": {
+    "placeholder": "Iskanje ukaza ali strani…",
+    "navigation": "Navigacija",
+    "actions": "Dejanja",
+    "preferences": "Nastavitve",
+    "openCommandPalette": "Odpri ukazno paleto",
+    "newOrganization": "Nova organizacija",
+    "logout": "Odjava",
+    "noResults": "Brez rezultatov",
+    "switchTheme": "Zamenjaj temo",
+    "switchLanguage": "Zamenjaj jezik"
+  },
+  "user": {
+    "profile": "Profil",
+    "menu": "Uporabniški meni",
+    "myAvatar": "Moj avatar"
+  },
+  "orgSwitcher": {
+    "label": "Organizacija",
+    "search": "Iskanje organizacije…",
+    "noOrgs": "Brez organizacije",
+    "select": "Izberite organizacijo"
+  },
+  "organizations": {
+    "title": "Organizacije",
+    "subtitle": "Upravljajte vse organizacije platforme",
+    "new": "Nova organizacija",
+    "edit": "Uredi organizacijo",
+    "search": "Iskanje po imenu",
+    "empty": "Brez organizacij",
+    "members": "Člani",
+    "openDashboard": "Apri dashboard",
+    "deleted": "Organizacija izbrisana",
+    "created": "Organizacija ustvarjena",
+    "updated": "Organizacija posodobljena",
+    "fields": {
+      "logo": "Logotip organizacije",
+      "logoHint": "PNG / JPEG / WEBP, največ 5 MB",
+      "name": "Ime",
+      "email": "E-pošta",
+      "phone": "Telefon",
+      "website": "Spletno mesto",
+      "vatNumber": "Davčna št.",
+      "fiscalCode": "Fiskalna koda",
+      "country": "Država",
+      "address": "Naslov",
+      "city": "Mesto",
+      "province": "Regija",
+      "postalCode": "Poštna številka"
+    },
+    "deleteConfirm": {
+      "title": "Izbrisati organizacijo?",
+      "message": "Pripravljate se na izbris \"{{name}}\". Dejanje je obnovljivo iz administracije."
+    }
+  },
+  "members": {
+    "title": "Člani",
+    "subtitle": "Ogled in upravljanje članov organizacije",
+    "subtitleAdmin": "Neposredno vpišite uporabnike kot člane",
+    "invite": "Povabi",
+    "invited": "Član povabljen",
+    "removed": "Član odstranjen",
+    "roleChanged": "Vloga posodobljena",
+    "transferConfirmed": "Vloga creator prenesena",
+    "enroll": "Vpiši uporabnika",
+    "enrollSubmit": "Vpiši",
+    "userPicker": "Uporabnik",
+    "rolePicker": "Vloga",
+    "fields": {
+      "name": "Ime",
+      "email": "E-pošta",
+      "role": "Vloga"
+    },
+    "inviteDialog": {
+      "title": "Povabi člana",
+      "email": "E-pošta",
+      "role": "Vloga",
+      "submit": "Ustvari vabilo",
+      "submitting": "Ustvarjanje…",
+      "tokenLabel": "Delite to povezavo (veljavno 7 dni):",
+      "successTitle": "Vabilo ustvarjeno"
+    },
+    "removeConfirm": {
+      "title": "Odstraniti člana?",
+      "message": "{{name}} bo odstranjen iz organizacije."
+    },
+    "transferConfirm": {
+      "title": "Prenesti vlogo creator?",
+      "message": "Postali boste admin organizacije, {{name}} pa creator. Le novi creator lahko prekliče."
+    },
+    "actions": {
+      "permissions": "Dovoljenja",
+      "transfer": "Prenesi creator",
+      "remove": "Odstrani"
+    }
+  },
+  "memberPermissions": {
+    "title": "Dovoljenja: {{name}}",
+    "subtitle": "Za vsako dovoljenje pustite privzeto vrednost vloge ali vsilite grant/revoke za tega člana.",
+    "default": "Privzeto",
+    "grant": "Dodeli",
+    "revoke": "Prekliči",
+    "saved": "Dovoljenja člana posodobljena"
+  },
+  "users": {
+    "title": "Uporabniki",
+    "subtitle": "Upravljajte uporabnike in admine platforme",
+    "new": "Nov uporabnik",
+    "search": "Iskanje po imenu ali e-pošti",
+    "created": "Uporabnik ustvarjen",
+    "fields": {
+      "name": "Ime",
+      "email": "E-pošta",
+      "active": "Aktiven",
+      "platformAdmin": "Admin platforme"
+    },
+    "createDialog": {
+      "title": "Nov uporabnik",
+      "name": "Polno ime",
+      "email": "E-pošta",
+      "password": "Geslo (≥10 znakov, 1 velika, 1 številka)",
+      "platformAdmin": "Admin platforme",
+      "submit": "Ustvari",
+      "submitting": "Ustvarjanje…"
+    }
+  },
+  "globalPermissions": {
+    "title": "Globalna dovoljenja",
+    "subtitle": "Uredite privzeta dovoljenja za vsako vlogo. Veljajo za vse organizacije, razen če so eksplicitno preglašena.",
+    "rolePicker": "Vloga",
+    "saved": "Dovoljenja shranjena",
+    "save": "Shrani dovoljenja"
+  },
+  "templates": {
+    "preview": {
+      "lessonTag": "Lezione 01",
+      "chapter": "Capitolo introduttivo",
+      "title": "Argomento principale della lezione",
+      "subtitle": "Una breve descrizione del contesto: cosa vedremo, perché è importante e quali competenze sviluppiamo.",
+      "bullet1": "Obiettivi di apprendimento e prerequisiti",
+      "bullet2": "Concetti chiave con esempi pratici",
+      "bullet3": "Esercizi guidati e materiale di riferimento",
+      "author": "Prof. Mario Rossi",
+      "role": "Cattedra di Informatica",
+      "date": "12 marzo 2026",
+      "live": "Live"
+    },
+    "slide": {
+      "title": "Predloge slik",
+      "subtitle": "Ustvarjajte in urejajte predloge slik za tečaje",
+      "new": "Nova predloga",
+      "newPage": "Nova predloga slike",
+      "editPage": "Urejanje: {{name}}",
+      "previewLive": "Predogled v živo",
+      "previewHint": "Predogled se posodablja v realnem času med urejanjem.",
+      "deleted": "Predloga izbrisana",
+      "created": "Predloga ustvarjena",
+      "updated": "Predloga posodobljena",
+      "empty": "Brez predlog"
+    },
+    "pdf": {
+      "title": "Predloge PDF",
+      "subtitle": "Ustvarjajte in urejajte predloge PDF dokumentov",
+      "new": "Nova predloga",
+      "newPage": "Nova predloga PDF",
+      "editPage": "Urejanje: {{name}}",
+      "previewLive": "Predogled v živo",
+      "previewHint": "Predogled se posodablja v realnem času med urejanjem.",
+      "deleted": "Predloga izbrisana",
+      "created": "Predloga ustvarjena",
+      "updated": "Predloga posodobljena",
+      "empty": "Brez predlog"
+    },
+    "fields": {
+      "name": "Ime predloge",
+      "size": "Format slike",
+      "pageSize": "Velikost strani",
+      "font": "Pisava",
+      "textColor": "Barva besedila",
+      "primaryColor": "Primarna barva",
+      "secondaryColor": "Sekundarna barva",
+      "background": "Slika ozadja",
+      "logoLeft": "Logotip zgoraj levo",
+      "logoRight": "Logotip zgoraj desno",
+      "headerHeight": "Višina glave (mm)",
+      "footerHeight": "Višina noge (mm)",
+      "margin": "Rob strani (mm)",
+      "backgroundOpacity": "Opacità sfondo (%)"
+    },
+    "deleteConfirm": {
+      "title": "Izbrisati predlogo?",
+      "message": "Pripravljate se na izbris \"{{name}}\"."
+    },
+    "default": "Default",
+    "setDefault": "Imposta come default",
+    "defaultSet": "Template impostato come default"
+  },
+  "myAvatar": {
+    "title": "Il mio avatar",
+    "subtitle": "Carica una foto frontale e un audio. Da questi verranno generati automaticamente dei clip video.",
+    "tabs": {
+      "image": "Immagine",
+      "audio": "Audio",
+      "next": "Avanti",
+      "back": "Indietro"
+    },
+    "create": "Crea avatar",
+    "unsavedChanges": "Modifiche non salvate",
+    "statusReady": "Avatar attivo",
+    "statusSummary": "{{ready}}/{{total}} clip pronte · {{failed}} errori",
+    "playAudio": "Ascolta audio",
+    "clipsCount_one": "{{count}} clip in totale",
+    "clipsCount_other": "{{count}} clip in totale",
+    "image": "Foto frontale",
+    "imageHint": "PNG / JPEG / WEBP. L'immagine verrà ritagliata in formato quadrato (1:1).",
+    "imageEmpty": "Nessuna immagine",
+    "recrop": "Ritaglia di nuovo",
+    "cropTitle": "Ritaglia l'immagine",
+    "cropHint": "Trascina e ridimensiona l'area di selezione. Il rapporto è fissato a 1:1.",
+    "cropConfirm": "Applica ritaglio",
+    "slidePreviewTitle": "Anteprima nella slide",
+    "slidePreviewHint": "Esempio di come l'avatar apparirà in basso a destra in un template slide.",
+    "audio": "Audio personale",
+    "audioHint": "Leggi ad alta voce il testo qui sopra. La registrazione servirà ad addestrare un modello vocale fedele alla tua voce.",
+    "audioUpload": "Carica file",
+    "audioRecord": "Registra adesso",
+    "recordStart": "Avvia registrazione",
+    "recordStop": "Stop",
+    "audioLang": "Lingua audio",
+    "scriptTitle": "Testo da leggere",
+    "scriptHint": "Leggi questo testo a voce naturale durante la registrazione. Più la lettura è chiara e rilassata, migliore sarà il modello vocale.",
+    "scriptFallback": "Per la lingua selezionata non è ancora configurato un testo specifico: viene mostrato quello in {{lang}}.",
+    "scriptMissing": "Nessun testo da leggere è configurato per questa lingua. Contatta un amministratore.",
+    "saveWarn": "Modificare l'immagine rigenererà tutti i clip.",
+    "regenerate": "Rigenera clip",
+    "regenerated": "Generazione clip riavviata",
+    "clipsTitle": "Clip generate",
+    "clipsEmpty": "Nessun clip configurato. Definisci almeno un prompt nella sezione admin Configurazioni → Avatar.",
+    "clipPending": "In attesa…",
+    "clipProcessing": "Generazione…",
+    "clipReady": "Pronto",
+    "clipFailed": "Errore",
+    "allReady": "Tutti pronti",
+    "allFailed": "Tutti falliti",
+    "partial": "Parziale",
+    "pending": "In attesa",
+    "processing": "Generazione",
+    "saved": "Avatar salvato",
+    "deleted": "Avatar eliminato",
+    "deleteConfirm": {
+      "title": "Eliminare l'avatar?",
+      "message": "Verranno eliminati immagine, audio e tutti i clip generati."
+    }
+  },
+  "avatarConfig": {
+    "title": "Configurazioni — Avatar",
+    "subtitle": "Gestisci i prompt video per la generazione dei clip MiniMax e i testi di trascrizione che gli utenti leggeranno per la registrazione vocale.",
+    "tabs": {
+      "prompts": "Prompt video",
+      "scripts": "Lingue trascrizione"
+    },
+    "addPrompt": "Aggiungi prompt",
+    "empty": "Nessun prompt configurato. Aggiungine almeno uno per abilitare la generazione clip.",
+    "fields": {
+      "label": "Etichetta",
+      "labelPlaceholder": "Es. \"Cenno di pensiero\"",
+      "prompt": "Prompt MiniMax (inglese, max 2000 caratteri)",
+      "active": "Attivo"
+    },
+    "moveUp": "Sposta su",
+    "moveDown": "Sposta giù",
+    "unsavedHint": "Modifiche non salvate — fai blur del campo per salvare.",
+    "count_one": "{{count}} clip configurato",
+    "count_other": "{{count}} clip configurati",
+    "created": "Prompt creato",
+    "updated": "Prompt aggiornato",
+    "deleted": "Prompt eliminato",
+    "deleteConfirm": {
+      "title": "Eliminare il prompt?",
+      "message": "Il prompt \"{{name}}\" sarà rimosso dalla configurazione."
+    },
+    "voiceScript": {
+      "title": "Testo da leggere durante la registrazione",
+      "subtitle": "Per ogni lingua, definisci il testo che l'utente vedrà e dovrà leggere ad alta voce mentre registra l'audio. Serve a ottenere un campione vocale standardizzato per il voice cloning.",
+      "empty": "Nessun testo configurato. Aggiungine almeno uno per la lingua di default.",
+      "add": "Aggiungi testo per una lingua",
+      "selectLang": "Seleziona lingua",
+      "placeholder": "Buongiorno, mi presento e leggo questo breve testo…",
+      "text": "Testo",
+      "saved": "Testo salvato",
+      "deleted": "Testo eliminato",
+      "deleteConfirm": {
+        "title": "Eliminare il testo?",
+        "message": "Verrà rimosso il testo da leggere per la lingua {{lang}}."
+      }
+    }
+  },
+  "permissions": {
+    "member:view": "Ogled članov",
+    "member:invite": "Vabljenje uporabnikov",
+    "member:assign_role": "Dodeljevanje vlog",
+    "member:remove": "Odstranjevanje članov",
+    "template:slide:manage": "Upravljanje predlog slik",
+    "template:pdf:manage": "Upravljanje PDF predlog",
+    "permission:manage": "Upravljanje dovoljenj",
+    "org:transfer_creator": "Prenos vloge creator",
+    "org:update": "Urejanje organizacije",
+    "course_config:manage": "Gestisci parametri corsi"
+  },
+  "permissionDescriptions": {
+    "member:view": "Vedere l'elenco dei membri dell'organizzazione con nome, email, ruolo e data di iscrizione. Prerequisito per quasi tutte le altre azioni sui membri.",
+    "member:invite": "Creare inviti via email per nuovi membri scegliendo il ruolo iniziale. Ogni invito è un link monouso con scadenza a 7 giorni.",
+    "member:assign_role": "Cambiare il ruolo di un membro esistente, ma solo fino al proprio livello di rank: un Org Admin non può promuovere a Creator né modificare un membro di rango superiore.",
+    "member:remove": "Rimuovere un membro dall'organizzazione. Il Creator non è rimovibile direttamente: va prima trasferito ad un altro membro.",
+    "template:slide:manage": "Creare, modificare, eliminare e scegliere come default i template per le slide dei corsi (formato 16:9 / 4:3, colori, font, logo, immagine di sfondo).",
+    "template:pdf:manage": "Creare, modificare, eliminare e scegliere come default i template per i documenti PDF (formato A4/Letter, header/footer/margini in mm, colori, logo, sfondo).",
+    "permission:manage": "Modificare i permessi dell'organizzazione: override per ruolo (es. concedere a tutti i Manager un permesso non default) e override per singolo membro (concedi/revoca puntuale).",
+    "org:transfer_creator": "Trasferire il ruolo di Creator a un altro membro. Chi era Creator diventa Org Admin. Azione riservata al Creator e irreversibile senza un nuovo trasferimento.",
+    "org:update": "Modificare i dati anagrafici dell'organizzazione: nome, partita IVA, codice fiscale, indirizzo, contatti, logo.",
+    "course_config:manage": "Configurare i parametri di default per la generazione dei corsi: numero di moduli per CFU, lezioni per modulo, durata delle lezioni e attivazione della verifica di apprendimento finale (con il numero di domande a scelta multipla e aperte da generare). Questi valori vengono usati per pre-popolare la struttura di un nuovo corso."
+  },
+  "roles": {
+    "creator": "Ustvarjalec",
+    "org_admin": "Administrator organizacije",
+    "manager": "Manager",
+    "member": "Član"
+  },
+  "errors": {
+    "generic": "Prišlo je do napake",
+    "loadingFailed": "Nalaganje ni uspelo",
+    "saveFailed": "Shranjevanje ni uspelo"
+  },
+  "i18n": {
+    "title": "Gestione lingue",
+    "subtitle": "Crea, modifica e cancella le lingue e le traduzioni della piattaforma",
+    "new": "Nuova lingua",
+    "edit": "Modifica lingua",
+    "editTranslations": "Modifica traduzioni",
+    "fields": {
+      "code": "Codice",
+      "codeHint": "ISO 639-1 (es. it, en) o regionale (es. pt-BR)",
+      "nameNative": "Nome nativo",
+      "flagCountry": "Bandiera (codice paese ISO, es. IT)",
+      "rtl": "Right-to-left",
+      "active": "Attiva",
+      "default": "Default",
+      "copyFrom": "Copia traduzioni da"
+    },
+    "stats": {
+      "translations_one": "{{count}} traduzione",
+      "translations_other": "{{count}} traduzioni"
+    },
+    "created": "Lingua creata",
+    "updated": "Lingua aggiornata",
+    "deleted": "Lingua eliminata",
+    "translationsSaved": "Traduzioni salvate ({{count}})",
+    "deleteConfirm": {
+      "title": "Eliminare la lingua?",
+      "message": "Stai per eliminare \"{{name}}\" e tutte le sue traduzioni."
+    },
+    "editor": {
+      "title": "Traduzioni — {{name}}",
+      "search": "Cerca chiave o valore",
+      "empty": "Nessuna traduzione",
+      "save": "Salva traduzioni",
+      "reference": "Riferimento {{lang}}",
+      "modifiedCount_one": "{{count}} chiave modificata",
+      "modifiedCount_other": "{{count}} chiavi modificate",
+      "noChanges": "Nessuna modifica"
+    }
+  },
+  "dashboard": {
+    "admin": {
+      "title": "Skrbniška plošča",
+      "subtitle": "Globalno upravljanje platforme a4u"
+    },
+    "org": {
+      "subtitle": "Vloga: {{role}}",
+      "platformAdmin": "Admin piattaforma"
+    },
+    "noOrg": {
+      "title": "Dobrodošli",
+      "message": "Niste še član nobene organizacije. Počakajte na vabilo ali se obrnite na skrbnika."
+    }
+  }
+}

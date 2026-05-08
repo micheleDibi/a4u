@@ -1,0 +1,516 @@
+{
+  "app": {
+    "name": "a4u",
+    "tagline": "Ardán cúrsaí ollscoile"
+  },
+  "common": {
+    "save": "Sábháil",
+    "cancel": "Cealaigh",
+    "delete": "Scrios",
+    "edit": "Cuir in eagar",
+    "add": "Cuir leis",
+    "loading": "Á luchtú…",
+    "saving": "Á shábháil…",
+    "creating": "Á chruthú…",
+    "remove": "Bain",
+    "confirm": "Deimhnigh",
+    "close": "Dún",
+    "search": "Cuardaigh",
+    "back": "Ar ais",
+    "next": "Ar aghaidh",
+    "actions": "Gníomhartha",
+    "of": "as",
+    "noResults": "Gan torthaí",
+    "copy": "Cóipeáil",
+    "copied": "Cóipeáilte!",
+    "yes": "Tá",
+    "no": "Níl",
+    "all": "Gach rud",
+    "optional": "roghnach",
+    "required": "riachtanach",
+    "moreInfo": "Tuilleadh eolais"
+  },
+  "auth": {
+    "login": {
+      "title": "Fáilte ar ais",
+      "subtitle": "Logáil isteach i do spás oibre a4u",
+      "email": "Ríomhphost",
+      "password": "Pasfhocal",
+      "submit": "Logáil isteach",
+      "submitting": "Á logáil isteach…"
+    },
+    "logout": "Logáil amach",
+    "invitation": {
+      "title": "Glac le cuireadh",
+      "subtitle": "Tugadh cuireadh duit chuig {{org}} mar {{role}}",
+      "fullName": "Ainm iomlán",
+      "passwordHint": "10+ carachtar, ceann ceannlitir, digit amháin",
+      "submit": "Glac le cuireadh",
+      "submitting": "Á dheimhniú…",
+      "alreadyRegistered": "Tá tú cláraithe cheana. Cliceáil \"Glac\" le bheith curtha leis.",
+      "invalidOrExpired": "Níl an cuireadh bailí, tá sé in éag nó úsáidte cheana."
+    }
+  },
+  "theme": {
+    "label": "Téama",
+    "light": "Geal",
+    "dark": "Dorcha",
+    "system": "Córas"
+  },
+  "language": {
+    "label": "Teanga"
+  },
+  "nav": {
+    "platform": "Ardán",
+    "organization": "Eagraíocht",
+    "configurazioni": "Cumraíocht",
+    "personal": "Pearsanta",
+    "dashboard": "Painéal",
+    "organizations": "Eagraíochtaí",
+    "users": "Úsáideoirí",
+    "permissions": "Ceadanna domhanda",
+    "i18n": "Teangacha",
+    "members": "Baill",
+    "templatesSlide": "Teimpléid sleamhnán",
+    "templatesPdf": "Teimpléid PDF",
+    "avatarConfig": "Avatar",
+    "courseSettings": "Paraiméadair an chúrsa"
+  },
+  "courseSettings": {
+    "title": "Paraiméadair an chúrsa",
+    "subtitle": "Réamhshocruithe a úsáidtear chun struchtúr cúrsa nua a ghiniúint san eagraíocht seo.",
+    "dirtyBanner": "Athruithe gan sábháil",
+    "saved": "Paraiméadair sábháilte",
+    "sections": {
+      "structure": {
+        "title": "Struchtúr an chúrsa",
+        "subtitle": "Cé mhéad modúl agus ceacht a ghintear in aghaidh an chreidiúna."
+      },
+      "duration": {
+        "title": "Fad na gceacht",
+        "subtitle": "Fad caighdeánach gach ceacht den chúrsa."
+      },
+      "assessment": {
+        "subtitle": "Is measúnú eolais é an ceacht deireanach de gach modúl, a ghintear go huathoibríoch.",
+        "disabledHint": "Ní ghintear measúnú deiridh. Críochnaíonn gach modúl lena ghnáthcheacht deireanach."
+      }
+    },
+    "fields": {
+      "modulesPerCfu": "Modúil in aghaidh an chreidiúna",
+      "lessonsPerModule": "Ceachtanna in aghaidh modúil",
+      "lessonDuration": "Fad an cheachta",
+      "assessment": "Measúnú deiridh eolais",
+      "assessmentHelp": "Má tá sé cumasaithe, is measúnú eolais arna ghiniúint go huathoibríoch é an ceacht deireanach de gach modúl: gintear sraith ceisteanna (rogha iolrach agus oscailte) chun na hinniúlachtaí a fuarthas a fhíorú. Ní dhéanann an t-ardán ach ábhar a ghiniúint; tá soláthar do mhic léinn lasmuigh den scóip.",
+      "mcq": "Ceisteanna rogha iolrach",
+      "openQuestions": "Ceisteanna oscailte"
+    },
+    "units": {
+      "modules": "modúil",
+      "lessons": "ceachtanna",
+      "minutes": "nóiméid",
+      "questions": "ceisteanna"
+    },
+    "summary": {
+      "title": "Achoimre in aghaidh an chreidiúna",
+      "modulesPerCfu": "Modúil",
+      "lessonsPerModule": "Ceachtanna in aghaidh modúil",
+      "lessonDuration": "Fad an cheachta",
+      "totalLessonsPerCfu": "Iomlán ceachtanna",
+      "totalDurationPerCfu": "Fad iomlán",
+      "mcq": "Ceisteanna rogha iolrach",
+      "openQuestions": "Ceisteanna oscailte",
+      "totalQuestions": "Iomlán ceisteanna measúnaithe",
+      "noAssessment": "Níor gineadh measúnú deiridh.",
+      "minutesValue_one": "{{count}} nóiméad",
+      "minutesValue_other": "{{count}} nóiméad",
+      "hours_one": "{{count}} uair",
+      "hours_other": "{{count}} uair",
+      "hoursAndMinutes": "{{hours}}u {{minutes}}n"
+    }
+  },
+  "command": {
+    "placeholder": "Cuardaigh ordú nó leathanach…",
+    "navigation": "Nascleanúint",
+    "actions": "Gníomhartha",
+    "preferences": "Sainroghanna",
+    "openCommandPalette": "Oscail pailéad orduithe",
+    "newOrganization": "Eagraíocht nua",
+    "logout": "Logáil amach",
+    "noResults": "Gan torthaí",
+    "switchTheme": "Athraigh téama",
+    "switchLanguage": "Athraigh teanga"
+  },
+  "user": {
+    "profile": "Próifíl",
+    "menu": "Roghchlár úsáideora",
+    "myAvatar": "M'avatar"
+  },
+  "orgSwitcher": {
+    "label": "Eagraíocht",
+    "search": "Cuardaigh eagraíocht…",
+    "noOrgs": "Gan eagraíocht",
+    "select": "Roghnaigh eagraíocht"
+  },
+  "organizations": {
+    "title": "Eagraíochtaí",
+    "subtitle": "Bainistigh gach eagraíocht san ardán",
+    "new": "Eagraíocht nua",
+    "edit": "Cuir eagraíocht in eagar",
+    "search": "Cuardaigh de réir ainm",
+    "empty": "Gan eagraíochtaí",
+    "members": "Baill",
+    "openDashboard": "Apri dashboard",
+    "deleted": "Eagraíocht scriosta",
+    "created": "Eagraíocht cruthaithe",
+    "updated": "Eagraíocht nuashonraithe",
+    "fields": {
+      "logo": "Lógó na heagraíochta",
+      "logoHint": "PNG / JPEG / WEBP, max 5 MB",
+      "name": "Ainm",
+      "email": "Ríomhphost",
+      "phone": "Fón",
+      "website": "Suíomh gréasáin",
+      "vatNumber": "Uimhir CBL",
+      "fiscalCode": "Cód cánach",
+      "country": "Tír",
+      "address": "Seoladh",
+      "city": "Cathair",
+      "province": "Cúige",
+      "postalCode": "Eircode"
+    },
+    "deleteConfirm": {
+      "title": "Scrios an eagraíocht?",
+      "message": "Tá tú ar tí \"{{name}}\" a scriosadh. Is féidir é a chur ar ais ón riarachán."
+    }
+  },
+  "members": {
+    "title": "Baill",
+    "subtitle": "Féach agus bainistigh baill na heagraíochta",
+    "subtitleAdmin": "Cláraigh úsáideoirí go díreach mar bhaill",
+    "invite": "Tabhair cuireadh",
+    "invited": "Ball tugadh cuireadh",
+    "removed": "Ball bainte",
+    "roleChanged": "Ról nuashonraithe",
+    "transferConfirmed": "Aistríodh an ról creator",
+    "enroll": "Cláraigh úsáideoir",
+    "enrollSubmit": "Cláraigh",
+    "userPicker": "Úsáideoir",
+    "rolePicker": "Ról",
+    "fields": {
+      "name": "Ainm",
+      "email": "Ríomhphost",
+      "role": "Ról"
+    },
+    "inviteDialog": {
+      "title": "Tabhair cuireadh do bhall",
+      "email": "Ríomhphost",
+      "role": "Ról",
+      "submit": "Cruthaigh cuireadh",
+      "submitting": "Á chruthú…",
+      "tokenLabel": "Roinn an nasc seo (bailí 7 lá):",
+      "successTitle": "Cuireadh cruthaithe"
+    },
+    "removeConfirm": {
+      "title": "Bain an ball?",
+      "message": "Bainfear {{name}} ón eagraíocht."
+    },
+    "transferConfirm": {
+      "title": "Aistrigh ról creator?",
+      "message": "Beidh tú i d'admin na heagraíochta agus beidh {{name}} mar creator. Ní féidir é a chealú ach ag an creator nua."
+    },
+    "actions": {
+      "permissions": "Ceadanna",
+      "transfer": "Aistrigh creator",
+      "remove": "Bain"
+    }
+  },
+  "memberPermissions": {
+    "title": "Ceadanna {{name}}",
+    "subtitle": "Maidir le gach cead, fág réamhshocrú an róil nó tabhair grant/revoke sonrach don bhall seo.",
+    "default": "Réamhshocrú",
+    "grant": "Tabhair",
+    "revoke": "Cealaigh",
+    "saved": "Ceadanna an bhaill nuashonraithe"
+  },
+  "users": {
+    "title": "Úsáideoirí",
+    "subtitle": "Bainistigh úsáideoirí agus admins an ardáin",
+    "new": "Úsáideoir nua",
+    "search": "Cuardaigh de réir ainm nó ríomhphost",
+    "created": "Úsáideoir cruthaithe",
+    "fields": {
+      "name": "Ainm",
+      "email": "Ríomhphost",
+      "active": "Gníomhach",
+      "platformAdmin": "Admin an ardáin"
+    },
+    "createDialog": {
+      "title": "Úsáideoir nua",
+      "name": "Ainm iomlán",
+      "email": "Ríomhphost",
+      "password": "Pasfhocal (≥10 char., 1 ceannlitir, 1 digit)",
+      "platformAdmin": "Admin an ardáin",
+      "submit": "Cruthaigh",
+      "submitting": "Á chruthú…"
+    }
+  },
+  "globalPermissions": {
+    "title": "Ceadanna domhanda",
+    "subtitle": "Cuir ceadanna réamhshocraithe gach róil in eagar. Baineann siad le gach eagraíocht ach amháin nuair a sháraítear iad go follasach.",
+    "rolePicker": "Ról",
+    "saved": "Ceadanna sábháilte",
+    "save": "Sábháil ceadanna"
+  },
+  "templates": {
+    "preview": {
+      "lessonTag": "Lezione 01",
+      "chapter": "Capitolo introduttivo",
+      "title": "Argomento principale della lezione",
+      "subtitle": "Una breve descrizione del contesto: cosa vedremo, perché è importante e quali competenze sviluppiamo.",
+      "bullet1": "Obiettivi di apprendimento e prerequisiti",
+      "bullet2": "Concetti chiave con esempi pratici",
+      "bullet3": "Esercizi guidati e materiale di riferimento",
+      "author": "Prof. Mario Rossi",
+      "role": "Cattedra di Informatica",
+      "date": "12 marzo 2026",
+      "live": "Live"
+    },
+    "slide": {
+      "title": "Teimpléid sleamhnán",
+      "subtitle": "Cruthaigh agus cuir teimpléid sleamhnán cúrsaí in eagar",
+      "new": "Teimpléad nua",
+      "newPage": "Teimpléad sleamhnáin nua",
+      "editPage": "In eagar: {{name}}",
+      "previewLive": "Réamhamharc beo",
+      "previewHint": "Nuashonraítear an réamhamharc i bhfíor-am le linn eagarthóireachta.",
+      "deleted": "Teimpléad scriosta",
+      "created": "Teimpléad cruthaithe",
+      "updated": "Teimpléad nuashonraithe",
+      "empty": "Gan teimpléid go fóill"
+    },
+    "pdf": {
+      "title": "Teimpléid PDF",
+      "subtitle": "Cruthaigh agus cuir teimpléid PDF in eagar",
+      "new": "Teimpléad nua",
+      "newPage": "Teimpléad PDF nua",
+      "editPage": "In eagar: {{name}}",
+      "previewLive": "Réamhamharc beo",
+      "previewHint": "Nuashonraítear an réamhamharc i bhfíor-am le linn eagarthóireachta.",
+      "deleted": "Teimpléad scriosta",
+      "created": "Teimpléad cruthaithe",
+      "updated": "Teimpléad nuashonraithe",
+      "empty": "Gan teimpléid go fóill"
+    },
+    "fields": {
+      "name": "Ainm an teimpléid",
+      "size": "Formáid sleamhnáin",
+      "pageSize": "Méid leathanaigh",
+      "font": "Cló",
+      "textColor": "Dath an téacs",
+      "primaryColor": "Príomhdhath",
+      "secondaryColor": "Dath tánaisteach",
+      "background": "Íomhá chúlra",
+      "logoLeft": "Lógó barr ar chlé",
+      "logoRight": "Lógó barr ar dheis",
+      "headerHeight": "Airde an cheanntáisc (mm)",
+      "footerHeight": "Airde an bhuntáisc (mm)",
+      "margin": "Imeall an leathanaigh (mm)",
+      "backgroundOpacity": "Opacità sfondo (%)"
+    },
+    "deleteConfirm": {
+      "title": "Scrios an teimpléad?",
+      "message": "Tá tú ar tí \"{{name}}\" a scriosadh."
+    },
+    "default": "Default",
+    "setDefault": "Imposta come default",
+    "defaultSet": "Template impostato come default"
+  },
+  "myAvatar": {
+    "title": "Il mio avatar",
+    "subtitle": "Carica una foto frontale e un audio. Da questi verranno generati automaticamente dei clip video.",
+    "tabs": {
+      "image": "Immagine",
+      "audio": "Audio",
+      "next": "Avanti",
+      "back": "Indietro"
+    },
+    "create": "Crea avatar",
+    "unsavedChanges": "Modifiche non salvate",
+    "statusReady": "Avatar attivo",
+    "statusSummary": "{{ready}}/{{total}} clip pronte · {{failed}} errori",
+    "playAudio": "Ascolta audio",
+    "clipsCount_one": "{{count}} clip in totale",
+    "clipsCount_other": "{{count}} clip in totale",
+    "image": "Foto frontale",
+    "imageHint": "PNG / JPEG / WEBP. L'immagine verrà ritagliata in formato quadrato (1:1).",
+    "imageEmpty": "Nessuna immagine",
+    "recrop": "Ritaglia di nuovo",
+    "cropTitle": "Ritaglia l'immagine",
+    "cropHint": "Trascina e ridimensiona l'area di selezione. Il rapporto è fissato a 1:1.",
+    "cropConfirm": "Applica ritaglio",
+    "slidePreviewTitle": "Anteprima nella slide",
+    "slidePreviewHint": "Esempio di come l'avatar apparirà in basso a destra in un template slide.",
+    "audio": "Audio personale",
+    "audioHint": "Leggi ad alta voce il testo qui sopra. La registrazione servirà ad addestrare un modello vocale fedele alla tua voce.",
+    "audioUpload": "Carica file",
+    "audioRecord": "Registra adesso",
+    "recordStart": "Avvia registrazione",
+    "recordStop": "Stop",
+    "audioLang": "Lingua audio",
+    "scriptTitle": "Testo da leggere",
+    "scriptHint": "Leggi questo testo a voce naturale durante la registrazione. Più la lettura è chiara e rilassata, migliore sarà il modello vocale.",
+    "scriptFallback": "Per la lingua selezionata non è ancora configurato un testo specifico: viene mostrato quello in {{lang}}.",
+    "scriptMissing": "Nessun testo da leggere è configurato per questa lingua. Contatta un amministratore.",
+    "saveWarn": "Modificare l'immagine rigenererà tutti i clip.",
+    "regenerate": "Rigenera clip",
+    "regenerated": "Generazione clip riavviata",
+    "clipsTitle": "Clip generate",
+    "clipsEmpty": "Nessun clip configurato. Definisci almeno un prompt nella sezione admin Configurazioni → Avatar.",
+    "clipPending": "In attesa…",
+    "clipProcessing": "Generazione…",
+    "clipReady": "Pronto",
+    "clipFailed": "Errore",
+    "allReady": "Tutti pronti",
+    "allFailed": "Tutti falliti",
+    "partial": "Parziale",
+    "pending": "In attesa",
+    "processing": "Generazione",
+    "saved": "Avatar salvato",
+    "deleted": "Avatar eliminato",
+    "deleteConfirm": {
+      "title": "Eliminare l'avatar?",
+      "message": "Verranno eliminati immagine, audio e tutti i clip generati."
+    }
+  },
+  "avatarConfig": {
+    "title": "Configurazioni — Avatar",
+    "subtitle": "Gestisci i prompt video per la generazione dei clip MiniMax e i testi di trascrizione che gli utenti leggeranno per la registrazione vocale.",
+    "tabs": {
+      "prompts": "Prompt video",
+      "scripts": "Lingue trascrizione"
+    },
+    "addPrompt": "Aggiungi prompt",
+    "empty": "Nessun prompt configurato. Aggiungine almeno uno per abilitare la generazione clip.",
+    "fields": {
+      "label": "Etichetta",
+      "labelPlaceholder": "Es. \"Cenno di pensiero\"",
+      "prompt": "Prompt MiniMax (inglese, max 2000 caratteri)",
+      "active": "Attivo"
+    },
+    "moveUp": "Sposta su",
+    "moveDown": "Sposta giù",
+    "unsavedHint": "Modifiche non salvate — fai blur del campo per salvare.",
+    "count_one": "{{count}} clip configurato",
+    "count_other": "{{count}} clip configurati",
+    "created": "Prompt creato",
+    "updated": "Prompt aggiornato",
+    "deleted": "Prompt eliminato",
+    "deleteConfirm": {
+      "title": "Eliminare il prompt?",
+      "message": "Il prompt \"{{name}}\" sarà rimosso dalla configurazione."
+    },
+    "voiceScript": {
+      "title": "Testo da leggere durante la registrazione",
+      "subtitle": "Per ogni lingua, definisci il testo che l'utente vedrà e dovrà leggere ad alta voce mentre registra l'audio. Serve a ottenere un campione vocale standardizzato per il voice cloning.",
+      "empty": "Nessun testo configurato. Aggiungine almeno uno per la lingua di default.",
+      "add": "Aggiungi testo per una lingua",
+      "selectLang": "Seleziona lingua",
+      "placeholder": "Buongiorno, mi presento e leggo questo breve testo…",
+      "text": "Testo",
+      "saved": "Testo salvato",
+      "deleted": "Testo eliminato",
+      "deleteConfirm": {
+        "title": "Eliminare il testo?",
+        "message": "Verrà rimosso il testo da leggere per la lingua {{lang}}."
+      }
+    }
+  },
+  "permissions": {
+    "member:view": "Féach baill",
+    "member:invite": "Tabhair cuireadh d'úsáideoirí",
+    "member:assign_role": "Sann róil",
+    "member:remove": "Bain baill",
+    "template:slide:manage": "Bainistigh teimpléid sleamhnán",
+    "template:pdf:manage": "Bainistigh teimpléid PDF",
+    "permission:manage": "Bainistigh ceadanna",
+    "org:transfer_creator": "Aistrigh ról creator",
+    "org:update": "Cuir eagraíocht in eagar",
+    "course_config:manage": "Gestisci parametri corsi"
+  },
+  "permissionDescriptions": {
+    "member:view": "Vedere l'elenco dei membri dell'organizzazione con nome, email, ruolo e data di iscrizione. Prerequisito per quasi tutte le altre azioni sui membri.",
+    "member:invite": "Creare inviti via email per nuovi membri scegliendo il ruolo iniziale. Ogni invito è un link monouso con scadenza a 7 giorni.",
+    "member:assign_role": "Cambiare il ruolo di un membro esistente, ma solo fino al proprio livello di rank: un Org Admin non può promuovere a Creator né modificare un membro di rango superiore.",
+    "member:remove": "Rimuovere un membro dall'organizzazione. Il Creator non è rimovibile direttamente: va prima trasferito ad un altro membro.",
+    "template:slide:manage": "Creare, modificare, eliminare e scegliere come default i template per le slide dei corsi (formato 16:9 / 4:3, colori, font, logo, immagine di sfondo).",
+    "template:pdf:manage": "Creare, modificare, eliminare e scegliere come default i template per i documenti PDF (formato A4/Letter, header/footer/margini in mm, colori, logo, sfondo).",
+    "permission:manage": "Modificare i permessi dell'organizzazione: override per ruolo (es. concedere a tutti i Manager un permesso non default) e override per singolo membro (concedi/revoca puntuale).",
+    "org:transfer_creator": "Trasferire il ruolo di Creator a un altro membro. Chi era Creator diventa Org Admin. Azione riservata al Creator e irreversibile senza un nuovo trasferimento.",
+    "org:update": "Modificare i dati anagrafici dell'organizzazione: nome, partita IVA, codice fiscale, indirizzo, contatti, logo.",
+    "course_config:manage": "Configurare i parametri di default per la generazione dei corsi: numero di moduli per CFU, lezioni per modulo, durata delle lezioni e attivazione della verifica di apprendimento finale (con il numero di domande a scelta multipla e aperte da generare). Questi valori vengono usati per pre-popolare la struttura di un nuovo corso."
+  },
+  "roles": {
+    "creator": "Cruthaitheoir",
+    "org_admin": "Riarthóir eagraíochta",
+    "manager": "Manager",
+    "member": "Ball"
+  },
+  "errors": {
+    "generic": "Tharla earráid",
+    "loadingFailed": "Theip ar an luchtú",
+    "saveFailed": "Theip ar an sábháil"
+  },
+  "i18n": {
+    "title": "Gestione lingue",
+    "subtitle": "Crea, modifica e cancella le lingue e le traduzioni della piattaforma",
+    "new": "Nuova lingua",
+    "edit": "Modifica lingua",
+    "editTranslations": "Modifica traduzioni",
+    "fields": {
+      "code": "Codice",
+      "codeHint": "ISO 639-1 (es. it, en) o regionale (es. pt-BR)",
+      "nameNative": "Nome nativo",
+      "flagCountry": "Bandiera (codice paese ISO, es. IT)",
+      "rtl": "Right-to-left",
+      "active": "Attiva",
+      "default": "Default",
+      "copyFrom": "Copia traduzioni da"
+    },
+    "stats": {
+      "translations_one": "{{count}} traduzione",
+      "translations_other": "{{count}} traduzioni"
+    },
+    "created": "Lingua creata",
+    "updated": "Lingua aggiornata",
+    "deleted": "Lingua eliminata",
+    "translationsSaved": "Traduzioni salvate ({{count}})",
+    "deleteConfirm": {
+      "title": "Eliminare la lingua?",
+      "message": "Stai per eliminare \"{{name}}\" e tutte le sue traduzioni."
+    },
+    "editor": {
+      "title": "Traduzioni — {{name}}",
+      "search": "Cerca chiave o valore",
+      "empty": "Nessuna traduzione",
+      "save": "Salva traduzioni",
+      "reference": "Riferimento {{lang}}",
+      "modifiedCount_one": "{{count}} chiave modificata",
+      "modifiedCount_other": "{{count}} chiavi modificate",
+      "noChanges": "Nessuna modifica"
+    }
+  },
+  "dashboard": {
+    "admin": {
+      "title": "Painéal admin",
+      "subtitle": "Bainistíocht dhomhanda an ardáin a4u"
+    },
+    "org": {
+      "subtitle": "Ról: {{role}}",
+      "platformAdmin": "Admin piattaforma"
+    },
+    "noOrg": {
+      "title": "Fáilte",
+      "message": "Níl tú i do bhall d'aon eagraíocht go fóill. Fan le cuireadh nó déan teagmháil le riarthóir."
+    }
+  }
+}

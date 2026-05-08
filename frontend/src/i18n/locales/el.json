@@ -1,0 +1,516 @@
+{
+  "app": {
+    "name": "a4u",
+    "tagline": "Πλατφόρμα πανεπιστημιακών μαθημάτων"
+  },
+  "common": {
+    "save": "Αποθήκευση",
+    "cancel": "Ακύρωση",
+    "delete": "Διαγραφή",
+    "edit": "Επεξεργασία",
+    "add": "Προσθήκη",
+    "loading": "Φόρτωση…",
+    "saving": "Αποθήκευση…",
+    "creating": "Δημιουργία…",
+    "remove": "Αφαίρεση",
+    "confirm": "Επιβεβαίωση",
+    "close": "Κλείσιμο",
+    "search": "Αναζήτηση",
+    "back": "Πίσω",
+    "next": "Επόμενο",
+    "actions": "Ενέργειες",
+    "of": "από",
+    "noResults": "Κανένα αποτέλεσμα",
+    "copy": "Αντιγραφή",
+    "copied": "Αντιγράφηκε!",
+    "yes": "Ναι",
+    "no": "Όχι",
+    "all": "Όλα",
+    "optional": "προαιρετικό",
+    "required": "υποχρεωτικό",
+    "moreInfo": "Περισσότερες πληροφορίες"
+  },
+  "auth": {
+    "login": {
+      "title": "Καλώς ήρθατε ξανά",
+      "subtitle": "Συνδεθείτε στον χώρο εργασίας a4u",
+      "email": "Email",
+      "password": "Κωδικός",
+      "submit": "Σύνδεση",
+      "submitting": "Σύνδεση…"
+    },
+    "logout": "Αποσύνδεση",
+    "invitation": {
+      "title": "Αποδοχή πρόσκλησης",
+      "subtitle": "Έχεις προσκληθεί στο {{org}} ως {{role}}",
+      "fullName": "Πλήρες όνομα",
+      "passwordHint": "Τουλάχ. 10 χαρακτήρες, ένα κεφαλαίο, ένα ψηφίο",
+      "submit": "Αποδοχή",
+      "submitting": "Επιβεβαίωση…",
+      "alreadyRegistered": "Είσαι ήδη εγγεγραμμένος. Πάτα \"Αποδοχή\" για να προστεθείς.",
+      "invalidOrExpired": "Η πρόσκληση δεν είναι έγκυρη, έληξε ή έχει ήδη χρησιμοποιηθεί."
+    }
+  },
+  "theme": {
+    "label": "Θέμα",
+    "light": "Φωτεινό",
+    "dark": "Σκούρο",
+    "system": "Σύστημα"
+  },
+  "language": {
+    "label": "Γλώσσα"
+  },
+  "nav": {
+    "platform": "Πλατφόρμα",
+    "organization": "Οργανισμός",
+    "configurazioni": "Διαμόρφωση",
+    "personal": "Προσωπικά",
+    "dashboard": "Πίνακας",
+    "organizations": "Οργανισμοί",
+    "users": "Χρήστες",
+    "permissions": "Καθολικά δικαιώματα",
+    "i18n": "Γλώσσες",
+    "members": "Μέλη",
+    "templatesSlide": "Πρότυπα διαφανειών",
+    "templatesPdf": "Πρότυπα PDF",
+    "avatarConfig": "Avatar",
+    "courseSettings": "Παράμετροι μαθήματος"
+  },
+  "courseSettings": {
+    "title": "Παράμετροι μαθήματος",
+    "subtitle": "Προεπιλεγμένες τιμές που χρησιμοποιούνται για τη δημιουργία της δομής ενός νέου μαθήματος σε αυτόν τον οργανισμό.",
+    "dirtyBanner": "Μη αποθηκευμένες αλλαγές",
+    "saved": "Οι παράμετροι αποθηκεύτηκαν",
+    "sections": {
+      "structure": {
+        "title": "Δομή μαθήματος",
+        "subtitle": "Πόσες ενότητες και μαθήματα δημιουργούνται ανά πιστωτική μονάδα."
+      },
+      "duration": {
+        "title": "Διάρκεια μαθημάτων",
+        "subtitle": "Τυπική διάρκεια κάθε μαθήματος του κύκλου."
+      },
+      "assessment": {
+        "subtitle": "Το τελευταίο μάθημα κάθε ενότητας είναι μια αυτόματα παραγόμενη αξιολόγηση γνώσεων.",
+        "disabledHint": "Δεν παράγεται τελική αξιολόγηση. Κάθε ενότητα ολοκληρώνεται με το συνήθες τελευταίο της μάθημα."
+      }
+    },
+    "fields": {
+      "modulesPerCfu": "Ενότητες ανά μονάδα",
+      "lessonsPerModule": "Μαθήματα ανά ενότητα",
+      "lessonDuration": "Διάρκεια μαθήματος",
+      "assessment": "Τελική αξιολόγηση γνώσεων",
+      "assessmentHelp": "Αν είναι ενεργό, το τελευταίο μάθημα κάθε ενότητας είναι μια αυτόματα παραγόμενη αξιολόγηση γνώσεων: παράγεται ένα σύνολο ερωτήσεων (πολλαπλής επιλογής και ανοιχτών) για την επαλήθευση των αποκτηθεισών δεξιοτήτων. Η πλατφόρμα παράγει μόνο περιεχόμενο· η διανομή στους φοιτητές είναι εκτός πεδίου.",
+      "mcq": "Ερωτήσεις πολλαπλής επιλογής",
+      "openQuestions": "Ανοιχτές ερωτήσεις"
+    },
+    "units": {
+      "modules": "ενότητες",
+      "lessons": "μαθήματα",
+      "minutes": "λεπτά",
+      "questions": "ερωτήσεις"
+    },
+    "summary": {
+      "title": "Σύνοψη ανά μονάδα",
+      "modulesPerCfu": "Ενότητες",
+      "lessonsPerModule": "Μαθήματα ανά ενότητα",
+      "lessonDuration": "Διάρκεια μαθήματος",
+      "totalLessonsPerCfu": "Σύνολο μαθημάτων",
+      "totalDurationPerCfu": "Συνολική διάρκεια",
+      "mcq": "Ερωτήσεις πολλαπλής επιλογής",
+      "openQuestions": "Ανοιχτές ερωτήσεις",
+      "totalQuestions": "Σύνολο ερωτήσεων αξιολόγησης",
+      "noAssessment": "Δεν παράγεται τελική αξιολόγηση.",
+      "minutesValue_one": "{{count}} λεπτό",
+      "minutesValue_other": "{{count}} λεπτά",
+      "hours_one": "{{count}} ώρα",
+      "hours_other": "{{count}} ώρες",
+      "hoursAndMinutes": "{{hours}}ω {{minutes}}λ"
+    }
+  },
+  "command": {
+    "placeholder": "Αναζήτηση εντολής ή σελίδας…",
+    "navigation": "Πλοήγηση",
+    "actions": "Ενέργειες",
+    "preferences": "Προτιμήσεις",
+    "openCommandPalette": "Άνοιγμα command palette",
+    "newOrganization": "Νέος οργανισμός",
+    "logout": "Αποσύνδεση",
+    "noResults": "Καμία εγγραφή",
+    "switchTheme": "Αλλαγή θέματος",
+    "switchLanguage": "Αλλαγή γλώσσας"
+  },
+  "user": {
+    "profile": "Προφίλ",
+    "menu": "Μενού χρήστη",
+    "myAvatar": "Το avatar μου"
+  },
+  "orgSwitcher": {
+    "label": "Οργανισμός",
+    "search": "Αναζήτηση οργανισμού…",
+    "noOrgs": "Κανένας οργανισμός",
+    "select": "Επιλογή οργανισμού"
+  },
+  "organizations": {
+    "title": "Οργανισμοί",
+    "subtitle": "Διαχείριση όλων των οργανισμών της πλατφόρμας",
+    "new": "Νέος οργανισμός",
+    "edit": "Επεξεργασία οργανισμού",
+    "search": "Αναζήτηση με όνομα",
+    "empty": "Κανένας οργανισμός",
+    "members": "Μέλη",
+    "openDashboard": "Apri dashboard",
+    "deleted": "Ο οργανισμός διαγράφηκε",
+    "created": "Ο οργανισμός δημιουργήθηκε",
+    "updated": "Ο οργανισμός ενημερώθηκε",
+    "fields": {
+      "logo": "Λογότυπο οργανισμού",
+      "logoHint": "PNG / JPEG / WEBP, έως 5 MB",
+      "name": "Επωνυμία",
+      "email": "Email",
+      "phone": "Τηλέφωνο",
+      "website": "Ιστότοπος",
+      "vatNumber": "ΑΦΜ",
+      "fiscalCode": "Φορολογικός κωδικός",
+      "country": "Χώρα",
+      "address": "Διεύθυνση",
+      "city": "Πόλη",
+      "province": "Επαρχία",
+      "postalCode": "ΤΚ"
+    },
+    "deleteConfirm": {
+      "title": "Διαγραφή οργανισμού;",
+      "message": "Πρόκειται να διαγράψεις τον \"{{name}}\". Η ενέργεια είναι αναστρέψιμη από τη διαχείριση."
+    }
+  },
+  "members": {
+    "title": "Μέλη",
+    "subtitle": "Δες και διαχειρίσου τα μέλη του οργανισμού",
+    "subtitleAdmin": "Εγγραφή χρηστών απευθείας ως μέλη",
+    "invite": "Πρόσκληση",
+    "invited": "Το μέλος προσκλήθηκε",
+    "removed": "Το μέλος αφαιρέθηκε",
+    "roleChanged": "Ο ρόλος ενημερώθηκε",
+    "transferConfirmed": "Ο ρόλος creator μεταφέρθηκε",
+    "enroll": "Εγγραφή χρήστη",
+    "enrollSubmit": "Εγγραφή",
+    "userPicker": "Χρήστης",
+    "rolePicker": "Ρόλος",
+    "fields": {
+      "name": "Όνομα",
+      "email": "Email",
+      "role": "Ρόλος"
+    },
+    "inviteDialog": {
+      "title": "Πρόσκληση μέλους",
+      "email": "Email",
+      "role": "Ρόλος",
+      "submit": "Δημιουργία πρόσκλησης",
+      "submitting": "Δημιουργία…",
+      "tokenLabel": "Μοιράσου αυτόν τον σύνδεσμο (ισχύει 7 ημέρες):",
+      "successTitle": "Η πρόσκληση δημιουργήθηκε"
+    },
+    "removeConfirm": {
+      "title": "Αφαίρεση μέλους;",
+      "message": "Το {{name}} θα αφαιρεθεί από τον οργανισμό."
+    },
+    "transferConfirm": {
+      "title": "Μεταφορά ρόλου creator;",
+      "message": "Θα γίνεις admin οργανισμού και ο/η {{name}} θα γίνει creator. Μόνο ο νέος creator μπορεί να ανατρέψει τη μεταφορά."
+    },
+    "actions": {
+      "permissions": "Δικαιώματα",
+      "transfer": "Μεταφορά creator",
+      "remove": "Αφαίρεση"
+    }
+  },
+  "memberPermissions": {
+    "title": "Δικαιώματα του/της {{name}}",
+    "subtitle": "Για κάθε δικαίωμα, άσε την προεπιλογή του ρόλου ή εξαναγκάσε grant/revoke για αυτό το μέλος.",
+    "default": "Προεπιλογή",
+    "grant": "Παραχώρηση",
+    "revoke": "Ανάκληση",
+    "saved": "Τα δικαιώματα του μέλους ενημερώθηκαν"
+  },
+  "users": {
+    "title": "Χρήστες",
+    "subtitle": "Διαχείριση χρηστών και admins της πλατφόρμας",
+    "new": "Νέος χρήστης",
+    "search": "Αναζήτηση με όνομα ή email",
+    "created": "Ο χρήστης δημιουργήθηκε",
+    "fields": {
+      "name": "Όνομα",
+      "email": "Email",
+      "active": "Ενεργός",
+      "platformAdmin": "Admin πλατφόρμας"
+    },
+    "createDialog": {
+      "title": "Νέος χρήστης",
+      "name": "Πλήρες όνομα",
+      "email": "Email",
+      "password": "Κωδικός (≥10 χαρ., 1 κεφαλαίο, 1 ψηφίο)",
+      "platformAdmin": "Admin πλατφόρμας",
+      "submit": "Δημιουργία",
+      "submitting": "Δημιουργία…"
+    }
+  },
+  "globalPermissions": {
+    "title": "Καθολικά δικαιώματα",
+    "subtitle": "Επεξεργάσου τα προεπιλεγμένα δικαιώματα κάθε ρόλου. Ισχύουν σε όλους τους οργανισμούς εκτός όπου υπάρχει override.",
+    "rolePicker": "Ρόλος",
+    "saved": "Τα δικαιώματα αποθηκεύτηκαν",
+    "save": "Αποθήκευση δικαιωμάτων"
+  },
+  "templates": {
+    "preview": {
+      "lessonTag": "Lezione 01",
+      "chapter": "Capitolo introduttivo",
+      "title": "Argomento principale della lezione",
+      "subtitle": "Una breve descrizione del contesto: cosa vedremo, perché è importante e quali competenze sviluppiamo.",
+      "bullet1": "Obiettivi di apprendimento e prerequisiti",
+      "bullet2": "Concetti chiave con esempi pratici",
+      "bullet3": "Esercizi guidati e materiale di riferimento",
+      "author": "Prof. Mario Rossi",
+      "role": "Cattedra di Informatica",
+      "date": "12 marzo 2026",
+      "live": "Live"
+    },
+    "slide": {
+      "title": "Πρότυπα διαφανειών",
+      "subtitle": "Δημιούργησε και επεξεργάσου πρότυπα διαφανειών για μαθήματα",
+      "new": "Νέο πρότυπο",
+      "newPage": "Νέο πρότυπο διαφάνειας",
+      "editPage": "Επεξεργασία: {{name}}",
+      "previewLive": "Ζωντανή προεπισκόπηση",
+      "previewHint": "Η προεπισκόπηση ενημερώνεται σε πραγματικό χρόνο.",
+      "deleted": "Το πρότυπο διαγράφηκε",
+      "created": "Το πρότυπο δημιουργήθηκε",
+      "updated": "Το πρότυπο ενημερώθηκε",
+      "empty": "Δεν υπάρχουν ακόμη πρότυπα"
+    },
+    "pdf": {
+      "title": "Πρότυπα PDF",
+      "subtitle": "Δημιούργησε και επεξεργάσου πρότυπα για έγγραφα PDF",
+      "new": "Νέο πρότυπο",
+      "newPage": "Νέο πρότυπο PDF",
+      "editPage": "Επεξεργασία: {{name}}",
+      "previewLive": "Ζωντανή προεπισκόπηση",
+      "previewHint": "Η προεπισκόπηση ενημερώνεται σε πραγματικό χρόνο.",
+      "deleted": "Το πρότυπο διαγράφηκε",
+      "created": "Το πρότυπο δημιουργήθηκε",
+      "updated": "Το πρότυπο ενημερώθηκε",
+      "empty": "Δεν υπάρχουν ακόμη πρότυπα"
+    },
+    "fields": {
+      "name": "Όνομα προτύπου",
+      "size": "Μορφή διαφάνειας",
+      "pageSize": "Μορφή σελίδας",
+      "font": "Γραμματοσειρά",
+      "textColor": "Χρώμα κειμένου",
+      "primaryColor": "Πρωτεύον χρώμα",
+      "secondaryColor": "Δευτερεύον χρώμα",
+      "background": "Εικόνα φόντου",
+      "logoLeft": "Λογότυπο πάνω αριστερά",
+      "logoRight": "Λογότυπο πάνω δεξιά",
+      "headerHeight": "Ύψος κεφαλίδας (mm)",
+      "footerHeight": "Ύψος υποσέλιδου (mm)",
+      "margin": "Περιθώριο σελίδας (mm)",
+      "backgroundOpacity": "Opacità sfondo (%)"
+    },
+    "deleteConfirm": {
+      "title": "Διαγραφή προτύπου;",
+      "message": "Πρόκειται να διαγράψεις το \"{{name}}\"."
+    },
+    "default": "Default",
+    "setDefault": "Imposta come default",
+    "defaultSet": "Template impostato come default"
+  },
+  "myAvatar": {
+    "title": "Il mio avatar",
+    "subtitle": "Carica una foto frontale e un audio. Da questi verranno generati automaticamente dei clip video.",
+    "tabs": {
+      "image": "Immagine",
+      "audio": "Audio",
+      "next": "Avanti",
+      "back": "Indietro"
+    },
+    "create": "Crea avatar",
+    "unsavedChanges": "Modifiche non salvate",
+    "statusReady": "Avatar attivo",
+    "statusSummary": "{{ready}}/{{total}} clip pronte · {{failed}} errori",
+    "playAudio": "Ascolta audio",
+    "clipsCount_one": "{{count}} clip in totale",
+    "clipsCount_other": "{{count}} clip in totale",
+    "image": "Foto frontale",
+    "imageHint": "PNG / JPEG / WEBP. L'immagine verrà ritagliata in formato quadrato (1:1).",
+    "imageEmpty": "Nessuna immagine",
+    "recrop": "Ritaglia di nuovo",
+    "cropTitle": "Ritaglia l'immagine",
+    "cropHint": "Trascina e ridimensiona l'area di selezione. Il rapporto è fissato a 1:1.",
+    "cropConfirm": "Applica ritaglio",
+    "slidePreviewTitle": "Anteprima nella slide",
+    "slidePreviewHint": "Esempio di come l'avatar apparirà in basso a destra in un template slide.",
+    "audio": "Audio personale",
+    "audioHint": "Leggi ad alta voce il testo qui sopra. La registrazione servirà ad addestrare un modello vocale fedele alla tua voce.",
+    "audioUpload": "Carica file",
+    "audioRecord": "Registra adesso",
+    "recordStart": "Avvia registrazione",
+    "recordStop": "Stop",
+    "audioLang": "Lingua audio",
+    "scriptTitle": "Testo da leggere",
+    "scriptHint": "Leggi questo testo a voce naturale durante la registrazione. Più la lettura è chiara e rilassata, migliore sarà il modello vocale.",
+    "scriptFallback": "Per la lingua selezionata non è ancora configurato un testo specifico: viene mostrato quello in {{lang}}.",
+    "scriptMissing": "Nessun testo da leggere è configurato per questa lingua. Contatta un amministratore.",
+    "saveWarn": "Modificare l'immagine rigenererà tutti i clip.",
+    "regenerate": "Rigenera clip",
+    "regenerated": "Generazione clip riavviata",
+    "clipsTitle": "Clip generate",
+    "clipsEmpty": "Nessun clip configurato. Definisci almeno un prompt nella sezione admin Configurazioni → Avatar.",
+    "clipPending": "In attesa…",
+    "clipProcessing": "Generazione…",
+    "clipReady": "Pronto",
+    "clipFailed": "Errore",
+    "allReady": "Tutti pronti",
+    "allFailed": "Tutti falliti",
+    "partial": "Parziale",
+    "pending": "In attesa",
+    "processing": "Generazione",
+    "saved": "Avatar salvato",
+    "deleted": "Avatar eliminato",
+    "deleteConfirm": {
+      "title": "Eliminare l'avatar?",
+      "message": "Verranno eliminati immagine, audio e tutti i clip generati."
+    }
+  },
+  "avatarConfig": {
+    "title": "Configurazioni — Avatar",
+    "subtitle": "Gestisci i prompt video per la generazione dei clip MiniMax e i testi di trascrizione che gli utenti leggeranno per la registrazione vocale.",
+    "tabs": {
+      "prompts": "Prompt video",
+      "scripts": "Lingue trascrizione"
+    },
+    "addPrompt": "Aggiungi prompt",
+    "empty": "Nessun prompt configurato. Aggiungine almeno uno per abilitare la generazione clip.",
+    "fields": {
+      "label": "Etichetta",
+      "labelPlaceholder": "Es. \"Cenno di pensiero\"",
+      "prompt": "Prompt MiniMax (inglese, max 2000 caratteri)",
+      "active": "Attivo"
+    },
+    "moveUp": "Sposta su",
+    "moveDown": "Sposta giù",
+    "unsavedHint": "Modifiche non salvate — fai blur del campo per salvare.",
+    "count_one": "{{count}} clip configurato",
+    "count_other": "{{count}} clip configurati",
+    "created": "Prompt creato",
+    "updated": "Prompt aggiornato",
+    "deleted": "Prompt eliminato",
+    "deleteConfirm": {
+      "title": "Eliminare il prompt?",
+      "message": "Il prompt \"{{name}}\" sarà rimosso dalla configurazione."
+    },
+    "voiceScript": {
+      "title": "Testo da leggere durante la registrazione",
+      "subtitle": "Per ogni lingua, definisci il testo che l'utente vedrà e dovrà leggere ad alta voce mentre registra l'audio. Serve a ottenere un campione vocale standardizzato per il voice cloning.",
+      "empty": "Nessun testo configurato. Aggiungine almeno uno per la lingua di default.",
+      "add": "Aggiungi testo per una lingua",
+      "selectLang": "Seleziona lingua",
+      "placeholder": "Buongiorno, mi presento e leggo questo breve testo…",
+      "text": "Testo",
+      "saved": "Testo salvato",
+      "deleted": "Testo eliminato",
+      "deleteConfirm": {
+        "title": "Eliminare il testo?",
+        "message": "Verrà rimosso il testo da leggere per la lingua {{lang}}."
+      }
+    }
+  },
+  "permissions": {
+    "member:view": "Προβολή μελών",
+    "member:invite": "Πρόσκληση χρηστών",
+    "member:assign_role": "Ανάθεση ρόλων",
+    "member:remove": "Αφαίρεση μελών",
+    "template:slide:manage": "Διαχείριση προτύπων διαφανειών",
+    "template:pdf:manage": "Διαχείριση προτύπων PDF",
+    "permission:manage": "Διαχείριση δικαιωμάτων",
+    "org:transfer_creator": "Μεταφορά ρόλου creator",
+    "org:update": "Επεξεργασία οργανισμού",
+    "course_config:manage": "Gestisci parametri corsi"
+  },
+  "permissionDescriptions": {
+    "member:view": "Vedere l'elenco dei membri dell'organizzazione con nome, email, ruolo e data di iscrizione. Prerequisito per quasi tutte le altre azioni sui membri.",
+    "member:invite": "Creare inviti via email per nuovi membri scegliendo il ruolo iniziale. Ogni invito è un link monouso con scadenza a 7 giorni.",
+    "member:assign_role": "Cambiare il ruolo di un membro esistente, ma solo fino al proprio livello di rank: un Org Admin non può promuovere a Creator né modificare un membro di rango superiore.",
+    "member:remove": "Rimuovere un membro dall'organizzazione. Il Creator non è rimovibile direttamente: va prima trasferito ad un altro membro.",
+    "template:slide:manage": "Creare, modificare, eliminare e scegliere come default i template per le slide dei corsi (formato 16:9 / 4:3, colori, font, logo, immagine di sfondo).",
+    "template:pdf:manage": "Creare, modificare, eliminare e scegliere come default i template per i documenti PDF (formato A4/Letter, header/footer/margini in mm, colori, logo, sfondo).",
+    "permission:manage": "Modificare i permessi dell'organizzazione: override per ruolo (es. concedere a tutti i Manager un permesso non default) e override per singolo membro (concedi/revoca puntuale).",
+    "org:transfer_creator": "Trasferire il ruolo di Creator a un altro membro. Chi era Creator diventa Org Admin. Azione riservata al Creator e irreversibile senza un nuovo trasferimento.",
+    "org:update": "Modificare i dati anagrafici dell'organizzazione: nome, partita IVA, codice fiscale, indirizzo, contatti, logo.",
+    "course_config:manage": "Configurare i parametri di default per la generazione dei corsi: numero di moduli per CFU, lezioni per modulo, durata delle lezioni e attivazione della verifica di apprendimento finale (con il numero di domande a scelta multipla e aperte da generare). Questi valori vengono usati per pre-popolare la struttura di un nuovo corso."
+  },
+  "roles": {
+    "creator": "Δημιουργός",
+    "org_admin": "Διαχειριστής οργανισμού",
+    "manager": "Manager",
+    "member": "Μέλος"
+  },
+  "errors": {
+    "generic": "Παρουσιάστηκε σφάλμα",
+    "loadingFailed": "Η φόρτωση απέτυχε",
+    "saveFailed": "Η αποθήκευση απέτυχε"
+  },
+  "i18n": {
+    "title": "Gestione lingue",
+    "subtitle": "Crea, modifica e cancella le lingue e le traduzioni della piattaforma",
+    "new": "Nuova lingua",
+    "edit": "Modifica lingua",
+    "editTranslations": "Modifica traduzioni",
+    "fields": {
+      "code": "Codice",
+      "codeHint": "ISO 639-1 (es. it, en) o regionale (es. pt-BR)",
+      "nameNative": "Nome nativo",
+      "flagCountry": "Bandiera (codice paese ISO, es. IT)",
+      "rtl": "Right-to-left",
+      "active": "Attiva",
+      "default": "Default",
+      "copyFrom": "Copia traduzioni da"
+    },
+    "stats": {
+      "translations_one": "{{count}} traduzione",
+      "translations_other": "{{count}} traduzioni"
+    },
+    "created": "Lingua creata",
+    "updated": "Lingua aggiornata",
+    "deleted": "Lingua eliminata",
+    "translationsSaved": "Traduzioni salvate ({{count}})",
+    "deleteConfirm": {
+      "title": "Eliminare la lingua?",
+      "message": "Stai per eliminare \"{{name}}\" e tutte le sue traduzioni."
+    },
+    "editor": {
+      "title": "Traduzioni — {{name}}",
+      "search": "Cerca chiave o valore",
+      "empty": "Nessuna traduzione",
+      "save": "Salva traduzioni",
+      "reference": "Riferimento {{lang}}",
+      "modifiedCount_one": "{{count}} chiave modificata",
+      "modifiedCount_other": "{{count}} chiavi modificate",
+      "noChanges": "Nessuna modifica"
+    }
+  },
+  "dashboard": {
+    "admin": {
+      "title": "Πίνακας διαχείρισης",
+      "subtitle": "Καθολική διαχείριση της πλατφόρμας a4u"
+    },
+    "org": {
+      "subtitle": "Ρόλος: {{role}}",
+      "platformAdmin": "Admin piattaforma"
+    },
+    "noOrg": {
+      "title": "Καλώς ήρθες",
+      "message": "Δεν είσαι ακόμη μέλος κανενός οργανισμού. Περίμενε πρόσκληση ή επικοινώνησε με διαχειριστή."
+    }
+  }
+}

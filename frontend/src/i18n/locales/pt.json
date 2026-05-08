@@ -1,0 +1,386 @@
+{
+  "app": { "name": "a4u", "tagline": "Plataforma de cursos universitários" },
+  "common": {
+    "save": "Guardar", "cancel": "Cancelar", "delete": "Eliminar", "edit": "Editar",
+    "add": "Adicionar", "loading": "A carregar…", "saving": "A guardar…",
+    "creating": "A criar…", "remove": "Remover", "confirm": "Confirmar",
+    "close": "Fechar", "search": "Procurar", "back": "Voltar", "next": "Seguinte",
+    "actions": "Ações", "of": "de", "noResults": "Sem resultados",
+    "copy": "Copiar", "copied": "Copiado!", "yes": "Sim", "no": "Não", "all": "Todos",
+    "optional": "opcional", "required": "obrigatório",
+    "moreInfo": "Mais informações"
+  },
+  "auth": {
+    "login": {
+      "title": "Bem-vindo de volta", "subtitle": "Inicie sessão na sua área a4u",
+      "email": "E-mail", "password": "Palavra-passe",
+      "submit": "Iniciar sessão", "submitting": "A iniciar sessão…"
+    },
+    "logout": "Terminar sessão",
+    "invitation": {
+      "title": "Aceitar convite",
+      "subtitle": "Foi convidado para {{org}} como {{role}}",
+      "fullName": "Nome completo",
+      "passwordHint": "Mín. 10 caracteres, uma maiúscula, um dígito",
+      "submit": "Aceitar convite", "submitting": "A confirmar…",
+      "alreadyRegistered": "Já está registado. Clique em \"Aceitar\" para se adicionar.",
+      "invalidOrExpired": "O convite não é válido, expirou ou já foi utilizado."
+    }
+  },
+  "theme": { "label": "Tema", "light": "Claro", "dark": "Escuro", "system": "Sistema" },
+  "language": { "label": "Idioma" },
+  "nav": {
+    "platform": "Plataforma", "organization": "Organização",
+    "configurazioni": "Configurações", "personal": "Pessoal",
+    "dashboard": "Painel", "organizations": "Organizações",
+    "users": "Utilizadores", "permissions": "Permissões globais", "i18n": "Idiomas",
+    "members": "Membros", "templatesSlide": "Modelos de slide",
+    "templatesPdf": "Modelos PDF", "avatarConfig": "Avatar",
+    "courseSettings": "Parâmetros de curso"
+  },
+  "courseSettings": {
+    "title": "Parâmetros de curso",
+    "subtitle": "Valores predefinidos utilizados para gerar a estrutura de um novo curso nesta organização.",
+    "dirtyBanner": "Alterações não guardadas",
+    "saved": "Parâmetros guardados",
+    "sections": {
+      "structure": {
+        "title": "Estrutura do curso",
+        "subtitle": "Quantos módulos e lições são gerados por crédito."
+      },
+      "duration": {
+        "title": "Duração das lições",
+        "subtitle": "Duração padrão de cada lição do curso."
+      },
+      "assessment": {
+        "subtitle": "A última lição de cada módulo é uma avaliação gerada automaticamente.",
+        "disabledHint": "Não é gerada avaliação final. Cada módulo termina com a sua última lição regular."
+      }
+    },
+    "fields": {
+      "modulesPerCfu": "Módulos por crédito",
+      "lessonsPerModule": "Lições por módulo",
+      "lessonDuration": "Duração da lição",
+      "assessment": "Avaliação final de aprendizagem",
+      "assessmentHelp": "Se ativo, a última lição de cada módulo é uma avaliação gerada automaticamente: é produzida uma série de perguntas (de escolha múltipla e abertas) para verificar as competências adquiridas. A plataforma apenas gera os conteúdos, não gere a fruição pelos estudantes.",
+      "mcq": "Perguntas de escolha múltipla",
+      "openQuestions": "Perguntas abertas"
+    },
+    "units": {
+      "modules": "módulos",
+      "lessons": "lições",
+      "minutes": "minutos",
+      "questions": "perguntas"
+    },
+    "summary": {
+      "title": "Resumo por crédito",
+      "modulesPerCfu": "Módulos",
+      "lessonsPerModule": "Lições por módulo",
+      "lessonDuration": "Duração lição",
+      "totalLessonsPerCfu": "Total de lições",
+      "totalDurationPerCfu": "Duração total",
+      "mcq": "Perguntas de escolha múltipla",
+      "openQuestions": "Perguntas abertas",
+      "totalQuestions": "Total de perguntas por avaliação",
+      "noAssessment": "Nenhuma avaliação final gerada.",
+      "minutesValue_one": "{{count}} minuto",
+      "minutesValue_other": "{{count}} minutos",
+      "hours_one": "{{count}} hora",
+      "hours_other": "{{count}} horas",
+      "hoursAndMinutes": "{{hours}}h {{minutes}}m"
+    }
+  },
+  "command": {
+    "placeholder": "Procurar um comando ou página…",
+    "navigation": "Navegação", "actions": "Ações", "preferences": "Preferências",
+    "openCommandPalette": "Abrir paleta de comandos",
+    "newOrganization": "Nova organização",
+    "logout": "Terminar sessão", "noResults": "Sem resultados",
+    "switchTheme": "Mudar tema", "switchLanguage": "Mudar idioma"
+  },
+  "user": { "profile": "Perfil", "menu": "Menu do utilizador", "myAvatar": "O meu avatar" },
+  "orgSwitcher": {
+    "label": "Organização", "search": "Procurar organização…",
+    "noOrgs": "Sem organização", "select": "Selecionar organização"
+  },
+  "organizations": {
+    "title": "Organizações",
+    "subtitle": "Faça a gestão de todas as organizações da plataforma",
+    "new": "Nova organização", "edit": "Editar organização",
+    "search": "Procurar por nome", "empty": "Sem organizações",
+    "members": "Membros", "openDashboard": "Abrir painel",
+    "deleted": "Organização eliminada",
+    "created": "Organização criada", "updated": "Organização atualizada",
+    "fields": {
+      "logo": "Logótipo da organização",
+      "logoHint": "PNG / JPEG / WEBP, máx 5 MB",
+      "name": "Denominação", "email": "E-mail", "phone": "Telefone",
+      "website": "Website", "vatNumber": "NIF",
+      "fiscalCode": "Código fiscal", "country": "País",
+      "address": "Morada", "city": "Cidade",
+      "province": "Distrito", "postalCode": "Código postal"
+    },
+    "deleteConfirm": {
+      "title": "Eliminar a organização?",
+      "message": "Está prestes a eliminar \"{{name}}\". A ação é reversível pelo lado da administração."
+    }
+  },
+  "members": {
+    "title": "Membros",
+    "subtitle": "Veja e faça a gestão dos membros da organização",
+    "subtitleAdmin": "Inscreva utilizadores diretamente como membros",
+    "invite": "Convidar", "invited": "Membro convidado",
+    "removed": "Membro removido", "roleChanged": "Função atualizada",
+    "transferConfirmed": "Função de criador transferida",
+    "enroll": "Inscrever utilizador", "enrollSubmit": "Inscrever",
+    "userPicker": "Utilizador", "rolePicker": "Função",
+    "fields": { "name": "Nome", "email": "E-mail", "role": "Função" },
+    "inviteDialog": {
+      "title": "Convidar um membro", "email": "E-mail", "role": "Função",
+      "submit": "Criar convite", "submitting": "A criar…",
+      "tokenLabel": "Partilhe esta hiperligação (válida 7 dias):",
+      "successTitle": "Convite criado"
+    },
+    "removeConfirm": {
+      "title": "Remover o membro?",
+      "message": "{{name}} será removido da organização."
+    },
+    "transferConfirm": {
+      "title": "Transferir a função de criador?",
+      "message": "Tornar-se-á admin da organização e {{name}} tornar-se-á criador. Apenas o novo criador pode reverter."
+    },
+    "actions": { "permissions": "Permissões", "transfer": "Transferir criador", "remove": "Remover" }
+  },
+  "memberPermissions": {
+    "title": "Permissões de {{name}}",
+    "subtitle": "Para cada permissão, deixe o valor predefinido da função ou force uma concessão/revogação específica para este membro.",
+    "default": "Predefinido", "grant": "Conceder", "revoke": "Revogar",
+    "saved": "Permissões do membro atualizadas"
+  },
+  "users": {
+    "title": "Utilizadores", "subtitle": "Gerir utilizadores e admins de plataforma",
+    "new": "Novo utilizador", "search": "Procurar por nome ou e-mail",
+    "created": "Utilizador criado",
+    "fields": { "name": "Nome", "email": "E-mail", "active": "Ativo", "platformAdmin": "Admin plataforma" },
+    "createDialog": {
+      "title": "Novo utilizador", "name": "Nome completo", "email": "E-mail",
+      "password": "Palavra-passe (≥10 caracteres, uma maiúscula, um dígito)",
+      "platformAdmin": "Admin plataforma",
+      "submit": "Criar", "submitting": "A criar…"
+    }
+  },
+  "globalPermissions": {
+    "title": "Permissões globais",
+    "subtitle": "Edite as permissões predefinidas para cada função. Aplicam-se a todas as organizações exceto as que têm override explícito.",
+    "rolePicker": "Função", "saved": "Permissões guardadas", "save": "Guardar permissões"
+  },
+  "templates": {
+    "preview": {
+      "lessonTag": "Lição 01",
+      "chapter": "Capítulo introdutório",
+      "title": "Tópico principal da lição",
+      "subtitle": "Uma breve descrição do contexto: o que veremos, porque é importante e que competências desenvolvemos.",
+      "bullet1": "Objetivos de aprendizagem e pré-requisitos",
+      "bullet2": "Conceitos-chave com exemplos práticos",
+      "bullet3": "Exercícios guiados e material de referência",
+      "author": "Prof. Mario Rossi",
+      "role": "Cátedra de Informática",
+      "date": "12 de março de 2026",
+      "live": "Em direto"
+    },
+    "slide": {
+      "title": "Modelos de slide",
+      "subtitle": "Crie e edite os modelos para os slides dos cursos",
+      "new": "Novo modelo", "newPage": "Novo modelo de slide",
+      "editPage": "Editar: {{name}}", "previewLive": "Pré-visualização em direto",
+      "previewHint": "A pré-visualização atualiza-se em tempo real durante a edição.",
+      "deleted": "Modelo eliminado", "created": "Modelo criado",
+      "updated": "Modelo atualizado", "empty": "Ainda sem modelos"
+    },
+    "pdf": {
+      "title": "Modelos PDF",
+      "subtitle": "Crie e edite os modelos para os documentos PDF",
+      "new": "Novo modelo", "newPage": "Novo modelo PDF",
+      "editPage": "Editar: {{name}}", "previewLive": "Pré-visualização em direto",
+      "previewHint": "A pré-visualização atualiza-se em tempo real durante a edição.",
+      "deleted": "Modelo eliminado", "created": "Modelo criado",
+      "updated": "Modelo atualizado", "empty": "Ainda sem modelos"
+    },
+    "fields": {
+      "name": "Nome do modelo", "size": "Formato slide", "pageSize": "Tamanho da página",
+      "font": "Tipo de letra", "textColor": "Cor do texto",
+      "primaryColor": "Cor primária", "secondaryColor": "Cor secundária",
+      "background": "Imagem de fundo", "logoLeft": "Logo em cima à esquerda",
+      "logoRight": "Logo em cima à direita",
+      "headerHeight": "Altura cabeçalho (mm)", "footerHeight": "Altura rodapé (mm)",
+      "margin": "Margem da página (mm)",
+      "backgroundOpacity": "Opacidade do fundo (%)"
+    },
+    "deleteConfirm": {
+      "title": "Eliminar o modelo?",
+      "message": "Está prestes a eliminar \"{{name}}\"."
+    },
+    "default": "Predefinido",
+    "setDefault": "Definir como predefinido",
+    "defaultSet": "Modelo definido como predefinido"
+  },
+  "myAvatar": {
+    "title": "O meu avatar",
+    "subtitle": "Carregue uma foto frontal e um áudio. A partir destes serão gerados automaticamente clips de vídeo.",
+    "tabs": { "image": "Imagem", "audio": "Áudio", "next": "Seguinte", "back": "Voltar" },
+    "create": "Criar avatar",
+    "unsavedChanges": "Alterações não guardadas",
+    "statusReady": "Avatar ativo",
+    "statusSummary": "{{ready}}/{{total}} clips prontos · {{failed}} erros",
+    "playAudio": "Ouvir áudio",
+    "clipsCount_one": "{{count}} clip no total",
+    "clipsCount_other": "{{count}} clips no total",
+    "image": "Foto frontal",
+    "imageHint": "PNG / JPEG / WEBP. A imagem será recortada em formato quadrado (1:1).",
+    "imageEmpty": "Sem imagem",
+    "recrop": "Recortar novamente",
+    "cropTitle": "Recortar a imagem",
+    "cropHint": "Arraste e redimensione a área de seleção. A proporção está fixada em 1:1.",
+    "cropConfirm": "Aplicar recorte",
+    "slidePreviewTitle": "Pré-visualização no slide",
+    "slidePreviewHint": "Exemplo de como o avatar aparecerá em baixo à direita num modelo de slide.",
+    "audio": "Áudio pessoal",
+    "audioHint": "Leia o texto acima em voz alta. A gravação servirá para treinar um modelo de voz fiel à sua.",
+    "audioUpload": "Carregar ficheiro",
+    "audioRecord": "Gravar agora",
+    "recordStart": "Iniciar gravação",
+    "recordStop": "Parar",
+    "audioLang": "Idioma do áudio",
+    "scriptTitle": "Texto a ler",
+    "scriptHint": "Leia este texto com voz natural durante a gravação. Quanto mais clara e relaxada for a leitura, melhor será o modelo vocal.",
+    "scriptFallback": "Para o idioma selecionado ainda não há um texto específico configurado: é mostrado o de {{lang}}.",
+    "scriptMissing": "Não há texto configurado para este idioma. Contacte um administrador.",
+    "saveWarn": "Alterar a imagem irá regenerar todos os clips.",
+    "regenerate": "Regenerar clips",
+    "regenerated": "Geração de clips reiniciada",
+    "clipsTitle": "Clips gerados",
+    "clipsEmpty": "Nenhum clip configurado. Defina pelo menos um prompt na secção admin Configurações → Avatar.",
+    "clipPending": "Em espera…",
+    "clipProcessing": "A gerar…",
+    "clipReady": "Pronto",
+    "clipFailed": "Erro",
+    "allReady": "Todos prontos",
+    "allFailed": "Todos falharam",
+    "partial": "Parcial",
+    "pending": "Em espera",
+    "processing": "A gerar",
+    "saved": "Avatar guardado",
+    "deleted": "Avatar eliminado",
+    "deleteConfirm": {
+      "title": "Eliminar o avatar?",
+      "message": "Serão eliminados imagem, áudio e todos os clips gerados."
+    }
+  },
+  "avatarConfig": {
+    "title": "Configurações — Avatar",
+    "subtitle": "Faça a gestão dos prompts de vídeo para a geração de clips MiniMax e dos textos de transcrição que os utilizadores lerão para a gravação de voz.",
+    "tabs": { "prompts": "Prompts de vídeo", "scripts": "Idiomas de transcrição" },
+    "addPrompt": "Adicionar prompt",
+    "empty": "Nenhum prompt configurado. Adicione pelo menos um para ativar a geração de clips.",
+    "fields": {
+      "label": "Etiqueta",
+      "labelPlaceholder": "Ex. \"Aceno pensativo\"",
+      "prompt": "Prompt MiniMax (inglês, máx 2000 caracteres)",
+      "active": "Ativo"
+    },
+    "moveUp": "Mover para cima",
+    "moveDown": "Mover para baixo",
+    "unsavedHint": "Alterações não guardadas — saia do campo para guardar.",
+    "count_one": "{{count}} clip configurado",
+    "count_other": "{{count}} clips configurados",
+    "created": "Prompt criado",
+    "updated": "Prompt atualizado",
+    "deleted": "Prompt eliminado",
+    "deleteConfirm": {
+      "title": "Eliminar o prompt?",
+      "message": "O prompt \"{{name}}\" será removido da configuração."
+    },
+    "voiceScript": {
+      "title": "Texto a ler durante a gravação",
+      "subtitle": "Para cada idioma, defina o texto que o utilizador verá e deverá ler em voz alta enquanto grava o áudio. Serve para obter uma amostra vocal padronizada para clonagem de voz.",
+      "empty": "Nenhum texto configurado. Adicione pelo menos um para o idioma predefinido.",
+      "add": "Adicionar texto para um idioma",
+      "selectLang": "Selecionar idioma",
+      "placeholder": "Bom dia, apresento-me e leio este breve texto…",
+      "text": "Texto",
+      "saved": "Texto guardado",
+      "deleted": "Texto eliminado",
+      "deleteConfirm": {
+        "title": "Eliminar o texto?",
+        "message": "Será removido o texto a ler para o idioma {{lang}}."
+      }
+    }
+  },
+  "permissions": {
+    "member:view": "Ver membros", "member:invite": "Convidar utilizadores",
+    "member:assign_role": "Atribuir funções", "member:remove": "Remover membros",
+    "template:slide:manage": "Gerir modelos de slide",
+    "template:pdf:manage": "Gerir modelos PDF",
+    "permission:manage": "Gerir permissões",
+    "org:transfer_creator": "Transferir função de criador", "org:update": "Editar organização",
+    "course_config:manage": "Gerir parâmetros de curso"
+  },
+  "permissionDescriptions": {
+    "member:view": "Ver a lista de membros da organização com nome, e-mail, função e data de inscrição. Pré-requisito para quase todas as outras ações sobre membros.",
+    "member:invite": "Criar convites por e-mail para novos membros escolhendo a função inicial. Cada convite é uma hiperligação de uso único com expiração de 7 dias.",
+    "member:assign_role": "Mudar a função de um membro existente, mas apenas até ao próprio nível: um Org Admin não pode promover a Criador nem alterar um membro de nível superior.",
+    "member:remove": "Remover um membro da organização. O Criador não pode ser removido diretamente: a função tem de ser primeiro transferida.",
+    "template:slide:manage": "Criar, editar, eliminar e escolher como predefinidos os modelos de slide do curso (formato 16:9 / 4:3, cores, tipo de letra, logo, imagem de fundo).",
+    "template:pdf:manage": "Criar, editar, eliminar e escolher como predefinidos os modelos para documentos PDF (formato A4/Letter, cabeçalho/rodapé/margens em mm, cores, logo, fundo).",
+    "permission:manage": "Modificar as permissões da organização: override por função (p. ex. conceder a todos os Managers uma permissão não predefinida) e override por membro (concessão/revogação pontual).",
+    "org:transfer_creator": "Transferir a função de Criador para outro membro. Quem era Criador passa a Org Admin. Ação reservada ao Criador e irreversível sem nova transferência.",
+    "org:update": "Modificar os dados da organização: nome, NIF, código fiscal, morada, contactos, logo.",
+    "course_config:manage": "Configurar os parâmetros predefinidos para a geração dos cursos: número de módulos por crédito, lições por módulo, duração das lições e ativação da avaliação final de aprendizagem (com o número de perguntas de escolha múltipla e abertas a gerar). Estes valores são usados para pré-preencher a estrutura de um novo curso."
+  },
+  "roles": {
+    "creator": "Criador", "org_admin": "Admin de organização",
+    "manager": "Manager", "member": "Membro"
+  },
+  "errors": { "generic": "Ocorreu um erro", "loadingFailed": "Falha no carregamento", "saveFailed": "Falha ao guardar" },
+  "i18n": {
+    "title": "Gestão de idiomas",
+    "subtitle": "Crie, edite e elimine os idiomas e traduções da plataforma",
+    "new": "Novo idioma",
+    "edit": "Editar idioma",
+    "editTranslations": "Editar traduções",
+    "fields": {
+      "code": "Código",
+      "codeHint": "ISO 639-1 (p. ex. it, en) ou regional (p. ex. pt-BR)",
+      "nameNative": "Nome nativo",
+      "flagCountry": "Bandeira (código país ISO, p. ex. IT)",
+      "rtl": "Right-to-left",
+      "active": "Ativo",
+      "default": "Predefinido",
+      "copyFrom": "Copiar traduções de"
+    },
+    "stats": { "translations_one": "{{count}} tradução", "translations_other": "{{count}} traduções" },
+    "created": "Idioma criado",
+    "updated": "Idioma atualizado",
+    "deleted": "Idioma eliminado",
+    "translationsSaved": "Traduções guardadas ({{count}})",
+    "deleteConfirm": {
+      "title": "Eliminar o idioma?",
+      "message": "Está prestes a eliminar \"{{name}}\" e todas as suas traduções."
+    },
+    "editor": {
+      "title": "Traduções — {{name}}",
+      "search": "Procurar chave ou valor",
+      "empty": "Sem traduções",
+      "save": "Guardar traduções",
+      "reference": "Referência {{lang}}",
+      "modifiedCount_one": "{{count}} chave modificada",
+      "modifiedCount_other": "{{count}} chaves modificadas",
+      "noChanges": "Sem alterações"
+    }
+  },
+  "dashboard": {
+    "admin": { "title": "Painel de administração", "subtitle": "Gestão global da plataforma a4u" },
+    "org": { "subtitle": "Função: {{role}}", "platformAdmin": "Admin plataforma" },
+    "noOrg": { "title": "Bem-vindo", "message": "Ainda não é membro de nenhuma organização. Aguarde um convite ou contacte um administrador." }
+  }
+}

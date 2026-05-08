@@ -1,0 +1,516 @@
+{
+  "app": {
+    "name": "a4u",
+    "tagline": "Plattform för universitetskurser"
+  },
+  "common": {
+    "save": "Spara",
+    "cancel": "Avbryt",
+    "delete": "Ta bort",
+    "edit": "Redigera",
+    "add": "Lägg till",
+    "loading": "Laddar…",
+    "saving": "Sparar…",
+    "creating": "Skapar…",
+    "remove": "Ta bort",
+    "confirm": "Bekräfta",
+    "close": "Stäng",
+    "search": "Sök",
+    "back": "Tillbaka",
+    "next": "Nästa",
+    "actions": "Åtgärder",
+    "of": "av",
+    "noResults": "Inga resultat",
+    "copy": "Kopiera",
+    "copied": "Kopierat!",
+    "yes": "Ja",
+    "no": "Nej",
+    "all": "Alla",
+    "optional": "valfri",
+    "required": "obligatorisk",
+    "moreInfo": "Mer information"
+  },
+  "auth": {
+    "login": {
+      "title": "Välkommen tillbaka",
+      "subtitle": "Logga in på din a4u-arbetsyta",
+      "email": "E-post",
+      "password": "Lösenord",
+      "submit": "Logga in",
+      "submitting": "Loggar in…"
+    },
+    "logout": "Logga ut",
+    "invitation": {
+      "title": "Acceptera inbjudan",
+      "subtitle": "Du har bjudits in till {{org}} som {{role}}",
+      "fullName": "Fullständigt namn",
+      "passwordHint": "Min. 10 tecken, en versal, en siffra",
+      "submit": "Acceptera inbjudan",
+      "submitting": "Bekräftar…",
+      "alreadyRegistered": "Du är redan registrerad. Klicka \"Acceptera\" för att läggas till.",
+      "invalidOrExpired": "Inbjudan är ogiltig, har gått ut eller redan använts."
+    }
+  },
+  "theme": {
+    "label": "Tema",
+    "light": "Ljust",
+    "dark": "Mörkt",
+    "system": "System"
+  },
+  "language": {
+    "label": "Språk"
+  },
+  "nav": {
+    "platform": "Plattform",
+    "organization": "Organisation",
+    "configurazioni": "Konfiguration",
+    "personal": "Personligt",
+    "dashboard": "Dashboard",
+    "organizations": "Organisationer",
+    "users": "Användare",
+    "permissions": "Globala behörigheter",
+    "i18n": "Språk",
+    "members": "Medlemmar",
+    "templatesSlide": "Bildmallar",
+    "templatesPdf": "PDF-mallar",
+    "avatarConfig": "Avatar",
+    "courseSettings": "Kursparametrar"
+  },
+  "courseSettings": {
+    "title": "Kursparametrar",
+    "subtitle": "Standardvärden som används för att generera strukturen för en ny kurs i denna organisation.",
+    "dirtyBanner": "Osparade ändringar",
+    "saved": "Parametrar sparade",
+    "sections": {
+      "structure": {
+        "title": "Kursstruktur",
+        "subtitle": "Hur många moduler och lektioner som genereras per poäng."
+      },
+      "duration": {
+        "title": "Lektionernas längd",
+        "subtitle": "Standardlängd för varje kurslektion."
+      },
+      "assessment": {
+        "subtitle": "Den sista lektionen i varje modul är en automatiskt genererad kunskapskontroll.",
+        "disabledHint": "Ingen slutbedömning genereras. Varje modul avslutas med sin ordinarie sista lektion."
+      }
+    },
+    "fields": {
+      "modulesPerCfu": "Moduler per poäng",
+      "lessonsPerModule": "Lektioner per modul",
+      "lessonDuration": "Lektionslängd",
+      "assessment": "Avslutande kunskapskontroll",
+      "assessmentHelp": "Om aktiverat är sista lektionen i varje modul en automatiskt genererad kunskapskontroll: en uppsättning frågor (flerval och öppna) genereras för att verifiera förvärvade kompetenser. Plattformen genererar endast innehåll; leverans till studenter ligger utanför omfattningen.",
+      "mcq": "Flervalsfrågor",
+      "openQuestions": "Öppna frågor"
+    },
+    "units": {
+      "modules": "moduler",
+      "lessons": "lektioner",
+      "minutes": "minuter",
+      "questions": "frågor"
+    },
+    "summary": {
+      "title": "Sammanfattning per poäng",
+      "modulesPerCfu": "Moduler",
+      "lessonsPerModule": "Lektioner per modul",
+      "lessonDuration": "Lektionslängd",
+      "totalLessonsPerCfu": "Totalt antal lektioner",
+      "totalDurationPerCfu": "Total tid",
+      "mcq": "Flervalsfrågor",
+      "openQuestions": "Öppna frågor",
+      "totalQuestions": "Totalt antal bedömningsfrågor",
+      "noAssessment": "Ingen slutbedömning genererad.",
+      "minutesValue_one": "{{count}} minut",
+      "minutesValue_other": "{{count}} minuter",
+      "hours_one": "{{count}} timme",
+      "hours_other": "{{count}} timmar",
+      "hoursAndMinutes": "{{hours}}h {{minutes}}m"
+    }
+  },
+  "command": {
+    "placeholder": "Sök kommando eller sida…",
+    "navigation": "Navigation",
+    "actions": "Åtgärder",
+    "preferences": "Inställningar",
+    "openCommandPalette": "Öppna kommandopalett",
+    "newOrganization": "Ny organisation",
+    "logout": "Logga ut",
+    "noResults": "Inga resultat",
+    "switchTheme": "Byt tema",
+    "switchLanguage": "Byt språk"
+  },
+  "user": {
+    "profile": "Profil",
+    "menu": "Användarmeny",
+    "myAvatar": "Min avatar"
+  },
+  "orgSwitcher": {
+    "label": "Organisation",
+    "search": "Sök organisation…",
+    "noOrgs": "Ingen organisation",
+    "select": "Välj organisation"
+  },
+  "organizations": {
+    "title": "Organisationer",
+    "subtitle": "Hantera alla plattformens organisationer",
+    "new": "Ny organisation",
+    "edit": "Redigera organisation",
+    "search": "Sök efter namn",
+    "empty": "Inga organisationer",
+    "members": "Medlemmar",
+    "openDashboard": "Apri dashboard",
+    "deleted": "Organisation borttagen",
+    "created": "Organisation skapad",
+    "updated": "Organisation uppdaterad",
+    "fields": {
+      "logo": "Organisationslogga",
+      "logoHint": "PNG / JPEG / WEBP, max 5 MB",
+      "name": "Namn",
+      "email": "E-post",
+      "phone": "Telefon",
+      "website": "Webbplats",
+      "vatNumber": "Momsnr",
+      "fiscalCode": "Skattekod",
+      "country": "Land",
+      "address": "Adress",
+      "city": "Stad",
+      "province": "Region",
+      "postalCode": "Postnr"
+    },
+    "deleteConfirm": {
+      "title": "Ta bort organisationen?",
+      "message": "Du tar bort \"{{name}}\". Åtgärden är reversibel via administrationen."
+    }
+  },
+  "members": {
+    "title": "Medlemmar",
+    "subtitle": "Visa och hantera organisationens medlemmar",
+    "subtitleAdmin": "Skriv in användare direkt som medlemmar",
+    "invite": "Bjud in",
+    "invited": "Medlem inbjuden",
+    "removed": "Medlem borttagen",
+    "roleChanged": "Roll uppdaterad",
+    "transferConfirmed": "Creator-roll överförd",
+    "enroll": "Skriv in användare",
+    "enrollSubmit": "Skriv in",
+    "userPicker": "Användare",
+    "rolePicker": "Roll",
+    "fields": {
+      "name": "Namn",
+      "email": "E-post",
+      "role": "Roll"
+    },
+    "inviteDialog": {
+      "title": "Bjud in en medlem",
+      "email": "E-post",
+      "role": "Roll",
+      "submit": "Skapa inbjudan",
+      "submitting": "Skapar…",
+      "tokenLabel": "Dela denna länk (giltig 7 dagar):",
+      "successTitle": "Inbjudan skapad"
+    },
+    "removeConfirm": {
+      "title": "Ta bort medlemmen?",
+      "message": "{{name}} tas bort från organisationen."
+    },
+    "transferConfirm": {
+      "title": "Överför creator-rollen?",
+      "message": "Du blir organisationsadmin och {{name}} blir creator. Endast den nya creatorn kan ångra."
+    },
+    "actions": {
+      "permissions": "Behörigheter",
+      "transfer": "Överför creator",
+      "remove": "Ta bort"
+    }
+  },
+  "memberPermissions": {
+    "title": "Behörigheter för {{name}}",
+    "subtitle": "För varje behörighet, lämna rollens standard eller tvinga grant/revoke för denna medlem.",
+    "default": "Standard",
+    "grant": "Tilldela",
+    "revoke": "Återkalla",
+    "saved": "Medlemmens behörigheter uppdaterade"
+  },
+  "users": {
+    "title": "Användare",
+    "subtitle": "Hantera användare och plattformsadmins",
+    "new": "Ny användare",
+    "search": "Sök efter namn eller e-post",
+    "created": "Användare skapad",
+    "fields": {
+      "name": "Namn",
+      "email": "E-post",
+      "active": "Aktiv",
+      "platformAdmin": "Plattformsadmin"
+    },
+    "createDialog": {
+      "title": "Ny användare",
+      "name": "Fullständigt namn",
+      "email": "E-post",
+      "password": "Lösenord (≥10 tecken, 1 versal, 1 siffra)",
+      "platformAdmin": "Plattformsadmin",
+      "submit": "Skapa",
+      "submitting": "Skapar…"
+    }
+  },
+  "globalPermissions": {
+    "title": "Globala behörigheter",
+    "subtitle": "Redigera standardbehörigheter för varje roll. De gäller för alla organisationer om inte annat anges.",
+    "rolePicker": "Roll",
+    "saved": "Behörigheter sparade",
+    "save": "Spara behörigheter"
+  },
+  "templates": {
+    "preview": {
+      "lessonTag": "Lezione 01",
+      "chapter": "Capitolo introduttivo",
+      "title": "Argomento principale della lezione",
+      "subtitle": "Una breve descrizione del contesto: cosa vedremo, perché è importante e quali competenze sviluppiamo.",
+      "bullet1": "Obiettivi di apprendimento e prerequisiti",
+      "bullet2": "Concetti chiave con esempi pratici",
+      "bullet3": "Esercizi guidati e materiale di riferimento",
+      "author": "Prof. Mario Rossi",
+      "role": "Cattedra di Informatica",
+      "date": "12 marzo 2026",
+      "live": "Live"
+    },
+    "slide": {
+      "title": "Slide-mallar",
+      "subtitle": "Skapa och redigera mallar för kursslides",
+      "new": "Ny mall",
+      "newPage": "Ny slide-mall",
+      "editPage": "Redigera: {{name}}",
+      "previewLive": "Live förhandsvisning",
+      "previewHint": "Förhandsvisningen uppdateras i realtid när du redigerar.",
+      "deleted": "Mall borttagen",
+      "created": "Mall skapad",
+      "updated": "Mall uppdaterad",
+      "empty": "Inga mallar än"
+    },
+    "pdf": {
+      "title": "PDF-mallar",
+      "subtitle": "Skapa och redigera mallar för PDF-dokument",
+      "new": "Ny mall",
+      "newPage": "Ny PDF-mall",
+      "editPage": "Redigera: {{name}}",
+      "previewLive": "Live förhandsvisning",
+      "previewHint": "Förhandsvisningen uppdateras i realtid när du redigerar.",
+      "deleted": "Mall borttagen",
+      "created": "Mall skapad",
+      "updated": "Mall uppdaterad",
+      "empty": "Inga mallar än"
+    },
+    "fields": {
+      "name": "Mallnamn",
+      "size": "Slide-format",
+      "pageSize": "Sidstorlek",
+      "font": "Typsnitt",
+      "textColor": "Textfärg",
+      "primaryColor": "Primär färg",
+      "secondaryColor": "Sekundär färg",
+      "background": "Bakgrundsbild",
+      "logoLeft": "Logo uppe till vänster",
+      "logoRight": "Logo uppe till höger",
+      "headerHeight": "Header-höjd (mm)",
+      "footerHeight": "Footer-höjd (mm)",
+      "margin": "Sidmarginal (mm)",
+      "backgroundOpacity": "Opacità sfondo (%)"
+    },
+    "deleteConfirm": {
+      "title": "Ta bort mallen?",
+      "message": "Du tar bort \"{{name}}\"."
+    },
+    "default": "Default",
+    "setDefault": "Imposta come default",
+    "defaultSet": "Template impostato come default"
+  },
+  "myAvatar": {
+    "title": "Il mio avatar",
+    "subtitle": "Carica una foto frontale e un audio. Da questi verranno generati automaticamente dei clip video.",
+    "tabs": {
+      "image": "Immagine",
+      "audio": "Audio",
+      "next": "Avanti",
+      "back": "Indietro"
+    },
+    "create": "Crea avatar",
+    "unsavedChanges": "Modifiche non salvate",
+    "statusReady": "Avatar attivo",
+    "statusSummary": "{{ready}}/{{total}} clip pronte · {{failed}} errori",
+    "playAudio": "Ascolta audio",
+    "clipsCount_one": "{{count}} clip in totale",
+    "clipsCount_other": "{{count}} clip in totale",
+    "image": "Foto frontale",
+    "imageHint": "PNG / JPEG / WEBP. L'immagine verrà ritagliata in formato quadrato (1:1).",
+    "imageEmpty": "Nessuna immagine",
+    "recrop": "Ritaglia di nuovo",
+    "cropTitle": "Ritaglia l'immagine",
+    "cropHint": "Trascina e ridimensiona l'area di selezione. Il rapporto è fissato a 1:1.",
+    "cropConfirm": "Applica ritaglio",
+    "slidePreviewTitle": "Anteprima nella slide",
+    "slidePreviewHint": "Esempio di come l'avatar apparirà in basso a destra in un template slide.",
+    "audio": "Audio personale",
+    "audioHint": "Leggi ad alta voce il testo qui sopra. La registrazione servirà ad addestrare un modello vocale fedele alla tua voce.",
+    "audioUpload": "Carica file",
+    "audioRecord": "Registra adesso",
+    "recordStart": "Avvia registrazione",
+    "recordStop": "Stop",
+    "audioLang": "Lingua audio",
+    "scriptTitle": "Testo da leggere",
+    "scriptHint": "Leggi questo testo a voce naturale durante la registrazione. Più la lettura è chiara e rilassata, migliore sarà il modello vocale.",
+    "scriptFallback": "Per la lingua selezionata non è ancora configurato un testo specifico: viene mostrato quello in {{lang}}.",
+    "scriptMissing": "Nessun testo da leggere è configurato per questa lingua. Contatta un amministratore.",
+    "saveWarn": "Modificare l'immagine rigenererà tutti i clip.",
+    "regenerate": "Rigenera clip",
+    "regenerated": "Generazione clip riavviata",
+    "clipsTitle": "Clip generate",
+    "clipsEmpty": "Nessun clip configurato. Definisci almeno un prompt nella sezione admin Configurazioni → Avatar.",
+    "clipPending": "In attesa…",
+    "clipProcessing": "Generazione…",
+    "clipReady": "Pronto",
+    "clipFailed": "Errore",
+    "allReady": "Tutti pronti",
+    "allFailed": "Tutti falliti",
+    "partial": "Parziale",
+    "pending": "In attesa",
+    "processing": "Generazione",
+    "saved": "Avatar salvato",
+    "deleted": "Avatar eliminato",
+    "deleteConfirm": {
+      "title": "Eliminare l'avatar?",
+      "message": "Verranno eliminati immagine, audio e tutti i clip generati."
+    }
+  },
+  "avatarConfig": {
+    "title": "Configurazioni — Avatar",
+    "subtitle": "Gestisci i prompt video per la generazione dei clip MiniMax e i testi di trascrizione che gli utenti leggeranno per la registrazione vocale.",
+    "tabs": {
+      "prompts": "Prompt video",
+      "scripts": "Lingue trascrizione"
+    },
+    "addPrompt": "Aggiungi prompt",
+    "empty": "Nessun prompt configurato. Aggiungine almeno uno per abilitare la generazione clip.",
+    "fields": {
+      "label": "Etichetta",
+      "labelPlaceholder": "Es. \"Cenno di pensiero\"",
+      "prompt": "Prompt MiniMax (inglese, max 2000 caratteri)",
+      "active": "Attivo"
+    },
+    "moveUp": "Sposta su",
+    "moveDown": "Sposta giù",
+    "unsavedHint": "Modifiche non salvate — fai blur del campo per salvare.",
+    "count_one": "{{count}} clip configurato",
+    "count_other": "{{count}} clip configurati",
+    "created": "Prompt creato",
+    "updated": "Prompt aggiornato",
+    "deleted": "Prompt eliminato",
+    "deleteConfirm": {
+      "title": "Eliminare il prompt?",
+      "message": "Il prompt \"{{name}}\" sarà rimosso dalla configurazione."
+    },
+    "voiceScript": {
+      "title": "Testo da leggere durante la registrazione",
+      "subtitle": "Per ogni lingua, definisci il testo che l'utente vedrà e dovrà leggere ad alta voce mentre registra l'audio. Serve a ottenere un campione vocale standardizzato per il voice cloning.",
+      "empty": "Nessun testo configurato. Aggiungine almeno uno per la lingua di default.",
+      "add": "Aggiungi testo per una lingua",
+      "selectLang": "Seleziona lingua",
+      "placeholder": "Buongiorno, mi presento e leggo questo breve testo…",
+      "text": "Testo",
+      "saved": "Testo salvato",
+      "deleted": "Testo eliminato",
+      "deleteConfirm": {
+        "title": "Eliminare il testo?",
+        "message": "Verrà rimosso il testo da leggere per la lingua {{lang}}."
+      }
+    }
+  },
+  "permissions": {
+    "member:view": "Visa medlemmar",
+    "member:invite": "Bjud in användare",
+    "member:assign_role": "Tilldela roller",
+    "member:remove": "Ta bort medlemmar",
+    "template:slide:manage": "Hantera slide-mallar",
+    "template:pdf:manage": "Hantera PDF-mallar",
+    "permission:manage": "Hantera behörigheter",
+    "org:transfer_creator": "Överför creator-roll",
+    "org:update": "Redigera organisation",
+    "course_config:manage": "Gestisci parametri corsi"
+  },
+  "permissionDescriptions": {
+    "member:view": "Vedere l'elenco dei membri dell'organizzazione con nome, email, ruolo e data di iscrizione. Prerequisito per quasi tutte le altre azioni sui membri.",
+    "member:invite": "Creare inviti via email per nuovi membri scegliendo il ruolo iniziale. Ogni invito è un link monouso con scadenza a 7 giorni.",
+    "member:assign_role": "Cambiare il ruolo di un membro esistente, ma solo fino al proprio livello di rank: un Org Admin non può promuovere a Creator né modificare un membro di rango superiore.",
+    "member:remove": "Rimuovere un membro dall'organizzazione. Il Creator non è rimovibile direttamente: va prima trasferito ad un altro membro.",
+    "template:slide:manage": "Creare, modificare, eliminare e scegliere come default i template per le slide dei corsi (formato 16:9 / 4:3, colori, font, logo, immagine di sfondo).",
+    "template:pdf:manage": "Creare, modificare, eliminare e scegliere come default i template per i documenti PDF (formato A4/Letter, header/footer/margini in mm, colori, logo, sfondo).",
+    "permission:manage": "Modificare i permessi dell'organizzazione: override per ruolo (es. concedere a tutti i Manager un permesso non default) e override per singolo membro (concedi/revoca puntuale).",
+    "org:transfer_creator": "Trasferire il ruolo di Creator a un altro membro. Chi era Creator diventa Org Admin. Azione riservata al Creator e irreversibile senza un nuovo trasferimento.",
+    "org:update": "Modificare i dati anagrafici dell'organizzazione: nome, partita IVA, codice fiscale, indirizzo, contatti, logo.",
+    "course_config:manage": "Configurare i parametri di default per la generazione dei corsi: numero di moduli per CFU, lezioni per modulo, durata delle lezioni e attivazione della verifica di apprendimento finale (con il numero di domande a scelta multipla e aperte da generare). Questi valori vengono usati per pre-popolare la struttura di un nuovo corso."
+  },
+  "roles": {
+    "creator": "Skapare",
+    "org_admin": "Organisationsadmin",
+    "manager": "Manager",
+    "member": "Medlem"
+  },
+  "errors": {
+    "generic": "Ett fel inträffade",
+    "loadingFailed": "Inläsning misslyckades",
+    "saveFailed": "Sparning misslyckades"
+  },
+  "i18n": {
+    "title": "Gestione lingue",
+    "subtitle": "Crea, modifica e cancella le lingue e le traduzioni della piattaforma",
+    "new": "Nuova lingua",
+    "edit": "Modifica lingua",
+    "editTranslations": "Modifica traduzioni",
+    "fields": {
+      "code": "Codice",
+      "codeHint": "ISO 639-1 (es. it, en) o regionale (es. pt-BR)",
+      "nameNative": "Nome nativo",
+      "flagCountry": "Bandiera (codice paese ISO, es. IT)",
+      "rtl": "Right-to-left",
+      "active": "Attiva",
+      "default": "Default",
+      "copyFrom": "Copia traduzioni da"
+    },
+    "stats": {
+      "translations_one": "{{count}} traduzione",
+      "translations_other": "{{count}} traduzioni"
+    },
+    "created": "Lingua creata",
+    "updated": "Lingua aggiornata",
+    "deleted": "Lingua eliminata",
+    "translationsSaved": "Traduzioni salvate ({{count}})",
+    "deleteConfirm": {
+      "title": "Eliminare la lingua?",
+      "message": "Stai per eliminare \"{{name}}\" e tutte le sue traduzioni."
+    },
+    "editor": {
+      "title": "Traduzioni — {{name}}",
+      "search": "Cerca chiave o valore",
+      "empty": "Nessuna traduzione",
+      "save": "Salva traduzioni",
+      "reference": "Riferimento {{lang}}",
+      "modifiedCount_one": "{{count}} chiave modificata",
+      "modifiedCount_other": "{{count}} chiavi modificate",
+      "noChanges": "Nessuna modifica"
+    }
+  },
+  "dashboard": {
+    "admin": {
+      "title": "Adminpanel",
+      "subtitle": "Global hantering av a4u-plattformen"
+    },
+    "org": {
+      "subtitle": "Roll: {{role}}",
+      "platformAdmin": "Admin piattaforma"
+    },
+    "noOrg": {
+      "title": "Välkommen",
+      "message": "Du är inte ännu medlem i någon organisation. Vänta på en inbjudan eller kontakta en administratör."
+    }
+  }
+}

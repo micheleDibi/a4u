@@ -1,0 +1,386 @@
+{
+  "app": { "name": "a4u", "tagline": "Platformă pentru cursuri universitare" },
+  "common": {
+    "save": "Salvează", "cancel": "Anulează", "delete": "Șterge", "edit": "Editează",
+    "add": "Adaugă", "loading": "Se încarcă…", "saving": "Se salvează…",
+    "creating": "Se creează…", "remove": "Elimină", "confirm": "Confirmă",
+    "close": "Închide", "search": "Caută", "back": "Înapoi", "next": "Următorul",
+    "actions": "Acțiuni", "of": "din", "noResults": "Niciun rezultat",
+    "copy": "Copiază", "copied": "Copiat!", "yes": "Da", "no": "Nu", "all": "Toate",
+    "optional": "opțional", "required": "obligatoriu",
+    "moreInfo": "Mai multe informații"
+  },
+  "auth": {
+    "login": {
+      "title": "Bine ai revenit", "subtitle": "Conectează-te la spațiul tău a4u",
+      "email": "E-mail", "password": "Parolă",
+      "submit": "Conectare", "submitting": "Se conectează…"
+    },
+    "logout": "Deconectare",
+    "invitation": {
+      "title": "Acceptă invitația",
+      "subtitle": "Ai fost invitat la {{org}} ca {{role}}",
+      "fullName": "Nume complet",
+      "passwordHint": "Min. 10 caractere, o majusculă, o cifră",
+      "submit": "Acceptă invitația", "submitting": "Se confirmă…",
+      "alreadyRegistered": "Ești deja înregistrat. Apasă \"Acceptă\" pentru a te adăuga.",
+      "invalidOrExpired": "Invitația nu este validă, a expirat sau a fost deja folosită."
+    }
+  },
+  "theme": { "label": "Temă", "light": "Luminos", "dark": "Întunecat", "system": "Sistem" },
+  "language": { "label": "Limbă" },
+  "nav": {
+    "platform": "Platformă", "organization": "Organizație",
+    "configurazioni": "Configurări", "personal": "Personal",
+    "dashboard": "Panou", "organizations": "Organizații",
+    "users": "Utilizatori", "permissions": "Permisiuni globale", "i18n": "Limbi",
+    "members": "Membri", "templatesSlide": "Șabloane slide",
+    "templatesPdf": "Șabloane PDF", "avatarConfig": "Avatar",
+    "courseSettings": "Parametri curs"
+  },
+  "courseSettings": {
+    "title": "Parametri curs",
+    "subtitle": "Valori implicite folosite pentru a genera structura unui nou curs în această organizație.",
+    "dirtyBanner": "Modificări nesalvate",
+    "saved": "Parametri salvați",
+    "sections": {
+      "structure": {
+        "title": "Structura cursului",
+        "subtitle": "Câte module și lecții se generează pentru fiecare credit."
+      },
+      "duration": {
+        "title": "Durata lecțiilor",
+        "subtitle": "Durata standard a fiecărei lecții din curs."
+      },
+      "assessment": {
+        "subtitle": "Ultima lecție a fiecărui modul este o evaluare generată automat.",
+        "disabledHint": "Nu se generează evaluare finală. Fiecare modul se încheie cu ultima sa lecție obișnuită."
+      }
+    },
+    "fields": {
+      "modulesPerCfu": "Module pe credit",
+      "lessonsPerModule": "Lecții pe modul",
+      "lessonDuration": "Durata lecției",
+      "assessment": "Evaluare finală a învățării",
+      "assessmentHelp": "Dacă este activată, ultima lecție a fiecărui modul este o evaluare generată automat: se produce o serie de întrebări (cu alegere multiplă și deschise) pentru a verifica competențele dobândite. Platforma generează doar conținutul, nu se ocupă de utilizarea de către studenți.",
+      "mcq": "Întrebări cu alegere multiplă",
+      "openQuestions": "Întrebări deschise"
+    },
+    "units": {
+      "modules": "module",
+      "lessons": "lecții",
+      "minutes": "minute",
+      "questions": "întrebări"
+    },
+    "summary": {
+      "title": "Rezumat per credit",
+      "modulesPerCfu": "Module",
+      "lessonsPerModule": "Lecții pe modul",
+      "lessonDuration": "Durată lecție",
+      "totalLessonsPerCfu": "Lecții totale",
+      "totalDurationPerCfu": "Durată totală",
+      "mcq": "Întrebări cu alegere multiplă",
+      "openQuestions": "Întrebări deschise",
+      "totalQuestions": "Total întrebări de evaluare",
+      "noAssessment": "Nicio evaluare finală generată.",
+      "minutesValue_one": "{{count}} minut",
+      "minutesValue_other": "{{count}} minute",
+      "hours_one": "{{count}} oră",
+      "hours_other": "{{count}} ore",
+      "hoursAndMinutes": "{{hours}}h {{minutes}}m"
+    }
+  },
+  "command": {
+    "placeholder": "Caută o comandă sau o pagină…",
+    "navigation": "Navigare", "actions": "Acțiuni", "preferences": "Preferințe",
+    "openCommandPalette": "Deschide paleta de comenzi",
+    "newOrganization": "Organizație nouă",
+    "logout": "Deconectare", "noResults": "Niciun rezultat",
+    "switchTheme": "Schimbă tema", "switchLanguage": "Schimbă limba"
+  },
+  "user": { "profile": "Profil", "menu": "Meniu utilizator", "myAvatar": "Avatarul meu" },
+  "orgSwitcher": {
+    "label": "Organizație", "search": "Caută organizație…",
+    "noOrgs": "Nicio organizație", "select": "Selectează organizația"
+  },
+  "organizations": {
+    "title": "Organizații",
+    "subtitle": "Gestionează toate organizațiile platformei",
+    "new": "Organizație nouă", "edit": "Editează organizația",
+    "search": "Caută după nume", "empty": "Nicio organizație",
+    "members": "Membri", "openDashboard": "Deschide panoul",
+    "deleted": "Organizație ștearsă",
+    "created": "Organizație creată", "updated": "Organizație actualizată",
+    "fields": {
+      "logo": "Logo organizație",
+      "logoHint": "PNG / JPEG / WEBP, max 5 MB",
+      "name": "Denumire", "email": "E-mail", "phone": "Telefon",
+      "website": "Website", "vatNumber": "Cod TVA",
+      "fiscalCode": "Cod fiscal", "country": "Țară",
+      "address": "Adresă", "city": "Oraș",
+      "province": "Județ", "postalCode": "Cod poștal"
+    },
+    "deleteConfirm": {
+      "title": "Ștergi organizația?",
+      "message": "Urmează să ștergi \"{{name}}\". Acțiunea este reversibilă din administrare."
+    }
+  },
+  "members": {
+    "title": "Membri",
+    "subtitle": "Vezi și gestionează membrii organizației",
+    "subtitleAdmin": "Înscrie utilizatori direct ca membri",
+    "invite": "Invită", "invited": "Membru invitat",
+    "removed": "Membru eliminat", "roleChanged": "Rol actualizat",
+    "transferConfirmed": "Rol de creator transferat",
+    "enroll": "Înscrie utilizatorul", "enrollSubmit": "Înscrie",
+    "userPicker": "Utilizator", "rolePicker": "Rol",
+    "fields": { "name": "Nume", "email": "E-mail", "role": "Rol" },
+    "inviteDialog": {
+      "title": "Invită un membru", "email": "E-mail", "role": "Rol",
+      "submit": "Creează invitație", "submitting": "Se creează…",
+      "tokenLabel": "Distribuie acest link (valabil 7 zile):",
+      "successTitle": "Invitație creată"
+    },
+    "removeConfirm": {
+      "title": "Elimini membrul?",
+      "message": "{{name}} va fi eliminat din organizație."
+    },
+    "transferConfirm": {
+      "title": "Transferi rolul de creator?",
+      "message": "Vei deveni admin al organizației, iar {{name}} va deveni creator. Doar noul creator poate reveni."
+    },
+    "actions": { "permissions": "Permisiuni", "transfer": "Transferă creator", "remove": "Elimină" }
+  },
+  "memberPermissions": {
+    "title": "Permisiuni pentru {{name}}",
+    "subtitle": "Pentru fiecare permisiune, lasă valoarea implicită a rolului sau forțează acordare/revocare specifică pentru acest membru.",
+    "default": "Implicit", "grant": "Acordă", "revoke": "Revocă",
+    "saved": "Permisiuni de membru actualizate"
+  },
+  "users": {
+    "title": "Utilizatori", "subtitle": "Gestionează utilizatori și administratori de platformă",
+    "new": "Utilizator nou", "search": "Caută după nume sau e-mail",
+    "created": "Utilizator creat",
+    "fields": { "name": "Nume", "email": "E-mail", "active": "Activ", "platformAdmin": "Admin platformă" },
+    "createDialog": {
+      "title": "Utilizator nou", "name": "Nume complet", "email": "E-mail",
+      "password": "Parolă (≥10 caractere, o majusculă, o cifră)",
+      "platformAdmin": "Admin platformă",
+      "submit": "Creează", "submitting": "Se creează…"
+    }
+  },
+  "globalPermissions": {
+    "title": "Permisiuni globale",
+    "subtitle": "Editează permisiunile implicite pentru fiecare rol. Se aplică tuturor organizațiilor cu excepția celor cu suprascriere explicită.",
+    "rolePicker": "Rol", "saved": "Permisiuni salvate", "save": "Salvează permisiunile"
+  },
+  "templates": {
+    "preview": {
+      "lessonTag": "Lecția 01",
+      "chapter": "Capitol introductiv",
+      "title": "Subiectul principal al lecției",
+      "subtitle": "O scurtă descriere a contextului: ce vom vedea, de ce este important și ce competențe dezvoltăm.",
+      "bullet1": "Obiective de învățare și prerechizite",
+      "bullet2": "Concepte-cheie cu exemple practice",
+      "bullet3": "Exerciții ghidate și material de referință",
+      "author": "Prof. Mario Rossi",
+      "role": "Catedra de Informatică",
+      "date": "12 martie 2026",
+      "live": "În direct"
+    },
+    "slide": {
+      "title": "Șabloane slide",
+      "subtitle": "Creează și editează șabloanele pentru slide-urile cursurilor",
+      "new": "Șablon nou", "newPage": "Șablon slide nou",
+      "editPage": "Editează: {{name}}", "previewLive": "Previzualizare în direct",
+      "previewHint": "Previzualizarea se actualizează în timp real în timpul editării.",
+      "deleted": "Șablon șters", "created": "Șablon creat",
+      "updated": "Șablon actualizat", "empty": "Niciun șablon încă"
+    },
+    "pdf": {
+      "title": "Șabloane PDF",
+      "subtitle": "Creează și editează șabloanele pentru documentele PDF",
+      "new": "Șablon nou", "newPage": "Șablon PDF nou",
+      "editPage": "Editează: {{name}}", "previewLive": "Previzualizare în direct",
+      "previewHint": "Previzualizarea se actualizează în timp real în timpul editării.",
+      "deleted": "Șablon șters", "created": "Șablon creat",
+      "updated": "Șablon actualizat", "empty": "Niciun șablon încă"
+    },
+    "fields": {
+      "name": "Nume șablon", "size": "Format slide", "pageSize": "Dimensiune pagină",
+      "font": "Font", "textColor": "Culoare text",
+      "primaryColor": "Culoare primară", "secondaryColor": "Culoare secundară",
+      "background": "Imagine de fundal", "logoLeft": "Logo sus stânga",
+      "logoRight": "Logo sus dreapta",
+      "headerHeight": "Înălțime antet (mm)", "footerHeight": "Înălțime subsol (mm)",
+      "margin": "Margine pagină (mm)",
+      "backgroundOpacity": "Opacitate fundal (%)"
+    },
+    "deleteConfirm": {
+      "title": "Ștergi șablonul?",
+      "message": "Urmează să ștergi \"{{name}}\"."
+    },
+    "default": "Implicit",
+    "setDefault": "Setează ca implicit",
+    "defaultSet": "Șablon setat ca implicit"
+  },
+  "myAvatar": {
+    "title": "Avatarul meu",
+    "subtitle": "Încarcă o fotografie frontală și un audio. Din acestea vor fi generate automat clipuri video.",
+    "tabs": { "image": "Imagine", "audio": "Audio", "next": "Următorul", "back": "Înapoi" },
+    "create": "Creează avatar",
+    "unsavedChanges": "Modificări nesalvate",
+    "statusReady": "Avatar activ",
+    "statusSummary": "{{ready}}/{{total}} clipuri gata · {{failed}} erori",
+    "playAudio": "Ascultă audio",
+    "clipsCount_one": "{{count}} clip în total",
+    "clipsCount_other": "{{count}} clipuri în total",
+    "image": "Fotografie frontală",
+    "imageHint": "PNG / JPEG / WEBP. Imaginea va fi tăiată în format pătrat (1:1).",
+    "imageEmpty": "Fără imagine",
+    "recrop": "Taie din nou",
+    "cropTitle": "Taie imaginea",
+    "cropHint": "Trage și redimensionează zona de selecție. Raportul este fixat la 1:1.",
+    "cropConfirm": "Aplică tăierea",
+    "slidePreviewTitle": "Previzualizare în slide",
+    "slidePreviewHint": "Exemplu de cum va apărea avatarul jos dreapta într-un șablon de slide.",
+    "audio": "Audio personal",
+    "audioHint": "Citește textul de mai sus cu voce tare. Înregistrarea va servi la antrenarea unui model de voce fidel celei tale.",
+    "audioUpload": "Încarcă fișier",
+    "audioRecord": "Înregistrează acum",
+    "recordStart": "Începe înregistrarea",
+    "recordStop": "Oprește",
+    "audioLang": "Limba audio",
+    "scriptTitle": "Text de citit",
+    "scriptHint": "Citește acest text cu voce naturală în timpul înregistrării. Cu cât citirea este mai clară și relaxată, cu atât modelul vocal va fi mai bun.",
+    "scriptFallback": "Pentru limba selectată nu este încă configurat un text specific: se afișează cel din {{lang}}.",
+    "scriptMissing": "Niciun text configurat pentru această limbă. Contactează un administrator.",
+    "saveWarn": "Modificarea imaginii va regenera toate clipurile.",
+    "regenerate": "Regenerează clipurile",
+    "regenerated": "Generarea clipurilor a fost reluată",
+    "clipsTitle": "Clipuri generate",
+    "clipsEmpty": "Niciun clip configurat. Definește cel puțin un prompt în secțiunea admin Configurări → Avatar.",
+    "clipPending": "În așteptare…",
+    "clipProcessing": "Se generează…",
+    "clipReady": "Gata",
+    "clipFailed": "Eroare",
+    "allReady": "Toate gata",
+    "allFailed": "Toate au eșuat",
+    "partial": "Parțial",
+    "pending": "În așteptare",
+    "processing": "Se generează",
+    "saved": "Avatar salvat",
+    "deleted": "Avatar șters",
+    "deleteConfirm": {
+      "title": "Ștergi avatarul?",
+      "message": "Vor fi șterse imaginea, audio și toate clipurile generate."
+    }
+  },
+  "avatarConfig": {
+    "title": "Configurări — Avatar",
+    "subtitle": "Gestionează prompturile video pentru generarea clipurilor MiniMax și textele de transcriere pe care utilizatorii le vor citi pentru înregistrarea vocală.",
+    "tabs": { "prompts": "Prompturi video", "scripts": "Limbi de transcriere" },
+    "addPrompt": "Adaugă prompt",
+    "empty": "Niciun prompt configurat. Adaugă cel puțin unul pentru a activa generarea clipurilor.",
+    "fields": {
+      "label": "Etichetă",
+      "labelPlaceholder": "Ex. \"Înclinare gânditoare\"",
+      "prompt": "Prompt MiniMax (engleză, max 2000 caractere)",
+      "active": "Activ"
+    },
+    "moveUp": "Mută în sus",
+    "moveDown": "Mută în jos",
+    "unsavedHint": "Modificări nesalvate — pierde focusul câmpului pentru a salva.",
+    "count_one": "{{count}} clip configurat",
+    "count_other": "{{count}} clipuri configurate",
+    "created": "Prompt creat",
+    "updated": "Prompt actualizat",
+    "deleted": "Prompt șters",
+    "deleteConfirm": {
+      "title": "Ștergi promptul?",
+      "message": "Promptul \"{{name}}\" va fi eliminat din configurare."
+    },
+    "voiceScript": {
+      "title": "Text de citit în timpul înregistrării",
+      "subtitle": "Pentru fiecare limbă, definește textul pe care utilizatorul îl va vedea și va trebui să îl citească cu voce tare în timp ce înregistrează audio. Servește la obținerea unui eșantion vocal standardizat pentru clonarea vocii.",
+      "empty": "Niciun text configurat. Adaugă cel puțin unul pentru limba implicită.",
+      "add": "Adaugă text pentru o limbă",
+      "selectLang": "Selectează limba",
+      "placeholder": "Bună ziua, mă prezint și citesc acest scurt text…",
+      "text": "Text",
+      "saved": "Text salvat",
+      "deleted": "Text șters",
+      "deleteConfirm": {
+        "title": "Ștergi textul?",
+        "message": "Va fi eliminat textul de citit pentru limba {{lang}}."
+      }
+    }
+  },
+  "permissions": {
+    "member:view": "Vezi membrii", "member:invite": "Invită utilizatori",
+    "member:assign_role": "Atribuie roluri", "member:remove": "Elimină membri",
+    "template:slide:manage": "Gestionează șabloanele slide",
+    "template:pdf:manage": "Gestionează șabloanele PDF",
+    "permission:manage": "Gestionează permisiunile",
+    "org:transfer_creator": "Transferă rolul de creator", "org:update": "Editează organizația",
+    "course_config:manage": "Gestionează parametrii cursului"
+  },
+  "permissionDescriptions": {
+    "member:view": "Vezi lista membrilor organizației cu nume, e-mail, rol și data înscrierii. Prerechizit pentru aproape toate celelalte acțiuni asupra membrilor.",
+    "member:invite": "Creează invitații prin e-mail pentru noi membri alegând rolul inițial. Fiecare invitație este un link de unică folosință cu expirare la 7 zile.",
+    "member:assign_role": "Schimbă rolul unui membru existent, dar doar până la propriul nivel: un Org Admin nu poate promova la Creator și nici nu poate modifica un membru de rang superior.",
+    "member:remove": "Elimină un membru din organizație. Creatorul nu poate fi eliminat direct: rolul trebuie mai întâi transferat.",
+    "template:slide:manage": "Creează, editează, șterge și alege ca implicit șabloanele de slide ale cursurilor (format 16:9 / 4:3, culori, font, logo, imagine de fundal).",
+    "template:pdf:manage": "Creează, editează, șterge și alege ca implicit șabloanele pentru documentele PDF (format A4/Letter, antet/subsol/margini în mm, culori, logo, fundal).",
+    "permission:manage": "Modifică permisiunile organizației: suprascriere per rol (de ex. acordare la toți Managerii a unei permisiuni neimplicite) și suprascriere per membru (acordare/revocare punctuală).",
+    "org:transfer_creator": "Transferă rolul de Creator unui alt membru. Cel care era Creator devine Org Admin. Acțiune rezervată Creatorului și ireversibilă fără un nou transfer.",
+    "org:update": "Modifică datele organizației: nume, cod TVA, cod fiscal, adresă, contacte, logo.",
+    "course_config:manage": "Configurează parametrii impliciți pentru generarea cursurilor: număr de module pe credit, lecții pe modul, durata lecțiilor și activarea evaluării finale (cu numărul de întrebări cu alegere multiplă și deschise de generat). Aceste valori sunt folosite pentru pre-popularea structurii unui nou curs."
+  },
+  "roles": {
+    "creator": "Creator", "org_admin": "Admin organizație",
+    "manager": "Manager", "member": "Membru"
+  },
+  "errors": { "generic": "A apărut o eroare", "loadingFailed": "Încărcare eșuată", "saveFailed": "Salvare eșuată" },
+  "i18n": {
+    "title": "Gestionare limbi",
+    "subtitle": "Creează, editează și șterge limbile și traducerile platformei",
+    "new": "Limbă nouă",
+    "edit": "Editează limba",
+    "editTranslations": "Editează traducerile",
+    "fields": {
+      "code": "Cod",
+      "codeHint": "ISO 639-1 (de ex. it, en) sau regional (de ex. pt-BR)",
+      "nameNative": "Nume nativ",
+      "flagCountry": "Steag (cod țară ISO, de ex. IT)",
+      "rtl": "Right-to-left",
+      "active": "Activă",
+      "default": "Implicit",
+      "copyFrom": "Copiază traducerile din"
+    },
+    "stats": { "translations_one": "{{count}} traducere", "translations_other": "{{count}} traduceri" },
+    "created": "Limbă creată",
+    "updated": "Limbă actualizată",
+    "deleted": "Limbă ștearsă",
+    "translationsSaved": "Traduceri salvate ({{count}})",
+    "deleteConfirm": {
+      "title": "Ștergi limba?",
+      "message": "Urmează să ștergi \"{{name}}\" și toate traducerile sale."
+    },
+    "editor": {
+      "title": "Traduceri — {{name}}",
+      "search": "Caută cheie sau valoare",
+      "empty": "Nicio traducere",
+      "save": "Salvează traducerile",
+      "reference": "Referință {{lang}}",
+      "modifiedCount_one": "{{count}} cheie modificată",
+      "modifiedCount_other": "{{count}} chei modificate",
+      "noChanges": "Nicio modificare"
+    }
+  },
+  "dashboard": {
+    "admin": { "title": "Panou de administrare", "subtitle": "Gestionarea globală a platformei a4u" },
+    "org": { "subtitle": "Rol: {{role}}", "platformAdmin": "Admin platformă" },
+    "noOrg": { "title": "Bine ai venit", "message": "Nu ești încă membru al niciunei organizații. Așteaptă o invitație sau contactează un administrator." }
+  }
+}

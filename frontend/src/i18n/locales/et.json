@@ -1,0 +1,516 @@
+{
+  "app": {
+    "name": "a4u",
+    "tagline": "Ülikoolikursuste platvorm"
+  },
+  "common": {
+    "save": "Salvesta",
+    "cancel": "Tühista",
+    "delete": "Kustuta",
+    "edit": "Muuda",
+    "add": "Lisa",
+    "loading": "Laadimine…",
+    "saving": "Salvestamine…",
+    "creating": "Loomine…",
+    "remove": "Eemalda",
+    "confirm": "Kinnita",
+    "close": "Sulge",
+    "search": "Otsi",
+    "back": "Tagasi",
+    "next": "Edasi",
+    "actions": "Toimingud",
+    "of": "/",
+    "noResults": "Tulemusi pole",
+    "copy": "Kopeeri",
+    "copied": "Kopeeritud!",
+    "yes": "Jah",
+    "no": "Ei",
+    "all": "Kõik",
+    "optional": "valikuline",
+    "required": "kohustuslik",
+    "moreInfo": "Rohkem teavet"
+  },
+  "auth": {
+    "login": {
+      "title": "Tere tulemast tagasi",
+      "subtitle": "Logi sisse oma a4u tööruumi",
+      "email": "E-post",
+      "password": "Parool",
+      "submit": "Logi sisse",
+      "submitting": "Sisselogimine…"
+    },
+    "logout": "Logi välja",
+    "invitation": {
+      "title": "Võta kutse vastu",
+      "subtitle": "Sind on kutsutud organisatsiooni {{org}} rollis {{role}}",
+      "fullName": "Täisnimi",
+      "passwordHint": "Vähemalt 10 tähemärki, üks suurtäht, üks number",
+      "submit": "Võta kutse vastu",
+      "submitting": "Kinnitamine…",
+      "alreadyRegistered": "Oled juba registreeritud. Klõpsa \"Võta vastu\", et liituda.",
+      "invalidOrExpired": "Kutse pole kehtiv, on aegunud või juba kasutatud."
+    }
+  },
+  "theme": {
+    "label": "Teema",
+    "light": "Hele",
+    "dark": "Tume",
+    "system": "Süsteem"
+  },
+  "language": {
+    "label": "Keel"
+  },
+  "nav": {
+    "platform": "Platvorm",
+    "organization": "Organisatsioon",
+    "configurazioni": "Seadistus",
+    "personal": "Isiklik",
+    "dashboard": "Töölaud",
+    "organizations": "Organisatsioonid",
+    "users": "Kasutajad",
+    "permissions": "Globaalsed õigused",
+    "i18n": "Keeled",
+    "members": "Liikmed",
+    "templatesSlide": "Slaidimallid",
+    "templatesPdf": "PDF-mallid",
+    "avatarConfig": "Avatar",
+    "courseSettings": "Kursuse parameetrid"
+  },
+  "courseSettings": {
+    "title": "Kursuse parameetrid",
+    "subtitle": "Vaikeväärtused, mida kasutatakse uue kursuse struktuuri loomiseks selles organisatsioonis.",
+    "dirtyBanner": "Salvestamata muudatused",
+    "saved": "Parameetrid salvestatud",
+    "sections": {
+      "structure": {
+        "title": "Kursuse struktuur",
+        "subtitle": "Mitu moodulit ja õppetundi luuakse iga ainepunkti kohta."
+      },
+      "duration": {
+        "title": "Õppetundide kestus",
+        "subtitle": "Iga kursuse õppetunni standardkestus."
+      },
+      "assessment": {
+        "subtitle": "Iga mooduli viimane õppetund on automaatselt loodud teadmiste hindamine.",
+        "disabledHint": "Lõpphindamist ei looda. Iga moodul lõpeb tavalise viimase õppetunniga."
+      }
+    },
+    "fields": {
+      "modulesPerCfu": "Mooduleid ainepunkti kohta",
+      "lessonsPerModule": "Õppetunde mooduli kohta",
+      "lessonDuration": "Õppetunni kestus",
+      "assessment": "Lõplik teadmiste hindamine",
+      "assessmentHelp": "Kui aktiveeritud, on iga mooduli viimane õppetund automaatselt loodud teadmiste hindamine: luuakse hulk küsimusi (valikvastustega ja avatud), et kontrollida omandatud pädevusi. Platvorm loob ainult sisu; tudengitele edastamine ei kuulu ulatusse.",
+      "mcq": "Valikvastustega küsimused",
+      "openQuestions": "Avatud küsimused"
+    },
+    "units": {
+      "modules": "moodulit",
+      "lessons": "õppetundi",
+      "minutes": "minutit",
+      "questions": "küsimust"
+    },
+    "summary": {
+      "title": "Kokkuvõte ainepunkti kohta",
+      "modulesPerCfu": "Moodulid",
+      "lessonsPerModule": "Õppetunde mooduli kohta",
+      "lessonDuration": "Õppetunni kestus",
+      "totalLessonsPerCfu": "Õppetunde kokku",
+      "totalDurationPerCfu": "Kogukestus",
+      "mcq": "Valikvastustega küsimused",
+      "openQuestions": "Avatud küsimused",
+      "totalQuestions": "Hindamisküsimusi kokku",
+      "noAssessment": "Lõpphindamist ei looda.",
+      "minutesValue_one": "{{count}} minut",
+      "minutesValue_other": "{{count}} minutit",
+      "hours_one": "{{count}} tund",
+      "hours_other": "{{count}} tundi",
+      "hoursAndMinutes": "{{hours}}h {{minutes}}m"
+    }
+  },
+  "command": {
+    "placeholder": "Otsi käsku või lehte…",
+    "navigation": "Navigeerimine",
+    "actions": "Toimingud",
+    "preferences": "Eelistused",
+    "openCommandPalette": "Ava käsupalett",
+    "newOrganization": "Uus organisatsioon",
+    "logout": "Logi välja",
+    "noResults": "Tulemusi pole",
+    "switchTheme": "Vaheta teemat",
+    "switchLanguage": "Vaheta keelt"
+  },
+  "user": {
+    "profile": "Profiil",
+    "menu": "Kasutajamenüü",
+    "myAvatar": "Minu avatar"
+  },
+  "orgSwitcher": {
+    "label": "Organisatsioon",
+    "search": "Otsi organisatsiooni…",
+    "noOrgs": "Organisatsioone pole",
+    "select": "Vali organisatsioon"
+  },
+  "organizations": {
+    "title": "Organisatsioonid",
+    "subtitle": "Halda kõiki platvormi organisatsioone",
+    "new": "Uus organisatsioon",
+    "edit": "Muuda organisatsiooni",
+    "search": "Otsi nime järgi",
+    "empty": "Organisatsioone pole",
+    "members": "Liikmed",
+    "openDashboard": "Apri dashboard",
+    "deleted": "Organisatsioon kustutatud",
+    "created": "Organisatsioon loodud",
+    "updated": "Organisatsioon uuendatud",
+    "fields": {
+      "logo": "Organisatsiooni logo",
+      "logoHint": "PNG / JPEG / WEBP, max 5 MB",
+      "name": "Nimi",
+      "email": "E-post",
+      "phone": "Telefon",
+      "website": "Veebileht",
+      "vatNumber": "KMKR number",
+      "fiscalCode": "Maksukood",
+      "country": "Riik",
+      "address": "Aadress",
+      "city": "Linn",
+      "province": "Maakond",
+      "postalCode": "Postiindeks"
+    },
+    "deleteConfirm": {
+      "title": "Kustuta organisatsioon?",
+      "message": "Sa kustutad \"{{name}}\". Toiming on tagasipööratav administratsioonist."
+    }
+  },
+  "members": {
+    "title": "Liikmed",
+    "subtitle": "Vaata ja halda organisatsiooni liikmeid",
+    "subtitleAdmin": "Registreeri kasutajad otse liikmeteks",
+    "invite": "Kutsu",
+    "invited": "Liige kutsutud",
+    "removed": "Liige eemaldatud",
+    "roleChanged": "Roll uuendatud",
+    "transferConfirmed": "Creator-roll üle kantud",
+    "enroll": "Registreeri kasutaja",
+    "enrollSubmit": "Registreeri",
+    "userPicker": "Kasutaja",
+    "rolePicker": "Roll",
+    "fields": {
+      "name": "Nimi",
+      "email": "E-post",
+      "role": "Roll"
+    },
+    "inviteDialog": {
+      "title": "Kutsu liige",
+      "email": "E-post",
+      "role": "Roll",
+      "submit": "Loo kutse",
+      "submitting": "Loomine…",
+      "tokenLabel": "Jaga seda linki (kehtib 7 päeva):",
+      "successTitle": "Kutse loodud"
+    },
+    "removeConfirm": {
+      "title": "Eemaldan liikme?",
+      "message": "{{name}} eemaldatakse organisatsioonist."
+    },
+    "transferConfirm": {
+      "title": "Anna creator-roll üle?",
+      "message": "Sinust saab organisatsiooni admin ja {{name}} saab creatoriks. Ainult uus creator saab tagasi võtta."
+    },
+    "actions": {
+      "permissions": "Õigused",
+      "transfer": "Anna creator üle",
+      "remove": "Eemalda"
+    }
+  },
+  "memberPermissions": {
+    "title": "{{name}} õigused",
+    "subtitle": "Iga õiguse jaoks jäta rolli vaikeväärtus või sundi grant/revoke selle liikme jaoks.",
+    "default": "Vaikimisi",
+    "grant": "Anna",
+    "revoke": "Tühista",
+    "saved": "Liikme õigused uuendatud"
+  },
+  "users": {
+    "title": "Kasutajad",
+    "subtitle": "Halda kasutajaid ja platvormi adminne",
+    "new": "Uus kasutaja",
+    "search": "Otsi nime või e-posti järgi",
+    "created": "Kasutaja loodud",
+    "fields": {
+      "name": "Nimi",
+      "email": "E-post",
+      "active": "Aktiivne",
+      "platformAdmin": "Platvormi admin"
+    },
+    "createDialog": {
+      "title": "Uus kasutaja",
+      "name": "Täisnimi",
+      "email": "E-post",
+      "password": "Parool (≥10 tähemärki, 1 suurtäht, 1 number)",
+      "platformAdmin": "Platvormi admin",
+      "submit": "Loo",
+      "submitting": "Loomine…"
+    }
+  },
+  "globalPermissions": {
+    "title": "Globaalsed õigused",
+    "subtitle": "Muuda iga rolli vaikimisi õigusi. Need kehtivad kõikidele organisatsioonidele, kui pole eraldi tühistatud.",
+    "rolePicker": "Roll",
+    "saved": "Õigused salvestatud",
+    "save": "Salvesta õigused"
+  },
+  "templates": {
+    "preview": {
+      "lessonTag": "Lezione 01",
+      "chapter": "Capitolo introduttivo",
+      "title": "Argomento principale della lezione",
+      "subtitle": "Una breve descrizione del contesto: cosa vedremo, perché è importante e quali competenze sviluppiamo.",
+      "bullet1": "Obiettivi di apprendimento e prerequisiti",
+      "bullet2": "Concetti chiave con esempi pratici",
+      "bullet3": "Esercizi guidati e materiale di riferimento",
+      "author": "Prof. Mario Rossi",
+      "role": "Cattedra di Informatica",
+      "date": "12 marzo 2026",
+      "live": "Live"
+    },
+    "slide": {
+      "title": "Slaidi mallid",
+      "subtitle": "Loo ja muuda kursuste slaidide malle",
+      "new": "Uus mall",
+      "newPage": "Uus slaidi mall",
+      "editPage": "Muuda: {{name}}",
+      "previewLive": "Reaalajas eelvaade",
+      "previewHint": "Eelvaade uuendatakse reaalajas redigeerimise ajal.",
+      "deleted": "Mall kustutatud",
+      "created": "Mall loodud",
+      "updated": "Mall uuendatud",
+      "empty": "Malle pole veel"
+    },
+    "pdf": {
+      "title": "PDF mallid",
+      "subtitle": "Loo ja muuda PDF dokumentide malle",
+      "new": "Uus mall",
+      "newPage": "Uus PDF mall",
+      "editPage": "Muuda: {{name}}",
+      "previewLive": "Reaalajas eelvaade",
+      "previewHint": "Eelvaade uuendatakse reaalajas redigeerimise ajal.",
+      "deleted": "Mall kustutatud",
+      "created": "Mall loodud",
+      "updated": "Mall uuendatud",
+      "empty": "Malle pole veel"
+    },
+    "fields": {
+      "name": "Malli nimi",
+      "size": "Slaidi formaat",
+      "pageSize": "Lehekülje suurus",
+      "font": "Font",
+      "textColor": "Teksti värv",
+      "primaryColor": "Esmane värv",
+      "secondaryColor": "Teisene värv",
+      "background": "Taustpilt",
+      "logoLeft": "Logo üleval vasakul",
+      "logoRight": "Logo üleval paremal",
+      "headerHeight": "Päise kõrgus (mm)",
+      "footerHeight": "Jaluse kõrgus (mm)",
+      "margin": "Lehe äär (mm)",
+      "backgroundOpacity": "Opacità sfondo (%)"
+    },
+    "deleteConfirm": {
+      "title": "Kustuta mall?",
+      "message": "Sa kustutad \"{{name}}\"."
+    },
+    "default": "Default",
+    "setDefault": "Imposta come default",
+    "defaultSet": "Template impostato come default"
+  },
+  "myAvatar": {
+    "title": "Il mio avatar",
+    "subtitle": "Carica una foto frontale e un audio. Da questi verranno generati automaticamente dei clip video.",
+    "tabs": {
+      "image": "Immagine",
+      "audio": "Audio",
+      "next": "Avanti",
+      "back": "Indietro"
+    },
+    "create": "Crea avatar",
+    "unsavedChanges": "Modifiche non salvate",
+    "statusReady": "Avatar attivo",
+    "statusSummary": "{{ready}}/{{total}} clip pronte · {{failed}} errori",
+    "playAudio": "Ascolta audio",
+    "clipsCount_one": "{{count}} clip in totale",
+    "clipsCount_other": "{{count}} clip in totale",
+    "image": "Foto frontale",
+    "imageHint": "PNG / JPEG / WEBP. L'immagine verrà ritagliata in formato quadrato (1:1).",
+    "imageEmpty": "Nessuna immagine",
+    "recrop": "Ritaglia di nuovo",
+    "cropTitle": "Ritaglia l'immagine",
+    "cropHint": "Trascina e ridimensiona l'area di selezione. Il rapporto è fissato a 1:1.",
+    "cropConfirm": "Applica ritaglio",
+    "slidePreviewTitle": "Anteprima nella slide",
+    "slidePreviewHint": "Esempio di come l'avatar apparirà in basso a destra in un template slide.",
+    "audio": "Audio personale",
+    "audioHint": "Leggi ad alta voce il testo qui sopra. La registrazione servirà ad addestrare un modello vocale fedele alla tua voce.",
+    "audioUpload": "Carica file",
+    "audioRecord": "Registra adesso",
+    "recordStart": "Avvia registrazione",
+    "recordStop": "Stop",
+    "audioLang": "Lingua audio",
+    "scriptTitle": "Testo da leggere",
+    "scriptHint": "Leggi questo testo a voce naturale durante la registrazione. Più la lettura è chiara e rilassata, migliore sarà il modello vocale.",
+    "scriptFallback": "Per la lingua selezionata non è ancora configurato un testo specifico: viene mostrato quello in {{lang}}.",
+    "scriptMissing": "Nessun testo da leggere è configurato per questa lingua. Contatta un amministratore.",
+    "saveWarn": "Modificare l'immagine rigenererà tutti i clip.",
+    "regenerate": "Rigenera clip",
+    "regenerated": "Generazione clip riavviata",
+    "clipsTitle": "Clip generate",
+    "clipsEmpty": "Nessun clip configurato. Definisci almeno un prompt nella sezione admin Configurazioni → Avatar.",
+    "clipPending": "In attesa…",
+    "clipProcessing": "Generazione…",
+    "clipReady": "Pronto",
+    "clipFailed": "Errore",
+    "allReady": "Tutti pronti",
+    "allFailed": "Tutti falliti",
+    "partial": "Parziale",
+    "pending": "In attesa",
+    "processing": "Generazione",
+    "saved": "Avatar salvato",
+    "deleted": "Avatar eliminato",
+    "deleteConfirm": {
+      "title": "Eliminare l'avatar?",
+      "message": "Verranno eliminati immagine, audio e tutti i clip generati."
+    }
+  },
+  "avatarConfig": {
+    "title": "Configurazioni — Avatar",
+    "subtitle": "Gestisci i prompt video per la generazione dei clip MiniMax e i testi di trascrizione che gli utenti leggeranno per la registrazione vocale.",
+    "tabs": {
+      "prompts": "Prompt video",
+      "scripts": "Lingue trascrizione"
+    },
+    "addPrompt": "Aggiungi prompt",
+    "empty": "Nessun prompt configurato. Aggiungine almeno uno per abilitare la generazione clip.",
+    "fields": {
+      "label": "Etichetta",
+      "labelPlaceholder": "Es. \"Cenno di pensiero\"",
+      "prompt": "Prompt MiniMax (inglese, max 2000 caratteri)",
+      "active": "Attivo"
+    },
+    "moveUp": "Sposta su",
+    "moveDown": "Sposta giù",
+    "unsavedHint": "Modifiche non salvate — fai blur del campo per salvare.",
+    "count_one": "{{count}} clip configurato",
+    "count_other": "{{count}} clip configurati",
+    "created": "Prompt creato",
+    "updated": "Prompt aggiornato",
+    "deleted": "Prompt eliminato",
+    "deleteConfirm": {
+      "title": "Eliminare il prompt?",
+      "message": "Il prompt \"{{name}}\" sarà rimosso dalla configurazione."
+    },
+    "voiceScript": {
+      "title": "Testo da leggere durante la registrazione",
+      "subtitle": "Per ogni lingua, definisci il testo che l'utente vedrà e dovrà leggere ad alta voce mentre registra l'audio. Serve a ottenere un campione vocale standardizzato per il voice cloning.",
+      "empty": "Nessun testo configurato. Aggiungine almeno uno per la lingua di default.",
+      "add": "Aggiungi testo per una lingua",
+      "selectLang": "Seleziona lingua",
+      "placeholder": "Buongiorno, mi presento e leggo questo breve testo…",
+      "text": "Testo",
+      "saved": "Testo salvato",
+      "deleted": "Testo eliminato",
+      "deleteConfirm": {
+        "title": "Eliminare il testo?",
+        "message": "Verrà rimosso il testo da leggere per la lingua {{lang}}."
+      }
+    }
+  },
+  "permissions": {
+    "member:view": "Vaata liikmeid",
+    "member:invite": "Kutsu kasutajaid",
+    "member:assign_role": "Määra rolle",
+    "member:remove": "Eemalda liikmeid",
+    "template:slide:manage": "Halda slaidi malle",
+    "template:pdf:manage": "Halda PDF malle",
+    "permission:manage": "Halda õigusi",
+    "org:transfer_creator": "Anna creator-roll üle",
+    "org:update": "Muuda organisatsiooni",
+    "course_config:manage": "Gestisci parametri corsi"
+  },
+  "permissionDescriptions": {
+    "member:view": "Vedere l'elenco dei membri dell'organizzazione con nome, email, ruolo e data di iscrizione. Prerequisito per quasi tutte le altre azioni sui membri.",
+    "member:invite": "Creare inviti via email per nuovi membri scegliendo il ruolo iniziale. Ogni invito è un link monouso con scadenza a 7 giorni.",
+    "member:assign_role": "Cambiare il ruolo di un membro esistente, ma solo fino al proprio livello di rank: un Org Admin non può promuovere a Creator né modificare un membro di rango superiore.",
+    "member:remove": "Rimuovere un membro dall'organizzazione. Il Creator non è rimovibile direttamente: va prima trasferito ad un altro membro.",
+    "template:slide:manage": "Creare, modificare, eliminare e scegliere come default i template per le slide dei corsi (formato 16:9 / 4:3, colori, font, logo, immagine di sfondo).",
+    "template:pdf:manage": "Creare, modificare, eliminare e scegliere come default i template per i documenti PDF (formato A4/Letter, header/footer/margini in mm, colori, logo, sfondo).",
+    "permission:manage": "Modificare i permessi dell'organizzazione: override per ruolo (es. concedere a tutti i Manager un permesso non default) e override per singolo membro (concedi/revoca puntuale).",
+    "org:transfer_creator": "Trasferire il ruolo di Creator a un altro membro. Chi era Creator diventa Org Admin. Azione riservata al Creator e irreversibile senza un nuovo trasferimento.",
+    "org:update": "Modificare i dati anagrafici dell'organizzazione: nome, partita IVA, codice fiscale, indirizzo, contatti, logo.",
+    "course_config:manage": "Configurare i parametri di default per la generazione dei corsi: numero di moduli per CFU, lezioni per modulo, durata delle lezioni e attivazione della verifica di apprendimento finale (con il numero di domande a scelta multipla e aperte da generare). Questi valori vengono usati per pre-popolare la struttura di un nuovo corso."
+  },
+  "roles": {
+    "creator": "Looja",
+    "org_admin": "Organisatsiooni administraator",
+    "manager": "Manager",
+    "member": "Liige"
+  },
+  "errors": {
+    "generic": "Tekkis viga",
+    "loadingFailed": "Laadimine ebaõnnestus",
+    "saveFailed": "Salvestamine ebaõnnestus"
+  },
+  "i18n": {
+    "title": "Gestione lingue",
+    "subtitle": "Crea, modifica e cancella le lingue e le traduzioni della piattaforma",
+    "new": "Nuova lingua",
+    "edit": "Modifica lingua",
+    "editTranslations": "Modifica traduzioni",
+    "fields": {
+      "code": "Codice",
+      "codeHint": "ISO 639-1 (es. it, en) o regionale (es. pt-BR)",
+      "nameNative": "Nome nativo",
+      "flagCountry": "Bandiera (codice paese ISO, es. IT)",
+      "rtl": "Right-to-left",
+      "active": "Attiva",
+      "default": "Default",
+      "copyFrom": "Copia traduzioni da"
+    },
+    "stats": {
+      "translations_one": "{{count}} traduzione",
+      "translations_other": "{{count}} traduzioni"
+    },
+    "created": "Lingua creata",
+    "updated": "Lingua aggiornata",
+    "deleted": "Lingua eliminata",
+    "translationsSaved": "Traduzioni salvate ({{count}})",
+    "deleteConfirm": {
+      "title": "Eliminare la lingua?",
+      "message": "Stai per eliminare \"{{name}}\" e tutte le sue traduzioni."
+    },
+    "editor": {
+      "title": "Traduzioni — {{name}}",
+      "search": "Cerca chiave o valore",
+      "empty": "Nessuna traduzione",
+      "save": "Salva traduzioni",
+      "reference": "Riferimento {{lang}}",
+      "modifiedCount_one": "{{count}} chiave modificata",
+      "modifiedCount_other": "{{count}} chiavi modificate",
+      "noChanges": "Nessuna modifica"
+    }
+  },
+  "dashboard": {
+    "admin": {
+      "title": "Administreerimispaneel",
+      "subtitle": "a4u platvormi globaalne haldamine"
+    },
+    "org": {
+      "subtitle": "Roll: {{role}}",
+      "platformAdmin": "Admin piattaforma"
+    },
+    "noOrg": {
+      "title": "Tere tulemast",
+      "message": "Sa pole veel ühegi organisatsiooni liige. Oota kutset või võta ühendust administraatoriga."
+    }
+  }
+}

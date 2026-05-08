@@ -1,0 +1,516 @@
+{
+  "app": {
+    "name": "a4u",
+    "tagline": "Platforma univerzitných kurzov"
+  },
+  "common": {
+    "save": "Uložiť",
+    "cancel": "Zrušiť",
+    "delete": "Vymazať",
+    "edit": "Upraviť",
+    "add": "Pridať",
+    "loading": "Načítavanie…",
+    "saving": "Ukladanie…",
+    "creating": "Vytváranie…",
+    "remove": "Odstrániť",
+    "confirm": "Potvrdiť",
+    "close": "Zavrieť",
+    "search": "Hľadať",
+    "back": "Späť",
+    "next": "Ďalej",
+    "actions": "Akcie",
+    "of": "z",
+    "noResults": "Žiadne výsledky",
+    "copy": "Kopírovať",
+    "copied": "Skopírované!",
+    "yes": "Áno",
+    "no": "Nie",
+    "all": "Všetko",
+    "optional": "voliteľné",
+    "required": "povinné",
+    "moreInfo": "Viac informácií"
+  },
+  "auth": {
+    "login": {
+      "title": "Vitajte späť",
+      "subtitle": "Prihláste sa do svojho a4u priestoru",
+      "email": "E-mail",
+      "password": "Heslo",
+      "submit": "Prihlásiť sa",
+      "submitting": "Prihlasovanie…"
+    },
+    "logout": "Odhlásiť sa",
+    "invitation": {
+      "title": "Prijať pozvánku",
+      "subtitle": "Boli ste pozvaní do {{org}} ako {{role}}",
+      "fullName": "Celé meno",
+      "passwordHint": "Min. 10 znakov, jedno veľké písmeno, jedna číslica",
+      "submit": "Prijať pozvánku",
+      "submitting": "Potvrdzujem…",
+      "alreadyRegistered": "Už ste zaregistrovaní. Kliknite na \"Prijať\" pre pripojenie.",
+      "invalidOrExpired": "Pozvánka nie je platná, vypršala alebo už bola použitá."
+    }
+  },
+  "theme": {
+    "label": "Téma",
+    "light": "Svetlá",
+    "dark": "Tmavá",
+    "system": "Systém"
+  },
+  "language": {
+    "label": "Jazyk"
+  },
+  "nav": {
+    "platform": "Platforma",
+    "organization": "Organizácia",
+    "configurazioni": "Konfigurácia",
+    "personal": "Osobné",
+    "dashboard": "Prehľad",
+    "organizations": "Organizácie",
+    "users": "Používatelia",
+    "permissions": "Globálne oprávnenia",
+    "i18n": "Jazyky",
+    "members": "Členovia",
+    "templatesSlide": "Šablóny snímok",
+    "templatesPdf": "Šablóny PDF",
+    "avatarConfig": "Avatar",
+    "courseSettings": "Parametre kurzu"
+  },
+  "courseSettings": {
+    "title": "Parametre kurzu",
+    "subtitle": "Predvolené hodnoty použité na vygenerovanie štruktúry nového kurzu v tejto organizácii.",
+    "dirtyBanner": "Neuložené zmeny",
+    "saved": "Parametre uložené",
+    "sections": {
+      "structure": {
+        "title": "Štruktúra kurzu",
+        "subtitle": "Koľko modulov a lekcií sa vygeneruje na kredit."
+      },
+      "duration": {
+        "title": "Dĺžka lekcií",
+        "subtitle": "Štandardná dĺžka každej lekcie kurzu."
+      },
+      "assessment": {
+        "subtitle": "Posledná lekcia každého modulu je automaticky vygenerované hodnotenie vedomostí.",
+        "disabledHint": "Záverečné hodnotenie sa negeneruje. Každý modul končí bežnou poslednou lekciou."
+      }
+    },
+    "fields": {
+      "modulesPerCfu": "Moduly na kredit",
+      "lessonsPerModule": "Lekcie na modul",
+      "lessonDuration": "Dĺžka lekcie",
+      "assessment": "Záverečné hodnotenie vedomostí",
+      "assessmentHelp": "Ak je povolené, posledná lekcia každého modulu je automaticky vygenerované hodnotenie vedomostí: vygeneruje sa séria otázok (s výberom a otvorené) na overenie získaných kompetencií. Platforma generuje len obsah; doručovanie študentom je mimo rozsahu.",
+      "mcq": "Otázky s výberom",
+      "openQuestions": "Otvorené otázky"
+    },
+    "units": {
+      "modules": "moduly",
+      "lessons": "lekcie",
+      "minutes": "minúty",
+      "questions": "otázky"
+    },
+    "summary": {
+      "title": "Súhrn na kredit",
+      "modulesPerCfu": "Moduly",
+      "lessonsPerModule": "Lekcie na modul",
+      "lessonDuration": "Dĺžka lekcie",
+      "totalLessonsPerCfu": "Lekcií celkom",
+      "totalDurationPerCfu": "Celkový čas",
+      "mcq": "Otázky s výberom",
+      "openQuestions": "Otvorené otázky",
+      "totalQuestions": "Celkovo otázok hodnotenia",
+      "noAssessment": "Žiadne záverečné hodnotenie.",
+      "minutesValue_one": "{{count}} minúta",
+      "minutesValue_other": "{{count}} minút",
+      "hours_one": "{{count}} hodina",
+      "hours_other": "{{count}} hodín",
+      "hoursAndMinutes": "{{hours}}h {{minutes}}m"
+    }
+  },
+  "command": {
+    "placeholder": "Hľadať príkaz alebo stránku…",
+    "navigation": "Navigácia",
+    "actions": "Akcie",
+    "preferences": "Predvoľby",
+    "openCommandPalette": "Otvoriť paletu príkazov",
+    "newOrganization": "Nová organizácia",
+    "logout": "Odhlásiť",
+    "noResults": "Žiadne výsledky",
+    "switchTheme": "Zmeniť motív",
+    "switchLanguage": "Zmeniť jazyk"
+  },
+  "user": {
+    "profile": "Profil",
+    "menu": "Používateľské menu",
+    "myAvatar": "Môj avatar"
+  },
+  "orgSwitcher": {
+    "label": "Organizácia",
+    "search": "Hľadať organizáciu…",
+    "noOrgs": "Žiadna organizácia",
+    "select": "Vyberte organizáciu"
+  },
+  "organizations": {
+    "title": "Organizácie",
+    "subtitle": "Spravujte všetky organizácie platformy",
+    "new": "Nová organizácia",
+    "edit": "Upraviť organizáciu",
+    "search": "Hľadať podľa názvu",
+    "empty": "Žiadne organizácie",
+    "members": "Členovia",
+    "openDashboard": "Apri dashboard",
+    "deleted": "Organizácia zmazaná",
+    "created": "Organizácia vytvorená",
+    "updated": "Organizácia aktualizovaná",
+    "fields": {
+      "logo": "Logo organizácie",
+      "logoHint": "PNG / JPEG / WEBP, max 5 MB",
+      "name": "Názov",
+      "email": "E-mail",
+      "phone": "Telefón",
+      "website": "Web",
+      "vatNumber": "IČ DPH",
+      "fiscalCode": "DIČ",
+      "country": "Krajina",
+      "address": "Adresa",
+      "city": "Mesto",
+      "province": "Kraj",
+      "postalCode": "PSČ"
+    },
+    "deleteConfirm": {
+      "title": "Zmazať organizáciu?",
+      "message": "Chystáte sa zmazať \"{{name}}\". Akcia je vratná z administrácie."
+    }
+  },
+  "members": {
+    "title": "Členovia",
+    "subtitle": "Zobraziť a spravovať členov organizácie",
+    "subtitleAdmin": "Priamo prihlásiť používateľov ako členov",
+    "invite": "Pozvať",
+    "invited": "Člen pozvaný",
+    "removed": "Člen odstránený",
+    "roleChanged": "Rola aktualizovaná",
+    "transferConfirmed": "Rola creator prenesená",
+    "enroll": "Prihlásiť používateľa",
+    "enrollSubmit": "Prihlásiť",
+    "userPicker": "Používateľ",
+    "rolePicker": "Rola",
+    "fields": {
+      "name": "Meno",
+      "email": "E-mail",
+      "role": "Rola"
+    },
+    "inviteDialog": {
+      "title": "Pozvať člena",
+      "email": "E-mail",
+      "role": "Rola",
+      "submit": "Vytvoriť pozvánku",
+      "submitting": "Vytváranie…",
+      "tokenLabel": "Zdieľajte tento odkaz (platný 7 dní):",
+      "successTitle": "Pozvánka vytvorená"
+    },
+    "removeConfirm": {
+      "title": "Odstrániť člena?",
+      "message": "{{name}} bude odstránený z organizácie."
+    },
+    "transferConfirm": {
+      "title": "Preniesť rolu creator?",
+      "message": "Stanete sa adminom organizácie a {{name}} sa stane creatorom. Iba nový creator môže akciu vrátiť späť."
+    },
+    "actions": {
+      "permissions": "Oprávnenia",
+      "transfer": "Preniesť creator",
+      "remove": "Odstrániť"
+    }
+  },
+  "memberPermissions": {
+    "title": "Oprávnenia: {{name}}",
+    "subtitle": "Pre každé oprávnenie nechajte predvolenú hodnotu role alebo vynúťte grant/revoke pre tohto člena.",
+    "default": "Predvolené",
+    "grant": "Udeliť",
+    "revoke": "Odobrať",
+    "saved": "Oprávnenia člena aktualizované"
+  },
+  "users": {
+    "title": "Používatelia",
+    "subtitle": "Spravujte používateľov a admin platformy",
+    "new": "Nový používateľ",
+    "search": "Hľadať podľa mena alebo e-mailu",
+    "created": "Používateľ vytvorený",
+    "fields": {
+      "name": "Meno",
+      "email": "E-mail",
+      "active": "Aktívny",
+      "platformAdmin": "Admin platformy"
+    },
+    "createDialog": {
+      "title": "Nový používateľ",
+      "name": "Celé meno",
+      "email": "E-mail",
+      "password": "Heslo (≥10 znakov, 1 veľké, 1 číslica)",
+      "platformAdmin": "Admin platformy",
+      "submit": "Vytvoriť",
+      "submitting": "Vytváranie…"
+    }
+  },
+  "globalPermissions": {
+    "title": "Globálne oprávnenia",
+    "subtitle": "Upravte predvolené oprávnenia pre každú rolu. Platia pre všetky organizácie, pokiaľ nie sú explicitne prepísané.",
+    "rolePicker": "Rola",
+    "saved": "Oprávnenia uložené",
+    "save": "Uložiť oprávnenia"
+  },
+  "templates": {
+    "preview": {
+      "lessonTag": "Lezione 01",
+      "chapter": "Capitolo introduttivo",
+      "title": "Argomento principale della lezione",
+      "subtitle": "Una breve descrizione del contesto: cosa vedremo, perché è importante e quali competenze sviluppiamo.",
+      "bullet1": "Obiettivi di apprendimento e prerequisiti",
+      "bullet2": "Concetti chiave con esempi pratici",
+      "bullet3": "Esercizi guidati e materiale di riferimento",
+      "author": "Prof. Mario Rossi",
+      "role": "Cattedra di Informatica",
+      "date": "12 marzo 2026",
+      "live": "Live"
+    },
+    "slide": {
+      "title": "Šablóny snímok",
+      "subtitle": "Vytvárajte a upravujte šablóny snímok pre kurzy",
+      "new": "Nová šablóna",
+      "newPage": "Nová šablóna snímky",
+      "editPage": "Upraviť: {{name}}",
+      "previewLive": "Živý náhľad",
+      "previewHint": "Náhľad sa aktualizuje v reálnom čase pri úprave.",
+      "deleted": "Šablóna zmazaná",
+      "created": "Šablóna vytvorená",
+      "updated": "Šablóna aktualizovaná",
+      "empty": "Žiadne šablóny"
+    },
+    "pdf": {
+      "title": "PDF šablóny",
+      "subtitle": "Vytvárajte a upravujte šablóny PDF dokumentov",
+      "new": "Nová šablóna",
+      "newPage": "Nová PDF šablóna",
+      "editPage": "Upraviť: {{name}}",
+      "previewLive": "Živý náhľad",
+      "previewHint": "Náhľad sa aktualizuje v reálnom čase pri úprave.",
+      "deleted": "Šablóna zmazaná",
+      "created": "Šablóna vytvorená",
+      "updated": "Šablóna aktualizovaná",
+      "empty": "Žiadne šablóny"
+    },
+    "fields": {
+      "name": "Názov šablóny",
+      "size": "Formát snímky",
+      "pageSize": "Veľkosť strany",
+      "font": "Písmo",
+      "textColor": "Farba textu",
+      "primaryColor": "Primárna farba",
+      "secondaryColor": "Sekundárna farba",
+      "background": "Obrázok pozadia",
+      "logoLeft": "Logo vľavo hore",
+      "logoRight": "Logo vpravo hore",
+      "headerHeight": "Výška hlavičky (mm)",
+      "footerHeight": "Výška päty (mm)",
+      "margin": "Okraj strany (mm)",
+      "backgroundOpacity": "Opacità sfondo (%)"
+    },
+    "deleteConfirm": {
+      "title": "Zmazať šablónu?",
+      "message": "Chystáte sa zmazať \"{{name}}\"."
+    },
+    "default": "Default",
+    "setDefault": "Imposta come default",
+    "defaultSet": "Template impostato come default"
+  },
+  "myAvatar": {
+    "title": "Il mio avatar",
+    "subtitle": "Carica una foto frontale e un audio. Da questi verranno generati automaticamente dei clip video.",
+    "tabs": {
+      "image": "Immagine",
+      "audio": "Audio",
+      "next": "Avanti",
+      "back": "Indietro"
+    },
+    "create": "Crea avatar",
+    "unsavedChanges": "Modifiche non salvate",
+    "statusReady": "Avatar attivo",
+    "statusSummary": "{{ready}}/{{total}} clip pronte · {{failed}} errori",
+    "playAudio": "Ascolta audio",
+    "clipsCount_one": "{{count}} clip in totale",
+    "clipsCount_other": "{{count}} clip in totale",
+    "image": "Foto frontale",
+    "imageHint": "PNG / JPEG / WEBP. L'immagine verrà ritagliata in formato quadrato (1:1).",
+    "imageEmpty": "Nessuna immagine",
+    "recrop": "Ritaglia di nuovo",
+    "cropTitle": "Ritaglia l'immagine",
+    "cropHint": "Trascina e ridimensiona l'area di selezione. Il rapporto è fissato a 1:1.",
+    "cropConfirm": "Applica ritaglio",
+    "slidePreviewTitle": "Anteprima nella slide",
+    "slidePreviewHint": "Esempio di come l'avatar apparirà in basso a destra in un template slide.",
+    "audio": "Audio personale",
+    "audioHint": "Leggi ad alta voce il testo qui sopra. La registrazione servirà ad addestrare un modello vocale fedele alla tua voce.",
+    "audioUpload": "Carica file",
+    "audioRecord": "Registra adesso",
+    "recordStart": "Avvia registrazione",
+    "recordStop": "Stop",
+    "audioLang": "Lingua audio",
+    "scriptTitle": "Testo da leggere",
+    "scriptHint": "Leggi questo testo a voce naturale durante la registrazione. Più la lettura è chiara e rilassata, migliore sarà il modello vocale.",
+    "scriptFallback": "Per la lingua selezionata non è ancora configurato un testo specifico: viene mostrato quello in {{lang}}.",
+    "scriptMissing": "Nessun testo da leggere è configurato per questa lingua. Contatta un amministratore.",
+    "saveWarn": "Modificare l'immagine rigenererà tutti i clip.",
+    "regenerate": "Rigenera clip",
+    "regenerated": "Generazione clip riavviata",
+    "clipsTitle": "Clip generate",
+    "clipsEmpty": "Nessun clip configurato. Definisci almeno un prompt nella sezione admin Configurazioni → Avatar.",
+    "clipPending": "In attesa…",
+    "clipProcessing": "Generazione…",
+    "clipReady": "Pronto",
+    "clipFailed": "Errore",
+    "allReady": "Tutti pronti",
+    "allFailed": "Tutti falliti",
+    "partial": "Parziale",
+    "pending": "In attesa",
+    "processing": "Generazione",
+    "saved": "Avatar salvato",
+    "deleted": "Avatar eliminato",
+    "deleteConfirm": {
+      "title": "Eliminare l'avatar?",
+      "message": "Verranno eliminati immagine, audio e tutti i clip generati."
+    }
+  },
+  "avatarConfig": {
+    "title": "Configurazioni — Avatar",
+    "subtitle": "Gestisci i prompt video per la generazione dei clip MiniMax e i testi di trascrizione che gli utenti leggeranno per la registrazione vocale.",
+    "tabs": {
+      "prompts": "Prompt video",
+      "scripts": "Lingue trascrizione"
+    },
+    "addPrompt": "Aggiungi prompt",
+    "empty": "Nessun prompt configurato. Aggiungine almeno uno per abilitare la generazione clip.",
+    "fields": {
+      "label": "Etichetta",
+      "labelPlaceholder": "Es. \"Cenno di pensiero\"",
+      "prompt": "Prompt MiniMax (inglese, max 2000 caratteri)",
+      "active": "Attivo"
+    },
+    "moveUp": "Sposta su",
+    "moveDown": "Sposta giù",
+    "unsavedHint": "Modifiche non salvate — fai blur del campo per salvare.",
+    "count_one": "{{count}} clip configurato",
+    "count_other": "{{count}} clip configurati",
+    "created": "Prompt creato",
+    "updated": "Prompt aggiornato",
+    "deleted": "Prompt eliminato",
+    "deleteConfirm": {
+      "title": "Eliminare il prompt?",
+      "message": "Il prompt \"{{name}}\" sarà rimosso dalla configurazione."
+    },
+    "voiceScript": {
+      "title": "Testo da leggere durante la registrazione",
+      "subtitle": "Per ogni lingua, definisci il testo che l'utente vedrà e dovrà leggere ad alta voce mentre registra l'audio. Serve a ottenere un campione vocale standardizzato per il voice cloning.",
+      "empty": "Nessun testo configurato. Aggiungine almeno uno per la lingua di default.",
+      "add": "Aggiungi testo per una lingua",
+      "selectLang": "Seleziona lingua",
+      "placeholder": "Buongiorno, mi presento e leggo questo breve testo…",
+      "text": "Testo",
+      "saved": "Testo salvato",
+      "deleted": "Testo eliminato",
+      "deleteConfirm": {
+        "title": "Eliminare il testo?",
+        "message": "Verrà rimosso il testo da leggere per la lingua {{lang}}."
+      }
+    }
+  },
+  "permissions": {
+    "member:view": "Zobraziť členov",
+    "member:invite": "Pozvať používateľov",
+    "member:assign_role": "Priradiť role",
+    "member:remove": "Odstrániť členov",
+    "template:slide:manage": "Spravovať šablóny snímok",
+    "template:pdf:manage": "Spravovať PDF šablóny",
+    "permission:manage": "Spravovať oprávnenia",
+    "org:transfer_creator": "Preniesť rolu creator",
+    "org:update": "Upraviť organizáciu",
+    "course_config:manage": "Gestisci parametri corsi"
+  },
+  "permissionDescriptions": {
+    "member:view": "Vedere l'elenco dei membri dell'organizzazione con nome, email, ruolo e data di iscrizione. Prerequisito per quasi tutte le altre azioni sui membri.",
+    "member:invite": "Creare inviti via email per nuovi membri scegliendo il ruolo iniziale. Ogni invito è un link monouso con scadenza a 7 giorni.",
+    "member:assign_role": "Cambiare il ruolo di un membro esistente, ma solo fino al proprio livello di rank: un Org Admin non può promuovere a Creator né modificare un membro di rango superiore.",
+    "member:remove": "Rimuovere un membro dall'organizzazione. Il Creator non è rimovibile direttamente: va prima trasferito ad un altro membro.",
+    "template:slide:manage": "Creare, modificare, eliminare e scegliere come default i template per le slide dei corsi (formato 16:9 / 4:3, colori, font, logo, immagine di sfondo).",
+    "template:pdf:manage": "Creare, modificare, eliminare e scegliere come default i template per i documenti PDF (formato A4/Letter, header/footer/margini in mm, colori, logo, sfondo).",
+    "permission:manage": "Modificare i permessi dell'organizzazione: override per ruolo (es. concedere a tutti i Manager un permesso non default) e override per singolo membro (concedi/revoca puntuale).",
+    "org:transfer_creator": "Trasferire il ruolo di Creator a un altro membro. Chi era Creator diventa Org Admin. Azione riservata al Creator e irreversibile senza un nuovo trasferimento.",
+    "org:update": "Modificare i dati anagrafici dell'organizzazione: nome, partita IVA, codice fiscale, indirizzo, contatti, logo.",
+    "course_config:manage": "Configurare i parametri di default per la generazione dei corsi: numero di moduli per CFU, lezioni per modulo, durata delle lezioni e attivazione della verifica di apprendimento finale (con il numero di domande a scelta multipla e aperte da generare). Questi valori vengono usati per pre-popolare la struttura di un nuovo corso."
+  },
+  "roles": {
+    "creator": "Tvorca",
+    "org_admin": "Administrátor organizácie",
+    "manager": "Manager",
+    "member": "Člen"
+  },
+  "errors": {
+    "generic": "Vyskytla sa chyba",
+    "loadingFailed": "Načítanie zlyhalo",
+    "saveFailed": "Uloženie zlyhalo"
+  },
+  "i18n": {
+    "title": "Gestione lingue",
+    "subtitle": "Crea, modifica e cancella le lingue e le traduzioni della piattaforma",
+    "new": "Nuova lingua",
+    "edit": "Modifica lingua",
+    "editTranslations": "Modifica traduzioni",
+    "fields": {
+      "code": "Codice",
+      "codeHint": "ISO 639-1 (es. it, en) o regionale (es. pt-BR)",
+      "nameNative": "Nome nativo",
+      "flagCountry": "Bandiera (codice paese ISO, es. IT)",
+      "rtl": "Right-to-left",
+      "active": "Attiva",
+      "default": "Default",
+      "copyFrom": "Copia traduzioni da"
+    },
+    "stats": {
+      "translations_one": "{{count}} traduzione",
+      "translations_other": "{{count}} traduzioni"
+    },
+    "created": "Lingua creata",
+    "updated": "Lingua aggiornata",
+    "deleted": "Lingua eliminata",
+    "translationsSaved": "Traduzioni salvate ({{count}})",
+    "deleteConfirm": {
+      "title": "Eliminare la lingua?",
+      "message": "Stai per eliminare \"{{name}}\" e tutte le sue traduzioni."
+    },
+    "editor": {
+      "title": "Traduzioni — {{name}}",
+      "search": "Cerca chiave o valore",
+      "empty": "Nessuna traduzione",
+      "save": "Salva traduzioni",
+      "reference": "Riferimento {{lang}}",
+      "modifiedCount_one": "{{count}} chiave modificata",
+      "modifiedCount_other": "{{count}} chiavi modificate",
+      "noChanges": "Nessuna modifica"
+    }
+  },
+  "dashboard": {
+    "admin": {
+      "title": "Administračný panel",
+      "subtitle": "Globálna správa platformy a4u"
+    },
+    "org": {
+      "subtitle": "Rola: {{role}}",
+      "platformAdmin": "Admin piattaforma"
+    },
+    "noOrg": {
+      "title": "Vitajte",
+      "message": "Zatiaľ nie ste členom žiadnej organizácie. Počkajte na pozvánku alebo kontaktujte administrátora."
+    }
+  }
+}

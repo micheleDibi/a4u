@@ -1,0 +1,516 @@
+{
+  "app": {
+    "name": "a4u",
+    "tagline": "Universitetinių kursų platforma"
+  },
+  "common": {
+    "save": "Įrašyti",
+    "cancel": "Atšaukti",
+    "delete": "Ištrinti",
+    "edit": "Redaguoti",
+    "add": "Pridėti",
+    "loading": "Įkeliama…",
+    "saving": "Įrašoma…",
+    "creating": "Kuriama…",
+    "remove": "Pašalinti",
+    "confirm": "Patvirtinti",
+    "close": "Uždaryti",
+    "search": "Ieškoti",
+    "back": "Atgal",
+    "next": "Toliau",
+    "actions": "Veiksmai",
+    "of": "iš",
+    "noResults": "Rezultatų nėra",
+    "copy": "Kopijuoti",
+    "copied": "Nukopijuota!",
+    "yes": "Taip",
+    "no": "Ne",
+    "all": "Visi",
+    "optional": "neprivalomas",
+    "required": "privalomas",
+    "moreInfo": "Daugiau informacijos"
+  },
+  "auth": {
+    "login": {
+      "title": "Sveiki sugrįžę",
+      "subtitle": "Prisijunkite prie savo a4u darbo erdvės",
+      "email": "El. paštas",
+      "password": "Slaptažodis",
+      "submit": "Prisijungti",
+      "submitting": "Prisijungiama…"
+    },
+    "logout": "Atsijungti",
+    "invitation": {
+      "title": "Priimti pakvietimą",
+      "subtitle": "Jūs pakviesti į {{org}} kaip {{role}}",
+      "fullName": "Pilnas vardas",
+      "passwordHint": "Mažiausiai 10 simbolių, viena didžioji, vienas skaičius",
+      "submit": "Priimti pakvietimą",
+      "submitting": "Patvirtinama…",
+      "alreadyRegistered": "Jūs jau užsiregistravęs. Spustelėkite \"Priimti\", kad būtumėte pridėtas.",
+      "invalidOrExpired": "Pakvietimas negaliojantis, pasibaigęs arba jau panaudotas."
+    }
+  },
+  "theme": {
+    "label": "Tema",
+    "light": "Šviesi",
+    "dark": "Tamsi",
+    "system": "Sistemos"
+  },
+  "language": {
+    "label": "Kalba"
+  },
+  "nav": {
+    "platform": "Platforma",
+    "organization": "Organizacija",
+    "configurazioni": "Konfigūracija",
+    "personal": "Asmeninis",
+    "dashboard": "Skydelis",
+    "organizations": "Organizacijos",
+    "users": "Naudotojai",
+    "permissions": "Globalūs leidimai",
+    "i18n": "Kalbos",
+    "members": "Nariai",
+    "templatesSlide": "Skaidrių šablonai",
+    "templatesPdf": "PDF šablonai",
+    "avatarConfig": "Avataras",
+    "courseSettings": "Kurso parametrai"
+  },
+  "courseSettings": {
+    "title": "Kurso parametrai",
+    "subtitle": "Numatytosios reikšmės, naudojamos generuojant naujo kurso struktūrą šioje organizacijoje.",
+    "dirtyBanner": "Neįrašyti pakeitimai",
+    "saved": "Parametrai įrašyti",
+    "sections": {
+      "structure": {
+        "title": "Kurso struktūra",
+        "subtitle": "Kiek modulių ir pamokų sugeneruojama vienam kreditui."
+      },
+      "duration": {
+        "title": "Pamokų trukmė",
+        "subtitle": "Numatytoji kiekvienos kurso pamokos trukmė."
+      },
+      "assessment": {
+        "subtitle": "Paskutinė kiekvieno modulio pamoka yra automatiškai sugeneruotas žinių vertinimas.",
+        "disabledHint": "Galutinis vertinimas negeneruojamas. Kiekvienas modulis baigiasi įprasta paskutine pamoka."
+      }
+    },
+    "fields": {
+      "modulesPerCfu": "Modulių vienam kreditui",
+      "lessonsPerModule": "Pamokų moduliui",
+      "lessonDuration": "Pamokos trukmė",
+      "assessment": "Galutinis žinių vertinimas",
+      "assessmentHelp": "Jei įjungta, paskutinė kiekvieno modulio pamoka yra automatiškai sugeneruotas žinių vertinimas: sugeneruojamas klausimų rinkinys (pasirenkamųjų ir atvirų), kad būtų patikrintos įgytos kompetencijos. Platforma generuoja tik turinį; pristatymas studentams nepatenka į apimtį.",
+      "mcq": "Pasirenkamieji klausimai",
+      "openQuestions": "Atviri klausimai"
+    },
+    "units": {
+      "modules": "moduliai",
+      "lessons": "pamokos",
+      "minutes": "minutės",
+      "questions": "klausimai"
+    },
+    "summary": {
+      "title": "Suvestinė vienam kreditui",
+      "modulesPerCfu": "Moduliai",
+      "lessonsPerModule": "Pamokų moduliui",
+      "lessonDuration": "Pamokos trukmė",
+      "totalLessonsPerCfu": "Iš viso pamokų",
+      "totalDurationPerCfu": "Bendra trukmė",
+      "mcq": "Pasirenkamieji klausimai",
+      "openQuestions": "Atviri klausimai",
+      "totalQuestions": "Iš viso vertinimo klausimų",
+      "noAssessment": "Galutinis vertinimas nesugeneruojamas.",
+      "minutesValue_one": "{{count}} minutė",
+      "minutesValue_other": "{{count}} minutės",
+      "hours_one": "{{count}} valanda",
+      "hours_other": "{{count}} valandos",
+      "hoursAndMinutes": "{{hours}}h {{minutes}}m"
+    }
+  },
+  "command": {
+    "placeholder": "Ieškoti komandos arba puslapio…",
+    "navigation": "Navigacija",
+    "actions": "Veiksmai",
+    "preferences": "Nustatymai",
+    "openCommandPalette": "Atverti komandų paletę",
+    "newOrganization": "Nauja organizacija",
+    "logout": "Atsijungti",
+    "noResults": "Nėra rezultatų",
+    "switchTheme": "Keisti temą",
+    "switchLanguage": "Keisti kalbą"
+  },
+  "user": {
+    "profile": "Profilis",
+    "menu": "Naudotojo meniu",
+    "myAvatar": "Mano avataras"
+  },
+  "orgSwitcher": {
+    "label": "Organizacija",
+    "search": "Ieškoti organizacijos…",
+    "noOrgs": "Nėra organizacijų",
+    "select": "Pasirinkite organizaciją"
+  },
+  "organizations": {
+    "title": "Organizacijos",
+    "subtitle": "Tvarkykite visas platformos organizacijas",
+    "new": "Nauja organizacija",
+    "edit": "Redaguoti organizaciją",
+    "search": "Ieškoti pagal pavadinimą",
+    "empty": "Nėra organizacijų",
+    "members": "Nariai",
+    "openDashboard": "Apri dashboard",
+    "deleted": "Organizacija ištrinta",
+    "created": "Organizacija sukurta",
+    "updated": "Organizacija atnaujinta",
+    "fields": {
+      "logo": "Organizacijos logotipas",
+      "logoHint": "PNG / JPEG / WEBP, ne daugiau 5 MB",
+      "name": "Pavadinimas",
+      "email": "El. paštas",
+      "phone": "Telefonas",
+      "website": "Svetainė",
+      "vatNumber": "PVM numeris",
+      "fiscalCode": "Mokesčių kodas",
+      "country": "Šalis",
+      "address": "Adresas",
+      "city": "Miestas",
+      "province": "Apskritis",
+      "postalCode": "Pašto kodas"
+    },
+    "deleteConfirm": {
+      "title": "Ištrinti organizaciją?",
+      "message": "Ruošiatės ištrinti \"{{name}}\". Veiksmas grąžinamas iš administracijos."
+    }
+  },
+  "members": {
+    "title": "Nariai",
+    "subtitle": "Peržiūrėti ir tvarkyti organizacijos narius",
+    "subtitleAdmin": "Tiesiogiai užregistruoti vartotojus kaip narius",
+    "invite": "Pakviesti",
+    "invited": "Narys pakviestas",
+    "removed": "Narys pašalintas",
+    "roleChanged": "Vaidmuo atnaujintas",
+    "transferConfirmed": "Creator vaidmuo perkeltas",
+    "enroll": "Užregistruoti vartotoją",
+    "enrollSubmit": "Užregistruoti",
+    "userPicker": "Vartotojas",
+    "rolePicker": "Vaidmuo",
+    "fields": {
+      "name": "Vardas",
+      "email": "El. paštas",
+      "role": "Vaidmuo"
+    },
+    "inviteDialog": {
+      "title": "Pakviesti narį",
+      "email": "El. paštas",
+      "role": "Vaidmuo",
+      "submit": "Sukurti pakvietimą",
+      "submitting": "Kuriama…",
+      "tokenLabel": "Pasidalykite šia nuoroda (galioja 7 dienas):",
+      "successTitle": "Pakvietimas sukurtas"
+    },
+    "removeConfirm": {
+      "title": "Pašalinti narį?",
+      "message": "{{name}} bus pašalintas iš organizacijos."
+    },
+    "transferConfirm": {
+      "title": "Perkelti creator vaidmenį?",
+      "message": "Tapsite organizacijos adminu, o {{name}} taps creator. Tik naujas creator gali atšaukti."
+    },
+    "actions": {
+      "permissions": "Leidimai",
+      "transfer": "Perkelti creator",
+      "remove": "Pašalinti"
+    }
+  },
+  "memberPermissions": {
+    "title": "{{name}} leidimai",
+    "subtitle": "Kiekvienam leidimui palikite vaidmens numatytąją reikšmę arba priverskite grant/revoke šiam nariui.",
+    "default": "Numatytasis",
+    "grant": "Suteikti",
+    "revoke": "Atšaukti",
+    "saved": "Nario leidimai atnaujinti"
+  },
+  "users": {
+    "title": "Vartotojai",
+    "subtitle": "Tvarkykite vartotojus ir platformos adminus",
+    "new": "Naujas vartotojas",
+    "search": "Ieškoti pagal vardą ar el. paštą",
+    "created": "Vartotojas sukurtas",
+    "fields": {
+      "name": "Vardas",
+      "email": "El. paštas",
+      "active": "Aktyvus",
+      "platformAdmin": "Platformos adminas"
+    },
+    "createDialog": {
+      "title": "Naujas vartotojas",
+      "name": "Pilnas vardas",
+      "email": "El. paštas",
+      "password": "Slaptažodis (≥10 simb., 1 didelė, 1 skaičius)",
+      "platformAdmin": "Platformos adminas",
+      "submit": "Sukurti",
+      "submitting": "Kuriama…"
+    }
+  },
+  "globalPermissions": {
+    "title": "Globalūs leidimai",
+    "subtitle": "Redaguokite kiekvieno vaidmens numatytuosius leidimus. Galioja visoms organizacijoms, nebent aiškiai pakeičiama.",
+    "rolePicker": "Vaidmuo",
+    "saved": "Leidimai išsaugoti",
+    "save": "Išsaugoti leidimus"
+  },
+  "templates": {
+    "preview": {
+      "lessonTag": "Lezione 01",
+      "chapter": "Capitolo introduttivo",
+      "title": "Argomento principale della lezione",
+      "subtitle": "Una breve descrizione del contesto: cosa vedremo, perché è importante e quali competenze sviluppiamo.",
+      "bullet1": "Obiettivi di apprendimento e prerequisiti",
+      "bullet2": "Concetti chiave con esempi pratici",
+      "bullet3": "Esercizi guidati e materiale di riferimento",
+      "author": "Prof. Mario Rossi",
+      "role": "Cattedra di Informatica",
+      "date": "12 marzo 2026",
+      "live": "Live"
+    },
+    "slide": {
+      "title": "Skaidrių šablonai",
+      "subtitle": "Kurkite ir redaguokite kursų skaidrių šablonus",
+      "new": "Naujas šablonas",
+      "newPage": "Naujas skaidrės šablonas",
+      "editPage": "Redaguoti: {{name}}",
+      "previewLive": "Peržiūra realiu laiku",
+      "previewHint": "Peržiūra atnaujinama realiu laiku redaguojant.",
+      "deleted": "Šablonas ištrintas",
+      "created": "Šablonas sukurtas",
+      "updated": "Šablonas atnaujintas",
+      "empty": "Šablonų dar nėra"
+    },
+    "pdf": {
+      "title": "PDF šablonai",
+      "subtitle": "Kurkite ir redaguokite PDF dokumentų šablonus",
+      "new": "Naujas šablonas",
+      "newPage": "Naujas PDF šablonas",
+      "editPage": "Redaguoti: {{name}}",
+      "previewLive": "Peržiūra realiu laiku",
+      "previewHint": "Peržiūra atnaujinama realiu laiku redaguojant.",
+      "deleted": "Šablonas ištrintas",
+      "created": "Šablonas sukurtas",
+      "updated": "Šablonas atnaujintas",
+      "empty": "Šablonų dar nėra"
+    },
+    "fields": {
+      "name": "Šablono pavadinimas",
+      "size": "Skaidrės formatas",
+      "pageSize": "Puslapio dydis",
+      "font": "Šriftas",
+      "textColor": "Teksto spalva",
+      "primaryColor": "Pagrindinė spalva",
+      "secondaryColor": "Antrinė spalva",
+      "background": "Fono paveikslėlis",
+      "logoLeft": "Logotipas viršuje kairėje",
+      "logoRight": "Logotipas viršuje dešinėje",
+      "headerHeight": "Antraštės aukštis (mm)",
+      "footerHeight": "Poraštės aukštis (mm)",
+      "margin": "Puslapio paraštė (mm)",
+      "backgroundOpacity": "Opacità sfondo (%)"
+    },
+    "deleteConfirm": {
+      "title": "Ištrinti šabloną?",
+      "message": "Ruošiatės ištrinti \"{{name}}\"."
+    },
+    "default": "Default",
+    "setDefault": "Imposta come default",
+    "defaultSet": "Template impostato come default"
+  },
+  "myAvatar": {
+    "title": "Il mio avatar",
+    "subtitle": "Carica una foto frontale e un audio. Da questi verranno generati automaticamente dei clip video.",
+    "tabs": {
+      "image": "Immagine",
+      "audio": "Audio",
+      "next": "Avanti",
+      "back": "Indietro"
+    },
+    "create": "Crea avatar",
+    "unsavedChanges": "Modifiche non salvate",
+    "statusReady": "Avatar attivo",
+    "statusSummary": "{{ready}}/{{total}} clip pronte · {{failed}} errori",
+    "playAudio": "Ascolta audio",
+    "clipsCount_one": "{{count}} clip in totale",
+    "clipsCount_other": "{{count}} clip in totale",
+    "image": "Foto frontale",
+    "imageHint": "PNG / JPEG / WEBP. L'immagine verrà ritagliata in formato quadrato (1:1).",
+    "imageEmpty": "Nessuna immagine",
+    "recrop": "Ritaglia di nuovo",
+    "cropTitle": "Ritaglia l'immagine",
+    "cropHint": "Trascina e ridimensiona l'area di selezione. Il rapporto è fissato a 1:1.",
+    "cropConfirm": "Applica ritaglio",
+    "slidePreviewTitle": "Anteprima nella slide",
+    "slidePreviewHint": "Esempio di come l'avatar apparirà in basso a destra in un template slide.",
+    "audio": "Audio personale",
+    "audioHint": "Leggi ad alta voce il testo qui sopra. La registrazione servirà ad addestrare un modello vocale fedele alla tua voce.",
+    "audioUpload": "Carica file",
+    "audioRecord": "Registra adesso",
+    "recordStart": "Avvia registrazione",
+    "recordStop": "Stop",
+    "audioLang": "Lingua audio",
+    "scriptTitle": "Testo da leggere",
+    "scriptHint": "Leggi questo testo a voce naturale durante la registrazione. Più la lettura è chiara e rilassata, migliore sarà il modello vocale.",
+    "scriptFallback": "Per la lingua selezionata non è ancora configurato un testo specifico: viene mostrato quello in {{lang}}.",
+    "scriptMissing": "Nessun testo da leggere è configurato per questa lingua. Contatta un amministratore.",
+    "saveWarn": "Modificare l'immagine rigenererà tutti i clip.",
+    "regenerate": "Rigenera clip",
+    "regenerated": "Generazione clip riavviata",
+    "clipsTitle": "Clip generate",
+    "clipsEmpty": "Nessun clip configurato. Definisci almeno un prompt nella sezione admin Configurazioni → Avatar.",
+    "clipPending": "In attesa…",
+    "clipProcessing": "Generazione…",
+    "clipReady": "Pronto",
+    "clipFailed": "Errore",
+    "allReady": "Tutti pronti",
+    "allFailed": "Tutti falliti",
+    "partial": "Parziale",
+    "pending": "In attesa",
+    "processing": "Generazione",
+    "saved": "Avatar salvato",
+    "deleted": "Avatar eliminato",
+    "deleteConfirm": {
+      "title": "Eliminare l'avatar?",
+      "message": "Verranno eliminati immagine, audio e tutti i clip generati."
+    }
+  },
+  "avatarConfig": {
+    "title": "Configurazioni — Avatar",
+    "subtitle": "Gestisci i prompt video per la generazione dei clip MiniMax e i testi di trascrizione che gli utenti leggeranno per la registrazione vocale.",
+    "tabs": {
+      "prompts": "Prompt video",
+      "scripts": "Lingue trascrizione"
+    },
+    "addPrompt": "Aggiungi prompt",
+    "empty": "Nessun prompt configurato. Aggiungine almeno uno per abilitare la generazione clip.",
+    "fields": {
+      "label": "Etichetta",
+      "labelPlaceholder": "Es. \"Cenno di pensiero\"",
+      "prompt": "Prompt MiniMax (inglese, max 2000 caratteri)",
+      "active": "Attivo"
+    },
+    "moveUp": "Sposta su",
+    "moveDown": "Sposta giù",
+    "unsavedHint": "Modifiche non salvate — fai blur del campo per salvare.",
+    "count_one": "{{count}} clip configurato",
+    "count_other": "{{count}} clip configurati",
+    "created": "Prompt creato",
+    "updated": "Prompt aggiornato",
+    "deleted": "Prompt eliminato",
+    "deleteConfirm": {
+      "title": "Eliminare il prompt?",
+      "message": "Il prompt \"{{name}}\" sarà rimosso dalla configurazione."
+    },
+    "voiceScript": {
+      "title": "Testo da leggere durante la registrazione",
+      "subtitle": "Per ogni lingua, definisci il testo che l'utente vedrà e dovrà leggere ad alta voce mentre registra l'audio. Serve a ottenere un campione vocale standardizzato per il voice cloning.",
+      "empty": "Nessun testo configurato. Aggiungine almeno uno per la lingua di default.",
+      "add": "Aggiungi testo per una lingua",
+      "selectLang": "Seleziona lingua",
+      "placeholder": "Buongiorno, mi presento e leggo questo breve testo…",
+      "text": "Testo",
+      "saved": "Testo salvato",
+      "deleted": "Testo eliminato",
+      "deleteConfirm": {
+        "title": "Eliminare il testo?",
+        "message": "Verrà rimosso il testo da leggere per la lingua {{lang}}."
+      }
+    }
+  },
+  "permissions": {
+    "member:view": "Peržiūrėti narius",
+    "member:invite": "Kviesti vartotojus",
+    "member:assign_role": "Priskirti vaidmenis",
+    "member:remove": "Šalinti narius",
+    "template:slide:manage": "Tvarkyti skaidrių šablonus",
+    "template:pdf:manage": "Tvarkyti PDF šablonus",
+    "permission:manage": "Tvarkyti leidimus",
+    "org:transfer_creator": "Perkelti creator vaidmenį",
+    "org:update": "Redaguoti organizaciją",
+    "course_config:manage": "Gestisci parametri corsi"
+  },
+  "permissionDescriptions": {
+    "member:view": "Vedere l'elenco dei membri dell'organizzazione con nome, email, ruolo e data di iscrizione. Prerequisito per quasi tutte le altre azioni sui membri.",
+    "member:invite": "Creare inviti via email per nuovi membri scegliendo il ruolo iniziale. Ogni invito è un link monouso con scadenza a 7 giorni.",
+    "member:assign_role": "Cambiare il ruolo di un membro esistente, ma solo fino al proprio livello di rank: un Org Admin non può promuovere a Creator né modificare un membro di rango superiore.",
+    "member:remove": "Rimuovere un membro dall'organizzazione. Il Creator non è rimovibile direttamente: va prima trasferito ad un altro membro.",
+    "template:slide:manage": "Creare, modificare, eliminare e scegliere come default i template per le slide dei corsi (formato 16:9 / 4:3, colori, font, logo, immagine di sfondo).",
+    "template:pdf:manage": "Creare, modificare, eliminare e scegliere come default i template per i documenti PDF (formato A4/Letter, header/footer/margini in mm, colori, logo, sfondo).",
+    "permission:manage": "Modificare i permessi dell'organizzazione: override per ruolo (es. concedere a tutti i Manager un permesso non default) e override per singolo membro (concedi/revoca puntuale).",
+    "org:transfer_creator": "Trasferire il ruolo di Creator a un altro membro. Chi era Creator diventa Org Admin. Azione riservata al Creator e irreversibile senza un nuovo trasferimento.",
+    "org:update": "Modificare i dati anagrafici dell'organizzazione: nome, partita IVA, codice fiscale, indirizzo, contatti, logo.",
+    "course_config:manage": "Configurare i parametri di default per la generazione dei corsi: numero di moduli per CFU, lezioni per modulo, durata delle lezioni e attivazione della verifica di apprendimento finale (con il numero di domande a scelta multipla e aperte da generare). Questi valori vengono usati per pre-popolare la struttura di un nuovo corso."
+  },
+  "roles": {
+    "creator": "Kūrėjas",
+    "org_admin": "Organizacijos administratorius",
+    "manager": "Manager",
+    "member": "Narys"
+  },
+  "errors": {
+    "generic": "Įvyko klaida",
+    "loadingFailed": "Įkėlimas nepavyko",
+    "saveFailed": "Įrašymas nepavyko"
+  },
+  "i18n": {
+    "title": "Gestione lingue",
+    "subtitle": "Crea, modifica e cancella le lingue e le traduzioni della piattaforma",
+    "new": "Nuova lingua",
+    "edit": "Modifica lingua",
+    "editTranslations": "Modifica traduzioni",
+    "fields": {
+      "code": "Codice",
+      "codeHint": "ISO 639-1 (es. it, en) o regionale (es. pt-BR)",
+      "nameNative": "Nome nativo",
+      "flagCountry": "Bandiera (codice paese ISO, es. IT)",
+      "rtl": "Right-to-left",
+      "active": "Attiva",
+      "default": "Default",
+      "copyFrom": "Copia traduzioni da"
+    },
+    "stats": {
+      "translations_one": "{{count}} traduzione",
+      "translations_other": "{{count}} traduzioni"
+    },
+    "created": "Lingua creata",
+    "updated": "Lingua aggiornata",
+    "deleted": "Lingua eliminata",
+    "translationsSaved": "Traduzioni salvate ({{count}})",
+    "deleteConfirm": {
+      "title": "Eliminare la lingua?",
+      "message": "Stai per eliminare \"{{name}}\" e tutte le sue traduzioni."
+    },
+    "editor": {
+      "title": "Traduzioni — {{name}}",
+      "search": "Cerca chiave o valore",
+      "empty": "Nessuna traduzione",
+      "save": "Salva traduzioni",
+      "reference": "Riferimento {{lang}}",
+      "modifiedCount_one": "{{count}} chiave modificata",
+      "modifiedCount_other": "{{count}} chiavi modificate",
+      "noChanges": "Nessuna modifica"
+    }
+  },
+  "dashboard": {
+    "admin": {
+      "title": "Administravimo skydelis",
+      "subtitle": "Globalus a4u platformos valdymas"
+    },
+    "org": {
+      "subtitle": "Vaidmuo: {{role}}",
+      "platformAdmin": "Admin piattaforma"
+    },
+    "noOrg": {
+      "title": "Sveiki",
+      "message": "Dar nesate jokios organizacijos narys. Palaukite pakvietimo arba susisiekite su administratoriumi."
+    }
+  }
+}

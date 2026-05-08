@@ -1,0 +1,516 @@
+{
+  "app": {
+    "name": "a4u",
+    "tagline": "Platform voor universitaire cursussen"
+  },
+  "common": {
+    "save": "Opslaan",
+    "cancel": "Annuleren",
+    "delete": "Verwijderen",
+    "edit": "Bewerken",
+    "add": "Toevoegen",
+    "loading": "Laden…",
+    "saving": "Bezig met opslaan…",
+    "creating": "Bezig met maken…",
+    "remove": "Verwijderen",
+    "confirm": "Bevestigen",
+    "close": "Sluiten",
+    "search": "Zoeken",
+    "back": "Terug",
+    "next": "Volgende",
+    "actions": "Acties",
+    "of": "van",
+    "noResults": "Geen resultaten",
+    "copy": "Kopiëren",
+    "copied": "Gekopieerd!",
+    "yes": "Ja",
+    "no": "Nee",
+    "all": "Alle",
+    "optional": "optioneel",
+    "required": "verplicht",
+    "moreInfo": "Meer informatie"
+  },
+  "auth": {
+    "login": {
+      "title": "Welkom terug",
+      "subtitle": "Meld u aan bij uw a4u-werkruimte",
+      "email": "E-mail",
+      "password": "Wachtwoord",
+      "submit": "Aanmelden",
+      "submitting": "Aanmelden…"
+    },
+    "logout": "Afmelden",
+    "invitation": {
+      "title": "Uitnodiging accepteren",
+      "subtitle": "U bent uitgenodigd voor {{org}} als {{role}}",
+      "fullName": "Volledige naam",
+      "passwordHint": "Min. 10 tekens, één hoofdletter, één cijfer",
+      "submit": "Uitnodiging accepteren",
+      "submitting": "Bevestigen…",
+      "alreadyRegistered": "Je bent al geregistreerd. Klik op \"Accepteren\" om toegevoegd te worden.",
+      "invalidOrExpired": "De uitnodiging is ongeldig, verlopen of al gebruikt."
+    }
+  },
+  "theme": {
+    "label": "Thema",
+    "light": "Licht",
+    "dark": "Donker",
+    "system": "Systeem"
+  },
+  "language": {
+    "label": "Taal"
+  },
+  "nav": {
+    "platform": "Platform",
+    "organization": "Organisatie",
+    "configurazioni": "Configuratie",
+    "personal": "Persoonlijk",
+    "dashboard": "Dashboard",
+    "organizations": "Organisaties",
+    "users": "Gebruikers",
+    "permissions": "Globale machtigingen",
+    "i18n": "Talen",
+    "members": "Leden",
+    "templatesSlide": "Diasjablonen",
+    "templatesPdf": "PDF-sjablonen",
+    "avatarConfig": "Avatar",
+    "courseSettings": "Cursusparameters"
+  },
+  "courseSettings": {
+    "title": "Cursusparameters",
+    "subtitle": "Standaardwaarden voor het genereren van de structuur van een nieuwe cursus in deze organisatie.",
+    "dirtyBanner": "Niet-opgeslagen wijzigingen",
+    "saved": "Parameters opgeslagen",
+    "sections": {
+      "structure": {
+        "title": "Cursusstructuur",
+        "subtitle": "Hoeveel modules en lessen per credit worden gegenereerd."
+      },
+      "duration": {
+        "title": "Lesduur",
+        "subtitle": "Standaardduur van elke cursusles."
+      },
+      "assessment": {
+        "subtitle": "De laatste les van elke module is een automatisch gegenereerde toets.",
+        "disabledHint": "Geen eindtoets gegenereerd. Elke module eindigt met de reguliere laatste les."
+      }
+    },
+    "fields": {
+      "modulesPerCfu": "Modules per credit",
+      "lessonsPerModule": "Lessen per module",
+      "lessonDuration": "Lesduur",
+      "assessment": "Eindtoets kennis",
+      "assessmentHelp": "Indien ingeschakeld is de laatste les van elke module een automatisch gegenereerde toets: er wordt een set vragen gegenereerd (meerkeuze en open) om de verworven competenties te verifiëren. Het platform genereert alleen content; aflevering aan studenten valt buiten het bestek.",
+      "mcq": "Meerkeuzevragen",
+      "openQuestions": "Open vragen"
+    },
+    "units": {
+      "modules": "modules",
+      "lessons": "lessen",
+      "minutes": "minuten",
+      "questions": "vragen"
+    },
+    "summary": {
+      "title": "Overzicht per credit",
+      "modulesPerCfu": "Modules",
+      "lessonsPerModule": "Lessen per module",
+      "lessonDuration": "Lesduur",
+      "totalLessonsPerCfu": "Totaal lessen",
+      "totalDurationPerCfu": "Totale duur",
+      "mcq": "Meerkeuzevragen",
+      "openQuestions": "Open vragen",
+      "totalQuestions": "Totaal toetsvragen",
+      "noAssessment": "Geen eindtoets gegenereerd.",
+      "minutesValue_one": "{{count}} minuut",
+      "minutesValue_other": "{{count}} minuten",
+      "hours_one": "{{count}} uur",
+      "hours_other": "{{count}} uur",
+      "hoursAndMinutes": "{{hours}}u {{minutes}}m"
+    }
+  },
+  "command": {
+    "placeholder": "Zoek opdracht of pagina…",
+    "navigation": "Navigatie",
+    "actions": "Acties",
+    "preferences": "Voorkeuren",
+    "openCommandPalette": "Open command palette",
+    "newOrganization": "Nieuwe organisatie",
+    "logout": "Uitloggen",
+    "noResults": "Geen resultaten",
+    "switchTheme": "Thema wisselen",
+    "switchLanguage": "Taal wisselen"
+  },
+  "user": {
+    "profile": "Profiel",
+    "menu": "Gebruikersmenu",
+    "myAvatar": "Mijn avatar"
+  },
+  "orgSwitcher": {
+    "label": "Organisatie",
+    "search": "Organisatie zoeken…",
+    "noOrgs": "Geen organisatie",
+    "select": "Organisatie kiezen"
+  },
+  "organizations": {
+    "title": "Organisaties",
+    "subtitle": "Beheer alle organisaties van het platform",
+    "new": "Nieuwe organisatie",
+    "edit": "Organisatie bewerken",
+    "search": "Zoek op naam",
+    "empty": "Geen organisaties",
+    "members": "Leden",
+    "openDashboard": "Apri dashboard",
+    "deleted": "Organisatie verwijderd",
+    "created": "Organisatie aangemaakt",
+    "updated": "Organisatie bijgewerkt",
+    "fields": {
+      "logo": "Organisatielogo",
+      "logoHint": "PNG / JPEG / WEBP, max 5 MB",
+      "name": "Naam",
+      "email": "E-mail",
+      "phone": "Telefoon",
+      "website": "Website",
+      "vatNumber": "Btw-nummer",
+      "fiscalCode": "Fiscale code",
+      "country": "Land",
+      "address": "Adres",
+      "city": "Stad",
+      "province": "Provincie",
+      "postalCode": "Postcode"
+    },
+    "deleteConfirm": {
+      "title": "Organisatie verwijderen?",
+      "message": "Je staat op het punt \"{{name}}\" te verwijderen. De actie is omkeerbaar door de admin."
+    }
+  },
+  "members": {
+    "title": "Leden",
+    "subtitle": "Bekijk en beheer leden van de organisatie",
+    "subtitleAdmin": "Schrijf gebruikers direct in als lid",
+    "invite": "Uitnodigen",
+    "invited": "Lid uitgenodigd",
+    "removed": "Lid verwijderd",
+    "roleChanged": "Rol bijgewerkt",
+    "transferConfirmed": "Creator-rol overgedragen",
+    "enroll": "Gebruiker inschrijven",
+    "enrollSubmit": "Inschrijven",
+    "userPicker": "Gebruiker",
+    "rolePicker": "Rol",
+    "fields": {
+      "name": "Naam",
+      "email": "E-mail",
+      "role": "Rol"
+    },
+    "inviteDialog": {
+      "title": "Lid uitnodigen",
+      "email": "E-mail",
+      "role": "Rol",
+      "submit": "Uitnodiging maken",
+      "submitting": "Aanmaken…",
+      "tokenLabel": "Deel deze link (7 dagen geldig):",
+      "successTitle": "Uitnodiging aangemaakt"
+    },
+    "removeConfirm": {
+      "title": "Lid verwijderen?",
+      "message": "{{name}} wordt uit de organisatie verwijderd."
+    },
+    "transferConfirm": {
+      "title": "Creator-rol overdragen?",
+      "message": "Je wordt organisatie-admin en {{name}} wordt creator. Alleen de nieuwe creator kan dit terugdraaien."
+    },
+    "actions": {
+      "permissions": "Rechten",
+      "transfer": "Creator overdragen",
+      "remove": "Verwijderen"
+    }
+  },
+  "memberPermissions": {
+    "title": "Rechten van {{name}}",
+    "subtitle": "Laat voor elk recht de standaard van de rol staan of forceer een specifieke grant/revoke voor dit lid.",
+    "default": "Standaard",
+    "grant": "Toekennen",
+    "revoke": "Intrekken",
+    "saved": "Rechten van het lid bijgewerkt"
+  },
+  "users": {
+    "title": "Gebruikers",
+    "subtitle": "Beheer gebruikers en platform-admins",
+    "new": "Nieuwe gebruiker",
+    "search": "Zoek op naam of e-mail",
+    "created": "Gebruiker aangemaakt",
+    "fields": {
+      "name": "Naam",
+      "email": "E-mail",
+      "active": "Actief",
+      "platformAdmin": "Platform-admin"
+    },
+    "createDialog": {
+      "title": "Nieuwe gebruiker",
+      "name": "Volledige naam",
+      "email": "E-mail",
+      "password": "Wachtwoord (≥10 tek., 1 hoofdletter, 1 cijfer)",
+      "platformAdmin": "Platform-admin",
+      "submit": "Aanmaken",
+      "submitting": "Aanmaken…"
+    }
+  },
+  "globalPermissions": {
+    "title": "Globale rechten",
+    "subtitle": "Bewerk de standaardrechten voor elke rol. Ze gelden voor alle organisaties tenzij expliciet overschreven.",
+    "rolePicker": "Rol",
+    "saved": "Rechten opgeslagen",
+    "save": "Rechten opslaan"
+  },
+  "templates": {
+    "preview": {
+      "lessonTag": "Lezione 01",
+      "chapter": "Capitolo introduttivo",
+      "title": "Argomento principale della lezione",
+      "subtitle": "Una breve descrizione del contesto: cosa vedremo, perché è importante e quali competenze sviluppiamo.",
+      "bullet1": "Obiettivi di apprendimento e prerequisiti",
+      "bullet2": "Concetti chiave con esempi pratici",
+      "bullet3": "Esercizi guidati e materiale di riferimento",
+      "author": "Prof. Mario Rossi",
+      "role": "Cattedra di Informatica",
+      "date": "12 marzo 2026",
+      "live": "Live"
+    },
+    "slide": {
+      "title": "Slide-sjablonen",
+      "subtitle": "Maak en bewerk sjablonen voor cursusslides",
+      "new": "Nieuw sjabloon",
+      "newPage": "Nieuw slide-sjabloon",
+      "editPage": "Bewerken: {{name}}",
+      "previewLive": "Live preview",
+      "previewHint": "De preview wordt tijdens bewerken in real time bijgewerkt.",
+      "deleted": "Sjabloon verwijderd",
+      "created": "Sjabloon aangemaakt",
+      "updated": "Sjabloon bijgewerkt",
+      "empty": "Nog geen sjablonen"
+    },
+    "pdf": {
+      "title": "PDF-sjablonen",
+      "subtitle": "Maak en bewerk sjablonen voor PDF-documenten",
+      "new": "Nieuw sjabloon",
+      "newPage": "Nieuw PDF-sjabloon",
+      "editPage": "Bewerken: {{name}}",
+      "previewLive": "Live preview",
+      "previewHint": "De preview wordt tijdens bewerken in real time bijgewerkt.",
+      "deleted": "Sjabloon verwijderd",
+      "created": "Sjabloon aangemaakt",
+      "updated": "Sjabloon bijgewerkt",
+      "empty": "Nog geen sjablonen"
+    },
+    "fields": {
+      "name": "Naam sjabloon",
+      "size": "Slide-formaat",
+      "pageSize": "Paginaformaat",
+      "font": "Lettertype",
+      "textColor": "Tekstkleur",
+      "primaryColor": "Primaire kleur",
+      "secondaryColor": "Secundaire kleur",
+      "background": "Achtergrondafbeelding",
+      "logoLeft": "Logo linksboven",
+      "logoRight": "Logo rechtsboven",
+      "headerHeight": "Hoogte koptekst (mm)",
+      "footerHeight": "Hoogte voettekst (mm)",
+      "margin": "Paginamarge (mm)",
+      "backgroundOpacity": "Opacità sfondo (%)"
+    },
+    "deleteConfirm": {
+      "title": "Sjabloon verwijderen?",
+      "message": "Je staat op het punt \"{{name}}\" te verwijderen."
+    },
+    "default": "Default",
+    "setDefault": "Imposta come default",
+    "defaultSet": "Template impostato come default"
+  },
+  "myAvatar": {
+    "title": "Il mio avatar",
+    "subtitle": "Carica una foto frontale e un audio. Da questi verranno generati automaticamente dei clip video.",
+    "tabs": {
+      "image": "Immagine",
+      "audio": "Audio",
+      "next": "Avanti",
+      "back": "Indietro"
+    },
+    "create": "Crea avatar",
+    "unsavedChanges": "Modifiche non salvate",
+    "statusReady": "Avatar attivo",
+    "statusSummary": "{{ready}}/{{total}} clip pronte · {{failed}} errori",
+    "playAudio": "Ascolta audio",
+    "clipsCount_one": "{{count}} clip in totale",
+    "clipsCount_other": "{{count}} clip in totale",
+    "image": "Foto frontale",
+    "imageHint": "PNG / JPEG / WEBP. L'immagine verrà ritagliata in formato quadrato (1:1).",
+    "imageEmpty": "Nessuna immagine",
+    "recrop": "Ritaglia di nuovo",
+    "cropTitle": "Ritaglia l'immagine",
+    "cropHint": "Trascina e ridimensiona l'area di selezione. Il rapporto è fissato a 1:1.",
+    "cropConfirm": "Applica ritaglio",
+    "slidePreviewTitle": "Anteprima nella slide",
+    "slidePreviewHint": "Esempio di come l'avatar apparirà in basso a destra in un template slide.",
+    "audio": "Audio personale",
+    "audioHint": "Leggi ad alta voce il testo qui sopra. La registrazione servirà ad addestrare un modello vocale fedele alla tua voce.",
+    "audioUpload": "Carica file",
+    "audioRecord": "Registra adesso",
+    "recordStart": "Avvia registrazione",
+    "recordStop": "Stop",
+    "audioLang": "Lingua audio",
+    "scriptTitle": "Testo da leggere",
+    "scriptHint": "Leggi questo testo a voce naturale durante la registrazione. Più la lettura è chiara e rilassata, migliore sarà il modello vocale.",
+    "scriptFallback": "Per la lingua selezionata non è ancora configurato un testo specifico: viene mostrato quello in {{lang}}.",
+    "scriptMissing": "Nessun testo da leggere è configurato per questa lingua. Contatta un amministratore.",
+    "saveWarn": "Modificare l'immagine rigenererà tutti i clip.",
+    "regenerate": "Rigenera clip",
+    "regenerated": "Generazione clip riavviata",
+    "clipsTitle": "Clip generate",
+    "clipsEmpty": "Nessun clip configurato. Definisci almeno un prompt nella sezione admin Configurazioni → Avatar.",
+    "clipPending": "In attesa…",
+    "clipProcessing": "Generazione…",
+    "clipReady": "Pronto",
+    "clipFailed": "Errore",
+    "allReady": "Tutti pronti",
+    "allFailed": "Tutti falliti",
+    "partial": "Parziale",
+    "pending": "In attesa",
+    "processing": "Generazione",
+    "saved": "Avatar salvato",
+    "deleted": "Avatar eliminato",
+    "deleteConfirm": {
+      "title": "Eliminare l'avatar?",
+      "message": "Verranno eliminati immagine, audio e tutti i clip generati."
+    }
+  },
+  "avatarConfig": {
+    "title": "Configurazioni — Avatar",
+    "subtitle": "Gestisci i prompt video per la generazione dei clip MiniMax e i testi di trascrizione che gli utenti leggeranno per la registrazione vocale.",
+    "tabs": {
+      "prompts": "Prompt video",
+      "scripts": "Lingue trascrizione"
+    },
+    "addPrompt": "Aggiungi prompt",
+    "empty": "Nessun prompt configurato. Aggiungine almeno uno per abilitare la generazione clip.",
+    "fields": {
+      "label": "Etichetta",
+      "labelPlaceholder": "Es. \"Cenno di pensiero\"",
+      "prompt": "Prompt MiniMax (inglese, max 2000 caratteri)",
+      "active": "Attivo"
+    },
+    "moveUp": "Sposta su",
+    "moveDown": "Sposta giù",
+    "unsavedHint": "Modifiche non salvate — fai blur del campo per salvare.",
+    "count_one": "{{count}} clip configurato",
+    "count_other": "{{count}} clip configurati",
+    "created": "Prompt creato",
+    "updated": "Prompt aggiornato",
+    "deleted": "Prompt eliminato",
+    "deleteConfirm": {
+      "title": "Eliminare il prompt?",
+      "message": "Il prompt \"{{name}}\" sarà rimosso dalla configurazione."
+    },
+    "voiceScript": {
+      "title": "Testo da leggere durante la registrazione",
+      "subtitle": "Per ogni lingua, definisci il testo che l'utente vedrà e dovrà leggere ad alta voce mentre registra l'audio. Serve a ottenere un campione vocale standardizzato per il voice cloning.",
+      "empty": "Nessun testo configurato. Aggiungine almeno uno per la lingua di default.",
+      "add": "Aggiungi testo per una lingua",
+      "selectLang": "Seleziona lingua",
+      "placeholder": "Buongiorno, mi presento e leggo questo breve testo…",
+      "text": "Testo",
+      "saved": "Testo salvato",
+      "deleted": "Testo eliminato",
+      "deleteConfirm": {
+        "title": "Eliminare il testo?",
+        "message": "Verrà rimosso il testo da leggere per la lingua {{lang}}."
+      }
+    }
+  },
+  "permissions": {
+    "member:view": "Leden bekijken",
+    "member:invite": "Gebruikers uitnodigen",
+    "member:assign_role": "Rollen toewijzen",
+    "member:remove": "Leden verwijderen",
+    "template:slide:manage": "Slide-sjablonen beheren",
+    "template:pdf:manage": "PDF-sjablonen beheren",
+    "permission:manage": "Rechten beheren",
+    "org:transfer_creator": "Creator-rol overdragen",
+    "org:update": "Organisatie bewerken",
+    "course_config:manage": "Gestisci parametri corsi"
+  },
+  "permissionDescriptions": {
+    "member:view": "Vedere l'elenco dei membri dell'organizzazione con nome, email, ruolo e data di iscrizione. Prerequisito per quasi tutte le altre azioni sui membri.",
+    "member:invite": "Creare inviti via email per nuovi membri scegliendo il ruolo iniziale. Ogni invito è un link monouso con scadenza a 7 giorni.",
+    "member:assign_role": "Cambiare il ruolo di un membro esistente, ma solo fino al proprio livello di rank: un Org Admin non può promuovere a Creator né modificare un membro di rango superiore.",
+    "member:remove": "Rimuovere un membro dall'organizzazione. Il Creator non è rimovibile direttamente: va prima trasferito ad un altro membro.",
+    "template:slide:manage": "Creare, modificare, eliminare e scegliere come default i template per le slide dei corsi (formato 16:9 / 4:3, colori, font, logo, immagine di sfondo).",
+    "template:pdf:manage": "Creare, modificare, eliminare e scegliere come default i template per i documenti PDF (formato A4/Letter, header/footer/margini in mm, colori, logo, sfondo).",
+    "permission:manage": "Modificare i permessi dell'organizzazione: override per ruolo (es. concedere a tutti i Manager un permesso non default) e override per singolo membro (concedi/revoca puntuale).",
+    "org:transfer_creator": "Trasferire il ruolo di Creator a un altro membro. Chi era Creator diventa Org Admin. Azione riservata al Creator e irreversibile senza un nuovo trasferimento.",
+    "org:update": "Modificare i dati anagrafici dell'organizzazione: nome, partita IVA, codice fiscale, indirizzo, contatti, logo.",
+    "course_config:manage": "Configurare i parametri di default per la generazione dei corsi: numero di moduli per CFU, lezioni per modulo, durata delle lezioni e attivazione della verifica di apprendimento finale (con il numero di domande a scelta multipla e aperte da generare). Questi valori vengono usati per pre-popolare la struttura di un nuovo corso."
+  },
+  "roles": {
+    "creator": "Aanmaker",
+    "org_admin": "Org-beheerder",
+    "manager": "Manager",
+    "member": "Lid"
+  },
+  "errors": {
+    "generic": "Er is een fout opgetreden",
+    "loadingFailed": "Laden mislukt",
+    "saveFailed": "Opslaan mislukt"
+  },
+  "i18n": {
+    "title": "Gestione lingue",
+    "subtitle": "Crea, modifica e cancella le lingue e le traduzioni della piattaforma",
+    "new": "Nuova lingua",
+    "edit": "Modifica lingua",
+    "editTranslations": "Modifica traduzioni",
+    "fields": {
+      "code": "Codice",
+      "codeHint": "ISO 639-1 (es. it, en) o regionale (es. pt-BR)",
+      "nameNative": "Nome nativo",
+      "flagCountry": "Bandiera (codice paese ISO, es. IT)",
+      "rtl": "Right-to-left",
+      "active": "Attiva",
+      "default": "Default",
+      "copyFrom": "Copia traduzioni da"
+    },
+    "stats": {
+      "translations_one": "{{count}} traduzione",
+      "translations_other": "{{count}} traduzioni"
+    },
+    "created": "Lingua creata",
+    "updated": "Lingua aggiornata",
+    "deleted": "Lingua eliminata",
+    "translationsSaved": "Traduzioni salvate ({{count}})",
+    "deleteConfirm": {
+      "title": "Eliminare la lingua?",
+      "message": "Stai per eliminare \"{{name}}\" e tutte le sue traduzioni."
+    },
+    "editor": {
+      "title": "Traduzioni — {{name}}",
+      "search": "Cerca chiave o valore",
+      "empty": "Nessuna traduzione",
+      "save": "Salva traduzioni",
+      "reference": "Riferimento {{lang}}",
+      "modifiedCount_one": "{{count}} chiave modificata",
+      "modifiedCount_other": "{{count}} chiavi modificate",
+      "noChanges": "Nessuna modifica"
+    }
+  },
+  "dashboard": {
+    "admin": {
+      "title": "Beheerpaneel",
+      "subtitle": "Globaal beheer van het a4u-platform"
+    },
+    "org": {
+      "subtitle": "Rol: {{role}}",
+      "platformAdmin": "Admin piattaforma"
+    },
+    "noOrg": {
+      "title": "Welkom",
+      "message": "Je bent nog geen lid van een organisatie. Wacht op een uitnodiging of neem contact op met een beheerder."
+    }
+  }
+}

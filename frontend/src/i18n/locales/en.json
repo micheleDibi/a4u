@@ -1,0 +1,1325 @@
+{
+  "app": {
+    "name": "a4u",
+    "tagline": "University courses platform"
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "add": "Add",
+    "loading": "Loading…",
+    "saving": "Saving…",
+    "creating": "Creating…",
+    "remove": "Remove",
+    "confirm": "Confirm",
+    "close": "Close",
+    "search": "Search",
+    "back": "Back",
+    "next": "Next",
+    "actions": "Actions",
+    "of": "of",
+    "noResults": "No results",
+    "copy": "Copy",
+    "copied": "Copied!",
+    "yes": "Yes",
+    "no": "No",
+    "all": "All",
+    "optional": "optional",
+    "required": "required",
+    "moreInfo": "More information",
+    "none": "None",
+    "select": "Select…",
+    "moveUp": "Move up",
+    "moveDown": "Move down"
+  },
+  "auth": {
+    "login": {
+      "title": "Welcome back",
+      "subtitle": "Sign in to your a4u workspace",
+      "email": "Email",
+      "password": "Password",
+      "submit": "Sign in",
+      "submitting": "Signing in…"
+    },
+    "logout": "Sign out",
+    "invitation": {
+      "title": "Accept invitation",
+      "subtitle": "You have been invited to {{org}} as {{role}}",
+      "fullName": "Full name",
+      "passwordHint": "Min 10 characters, one uppercase, one digit",
+      "submit": "Accept invitation",
+      "submitting": "Confirming…",
+      "alreadyRegistered": "You are already registered. Click \"Accept\" to be added.",
+      "invalidOrExpired": "The invitation is not valid, has expired or has already been used."
+    }
+  },
+  "theme": {
+    "label": "Theme",
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System"
+  },
+  "language": {
+    "label": "Language"
+  },
+  "nav": {
+    "platform": "Platform",
+    "organization": "Organization",
+    "configurazioni": "Configuration",
+    "personal": "Personal",
+    "dashboard": "Dashboard",
+    "organizations": "Organizations",
+    "users": "Users",
+    "permissions": "Global permissions",
+    "i18n": "Languages",
+    "members": "Members",
+    "templatesSlide": "Slide templates",
+    "templatesPdf": "PDF templates",
+    "avatarConfig": "Avatar",
+    "courseSettings": "Course parameters",
+    "taxonomies": "Course taxonomies",
+    "courses": "Courses"
+  },
+  "courses": {
+    "title": "Courses",
+    "subtitle": "Create and manage your organization's courses.",
+    "empty": "No courses created yet.",
+    "create": "New course",
+    "createSubtitle": "Fill in the basic parameters. You can always come back later to edit them and trigger AI content generation.",
+    "edit": "Edit course",
+    "editSubtitle": "Edit course parameters. Changes are saved automatically.",
+    "created": "Course created",
+    "saved": "Course saved",
+    "deleted": "Course deleted",
+    "assigneeUpdated": "Assignee updated",
+    "search": "Search by title or objectives…",
+    "saveAndContinue": "Save and continue",
+    "saveNow": "Save now",
+    "filters": {
+      "allStatuses": "All statuses"
+    },
+    "tabs": {
+      "base": "Basic information",
+      "didactic": "Didactic framing",
+      "documents": "Documents",
+      "architecture": "Architecture",
+      "lessonsStructure": "Lesson structure",
+      "lessonContent": "Content"
+    },
+    "sections": {
+      "basics": "Basic information",
+      "didactic": "Didactic framing",
+      "keywords": "Key topics",
+      "documents": "Reference documents",
+      "sizing": "Sizing",
+      "architecture": "Course architecture"
+    },
+    "fields": {
+      "title": "Title",
+      "titlePlaceholder": "E.g. Introduction to data analysis",
+      "objectives": "Course objectives",
+      "objectivesPlaceholder": "What will the student learn at the end of the course?",
+      "language": "Course language",
+      "assignee": "Assignee",
+      "assigneePlaceholder": "Select a member",
+      "noMembers": "No members available.",
+      "status": "Status",
+      "modulesCount": "Modules",
+      "updatedAt": "Updated",
+      "cfu": "Credits",
+      "cfuHint": "Number of academic credits. Determines the number of modules and lessons.",
+      "argomentiChiavePlaceholder": "Add a topic and press Enter…",
+      "argomentiChiaveEmpty": "No topics added.",
+      "argomentiChiaveHint": "Press Enter or comma to add. Maximum {{max}} topics."
+    },
+    "taxonomies": {
+      "categoria": "Category",
+      "stileInsegnamento": "Teaching style",
+      "profonditaContenuto": "Content depth",
+      "ruoloDocente": "Teacher role",
+      "dimensionePubblico": "Audience size",
+      "livelloConoscenza": "Knowledge level",
+      "destinatari": "Target audience",
+      "livelloEqf": "EQF level",
+      "selectPlaceholder": "Select…",
+      "none": "Not specified"
+    },
+    "statuses": {
+      "draft": "Draft",
+      "architecture_pending": "Architecture — queued",
+      "architecture_ready": "Architecture — ready",
+      "architecture_approved": "Architecture — approved",
+      "lessons_structure_pending": "Lesson structure — queued",
+      "lessons_structure_ready": "Lesson structure — ready",
+      "lessons_structure_approved": "Lesson structure — approved",
+      "content_pending": "Content — queued",
+      "content_ready": "Content — ready",
+      "content_approved": "Content — approved",
+      "slides_pending": "Slides — queued",
+      "slides_ready": "Slides — ready",
+      "speech_pending": "Speech — queued",
+      "speech_ready": "Speech — ready",
+      "published": "Published",
+      "archived": "Archived"
+    },
+    "summary": {
+      "title": "Sizing summary",
+      "modules": "Total modules",
+      "lessonsPerModule": "Lessons per module",
+      "totalLessons": "Total lessons",
+      "lessonDuration": "Lesson duration",
+      "totalDuration": "Total duration",
+      "assessment": "Final assessment",
+      "assessmentEnabled": "{{mc}} multiple-choice + {{open}} open",
+      "assessmentDisabled": "Disabled",
+      "minutes": "{{minutes}} min",
+      "hoursAndMinutes": "{{hours}}h {{minutes}}m",
+      "modulesShort": "{{modules}} modules · {{cfu}} credits",
+      "createHint": "Full sizing (lessons, duration, assessment) will be available after the first save."
+    },
+    "autoSave": {
+      "saving": "Saving…",
+      "savedAt": "Saved at {{time}}",
+      "error": "Save error: {{message}}"
+    },
+    "deleteConfirm": {
+      "title": "Delete the course?",
+      "message": "You are about to delete \"{{title}}\". This is irreversible and will remove all uploaded documents."
+    },
+    "docs": {
+      "uploaded": "Document uploaded",
+      "deleted": "Document deleted",
+      "reprocess": "Reprocess",
+      "reprocessed": "Reprocessing started",
+      "viewDetail": "View detail",
+      "tooLarge": "\"{{name}}\" exceeds the {{max}} MB limit.",
+      "invalidType": "\"{{name}}\" has an unsupported format ({{type}}).",
+      "dropHere": "Drop reference documents here",
+      "types": "PDF, DOC/DOCX, TXT, MD, RTF — max {{max}} MB each",
+      "choose": "Choose file",
+      "uploading": "Uploading…",
+      "empty": "No documents uploaded.",
+      "summary": {
+        "pending": "To process",
+        "processing": "Processing…",
+        "ready": "Ready",
+        "failed": "Error",
+        "dialog": {
+          "title": "Structured summary — {{filename}}",
+          "loading": "Loading summary…",
+          "notReady": "Summary is not yet available.",
+          "empty": "No items.",
+          "detectedLanguage": "Detected language: {{lang}}",
+          "sections": {
+            "abstract": "Abstract",
+            "structure": "Structure",
+            "concepts": "Key concepts",
+            "definitions": "Definitions",
+            "examples": "Examples & cases",
+            "formulas": "Formulas & rules",
+            "authors": "Authors & references",
+            "tags": "Relevance tags"
+          },
+          "authors": {
+            "author": "Author",
+            "cited_reference": "Cited reference"
+          },
+          "meta": {
+            "model": "Model",
+            "tokens": "{{total}} tokens",
+            "generatedAt": "Generated on {{time}}",
+            "attempts_one": "{{count}} attempt",
+            "attempts_other": "{{count}} attempts",
+            "chars_one": "{{count}} character extracted",
+            "chars_other": "{{count}} characters extracted"
+          }
+        }
+      },
+      "deleteConfirm": {
+        "title": "Delete the document?",
+        "message": "You are about to delete \"{{name}}\"."
+      },
+      "reprocessConfirm": {
+        "title": "Regenerate the summary?",
+        "message": "You are about to regenerate the summary for \"{{name}}\". New OpenAI tokens will be consumed."
+      }
+    },
+    "generate": {
+      "label": "Generate architecture",
+      "disabledTooltip": "Available in a future version."
+    },
+    "architecture": {
+      "generate": "Generate architecture",
+      "regenerate": "Regenerate architecture",
+      "approve": "Approve architecture",
+      "approving": "Approving…",
+      "approved": "Architecture approved",
+      "requested": "Architecture generation started",
+      "generating": "Generating…",
+      "empty": "No architecture generated yet. Upload at least one reference document, then click \"Generate architecture\".",
+      "noDocsTooltip": "At least one document with a `Ready` summary is required to generate the architecture.",
+      "pendingMessage": "Generating the course architecture. The system is calling the AI with the course parameters and the summaries of the uploaded documents.",
+      "phases": {
+        "preparing_prompt": "Preparing the prompt…",
+        "calling_openai": "AI generation in progress…",
+        "materializing": "Saving the architecture…"
+      },
+      "moduleLabel": "Module {{n}}",
+      "lessonLabel": "Lesson {{n}}",
+      "moduleGenerating": "Generating lessons…",
+      "moduleGenerateLessons": "Generate lessons with AI",
+      "moduleLessonsGenerated": "Lessons generated",
+      "moduleLessonsGenerationFailed": "Lesson generation failed",
+      "module": {
+        "add": "Add module",
+        "createTitle": "New module",
+        "editTitle": "Edit module",
+        "dialogDescription": "Set the module title and description. The code (M1, M2…) is assigned automatically.",
+        "fields": {
+          "title": "Module title",
+          "titlePlaceholder": "E.g. Machine learning fundamentals",
+          "titleHint": "A concise title identifying the main topic of the module.",
+          "description": "Description",
+          "descriptionPlaceholder": "E.g. In this module we will introduce the basic concepts of supervised machine learning, with practical examples of classification and regression.",
+          "descriptionHint": "A short description (1-3 sentences) used by the AI to generate the lesson content for this module."
+        },
+        "lessonsCount_one": "This module contains {{count}} lesson.",
+        "lessonsCount_other": "This module contains {{count}} lessons.",
+        "created": "Module created",
+        "updated": "Module updated",
+        "deleted": "Module deleted",
+        "deleteConfirmTitle": "Delete the module?",
+        "deleteConfirmMessage": "You are about to delete \"{{label}}\" and all its lessons. This is irreversible."
+      },
+      "lesson": {
+        "add": "Add lesson",
+        "createTitle": "New lesson",
+        "editTitle": "Edit lesson",
+        "dialogDescription": "Set the lesson title, summary and — for the introductory lesson — recommended textbooks. The code (M1.L1…) is assigned automatically.",
+        "fields": {
+          "title": "Lesson title",
+          "titlePlaceholder": "E.g. Supervised classification algorithms",
+          "titleHint": "A concise title identifying the topic of the lesson.",
+          "summary": "Summary",
+          "summaryPlaceholder": "E.g. Overview of the main classification algorithms (k-NN, decision trees, SVM) with practical examples and a comparison of their performance.",
+          "summaryHint": "A short summary (1-3 sentences) used by the AI to generate the lesson content.",
+          "isIntroductory": "Introductory lesson (with bibliography)",
+          "isIntroductoryHint": "The introductory lesson opens the course and includes recommended textbooks. Usually the first lesson of the first module (M1.L1)."
+        },
+        "bibliography": {
+          "title": "Recommended bibliography",
+          "hint": "Books and sources the student can consult for further study. Up to 20 entries.",
+          "add": "Add book",
+          "empty": "No books added yet. Click \"Add book\" to start.",
+          "fields": {
+            "authors": "Authors",
+            "authorsPlaceholder": "E.g. Mitchell, T.M.",
+            "title": "Title",
+            "titlePlaceholder": "E.g. Machine Learning",
+            "publisher": "Publisher",
+            "year": "Year",
+            "note": "Note",
+            "notePlaceholder": "E.g. Classic reference text for the course.",
+            "source": "Source",
+            "confidence": "Confidence"
+          }
+        },
+        "created": "Lesson created",
+        "updated": "Lesson updated",
+        "deleted": "Lesson deleted",
+        "deleteConfirmTitle": "Delete the lesson?",
+        "deleteConfirmMessage": "You are about to delete \"{{label}}\". This is irreversible."
+      },
+      "errorTitle": "Generation failed",
+      "approvedBanner": "Architecture approved. You can now move on to the next phases (lesson structure, content, slides, speech).",
+      "readyBanner": "The architecture is ready for review. Approve it if it looks good, or regenerate with specific guidance.",
+      "generateDialog": {
+        "title": "Generate course architecture",
+        "description": "The AI will propose the course structure (modules and lessons) based on the configured parameters and the uploaded documents. Generation takes a few seconds."
+      },
+      "regenerateDialog": {
+        "title": "Regenerate architecture",
+        "description": "The current architecture will be replaced. You can provide specific guidance to drive the regeneration (optional).",
+        "hintLabel": "Teacher guidance (optional)",
+        "hintPlaceholder": "E.g. \"Add a healthcare case study\" or \"Lower the technical level, it's too advanced for the audience\".",
+        "hintHelper": "Leave empty for a standard regeneration. Up to 2000 characters."
+      },
+      "view": {
+        "overviewTitle": "Course overview",
+        "overview": "Overview",
+        "rationale": "Pedagogical rationale",
+        "introductory": "Introductory",
+        "bibliography": "Recommended bibliography",
+        "bibliographySource": {
+          "from_uploaded_documents": "From uploaded documents",
+          "general_knowledge_suggestion": "General suggestion"
+        },
+        "bibliographyConfidence": {
+          "confirmed": "Confirmed",
+          "to_verify": "To verify"
+        },
+        "generatedAt": "Generated on {{time}}",
+        "tokens": "{{total}} tokens",
+        "attempts_one": "{{count}} attempt",
+        "attempts_other": "{{count}} attempts"
+      }
+    },
+    "lessonsStructure": {
+      "title": "Lesson structure",
+      "description": "For each module, the AI generates learning objectives, mandatory topics, prerequisites, and a section outline for every lesson. You can generate all modules in batch or one at a time.",
+      "architectureNotApproved": "Approve the course architecture first to access lesson structure generation.",
+      "generateAll": "Generate structure for all modules",
+      "regenerateAll": "Regenerate structure for all modules",
+      "approveAll": "Approve structure of all modules",
+      "aggregate": {
+        "label": "{{completed}}/{{total}} modules completed",
+        "failed_one": "{{count}} module failed — use \"Retry\".",
+        "failed_other": "{{count}} modules failed — use \"Retry\"."
+      },
+      "statuses": {
+        "empty": "Empty",
+        "pending": "Queued",
+        "processing": "Processing",
+        "ready": "Ready",
+        "approved": "Approved",
+        "failed": "Failed"
+      },
+      "phases": {
+        "preparing_prompt": "Preparing prompt…",
+        "calling_openai": "AI generation in progress…",
+        "materializing": "Saving the structure…"
+      },
+      "fields": {
+        "learningObjectives": "Learning objectives",
+        "mandatoryTopics": "Mandatory topics",
+        "prerequisites": "Prerequisites",
+        "sectionOutline": "Section outline"
+      },
+      "subsection": {
+        "empty": "No items."
+      },
+      "module": {
+        "generate": "Generate",
+        "regenerate": "Regenerate",
+        "retry": "Retry",
+        "approve": "Approve",
+        "failed": "Generation failed"
+      },
+      "lesson": {
+        "editTitle": "Edit lesson structure",
+        "editDescription": "Edit objectives, mandatory topics, prerequisites and section outline of the lesson. Changes may invalidate downstream generation of content, slides and speech.",
+        "emptyHint": "Structure not yet generated.",
+        "objective": {
+          "add": "Add objective",
+          "placeholder": "E.g. The student will be able to apply the k-NN algorithm to a labeled dataset.",
+          "prefixHintIt": "Start with \"Lo studente sarà in grado di…\".",
+          "prefixHintEn": "Start with \"The student will be able to…\".",
+          "remove": "Remove objective",
+          "moveUp": "Move up",
+          "moveDown": "Move down"
+        },
+        "topic": {
+          "add": "Add topic",
+          "fields": {
+            "topicId": "ID",
+            "topic": "Topic",
+            "rationale": "Rationale"
+          },
+          "topicPlaceholder": "E.g. k-Nearest Neighbors algorithm",
+          "rationalePlaceholder": "E.g. It is fundamental to understand the idea of instance-based learning.",
+          "idHint": "Unique topic identifier (e.g. T1, T2…).",
+          "duplicateId": "Duplicate ID",
+          "remove": "Remove topic"
+        },
+        "prerequisite": {
+          "add": "Add prerequisite",
+          "placeholder": "E.g. Basic knowledge of Euclidean distance.",
+          "remove": "Remove prerequisite"
+        },
+        "section": {
+          "add": "Add section",
+          "fields": {
+            "sectionId": "ID",
+            "title": "Title",
+            "purpose": "Purpose",
+            "coversTopics": "Covered topics"
+          },
+          "titlePlaceholder": "E.g. Formal definition of k-NN",
+          "purposePlaceholder": "E.g. Introduce the mathematical formulation of the k-NN algorithm.",
+          "coverageHint": "Select one or more mandatory topics covered by this section.",
+          "uncoveredWarning": "Warning: some mandatory topics are not covered by any section: {{ids}}",
+          "duplicateId": "Duplicate ID",
+          "noTopicsHint": "No topics available. Add a mandatory topic first.",
+          "remove": "Remove section",
+          "moveUp": "Move up",
+          "moveDown": "Move down"
+        }
+      },
+      "dialog": {
+        "generateModule": {
+          "title": "Generate structure for {{module}}",
+          "description": "The AI will generate objectives, topics, prerequisites and section outlines for the lessons of this module, based on the approved architecture and uploaded documents."
+        },
+        "regenerateModule": {
+          "title": "Regenerate structure for {{module}}",
+          "description": "The current module structure will be replaced. You can provide specific guidance to drive the regeneration (optional)."
+        },
+        "generateAll": {
+          "title": "Generate structure for all modules",
+          "description": "The AI will process module structures in parallel. You will see an aggregate progress bar and one per module."
+        },
+        "regenerateAll": {
+          "title": "Regenerate structure for all modules",
+          "description": "The current structure of all modules will be replaced. You can provide specific guidance to drive the regeneration (optional)."
+        },
+        "hintLabel": "Teacher guidance (optional)",
+        "hintPlaceholder": "E.g. \"Add a healthcare case study\" or \"Lower the technical level, it's too advanced for the audience\".",
+        "hintHelper": "Leave empty for a standard regeneration. Up to 2000 characters.",
+        "generating": "Generating…",
+        "generateModuleCta": "Generate",
+        "regenerateModuleCta": "Regenerate",
+        "generateAllCta": "Generate all",
+        "regenerateAllCta": "Regenerate all",
+        "edit": {
+          "save": "Save",
+          "cancel": "Cancel"
+        }
+      },
+      "validation": {
+        "objectiveRequired": "At least one objective is required.",
+        "topicIdRequired": "Topic ID is required.",
+        "topicTitleRequired": "Topic is required.",
+        "topicIdMustBeUnique": "Topic IDs must be unique.",
+        "sectionIdMustBeUnique": "Section IDs must be unique.",
+        "sectionIdRequired": "Section ID is required.",
+        "sectionTitleRequired": "Section title is required.",
+        "coverageIncomplete": "All mandatory topics must be covered by at least one section."
+      },
+      "toast": {
+        "batchStarted": "Structure generation started for all modules.",
+        "moduleStarted": "Structure generation started.",
+        "moduleApproved": "Module structure approved.",
+        "allApproved": "Structure of all modules approved.",
+        "lessonUpdated": "Lesson structure updated.",
+        "error": "Operation failed. Try again."
+      }
+    },
+    "lessonsContent": {
+      "title": "Lesson content",
+      "description": "For each lesson the AI writes the full markdown text with visual assets (Mermaid, LaTeX formulas, tables), examples, exercises and references.",
+      "lessonsStructureNotApproved": "Approve the lesson structure first to generate content.",
+      "generateAll": "Generate content for all lessons",
+      "regenerateAll": "Regenerate all content",
+      "approveAll": "Approve all content",
+      "cancelAll": "Stop generation",
+      "aggregate": {
+        "label": "{{completed}}/{{total}} lessons completed",
+        "failed_one": "{{count}} lesson failed — use \"Retry\".",
+        "failed_other": "{{count}} lessons failed — use \"Retry\"."
+      },
+      "statuses": {
+        "empty": "Empty",
+        "pending": "Queued",
+        "processing": "Processing",
+        "ready": "Ready",
+        "approved": "Approved",
+        "failed": "Failed"
+      },
+      "phases": {
+        "preparing_prompt": "Preparing the prompt…",
+        "calling_openai": "AI generation in progress…",
+        "materializing": "Saving the content…"
+      },
+      "lesson": {
+        "generate": "Generate",
+        "regenerate": "Regenerate",
+        "retry": "Retry",
+        "approve": "Approve",
+        "failed": "Generation failed",
+        "edit": "Edit"
+      },
+      "render": {
+        "words": "{{count}} estimated words",
+        "intro": "Introduction",
+        "sections": "Sections",
+        "sectionsCount_one": "{{count}} section",
+        "sectionsCount_other": "{{count}} sections",
+        "assetsCount_one": "{{count}} visual asset",
+        "assetsCount_other": "{{count}} visual assets",
+        "summary": "Summary",
+        "keyTakeaways": "Key takeaways",
+        "exercises": "Self-study exercises",
+        "references": "References",
+        "coverage": "Coverage",
+        "objectives": "Objectives",
+        "topics": "Topics",
+        "objectivesShort": "Objectives",
+        "topicsShort": "Topics",
+        "expectedAnswer": "Expected answer / key points",
+        "sources": {
+          "documento_caricato": "Uploaded document",
+          "suggerimento_generale": "General suggestion"
+        }
+      },
+      "editor": {
+        "text": "Lesson text",
+        "visualAssets": "Visual assets (diagrams, schemas, images)",
+        "tables": "Tables",
+        "equations": "Equations",
+        "examples": "Examples",
+        "sectionTitle": "Section title",
+        "caption": "Caption (short description)",
+        "equationLabel": "Equation name",
+        "equationExplanation": "Explanation",
+        "exampleTitle": "Example title",
+        "assetContent": "Content / description",
+        "altText": "Alternative text (accessibility description)",
+        "assetTypes": {
+          "diagram": "Diagram",
+          "schema": "Schema",
+          "image": "Image",
+          "illustration": "Illustration",
+          "chart": "Chart"
+        },
+        "assetFormats": {
+          "mermaid": "Mermaid diagram",
+          "image_prompt": "Image prompt",
+          "image_search_query": "Image search query",
+          "description": "Text description"
+        },
+        "refCode": "Reference code",
+        "refCopy": "Copy reference",
+        "refCopied": "Copied: {{token}}",
+        "refCopyFailed": "Could not copy to clipboard"
+      },
+      "dialog": {
+        "generateLesson": {
+          "title": "Generate content for {{lesson}}",
+          "description": "The AI will write the full lesson text with visual assets, examples, exercises and references."
+        },
+        "regenerateLesson": {
+          "title": "Regenerate content of {{lesson}}",
+          "description": "The current content will be replaced. You can provide specific instructions to guide the regeneration (optional)."
+        },
+        "generateAll": {
+          "title": "Generate content for all lessons",
+          "description": "The AI will process lessons in parallel (concurrency cap). The glossary will be auto-generated on the first task if missing."
+        },
+        "regenerateAll": {
+          "title": "Regenerate all content",
+          "description": "All content will be replaced. You can provide specific instructions to guide the regeneration (optional)."
+        },
+        "hintLabel": "Teacher's instructions (optional)",
+        "hintPlaceholder": "E.g. \"Add a retail sector example and simplify section 3\".",
+        "hintHelper": "Leave empty for a standard regeneration. Max 2000 characters.",
+        "generating": "Generating…",
+        "generateLessonCta": "Generate",
+        "regenerateLessonCta": "Regenerate",
+        "generateAllCta": "Generate all",
+        "regenerateAllCta": "Regenerate all",
+        "edit": {
+          "title": "Edit content of {{lesson}}",
+          "description": "Edit text, visual assets, tables, equations, examples and exercises of the lesson. Edits do not degrade the approval status.",
+          "save": "Save",
+          "saving": "Saving…",
+          "tabs": {
+            "markdown": "Text (Markdown)",
+            "visualAssets": "Visual assets",
+            "tables": "Tables",
+            "equations": "Equations",
+            "examples": "Examples",
+            "exercises": "Exercises"
+          }
+        }
+      },
+      "toast": {
+        "batchStarted": "Content generation started for all lessons.",
+        "lessonStarted": "Content generation started.",
+        "lessonApproved": "Lesson content approved.",
+        "allApproved": "All lessons content approved.",
+        "lessonUpdated": "Lesson content updated.",
+        "cancelled": "Generation cancelled.",
+        "error": "Operation failed. Try again."
+      },
+      "editorUI": {
+        "richtext": {
+          "bold": "Bold",
+          "italic": "Italic",
+          "strike": "Strikethrough",
+          "h2": "Heading 2",
+          "h3": "Heading 3",
+          "bulletList": "Bulleted list",
+          "orderedList": "Numbered list",
+          "quote": "Quote",
+          "inlineCode": "Inline code",
+          "link": "Insert link",
+          "undo": "Undo",
+          "redo": "Redo"
+        },
+        "table": {
+          "addColumn": "Add column",
+          "removeColumn": "Remove column",
+          "addRow": "Add row",
+          "removeRow": "Remove row"
+        },
+        "latex": {
+          "code": "LaTeX code",
+          "preview": "Preview",
+          "previewEmpty": "Start typing to see the preview",
+          "previewError": "LaTeX syntax error",
+          "groups": {
+            "structures": "Structures",
+            "operators": "Operators",
+            "relations": "Relations",
+            "basicOps": "Operations",
+            "greek": "Greek",
+            "matrices": "Matrices"
+          }
+        },
+        "mermaid": {
+          "diagram": "Diagram",
+          "code": "Diagram code",
+          "preview": "Preview",
+          "previewEmpty": "Type some code (or pick a template) to see the preview",
+          "loading": "Rendering diagram…",
+          "insertTemplate": "Insert template…",
+          "templates": {
+            "flowchart": "Flowchart",
+            "sequence": "Sequence diagram",
+            "state": "State diagram",
+            "er": "ER diagram",
+            "mindmap": "Mind map",
+            "class": "Class diagram",
+            "gantt": "Gantt"
+          }
+        }
+      }
+    },
+    "glossary": {
+      "title": "Course glossary",
+      "termsCount_one": "{{count}} term",
+      "termsCount_other": "{{count}} terms",
+      "generate": "Generate glossary",
+      "regenerate": "Regenerate glossary",
+      "autoGenerateHint": "The glossary will be auto-created on the first content trigger, or you can generate it now.",
+      "processingHint": "Generating the glossary…",
+      "errorTitle": "Glossary generation failed",
+      "statuses": {
+        "empty": "Not generated",
+        "pending": "Queued",
+        "processing": "Processing",
+        "ready": "Ready",
+        "approved": "Approved",
+        "failed": "Failed"
+      },
+      "toast": {
+        "regenerated": "Glossary regenerated.",
+        "error": "Operation failed. Try again."
+      }
+    },
+    "errors": {
+      "titleRequired": "Title is required."
+    },
+    "lessonsPdf": {
+      "exportAll": "Export PDFs ({{count}})",
+      "cancelAll": "Cancel PDF export",
+      "lesson": {
+        "export": "Export PDF",
+        "retry": "Retry export",
+        "exporting": "Exporting PDF...",
+        "download": "Download PDF",
+        "failed": "PDF export failed"
+      },
+      "phases": {
+        "preparing": "Preparing...",
+        "rendering_html": "Rendering HTML...",
+        "rendering_pdf": "Rendering PDF..."
+      },
+      "statuses": {
+        "empty": "No PDF",
+        "pending": "PDF queued",
+        "processing": "PDF in progress",
+        "ready": "PDF ready",
+        "failed": "PDF failed"
+      },
+      "toast": {
+        "lessonStarted": "PDF export started.",
+        "batchStarted": "PDF export started for all lessons.",
+        "cancelled": "PDF export cancelled.",
+        "error": "Error during PDF export."
+      },
+      "dialog": {
+        "exportLesson": {
+          "title": "Export PDF — {{lesson}}",
+          "description": "Choose the graphic template to apply to the lesson PDF."
+        },
+        "exportAll": {
+          "title": "Export PDF for all lessons",
+          "description": "{{count}} lessons will be exported with the selected graphic template."
+        },
+        "templateLabel": "Graphic template",
+        "defaultBadge": "Default",
+        "noTemplates": "No templates configured for the organization. The built-in default template will be used.",
+        "exportCta": "Export",
+        "exportAllCta": "Export all"
+      }
+    }
+  },
+  "courseSettings": {
+    "title": "Course parameters",
+    "subtitle": "Default values used to generate the structure of a new course in this organization.",
+    "dirtyBanner": "Unsaved changes",
+    "saved": "Parameters saved",
+    "sections": {
+      "structure": {
+        "title": "Course structure",
+        "subtitle": "How many modules and lessons are generated per credit."
+      },
+      "duration": {
+        "title": "Lesson duration",
+        "subtitle": "Default duration of each lesson."
+      },
+      "assessment": {
+        "subtitle": "The last lesson of every module is an auto-generated knowledge assessment.",
+        "disabledHint": "No final assessment is generated. Each module ends with its last regular lesson."
+      }
+    },
+    "fields": {
+      "modulesPerCfu": "Modules per credit",
+      "lessonsPerModule": "Lessons per module",
+      "lessonDuration": "Lesson duration",
+      "assessment": "Final knowledge assessment",
+      "assessmentHelp": "If enabled, the last lesson of every module is an auto-generated knowledge assessment: a set of questions (multiple choice and open) is generated to verify acquired competencies. The platform only generates content; student delivery is out of scope.",
+      "mcq": "Multiple choice questions",
+      "openQuestions": "Open questions"
+    },
+    "units": {
+      "modules": "modules",
+      "lessons": "lessons",
+      "minutes": "minutes",
+      "questions": "questions"
+    },
+    "summary": {
+      "title": "Per-credit summary",
+      "modulesPerCfu": "Modules",
+      "lessonsPerModule": "Lessons per module",
+      "lessonDuration": "Lesson duration",
+      "totalLessonsPerCfu": "Total lessons",
+      "totalDurationPerCfu": "Total duration",
+      "mcq": "Multiple choice questions",
+      "openQuestions": "Open questions",
+      "totalQuestions": "Total assessment questions",
+      "noAssessment": "No final assessment generated.",
+      "minutesValue_one": "{{count}} minute",
+      "minutesValue_other": "{{count}} minutes",
+      "hours_one": "{{count}} hour",
+      "hours_other": "{{count}} hours",
+      "hoursAndMinutes": "{{hours}}h {{minutes}}m"
+    }
+  },
+  "command": {
+    "placeholder": "Search a command or page…",
+    "navigation": "Navigation",
+    "actions": "Actions",
+    "preferences": "Preferences",
+    "openCommandPalette": "Open command palette",
+    "newOrganization": "New organization",
+    "logout": "Sign out",
+    "noResults": "No results",
+    "switchTheme": "Switch theme",
+    "switchLanguage": "Switch language"
+  },
+  "user": {
+    "profile": "Profile",
+    "menu": "User menu",
+    "myAvatar": "My avatar"
+  },
+  "orgSwitcher": {
+    "label": "Organization",
+    "search": "Search organization…",
+    "noOrgs": "No organization",
+    "select": "Select organization"
+  },
+  "organizations": {
+    "title": "Organizations",
+    "subtitle": "Manage all platform organizations",
+    "new": "New organization",
+    "edit": "Edit organization",
+    "search": "Search by name",
+    "empty": "No organizations",
+    "members": "Members",
+    "openDashboard": "Open dashboard",
+    "deleted": "Organization deleted",
+    "created": "Organization created",
+    "updated": "Organization updated",
+    "fields": {
+      "logo": "Organization logo",
+      "logoHint": "PNG / JPEG / WEBP, max 5 MB",
+      "name": "Name",
+      "email": "Email",
+      "phone": "Phone",
+      "website": "Website",
+      "vatNumber": "VAT number",
+      "fiscalCode": "Tax code",
+      "country": "Country",
+      "address": "Address",
+      "city": "City",
+      "province": "Province",
+      "postalCode": "Postal code"
+    },
+    "deleteConfirm": {
+      "title": "Delete the organization?",
+      "message": "You are about to delete \"{{name}}\". The action is reversible from the admin side."
+    }
+  },
+  "members": {
+    "title": "Members",
+    "subtitle": "View and manage organization members",
+    "subtitleAdmin": "Enroll users directly as members",
+    "invite": "Invite",
+    "invited": "Member invited",
+    "removed": "Member removed",
+    "roleChanged": "Role updated",
+    "transferConfirmed": "Creator role transferred",
+    "enroll": "Enroll user",
+    "enrollSubmit": "Enroll",
+    "userPicker": "User",
+    "rolePicker": "Role",
+    "fields": {
+      "name": "Name",
+      "email": "Email",
+      "role": "Role"
+    },
+    "inviteDialog": {
+      "title": "Invite a member",
+      "email": "Email",
+      "role": "Role",
+      "submit": "Create invitation",
+      "submitting": "Creating…",
+      "tokenLabel": "Share this link (valid 7 days):",
+      "successTitle": "Invitation created"
+    },
+    "removeConfirm": {
+      "title": "Remove the member?",
+      "message": "{{name}} will be removed from the organization."
+    },
+    "transferConfirm": {
+      "title": "Transfer creator role?",
+      "message": "You will become organization admin and {{name}} will become creator. Only the new creator can revert."
+    },
+    "actions": {
+      "permissions": "Permissions",
+      "transfer": "Transfer creator",
+      "remove": "Remove"
+    }
+  },
+  "memberPermissions": {
+    "title": "Permissions of {{name}}",
+    "subtitle": "For each permission, leave the role default or force a specific grant/revoke for this member.",
+    "default": "Default",
+    "grant": "Grant",
+    "revoke": "Revoke",
+    "saved": "Member permissions updated"
+  },
+  "users": {
+    "title": "Users",
+    "subtitle": "Manage users and platform admins",
+    "new": "New user",
+    "search": "Search by name or email",
+    "created": "User created",
+    "fields": {
+      "name": "Name",
+      "email": "Email",
+      "active": "Active",
+      "platformAdmin": "Platform admin"
+    },
+    "createDialog": {
+      "title": "New user",
+      "name": "Full name",
+      "email": "Email",
+      "password": "Password (≥10 chars, one uppercase, one digit)",
+      "platformAdmin": "Platform admin",
+      "submit": "Create",
+      "submitting": "Creating…"
+    }
+  },
+  "globalPermissions": {
+    "title": "Global permissions",
+    "subtitle": "Edit default permissions for each role. They apply to every organization unless explicitly overridden.",
+    "rolePicker": "Role",
+    "saved": "Permissions saved",
+    "save": "Save permissions"
+  },
+  "templates": {
+    "preview": {
+      "lessonTag": "Lesson 01",
+      "chapter": "Introductory chapter",
+      "title": "Main topic of the lesson",
+      "subtitle": "A brief description of the context: what we will see, why it matters, and which skills we develop.",
+      "bullet1": "Learning objectives and prerequisites",
+      "bullet2": "Key concepts with practical examples",
+      "bullet3": "Guided exercises and reference material",
+      "author": "Prof. Mario Rossi",
+      "role": "Computer Science Chair",
+      "date": "March 12, 2026",
+      "live": "Live"
+    },
+    "slide": {
+      "title": "Slide templates",
+      "subtitle": "Create and edit course slide templates",
+      "new": "New template",
+      "newPage": "New slide template",
+      "editPage": "Edit: {{name}}",
+      "previewLive": "Live preview",
+      "previewHint": "Preview updates in real time as you edit.",
+      "deleted": "Template deleted",
+      "created": "Template created",
+      "updated": "Template updated",
+      "empty": "No templates yet"
+    },
+    "pdf": {
+      "title": "PDF templates",
+      "subtitle": "Create and edit PDF document templates",
+      "new": "New template",
+      "newPage": "New PDF template",
+      "editPage": "Edit: {{name}}",
+      "previewLive": "Live preview",
+      "previewHint": "Preview updates in real time as you edit.",
+      "deleted": "Template deleted",
+      "created": "Template created",
+      "updated": "Template updated",
+      "empty": "No templates yet"
+    },
+    "fields": {
+      "name": "Template name",
+      "size": "Slide format",
+      "pageSize": "Page size",
+      "font": "Font",
+      "textColor": "Text color",
+      "primaryColor": "Primary color",
+      "secondaryColor": "Secondary color",
+      "background": "Background image",
+      "logoLeft": "Top-left logo",
+      "logoRight": "Top-right logo",
+      "headerHeight": "Header height (mm)",
+      "footerHeight": "Footer height (mm)",
+      "margin": "Page margin (mm)",
+      "backgroundOpacity": "Background opacity (%)"
+    },
+    "deleteConfirm": {
+      "title": "Delete the template?",
+      "message": "You are about to delete \"{{name}}\"."
+    },
+    "default": "Default",
+    "setDefault": "Set as default",
+    "defaultSet": "Template set as default"
+  },
+  "myAvatar": {
+    "title": "My avatar",
+    "subtitle": "Upload a frontal photo and an audio. Video clips will be automatically generated from these.",
+    "tabs": {
+      "image": "Image",
+      "audio": "Audio",
+      "next": "Next",
+      "back": "Back"
+    },
+    "create": "Create avatar",
+    "unsavedChanges": "Unsaved changes",
+    "statusReady": "Avatar active",
+    "statusSummary": "{{ready}}/{{total}} clips ready · {{failed}} failed",
+    "playAudio": "Play audio",
+    "clipsCount_one": "{{count}} clip total",
+    "clipsCount_other": "{{count}} clips total",
+    "image": "Frontal photo",
+    "imageHint": "PNG / JPEG / WEBP. The image will be cropped to a square (1:1).",
+    "imageEmpty": "No image",
+    "recrop": "Crop again",
+    "cropTitle": "Crop the image",
+    "cropHint": "Drag and resize the selection. The aspect ratio is locked to 1:1.",
+    "cropConfirm": "Apply crop",
+    "slidePreviewTitle": "Slide preview",
+    "slidePreviewHint": "Example of how the avatar will appear at the bottom-right of a slide template.",
+    "audio": "Personal audio",
+    "audioHint": "Read the text above out loud. The recording will be used to train a voice model that sounds like you.",
+    "audioUpload": "Upload file",
+    "audioRecord": "Record now",
+    "recordStart": "Start recording",
+    "recordStop": "Stop",
+    "audioLang": "Audio language",
+    "scriptTitle": "Text to read",
+    "scriptHint": "Read this text aloud at a natural pace during the recording. The clearer and more relaxed the reading, the better the voice model.",
+    "scriptFallback": "No specific text is configured for the selected language: showing {{lang}}.",
+    "scriptMissing": "No reading text is configured for this language. Contact an administrator.",
+    "saveWarn": "Changing the image will regenerate all clips.",
+    "regenerate": "Regenerate clips",
+    "regenerated": "Clip generation restarted",
+    "clipsTitle": "Generated clips",
+    "clipsEmpty": "No clips configured. Define at least one prompt in admin Configuration → Avatar.",
+    "clipPending": "Pending…",
+    "clipProcessing": "Generating…",
+    "clipReady": "Ready",
+    "clipFailed": "Error",
+    "allReady": "All ready",
+    "allFailed": "All failed",
+    "partial": "Partial",
+    "pending": "Pending",
+    "processing": "Generating",
+    "saved": "Avatar saved",
+    "deleted": "Avatar deleted",
+    "deleteConfirm": {
+      "title": "Delete the avatar?",
+      "message": "Image, audio, and all generated clips will be deleted."
+    }
+  },
+  "avatarConfig": {
+    "title": "Configuration — Avatar",
+    "subtitle": "Manage the video prompts used to generate MiniMax clips and the transcription scripts users will read for voice recording.",
+    "tabs": {
+      "prompts": "Video prompts",
+      "scripts": "Transcription languages"
+    },
+    "addPrompt": "Add prompt",
+    "empty": "No prompts configured. Add at least one to enable clip generation.",
+    "fields": {
+      "label": "Label",
+      "labelPlaceholder": "E.g. \"Thoughtful nod\"",
+      "prompt": "MiniMax prompt (English, max 2000 characters)",
+      "active": "Active"
+    },
+    "moveUp": "Move up",
+    "moveDown": "Move down",
+    "unsavedHint": "Unsaved changes — blur the field to save.",
+    "count_one": "{{count}} clip configured",
+    "count_other": "{{count}} clips configured",
+    "created": "Prompt created",
+    "updated": "Prompt updated",
+    "deleted": "Prompt deleted",
+    "deleteConfirm": {
+      "title": "Delete the prompt?",
+      "message": "Prompt \"{{name}}\" will be removed from the configuration."
+    },
+    "voiceScript": {
+      "title": "Text to read during the recording",
+      "subtitle": "For each language, define the text the user will see and must read aloud while recording the audio. This produces a standardized voice sample for voice cloning.",
+      "empty": "No texts configured. Add at least one for the default language.",
+      "add": "Add text for a language",
+      "selectLang": "Select language",
+      "placeholder": "Hello, I am introducing myself and reading this short text…",
+      "text": "Text",
+      "saved": "Text saved",
+      "deleted": "Text deleted",
+      "deleteConfirm": {
+        "title": "Delete the text?",
+        "message": "The reading text for language {{lang}} will be removed."
+      }
+    }
+  },
+  "permissions": {
+    "member:view": "View members",
+    "member:invite": "Invite users",
+    "member:assign_role": "Assign roles",
+    "member:remove": "Remove members",
+    "template:slide:manage": "Manage slide templates",
+    "template:pdf:manage": "Manage PDF templates",
+    "permission:manage": "Manage permissions",
+    "org:transfer_creator": "Transfer creator role",
+    "org:update": "Edit organization",
+    "course_config:manage": "Manage course parameters",
+    "course:view": "View courses",
+    "course:create": "Create courses",
+    "course:assign": "Assign courses",
+    "course:edit": "Edit courses",
+    "course:delete": "Delete courses",
+    "course:generate": "Generate course content"
+  },
+  "permissionDescriptions": {
+    "member:view": "View the list of organization members with name, email, role and join date. Prerequisite for almost every other action on members.",
+    "member:invite": "Create email invitations for new members choosing the initial role. Each invitation is a single-use link with 7-day expiry.",
+    "member:assign_role": "Change the role of an existing member, but only up to your own rank: an Org Admin cannot promote to Creator nor edit a higher-ranked member.",
+    "member:remove": "Remove a member from the organization. The Creator cannot be removed directly: transfer the role first.",
+    "template:slide:manage": "Create, edit, delete and choose as default the course slide templates (16:9 / 4:3 format, colors, font, logo, background image).",
+    "template:pdf:manage": "Create, edit, delete and choose as default the PDF document templates (A4/Letter format, header/footer/margins in mm, colors, logo, background).",
+    "permission:manage": "Edit organization permissions: per-role overrides (e.g. grant a non-default permission to all Managers) and per-member overrides (targeted grant/revoke).",
+    "org:transfer_creator": "Transfer the Creator role to another member. The previous Creator becomes Org Admin. Reserved to the Creator and irreversible without a new transfer.",
+    "org:update": "Edit the organization's profile data: name, VAT number, tax code, address, contacts, logo.",
+    "course_config:manage": "Configure default parameters for course generation: number of modules per credit, lessons per module, lesson duration and the final knowledge assessment toggle (with the number of multiple choice and open questions to generate). These values pre-populate the structure of a new course.",
+    "course:view": "See the list of organization courses. Without course:edit, the user only sees courses assigned to them.",
+    "course:create": "Create a new course choosing title, objectives, language, credits, didactic taxonomies and assignee.",
+    "course:assign": "Change the assignee of an existing course, transferring responsibility to another organization member.",
+    "course:edit": "Edit all course parameters (title, objectives, taxonomies, key topics, documents). Implies visibility of every course in the organization, not just assigned ones.",
+    "course:delete": "Delete a course and all its uploaded documents. This is irreversible.",
+    "course:generate": "Trigger AI generation of course content (architecture, lessons, slides, audio). Available in future iterations."
+  },
+  "roles": {
+    "creator": "Creator",
+    "org_admin": "Organization admin",
+    "manager": "Manager",
+    "member": "Member"
+  },
+  "errors": {
+    "generic": "An error occurred",
+    "loadingFailed": "Loading failed",
+    "saveFailed": "Save failed"
+  },
+  "i18n": {
+    "title": "Language management",
+    "subtitle": "Create, edit and delete platform languages and translations",
+    "new": "New language",
+    "edit": "Edit language",
+    "editTranslations": "Edit translations",
+    "fields": {
+      "code": "Code",
+      "codeHint": "ISO 639-1 (e.g. it, en) or regional (e.g. pt-BR)",
+      "nameNative": "Native name",
+      "flagCountry": "Flag (ISO country code, e.g. IT)",
+      "rtl": "Right-to-left",
+      "active": "Active",
+      "default": "Default",
+      "copyFrom": "Copy translations from"
+    },
+    "stats": {
+      "translations_one": "{{count}} translation",
+      "translations_other": "{{count}} translations"
+    },
+    "created": "Language created",
+    "updated": "Language updated",
+    "deleted": "Language deleted",
+    "translationsSaved": "Translations saved ({{count}})",
+    "deleteConfirm": {
+      "title": "Delete the language?",
+      "message": "You are about to delete \"{{name}}\" and all its translations."
+    },
+    "editor": {
+      "title": "Translations — {{name}}",
+      "search": "Search key or value",
+      "empty": "No translations",
+      "save": "Save translations",
+      "reference": "Reference {{lang}}",
+      "modifiedCount_one": "{{count}} key modified",
+      "modifiedCount_other": "{{count}} keys modified",
+      "noChanges": "No changes",
+      "onlyUntranslated_one": "Show only untranslated ({{count}})",
+      "onlyUntranslated_other": "Show only untranslated ({{count}})",
+      "untranslatedRow": "Untranslated"
+    },
+    "untranslatedTooltip_one": "{{count}} entry not yet translated",
+    "untranslatedTooltip_other": "{{count}} entries not yet translated",
+    "autoTranslate": "Complete with AI",
+    "autoTranslateConfirm": "Do you want to auto-translate {{count}} missing entries for \"{{name}}\" with AI? This operation uses OpenAI and may take a few seconds.",
+    "autoTranslateRunning": "Translating…",
+    "autoTranslateSuccess": "Translated {{translated}} of {{requested}} entries",
+    "autoTranslateNotConfigured": "OpenAI is not configured: set OPENAI_API_KEY in your .env file.",
+    "clearAll": "Clear all",
+    "clearAllRunning": "Clearing…",
+    "clearAllSuccess_one": "Deleted {{count}} translation",
+    "clearAllSuccess_other": "Deleted {{count}} translations",
+    "clearAllConfirm": {
+      "title": "Clear all translations?",
+      "message": "You are about to delete all {{count}} translations for \"{{name}}\". You can then regenerate them with the \"Complete with AI\" button. This cannot be undone."
+    }
+  },
+  "dashboard": {
+    "admin": {
+      "title": "Admin panel",
+      "subtitle": "Global a4u platform management"
+    },
+    "org": {
+      "subtitle": "Role: {{role}}",
+      "platformAdmin": "Platform admin"
+    },
+    "noOrg": {
+      "title": "Welcome",
+      "message": "You are not yet a member of any organization. Wait for an invitation or contact an administrator."
+    }
+  },
+  "taxonomies": {
+    "title": "Course taxonomies",
+    "subtitle": "Multilingual lookup values used in the course-creation menus. Editable by platform admins only.",
+    "category": {
+      "title": "Categories",
+      "subtitle": "Subject macro-areas and sub-categories.",
+      "empty": "No categories defined."
+    },
+    "teaching_style": {
+      "title": "Teaching styles",
+      "subtitle": "Pedagogical approach of the course.",
+      "empty": "No teaching styles defined."
+    },
+    "content_depth": {
+      "title": "Content depth",
+      "subtitle": "Depth at which the content is covered.",
+      "empty": "No content depth defined."
+    },
+    "teacher_role": {
+      "title": "Teacher roles",
+      "subtitle": "Profile that the virtual teacher takes during the course.",
+      "empty": "No teacher roles defined."
+    },
+    "audience_size": {
+      "title": "Audience size",
+      "subtitle": "Expected number of participants.",
+      "empty": "No audience size defined."
+    },
+    "knowledge_level": {
+      "title": "Knowledge level",
+      "subtitle": "Student's starting level.",
+      "empty": "No knowledge levels defined."
+    },
+    "target_audience": {
+      "title": "Target audience",
+      "subtitle": "Type of audience the course is built for.",
+      "empty": "No target audience defined."
+    },
+    "eqf_level": {
+      "title": "EQF levels",
+      "subtitle": "European Qualifications Framework: levels and associated qualifications.",
+      "empty": "No EQF levels defined."
+    },
+    "term": {
+      "add": "Add term",
+      "edit": "Edit term",
+      "delete": "Delete",
+      "saved": "Term saved",
+      "created": "Term created",
+      "deleted": "Term deleted",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "disabled": "Disabled",
+      "activeYes": "Active",
+      "activeNo": "Disabled",
+      "autoTranslate": "Translate with AI",
+      "autoTranslateRunning": "Translating…",
+      "autoTranslateSuccess": "Translated {{labels}} labels and {{descriptions}} descriptions.",
+      "autoTranslateHint": "Save the term, then use \"Translate with AI\" to fill in the other languages.",
+      "autoTranslateAll": "Translate all",
+      "autoTranslateAllRunning": "Bulk translation in progress…",
+      "autoTranslateAllSuccess": "Translated {{labels}} labels and {{descriptions}} descriptions across {{languages}} languages.",
+      "autoTranslateAllConfirm": {
+        "title": "Translate all terms?",
+        "message": "OpenAI will translate every term in this taxonomy ({{count}} terms) into every active language, starting from IT. It may take a few minutes."
+      },
+      "fields": {
+        "slug": "Slug",
+        "slugHint": "Stable identifier (snake_case). Cannot be changed after creation.",
+        "parent": "Parent category",
+        "parentNone": "None (top level)",
+        "isActive": "Active",
+        "labels": "Labels",
+        "label": "Label",
+        "description": "Description"
+      },
+      "deleteConfirm": {
+        "title": "Delete term?",
+        "message": "You are about to delete \"{{name}}\". This cannot be undone.",
+        "messageWithChildren_one": "You are about to delete \"{{name}}\" and {{count}} linked sub-category. This cannot be undone.",
+        "messageWithChildren_other": "You are about to delete \"{{name}}\" and {{count}} linked sub-categories. This cannot be undone."
+      },
+      "errors": {
+        "slugRequired": "Slug is required.",
+        "defaultLabelRequired": "The {{lang}} label is required."
+      }
+    }
+  }
+}

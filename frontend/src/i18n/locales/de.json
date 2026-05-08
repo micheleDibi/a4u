@@ -1,0 +1,386 @@
+{
+  "app": { "name": "a4u", "tagline": "Plattform für Universitätskurse" },
+  "common": {
+    "save": "Speichern", "cancel": "Abbrechen", "delete": "Löschen", "edit": "Bearbeiten",
+    "add": "Hinzufügen", "loading": "Wird geladen…", "saving": "Wird gespeichert…",
+    "creating": "Wird erstellt…", "remove": "Entfernen", "confirm": "Bestätigen",
+    "close": "Schließen", "search": "Suchen", "back": "Zurück", "next": "Weiter",
+    "actions": "Aktionen", "of": "von", "noResults": "Keine Ergebnisse",
+    "copy": "Kopieren", "copied": "Kopiert!", "yes": "Ja", "no": "Nein", "all": "Alle",
+    "optional": "optional", "required": "erforderlich",
+    "moreInfo": "Mehr Informationen"
+  },
+  "auth": {
+    "login": {
+      "title": "Willkommen zurück", "subtitle": "Melden Sie sich in Ihrem a4u-Workspace an",
+      "email": "E-Mail", "password": "Passwort",
+      "submit": "Anmelden", "submitting": "Anmeldung läuft…"
+    },
+    "logout": "Abmelden",
+    "invitation": {
+      "title": "Einladung annehmen",
+      "subtitle": "Sie wurden zu {{org}} als {{role}} eingeladen",
+      "fullName": "Vollständiger Name",
+      "passwordHint": "Mind. 10 Zeichen, ein Großbuchstabe, eine Zahl",
+      "submit": "Einladung annehmen", "submitting": "Wird bestätigt…",
+      "alreadyRegistered": "Sie sind bereits registriert. Klicken Sie auf \"Annehmen\", um sich hinzuzufügen.",
+      "invalidOrExpired": "Die Einladung ist nicht gültig, abgelaufen oder bereits verwendet."
+    }
+  },
+  "theme": { "label": "Design", "light": "Hell", "dark": "Dunkel", "system": "System" },
+  "language": { "label": "Sprache" },
+  "nav": {
+    "platform": "Plattform", "organization": "Organisation",
+    "configurazioni": "Konfiguration", "personal": "Persönlich",
+    "dashboard": "Dashboard", "organizations": "Organisationen",
+    "users": "Benutzer", "permissions": "Globale Berechtigungen", "i18n": "Sprachen",
+    "members": "Mitglieder", "templatesSlide": "Folienvorlagen",
+    "templatesPdf": "PDF-Vorlagen", "avatarConfig": "Avatar",
+    "courseSettings": "Kursparameter"
+  },
+  "courseSettings": {
+    "title": "Kursparameter",
+    "subtitle": "Standardwerte zum Generieren der Struktur eines neuen Kurses in dieser Organisation.",
+    "dirtyBanner": "Nicht gespeicherte Änderungen",
+    "saved": "Parameter gespeichert",
+    "sections": {
+      "structure": {
+        "title": "Kursstruktur",
+        "subtitle": "Wie viele Module und Lektionen pro Credit generiert werden."
+      },
+      "duration": {
+        "title": "Dauer der Lektionen",
+        "subtitle": "Standarddauer jeder Kurslektion."
+      },
+      "assessment": {
+        "subtitle": "Die letzte Lektion jedes Moduls ist eine automatisch generierte Lernkontrolle.",
+        "disabledHint": "Es wird keine Abschlussprüfung generiert. Jedes Modul endet mit seiner regulären letzten Lektion."
+      }
+    },
+    "fields": {
+      "modulesPerCfu": "Module pro Credit",
+      "lessonsPerModule": "Lektionen pro Modul",
+      "lessonDuration": "Dauer der Lektion",
+      "assessment": "Abschließende Lernkontrolle",
+      "assessmentHelp": "Wenn aktiviert, ist die letzte Lektion jedes Moduls eine automatisch generierte Lernkontrolle: Es wird eine Reihe von Fragen (Multiple-Choice und offen) generiert, um die erworbenen Kompetenzen zu überprüfen. Die Plattform generiert nur Inhalte; die Bereitstellung an Studierende liegt außerhalb des Geltungsbereichs.",
+      "mcq": "Multiple-Choice-Fragen",
+      "openQuestions": "Offene Fragen"
+    },
+    "units": {
+      "modules": "Module",
+      "lessons": "Lektionen",
+      "minutes": "Minuten",
+      "questions": "Fragen"
+    },
+    "summary": {
+      "title": "Übersicht pro Credit",
+      "modulesPerCfu": "Module",
+      "lessonsPerModule": "Lektionen pro Modul",
+      "lessonDuration": "Lektionsdauer",
+      "totalLessonsPerCfu": "Lektionen gesamt",
+      "totalDurationPerCfu": "Gesamtdauer",
+      "mcq": "Multiple-Choice-Fragen",
+      "openQuestions": "Offene Fragen",
+      "totalQuestions": "Fragen gesamt pro Prüfung",
+      "noAssessment": "Keine Abschlussprüfung generiert.",
+      "minutesValue_one": "{{count}} Minute",
+      "minutesValue_other": "{{count}} Minuten",
+      "hours_one": "{{count}} Stunde",
+      "hours_other": "{{count}} Stunden",
+      "hoursAndMinutes": "{{hours}}h {{minutes}}m"
+    }
+  },
+  "command": {
+    "placeholder": "Befehl oder Seite suchen…",
+    "navigation": "Navigation", "actions": "Aktionen", "preferences": "Einstellungen",
+    "openCommandPalette": "Befehlspalette öffnen",
+    "newOrganization": "Neue Organisation",
+    "logout": "Abmelden", "noResults": "Keine Ergebnisse",
+    "switchTheme": "Design wechseln", "switchLanguage": "Sprache wechseln"
+  },
+  "user": { "profile": "Profil", "menu": "Benutzermenü", "myAvatar": "Mein Avatar" },
+  "orgSwitcher": {
+    "label": "Organisation", "search": "Organisation suchen…",
+    "noOrgs": "Keine Organisation", "select": "Organisation auswählen"
+  },
+  "organizations": {
+    "title": "Organisationen",
+    "subtitle": "Verwalten Sie alle Plattformorganisationen",
+    "new": "Neue Organisation", "edit": "Organisation bearbeiten",
+    "search": "Nach Namen suchen", "empty": "Keine Organisationen",
+    "members": "Mitglieder", "openDashboard": "Dashboard öffnen",
+    "deleted": "Organisation gelöscht",
+    "created": "Organisation erstellt", "updated": "Organisation aktualisiert",
+    "fields": {
+      "logo": "Organisationslogo",
+      "logoHint": "PNG / JPEG / WEBP, max 5 MB",
+      "name": "Bezeichnung", "email": "E-Mail", "phone": "Telefon",
+      "website": "Webseite", "vatNumber": "USt-IdNr.",
+      "fiscalCode": "Steuernummer", "country": "Land",
+      "address": "Adresse", "city": "Stadt",
+      "province": "Provinz", "postalCode": "PLZ"
+    },
+    "deleteConfirm": {
+      "title": "Organisation löschen?",
+      "message": "Sie sind dabei, \"{{name}}\" zu löschen. Die Aktion kann administrativ rückgängig gemacht werden."
+    }
+  },
+  "members": {
+    "title": "Mitglieder",
+    "subtitle": "Mitglieder der Organisation anzeigen und verwalten",
+    "subtitleAdmin": "Benutzer direkt als Mitglieder einschreiben",
+    "invite": "Einladen", "invited": "Mitglied eingeladen",
+    "removed": "Mitglied entfernt", "roleChanged": "Rolle aktualisiert",
+    "transferConfirmed": "Creator-Rolle übertragen",
+    "enroll": "Benutzer einschreiben", "enrollSubmit": "Einschreiben",
+    "userPicker": "Benutzer", "rolePicker": "Rolle",
+    "fields": { "name": "Name", "email": "E-Mail", "role": "Rolle" },
+    "inviteDialog": {
+      "title": "Mitglied einladen", "email": "E-Mail", "role": "Rolle",
+      "submit": "Einladung erstellen", "submitting": "Wird erstellt…",
+      "tokenLabel": "Diesen Link teilen (gültig 7 Tage):",
+      "successTitle": "Einladung erstellt"
+    },
+    "removeConfirm": {
+      "title": "Mitglied entfernen?",
+      "message": "{{name}} wird aus der Organisation entfernt."
+    },
+    "transferConfirm": {
+      "title": "Creator-Rolle übertragen?",
+      "message": "Sie werden Org-Admin und {{name}} wird Creator. Nur der neue Creator kann es rückgängig machen."
+    },
+    "actions": { "permissions": "Berechtigungen", "transfer": "Creator übertragen", "remove": "Entfernen" }
+  },
+  "memberPermissions": {
+    "title": "Berechtigungen von {{name}}",
+    "subtitle": "Belassen Sie für jede Berechtigung den Rollenstandard oder erzwingen Sie eine spezifische Erteilung/Entzug für dieses Mitglied.",
+    "default": "Standard", "grant": "Erteilen", "revoke": "Entziehen",
+    "saved": "Mitgliederberechtigungen aktualisiert"
+  },
+  "users": {
+    "title": "Benutzer", "subtitle": "Benutzer und Plattform-Administratoren verwalten",
+    "new": "Neuer Benutzer", "search": "Nach Name oder E-Mail suchen",
+    "created": "Benutzer erstellt",
+    "fields": { "name": "Name", "email": "E-Mail", "active": "Aktiv", "platformAdmin": "Plattform-Admin" },
+    "createDialog": {
+      "title": "Neuer Benutzer", "name": "Vollständiger Name", "email": "E-Mail",
+      "password": "Passwort (≥10 Zeichen, ein Großbuchstabe, eine Zahl)",
+      "platformAdmin": "Plattform-Admin",
+      "submit": "Erstellen", "submitting": "Wird erstellt…"
+    }
+  },
+  "globalPermissions": {
+    "title": "Globale Berechtigungen",
+    "subtitle": "Bearbeiten Sie die Standardberechtigungen jeder Rolle. Sie gelten für alle Organisationen, außer für solche mit explizitem Override.",
+    "rolePicker": "Rolle", "saved": "Berechtigungen gespeichert", "save": "Berechtigungen speichern"
+  },
+  "templates": {
+    "preview": {
+      "lessonTag": "Lektion 01",
+      "chapter": "Einführungskapitel",
+      "title": "Hauptthema der Lektion",
+      "subtitle": "Eine kurze Beschreibung des Kontexts: Was wir sehen, warum es wichtig ist und welche Kompetenzen wir entwickeln.",
+      "bullet1": "Lernziele und Voraussetzungen",
+      "bullet2": "Schlüsselkonzepte mit praktischen Beispielen",
+      "bullet3": "Geführte Übungen und Referenzmaterial",
+      "author": "Prof. Mario Rossi",
+      "role": "Lehrstuhl für Informatik",
+      "date": "12. März 2026",
+      "live": "Live"
+    },
+    "slide": {
+      "title": "Folienvorlagen",
+      "subtitle": "Erstellen und bearbeiten Sie die Folienvorlagen der Kurse",
+      "new": "Neue Vorlage", "newPage": "Neue Folienvorlage",
+      "editPage": "Bearbeiten: {{name}}", "previewLive": "Live-Vorschau",
+      "previewHint": "Die Vorschau wird beim Bearbeiten in Echtzeit aktualisiert.",
+      "deleted": "Vorlage gelöscht", "created": "Vorlage erstellt",
+      "updated": "Vorlage aktualisiert", "empty": "Noch keine Vorlagen"
+    },
+    "pdf": {
+      "title": "PDF-Vorlagen",
+      "subtitle": "Erstellen und bearbeiten Sie die Vorlagen für PDF-Dokumente",
+      "new": "Neue Vorlage", "newPage": "Neue PDF-Vorlage",
+      "editPage": "Bearbeiten: {{name}}", "previewLive": "Live-Vorschau",
+      "previewHint": "Die Vorschau wird beim Bearbeiten in Echtzeit aktualisiert.",
+      "deleted": "Vorlage gelöscht", "created": "Vorlage erstellt",
+      "updated": "Vorlage aktualisiert", "empty": "Noch keine Vorlagen"
+    },
+    "fields": {
+      "name": "Vorlagenname", "size": "Folienformat", "pageSize": "Seitenformat",
+      "font": "Schriftart", "textColor": "Textfarbe",
+      "primaryColor": "Primärfarbe", "secondaryColor": "Sekundärfarbe",
+      "background": "Hintergrundbild", "logoLeft": "Logo oben links",
+      "logoRight": "Logo oben rechts",
+      "headerHeight": "Kopfzeilenhöhe (mm)", "footerHeight": "Fußzeilenhöhe (mm)",
+      "margin": "Seitenrand (mm)",
+      "backgroundOpacity": "Hintergrundtransparenz (%)"
+    },
+    "deleteConfirm": {
+      "title": "Vorlage löschen?",
+      "message": "Sie sind dabei, \"{{name}}\" zu löschen."
+    },
+    "default": "Standard",
+    "setDefault": "Als Standard festlegen",
+    "defaultSet": "Vorlage als Standard festgelegt"
+  },
+  "myAvatar": {
+    "title": "Mein Avatar",
+    "subtitle": "Laden Sie ein frontales Foto und eine Audiodatei hoch. Daraus werden automatisch Videoclips generiert.",
+    "tabs": { "image": "Bild", "audio": "Audio", "next": "Weiter", "back": "Zurück" },
+    "create": "Avatar erstellen",
+    "unsavedChanges": "Nicht gespeicherte Änderungen",
+    "statusReady": "Avatar aktiv",
+    "statusSummary": "{{ready}}/{{total}} Clips bereit · {{failed}} Fehler",
+    "playAudio": "Audio abspielen",
+    "clipsCount_one": "{{count}} Clip insgesamt",
+    "clipsCount_other": "{{count}} Clips insgesamt",
+    "image": "Frontales Foto",
+    "imageHint": "PNG / JPEG / WEBP. Das Bild wird auf quadratisches Format (1:1) zugeschnitten.",
+    "imageEmpty": "Kein Bild",
+    "recrop": "Erneut zuschneiden",
+    "cropTitle": "Bild zuschneiden",
+    "cropHint": "Ziehen und ändern Sie die Größe der Auswahl. Das Verhältnis ist auf 1:1 festgelegt.",
+    "cropConfirm": "Zuschnitt anwenden",
+    "slidePreviewTitle": "Vorschau in der Folie",
+    "slidePreviewHint": "Beispiel, wie der Avatar unten rechts in einer Folienvorlage aussieht.",
+    "audio": "Persönliches Audio",
+    "audioHint": "Lesen Sie den obigen Text laut vor. Die Aufnahme wird verwendet, um ein Stimmmodell zu trainieren, das Ihrer Stimme treu ist.",
+    "audioUpload": "Datei hochladen",
+    "audioRecord": "Jetzt aufnehmen",
+    "recordStart": "Aufnahme starten",
+    "recordStop": "Stopp",
+    "audioLang": "Audiosprache",
+    "scriptTitle": "Zu lesender Text",
+    "scriptHint": "Lesen Sie diesen Text während der Aufnahme mit natürlicher Stimme. Je klarer und entspannter das Lesen, desto besser das Stimmmodell.",
+    "scriptFallback": "Für die ausgewählte Sprache ist noch kein spezifischer Text konfiguriert: Es wird der Text in {{lang}} angezeigt.",
+    "scriptMissing": "Für diese Sprache ist kein Lesetext konfiguriert. Wenden Sie sich an einen Administrator.",
+    "saveWarn": "Eine Bildänderung regeneriert alle Clips.",
+    "regenerate": "Clips regenerieren",
+    "regenerated": "Clip-Generierung neu gestartet",
+    "clipsTitle": "Generierte Clips",
+    "clipsEmpty": "Keine Clips konfiguriert. Definieren Sie mindestens einen Prompt im Admin-Bereich Konfiguration → Avatar.",
+    "clipPending": "Wartend…",
+    "clipProcessing": "Wird generiert…",
+    "clipReady": "Bereit",
+    "clipFailed": "Fehler",
+    "allReady": "Alle bereit",
+    "allFailed": "Alle fehlgeschlagen",
+    "partial": "Teilweise",
+    "pending": "Wartend",
+    "processing": "Wird generiert",
+    "saved": "Avatar gespeichert",
+    "deleted": "Avatar gelöscht",
+    "deleteConfirm": {
+      "title": "Avatar löschen?",
+      "message": "Bild, Audio und alle generierten Clips werden gelöscht."
+    }
+  },
+  "avatarConfig": {
+    "title": "Konfiguration — Avatar",
+    "subtitle": "Verwalten Sie die Video-Prompts für die MiniMax-Clip-Generierung und die Transkriptionstexte, die Benutzer für die Stimmaufnahme lesen werden.",
+    "tabs": { "prompts": "Video-Prompts", "scripts": "Transkriptionssprachen" },
+    "addPrompt": "Prompt hinzufügen",
+    "empty": "Keine Prompts konfiguriert. Fügen Sie mindestens einen hinzu, um die Clip-Generierung zu aktivieren.",
+    "fields": {
+      "label": "Label",
+      "labelPlaceholder": "Z. B. \"Nachdenkliches Nicken\"",
+      "prompt": "MiniMax-Prompt (Englisch, max 2000 Zeichen)",
+      "active": "Aktiv"
+    },
+    "moveUp": "Nach oben verschieben",
+    "moveDown": "Nach unten verschieben",
+    "unsavedHint": "Nicht gespeicherte Änderungen — Feldfokus verlassen, um zu speichern.",
+    "count_one": "{{count}} Clip konfiguriert",
+    "count_other": "{{count}} Clips konfiguriert",
+    "created": "Prompt erstellt",
+    "updated": "Prompt aktualisiert",
+    "deleted": "Prompt gelöscht",
+    "deleteConfirm": {
+      "title": "Prompt löschen?",
+      "message": "Der Prompt \"{{name}}\" wird aus der Konfiguration entfernt."
+    },
+    "voiceScript": {
+      "title": "Während der Aufnahme zu lesender Text",
+      "subtitle": "Definieren Sie für jede Sprache den Text, den der Benutzer sieht und während der Audioaufnahme laut lesen muss. Dient zum Erhalt einer standardisierten Stimmprobe für Voice-Cloning.",
+      "empty": "Kein Text konfiguriert. Fügen Sie mindestens einen für die Standardsprache hinzu.",
+      "add": "Text für eine Sprache hinzufügen",
+      "selectLang": "Sprache auswählen",
+      "placeholder": "Guten Tag, ich stelle mich vor und lese diesen kurzen Text…",
+      "text": "Text",
+      "saved": "Text gespeichert",
+      "deleted": "Text gelöscht",
+      "deleteConfirm": {
+        "title": "Text löschen?",
+        "message": "Der Lesetext für die Sprache {{lang}} wird entfernt."
+      }
+    }
+  },
+  "permissions": {
+    "member:view": "Mitglieder ansehen", "member:invite": "Benutzer einladen",
+    "member:assign_role": "Rollen zuweisen", "member:remove": "Mitglieder entfernen",
+    "template:slide:manage": "Folienvorlagen verwalten",
+    "template:pdf:manage": "PDF-Vorlagen verwalten",
+    "permission:manage": "Berechtigungen verwalten",
+    "org:transfer_creator": "Creator-Rolle übertragen", "org:update": "Organisation bearbeiten",
+    "course_config:manage": "Kursparameter verwalten"
+  },
+  "permissionDescriptions": {
+    "member:view": "Liste der Mitglieder der Organisation mit Name, E-Mail, Rolle und Beitrittsdatum anzeigen. Voraussetzung für fast alle anderen Aktionen für Mitglieder.",
+    "member:invite": "E-Mail-Einladungen für neue Mitglieder erstellen und die Anfangsrolle wählen. Jede Einladung ist ein einmaliger Link mit Ablauf nach 7 Tagen.",
+    "member:assign_role": "Die Rolle eines bestehenden Mitglieds ändern, jedoch nur bis zum eigenen Rang: Ein Org-Admin kann nicht zum Creator befördern oder ein Mitglied höheren Ranges bearbeiten.",
+    "member:remove": "Ein Mitglied aus der Organisation entfernen. Der Creator kann nicht direkt entfernt werden: Die Rolle muss zuerst übertragen werden.",
+    "template:slide:manage": "Erstellen, bearbeiten, löschen und als Standard auswählen der Folienvorlagen der Kurse (Format 16:9 / 4:3, Farben, Schrift, Logo, Hintergrundbild).",
+    "template:pdf:manage": "Erstellen, bearbeiten, löschen und als Standard auswählen der Vorlagen für PDF-Dokumente (Format A4/Letter, Kopf-/Fußzeile/Ränder in mm, Farben, Logo, Hintergrund).",
+    "permission:manage": "Organisationsberechtigungen ändern: Override pro Rolle (z. B. allen Managern eine nicht standardmäßige Berechtigung erteilen) und Override pro Mitglied (gezielte Erteilung/Entzug).",
+    "org:transfer_creator": "Die Creator-Rolle an ein anderes Mitglied übertragen. Der bisherige Creator wird zum Org-Admin. Aktion ist dem Creator vorbehalten und ohne neue Übertragung irreversibel.",
+    "org:update": "Stammdaten der Organisation bearbeiten: Name, USt-IdNr., Steuernummer, Adresse, Kontakte, Logo.",
+    "course_config:manage": "Standardparameter für die Kursgenerierung konfigurieren: Anzahl der Module pro Credit, Lektionen pro Modul, Lektionsdauer und Aktivierung der abschließenden Lernkontrolle (mit der Anzahl der zu generierenden Multiple-Choice- und offenen Fragen). Diese Werte werden zum Vorbefüllen der Struktur eines neuen Kurses verwendet."
+  },
+  "roles": {
+    "creator": "Creator", "org_admin": "Organisations-Admin",
+    "manager": "Manager", "member": "Mitglied"
+  },
+  "errors": { "generic": "Ein Fehler ist aufgetreten", "loadingFailed": "Laden fehlgeschlagen", "saveFailed": "Speichern fehlgeschlagen" },
+  "i18n": {
+    "title": "Sprachverwaltung",
+    "subtitle": "Erstellen, bearbeiten und löschen Sie die Plattformsprachen und Übersetzungen",
+    "new": "Neue Sprache",
+    "edit": "Sprache bearbeiten",
+    "editTranslations": "Übersetzungen bearbeiten",
+    "fields": {
+      "code": "Code",
+      "codeHint": "ISO 639-1 (z. B. it, en) oder regional (z. B. pt-BR)",
+      "nameNative": "Nativer Name",
+      "flagCountry": "Flagge (ISO-Ländercode, z. B. IT)",
+      "rtl": "Right-to-left",
+      "active": "Aktiv",
+      "default": "Standard",
+      "copyFrom": "Übersetzungen kopieren von"
+    },
+    "stats": { "translations_one": "{{count}} Übersetzung", "translations_other": "{{count}} Übersetzungen" },
+    "created": "Sprache erstellt",
+    "updated": "Sprache aktualisiert",
+    "deleted": "Sprache gelöscht",
+    "translationsSaved": "Übersetzungen gespeichert ({{count}})",
+    "deleteConfirm": {
+      "title": "Sprache löschen?",
+      "message": "Sie sind dabei, \"{{name}}\" und alle ihre Übersetzungen zu löschen."
+    },
+    "editor": {
+      "title": "Übersetzungen — {{name}}",
+      "search": "Schlüssel oder Wert suchen",
+      "empty": "Keine Übersetzungen",
+      "save": "Übersetzungen speichern",
+      "reference": "Referenz {{lang}}",
+      "modifiedCount_one": "{{count}} Schlüssel geändert",
+      "modifiedCount_other": "{{count}} Schlüssel geändert",
+      "noChanges": "Keine Änderungen"
+    }
+  },
+  "dashboard": {
+    "admin": { "title": "Admin-Panel", "subtitle": "Globale Verwaltung der a4u-Plattform" },
+    "org": { "subtitle": "Rolle: {{role}}", "platformAdmin": "Plattform-Admin" },
+    "noOrg": { "title": "Willkommen", "message": "Sie sind noch kein Mitglied einer Organisation. Warten Sie auf eine Einladung oder kontaktieren Sie einen Administrator." }
+  }
+}

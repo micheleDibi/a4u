@@ -1,0 +1,516 @@
+{
+  "app": {
+    "name": "a4u",
+    "tagline": "Universitātes kursu platforma"
+  },
+  "common": {
+    "save": "Saglabāt",
+    "cancel": "Atcelt",
+    "delete": "Dzēst",
+    "edit": "Rediģēt",
+    "add": "Pievienot",
+    "loading": "Notiek ielāde…",
+    "saving": "Notiek saglabāšana…",
+    "creating": "Tiek izveidots…",
+    "remove": "Noņemt",
+    "confirm": "Apstiprināt",
+    "close": "Aizvērt",
+    "search": "Meklēt",
+    "back": "Atpakaļ",
+    "next": "Tālāk",
+    "actions": "Darbības",
+    "of": "no",
+    "noResults": "Nav rezultātu",
+    "copy": "Kopēt",
+    "copied": "Kopēts!",
+    "yes": "Jā",
+    "no": "Nē",
+    "all": "Visi",
+    "optional": "neobligāts",
+    "required": "obligāts",
+    "moreInfo": "Papildu informācija"
+  },
+  "auth": {
+    "login": {
+      "title": "Laipni atgriezies",
+      "subtitle": "Piesakieties savā a4u darba telpā",
+      "email": "E-pasts",
+      "password": "Parole",
+      "submit": "Pieteikties",
+      "submitting": "Notiek pieteikšanās…"
+    },
+    "logout": "Iziet",
+    "invitation": {
+      "title": "Pieņemt uzaicinājumu",
+      "subtitle": "Jūs esat uzaicināts uz {{org}} kā {{role}}",
+      "fullName": "Pilns vārds",
+      "passwordHint": "Vismaz 10 rakstzīmes, viens lielais burts, viens cipars",
+      "submit": "Pieņemt uzaicinājumu",
+      "submitting": "Apstiprinājums…",
+      "alreadyRegistered": "Jūs jau esat reģistrēts. Klikšķiniet \"Pieņemt\", lai pievienotos.",
+      "invalidOrExpired": "Uzaicinājums nav derīgs, beidzies vai jau izmantots."
+    }
+  },
+  "theme": {
+    "label": "Motīvs",
+    "light": "Gaišs",
+    "dark": "Tumšs",
+    "system": "Sistēmas"
+  },
+  "language": {
+    "label": "Valoda"
+  },
+  "nav": {
+    "platform": "Platforma",
+    "organization": "Organizācija",
+    "configurazioni": "Konfigurācija",
+    "personal": "Personīgais",
+    "dashboard": "Vadības panelis",
+    "organizations": "Organizācijas",
+    "users": "Lietotāji",
+    "permissions": "Globālās atļaujas",
+    "i18n": "Valodas",
+    "members": "Dalībnieki",
+    "templatesSlide": "Slaidu veidnes",
+    "templatesPdf": "PDF veidnes",
+    "avatarConfig": "Avatārs",
+    "courseSettings": "Kursa parametri"
+  },
+  "courseSettings": {
+    "title": "Kursa parametri",
+    "subtitle": "Noklusējuma vērtības, ko izmanto, lai ģenerētu jauna kursa struktūru šajā organizācijā.",
+    "dirtyBanner": "Nesaglabātas izmaiņas",
+    "saved": "Parametri saglabāti",
+    "sections": {
+      "structure": {
+        "title": "Kursa struktūra",
+        "subtitle": "Cik moduļu un nodarbību tiek ģenerēts par vienu kredītpunktu."
+      },
+      "duration": {
+        "title": "Nodarbību ilgums",
+        "subtitle": "Standarta katras kursa nodarbības ilgums."
+      },
+      "assessment": {
+        "subtitle": "Katra moduļa pēdējā nodarbība ir automātiski ģenerēts zināšanu novērtējums.",
+        "disabledHint": "Gala novērtējums netiek ģenerēts. Katrs modulis beidzas ar parasto pēdējo nodarbību."
+      }
+    },
+    "fields": {
+      "modulesPerCfu": "Moduļi uz kredītpunktu",
+      "lessonsPerModule": "Nodarbības modulī",
+      "lessonDuration": "Nodarbības ilgums",
+      "assessment": "Gala zināšanu novērtējums",
+      "assessmentHelp": "Ja iespējots, katra moduļa pēdējā nodarbība ir automātiski ģenerēts zināšanu novērtējums: tiek ģenerēts jautājumu kopums (ar izvēli un atvērti), lai pārbaudītu iegūtās kompetences. Platforma tikai ģenerē saturu; piegāde studentiem ir ārpus tvēruma.",
+      "mcq": "Jautājumi ar izvēli",
+      "openQuestions": "Atvērtie jautājumi"
+    },
+    "units": {
+      "modules": "moduļi",
+      "lessons": "nodarbības",
+      "minutes": "minūtes",
+      "questions": "jautājumi"
+    },
+    "summary": {
+      "title": "Kopsavilkums par kredītpunktu",
+      "modulesPerCfu": "Moduļi",
+      "lessonsPerModule": "Nodarbības modulī",
+      "lessonDuration": "Nodarbības ilgums",
+      "totalLessonsPerCfu": "Kopā nodarbību",
+      "totalDurationPerCfu": "Kopējais ilgums",
+      "mcq": "Jautājumi ar izvēli",
+      "openQuestions": "Atvērtie jautājumi",
+      "totalQuestions": "Kopā novērtējuma jautājumu",
+      "noAssessment": "Nav ģenerēts gala novērtējums.",
+      "minutesValue_one": "{{count}} minūte",
+      "minutesValue_other": "{{count}} minūtes",
+      "hours_one": "{{count}} stunda",
+      "hours_other": "{{count}} stundas",
+      "hoursAndMinutes": "{{hours}}h {{minutes}}m"
+    }
+  },
+  "command": {
+    "placeholder": "Meklēt komandu vai lapu…",
+    "navigation": "Navigācija",
+    "actions": "Darbības",
+    "preferences": "Iestatījumi",
+    "openCommandPalette": "Atvērt komandu paleti",
+    "newOrganization": "Jauna organizācija",
+    "logout": "Iziet",
+    "noResults": "Nav rezultātu",
+    "switchTheme": "Mainīt motīvu",
+    "switchLanguage": "Mainīt valodu"
+  },
+  "user": {
+    "profile": "Profils",
+    "menu": "Lietotāja izvēlne",
+    "myAvatar": "Mans avatārs"
+  },
+  "orgSwitcher": {
+    "label": "Organizācija",
+    "search": "Meklēt organizāciju…",
+    "noOrgs": "Nav organizāciju",
+    "select": "Izvēlieties organizāciju"
+  },
+  "organizations": {
+    "title": "Organizācijas",
+    "subtitle": "Pārvaldiet visas platformas organizācijas",
+    "new": "Jauna organizācija",
+    "edit": "Rediģēt organizāciju",
+    "search": "Meklēt pēc nosaukuma",
+    "empty": "Nav organizāciju",
+    "members": "Dalībnieki",
+    "openDashboard": "Apri dashboard",
+    "deleted": "Organizācija dzēsta",
+    "created": "Organizācija izveidota",
+    "updated": "Organizācija atjaunināta",
+    "fields": {
+      "logo": "Organizācijas logotips",
+      "logoHint": "PNG / JPEG / WEBP, maks. 5 MB",
+      "name": "Nosaukums",
+      "email": "E-pasts",
+      "phone": "Tālrunis",
+      "website": "Mājaslapa",
+      "vatNumber": "PVN numurs",
+      "fiscalCode": "Nodokļu kods",
+      "country": "Valsts",
+      "address": "Adrese",
+      "city": "Pilsēta",
+      "province": "Reģions",
+      "postalCode": "Pasta indekss"
+    },
+    "deleteConfirm": {
+      "title": "Dzēst organizāciju?",
+      "message": "Jūs gatavojaties dzēst \"{{name}}\". Darbība ir atgriežama no administrācijas."
+    }
+  },
+  "members": {
+    "title": "Dalībnieki",
+    "subtitle": "Skatīt un pārvaldīt organizācijas dalībniekus",
+    "subtitleAdmin": "Tieši reģistrēt lietotājus kā dalībniekus",
+    "invite": "Uzaicināt",
+    "invited": "Dalībnieks uzaicināts",
+    "removed": "Dalībnieks noņemts",
+    "roleChanged": "Loma atjaunināta",
+    "transferConfirmed": "Creator loma pārcelta",
+    "enroll": "Reģistrēt lietotāju",
+    "enrollSubmit": "Reģistrēt",
+    "userPicker": "Lietotājs",
+    "rolePicker": "Loma",
+    "fields": {
+      "name": "Vārds",
+      "email": "E-pasts",
+      "role": "Loma"
+    },
+    "inviteDialog": {
+      "title": "Uzaicināt dalībnieku",
+      "email": "E-pasts",
+      "role": "Loma",
+      "submit": "Izveidot uzaicinājumu",
+      "submitting": "Izveide…",
+      "tokenLabel": "Kopīgojiet šo saiti (derīga 7 dienas):",
+      "successTitle": "Uzaicinājums izveidots"
+    },
+    "removeConfirm": {
+      "title": "Noņemt dalībnieku?",
+      "message": "{{name}} tiks noņemts no organizācijas."
+    },
+    "transferConfirm": {
+      "title": "Pārcelt creator lomu?",
+      "message": "Jūs kļūsiet par organizācijas adminu, un {{name}} kļūs par creator. Tikai jaunais creator var atcelt."
+    },
+    "actions": {
+      "permissions": "Atļaujas",
+      "transfer": "Pārcelt creator",
+      "remove": "Noņemt"
+    }
+  },
+  "memberPermissions": {
+    "title": "{{name}} atļaujas",
+    "subtitle": "Katrai atļaujai atstājiet lomas noklusējumu vai piespiediet grant/revoke šim dalībniekam.",
+    "default": "Noklusējums",
+    "grant": "Piešķirt",
+    "revoke": "Atsaukt",
+    "saved": "Dalībnieka atļaujas atjauninātas"
+  },
+  "users": {
+    "title": "Lietotāji",
+    "subtitle": "Pārvaldiet lietotājus un platformas adminus",
+    "new": "Jauns lietotājs",
+    "search": "Meklēt pēc vārda vai e-pasta",
+    "created": "Lietotājs izveidots",
+    "fields": {
+      "name": "Vārds",
+      "email": "E-pasts",
+      "active": "Aktīvs",
+      "platformAdmin": "Platformas admins"
+    },
+    "createDialog": {
+      "title": "Jauns lietotājs",
+      "name": "Pilns vārds",
+      "email": "E-pasts",
+      "password": "Parole (≥10 rakstzīmes, 1 lielais, 1 cipars)",
+      "platformAdmin": "Platformas admins",
+      "submit": "Izveidot",
+      "submitting": "Izveide…"
+    }
+  },
+  "globalPermissions": {
+    "title": "Globālās atļaujas",
+    "subtitle": "Rediģējiet katras lomas noklusējuma atļaujas. Tās attiecas uz visām organizācijām, ja vien nav skaidri pārrakstītas.",
+    "rolePicker": "Loma",
+    "saved": "Atļaujas saglabātas",
+    "save": "Saglabāt atļaujas"
+  },
+  "templates": {
+    "preview": {
+      "lessonTag": "Lezione 01",
+      "chapter": "Capitolo introduttivo",
+      "title": "Argomento principale della lezione",
+      "subtitle": "Una breve descrizione del contesto: cosa vedremo, perché è importante e quali competenze sviluppiamo.",
+      "bullet1": "Obiettivi di apprendimento e prerequisiti",
+      "bullet2": "Concetti chiave con esempi pratici",
+      "bullet3": "Esercizi guidati e materiale di riferimento",
+      "author": "Prof. Mario Rossi",
+      "role": "Cattedra di Informatica",
+      "date": "12 marzo 2026",
+      "live": "Live"
+    },
+    "slide": {
+      "title": "Slaidu veidnes",
+      "subtitle": "Veidojiet un rediģējiet kursu slaidu veidnes",
+      "new": "Jauna veidne",
+      "newPage": "Jauna slaida veidne",
+      "editPage": "Rediģēt: {{name}}",
+      "previewLive": "Tiešais priekšskatījums",
+      "previewHint": "Priekšskatījums tiek atjaunināts reāllaikā rediģēšanas laikā.",
+      "deleted": "Veidne dzēsta",
+      "created": "Veidne izveidota",
+      "updated": "Veidne atjaunināta",
+      "empty": "Vēl nav veidņu"
+    },
+    "pdf": {
+      "title": "PDF veidnes",
+      "subtitle": "Veidojiet un rediģējiet PDF dokumentu veidnes",
+      "new": "Jauna veidne",
+      "newPage": "Jauna PDF veidne",
+      "editPage": "Rediģēt: {{name}}",
+      "previewLive": "Tiešais priekšskatījums",
+      "previewHint": "Priekšskatījums tiek atjaunināts reāllaikā rediģēšanas laikā.",
+      "deleted": "Veidne dzēsta",
+      "created": "Veidne izveidota",
+      "updated": "Veidne atjaunināta",
+      "empty": "Vēl nav veidņu"
+    },
+    "fields": {
+      "name": "Veidnes nosaukums",
+      "size": "Slaida formāts",
+      "pageSize": "Lapas izmērs",
+      "font": "Fonts",
+      "textColor": "Teksta krāsa",
+      "primaryColor": "Primārā krāsa",
+      "secondaryColor": "Sekundārā krāsa",
+      "background": "Fona attēls",
+      "logoLeft": "Logo augšējā kreisajā",
+      "logoRight": "Logo augšējā labajā",
+      "headerHeight": "Galvenes augstums (mm)",
+      "footerHeight": "Kājenes augstums (mm)",
+      "margin": "Lapas mala (mm)",
+      "backgroundOpacity": "Opacità sfondo (%)"
+    },
+    "deleteConfirm": {
+      "title": "Dzēst veidni?",
+      "message": "Jūs gatavojaties dzēst \"{{name}}\"."
+    },
+    "default": "Default",
+    "setDefault": "Imposta come default",
+    "defaultSet": "Template impostato come default"
+  },
+  "myAvatar": {
+    "title": "Il mio avatar",
+    "subtitle": "Carica una foto frontale e un audio. Da questi verranno generati automaticamente dei clip video.",
+    "tabs": {
+      "image": "Immagine",
+      "audio": "Audio",
+      "next": "Avanti",
+      "back": "Indietro"
+    },
+    "create": "Crea avatar",
+    "unsavedChanges": "Modifiche non salvate",
+    "statusReady": "Avatar attivo",
+    "statusSummary": "{{ready}}/{{total}} clip pronte · {{failed}} errori",
+    "playAudio": "Ascolta audio",
+    "clipsCount_one": "{{count}} clip in totale",
+    "clipsCount_other": "{{count}} clip in totale",
+    "image": "Foto frontale",
+    "imageHint": "PNG / JPEG / WEBP. L'immagine verrà ritagliata in formato quadrato (1:1).",
+    "imageEmpty": "Nessuna immagine",
+    "recrop": "Ritaglia di nuovo",
+    "cropTitle": "Ritaglia l'immagine",
+    "cropHint": "Trascina e ridimensiona l'area di selezione. Il rapporto è fissato a 1:1.",
+    "cropConfirm": "Applica ritaglio",
+    "slidePreviewTitle": "Anteprima nella slide",
+    "slidePreviewHint": "Esempio di come l'avatar apparirà in basso a destra in un template slide.",
+    "audio": "Audio personale",
+    "audioHint": "Leggi ad alta voce il testo qui sopra. La registrazione servirà ad addestrare un modello vocale fedele alla tua voce.",
+    "audioUpload": "Carica file",
+    "audioRecord": "Registra adesso",
+    "recordStart": "Avvia registrazione",
+    "recordStop": "Stop",
+    "audioLang": "Lingua audio",
+    "scriptTitle": "Testo da leggere",
+    "scriptHint": "Leggi questo testo a voce naturale durante la registrazione. Più la lettura è chiara e rilassata, migliore sarà il modello vocale.",
+    "scriptFallback": "Per la lingua selezionata non è ancora configurato un testo specifico: viene mostrato quello in {{lang}}.",
+    "scriptMissing": "Nessun testo da leggere è configurato per questa lingua. Contatta un amministratore.",
+    "saveWarn": "Modificare l'immagine rigenererà tutti i clip.",
+    "regenerate": "Rigenera clip",
+    "regenerated": "Generazione clip riavviata",
+    "clipsTitle": "Clip generate",
+    "clipsEmpty": "Nessun clip configurato. Definisci almeno un prompt nella sezione admin Configurazioni → Avatar.",
+    "clipPending": "In attesa…",
+    "clipProcessing": "Generazione…",
+    "clipReady": "Pronto",
+    "clipFailed": "Errore",
+    "allReady": "Tutti pronti",
+    "allFailed": "Tutti falliti",
+    "partial": "Parziale",
+    "pending": "In attesa",
+    "processing": "Generazione",
+    "saved": "Avatar salvato",
+    "deleted": "Avatar eliminato",
+    "deleteConfirm": {
+      "title": "Eliminare l'avatar?",
+      "message": "Verranno eliminati immagine, audio e tutti i clip generati."
+    }
+  },
+  "avatarConfig": {
+    "title": "Configurazioni — Avatar",
+    "subtitle": "Gestisci i prompt video per la generazione dei clip MiniMax e i testi di trascrizione che gli utenti leggeranno per la registrazione vocale.",
+    "tabs": {
+      "prompts": "Prompt video",
+      "scripts": "Lingue trascrizione"
+    },
+    "addPrompt": "Aggiungi prompt",
+    "empty": "Nessun prompt configurato. Aggiungine almeno uno per abilitare la generazione clip.",
+    "fields": {
+      "label": "Etichetta",
+      "labelPlaceholder": "Es. \"Cenno di pensiero\"",
+      "prompt": "Prompt MiniMax (inglese, max 2000 caratteri)",
+      "active": "Attivo"
+    },
+    "moveUp": "Sposta su",
+    "moveDown": "Sposta giù",
+    "unsavedHint": "Modifiche non salvate — fai blur del campo per salvare.",
+    "count_one": "{{count}} clip configurato",
+    "count_other": "{{count}} clip configurati",
+    "created": "Prompt creato",
+    "updated": "Prompt aggiornato",
+    "deleted": "Prompt eliminato",
+    "deleteConfirm": {
+      "title": "Eliminare il prompt?",
+      "message": "Il prompt \"{{name}}\" sarà rimosso dalla configurazione."
+    },
+    "voiceScript": {
+      "title": "Testo da leggere durante la registrazione",
+      "subtitle": "Per ogni lingua, definisci il testo che l'utente vedrà e dovrà leggere ad alta voce mentre registra l'audio. Serve a ottenere un campione vocale standardizzato per il voice cloning.",
+      "empty": "Nessun testo configurato. Aggiungine almeno uno per la lingua di default.",
+      "add": "Aggiungi testo per una lingua",
+      "selectLang": "Seleziona lingua",
+      "placeholder": "Buongiorno, mi presento e leggo questo breve testo…",
+      "text": "Testo",
+      "saved": "Testo salvato",
+      "deleted": "Testo eliminato",
+      "deleteConfirm": {
+        "title": "Eliminare il testo?",
+        "message": "Verrà rimosso il testo da leggere per la lingua {{lang}}."
+      }
+    }
+  },
+  "permissions": {
+    "member:view": "Skatīt dalībniekus",
+    "member:invite": "Uzaicināt lietotājus",
+    "member:assign_role": "Piešķirt lomas",
+    "member:remove": "Noņemt dalībniekus",
+    "template:slide:manage": "Pārvaldīt slaidu veidnes",
+    "template:pdf:manage": "Pārvaldīt PDF veidnes",
+    "permission:manage": "Pārvaldīt atļaujas",
+    "org:transfer_creator": "Pārcelt creator lomu",
+    "org:update": "Rediģēt organizāciju",
+    "course_config:manage": "Gestisci parametri corsi"
+  },
+  "permissionDescriptions": {
+    "member:view": "Vedere l'elenco dei membri dell'organizzazione con nome, email, ruolo e data di iscrizione. Prerequisito per quasi tutte le altre azioni sui membri.",
+    "member:invite": "Creare inviti via email per nuovi membri scegliendo il ruolo iniziale. Ogni invito è un link monouso con scadenza a 7 giorni.",
+    "member:assign_role": "Cambiare il ruolo di un membro esistente, ma solo fino al proprio livello di rank: un Org Admin non può promuovere a Creator né modificare un membro di rango superiore.",
+    "member:remove": "Rimuovere un membro dall'organizzazione. Il Creator non è rimovibile direttamente: va prima trasferito ad un altro membro.",
+    "template:slide:manage": "Creare, modificare, eliminare e scegliere come default i template per le slide dei corsi (formato 16:9 / 4:3, colori, font, logo, immagine di sfondo).",
+    "template:pdf:manage": "Creare, modificare, eliminare e scegliere come default i template per i documenti PDF (formato A4/Letter, header/footer/margini in mm, colori, logo, sfondo).",
+    "permission:manage": "Modificare i permessi dell'organizzazione: override per ruolo (es. concedere a tutti i Manager un permesso non default) e override per singolo membro (concedi/revoca puntuale).",
+    "org:transfer_creator": "Trasferire il ruolo di Creator a un altro membro. Chi era Creator diventa Org Admin. Azione riservata al Creator e irreversibile senza un nuovo trasferimento.",
+    "org:update": "Modificare i dati anagrafici dell'organizzazione: nome, partita IVA, codice fiscale, indirizzo, contatti, logo.",
+    "course_config:manage": "Configurare i parametri di default per la generazione dei corsi: numero di moduli per CFU, lezioni per modulo, durata delle lezioni e attivazione della verifica di apprendimento finale (con il numero di domande a scelta multipla e aperte da generare). Questi valori vengono usati per pre-popolare la struttura di un nuovo corso."
+  },
+  "roles": {
+    "creator": "Veidotājs",
+    "org_admin": "Organizācijas administrators",
+    "manager": "Manager",
+    "member": "Dalībnieks"
+  },
+  "errors": {
+    "generic": "Radās kļūda",
+    "loadingFailed": "Ielāde neizdevās",
+    "saveFailed": "Saglabāšana neizdevās"
+  },
+  "i18n": {
+    "title": "Gestione lingue",
+    "subtitle": "Crea, modifica e cancella le lingue e le traduzioni della piattaforma",
+    "new": "Nuova lingua",
+    "edit": "Modifica lingua",
+    "editTranslations": "Modifica traduzioni",
+    "fields": {
+      "code": "Codice",
+      "codeHint": "ISO 639-1 (es. it, en) o regionale (es. pt-BR)",
+      "nameNative": "Nome nativo",
+      "flagCountry": "Bandiera (codice paese ISO, es. IT)",
+      "rtl": "Right-to-left",
+      "active": "Attiva",
+      "default": "Default",
+      "copyFrom": "Copia traduzioni da"
+    },
+    "stats": {
+      "translations_one": "{{count}} traduzione",
+      "translations_other": "{{count}} traduzioni"
+    },
+    "created": "Lingua creata",
+    "updated": "Lingua aggiornata",
+    "deleted": "Lingua eliminata",
+    "translationsSaved": "Traduzioni salvate ({{count}})",
+    "deleteConfirm": {
+      "title": "Eliminare la lingua?",
+      "message": "Stai per eliminare \"{{name}}\" e tutte le sue traduzioni."
+    },
+    "editor": {
+      "title": "Traduzioni — {{name}}",
+      "search": "Cerca chiave o valore",
+      "empty": "Nessuna traduzione",
+      "save": "Salva traduzioni",
+      "reference": "Riferimento {{lang}}",
+      "modifiedCount_one": "{{count}} chiave modificata",
+      "modifiedCount_other": "{{count}} chiavi modificate",
+      "noChanges": "Nessuna modifica"
+    }
+  },
+  "dashboard": {
+    "admin": {
+      "title": "Admina panelis",
+      "subtitle": "a4u platformas globālā pārvaldība"
+    },
+    "org": {
+      "subtitle": "Loma: {{role}}",
+      "platformAdmin": "Admin piattaforma"
+    },
+    "noOrg": {
+      "title": "Laipni lūdzam",
+      "message": "Jūs vēl neesat nevienas organizācijas dalībnieks. Gaidiet uzaicinājumu vai sazinieties ar administratoru."
+    }
+  }
+}
