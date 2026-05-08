@@ -39,6 +39,11 @@ backend/uploads/**
 # Generated artifacts (runtime)
 backend/generated_pdfs/
 
+# Database dumps (PII: contain hashed passwords and emails)
+deploy/seed/*.sql
+deploy/seed/*.sql.gz
+deploy/seed/*.dump
+
 # IDE / OS
 .idea/
 .vscode/

@@ -11,20 +11,40 @@ COPY app ./app
 RUN pip install --upgrade pip && pip install --no-cache-dir .
 
 FROM python:3.12-slim AS runtime
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
-# WeasyPrint runtime deps: Pango per il text rendering, GDK-Pixbuf per
-# le immagini, libffi per cffi. Senza questi `import weasyprint`
-# fallisce per `cannot load library libpango-1.0-0`.
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+
+# Runtime deps in due gruppi:
+#  - WeasyPrint (Pango, GDK-Pixbuf, HarfBuzz, libffi, fonts) per il
+#    rendering finale del PDF.
+#  - Chromium di Playwright (libnss, libgbm, libasound, ecc.) per il
+#    pre-render dei diagrammi Mermaid in SVG.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libpq5 curl \
+        # WeasyPrint
         libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b \
         libgdk-pixbuf-2.0-0 libffi8 \
         fonts-dejavu-core fonts-liberation \
+        # Playwright Chromium
+        libnss3 libnspr4 libgbm1 libasound2 \
+        libxshmfence1 libxrandr2 libxkbcommon0 \
+        libxcomposite1 libxdamage1 libxfixes3 libxext6 \
+        libcups2 libatk1.0-0 libatk-bridge2.0-0 libatspi2.0-0 \
+        libdrm2 libxss1 \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd -r app && useradd -r -g app -d /app app
+
 WORKDIR /app
 COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
+
+# Scarica il browser Chromium di Playwright in /ms-playwright (path
+# condiviso tra utenti, settato via env var sopra). Eseguito come root
+# perché playwright richiede di scrivere lì; chown a `app` dopo per
+# permessi di lettura runtime.
+RUN python -m playwright install chromium \
+    && chown -R app:app /ms-playwright
+
 COPY --chown=app:app . /app
 RUN mkdir -p /app/uploads/organizations /app/uploads/avatars /app/uploads/templates \
     && chown -R app:app /app/uploads
