@@ -1,0 +1,180 @@
+{
+  "app": { "name": "a4u", "tagline": "Piattaforma corsi universitari" },
+  "common": {
+    "save": "Salva", "cancel": "Annulla", "delete": "Elimina", "edit": "Modifica",
+    "add": "Aggiungi", "loading": "Caricamento…", "saving": "Salvataggio…",
+    "creating": "Creazione…", "remove": "Rimuovi", "confirm": "Conferma",
+    "close": "Chiudi", "search": "Cerca", "back": "Indietro", "next": "Avanti",
+    "actions": "Azioni", "of": "di", "noResults": "Nessun risultato",
+    "copy": "Copia", "copied": "Copiato!", "yes": "Sì", "no": "No", "all": "Tutti",
+    "optional": "facoltativo", "required": "obbligatorio"
+  },
+  "auth": {
+    "login": {
+      "title": "Bentornato", "subtitle": "Accedi al tuo workspace a4u",
+      "email": "Email", "password": "Password",
+      "submit": "Accedi", "submitting": "Accesso in corso…"
+    },
+    "logout": "Esci",
+    "invitation": {
+      "title": "Accetta invito",
+      "subtitle": "Sei stato invitato a {{org}} come {{role}}",
+      "fullName": "Nome completo",
+      "passwordHint": "Min 10 caratteri, una maiuscola, un numero",
+      "submit": "Accetta invito", "submitting": "Conferma in corso…",
+      "alreadyRegistered": "Sei già registrato. Clicca \"Accetta\" per aggiungerti.",
+      "invalidOrExpired": "L'invito non è valido, è scaduto o è già stato utilizzato."
+    }
+  },
+  "theme": { "label": "Tema", "light": "Chiaro", "dark": "Scuro", "system": "Sistema" },
+  "language": { "label": "Lingua" },
+  "nav": {
+    "platform": "Piattaforma", "organization": "Organizzazione",
+    "dashboard": "Dashboard", "organizations": "Organizzazioni",
+    "users": "Utenti", "permissions": "Permessi globali",
+    "members": "Membri", "templatesSlide": "Template slide",
+    "templatesPdf": "Template PDF", "avatars": "Avatar"
+  },
+  "command": {
+    "placeholder": "Cerca un comando o una pagina…",
+    "navigation": "Navigazione", "actions": "Azioni", "preferences": "Preferenze",
+    "openCommandPalette": "Apri command palette",
+    "newOrganization": "Nuova organizzazione",
+    "logout": "Esci", "noResults": "Nessun risultato",
+    "switchTheme": "Cambia tema", "switchLanguage": "Cambia lingua"
+  },
+  "user": { "profile": "Profilo", "menu": "Menu utente" },
+  "orgSwitcher": {
+    "label": "Organizzazione", "search": "Cerca organizzazione…",
+    "noOrgs": "Nessuna organizzazione", "select": "Seleziona organizzazione"
+  },
+  "organizations": {
+    "title": "Organizzazioni",
+    "subtitle": "Gestisci tutte le organizzazioni della piattaforma",
+    "new": "Nuova organizzazione", "edit": "Modifica organizzazione",
+    "search": "Cerca per nome", "empty": "Nessuna organizzazione",
+    "members": "Membri", "deleted": "Organizzazione eliminata",
+    "created": "Organizzazione creata", "updated": "Organizzazione aggiornata",
+    "fields": {
+      "logo": "Logo organizzazione",
+      "logoHint": "PNG / JPEG / WEBP, max 5 MB",
+      "name": "Denominazione", "email": "Email", "phone": "Telefono",
+      "website": "Sito web", "vatNumber": "Partita IVA",
+      "fiscalCode": "Codice fiscale", "country": "Stato",
+      "address": "Indirizzo", "city": "Città",
+      "province": "Provincia", "postalCode": "CAP"
+    },
+    "deleteConfirm": {
+      "title": "Eliminare l'organizzazione?",
+      "message": "Stai per eliminare \"{{name}}\". L'azione è reversibile lato amministrazione."
+    }
+  },
+  "members": {
+    "title": "Membri",
+    "subtitle": "Visualizza e gestisci i membri dell'organizzazione",
+    "subtitleAdmin": "Iscrivi direttamente utenti come membri",
+    "invite": "Invita", "invited": "Membro invitato",
+    "removed": "Membro rimosso", "roleChanged": "Ruolo aggiornato",
+    "transferConfirmed": "Ruolo creator trasferito",
+    "enroll": "Iscrivi utente", "enrollSubmit": "Iscrivi",
+    "userPicker": "Utente", "rolePicker": "Ruolo",
+    "fields": { "name": "Nome", "email": "Email", "role": "Ruolo" },
+    "inviteDialog": {
+      "title": "Invita un membro", "email": "Email", "role": "Ruolo",
+      "submit": "Crea invito", "submitting": "Creazione…",
+      "tokenLabel": "Condividi questo link (validità 7 giorni):",
+      "successTitle": "Invito creato"
+    },
+    "removeConfirm": {
+      "title": "Rimuovere il membro?",
+      "message": "{{name}} verrà rimosso dall'organizzazione."
+    },
+    "transferConfirm": {
+      "title": "Trasferire il ruolo creator?",
+      "message": "Diventerai amministratore organizzazione e {{name}} diventerà creator. L'azione è reversibile solo dal nuovo creator."
+    },
+    "actions": { "permissions": "Permessi", "transfer": "Trasferisci creator", "remove": "Rimuovi" }
+  },
+  "memberPermissions": {
+    "title": "Permessi di {{name}}",
+    "subtitle": "Per ogni permesso, lascia il default del ruolo oppure forza grant/revoca specifico per questo membro.",
+    "default": "Default", "grant": "Concedi", "revoke": "Revoca",
+    "saved": "Permessi del membro aggiornati"
+  },
+  "users": {
+    "title": "Utenti", "subtitle": "Gestisci utenti e admin di piattaforma",
+    "new": "Nuovo utente", "search": "Cerca per nome o email",
+    "created": "Utente creato",
+    "fields": { "name": "Nome", "email": "Email", "active": "Attivo", "platformAdmin": "Admin piattaforma" },
+    "createDialog": {
+      "title": "Nuovo utente", "name": "Nome completo", "email": "Email",
+      "password": "Password (≥10 caratteri, una maiuscola, un numero)",
+      "platformAdmin": "Admin di piattaforma",
+      "submit": "Crea", "submitting": "Creazione…"
+    }
+  },
+  "globalPermissions": {
+    "title": "Permessi globali",
+    "subtitle": "Modifica i permessi predefiniti per ciascun ruolo. Si applicano a tutte le organizzazioni tranne quelle con override esplicito.",
+    "rolePicker": "Ruolo", "saved": "Permessi salvati", "save": "Salva permessi"
+  },
+  "templates": {
+    "slide": {
+      "title": "Template slide",
+      "subtitle": "Crea e modifica i template per le slide dei corsi",
+      "new": "Nuovo template", "newPage": "Nuovo template slide",
+      "editPage": "Modifica: {{name}}", "previewLive": "Preview live",
+      "previewHint": "La preview si aggiorna in tempo reale alle modifiche.",
+      "deleted": "Template eliminato", "created": "Template creato",
+      "updated": "Template aggiornato", "empty": "Nessun template ancora creato"
+    },
+    "pdf": {
+      "title": "Template PDF",
+      "subtitle": "Crea e modifica i template per i documenti PDF",
+      "new": "Nuovo template", "newPage": "Nuovo template PDF",
+      "editPage": "Modifica: {{name}}", "previewLive": "Preview live",
+      "previewHint": "La preview si aggiorna in tempo reale alle modifiche.",
+      "deleted": "Template eliminato", "created": "Template creato",
+      "updated": "Template aggiornato", "empty": "Nessun template ancora creato"
+    },
+    "fields": {
+      "name": "Nome template", "size": "Formato slide", "pageSize": "Formato pagina",
+      "font": "Font", "textColor": "Colore del testo",
+      "primaryColor": "Colore primario", "secondaryColor": "Colore secondario",
+      "background": "Immagine di sfondo", "logoLeft": "Logo in alto a sinistra",
+      "logoRight": "Logo in alto a destra",
+      "headerHeight": "Altezza header (mm)", "footerHeight": "Altezza footer (mm)",
+      "margin": "Margine pagina (mm)"
+    },
+    "deleteConfirm": {
+      "title": "Eliminare il template?",
+      "message": "Stai per eliminare \"{{name}}\"."
+    }
+  },
+  "avatars": {
+    "title": "Avatar", "subtitle": "Avatar disponibili per i corsi",
+    "new": "Nuovo avatar", "newDialog": "Nuovo avatar", "editDialog": "Modifica avatar",
+    "fields": { "name": "Nome", "description": "Descrizione", "image": "Immagine" },
+    "empty": "Nessun avatar ancora creato",
+    "created": "Avatar creato", "updated": "Avatar aggiornato", "deleted": "Avatar eliminato",
+    "deleteConfirm": { "title": "Eliminare l'avatar?", "message": "Stai per eliminare \"{{name}}\"." }
+  },
+  "permissions": {
+    "member:view": "Visualizza membri", "member:invite": "Invita utenti",
+    "member:assign_role": "Assegna ruoli", "member:remove": "Rimuovi membri",
+    "template:slide:manage": "Gestisci template slide",
+    "template:pdf:manage": "Gestisci template PDF",
+    "avatar:manage": "Gestisci avatar", "permission:manage": "Gestisci permessi",
+    "org:transfer_creator": "Trasferisci ruolo creatore", "org:update": "Modifica organizzazione"
+  },
+  "roles": {
+    "creator": "Creatore", "org_admin": "Amministratore organizzazione",
+    "manager": "Manager", "member": "Membro"
+  },
+  "errors": { "generic": "Si è verificato un errore", "loadingFailed": "Caricamento fallito", "saveFailed": "Salvataggio fallito" },
+  "dashboard": {
+    "admin": { "title": "Pannello di amministrazione", "subtitle": "Gestione globale della piattaforma a4u" },
+    "org": { "subtitle": "Ruolo: {{role}}" },
+    "noOrg": { "title": "Benvenuto", "message": "Non sei ancora membro di nessuna organizzazione. Attendi un invito o contatta un amministratore." }
+  }
+}

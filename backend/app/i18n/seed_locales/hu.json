@@ -1,0 +1,177 @@
+{
+  "app": { "name": "a4u", "tagline": "Egyetemi kurzusok platformja" },
+  "common": {
+    "save": "Mentés", "cancel": "Mégse", "delete": "Törlés", "edit": "Szerkesztés",
+    "add": "Hozzáadás", "loading": "Betöltés…", "saving": "Mentés…",
+    "creating": "Létrehozás…", "remove": "Eltávolítás", "confirm": "Megerősítés",
+    "close": "Bezárás", "search": "Keresés", "back": "Vissza", "next": "Következő",
+    "actions": "Műveletek", "of": "/", "noResults": "Nincs találat",
+    "copy": "Másolás", "copied": "Másolva!", "yes": "Igen", "no": "Nem", "all": "Minden",
+    "optional": "opcionális", "required": "kötelező"
+  },
+  "auth": {
+    "login": {
+      "title": "Üdv újra", "subtitle": "Jelentkezz be az a4u workspace-be",
+      "email": "E-mail", "password": "Jelszó",
+      "submit": "Belépés", "submitting": "Belépés…"
+    },
+    "logout": "Kilépés",
+    "invitation": {
+      "title": "Meghívás elfogadása",
+      "subtitle": "Meghívást kaptál a {{org}} szervezetbe mint {{role}}",
+      "fullName": "Teljes név",
+      "passwordHint": "Min. 10 karakter, egy nagybetű, egy szám",
+      "submit": "Meghívás elfogadása", "submitting": "Megerősítés…",
+      "alreadyRegistered": "Már regisztrált vagy. Kattints az \"Elfogadás\"-ra a csatlakozáshoz.",
+      "invalidOrExpired": "A meghívás érvénytelen, lejárt vagy már fel lett használva."
+    }
+  },
+  "theme": { "label": "Téma", "light": "Világos", "dark": "Sötét", "system": "Rendszer" },
+  "language": { "label": "Nyelv" },
+  "nav": {
+    "platform": "Platform", "organization": "Szervezet",
+    "dashboard": "Vezérlőpult", "organizations": "Szervezetek",
+    "users": "Felhasználók", "permissions": "Globális jogosultságok",
+    "members": "Tagok", "templatesSlide": "Dia sablonok",
+    "templatesPdf": "PDF sablonok", "avatars": "Avatarok"
+  },
+  "command": {
+    "placeholder": "Parancs vagy oldal keresése…",
+    "navigation": "Navigáció", "actions": "Műveletek", "preferences": "Beállítások",
+    "openCommandPalette": "Parancspaletta megnyitása",
+    "newOrganization": "Új szervezet",
+    "logout": "Kilépés", "noResults": "Nincs találat",
+    "switchTheme": "Téma váltása", "switchLanguage": "Nyelv váltása"
+  },
+  "user": { "profile": "Profil", "menu": "Felhasználói menü" },
+  "orgSwitcher": {
+    "label": "Szervezet", "search": "Szervezet keresése…",
+    "noOrgs": "Nincs szervezet", "select": "Szervezet kiválasztása"
+  },
+  "organizations": {
+    "title": "Szervezetek",
+    "subtitle": "Kezeld a platform összes szervezetét",
+    "new": "Új szervezet", "edit": "Szervezet szerkesztése",
+    "search": "Keresés név alapján", "empty": "Nincs szervezet",
+    "members": "Tagok", "deleted": "Szervezet törölve",
+    "created": "Szervezet létrehozva", "updated": "Szervezet frissítve",
+    "fields": {
+      "logo": "Szervezet logója",
+      "logoHint": "PNG / JPEG / WEBP, max 5 MB",
+      "name": "Név", "email": "E-mail", "phone": "Telefon",
+      "website": "Weboldal", "vatNumber": "Áfa szám",
+      "fiscalCode": "Adószám", "country": "Ország",
+      "address": "Cím", "city": "Város",
+      "province": "Megye", "postalCode": "Irányítószám"
+    },
+    "deleteConfirm": {
+      "title": "Törölni a szervezetet?",
+      "message": "Törlöd a következőt: \"{{name}}\". A művelet visszaállítható az adminisztrációból."
+    }
+  },
+  "members": {
+    "title": "Tagok",
+    "subtitle": "Szervezet tagjainak megtekintése és kezelése",
+    "subtitleAdmin": "Felhasználók közvetlen tagként történő hozzáadása",
+    "invite": "Meghívás", "invited": "Tag meghíva",
+    "removed": "Tag eltávolítva", "roleChanged": "Szerep frissítve",
+    "transferConfirmed": "Creator szerep átadva",
+    "enroll": "Felhasználó hozzáadása", "enrollSubmit": "Hozzáadás",
+    "userPicker": "Felhasználó", "rolePicker": "Szerep",
+    "fields": { "name": "Név", "email": "E-mail", "role": "Szerep" },
+    "inviteDialog": {
+      "title": "Tag meghívása", "email": "E-mail", "role": "Szerep",
+      "submit": "Meghívás létrehozása", "submitting": "Létrehozás…",
+      "tokenLabel": "Oszd meg ezt a linket (7 napig érvényes):",
+      "successTitle": "Meghívás létrehozva"
+    },
+    "removeConfirm": {
+      "title": "Tag eltávolítása?",
+      "message": "{{name}} eltávolításra kerül a szervezetből."
+    },
+    "transferConfirm": {
+      "title": "Creator szerep átadása?",
+      "message": "Te leszel a szervezet adminja, {{name}} pedig creator. Csak az új creator vonhatja vissza."
+    },
+    "actions": { "permissions": "Jogosultságok", "transfer": "Creator átadása", "remove": "Eltávolítás" }
+  },
+  "memberPermissions": {
+    "title": "{{name}} jogosultságai",
+    "subtitle": "Minden jogosultsághoz hagyd a szerep alapértékét vagy kényszeríts grant/revoke-t erre a tagra.",
+    "default": "Alapértelmezett", "grant": "Engedélyezés", "revoke": "Visszavonás",
+    "saved": "Tag jogosultságai frissítve"
+  },
+  "users": {
+    "title": "Felhasználók", "subtitle": "Felhasználók és platform adminok kezelése",
+    "new": "Új felhasználó", "search": "Keresés név vagy e-mail alapján",
+    "created": "Felhasználó létrehozva",
+    "fields": { "name": "Név", "email": "E-mail", "active": "Aktív", "platformAdmin": "Platform admin" },
+    "createDialog": {
+      "title": "Új felhasználó", "name": "Teljes név", "email": "E-mail",
+      "password": "Jelszó (≥10 karakter, 1 nagybetű, 1 szám)",
+      "platformAdmin": "Platform admin",
+      "submit": "Létrehozás", "submitting": "Létrehozás…"
+    }
+  },
+  "globalPermissions": {
+    "title": "Globális jogosultságok",
+    "subtitle": "Minden szerep alapértelmezett jogosultságait szerkesztheted. Minden szervezetre érvényes, kivéve ha explicit felülírás van.",
+    "rolePicker": "Szerep", "saved": "Jogosultságok elmentve", "save": "Jogosultságok mentése"
+  },
+  "templates": {
+    "slide": {
+      "title": "Dia sablonok",
+      "subtitle": "Hozz létre és szerkessz sablonokat a kurzusok diáihoz",
+      "new": "Új sablon", "newPage": "Új dia sablon",
+      "editPage": "Szerkesztés: {{name}}", "previewLive": "Élő előnézet",
+      "previewHint": "Az előnézet valós időben frissül szerkesztés közben.",
+      "deleted": "Sablon törölve", "created": "Sablon létrehozva",
+      "updated": "Sablon frissítve", "empty": "Még nincsenek sablonok"
+    },
+    "pdf": {
+      "title": "PDF sablonok",
+      "subtitle": "Hozz létre és szerkessz PDF dokumentum sablonokat",
+      "new": "Új sablon", "newPage": "Új PDF sablon",
+      "editPage": "Szerkesztés: {{name}}", "previewLive": "Élő előnézet",
+      "previewHint": "Az előnézet valós időben frissül szerkesztés közben.",
+      "deleted": "Sablon törölve", "created": "Sablon létrehozva",
+      "updated": "Sablon frissítve", "empty": "Még nincsenek sablonok"
+    },
+    "fields": {
+      "name": "Sablon neve", "size": "Dia formátum", "pageSize": "Oldalméret",
+      "font": "Betűtípus", "textColor": "Szöveg színe",
+      "primaryColor": "Elsődleges szín", "secondaryColor": "Másodlagos szín",
+      "background": "Háttérkép", "logoLeft": "Logo bal felső",
+      "logoRight": "Logo jobb felső",
+      "headerHeight": "Fejléc magasság (mm)", "footerHeight": "Lábléc magasság (mm)",
+      "margin": "Oldalmargó (mm)"
+    },
+    "deleteConfirm": { "title": "Sablon törlése?", "message": "Törlöd a következőt: \"{{name}}\"." }
+  },
+  "avatars": {
+    "title": "Avatarok", "subtitle": "Kurzusokhoz elérhető avatarok",
+    "new": "Új avatar", "newDialog": "Új avatar", "editDialog": "Avatar szerkesztése",
+    "fields": { "name": "Név", "description": "Leírás", "image": "Kép" },
+    "empty": "Még nincsenek avatarok",
+    "created": "Avatar létrehozva", "updated": "Avatar frissítve", "deleted": "Avatar törölve",
+    "deleteConfirm": { "title": "Avatar törlése?", "message": "Törlöd a következőt: \"{{name}}\"." }
+  },
+  "permissions": {
+    "member:view": "Tagok megtekintése", "member:invite": "Felhasználók meghívása",
+    "member:assign_role": "Szerepek hozzárendelése", "member:remove": "Tagok eltávolítása",
+    "template:slide:manage": "Dia sablonok kezelése",
+    "template:pdf:manage": "PDF sablonok kezelése",
+    "avatar:manage": "Avatarok kezelése", "permission:manage": "Jogosultságok kezelése",
+    "org:transfer_creator": "Creator szerep átadása", "org:update": "Szervezet szerkesztése"
+  },
+  "roles": {
+    "creator": "Creator", "org_admin": "Szervezet admin",
+    "manager": "Manager", "member": "Tag"
+  },
+  "errors": { "generic": "Hiba történt", "loadingFailed": "Betöltés sikertelen", "saveFailed": "Mentés sikertelen" },
+  "dashboard": {
+    "admin": { "title": "Admin panel", "subtitle": "Az a4u platform globális kezelése" },
+    "org": { "subtitle": "Szerep: {{role}}" },
+    "noOrg": { "title": "Üdv", "message": "Még nem vagy tagja semmilyen szervezetnek. Várd meg a meghívást vagy lépj kapcsolatba egy adminisztrátorral." }
+  }
+}

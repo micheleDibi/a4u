@@ -1,0 +1,177 @@
+{
+  "app": { "name": "a4u", "tagline": "Πλατφόρμα πανεπιστημιακών μαθημάτων" },
+  "common": {
+    "save": "Αποθήκευση", "cancel": "Άκυρο", "delete": "Διαγραφή", "edit": "Επεξεργασία",
+    "add": "Προσθήκη", "loading": "Φόρτωση…", "saving": "Αποθήκευση…",
+    "creating": "Δημιουργία…", "remove": "Αφαίρεση", "confirm": "Επιβεβαίωση",
+    "close": "Κλείσιμο", "search": "Αναζήτηση", "back": "Πίσω", "next": "Επόμενο",
+    "actions": "Ενέργειες", "of": "από", "noResults": "Καμία εγγραφή",
+    "copy": "Αντιγραφή", "copied": "Αντιγράφηκε!", "yes": "Ναι", "no": "Όχι", "all": "Όλα",
+    "optional": "προαιρετικό", "required": "υποχρεωτικό"
+  },
+  "auth": {
+    "login": {
+      "title": "Καλώς ήρθες ξανά", "subtitle": "Συνδέσου στο a4u workspace",
+      "email": "Email", "password": "Κωδικός",
+      "submit": "Σύνδεση", "submitting": "Σύνδεση…"
+    },
+    "logout": "Αποσύνδεση",
+    "invitation": {
+      "title": "Αποδοχή πρόσκλησης",
+      "subtitle": "Έχεις προσκληθεί στο {{org}} ως {{role}}",
+      "fullName": "Πλήρες όνομα",
+      "passwordHint": "Τουλάχ. 10 χαρακτήρες, ένα κεφαλαίο, ένα ψηφίο",
+      "submit": "Αποδοχή", "submitting": "Επιβεβαίωση…",
+      "alreadyRegistered": "Είσαι ήδη εγγεγραμμένος. Πάτα \"Αποδοχή\" για να προστεθείς.",
+      "invalidOrExpired": "Η πρόσκληση δεν είναι έγκυρη, έληξε ή έχει ήδη χρησιμοποιηθεί."
+    }
+  },
+  "theme": { "label": "Θέμα", "light": "Φωτεινό", "dark": "Σκοτεινό", "system": "Σύστημα" },
+  "language": { "label": "Γλώσσα" },
+  "nav": {
+    "platform": "Πλατφόρμα", "organization": "Οργανισμός",
+    "dashboard": "Πίνακας", "organizations": "Οργανισμοί",
+    "users": "Χρήστες", "permissions": "Καθολικά δικαιώματα",
+    "members": "Μέλη", "templatesSlide": "Πρότυπα διαφανειών",
+    "templatesPdf": "Πρότυπα PDF", "avatars": "Άβαταρ"
+  },
+  "command": {
+    "placeholder": "Αναζήτηση εντολής ή σελίδας…",
+    "navigation": "Πλοήγηση", "actions": "Ενέργειες", "preferences": "Προτιμήσεις",
+    "openCommandPalette": "Άνοιγμα command palette",
+    "newOrganization": "Νέος οργανισμός",
+    "logout": "Αποσύνδεση", "noResults": "Καμία εγγραφή",
+    "switchTheme": "Αλλαγή θέματος", "switchLanguage": "Αλλαγή γλώσσας"
+  },
+  "user": { "profile": "Προφίλ", "menu": "Μενού χρήστη" },
+  "orgSwitcher": {
+    "label": "Οργανισμός", "search": "Αναζήτηση οργανισμού…",
+    "noOrgs": "Κανένας οργανισμός", "select": "Επιλογή οργανισμού"
+  },
+  "organizations": {
+    "title": "Οργανισμοί",
+    "subtitle": "Διαχείριση όλων των οργανισμών της πλατφόρμας",
+    "new": "Νέος οργανισμός", "edit": "Επεξεργασία οργανισμού",
+    "search": "Αναζήτηση με όνομα", "empty": "Κανένας οργανισμός",
+    "members": "Μέλη", "deleted": "Ο οργανισμός διαγράφηκε",
+    "created": "Ο οργανισμός δημιουργήθηκε", "updated": "Ο οργανισμός ενημερώθηκε",
+    "fields": {
+      "logo": "Λογότυπο οργανισμού",
+      "logoHint": "PNG / JPEG / WEBP, έως 5 MB",
+      "name": "Επωνυμία", "email": "Email", "phone": "Τηλέφωνο",
+      "website": "Ιστότοπος", "vatNumber": "ΑΦΜ",
+      "fiscalCode": "Φορολογικός κωδικός", "country": "Χώρα",
+      "address": "Διεύθυνση", "city": "Πόλη",
+      "province": "Επαρχία", "postalCode": "ΤΚ"
+    },
+    "deleteConfirm": {
+      "title": "Διαγραφή οργανισμού;",
+      "message": "Πρόκειται να διαγράψεις τον \"{{name}}\". Η ενέργεια είναι αναστρέψιμη από τη διαχείριση."
+    }
+  },
+  "members": {
+    "title": "Μέλη",
+    "subtitle": "Δες και διαχειρίσου τα μέλη του οργανισμού",
+    "subtitleAdmin": "Εγγραφή χρηστών απευθείας ως μέλη",
+    "invite": "Πρόσκληση", "invited": "Το μέλος προσκλήθηκε",
+    "removed": "Το μέλος αφαιρέθηκε", "roleChanged": "Ο ρόλος ενημερώθηκε",
+    "transferConfirmed": "Ο ρόλος creator μεταφέρθηκε",
+    "enroll": "Εγγραφή χρήστη", "enrollSubmit": "Εγγραφή",
+    "userPicker": "Χρήστης", "rolePicker": "Ρόλος",
+    "fields": { "name": "Όνομα", "email": "Email", "role": "Ρόλος" },
+    "inviteDialog": {
+      "title": "Πρόσκληση μέλους", "email": "Email", "role": "Ρόλος",
+      "submit": "Δημιουργία πρόσκλησης", "submitting": "Δημιουργία…",
+      "tokenLabel": "Μοιράσου αυτόν τον σύνδεσμο (ισχύει 7 ημέρες):",
+      "successTitle": "Η πρόσκληση δημιουργήθηκε"
+    },
+    "removeConfirm": {
+      "title": "Αφαίρεση μέλους;",
+      "message": "Το {{name}} θα αφαιρεθεί από τον οργανισμό."
+    },
+    "transferConfirm": {
+      "title": "Μεταφορά ρόλου creator;",
+      "message": "Θα γίνεις admin οργανισμού και ο/η {{name}} θα γίνει creator. Μόνο ο νέος creator μπορεί να ανατρέψει τη μεταφορά."
+    },
+    "actions": { "permissions": "Δικαιώματα", "transfer": "Μεταφορά creator", "remove": "Αφαίρεση" }
+  },
+  "memberPermissions": {
+    "title": "Δικαιώματα του/της {{name}}",
+    "subtitle": "Για κάθε δικαίωμα, άσε την προεπιλογή του ρόλου ή εξαναγκάσε grant/revoke για αυτό το μέλος.",
+    "default": "Προεπιλογή", "grant": "Παραχώρηση", "revoke": "Ανάκληση",
+    "saved": "Τα δικαιώματα του μέλους ενημερώθηκαν"
+  },
+  "users": {
+    "title": "Χρήστες", "subtitle": "Διαχείριση χρηστών και admins της πλατφόρμας",
+    "new": "Νέος χρήστης", "search": "Αναζήτηση με όνομα ή email",
+    "created": "Ο χρήστης δημιουργήθηκε",
+    "fields": { "name": "Όνομα", "email": "Email", "active": "Ενεργός", "platformAdmin": "Admin πλατφόρμας" },
+    "createDialog": {
+      "title": "Νέος χρήστης", "name": "Πλήρες όνομα", "email": "Email",
+      "password": "Κωδικός (≥10 χαρ., 1 κεφαλαίο, 1 ψηφίο)",
+      "platformAdmin": "Admin πλατφόρμας",
+      "submit": "Δημιουργία", "submitting": "Δημιουργία…"
+    }
+  },
+  "globalPermissions": {
+    "title": "Καθολικά δικαιώματα",
+    "subtitle": "Επεξεργάσου τα προεπιλεγμένα δικαιώματα κάθε ρόλου. Ισχύουν σε όλους τους οργανισμούς εκτός όπου υπάρχει override.",
+    "rolePicker": "Ρόλος", "saved": "Τα δικαιώματα αποθηκεύτηκαν", "save": "Αποθήκευση δικαιωμάτων"
+  },
+  "templates": {
+    "slide": {
+      "title": "Πρότυπα διαφανειών",
+      "subtitle": "Δημιούργησε και επεξεργάσου πρότυπα διαφανειών για μαθήματα",
+      "new": "Νέο πρότυπο", "newPage": "Νέο πρότυπο διαφάνειας",
+      "editPage": "Επεξεργασία: {{name}}", "previewLive": "Ζωντανή προεπισκόπηση",
+      "previewHint": "Η προεπισκόπηση ενημερώνεται σε πραγματικό χρόνο.",
+      "deleted": "Το πρότυπο διαγράφηκε", "created": "Το πρότυπο δημιουργήθηκε",
+      "updated": "Το πρότυπο ενημερώθηκε", "empty": "Δεν υπάρχουν ακόμη πρότυπα"
+    },
+    "pdf": {
+      "title": "Πρότυπα PDF",
+      "subtitle": "Δημιούργησε και επεξεργάσου πρότυπα για έγγραφα PDF",
+      "new": "Νέο πρότυπο", "newPage": "Νέο πρότυπο PDF",
+      "editPage": "Επεξεργασία: {{name}}", "previewLive": "Ζωντανή προεπισκόπηση",
+      "previewHint": "Η προεπισκόπηση ενημερώνεται σε πραγματικό χρόνο.",
+      "deleted": "Το πρότυπο διαγράφηκε", "created": "Το πρότυπο δημιουργήθηκε",
+      "updated": "Το πρότυπο ενημερώθηκε", "empty": "Δεν υπάρχουν ακόμη πρότυπα"
+    },
+    "fields": {
+      "name": "Όνομα προτύπου", "size": "Μορφή διαφάνειας", "pageSize": "Μορφή σελίδας",
+      "font": "Γραμματοσειρά", "textColor": "Χρώμα κειμένου",
+      "primaryColor": "Πρωτεύον χρώμα", "secondaryColor": "Δευτερεύον χρώμα",
+      "background": "Εικόνα φόντου", "logoLeft": "Λογότυπο πάνω αριστερά",
+      "logoRight": "Λογότυπο πάνω δεξιά",
+      "headerHeight": "Ύψος κεφαλίδας (mm)", "footerHeight": "Ύψος υποσέλιδου (mm)",
+      "margin": "Περιθώριο σελίδας (mm)"
+    },
+    "deleteConfirm": { "title": "Διαγραφή προτύπου;", "message": "Πρόκειται να διαγράψεις το \"{{name}}\"." }
+  },
+  "avatars": {
+    "title": "Άβαταρ", "subtitle": "Διαθέσιμα άβαταρ για μαθήματα",
+    "new": "Νέο άβαταρ", "newDialog": "Νέο άβαταρ", "editDialog": "Επεξεργασία άβαταρ",
+    "fields": { "name": "Όνομα", "description": "Περιγραφή", "image": "Εικόνα" },
+    "empty": "Δεν υπάρχουν ακόμη άβαταρ",
+    "created": "Το άβαταρ δημιουργήθηκε", "updated": "Το άβαταρ ενημερώθηκε", "deleted": "Το άβαταρ διαγράφηκε",
+    "deleteConfirm": { "title": "Διαγραφή άβαταρ;", "message": "Πρόκειται να διαγράψεις το \"{{name}}\"." }
+  },
+  "permissions": {
+    "member:view": "Προβολή μελών", "member:invite": "Πρόσκληση χρηστών",
+    "member:assign_role": "Ανάθεση ρόλων", "member:remove": "Αφαίρεση μελών",
+    "template:slide:manage": "Διαχείριση προτύπων διαφανειών",
+    "template:pdf:manage": "Διαχείριση προτύπων PDF",
+    "avatar:manage": "Διαχείριση άβαταρ", "permission:manage": "Διαχείριση δικαιωμάτων",
+    "org:transfer_creator": "Μεταφορά ρόλου creator", "org:update": "Επεξεργασία οργανισμού"
+  },
+  "roles": {
+    "creator": "Creator", "org_admin": "Admin οργανισμού",
+    "manager": "Manager", "member": "Μέλος"
+  },
+  "errors": { "generic": "Παρουσιάστηκε σφάλμα", "loadingFailed": "Η φόρτωση απέτυχε", "saveFailed": "Η αποθήκευση απέτυχε" },
+  "dashboard": {
+    "admin": { "title": "Πίνακας διαχείρισης", "subtitle": "Καθολική διαχείριση της πλατφόρμας a4u" },
+    "org": { "subtitle": "Ρόλος: {{role}}" },
+    "noOrg": { "title": "Καλώς ήρθες", "message": "Δεν είσαι ακόμη μέλος κανενός οργανισμού. Περίμενε πρόσκληση ή επικοινώνησε με διαχειριστή." }
+  }
+}

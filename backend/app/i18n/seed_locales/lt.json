@@ -1,0 +1,177 @@
+{
+  "app": { "name": "a4u", "tagline": "Universitetinių kursų platforma" },
+  "common": {
+    "save": "Išsaugoti", "cancel": "Atšaukti", "delete": "Ištrinti", "edit": "Redaguoti",
+    "add": "Pridėti", "loading": "Įkeliama…", "saving": "Saugoma…",
+    "creating": "Kuriama…", "remove": "Pašalinti", "confirm": "Patvirtinti",
+    "close": "Uždaryti", "search": "Ieškoti", "back": "Atgal", "next": "Toliau",
+    "actions": "Veiksmai", "of": "iš", "noResults": "Nėra rezultatų",
+    "copy": "Kopijuoti", "copied": "Nukopijuota!", "yes": "Taip", "no": "Ne", "all": "Visi",
+    "optional": "neprivaloma", "required": "privaloma"
+  },
+  "auth": {
+    "login": {
+      "title": "Sveiki sugrįžę", "subtitle": "Prisijunkite prie savo a4u workspace",
+      "email": "El. paštas", "password": "Slaptažodis",
+      "submit": "Prisijungti", "submitting": "Prisijungiama…"
+    },
+    "logout": "Atsijungti",
+    "invitation": {
+      "title": "Priimti pakvietimą",
+      "subtitle": "Jūs pakviesti į {{org}} kaip {{role}}",
+      "fullName": "Pilnas vardas",
+      "passwordHint": "Mažiausiai 10 simbolių, viena didžioji, vienas skaičius",
+      "submit": "Priimti pakvietimą", "submitting": "Patvirtinama…",
+      "alreadyRegistered": "Jūs jau užsiregistravęs. Spustelėkite \"Priimti\", kad būtumėte pridėtas.",
+      "invalidOrExpired": "Pakvietimas negaliojantis, pasibaigęs arba jau panaudotas."
+    }
+  },
+  "theme": { "label": "Tema", "light": "Šviesi", "dark": "Tamsi", "system": "Sistema" },
+  "language": { "label": "Kalba" },
+  "nav": {
+    "platform": "Platforma", "organization": "Organizacija",
+    "dashboard": "Skydelis", "organizations": "Organizacijos",
+    "users": "Vartotojai", "permissions": "Globalūs leidimai",
+    "members": "Nariai", "templatesSlide": "Skaidrių šablonai",
+    "templatesPdf": "PDF šablonai", "avatars": "Avatarai"
+  },
+  "command": {
+    "placeholder": "Ieškoti komandos arba puslapio…",
+    "navigation": "Navigacija", "actions": "Veiksmai", "preferences": "Nustatymai",
+    "openCommandPalette": "Atverti komandų paletę",
+    "newOrganization": "Nauja organizacija",
+    "logout": "Atsijungti", "noResults": "Nėra rezultatų",
+    "switchTheme": "Keisti temą", "switchLanguage": "Keisti kalbą"
+  },
+  "user": { "profile": "Profilis", "menu": "Vartotojo meniu" },
+  "orgSwitcher": {
+    "label": "Organizacija", "search": "Ieškoti organizacijos…",
+    "noOrgs": "Nėra organizacijų", "select": "Pasirinkite organizaciją"
+  },
+  "organizations": {
+    "title": "Organizacijos",
+    "subtitle": "Tvarkykite visas platformos organizacijas",
+    "new": "Nauja organizacija", "edit": "Redaguoti organizaciją",
+    "search": "Ieškoti pagal pavadinimą", "empty": "Nėra organizacijų",
+    "members": "Nariai", "deleted": "Organizacija ištrinta",
+    "created": "Organizacija sukurta", "updated": "Organizacija atnaujinta",
+    "fields": {
+      "logo": "Organizacijos logotipas",
+      "logoHint": "PNG / JPEG / WEBP, ne daugiau 5 MB",
+      "name": "Pavadinimas", "email": "El. paštas", "phone": "Telefonas",
+      "website": "Svetainė", "vatNumber": "PVM numeris",
+      "fiscalCode": "Mokesčių kodas", "country": "Šalis",
+      "address": "Adresas", "city": "Miestas",
+      "province": "Apskritis", "postalCode": "Pašto kodas"
+    },
+    "deleteConfirm": {
+      "title": "Ištrinti organizaciją?",
+      "message": "Ruošiatės ištrinti \"{{name}}\". Veiksmas grąžinamas iš administracijos."
+    }
+  },
+  "members": {
+    "title": "Nariai",
+    "subtitle": "Peržiūrėti ir tvarkyti organizacijos narius",
+    "subtitleAdmin": "Tiesiogiai užregistruoti vartotojus kaip narius",
+    "invite": "Pakviesti", "invited": "Narys pakviestas",
+    "removed": "Narys pašalintas", "roleChanged": "Vaidmuo atnaujintas",
+    "transferConfirmed": "Creator vaidmuo perkeltas",
+    "enroll": "Užregistruoti vartotoją", "enrollSubmit": "Užregistruoti",
+    "userPicker": "Vartotojas", "rolePicker": "Vaidmuo",
+    "fields": { "name": "Vardas", "email": "El. paštas", "role": "Vaidmuo" },
+    "inviteDialog": {
+      "title": "Pakviesti narį", "email": "El. paštas", "role": "Vaidmuo",
+      "submit": "Sukurti pakvietimą", "submitting": "Kuriama…",
+      "tokenLabel": "Pasidalykite šia nuoroda (galioja 7 dienas):",
+      "successTitle": "Pakvietimas sukurtas"
+    },
+    "removeConfirm": {
+      "title": "Pašalinti narį?",
+      "message": "{{name}} bus pašalintas iš organizacijos."
+    },
+    "transferConfirm": {
+      "title": "Perkelti creator vaidmenį?",
+      "message": "Tapsite organizacijos adminu, o {{name}} taps creator. Tik naujas creator gali atšaukti."
+    },
+    "actions": { "permissions": "Leidimai", "transfer": "Perkelti creator", "remove": "Pašalinti" }
+  },
+  "memberPermissions": {
+    "title": "{{name}} leidimai",
+    "subtitle": "Kiekvienam leidimui palikite vaidmens numatytąją reikšmę arba priverskite grant/revoke šiam nariui.",
+    "default": "Numatytasis", "grant": "Suteikti", "revoke": "Atšaukti",
+    "saved": "Nario leidimai atnaujinti"
+  },
+  "users": {
+    "title": "Vartotojai", "subtitle": "Tvarkykite vartotojus ir platformos adminus",
+    "new": "Naujas vartotojas", "search": "Ieškoti pagal vardą ar el. paštą",
+    "created": "Vartotojas sukurtas",
+    "fields": { "name": "Vardas", "email": "El. paštas", "active": "Aktyvus", "platformAdmin": "Platformos adminas" },
+    "createDialog": {
+      "title": "Naujas vartotojas", "name": "Pilnas vardas", "email": "El. paštas",
+      "password": "Slaptažodis (≥10 simb., 1 didelė, 1 skaičius)",
+      "platformAdmin": "Platformos adminas",
+      "submit": "Sukurti", "submitting": "Kuriama…"
+    }
+  },
+  "globalPermissions": {
+    "title": "Globalūs leidimai",
+    "subtitle": "Redaguokite kiekvieno vaidmens numatytuosius leidimus. Galioja visoms organizacijoms, nebent aiškiai pakeičiama.",
+    "rolePicker": "Vaidmuo", "saved": "Leidimai išsaugoti", "save": "Išsaugoti leidimus"
+  },
+  "templates": {
+    "slide": {
+      "title": "Skaidrių šablonai",
+      "subtitle": "Kurkite ir redaguokite kursų skaidrių šablonus",
+      "new": "Naujas šablonas", "newPage": "Naujas skaidrės šablonas",
+      "editPage": "Redaguoti: {{name}}", "previewLive": "Peržiūra realiu laiku",
+      "previewHint": "Peržiūra atnaujinama realiu laiku redaguojant.",
+      "deleted": "Šablonas ištrintas", "created": "Šablonas sukurtas",
+      "updated": "Šablonas atnaujintas", "empty": "Šablonų dar nėra"
+    },
+    "pdf": {
+      "title": "PDF šablonai",
+      "subtitle": "Kurkite ir redaguokite PDF dokumentų šablonus",
+      "new": "Naujas šablonas", "newPage": "Naujas PDF šablonas",
+      "editPage": "Redaguoti: {{name}}", "previewLive": "Peržiūra realiu laiku",
+      "previewHint": "Peržiūra atnaujinama realiu laiku redaguojant.",
+      "deleted": "Šablonas ištrintas", "created": "Šablonas sukurtas",
+      "updated": "Šablonas atnaujintas", "empty": "Šablonų dar nėra"
+    },
+    "fields": {
+      "name": "Šablono pavadinimas", "size": "Skaidrės formatas", "pageSize": "Puslapio dydis",
+      "font": "Šriftas", "textColor": "Teksto spalva",
+      "primaryColor": "Pagrindinė spalva", "secondaryColor": "Antrinė spalva",
+      "background": "Fono paveikslėlis", "logoLeft": "Logotipas viršuje kairėje",
+      "logoRight": "Logotipas viršuje dešinėje",
+      "headerHeight": "Antraštės aukštis (mm)", "footerHeight": "Poraštės aukštis (mm)",
+      "margin": "Puslapio paraštė (mm)"
+    },
+    "deleteConfirm": { "title": "Ištrinti šabloną?", "message": "Ruošiatės ištrinti \"{{name}}\"." }
+  },
+  "avatars": {
+    "title": "Avatarai", "subtitle": "Kursams prieinami avatarai",
+    "new": "Naujas avataras", "newDialog": "Naujas avataras", "editDialog": "Redaguoti avatarą",
+    "fields": { "name": "Pavadinimas", "description": "Aprašymas", "image": "Paveikslėlis" },
+    "empty": "Avatarų dar nėra",
+    "created": "Avataras sukurtas", "updated": "Avataras atnaujintas", "deleted": "Avataras ištrintas",
+    "deleteConfirm": { "title": "Ištrinti avatarą?", "message": "Ruošiatės ištrinti \"{{name}}\"." }
+  },
+  "permissions": {
+    "member:view": "Peržiūrėti narius", "member:invite": "Kviesti vartotojus",
+    "member:assign_role": "Priskirti vaidmenis", "member:remove": "Šalinti narius",
+    "template:slide:manage": "Tvarkyti skaidrių šablonus",
+    "template:pdf:manage": "Tvarkyti PDF šablonus",
+    "avatar:manage": "Tvarkyti avatarus", "permission:manage": "Tvarkyti leidimus",
+    "org:transfer_creator": "Perkelti creator vaidmenį", "org:update": "Redaguoti organizaciją"
+  },
+  "roles": {
+    "creator": "Creator", "org_admin": "Organizacijos adminas",
+    "manager": "Manager", "member": "Narys"
+  },
+  "errors": { "generic": "Įvyko klaida", "loadingFailed": "Įkėlimas nepavyko", "saveFailed": "Saugojimas nepavyko" },
+  "dashboard": {
+    "admin": { "title": "Administravimo skydelis", "subtitle": "Globalus a4u platformos valdymas" },
+    "org": { "subtitle": "Vaidmuo: {{role}}" },
+    "noOrg": { "title": "Sveiki", "message": "Dar nesate jokios organizacijos narys. Palaukite pakvietimo arba susisiekite su administratoriumi." }
+  }
+}

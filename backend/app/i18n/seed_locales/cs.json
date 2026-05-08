@@ -1,0 +1,177 @@
+{
+  "app": { "name": "a4u", "tagline": "Platforma univerzitních kurzů" },
+  "common": {
+    "save": "Uložit", "cancel": "Zrušit", "delete": "Smazat", "edit": "Upravit",
+    "add": "Přidat", "loading": "Načítání…", "saving": "Ukládání…",
+    "creating": "Vytváření…", "remove": "Odebrat", "confirm": "Potvrdit",
+    "close": "Zavřít", "search": "Hledat", "back": "Zpět", "next": "Další",
+    "actions": "Akce", "of": "z", "noResults": "Žádné výsledky",
+    "copy": "Kopírovat", "copied": "Zkopírováno!", "yes": "Ano", "no": "Ne", "all": "Vše",
+    "optional": "volitelné", "required": "povinné"
+  },
+  "auth": {
+    "login": {
+      "title": "Vítejte zpět", "subtitle": "Přihlaste se do svého workspace a4u",
+      "email": "E-mail", "password": "Heslo",
+      "submit": "Přihlásit", "submitting": "Přihlašování…"
+    },
+    "logout": "Odhlásit",
+    "invitation": {
+      "title": "Přijmout pozvánku",
+      "subtitle": "Byli jste pozváni do {{org}} jako {{role}}",
+      "fullName": "Celé jméno",
+      "passwordHint": "Min. 10 znaků, jedno velké písmeno, jedna číslice",
+      "submit": "Přijmout pozvánku", "submitting": "Potvrzuji…",
+      "alreadyRegistered": "Již jste registrováni. Klikněte na \"Přijmout\" pro připojení.",
+      "invalidOrExpired": "Pozvánka není platná, vypršela nebo již byla použita."
+    }
+  },
+  "theme": { "label": "Motiv", "light": "Světlý", "dark": "Tmavý", "system": "Systém" },
+  "language": { "label": "Jazyk" },
+  "nav": {
+    "platform": "Platforma", "organization": "Organizace",
+    "dashboard": "Přehled", "organizations": "Organizace",
+    "users": "Uživatelé", "permissions": "Globální oprávnění",
+    "members": "Členové", "templatesSlide": "Šablony slidů",
+    "templatesPdf": "PDF šablony", "avatars": "Avatary"
+  },
+  "command": {
+    "placeholder": "Hledat příkaz nebo stránku…",
+    "navigation": "Navigace", "actions": "Akce", "preferences": "Předvolby",
+    "openCommandPalette": "Otevřít paletu příkazů",
+    "newOrganization": "Nová organizace",
+    "logout": "Odhlásit", "noResults": "Žádné výsledky",
+    "switchTheme": "Změnit motiv", "switchLanguage": "Změnit jazyk"
+  },
+  "user": { "profile": "Profil", "menu": "Uživatelské menu" },
+  "orgSwitcher": {
+    "label": "Organizace", "search": "Hledat organizaci…",
+    "noOrgs": "Žádná organizace", "select": "Vyberte organizaci"
+  },
+  "organizations": {
+    "title": "Organizace",
+    "subtitle": "Spravujte všechny organizace platformy",
+    "new": "Nová organizace", "edit": "Upravit organizaci",
+    "search": "Hledat podle názvu", "empty": "Žádné organizace",
+    "members": "Členové", "deleted": "Organizace smazána",
+    "created": "Organizace vytvořena", "updated": "Organizace aktualizována",
+    "fields": {
+      "logo": "Logo organizace",
+      "logoHint": "PNG / JPEG / WEBP, max 5 MB",
+      "name": "Název", "email": "E-mail", "phone": "Telefon",
+      "website": "Web", "vatNumber": "DIČ",
+      "fiscalCode": "Daňové ID", "country": "Země",
+      "address": "Adresa", "city": "Město",
+      "province": "Kraj", "postalCode": "PSČ"
+    },
+    "deleteConfirm": {
+      "title": "Smazat organizaci?",
+      "message": "Chystáte se smazat \"{{name}}\". Akce je vratná z administrace."
+    }
+  },
+  "members": {
+    "title": "Členové",
+    "subtitle": "Zobrazit a spravovat členy organizace",
+    "subtitleAdmin": "Přímo přihlásit uživatele jako členy",
+    "invite": "Pozvat", "invited": "Člen pozván",
+    "removed": "Člen odstraněn", "roleChanged": "Role aktualizována",
+    "transferConfirmed": "Role creator přenesena",
+    "enroll": "Přihlásit uživatele", "enrollSubmit": "Přihlásit",
+    "userPicker": "Uživatel", "rolePicker": "Role",
+    "fields": { "name": "Jméno", "email": "E-mail", "role": "Role" },
+    "inviteDialog": {
+      "title": "Pozvat člena", "email": "E-mail", "role": "Role",
+      "submit": "Vytvořit pozvánku", "submitting": "Vytváření…",
+      "tokenLabel": "Sdílejte tento odkaz (platný 7 dní):",
+      "successTitle": "Pozvánka vytvořena"
+    },
+    "removeConfirm": {
+      "title": "Odstranit člena?",
+      "message": "{{name}} bude odstraněn z organizace."
+    },
+    "transferConfirm": {
+      "title": "Přenést roli creator?",
+      "message": "Stanete se adminem organizace a {{name}} se stane creatorem. Pouze nový creator může vrátit zpět."
+    },
+    "actions": { "permissions": "Oprávnění", "transfer": "Přenést creator", "remove": "Odstranit" }
+  },
+  "memberPermissions": {
+    "title": "Oprávnění: {{name}}",
+    "subtitle": "Pro každé oprávnění ponechte výchozí hodnotu role nebo vynuťte grant/revoke pro tohoto člena.",
+    "default": "Výchozí", "grant": "Udělit", "revoke": "Odebrat",
+    "saved": "Oprávnění člena aktualizována"
+  },
+  "users": {
+    "title": "Uživatelé", "subtitle": "Spravujte uživatele a admin platformy",
+    "new": "Nový uživatel", "search": "Hledat podle jména nebo e-mailu",
+    "created": "Uživatel vytvořen",
+    "fields": { "name": "Jméno", "email": "E-mail", "active": "Aktivní", "platformAdmin": "Admin platformy" },
+    "createDialog": {
+      "title": "Nový uživatel", "name": "Celé jméno", "email": "E-mail",
+      "password": "Heslo (≥10 znaků, 1 velké, 1 číslice)",
+      "platformAdmin": "Admin platformy",
+      "submit": "Vytvořit", "submitting": "Vytváření…"
+    }
+  },
+  "globalPermissions": {
+    "title": "Globální oprávnění",
+    "subtitle": "Upravte výchozí oprávnění pro každou roli. Platí pro všechny organizace, pokud není explicitně přepsáno.",
+    "rolePicker": "Role", "saved": "Oprávnění uložena", "save": "Uložit oprávnění"
+  },
+  "templates": {
+    "slide": {
+      "title": "Šablony slidů",
+      "subtitle": "Vytvářejte a upravujte šablony slidů pro kurzy",
+      "new": "Nová šablona", "newPage": "Nová šablona slidu",
+      "editPage": "Upravit: {{name}}", "previewLive": "Živý náhled",
+      "previewHint": "Náhled se aktualizuje v reálném čase při úpravě.",
+      "deleted": "Šablona smazána", "created": "Šablona vytvořena",
+      "updated": "Šablona aktualizována", "empty": "Žádné šablony"
+    },
+    "pdf": {
+      "title": "PDF šablony",
+      "subtitle": "Vytvářejte a upravujte šablony PDF dokumentů",
+      "new": "Nová šablona", "newPage": "Nová PDF šablona",
+      "editPage": "Upravit: {{name}}", "previewLive": "Živý náhled",
+      "previewHint": "Náhled se aktualizuje v reálném čase při úpravě.",
+      "deleted": "Šablona smazána", "created": "Šablona vytvořena",
+      "updated": "Šablona aktualizována", "empty": "Žádné šablony"
+    },
+    "fields": {
+      "name": "Název šablony", "size": "Formát slidu", "pageSize": "Velikost stránky",
+      "font": "Písmo", "textColor": "Barva textu",
+      "primaryColor": "Primární barva", "secondaryColor": "Sekundární barva",
+      "background": "Obrázek pozadí", "logoLeft": "Logo vlevo nahoře",
+      "logoRight": "Logo vpravo nahoře",
+      "headerHeight": "Výška záhlaví (mm)", "footerHeight": "Výška zápatí (mm)",
+      "margin": "Okraj stránky (mm)"
+    },
+    "deleteConfirm": { "title": "Smazat šablonu?", "message": "Chystáte se smazat \"{{name}}\"." }
+  },
+  "avatars": {
+    "title": "Avatary", "subtitle": "Avatary dostupné pro kurzy",
+    "new": "Nový avatar", "newDialog": "Nový avatar", "editDialog": "Upravit avatar",
+    "fields": { "name": "Název", "description": "Popis", "image": "Obrázek" },
+    "empty": "Žádné avatary",
+    "created": "Avatar vytvořen", "updated": "Avatar aktualizován", "deleted": "Avatar smazán",
+    "deleteConfirm": { "title": "Smazat avatar?", "message": "Chystáte se smazat \"{{name}}\"." }
+  },
+  "permissions": {
+    "member:view": "Zobrazit členy", "member:invite": "Pozvat uživatele",
+    "member:assign_role": "Přiřadit role", "member:remove": "Odstranit členy",
+    "template:slide:manage": "Spravovat šablony slidů",
+    "template:pdf:manage": "Spravovat PDF šablony",
+    "avatar:manage": "Spravovat avatary", "permission:manage": "Spravovat oprávnění",
+    "org:transfer_creator": "Přenést roli creator", "org:update": "Upravit organizaci"
+  },
+  "roles": {
+    "creator": "Creator", "org_admin": "Admin organizace",
+    "manager": "Manager", "member": "Člen"
+  },
+  "errors": { "generic": "Došlo k chybě", "loadingFailed": "Načtení selhalo", "saveFailed": "Uložení selhalo" },
+  "dashboard": {
+    "admin": { "title": "Panel administrace", "subtitle": "Globální správa platformy a4u" },
+    "org": { "subtitle": "Role: {{role}}" },
+    "noOrg": { "title": "Vítejte", "message": "Nejste zatím členem žádné organizace. Počkejte na pozvánku nebo kontaktujte administrátora." }
+  }
+}

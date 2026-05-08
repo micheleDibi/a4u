@@ -1,0 +1,177 @@
+{
+  "app": { "name": "a4u", "tagline": "Universitātes kursu platforma" },
+  "common": {
+    "save": "Saglabāt", "cancel": "Atcelt", "delete": "Dzēst", "edit": "Rediģēt",
+    "add": "Pievienot", "loading": "Ielāde…", "saving": "Saglabāšana…",
+    "creating": "Izveide…", "remove": "Noņemt", "confirm": "Apstiprināt",
+    "close": "Aizvērt", "search": "Meklēt", "back": "Atpakaļ", "next": "Tālāk",
+    "actions": "Darbības", "of": "no", "noResults": "Nav rezultātu",
+    "copy": "Kopēt", "copied": "Nokopēts!", "yes": "Jā", "no": "Nē", "all": "Visi",
+    "optional": "neobligāti", "required": "obligāti"
+  },
+  "auth": {
+    "login": {
+      "title": "Laipni atgriežoties", "subtitle": "Pierakstieties savā a4u workspace",
+      "email": "E-pasts", "password": "Parole",
+      "submit": "Pieteikties", "submitting": "Pieteikšanās…"
+    },
+    "logout": "Iziet",
+    "invitation": {
+      "title": "Pieņemt uzaicinājumu",
+      "subtitle": "Jūs esat uzaicināts uz {{org}} kā {{role}}",
+      "fullName": "Pilns vārds",
+      "passwordHint": "Vismaz 10 rakstzīmes, viens lielais burts, viens cipars",
+      "submit": "Pieņemt uzaicinājumu", "submitting": "Apstiprinājums…",
+      "alreadyRegistered": "Jūs jau esat reģistrēts. Klikšķiniet \"Pieņemt\", lai pievienotos.",
+      "invalidOrExpired": "Uzaicinājums nav derīgs, beidzies vai jau izmantots."
+    }
+  },
+  "theme": { "label": "Motīvs", "light": "Gaišs", "dark": "Tumšs", "system": "Sistēma" },
+  "language": { "label": "Valoda" },
+  "nav": {
+    "platform": "Platforma", "organization": "Organizācija",
+    "dashboard": "Panelis", "organizations": "Organizācijas",
+    "users": "Lietotāji", "permissions": "Globālās atļaujas",
+    "members": "Dalībnieki", "templatesSlide": "Slaidu veidnes",
+    "templatesPdf": "PDF veidnes", "avatars": "Avatāri"
+  },
+  "command": {
+    "placeholder": "Meklēt komandu vai lapu…",
+    "navigation": "Navigācija", "actions": "Darbības", "preferences": "Iestatījumi",
+    "openCommandPalette": "Atvērt komandu paleti",
+    "newOrganization": "Jauna organizācija",
+    "logout": "Iziet", "noResults": "Nav rezultātu",
+    "switchTheme": "Mainīt motīvu", "switchLanguage": "Mainīt valodu"
+  },
+  "user": { "profile": "Profils", "menu": "Lietotāja izvēlne" },
+  "orgSwitcher": {
+    "label": "Organizācija", "search": "Meklēt organizāciju…",
+    "noOrgs": "Nav organizāciju", "select": "Izvēlieties organizāciju"
+  },
+  "organizations": {
+    "title": "Organizācijas",
+    "subtitle": "Pārvaldiet visas platformas organizācijas",
+    "new": "Jauna organizācija", "edit": "Rediģēt organizāciju",
+    "search": "Meklēt pēc nosaukuma", "empty": "Nav organizāciju",
+    "members": "Dalībnieki", "deleted": "Organizācija dzēsta",
+    "created": "Organizācija izveidota", "updated": "Organizācija atjaunināta",
+    "fields": {
+      "logo": "Organizācijas logotips",
+      "logoHint": "PNG / JPEG / WEBP, maks. 5 MB",
+      "name": "Nosaukums", "email": "E-pasts", "phone": "Tālrunis",
+      "website": "Mājaslapa", "vatNumber": "PVN numurs",
+      "fiscalCode": "Nodokļu kods", "country": "Valsts",
+      "address": "Adrese", "city": "Pilsēta",
+      "province": "Reģions", "postalCode": "Pasta indekss"
+    },
+    "deleteConfirm": {
+      "title": "Dzēst organizāciju?",
+      "message": "Jūs gatavojaties dzēst \"{{name}}\". Darbība ir atgriežama no administrācijas."
+    }
+  },
+  "members": {
+    "title": "Dalībnieki",
+    "subtitle": "Skatīt un pārvaldīt organizācijas dalībniekus",
+    "subtitleAdmin": "Tieši reģistrēt lietotājus kā dalībniekus",
+    "invite": "Uzaicināt", "invited": "Dalībnieks uzaicināts",
+    "removed": "Dalībnieks noņemts", "roleChanged": "Loma atjaunināta",
+    "transferConfirmed": "Creator loma pārcelta",
+    "enroll": "Reģistrēt lietotāju", "enrollSubmit": "Reģistrēt",
+    "userPicker": "Lietotājs", "rolePicker": "Loma",
+    "fields": { "name": "Vārds", "email": "E-pasts", "role": "Loma" },
+    "inviteDialog": {
+      "title": "Uzaicināt dalībnieku", "email": "E-pasts", "role": "Loma",
+      "submit": "Izveidot uzaicinājumu", "submitting": "Izveide…",
+      "tokenLabel": "Kopīgojiet šo saiti (derīga 7 dienas):",
+      "successTitle": "Uzaicinājums izveidots"
+    },
+    "removeConfirm": {
+      "title": "Noņemt dalībnieku?",
+      "message": "{{name}} tiks noņemts no organizācijas."
+    },
+    "transferConfirm": {
+      "title": "Pārcelt creator lomu?",
+      "message": "Jūs kļūsiet par organizācijas adminu, un {{name}} kļūs par creator. Tikai jaunais creator var atcelt."
+    },
+    "actions": { "permissions": "Atļaujas", "transfer": "Pārcelt creator", "remove": "Noņemt" }
+  },
+  "memberPermissions": {
+    "title": "{{name}} atļaujas",
+    "subtitle": "Katrai atļaujai atstājiet lomas noklusējumu vai piespiediet grant/revoke šim dalībniekam.",
+    "default": "Noklusējums", "grant": "Piešķirt", "revoke": "Atsaukt",
+    "saved": "Dalībnieka atļaujas atjauninātas"
+  },
+  "users": {
+    "title": "Lietotāji", "subtitle": "Pārvaldiet lietotājus un platformas adminus",
+    "new": "Jauns lietotājs", "search": "Meklēt pēc vārda vai e-pasta",
+    "created": "Lietotājs izveidots",
+    "fields": { "name": "Vārds", "email": "E-pasts", "active": "Aktīvs", "platformAdmin": "Platformas admins" },
+    "createDialog": {
+      "title": "Jauns lietotājs", "name": "Pilns vārds", "email": "E-pasts",
+      "password": "Parole (≥10 rakstzīmes, 1 lielais, 1 cipars)",
+      "platformAdmin": "Platformas admins",
+      "submit": "Izveidot", "submitting": "Izveide…"
+    }
+  },
+  "globalPermissions": {
+    "title": "Globālās atļaujas",
+    "subtitle": "Rediģējiet katras lomas noklusējuma atļaujas. Tās attiecas uz visām organizācijām, ja vien nav skaidri pārrakstītas.",
+    "rolePicker": "Loma", "saved": "Atļaujas saglabātas", "save": "Saglabāt atļaujas"
+  },
+  "templates": {
+    "slide": {
+      "title": "Slaidu veidnes",
+      "subtitle": "Veidojiet un rediģējiet kursu slaidu veidnes",
+      "new": "Jauna veidne", "newPage": "Jauna slaida veidne",
+      "editPage": "Rediģēt: {{name}}", "previewLive": "Tiešais priekšskatījums",
+      "previewHint": "Priekšskatījums tiek atjaunināts reāllaikā rediģēšanas laikā.",
+      "deleted": "Veidne dzēsta", "created": "Veidne izveidota",
+      "updated": "Veidne atjaunināta", "empty": "Vēl nav veidņu"
+    },
+    "pdf": {
+      "title": "PDF veidnes",
+      "subtitle": "Veidojiet un rediģējiet PDF dokumentu veidnes",
+      "new": "Jauna veidne", "newPage": "Jauna PDF veidne",
+      "editPage": "Rediģēt: {{name}}", "previewLive": "Tiešais priekšskatījums",
+      "previewHint": "Priekšskatījums tiek atjaunināts reāllaikā rediģēšanas laikā.",
+      "deleted": "Veidne dzēsta", "created": "Veidne izveidota",
+      "updated": "Veidne atjaunināta", "empty": "Vēl nav veidņu"
+    },
+    "fields": {
+      "name": "Veidnes nosaukums", "size": "Slaida formāts", "pageSize": "Lapas izmērs",
+      "font": "Fonts", "textColor": "Teksta krāsa",
+      "primaryColor": "Primārā krāsa", "secondaryColor": "Sekundārā krāsa",
+      "background": "Fona attēls", "logoLeft": "Logo augšējā kreisajā",
+      "logoRight": "Logo augšējā labajā",
+      "headerHeight": "Galvenes augstums (mm)", "footerHeight": "Kājenes augstums (mm)",
+      "margin": "Lapas mala (mm)"
+    },
+    "deleteConfirm": { "title": "Dzēst veidni?", "message": "Jūs gatavojaties dzēst \"{{name}}\"." }
+  },
+  "avatars": {
+    "title": "Avatāri", "subtitle": "Kursiem pieejamie avatāri",
+    "new": "Jauns avatārs", "newDialog": "Jauns avatārs", "editDialog": "Rediģēt avatāru",
+    "fields": { "name": "Nosaukums", "description": "Apraksts", "image": "Attēls" },
+    "empty": "Vēl nav avatāru",
+    "created": "Avatārs izveidots", "updated": "Avatārs atjaunināts", "deleted": "Avatārs dzēsts",
+    "deleteConfirm": { "title": "Dzēst avatāru?", "message": "Jūs gatavojaties dzēst \"{{name}}\"." }
+  },
+  "permissions": {
+    "member:view": "Skatīt dalībniekus", "member:invite": "Uzaicināt lietotājus",
+    "member:assign_role": "Piešķirt lomas", "member:remove": "Noņemt dalībniekus",
+    "template:slide:manage": "Pārvaldīt slaidu veidnes",
+    "template:pdf:manage": "Pārvaldīt PDF veidnes",
+    "avatar:manage": "Pārvaldīt avatārus", "permission:manage": "Pārvaldīt atļaujas",
+    "org:transfer_creator": "Pārcelt creator lomu", "org:update": "Rediģēt organizāciju"
+  },
+  "roles": {
+    "creator": "Creator", "org_admin": "Organizācijas admins",
+    "manager": "Manager", "member": "Dalībnieks"
+  },
+  "errors": { "generic": "Radās kļūda", "loadingFailed": "Ielāde neizdevās", "saveFailed": "Saglabāšana neizdevās" },
+  "dashboard": {
+    "admin": { "title": "Admina panelis", "subtitle": "a4u platformas globālā pārvaldība" },
+    "org": { "subtitle": "Loma: {{role}}" },
+    "noOrg": { "title": "Laipni lūdzam", "message": "Jūs vēl neesat nevienas organizācijas dalībnieks. Gaidiet uzaicinājumu vai sazinieties ar administratoru." }
+  }
+}

@@ -1,0 +1,177 @@
+{
+  "app": { "name": "a4u", "tagline": "Platform til universitetskurser" },
+  "common": {
+    "save": "Gem", "cancel": "Annullér", "delete": "Slet", "edit": "Redigér",
+    "add": "Tilføj", "loading": "Indlæser…", "saving": "Gemmer…",
+    "creating": "Opretter…", "remove": "Fjern", "confirm": "Bekræft",
+    "close": "Luk", "search": "Søg", "back": "Tilbage", "next": "Næste",
+    "actions": "Handlinger", "of": "af", "noResults": "Ingen resultater",
+    "copy": "Kopiér", "copied": "Kopieret!", "yes": "Ja", "no": "Nej", "all": "Alle",
+    "optional": "valgfri", "required": "obligatorisk"
+  },
+  "auth": {
+    "login": {
+      "title": "Velkommen tilbage", "subtitle": "Log ind på dit a4u-arbejdsområde",
+      "email": "E-mail", "password": "Adgangskode",
+      "submit": "Log ind", "submitting": "Logger ind…"
+    },
+    "logout": "Log ud",
+    "invitation": {
+      "title": "Acceptér invitation",
+      "subtitle": "Du er inviteret til {{org}} som {{role}}",
+      "fullName": "Fulde navn",
+      "passwordHint": "Min. 10 tegn, ét stort bogstav, ét tal",
+      "submit": "Acceptér invitation", "submitting": "Bekræfter…",
+      "alreadyRegistered": "Du er allerede registreret. Klik \"Acceptér\" for at blive tilføjet.",
+      "invalidOrExpired": "Invitationen er ugyldig, udløbet eller allerede brugt."
+    }
+  },
+  "theme": { "label": "Tema", "light": "Lys", "dark": "Mørk", "system": "System" },
+  "language": { "label": "Sprog" },
+  "nav": {
+    "platform": "Platform", "organization": "Organisation",
+    "dashboard": "Dashboard", "organizations": "Organisationer",
+    "users": "Brugere", "permissions": "Globale rettigheder",
+    "members": "Medlemmer", "templatesSlide": "Slide-skabeloner",
+    "templatesPdf": "PDF-skabeloner", "avatars": "Avatarer"
+  },
+  "command": {
+    "placeholder": "Søg kommando eller side…",
+    "navigation": "Navigation", "actions": "Handlinger", "preferences": "Indstillinger",
+    "openCommandPalette": "Åbn kommandopalette",
+    "newOrganization": "Ny organisation",
+    "logout": "Log ud", "noResults": "Ingen resultater",
+    "switchTheme": "Skift tema", "switchLanguage": "Skift sprog"
+  },
+  "user": { "profile": "Profil", "menu": "Brugermenu" },
+  "orgSwitcher": {
+    "label": "Organisation", "search": "Søg organisation…",
+    "noOrgs": "Ingen organisation", "select": "Vælg organisation"
+  },
+  "organizations": {
+    "title": "Organisationer",
+    "subtitle": "Administrér alle platformens organisationer",
+    "new": "Ny organisation", "edit": "Redigér organisation",
+    "search": "Søg efter navn", "empty": "Ingen organisationer",
+    "members": "Medlemmer", "deleted": "Organisation slettet",
+    "created": "Organisation oprettet", "updated": "Organisation opdateret",
+    "fields": {
+      "logo": "Organisationslogo",
+      "logoHint": "PNG / JPEG / WEBP, maks 5 MB",
+      "name": "Navn", "email": "E-mail", "phone": "Telefon",
+      "website": "Hjemmeside", "vatNumber": "Momsnummer",
+      "fiscalCode": "Skattekode", "country": "Land",
+      "address": "Adresse", "city": "By",
+      "province": "Region", "postalCode": "Postnummer"
+    },
+    "deleteConfirm": {
+      "title": "Slet organisationen?",
+      "message": "Du er ved at slette \"{{name}}\". Handlingen kan fortrydes af administrationen."
+    }
+  },
+  "members": {
+    "title": "Medlemmer",
+    "subtitle": "Se og administrér organisationens medlemmer",
+    "subtitleAdmin": "Tilmeld brugere direkte som medlemmer",
+    "invite": "Inviter", "invited": "Medlem inviteret",
+    "removed": "Medlem fjernet", "roleChanged": "Rolle opdateret",
+    "transferConfirmed": "Creator-rolle overført",
+    "enroll": "Tilmeld bruger", "enrollSubmit": "Tilmeld",
+    "userPicker": "Bruger", "rolePicker": "Rolle",
+    "fields": { "name": "Navn", "email": "E-mail", "role": "Rolle" },
+    "inviteDialog": {
+      "title": "Invitér et medlem", "email": "E-mail", "role": "Rolle",
+      "submit": "Opret invitation", "submitting": "Opretter…",
+      "tokenLabel": "Del dette link (gyldig 7 dage):",
+      "successTitle": "Invitation oprettet"
+    },
+    "removeConfirm": {
+      "title": "Fjerne medlemmet?",
+      "message": "{{name}} fjernes fra organisationen."
+    },
+    "transferConfirm": {
+      "title": "Overfør creator-rolle?",
+      "message": "Du bliver organisationsadmin og {{name}} bliver creator. Kun den nye creator kan fortryde."
+    },
+    "actions": { "permissions": "Rettigheder", "transfer": "Overfør creator", "remove": "Fjern" }
+  },
+  "memberPermissions": {
+    "title": "Rettigheder for {{name}}",
+    "subtitle": "For hver rettighed, lad rollens standard stå eller tving grant/revoke for dette medlem.",
+    "default": "Standard", "grant": "Tildel", "revoke": "Tilbagekald",
+    "saved": "Medlemmets rettigheder opdateret"
+  },
+  "users": {
+    "title": "Brugere", "subtitle": "Administrér brugere og platformsadmins",
+    "new": "Ny bruger", "search": "Søg efter navn eller e-mail",
+    "created": "Bruger oprettet",
+    "fields": { "name": "Navn", "email": "E-mail", "active": "Aktiv", "platformAdmin": "Platformsadmin" },
+    "createDialog": {
+      "title": "Ny bruger", "name": "Fulde navn", "email": "E-mail",
+      "password": "Adgangskode (≥10 tegn, 1 stort, 1 tal)",
+      "platformAdmin": "Platformsadmin",
+      "submit": "Opret", "submitting": "Opretter…"
+    }
+  },
+  "globalPermissions": {
+    "title": "Globale rettigheder",
+    "subtitle": "Redigér standardrettigheder for hver rolle. De gælder for alle organisationer medmindre der er en eksplicit override.",
+    "rolePicker": "Rolle", "saved": "Rettigheder gemt", "save": "Gem rettigheder"
+  },
+  "templates": {
+    "slide": {
+      "title": "Slide-skabeloner",
+      "subtitle": "Opret og redigér skabeloner til kursusslides",
+      "new": "Ny skabelon", "newPage": "Ny slide-skabelon",
+      "editPage": "Redigér: {{name}}", "previewLive": "Live forhåndsvisning",
+      "previewHint": "Forhåndsvisningen opdateres i realtid mens du redigerer.",
+      "deleted": "Skabelon slettet", "created": "Skabelon oprettet",
+      "updated": "Skabelon opdateret", "empty": "Ingen skabeloner endnu"
+    },
+    "pdf": {
+      "title": "PDF-skabeloner",
+      "subtitle": "Opret og redigér skabeloner til PDF-dokumenter",
+      "new": "Ny skabelon", "newPage": "Ny PDF-skabelon",
+      "editPage": "Redigér: {{name}}", "previewLive": "Live forhåndsvisning",
+      "previewHint": "Forhåndsvisningen opdateres i realtid mens du redigerer.",
+      "deleted": "Skabelon slettet", "created": "Skabelon oprettet",
+      "updated": "Skabelon opdateret", "empty": "Ingen skabeloner endnu"
+    },
+    "fields": {
+      "name": "Skabelonnavn", "size": "Slide-format", "pageSize": "Sidestørrelse",
+      "font": "Skrifttype", "textColor": "Tekstfarve",
+      "primaryColor": "Primær farve", "secondaryColor": "Sekundær farve",
+      "background": "Baggrundsbillede", "logoLeft": "Logo øverst til venstre",
+      "logoRight": "Logo øverst til højre",
+      "headerHeight": "Header-højde (mm)", "footerHeight": "Footer-højde (mm)",
+      "margin": "Sidemargen (mm)"
+    },
+    "deleteConfirm": { "title": "Slet skabelonen?", "message": "Du er ved at slette \"{{name}}\"." }
+  },
+  "avatars": {
+    "title": "Avatarer", "subtitle": "Tilgængelige avatarer til kurserne",
+    "new": "Ny avatar", "newDialog": "Ny avatar", "editDialog": "Redigér avatar",
+    "fields": { "name": "Navn", "description": "Beskrivelse", "image": "Billede" },
+    "empty": "Ingen avatarer endnu",
+    "created": "Avatar oprettet", "updated": "Avatar opdateret", "deleted": "Avatar slettet",
+    "deleteConfirm": { "title": "Slet avataren?", "message": "Du er ved at slette \"{{name}}\"." }
+  },
+  "permissions": {
+    "member:view": "Se medlemmer", "member:invite": "Invitér brugere",
+    "member:assign_role": "Tildel roller", "member:remove": "Fjern medlemmer",
+    "template:slide:manage": "Administrér slide-skabeloner",
+    "template:pdf:manage": "Administrér PDF-skabeloner",
+    "avatar:manage": "Administrér avatarer", "permission:manage": "Administrér rettigheder",
+    "org:transfer_creator": "Overfør creator-rolle", "org:update": "Redigér organisation"
+  },
+  "roles": {
+    "creator": "Creator", "org_admin": "Organisationsadmin",
+    "manager": "Manager", "member": "Medlem"
+  },
+  "errors": { "generic": "Der opstod en fejl", "loadingFailed": "Kunne ikke indlæse", "saveFailed": "Kunne ikke gemme" },
+  "dashboard": {
+    "admin": { "title": "Adminpanel", "subtitle": "Global administration af a4u-platformen" },
+    "org": { "subtitle": "Rolle: {{role}}" },
+    "noOrg": { "title": "Velkommen", "message": "Du er endnu ikke medlem af nogen organisation. Vent på en invitation eller kontakt en administrator." }
+  }
+}

@@ -1,0 +1,177 @@
+{
+  "app": { "name": "a4u", "tagline": "University courses platform" },
+  "common": {
+    "save": "Save", "cancel": "Cancel", "delete": "Delete", "edit": "Edit",
+    "add": "Add", "loading": "Loading…", "saving": "Saving…",
+    "creating": "Creating…", "remove": "Remove", "confirm": "Confirm",
+    "close": "Close", "search": "Search", "back": "Back", "next": "Next",
+    "actions": "Actions", "of": "of", "noResults": "No results",
+    "copy": "Copy", "copied": "Copied!", "yes": "Yes", "no": "No", "all": "All",
+    "optional": "optional", "required": "required"
+  },
+  "auth": {
+    "login": {
+      "title": "Welcome back", "subtitle": "Sign in to your a4u workspace",
+      "email": "Email", "password": "Password",
+      "submit": "Sign in", "submitting": "Signing in…"
+    },
+    "logout": "Sign out",
+    "invitation": {
+      "title": "Accept invitation",
+      "subtitle": "You have been invited to {{org}} as {{role}}",
+      "fullName": "Full name",
+      "passwordHint": "Min 10 characters, one uppercase, one digit",
+      "submit": "Accept invitation", "submitting": "Confirming…",
+      "alreadyRegistered": "You are already registered. Click \"Accept\" to be added.",
+      "invalidOrExpired": "The invitation is not valid, has expired or has already been used."
+    }
+  },
+  "theme": { "label": "Theme", "light": "Light", "dark": "Dark", "system": "System" },
+  "language": { "label": "Language" },
+  "nav": {
+    "platform": "Platform", "organization": "Organization",
+    "dashboard": "Dashboard", "organizations": "Organizations",
+    "users": "Users", "permissions": "Global permissions",
+    "members": "Members", "templatesSlide": "Slide templates",
+    "templatesPdf": "PDF templates", "avatars": "Avatars"
+  },
+  "command": {
+    "placeholder": "Search a command or page…",
+    "navigation": "Navigation", "actions": "Actions", "preferences": "Preferences",
+    "openCommandPalette": "Open command palette",
+    "newOrganization": "New organization",
+    "logout": "Sign out", "noResults": "No results",
+    "switchTheme": "Switch theme", "switchLanguage": "Switch language"
+  },
+  "user": { "profile": "Profile", "menu": "User menu" },
+  "orgSwitcher": {
+    "label": "Organization", "search": "Search organization…",
+    "noOrgs": "No organization", "select": "Select organization"
+  },
+  "organizations": {
+    "title": "Organizations",
+    "subtitle": "Manage all platform organizations",
+    "new": "New organization", "edit": "Edit organization",
+    "search": "Search by name", "empty": "No organizations",
+    "members": "Members", "deleted": "Organization deleted",
+    "created": "Organization created", "updated": "Organization updated",
+    "fields": {
+      "logo": "Organization logo",
+      "logoHint": "PNG / JPEG / WEBP, max 5 MB",
+      "name": "Name", "email": "Email", "phone": "Phone",
+      "website": "Website", "vatNumber": "VAT number",
+      "fiscalCode": "Tax code", "country": "Country",
+      "address": "Address", "city": "City",
+      "province": "Province", "postalCode": "Postal code"
+    },
+    "deleteConfirm": {
+      "title": "Delete the organization?",
+      "message": "You are about to delete \"{{name}}\". The action is reversible from the admin side."
+    }
+  },
+  "members": {
+    "title": "Members",
+    "subtitle": "View and manage organization members",
+    "subtitleAdmin": "Enroll users directly as members",
+    "invite": "Invite", "invited": "Member invited",
+    "removed": "Member removed", "roleChanged": "Role updated",
+    "transferConfirmed": "Creator role transferred",
+    "enroll": "Enroll user", "enrollSubmit": "Enroll",
+    "userPicker": "User", "rolePicker": "Role",
+    "fields": { "name": "Name", "email": "Email", "role": "Role" },
+    "inviteDialog": {
+      "title": "Invite a member", "email": "Email", "role": "Role",
+      "submit": "Create invitation", "submitting": "Creating…",
+      "tokenLabel": "Share this link (valid 7 days):",
+      "successTitle": "Invitation created"
+    },
+    "removeConfirm": {
+      "title": "Remove the member?",
+      "message": "{{name}} will be removed from the organization."
+    },
+    "transferConfirm": {
+      "title": "Transfer creator role?",
+      "message": "You will become organization admin and {{name}} will become creator. Only the new creator can revert."
+    },
+    "actions": { "permissions": "Permissions", "transfer": "Transfer creator", "remove": "Remove" }
+  },
+  "memberPermissions": {
+    "title": "Permissions of {{name}}",
+    "subtitle": "For each permission, leave the role default or force a specific grant/revoke for this member.",
+    "default": "Default", "grant": "Grant", "revoke": "Revoke",
+    "saved": "Member permissions updated"
+  },
+  "users": {
+    "title": "Users", "subtitle": "Manage users and platform admins",
+    "new": "New user", "search": "Search by name or email",
+    "created": "User created",
+    "fields": { "name": "Name", "email": "Email", "active": "Active", "platformAdmin": "Platform admin" },
+    "createDialog": {
+      "title": "New user", "name": "Full name", "email": "Email",
+      "password": "Password (≥10 chars, one uppercase, one digit)",
+      "platformAdmin": "Platform admin",
+      "submit": "Create", "submitting": "Creating…"
+    }
+  },
+  "globalPermissions": {
+    "title": "Global permissions",
+    "subtitle": "Edit default permissions for each role. They apply to every organization unless explicitly overridden.",
+    "rolePicker": "Role", "saved": "Permissions saved", "save": "Save permissions"
+  },
+  "templates": {
+    "slide": {
+      "title": "Slide templates",
+      "subtitle": "Create and edit course slide templates",
+      "new": "New template", "newPage": "New slide template",
+      "editPage": "Edit: {{name}}", "previewLive": "Live preview",
+      "previewHint": "Preview updates in real time as you edit.",
+      "deleted": "Template deleted", "created": "Template created",
+      "updated": "Template updated", "empty": "No templates yet"
+    },
+    "pdf": {
+      "title": "PDF templates",
+      "subtitle": "Create and edit PDF document templates",
+      "new": "New template", "newPage": "New PDF template",
+      "editPage": "Edit: {{name}}", "previewLive": "Live preview",
+      "previewHint": "Preview updates in real time as you edit.",
+      "deleted": "Template deleted", "created": "Template created",
+      "updated": "Template updated", "empty": "No templates yet"
+    },
+    "fields": {
+      "name": "Template name", "size": "Slide format", "pageSize": "Page size",
+      "font": "Font", "textColor": "Text color",
+      "primaryColor": "Primary color", "secondaryColor": "Secondary color",
+      "background": "Background image", "logoLeft": "Top-left logo",
+      "logoRight": "Top-right logo",
+      "headerHeight": "Header height (mm)", "footerHeight": "Footer height (mm)",
+      "margin": "Page margin (mm)"
+    },
+    "deleteConfirm": { "title": "Delete the template?", "message": "You are about to delete \"{{name}}\"." }
+  },
+  "avatars": {
+    "title": "Avatars", "subtitle": "Avatars available for courses",
+    "new": "New avatar", "newDialog": "New avatar", "editDialog": "Edit avatar",
+    "fields": { "name": "Name", "description": "Description", "image": "Image" },
+    "empty": "No avatars yet",
+    "created": "Avatar created", "updated": "Avatar updated", "deleted": "Avatar deleted",
+    "deleteConfirm": { "title": "Delete the avatar?", "message": "You are about to delete \"{{name}}\"." }
+  },
+  "permissions": {
+    "member:view": "View members", "member:invite": "Invite users",
+    "member:assign_role": "Assign roles", "member:remove": "Remove members",
+    "template:slide:manage": "Manage slide templates",
+    "template:pdf:manage": "Manage PDF templates",
+    "avatar:manage": "Manage avatars", "permission:manage": "Manage permissions",
+    "org:transfer_creator": "Transfer creator role", "org:update": "Edit organization"
+  },
+  "roles": {
+    "creator": "Creator", "org_admin": "Organization admin",
+    "manager": "Manager", "member": "Member"
+  },
+  "errors": { "generic": "An error occurred", "loadingFailed": "Loading failed", "saveFailed": "Save failed" },
+  "dashboard": {
+    "admin": { "title": "Admin panel", "subtitle": "Global platform management" },
+    "org": { "subtitle": "Role: {{role}}" },
+    "noOrg": { "title": "Welcome", "message": "You are not yet a member of any organization. Please wait for an invitation or contact an administrator." }
+  }
+}

@@ -1,0 +1,177 @@
+{
+  "app": { "name": "a4u", "tagline": "Ülikoolikursuste platvorm" },
+  "common": {
+    "save": "Salvesta", "cancel": "Tühista", "delete": "Kustuta", "edit": "Muuda",
+    "add": "Lisa", "loading": "Laadimine…", "saving": "Salvestamine…",
+    "creating": "Loomine…", "remove": "Eemalda", "confirm": "Kinnita",
+    "close": "Sulge", "search": "Otsi", "back": "Tagasi", "next": "Edasi",
+    "actions": "Toimingud", "of": "/", "noResults": "Tulemusi pole",
+    "copy": "Kopeeri", "copied": "Kopeeritud!", "yes": "Jah", "no": "Ei", "all": "Kõik",
+    "optional": "valikuline", "required": "kohustuslik"
+  },
+  "auth": {
+    "login": {
+      "title": "Tere tulemast tagasi", "subtitle": "Logi sisse oma a4u tööruumi",
+      "email": "E-post", "password": "Parool",
+      "submit": "Logi sisse", "submitting": "Logitakse sisse…"
+    },
+    "logout": "Logi välja",
+    "invitation": {
+      "title": "Võta kutse vastu",
+      "subtitle": "Sind on kutsutud organisatsiooni {{org}} rollis {{role}}",
+      "fullName": "Täisnimi",
+      "passwordHint": "Vähemalt 10 tähemärki, üks suurtäht, üks number",
+      "submit": "Võta kutse vastu", "submitting": "Kinnitamine…",
+      "alreadyRegistered": "Oled juba registreeritud. Klõpsa \"Võta vastu\", et liituda.",
+      "invalidOrExpired": "Kutse pole kehtiv, on aegunud või juba kasutatud."
+    }
+  },
+  "theme": { "label": "Teema", "light": "Hele", "dark": "Tume", "system": "Süsteem" },
+  "language": { "label": "Keel" },
+  "nav": {
+    "platform": "Platvorm", "organization": "Organisatsioon",
+    "dashboard": "Töölaud", "organizations": "Organisatsioonid",
+    "users": "Kasutajad", "permissions": "Globaalsed õigused",
+    "members": "Liikmed", "templatesSlide": "Slaidi mallid",
+    "templatesPdf": "PDF mallid", "avatars": "Avatarid"
+  },
+  "command": {
+    "placeholder": "Otsi käsku või lehte…",
+    "navigation": "Navigeerimine", "actions": "Toimingud", "preferences": "Eelistused",
+    "openCommandPalette": "Ava käsupalett",
+    "newOrganization": "Uus organisatsioon",
+    "logout": "Logi välja", "noResults": "Tulemusi pole",
+    "switchTheme": "Vaheta teemat", "switchLanguage": "Vaheta keelt"
+  },
+  "user": { "profile": "Profiil", "menu": "Kasutajamenüü" },
+  "orgSwitcher": {
+    "label": "Organisatsioon", "search": "Otsi organisatsiooni…",
+    "noOrgs": "Organisatsioone pole", "select": "Vali organisatsioon"
+  },
+  "organizations": {
+    "title": "Organisatsioonid",
+    "subtitle": "Halda kõiki platvormi organisatsioone",
+    "new": "Uus organisatsioon", "edit": "Muuda organisatsiooni",
+    "search": "Otsi nime järgi", "empty": "Organisatsioone pole",
+    "members": "Liikmed", "deleted": "Organisatsioon kustutatud",
+    "created": "Organisatsioon loodud", "updated": "Organisatsioon uuendatud",
+    "fields": {
+      "logo": "Organisatsiooni logo",
+      "logoHint": "PNG / JPEG / WEBP, max 5 MB",
+      "name": "Nimi", "email": "E-post", "phone": "Telefon",
+      "website": "Veebileht", "vatNumber": "KMKR number",
+      "fiscalCode": "Maksukood", "country": "Riik",
+      "address": "Aadress", "city": "Linn",
+      "province": "Maakond", "postalCode": "Postiindeks"
+    },
+    "deleteConfirm": {
+      "title": "Kustuta organisatsioon?",
+      "message": "Sa kustutad \"{{name}}\". Toiming on tagasipööratav administratsioonist."
+    }
+  },
+  "members": {
+    "title": "Liikmed",
+    "subtitle": "Vaata ja halda organisatsiooni liikmeid",
+    "subtitleAdmin": "Registreeri kasutajad otse liikmeteks",
+    "invite": "Kutsu", "invited": "Liige kutsutud",
+    "removed": "Liige eemaldatud", "roleChanged": "Roll uuendatud",
+    "transferConfirmed": "Creator-roll üle kantud",
+    "enroll": "Registreeri kasutaja", "enrollSubmit": "Registreeri",
+    "userPicker": "Kasutaja", "rolePicker": "Roll",
+    "fields": { "name": "Nimi", "email": "E-post", "role": "Roll" },
+    "inviteDialog": {
+      "title": "Kutsu liige", "email": "E-post", "role": "Roll",
+      "submit": "Loo kutse", "submitting": "Loomine…",
+      "tokenLabel": "Jaga seda linki (kehtib 7 päeva):",
+      "successTitle": "Kutse loodud"
+    },
+    "removeConfirm": {
+      "title": "Eemaldan liikme?",
+      "message": "{{name}} eemaldatakse organisatsioonist."
+    },
+    "transferConfirm": {
+      "title": "Anna creator-roll üle?",
+      "message": "Sinust saab organisatsiooni admin ja {{name}} saab creatoriks. Ainult uus creator saab tagasi võtta."
+    },
+    "actions": { "permissions": "Õigused", "transfer": "Anna creator üle", "remove": "Eemalda" }
+  },
+  "memberPermissions": {
+    "title": "{{name}} õigused",
+    "subtitle": "Iga õiguse jaoks jäta rolli vaikeväärtus või sundi grant/revoke selle liikme jaoks.",
+    "default": "Vaikimisi", "grant": "Anna", "revoke": "Tühista",
+    "saved": "Liikme õigused uuendatud"
+  },
+  "users": {
+    "title": "Kasutajad", "subtitle": "Halda kasutajaid ja platvormi adminne",
+    "new": "Uus kasutaja", "search": "Otsi nime või e-posti järgi",
+    "created": "Kasutaja loodud",
+    "fields": { "name": "Nimi", "email": "E-post", "active": "Aktiivne", "platformAdmin": "Platvormi admin" },
+    "createDialog": {
+      "title": "Uus kasutaja", "name": "Täisnimi", "email": "E-post",
+      "password": "Parool (≥10 tähemärki, 1 suurtäht, 1 number)",
+      "platformAdmin": "Platvormi admin",
+      "submit": "Loo", "submitting": "Loomine…"
+    }
+  },
+  "globalPermissions": {
+    "title": "Globaalsed õigused",
+    "subtitle": "Muuda iga rolli vaikimisi õigusi. Need kehtivad kõikidele organisatsioonidele, kui pole eraldi tühistatud.",
+    "rolePicker": "Roll", "saved": "Õigused salvestatud", "save": "Salvesta õigused"
+  },
+  "templates": {
+    "slide": {
+      "title": "Slaidi mallid",
+      "subtitle": "Loo ja muuda kursuste slaidide malle",
+      "new": "Uus mall", "newPage": "Uus slaidi mall",
+      "editPage": "Muuda: {{name}}", "previewLive": "Reaalajas eelvaade",
+      "previewHint": "Eelvaade uuendatakse reaalajas redigeerimise ajal.",
+      "deleted": "Mall kustutatud", "created": "Mall loodud",
+      "updated": "Mall uuendatud", "empty": "Malle pole veel"
+    },
+    "pdf": {
+      "title": "PDF mallid",
+      "subtitle": "Loo ja muuda PDF dokumentide malle",
+      "new": "Uus mall", "newPage": "Uus PDF mall",
+      "editPage": "Muuda: {{name}}", "previewLive": "Reaalajas eelvaade",
+      "previewHint": "Eelvaade uuendatakse reaalajas redigeerimise ajal.",
+      "deleted": "Mall kustutatud", "created": "Mall loodud",
+      "updated": "Mall uuendatud", "empty": "Malle pole veel"
+    },
+    "fields": {
+      "name": "Malli nimi", "size": "Slaidi formaat", "pageSize": "Lehekülje suurus",
+      "font": "Font", "textColor": "Teksti värv",
+      "primaryColor": "Esmane värv", "secondaryColor": "Teisene värv",
+      "background": "Taustpilt", "logoLeft": "Logo üleval vasakul",
+      "logoRight": "Logo üleval paremal",
+      "headerHeight": "Päise kõrgus (mm)", "footerHeight": "Jaluse kõrgus (mm)",
+      "margin": "Lehe äär (mm)"
+    },
+    "deleteConfirm": { "title": "Kustuta mall?", "message": "Sa kustutad \"{{name}}\"." }
+  },
+  "avatars": {
+    "title": "Avatarid", "subtitle": "Kursuste jaoks saadaval avatarid",
+    "new": "Uus avatar", "newDialog": "Uus avatar", "editDialog": "Muuda avatari",
+    "fields": { "name": "Nimi", "description": "Kirjeldus", "image": "Pilt" },
+    "empty": "Avatare pole veel",
+    "created": "Avatar loodud", "updated": "Avatar uuendatud", "deleted": "Avatar kustutatud",
+    "deleteConfirm": { "title": "Kustuta avatar?", "message": "Sa kustutad \"{{name}}\"." }
+  },
+  "permissions": {
+    "member:view": "Vaata liikmeid", "member:invite": "Kutsu kasutajaid",
+    "member:assign_role": "Määra rolle", "member:remove": "Eemalda liikmeid",
+    "template:slide:manage": "Halda slaidi malle",
+    "template:pdf:manage": "Halda PDF malle",
+    "avatar:manage": "Halda avatare", "permission:manage": "Halda õigusi",
+    "org:transfer_creator": "Anna creator-roll üle", "org:update": "Muuda organisatsiooni"
+  },
+  "roles": {
+    "creator": "Creator", "org_admin": "Organisatsiooni admin",
+    "manager": "Manager", "member": "Liige"
+  },
+  "errors": { "generic": "Tekkis viga", "loadingFailed": "Laadimine ebaõnnestus", "saveFailed": "Salvestamine ebaõnnestus" },
+  "dashboard": {
+    "admin": { "title": "Administreerimispaneel", "subtitle": "a4u platvormi globaalne haldamine" },
+    "org": { "subtitle": "Roll: {{role}}" },
+    "noOrg": { "title": "Tere tulemast", "message": "Sa pole veel ühegi organisatsiooni liige. Oota kutset või võta ühendust administraatoriga." }
+  }
+}

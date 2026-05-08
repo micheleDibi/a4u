@@ -1,0 +1,177 @@
+{
+  "app": { "name": "a4u", "tagline": "Plattform för universitetskurser" },
+  "common": {
+    "save": "Spara", "cancel": "Avbryt", "delete": "Ta bort", "edit": "Redigera",
+    "add": "Lägg till", "loading": "Laddar…", "saving": "Sparar…",
+    "creating": "Skapar…", "remove": "Ta bort", "confirm": "Bekräfta",
+    "close": "Stäng", "search": "Sök", "back": "Tillbaka", "next": "Nästa",
+    "actions": "Åtgärder", "of": "av", "noResults": "Inga resultat",
+    "copy": "Kopiera", "copied": "Kopierat!", "yes": "Ja", "no": "Nej", "all": "Alla",
+    "optional": "valfritt", "required": "obligatoriskt"
+  },
+  "auth": {
+    "login": {
+      "title": "Välkommen tillbaka", "subtitle": "Logga in på din a4u-arbetsyta",
+      "email": "E-post", "password": "Lösenord",
+      "submit": "Logga in", "submitting": "Loggar in…"
+    },
+    "logout": "Logga ut",
+    "invitation": {
+      "title": "Acceptera inbjudan",
+      "subtitle": "Du har bjudits in till {{org}} som {{role}}",
+      "fullName": "Fullständigt namn",
+      "passwordHint": "Min. 10 tecken, en versal, en siffra",
+      "submit": "Acceptera inbjudan", "submitting": "Bekräftar…",
+      "alreadyRegistered": "Du är redan registrerad. Klicka \"Acceptera\" för att läggas till.",
+      "invalidOrExpired": "Inbjudan är ogiltig, har gått ut eller redan använts."
+    }
+  },
+  "theme": { "label": "Tema", "light": "Ljust", "dark": "Mörkt", "system": "System" },
+  "language": { "label": "Språk" },
+  "nav": {
+    "platform": "Plattform", "organization": "Organisation",
+    "dashboard": "Dashboard", "organizations": "Organisationer",
+    "users": "Användare", "permissions": "Globala behörigheter",
+    "members": "Medlemmar", "templatesSlide": "Slide-mallar",
+    "templatesPdf": "PDF-mallar", "avatars": "Avatarer"
+  },
+  "command": {
+    "placeholder": "Sök kommando eller sida…",
+    "navigation": "Navigation", "actions": "Åtgärder", "preferences": "Inställningar",
+    "openCommandPalette": "Öppna kommandopalett",
+    "newOrganization": "Ny organisation",
+    "logout": "Logga ut", "noResults": "Inga resultat",
+    "switchTheme": "Byt tema", "switchLanguage": "Byt språk"
+  },
+  "user": { "profile": "Profil", "menu": "Användarmeny" },
+  "orgSwitcher": {
+    "label": "Organisation", "search": "Sök organisation…",
+    "noOrgs": "Ingen organisation", "select": "Välj organisation"
+  },
+  "organizations": {
+    "title": "Organisationer",
+    "subtitle": "Hantera alla plattformens organisationer",
+    "new": "Ny organisation", "edit": "Redigera organisation",
+    "search": "Sök efter namn", "empty": "Inga organisationer",
+    "members": "Medlemmar", "deleted": "Organisation borttagen",
+    "created": "Organisation skapad", "updated": "Organisation uppdaterad",
+    "fields": {
+      "logo": "Organisationslogga",
+      "logoHint": "PNG / JPEG / WEBP, max 5 MB",
+      "name": "Namn", "email": "E-post", "phone": "Telefon",
+      "website": "Webbplats", "vatNumber": "Momsnr",
+      "fiscalCode": "Skattekod", "country": "Land",
+      "address": "Adress", "city": "Stad",
+      "province": "Region", "postalCode": "Postnr"
+    },
+    "deleteConfirm": {
+      "title": "Ta bort organisationen?",
+      "message": "Du tar bort \"{{name}}\". Åtgärden är reversibel via administrationen."
+    }
+  },
+  "members": {
+    "title": "Medlemmar",
+    "subtitle": "Visa och hantera organisationens medlemmar",
+    "subtitleAdmin": "Skriv in användare direkt som medlemmar",
+    "invite": "Bjud in", "invited": "Medlem inbjuden",
+    "removed": "Medlem borttagen", "roleChanged": "Roll uppdaterad",
+    "transferConfirmed": "Creator-roll överförd",
+    "enroll": "Skriv in användare", "enrollSubmit": "Skriv in",
+    "userPicker": "Användare", "rolePicker": "Roll",
+    "fields": { "name": "Namn", "email": "E-post", "role": "Roll" },
+    "inviteDialog": {
+      "title": "Bjud in en medlem", "email": "E-post", "role": "Roll",
+      "submit": "Skapa inbjudan", "submitting": "Skapar…",
+      "tokenLabel": "Dela denna länk (giltig 7 dagar):",
+      "successTitle": "Inbjudan skapad"
+    },
+    "removeConfirm": {
+      "title": "Ta bort medlemmen?",
+      "message": "{{name}} tas bort från organisationen."
+    },
+    "transferConfirm": {
+      "title": "Överför creator-rollen?",
+      "message": "Du blir organisationsadmin och {{name}} blir creator. Endast den nya creatorn kan ångra."
+    },
+    "actions": { "permissions": "Behörigheter", "transfer": "Överför creator", "remove": "Ta bort" }
+  },
+  "memberPermissions": {
+    "title": "Behörigheter för {{name}}",
+    "subtitle": "För varje behörighet, lämna rollens standard eller tvinga grant/revoke för denna medlem.",
+    "default": "Standard", "grant": "Tilldela", "revoke": "Återkalla",
+    "saved": "Medlemmens behörigheter uppdaterade"
+  },
+  "users": {
+    "title": "Användare", "subtitle": "Hantera användare och plattformsadmins",
+    "new": "Ny användare", "search": "Sök efter namn eller e-post",
+    "created": "Användare skapad",
+    "fields": { "name": "Namn", "email": "E-post", "active": "Aktiv", "platformAdmin": "Plattformsadmin" },
+    "createDialog": {
+      "title": "Ny användare", "name": "Fullständigt namn", "email": "E-post",
+      "password": "Lösenord (≥10 tecken, 1 versal, 1 siffra)",
+      "platformAdmin": "Plattformsadmin",
+      "submit": "Skapa", "submitting": "Skapar…"
+    }
+  },
+  "globalPermissions": {
+    "title": "Globala behörigheter",
+    "subtitle": "Redigera standardbehörigheter för varje roll. De gäller för alla organisationer om inte annat anges.",
+    "rolePicker": "Roll", "saved": "Behörigheter sparade", "save": "Spara behörigheter"
+  },
+  "templates": {
+    "slide": {
+      "title": "Slide-mallar",
+      "subtitle": "Skapa och redigera mallar för kursslides",
+      "new": "Ny mall", "newPage": "Ny slide-mall",
+      "editPage": "Redigera: {{name}}", "previewLive": "Live förhandsvisning",
+      "previewHint": "Förhandsvisningen uppdateras i realtid när du redigerar.",
+      "deleted": "Mall borttagen", "created": "Mall skapad",
+      "updated": "Mall uppdaterad", "empty": "Inga mallar än"
+    },
+    "pdf": {
+      "title": "PDF-mallar",
+      "subtitle": "Skapa och redigera mallar för PDF-dokument",
+      "new": "Ny mall", "newPage": "Ny PDF-mall",
+      "editPage": "Redigera: {{name}}", "previewLive": "Live förhandsvisning",
+      "previewHint": "Förhandsvisningen uppdateras i realtid när du redigerar.",
+      "deleted": "Mall borttagen", "created": "Mall skapad",
+      "updated": "Mall uppdaterad", "empty": "Inga mallar än"
+    },
+    "fields": {
+      "name": "Mallnamn", "size": "Slide-format", "pageSize": "Sidstorlek",
+      "font": "Typsnitt", "textColor": "Textfärg",
+      "primaryColor": "Primär färg", "secondaryColor": "Sekundär färg",
+      "background": "Bakgrundsbild", "logoLeft": "Logo uppe till vänster",
+      "logoRight": "Logo uppe till höger",
+      "headerHeight": "Header-höjd (mm)", "footerHeight": "Footer-höjd (mm)",
+      "margin": "Sidmarginal (mm)"
+    },
+    "deleteConfirm": { "title": "Ta bort mallen?", "message": "Du tar bort \"{{name}}\"." }
+  },
+  "avatars": {
+    "title": "Avatarer", "subtitle": "Tillgängliga avatarer för kurserna",
+    "new": "Ny avatar", "newDialog": "Ny avatar", "editDialog": "Redigera avatar",
+    "fields": { "name": "Namn", "description": "Beskrivning", "image": "Bild" },
+    "empty": "Inga avatarer än",
+    "created": "Avatar skapad", "updated": "Avatar uppdaterad", "deleted": "Avatar borttagen",
+    "deleteConfirm": { "title": "Ta bort avataren?", "message": "Du tar bort \"{{name}}\"." }
+  },
+  "permissions": {
+    "member:view": "Visa medlemmar", "member:invite": "Bjud in användare",
+    "member:assign_role": "Tilldela roller", "member:remove": "Ta bort medlemmar",
+    "template:slide:manage": "Hantera slide-mallar",
+    "template:pdf:manage": "Hantera PDF-mallar",
+    "avatar:manage": "Hantera avatarer", "permission:manage": "Hantera behörigheter",
+    "org:transfer_creator": "Överför creator-roll", "org:update": "Redigera organisation"
+  },
+  "roles": {
+    "creator": "Creator", "org_admin": "Organisationsadmin",
+    "manager": "Manager", "member": "Medlem"
+  },
+  "errors": { "generic": "Ett fel uppstod", "loadingFailed": "Inläsning misslyckades", "saveFailed": "Sparning misslyckades" },
+  "dashboard": {
+    "admin": { "title": "Adminpanel", "subtitle": "Global hantering av a4u-plattformen" },
+    "org": { "subtitle": "Roll: {{role}}" },
+    "noOrg": { "title": "Välkommen", "message": "Du är inte ännu medlem i någon organisation. Vänta på en inbjudan eller kontakta en administratör." }
+  }
+}

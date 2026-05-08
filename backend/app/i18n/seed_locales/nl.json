@@ -1,0 +1,177 @@
+{
+  "app": { "name": "a4u", "tagline": "Platform voor universitaire cursussen" },
+  "common": {
+    "save": "Opslaan", "cancel": "Annuleren", "delete": "Verwijderen", "edit": "Bewerken",
+    "add": "Toevoegen", "loading": "Laden…", "saving": "Opslaan…",
+    "creating": "Aanmaken…", "remove": "Verwijderen", "confirm": "Bevestigen",
+    "close": "Sluiten", "search": "Zoeken", "back": "Terug", "next": "Volgende",
+    "actions": "Acties", "of": "van", "noResults": "Geen resultaten",
+    "copy": "Kopiëren", "copied": "Gekopieerd!", "yes": "Ja", "no": "Nee", "all": "Alle",
+    "optional": "optioneel", "required": "verplicht"
+  },
+  "auth": {
+    "login": {
+      "title": "Welkom terug", "subtitle": "Log in op je a4u-werkruimte",
+      "email": "E-mail", "password": "Wachtwoord",
+      "submit": "Inloggen", "submitting": "Inloggen…"
+    },
+    "logout": "Uitloggen",
+    "invitation": {
+      "title": "Uitnodiging accepteren",
+      "subtitle": "Je bent uitgenodigd voor {{org}} als {{role}}",
+      "fullName": "Volledige naam",
+      "passwordHint": "Min. 10 tekens, één hoofdletter, één cijfer",
+      "submit": "Uitnodiging accepteren", "submitting": "Bevestigen…",
+      "alreadyRegistered": "Je bent al geregistreerd. Klik op \"Accepteren\" om toegevoegd te worden.",
+      "invalidOrExpired": "De uitnodiging is ongeldig, verlopen of al gebruikt."
+    }
+  },
+  "theme": { "label": "Thema", "light": "Licht", "dark": "Donker", "system": "Systeem" },
+  "language": { "label": "Taal" },
+  "nav": {
+    "platform": "Platform", "organization": "Organisatie",
+    "dashboard": "Dashboard", "organizations": "Organisaties",
+    "users": "Gebruikers", "permissions": "Globale rechten",
+    "members": "Leden", "templatesSlide": "Slide-sjablonen",
+    "templatesPdf": "PDF-sjablonen", "avatars": "Avatars"
+  },
+  "command": {
+    "placeholder": "Zoek opdracht of pagina…",
+    "navigation": "Navigatie", "actions": "Acties", "preferences": "Voorkeuren",
+    "openCommandPalette": "Open command palette",
+    "newOrganization": "Nieuwe organisatie",
+    "logout": "Uitloggen", "noResults": "Geen resultaten",
+    "switchTheme": "Thema wisselen", "switchLanguage": "Taal wisselen"
+  },
+  "user": { "profile": "Profiel", "menu": "Gebruikersmenu" },
+  "orgSwitcher": {
+    "label": "Organisatie", "search": "Organisatie zoeken…",
+    "noOrgs": "Geen organisatie", "select": "Organisatie kiezen"
+  },
+  "organizations": {
+    "title": "Organisaties",
+    "subtitle": "Beheer alle organisaties van het platform",
+    "new": "Nieuwe organisatie", "edit": "Organisatie bewerken",
+    "search": "Zoek op naam", "empty": "Geen organisaties",
+    "members": "Leden", "deleted": "Organisatie verwijderd",
+    "created": "Organisatie aangemaakt", "updated": "Organisatie bijgewerkt",
+    "fields": {
+      "logo": "Organisatielogo",
+      "logoHint": "PNG / JPEG / WEBP, max 5 MB",
+      "name": "Naam", "email": "E-mail", "phone": "Telefoon",
+      "website": "Website", "vatNumber": "Btw-nummer",
+      "fiscalCode": "Fiscale code", "country": "Land",
+      "address": "Adres", "city": "Stad",
+      "province": "Provincie", "postalCode": "Postcode"
+    },
+    "deleteConfirm": {
+      "title": "Organisatie verwijderen?",
+      "message": "Je staat op het punt \"{{name}}\" te verwijderen. De actie is omkeerbaar door de admin."
+    }
+  },
+  "members": {
+    "title": "Leden",
+    "subtitle": "Bekijk en beheer leden van de organisatie",
+    "subtitleAdmin": "Schrijf gebruikers direct in als lid",
+    "invite": "Uitnodigen", "invited": "Lid uitgenodigd",
+    "removed": "Lid verwijderd", "roleChanged": "Rol bijgewerkt",
+    "transferConfirmed": "Creator-rol overgedragen",
+    "enroll": "Gebruiker inschrijven", "enrollSubmit": "Inschrijven",
+    "userPicker": "Gebruiker", "rolePicker": "Rol",
+    "fields": { "name": "Naam", "email": "E-mail", "role": "Rol" },
+    "inviteDialog": {
+      "title": "Lid uitnodigen", "email": "E-mail", "role": "Rol",
+      "submit": "Uitnodiging maken", "submitting": "Aanmaken…",
+      "tokenLabel": "Deel deze link (7 dagen geldig):",
+      "successTitle": "Uitnodiging aangemaakt"
+    },
+    "removeConfirm": {
+      "title": "Lid verwijderen?",
+      "message": "{{name}} wordt uit de organisatie verwijderd."
+    },
+    "transferConfirm": {
+      "title": "Creator-rol overdragen?",
+      "message": "Je wordt organisatie-admin en {{name}} wordt creator. Alleen de nieuwe creator kan dit terugdraaien."
+    },
+    "actions": { "permissions": "Rechten", "transfer": "Creator overdragen", "remove": "Verwijderen" }
+  },
+  "memberPermissions": {
+    "title": "Rechten van {{name}}",
+    "subtitle": "Laat voor elk recht de standaard van de rol staan of forceer een specifieke grant/revoke voor dit lid.",
+    "default": "Standaard", "grant": "Toekennen", "revoke": "Intrekken",
+    "saved": "Rechten van het lid bijgewerkt"
+  },
+  "users": {
+    "title": "Gebruikers", "subtitle": "Beheer gebruikers en platform-admins",
+    "new": "Nieuwe gebruiker", "search": "Zoek op naam of e-mail",
+    "created": "Gebruiker aangemaakt",
+    "fields": { "name": "Naam", "email": "E-mail", "active": "Actief", "platformAdmin": "Platform-admin" },
+    "createDialog": {
+      "title": "Nieuwe gebruiker", "name": "Volledige naam", "email": "E-mail",
+      "password": "Wachtwoord (≥10 tek., 1 hoofdletter, 1 cijfer)",
+      "platformAdmin": "Platform-admin",
+      "submit": "Aanmaken", "submitting": "Aanmaken…"
+    }
+  },
+  "globalPermissions": {
+    "title": "Globale rechten",
+    "subtitle": "Bewerk de standaardrechten voor elke rol. Ze gelden voor alle organisaties tenzij expliciet overschreven.",
+    "rolePicker": "Rol", "saved": "Rechten opgeslagen", "save": "Rechten opslaan"
+  },
+  "templates": {
+    "slide": {
+      "title": "Slide-sjablonen",
+      "subtitle": "Maak en bewerk sjablonen voor cursusslides",
+      "new": "Nieuw sjabloon", "newPage": "Nieuw slide-sjabloon",
+      "editPage": "Bewerken: {{name}}", "previewLive": "Live preview",
+      "previewHint": "De preview wordt tijdens bewerken in real time bijgewerkt.",
+      "deleted": "Sjabloon verwijderd", "created": "Sjabloon aangemaakt",
+      "updated": "Sjabloon bijgewerkt", "empty": "Nog geen sjablonen"
+    },
+    "pdf": {
+      "title": "PDF-sjablonen",
+      "subtitle": "Maak en bewerk sjablonen voor PDF-documenten",
+      "new": "Nieuw sjabloon", "newPage": "Nieuw PDF-sjabloon",
+      "editPage": "Bewerken: {{name}}", "previewLive": "Live preview",
+      "previewHint": "De preview wordt tijdens bewerken in real time bijgewerkt.",
+      "deleted": "Sjabloon verwijderd", "created": "Sjabloon aangemaakt",
+      "updated": "Sjabloon bijgewerkt", "empty": "Nog geen sjablonen"
+    },
+    "fields": {
+      "name": "Naam sjabloon", "size": "Slide-formaat", "pageSize": "Paginaformaat",
+      "font": "Lettertype", "textColor": "Tekstkleur",
+      "primaryColor": "Primaire kleur", "secondaryColor": "Secundaire kleur",
+      "background": "Achtergrondafbeelding", "logoLeft": "Logo linksboven",
+      "logoRight": "Logo rechtsboven",
+      "headerHeight": "Hoogte koptekst (mm)", "footerHeight": "Hoogte voettekst (mm)",
+      "margin": "Paginamarge (mm)"
+    },
+    "deleteConfirm": { "title": "Sjabloon verwijderen?", "message": "Je staat op het punt \"{{name}}\" te verwijderen." }
+  },
+  "avatars": {
+    "title": "Avatars", "subtitle": "Beschikbare avatars voor de cursussen",
+    "new": "Nieuwe avatar", "newDialog": "Nieuwe avatar", "editDialog": "Avatar bewerken",
+    "fields": { "name": "Naam", "description": "Beschrijving", "image": "Afbeelding" },
+    "empty": "Nog geen avatars",
+    "created": "Avatar aangemaakt", "updated": "Avatar bijgewerkt", "deleted": "Avatar verwijderd",
+    "deleteConfirm": { "title": "Avatar verwijderen?", "message": "Je staat op het punt \"{{name}}\" te verwijderen." }
+  },
+  "permissions": {
+    "member:view": "Leden bekijken", "member:invite": "Gebruikers uitnodigen",
+    "member:assign_role": "Rollen toewijzen", "member:remove": "Leden verwijderen",
+    "template:slide:manage": "Slide-sjablonen beheren",
+    "template:pdf:manage": "PDF-sjablonen beheren",
+    "avatar:manage": "Avatars beheren", "permission:manage": "Rechten beheren",
+    "org:transfer_creator": "Creator-rol overdragen", "org:update": "Organisatie bewerken"
+  },
+  "roles": {
+    "creator": "Creator", "org_admin": "Organisatie-admin",
+    "manager": "Manager", "member": "Lid"
+  },
+  "errors": { "generic": "Er is een fout opgetreden", "loadingFailed": "Laden mislukt", "saveFailed": "Opslaan mislukt" },
+  "dashboard": {
+    "admin": { "title": "Beheerpaneel", "subtitle": "Globaal beheer van het a4u-platform" },
+    "org": { "subtitle": "Rol: {{role}}" },
+    "noOrg": { "title": "Welkom", "message": "Je bent nog geen lid van een organisatie. Wacht op een uitnodiging of neem contact op met een beheerder." }
+  }
+}

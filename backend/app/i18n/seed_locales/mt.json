@@ -1,0 +1,177 @@
+{
+  "app": { "name": "a4u", "tagline": "Pjattaforma għal korsijiet universitarji" },
+  "common": {
+    "save": "Issejvja", "cancel": "Ikkanċella", "delete": "Ħassar", "edit": "Editja",
+    "add": "Żid", "loading": "Qed jitgħabba…", "saving": "Qed jissejvja…",
+    "creating": "Qed jinħoloq…", "remove": "Neħħi", "confirm": "Ikkonferma",
+    "close": "Agħlaq", "search": "Fittex", "back": "Lura", "next": "Li jmiss",
+    "actions": "Azzjonijiet", "of": "minn", "noResults": "L-ebda riżultat",
+    "copy": "Ikkopja", "copied": "Ikkupjat!", "yes": "Iva", "no": "Le", "all": "Kollha",
+    "optional": "fakultattiv", "required": "obbligatorju"
+  },
+  "auth": {
+    "login": {
+      "title": "Merħba mill-ġdid", "subtitle": "Idħol fl-ispazju tax-xogħol a4u tiegħek",
+      "email": "Email", "password": "Password",
+      "submit": "Idħol", "submitting": "Qed jiddaħħal…"
+    },
+    "logout": "Oħroġ",
+    "invitation": {
+      "title": "Aċċetta stedina",
+      "subtitle": "Inti mistieden f'{{org}} bħala {{role}}",
+      "fullName": "Isem sħiħ",
+      "passwordHint": "Tal-anqas 10 karattri, ittra kbira, numru wieħed",
+      "submit": "Aċċetta stedina", "submitting": "Qed tiġi kkonfermata…",
+      "alreadyRegistered": "Inti diġà rreġistrat. Ikklikkja \"Aċċetta\" biex tiġi miżjud.",
+      "invalidOrExpired": "L-istedina mhix valida, skadiet jew diġà ntużat."
+    }
+  },
+  "theme": { "label": "Tema", "light": "Ċar", "dark": "Skur", "system": "Sistema" },
+  "language": { "label": "Lingwa" },
+  "nav": {
+    "platform": "Pjattaforma", "organization": "Organizzazzjoni",
+    "dashboard": "Dashboard", "organizations": "Organizzazzjonijiet",
+    "users": "Utenti", "permissions": "Permessi globali",
+    "members": "Membri", "templatesSlide": "Templates għal slides",
+    "templatesPdf": "Templates PDF", "avatars": "Avatars"
+  },
+  "command": {
+    "placeholder": "Fittex kmand jew paġna…",
+    "navigation": "Navigazzjoni", "actions": "Azzjonijiet", "preferences": "Preferenzi",
+    "openCommandPalette": "Iftaħ command palette",
+    "newOrganization": "Organizzazzjoni ġdida",
+    "logout": "Oħroġ", "noResults": "L-ebda riżultat",
+    "switchTheme": "Ibdel tema", "switchLanguage": "Ibdel lingwa"
+  },
+  "user": { "profile": "Profil", "menu": "Menu tal-utent" },
+  "orgSwitcher": {
+    "label": "Organizzazzjoni", "search": "Fittex organizzazzjoni…",
+    "noOrgs": "L-ebda organizzazzjoni", "select": "Agħżel organizzazzjoni"
+  },
+  "organizations": {
+    "title": "Organizzazzjonijiet",
+    "subtitle": "Immaniġġja l-organizzazzjonijiet kollha tal-pjattaforma",
+    "new": "Organizzazzjoni ġdida", "edit": "Editja organizzazzjoni",
+    "search": "Fittex bl-isem", "empty": "L-ebda organizzazzjoni",
+    "members": "Membri", "deleted": "Organizzazzjoni mħassra",
+    "created": "Organizzazzjoni maħluqa", "updated": "Organizzazzjoni aġġornata",
+    "fields": {
+      "logo": "Logo tal-organizzazzjoni",
+      "logoHint": "PNG / JPEG / WEBP, massimu 5 MB",
+      "name": "Isem", "email": "Email", "phone": "Telefon",
+      "website": "Sit elettroniku", "vatNumber": "Numru tal-VAT",
+      "fiscalCode": "Kodiċi fiskali", "country": "Pajjiż",
+      "address": "Indirizz", "city": "Belt",
+      "province": "Reġjun", "postalCode": "Kodiċi postali"
+    },
+    "deleteConfirm": {
+      "title": "Ħassar l-organizzazzjoni?",
+      "message": "Inti ser tħassar \"{{name}}\". L-azzjoni hija reversibbli mill-amministrazzjoni."
+    }
+  },
+  "members": {
+    "title": "Membri",
+    "subtitle": "Ara u immaniġġja l-membri tal-organizzazzjoni",
+    "subtitleAdmin": "Irreġistra utenti direttament bħala membri",
+    "invite": "Stieden", "invited": "Membru mistieden",
+    "removed": "Membru mneħħi", "roleChanged": "Rwol aġġornat",
+    "transferConfirmed": "Rwol creator trasferit",
+    "enroll": "Irreġistra utent", "enrollSubmit": "Irreġistra",
+    "userPicker": "Utent", "rolePicker": "Rwol",
+    "fields": { "name": "Isem", "email": "Email", "role": "Rwol" },
+    "inviteDialog": {
+      "title": "Stieden membru", "email": "Email", "role": "Rwol",
+      "submit": "Oħloq stedina", "submitting": "Qed tinħoloq…",
+      "tokenLabel": "Aqsam dan il-link (validu 7 ijiem):",
+      "successTitle": "Stedina maħluqa"
+    },
+    "removeConfirm": {
+      "title": "Neħħi l-membru?",
+      "message": "{{name}} jitneħħa mill-organizzazzjoni."
+    },
+    "transferConfirm": {
+      "title": "Ittrasferixxi r-rwol creator?",
+      "message": "Int issir admin tal-organizzazzjoni u {{name}} isir creator. Biss il-creator il-ġdid jista' jirreverti."
+    },
+    "actions": { "permissions": "Permessi", "transfer": "Ittrasferixxi creator", "remove": "Neħħi" }
+  },
+  "memberPermissions": {
+    "title": "Permessi ta' {{name}}",
+    "subtitle": "Għal kull permess ħalli l-valur default tar-rwol jew imponi grant/revoke speċifiku għal dan il-membru.",
+    "default": "Default", "grant": "Agħti", "revoke": "Irrevoka",
+    "saved": "Permessi tal-membru aġġornati"
+  },
+  "users": {
+    "title": "Utenti", "subtitle": "Immaniġġja utenti u admins tal-pjattaforma",
+    "new": "Utent ġdid", "search": "Fittex bl-isem jew email",
+    "created": "Utent maħluq",
+    "fields": { "name": "Isem", "email": "Email", "active": "Attiv", "platformAdmin": "Admin tal-pjattaforma" },
+    "createDialog": {
+      "title": "Utent ġdid", "name": "Isem sħiħ", "email": "Email",
+      "password": "Password (≥10 karattri, 1 ittra kbira, 1 numru)",
+      "platformAdmin": "Admin tal-pjattaforma",
+      "submit": "Oħloq", "submitting": "Qed jinħoloq…"
+    }
+  },
+  "globalPermissions": {
+    "title": "Permessi globali",
+    "subtitle": "Editja l-permessi default għal kull rwol. Japplikaw għal kull organizzazzjoni ħlief jekk ikun hemm override espliċitu.",
+    "rolePicker": "Rwol", "saved": "Permessi ssejvjati", "save": "Issejvja permessi"
+  },
+  "templates": {
+    "slide": {
+      "title": "Templates għal slides",
+      "subtitle": "Oħloq u editja templates għas-slides tal-korsijiet",
+      "new": "Template ġdid", "newPage": "Template ġdid għas-slides",
+      "editPage": "Editja: {{name}}", "previewLive": "Anteprima fil-ħin",
+      "previewHint": "L-anteprima taġġorna fil-ħin reali waqt l-editjar.",
+      "deleted": "Template imħassar", "created": "Template maħluq",
+      "updated": "Template aġġornat", "empty": "Għad m'hemmx templates"
+    },
+    "pdf": {
+      "title": "Templates PDF",
+      "subtitle": "Oħloq u editja templates għad-dokumenti PDF",
+      "new": "Template ġdid", "newPage": "Template PDF ġdid",
+      "editPage": "Editja: {{name}}", "previewLive": "Anteprima fil-ħin",
+      "previewHint": "L-anteprima taġġorna fil-ħin reali waqt l-editjar.",
+      "deleted": "Template imħassar", "created": "Template maħluq",
+      "updated": "Template aġġornat", "empty": "Għad m'hemmx templates"
+    },
+    "fields": {
+      "name": "Isem tat-template", "size": "Format tas-slide", "pageSize": "Daqs tal-paġna",
+      "font": "Font", "textColor": "Kulur tat-test",
+      "primaryColor": "Kulur primarju", "secondaryColor": "Kulur sekondarju",
+      "background": "Stampa tal-isfond", "logoLeft": "Logo fuq xellug",
+      "logoRight": "Logo fuq lemin",
+      "headerHeight": "Għoli tal-header (mm)", "footerHeight": "Għoli tal-footer (mm)",
+      "margin": "Marġini tal-paġna (mm)"
+    },
+    "deleteConfirm": { "title": "Ħassar it-template?", "message": "Inti ser tħassar \"{{name}}\"." }
+  },
+  "avatars": {
+    "title": "Avatars", "subtitle": "Avatars disponibbli għall-korsijiet",
+    "new": "Avatar ġdid", "newDialog": "Avatar ġdid", "editDialog": "Editja avatar",
+    "fields": { "name": "Isem", "description": "Deskrizzjoni", "image": "Stampa" },
+    "empty": "Għad m'hemmx avatars",
+    "created": "Avatar maħluq", "updated": "Avatar aġġornat", "deleted": "Avatar imħassar",
+    "deleteConfirm": { "title": "Ħassar l-avatar?", "message": "Inti ser tħassar \"{{name}}\"." }
+  },
+  "permissions": {
+    "member:view": "Ara membri", "member:invite": "Stieden utenti",
+    "member:assign_role": "Assenja rwoli", "member:remove": "Neħħi membri",
+    "template:slide:manage": "Immaniġġja templates għas-slides",
+    "template:pdf:manage": "Immaniġġja templates PDF",
+    "avatar:manage": "Immaniġġja avatars", "permission:manage": "Immaniġġja permessi",
+    "org:transfer_creator": "Ittrasferixxi rwol creator", "org:update": "Editja organizzazzjoni"
+  },
+  "roles": {
+    "creator": "Creator", "org_admin": "Admin tal-organizzazzjoni",
+    "manager": "Manager", "member": "Membru"
+  },
+  "errors": { "generic": "Seħħ żball", "loadingFailed": "It-tagħbija fallat", "saveFailed": "L-issejvjar fallat" },
+  "dashboard": {
+    "admin": { "title": "Pannell tal-amministrazzjoni", "subtitle": "Ġestjoni globali tal-pjattaforma a4u" },
+    "org": { "subtitle": "Rwol: {{role}}" },
+    "noOrg": { "title": "Merħba", "message": "Għadek mhux membru ta' ebda organizzazzjoni. Stenna stedina jew ikkuntattja amministratur." }
+  }
+}

@@ -1,0 +1,177 @@
+{
+  "app": { "name": "a4u", "tagline": "Yliopistokurssien alusta" },
+  "common": {
+    "save": "Tallenna", "cancel": "Peruuta", "delete": "Poista", "edit": "Muokkaa",
+    "add": "Lisää", "loading": "Ladataan…", "saving": "Tallennetaan…",
+    "creating": "Luodaan…", "remove": "Poista", "confirm": "Vahvista",
+    "close": "Sulje", "search": "Hae", "back": "Takaisin", "next": "Seuraava",
+    "actions": "Toiminnot", "of": "/", "noResults": "Ei tuloksia",
+    "copy": "Kopioi", "copied": "Kopioitu!", "yes": "Kyllä", "no": "Ei", "all": "Kaikki",
+    "optional": "valinnainen", "required": "pakollinen"
+  },
+  "auth": {
+    "login": {
+      "title": "Tervetuloa takaisin", "subtitle": "Kirjaudu a4u-työtilaasi",
+      "email": "Sähköposti", "password": "Salasana",
+      "submit": "Kirjaudu", "submitting": "Kirjaudutaan…"
+    },
+    "logout": "Kirjaudu ulos",
+    "invitation": {
+      "title": "Hyväksy kutsu",
+      "subtitle": "Sinut on kutsuttu organisaatioon {{org}} roolissa {{role}}",
+      "fullName": "Koko nimi",
+      "passwordHint": "Vähintään 10 merkkiä, yksi iso kirjain, yksi numero",
+      "submit": "Hyväksy kutsu", "submitting": "Vahvistetaan…",
+      "alreadyRegistered": "Olet jo rekisteröitynyt. Klikkaa \"Hyväksy\" liittyäksesi.",
+      "invalidOrExpired": "Kutsu ei ole voimassa, on vanhentunut tai jo käytetty."
+    }
+  },
+  "theme": { "label": "Teema", "light": "Vaalea", "dark": "Tumma", "system": "Järjestelmä" },
+  "language": { "label": "Kieli" },
+  "nav": {
+    "platform": "Alusta", "organization": "Organisaatio",
+    "dashboard": "Kojelauta", "organizations": "Organisaatiot",
+    "users": "Käyttäjät", "permissions": "Yleiset oikeudet",
+    "members": "Jäsenet", "templatesSlide": "Diapohjat",
+    "templatesPdf": "PDF-pohjat", "avatars": "Avatarit"
+  },
+  "command": {
+    "placeholder": "Hae komentoa tai sivua…",
+    "navigation": "Navigointi", "actions": "Toiminnot", "preferences": "Asetukset",
+    "openCommandPalette": "Avaa komentopaletti",
+    "newOrganization": "Uusi organisaatio",
+    "logout": "Kirjaudu ulos", "noResults": "Ei tuloksia",
+    "switchTheme": "Vaihda teema", "switchLanguage": "Vaihda kieli"
+  },
+  "user": { "profile": "Profiili", "menu": "Käyttäjävalikko" },
+  "orgSwitcher": {
+    "label": "Organisaatio", "search": "Hae organisaatiota…",
+    "noOrgs": "Ei organisaatioita", "select": "Valitse organisaatio"
+  },
+  "organizations": {
+    "title": "Organisaatiot",
+    "subtitle": "Hallinnoi alustan kaikkia organisaatioita",
+    "new": "Uusi organisaatio", "edit": "Muokkaa organisaatiota",
+    "search": "Hae nimellä", "empty": "Ei organisaatioita",
+    "members": "Jäsenet", "deleted": "Organisaatio poistettu",
+    "created": "Organisaatio luotu", "updated": "Organisaatio päivitetty",
+    "fields": {
+      "logo": "Organisaation logo",
+      "logoHint": "PNG / JPEG / WEBP, enint. 5 MB",
+      "name": "Nimi", "email": "Sähköposti", "phone": "Puhelin",
+      "website": "Verkkosivu", "vatNumber": "ALV-numero",
+      "fiscalCode": "Verokoodi", "country": "Maa",
+      "address": "Osoite", "city": "Kaupunki",
+      "province": "Maakunta", "postalCode": "Postinumero"
+    },
+    "deleteConfirm": {
+      "title": "Poistetaanko organisaatio?",
+      "message": "Olet poistamassa kohteen \"{{name}}\". Toiminto on peruttavissa hallinnasta."
+    }
+  },
+  "members": {
+    "title": "Jäsenet",
+    "subtitle": "Näytä ja hallinnoi organisaation jäseniä",
+    "subtitleAdmin": "Liitä käyttäjiä suoraan jäseniksi",
+    "invite": "Kutsu", "invited": "Jäsen kutsuttu",
+    "removed": "Jäsen poistettu", "roleChanged": "Rooli päivitetty",
+    "transferConfirmed": "Creator-rooli siirretty",
+    "enroll": "Liitä käyttäjä", "enrollSubmit": "Liitä",
+    "userPicker": "Käyttäjä", "rolePicker": "Rooli",
+    "fields": { "name": "Nimi", "email": "Sähköposti", "role": "Rooli" },
+    "inviteDialog": {
+      "title": "Kutsu jäsen", "email": "Sähköposti", "role": "Rooli",
+      "submit": "Luo kutsu", "submitting": "Luodaan…",
+      "tokenLabel": "Jaa tämä linkki (voimassa 7 päivää):",
+      "successTitle": "Kutsu luotu"
+    },
+    "removeConfirm": {
+      "title": "Poistetaanko jäsen?",
+      "message": "{{name}} poistetaan organisaatiosta."
+    },
+    "transferConfirm": {
+      "title": "Siirretäänkö creator-rooli?",
+      "message": "Sinusta tulee organisaation admin ja {{name}} saa creator-roolin. Vain uusi creator voi peruuttaa."
+    },
+    "actions": { "permissions": "Oikeudet", "transfer": "Siirrä creator", "remove": "Poista" }
+  },
+  "memberPermissions": {
+    "title": "Käyttäjän {{name}} oikeudet",
+    "subtitle": "Jätä jokaiselle oikeudelle roolin oletus tai pakota grant/revoke tälle jäsenelle.",
+    "default": "Oletus", "grant": "Myönnä", "revoke": "Peruuta",
+    "saved": "Jäsenen oikeudet päivitetty"
+  },
+  "users": {
+    "title": "Käyttäjät", "subtitle": "Hallinnoi käyttäjiä ja alustan admineita",
+    "new": "Uusi käyttäjä", "search": "Hae nimellä tai sähköpostilla",
+    "created": "Käyttäjä luotu",
+    "fields": { "name": "Nimi", "email": "Sähköposti", "active": "Aktiivinen", "platformAdmin": "Alustan admin" },
+    "createDialog": {
+      "title": "Uusi käyttäjä", "name": "Koko nimi", "email": "Sähköposti",
+      "password": "Salasana (≥10 merkkiä, 1 iso, 1 numero)",
+      "platformAdmin": "Alustan admin",
+      "submit": "Luo", "submitting": "Luodaan…"
+    }
+  },
+  "globalPermissions": {
+    "title": "Yleiset oikeudet",
+    "subtitle": "Muokkaa kunkin roolin oletusoikeuksia. Ne pätevät kaikissa organisaatioissa, ellei niitä ole nimenomaisesti ohitettu.",
+    "rolePicker": "Rooli", "saved": "Oikeudet tallennettu", "save": "Tallenna oikeudet"
+  },
+  "templates": {
+    "slide": {
+      "title": "Diapohjat",
+      "subtitle": "Luo ja muokkaa kurssidiojen pohjia",
+      "new": "Uusi pohja", "newPage": "Uusi diapohja",
+      "editPage": "Muokkaa: {{name}}", "previewLive": "Live-esikatselu",
+      "previewHint": "Esikatselu päivittyy reaaliajassa muokkauksen mukaan.",
+      "deleted": "Pohja poistettu", "created": "Pohja luotu",
+      "updated": "Pohja päivitetty", "empty": "Ei vielä pohjia"
+    },
+    "pdf": {
+      "title": "PDF-pohjat",
+      "subtitle": "Luo ja muokkaa PDF-asiakirjojen pohjia",
+      "new": "Uusi pohja", "newPage": "Uusi PDF-pohja",
+      "editPage": "Muokkaa: {{name}}", "previewLive": "Live-esikatselu",
+      "previewHint": "Esikatselu päivittyy reaaliajassa muokkauksen mukaan.",
+      "deleted": "Pohja poistettu", "created": "Pohja luotu",
+      "updated": "Pohja päivitetty", "empty": "Ei vielä pohjia"
+    },
+    "fields": {
+      "name": "Pohjan nimi", "size": "Diakoko", "pageSize": "Sivun koko",
+      "font": "Kirjasin", "textColor": "Tekstin väri",
+      "primaryColor": "Pääväri", "secondaryColor": "Toissijainen väri",
+      "background": "Taustakuva", "logoLeft": "Logo vasemmalle ylhäälle",
+      "logoRight": "Logo oikealle ylhäälle",
+      "headerHeight": "Ylätunnisteen korkeus (mm)", "footerHeight": "Alatunnisteen korkeus (mm)",
+      "margin": "Sivun marginaali (mm)"
+    },
+    "deleteConfirm": { "title": "Poistetaanko pohja?", "message": "Olet poistamassa kohteen \"{{name}}\"." }
+  },
+  "avatars": {
+    "title": "Avatarit", "subtitle": "Kursseille saatavilla olevat avatarit",
+    "new": "Uusi avatar", "newDialog": "Uusi avatar", "editDialog": "Muokkaa avataria",
+    "fields": { "name": "Nimi", "description": "Kuvaus", "image": "Kuva" },
+    "empty": "Ei vielä avatareita",
+    "created": "Avatar luotu", "updated": "Avatar päivitetty", "deleted": "Avatar poistettu",
+    "deleteConfirm": { "title": "Poistetaanko avatar?", "message": "Olet poistamassa kohteen \"{{name}}\"." }
+  },
+  "permissions": {
+    "member:view": "Näytä jäsenet", "member:invite": "Kutsu käyttäjiä",
+    "member:assign_role": "Aseta rooleja", "member:remove": "Poista jäseniä",
+    "template:slide:manage": "Hallinnoi diapohjia",
+    "template:pdf:manage": "Hallinnoi PDF-pohjia",
+    "avatar:manage": "Hallinnoi avatareita", "permission:manage": "Hallinnoi oikeuksia",
+    "org:transfer_creator": "Siirrä creator-rooli", "org:update": "Muokkaa organisaatiota"
+  },
+  "roles": {
+    "creator": "Creator", "org_admin": "Organisaation admin",
+    "manager": "Manager", "member": "Jäsen"
+  },
+  "errors": { "generic": "Tapahtui virhe", "loadingFailed": "Lataus epäonnistui", "saveFailed": "Tallennus epäonnistui" },
+  "dashboard": {
+    "admin": { "title": "Hallintapaneeli", "subtitle": "a4u-alustan kokonaishallinta" },
+    "org": { "subtitle": "Rooli: {{role}}" },
+    "noOrg": { "title": "Tervetuloa", "message": "Et ole vielä jäsen missään organisaatiossa. Odota kutsua tai ota yhteyttä ylläpitäjään." }
+  }
+}

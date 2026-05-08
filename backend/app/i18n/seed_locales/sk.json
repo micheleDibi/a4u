@@ -1,0 +1,177 @@
+{
+  "app": { "name": "a4u", "tagline": "Platforma univerzitných kurzov" },
+  "common": {
+    "save": "Uložiť", "cancel": "Zrušiť", "delete": "Zmazať", "edit": "Upraviť",
+    "add": "Pridať", "loading": "Načítavam…", "saving": "Ukladám…",
+    "creating": "Vytváram…", "remove": "Odstrániť", "confirm": "Potvrdiť",
+    "close": "Zatvoriť", "search": "Hľadať", "back": "Späť", "next": "Ďalej",
+    "actions": "Akcie", "of": "z", "noResults": "Žiadne výsledky",
+    "copy": "Kopírovať", "copied": "Skopírované!", "yes": "Áno", "no": "Nie", "all": "Všetko",
+    "optional": "voliteľné", "required": "povinné"
+  },
+  "auth": {
+    "login": {
+      "title": "Vitajte späť", "subtitle": "Prihláste sa do svojho workspace a4u",
+      "email": "E-mail", "password": "Heslo",
+      "submit": "Prihlásiť", "submitting": "Prihlasovanie…"
+    },
+    "logout": "Odhlásiť",
+    "invitation": {
+      "title": "Prijať pozvánku",
+      "subtitle": "Boli ste pozvaní do {{org}} ako {{role}}",
+      "fullName": "Celé meno",
+      "passwordHint": "Min. 10 znakov, jedno veľké písmeno, jedna číslica",
+      "submit": "Prijať pozvánku", "submitting": "Potvrdzujem…",
+      "alreadyRegistered": "Už ste zaregistrovaní. Kliknite na \"Prijať\" pre pripojenie.",
+      "invalidOrExpired": "Pozvánka nie je platná, vypršala alebo už bola použitá."
+    }
+  },
+  "theme": { "label": "Motív", "light": "Svetlý", "dark": "Tmavý", "system": "Systém" },
+  "language": { "label": "Jazyk" },
+  "nav": {
+    "platform": "Platforma", "organization": "Organizácia",
+    "dashboard": "Prehľad", "organizations": "Organizácie",
+    "users": "Používatelia", "permissions": "Globálne oprávnenia",
+    "members": "Členovia", "templatesSlide": "Šablóny snímok",
+    "templatesPdf": "PDF šablóny", "avatars": "Avatary"
+  },
+  "command": {
+    "placeholder": "Hľadať príkaz alebo stránku…",
+    "navigation": "Navigácia", "actions": "Akcie", "preferences": "Predvoľby",
+    "openCommandPalette": "Otvoriť paletu príkazov",
+    "newOrganization": "Nová organizácia",
+    "logout": "Odhlásiť", "noResults": "Žiadne výsledky",
+    "switchTheme": "Zmeniť motív", "switchLanguage": "Zmeniť jazyk"
+  },
+  "user": { "profile": "Profil", "menu": "Menu používateľa" },
+  "orgSwitcher": {
+    "label": "Organizácia", "search": "Hľadať organizáciu…",
+    "noOrgs": "Žiadna organizácia", "select": "Vyberte organizáciu"
+  },
+  "organizations": {
+    "title": "Organizácie",
+    "subtitle": "Spravujte všetky organizácie platformy",
+    "new": "Nová organizácia", "edit": "Upraviť organizáciu",
+    "search": "Hľadať podľa názvu", "empty": "Žiadne organizácie",
+    "members": "Členovia", "deleted": "Organizácia zmazaná",
+    "created": "Organizácia vytvorená", "updated": "Organizácia aktualizovaná",
+    "fields": {
+      "logo": "Logo organizácie",
+      "logoHint": "PNG / JPEG / WEBP, max 5 MB",
+      "name": "Názov", "email": "E-mail", "phone": "Telefón",
+      "website": "Web", "vatNumber": "IČ DPH",
+      "fiscalCode": "DIČ", "country": "Krajina",
+      "address": "Adresa", "city": "Mesto",
+      "province": "Kraj", "postalCode": "PSČ"
+    },
+    "deleteConfirm": {
+      "title": "Zmazať organizáciu?",
+      "message": "Chystáte sa zmazať \"{{name}}\". Akcia je vratná z administrácie."
+    }
+  },
+  "members": {
+    "title": "Členovia",
+    "subtitle": "Zobraziť a spravovať členov organizácie",
+    "subtitleAdmin": "Priamo prihlásiť používateľov ako členov",
+    "invite": "Pozvať", "invited": "Člen pozvaný",
+    "removed": "Člen odstránený", "roleChanged": "Rola aktualizovaná",
+    "transferConfirmed": "Rola creator prenesená",
+    "enroll": "Prihlásiť používateľa", "enrollSubmit": "Prihlásiť",
+    "userPicker": "Používateľ", "rolePicker": "Rola",
+    "fields": { "name": "Meno", "email": "E-mail", "role": "Rola" },
+    "inviteDialog": {
+      "title": "Pozvať člena", "email": "E-mail", "role": "Rola",
+      "submit": "Vytvoriť pozvánku", "submitting": "Vytváranie…",
+      "tokenLabel": "Zdieľajte tento odkaz (platný 7 dní):",
+      "successTitle": "Pozvánka vytvorená"
+    },
+    "removeConfirm": {
+      "title": "Odstrániť člena?",
+      "message": "{{name}} bude odstránený z organizácie."
+    },
+    "transferConfirm": {
+      "title": "Preniesť rolu creator?",
+      "message": "Stanete sa adminom organizácie a {{name}} sa stane creatorom. Iba nový creator môže akciu vrátiť späť."
+    },
+    "actions": { "permissions": "Oprávnenia", "transfer": "Preniesť creator", "remove": "Odstrániť" }
+  },
+  "memberPermissions": {
+    "title": "Oprávnenia: {{name}}",
+    "subtitle": "Pre každé oprávnenie nechajte predvolenú hodnotu role alebo vynúťte grant/revoke pre tohto člena.",
+    "default": "Predvolené", "grant": "Udeliť", "revoke": "Odobrať",
+    "saved": "Oprávnenia člena aktualizované"
+  },
+  "users": {
+    "title": "Používatelia", "subtitle": "Spravujte používateľov a admin platformy",
+    "new": "Nový používateľ", "search": "Hľadať podľa mena alebo e-mailu",
+    "created": "Používateľ vytvorený",
+    "fields": { "name": "Meno", "email": "E-mail", "active": "Aktívny", "platformAdmin": "Admin platformy" },
+    "createDialog": {
+      "title": "Nový používateľ", "name": "Celé meno", "email": "E-mail",
+      "password": "Heslo (≥10 znakov, 1 veľké, 1 číslica)",
+      "platformAdmin": "Admin platformy",
+      "submit": "Vytvoriť", "submitting": "Vytváranie…"
+    }
+  },
+  "globalPermissions": {
+    "title": "Globálne oprávnenia",
+    "subtitle": "Upravte predvolené oprávnenia pre každú rolu. Platia pre všetky organizácie, pokiaľ nie sú explicitne prepísané.",
+    "rolePicker": "Rola", "saved": "Oprávnenia uložené", "save": "Uložiť oprávnenia"
+  },
+  "templates": {
+    "slide": {
+      "title": "Šablóny snímok",
+      "subtitle": "Vytvárajte a upravujte šablóny snímok pre kurzy",
+      "new": "Nová šablóna", "newPage": "Nová šablóna snímky",
+      "editPage": "Upraviť: {{name}}", "previewLive": "Živý náhľad",
+      "previewHint": "Náhľad sa aktualizuje v reálnom čase pri úprave.",
+      "deleted": "Šablóna zmazaná", "created": "Šablóna vytvorená",
+      "updated": "Šablóna aktualizovaná", "empty": "Žiadne šablóny"
+    },
+    "pdf": {
+      "title": "PDF šablóny",
+      "subtitle": "Vytvárajte a upravujte šablóny PDF dokumentov",
+      "new": "Nová šablóna", "newPage": "Nová PDF šablóna",
+      "editPage": "Upraviť: {{name}}", "previewLive": "Živý náhľad",
+      "previewHint": "Náhľad sa aktualizuje v reálnom čase pri úprave.",
+      "deleted": "Šablóna zmazaná", "created": "Šablóna vytvorená",
+      "updated": "Šablóna aktualizovaná", "empty": "Žiadne šablóny"
+    },
+    "fields": {
+      "name": "Názov šablóny", "size": "Formát snímky", "pageSize": "Veľkosť strany",
+      "font": "Písmo", "textColor": "Farba textu",
+      "primaryColor": "Primárna farba", "secondaryColor": "Sekundárna farba",
+      "background": "Obrázok pozadia", "logoLeft": "Logo vľavo hore",
+      "logoRight": "Logo vpravo hore",
+      "headerHeight": "Výška hlavičky (mm)", "footerHeight": "Výška päty (mm)",
+      "margin": "Okraj strany (mm)"
+    },
+    "deleteConfirm": { "title": "Zmazať šablónu?", "message": "Chystáte sa zmazať \"{{name}}\"." }
+  },
+  "avatars": {
+    "title": "Avatary", "subtitle": "Avatary dostupné pre kurzy",
+    "new": "Nový avatar", "newDialog": "Nový avatar", "editDialog": "Upraviť avatar",
+    "fields": { "name": "Názov", "description": "Popis", "image": "Obrázok" },
+    "empty": "Žiadne avatary",
+    "created": "Avatar vytvorený", "updated": "Avatar aktualizovaný", "deleted": "Avatar zmazaný",
+    "deleteConfirm": { "title": "Zmazať avatar?", "message": "Chystáte sa zmazať \"{{name}}\"." }
+  },
+  "permissions": {
+    "member:view": "Zobraziť členov", "member:invite": "Pozvať používateľov",
+    "member:assign_role": "Priradiť role", "member:remove": "Odstrániť členov",
+    "template:slide:manage": "Spravovať šablóny snímok",
+    "template:pdf:manage": "Spravovať PDF šablóny",
+    "avatar:manage": "Spravovať avatary", "permission:manage": "Spravovať oprávnenia",
+    "org:transfer_creator": "Preniesť rolu creator", "org:update": "Upraviť organizáciu"
+  },
+  "roles": {
+    "creator": "Creator", "org_admin": "Admin organizácie",
+    "manager": "Manager", "member": "Člen"
+  },
+  "errors": { "generic": "Vyskytla sa chyba", "loadingFailed": "Načítanie zlyhalo", "saveFailed": "Uloženie zlyhalo" },
+  "dashboard": {
+    "admin": { "title": "Administračný panel", "subtitle": "Globálna správa platformy a4u" },
+    "org": { "subtitle": "Rola: {{role}}" },
+    "noOrg": { "title": "Vitajte", "message": "Zatiaľ nie ste členom žiadnej organizácie. Počkajte na pozvánku alebo kontaktujte administrátora." }
+  }
+}

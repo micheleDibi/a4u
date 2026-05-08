@@ -1,0 +1,177 @@
+{
+  "app": { "name": "a4u", "tagline": "Platforma kursów uniwersyteckich" },
+  "common": {
+    "save": "Zapisz", "cancel": "Anuluj", "delete": "Usuń", "edit": "Edytuj",
+    "add": "Dodaj", "loading": "Ładowanie…", "saving": "Zapisywanie…",
+    "creating": "Tworzenie…", "remove": "Usuń", "confirm": "Potwierdź",
+    "close": "Zamknij", "search": "Szukaj", "back": "Wstecz", "next": "Dalej",
+    "actions": "Akcje", "of": "z", "noResults": "Brak wyników",
+    "copy": "Kopiuj", "copied": "Skopiowano!", "yes": "Tak", "no": "Nie", "all": "Wszystko",
+    "optional": "opcjonalne", "required": "wymagane"
+  },
+  "auth": {
+    "login": {
+      "title": "Witaj ponownie", "subtitle": "Zaloguj się do swojego workspace a4u",
+      "email": "E-mail", "password": "Hasło",
+      "submit": "Zaloguj", "submitting": "Logowanie…"
+    },
+    "logout": "Wyloguj",
+    "invitation": {
+      "title": "Akceptuj zaproszenie",
+      "subtitle": "Zaproszono Cię do {{org}} jako {{role}}",
+      "fullName": "Pełne imię i nazwisko",
+      "passwordHint": "Min. 10 znaków, jedna wielka litera, jedna cyfra",
+      "submit": "Akceptuj zaproszenie", "submitting": "Potwierdzanie…",
+      "alreadyRegistered": "Jesteś już zarejestrowany. Kliknij \"Akceptuj\", aby dołączyć.",
+      "invalidOrExpired": "Zaproszenie nie jest ważne, wygasło lub zostało już użyte."
+    }
+  },
+  "theme": { "label": "Motyw", "light": "Jasny", "dark": "Ciemny", "system": "System" },
+  "language": { "label": "Język" },
+  "nav": {
+    "platform": "Platforma", "organization": "Organizacja",
+    "dashboard": "Panel", "organizations": "Organizacje",
+    "users": "Użytkownicy", "permissions": "Uprawnienia globalne",
+    "members": "Członkowie", "templatesSlide": "Szablony slajdów",
+    "templatesPdf": "Szablony PDF", "avatars": "Awatary"
+  },
+  "command": {
+    "placeholder": "Szukaj polecenia lub strony…",
+    "navigation": "Nawigacja", "actions": "Akcje", "preferences": "Preferencje",
+    "openCommandPalette": "Otwórz paletę poleceń",
+    "newOrganization": "Nowa organizacja",
+    "logout": "Wyloguj", "noResults": "Brak wyników",
+    "switchTheme": "Zmień motyw", "switchLanguage": "Zmień język"
+  },
+  "user": { "profile": "Profil", "menu": "Menu użytkownika" },
+  "orgSwitcher": {
+    "label": "Organizacja", "search": "Szukaj organizacji…",
+    "noOrgs": "Brak organizacji", "select": "Wybierz organizację"
+  },
+  "organizations": {
+    "title": "Organizacje",
+    "subtitle": "Zarządzaj wszystkimi organizacjami platformy",
+    "new": "Nowa organizacja", "edit": "Edytuj organizację",
+    "search": "Szukaj po nazwie", "empty": "Brak organizacji",
+    "members": "Członkowie", "deleted": "Organizacja usunięta",
+    "created": "Organizacja utworzona", "updated": "Organizacja zaktualizowana",
+    "fields": {
+      "logo": "Logo organizacji",
+      "logoHint": "PNG / JPEG / WEBP, maks. 5 MB",
+      "name": "Nazwa", "email": "E-mail", "phone": "Telefon",
+      "website": "Strona", "vatNumber": "NIP / VAT",
+      "fiscalCode": "Kod fiskalny", "country": "Kraj",
+      "address": "Adres", "city": "Miasto",
+      "province": "Województwo", "postalCode": "Kod pocztowy"
+    },
+    "deleteConfirm": {
+      "title": "Usunąć organizację?",
+      "message": "Zamierzasz usunąć \"{{name}}\". Akcja jest odwracalna z poziomu administracji."
+    }
+  },
+  "members": {
+    "title": "Członkowie",
+    "subtitle": "Wyświetl i zarządzaj członkami organizacji",
+    "subtitleAdmin": "Bezpośrednio dodawaj użytkowników jako członków",
+    "invite": "Zaproś", "invited": "Członek zaproszony",
+    "removed": "Członek usunięty", "roleChanged": "Rola zaktualizowana",
+    "transferConfirmed": "Rola creator przeniesiona",
+    "enroll": "Dodaj użytkownika", "enrollSubmit": "Dodaj",
+    "userPicker": "Użytkownik", "rolePicker": "Rola",
+    "fields": { "name": "Imię i nazwisko", "email": "E-mail", "role": "Rola" },
+    "inviteDialog": {
+      "title": "Zaproś członka", "email": "E-mail", "role": "Rola",
+      "submit": "Utwórz zaproszenie", "submitting": "Tworzenie…",
+      "tokenLabel": "Udostępnij ten link (ważny 7 dni):",
+      "successTitle": "Zaproszenie utworzone"
+    },
+    "removeConfirm": {
+      "title": "Usunąć członka?",
+      "message": "{{name}} zostanie usunięty z organizacji."
+    },
+    "transferConfirm": {
+      "title": "Przenieść rolę creator?",
+      "message": "Staniesz się administratorem organizacji, a {{name}} zostanie creatorem. Tylko nowy creator może cofnąć tę zmianę."
+    },
+    "actions": { "permissions": "Uprawnienia", "transfer": "Przenieś creator", "remove": "Usuń" }
+  },
+  "memberPermissions": {
+    "title": "Uprawnienia: {{name}}",
+    "subtitle": "Dla każdego uprawnienia pozostaw domyślne lub wymuś grant/revoke specyficzne dla tego członka.",
+    "default": "Domyślne", "grant": "Przyznaj", "revoke": "Odbierz",
+    "saved": "Uprawnienia członka zaktualizowane"
+  },
+  "users": {
+    "title": "Użytkownicy", "subtitle": "Zarządzaj użytkownikami i adminami platformy",
+    "new": "Nowy użytkownik", "search": "Szukaj po imieniu lub e-mailu",
+    "created": "Użytkownik utworzony",
+    "fields": { "name": "Imię i nazwisko", "email": "E-mail", "active": "Aktywny", "platformAdmin": "Admin platformy" },
+    "createDialog": {
+      "title": "Nowy użytkownik", "name": "Imię i nazwisko", "email": "E-mail",
+      "password": "Hasło (≥10 znaków, 1 wielka litera, 1 cyfra)",
+      "platformAdmin": "Admin platformy",
+      "submit": "Utwórz", "submitting": "Tworzenie…"
+    }
+  },
+  "globalPermissions": {
+    "title": "Uprawnienia globalne",
+    "subtitle": "Edytuj domyślne uprawnienia każdej roli. Obowiązują we wszystkich organizacjach poza tymi z jawnymi zmianami.",
+    "rolePicker": "Rola", "saved": "Uprawnienia zapisane", "save": "Zapisz uprawnienia"
+  },
+  "templates": {
+    "slide": {
+      "title": "Szablony slajdów",
+      "subtitle": "Twórz i edytuj szablony slajdów dla kursów",
+      "new": "Nowy szablon", "newPage": "Nowy szablon slajdu",
+      "editPage": "Edytuj: {{name}}", "previewLive": "Podgląd na żywo",
+      "previewHint": "Podgląd aktualizuje się w czasie rzeczywistym podczas edycji.",
+      "deleted": "Szablon usunięty", "created": "Szablon utworzony",
+      "updated": "Szablon zaktualizowany", "empty": "Brak szablonów"
+    },
+    "pdf": {
+      "title": "Szablony PDF",
+      "subtitle": "Twórz i edytuj szablony dokumentów PDF",
+      "new": "Nowy szablon", "newPage": "Nowy szablon PDF",
+      "editPage": "Edytuj: {{name}}", "previewLive": "Podgląd na żywo",
+      "previewHint": "Podgląd aktualizuje się w czasie rzeczywistym podczas edycji.",
+      "deleted": "Szablon usunięty", "created": "Szablon utworzony",
+      "updated": "Szablon zaktualizowany", "empty": "Brak szablonów"
+    },
+    "fields": {
+      "name": "Nazwa szablonu", "size": "Format slajdu", "pageSize": "Format strony",
+      "font": "Czcionka", "textColor": "Kolor tekstu",
+      "primaryColor": "Kolor podstawowy", "secondaryColor": "Kolor drugorzędny",
+      "background": "Obraz tła", "logoLeft": "Logo lewy górny róg",
+      "logoRight": "Logo prawy górny róg",
+      "headerHeight": "Wysokość nagłówka (mm)", "footerHeight": "Wysokość stopki (mm)",
+      "margin": "Margines strony (mm)"
+    },
+    "deleteConfirm": { "title": "Usunąć szablon?", "message": "Zamierzasz usunąć \"{{name}}\"." }
+  },
+  "avatars": {
+    "title": "Awatary", "subtitle": "Awatary dostępne dla kursów",
+    "new": "Nowy awatar", "newDialog": "Nowy awatar", "editDialog": "Edytuj awatar",
+    "fields": { "name": "Nazwa", "description": "Opis", "image": "Obraz" },
+    "empty": "Brak awatarów",
+    "created": "Awatar utworzony", "updated": "Awatar zaktualizowany", "deleted": "Awatar usunięty",
+    "deleteConfirm": { "title": "Usunąć awatar?", "message": "Zamierzasz usunąć \"{{name}}\"." }
+  },
+  "permissions": {
+    "member:view": "Wyświetl członków", "member:invite": "Zapraszaj użytkowników",
+    "member:assign_role": "Przypisuj role", "member:remove": "Usuwaj członków",
+    "template:slide:manage": "Zarządzaj szablonami slajdów",
+    "template:pdf:manage": "Zarządzaj szablonami PDF",
+    "avatar:manage": "Zarządzaj awatarami", "permission:manage": "Zarządzaj uprawnieniami",
+    "org:transfer_creator": "Przenieś rolę creator", "org:update": "Edytuj organizację"
+  },
+  "roles": {
+    "creator": "Creator", "org_admin": "Admin organizacji",
+    "manager": "Manager", "member": "Członek"
+  },
+  "errors": { "generic": "Wystąpił błąd", "loadingFailed": "Ładowanie nie powiodło się", "saveFailed": "Zapis nie powiódł się" },
+  "dashboard": {
+    "admin": { "title": "Panel administracyjny", "subtitle": "Globalne zarządzanie platformą a4u" },
+    "org": { "subtitle": "Rola: {{role}}" },
+    "noOrg": { "title": "Witaj", "message": "Nie jesteś jeszcze członkiem żadnej organizacji. Poczekaj na zaproszenie lub skontaktuj się z administratorem." }
+  }
+}

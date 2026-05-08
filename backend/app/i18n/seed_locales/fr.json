@@ -1,0 +1,177 @@
+{
+  "app": { "name": "a4u", "tagline": "Plateforme de cours universitaires" },
+  "common": {
+    "save": "Enregistrer", "cancel": "Annuler", "delete": "Supprimer", "edit": "Modifier",
+    "add": "Ajouter", "loading": "Chargement…", "saving": "Enregistrement…",
+    "creating": "Création…", "remove": "Retirer", "confirm": "Confirmer",
+    "close": "Fermer", "search": "Rechercher", "back": "Retour", "next": "Suivant",
+    "actions": "Actions", "of": "sur", "noResults": "Aucun résultat",
+    "copy": "Copier", "copied": "Copié !", "yes": "Oui", "no": "Non", "all": "Tous",
+    "optional": "facultatif", "required": "obligatoire"
+  },
+  "auth": {
+    "login": {
+      "title": "Bon retour", "subtitle": "Connectez-vous à votre espace a4u",
+      "email": "E-mail", "password": "Mot de passe",
+      "submit": "Connexion", "submitting": "Connexion en cours…"
+    },
+    "logout": "Déconnexion",
+    "invitation": {
+      "title": "Accepter l'invitation",
+      "subtitle": "Vous êtes invité dans {{org}} en tant que {{role}}",
+      "fullName": "Nom complet",
+      "passwordHint": "Min. 10 caractères, une majuscule, un chiffre",
+      "submit": "Accepter l'invitation", "submitting": "Confirmation…",
+      "alreadyRegistered": "Vous êtes déjà inscrit. Cliquez \"Accepter\" pour rejoindre.",
+      "invalidOrExpired": "L'invitation n'est pas valide, a expiré ou a déjà été utilisée."
+    }
+  },
+  "theme": { "label": "Thème", "light": "Clair", "dark": "Sombre", "system": "Système" },
+  "language": { "label": "Langue" },
+  "nav": {
+    "platform": "Plateforme", "organization": "Organisation",
+    "dashboard": "Tableau de bord", "organizations": "Organisations",
+    "users": "Utilisateurs", "permissions": "Permissions globales",
+    "members": "Membres", "templatesSlide": "Modèles de diapositives",
+    "templatesPdf": "Modèles PDF", "avatars": "Avatars"
+  },
+  "command": {
+    "placeholder": "Rechercher une commande ou une page…",
+    "navigation": "Navigation", "actions": "Actions", "preferences": "Préférences",
+    "openCommandPalette": "Ouvrir la palette de commandes",
+    "newOrganization": "Nouvelle organisation",
+    "logout": "Déconnexion", "noResults": "Aucun résultat",
+    "switchTheme": "Changer de thème", "switchLanguage": "Changer de langue"
+  },
+  "user": { "profile": "Profil", "menu": "Menu utilisateur" },
+  "orgSwitcher": {
+    "label": "Organisation", "search": "Rechercher une organisation…",
+    "noOrgs": "Aucune organisation", "select": "Sélectionner une organisation"
+  },
+  "organizations": {
+    "title": "Organisations",
+    "subtitle": "Gérer toutes les organisations de la plateforme",
+    "new": "Nouvelle organisation", "edit": "Modifier l'organisation",
+    "search": "Rechercher par nom", "empty": "Aucune organisation",
+    "members": "Membres", "deleted": "Organisation supprimée",
+    "created": "Organisation créée", "updated": "Organisation mise à jour",
+    "fields": {
+      "logo": "Logo de l'organisation",
+      "logoHint": "PNG / JPEG / WEBP, max 5 Mo",
+      "name": "Dénomination", "email": "E-mail", "phone": "Téléphone",
+      "website": "Site web", "vatNumber": "Numéro de TVA",
+      "fiscalCode": "Code fiscal", "country": "Pays",
+      "address": "Adresse", "city": "Ville",
+      "province": "Région", "postalCode": "Code postal"
+    },
+    "deleteConfirm": {
+      "title": "Supprimer l'organisation ?",
+      "message": "Vous êtes sur le point de supprimer \"{{name}}\". L'action est réversible côté admin."
+    }
+  },
+  "members": {
+    "title": "Membres",
+    "subtitle": "Voir et gérer les membres de l'organisation",
+    "subtitleAdmin": "Inscrire directement des utilisateurs comme membres",
+    "invite": "Inviter", "invited": "Membre invité",
+    "removed": "Membre retiré", "roleChanged": "Rôle mis à jour",
+    "transferConfirmed": "Rôle créateur transféré",
+    "enroll": "Inscrire un utilisateur", "enrollSubmit": "Inscrire",
+    "userPicker": "Utilisateur", "rolePicker": "Rôle",
+    "fields": { "name": "Nom", "email": "E-mail", "role": "Rôle" },
+    "inviteDialog": {
+      "title": "Inviter un membre", "email": "E-mail", "role": "Rôle",
+      "submit": "Créer l'invitation", "submitting": "Création…",
+      "tokenLabel": "Partager ce lien (valide 7 jours) :",
+      "successTitle": "Invitation créée"
+    },
+    "removeConfirm": {
+      "title": "Retirer le membre ?",
+      "message": "{{name}} sera retiré de l'organisation."
+    },
+    "transferConfirm": {
+      "title": "Transférer le rôle créateur ?",
+      "message": "Vous deviendrez admin de l'organisation et {{name}} deviendra créateur. Seul le nouveau créateur pourra revenir en arrière."
+    },
+    "actions": { "permissions": "Permissions", "transfer": "Transférer créateur", "remove": "Retirer" }
+  },
+  "memberPermissions": {
+    "title": "Permissions de {{name}}",
+    "subtitle": "Pour chaque permission, laissez la valeur par défaut du rôle ou forcez un grant/révocation spécifique pour ce membre.",
+    "default": "Par défaut", "grant": "Accorder", "revoke": "Révoquer",
+    "saved": "Permissions du membre mises à jour"
+  },
+  "users": {
+    "title": "Utilisateurs", "subtitle": "Gérer les utilisateurs et admins de la plateforme",
+    "new": "Nouvel utilisateur", "search": "Rechercher par nom ou e-mail",
+    "created": "Utilisateur créé",
+    "fields": { "name": "Nom", "email": "E-mail", "active": "Actif", "platformAdmin": "Admin plateforme" },
+    "createDialog": {
+      "title": "Nouvel utilisateur", "name": "Nom complet", "email": "E-mail",
+      "password": "Mot de passe (≥10 car., 1 majuscule, 1 chiffre)",
+      "platformAdmin": "Admin de la plateforme",
+      "submit": "Créer", "submitting": "Création…"
+    }
+  },
+  "globalPermissions": {
+    "title": "Permissions globales",
+    "subtitle": "Modifier les permissions par défaut de chaque rôle. Elles s'appliquent à toutes les organisations sauf en cas d'override explicite.",
+    "rolePicker": "Rôle", "saved": "Permissions enregistrées", "save": "Enregistrer les permissions"
+  },
+  "templates": {
+    "slide": {
+      "title": "Modèles de diapositives",
+      "subtitle": "Créer et modifier les modèles de diapositives des cours",
+      "new": "Nouveau modèle", "newPage": "Nouveau modèle de diapositive",
+      "editPage": "Modifier : {{name}}", "previewLive": "Aperçu en direct",
+      "previewHint": "L'aperçu se met à jour en temps réel pendant la modification.",
+      "deleted": "Modèle supprimé", "created": "Modèle créé",
+      "updated": "Modèle mis à jour", "empty": "Aucun modèle pour le moment"
+    },
+    "pdf": {
+      "title": "Modèles PDF",
+      "subtitle": "Créer et modifier les modèles de documents PDF",
+      "new": "Nouveau modèle", "newPage": "Nouveau modèle PDF",
+      "editPage": "Modifier : {{name}}", "previewLive": "Aperçu en direct",
+      "previewHint": "L'aperçu se met à jour en temps réel pendant la modification.",
+      "deleted": "Modèle supprimé", "created": "Modèle créé",
+      "updated": "Modèle mis à jour", "empty": "Aucun modèle pour le moment"
+    },
+    "fields": {
+      "name": "Nom du modèle", "size": "Format de diapositive", "pageSize": "Format de page",
+      "font": "Police", "textColor": "Couleur du texte",
+      "primaryColor": "Couleur primaire", "secondaryColor": "Couleur secondaire",
+      "background": "Image de fond", "logoLeft": "Logo en haut à gauche",
+      "logoRight": "Logo en haut à droite",
+      "headerHeight": "Hauteur de l'en-tête (mm)", "footerHeight": "Hauteur du pied de page (mm)",
+      "margin": "Marge de page (mm)"
+    },
+    "deleteConfirm": { "title": "Supprimer le modèle ?", "message": "Vous êtes sur le point de supprimer \"{{name}}\"." }
+  },
+  "avatars": {
+    "title": "Avatars", "subtitle": "Avatars disponibles pour les cours",
+    "new": "Nouvel avatar", "newDialog": "Nouvel avatar", "editDialog": "Modifier l'avatar",
+    "fields": { "name": "Nom", "description": "Description", "image": "Image" },
+    "empty": "Aucun avatar pour le moment",
+    "created": "Avatar créé", "updated": "Avatar mis à jour", "deleted": "Avatar supprimé",
+    "deleteConfirm": { "title": "Supprimer l'avatar ?", "message": "Vous êtes sur le point de supprimer \"{{name}}\"." }
+  },
+  "permissions": {
+    "member:view": "Voir les membres", "member:invite": "Inviter des utilisateurs",
+    "member:assign_role": "Assigner des rôles", "member:remove": "Retirer des membres",
+    "template:slide:manage": "Gérer les modèles de diapositives",
+    "template:pdf:manage": "Gérer les modèles PDF",
+    "avatar:manage": "Gérer les avatars", "permission:manage": "Gérer les permissions",
+    "org:transfer_creator": "Transférer le rôle créateur", "org:update": "Modifier l'organisation"
+  },
+  "roles": {
+    "creator": "Créateur", "org_admin": "Admin organisation",
+    "manager": "Manager", "member": "Membre"
+  },
+  "errors": { "generic": "Une erreur s'est produite", "loadingFailed": "Échec du chargement", "saveFailed": "Échec de l'enregistrement" },
+  "dashboard": {
+    "admin": { "title": "Panneau d'administration", "subtitle": "Gestion globale de la plateforme a4u" },
+    "org": { "subtitle": "Rôle : {{role}}" },
+    "noOrg": { "title": "Bienvenue", "message": "Vous n'êtes encore membre d'aucune organisation. Attendez une invitation ou contactez un administrateur." }
+  }
+}

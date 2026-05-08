@@ -1,0 +1,177 @@
+{
+  "app": { "name": "a4u", "tagline": "Platformă pentru cursuri universitare" },
+  "common": {
+    "save": "Salvează", "cancel": "Anulează", "delete": "Șterge", "edit": "Modifică",
+    "add": "Adaugă", "loading": "Se încarcă…", "saving": "Se salvează…",
+    "creating": "Se creează…", "remove": "Elimină", "confirm": "Confirmă",
+    "close": "Închide", "search": "Caută", "back": "Înapoi", "next": "Următorul",
+    "actions": "Acțiuni", "of": "din", "noResults": "Niciun rezultat",
+    "copy": "Copiază", "copied": "Copiat!", "yes": "Da", "no": "Nu", "all": "Toate",
+    "optional": "opțional", "required": "obligatoriu"
+  },
+  "auth": {
+    "login": {
+      "title": "Bine ai revenit", "subtitle": "Autentifică-te în workspace-ul a4u",
+      "email": "E-mail", "password": "Parolă",
+      "submit": "Conectare", "submitting": "Se conectează…"
+    },
+    "logout": "Ieși",
+    "invitation": {
+      "title": "Acceptă invitația",
+      "subtitle": "Ai fost invitat în {{org}} ca {{role}}",
+      "fullName": "Nume complet",
+      "passwordHint": "Min. 10 caractere, o majusculă, o cifră",
+      "submit": "Acceptă invitația", "submitting": "Se confirmă…",
+      "alreadyRegistered": "Ești deja înregistrat. Apasă \"Acceptă\" pentru a fi adăugat.",
+      "invalidOrExpired": "Invitația nu este validă, a expirat sau a fost deja folosită."
+    }
+  },
+  "theme": { "label": "Temă", "light": "Luminos", "dark": "Întunecat", "system": "Sistem" },
+  "language": { "label": "Limbă" },
+  "nav": {
+    "platform": "Platformă", "organization": "Organizație",
+    "dashboard": "Tablou de bord", "organizations": "Organizații",
+    "users": "Utilizatori", "permissions": "Permisiuni globale",
+    "members": "Membri", "templatesSlide": "Șabloane slide",
+    "templatesPdf": "Șabloane PDF", "avatars": "Avatare"
+  },
+  "command": {
+    "placeholder": "Caută o comandă sau pagină…",
+    "navigation": "Navigare", "actions": "Acțiuni", "preferences": "Preferințe",
+    "openCommandPalette": "Deschide paleta de comenzi",
+    "newOrganization": "Organizație nouă",
+    "logout": "Ieși", "noResults": "Niciun rezultat",
+    "switchTheme": "Schimbă tema", "switchLanguage": "Schimbă limba"
+  },
+  "user": { "profile": "Profil", "menu": "Meniu utilizator" },
+  "orgSwitcher": {
+    "label": "Organizație", "search": "Caută organizație…",
+    "noOrgs": "Nicio organizație", "select": "Selectează organizația"
+  },
+  "organizations": {
+    "title": "Organizații",
+    "subtitle": "Gestionează toate organizațiile platformei",
+    "new": "Organizație nouă", "edit": "Modifică organizația",
+    "search": "Caută după nume", "empty": "Nicio organizație",
+    "members": "Membri", "deleted": "Organizație ștearsă",
+    "created": "Organizație creată", "updated": "Organizație actualizată",
+    "fields": {
+      "logo": "Logo organizație",
+      "logoHint": "PNG / JPEG / WEBP, max 5 MB",
+      "name": "Denumire", "email": "E-mail", "phone": "Telefon",
+      "website": "Site web", "vatNumber": "CUI / TVA",
+      "fiscalCode": "Cod fiscal", "country": "Țară",
+      "address": "Adresă", "city": "Oraș",
+      "province": "Județ", "postalCode": "Cod poștal"
+    },
+    "deleteConfirm": {
+      "title": "Ștergeți organizația?",
+      "message": "Sunteți pe cale să ștergeți \"{{name}}\". Acțiunea este reversibilă din administrare."
+    }
+  },
+  "members": {
+    "title": "Membri",
+    "subtitle": "Vezi și gestionează membrii organizației",
+    "subtitleAdmin": "Înscrie utilizatori direct ca membri",
+    "invite": "Invită", "invited": "Membru invitat",
+    "removed": "Membru eliminat", "roleChanged": "Rol actualizat",
+    "transferConfirmed": "Rol creator transferat",
+    "enroll": "Înscrie utilizator", "enrollSubmit": "Înscrie",
+    "userPicker": "Utilizator", "rolePicker": "Rol",
+    "fields": { "name": "Nume", "email": "E-mail", "role": "Rol" },
+    "inviteDialog": {
+      "title": "Invită un membru", "email": "E-mail", "role": "Rol",
+      "submit": "Creează invitație", "submitting": "Se creează…",
+      "tokenLabel": "Distribuie acest link (valabil 7 zile):",
+      "successTitle": "Invitație creată"
+    },
+    "removeConfirm": {
+      "title": "Eliminați membrul?",
+      "message": "{{name}} va fi eliminat din organizație."
+    },
+    "transferConfirm": {
+      "title": "Transferați rolul de creator?",
+      "message": "Veți deveni admin al organizației, iar {{name}} va deveni creator. Doar noul creator poate anula."
+    },
+    "actions": { "permissions": "Permisiuni", "transfer": "Transferă creator", "remove": "Elimină" }
+  },
+  "memberPermissions": {
+    "title": "Permisiunile lui {{name}}",
+    "subtitle": "Pentru fiecare permisiune lasă valoarea implicită a rolului sau forțează grant/revoke specific pentru acest membru.",
+    "default": "Implicit", "grant": "Acordă", "revoke": "Revocă",
+    "saved": "Permisiunile membrului actualizate"
+  },
+  "users": {
+    "title": "Utilizatori", "subtitle": "Gestionează utilizatorii și adminii platformei",
+    "new": "Utilizator nou", "search": "Caută după nume sau e-mail",
+    "created": "Utilizator creat",
+    "fields": { "name": "Nume", "email": "E-mail", "active": "Activ", "platformAdmin": "Admin platformă" },
+    "createDialog": {
+      "title": "Utilizator nou", "name": "Nume complet", "email": "E-mail",
+      "password": "Parolă (≥10 car., 1 majusculă, 1 cifră)",
+      "platformAdmin": "Admin platformă",
+      "submit": "Creează", "submitting": "Se creează…"
+    }
+  },
+  "globalPermissions": {
+    "title": "Permisiuni globale",
+    "subtitle": "Modifică permisiunile implicite pentru fiecare rol. Se aplică tuturor organizațiilor cu excepția celor cu override explicit.",
+    "rolePicker": "Rol", "saved": "Permisiuni salvate", "save": "Salvează permisiunile"
+  },
+  "templates": {
+    "slide": {
+      "title": "Șabloane slide",
+      "subtitle": "Creează și modifică șabloane pentru slide-urile cursurilor",
+      "new": "Șablon nou", "newPage": "Șablon slide nou",
+      "editPage": "Modifică: {{name}}", "previewLive": "Previzualizare live",
+      "previewHint": "Previzualizarea se actualizează în timp real în timpul editării.",
+      "deleted": "Șablon șters", "created": "Șablon creat",
+      "updated": "Șablon actualizat", "empty": "Niciun șablon încă"
+    },
+    "pdf": {
+      "title": "Șabloane PDF",
+      "subtitle": "Creează și modifică șabloane pentru documentele PDF",
+      "new": "Șablon nou", "newPage": "Șablon PDF nou",
+      "editPage": "Modifică: {{name}}", "previewLive": "Previzualizare live",
+      "previewHint": "Previzualizarea se actualizează în timp real în timpul editării.",
+      "deleted": "Șablon șters", "created": "Șablon creat",
+      "updated": "Șablon actualizat", "empty": "Niciun șablon încă"
+    },
+    "fields": {
+      "name": "Nume șablon", "size": "Format slide", "pageSize": "Dimensiune pagină",
+      "font": "Font", "textColor": "Culoare text",
+      "primaryColor": "Culoare primară", "secondaryColor": "Culoare secundară",
+      "background": "Imagine de fundal", "logoLeft": "Logo stânga sus",
+      "logoRight": "Logo dreapta sus",
+      "headerHeight": "Înălțime antet (mm)", "footerHeight": "Înălțime subsol (mm)",
+      "margin": "Margine pagină (mm)"
+    },
+    "deleteConfirm": { "title": "Ștergeți șablonul?", "message": "Sunteți pe cale să ștergeți \"{{name}}\"." }
+  },
+  "avatars": {
+    "title": "Avatare", "subtitle": "Avatare disponibile pentru cursuri",
+    "new": "Avatar nou", "newDialog": "Avatar nou", "editDialog": "Modifică avatar",
+    "fields": { "name": "Nume", "description": "Descriere", "image": "Imagine" },
+    "empty": "Niciun avatar încă",
+    "created": "Avatar creat", "updated": "Avatar actualizat", "deleted": "Avatar șters",
+    "deleteConfirm": { "title": "Ștergeți avatarul?", "message": "Sunteți pe cale să ștergeți \"{{name}}\"." }
+  },
+  "permissions": {
+    "member:view": "Vezi membri", "member:invite": "Invită utilizatori",
+    "member:assign_role": "Atribuie roluri", "member:remove": "Elimină membri",
+    "template:slide:manage": "Gestionează șabloane slide",
+    "template:pdf:manage": "Gestionează șabloane PDF",
+    "avatar:manage": "Gestionează avatare", "permission:manage": "Gestionează permisiuni",
+    "org:transfer_creator": "Transferă rolul de creator", "org:update": "Modifică organizația"
+  },
+  "roles": {
+    "creator": "Creator", "org_admin": "Admin organizație",
+    "manager": "Manager", "member": "Membru"
+  },
+  "errors": { "generic": "A apărut o eroare", "loadingFailed": "Încărcarea a eșuat", "saveFailed": "Salvarea a eșuat" },
+  "dashboard": {
+    "admin": { "title": "Panou de administrare", "subtitle": "Gestionare globală a platformei a4u" },
+    "org": { "subtitle": "Rol: {{role}}" },
+    "noOrg": { "title": "Bun venit", "message": "Nu ești încă membru în nicio organizație. Așteaptă o invitație sau contactează un administrator." }
+  }
+}

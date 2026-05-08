@@ -1,0 +1,177 @@
+{
+  "app": { "name": "a4u", "tagline": "Platforma za univerzitetne tečaje" },
+  "common": {
+    "save": "Shrani", "cancel": "Prekliči", "delete": "Izbriši", "edit": "Uredi",
+    "add": "Dodaj", "loading": "Nalaganje…", "saving": "Shranjevanje…",
+    "creating": "Ustvarjanje…", "remove": "Odstrani", "confirm": "Potrdi",
+    "close": "Zapri", "search": "Iskanje", "back": "Nazaj", "next": "Naprej",
+    "actions": "Dejanja", "of": "od", "noResults": "Brez rezultatov",
+    "copy": "Kopiraj", "copied": "Kopirano!", "yes": "Da", "no": "Ne", "all": "Vse",
+    "optional": "neobvezno", "required": "obvezno"
+  },
+  "auth": {
+    "login": {
+      "title": "Pozdravljeni nazaj", "subtitle": "Prijavite se v svoj workspace a4u",
+      "email": "E-pošta", "password": "Geslo",
+      "submit": "Prijava", "submitting": "Prijavljanje…"
+    },
+    "logout": "Odjava",
+    "invitation": {
+      "title": "Sprejmi vabilo",
+      "subtitle": "Povabljeni ste v {{org}} kot {{role}}",
+      "fullName": "Polno ime",
+      "passwordHint": "Najmanj 10 znakov, ena velika črka, ena številka",
+      "submit": "Sprejmi vabilo", "submitting": "Potrjevanje…",
+      "alreadyRegistered": "Že ste registrirani. Kliknite \"Sprejmi\" za pridružitev.",
+      "invalidOrExpired": "Vabilo ni veljavno, je poteklo ali je že bilo uporabljeno."
+    }
+  },
+  "theme": { "label": "Tema", "light": "Svetla", "dark": "Temna", "system": "Sistem" },
+  "language": { "label": "Jezik" },
+  "nav": {
+    "platform": "Platforma", "organization": "Organizacija",
+    "dashboard": "Nadzorna plošča", "organizations": "Organizacije",
+    "users": "Uporabniki", "permissions": "Globalna dovoljenja",
+    "members": "Člani", "templatesSlide": "Predloge slik",
+    "templatesPdf": "Predloge PDF", "avatars": "Avatarji"
+  },
+  "command": {
+    "placeholder": "Iskanje ukaza ali strani…",
+    "navigation": "Navigacija", "actions": "Dejanja", "preferences": "Nastavitve",
+    "openCommandPalette": "Odpri ukazno paleto",
+    "newOrganization": "Nova organizacija",
+    "logout": "Odjava", "noResults": "Brez rezultatov",
+    "switchTheme": "Zamenjaj temo", "switchLanguage": "Zamenjaj jezik"
+  },
+  "user": { "profile": "Profil", "menu": "Uporabniški meni" },
+  "orgSwitcher": {
+    "label": "Organizacija", "search": "Iskanje organizacije…",
+    "noOrgs": "Brez organizacije", "select": "Izberite organizacijo"
+  },
+  "organizations": {
+    "title": "Organizacije",
+    "subtitle": "Upravljajte vse organizacije platforme",
+    "new": "Nova organizacija", "edit": "Uredi organizacijo",
+    "search": "Iskanje po imenu", "empty": "Brez organizacij",
+    "members": "Člani", "deleted": "Organizacija izbrisana",
+    "created": "Organizacija ustvarjena", "updated": "Organizacija posodobljena",
+    "fields": {
+      "logo": "Logotip organizacije",
+      "logoHint": "PNG / JPEG / WEBP, največ 5 MB",
+      "name": "Ime", "email": "E-pošta", "phone": "Telefon",
+      "website": "Spletno mesto", "vatNumber": "Davčna št.",
+      "fiscalCode": "Fiskalna koda", "country": "Država",
+      "address": "Naslov", "city": "Mesto",
+      "province": "Regija", "postalCode": "Poštna številka"
+    },
+    "deleteConfirm": {
+      "title": "Izbrisati organizacijo?",
+      "message": "Pripravljate se na izbris \"{{name}}\". Dejanje je obnovljivo iz administracije."
+    }
+  },
+  "members": {
+    "title": "Člani",
+    "subtitle": "Ogled in upravljanje članov organizacije",
+    "subtitleAdmin": "Neposredno vpišite uporabnike kot člane",
+    "invite": "Povabi", "invited": "Član povabljen",
+    "removed": "Član odstranjen", "roleChanged": "Vloga posodobljena",
+    "transferConfirmed": "Vloga creator prenesena",
+    "enroll": "Vpiši uporabnika", "enrollSubmit": "Vpiši",
+    "userPicker": "Uporabnik", "rolePicker": "Vloga",
+    "fields": { "name": "Ime", "email": "E-pošta", "role": "Vloga" },
+    "inviteDialog": {
+      "title": "Povabi člana", "email": "E-pošta", "role": "Vloga",
+      "submit": "Ustvari vabilo", "submitting": "Ustvarjanje…",
+      "tokenLabel": "Delite to povezavo (veljavno 7 dni):",
+      "successTitle": "Vabilo ustvarjeno"
+    },
+    "removeConfirm": {
+      "title": "Odstraniti člana?",
+      "message": "{{name}} bo odstranjen iz organizacije."
+    },
+    "transferConfirm": {
+      "title": "Prenesti vlogo creator?",
+      "message": "Postali boste admin organizacije, {{name}} pa creator. Le novi creator lahko prekliče."
+    },
+    "actions": { "permissions": "Dovoljenja", "transfer": "Prenesi creator", "remove": "Odstrani" }
+  },
+  "memberPermissions": {
+    "title": "Dovoljenja: {{name}}",
+    "subtitle": "Za vsako dovoljenje pustite privzeto vrednost vloge ali vsilite grant/revoke za tega člana.",
+    "default": "Privzeto", "grant": "Dodeli", "revoke": "Prekliči",
+    "saved": "Dovoljenja člana posodobljena"
+  },
+  "users": {
+    "title": "Uporabniki", "subtitle": "Upravljajte uporabnike in admine platforme",
+    "new": "Nov uporabnik", "search": "Iskanje po imenu ali e-pošti",
+    "created": "Uporabnik ustvarjen",
+    "fields": { "name": "Ime", "email": "E-pošta", "active": "Aktiven", "platformAdmin": "Admin platforme" },
+    "createDialog": {
+      "title": "Nov uporabnik", "name": "Polno ime", "email": "E-pošta",
+      "password": "Geslo (≥10 znakov, 1 velika, 1 številka)",
+      "platformAdmin": "Admin platforme",
+      "submit": "Ustvari", "submitting": "Ustvarjanje…"
+    }
+  },
+  "globalPermissions": {
+    "title": "Globalna dovoljenja",
+    "subtitle": "Uredite privzeta dovoljenja za vsako vlogo. Veljajo za vse organizacije, razen če so eksplicitno preglašena.",
+    "rolePicker": "Vloga", "saved": "Dovoljenja shranjena", "save": "Shrani dovoljenja"
+  },
+  "templates": {
+    "slide": {
+      "title": "Predloge slik",
+      "subtitle": "Ustvarjajte in urejajte predloge slik za tečaje",
+      "new": "Nova predloga", "newPage": "Nova predloga slike",
+      "editPage": "Urejanje: {{name}}", "previewLive": "Predogled v živo",
+      "previewHint": "Predogled se posodablja v realnem času med urejanjem.",
+      "deleted": "Predloga izbrisana", "created": "Predloga ustvarjena",
+      "updated": "Predloga posodobljena", "empty": "Brez predlog"
+    },
+    "pdf": {
+      "title": "Predloge PDF",
+      "subtitle": "Ustvarjajte in urejajte predloge PDF dokumentov",
+      "new": "Nova predloga", "newPage": "Nova predloga PDF",
+      "editPage": "Urejanje: {{name}}", "previewLive": "Predogled v živo",
+      "previewHint": "Predogled se posodablja v realnem času med urejanjem.",
+      "deleted": "Predloga izbrisana", "created": "Predloga ustvarjena",
+      "updated": "Predloga posodobljena", "empty": "Brez predlog"
+    },
+    "fields": {
+      "name": "Ime predloge", "size": "Format slike", "pageSize": "Velikost strani",
+      "font": "Pisava", "textColor": "Barva besedila",
+      "primaryColor": "Primarna barva", "secondaryColor": "Sekundarna barva",
+      "background": "Slika ozadja", "logoLeft": "Logotip zgoraj levo",
+      "logoRight": "Logotip zgoraj desno",
+      "headerHeight": "Višina glave (mm)", "footerHeight": "Višina noge (mm)",
+      "margin": "Rob strani (mm)"
+    },
+    "deleteConfirm": { "title": "Izbrisati predlogo?", "message": "Pripravljate se na izbris \"{{name}}\"." }
+  },
+  "avatars": {
+    "title": "Avatarji", "subtitle": "Razpoložljivi avatarji za tečaje",
+    "new": "Nov avatar", "newDialog": "Nov avatar", "editDialog": "Uredi avatar",
+    "fields": { "name": "Ime", "description": "Opis", "image": "Slika" },
+    "empty": "Brez avatarjev",
+    "created": "Avatar ustvarjen", "updated": "Avatar posodobljen", "deleted": "Avatar izbrisan",
+    "deleteConfirm": { "title": "Izbrisati avatar?", "message": "Pripravljate se na izbris \"{{name}}\"." }
+  },
+  "permissions": {
+    "member:view": "Ogled članov", "member:invite": "Vabljenje uporabnikov",
+    "member:assign_role": "Dodeljevanje vlog", "member:remove": "Odstranjevanje članov",
+    "template:slide:manage": "Upravljanje predlog slik",
+    "template:pdf:manage": "Upravljanje PDF predlog",
+    "avatar:manage": "Upravljanje avatarjev", "permission:manage": "Upravljanje dovoljenj",
+    "org:transfer_creator": "Prenos vloge creator", "org:update": "Urejanje organizacije"
+  },
+  "roles": {
+    "creator": "Creator", "org_admin": "Admin organizacije",
+    "manager": "Manager", "member": "Član"
+  },
+  "errors": { "generic": "Prišlo je do napake", "loadingFailed": "Nalaganje ni uspelo", "saveFailed": "Shranjevanje ni uspelo" },
+  "dashboard": {
+    "admin": { "title": "Skrbniška plošča", "subtitle": "Globalno upravljanje platforme a4u" },
+    "org": { "subtitle": "Vloga: {{role}}" },
+    "noOrg": { "title": "Dobrodošli", "message": "Niste še član nobene organizacije. Počakajte na vabilo ali se obrnite na skrbnika." }
+  }
+}
