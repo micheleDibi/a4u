@@ -298,6 +298,7 @@
         "createTitle": "New lesson",
         "editTitle": "Edit lesson",
         "dialogDescription": "Set the lesson title, summary and — for the introductory lesson — recommended textbooks. The code (M1.L1…) is assigned automatically.",
+        "introductory": "Introductory",
         "fields": {
           "title": "Lesson title",
           "titlePlaceholder": "E.g. Supervised classification algorithms",
