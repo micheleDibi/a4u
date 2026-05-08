@@ -1,0 +1,362 @@
+# Frontend 02 — `api/`
+
+Client axios + moduli che mappano gli endpoint backend.
+
+---
+
+## `src/api/client.ts`
+
+**Scopo**: istanza axios condivisa con cookie auto-inviati e refresh
+trasparente.
+
+### Esporta
+
+- `apiClient: AxiosInstance`.
+
+### Configurazione
+
+```ts
+axios.create({
+  baseURL: import.meta.env.VITE_API_BASE_URL ?? "/api/v1",
+  withCredentials: true,
+  headers: { "Content-Type": "application/json" },
+  timeout: 20_000,
+});
+```
+
+### Interceptor di refresh
+
+`apiClient.interceptors.response.use(success, async error => …)`:
+
+1. Se `error.response.status === 401`, `cfg !== undefined`,
+   `cfg._retry !== true`, e l'URL non contiene `/auth/login` né
+   `/auth/refresh`:
+2. Marca `cfg._retry = true`.
+3. Se non c'è già un refresh in flight, lo avvia: `apiClient.post("/auth/refresh")`.
+4. Awaita la promise condivisa (deduplicazione).
+5. Ri-esegue `apiClient(cfg)` (la richiesta originale).
+6. Se il refresh fallisce, ribalta l'errore.
+
+Variabile module-scope `refreshing: Promise<void> | null` evita refresh
+concorrenti.
+
+> Eventuali nuovi cookie sono settati direttamente dal backend
+> (Set-Cookie). axios continua a inoltrare automaticamente.
+
+---
+
+## `src/api/types.ts`
+
+DTO TypeScript che rispecchiano gli output Pydantic.
+
+- `UUID = string`.
+- `UserOut`, `MeOrganization`, `MeOut`.
+- `OrganizationOut`.
+- `Page<T>`, `PageMeta`.
+- `MembershipOut`.
+- `InvitationCreateResponse`, `InvitationPreview`.
+- `SlideTemplateOut`, `PdfTemplateOut`.
+- `AvatarOut` (senza più `audio_text`), `AvatarClipOut`,
+  `AvatarClipPromptOut`, `AvatarVoiceScriptOut` `{ language_code, text,
+  created_at, updated_at }`, `AvatarClipStatus`,
+  `AvatarClipsAggregateStatus`.
+- `PermissionOverrideEntry`.
+- `OrganizationCourseSettingsOut`: `{ id, organization_id,
+  modules_per_cfu, lessons_per_module, lesson_duration_minutes,
+  assessment_lesson_enabled, multiple_choice_questions_count,
+  open_questions_count, created_at, updated_at }`.
+
+> Il keep-in-sync con il backend è manuale; un futuro `openapi-typescript`
+> generato dal `openapi.json` automatizzerebbe questo step.
+
+---
+
+## `src/api/auth.ts`
+
+- `authApi.login(email, password) -> Promise<void>`: `POST /auth/login`.
+- `authApi.logout() -> Promise<void>`: `POST /auth/logout`.
+- `authApi.me() -> Promise<MeOut>`: `GET /auth/me`.
+
+---
+
+## `src/api/organizations.ts`
+
+### `OrganizationFormFields`
+
+Tipo che riflette i campi del form (tutti optional tranne `name`+`email`).
+
+### `appendOrg(form, data)` (helper privato)
+
+Aggiunge tutti i campi non-vuoti a un `FormData`.
+
+### `organizationsApi`
+
+- `list(params) -> Promise<Page<OrganizationOut>>`: GET con
+  `page/page_size/q`.
+- `get(id) -> Promise<OrganizationOut>`.
+- `create(data, logo) -> Promise<OrganizationOut>`: multipart, allega
+  `logo` se presente. POST `/admin/organizations`.
+- `update(id, data, options: {logo?, remove_logo?}) -> Promise<OrganizationOut>`:
+  multipart PUT.
+- `remove(id) -> Promise<void>`: DELETE.
+- `enrollUser(orgId, userId, roleCode) -> Promise<void>`:
+  POST `/admin/organizations/:id/memberships`.
+
+---
+
+## `src/api/users.ts`
+
+### `UserCreateFields`
+
+`{ email, full_name, password, is_platform_admin? }`.
+
+### `usersApi`
+
+- `list(params) -> Promise<Page<UserOut>>`.
+- `create(data) -> Promise<UserOut>`.
+- `update(id, partial) -> Promise<UserOut>`.
+
+---
+
+## `src/api/memberships.ts`
+
+`membershipsApi`:
+
+- `list(orgId)`: GET `/orgs/:orgId/members` → `MembershipOut[]`.
+- `changeRole(orgId, userId, roleCode)`: PUT.
+- `remove(orgId, userId)`: DELETE.
+- `getMemberPermissions(orgId, userId)`: GET → `{membership_id, overrides}`.
+- `setMemberPermissions(orgId, userId, overrides)`: PUT.
+- `getRolePermissions(orgId, roleCode)`: GET → `{role_code, defaults, overrides}`.
+- `setRolePermissions(orgId, roleCode, overrides)`: PUT.
+- `transferCreator(orgId, targetUserId)`: POST `/orgs/:id/transfer-creator`.
+
+---
+
+## `src/api/invitations.ts`
+
+`invitationsApi`:
+
+- `create(orgId, email, roleCode) -> Promise<InvitationCreateResponse>`.
+- `preview(token) -> Promise<InvitationPreview>`.
+- `accept(token, payload: {full_name?, password?}) -> Promise<void>`.
+
+---
+
+## `src/api/permissions.ts`
+
+`permissionsApi`:
+
+- `catalog()`: GET `/admin/permissions/permissions` → catalogo (tutti i
+  codici + ruoli).
+- `getRoleDefaults(roleCode)`: GET `/admin/permissions/role-defaults?role_code=`.
+- `setRoleDefaults(roleCode, permissions)`: PUT.
+
+Re-export del tipo `PermissionOverrideEntry` da `types.ts`.
+
+---
+
+## `src/api/slideTemplates.ts`
+
+### `SlideTemplateFields`
+
+Riflette `SlideTemplateBase`.
+
+### `SlideTemplateFiles`
+
+Files opzionali (`background`, `logo_left`, `logo_right`) e flag
+`remove_*`.
+
+### `buildForm(fields, files)` (helper)
+
+Costruisce un `FormData` con campi + file + flag.
+
+### `slideTemplatesApi`
+
+- `list(orgId)`: GET → `SlideTemplateOut[]`.
+- `get(orgId, id)`: GET.
+- `create(orgId, fields, files)`: POST multipart.
+- `update(orgId, id, fields, files)`: PUT multipart.
+- `remove(orgId, id)`: DELETE.
+
+---
+
+## `src/api/pdfTemplates.ts`
+
+Stessa struttura ma con campi PDF (`page_size`, `header_height_mm`, ecc.).
+
+---
+
+## `src/api/avatars.ts`
+
+`myAvatarApi` — opera sull'utente corrente (1:1, no `orgId`).
+
+`MyAvatarUpsertFields` riflette il body multipart accettato dal backend:
+non include più `audio_text` (rimosso).
+
+```ts
+myAvatarApi.get(): Promise<AvatarOut | null>
+// GET /me/avatar
+
+myAvatarApi.upsert(payload: {
+  image?: File | null;
+  audio?: File | null;
+  audio_lang?: string;
+}): Promise<AvatarOut>
+// PUT /me/avatar (multipart)
+// `image`, quando presente, è il JPEG quadrato 1024x1024 prodotto da
+// FormAvatarImageInput dopo il crop 1:1.
+
+myAvatarApi.remove(): Promise<void>
+// DELETE /me/avatar
+
+myAvatarApi.regenerateClips(): Promise<AvatarOut>
+// POST /me/avatar/clips/regenerate
+
+myAvatarApi.getVoiceScript(lang?: string): Promise<AvatarVoiceScriptOut | null>
+// GET /me/avatar/voice-script?lang=...
+// Risolve il testo da leggere durante la registrazione, con fallback
+// lato server (lingua richiesta -> default piattaforma -> qualsiasi
+// script disponibile -> null).
+```
+
+---
+
+## `src/api/avatarConfig.ts`
+
+`avatarConfigApi` — admin di piattaforma. Gestisce i prompt EN passati a
+MiniMax.
+
+```ts
+avatarConfigApi.list(): Promise<AvatarClipPromptOut[]>
+// GET /admin/avatar-config/prompts
+
+avatarConfigApi.create(data: {
+  prompt: string;
+  label_it: string;
+  is_active?: boolean;
+}): Promise<AvatarClipPromptOut>
+// POST /admin/avatar-config/prompts
+
+avatarConfigApi.update(id: UUID, data: {
+  prompt?: string;
+  label_it?: string;
+  is_active?: boolean;
+}): Promise<AvatarClipPromptOut>
+// PUT /admin/avatar-config/prompts/:id
+
+avatarConfigApi.remove(id: UUID): Promise<void>
+// DELETE /admin/avatar-config/prompts/:id
+
+avatarConfigApi.reorder(orderedIds: UUID[]): Promise<AvatarClipPromptOut[]>
+// PUT /admin/avatar-config/prompts/reorder
+
+avatarConfigApi.listVoiceScripts(): Promise<AvatarVoiceScriptOut[]>
+// GET /admin/avatar-config/voice-scripts
+
+avatarConfigApi.upsertVoiceScript(
+  lang: string, text: string,
+): Promise<AvatarVoiceScriptOut>
+// PUT /admin/avatar-config/voice-scripts/:lang
+
+avatarConfigApi.deleteVoiceScript(lang: string): Promise<void>
+// DELETE /admin/avatar-config/voice-scripts/:lang
+```
+
+---
+
+## `src/api/pdfTemplates.ts` — note
+
+`PdfTemplateFields` include ora `background_opacity_pct: number`
+(0..100, default 15). `PdfTemplateOut` espone lo stesso campo.
+
+---
+
+## `src/api/courseSettings.ts`
+
+### `OrganizationCourseSettingsInput`
+
+Body PUT con i 6 campi business:
+
+```ts
+interface OrganizationCourseSettingsInput {
+  modules_per_cfu: number;            // >= 1
+  lessons_per_module: number;         // >= 1
+  lesson_duration_minutes: number;    // >= 1
+  assessment_lesson_enabled: boolean;
+  multiple_choice_questions_count: number;  // >= 0
+  open_questions_count: number;             // >= 0
+}
+```
+
+### `courseSettingsApi`
+
+```ts
+courseSettingsApi.get(orgId: UUID): Promise<OrganizationCourseSettingsOut>
+// GET /orgs/:orgId/course-settings (idempotente: il backend crea
+// lazy la riga con i default se assente).
+
+courseSettingsApi.update(
+  orgId: UUID,
+  payload: OrganizationCourseSettingsInput,
+): Promise<OrganizationCourseSettingsOut>
+// PUT /orgs/:orgId/course-settings
+```
+
+Permission gating richiesto lato server: `course_config:manage`.
+
+---
+
+## `src/api/i18n.ts`
+
+`LanguageOut` include il nuovo campo `untranslated_count: number`
+(numero di chiavi mancanti o vuote rispetto alla lingua di default).
+
+### `AutoTranslateResponse`
+
+```ts
+interface AutoTranslateResponse {
+  code: string;
+  requested: number;
+  translated: number;
+  skipped: number;
+  errors: string[];
+}
+```
+
+### `i18nApi.autoTranslate`
+
+```ts
+i18nApi.autoTranslate(code: string): Promise<AutoTranslateResponse>
+// POST /admin/i18n/languages/:code/auto-translate
+```
+
+Innesca il completamento via OpenAI delle chiavi mancanti per la
+lingua target. Se `OPENAI_API_KEY` non è configurata, il backend
+risponde `422 openai_not_configured`.
+
+---
+
+## `src/api/courses.ts`
+
+API del dominio Corsi. Documentata in dettaglio in
+[Courses 05 — API reference](../courses/05-api-reference.md). Sintesi
+dei namespace esposti:
+
+```ts
+coursesApi.{
+  list, create, get, update, updateAssignee, delete: del,
+  documents: { upload, list, get, reprocess, delete },
+  architecture: { generate, approve },
+  modules: { create, update, delete, reorder, generateLessons },
+  lessons: { create, update, delete, reorder },
+}
+```
+
+**Override timeout**: `coursesApi.modules.generateLessons` passa
+`{ timeout: 300_000 }` al request perché la chiamata sync attende
+OpenAI ~20-30s e il default `apiClient.timeout = 20_000` sarebbe
+troppo basso.
+
+**Helper di tipo**: `CourseOut`, `CourseDocumentOut`, `CourseModuleOut`,
+`CourseLessonOut`, `RecommendedBibliographyItem`, `DocumentSummaryOut`.
