@@ -1,0 +1,168 @@
+from __future__ import annotations
+
+import uuid
+from datetime import datetime
+from typing import Literal
+
+from typing import Any
+
+from pydantic import BaseModel, EmailStr, Field
+
+from app.schemas.common import ORMModel
+from app.schemas.course_architecture import CourseModuleOut
+from app.schemas.document_summary import DocumentSummaryOut
+
+CourseStatus = Literal[
+    "draft",
+    "architecture_pending",
+    "architecture_ready",
+    "architecture_approved",
+    "lessons_structure_pending",
+    "lessons_structure_ready",
+    "lessons_structure_approved",
+    "content_pending",
+    "content_ready",
+    "content_approved",
+    "slides_pending",
+    "slides_ready",
+    "speech_pending",
+    "speech_ready",
+    "published",
+    "archived",
+]
+
+DocumentSummaryStatus = Literal["pending", "processing", "ready", "failed"]
+
+
+class TaxonomyAssignments(BaseModel):
+    """Mappa nome-tassonomia → term_id (nullable). I 8 valori coprono
+    tutte le tassonomie definite in `course_taxonomy_term`."""
+
+    categoria: uuid.UUID | None = None
+    stile_insegnamento: uuid.UUID | None = None
+    profondita_contenuto: uuid.UUID | None = None
+    ruolo_docente: uuid.UUID | None = None
+    dimensione_pubblico: uuid.UUID | None = None
+    livello_conoscenza: uuid.UUID | None = None
+    destinatari: uuid.UUID | None = None
+    livello_eqf: uuid.UUID | None = None
+
+
+class UserCompact(ORMModel):
+    id: uuid.UUID
+    email: EmailStr
+    full_name: str
+
+
+class TaxonomyTermCompact(ORMModel):
+    id: uuid.UUID
+    taxonomy_type: str
+    parent_id: uuid.UUID | None = None
+    slug: str
+    labels: dict[str, str]
+    descriptions: dict[str, str] | None = None
+
+
+class CourseDocumentOut(ORMModel):
+    id: uuid.UUID
+    filename_original: str
+    mime_type: str
+    size_bytes: int
+    summary_status: DocumentSummaryStatus
+    summary_generated_at: datetime | None = None
+    summary_error: str | None = None
+    summary_attempts: int = 0
+    summary_tokens: dict[str, object] | None = None
+    text_chars_extracted: int | None = None
+    created_at: datetime
+
+
+class CourseDocumentDetailOut(CourseDocumentOut):
+    """Variante con il riassunto strutturato in chiaro. Usato dall'endpoint
+    `GET /documents/{id}` quando l'utente apre il dialog del riassunto."""
+
+    summary: DocumentSummaryOut | None = None
+
+
+class CourseListItemOut(ORMModel):
+    id: uuid.UUID
+    title: str
+    status: CourseStatus
+    language_code: str
+    assignee: UserCompact
+    modules_count: int
+    cfu: int
+    updated_at: datetime
+    created_at: datetime
+
+
+class CourseOut(ORMModel):
+    id: uuid.UUID
+    organization_id: uuid.UUID
+    title: str
+    objectives: str
+    language_code: str
+    argomenti_chiave: list[str] = Field(default_factory=list)
+    cfu: int
+    modules_count: int
+    lessons_per_module: int
+    lesson_duration_minutes: int
+    assessment_lesson_enabled: bool
+    multiple_choice_questions_count: int
+    open_questions_count: int
+    status: CourseStatus
+    assignee: UserCompact
+    created_by: UserCompact | None = None
+    documents: list[CourseDocumentOut] = Field(default_factory=list)
+    # Architettura corso (Fase 1) — popolata quando lo status è ≥ architecture_ready.
+    modules: list[CourseModuleOut] = Field(default_factory=list)
+    course_overview: str | None = None
+    pedagogical_rationale: str | None = None
+    architecture_attempts: int = 0
+    architecture_tokens: dict[str, Any] | None = None
+    architecture_error: str | None = None
+    architecture_generated_at: datetime | None = None
+    architecture_regeneration_hint: str | None = None
+    architecture_progress: int = 0
+    architecture_progress_phase: str | None = None
+    # Glossario corso (§10.1) — generato una volta, riusato in Fase 2/3/5.
+    glossary_status: str = "empty"
+    glossary_raw: dict[str, Any] | None = None
+    glossary_tokens: dict[str, Any] | None = None
+    glossary_generated_at: datetime | None = None
+    glossary_error: str | None = None
+    # Term completi (mappa nome → term) per render dei nomi senza extra round-trip.
+    categoria: TaxonomyTermCompact | None = None
+    stile_insegnamento: TaxonomyTermCompact | None = None
+    profondita_contenuto: TaxonomyTermCompact | None = None
+    ruolo_docente: TaxonomyTermCompact | None = None
+    dimensione_pubblico: TaxonomyTermCompact | None = None
+    livello_conoscenza: TaxonomyTermCompact | None = None
+    destinatari: TaxonomyTermCompact | None = None
+    livello_eqf: TaxonomyTermCompact | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class CourseCreateInput(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    objectives: str = Field(default="", max_length=8000)
+    language_code: str = Field(min_length=2, max_length=10)
+    cfu: int = Field(ge=1, le=200)
+    argomenti_chiave: list[str] = Field(default_factory=list, max_length=30)
+    assignee_user_id: uuid.UUID | None = None
+    taxonomies: TaxonomyAssignments = Field(default_factory=TaxonomyAssignments)
+
+
+class CourseUpdateInput(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    objectives: str | None = Field(default=None, max_length=8000)
+    language_code: str | None = Field(default=None, min_length=2, max_length=10)
+    cfu: int | None = Field(default=None, ge=1, le=200)
+    argomenti_chiave: list[str] | None = Field(default=None, max_length=30)
+    taxonomies: TaxonomyAssignments | None = None
+    status: CourseStatus | None = None
+
+
+class CourseAssigneeUpdateInput(BaseModel):
+    assignee_user_id: uuid.UUID

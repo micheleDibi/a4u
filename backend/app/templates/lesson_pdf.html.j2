@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="{{ language }}">
+<head>
+  <meta charset="utf-8" />
+  <title>{{ course.title }} — {{ lesson.title }}</title>
+
+  <style>
+    /* === Reset + base font dal template org === */
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: "{{ tpl.font_family }}", "Inter", "DejaVu Sans",
+                    "Liberation Sans", -apple-system, "Segoe UI",
+                    Roboto, "Helvetica Neue", Arial, sans-serif;
+      color: {{ tpl.text_color }};
+      font-size: 11pt;
+      line-height: 1.5;
+    }
+
+    /* === @page ===
+       CSS Paged Media: WeasyPrint (a differenza di Chromium) supporta
+       margin boxes (@top-left, @bottom-center) e position:running()
+       correttamente. Questo permette:
+         - header con loghi ripetuti su ogni pagina (running pageHeader)
+         - numerazione automatica (counter(page))
+         - sfondo edge-to-edge (`.page-background` con offset negativi)
+       Pattern verificato sul progetto gemello avatar4universityAPI. */
+    @page {
+      size: {{ tpl.page_size }};
+      margin: {{ margin_top_cm }}cm {{ margin_side_cm }}cm
+              {{ margin_bottom_cm }}cm {{ margin_side_cm }}cm;
+
+      @top-left {
+        content: element(pageHeader);
+        width: 100%;
+        vertical-align: top;
+      }
+      @bottom-center {
+        content: counter(page);
+        font-family: "{{ tpl.font_family }}", "DejaVu Sans", sans-serif;
+        font-size: 9pt;
+        color: {{ tpl.text_color }};
+      }
+    }
+
+    /* === Background edge-to-edge ===
+       Gli offset negativi sono uguali ai margini @page: l'elemento
+       extende oltre il content area di esattamente lo spessore del
+       margin → copre TUTTO il foglio (paper-width × paper-height).
+       z-index negativo lo manda dietro al contenuto. */
+    {% if tpl.background_image_url %}
+    .page-background {
+      position: fixed;
+      top: -{{ margin_top_cm }}cm;
+      bottom: -{{ margin_bottom_cm }}cm;
+      left: -{{ margin_side_cm }}cm;
+      right: -{{ margin_side_cm }}cm;
+      background-image: url("{{ tpl.background_image_url }}");
+      background-size: cover;
+      background-position: center center;
+      background-repeat: no-repeat;
+      opacity: {{ (tpl.background_opacity_pct / 100.0) | round(3) }};
+      z-index: -100;
+    }
+    {% endif %}
+
+    /* === Header running ===
+       L'elemento .page-header non viene mostrato in linea con il body:
+       viene "spostato" nel margin-box @top-left dell'@page, e ripetuto
+       su ogni pagina (incluse copertina e pagine successive). */
+    {% if tpl.logo_left_url or tpl.logo_right_url %}
+    .page-header {
+      position: running(pageHeader);
+      width: 100%;
+      padding-bottom: 4pt;
+      border-bottom: 0.5pt solid {{ tpl.secondary_color }}66;
+    }
+    .page-header::after {
+      content: "";
+      display: block;
+      clear: both;
+    }
+    .page-header .logo-left {
+      max-height: {{ tpl.header_height_mm if tpl.header_height_mm else 12 }}mm;
+      max-width: 50mm;
+      float: left;
+    }
+    .page-header .logo-right {
+      max-height: {{ tpl.header_height_mm if tpl.header_height_mm else 12 }}mm;
+      max-width: 50mm;
+      float: right;
+    }
+    {% endif %}
+
+    /* === Page-break utilities === */
+    .pb-after { page-break-after: always; }
+    .pb-avoid { page-break-inside: avoid; }
+    figure, table, .equation, .example { page-break-inside: avoid; }
+
+    /* === Cover === */
+    .cover {
+      min-height: 22cm;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      page-break-after: always;
+      text-align: center;
+    }
+    .cover .accent-bar {
+      width: 60mm; height: 4pt;
+      background: {{ tpl.primary_color }};
+      margin: 0 auto 12mm;
+    }
+    .cover .org-name {
+      font-size: 11pt; letter-spacing: 0.06em; text-transform: uppercase;
+      color: {{ tpl.secondary_color }}; margin-bottom: 14mm;
+    }
+    .cover .lesson-code {
+      font-size: 13pt; font-weight: 600;
+      color: {{ tpl.primary_color }}; margin-bottom: 4mm;
+    }
+    .cover .lesson-title {
+      font-size: 28pt; font-weight: 700; letter-spacing: -0.01em;
+      line-height: 1.15; margin: 0 0 12mm; max-width: 140mm;
+      align-self: center;
+    }
+    .cover .course-title {
+      font-size: 13pt; font-style: italic;
+      color: {{ tpl.text_color }}; opacity: 0.7;
+    }
+
+    /* === Headings === */
+    h1 { font-size: 22pt; font-weight: 700; margin: 0 0 6mm;
+         color: {{ tpl.primary_color }}; }
+    h2 {
+      font-size: 16pt; font-weight: 700; line-height: 1.2;
+      margin: 10mm 0 4mm; padding-bottom: 2mm;
+      border-bottom: 1.5pt solid {{ tpl.primary_color }};
+      color: {{ tpl.primary_color }};
+    }
+    h3 { font-size: 13pt; font-weight: 600; margin: 6mm 0 2mm;
+         color: {{ tpl.text_color }}; }
+    h4 { font-size: 11pt; font-weight: 600; margin: 4mm 0 1mm; }
+
+    /* === Body text === */
+    p { margin: 0 0 3mm; text-align: justify; hyphens: auto; }
+    strong { font-weight: 600; }
+    em { font-style: italic; }
+    a { color: {{ tpl.primary_color }}; text-decoration: underline; }
+    ul, ol { margin: 0 0 3mm; padding-left: 6mm; }
+    li { margin: 0.5mm 0; }
+    li > p { margin: 0; }
+    blockquote {
+      margin: 3mm 0; padding: 2mm 4mm;
+      border-left: 3pt solid {{ tpl.secondary_color }};
+      background: rgba(0, 0, 0, 0.03);
+      color: rgba(0, 0, 0, 0.75);
+    }
+
+    /* === Code === */
+    code {
+      font-family: "Menlo", "Consolas", monospace;
+      font-size: 0.88em; background: rgba(0, 0, 0, 0.05);
+      padding: 0.5pt 3pt; border-radius: 2pt;
+    }
+    pre {
+      background: #f5f5f7; border: 0.5pt solid rgba(0, 0, 0, 0.08);
+      border-radius: 3pt; padding: 3mm; overflow: hidden;
+      font-size: 9.5pt; line-height: 1.4;
+    }
+    pre code { background: transparent; padding: 0; font-size: 9.5pt; }
+
+    /* === Markdown tables === */
+    .lp-content table {
+      width: 100%; border-collapse: collapse;
+      margin: 3mm 0; font-size: 10pt;
+    }
+    .lp-content th {
+      text-align: left; font-weight: 600;
+      padding: 1.5mm 2.5mm;
+      border: 0.5pt solid rgba(0, 0, 0, 0.15);
+      background: {{ tpl.primary_color }}1A;
+    }
+    .lp-content td {
+      padding: 1.5mm 2.5mm;
+      border: 0.5pt solid rgba(0, 0, 0, 0.15);
+      vertical-align: top;
+    }
+
+    /* === Asset blocks === */
+    figure {
+      margin: 4mm 0;
+      border: 0.5pt solid rgba(0, 0, 0, 0.12);
+      border-radius: 3pt;
+    }
+    figure .figure-body {
+      padding: 3mm; background: rgba(255, 255, 255, 0.6);
+    }
+    figure figcaption {
+      padding: 1.5mm 3mm; font-size: 9pt;
+      color: rgba(0, 0, 0, 0.6); font-style: italic;
+      border-top: 0.5pt solid rgba(0, 0, 0, 0.1);
+      background: rgba(255, 255, 255, 0.6);
+    }
+    .equation { text-align: center; }
+    .equation .math-block { margin: 0; }
+    .equation figcaption .label { font-style: normal; font-weight: 600; }
+
+    .example {
+      margin: 4mm 0;
+      border-left: 3pt solid {{ tpl.primary_color }};
+      background: {{ tpl.primary_color }}0D;
+      border-radius: 0 3pt 3pt 0;
+    }
+    .example .example-title {
+      font-weight: 600; padding: 2mm 3mm 0;
+      color: {{ tpl.primary_color }};
+    }
+    .example .example-body { padding: 1mm 3mm 2mm; }
+
+    .placeholder-image {
+      padding: 4mm; text-align: center;
+      background: rgba(0, 0, 0, 0.04);
+      color: rgba(0, 0, 0, 0.55); font-size: 9.5pt;
+    }
+    .mermaid-svg svg {
+      max-width: 100%; height: auto;
+      display: block; margin: 0 auto;
+    }
+    .mermaid-fallback {
+      font-family: "Menlo", "Consolas", monospace; font-size: 9pt;
+      white-space: pre-wrap;
+    }
+
+    /* === Math === */
+    /* WeasyPrint renderizza MathML nativamente; alziamo solo
+       leggermente il font-size per leggibilità in stampa. */
+    math { font-size: 1.05em; }
+    .math-block { margin: 3mm 0; text-align: center; }
+    .math-block math { display: block; margin: 0 auto; }
+    .math-error {
+      color: #cc0000; background: rgba(204, 0, 0, 0.08);
+      padding: 0.5pt 3pt; border-radius: 2pt;
+    }
+
+    .key-takeaways {
+      margin-top: 6mm; padding: 3mm 4mm; border-radius: 3pt;
+      background: {{ tpl.primary_color }}0D;
+      border: 0.5pt solid {{ tpl.primary_color }}33;
+    }
+    .key-takeaways h2 {
+      margin-top: 0; border-bottom-color: {{ tpl.primary_color }}66;
+    }
+
+    .references-list { font-size: 9.5pt; color: rgba(0, 0, 0, 0.75); }
+    .references-list li { margin: 1mm 0; }
+
+    .lp-content > :first-child { margin-top: 0; }
+  </style>
+</head>
+<body>
+  {% if tpl.background_image_url %}
+  <div class="page-background"></div>
+  {% endif %}
+
+  {% if tpl.logo_left_url or tpl.logo_right_url %}
+  <div class="page-header">
+    {% if tpl.logo_left_url %}
+      <img class="logo-left" src="{{ tpl.logo_left_url }}" alt="" />
+    {% endif %}
+    {% if tpl.logo_right_url %}
+      <img class="logo-right" src="{{ tpl.logo_right_url }}" alt="" />
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {# === Cover === #}
+  <section class="cover">
+    <div class="accent-bar"></div>
+    {% if organization_name %}
+      <div class="org-name">{{ organization_name }}</div>
+    {% endif %}
+    <div class="lesson-code">{{ lesson.lesson_code }}</div>
+    <h1 class="lesson-title">{{ lesson.title }}</h1>
+    <div class="course-title">{{ course.title }}</div>
+  </section>
+
+  {# === Body === #}
+  <div class="lp-content">
+    {{ body_html | safe }}
+  </div>
+
+  {% if key_takeaways %}
+  <section class="key-takeaways pb-avoid">
+    <h2>{{ labels.key_takeaways }}</h2>
+    <ul>
+      {% for kt in key_takeaways %}<li>{{ kt }}</li>{% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  {% if references %}
+  <section class="pb-avoid">
+    <h2>{{ labels.references }}</h2>
+    <ol class="references-list">
+      {% for ref in references %}<li>{{ ref.citation }}</li>{% endfor %}
+    </ol>
+  </section>
+  {% endif %}
+</body>
+</html>
