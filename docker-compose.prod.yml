@@ -69,6 +69,7 @@ services:
       - "${BACKEND_PORT:-127.0.0.1:8000}:8000"
     volumes:
       - uploads:/app/uploads
+      - generated_pdfs:/app/generated_pdfs
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/v1/system/health').status==200 else 1)"]
       interval: 30s
@@ -94,3 +95,4 @@ services:
 
 volumes:
   uploads:
+  generated_pdfs:

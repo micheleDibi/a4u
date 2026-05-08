@@ -47,7 +47,8 @@ RUN python -m playwright install chromium \
 
 COPY --chown=app:app . /app
 RUN mkdir -p /app/uploads/organizations /app/uploads/avatars /app/uploads/templates \
-    && chown -R app:app /app/uploads
+             /app/generated_pdfs \
+    && chown -R app:app /app/uploads /app/generated_pdfs
 USER app
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
