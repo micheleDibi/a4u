@@ -216,18 +216,22 @@ def _expected_slide_range(minutes: int) -> tuple[int, int]:
     """Range atteso (min, max) per durata lezione, con tolleranza ±20%
     rispetto alle linee guida §7.1 punto 3.
 
+    - 15 min → 6-10 → 5-12   (overhead strutturale: floor 6)
     - 30 min → 12-15 → 10-18
     - 45 min → 18-23 → 14-28
     - 60 min → 22-30 → 18-36
     - 90 min → 32-42 → 26-50
-    Per durate intermedie/insolite, interpolazione lineare con cap.
+
+    Per durate brevi (≤ ~20 min) la formula lineare sottostima perché
+    una lezione, anche brevissima, ha un overhead strutturale fisso
+    (title, agenda, prerequisites, summary, takeaways, references ≈
+    6 slide) che non scala col tempo. Applichiamo un floor minimo
+    per coprire questo caso.
     """
-    # Tabella di riferimento (durata → (low, high) base).
-    # Calcoliamo low/high con interpolazione lineare e tolleranza ±20%.
     if minutes <= 0:
         return (1, 1)
-    base_low = max(1, round(minutes * 0.36))   # ~12 slide / 30 min
-    base_high = max(2, round(minutes * 0.50))  # ~15 slide / 30 min
+    base_low = max(6, round(minutes * 0.36))   # floor 6 strutturali
+    base_high = max(10, round(minutes * 0.50)) # floor 10 (6 strutt. + ~4 contenuto)
     # Tolleranza ±20%
     low = max(1, round(base_low * 0.80))
     high = max(low + 1, round(base_high * 1.20))

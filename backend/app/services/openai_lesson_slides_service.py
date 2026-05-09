@@ -56,8 +56,12 @@ PRINCIPI
    `*_new_*` (es. `fig_new_1`, `tab_new_2`).
 
 3. NUMERO DI SLIDE: stima ~2-3 minuti per slide di contenuto, meno
-   per slide di apertura/transizione/agenda. Per {{minuti_per_lezione}}
-   minuti, target indicativo:
+   per slide di apertura/transizione/agenda. Anche le lezioni brevi
+   richiedono un overhead strutturale fisso (~6 slide: titolo, agenda,
+   prerequisiti, sintesi, takeaways, riferimenti). Per
+   {{minuti_per_lezione}} minuti, target indicativo:
+   - 15 min →  6-10 slide   (overhead strutturale + 1-3 di contenuto)
+   - 20 min →  8-12 slide
    - 30 min → 12-15 slide
    - 45 min → 18-23 slide
    - 60 min → 22-30 slide
