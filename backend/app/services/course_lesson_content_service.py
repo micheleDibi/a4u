@@ -469,6 +469,61 @@ async def request_all_lessons_generation(
     return await _refresh_full(db, course)
 
 
+async def request_missing_lessons_generation(
+    db: AsyncSession,
+    *,
+    course: Course,
+    actor_id: uuid.UUID,
+) -> Course:
+    """Marca SOLO le lezioni con `content_status='empty'` come `pending`.
+
+    Pensato per un secondo passo dopo `generate-all`: se alcune lezioni
+    sono fallite definitivamente o sono state aggiunte manualmente più
+    tardi, l'utente può riempire i buchi senza rigenerare quelle già
+    pronte. Niente regeneration_hint: il pattern di "completamento" è
+    fire-and-forget standard.
+    """
+    if course.status not in VALID_COURSE_GENERATE_FROM_STATUSES:
+        raise ConflictError(
+            f"Stato corso non valido per Fase 3: {course.status}",
+            code="invalid_course_status",
+        )
+
+    missing_lessons: list[CourseLesson] = [
+        lesson
+        for m in course.modules
+        for lesson in m.lessons
+        if lesson.content_status == "empty"
+    ]
+    if not missing_lessons:
+        raise ConflictError(
+            "Nessuna lezione mancante: tutte le lezioni hanno già un contenuto.",
+            code="no_missing_lessons",
+        )
+
+    for lesson in missing_lessons:
+        lesson.content_status = "pending"
+        lesson.content_error = None
+        lesson.content_progress = 0
+        lesson.content_progress_phase = None
+        # Nessun regeneration_hint: è una generazione standard.
+        lesson.content_regeneration_hint = None
+
+    course.status = "content_pending"
+
+    await write_audit(
+        db,
+        action="course.content.generate_missing.requested",
+        actor_user_id=actor_id,
+        organization_id=course.organization_id,
+        target_type="course",
+        target_id=str(course.id),
+        metadata={"lessons_count": len(missing_lessons)},
+    )
+    await db.commit()
+    return await _refresh_full(db, course)
+
+
 async def cancel_all_lessons_generation(
     db: AsyncSession,
     *,

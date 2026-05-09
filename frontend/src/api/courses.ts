@@ -774,6 +774,15 @@ export const coursesApi = {
       );
       return res.data;
     },
+    generateMissing: async (
+      orgId: string,
+      courseId: string
+    ): Promise<CourseOut> => {
+      const res = await apiClient.post<CourseOut>(
+        `${base(orgId)}/${courseId}/lessons-content/generate-missing`
+      );
+      return res.data;
+    },
     approveLesson: async (
       orgId: string,
       courseId: string,

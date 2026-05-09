@@ -887,6 +887,36 @@ async def generate_all_lessons_content(
 
 
 @router.post(
+    "/{course_id}/lessons-content/generate-missing",
+    response_model=CourseOut,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def generate_missing_lessons_content(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_GENERATE),
+) -> CourseOut:
+    """Avvia la generazione AI dei contenuti SOLO per le lezioni con
+    `content_status='empty'`. Utile per "riempire i buchi" senza
+    rigenerare le lezioni già pronte/approvate.
+
+    409 `no_missing_lessons` se tutte le lezioni hanno già un contenuto.
+    """
+    await _ensure_org(db, org_id)
+    course = await _load_course_for_edit(
+        db, org_id=org_id, course_id=course_id, current=current
+    )
+    course = await course_lesson_content_service.request_missing_lessons_generation(
+        db,
+        course=course,
+        actor_id=current.id,
+    )
+    return CourseOut.model_validate(course)
+
+
+@router.post(
     "/{course_id}/lessons-content/cancel-all",
     response_model=CourseOut,
 )

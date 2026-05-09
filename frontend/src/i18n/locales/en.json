@@ -519,6 +519,7 @@
       "lessonsStructureNotApproved": "Approve the lesson structure first to generate content.",
       "generateAll": "Generate content for all lessons",
       "regenerateAll": "Regenerate all content",
+      "generateMissing": "Generate missing ({{count}})",
       "approveAll": "Approve all content",
       "cancelAll": "Stop generation",
       "aggregate": {

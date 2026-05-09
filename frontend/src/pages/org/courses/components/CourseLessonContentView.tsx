@@ -183,6 +183,14 @@ export function CourseLessonContentView({
   const someEverGenerated = allLessons.some((l) =>
     ["ready", "approved", "failed"].includes(l.content_status),
   );
+  // Lezioni "vuote": per il bottone "Genera mancanti". Visibile solo
+  // quando ci sono lezioni da generare E almeno una è già stata
+  // generata (altrimenti l'utente userebbe "Genera tutti").
+  const missingCount = allLessons.filter(
+    (l) => l.content_status === "empty",
+  ).length;
+  const showGenerateMissing =
+    missingCount > 0 && missingCount < allLessons.length && someEverGenerated;
 
   // PDF aggregate
   const pdfAggregate = useMemo(() => {
@@ -214,6 +222,19 @@ export function CourseLessonContentView({
     onSuccess: (fresh) => {
       setCache(fresh);
       setGenerateDialog({ kind: "closed" });
+      toast.success(t("courses.lessonsContent.toast.batchStarted"));
+    },
+    onError: (err) =>
+      toast.error(
+        extractApiError(err).message ?? t("courses.lessonsContent.toast.error"),
+      ),
+  });
+
+  const generateMissingMut = useMutation({
+    mutationFn: () =>
+      coursesApi.lessonContent.generateMissing(orgId, course.id),
+    onSuccess: (fresh) => {
+      setCache(fresh);
       toast.success(t("courses.lessonsContent.toast.batchStarted"));
     },
     onError: (err) =>
@@ -435,6 +456,18 @@ export function CourseLessonContentView({
                   {someEverGenerated
                     ? t("courses.lessonsContent.regenerateAll")
                     : t("courses.lessonsContent.generateAll")}
+                </Button>
+              )}
+              {canGenerate && showGenerateMissing && (
+                <Button
+                  variant="default"
+                  onClick={() => generateMissingMut.mutate()}
+                  disabled={anyActive || generateMissingMut.isPending}
+                >
+                  <Sparkles className="size-4" />
+                  {t("courses.lessonsContent.generateMissing", {
+                    count: missingCount,
+                  })}
                 </Button>
               )}
               {canGenerate && allReadyOrApproved && !allApproved && (
