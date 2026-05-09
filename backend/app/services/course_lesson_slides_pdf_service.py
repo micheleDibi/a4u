@@ -29,12 +29,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
-from app.core.errors import ConflictError
+from app.core.errors import ConflictError, NotFoundError
 from app.core.logging import get_logger
 from app.models.course import Course
 from app.models.course_lesson import CourseLesson
 from app.models.organization import Organization
-from app.models.pdf_template import PdfTemplate
+from app.models.slide_template import SlideTemplate
 from app.services import course_lesson_pdf_service as base_pdf
 from app.services import course_lesson_slides_service
 
@@ -221,6 +221,89 @@ async def _prerender_mermaid_for_slides(
 
 
 # ---------------------------------------------------------------------------
+# Slide template helpers (resolve + format)
+# ---------------------------------------------------------------------------
+
+
+async def _get_default_slide_template(
+    db: AsyncSession, *, organization_id: uuid.UUID
+) -> SlideTemplate | None:
+    """Default `is_default=True`, fallback al primo, `None` se nessuno."""
+    res = await db.execute(
+        select(SlideTemplate)
+        .where(SlideTemplate.organization_id == organization_id)
+        .order_by(SlideTemplate.is_default.desc(), SlideTemplate.created_at.asc())
+        .limit(1)
+    )
+    return res.scalar_one_or_none()
+
+
+async def _get_slide_template_or_404(
+    db: AsyncSession,
+    *,
+    organization_id: uuid.UUID,
+    template_id: uuid.UUID,
+) -> SlideTemplate:
+    res = await db.execute(
+        select(SlideTemplate).where(
+            SlideTemplate.id == template_id,
+            SlideTemplate.organization_id == organization_id,
+        )
+    )
+    tpl = res.scalar_one_or_none()
+    if tpl is None:
+        raise NotFoundError(
+            f"Slide template {template_id} non trovato.",
+            code="slide_template_not_found",
+        )
+    return tpl
+
+
+def _format_slide_template_for_render(
+    tpl: SlideTemplate, *, public_base_url: str | None
+) -> dict[str, Any]:
+    """Adatta SlideTemplate al dict `tpl` consumato dal Jinja delle slide.
+
+    Usa gli stessi nomi di campo del PdfTemplate dove possibile, così il
+    template HTML (che legge `tpl.font_family`, `tpl.text_color`,
+    `tpl.primary_color`, `tpl.secondary_color`) funziona senza modifiche.
+    """
+    return {
+        "font_family": tpl.font_family,
+        "text_color": tpl.text_color,
+        "primary_color": tpl.primary_color,
+        "secondary_color": tpl.secondary_color,
+        "slide_size": tpl.slide_size,
+        "margin_mm": tpl.margin_mm,
+        "background_opacity_pct": tpl.background_opacity_pct,
+        "background_image_url": base_pdf._resolve_template_asset_url(
+            tpl.background_image_path, public_base_url=public_base_url
+        ),
+        "logo_left_url": base_pdf._resolve_template_asset_url(
+            tpl.logo_left_path, public_base_url=public_base_url
+        ),
+        "logo_right_url": base_pdf._resolve_template_asset_url(
+            tpl.logo_right_path, public_base_url=public_base_url
+        ),
+    }
+
+
+def _default_slide_template_dict() -> dict[str, Any]:
+    return {
+        "font_family": "Inter",
+        "text_color": "#1F1F1F",
+        "primary_color": "#1976D2",
+        "secondary_color": "#9C27B0",
+        "slide_size": "16:9",
+        "margin_mm": 20,
+        "background_opacity_pct": 0,
+        "background_image_url": None,
+        "logo_left_url": None,
+        "logo_right_url": None,
+    }
+
+
+# ---------------------------------------------------------------------------
 # render_slides_html
 # ---------------------------------------------------------------------------
 
@@ -230,14 +313,11 @@ def render_slides_html(
     course: Course,
     lesson: CourseLesson,
     organization: Organization | None,
-    pdf_template: PdfTemplate | None,
+    slide_template: SlideTemplate | None,
     public_base_url: str | None = None,
     mermaid_svg_map: dict[str, str] | None = None,
 ) -> str:
-    """Pure-function: HTML completo delle slide pronto per WeasyPrint.
-
-    Reuses base PDF helpers per template formatting + asset rendering.
-    """
+    """Pure-function: HTML completo delle slide pronto per WeasyPrint."""
     slides_raw = lesson.slides_raw or {}
     if not slides_raw:
         raise ConflictError(
@@ -250,12 +330,12 @@ def render_slides_html(
 
     language = (course.language_code or "it").lower()
 
-    if pdf_template is not None:
-        tpl_dict = base_pdf._format_pdf_template_for_render(
-            pdf_template, public_base_url=public_base_url
+    if slide_template is not None:
+        tpl_dict = _format_slide_template_for_render(
+            slide_template, public_base_url=public_base_url
         )
     else:
-        tpl_dict = base_pdf._default_template_dict(language=language)
+        tpl_dict = _default_slide_template_dict()
 
     mmap = mermaid_svg_map or {}
     rendered_slides: list[dict[str, Any]] = []
@@ -320,20 +400,19 @@ async def materialize_lesson_slides_pdf(
     Restituisce il path relativo persistito."""
     organization = await base_pdf._get_organization(db, course.organization_id)
 
-    # Risolvi template: se la lezione ha `slides_pdf_template_id`, usalo;
-    # altrimenti default org. Non ricicla il `pdf_template_id` del PDF
-    # lezione testo (sono concettualmente distinti).
-    pdf_template: PdfTemplate | None = None
+    # Risolvi il template SLIDE (unificato con quello dell'avatar):
+    # se la lezione ne ha uno scelto esplicitamente, usalo; altrimenti
+    # cadi sul default `slide_templates` dell'org.
+    slide_template: SlideTemplate | None = None
     if lesson.slides_pdf_template_id is not None:
-        pdf_template = await base_pdf._get_pdf_template_or_404(
+        slide_template = await _get_slide_template_or_404(
             db,
             organization_id=course.organization_id,
             template_id=lesson.slides_pdf_template_id,
-            kind="slides",
         )
     else:
-        pdf_template = await base_pdf._get_default_pdf_template(
-            db, organization_id=course.organization_id, kind="slides"
+        slide_template = await _get_default_slide_template(
+            db, organization_id=course.organization_id
         )
 
     slides_raw = lesson.slides_raw or {}
@@ -346,7 +425,7 @@ async def materialize_lesson_slides_pdf(
         course=course,
         lesson=lesson,
         organization=organization,
-        pdf_template=pdf_template,
+        slide_template=slide_template,
         public_base_url=public_base_url,
         mermaid_svg_map=mermaid_svg_map,
     )
@@ -363,7 +442,7 @@ async def materialize_lesson_slides_pdf(
     abs_path.write_bytes(pdf_bytes)
 
     lesson.slides_pdf_path = rel
-    lesson.slides_pdf_template_id = pdf_template.id if pdf_template else None
+    lesson.slides_pdf_template_id = slide_template.id if slide_template else None
     lesson.slides_pdf_generated_at = datetime.now(UTC)
     return rel
 
@@ -399,11 +478,10 @@ async def request_lesson_slides_pdf(
         )
 
     if pdf_template_id is not None:
-        await base_pdf._get_pdf_template_or_404(
+        await _get_slide_template_or_404(
             db,
             organization_id=course.organization_id,
             template_id=pdf_template_id,
-            kind="slides",
         )
         lesson.slides_pdf_template_id = pdf_template_id
 
@@ -454,11 +532,10 @@ async def request_all_lessons_slides_pdf(
         )
 
     if pdf_template_id is not None:
-        await base_pdf._get_pdf_template_or_404(
+        await _get_slide_template_or_404(
             db,
             organization_id=course.organization_id,
             template_id=pdf_template_id,
-            kind="slides",
         )
 
     for lesson in eligible:

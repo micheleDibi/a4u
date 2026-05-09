@@ -2,33 +2,24 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import CHAR, Boolean, CheckConstraint, ForeignKey, SmallInteger, String
+from sqlalchemy import CHAR, Boolean, ForeignKey, SmallInteger, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin, UUIDPKMixin
 
 
-# Discriminatore: distingue i template del PDF lezione testo da quelli
-# del PDF delle slide. L'output è sempre un .pdf, ma il layout (page
-# size landscape, font-size, ecc.) e la pipeline di rendering cambiano.
-PDF_TEMPLATE_KINDS: tuple[str, ...] = ("lesson", "slides")
-
-
 class PdfTemplate(UUIDPKMixin, TimestampMixin, Base):
+    """Template per il PDF della lezione testo (Fase 3 export).
+
+    I template per le SLIDE (Fase 4 export PDF + avatar video) sono
+    unificati su `slide_templates` (vedi `app.models.slide_template`).
+    """
+
     __tablename__ = "pdf_templates"
-    __table_args__ = (
-        CheckConstraint(
-            "kind IN ('lesson', 'slides')",
-            name="ck_pdf_templates_kind",
-        ),
-    )
 
     organization_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    kind: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="lesson", server_default="lesson"
     )
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     background_image_path: Mapped[str | None] = mapped_column(String(500))

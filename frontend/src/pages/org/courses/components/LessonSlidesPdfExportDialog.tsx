@@ -16,8 +16,8 @@ import {
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { pdfTemplatesApi } from "@/api/pdfTemplates";
-import type { PdfTemplateOut } from "@/api/types";
+import { slideTemplatesApi } from "@/api/slideTemplates";
+import type { SlideTemplateOut } from "@/api/types";
 
 export type LessonSlidesPdfExportMode = "single" | "all";
 
@@ -53,8 +53,8 @@ export function LessonSlidesPdfExportDialog({
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const tplQuery = useQuery({
-    queryKey: ["org", orgId, "pdf-templates", "slides"],
-    queryFn: () => pdfTemplatesApi.list(orgId, "slides"),
+    queryKey: ["org", orgId, "slide-templates"],
+    queryFn: () => slideTemplatesApi.list(orgId),
     enabled: open,
     staleTime: 30_000,
   });
@@ -176,7 +176,7 @@ export function LessonSlidesPdfExportDialog({
 }
 
 interface TemplateOptionProps {
-  tpl: PdfTemplateOut;
+  tpl: SlideTemplateOut;
   selected: boolean;
   onSelect: () => void;
 }
@@ -219,7 +219,7 @@ function TemplateOption({ tpl, selected, onSelect }: TemplateOptionProps) {
           )}
         </div>
         <div className="mt-0.5 text-xs text-muted-foreground">
-          {tpl.font_family} · {tpl.page_size} · {tpl.margin_mm}mm
+          {tpl.font_family} · {tpl.slide_size} · {tpl.margin_mm}mm
         </div>
       </div>
 

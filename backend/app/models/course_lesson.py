@@ -280,7 +280,7 @@ class CourseLesson(UUIDPKMixin, TimestampMixin, Base):
     )
     slides_pdf_template_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("pdf_templates.id", ondelete="SET NULL"),
+        ForeignKey("slide_templates.id", ondelete="SET NULL"),
         nullable=True,
     )
     slides_pdf_attempts: Mapped[int] = mapped_column(

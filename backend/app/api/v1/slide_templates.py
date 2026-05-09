@@ -21,6 +21,8 @@ def _form_slide_template(
     secondary_color: Annotated[str, Form()] = "#9C27B0",
     font_family: Annotated[str, Form()] = "Roboto",
     slide_size: Annotated[Literal["16:9", "4:3"], Form()] = "16:9",
+    margin_mm: Annotated[int, Form(ge=0, le=60)] = 20,
+    background_opacity_pct: Annotated[int, Form(ge=0, le=100)] = 15,
 ) -> SlideTemplateBase:
     return SlideTemplateBase(
         name=name,
@@ -29,6 +31,8 @@ def _form_slide_template(
         secondary_color=secondary_color,
         font_family=font_family,
         slide_size=slide_size,
+        margin_mm=margin_mm,
+        background_opacity_pct=background_opacity_pct,
     )
 
 

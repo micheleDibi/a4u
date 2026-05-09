@@ -8,6 +8,8 @@ export interface SlideTemplateFields {
   secondary_color: string;
   font_family: string;
   slide_size: "16:9" | "4:3";
+  margin_mm: number;
+  background_opacity_pct: number;
 }
 
 export interface SlideTemplateFiles {

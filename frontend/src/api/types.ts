@@ -99,17 +99,16 @@ export interface SlideTemplateOut {
   secondary_color: string;
   font_family: string;
   slide_size: "16:9" | "4:3";
+  margin_mm: number;
+  background_opacity_pct: number;
   is_default: boolean;
   created_at: string;
   updated_at: string;
 }
 
-export type PdfTemplateKind = "lesson" | "slides";
-
 export interface PdfTemplateOut {
   id: UUID;
   organization_id: UUID;
-  kind: PdfTemplateKind;
   name: string;
   background_image_path: string | null;
   logo_left_path: string | null;

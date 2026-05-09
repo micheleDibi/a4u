@@ -1221,9 +1221,6 @@
     },
     "fields": {
       "name": "Template name",
-      "kind": "Template type",
-      "kindLesson": "Lesson (text PDF)",
-      "kindSlides": "Slides (presentation PDF)",
       "size": "Slide format",
       "pageSize": "Page size",
       "font": "Font",

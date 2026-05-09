@@ -21,6 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Slider } from "@/components/ui/slider";
 import { extractApiError } from "@/lib/errors";
 
 const HEX = /^#[0-9A-Fa-f]{6}$/;
@@ -32,6 +33,8 @@ const schema = z.object({
   secondary_color: z.string().regex(HEX),
   font_family: z.string().min(1).max(120),
   slide_size: z.enum(["16:9", "4:3"]),
+  margin_mm: z.number().min(0).max(60),
+  background_opacity_pct: z.number().min(0).max(100),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -66,6 +69,8 @@ export default function SlideTemplateEditorPage() {
       secondary_color: tplQuery.data?.secondary_color ?? "#9333EA",
       font_family: tplQuery.data?.font_family ?? "Inter",
       slide_size: tplQuery.data?.slide_size ?? "16:9",
+      margin_mm: tplQuery.data?.margin_mm ?? 20,
+      background_opacity_pct: tplQuery.data?.background_opacity_pct ?? 15,
     }),
     [tplQuery.data]
   );
@@ -176,12 +181,21 @@ export default function SlideTemplateEditorPage() {
               <ColorRow control={form.control} name="primary_color" label={t("templates.fields.primaryColor")} />
               <ColorRow control={form.control} name="secondary_color" label={t("templates.fields.secondaryColor")} />
 
+              <SliderRow control={form.control} name="margin_mm" label={t("templates.fields.margin")} max={60} />
+
               <FormImageUpload
                 label={t("templates.fields.background")}
                 value={bgFile}
                 existingUrl={!removeBg ? tplQuery.data?.background_image_path ?? null : null}
                 onChange={(f) => { setBgFile(f); if (f) setRemoveBg(false); }}
                 onRemoveExisting={() => setRemoveBg(true)}
+              />
+              <SliderRow
+                control={form.control}
+                name="background_opacity_pct"
+                label={t("templates.fields.backgroundOpacity")}
+                max={100}
+                unit="%"
               />
               <FormImageUpload
                 label={t("templates.fields.logoLeft")}
@@ -245,6 +259,44 @@ function FieldRow({ label, children, error }: { label: string; children: React.R
       {children}
       {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
+  );
+}
+
+function SliderRow({
+  control,
+  name,
+  label,
+  max,
+  unit = "mm",
+}: {
+  control: ReturnType<typeof useForm<FormValues>>["control"];
+  name: keyof FormValues;
+  label: string;
+  max: number;
+  unit?: string;
+}) {
+  return (
+    <Controller
+      name={name}
+      control={control}
+      render={({ field }) => (
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <Label>{label}</Label>
+            <span className="text-xs text-muted-foreground">
+              {Number(field.value)} {unit}
+            </span>
+          </div>
+          <Slider
+            value={[Number(field.value)]}
+            onValueChange={(v) => field.onChange(v[0])}
+            min={0}
+            max={max}
+            step={1}
+          />
+        </div>
+      )}
+    />
   );
 }
 

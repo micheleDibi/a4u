@@ -1222,9 +1222,6 @@
     },
     "fields": {
       "name": "Nome template",
-      "kind": "Tipo template",
-      "kindLesson": "Lezione (PDF testo)",
-      "kindSlides": "Slide (PDF presentazione)",
       "size": "Formato slide",
       "pageSize": "Formato pagina",
       "font": "Font",

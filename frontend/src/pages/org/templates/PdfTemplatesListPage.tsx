@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { pdfTemplatesApi } from "@/api/pdfTemplates";
-import type { PdfTemplateKind, PdfTemplateOut } from "@/api/types";
+import type { PdfTemplateOut } from "@/api/types";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { PdfTemplatePreview } from "@/components/templates/PdfTemplatePreview";
@@ -18,7 +18,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { extractApiError } from "@/lib/errors";
 
 export default function PdfTemplatesListPage() {
@@ -27,11 +26,10 @@ export default function PdfTemplatesListPage() {
   const qc = useQueryClient();
   const { t } = useTranslation();
   const [toDelete, setToDelete] = useState<PdfTemplateOut | null>(null);
-  const [kind, setKind] = useState<PdfTemplateKind>("lesson");
 
   const query = useQuery({
-    queryKey: ["org", orgId, "pdf-templates", kind],
-    queryFn: () => pdfTemplatesApi.list(orgId, kind),
+    queryKey: ["org", orgId, "pdf-templates"],
+    queryFn: () => pdfTemplatesApi.list(orgId),
   });
 
   const remove = useMutation({
@@ -58,27 +56,12 @@ export default function PdfTemplatesListPage() {
         title={t("templates.pdf.title")}
         description={t("templates.pdf.subtitle")}
         actions={
-          <Button
-            onClick={() =>
-              navigate(`/orgs/${orgId}/templates/pdf/new?kind=${kind}`)
-            }
-          >
+          <Button onClick={() => navigate(`/orgs/${orgId}/templates/pdf/new`)}>
             <Plus className="size-4" />
             {t("templates.pdf.new")}
           </Button>
         }
       />
-
-      <Tabs value={kind} onValueChange={(v) => setKind(v as PdfTemplateKind)}>
-        <TabsList>
-          <TabsTrigger value="lesson">
-            {t("templates.fields.kindLesson")}
-          </TabsTrigger>
-          <TabsTrigger value="slides">
-            {t("templates.fields.kindSlides")}
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {(query.data ?? []).map((tpl) => (

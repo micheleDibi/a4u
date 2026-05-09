@@ -4,10 +4,9 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { pdfTemplatesApi, type PdfTemplateFields } from "@/api/pdfTemplates";
-import type { PdfTemplateKind } from "@/api/types";
 import { FormImageUpload } from "@/components/forms/FormImageUpload";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { PdfTemplatePreview } from "@/components/templates/PdfTemplatePreview";
@@ -29,7 +28,6 @@ const HEX = /^#[0-9A-Fa-f]{6}$/;
 
 const schema = z.object({
   name: z.string().min(1).max(120),
-  kind: z.enum(["lesson", "slides"]),
   text_color: z.string().regex(HEX),
   primary_color: z.string().regex(HEX),
   secondary_color: z.string().regex(HEX),
@@ -51,9 +49,6 @@ export default function PdfTemplateEditorPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { t } = useTranslation();
-  const [searchParams] = useSearchParams();
-  const initialKind: PdfTemplateKind =
-    searchParams.get("kind") === "slides" ? "slides" : "lesson";
 
   const [bgFile, setBgFile] = useState<File | null>(null);
   const [logoLFile, setLogoLFile] = useState<File | null>(null);
@@ -71,7 +66,6 @@ export default function PdfTemplateEditorPage() {
   const defaults: FormValues = useMemo(
     () => ({
       name: tplQuery.data?.name ?? "",
-      kind: tplQuery.data?.kind ?? initialKind,
       text_color: tplQuery.data?.text_color ?? "#1F1F1F",
       primary_color: tplQuery.data?.primary_color ?? "#4F46E5",
       secondary_color: tplQuery.data?.secondary_color ?? "#9333EA",
@@ -82,7 +76,7 @@ export default function PdfTemplateEditorPage() {
       margin_mm: tplQuery.data?.margin_mm ?? 20,
       background_opacity_pct: tplQuery.data?.background_opacity_pct ?? 15,
     }),
-    [tplQuery.data, initialKind]
+    [tplQuery.data]
   );
 
   const form = useForm<FormValues>({ defaultValues: defaults, resolver: zodResolver(schema), mode: "onChange" });
@@ -143,31 +137,6 @@ export default function PdfTemplateEditorPage() {
         <Card>
           <CardContent className="p-6">
             <form onSubmit={form.handleSubmit((v) => save.mutate(v))} className="space-y-4">
-              <Controller
-                name="kind"
-                control={form.control}
-                render={({ field }) => (
-                  <FieldRow label={t("templates.fields.kind")}>
-                    <Select
-                      value={field.value}
-                      onValueChange={field.onChange}
-                      disabled={!isNew}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="lesson">
-                          {t("templates.fields.kindLesson")}
-                        </SelectItem>
-                        <SelectItem value="slides">
-                          {t("templates.fields.kindSlides")}
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </FieldRow>
-                )}
-              />
               <Controller
                 name="name"
                 control={form.control}
