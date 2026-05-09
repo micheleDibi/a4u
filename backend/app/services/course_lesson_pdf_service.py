@@ -151,13 +151,20 @@ async def get_lesson_or_404(
 
 
 async def _get_default_pdf_template(
-    db: AsyncSession, *, organization_id: uuid.UUID
+    db: AsyncSession,
+    *,
+    organization_id: uuid.UUID,
+    kind: str = "lesson",
 ) -> PdfTemplate | None:
-    """Restituisce il template `is_default=True` dell'org, o il primo se
-    non c'è un default, o `None` se l'org non ne ha alcuno."""
+    """Restituisce il template `is_default=True` dell'org per il `kind`
+    indicato, o il primo se non c'è un default, o `None` se l'org non
+    ne ha alcuno per quel kind."""
     res = await db.execute(
         select(PdfTemplate)
-        .where(PdfTemplate.organization_id == organization_id)
+        .where(
+            PdfTemplate.organization_id == organization_id,
+            PdfTemplate.kind == kind,
+        )
         .order_by(PdfTemplate.is_default.desc(), PdfTemplate.created_at.asc())
         .limit(1)
     )
@@ -169,19 +176,23 @@ async def _get_pdf_template_or_404(
     *,
     organization_id: uuid.UUID,
     template_id: uuid.UUID,
+    kind: str = "lesson",
 ) -> PdfTemplate:
     """Restituisce il template scelto dall'utente, validando che
-    appartenga all'org. Solleva NotFoundError se non esiste."""
+    appartenga all'org e abbia il `kind` atteso. Impedisce di usare
+    un template `slides` per il PDF lezione e viceversa.
+    """
     res = await db.execute(
         select(PdfTemplate).where(
             PdfTemplate.id == template_id,
             PdfTemplate.organization_id == organization_id,
+            PdfTemplate.kind == kind,
         )
     )
     tpl = res.scalar_one_or_none()
     if tpl is None:
         raise NotFoundError(
-            f"PDF template {template_id} non trovato.",
+            f"PDF template {template_id} non trovato (kind={kind}).",
             code="pdf_template_not_found",
         )
     return tpl

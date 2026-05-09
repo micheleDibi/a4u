@@ -50,8 +50,12 @@ class SlideTemplateOut(SlideTemplateBase, ORMModel):
     updated_at: datetime
 
 
+PdfTemplateKind = Literal["lesson", "slides"]
+
+
 class PdfTemplateBase(_TemplateColors):
     name: str = Field(min_length=1, max_length=120)
+    kind: PdfTemplateKind = "lesson"
     page_size: Literal["A4", "Letter"] = "A4"
     header_height_mm: int = Field(default=20, ge=0, le=80)
     footer_height_mm: int = Field(default=15, ge=0, le=80)

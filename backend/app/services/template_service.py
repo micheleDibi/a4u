@@ -22,12 +22,19 @@ async def list_slide_templates(db: AsyncSession, organization_id: uuid.UUID) -> 
     return list(res.scalars().all())
 
 
-async def list_pdf_templates(db: AsyncSession, organization_id: uuid.UUID) -> list[PdfTemplate]:
-    res = await db.execute(
-        select(PdfTemplate)
-        .where(PdfTemplate.organization_id == organization_id)
-        .order_by(PdfTemplate.name.asc())
-    )
+async def list_pdf_templates(
+    db: AsyncSession,
+    organization_id: uuid.UUID,
+    *,
+    kind: str | None = None,
+) -> list[PdfTemplate]:
+    """Elenca i template PDF dell'org. Se `kind` è fornito (`'lesson'`
+    o `'slides'`) filtra solo quelli del tipo richiesto."""
+    q = select(PdfTemplate).where(PdfTemplate.organization_id == organization_id)
+    if kind is not None:
+        q = q.where(PdfTemplate.kind == kind)
+    q = q.order_by(PdfTemplate.name.asc())
+    res = await db.execute(q)
     return list(res.scalars().all())
 
 
@@ -163,10 +170,13 @@ async def set_default_slide_template(
 async def set_default_pdf_template(
     db: AsyncSession, *, tpl: PdfTemplate, actor_id: uuid.UUID
 ) -> PdfTemplate:
+    # Reset solo gli altri template DELLO STESSO `kind`: lesson e slides
+    # hanno default indipendenti.
     await db.execute(
         update(PdfTemplate)
         .where(
             PdfTemplate.organization_id == tpl.organization_id,
+            PdfTemplate.kind == tpl.kind,
             PdfTemplate.id != tpl.id,
             PdfTemplate.is_default.is_(True),
         )

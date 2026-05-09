@@ -104,9 +104,12 @@ export interface SlideTemplateOut {
   updated_at: string;
 }
 
+export type PdfTemplateKind = "lesson" | "slides";
+
 export interface PdfTemplateOut {
   id: UUID;
   organization_id: UUID;
+  kind: PdfTemplateKind;
   name: string;
   background_image_path: string | null;
   logo_left_path: string | null;

@@ -53,8 +53,8 @@ export function LessonSlidesPdfExportDialog({
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const tplQuery = useQuery({
-    queryKey: ["org", orgId, "pdf-templates"],
-    queryFn: () => pdfTemplatesApi.list(orgId),
+    queryKey: ["org", orgId, "pdf-templates", "slides"],
+    queryFn: () => pdfTemplatesApi.list(orgId, "slides"),
     enabled: open,
     staleTime: 30_000,
   });

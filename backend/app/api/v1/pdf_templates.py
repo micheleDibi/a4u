@@ -17,6 +17,7 @@ router = APIRouter(prefix="/orgs/{org_id}/templates/pdf", tags=["templates"])
 
 def _form_pdf_template(
     name: Annotated[str, Form(...)],
+    kind: Annotated[Literal["lesson", "slides"], Form()] = "lesson",
     text_color: Annotated[str, Form()] = "#1F1F1F",
     primary_color: Annotated[str, Form()] = "#1976D2",
     secondary_color: Annotated[str, Form()] = "#9C27B0",
@@ -29,6 +30,7 @@ def _form_pdf_template(
 ) -> PdfTemplateBase:
     return PdfTemplateBase(
         name=name,
+        kind=kind,
         text_color=text_color,
         primary_color=primary_color,
         secondary_color=secondary_color,
@@ -43,9 +45,12 @@ def _form_pdf_template(
 
 @router.get("", response_model=list[PdfTemplateOut])
 async def list_templates(
-    org_id: uuid.UUID, db: DbSession, _=require(P.TEMPLATE_PDF_MANAGE)
+    org_id: uuid.UUID,
+    db: DbSession,
+    kind: Literal["lesson", "slides"] | None = None,
+    _=require(P.TEMPLATE_PDF_MANAGE),
 ) -> list[PdfTemplateOut]:
-    items = await template_service.list_pdf_templates(db, org_id)
+    items = await template_service.list_pdf_templates(db, org_id, kind=kind)
     return [PdfTemplateOut.model_validate(it) for it in items]
 
 
@@ -118,7 +123,11 @@ async def update_template(
     elif remove_logo_right:
         new_lr = None
 
+    # `kind` è immutabile dopo la creazione: ignora eventuali valori dal payload
+    # per evitare di riclassificare un template esistente.
     for k, v in payload.model_dump().items():
+        if k == "kind":
+            continue
         setattr(tpl, k, v)
 
     if new_bg != tpl.background_image_path and tpl.background_image_path:

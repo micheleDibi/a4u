@@ -1,8 +1,9 @@
 import { apiClient } from "./client";
-import type { PdfTemplateOut, UUID } from "./types";
+import type { PdfTemplateKind, PdfTemplateOut, UUID } from "./types";
 
 export interface PdfTemplateFields {
   name: string;
+  kind: PdfTemplateKind;
   text_color: string;
   primary_color: string;
   secondary_color: string;
@@ -36,8 +37,11 @@ function buildForm(fields: PdfTemplateFields, files: PdfTemplateFiles) {
 }
 
 export const pdfTemplatesApi = {
-  async list(orgId: UUID) {
-    const res = await apiClient.get<PdfTemplateOut[]>(`/orgs/${orgId}/templates/pdf`);
+  async list(orgId: UUID, kind?: PdfTemplateKind) {
+    const res = await apiClient.get<PdfTemplateOut[]>(
+      `/orgs/${orgId}/templates/pdf`,
+      { params: kind ? { kind } : undefined }
+    );
     return res.data;
   },
   async get(orgId: UUID, id: UUID) {
