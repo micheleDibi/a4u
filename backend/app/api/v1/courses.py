@@ -36,6 +36,10 @@ from app.schemas.course_lesson_content import (
     LessonContentGenerateInput,
     LessonContentUpdateInput,
 )
+from app.schemas.course_lesson_slides import (
+    LessonSlidesGenerateInput,
+    LessonSlidesUpdateInput,
+)
 from app.schemas.course_lesson_structure import (
     LessonStructureUpdateInput,
     LessonsStructureGenerateInput,
@@ -47,6 +51,8 @@ from app.services import (
     course_lesson_content_crud,
     course_lesson_content_service,
     course_lesson_pdf_service,
+    course_lesson_slides_crud,
+    course_lesson_slides_service,
     course_lesson_structure_crud,
     course_lesson_structure_service,
     course_service,
@@ -1082,6 +1088,210 @@ async def update_lesson_content(
         db, course=course, lesson_id=lesson_id
     )
     course = await course_lesson_content_crud.update_lesson_content(
+        db,
+        course=course,
+        lesson=lesson,
+        payload=payload,
+        actor_id=current.id,
+    )
+    return CourseOut.model_validate(course)
+
+
+# ---------------------------------------------------------------------------
+# Fase 4 — Slide della lezione (§7)
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{course_id}/lessons/{lesson_id}/slides/generate",
+    response_model=CourseOut,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def generate_lesson_slides(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    lesson_id: uuid.UUID,
+    payload: LessonSlidesGenerateInput,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_GENERATE),
+) -> CourseOut:
+    """Avvia la generazione AI delle slide di una singola lezione
+    (Fase 4 — §7). Imposta `lesson.slides_status='pending'`; il worker
+    dispatcha la lezione in parallelo (cap default 3). Pre-condizione:
+    `lesson.content_status ∈ (ready, approved)`.
+    """
+    await _ensure_org(db, org_id)
+    course = await _load_course_for_edit(
+        db, org_id=org_id, course_id=course_id, current=current
+    )
+    lesson = await course_lesson_slides_service.get_lesson_or_404(
+        db, course=course, lesson_id=lesson_id
+    )
+    course = await course_lesson_slides_service.request_lesson_slides_generation(
+        db,
+        course=course,
+        lesson=lesson,
+        actor_id=current.id,
+        regeneration_hint=payload.regeneration_hint,
+    )
+    return CourseOut.model_validate(course)
+
+
+@router.post(
+    "/{course_id}/lessons-slides/generate-all",
+    response_model=CourseOut,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def generate_all_lessons_slides(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    payload: LessonSlidesGenerateInput,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_GENERATE),
+) -> CourseOut:
+    """Avvia la generazione AI delle slide per TUTTE le lezioni con
+    `content_status ∈ (ready, approved)`. Le altre lezioni sono ignorate.
+    Il worker le elabora in parallelo (cap default 3).
+    """
+    await _ensure_org(db, org_id)
+    course = await _load_course_for_edit(
+        db, org_id=org_id, course_id=course_id, current=current
+    )
+    course = await course_lesson_slides_service.request_all_lessons_slides_generation(
+        db,
+        course=course,
+        actor_id=current.id,
+        regeneration_hint=payload.regeneration_hint,
+    )
+    return CourseOut.model_validate(course)
+
+
+@router.post(
+    "/{course_id}/lessons-slides/generate-missing",
+    response_model=CourseOut,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def generate_missing_lessons_slides(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_GENERATE),
+) -> CourseOut:
+    """Avvia la generazione AI delle slide SOLO per le lezioni con
+    `slides_status='empty'` AND `content_status ∈ (ready, approved)`.
+    """
+    await _ensure_org(db, org_id)
+    course = await _load_course_for_edit(
+        db, org_id=org_id, course_id=course_id, current=current
+    )
+    course = await course_lesson_slides_service.request_missing_lessons_slides_generation(
+        db,
+        course=course,
+        actor_id=current.id,
+    )
+    return CourseOut.model_validate(course)
+
+
+@router.post(
+    "/{course_id}/lessons-slides/cancel-all",
+    response_model=CourseOut,
+)
+async def cancel_all_lessons_slides(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_GENERATE),
+) -> CourseOut:
+    """Annulla la generazione slide in corso: marca tutte le lezioni
+    `pending|processing` come `failed`. Il worker scarta il risultato
+    delle lezioni con OpenAI in flight."""
+    await _ensure_org(db, org_id)
+    course = await _load_course_for_edit(
+        db, org_id=org_id, course_id=course_id, current=current
+    )
+    course = await course_lesson_slides_service.cancel_all_lessons_slides_generation(
+        db, course=course, actor_id=current.id
+    )
+    return CourseOut.model_validate(course)
+
+
+@router.post(
+    "/{course_id}/lessons/{lesson_id}/slides/approve",
+    response_model=CourseOut,
+)
+async def approve_lesson_slides(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    lesson_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_GENERATE),
+) -> CourseOut:
+    """Approva le slide di una singola lezione (`ready` → `approved`)."""
+    await _ensure_org(db, org_id)
+    course = await _load_course_for_edit(
+        db, org_id=org_id, course_id=course_id, current=current
+    )
+    lesson = await course_lesson_slides_service.get_lesson_or_404(
+        db, course=course, lesson_id=lesson_id
+    )
+    course = await course_lesson_slides_service.approve_lesson_slides(
+        db, course=course, lesson=lesson, actor_id=current.id
+    )
+    return CourseOut.model_validate(course)
+
+
+@router.post(
+    "/{course_id}/lessons-slides/approve-all",
+    response_model=CourseOut,
+)
+async def approve_all_lessons_slides(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_GENERATE),
+) -> CourseOut:
+    """Approva le slide di TUTTE le lezioni `ready` del corso."""
+    await _ensure_org(db, org_id)
+    course = await _load_course_for_edit(
+        db, org_id=org_id, course_id=course_id, current=current
+    )
+    course = await course_lesson_slides_service.approve_all_lessons_slides(
+        db, course=course, actor_id=current.id
+    )
+    return CourseOut.model_validate(course)
+
+
+@router.patch(
+    "/{course_id}/lessons/{lesson_id}/slides",
+    response_model=CourseOut,
+)
+async def update_lesson_slides(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    lesson_id: uuid.UUID,
+    payload: LessonSlidesUpdateInput,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_EDIT),
+) -> CourseOut:
+    """Patch manuale del `slides_raw` della lezione (Fase 4). Richiede
+    che le slide della lezione siano in `ready` o `approved`. Edit non
+    degrada lo stato.
+    """
+    await _ensure_org(db, org_id)
+    course = await _load_course_for_edit(
+        db, org_id=org_id, course_id=course_id, current=current
+    )
+    lesson = await course_lesson_slides_service.get_lesson_or_404(
+        db, course=course, lesson_id=lesson_id
+    )
+    course = await course_lesson_slides_crud.update_lesson_slides(
         db,
         course=course,
         lesson=lesson,

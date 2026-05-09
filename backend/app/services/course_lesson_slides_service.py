@@ -22,6 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.audit import write_audit
 from app.core.errors import ConflictError, NotFoundError
 from app.core.logging import get_logger
 from app.models.course import Course
@@ -433,3 +434,313 @@ async def get_lesson_or_404(
         f"Lezione {lesson_id} non trovata nel corso.",
         code="lesson_not_found",
     )
+
+
+# ---------------------------------------------------------------------------
+# Orchestration: request / cancel / approve
+# ---------------------------------------------------------------------------
+
+
+async def request_lesson_slides_generation(
+    db: AsyncSession,
+    *,
+    course: Course,
+    lesson: CourseLesson,
+    actor_id: uuid.UUID,
+    regeneration_hint: str | None,
+) -> Course:
+    """Sposta lo status della lezione a `pending` e annota l'eventuale
+    hint. Il worker prenderà la riga al prossimo tick e la elabora in
+    parallelo. Pre-condizione: `lesson.content_status ∈ (ready, approved)`."""
+    if course.status not in VALID_COURSE_SLIDES_GENERATE_FROM_STATUSES:
+        raise ConflictError(
+            f"Stato corso non valido per Fase 4: {course.status}. "
+            f"Servono contenuti `ready` o `approved` prima di generare slide.",
+            code="invalid_course_status_for_slides",
+        )
+    if lesson.content_status not in ("ready", "approved"):
+        raise ConflictError(
+            f"Lezione {lesson.lesson_code}: il contenuto deve essere "
+            f"`ready` o `approved` per generare slide (attuale: "
+            f"{lesson.content_status}).",
+            code="lesson_content_not_ready_for_slides",
+        )
+    if lesson.slides_status not in VALID_LESSON_SLIDES_GENERATE_FROM_STATUSES:
+        raise ConflictError(
+            f"Lezione {lesson.lesson_code}: stato slide non valido: "
+            f"{lesson.slides_status}",
+            code="invalid_lesson_slides_status",
+        )
+
+    lesson.slides_status = "pending"
+    lesson.slides_error = None
+    lesson.slides_progress = 0
+    lesson.slides_progress_phase = None
+    lesson.slides_regeneration_hint = (
+        regeneration_hint.strip() if regeneration_hint else None
+    )
+
+    _recompute_course_slides_status(course)
+
+    await write_audit(
+        db,
+        action="course.lesson.slides.generate.requested",
+        actor_user_id=actor_id,
+        organization_id=course.organization_id,
+        target_type="course_lesson",
+        target_id=str(lesson.id),
+        metadata={
+            "course_id": str(course.id),
+            "lesson_code": lesson.lesson_code,
+            "is_regeneration": is_regeneration_for_lesson(lesson),
+            "hint": (
+                lesson.slides_regeneration_hint[:200]
+                if lesson.slides_regeneration_hint
+                else None
+            ),
+        },
+    )
+    await db.commit()
+    return await _refresh_full(db, course)
+
+
+async def request_all_lessons_slides_generation(
+    db: AsyncSession,
+    *,
+    course: Course,
+    actor_id: uuid.UUID,
+    regeneration_hint: str | None,
+) -> Course:
+    """Marca tutte le lezioni con `content_status ∈ (ready, approved)`
+    come `slides_status='pending'`. Il worker le elabora in parallelo
+    (cap configurabile, default 3)."""
+    if course.status not in VALID_COURSE_SLIDES_GENERATE_FROM_STATUSES:
+        raise ConflictError(
+            f"Stato corso non valido per Fase 4: {course.status}",
+            code="invalid_course_status_for_slides",
+        )
+
+    eligible: list[CourseLesson] = [
+        lesson
+        for m in course.modules
+        for lesson in m.lessons
+        if lesson.content_status in ("ready", "approved")
+    ]
+    if not eligible:
+        raise ConflictError(
+            "Nessuna lezione con contenuto pronto. Genera prima la Fase 3.",
+            code="no_lessons_with_content",
+        )
+
+    hint_clean = regeneration_hint.strip() if regeneration_hint else None
+    for lesson in eligible:
+        lesson.slides_status = "pending"
+        lesson.slides_error = None
+        lesson.slides_progress = 0
+        lesson.slides_progress_phase = None
+        lesson.slides_regeneration_hint = hint_clean
+
+    course.status = "slides_pending"
+
+    await write_audit(
+        db,
+        action="course.slides.generate.requested",
+        actor_user_id=actor_id,
+        organization_id=course.organization_id,
+        target_type="course",
+        target_id=str(course.id),
+        metadata={
+            "lessons_count": len(eligible),
+            "hint": hint_clean[:200] if hint_clean else None,
+        },
+    )
+    await db.commit()
+    return await _refresh_full(db, course)
+
+
+async def request_missing_lessons_slides_generation(
+    db: AsyncSession,
+    *,
+    course: Course,
+    actor_id: uuid.UUID,
+) -> Course:
+    """Marca SOLO le lezioni con `slides_status='empty'` AND
+    `content_status ∈ (ready, approved)` come `slides_status='pending'`."""
+    if course.status not in VALID_COURSE_SLIDES_GENERATE_FROM_STATUSES:
+        raise ConflictError(
+            f"Stato corso non valido per Fase 4: {course.status}",
+            code="invalid_course_status_for_slides",
+        )
+
+    missing: list[CourseLesson] = [
+        lesson
+        for m in course.modules
+        for lesson in m.lessons
+        if lesson.slides_status == "empty"
+        and lesson.content_status in ("ready", "approved")
+    ]
+    if not missing:
+        raise ConflictError(
+            "Nessuna lezione mancante: tutte hanno già slide o non hanno "
+            "contenuto pronto.",
+            code="no_missing_slides_lessons",
+        )
+
+    for lesson in missing:
+        lesson.slides_status = "pending"
+        lesson.slides_error = None
+        lesson.slides_progress = 0
+        lesson.slides_progress_phase = None
+        lesson.slides_regeneration_hint = None
+
+    course.status = "slides_pending"
+
+    await write_audit(
+        db,
+        action="course.slides.generate_missing.requested",
+        actor_user_id=actor_id,
+        organization_id=course.organization_id,
+        target_type="course",
+        target_id=str(course.id),
+        metadata={"lessons_count": len(missing)},
+    )
+    await db.commit()
+    return await _refresh_full(db, course)
+
+
+async def cancel_all_lessons_slides_generation(
+    db: AsyncSession,
+    *,
+    course: Course,
+    actor_id: uuid.UUID,
+) -> Course:
+    """Annulla la generazione slide in corso: marca le `pending|processing`
+    come `failed` con messaggio `annullato`. Le pending si bloccano
+    subito, le processing finiscono l'I/O OpenAI ma il worker scarta
+    il risultato (vedi `_process_one`).
+    """
+    all_lessons: list[CourseLesson] = [
+        lesson for m in course.modules for lesson in m.lessons
+    ]
+    cancelled = 0
+    for lesson in all_lessons:
+        if lesson.slides_status in ("pending", "processing"):
+            lesson.slides_status = "failed"
+            lesson.slides_error = "Generazione annullata dall'utente."
+            lesson.slides_progress = 0
+            lesson.slides_progress_phase = None
+            cancelled += 1
+
+    if cancelled == 0:
+        return await _refresh_full(db, course)
+
+    _recompute_course_slides_status(course)
+
+    await write_audit(
+        db,
+        action="course.slides.generate.cancelled",
+        actor_user_id=actor_id,
+        organization_id=course.organization_id,
+        target_type="course",
+        target_id=str(course.id),
+        metadata={
+            "lessons_count": len(all_lessons),
+            "cancelled": cancelled,
+        },
+    )
+    await db.commit()
+    return await _refresh_full(db, course)
+
+
+# ---------------------------------------------------------------------------
+# Approve
+# ---------------------------------------------------------------------------
+
+
+async def approve_lesson_slides(
+    db: AsyncSession,
+    *,
+    course: Course,
+    lesson: CourseLesson,
+    actor_id: uuid.UUID,
+) -> Course:
+    """Sposta lo status delle slide della lezione da `ready` a `approved`."""
+    if lesson.slides_status != "ready":
+        raise ConflictError(
+            f"Lezione {lesson.lesson_code}: slide non in stato `ready` "
+            f"(attuale: {lesson.slides_status}).",
+            code="lesson_slides_not_ready",
+        )
+
+    lesson.slides_status = "approved"
+    lesson.slides_approved_at = _now()
+    _recompute_course_slides_status(course)
+
+    await write_audit(
+        db,
+        action="course.lesson.slides.approved",
+        actor_user_id=actor_id,
+        organization_id=course.organization_id,
+        target_type="course_lesson",
+        target_id=str(lesson.id),
+        metadata={
+            "course_id": str(course.id),
+            "lesson_code": lesson.lesson_code,
+        },
+    )
+    await db.commit()
+    return await _refresh_full(db, course)
+
+
+async def approve_all_lessons_slides(
+    db: AsyncSession,
+    *,
+    course: Course,
+    actor_id: uuid.UUID,
+) -> Course:
+    """Approva tutte le slide `ready` del corso. Richiede che TUTTE le
+    lezioni che hanno slide siano `ready` o già `approved`."""
+    all_lessons: list[CourseLesson] = [
+        lesson for m in course.modules for lesson in m.lessons
+    ]
+    not_ready = [
+        l for l in all_lessons
+        if l.slides_status not in ("ready", "approved", "empty")
+    ]
+    if not_ready:
+        raise ConflictError(
+            f"Non tutte le lezioni hanno slide pronte. In attesa: "
+            f"{', '.join(l.lesson_code for l in not_ready)}.",
+            code="not_all_lessons_slides_ready",
+        )
+
+    eligible = [l for l in all_lessons if l.slides_status == "ready"]
+    if not eligible:
+        raise ConflictError(
+            "Nessuna lezione con slide `ready` da approvare.",
+            code="no_slides_to_approve",
+        )
+
+    now = _now()
+    approved_count = 0
+    for lesson in eligible:
+        lesson.slides_status = "approved"
+        lesson.slides_approved_at = now
+        approved_count += 1
+
+    _recompute_course_slides_status(course)
+
+    await write_audit(
+        db,
+        action="course.slides.approved",
+        actor_user_id=actor_id,
+        organization_id=course.organization_id,
+        target_type="course",
+        target_id=str(course.id),
+        metadata={
+            "lessons_count": len(all_lessons),
+            "newly_approved": approved_count,
+        },
+    )
+    await db.commit()
+    return await _refresh_full(db, course)
