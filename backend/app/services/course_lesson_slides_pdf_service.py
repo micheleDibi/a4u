@@ -19,7 +19,6 @@ template dedicato per layout slide (A4 landscape, una slide per pagina).
 from __future__ import annotations
 
 import asyncio
-import re
 import urllib.parse
 import uuid
 from datetime import UTC, datetime
@@ -142,57 +141,20 @@ def _slide_type_label(language: str, slide_type: str) -> str:
     return labels_it.get(slide_type, slide_type)
 
 
-# Pattern per estrarre il root <svg ...> e iniettarci width/height
-# in mm calcolati dall'aspect ratio del viewBox. Strategia adottata
-# per il PDF SLIDE: inline SVG con dimensioni esplicite in mm fa
-# rispettare a WeasyPrint sia max-width sia max-height, evitando il
-# clipping che si verificava quando il browser/WP doveva indovinare
-# l'altezza da `width: 100%` + `max-height: 70mm`.
-_SVG_OPEN_RE = re.compile(r"<svg\b([^>]*)>", re.IGNORECASE)
-_VIEWBOX_RE = re.compile(
-    r'viewBox\s*=\s*"\s*([\d.\-eE]+)\s+([\d.\-eE]+)\s+([\d.\-eE]+)\s+([\d.\-eE]+)\s*"',
-    re.IGNORECASE,
-)
-
-
-def _fit_svg_inline(svg: str, *, max_width_mm: float, max_height_mm: float) -> str:
-    """Ritorna l'SVG con `width="Xmm" height="Ymm"` espliciti calcolati
-    proporzionalmente per stare dentro (max_width_mm × max_height_mm),
-    preservando l'aspect ratio dal viewBox.
-
-    Se manca il viewBox o il match fallisce, ritorna l'SVG invariato e
-    si conta sui CSS fallback nel template.
+def _svg_to_data_uri(svg: str) -> str:
+    """Converte un blocco SVG in una data-URI utilizzabile come `src`
+    di `<img>`. Strategia adottata per il PDF SLIDE: usando `<img>`
+    al posto dell'SVG inline, WeasyPrint applica correttamente
+    `object-fit: contain`, scalando l'immagine in modo proporzionale
+    all'effettivo box del container (anche quando questo si è
+    ristretto perché i bullet hanno consumato spazio). Con SVG
+    inline questo non era affidabile: WeasyPrint mostrava il SVG a
+    larghezza piena e lo clippava verticalmente.
     """
-    open_m = _SVG_OPEN_RE.search(svg)
-    vb_m = _VIEWBOX_RE.search(svg)
-    if not open_m or not vb_m:
-        return svg
-    try:
-        _x, _y, vb_w, vb_h = (float(g) for g in vb_m.groups())
-    except (TypeError, ValueError):
-        return svg
-    if vb_w <= 0 or vb_h <= 0:
-        return svg
-    aspect = vb_w / vb_h
-    h_if_w_max = max_width_mm / aspect
-    if h_if_w_max <= max_height_mm:
-        target_w_mm = max_width_mm
-        target_h_mm = h_if_w_max
-    else:
-        target_h_mm = max_height_mm
-        target_w_mm = max_height_mm * aspect
-    new_attrs = f' width="{target_w_mm:.2f}mm" height="{target_h_mm:.2f}mm"'
-    open_tag = open_m.group(0)
-    # `_strip_mermaid_max_width` lato base_pdf ha già rimosso eventuali
-    # width/height precedenti — quindi possiamo appenderli direttamente.
-    new_open = open_tag[:-1] + new_attrs + ">"
-    return svg.replace(open_tag, new_open, 1)
-
-
-# Box di rendering disponibile per ogni asset di slide (cap massimo).
-# Se la slide ha pochi bullet, l'asset può crescere fino a questo limite.
-SLIDE_ASSET_MAX_WIDTH_MM = 230.0
-SLIDE_ASSET_MAX_HEIGHT_MM = 70.0
+    # urlencode: serve solo a evitare caratteri problematici (`#`, `%`)
+    # nella URL. Mantiene il quoting minimale per leggibilità.
+    encoded = urllib.parse.quote(svg, safe="<>=:/, ;.()[]\"'")
+    return f"data:image/svg+xml;utf8,{encoded}"
 
 
 def _build_slide_asset_html(
@@ -220,12 +182,15 @@ def _build_slide_asset_html(
             svg = (mermaid_svg_map or {}).get(asset_id) if asset_id else None
             caption = (asset.get("caption") or "").strip()
             if svg:
-                fitted = _fit_svg_inline(
-                    svg,
-                    max_width_mm=SLIDE_ASSET_MAX_WIDTH_MM,
-                    max_height_mm=SLIDE_ASSET_MAX_HEIGHT_MM,
+                # Wrap the SVG in <img> so object-fit:contain applies
+                # and the diagram scales proportionally to whatever
+                # container size the flex layout assigns. Inline SVG
+                # under WeasyPrint doesn't shrink reliably; <img>
+                # does.
+                data_uri = _svg_to_data_uri(svg)
+                body = (
+                    f'<img class="mermaid-svg" src="{data_uri}" alt="" />'
                 )
-                body = f'<div class="mermaid-svg">{fitted}</div>'
             else:
                 content = asset.get("content", "") or ""
                 body = (

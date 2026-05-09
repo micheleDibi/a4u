@@ -152,13 +152,11 @@
     }
 
     /* Asset (diagrammi, formule, tabelle, esempi) sotto i bullet.
-       `flex: 1 1 auto; min-height: 0` insieme a overflow:hidden sul
-       body permettono al contenitore di vincolare l'altezza degli
-       asset SVG/img/table senza sbordare. Il `max-height: 60mm`
-       sugli asset visivi è il cap concreto: WeasyPrint scala l'SVG
-       proporzionalmente entro questo box. */
+       `.slide-assets` occupa tutto lo spazio rimanente del body
+       (flex: 1) con `min-height: 0` per permettere ai figli di
+       scendere sotto la loro altezza intrinseca. */
     .slide-assets {
-      flex: 1 1 auto;
+      flex: 1 1 0;
       min-height: 0;
       margin-top: 4mm;
       display: flex;
@@ -167,31 +165,49 @@
       overflow: hidden;
     }
     .slide-asset {
+      flex: 1 1 0;
+      min-height: 0;
       max-width: 100%;
-      max-height: 70mm;
       text-align: center;
     }
-    /* SVG di Mermaid: il backend (`_fit_svg_inline`) inietta
-       width/height in mm calcolati dal viewBox, così WeasyPrint
-       rispetta il box senza clip. I CSS qui sotto sono safety-net
-       in caso il viewBox manchi (l'SVG si limita comunque al
-       container). */
+    .slide-asset figure {
+      margin: 0;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    .slide-asset .figure-body {
+      width: 100%;
+      flex: 1 1 0;
+      min-height: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    /* Mermaid: arriva come <img> con data-URI SVG. `object-fit:
+       contain` fa lo scaling proporzionale all'effettivo box
+       assegnato dal layout flex — niente clipping. */
+    .slide-asset img.mermaid-svg {
+      display: block;
+      max-width: 100%;
+      max-height: 100%;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+    }
     .slide-asset svg {
       display: block;
       margin: 0 auto;
       max-width: 100%;
-      max-height: 70mm;
+      max-height: 100%;
     }
     .slide-asset img {
       display: block;
       margin: 0 auto;
       max-width: 100%;
-      max-height: 70mm;
-      width: auto;
-      height: auto;
-    }
-    .slide-asset figure {
-      margin: 0;
+      max-height: 100%;
     }
     .slide-asset table {
       width: 100%;
