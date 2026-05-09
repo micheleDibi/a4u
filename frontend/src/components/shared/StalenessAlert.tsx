@@ -5,7 +5,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-export type StalenessKind = "structure" | "content" | "pdf" | "slides";
+export type StalenessKind =
+  | "structure"
+  | "content"
+  | "pdf"
+  | "slides"
+  | "speech"
+  | "speechPdf";
 
 export interface StalenessAlertProps {
   /** Tipo di disallineamento downstream da segnalare. */

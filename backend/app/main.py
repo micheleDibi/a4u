@@ -28,6 +28,8 @@ from app.services import (
     course_lesson_pdf_worker,
     course_lesson_slides_pdf_worker,
     course_lesson_slides_worker,
+    course_lesson_speech_pdf_worker,
+    course_lesson_speech_worker,
     course_lesson_structure_worker,
 )
 
@@ -92,11 +94,20 @@ async def lifespan(app: FastAPI):
     # Worker export PDF SLIDE (Fase 4 §7). Stessa pipeline del PDF
     # lezione testo, template dedicato per layout slide A4 landscape.
     course_lesson_slides_pdf_worker.start_worker()
+    # Worker generazione discorso temporizzato (Fase 5 — §8). Dispatch
+    # parallelo delle lezioni con `speech_status='pending'`.
+    # Pre-condizione: `slides_status ∈ (ready, approved)`.
+    course_lesson_speech_worker.start_worker()
+    # Worker export PDF DISCORSO (Fase 5 §8). Stessa pipeline del PDF
+    # lezione testo, template dedicato per layout per-slide con timeline.
+    course_lesson_speech_pdf_worker.start_worker()
 
     log.info("startup_complete", env=settings.env)
     try:
         yield
     finally:
+        await course_lesson_speech_pdf_worker.stop_worker()
+        await course_lesson_speech_worker.stop_worker()
         await course_lesson_slides_pdf_worker.stop_worker()
         await course_lesson_pdf_worker.stop_worker()
         await course_lesson_slides_worker.stop_worker()

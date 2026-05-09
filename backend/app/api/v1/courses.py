@@ -40,6 +40,10 @@ from app.schemas.course_lesson_slides import (
     LessonSlidesGenerateInput,
     LessonSlidesUpdateInput,
 )
+from app.schemas.course_lesson_speech import (
+    LessonSpeechGenerateInput,
+    LessonSpeechUpdateInput,
+)
 from app.schemas.course_lesson_structure import (
     LessonStructureUpdateInput,
     LessonsStructureGenerateInput,
@@ -54,6 +58,9 @@ from app.services import (
     course_lesson_slides_crud,
     course_lesson_slides_pdf_service,
     course_lesson_slides_service,
+    course_lesson_speech_crud,
+    course_lesson_speech_pdf_service,
+    course_lesson_speech_service,
     course_lesson_structure_crud,
     course_lesson_structure_service,
     course_service,
@@ -1302,6 +1309,210 @@ async def update_lesson_slides(
     return CourseOut.model_validate(course)
 
 
+# ---------------------------------------------------------------------------
+# Fase 5 — Discorso temporizzato (§8)
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{course_id}/lessons/{lesson_id}/speech/generate",
+    response_model=CourseOut,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def generate_lesson_speech(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    lesson_id: uuid.UUID,
+    payload: LessonSpeechGenerateInput,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_GENERATE),
+) -> CourseOut:
+    """Avvia la generazione AI del discorso temporizzato di una singola
+    lezione (Fase 5 — §8). Imposta `lesson.speech_status='pending'`; il
+    worker dispatcha la lezione in parallelo (cap default 3).
+    Pre-condizione: `lesson.slides_status ∈ (ready, approved)`.
+    """
+    await _ensure_org(db, org_id)
+    course = await _load_course_for_edit(
+        db, org_id=org_id, course_id=course_id, current=current
+    )
+    lesson = await course_lesson_speech_service.get_lesson_or_404(
+        db, course=course, lesson_id=lesson_id
+    )
+    course = await course_lesson_speech_service.request_lesson_speech_generation(
+        db,
+        course=course,
+        lesson=lesson,
+        actor_id=current.id,
+        regeneration_hint=payload.regeneration_hint,
+    )
+    return CourseOut.model_validate(course)
+
+
+@router.post(
+    "/{course_id}/lessons-speech/generate-all",
+    response_model=CourseOut,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def generate_all_lessons_speech(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    payload: LessonSpeechGenerateInput,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_GENERATE),
+) -> CourseOut:
+    """Avvia la generazione AI del discorso per TUTTE le lezioni con
+    `slides_status ∈ (ready, approved)`. Le altre lezioni sono ignorate.
+    Il worker le elabora in parallelo (cap default 3).
+    """
+    await _ensure_org(db, org_id)
+    course = await _load_course_for_edit(
+        db, org_id=org_id, course_id=course_id, current=current
+    )
+    course = await course_lesson_speech_service.request_all_lessons_speech_generation(
+        db,
+        course=course,
+        actor_id=current.id,
+        regeneration_hint=payload.regeneration_hint,
+    )
+    return CourseOut.model_validate(course)
+
+
+@router.post(
+    "/{course_id}/lessons-speech/generate-missing",
+    response_model=CourseOut,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def generate_missing_lessons_speech(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_GENERATE),
+) -> CourseOut:
+    """Avvia la generazione AI del discorso SOLO per le lezioni con
+    `speech_status='empty'` AND `slides_status ∈ (ready, approved)`.
+    """
+    await _ensure_org(db, org_id)
+    course = await _load_course_for_edit(
+        db, org_id=org_id, course_id=course_id, current=current
+    )
+    course = await course_lesson_speech_service.request_missing_lessons_speech_generation(
+        db,
+        course=course,
+        actor_id=current.id,
+    )
+    return CourseOut.model_validate(course)
+
+
+@router.post(
+    "/{course_id}/lessons-speech/cancel-all",
+    response_model=CourseOut,
+)
+async def cancel_all_lessons_speech(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_GENERATE),
+) -> CourseOut:
+    """Annulla la generazione discorso in corso: marca tutte le lezioni
+    `pending|processing` come `failed`. Il worker scarta il risultato
+    delle lezioni con OpenAI in flight."""
+    await _ensure_org(db, org_id)
+    course = await _load_course_for_edit(
+        db, org_id=org_id, course_id=course_id, current=current
+    )
+    course = await course_lesson_speech_service.cancel_all_speech_generation(
+        db, course=course, actor_id=current.id
+    )
+    return CourseOut.model_validate(course)
+
+
+@router.post(
+    "/{course_id}/lessons/{lesson_id}/speech/approve",
+    response_model=CourseOut,
+)
+async def approve_lesson_speech(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    lesson_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_GENERATE),
+) -> CourseOut:
+    """Approva il discorso di una singola lezione (`ready` → `approved`)."""
+    await _ensure_org(db, org_id)
+    course = await _load_course_for_edit(
+        db, org_id=org_id, course_id=course_id, current=current
+    )
+    lesson = await course_lesson_speech_service.get_lesson_or_404(
+        db, course=course, lesson_id=lesson_id
+    )
+    course = await course_lesson_speech_service.approve_lesson_speech(
+        db, course=course, lesson=lesson, actor_id=current.id
+    )
+    return CourseOut.model_validate(course)
+
+
+@router.post(
+    "/{course_id}/lessons-speech/approve-all",
+    response_model=CourseOut,
+)
+async def approve_all_lessons_speech(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_GENERATE),
+) -> CourseOut:
+    """Approva il discorso di TUTTE le lezioni `ready` del corso."""
+    await _ensure_org(db, org_id)
+    course = await _load_course_for_edit(
+        db, org_id=org_id, course_id=course_id, current=current
+    )
+    course = await course_lesson_speech_service.approve_all_lessons_speech(
+        db, course=course, actor_id=current.id
+    )
+    return CourseOut.model_validate(course)
+
+
+@router.patch(
+    "/{course_id}/lessons/{lesson_id}/speech",
+    response_model=CourseOut,
+)
+async def update_lesson_speech(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    lesson_id: uuid.UUID,
+    payload: LessonSpeechUpdateInput,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_EDIT),
+) -> CourseOut:
+    """Patch manuale del `speech_raw` della lezione (Fase 5). Richiede
+    che il discorso della lezione sia in `ready` o `approved`. Edit non
+    degrada lo stato.
+    """
+    await _ensure_org(db, org_id)
+    course = await _load_course_for_edit(
+        db, org_id=org_id, course_id=course_id, current=current
+    )
+    lesson = await course_lesson_speech_service.get_lesson_or_404(
+        db, course=course, lesson_id=lesson_id
+    )
+    course = await course_lesson_speech_crud.update_lesson_speech(
+        db,
+        course=course,
+        lesson=lesson,
+        payload=payload,
+        actor_id=current.id,
+    )
+    return CourseOut.model_validate(course)
+
+
 @router.post(
     "/{course_id}/glossary/regenerate",
     response_model=CourseOut,
@@ -1592,6 +1803,139 @@ async def download_lesson_slides_pdf(
             code="slides_pdf_file_missing",
         )
     filename = course_lesson_slides_pdf_service.slides_pdf_filename_for_download(
+        course.title, lesson
+    )
+    return FileResponse(
+        path=str(abs_path),
+        media_type="application/pdf",
+        filename=filename,
+    )
+
+
+# ---------------------------------------------------------------------------
+# §8 — Export PDF discorso
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{course_id}/lessons/{lesson_id}/speech-pdf/export",
+    response_model=CourseOut,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def export_lesson_speech_pdf(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    lesson_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    pdf_template_id: Annotated[uuid.UUID | None, Query()] = None,
+    _=require(P.COURSE_GENERATE),
+) -> CourseOut:
+    """Avvia l'export PDF del discorso di una singola lezione (Fase 5).
+    Imposta `lesson.speech_pdf_status='pending'`. Vincoli: la lezione
+    deve avere `speech_status` ∈ ready/approved.
+    """
+    await _ensure_org(db, org_id)
+    course = await _load_course_for_edit(
+        db, org_id=org_id, course_id=course_id, current=current
+    )
+    lesson = await course_lesson_speech_service.get_lesson_or_404(
+        db, course=course, lesson_id=lesson_id
+    )
+    course = await course_lesson_speech_pdf_service.request_lesson_speech_pdf(
+        db,
+        course=course,
+        lesson=lesson,
+        actor_id=current.id,
+        pdf_template_id=pdf_template_id,
+    )
+    return CourseOut.model_validate(course)
+
+
+@router.post(
+    "/{course_id}/lessons-speech-pdf/export-all",
+    response_model=CourseOut,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def export_all_lessons_speech_pdf(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    pdf_template_id: Annotated[uuid.UUID | None, Query()] = None,
+    _=require(P.COURSE_GENERATE),
+) -> CourseOut:
+    """Avvia l'export PDF discorso per TUTTE le lezioni esportabili."""
+    await _ensure_org(db, org_id)
+    course = await _load_course_for_edit(
+        db, org_id=org_id, course_id=course_id, current=current
+    )
+    course = await course_lesson_speech_pdf_service.request_all_lessons_speech_pdf(
+        db,
+        course=course,
+        actor_id=current.id,
+        pdf_template_id=pdf_template_id,
+    )
+    return CourseOut.model_validate(course)
+
+
+@router.post(
+    "/{course_id}/lessons-speech-pdf/cancel-all",
+    response_model=CourseOut,
+)
+async def cancel_all_lessons_speech_pdf(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_GENERATE),
+) -> CourseOut:
+    """Annulla tutti gli export PDF discorso in flight."""
+    await _ensure_org(db, org_id)
+    course = await _load_course_for_edit(
+        db, org_id=org_id, course_id=course_id, current=current
+    )
+    course = await course_lesson_speech_pdf_service.cancel_all_speech_pdf_exports(
+        db, course=course, actor_id=current.id
+    )
+    return CourseOut.model_validate(course)
+
+
+@router.get(
+    "/{course_id}/lessons/{lesson_id}/speech-pdf/download",
+)
+async def download_lesson_speech_pdf(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    lesson_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_VIEW),
+) -> FileResponse:
+    """Scarica il PDF discorso. 404 se non disponibile."""
+    await _ensure_org(db, org_id)
+    course = await course_lesson_speech_service.load_course_full(
+        db, course_id=course_id
+    )
+    if course is None or course.organization_id != org_id:
+        raise NotFoundError("Corso non trovato.", code="course_not_found")
+    lesson = await course_lesson_speech_service.get_lesson_or_404(
+        db, course=course, lesson_id=lesson_id
+    )
+    if lesson.speech_pdf_status != "ready" or not lesson.speech_pdf_path:
+        raise NotFoundError(
+            "PDF discorso non disponibile per questa lezione.",
+            code="speech_pdf_not_ready",
+        )
+    abs_path = course_lesson_pdf_service.pdf_absolute_path(
+        lesson.speech_pdf_path
+    )
+    if not abs_path.is_file():
+        raise NotFoundError(
+            "File PDF discorso mancante sul filesystem.",
+            code="speech_pdf_file_missing",
+        )
+    filename = course_lesson_speech_pdf_service.speech_pdf_filename_for_download(
         course.title, lesson
     )
     return FileResponse(

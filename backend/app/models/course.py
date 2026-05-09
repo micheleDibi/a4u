@@ -48,6 +48,7 @@ COURSE_STATUSES: tuple[str, ...] = (
     "slides_approved",
     "speech_pending",
     "speech_ready",
+    "speech_approved",
     "published",
     "archived",
 )
@@ -90,7 +91,8 @@ class Course(UUIDPKMixin, TimestampMixin, Base):
             "'architecture_approved','lessons_structure_pending',"
             "'lessons_structure_ready','lessons_structure_approved',"
             "'content_pending','content_ready','content_approved',"
-            "'slides_pending','slides_ready','speech_pending','speech_ready',"
+            "'slides_pending','slides_ready','slides_approved',"
+            "'speech_pending','speech_ready','speech_approved',"
             "'published','archived')",
             name="ck_course_status_valid",
         ),

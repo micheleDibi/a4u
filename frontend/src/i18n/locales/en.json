@@ -129,7 +129,8 @@
       "architecture": "Architecture",
       "lessonsStructure": "Lesson structure",
       "lessonContent": "Content",
-      "lessonSlides": "Slides"
+      "lessonSlides": "Slides",
+      "lessonSpeech": "Speech"
     },
     "sections": {
       "basics": "Basic information",
@@ -892,6 +893,146 @@
         "error": "Operation failed. Try again."
       }
     },
+    "lessonsSpeech": {
+      "title": "Lesson timed speech",
+      "description": "For each lesson, the AI produces the spoken script the instructor will read (and a future TTS will speak in the video), split into segments synchronized to the slides. The estimated total duration matches the lesson duration (±5%).",
+      "slidesNotReady": "Generate the lesson slides first to produce the speech.",
+      "generateAll": "Generate speech for all lessons",
+      "regenerateAll": "Regenerate all speeches",
+      "generateMissing": "Generate missing ({{count}})",
+      "approveAll": "Approve all speeches",
+      "cancelAll": "Stop generation",
+      "aggregate": {
+        "label": "{{completed}}/{{total}} lessons with speech",
+        "failed_one": "{{count}} lesson failed — use \"Retry\".",
+        "failed_other": "{{count}} lessons failed — use \"Retry\".",
+        "eta": "Time remaining: ~{{time}}",
+        "avgPerTask": "~{{time}} per lesson"
+      },
+      "statuses": {
+        "empty": "Empty",
+        "pending": "Queued",
+        "processing": "Processing",
+        "ready": "Ready",
+        "approved": "Approved",
+        "failed": "Failed"
+      },
+      "phases": {
+        "preparing_prompt": "Preparing prompt…",
+        "calling_openai": "AI generation in progress…",
+        "materializing": "Saving the speech…"
+      },
+      "lesson": {
+        "generate": "Generate",
+        "regenerate": "Regenerate",
+        "retry": "Retry",
+        "approve": "Approve",
+        "edit": "Edit",
+        "failed": "Generation failed",
+        "segmentsCount_one": "{{count}} segment",
+        "segmentsCount_other": "{{count}} segments"
+      },
+      "render": {
+        "totalDuration": "Total duration: {{duration}}",
+        "totalWordCount_one": "{{count}} word",
+        "totalWordCount_other": "{{count}} words",
+        "slideTimeline": "[{{start}} — {{end}}]",
+        "durationLabel": "{{seconds}}s",
+        "deliveryNotes": "Delivery notes",
+        "noSegments": "(No segment for this slide)",
+        "slideHeader": "Slide {{number}} — {{title}}",
+        "slideMissing": "Slide not found: {{slideId}}"
+      },
+      "editor": {
+        "segmentId": "Segment ID",
+        "slideId": "Slide",
+        "text": "Text",
+        "textPlaceholder": "Natural prose, TTS-friendly. No abbreviations or special characters.",
+        "durationSeconds": "Estimated duration (s)",
+        "autoDuration": "Auto",
+        "deliveryNotes": "Delivery notes (optional)",
+        "deliveryNotesPlaceholder": "E.g. \"Warm tone, brief pause after the definition.\"",
+        "addSegment": "Add segment",
+        "removeSegment": "Remove",
+        "ttsSafetyWarning": "Warning: text contains characters or abbreviations that are not TTS-safe.",
+        "durationOutOfRange": "Total duration {{actual}}s out of range [{{low}}s, {{high}}s] (target {{target}}s ±5%).",
+        "durationOk": "Total duration {{actual}}s · target {{target}}s (within ±5%)",
+        "uncoveredSlide": "This slide has no associated segment."
+      },
+      "dialog": {
+        "generateLesson": {
+          "title": "Generate speech for {{lesson}}",
+          "description": "The AI will produce the timed speech of the lesson, split into segments synchronized to the slides."
+        },
+        "regenerateLesson": {
+          "title": "Regenerate speech for {{lesson}}",
+          "description": "The current speech will be replaced. You can provide specific guidance to direct the regeneration (optional)."
+        },
+        "generateAll": {
+          "title": "Generate speech for all lessons",
+          "description": "The AI will process in parallel the lessons with ready slides. Other lessons will be skipped."
+        },
+        "regenerateAll": {
+          "title": "Regenerate all speeches",
+          "description": "All existing speeches will be replaced. You can provide specific guidance to direct the regeneration (optional)."
+        },
+        "hintLabel": "Instructor guidance (optional)",
+        "hintPlaceholder": "E.g. \"More casual tone\", \"Add a rhetorical question on concept slides\".",
+        "hintHelper": "Leave empty for a standard regeneration. Maximum 2000 characters.",
+        "generating": "Generating…",
+        "generateLessonCta": "Generate",
+        "regenerateLessonCta": "Regenerate",
+        "generateAllCta": "Generate all",
+        "regenerateAllCta": "Regenerate all",
+        "edit": {
+          "title": "Edit speech of {{lesson}}",
+          "description": "Edit text, duration and notes of the speech segments. Edits do not degrade the approval status.",
+          "save": "Save",
+          "saving": "Saving…"
+        }
+      },
+      "toast": {
+        "batchStarted": "Speech generation started on all lessons.",
+        "lessonStarted": "Speech generation started.",
+        "lessonApproved": "Lesson speech approved.",
+        "allApproved": "All lessons' speech approved.",
+        "lessonUpdated": "Lesson speech updated.",
+        "cancelled": "Generation cancelled.",
+        "error": "Operation failed. Try again."
+      }
+    },
+    "lessonsSpeechPdf": {
+      "exportAll": "Export speech PDF ({{count}})",
+      "cancelAll": "Stop PDF export",
+      "lesson": {
+        "export": "Export PDF",
+        "retry": "Retry export",
+        "download": "Download PDF",
+        "regenerate": "Regenerate PDF",
+        "exporting": "Export in progress…"
+      },
+      "dialog": {
+        "exportLesson": {
+          "title": "Export speech PDF — {{lesson}}",
+          "description": "Choose the graphic template for the speech PDF."
+        },
+        "exportAll": {
+          "title": "Export speech PDF for all lessons",
+          "description": "{{count}} lessons will be exported to PDF (speech text grouped by slide with cumulative timeline)."
+        },
+        "templateLabel": "Template",
+        "noTemplates": "No template configured for the organization. The built-in default will be used.",
+        "exportCta": "Export",
+        "exportAllCta": "Export all",
+        "defaultBadge": "Default"
+      },
+      "toast": {
+        "batchStarted": "Speech PDF export started on all lessons.",
+        "lessonStarted": "Speech PDF export started.",
+        "cancelled": "Export cancelled.",
+        "error": "Operation failed. Try again."
+      }
+    },
     "glossary": {
       "title": "Course glossary",
       "termsCount_one": "{{count}} term",
@@ -975,6 +1116,9 @@
       },
       "lessonSlides": {
         "approved": "Slides approved"
+      },
+      "lessonSpeech": {
+        "approved": "Speech approved"
       }
     },
     "staleness": {
@@ -993,6 +1137,14 @@
       "slides": {
         "label": "Content changed since last generation",
         "action": "Update slides"
+      },
+      "speech": {
+        "label": "Slides or content changed since last generation",
+        "action": "Update speech"
+      },
+      "speechPdf": {
+        "label": "PDF out of sync with current speech",
+        "action": "Regenerate PDF"
       }
     }
   },

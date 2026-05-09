@@ -311,6 +311,54 @@ export interface LessonSlidesUpdateInput {
   new_assets?: LessonSlideNewAsset[];
 }
 
+// ---------------------------------------------------------------------------
+// Fase 5 — Discorso temporizzato (§8)
+// ---------------------------------------------------------------------------
+
+export type LessonSpeechStatus =
+  | "empty"
+  | "pending"
+  | "processing"
+  | "ready"
+  | "approved"
+  | "failed";
+
+export interface LessonSpeechSegment {
+  segment_id: string;
+  slide_id: string;
+  text: string;
+  estimated_duration_seconds: number;
+  delivery_notes: string;
+}
+
+export interface LessonSlideSegmentsMapEntry {
+  slide_id: string;
+  segment_ids: string[];
+  slide_total_duration_seconds: number;
+}
+
+export interface LessonSpeechRaw {
+  lesson_id: string;
+  language: string;
+  target_duration_seconds: number;
+  estimated_total_duration_seconds: number;
+  estimated_total_word_count: number;
+  speech_segments: LessonSpeechSegment[];
+  slide_to_segments_map: LessonSlideSegmentsMapEntry[];
+}
+
+export interface LessonSpeechTokens {
+  prompt: number;
+  completion: number;
+  total: number;
+  model: string;
+}
+
+export interface LessonSpeechUpdateInput {
+  speech_segments?: LessonSpeechSegment[];
+  slide_to_segments_map?: LessonSlideSegmentsMapEntry[];
+}
+
 export interface CourseLessonOut {
   id: string;
   module_id: string;
@@ -371,6 +419,29 @@ export interface CourseLessonOut {
   slides_pdf_generated_at: string | null;
   slides_pdf_template_id: string | null;
   slides_pdf_path: string | null;
+  // Fase 5 — Discorso temporizzato (§8)
+  speech_status: LessonSpeechStatus;
+  speech_progress: number;
+  speech_progress_phase: string | null;
+  speech_error: string | null;
+  speech_attempts: number;
+  speech_generated_at: string | null;
+  speech_approved_at: string | null;
+  speech_tokens: LessonSpeechTokens | null;
+  speech_regeneration_hint: string | null;
+  // Stale-detection — set solo da CRUD manuale, non dal worker AI.
+  speech_modified_at: string | null;
+  speech_raw: LessonSpeechRaw | null;
+  // §8 — Export PDF del discorso (Step 7). Tipi presenti subito così
+  // il polling e la cache li gestiscono uniformemente.
+  speech_pdf_status?: LessonPdfStatus;
+  speech_pdf_progress?: number;
+  speech_pdf_progress_phase?: string | null;
+  speech_pdf_error?: string | null;
+  speech_pdf_attempts?: number;
+  speech_pdf_generated_at?: string | null;
+  speech_pdf_template_id?: string | null;
+  speech_pdf_path?: string | null;
 }
 
 export interface LessonStructureTokens {
@@ -1015,6 +1086,80 @@ export const coursesApi = {
       return res.data;
     },
   },
+  lessonSpeech: {
+    generateLesson: async (
+      orgId: string,
+      courseId: string,
+      lessonId: string,
+      regeneration_hint?: string | null
+    ): Promise<CourseOut> => {
+      const res = await apiClient.post<CourseOut>(
+        `${base(orgId)}/${courseId}/lessons/${lessonId}/speech/generate`,
+        { regeneration_hint: regeneration_hint || null }
+      );
+      return res.data;
+    },
+    generateAll: async (
+      orgId: string,
+      courseId: string,
+      regeneration_hint?: string | null
+    ): Promise<CourseOut> => {
+      const res = await apiClient.post<CourseOut>(
+        `${base(orgId)}/${courseId}/lessons-speech/generate-all`,
+        { regeneration_hint: regeneration_hint || null }
+      );
+      return res.data;
+    },
+    generateMissing: async (
+      orgId: string,
+      courseId: string
+    ): Promise<CourseOut> => {
+      const res = await apiClient.post<CourseOut>(
+        `${base(orgId)}/${courseId}/lessons-speech/generate-missing`
+      );
+      return res.data;
+    },
+    approveLesson: async (
+      orgId: string,
+      courseId: string,
+      lessonId: string
+    ): Promise<CourseOut> => {
+      const res = await apiClient.post<CourseOut>(
+        `${base(orgId)}/${courseId}/lessons/${lessonId}/speech/approve`
+      );
+      return res.data;
+    },
+    cancelAll: async (
+      orgId: string,
+      courseId: string
+    ): Promise<CourseOut> => {
+      const res = await apiClient.post<CourseOut>(
+        `${base(orgId)}/${courseId}/lessons-speech/cancel-all`
+      );
+      return res.data;
+    },
+    approveAll: async (
+      orgId: string,
+      courseId: string
+    ): Promise<CourseOut> => {
+      const res = await apiClient.post<CourseOut>(
+        `${base(orgId)}/${courseId}/lessons-speech/approve-all`
+      );
+      return res.data;
+    },
+    updateLesson: async (
+      orgId: string,
+      courseId: string,
+      lessonId: string,
+      payload: LessonSpeechUpdateInput
+    ): Promise<CourseOut> => {
+      const res = await apiClient.patch<CourseOut>(
+        `${base(orgId)}/${courseId}/lessons/${lessonId}/speech`,
+        payload
+      );
+      return res.data;
+    },
+  },
   glossary: {
     regenerate: async (
       orgId: string,
@@ -1140,6 +1285,66 @@ export const coursesApi = {
     ): Promise<{ blob: Blob; filename: string | null }> => {
       const res = await apiClient.get<Blob>(
         `${base(orgId)}/${courseId}/lessons/${lessonId}/slides-pdf/download`,
+        { responseType: "blob" }
+      );
+      const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
+      const m = /filename\*?="?([^";]+)"?/i.exec(cd);
+      const filename = m ? decodeURIComponent(m[1]) : null;
+      return { blob: res.data, filename };
+    },
+  },
+  lessonSpeechPdf: {
+    exportLesson: async (
+      orgId: string,
+      courseId: string,
+      lessonId: string,
+      pdfTemplateId?: string | null
+    ): Promise<CourseOut> => {
+      const res = await apiClient.post<CourseOut>(
+        `${base(orgId)}/${courseId}/lessons/${lessonId}/speech-pdf/export`,
+        undefined,
+        pdfTemplateId
+          ? { params: { pdf_template_id: pdfTemplateId } }
+          : undefined
+      );
+      return res.data;
+    },
+    exportAll: async (
+      orgId: string,
+      courseId: string,
+      pdfTemplateId?: string | null
+    ): Promise<CourseOut> => {
+      const res = await apiClient.post<CourseOut>(
+        `${base(orgId)}/${courseId}/lessons-speech-pdf/export-all`,
+        undefined,
+        pdfTemplateId
+          ? { params: { pdf_template_id: pdfTemplateId } }
+          : undefined
+      );
+      return res.data;
+    },
+    cancelAll: async (
+      orgId: string,
+      courseId: string
+    ): Promise<CourseOut> => {
+      const res = await apiClient.post<CourseOut>(
+        `${base(orgId)}/${courseId}/lessons-speech-pdf/cancel-all`
+      );
+      return res.data;
+    },
+    downloadUrl: (
+      orgId: string,
+      courseId: string,
+      lessonId: string
+    ): string =>
+      `${apiClient.defaults.baseURL ?? ""}${base(orgId)}/${courseId}/lessons/${lessonId}/speech-pdf/download`,
+    download: async (
+      orgId: string,
+      courseId: string,
+      lessonId: string
+    ): Promise<{ blob: Blob; filename: string | null }> => {
+      const res = await apiClient.get<Blob>(
+        `${base(orgId)}/${courseId}/lessons/${lessonId}/speech-pdf/download`,
         { responseType: "blob" }
       );
       const cd = (res.headers["content-disposition"] as string | undefined) ?? "";

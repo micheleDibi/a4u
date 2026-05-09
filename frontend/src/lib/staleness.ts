@@ -104,3 +104,48 @@ export function isSlidesPdfStale(lesson: CourseLessonOut): boolean {
     return true;
   return false;
 }
+
+/**
+ * Il discorso (Fase 5) è stale se è cambiato qualcosa a monte:
+ * - le slide sono state rigenerate o modificate dopo il discorso, oppure
+ * - il contenuto è stato rigenerato/modificato dopo il discorso, oppure
+ * - la struttura della lezione è stata modificata dopo il discorso, oppure
+ * - l'architettura del modulo padre è stata modificata dopo il discorso.
+ *
+ * Si applica solo a discorsi già generati (`speech_generated_at` non null).
+ */
+export function isSpeechStale(
+  lesson: CourseLessonOut,
+  parentModule: CourseModuleOut,
+): boolean {
+  if (!lesson.speech_generated_at) return false;
+  if (isAfter(lesson.slides_generated_at, lesson.speech_generated_at))
+    return true;
+  if (isAfter(lesson.slides_modified_at, lesson.speech_generated_at))
+    return true;
+  if (isAfter(lesson.content_generated_at, lesson.speech_generated_at))
+    return true;
+  if (isAfter(lesson.content_modified_at, lesson.speech_generated_at))
+    return true;
+  if (isAfter(lesson.lesson_structure_modified_at, lesson.speech_generated_at))
+    return true;
+  if (isAfter(parentModule.architecture_modified_at, lesson.speech_generated_at))
+    return true;
+  return false;
+}
+
+/**
+ * Il PDF del discorso è stale se il discorso è stato rigenerato o
+ * modificato manualmente dopo l'ultimo export PDF discorso.
+ *
+ * Si applica solo a PDF già pronti (`speech_pdf_status === 'ready'`).
+ */
+export function isSpeechPdfStale(lesson: CourseLessonOut): boolean {
+  if (lesson.speech_pdf_status !== "ready") return false;
+  if (!lesson.speech_pdf_generated_at) return false;
+  if (isAfter(lesson.speech_generated_at, lesson.speech_pdf_generated_at))
+    return true;
+  if (isAfter(lesson.speech_modified_at, lesson.speech_pdf_generated_at))
+    return true;
+  return false;
+}

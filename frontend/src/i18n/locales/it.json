@@ -129,7 +129,8 @@
       "architecture": "Architettura",
       "lessonsStructure": "Struttura lezioni",
       "lessonContent": "Contenuti",
-      "lessonSlides": "Slide"
+      "lessonSlides": "Slide",
+      "lessonSpeech": "Discorso"
     },
     "sections": {
       "basics": "Informazioni di base",
@@ -893,6 +894,146 @@
         "error": "Operazione fallita. Riprova."
       }
     },
+    "lessonsSpeech": {
+      "title": "Discorso temporizzato delle lezioni",
+      "description": "Per ogni lezione, l'AI produce il parlato che il docente leggerà (e che un futuro TTS pronuncerà nel video), suddiviso in segmenti sincronizzati alle slide. La somma delle durate stimate corrisponde alla durata della lezione (±5%).",
+      "slidesNotReady": "Genera prima le slide delle lezioni per produrre il discorso.",
+      "generateAll": "Genera discorso per tutte le lezioni",
+      "regenerateAll": "Rigenera tutti i discorsi",
+      "generateMissing": "Genera mancanti ({{count}})",
+      "approveAll": "Approva tutti i discorsi",
+      "cancelAll": "Ferma generazione",
+      "aggregate": {
+        "label": "{{completed}}/{{total}} lezioni con discorso",
+        "failed_one": "{{count}} lezione fallita — usa \"Riprova\".",
+        "failed_other": "{{count}} lezioni fallite — usa \"Riprova\".",
+        "eta": "Tempo rimanente: ~{{time}}",
+        "avgPerTask": "~{{time}} per lezione"
+      },
+      "statuses": {
+        "empty": "Vuoto",
+        "pending": "In coda",
+        "processing": "In elaborazione",
+        "ready": "Pronto",
+        "approved": "Approvato",
+        "failed": "Fallito"
+      },
+      "phases": {
+        "preparing_prompt": "Preparazione del prompt…",
+        "calling_openai": "Generazione AI in corso…",
+        "materializing": "Salvataggio del discorso…"
+      },
+      "lesson": {
+        "generate": "Genera",
+        "regenerate": "Rigenera",
+        "retry": "Riprova",
+        "approve": "Approva",
+        "edit": "Modifica",
+        "failed": "Generazione fallita",
+        "segmentsCount_one": "{{count}} segmento",
+        "segmentsCount_other": "{{count}} segmenti"
+      },
+      "render": {
+        "totalDuration": "Durata totale: {{duration}}",
+        "totalWordCount_one": "{{count}} parola",
+        "totalWordCount_other": "{{count}} parole",
+        "slideTimeline": "[{{start}} — {{end}}]",
+        "durationLabel": "{{seconds}}s",
+        "deliveryNotes": "Note al docente",
+        "noSegments": "(Nessun segmento per questa slide)",
+        "slideHeader": "Slide {{number}} — {{title}}",
+        "slideMissing": "Slide non trovata: {{slideId}}"
+      },
+      "editor": {
+        "segmentId": "ID segmento",
+        "slideId": "Slide",
+        "text": "Testo",
+        "textPlaceholder": "Prosa naturale, TTS-friendly. Niente abbreviazioni o caratteri speciali.",
+        "durationSeconds": "Durata stimata (s)",
+        "autoDuration": "Auto",
+        "deliveryNotes": "Note al docente (opzionale)",
+        "deliveryNotesPlaceholder": "Es. \"Tono cordiale, pausa breve dopo la definizione.\"",
+        "addSegment": "Aggiungi segmento",
+        "removeSegment": "Rimuovi",
+        "ttsSafetyWarning": "Attenzione: il testo contiene caratteri o abbreviazioni non TTS-safe.",
+        "durationOutOfRange": "Durata totale {{actual}}s fuori range [{{low}}s, {{high}}s] (target {{target}}s ±5%).",
+        "durationOk": "Durata totale {{actual}}s · target {{target}}s (entro ±5%)",
+        "uncoveredSlide": "Questa slide non ha alcun segmento associato."
+      },
+      "dialog": {
+        "generateLesson": {
+          "title": "Genera discorso di {{lesson}}",
+          "description": "L'AI produrrà il discorso temporizzato della lezione, suddiviso in segmenti sincronizzati alle slide."
+        },
+        "regenerateLesson": {
+          "title": "Rigenera discorso di {{lesson}}",
+          "description": "Il discorso attuale verrà sostituito. Puoi fornire indicazioni specifiche per guidare la rigenerazione (opzionale)."
+        },
+        "generateAll": {
+          "title": "Genera discorso per tutte le lezioni",
+          "description": "L'AI elaborerà in parallelo le lezioni con slide pronte. Le altre lezioni verranno ignorate."
+        },
+        "regenerateAll": {
+          "title": "Rigenera tutti i discorsi",
+          "description": "Tutti i discorsi esistenti verranno sostituiti. Puoi fornire indicazioni specifiche per guidare la rigenerazione (opzionale)."
+        },
+        "hintLabel": "Indicazioni del docente (opzionale)",
+        "hintPlaceholder": "Es. \"Tono più informale\", \"Aggiungi una domanda retorica nelle slide concept\".",
+        "hintHelper": "Lascia vuoto per una rigenerazione standard. Massimo 2000 caratteri.",
+        "generating": "Generazione…",
+        "generateLessonCta": "Genera",
+        "regenerateLessonCta": "Rigenera",
+        "generateAllCta": "Genera tutto",
+        "regenerateAllCta": "Rigenera tutto",
+        "edit": {
+          "title": "Modifica discorso di {{lesson}}",
+          "description": "Modifica testo, durata e note dei segmenti del discorso. Le modifiche non degradano lo stato di approvazione.",
+          "save": "Salva",
+          "saving": "Salvataggio…"
+        }
+      },
+      "toast": {
+        "batchStarted": "Generazione discorso avviata su tutte le lezioni.",
+        "lessonStarted": "Generazione discorso avviata.",
+        "lessonApproved": "Discorso della lezione approvato.",
+        "allApproved": "Discorso di tutte le lezioni approvato.",
+        "lessonUpdated": "Discorso della lezione aggiornato.",
+        "cancelled": "Generazione annullata.",
+        "error": "Operazione fallita. Riprova."
+      }
+    },
+    "lessonsSpeechPdf": {
+      "exportAll": "Esporta PDF discorso ({{count}})",
+      "cancelAll": "Ferma export PDF",
+      "lesson": {
+        "export": "Esporta PDF",
+        "retry": "Riprova export",
+        "download": "Scarica PDF",
+        "regenerate": "Rigenera PDF",
+        "exporting": "Export in corso…"
+      },
+      "dialog": {
+        "exportLesson": {
+          "title": "Esporta PDF discorso — {{lesson}}",
+          "description": "Scegli il template grafico da applicare al PDF del discorso."
+        },
+        "exportAll": {
+          "title": "Esporta PDF discorso di tutte le lezioni",
+          "description": "{{count}} lezioni verranno esportate in PDF (testo del discorso raggruppato per slide con timeline)."
+        },
+        "templateLabel": "Template",
+        "noTemplates": "Nessun template configurato per l'organizzazione. Verrà usato il template di default integrato.",
+        "exportCta": "Esporta",
+        "exportAllCta": "Esporta tutto",
+        "defaultBadge": "Default"
+      },
+      "toast": {
+        "batchStarted": "Export PDF discorso avviato su tutte le lezioni.",
+        "lessonStarted": "Export PDF discorso avviato.",
+        "cancelled": "Export annullato.",
+        "error": "Operazione fallita. Riprova."
+      }
+    },
     "glossary": {
       "title": "Glossario del corso",
       "termsCount_one": "{{count}} termine",
@@ -976,6 +1117,9 @@
       },
       "lessonSlides": {
         "approved": "Slide approvate"
+      },
+      "lessonSpeech": {
+        "approved": "Discorso approvato"
       }
     },
     "staleness": {
@@ -994,6 +1138,14 @@
       "slides": {
         "label": "Contenuto modificato dopo l'ultima generazione",
         "action": "Aggiorna slide"
+      },
+      "speech": {
+        "label": "Slide o contenuto modificati dopo l'ultima generazione",
+        "action": "Aggiorna discorso"
+      },
+      "speechPdf": {
+        "label": "PDF non allineato al discorso attuale",
+        "action": "Rigenera PDF"
       }
     }
   },

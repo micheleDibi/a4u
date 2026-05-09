@@ -64,6 +64,7 @@ import { CourseDocumentUploader } from "./components/CourseDocumentUploader";
 import { CourseLessonStructureView } from "./components/CourseLessonStructureView";
 import { CourseLessonContentView } from "./components/CourseLessonContentView";
 import { CourseLessonSlidesView } from "./components/CourseLessonSlidesView";
+import { CourseLessonSpeechView } from "./components/CourseLessonSpeechView";
 import { CourseStatusBadge } from "./components/CourseStatusBadge";
 import { GenerateArchitectureDialog } from "./components/GenerateArchitectureDialog";
 import { KeywordTagsInput } from "./components/KeywordTagsInput";
@@ -215,6 +216,22 @@ export default function CourseEditorPage({ mode }: Props) {
         )
       );
       if (anyActiveSlidesPdf) return 4000;
+      const anyActiveLessonSpeech = (data.modules ?? []).some((m) =>
+        (m.lessons ?? []).some(
+          (l) =>
+            l.speech_status === "pending" ||
+            l.speech_status === "processing"
+        )
+      );
+      if (anyActiveLessonSpeech) return 5000;
+      const anyActiveSpeechPdf = (data.modules ?? []).some((m) =>
+        (m.lessons ?? []).some(
+          (l) =>
+            l.speech_pdf_status === "pending" ||
+            l.speech_pdf_status === "processing"
+        )
+      );
+      if (anyActiveSpeechPdf) return 4000;
       if (
         data.glossary_status === "pending" ||
         data.glossary_status === "processing"
@@ -249,6 +266,7 @@ export default function CourseEditorPage({ mode }: Props) {
     "lessons-structure",
     "lesson-content",
     "lesson-slides",
+    "lesson-speech",
   ] as const;
   type TabId = (typeof TAB_ORDER)[number];
   const tabStorageKey = courseId ? `course-editor-tab:${courseId}` : null;
@@ -629,12 +647,27 @@ export default function CourseEditorPage({ mode }: Props) {
                 !course ||
                 (course.status !== "content_ready" &&
                   course.status !== "content_approved" &&
-                  !["slides_pending", "slides_ready", "slides_approved", "speech_pending", "speech_ready", "published"].includes(
+                  !["slides_pending", "slides_ready", "slides_approved", "speech_pending", "speech_ready", "speech_approved", "published"].includes(
                     course.status
                   ))
               }
             >
               {t("courses.tabs.lessonSlides")}
+            </TabsTrigger>
+          )}
+          {mode === "edit" && (
+            <TabsTrigger
+              value="lesson-speech"
+              disabled={
+                !course ||
+                (course.status !== "slides_ready" &&
+                  course.status !== "slides_approved" &&
+                  !["speech_pending", "speech_ready", "speech_approved", "published"].includes(
+                    course.status
+                  ))
+              }
+            >
+              {t("courses.tabs.lessonSpeech")}
             </TabsTrigger>
           )}
         </TabsList>
@@ -1185,6 +1218,18 @@ export default function CourseEditorPage({ mode }: Props) {
         {mode === "edit" && course && (
           <TabsContent value="lesson-slides" className="space-y-4">
             <CourseLessonSlidesView
+              course={course}
+              orgId={orgId}
+              canEdit={canEdit}
+              canGenerate={canGenerate}
+            />
+          </TabsContent>
+        )}
+
+        {/* Tab — Discorso temporizzato (Fase 5 AI) */}
+        {mode === "edit" && course && (
+          <TabsContent value="lesson-speech" className="space-y-4">
+            <CourseLessonSpeechView
               course={course}
               orgId={orgId}
               canEdit={canEdit}

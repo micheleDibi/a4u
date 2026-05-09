@@ -8,7 +8,8 @@ export type ApprovalLevel =
   | "architecture"
   | "module"
   | "lessonContent"
-  | "lessonSlides";
+  | "lessonSlides"
+  | "lessonSpeech";
 
 export interface ApprovalBadgeProps {
   /** Livello del workflow a cui si riferisce l'approvazione. */

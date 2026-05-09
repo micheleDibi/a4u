@@ -141,6 +141,32 @@ class CourseLessonOut(ORMModel):
     slides_pdf_template_id: uuid.UUID | None = None
     slides_pdf_path: str | None = None
 
+    # Fase 5 — Discorso temporizzato (§8) — meta + payload AI
+    speech_status: str = "empty"
+    speech_progress: int = 0
+    speech_progress_phase: str | None = None
+    speech_error: str | None = None
+    speech_attempts: int = 0
+    speech_generated_at: datetime | None = None
+    speech_approved_at: datetime | None = None
+    speech_tokens: dict[str, Any] | None = None
+    speech_regeneration_hint: str | None = None
+    # Stale-detection: timestamp dell'ultima modifica manuale al
+    # `speech_raw`. Set da CRUD; worker AI NON lo tocca.
+    speech_modified_at: datetime | None = None
+    # Output AI completo (verbatim §8.4) — nullable finché non generato.
+    speech_raw: dict[str, Any] | None = None
+
+    # §8 — Export PDF del discorso
+    speech_pdf_status: str = "empty"
+    speech_pdf_progress: int = 0
+    speech_pdf_progress_phase: str | None = None
+    speech_pdf_error: str | None = None
+    speech_pdf_attempts: int = 0
+    speech_pdf_generated_at: datetime | None = None
+    speech_pdf_template_id: uuid.UUID | None = None
+    speech_pdf_path: str | None = None
+
 
 class CourseModuleOut(ORMModel):
     id: uuid.UUID

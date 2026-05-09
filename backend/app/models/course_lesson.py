@@ -51,6 +51,15 @@ LESSON_SLIDES_STATUSES: tuple[str, ...] = (
     "failed",
 )
 
+LESSON_SPEECH_STATUSES: tuple[str, ...] = (
+    "empty",
+    "pending",
+    "processing",
+    "ready",
+    "approved",
+    "failed",
+)
+
 
 class CourseLesson(UUIDPKMixin, TimestampMixin, Base):
     """Lezione del corso (Fase 1, §4 di prompt_generazione_corsi.md).
@@ -106,6 +115,24 @@ class CourseLesson(UUIDPKMixin, TimestampMixin, Base):
         CheckConstraint(
             "slides_pdf_progress >= 0 AND slides_pdf_progress <= 100",
             name="ck_course_lesson_slides_pdf_progress",
+        ),
+        CheckConstraint(
+            "speech_status IN "
+            "('empty','pending','processing','ready','approved','failed')",
+            name="ck_course_lesson_speech_status",
+        ),
+        CheckConstraint(
+            "speech_progress >= 0 AND speech_progress <= 100",
+            name="ck_course_lesson_speech_progress",
+        ),
+        CheckConstraint(
+            "speech_pdf_status IN "
+            "('empty','pending','processing','ready','failed')",
+            name="ck_course_lesson_speech_pdf_status",
+        ),
+        CheckConstraint(
+            "speech_pdf_progress >= 0 AND speech_pdf_progress <= 100",
+            name="ck_course_lesson_speech_pdf_progress",
         ),
     )
 
@@ -288,6 +315,76 @@ class CourseLesson(UUIDPKMixin, TimestampMixin, Base):
     )
     slides_pdf_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     slides_pdf_generated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    # §8 — Fase 5: Discorso temporizzato (pipeline async, scoped a lezione).
+    # Popolato dal worker `course_lesson_speech_worker` quando la lezione
+    # passa per `processing → ready`. Modificabile a mano via PATCH
+    # /lessons/{id}/speech (richiede status `ready` o `approved`).
+    speech_status: Mapped[str] = mapped_column(
+        String(40), nullable=False, default="empty", server_default="empty"
+    )
+    speech_raw: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB, nullable=True
+    )
+    speech_tokens: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB, nullable=True
+    )
+    speech_attempts: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, default=0, server_default="0"
+    )
+    speech_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    speech_generated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    speech_approved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Stale-detection — modifica manuale del `speech_raw` (Fase 5). Set
+    # da `course_lesson_speech_crud.update_lesson_speech`; il worker AI
+    # di Fase 5 NON tocca questa colonna. Confrontato lato FE col PDF
+    # discorso e con upstream (slides/content/structure/architecture).
+    speech_modified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    speech_regeneration_hint: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )
+    speech_progress: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, default=0, server_default="0"
+    )
+    speech_progress_phase: Mapped[str | None] = mapped_column(
+        String(50), nullable=True
+    )
+
+    # §8 — Export PDF del discorso temporizzato (pipeline async, scoped
+    # a livello lezione). FK a `pdf_templates` (kind=lesson, stesso del
+    # PDF lezione testo): il discorso è prosa pura, single-column
+    # block-flow A4 portrait. Stato `ready` significa "PDF disponibile a
+    # `speech_pdf_path`".
+    speech_pdf_status: Mapped[str] = mapped_column(
+        String(40), nullable=False, default="empty", server_default="empty"
+    )
+    speech_pdf_progress: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, default=0, server_default="0"
+    )
+    speech_pdf_progress_phase: Mapped[str | None] = mapped_column(
+        String(50), nullable=True
+    )
+    speech_pdf_path: Mapped[str | None] = mapped_column(
+        String(500), nullable=True
+    )
+    speech_pdf_template_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("pdf_templates.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    speech_pdf_attempts: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, default=0, server_default="0"
+    )
+    speech_pdf_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    speech_pdf_generated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
 

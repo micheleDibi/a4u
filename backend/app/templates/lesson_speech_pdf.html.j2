@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="{{ language }}">
+<head>
+  <meta charset="utf-8" />
+  <title>{{ course.title }} — {{ lesson.title }} — {{ labels.speech }}</title>
+
+  <style>
+    /* === Reset + base font dal template org === */
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: "{{ tpl.font_family }}", "Inter", "DejaVu Sans",
+                    "Liberation Sans", -apple-system, "Segoe UI",
+                    Roboto, "Helvetica Neue", Arial, sans-serif;
+      color: {{ tpl.text_color }};
+      font-size: 11pt;
+      line-height: 1.55;
+    }
+
+    /* === @page ===
+       A4 portrait, single column block-flow. Stessa struttura del PDF
+       lezione testo: header running con loghi, footer con counter
+       pagina, sfondo edge-to-edge se template ha background_image. */
+    @page {
+      size: {{ tpl.page_size }};
+      margin: {{ margin_top_cm }}cm {{ margin_side_cm }}cm
+              {{ margin_bottom_cm }}cm {{ margin_side_cm }}cm;
+
+      @top-left {
+        content: element(pageHeader);
+        width: 100%;
+        vertical-align: top;
+      }
+      @bottom-center {
+        content: "{{ course.title }} · {{ lesson.title }} · " counter(page) "/" counter(pages);
+        font-family: "{{ tpl.font_family }}", "DejaVu Sans", sans-serif;
+        font-size: 8.5pt;
+        color: {{ tpl.text_color }};
+        opacity: 0.65;
+      }
+    }
+
+    {% if tpl.background_image_url %}
+    .page-background {
+      position: fixed;
+      top: -{{ margin_top_cm }}cm;
+      bottom: -{{ margin_bottom_cm }}cm;
+      left: -{{ margin_side_cm }}cm;
+      right: -{{ margin_side_cm }}cm;
+      background-image: url("{{ tpl.background_image_url }}");
+      background-size: cover;
+      background-position: center center;
+      background-repeat: no-repeat;
+      opacity: {{ (tpl.background_opacity_pct / 100.0) | round(3) }};
+      z-index: -100;
+    }
+    {% endif %}
+
+    {% if tpl.logo_left_url or tpl.logo_right_url %}
+    .page-header {
+      position: running(pageHeader);
+      width: 100%;
+      padding-bottom: 4pt;
+      border-bottom: 0.5pt solid {{ tpl.secondary_color }}66;
+    }
+    .page-header::after {
+      content: "";
+      display: block;
+      clear: both;
+    }
+    .page-header .logo-left {
+      max-height: {{ tpl.header_height_mm if tpl.header_height_mm else 12 }}mm;
+      max-width: 50mm;
+      float: left;
+    }
+    .page-header .logo-right {
+      max-height: {{ tpl.header_height_mm if tpl.header_height_mm else 12 }}mm;
+      max-width: 50mm;
+      float: right;
+    }
+    {% endif %}
+
+    /* === Cover === */
+    .cover {
+      min-height: 22cm;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      page-break-after: always;
+      text-align: center;
+    }
+    .cover .accent-bar {
+      width: 60mm; height: 4pt;
+      background: {{ tpl.primary_color }};
+      margin: 0 auto 12mm;
+    }
+    .cover .org-name {
+      font-size: 11pt; letter-spacing: 0.06em; text-transform: uppercase;
+      color: {{ tpl.secondary_color }}; margin-bottom: 14mm;
+    }
+    .cover .speech-tag {
+      font-size: 12pt; font-weight: 600; letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: {{ tpl.primary_color }}; margin-bottom: 4mm;
+    }
+    .cover .lesson-tag {
+      font-size: 13pt; font-weight: 600;
+      color: {{ tpl.primary_color }}; margin-bottom: 4mm;
+    }
+    .cover .lesson-title {
+      font-size: 26pt; font-weight: 700; letter-spacing: -0.01em;
+      line-height: 1.15; margin: 0 0 12mm; max-width: 140mm;
+      align-self: center;
+    }
+    .cover .course-title {
+      font-size: 13pt; font-style: italic;
+      color: {{ tpl.text_color }}; opacity: 0.7; margin-bottom: 14mm;
+    }
+    .cover .meta-row {
+      display: flex; justify-content: center; gap: 16mm;
+      font-size: 11pt; color: {{ tpl.text_color }};
+    }
+    .cover .meta-row .meta-item {
+      text-align: center;
+    }
+    .cover .meta-row .meta-label {
+      display: block; font-size: 9pt; letter-spacing: 0.04em;
+      text-transform: uppercase; color: {{ tpl.secondary_color }};
+      margin-bottom: 1mm;
+    }
+    .cover .meta-row .meta-value {
+      font-weight: 600; font-variant-numeric: tabular-nums;
+      color: {{ tpl.primary_color }};
+    }
+
+    /* === Slide section header === */
+    .slide-section {
+      margin: 0 0 8mm;
+      page-break-inside: auto;
+    }
+    .slide-section + .slide-section {
+      border-top: 0.5pt solid rgba(0, 0, 0, 0.1);
+      padding-top: 6mm;
+      margin-top: 8mm;
+    }
+    .slide-header {
+      display: flex; align-items: baseline; gap: 4mm;
+      margin: 0 0 3mm;
+      page-break-after: avoid;
+    }
+    .slide-header .slide-num {
+      display: inline-block;
+      min-width: 9mm; padding: 0.5mm 2mm;
+      border: 0.5pt solid {{ tpl.primary_color }};
+      border-radius: 2pt;
+      font-family: "Menlo", "Consolas", monospace;
+      font-size: 10pt; font-weight: 600;
+      color: {{ tpl.primary_color }};
+      text-align: center;
+    }
+    .slide-header .slide-title {
+      flex: 1;
+      font-size: 14pt; font-weight: 600;
+      color: {{ tpl.text_color }};
+      line-height: 1.25;
+    }
+    .slide-header .slide-duration {
+      font-family: "Menlo", "Consolas", monospace;
+      font-size: 10pt;
+      color: {{ tpl.secondary_color }};
+      font-variant-numeric: tabular-nums;
+    }
+    .slide-missing-warning {
+      font-size: 9pt; color: #cc0000; font-style: italic;
+      margin: 0 0 3mm;
+    }
+
+    /* === Segment === */
+    .segment {
+      margin: 0 0 4mm;
+      padding: 2mm 0 2mm 4mm;
+      border-left: 2pt solid {{ tpl.primary_color }}33;
+      page-break-inside: auto;
+    }
+    .segment-meta {
+      display: flex; gap: 4mm; align-items: baseline;
+      font-family: "Menlo", "Consolas", monospace;
+      font-size: 9pt; font-variant-numeric: tabular-nums;
+      color: {{ tpl.secondary_color }};
+      margin: 0 0 1.5mm;
+    }
+    .segment-meta .timeline {
+      color: {{ tpl.primary_color }}; font-weight: 600;
+    }
+    .segment-text {
+      font-family: "Georgia", "Cambria", "DejaVu Serif", serif;
+      font-size: 11pt; line-height: 1.6;
+      text-align: justify; hyphens: auto;
+      margin: 0 0 1.5mm;
+    }
+    .segment-notes {
+      font-size: 9.5pt; font-style: italic;
+      color: rgba(0, 0, 0, 0.55);
+      margin: 0;
+    }
+    .segment-notes .label {
+      font-style: normal; font-weight: 600;
+      color: {{ tpl.secondary_color }};
+    }
+
+    .no-segments {
+      font-size: 10pt; font-style: italic;
+      color: rgba(0, 0, 0, 0.5);
+      margin: 0 0 4mm 4mm;
+    }
+  </style>
+</head>
+<body>
+  {% if tpl.background_image_url %}
+  <div class="page-background"></div>
+  {% endif %}
+
+  {% if tpl.logo_left_url or tpl.logo_right_url %}
+  <div class="page-header">
+    {% if tpl.logo_left_url %}
+      <img class="logo-left" src="{{ tpl.logo_left_url }}" alt="" />
+    {% endif %}
+    {% if tpl.logo_right_url %}
+      <img class="logo-right" src="{{ tpl.logo_right_url }}" alt="" />
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {# === Cover === #}
+  <section class="cover">
+    <div class="accent-bar"></div>
+    {% if organization_name %}
+      <div class="org-name">{{ organization_name }}</div>
+    {% endif %}
+    <div class="speech-tag">{{ labels.speech }}</div>
+    <div class="lesson-tag">{{ lesson_label }} · {{ lesson.lesson_code }}</div>
+    <h1 class="lesson-title">{{ lesson.title }}</h1>
+    <div class="course-title">{{ course.title }}</div>
+    <div class="meta-row">
+      <div class="meta-item">
+        <span class="meta-label">{{ labels.totalDuration }}</span>
+        <span class="meta-value">{{ total_duration_label }}</span>
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">{{ labels.totalWordCount }}</span>
+        <span class="meta-value">{{ total_word_count }}</span>
+      </div>
+    </div>
+  </section>
+
+  {# === Slide sections === #}
+  {% for entry in timeline %}
+  <section class="slide-section">
+    {% if entry.slide_missing %}
+      <p class="slide-missing-warning">
+        {{ labels.slideMissing }}: {{ entry.slide_id }}
+      </p>
+    {% endif %}
+    <div class="slide-header">
+      <span class="slide-num">{{ entry.slide_number or "—" }}</span>
+      <span class="slide-title">{{ entry.slide_title or entry.slide_id }}</span>
+      <span class="slide-duration">{{ entry.slide_total_label }}</span>
+    </div>
+
+    {% if entry.segments %}
+      {% for seg in entry.segments %}
+      <div class="segment">
+        <div class="segment-meta">
+          <span class="timeline">[{{ seg.start_mmss }} — {{ seg.end_mmss }}]</span>
+          <span>{{ seg.duration_label }}</span>
+        </div>
+        <p class="segment-text">{{ seg.text }}</p>
+        {% if seg.delivery_notes %}
+        <p class="segment-notes">
+          <span class="label">{{ labels.deliveryNotes }}:</span>
+          {{ seg.delivery_notes }}
+        </p>
+        {% endif %}
+      </div>
+      {% endfor %}
+    {% else %}
+      <p class="no-segments">{{ labels.noSegments }}</p>
+    {% endif %}
+  </section>
+  {% endfor %}
+</body>
+</html>

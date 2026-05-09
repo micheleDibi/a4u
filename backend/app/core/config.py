@@ -114,6 +114,20 @@ class Settings(BaseSettings):
     # `course_lesson_structure_auto_retry_max`.
     course_lesson_slides_auto_retry_max: int = 5
 
+    # Fase 5 — Discorso temporizzato (§8).
+    # Output prosa pura, ~6-12k tokens. Cap=16000 per coprire lezioni
+    # lunghe (90 min ≈ 11700 parole IT, ~16k token con reasoning).
+    openai_lesson_speech_model: str = "gpt-5.5"
+    openai_lesson_speech_max_tokens: int = 16_000
+    openai_lesson_speech_reasoning_effort: str = "medium"
+    course_lesson_speech_poll_interval_seconds: int = 4
+    # Cap=3 come slides/content: input ~12-25k (testo + slide),
+    # output ~6-12k, niente bottleneck di rate-limit.
+    course_lesson_speech_max_concurrency: int = 3
+    # Auto-retry trasparente per l'utente. Vedi
+    # `course_lesson_structure_auto_retry_max`.
+    course_lesson_speech_auto_retry_max: int = 5
+
     # §7 — Export PDF lezioni.
     # Cap=2: rendering Playwright è I/O+CPU intensive (Chromium istanza).
     course_lesson_pdf_poll_interval_seconds: int = 4
