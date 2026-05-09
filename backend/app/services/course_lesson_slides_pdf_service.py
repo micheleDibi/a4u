@@ -371,11 +371,27 @@ def render_slides_html(
             }
         )
 
+    # Etichetta "Lezione N" derivata dal lesson_code (es. M1.L4 → 4).
+    # Se il codice non rispetta il pattern atteso, fall-back a stringa
+    # vuota e il template mostra solo "LEZIONE".
+    lesson_word = "Lesson" if language.startswith("en") else "Lezione"
+    lesson_num = ""
+    if lesson.lesson_code:
+        last = lesson.lesson_code.split(".")[-1].strip()
+        if last and last[0].upper() == "L":
+            lesson_num = last[1:]
+        else:
+            lesson_num = last
+    lesson_label = (
+        f"{lesson_word} {lesson_num}".strip() if lesson_num else lesson_word
+    )
+
     template = _jinja_env.get_template("lesson_slides_pdf.html.j2")
     html = template.render(
         language=language,
         course={"title": course.title, "language": language},
         lesson={"title": lesson.title, "lesson_code": lesson.lesson_code},
+        lesson_label=lesson_label,
         organization_name=(organization.name if organization else None),
         tpl=tpl_dict,
         slides=rendered_slides,

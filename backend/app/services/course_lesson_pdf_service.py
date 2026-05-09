@@ -446,10 +446,32 @@ def _build_asset_html_map(
 # e le label illeggibili. Strippiamo quel `max-width:Xpx` lasciando
 # tutto il resto dello stile così l'SVG riempie il container.
 _MERMAID_MAX_WIDTH_RE = re.compile(r"max-width\s*:\s*[\d.]+px\s*;?", re.IGNORECASE)
+# Per rendere correttamente i diagrammi sotto un constraint CSS
+# `max-height` (es. layout slide), bisogna togliere gli attributi
+# `width="..."` / `height="..."` espliciti dal root <svg> di Mermaid:
+# se restano, `max-height: Xmm` viene applicato come clip / squash
+# invece di scalare proporzionalmente. Il `viewBox` rimane intatto
+# e basta a ricavare l'aspect ratio.
+_SVG_OPEN_TAG_RE = re.compile(r"<svg\b[^>]*>", re.IGNORECASE)
+_SVG_DIM_ATTR_RE = re.compile(
+    r'\s(?:width|height)\s*=\s*"[^"]*"', re.IGNORECASE
+)
 
 
 def _strip_mermaid_max_width(svg: str) -> str:
-    return _MERMAID_MAX_WIDTH_RE.sub("", svg)
+    """Rimuove sia `max-width:Xpx` dallo style sia gli attributi
+    `width`/`height` espliciti dal tag <svg> di root, così l'SVG
+    scala proporzionalmente entro qualunque CSS constraint del
+    container (es. `max-height` in slide PDF)."""
+    cleaned = _MERMAID_MAX_WIDTH_RE.sub("", svg)
+    m = _SVG_OPEN_TAG_RE.search(cleaned)
+    if not m:
+        return cleaned
+    head = m.group(0)
+    new_head = _SVG_DIM_ATTR_RE.sub("", head)
+    if new_head == head:
+        return cleaned
+    return cleaned.replace(head, new_head, 1)
 
 
 _MERMAID_RENDERER_HTML = """<!doctype html>
