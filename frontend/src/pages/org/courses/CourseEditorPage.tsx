@@ -63,6 +63,7 @@ import { CourseArchitectureView } from "./components/CourseArchitectureView";
 import { CourseDocumentUploader } from "./components/CourseDocumentUploader";
 import { CourseLessonStructureView } from "./components/CourseLessonStructureView";
 import { CourseLessonContentView } from "./components/CourseLessonContentView";
+import { CourseLessonSlidesView } from "./components/CourseLessonSlidesView";
 import { CourseStatusBadge } from "./components/CourseStatusBadge";
 import { GenerateArchitectureDialog } from "./components/GenerateArchitectureDialog";
 import { KeywordTagsInput } from "./components/KeywordTagsInput";
@@ -1164,20 +1165,15 @@ export default function CourseEditorPage({ mode }: Props) {
           </TabsContent>
         )}
 
-        {/* Tab — Slide lezioni (Fase 4 AI). Placeholder finché Step 5
-            non implementa CourseLessonSlidesView. */}
+        {/* Tab — Slide lezioni (Fase 4 AI) */}
         {mode === "edit" && course && (
           <TabsContent value="lesson-slides" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>{t("courses.lessonsSlides.title")}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  {t("courses.lessonsSlides.description")}
-                </p>
-              </CardContent>
-            </Card>
+            <CourseLessonSlidesView
+              course={course}
+              orgId={orgId}
+              canEdit={canEdit}
+              canGenerate={canGenerate}
+            />
           </TabsContent>
         )}
       </Tabs>

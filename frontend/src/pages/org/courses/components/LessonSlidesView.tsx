@@ -1,0 +1,219 @@
+import { useTranslation } from "react-i18next";
+
+import type {
+  LessonContentRaw,
+  LessonSlideItem,
+  LessonSlidesRaw,
+} from "@/api/courses";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { MarkdownRenderer } from "@/components/shared/MarkdownRenderer";
+import { MermaidDiagram } from "@/components/shared/MermaidDiagram";
+import { resolveAsset } from "@/lib/slides";
+
+interface Props {
+  slides: LessonSlidesRaw;
+  contentRaw: LessonContentRaw | null;
+}
+
+/**
+ * Viewer read-only delle slide di una lezione (Fase 4 §7).
+ *
+ * Architettura: una `<Card>` per slide, in lista verticale. Header
+ * con badge `slide_number`, badge `type`, titolo. Body con bullet,
+ * asset embedded (risolti da `references_assets`), speaker hint.
+ *
+ * Risoluzione asset: cerca prima in `contentRaw` (Fase 3), poi in
+ * `slides.new_assets` (asset creati dalla Fase 4). Vedi `lib/slides.ts`.
+ */
+export function LessonSlidesView({ slides, contentRaw }: Props) {
+  const { t } = useTranslation();
+  return (
+    <div className="space-y-3">
+      {slides.slides.map((slide) => (
+        <SlideCard
+          key={slide.slide_id}
+          slide={slide}
+          contentRaw={contentRaw}
+          newAssets={slides.new_assets}
+          t={t}
+        />
+      ))}
+    </div>
+  );
+}
+
+interface SlideCardProps {
+  slide: LessonSlideItem;
+  contentRaw: LessonContentRaw | null;
+  newAssets: LessonSlidesRaw["new_assets"];
+  t: ReturnType<typeof useTranslation>["t"];
+}
+
+function SlideCard({ slide, contentRaw, newAssets, t }: SlideCardProps) {
+  const typeLabel = t(
+    `courses.lessonsSlides.render.types.${slide.type}`,
+    { defaultValue: slide.type },
+  );
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline" className="font-mono text-[11px]">
+              {slide.slide_number}
+            </Badge>
+            <Badge variant="secondary" className="text-[11px]">
+              {typeLabel}
+            </Badge>
+            <h4 className="text-base font-semibold">{slide.title}</h4>
+          </div>
+          {slide.source_section_id && (
+            <Badge
+              variant="muted"
+              className="font-mono text-[10px]"
+              title={t("courses.lessonsSlides.render.sourceSection")}
+            >
+              {t("courses.lessonsSlides.render.sourceSection")}:{" "}
+              {slide.source_section_id}
+            </Badge>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Bullets */}
+        {slide.bullets.length > 0 ? (
+          <ul className="list-disc space-y-1 pl-5 text-sm">
+            {slide.bullets.map((b, idx) => (
+              <li key={idx}>{b}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-xs italic text-muted-foreground">
+            {t("courses.lessonsSlides.render.noBullets")}
+          </p>
+        )}
+
+        {/* Assets referenziati */}
+        {slide.references_assets.length > 0 && (
+          <div className="space-y-3">
+            {slide.references_assets.map((aid) => (
+              <SlideAssetRender
+                key={aid}
+                assetId={aid}
+                contentRaw={contentRaw}
+                newAssets={newAssets}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Speaker hint */}
+        {slide.speaker_hint && (
+          <div className="rounded-md border border-dashed border-border bg-muted/30 p-3 text-xs italic text-muted-foreground">
+            <span className="mr-1 font-medium not-italic">
+              {t("courses.lessonsSlides.render.speakerHint")}:
+            </span>
+            {slide.speaker_hint}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+interface SlideAssetRenderProps {
+  assetId: string;
+  contentRaw: LessonContentRaw | null;
+  newAssets: LessonSlidesRaw["new_assets"];
+}
+
+function SlideAssetRender({
+  assetId,
+  contentRaw,
+  newAssets,
+}: SlideAssetRenderProps) {
+  const resolved = resolveAsset(assetId, contentRaw, newAssets);
+  if (!resolved) {
+    return (
+      <div className="rounded border border-dashed border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive">
+        Asset non trovato: {assetId}
+      </div>
+    );
+  }
+
+  if (resolved.kind === "visual" || resolved.kind === "new_visual") {
+    const a = resolved.payload;
+    if (a.format === "mermaid") {
+      return (
+        <figure className="space-y-1">
+          <MermaidDiagram code={a.content} />
+          {a.caption && (
+            <figcaption className="text-xs italic text-muted-foreground">
+              {a.caption}
+            </figcaption>
+          )}
+        </figure>
+      );
+    }
+    // Per image_prompt / image_search_query / description: placeholder
+    // (il rendering immagini AI-generated è una feature separata).
+    return (
+      <figure className="space-y-1">
+        <div className="rounded-md border bg-muted/30 p-4 text-center text-xs text-muted-foreground">
+          {a.alt_text || a.caption || a.content}
+        </div>
+        {a.caption && (
+          <figcaption className="text-xs italic text-muted-foreground">
+            {a.caption}
+          </figcaption>
+        )}
+      </figure>
+    );
+  }
+
+  if (resolved.kind === "table") {
+    return (
+      <figure className="space-y-1">
+        <MarkdownRenderer source={resolved.payload.markdown} />
+        {resolved.payload.caption && (
+          <figcaption className="text-xs italic text-muted-foreground">
+            {resolved.payload.caption}
+          </figcaption>
+        )}
+      </figure>
+    );
+  }
+
+  if (resolved.kind === "equation") {
+    const e = resolved.payload;
+    // Renderizza il LaTeX in display mode via MarkdownRenderer ($$...$$).
+    const md = `$$${e.latex}$$`;
+    return (
+      <figure className="space-y-1">
+        <MarkdownRenderer source={md} />
+        {e.label && (
+          <figcaption className="text-xs italic text-muted-foreground">
+            {e.label}
+          </figcaption>
+        )}
+      </figure>
+    );
+  }
+
+  if (resolved.kind === "example") {
+    const ex = resolved.payload;
+    return (
+      <div className="rounded-md border border-border bg-muted/20 p-3">
+        {ex.title && (
+          <h5 className="mb-1 text-sm font-semibold">{ex.title}</h5>
+        )}
+        <MarkdownRenderer source={ex.content} />
+      </div>
+    );
+  }
+
+  return null;
+}
+
+export default LessonSlidesView;
