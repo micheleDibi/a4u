@@ -8,131 +8,151 @@
     *, *::before, *::after { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; }
     body {
-      font-family: "{{ tpl.font_family }}", "Inter", "DejaVu Sans",
-                    "Liberation Sans", sans-serif;
+      font-family: "{{ tpl.font_family }}", "Inter", "Helvetica",
+                    "Arial", sans-serif;
       color: {{ tpl.text_color }};
     }
 
-    /* Pagina: A4 landscape per layout slide. Margine derivato dal
-       template (`margin_mm`), con un floor di 8mm per garantire
-       leggibilità anche con valori molto bassi. */
-    {% set _m = (tpl.margin_mm or 20) %}
-    {% set _m = (_m if _m >= 8 else 8) %}
+    /* Pagina: full-bleed A4 landscape (297×210 mm). Nessun margine
+       dell'@page: la "safe zone" è creata dal padding interno della
+       slide, replicando il 6% / 5% della preview. */
     @page {
       size: A4 landscape;
-      margin: {{ _m }}mm;
-      {% if tpl.logo_left_url or tpl.logo_right_url %}
-      @top-left {
-        content: element(pageHeader);
-      }
-      {% endif %}
-      @bottom-right {
-        content: counter(page) " / " counter(pages);
-        font-family: "{{ tpl.font_family }}", sans-serif;
-        font-size: 9pt;
-        color: {{ tpl.text_color }};
-      }
-      @bottom-left {
-        content: "{{ course.title|e }} — {{ lesson.title|e }}";
-        font-size: 9pt;
-        color: {{ tpl.text_color }};
-        opacity: 0.6;
-      }
+      margin: 0;
     }
 
-    /* Background image: copre tutta la slide (sotto il contenuto). */
+    /* Una slide = una pagina, occupa l'intero foglio. */
+    .slide {
+      position: relative;
+      width: 297mm;
+      height: 210mm;
+      overflow: hidden;
+      page-break-after: always;
+    }
+    .slide:last-child { page-break-after: auto; }
+
+    /* Background: immagine full-bleed con opacità dal template,
+       oppure gradient di default. Sotto al contenuto. */
     {% if tpl.background_image_url %}
-    .page-background {
-      position: fixed;
-      top: -{{ _m }}mm;
-      bottom: -{{ _m }}mm;
-      left: -{{ _m }}mm;
-      right: -{{ _m }}mm;
+    .slide-bg {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
       background-image: url("{{ tpl.background_image_url }}");
       background-size: cover;
       background-position: center center;
       background-repeat: no-repeat;
-      opacity: {{ ((tpl.background_opacity_pct or 0) / 100.0) | round(3) }};
-      z-index: -100;
+      opacity: {{ ((tpl.background_opacity_pct or 100) / 100.0) | round(3) }};
+      z-index: 0;
+    }
+    {% else %}
+    .slide-bg {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background:
+        linear-gradient(135deg,
+          #ffffff 0%,
+          {{ tpl.primary_color }}0c 55%,
+          {{ tpl.secondary_color }}18 100%);
+      background-color: #fafafa;
+      z-index: 0;
     }
     {% endif %}
 
-    /* Header con logo: usato come `running()` element nel margin-box
-       @top-left, così appare su ogni slide. */
-    {% if tpl.logo_left_url or tpl.logo_right_url %}
-    .page-header {
-      position: running(pageHeader);
-      width: 100%;
+    /* Header: logo sinistra + logo destra, top 5% (10mm),
+       inset orizzontale 6% (≈18mm). */
+    .slide-header {
+      position: absolute;
+      top: 10mm;
+      left: 18mm;
+      right: 18mm;
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       justify-content: space-between;
-      padding-bottom: 2mm;
+      gap: 8mm;
+      z-index: 5;
     }
-    .page-header .logo-left {
+    .slide-header .logo-left,
+    .slide-header .logo-right {
       max-height: 14mm;
-      max-width: 50mm;
+      max-width: 38mm;
+      object-fit: contain;
     }
-    .page-header .logo-right {
-      max-height: 14mm;
-      max-width: 50mm;
-      margin-left: auto;
+    .slide-header .logo-spacer {
+      visibility: hidden;
+      width: 1mm;
+      height: 1mm;
     }
-    {% endif %}
 
-    .slide {
-      page-break-after: always;
-      min-height: 16cm;
+    /* Body container: inset come la preview (sx 18mm, dx 24mm,
+       top 50mm, bottom 38mm), centrato verticalmente. */
+    .slide-body {
+      position: absolute;
+      left: 18mm;
+      right: 24mm;
+      top: 50mm;
+      bottom: 38mm;
       display: flex;
       flex-direction: column;
+      justify-content: center;
+      z-index: 2;
     }
-    .slide:last-child { page-break-after: auto; }
-
-    .slide-header {
-      border-bottom: 2px solid {{ tpl.primary_color }};
-      padding-bottom: 0.4cm;
-      margin-bottom: 0.6cm;
-      display: flex;
-      align-items: baseline;
-      justify-content: space-between;
-      gap: 1cm;
+    .slide-tag {
+      font-size: 8pt;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.24em;
+      opacity: 0.55;
+      color: {{ tpl.text_color }};
+    }
+    .slide-chapter {
+      margin-top: 1.5mm;
+      font-size: 9pt;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.22em;
+      color: {{ tpl.primary_color }};
     }
     .slide-title {
-      font-size: 22pt;
+      margin: 2mm 0 0;
+      font-size: 28pt;
       font-weight: 700;
-      color: {{ tpl.primary_color }};
-      margin: 0;
-      flex: 1;
-    }
-    .slide-meta {
-      font-size: 9pt;
+      line-height: 1.05;
+      letter-spacing: -0.01em;
       color: {{ tpl.text_color }};
-      opacity: 0.6;
-      white-space: nowrap;
-    }
-    .slide-meta .slide-type {
-      display: inline-block;
-      padding: 0.1cm 0.3cm;
-      border-radius: 0.2cm;
-      background: {{ tpl.secondary_color }};
-      color: white;
-      font-weight: 600;
-      margin-right: 0.3cm;
     }
 
-    .slide-body {
-      flex: 1;
-      font-size: 13pt;
-      line-height: 1.55;
+    /* Bullet con dot a gradiente come nella preview. */
+    .slide-bullets {
+      margin: 7mm 0 0;
+      padding: 0;
+      list-style: none;
     }
-    .slide-body ul {
-      list-style: disc;
-      padding-left: 0.8cm;
-      margin: 0.2cm 0 0.6cm 0;
+    .slide-bullets li {
+      display: flex;
+      align-items: flex-start;
+      gap: 4mm;
+      font-size: 11pt;
+      line-height: 1.4;
+      margin: 0 0 3mm;
+      opacity: 0.88;
+      color: {{ tpl.text_color }};
     }
-    .slide-body li { margin-bottom: 0.3cm; }
+    .slide-bullets li::before {
+      content: "";
+      flex-shrink: 0;
+      width: 3mm;
+      height: 3mm;
+      margin-top: 1.5mm;
+      border-radius: 50%;
+      background: linear-gradient(135deg,
+        {{ tpl.primary_color }},
+        {{ tpl.secondary_color }});
+    }
 
+    /* Asset (diagrammi, formule, tabelle, esempi) sotto i bullet. */
+    .slide-assets { margin-top: 5mm; }
     .slide-asset {
-      margin: 0.4cm 0;
+      margin: 3mm 0;
       max-width: 100%;
     }
     .slide-asset svg { max-width: 100%; height: auto; }
@@ -140,84 +160,132 @@
     .slide-asset table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 10pt;
+      font-size: 9pt;
     }
     .slide-asset th, .slide-asset td {
-      border: 1px solid #ccc;
-      padding: 0.15cm 0.3cm;
+      border: 0.5pt solid #ccc;
+      padding: 1mm 2mm;
       text-align: left;
     }
     .slide-asset .caption {
-      font-size: 9pt;
+      font-size: 8pt;
       font-style: italic;
-      color: {{ tpl.text_color }};
       opacity: 0.7;
-      margin-top: 0.2cm;
+      margin-top: 1mm;
       text-align: center;
     }
     .slide-asset .placeholder {
-      border: 1px dashed #ccc;
-      padding: 0.5cm;
-      font-size: 10pt;
+      border: 0.5pt dashed #ccc;
+      padding: 4mm;
+      font-size: 9pt;
       color: #888;
       text-align: center;
-      border-radius: 0.2cm;
+      border-radius: 1mm;
     }
 
+    /* Footer: linea sottile + organizzazione · corso, page counter dx. */
     .slide-footer {
-      margin-top: auto;
-      padding-top: 0.5cm;
-      border-top: 1px solid #e5e5e5;
+      position: absolute;
+      left: 18mm;
+      right: 18mm;
+      bottom: 10mm;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 6mm;
+      z-index: 5;
+    }
+    .slide-footer .author-line {
+      width: 42mm;
+      height: 0.3mm;
+      background: {{ tpl.text_color }};
+      opacity: 0.3;
+    }
+    .slide-footer .author-meta {
+      margin-top: 2.5mm;
       font-size: 9pt;
-      font-style: italic;
       color: {{ tpl.text_color }};
+    }
+    .slide-footer .author-meta .org {
+      font-weight: 600;
+    }
+    .slide-footer .author-meta .sep {
+      opacity: 0.6;
+      margin: 0 1.5mm;
+    }
+    .slide-footer .author-meta .secondary {
       opacity: 0.7;
     }
-    .slide-footer .label {
-      font-style: normal;
-      font-weight: 600;
-      opacity: 1;
+    .slide-footer .page-counter {
+      font-family: "Menlo", "Consolas", monospace;
+      font-size: 9pt;
+      letter-spacing: 0.06em;
+      opacity: 0.55;
+      white-space: nowrap;
+      color: {{ tpl.text_color }};
     }
 
-    math { font-size: 13pt; }
+    math { font-size: 11pt; }
   </style>
 </head>
 <body>
-  {% if tpl.background_image_url %}
-  <div class="page-background"></div>
-  {% endif %}
-
-  {% if tpl.logo_left_url or tpl.logo_right_url %}
-  <div class="page-header">
-    {% if tpl.logo_left_url %}
-      <img class="logo-left" src="{{ tpl.logo_left_url }}" alt="" />
-    {% endif %}
-    {% if tpl.logo_right_url %}
-      <img class="logo-right" src="{{ tpl.logo_right_url }}" alt="" />
-    {% endif %}
-  </div>
-  {% endif %}
-
   {% for slide in slides %}
   <div class="slide">
+    <div class="slide-bg"></div>
+
     <div class="slide-header">
-      <h1 class="slide-title">{{ slide.title }}</h1>
-      <div class="slide-meta">
-        <span class="slide-type">{{ slide.type_label }}</span>
-        {{ slide.slide_number }} / {{ total_slides }}
-      </div>
+      {% if tpl.logo_left_url %}
+        <img class="logo-left" src="{{ tpl.logo_left_url }}" alt="" />
+      {% else %}
+        <span class="logo-spacer"></span>
+      {% endif %}
+      {% if tpl.logo_right_url %}
+        <img class="logo-right" src="{{ tpl.logo_right_url }}" alt="" />
+      {% else %}
+        <span class="logo-spacer"></span>
+      {% endif %}
     </div>
+
     <div class="slide-body">
+      <div class="slide-tag">
+        {{ lesson.lesson_code }} · Slide {{ "%02d"|format(slide.slide_number) }}
+      </div>
+      <div class="slide-chapter">{{ slide.type_label }}</div>
+      <h1 class="slide-title">{{ slide.title }}</h1>
+
       {% if slide.bullets %}
-      <ul>
+      <ul class="slide-bullets">
         {% for b in slide.bullets %}
         <li>{{ b }}</li>
         {% endfor %}
       </ul>
       {% endif %}
-      {% for asset_html in slide.assets_html %}
-      <div class="slide-asset">{{ asset_html|safe }}</div>
-      {% endfor %}
+
+      {% if slide.assets_html %}
+      <div class="slide-assets">
+        {% for asset_html in slide.assets_html %}
+        <div class="slide-asset">{{ asset_html|safe }}</div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="slide-footer">
+      <div>
+        <div class="author-line"></div>
+        <div class="author-meta">
+          {% if organization_name %}
+          <span class="org">{{ organization_name }}</span>
+          <span class="sep">·</span>
+          {% endif %}
+          <span class="secondary">{{ course.title }}</span>
+          <span class="sep">·</span>
+          <span class="secondary">{{ lesson.title }}</span>
+        </div>
+      </div>
+      <div class="page-counter">
+        {{ "%02d"|format(slide.slide_number) }} / {{ "%02d"|format(total_slides) }}
+      </div>
     </div>
   </div>
   {% endfor %}
