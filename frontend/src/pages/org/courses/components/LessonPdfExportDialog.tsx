@@ -53,8 +53,8 @@ export function LessonPdfExportDialog({
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const tplQuery = useQuery({
-    queryKey: ["org", orgId, "pdf-templates", "lesson"],
-    queryFn: () => pdfTemplatesApi.list(orgId, "lesson"),
+    queryKey: ["org", orgId, "pdf-templates"],
+    queryFn: () => pdfTemplatesApi.list(orgId),
     enabled: open,
     staleTime: 30_000,
   });
