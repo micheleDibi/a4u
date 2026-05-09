@@ -804,6 +804,20 @@
       "lessonContent": {
         "approved": "Content approved"
       }
+    },
+    "staleness": {
+      "structure": {
+        "label": "Architecture changed since last generation",
+        "action": "Update structure"
+      },
+      "content": {
+        "label": "Structure changed since last generation",
+        "action": "Update content"
+      },
+      "pdf": {
+        "label": "PDF out of sync with current content",
+        "action": "Regenerate PDF"
+      }
     }
   },
   "courseSettings": {

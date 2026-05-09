@@ -27,6 +27,7 @@ import {
   type LessonsStructureModuleStatus,
 } from "@/api/courses";
 import { ApprovalBadge } from "@/components/shared/ApprovalBadge";
+import { StalenessAlert } from "@/components/shared/StalenessAlert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -34,6 +35,7 @@ import { Progress } from "@/components/ui/progress";
 import { useBatchEta } from "@/hooks/useBatchEta";
 import { extractApiError } from "@/lib/errors";
 import { formatDuration } from "@/lib/formatDuration";
+import { isStructureStale } from "@/lib/staleness";
 import { LessonStructureEditDialog } from "./LessonStructureEditDialog";
 import {
   LessonsStructureGenerateDialog,
@@ -474,6 +476,7 @@ function ModuleCard({
   const status = module.lessons_structure_status;
   const isProcessing = status === "pending" || status === "processing";
   const isReady = status === "ready" || status === "approved";
+  const stale = isStructureStale(module);
 
   return (
     <Card>
@@ -544,6 +547,19 @@ function ModuleCard({
           </div>
         </div>
       </CardHeader>
+
+      {/* Stale-detection: l'architettura è stata modificata dopo
+          l'ultima generazione AI di Fase 2. Suggerisci la rigenerazione
+          della struttura del modulo. */}
+      {stale && canGenerate && isReady && !isProcessing && (
+        <CardContent className="pt-0">
+          <StalenessAlert
+            kind="structure"
+            variant="block"
+            onAction={() => onGenerate("regenerate-module")}
+          />
+        </CardContent>
+      )}
 
       {/* Stato pending/processing — Progress live */}
       {isProcessing && (

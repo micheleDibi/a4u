@@ -28,6 +28,7 @@ import {
   type LessonPdfStatus,
 } from "@/api/courses";
 import { ApprovalBadge } from "@/components/shared/ApprovalBadge";
+import { StalenessAlert } from "@/components/shared/StalenessAlert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -41,6 +42,7 @@ import { Progress } from "@/components/ui/progress";
 import { useBatchEta } from "@/hooks/useBatchEta";
 import { extractApiError } from "@/lib/errors";
 import { formatDuration } from "@/lib/formatDuration";
+import { isContentStale, isPdfStale } from "@/lib/staleness";
 
 import { LessonContentEditDialog } from "./LessonContentEditDialog";
 import {
@@ -739,6 +741,7 @@ function ModuleContentCard({
             <LessonContentRow
               key={lesson.id}
               lesson={lesson}
+              parentModule={module}
               expanded={expanded.has(lesson.id)}
               onToggle={() => onToggle(lesson.id)}
               canEdit={canEdit}
@@ -773,6 +776,7 @@ function ModuleContentCard({
 
 interface LessonContentRowProps {
   lesson: CourseLessonOut;
+  parentModule: CourseModuleOut;
   expanded: boolean;
   onToggle: () => void;
   canEdit: boolean;
@@ -789,6 +793,7 @@ interface LessonContentRowProps {
 
 function LessonContentRow({
   lesson,
+  parentModule,
   expanded,
   onToggle,
   canEdit,
@@ -907,6 +912,12 @@ function LessonContentRow({
     canGenerate && pdfStatus === "ready" && isReady && !isExportingPdf;
   const hasMenuItems = canRegenerateContent || canRegeneratePdf;
 
+  // Stale-detection: il contenuto è stale se la struttura della lezione o
+  // l'architettura del modulo padre sono state modificate dopo l'ultima
+  // generazione del content. Il PDF è stale se il content è cambiato dopo.
+  const contentStale = isContentStale(lesson, parentModule);
+  const pdfStale = isPdfStale(lesson);
+
   return (
     <div className="rounded-md border bg-muted/10">
       <div className="flex w-full items-center gap-2 px-3 py-2">
@@ -981,6 +992,31 @@ function LessonContentRow({
           </DropdownMenu>
         )}
       </div>
+
+      {/* Stale-detection alerts. Mostriamo PRIMA il content stale (a
+          monte del PDF) e POI il PDF stale: l'utente sa quale è la
+          regenerazione "principale" in cascata. Se il contenuto è stale
+          il PDF lo è di conseguenza, ma anche viceversa il PDF può
+          essere stale anche solo per un edit di content_modified_at. */}
+      {(contentStale || pdfStale) && !isProcessing && !isPdfProcessing && (
+        <div className="border-t px-4 py-3 space-y-2">
+          {contentStale && canGenerate && (
+            <StalenessAlert
+              kind="content"
+              variant="inline"
+              onAction={() => onGenerate("regenerate-lesson")}
+            />
+          )}
+          {pdfStale && (
+            <StalenessAlert
+              kind="pdf"
+              variant="inline"
+              onAction={canGenerate ? onExportPdf : undefined}
+              hideAction={!canGenerate}
+            />
+          )}
+        </div>
+      )}
 
       {/* Progress bar live — priorità: contenuto > PDF.
           Se la lezione sta ancora generando il contenuto, NON mostriamo

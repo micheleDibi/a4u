@@ -805,6 +805,20 @@
       "lessonContent": {
         "approved": "Contenuto approvato"
       }
+    },
+    "staleness": {
+      "structure": {
+        "label": "Architettura modificata dopo l'ultima generazione",
+        "action": "Aggiorna struttura"
+      },
+      "content": {
+        "label": "Struttura modificata dopo l'ultima generazione",
+        "action": "Aggiorna contenuto"
+      },
+      "pdf": {
+        "label": "PDF non allineato al contenuto attuale",
+        "action": "Rigenera PDF"
+      }
     }
   },
   "courseSettings": {

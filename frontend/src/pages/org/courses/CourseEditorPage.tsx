@@ -213,7 +213,9 @@ export default function CourseEditorPage({ mode }: Props) {
   // chiama `unlock`. Il lock viene applicato anche server-side.
   const setupLocked = !!course?.didactic_setup_confirmed_at;
   // Solo creator / org_admin / platform_admin possono sbloccare il setup.
-  const myRoleCode = me?.organizations.find((o) => o.id === orgId)?.role_code;
+  const myRoleCode = me?.organizations.find(
+    (o) => o.organization_id === orgId,
+  )?.role_code;
   const canUnlockSetup =
     me?.user.is_platform_admin || myRoleCode === "creator" || myRoleCode === "org_admin";
   const readOnly = (mode === "edit" && !canEdit) || setupLocked;
