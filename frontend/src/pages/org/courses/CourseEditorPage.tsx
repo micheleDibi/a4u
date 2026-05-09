@@ -199,6 +199,22 @@ export default function CourseEditorPage({ mode }: Props) {
         )
       );
       if (anyActiveLessonPdf) return 4000;
+      const anyActiveLessonSlides = (data.modules ?? []).some((m) =>
+        (m.lessons ?? []).some(
+          (l) =>
+            l.slides_status === "pending" ||
+            l.slides_status === "processing"
+        )
+      );
+      if (anyActiveLessonSlides) return 5000;
+      const anyActiveSlidesPdf = (data.modules ?? []).some((m) =>
+        (m.lessons ?? []).some(
+          (l) =>
+            l.slides_pdf_status === "pending" ||
+            l.slides_pdf_status === "processing"
+        )
+      );
+      if (anyActiveSlidesPdf) return 4000;
       if (
         data.glossary_status === "pending" ||
         data.glossary_status === "processing"

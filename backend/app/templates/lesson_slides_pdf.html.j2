@@ -13,10 +13,19 @@
       color: {{ tpl.text_color }};
     }
 
-    /* Pagina: A4 landscape per layout slide. */
+    /* Pagina: A4 landscape per layout slide. Margine derivato dal
+       template (`margin_mm`), con un floor di 8mm per garantire
+       leggibilità anche con valori molto bassi. */
+    {% set _m = (tpl.margin_mm or 20) %}
+    {% set _m = (_m if _m >= 8 else 8) %}
     @page {
       size: A4 landscape;
-      margin: 1.2cm 1.5cm 1.2cm 1.5cm;
+      margin: {{ _m }}mm;
+      {% if tpl.logo_left_url or tpl.logo_right_url %}
+      @top-left {
+        content: element(pageHeader);
+      }
+      {% endif %}
       @bottom-right {
         content: counter(page) " / " counter(pages);
         font-family: "{{ tpl.font_family }}", sans-serif;
@@ -31,9 +40,48 @@
       }
     }
 
+    /* Background image: copre tutta la slide (sotto il contenuto). */
+    {% if tpl.background_image_url %}
+    .page-background {
+      position: fixed;
+      top: -{{ _m }}mm;
+      bottom: -{{ _m }}mm;
+      left: -{{ _m }}mm;
+      right: -{{ _m }}mm;
+      background-image: url("{{ tpl.background_image_url }}");
+      background-size: cover;
+      background-position: center center;
+      background-repeat: no-repeat;
+      opacity: {{ ((tpl.background_opacity_pct or 0) / 100.0) | round(3) }};
+      z-index: -100;
+    }
+    {% endif %}
+
+    /* Header con logo: usato come `running()` element nel margin-box
+       @top-left, così appare su ogni slide. */
+    {% if tpl.logo_left_url or tpl.logo_right_url %}
+    .page-header {
+      position: running(pageHeader);
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 2mm;
+    }
+    .page-header .logo-left {
+      max-height: 14mm;
+      max-width: 50mm;
+    }
+    .page-header .logo-right {
+      max-height: 14mm;
+      max-width: 50mm;
+      margin-left: auto;
+    }
+    {% endif %}
+
     .slide {
       page-break-after: always;
-      min-height: 18cm;
+      min-height: 16cm;
       display: flex;
       flex-direction: column;
     }
@@ -135,6 +183,21 @@
   </style>
 </head>
 <body>
+  {% if tpl.background_image_url %}
+  <div class="page-background"></div>
+  {% endif %}
+
+  {% if tpl.logo_left_url or tpl.logo_right_url %}
+  <div class="page-header">
+    {% if tpl.logo_left_url %}
+      <img class="logo-left" src="{{ tpl.logo_left_url }}" alt="" />
+    {% endif %}
+    {% if tpl.logo_right_url %}
+      <img class="logo-right" src="{{ tpl.logo_right_url }}" alt="" />
+    {% endif %}
+  </div>
+  {% endif %}
+
   {% for slide in slides %}
   <div class="slide">
     <div class="slide-header">
