@@ -399,6 +399,7 @@ def render_slides_html(
         slide_type = s.get("type", "concept")
         title = s.get("title", "")
         type_label = _slide_type_label(language, slide_type)
+        body_text = (s.get("body") or "").strip()
         bullets = list(s.get("bullets") or [])
 
         assets_html: list[str] = []
@@ -420,15 +421,24 @@ def render_slides_html(
             "type": slide_type,
             "type_label": type_label,
             "title": title,
+            "body": body_text,
         }
 
-        if assets_html and bullets:
-            # Split: bullet page, poi asset page (stesso titolo).
+        # Split: una slide con bullet/body MA anche asset → 2 pagine,
+        # asset isolato. Il body resta sulla pagina con bullet (o, se
+        # non ci sono bullet ma c'è solo body, sulla pagina-body).
+        has_text_content = bool(bullets) or bool(body_text)
+        if assets_html and has_text_content:
             rendered_slides.append(
                 {**base_entry, "bullets": bullets, "assets_html": []}
             )
             rendered_slides.append(
-                {**base_entry, "bullets": [], "assets_html": assets_html}
+                {
+                    **base_entry,
+                    "body": "",  # niente prosa nella pagina asset-only
+                    "bullets": [],
+                    "assets_html": assets_html,
+                }
             )
         else:
             rendered_slides.append(

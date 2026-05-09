@@ -118,6 +118,18 @@
       color: {{ tpl.text_color }};
     }
 
+    /* Prosa di accompagnamento (subtitle / descrizione discorsiva).
+       Renderizzata se `slide.body` non è vuoto. */
+    .slide-body-text {
+      margin: 5mm 0 0;
+      font-size: 13pt;
+      line-height: 1.45;
+      font-weight: 400;
+      opacity: 0.78;
+      color: {{ tpl.text_color }};
+      max-width: 72ch;
+    }
+
     /* Bullet con dot a gradiente come nella preview. */
     .slide-bullets {
       margin: 5mm 0 0;
@@ -274,6 +286,10 @@
     <div class="slide-body">
       <div class="slide-tag">{{ lesson_label }}</div>
       <h1 class="slide-title">{{ slide.title }}</h1>
+
+      {% if slide.body %}
+      <p class="slide-body-text">{{ slide.body }}</p>
+      {% endif %}
 
       {% if slide.bullets %}
       <ul class="slide-bullets">

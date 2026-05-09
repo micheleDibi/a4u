@@ -65,6 +65,10 @@ class LessonSlideItem(BaseModel):
     slide_id: str = Field(min_length=1, max_length=50)
     type: SlideType
     title: str = Field(min_length=1, max_length=300)
+    # `body`: prosa breve (1-3 frasi) usata come subtitle/descrizione
+    # discorsiva. Pensata per evitare slide tutte-bullet che
+    # appesantiscono la lettura. Vuota per slide molto schematiche.
+    body: str = Field(default="", max_length=600)
     bullets: list[str] = Field(default_factory=list, max_length=10)
     references_assets: list[str] = Field(default_factory=list, max_length=20)
     # Vuoto per slide strutturali (title/agenda/transition).

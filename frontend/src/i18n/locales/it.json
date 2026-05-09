@@ -798,6 +798,8 @@
       "editor": {
         "title": "Titolo",
         "type": "Tipo",
+        "body": "Testo discorsivo (opzionale)",
+        "bodyPlaceholder": "Prosa breve di 1-3 frasi. Lascia vuoto per slide solo-bullet.",
         "bullets": "Bullet",
         "addBullet": "Aggiungi bullet",
         "removeBullet": "Rimuovi",

@@ -156,6 +156,7 @@ export function LessonSlidesEditDialog({
       slide_id: `S${String(nextNum).padStart(2, "0")}`,
       type: "concept",
       title: "",
+      body: "",
       bullets: [],
       references_assets: [],
       source_section_id: "",
@@ -429,6 +430,20 @@ function SlideEditCard({
                 </SelectContent>
               </Select>
             </div>
+          </div>
+
+          {/* Body (prosa breve) */}
+          <div className="space-y-1.5">
+            <Label>{t("courses.lessonsSlides.editor.body")}</Label>
+            <Textarea
+              rows={3}
+              value={slide.body}
+              onChange={(e) => onUpdate({ body: e.target.value })}
+              placeholder={t("courses.lessonsSlides.editor.bodyPlaceholder", {
+                defaultValue:
+                  "Prosa breve di 1-3 frasi (opzionale). Lascia vuoto per slide bullet-only.",
+              })}
+            />
           </div>
 
           {/* Bullets */}

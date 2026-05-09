@@ -82,10 +82,20 @@ PRINCIPI
 
 5. CONTENUTO PER SLIDE
    - title: max 8 parole, evocativo ma chiaro
+   - body: opzionale, 1-3 frasi di prosa breve (max ~50 parole, ~400
+     caratteri) per accompagnare/contestualizzare i bullet o
+     sostituirli quando il contenuto è meglio espresso in forma
+     discorsiva. È IMPORTANTE alternare slide bullet-only e slide
+     con body+bullet o body-only: una sequenza di sole bullet è
+     visivamente piatta e pesante da leggere. Tipicamente:
+       * title slide → body 1 frase (sottotitolo)
+       * concept/definition → body 2-3 frasi + 0-3 bullet di esempio
+       * agenda/takeaways → body vuoto, 3-6 bullet
+       * summary → body 1-2 frasi conclusive
    - bullets: 0-6 punti, max ~14 parole per punto. Linguaggio adatto
      al livello EQF {{livello_eqf}}. Le slide possono avere 0 bullet
      se contengono principalmente un asset (es. slide con un solo
-     diagramma e caption).
+     diagramma e caption) o se la prosa di `body` è già esaustiva.
    - references_assets: lista di asset ID di Fase 3 mostrati nella slide
    - source_section_id: la sezione del testo da cui questa slide è
      derivata (utile per validare la copertura). Vuoto per slide
@@ -179,6 +189,14 @@ LESSON_SLIDES_JSON_SCHEMA: dict[str, Any] = {
                             ],
                         },
                         "title": {"type": "string"},
+                        "body": {
+                            "type": "string",
+                            "description": (
+                                "Prosa breve (1-3 frasi) di contesto/"
+                                "descrizione. Vuota se la slide è "
+                                "puramente bullet o schematica."
+                            ),
+                        },
                         "bullets": {
                             "type": "array",
                             "items": {"type": "string"},
@@ -194,6 +212,7 @@ LESSON_SLIDES_JSON_SCHEMA: dict[str, Any] = {
                         "slide_id",
                         "type",
                         "title",
+                        "body",
                         "bullets",
                         "references_assets",
                         "source_section_id",

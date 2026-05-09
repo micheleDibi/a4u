@@ -81,6 +81,13 @@ function SlideCard({ slide, contentRaw, newAssets, t }: SlideCardProps) {
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/* Body (prosa breve / sottotitolo) */}
+        {slide.body && (
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            {slide.body}
+          </p>
+        )}
+
         {/* Bullets */}
         {slide.bullets.length > 0 ? (
           <ul className="list-disc space-y-1 pl-5 text-sm">
@@ -88,11 +95,11 @@ function SlideCard({ slide, contentRaw, newAssets, t }: SlideCardProps) {
               <li key={idx}>{b}</li>
             ))}
           </ul>
-        ) : (
+        ) : !slide.body ? (
           <p className="text-xs italic text-muted-foreground">
             {t("courses.lessonsSlides.render.noBullets")}
           </p>
-        )}
+        ) : null}
 
         {/* Assets referenziati */}
         {slide.references_assets.length > 0 && (

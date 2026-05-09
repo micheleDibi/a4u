@@ -797,6 +797,8 @@
       "editor": {
         "title": "Title",
         "type": "Type",
+        "body": "Prose text (optional)",
+        "bodyPlaceholder": "1-3 short sentences. Leave empty for bullet-only slide.",
         "bullets": "Bullets",
         "addBullet": "Add bullet",
         "removeBullet": "Remove",

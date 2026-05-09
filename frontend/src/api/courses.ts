@@ -277,6 +277,7 @@ export interface LessonSlideItem {
   slide_id: string;
   type: SlideType;
   title: string;
+  body: string;
   bullets: string[];
   references_assets: string[];
   source_section_id: string;
