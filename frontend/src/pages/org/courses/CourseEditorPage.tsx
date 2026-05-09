@@ -19,6 +19,8 @@ import {
   ArrowRight,
   CheckCircle2,
   Loader2,
+  Lock,
+  LockOpen,
   Minus,
   Plus,
   RotateCw,
@@ -206,7 +208,49 @@ export default function CourseEditorPage({ mode }: Props) {
   });
 
   const course = courseQuery.data ?? null;
-  const readOnly = mode === "edit" && !canEdit;
+  // Lock del setup didattico (Tab 1 + Tab 2). Quando confermato, gli
+  // input dei parametri sono read-only finché un creator/org_admin non
+  // chiama `unlock`. Il lock viene applicato anche server-side.
+  const setupLocked = !!course?.didactic_setup_confirmed_at;
+  // Solo creator / org_admin / platform_admin possono sbloccare il setup.
+  const myRoleCode = me?.organizations.find((o) => o.id === orgId)?.role_code;
+  const canUnlockSetup =
+    me?.user.is_platform_admin || myRoleCode === "creator" || myRoleCode === "org_admin";
+  const readOnly = (mode === "edit" && !canEdit) || setupLocked;
+
+  // Wizard tab — controlled + persisted in localStorage per courseId.
+  // L'utente può navigare avanti e indietro tra le tab; lo stato è
+  // ricordato così un refresh non lo riporta a Tab 1.
+  const TAB_ORDER = [
+    "base",
+    "didactic",
+    "documents",
+    "architecture",
+    "lessons-structure",
+    "lesson-content",
+  ] as const;
+  type TabId = (typeof TAB_ORDER)[number];
+  const tabStorageKey = courseId ? `course-editor-tab:${courseId}` : null;
+  const [activeTab, setActiveTab] = useState<TabId>(() => {
+    if (mode !== "edit" || !tabStorageKey) return "base";
+    try {
+      const saved = localStorage.getItem(tabStorageKey);
+      if (saved && (TAB_ORDER as readonly string[]).includes(saved)) {
+        return saved as TabId;
+      }
+    } catch {
+      // ignore
+    }
+    return "base";
+  });
+  useEffect(() => {
+    if (mode !== "edit" || !tabStorageKey) return;
+    try {
+      localStorage.setItem(tabStorageKey, activeTab);
+    } catch {
+      // ignore
+    }
+  }, [activeTab, mode, tabStorageKey]);
 
   const defaultLang = i18n.resolvedLanguage?.split("-")[0] || "it";
   const [draft, setDraft] = useState<DraftState | null>(null);
@@ -271,7 +315,14 @@ export default function CourseEditorPage({ mode }: Props) {
       qc.invalidateQueries({ queryKey: ["courses", "list", orgId] });
       qc.setQueryData(["courses", "detail", orgId, fresh.id], fresh);
       toast.success(t("courses.created"));
-      // Naviga alla pagina edit conservando i valori del draft.
+      // Auto-advance al prossimo step del wizard una volta navigato in
+      // edit mode: pre-settiamo il tab su "didactic" sotto la chiave del
+      // nuovo corso, così quando il componente edit monta lo legge.
+      try {
+        localStorage.setItem(`course-editor-tab:${fresh.id}`, "didactic");
+      } catch {
+        // ignore
+      }
       navigate(`/orgs/${orgId}/corsi/${fresh.id}`, { replace: true });
     },
     onError: (err) => toast.error(extractApiError(err).message),
@@ -296,6 +347,27 @@ export default function CourseEditorPage({ mode }: Props) {
       qc.setQueryData(["courses", "detail", orgId, courseId], fresh);
       qc.invalidateQueries({ queryKey: ["courses", "list", orgId] });
       toast.success(t("courses.architecture.approved"));
+    },
+    onError: (err) => toast.error(extractApiError(err).message),
+  });
+
+  // Wizard setup confirm/unlock (Tab 2 → blocca, banner Tab 1 sblocca).
+  const confirmDidacticMut = useMutation({
+    mutationFn: () => coursesApi.setup.confirmDidactic(orgId, courseId!),
+    onSuccess: (fresh) => {
+      qc.setQueryData(["courses", "detail", orgId, courseId], fresh);
+      qc.invalidateQueries({ queryKey: ["courses", "list", orgId] });
+      toast.success(t("courses.setup.toast.confirmed"));
+      setActiveTab("documents");
+    },
+    onError: (err) => toast.error(extractApiError(err).message),
+  });
+  const unlockSetupMut = useMutation({
+    mutationFn: () => coursesApi.setup.unlock(orgId, courseId!),
+    onSuccess: (fresh) => {
+      qc.setQueryData(["courses", "detail", orgId, courseId], fresh);
+      qc.invalidateQueries({ queryKey: ["courses", "list", orgId] });
+      toast.success(t("courses.setup.toast.unlocked"));
     },
     onError: (err) => toast.error(extractApiError(err).message),
   });
@@ -470,7 +542,11 @@ export default function CourseEditorPage({ mode }: Props) {
         }
       />
 
-      <Tabs defaultValue="base" className="space-y-4">
+      <Tabs
+        value={activeTab}
+        onValueChange={(v) => setActiveTab(v as TabId)}
+        className="space-y-4"
+      >
         <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1">
           <TabsTrigger value="base">{t("courses.tabs.base")}</TabsTrigger>
           <TabsTrigger value="didactic">
@@ -523,6 +599,25 @@ export default function CourseEditorPage({ mode }: Props) {
 
         {/* Tab — Informazioni di base */}
         <TabsContent value="base" className="space-y-4">
+          {setupLocked && (
+            <div className="flex flex-wrap items-center gap-3 rounded-md border border-amber-300/40 bg-amber-50/40 p-3 text-sm dark:border-amber-500/30 dark:bg-amber-900/10">
+              <Lock className="size-4 shrink-0 text-amber-600 dark:text-amber-500" />
+              <span className="flex-1">
+                {t("courses.setup.lockedBanner")}
+              </span>
+              {canUnlockSetup && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => unlockSetupMut.mutate()}
+                  disabled={unlockSetupMut.isPending}
+                >
+                  <LockOpen className="size-3.5" />
+                  {t("courses.setup.unlock")}
+                </Button>
+              )}
+            </div>
+          )}
           <Card>
             <CardHeader>
               <CardTitle>{t("courses.sections.basics")}</CardTitle>
@@ -745,7 +840,7 @@ export default function CourseEditorPage({ mode }: Props) {
               </div>
             </CardContent>
           </Card>
-          {mode === "create" && !readOnly && (
+          {mode === "create" && (
             <div className="flex justify-end">
               <Button
                 onClick={submit}
@@ -759,6 +854,18 @@ export default function CourseEditorPage({ mode }: Props) {
                   ? t("common.saving")
                   : t("courses.createAndContinue")}
                 {!createMut.isPending && <ArrowRight className="size-4" />}
+              </Button>
+            </div>
+          )}
+          {mode === "edit" && (
+            <div className="flex justify-end">
+              <Button
+                size="lg"
+                variant="outline"
+                onClick={() => setActiveTab("didactic")}
+              >
+                {t("courses.wizard.continueToDidactic")}
+                <ArrowRight className="size-4" />
               </Button>
             </div>
           )}
@@ -873,6 +980,38 @@ export default function CourseEditorPage({ mode }: Props) {
               </div>
             </CardContent>
           </Card>
+          {mode === "edit" && (
+            <div className="flex justify-end">
+              {setupLocked ? (
+                <Button
+                  size="lg"
+                  variant="outline"
+                  onClick={() => setActiveTab("documents")}
+                >
+                  {t("courses.wizard.continueToDocuments")}
+                  <ArrowRight className="size-4" />
+                </Button>
+              ) : (
+                <Button
+                  size="lg"
+                  onClick={() => confirmDidacticMut.mutate()}
+                  disabled={confirmDidacticMut.isPending}
+                >
+                  {confirmDidacticMut.isPending ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="size-4" />
+                  )}
+                  {confirmDidacticMut.isPending
+                    ? t("common.saving")
+                    : t("courses.wizard.confirmDidacticAndContinue")}
+                  {!confirmDidacticMut.isPending && (
+                    <ArrowRight className="size-4" />
+                  )}
+                </Button>
+              )}
+            </div>
+          )}
         </TabsContent>
 
         {/* Tab — Documenti di riferimento (solo edit mode) */}
@@ -887,10 +1026,20 @@ export default function CourseEditorPage({ mode }: Props) {
                   orgId={orgId}
                   courseId={course.id}
                   documents={course.documents}
-                  disabled={readOnly}
+                  disabled={mode === "edit" && !canEdit}
                 />
               </CardContent>
             </Card>
+            <div className="flex justify-end">
+              <Button
+                size="lg"
+                variant="outline"
+                onClick={() => setActiveTab("architecture")}
+              >
+                {t("courses.wizard.continueToArchitecture")}
+                <ArrowRight className="size-4" />
+              </Button>
+            </div>
           </TabsContent>
         )}
 
@@ -921,6 +1070,29 @@ export default function CourseEditorPage({ mode }: Props) {
                 />
               </CardContent>
             </Card>
+            {(course.status === "architecture_approved" ||
+              course.status === "lessons_structure_pending" ||
+              course.status === "lessons_structure_ready" ||
+              course.status === "lessons_structure_approved" ||
+              course.status.startsWith("content_") ||
+              [
+                "slides_pending",
+                "slides_ready",
+                "speech_pending",
+                "speech_ready",
+                "published",
+              ].includes(course.status)) && (
+              <div className="flex justify-end">
+                <Button
+                  size="lg"
+                  variant="outline"
+                  onClick={() => setActiveTab("lessons-structure")}
+                >
+                  {t("courses.wizard.continueToLessonsStructure")}
+                  <ArrowRight className="size-4" />
+                </Button>
+              </div>
+            )}
           </TabsContent>
         )}
 
@@ -933,6 +1105,26 @@ export default function CourseEditorPage({ mode }: Props) {
               canEdit={canEdit}
               canGenerate={canGenerate}
             />
+            {(course.status === "lessons_structure_approved" ||
+              course.status.startsWith("content_") ||
+              [
+                "slides_pending",
+                "slides_ready",
+                "speech_pending",
+                "speech_ready",
+                "published",
+              ].includes(course.status)) && (
+              <div className="flex justify-end">
+                <Button
+                  size="lg"
+                  variant="outline"
+                  onClick={() => setActiveTab("lesson-content")}
+                >
+                  {t("courses.wizard.continueToLessonContent")}
+                  <ArrowRight className="size-4" />
+                </Button>
+              </div>
+            )}
           </TabsContent>
         )}
 

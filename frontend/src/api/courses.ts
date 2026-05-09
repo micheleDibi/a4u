@@ -386,6 +386,8 @@ export interface CourseOut {
   architecture_regeneration_hint: string | null;
   architecture_progress: number;
   architecture_progress_phase: string | null;
+  // Wizard setup lock — null = editabile, valorizzato = locked.
+  didactic_setup_confirmed_at: string | null;
   // Glossario corso (§10.1)
   glossary_status: GlossaryStatus;
   glossary_raw: GlossaryRaw | null;
@@ -494,6 +496,23 @@ export const coursesApi = {
       { assignee_user_id }
     );
     return res.data;
+  },
+  setup: {
+    confirmDidactic: async (
+      orgId: string,
+      courseId: string
+    ): Promise<CourseOut> => {
+      const res = await apiClient.post<CourseOut>(
+        `${base(orgId)}/${courseId}/setup/confirm-didactic`
+      );
+      return res.data;
+    },
+    unlock: async (orgId: string, courseId: string): Promise<CourseOut> => {
+      const res = await apiClient.post<CourseOut>(
+        `${base(orgId)}/${courseId}/setup/unlock`
+      );
+      return res.data;
+    },
   },
   documents: {
     list: async (

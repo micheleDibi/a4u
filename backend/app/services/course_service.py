@@ -11,6 +11,7 @@ Pattern:
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import UploadFile
@@ -24,14 +25,16 @@ from app.core.audit import write_audit
 from app.core.errors import (
     ConflictError,
     NotFoundError,
+    PermissionDeniedError,
     ValidationAppError,
 )
-from app.core.permissions import P
+from app.core.permissions import P, R
 from app.models.course import Course
 from app.models.course_document import CourseDocument
 from app.models.course_taxonomy import CourseTaxonomyTerm
 from app.models.language import Language
 from app.models.membership import Membership
+from app.models.role import OrganizationRole
 from app.models.user import User
 from app.schemas.course import (
     CourseCreateInput,
@@ -320,6 +323,33 @@ async def update_course(
     payload: CourseUpdateInput,
     actor_id: uuid.UUID,
 ) -> Course:
+    # Gating: se il setup didattico è confermato, blocca le modifiche ai
+    # parametri di Tab 1 + Tab 2. Per tornare editabile, l'utente deve
+    # passare per `unlock_didactic_setup` (creator/org_admin only).
+    # Lo `status` è gestito dal pipeline AI e non rientra nel lock.
+    # Per `assignee_user_id` esiste l'endpoint dedicato `update_assignee`.
+    if course.didactic_setup_confirmed_at is not None:
+        locked_change = (
+            (payload.title is not None and payload.title.strip() != course.title)
+            or (
+                payload.objectives is not None
+                and payload.objectives.strip() != course.objectives
+            )
+            or (
+                payload.language_code is not None
+                and payload.language_code != course.language_code
+            )
+            or (payload.cfu is not None and payload.cfu != course.cfu)
+            or payload.argomenti_chiave is not None
+            or payload.taxonomies is not None
+        )
+        if locked_change:
+            raise ConflictError(
+                "Setup didattico confermato: i parametri non sono più "
+                "modificabili. Sblocca il setup prima di modificare.",
+                code="setup_locked",
+            )
+
     diff: dict[str, Any] = {}
 
     if payload.title is not None:
@@ -409,6 +439,13 @@ async def update_assignee(
 ) -> Course:
     if course.assignee_user_id == new_assignee_user_id:
         return await _refresh_full(db, course.id)
+    if course.didactic_setup_confirmed_at is not None:
+        # Setup confermato → assignee fa parte di Tab 1, anch'esso lockato.
+        raise ConflictError(
+            "Setup didattico confermato: l'assegnatario non è modificabile. "
+            "Sblocca il setup prima di cambiarlo.",
+            code="setup_locked",
+        )
     await _validate_assignee(
         db,
         organization_id=course.organization_id,
@@ -585,3 +622,81 @@ async def delete_document(
         target_id=str(doc_id),
         metadata={"course_id": str(course.id)},
     )
+
+
+# ---------------------------------------------------------------------------
+# Wizard setup confirm/unlock (Tab 1 + Tab 2 lock)
+# ---------------------------------------------------------------------------
+
+
+async def confirm_didactic_setup(
+    db: AsyncSession,
+    *,
+    course: Course,
+    actor_id: uuid.UUID,
+) -> Course:
+    """Marca il setup didattico (Tab 1 + Tab 2) come confermato.
+
+    Idempotente: se già confermato, ritorna il corso senza errore. Da
+    questo momento i campi parametri (title, objectives, argomenti_chiave,
+    language, cfu, taxonomies) non sono più modificabili tramite
+    `update_course` finché l'utente non chiama `unlock_didactic_setup`.
+    """
+    if course.didactic_setup_confirmed_at is not None:
+        # Idempotenza: nessun side-effect, niente audit.
+        return await _refresh_full(db, course.id)
+    course.didactic_setup_confirmed_at = datetime.now(UTC)
+    await db.flush()
+    await write_audit(
+        db,
+        action="course.didactic_setup.confirmed",
+        actor_user_id=actor_id,
+        organization_id=course.organization_id,
+        target_type="course",
+        target_id=str(course.id),
+    )
+    return await _refresh_full(db, course.id)
+
+
+async def unlock_didactic_setup(
+    db: AsyncSession,
+    *,
+    course: Course,
+    actor_user: User,
+    actor_membership: Membership | None,
+    actor_id: uuid.UUID,
+) -> Course:
+    """Sblocca il setup didattico — solo creator/org_admin (o platform_admin).
+
+    Azzera `didactic_setup_confirmed_at`, riportando il corso allo stato
+    pre-conferma. Idempotente sul corso non confermato.
+    """
+    # Permission check: platform_admin bypass; altrimenti serve creator
+    # o org_admin nell'org del corso.
+    if not actor_user.is_platform_admin:
+        if actor_membership is None:
+            raise PermissionDeniedError(
+                "Membership richiesta per sbloccare il setup.",
+                code="not_a_member",
+            )
+        actor_role = await db.get(OrganizationRole, actor_membership.role_id)
+        if actor_role is None or actor_role.code not in (R.CREATOR, R.ORG_ADMIN):
+            raise PermissionDeniedError(
+                "Solo il creator o l'org_admin può sbloccare il setup.",
+                code="setup_unlock_role_required",
+            )
+
+    if course.didactic_setup_confirmed_at is None:
+        # Idempotenza: nessun side-effect.
+        return await _refresh_full(db, course.id)
+    course.didactic_setup_confirmed_at = None
+    await db.flush()
+    await write_audit(
+        db,
+        action="course.didactic_setup.unlocked",
+        actor_user_id=actor_id,
+        organization_id=course.organization_id,
+        target_type="course",
+        target_id=str(course.id),
+    )
+    return await _refresh_full(db, course.id)

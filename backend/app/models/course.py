@@ -206,6 +206,15 @@ class Course(UUIDPKMixin, TimestampMixin, Base):
         DateTime(timezone=True), nullable=True
     )
 
+    # Timestamp di conferma del setup didattico (Tab 1 + Tab 2 del wizard).
+    # Quando NULL, i parametri del corso sono editabili. Quando valorizzato,
+    # sono read-only: il setup è "confermato" e non si tocca più senza un
+    # esplicito sblocco (creator/org_admin only). Vedi
+    # `course_service.update_course` per il gating server-side.
+    didactic_setup_confirmed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     # Hint utente passato all'ultimo run di rigenerazione (testo libero).
     # Persistito su `course` (non sulla riga di run) perché in foundation
     # eseguiamo un'unica rigenerazione full-architecture alla volta.

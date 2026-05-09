@@ -10,6 +10,7 @@ from sqlalchemy import select
 from app.core.deps import CurrentUser, DbSession
 from app.core.errors import NotFoundError
 from app.core.permissions import P, require, resolve_permissions
+from app.models.membership import Membership
 from app.models.organization import Organization
 from app.schemas.common import Page, PageMeta
 from app.schemas.course import (
@@ -149,6 +150,74 @@ async def update_course(
     )
     course = await course_service.update_course(
         db, course=course, payload=payload, actor_id=current.id
+    )
+    return CourseOut.model_validate(course)
+
+
+@router.post(
+    "/{course_id}/setup/confirm-didactic",
+    response_model=CourseOut,
+    status_code=status.HTTP_200_OK,
+)
+async def confirm_didactic_setup(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_EDIT),
+) -> CourseOut:
+    """Conferma il setup didattico (Tab 1 + Tab 2). Idempotente."""
+    await _ensure_org(db, org_id)
+    granted = await resolve_permissions(db, user=current, organization_id=org_id)
+    course = await course_service.get_course(
+        db,
+        organization_id=org_id,
+        course_id=course_id,
+        current_user=current,
+        granted_permissions=granted,
+    )
+    course = await course_service.confirm_didactic_setup(
+        db, course=course, actor_id=current.id
+    )
+    return CourseOut.model_validate(course)
+
+
+@router.post(
+    "/{course_id}/setup/unlock",
+    response_model=CourseOut,
+    status_code=status.HTTP_200_OK,
+)
+async def unlock_didactic_setup(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_EDIT),
+) -> CourseOut:
+    """Sblocca il setup didattico — solo creator/org_admin (o platform_admin)."""
+    await _ensure_org(db, org_id)
+    granted = await resolve_permissions(db, user=current, organization_id=org_id)
+    course = await course_service.get_course(
+        db,
+        organization_id=org_id,
+        course_id=course_id,
+        current_user=current,
+        granted_permissions=granted,
+    )
+    actor_membership = (
+        await db.execute(
+            select(Membership).where(
+                Membership.user_id == current.id,
+                Membership.organization_id == org_id,
+            )
+        )
+    ).scalar_one_or_none()
+    course = await course_service.unlock_didactic_setup(
+        db,
+        course=course,
+        actor_user=current,
+        actor_membership=actor_membership,
+        actor_id=current.id,
     )
     return CourseOut.model_validate(course)
 

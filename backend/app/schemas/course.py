@@ -125,6 +125,9 @@ class CourseOut(ORMModel):
     architecture_regeneration_hint: str | None = None
     architecture_progress: int = 0
     architecture_progress_phase: str | None = None
+    # Timestamp di conferma del setup didattico (Tab 1 + Tab 2). Null =
+    # editabile. Valorizzato = lock di tutti i campi parametri.
+    didactic_setup_confirmed_at: datetime | None = None
     # Glossario corso (§10.1) — generato una volta, riusato in Fase 2/3/5.
     glossary_status: str = "empty"
     glossary_raw: dict[str, Any] | None = None

@@ -98,6 +98,22 @@
     "search": "Cerca per titolo o obiettivi…",
     "saveNow": "Salva ora",
     "createAndContinue": "Crea e continua",
+    "wizard": {
+      "continueToDidactic": "Continua a Inquadramento didattico",
+      "confirmDidacticAndContinue": "Conferma e continua",
+      "continueToDocuments": "Continua a Documenti",
+      "continueToArchitecture": "Continua ad Architettura",
+      "continueToLessonsStructure": "Continua a Struttura lezioni",
+      "continueToLessonContent": "Continua a Contenuti"
+    },
+    "setup": {
+      "lockedBanner": "Setup didattico confermato. I parametri non sono modificabili. Sblocca per riaprire le modifiche.",
+      "unlock": "Sblocca setup",
+      "toast": {
+        "confirmed": "Setup didattico confermato.",
+        "unlocked": "Setup sbloccato. Puoi modificare i parametri."
+      }
+    },
     "filters": {
       "allStatuses": "Tutti gli stati"
     },

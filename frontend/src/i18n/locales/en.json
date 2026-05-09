@@ -98,6 +98,22 @@
     "search": "Search by title or objectives…",
     "saveNow": "Save now",
     "createAndContinue": "Create and continue",
+    "wizard": {
+      "continueToDidactic": "Continue to Didactic setup",
+      "confirmDidacticAndContinue": "Confirm and continue",
+      "continueToDocuments": "Continue to Documents",
+      "continueToArchitecture": "Continue to Architecture",
+      "continueToLessonsStructure": "Continue to Lessons structure",
+      "continueToLessonContent": "Continue to Content"
+    },
+    "setup": {
+      "lockedBanner": "Didactic setup confirmed. Parameters are not editable. Unlock to reopen edits.",
+      "unlock": "Unlock setup",
+      "toast": {
+        "confirmed": "Didactic setup confirmed.",
+        "unlocked": "Setup unlocked. You can edit parameters again."
+      }
+    },
     "filters": {
       "allStatuses": "All statuses"
     },
