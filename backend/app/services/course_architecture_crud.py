@@ -42,7 +42,26 @@ from app.services.openai_client import OpenAINotConfiguredError
 
 log = get_logger("app.course_architecture.crud")
 
-EDITABLE_STATUSES = {"architecture_ready", "architecture_approved"}
+# Stati in cui l'utente può modificare manualmente l'architettura.
+# Includiamo tutti gli stati "stabili" downstream (ready/approved delle
+# fasi successive) così l'utente può tornare indietro a correggere un
+# titolo modulo / aggiungere una lezione anche dopo aver generato Fase 2
+# o Fase 3. Lo stale-detection (cf. lib/staleness.ts) segnala quando
+# downstream è da rigenerare.
+#
+# Esclusi:
+# - `*_pending`: i worker AI stanno attivamente scrivendo, race condition.
+# - `published`/`archived`: il corso è in stato terminale, non si tocca.
+EDITABLE_STATUSES = {
+    "architecture_ready",
+    "architecture_approved",
+    "lessons_structure_ready",
+    "lessons_structure_approved",
+    "content_ready",
+    "content_approved",
+    "slides_ready",
+    "speech_ready",
+}
 
 
 def _now() -> datetime:

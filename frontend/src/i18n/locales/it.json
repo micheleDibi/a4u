@@ -109,6 +109,11 @@
     "setup": {
       "lockedBanner": "Setup didattico confermato. I parametri non sono modificabili. Sblocca per riaprire le modifiche.",
       "unlock": "Sblocca setup",
+      "confirmDialog": {
+        "title": "Confermare l'inquadramento didattico?",
+        "message": "Dopo la conferma, le informazioni di base e l'inquadramento didattico diventeranno di sola lettura. Solo un creator o un org admin potrà sbloccare il setup per modificarli.",
+        "confirmLabel": "Conferma e blocca"
+      },
       "toast": {
         "confirmed": "Setup didattico confermato.",
         "unlocked": "Setup sbloccato. Puoi modificare i parametri."
@@ -276,7 +281,7 @@
       "approved": "Architettura approvata",
       "requested": "Generazione architettura avviata",
       "generating": "Generazione in corso…",
-      "empty": "Nessuna architettura ancora generata. Carica almeno un documento di riferimento, poi clicca \"Genera architettura\".",
+      "empty": "Nessuna architettura ancora generata. Clicca \"Genera architettura\" per iniziare.",
       "noDocsTooltip": "Serve almeno un documento elaborato (summary `Pronto`) per generare l'architettura.",
       "pendingMessage": "Generazione architettura in corso. Il sistema sta interrogando l'AI con i parametri del corso e i riassunti dei documenti caricati.",
       "phases": {

@@ -109,6 +109,11 @@
     "setup": {
       "lockedBanner": "Didactic setup confirmed. Parameters are not editable. Unlock to reopen edits.",
       "unlock": "Unlock setup",
+      "confirmDialog": {
+        "title": "Confirm didactic setup?",
+        "message": "After confirmation, the basic information and didactic framing will become read-only. Only a creator or org admin can unlock the setup to edit them again.",
+        "confirmLabel": "Confirm and lock"
+      },
       "toast": {
         "confirmed": "Didactic setup confirmed.",
         "unlocked": "Setup unlocked. You can edit parameters again."
@@ -276,7 +281,7 @@
       "approved": "Architecture approved",
       "requested": "Architecture generation started",
       "generating": "Generating…",
-      "empty": "No architecture generated yet. Upload at least one reference document, then click \"Generate architecture\".",
+      "empty": "No architecture generated yet. Click \"Generate architecture\" to start.",
       "noDocsTooltip": "At least one document with a `Ready` summary is required to generate the architecture.",
       "pendingMessage": "Generating the course architecture. The system is calling the AI with the course parameters and the summaries of the uploaded documents.",
       "phases": {

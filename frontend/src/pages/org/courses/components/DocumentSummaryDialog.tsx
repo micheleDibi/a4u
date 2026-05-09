@@ -42,9 +42,19 @@ const SECTIONS = [
 type SectionId = (typeof SECTIONS)[number];
 
 function LatexBlock({ source }: { source: string }) {
-  // Renderizza con KaTeX. Se il parsing fallisce (testo senza sintassi LaTeX
-  // o macro non supportate), mostra il sorgente in mono.
+  // Detection LaTeX: cerchiamo marker espliciti (`\macro`, ^, _, {, },
+  // $). Senza di essi KaTeX renderizzerebbe il testo come matematica
+  // sequenziale — lettere in italic, spazi rimossi — il che produce
+  // l'illeggibile soup tipo "Sec'èunoperandolongdouble". L'AI a volte
+  // mette qui descrizioni in linguaggio naturale anziché formule;
+  // detectiamole e rendiamole come prosa.
+  const looksLikeLatex = useMemo(
+    () => /\\[a-zA-Z]+|[\^_{}$]/.test(source),
+    [source],
+  );
+
   const html = useMemo(() => {
+    if (!looksLikeLatex) return null;
     try {
       return katex.renderToString(source, {
         displayMode: true,
@@ -54,9 +64,18 @@ function LatexBlock({ source }: { source: string }) {
     } catch {
       return null;
     }
-  }, [source]);
+  }, [source, looksLikeLatex]);
 
+  if (!looksLikeLatex) {
+    // Testo in linguaggio naturale: rendi come prosa leggibile.
+    return (
+      <p className="rounded bg-muted/40 p-3 text-sm leading-relaxed whitespace-pre-wrap">
+        {source}
+      </p>
+    );
+  }
   if (!html) {
+    // Sembrava LaTeX ma KaTeX non l'ha parsato: mostra il sorgente raw.
     return (
       <pre className="overflow-x-auto rounded bg-muted/40 p-2 font-mono text-xs">
         {source}

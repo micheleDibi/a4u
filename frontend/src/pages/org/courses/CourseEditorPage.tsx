@@ -52,6 +52,7 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { ApprovalBadge } from "@/components/shared/ApprovalBadge";
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { useLanguages } from "@/hooks/useLanguages";
 import { useTaskEta } from "@/hooks/useTaskEta";
 import { flagFor } from "@/i18n/flags";
@@ -354,12 +355,18 @@ export default function CourseEditorPage({ mode }: Props) {
   });
 
   // Wizard setup confirm/unlock (Tab 2 → blocca, banner Tab 1 sblocca).
+  // Il confirm è preceduto da un dialog di conferma esplicita: dopo
+  // questa azione le tabs 1+2 diventano read-only fino a quando un
+  // creator/org_admin non chiama `unlock`.
+  const [confirmDidacticDialogOpen, setConfirmDidacticDialogOpen] =
+    useState(false);
   const confirmDidacticMut = useMutation({
     mutationFn: () => coursesApi.setup.confirmDidactic(orgId, courseId!),
     onSuccess: (fresh) => {
       qc.setQueryData(["courses", "detail", orgId, courseId], fresh);
       qc.invalidateQueries({ queryKey: ["courses", "list", orgId] });
       toast.success(t("courses.setup.toast.confirmed"));
+      setConfirmDidacticDialogOpen(false);
       setActiveTab("documents");
     },
     onError: (err) => toast.error(extractApiError(err).message),
@@ -842,39 +849,21 @@ export default function CourseEditorPage({ mode }: Props) {
               </div>
             </CardContent>
           </Card>
-          {mode === "create" && (
-            <div className="flex justify-end">
-              <Button
-                onClick={submit}
-                disabled={createMut.isPending || !draft.title.trim()}
-                size="lg"
-              >
-                {createMut.isPending ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : null}
-                {createMut.isPending
-                  ? t("common.saving")
-                  : t("courses.createAndContinue")}
-                {!createMut.isPending && <ArrowRight className="size-4" />}
-              </Button>
-            </div>
-          )}
-          {mode === "edit" && (
-            <div className="flex justify-end">
-              <Button
-                size="lg"
-                variant="outline"
-                onClick={() => setActiveTab("didactic")}
-              >
-                {t("courses.wizard.continueToDidactic")}
-                <ArrowRight className="size-4" />
-              </Button>
-            </div>
-          )}
+          <div className="flex justify-end">
+            <Button
+              size="lg"
+              variant="outline"
+              onClick={() => setActiveTab("didactic")}
+              disabled={mode === "create" && !draft.title.trim()}
+            >
+              {t("courses.wizard.continueToDidactic")}
+              <ArrowRight className="size-4" />
+            </Button>
+          </div>
         </TabsContent>
 
         {/* Tab — Inquadramento didattico (categoria spostata in Base) */}
-        <TabsContent value="didactic">
+        <TabsContent value="didactic" className="space-y-4">
           <Card>
             <CardHeader>
               <CardTitle>{t("courses.sections.didactic")}</CardTitle>
@@ -982,6 +971,23 @@ export default function CourseEditorPage({ mode }: Props) {
               </div>
             </CardContent>
           </Card>
+          {mode === "create" && (
+            <div className="flex justify-end">
+              <Button
+                onClick={submit}
+                disabled={createMut.isPending || !draft.title.trim()}
+                size="lg"
+              >
+                {createMut.isPending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : null}
+                {createMut.isPending
+                  ? t("common.saving")
+                  : t("courses.createAndContinue")}
+                {!createMut.isPending && <ArrowRight className="size-4" />}
+              </Button>
+            </div>
+          )}
           {mode === "edit" && (
             <div className="flex justify-end">
               {setupLocked ? (
@@ -996,7 +1002,7 @@ export default function CourseEditorPage({ mode }: Props) {
               ) : (
                 <Button
                   size="lg"
-                  onClick={() => confirmDidacticMut.mutate()}
+                  onClick={() => setConfirmDidacticDialogOpen(true)}
                   disabled={confirmDidacticMut.isPending}
                 >
                   {confirmDidacticMut.isPending ? (
@@ -1018,7 +1024,7 @@ export default function CourseEditorPage({ mode }: Props) {
 
         {/* Tab — Documenti di riferimento (solo edit mode) */}
         {mode === "edit" && course && (
-          <TabsContent value="documents">
+          <TabsContent value="documents" className="space-y-4">
             <Card>
               <CardHeader>
                 <CardTitle>{t("courses.sections.documents")}</CardTitle>
@@ -1047,7 +1053,7 @@ export default function CourseEditorPage({ mode }: Props) {
 
         {/* Tab — Architettura corso (Fase 1 AI, solo edit mode) */}
         {mode === "edit" && course && (
-          <TabsContent value="architecture">
+          <TabsContent value="architecture" className="space-y-4">
             <Card>
               <CardHeader>
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1100,7 +1106,7 @@ export default function CourseEditorPage({ mode }: Props) {
 
         {/* Tab — Struttura delle lezioni (Fase 2 AI, solo edit mode) */}
         {mode === "edit" && course && (
-          <TabsContent value="lessons-structure">
+          <TabsContent value="lessons-structure" className="space-y-4">
             <CourseLessonStructureView
               course={course}
               orgId={orgId}
@@ -1132,7 +1138,7 @@ export default function CourseEditorPage({ mode }: Props) {
 
         {/* Tab — Contenuti lezioni (Fase 3 AI + Glossario corso) */}
         {mode === "edit" && course && (
-          <TabsContent value="lesson-content">
+          <TabsContent value="lesson-content" className="space-y-4">
             <CourseLessonContentView
               course={course}
               orgId={orgId}
@@ -1155,6 +1161,16 @@ export default function CourseEditorPage({ mode }: Props) {
           onConfirm={(hint) => generateArchMut.mutate(hint)}
         />
       )}
+
+      <ConfirmDialog
+        open={confirmDidacticDialogOpen}
+        title={t("courses.setup.confirmDialog.title")}
+        message={t("courses.setup.confirmDialog.message")}
+        confirmLabel={t("courses.setup.confirmDialog.confirmLabel")}
+        cancelLabel={t("common.cancel")}
+        onConfirm={() => confirmDidacticMut.mutate()}
+        onClose={() => setConfirmDidacticDialogOpen(false)}
+      />
     </div>
   );
 }
@@ -1279,12 +1295,25 @@ function ArchitectureSection({
     );
   }
 
-  // Editing manuale è permesso solo dopo che l'AI ha generato l'architettura
-  // (status `architecture_ready` o `architecture_approved`).
+  // Editing manuale è permesso in tutti gli stati "stabili" downstream
+  // (ready/approved delle fasi successive). Lo stale-detection sui
+  // moduli segnala alla struttura/contenuto downstream quando una
+  // modifica all'architettura ha invalidato qualcosa più giù.
+  // Esclusi: `*_pending` (worker AI in scrittura, race condition),
+  // `published`/`archived` (corso terminato), `draft` (architettura non
+  // ancora generata).
   const editable =
     canEdit &&
-    (course.status === "architecture_ready" ||
-      course.status === "architecture_approved");
+    [
+      "architecture_ready",
+      "architecture_approved",
+      "lessons_structure_ready",
+      "lessons_structure_approved",
+      "content_ready",
+      "content_approved",
+      "slides_ready",
+      "speech_ready",
+    ].includes(course.status);
 
   return (
     <div className="space-y-3">
