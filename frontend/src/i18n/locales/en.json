@@ -128,7 +128,8 @@
       "documents": "Documents",
       "architecture": "Architecture",
       "lessonsStructure": "Lesson structure",
-      "lessonContent": "Content"
+      "lessonContent": "Content",
+      "lessonSlides": "Slides"
     },
     "sections": {
       "basics": "Basic information",
@@ -181,6 +182,7 @@
       "content_approved": "Content — approved",
       "slides_pending": "Slides — queued",
       "slides_ready": "Slides — ready",
+      "slides_approved": "Slides — approved",
       "speech_pending": "Speech — queued",
       "speech_ready": "Speech — ready",
       "published": "Published",
@@ -728,6 +730,136 @@
         }
       }
     },
+    "lessonsSlides": {
+      "title": "Lesson slides",
+      "description": "For each lesson, the AI produces a sequence of slides sized for the lesson duration. Slides reuse Phase 3 assets (diagrams, formulas, tables) and create new ones only when needed.",
+      "contentNotReady": "Generate the lesson contents first to produce the slides.",
+      "generateAll": "Generate slides for all lessons",
+      "regenerateAll": "Regenerate all slides",
+      "generateMissing": "Generate missing ({{count}})",
+      "approveAll": "Approve all slides",
+      "cancelAll": "Stop generation",
+      "aggregate": {
+        "label": "{{completed}}/{{total}} lessons with slides",
+        "failed_one": "{{count}} lesson failed — use \"Retry\".",
+        "failed_other": "{{count}} lessons failed — use \"Retry\".",
+        "eta": "Time remaining: ~{{time}}",
+        "avgPerTask": "~{{time}} per lesson"
+      },
+      "statuses": {
+        "empty": "Empty",
+        "pending": "Queued",
+        "processing": "Processing",
+        "ready": "Ready",
+        "approved": "Approved",
+        "failed": "Failed"
+      },
+      "phases": {
+        "preparing_prompt": "Preparing prompt…",
+        "calling_openai": "AI generating…",
+        "materializing": "Saving slides…"
+      },
+      "lesson": {
+        "generate": "Generate",
+        "regenerate": "Regenerate",
+        "retry": "Retry",
+        "approve": "Approve",
+        "edit": "Edit",
+        "failed": "Generation failed",
+        "slidesCount_one": "{{count}} slide",
+        "slidesCount_other": "{{count}} slides"
+      },
+      "render": {
+        "totalSlides": "{{count}} total slides",
+        "newAssets_one": "{{count}} new asset",
+        "newAssets_other": "{{count}} new assets",
+        "speakerHint": "Speaker notes",
+        "sourceSection": "From section",
+        "noBullets": "(No bullets — visual slide)",
+        "types": {
+          "title": "Title",
+          "agenda": "Agenda",
+          "prerequisites": "Prerequisites",
+          "concept": "Concept",
+          "definition": "Definition",
+          "diagram": "Diagram",
+          "formula": "Formula",
+          "table": "Table",
+          "example": "Example",
+          "case_study": "Case study",
+          "exercise": "Exercise",
+          "discussion": "Discussion",
+          "summary": "Summary",
+          "takeaways": "Takeaways",
+          "references": "References",
+          "bibliography": "Bibliography"
+        }
+      },
+      "editor": {
+        "title": "Title",
+        "type": "Type",
+        "bullets": "Bullets",
+        "addBullet": "Add bullet",
+        "removeBullet": "Remove",
+        "referencesAssets": "Referenced assets",
+        "addAssetRef": "Add asset",
+        "sourceSection": "Source section",
+        "speakerHint": "Speaker hint",
+        "newAssets": "New assets (not in Phase 3)",
+        "addNewAsset": "Add new asset",
+        "removeNewAsset": "Remove",
+        "addSlide": "Add slide",
+        "removeSlide": "Remove slide",
+        "noSourceSection": "(none)",
+        "assetIdLabel": "Asset ID",
+        "assetTypeLabel": "Type",
+        "assetFormatLabel": "Format",
+        "assetContent": "Content",
+        "assetCaption": "Caption",
+        "assetAltText": "Alt text"
+      },
+      "dialog": {
+        "generateLesson": {
+          "title": "Generate slides for {{lesson}}",
+          "description": "The AI will produce the lesson slide sequence, reusing the visual assets from the content."
+        },
+        "regenerateLesson": {
+          "title": "Regenerate slides for {{lesson}}",
+          "description": "The current slides will be replaced. You can provide specific guidance to drive the regeneration (optional)."
+        },
+        "generateAll": {
+          "title": "Generate slides for all lessons",
+          "description": "The AI will process lessons with ready content in parallel. Other lessons are skipped."
+        },
+        "regenerateAll": {
+          "title": "Regenerate all slides",
+          "description": "All existing slides will be replaced. You can provide specific guidance (optional)."
+        },
+        "hintLabel": "Teacher guidance (optional)",
+        "hintPlaceholder": "E.g. \"Add a summary slide at the start and reduce total count\".",
+        "hintHelper": "Leave blank for a standard regeneration. Max 2000 characters.",
+        "generating": "Generating…",
+        "generateLessonCta": "Generate",
+        "regenerateLessonCta": "Regenerate",
+        "generateAllCta": "Generate all",
+        "regenerateAllCta": "Regenerate all",
+        "edit": {
+          "title": "Edit slides for {{lesson}}",
+          "description": "Edit titles, bullets, referenced assets and new assets of the slides. Edits do not degrade approval status.",
+          "save": "Save",
+          "saving": "Saving…"
+        }
+      },
+      "toast": {
+        "batchStarted": "Slides generation started on all lessons.",
+        "lessonStarted": "Slides generation started.",
+        "lessonApproved": "Lesson slides approved.",
+        "allApproved": "All lessons slides approved.",
+        "lessonUpdated": "Lesson slides updated.",
+        "cancelled": "Generation cancelled.",
+        "error": "Operation failed. Try again."
+      }
+    },
     "glossary": {
       "title": "Course glossary",
       "termsCount_one": "{{count}} term",
@@ -808,6 +940,9 @@
       },
       "lessonContent": {
         "approved": "Content approved"
+      },
+      "lessonSlides": {
+        "approved": "Slides approved"
       }
     },
     "staleness": {
@@ -822,6 +957,10 @@
       "pdf": {
         "label": "PDF out of sync with current content",
         "action": "Regenerate PDF"
+      },
+      "slides": {
+        "label": "Content changed since last generation",
+        "action": "Update slides"
       }
     }
   },

@@ -14,6 +14,7 @@ export type CourseStatus =
   | "content_approved"
   | "slides_pending"
   | "slides_ready"
+  | "slides_approved"
   | "speech_pending"
   | "speech_ready"
   | "published"
@@ -241,6 +242,75 @@ export interface LessonContentUpdateInput {
   coverage_check?: LessonContentCoverageCheck;
 }
 
+// ---------------------------------------------------------------------------
+// Fase 4 — Slide della lezione (§7)
+// ---------------------------------------------------------------------------
+
+export type LessonSlidesStatus =
+  | "empty"
+  | "pending"
+  | "processing"
+  | "ready"
+  | "approved"
+  | "failed";
+
+export type SlideType =
+  | "title"
+  | "agenda"
+  | "prerequisites"
+  | "concept"
+  | "definition"
+  | "diagram"
+  | "formula"
+  | "table"
+  | "example"
+  | "case_study"
+  | "exercise"
+  | "discussion"
+  | "summary"
+  | "takeaways"
+  | "references"
+  | "bibliography";
+
+export interface LessonSlideItem {
+  slide_number: number;
+  slide_id: string;
+  type: SlideType;
+  title: string;
+  bullets: string[];
+  references_assets: string[];
+  source_section_id: string;
+  speaker_hint: string;
+}
+
+export interface LessonSlideNewAsset {
+  asset_id: string;
+  asset_type: "diagram" | "schema" | "image" | "illustration" | "chart";
+  format: "mermaid" | "image_prompt" | "image_search_query" | "description";
+  content: string;
+  caption: string;
+  alt_text: string;
+}
+
+export interface LessonSlidesRaw {
+  lesson_id: string;
+  total_slides: number;
+  slides: LessonSlideItem[];
+  new_assets: LessonSlideNewAsset[];
+}
+
+export interface LessonSlidesTokens {
+  prompt: number;
+  completion: number;
+  total: number;
+  model: string;
+}
+
+export interface LessonSlidesUpdateInput {
+  slides?: LessonSlideItem[];
+  new_assets?: LessonSlideNewAsset[];
+}
+
 export interface CourseLessonOut {
   id: string;
   module_id: string;
@@ -279,6 +349,19 @@ export interface CourseLessonOut {
   pdf_generated_at: string | null;
   pdf_template_id: string | null;
   pdf_path: string | null;
+  // Fase 4 — Slide della lezione (§7)
+  slides_status: LessonSlidesStatus;
+  slides_progress: number;
+  slides_progress_phase: string | null;
+  slides_error: string | null;
+  slides_attempts: number;
+  slides_generated_at: string | null;
+  slides_approved_at: string | null;
+  slides_tokens: LessonSlidesTokens | null;
+  slides_regeneration_hint: string | null;
+  // Stale-detection — set solo da CRUD manuale, non dal worker AI.
+  slides_modified_at: string | null;
+  slides_raw: LessonSlidesRaw | null;
 }
 
 export interface LessonStructureTokens {
@@ -844,6 +927,80 @@ export const coursesApi = {
     ): Promise<CourseOut> => {
       const res = await apiClient.patch<CourseOut>(
         `${base(orgId)}/${courseId}/lessons/${lessonId}/content`,
+        payload
+      );
+      return res.data;
+    },
+  },
+  lessonSlides: {
+    generateLesson: async (
+      orgId: string,
+      courseId: string,
+      lessonId: string,
+      regeneration_hint?: string | null
+    ): Promise<CourseOut> => {
+      const res = await apiClient.post<CourseOut>(
+        `${base(orgId)}/${courseId}/lessons/${lessonId}/slides/generate`,
+        { regeneration_hint: regeneration_hint || null }
+      );
+      return res.data;
+    },
+    generateAll: async (
+      orgId: string,
+      courseId: string,
+      regeneration_hint?: string | null
+    ): Promise<CourseOut> => {
+      const res = await apiClient.post<CourseOut>(
+        `${base(orgId)}/${courseId}/lessons-slides/generate-all`,
+        { regeneration_hint: regeneration_hint || null }
+      );
+      return res.data;
+    },
+    generateMissing: async (
+      orgId: string,
+      courseId: string
+    ): Promise<CourseOut> => {
+      const res = await apiClient.post<CourseOut>(
+        `${base(orgId)}/${courseId}/lessons-slides/generate-missing`
+      );
+      return res.data;
+    },
+    approveLesson: async (
+      orgId: string,
+      courseId: string,
+      lessonId: string
+    ): Promise<CourseOut> => {
+      const res = await apiClient.post<CourseOut>(
+        `${base(orgId)}/${courseId}/lessons/${lessonId}/slides/approve`
+      );
+      return res.data;
+    },
+    cancelAll: async (
+      orgId: string,
+      courseId: string
+    ): Promise<CourseOut> => {
+      const res = await apiClient.post<CourseOut>(
+        `${base(orgId)}/${courseId}/lessons-slides/cancel-all`
+      );
+      return res.data;
+    },
+    approveAll: async (
+      orgId: string,
+      courseId: string
+    ): Promise<CourseOut> => {
+      const res = await apiClient.post<CourseOut>(
+        `${base(orgId)}/${courseId}/lessons-slides/approve-all`
+      );
+      return res.data;
+    },
+    updateLesson: async (
+      orgId: string,
+      courseId: string,
+      lessonId: string,
+      payload: LessonSlidesUpdateInput
+    ): Promise<CourseOut> => {
+      const res = await apiClient.patch<CourseOut>(
+        `${base(orgId)}/${courseId}/lessons/${lessonId}/slides`,
         payload
       );
       return res.data;

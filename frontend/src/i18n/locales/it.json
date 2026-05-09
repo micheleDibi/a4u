@@ -128,7 +128,8 @@
       "documents": "Documenti",
       "architecture": "Architettura",
       "lessonsStructure": "Struttura lezioni",
-      "lessonContent": "Contenuti"
+      "lessonContent": "Contenuti",
+      "lessonSlides": "Slide"
     },
     "sections": {
       "basics": "Informazioni di base",
@@ -181,6 +182,7 @@
       "content_approved": "Contenuti — approvati",
       "slides_pending": "Slide — in coda",
       "slides_ready": "Slide — pronte",
+      "slides_approved": "Slide — approvate",
       "speech_pending": "Discorso — in coda",
       "speech_ready": "Discorso — pronto",
       "published": "Pubblicato",
@@ -729,6 +731,136 @@
         }
       }
     },
+    "lessonsSlides": {
+      "title": "Slide delle lezioni",
+      "description": "Per ogni lezione, l'AI produce una sequenza di slide dimensionate sulla durata della lezione. Le slide riusano gli asset di Fase 3 (diagrammi, formule, tabelle) e ne possono creare di nuovi solo se necessario.",
+      "contentNotReady": "Genera prima i contenuti delle lezioni per produrre le slide.",
+      "generateAll": "Genera slide per tutte le lezioni",
+      "regenerateAll": "Rigenera tutte le slide",
+      "generateMissing": "Genera mancanti ({{count}})",
+      "approveAll": "Approva tutte le slide",
+      "cancelAll": "Ferma generazione",
+      "aggregate": {
+        "label": "{{completed}}/{{total}} lezioni con slide",
+        "failed_one": "{{count}} lezione fallita — usa \"Riprova\".",
+        "failed_other": "{{count}} lezioni fallite — usa \"Riprova\".",
+        "eta": "Tempo rimanente: ~{{time}}",
+        "avgPerTask": "~{{time}} per lezione"
+      },
+      "statuses": {
+        "empty": "Vuoto",
+        "pending": "In coda",
+        "processing": "In elaborazione",
+        "ready": "Pronto",
+        "approved": "Approvato",
+        "failed": "Fallito"
+      },
+      "phases": {
+        "preparing_prompt": "Preparazione del prompt…",
+        "calling_openai": "Generazione AI in corso…",
+        "materializing": "Salvataggio delle slide…"
+      },
+      "lesson": {
+        "generate": "Genera",
+        "regenerate": "Rigenera",
+        "retry": "Riprova",
+        "approve": "Approva",
+        "edit": "Modifica",
+        "failed": "Generazione fallita",
+        "slidesCount_one": "{{count}} slide",
+        "slidesCount_other": "{{count}} slide"
+      },
+      "render": {
+        "totalSlides": "{{count}} slide totali",
+        "newAssets_one": "{{count}} nuovo asset",
+        "newAssets_other": "{{count}} nuovi asset",
+        "speakerHint": "Note per il docente",
+        "sourceSection": "Da sezione",
+        "noBullets": "(Nessun bullet — slide visiva)",
+        "types": {
+          "title": "Titolo",
+          "agenda": "Agenda",
+          "prerequisites": "Prerequisiti",
+          "concept": "Concetto",
+          "definition": "Definizione",
+          "diagram": "Diagramma",
+          "formula": "Formula",
+          "table": "Tabella",
+          "example": "Esempio",
+          "case_study": "Caso studio",
+          "exercise": "Esercizio",
+          "discussion": "Discussione",
+          "summary": "Sintesi",
+          "takeaways": "Punti chiave",
+          "references": "Riferimenti",
+          "bibliography": "Bibliografia"
+        }
+      },
+      "editor": {
+        "title": "Titolo",
+        "type": "Tipo",
+        "bullets": "Bullet",
+        "addBullet": "Aggiungi bullet",
+        "removeBullet": "Rimuovi",
+        "referencesAssets": "Asset referenziati",
+        "addAssetRef": "Aggiungi asset",
+        "sourceSection": "Sezione di origine",
+        "speakerHint": "Suggerimento per il docente",
+        "newAssets": "Asset nuovi (non presenti in Fase 3)",
+        "addNewAsset": "Aggiungi asset nuovo",
+        "removeNewAsset": "Rimuovi",
+        "addSlide": "Aggiungi slide",
+        "removeSlide": "Rimuovi slide",
+        "noSourceSection": "(nessuna)",
+        "assetIdLabel": "ID asset",
+        "assetTypeLabel": "Tipo",
+        "assetFormatLabel": "Formato",
+        "assetContent": "Contenuto",
+        "assetCaption": "Didascalia",
+        "assetAltText": "Testo alternativo"
+      },
+      "dialog": {
+        "generateLesson": {
+          "title": "Genera slide di {{lesson}}",
+          "description": "L'AI produrrà la sequenza di slide della lezione, riusando gli asset visivi del contenuto."
+        },
+        "regenerateLesson": {
+          "title": "Rigenera slide di {{lesson}}",
+          "description": "Le slide attuali verranno sostituite. Puoi fornire indicazioni specifiche per guidare la rigenerazione (opzionale)."
+        },
+        "generateAll": {
+          "title": "Genera slide per tutte le lezioni",
+          "description": "L'AI elaborerà in parallelo le lezioni con contenuto pronto. Le altre lezioni verranno ignorate."
+        },
+        "regenerateAll": {
+          "title": "Rigenera tutte le slide",
+          "description": "Tutte le slide esistenti verranno sostituite. Puoi fornire indicazioni specifiche per guidare la rigenerazione (opzionale)."
+        },
+        "hintLabel": "Indicazioni del docente (opzionale)",
+        "hintPlaceholder": "Es. \"Aggiungi una slide di sintesi all'inizio e riduci il numero totale\".",
+        "hintHelper": "Lascia vuoto per una rigenerazione standard. Massimo 2000 caratteri.",
+        "generating": "Generazione…",
+        "generateLessonCta": "Genera",
+        "regenerateLessonCta": "Rigenera",
+        "generateAllCta": "Genera tutto",
+        "regenerateAllCta": "Rigenera tutto",
+        "edit": {
+          "title": "Modifica slide di {{lesson}}",
+          "description": "Modifica titoli, bullet, asset referenziati e nuovi asset delle slide. Le modifiche non degradano lo stato di approvazione.",
+          "save": "Salva",
+          "saving": "Salvataggio…"
+        }
+      },
+      "toast": {
+        "batchStarted": "Generazione slide avviata su tutte le lezioni.",
+        "lessonStarted": "Generazione slide avviata.",
+        "lessonApproved": "Slide della lezione approvate.",
+        "allApproved": "Slide di tutte le lezioni approvate.",
+        "lessonUpdated": "Slide della lezione aggiornate.",
+        "cancelled": "Generazione annullata.",
+        "error": "Operazione fallita. Riprova."
+      }
+    },
     "glossary": {
       "title": "Glossario del corso",
       "termsCount_one": "{{count}} termine",
@@ -809,6 +941,9 @@
       },
       "lessonContent": {
         "approved": "Contenuto approvato"
+      },
+      "lessonSlides": {
+        "approved": "Slide approvate"
       }
     },
     "staleness": {
@@ -823,6 +958,10 @@
       "pdf": {
         "label": "PDF non allineato al contenuto attuale",
         "action": "Rigenera PDF"
+      },
+      "slides": {
+        "label": "Contenuto modificato dopo l'ultima generazione",
+        "action": "Aggiorna slide"
       }
     }
   },

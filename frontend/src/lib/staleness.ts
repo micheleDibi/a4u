@@ -63,3 +63,28 @@ export function isPdfStale(lesson: CourseLessonOut): boolean {
   if (isAfter(lesson.content_modified_at, lesson.pdf_generated_at)) return true;
   return false;
 }
+
+/**
+ * Le slide sono stale se è cambiato qualcosa a monte:
+ * - il contenuto è stato rigenerato dall'AI dopo le slide, oppure
+ * - il contenuto è stato modificato manualmente dopo le slide, oppure
+ * - la struttura della lezione è stata modificata dopo le slide, oppure
+ * - l'architettura del modulo padre è stata modificata dopo le slide.
+ *
+ * Si applica solo a slide già generate (`slides_generated_at` non null).
+ */
+export function isSlidesStale(
+  lesson: CourseLessonOut,
+  parentModule: CourseModuleOut,
+): boolean {
+  if (!lesson.slides_generated_at) return false;
+  if (isAfter(lesson.content_generated_at, lesson.slides_generated_at))
+    return true;
+  if (isAfter(lesson.content_modified_at, lesson.slides_generated_at))
+    return true;
+  if (isAfter(lesson.lesson_structure_modified_at, lesson.slides_generated_at))
+    return true;
+  if (isAfter(parentModule.architecture_modified_at, lesson.slides_generated_at))
+    return true;
+  return false;
+}

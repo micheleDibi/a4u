@@ -231,6 +231,7 @@ export default function CourseEditorPage({ mode }: Props) {
     "architecture",
     "lessons-structure",
     "lesson-content",
+    "lesson-slides",
   ] as const;
   type TabId = (typeof TAB_ORDER)[number];
   const tabStorageKey = courseId ? `course-editor-tab:${courseId}` : null;
@@ -596,12 +597,27 @@ export default function CourseEditorPage({ mode }: Props) {
                 !course ||
                 (course.status !== "lessons_structure_approved" &&
                   !course.status.startsWith("content_") &&
-                  !["slides_pending", "slides_ready", "speech_pending", "speech_ready", "published"].includes(
+                  !["slides_pending", "slides_ready", "slides_approved", "speech_pending", "speech_ready", "published"].includes(
                     course.status
                   ))
               }
             >
               {t("courses.tabs.lessonContent")}
+            </TabsTrigger>
+          )}
+          {mode === "edit" && (
+            <TabsTrigger
+              value="lesson-slides"
+              disabled={
+                !course ||
+                (course.status !== "content_ready" &&
+                  course.status !== "content_approved" &&
+                  !["slides_pending", "slides_ready", "slides_approved", "speech_pending", "speech_ready", "published"].includes(
+                    course.status
+                  ))
+              }
+            >
+              {t("courses.tabs.lessonSlides")}
             </TabsTrigger>
           )}
         </TabsList>
@@ -1145,6 +1161,23 @@ export default function CourseEditorPage({ mode }: Props) {
               canEdit={canEdit}
               canGenerate={canGenerate}
             />
+          </TabsContent>
+        )}
+
+        {/* Tab — Slide lezioni (Fase 4 AI). Placeholder finché Step 5
+            non implementa CourseLessonSlidesView. */}
+        {mode === "edit" && course && (
+          <TabsContent value="lesson-slides" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>{t("courses.lessonsSlides.title")}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground">
+                  {t("courses.lessonsSlides.description")}
+                </p>
+              </CardContent>
+            </Card>
           </TabsContent>
         )}
       </Tabs>

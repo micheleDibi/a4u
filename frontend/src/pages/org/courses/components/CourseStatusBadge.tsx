@@ -18,6 +18,7 @@ const VARIANTS: Record<
   content_approved: "brand",
   slides_pending: "warning",
   slides_ready: "brand",
+  slides_approved: "brand",
   speech_pending: "warning",
   speech_ready: "brand",
   published: "default",

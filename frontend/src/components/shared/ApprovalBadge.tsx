@@ -7,7 +7,8 @@ import { cn } from "@/lib/utils";
 export type ApprovalLevel =
   | "architecture"
   | "module"
-  | "lessonContent";
+  | "lessonContent"
+  | "lessonSlides";
 
 export interface ApprovalBadgeProps {
   /** Livello del workflow a cui si riferisce l'approvazione. */
