@@ -280,7 +280,6 @@ export interface LessonSlideItem {
   bullets: string[];
   references_assets: string[];
   source_section_id: string;
-  speaker_hint: string;
 }
 
 export interface LessonSlideNewAsset {

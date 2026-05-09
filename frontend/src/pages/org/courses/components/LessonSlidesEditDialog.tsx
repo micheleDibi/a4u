@@ -89,7 +89,7 @@ interface Props {
  * Layout: lista verticale di slide collapsabili. Ogni slide ha
  * title, type select, bullets (list editabile), references_assets
  * multi-select dall'unione contentRaw + new_assets, source_section_id
- * select dalle sezioni di Fase 3, speaker_hint.
+ * select dalle sezioni di Fase 3.
  *
  * Sezione separata in basso per gli asset NUOVI (specifici di Fase 4).
  *
@@ -159,7 +159,6 @@ export function LessonSlidesEditDialog({
       bullets: [],
       references_assets: [],
       source_section_id: "",
-      speaker_hint: "",
     };
     setSlides((prev) => [...prev, newSlide]);
     setExpanded((prev) => new Set(prev).add(newSlide.slide_id));
@@ -525,16 +524,6 @@ function SlideEditCard({
                 })
               )}
             </div>
-          </div>
-
-          {/* Speaker hint */}
-          <div className="space-y-1.5">
-            <Label>{t("courses.lessonsSlides.editor.speakerHint")}</Label>
-            <Textarea
-              rows={2}
-              value={slide.speaker_hint}
-              onChange={(e) => onUpdate({ speaker_hint: e.target.value })}
-            />
           </div>
         </div>
       )}

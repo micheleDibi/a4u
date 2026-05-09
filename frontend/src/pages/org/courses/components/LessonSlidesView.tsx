@@ -108,15 +108,6 @@ function SlideCard({ slide, contentRaw, newAssets, t }: SlideCardProps) {
           </div>
         )}
 
-        {/* Speaker hint */}
-        {slide.speaker_hint && (
-          <div className="rounded-md border border-dashed border-border bg-muted/30 p-3 text-xs italic text-muted-foreground">
-            <span className="mr-1 font-medium not-italic">
-              {t("courses.lessonsSlides.render.speakerHint")}:
-            </span>
-            {slide.speaker_hint}
-          </div>
-        )}
       </CardContent>
     </Card>
   );

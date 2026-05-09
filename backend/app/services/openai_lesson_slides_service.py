@@ -86,7 +86,6 @@ PRINCIPI
    - source_section_id: la sezione del testo da cui questa slide è
      derivata (utile per validare la copertura). Vuoto per slide
      strutturali (title, agenda, ...).
-   - speaker_hint: una frase breve per il docente su cosa enfatizzare.
 
 6. TIPI DI SLIDE: title, agenda, prerequisites, concept, definition,
    diagram, formula, table, example, case_study, exercise, discussion,
@@ -185,7 +184,6 @@ LESSON_SLIDES_JSON_SCHEMA: dict[str, Any] = {
                             "items": {"type": "string"},
                         },
                         "source_section_id": {"type": "string"},
-                        "speaker_hint": {"type": "string"},
                     },
                     "required": [
                         "slide_number",
@@ -195,7 +193,6 @@ LESSON_SLIDES_JSON_SCHEMA: dict[str, Any] = {
                         "bullets",
                         "references_assets",
                         "source_section_id",
-                        "speaker_hint",
                     ],
                     "additionalProperties": False,
                 },

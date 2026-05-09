@@ -773,7 +773,6 @@
         "totalSlides": "{{count}} total slides",
         "newAssets_one": "{{count}} new asset",
         "newAssets_other": "{{count}} new assets",
-        "speakerHint": "Speaker notes",
         "sourceSection": "From section",
         "noBullets": "(No bullets — visual slide)",
         "types": {
@@ -804,7 +803,6 @@
         "referencesAssets": "Referenced assets",
         "addAssetRef": "Add asset",
         "sourceSection": "Source section",
-        "speakerHint": "Speaker hint",
         "newAssets": "New assets (not in Phase 3)",
         "addNewAsset": "Add new asset",
         "removeNewAsset": "Remove",
@@ -1223,6 +1221,9 @@
     },
     "fields": {
       "name": "Template name",
+      "kind": "Template type",
+      "kindLesson": "Lesson (text PDF)",
+      "kindSlides": "Slides (presentation PDF)",
       "size": "Slide format",
       "pageSize": "Page size",
       "font": "Font",

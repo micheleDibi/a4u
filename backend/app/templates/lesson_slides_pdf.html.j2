@@ -156,12 +156,6 @@
       <div class="slide-asset">{{ asset_html|safe }}</div>
       {% endfor %}
     </div>
-    {% if slide.speaker_hint %}
-    <div class="slide-footer">
-      <span class="label">{{ labels.speaker_hint }}:</span>
-      {{ slide.speaker_hint }}
-    </div>
-    {% endif %}
   </div>
   {% endfor %}
 </body>

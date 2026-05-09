@@ -774,7 +774,6 @@
         "totalSlides": "{{count}} slide totali",
         "newAssets_one": "{{count}} nuovo asset",
         "newAssets_other": "{{count}} nuovi asset",
-        "speakerHint": "Note per il docente",
         "sourceSection": "Da sezione",
         "noBullets": "(Nessun bullet — slide visiva)",
         "types": {
@@ -805,7 +804,6 @@
         "referencesAssets": "Asset referenziati",
         "addAssetRef": "Aggiungi asset",
         "sourceSection": "Sezione di origine",
-        "speakerHint": "Suggerimento per il docente",
         "newAssets": "Asset nuovi (non presenti in Fase 3)",
         "addNewAsset": "Aggiungi asset nuovo",
         "removeNewAsset": "Rimuovi",
@@ -1224,6 +1222,9 @@
     },
     "fields": {
       "name": "Nome template",
+      "kind": "Tipo template",
+      "kindLesson": "Lezione (PDF testo)",
+      "kindSlides": "Slide (PDF presentazione)",
       "size": "Formato slide",
       "pageSize": "Formato pagina",
       "font": "Font",

@@ -69,7 +69,6 @@ class LessonSlideItem(BaseModel):
     references_assets: list[str] = Field(default_factory=list, max_length=20)
     # Vuoto per slide strutturali (title/agenda/transition).
     source_section_id: str = Field(default="", max_length=50)
-    speaker_hint: str = Field(default="", max_length=600)
 
 
 class LessonSlideNewAsset(BaseModel):
