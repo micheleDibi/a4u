@@ -96,12 +96,19 @@ fase ha il suo modello + cap di token configurabile a parte.
 | `OPENAI_LESSON_CONTENT_MODEL` | `gpt-5.5` | Modello per **Fase 3 — contenuto lezione**. |
 | `OPENAI_LESSON_CONTENT_MAX_TOKENS` | `32000` | Cap per ciascuna lezione elaborata in Fase 3 (output 8-15k token + reasoning). |
 | `OPENAI_LESSON_CONTENT_REASONING_EFFORT` | `high` | Reasoning effort per Fase 3 (default più alto: il task è il più complesso del pipeline). |
+| `OPENAI_LESSON_SLIDES_MODEL` | `gpt-5.5` | Modello per **Fase 4 — slide della lezione**. |
+| `OPENAI_LESSON_SLIDES_MAX_TOKENS` | `16000` | Cap per ciascuna lezione elaborata in Fase 4 (output ~4-8k token + reasoning). |
+| `OPENAI_LESSON_SLIDES_REASONING_EFFORT` | `medium` | Reasoning effort per Fase 4. |
+| `OPENAI_LESSON_SPEECH_MODEL` | `gpt-5.5` | Modello per **Fase 5 — discorso temporizzato**. |
+| `OPENAI_LESSON_SPEECH_MAX_TOKENS` | `16000` | Cap per ciascuna lezione elaborata in Fase 5 (output prosa pura ~6-12k token + reasoning; alza per lezioni 90 min ≈ 11.7k parole IT). |
+| `OPENAI_LESSON_SPEECH_REASONING_EFFORT` | `medium` | Reasoning effort per Fase 5. |
 
 ### OpenAI — parallelismo + auto-retry worker corso
 
-I worker batch del pipeline corso (Fase 2, Fase 3, PDF) elaborano i task in
-parallelo con un cap di concorrenza configurabile. I default sono prudenti
-per non triggerare rate-limit OpenAI con tier free/1.
+I worker batch del pipeline corso (Fase 2, Fase 3, Fase 4, Fase 5, e i tre
+PDF — testo / slide / discorso) elaborano i task in parallelo con un cap di
+concorrenza configurabile. I default sono prudenti per non triggerare
+rate-limit OpenAI con tier free/1.
 
 | Variabile | Default | Descrizione |
 |---|---|---|
@@ -117,11 +124,17 @@ per non triggerare rate-limit OpenAI con tier free/1.
 | `COURSE_LESSON_CONTENT_MAX_CONCURRENCY` | `3` | Cap lezioni parallele Fase 3 (output 5x più grande di Fase 2 → cap più basso). |
 | `COURSE_LESSON_CONTENT_DOCUMENTS_CONTEXT_MAX_CHARS` | `20000` | Budget summary nel prompt Fase 3. |
 | `COURSE_LESSON_CONTENT_AUTO_RETRY_MAX` | `5` | Vedi sopra. |
+| `COURSE_LESSON_SLIDES_POLL_INTERVAL_SECONDS` | `4` | Polling worker Fase 4. |
+| `COURSE_LESSON_SLIDES_MAX_CONCURRENCY` | `3` | Cap lezioni parallele Fase 4 (input ~8-18k token = content_raw, output ~4-8k). |
+| `COURSE_LESSON_SLIDES_AUTO_RETRY_MAX` | `5` | Numero massimo di retry trasparenti prima di transitare a `failed`. |
+| `COURSE_LESSON_SPEECH_POLL_INTERVAL_SECONDS` | `4` | Polling worker Fase 5. |
+| `COURSE_LESSON_SPEECH_MAX_CONCURRENCY` | `3` | Cap lezioni parallele Fase 5 (input ~12-25k token = content+slides, output ~6-12k prosa pura). |
+| `COURSE_LESSON_SPEECH_AUTO_RETRY_MAX` | `5` | Vedi sopra. Cause frequenti di retry: TTS-safety (l'AI mette `\frac` o `*` nel testo), durata fuori range. |
 | `COURSE_GLOSSARY_DOCUMENTS_CONTEXT_MAX_CHARS` | `20000` | Budget summary nel prompt glossario. |
-| `COURSE_LESSON_PDF_POLL_INTERVAL_SECONDS` | `4` | Polling worker PDF. |
-| `COURSE_LESSON_PDF_MAX_CONCURRENCY` | `2` | Cap PDF paralleli (WeasyPrint + Chromium pre-render mermaid → CPU/RAM bound, **non** OpenAI). |
-| `COURSE_LESSON_PDF_AUTO_RETRY_MAX` | `5` | Vedi sopra. |
-| `GENERATED_PDFS_DIR` | `generated_pdfs` | Directory output PDF generati. Path relativo o assoluto. |
+| `COURSE_LESSON_PDF_POLL_INTERVAL_SECONDS` | `4` | Polling worker PDF (condiviso da tutti e tre i worker PDF: testo, slide, discorso). |
+| `COURSE_LESSON_PDF_MAX_CONCURRENCY` | `2` | Cap PDF paralleli (WeasyPrint + Chromium pre-render mermaid per testo/slide → CPU/RAM bound, **non** OpenAI). Speech PDF non usa Mermaid. |
+| `COURSE_LESSON_PDF_AUTO_RETRY_MAX` | `5` | Vedi sopra. Condiviso dai 3 worker PDF. |
+| `GENERATED_PDFS_DIR` | `generated_pdfs` | Directory output PDF generati. Path relativo o assoluto. Subfolder per (org, course); file: `{lesson_id}.pdf` (testo), `{lesson_id}_slides.pdf` (slide), `{lesson_id}_speech.pdf` (discorso). |
 
 ### Tempi stimati (corso 30 lezioni) per `COURSE_LESSON_CONTENT_MAX_CONCURRENCY`
 

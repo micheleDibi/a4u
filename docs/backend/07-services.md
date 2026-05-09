@@ -748,31 +748,87 @@ gli elementi della lista.
 
 ## Servizi del dominio Corsi
 
-I services del dominio Corso sono documentati nella sezione dedicata (sono
-8 file, troppo per inlinarli qui senza disorientare).
+I services del dominio Corso sono documentati nella sezione dedicata
+(sono ~25 file, troppo per inlinarli qui senza disorientare). Mappatura
+sintetica:
+
+### Foundation + Pre-processing (Iterazioni A-B)
 
 | Service | Documentato in | Scopo |
 |---|---|---|
 | `course_service.py` | [Courses 01](../courses/01-data-model.md), [Courses 03](../courses/03-architecture-generation.md) | CRUD corso, list, dettaglio eager-loaded, upload documenti |
 | `course_taxonomy_service.py` | [Courses 01](../courses/01-data-model.md) | CRUD term tassonomie + auto-create on demand |
-| `course_architecture_service.py` | [Courses 03](../courses/03-architecture-generation.md) | Trigger generazione architettura, approve, rigenerazione |
-| `course_architecture_crud.py` | [Courses 04](../courses/04-manual-editing.md) | CRUD manuale moduli/lezioni con renumber + AI generate-lessons |
 | `course_document_worker.py` | [Courses 02](../courses/02-document-preprocessing.md) | Worker async pre-processing documenti (lifespan) |
-| `course_architecture_worker.py` | [Courses 03](../courses/03-architecture-generation.md) | Worker async Fase 1 architettura (lifespan + ticker progress) |
 | `document_extraction_service.py` | [Courses 02](../courses/02-document-preprocessing.md) | Estrazione testo da PDF/DOCX/DOC/RTF/TXT/MD via `asyncio.to_thread` |
 | `openai_summarize_service.py` | [Courses 02](../courses/02-document-preprocessing.md) | Wrapper OpenAI summarize (Appendice A) con `response_format: json_schema` |
+| `openai_client.py` | [Courses 02](../courses/02-document-preprocessing.md) | Modulo condiviso: `OpenAIError`, `OpenAINotConfiguredError`, `get_client()`, `apply_reasoning_effort()` |
+
+### Fase 1 — Architettura
+
+| Service | Documentato in | Scopo |
+|---|---|---|
+| `course_architecture_service.py` | [Courses 03](../courses/03-architecture-generation.md) | Trigger generazione architettura, approve, rigenerazione |
+| `course_architecture_crud.py` | [Courses 04](../courses/04-manual-editing.md) | CRUD manuale moduli/lezioni con renumber + AI generate-lessons |
+| `course_architecture_worker.py` | [Courses 03](../courses/03-architecture-generation.md) | Worker async Fase 1 architettura (lifespan + ticker progress) |
 | `openai_architecture_service.py` | [Courses 03](../courses/03-architecture-generation.md) | Wrapper OpenAI architettura (Fase 1) — gpt-5.5 |
 | `openai_module_lessons_service.py` | [Courses 04](../courses/04-manual-editing.md) | Wrapper OpenAI lezioni di un modulo singolo (sync, ~20-30s) |
-| `openai_client.py` | [Courses 02](../courses/02-document-preprocessing.md) | Modulo condiviso: `OpenAIError`, `OpenAINotConfiguredError`, `get_client()` |
 
-**Pattern condivisi**:
+### Fase 2 — Struttura lezioni
 
-- Worker async via `asyncio.Task` + `asyncio.Event`, registrati in
-  `app/main.py` lifespan. Auto-resume al boot delle righe in
-  `pending`/`processing`. Single-instance (no distributed lock — assume
-  un solo backend istanziato per ora).
-- Tutti i services OpenAI usano `response_format: json_schema` strict +
-  validazione Pydantic prima dello scrivere in DB.
-- Audit chiamato per ogni azione mutating: `course.created`,
-  `course.document.summary.ready`, `course.architecture.generated`,
-  `course.module.lessons.generated`, ecc.
+| Service | Documentato in | Scopo |
+|---|---|---|
+| `course_lesson_structure_service.py` | [Courses 07](../courses/07-lesson-structure.md) | Orchestrazione + materializzazione + approve |
+| `course_lesson_structure_crud.py` | [Courses 07](../courses/07-lesson-structure.md) | Edit manuale dei 4 campi Fase 2 |
+| `course_lesson_structure_worker.py` | [Courses 07](../courses/07-lesson-structure.md) | Worker parallelo (cap=5 default) per modulo |
+| `openai_lesson_structure_service.py` | [Courses 07](../courses/07-lesson-structure.md) | Wrapper OpenAI Fase 2 con JSON schema strict |
+
+### Fase 3 — Contenuto + Glossario
+
+| Service | Documentato in | Scopo |
+|---|---|---|
+| `course_lesson_content_service.py` | [Courses 08](../courses/08-lesson-content.md) | Orchestrazione + 10 validazioni §6.4 + materializzazione + approve |
+| `course_lesson_content_crud.py` | [Courses 08](../courses/08-lesson-content.md) | Edit manuale `content_raw` + sync ref per asset rinominati |
+| `course_lesson_content_worker.py` | [Courses 08](../courses/08-lesson-content.md) | Worker parallelo (cap=3 default) per lezione + auto-trigger glossario |
+| `course_glossary_service.py` | [Courses 08](../courses/08-lesson-content.md) | Glossario corso (§10.1) — sync + ensure_glossary_ready |
+| `openai_lesson_content_service.py` | [Courses 08](../courses/08-lesson-content.md) | Wrapper OpenAI Fase 3 + addendum §9.3 in rigenerazione |
+| `openai_glossary_service.py` | [Courses 08](../courses/08-lesson-content.md) | Wrapper OpenAI glossario (10-30 termini) |
+
+### §7 — PDF lezione testo
+
+| Service | Documentato in | Scopo |
+|---|---|---|
+| `course_lesson_pdf_service.py` | [Courses 09](../courses/09-pdf-export.md) | Render HTML + Playwright pre-render mermaid + WeasyPrint + materialize |
+| `course_lesson_pdf_worker.py` | [Courses 09](../courses/09-pdf-export.md) | Worker parallelo (cap=2 default) + cancel-check post-render |
+
+### Fase 4 — Slide + PDF slide
+
+| Service | Documentato in | Scopo |
+|---|---|---|
+| `course_lesson_slides_service.py` | [Courses 10](../courses/10-lesson-slides.md) | Orchestrazione + 8 validazioni §7.4 + materializzazione + approve + reset PDF su rigenerazione |
+| `course_lesson_slides_crud.py` | [Courses 10](../courses/10-lesson-slides.md) | Edit manuale `slides_raw` + validazione allentata |
+| `course_lesson_slides_worker.py` | [Courses 10](../courses/10-lesson-slides.md) | Worker parallelo (cap=3 default) + auto-retry trasparente + atomic claim |
+| `openai_lesson_slides_service.py` | [Courses 10](../courses/10-lesson-slides.md) | Wrapper OpenAI Fase 4 con JSON schema + REGENERATION_SUFFIX §9.4 |
+| `course_lesson_slides_pdf_service.py` | [Courses 09](../courses/09-pdf-export.md) | Render PDF slide A4 portrait + slide split + Mermaid base64 + slide_template |
+| `course_lesson_slides_pdf_worker.py` | [Courses 09](../courses/09-pdf-export.md) | Worker parallelo (cap=2, riusa env `course_lesson_pdf_*`) |
+
+### Fase 5 — Discorso + PDF discorso
+
+| Service | Documentato in | Scopo |
+|---|---|---|
+| `course_lesson_speech_service.py` | [Courses 11](../courses/11-lesson-speech.md) | Orchestrazione + 8 validazioni §8.5 (incl. TTS-safety) + materializzazione + approve |
+| `course_lesson_speech_crud.py` | [Courses 11](../courses/11-lesson-speech.md) | Edit manuale `speech_raw` + auto-ricalcolo durata + TTS-safety |
+| `course_lesson_speech_worker.py` | [Courses 11](../courses/11-lesson-speech.md) | Worker parallelo (cap=3 default) + pre-check slides ready |
+| `openai_lesson_speech_service.py` | [Courses 11](../courses/11-lesson-speech.md) | Wrapper OpenAI Fase 5 + JSON schema + REGENERATION_SUFFIX §9.5 + `WORDS_PER_MINUTE` (130 IT / 150 EN) |
+| `course_lesson_speech_pdf_service.py` | [Courses 09](../courses/09-pdf-export.md) | Render PDF discorso A4 portrait per-slide grouping + format_timeline cumulativa |
+| `course_lesson_speech_pdf_worker.py` | [Courses 09](../courses/09-pdf-export.md) | Worker parallelo (cap=2, riusa env `course_lesson_pdf_*`) |
+
+### Pattern condivisi (tutti i worker AI)
+
+- **Lifecycle**: registrati in `app/main.py` lifespan; ognuno espone `start_worker()` (idempotente) + `async stop_worker()` (gracefully attende task in flight con timeout 15s).
+- **Concorrenza**: `asyncio.Semaphore(N)` con N da env `COURSE_LESSON_*_MAX_CONCURRENCY`. Cap separati per ogni fase (5 struttura, 3 content/slides/speech, 2 PDF).
+- **Atomic claim** (anti-double-dispatch): `_inflight: set[UUID]` + `_inflight_lock: asyncio.Lock` con claim **PRIMA** del semaforo (pattern fix `87fbf70`). Evita che task in coda dietro al semaforo vengano ri-dispatched dal tick successivo.
+- **Auto-retry trasparente**: helper `_apply_failure(lesson, *, error, recoverable, auto_retry_max)`. Errori recuperabili (rate-limit OpenAI, validazione, materializzazione) tornano a `pending` finché `attempts < auto_retry_max` (default 5). La UI vede solo "in elaborazione" finché passa.
+- **Cancel-check post-OpenAI**: dopo la chiamata OpenAI/render PDF, refresh dello status dal DB; se `!= 'processing'` (utente ha cancellato), scarta il risultato senza scrivere.
+- **JSON schema strict**: tutte le chiamate OpenAI usano `response_format: {type: 'json_schema', json_schema: {strict: true, schema: {...}}}`. Validazione Pydantic post-call per ulteriore safety.
+- **Audit log** per ogni azione mutating: `course.created`, `course.document.summary.ready`, `course.architecture.generated`, `course.lesson.content.generated`, `course.lesson.slides.generated`, `course.lesson.speech.generated`, `course.lesson.{slides,speech}_pdf.generated`, ecc.
+- **Stale-detection setter**: i CRUD manuali settano `*_modified_at = now()` per la cascata staleness; i worker AI non lo toccano.

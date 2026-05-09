@@ -17,7 +17,7 @@ Pulsante "Nuovo corso" gated da `course:create`.
 
 ## `CourseEditorPage.tsx`
 
-Editor tab-based. Layout principale: **`<Tabs>`** con 6 voci (in modalità edit;
+Editor tab-based. Layout principale: **`<Tabs>`** con 8 voci (in modalità edit;
 in create solo le prime 2):
 
 1. **Informazioni di base** — title, objectives, argomenti chiave, categoria,
@@ -27,7 +27,15 @@ in create solo le prime 2):
 3. **Documenti** — solo edit
 4. **Architettura** — solo edit, AI Generate/Approve + view CRUD
 5. **Struttura lezioni** — solo edit, gated su `course.status >= architecture_approved`. AI batch/per-modulo + edit manuale.
-6. **Contenuti lezioni** — solo edit, gated su `course.status >= lessons_structure_approved`. AI batch/per-lezione (Fase 3) + glossario + **export PDF** (§7).
+6. **Contenuti lezioni** — solo edit, gated su `course.status >= lessons_structure_approved`. AI batch/per-lezione (Fase 3) + glossario + **export PDF testo** (§7).
+7. **Slide** — solo edit, gated su `course.status ∈ {content_ready, content_approved, slides_*, speech_*, published}`. AI batch/per-lezione (Fase 4) + edit manuale + **export PDF slide**.
+8. **Discorso** — solo edit, gated su `course.status ∈ {slides_ready, slides_approved, speech_*, published}`. AI batch/per-lezione (Fase 5) + edit manuale + **export PDF discorso**.
+
+Tab persistente per courseId in localStorage (`course-editor-tab:{courseId}`). Tab disabled (con relativo gating su course.status) restano visibili ma greyed-out finché la pre-condizione a monte non è soddisfatta.
+
+### Lock setup didattico
+
+`course.didactic_setup_confirmed_at` (migration 0017) blocca i Tab 1+2 in read-only quando confermato. Solo creator/org_admin/platform_admin possono fare unlock. Il lock è applicato anche server-side in `course_service.update_course`.
 
 ### Auto-save
 
@@ -36,12 +44,17 @@ Debounce 1500ms su `draft` change. Stable diff via `JSON.stringify(draft) === JS
 
 ### Polling
 
-`refetchInterval` su `useQuery`:
+`refetchInterval` su `useQuery` — copertura completa pipeline AI:
 - 5s se `course.status === 'architecture_pending'` (mostra `architecture_progress`)
 - 5s se almeno un documento è in `pending`/`processing`
 - 5s se almeno un modulo è in `lessons_structure_status ∈ {pending, processing}` (Fase 2)
-- 5s se almeno una lezione è in `content_status ∈ {pending, processing}` o se `glossary_status ∈ {pending, processing}` (Fase 3)
-- 4s se almeno una lezione è in `pdf_status ∈ {pending, processing}` (§7 — Iterazione E)
+- 5s se almeno una lezione è in `content_status ∈ {pending, processing}` (Fase 3)
+- 4s se almeno una lezione è in `pdf_status ∈ {pending, processing}` (§7)
+- 5s se almeno una lezione è in `slides_status ∈ {pending, processing}` (Fase 4)
+- 4s se almeno una lezione è in `slides_pdf_status ∈ {pending, processing}` (Fase 4 PDF)
+- 5s se almeno una lezione è in `speech_status ∈ {pending, processing}` (Fase 5)
+- 4s se almeno una lezione è in `speech_pdf_status ∈ {pending, processing}` (Fase 5 PDF)
+- 5s se `glossary_status ∈ {pending, processing}` (§10.1)
 - altrimenti `false`
 
 ### Sticky footer
@@ -363,6 +376,117 @@ dell'ID canonico con pulsante copy + input rinominabile. La rinomina invoca
 `[KIND:newId]` su tutti i campi testuali (introduction, sections.content,
 summary, examples.content, equations.explanation). L'utente non deve
 ricordarsi di sincronizzare i riferimenti a mano.
+
+## `CourseLessonSlidesView.tsx` (Fase 4 + PDF slide)
+
+Tab "Slide" del wizard. Mirror strutturale di `CourseLessonContentView` ma
+scoped sui campi `slides_*` e `slides_pdf_*` della lezione.
+
+Header: aggregate progress (slide+PDF combinato), CTA batch (Genera tutti /
+Rigenera / Genera mancanti / Approva tutti / Annulla, + Esporta PDF tutti /
+Annulla export).
+
+Per modulo: card con lista lezioni. Per lezione, riga espandibile con:
+- status badge + `<ApprovalBadge level="lessonSlides">` quando approved
+- primary CTA contestuale (Genera → Approva → Modifica + Esporta PDF / Scarica PDF / Aggiorna PDF con stale logic)
+- kebab menu (Rigenera, Rigenera PDF)
+- progress live + phase
+- `<StalenessAlert kind="slides">` quando `isSlidesStale === true`
+- `<StalenessAlert kind="pdf">` quando `isSlidesPdfStale === true` (riusa la kind "pdf" — etichetta uguale "PDF non allineato")
+- expanded: `<LessonSlidesView slides={slides_raw} contentRaw={content_raw} />`
+
+### `LessonSlidesView.tsx` (viewer read-only)
+
+Lista verticale di card per slide. Per ciascuna slide:
+- Header: badge slide_number + badge type + titolo + (opzionale) badge "Da sezione" con `source_section_id`
+- Body: prosa breve (`body`), bullets (`<ul>`), asset referenziati renderizzati via `resolveAsset()` di `lib/slides.ts` (visual mermaid → `<MermaidDiagram>`, table markdown → `<MarkdownRenderer>`, equation LaTeX → `$$...$$`, example card)
+- Asset orfano (riferimento senza definizione): box destructive con messaggio
+
+### `LessonSlidesEditDialog.tsx`
+
+Editor del `slides_raw`. Layout: lista slide collassabili con titolo + type select + body textarea + bullets list editabile + references_assets multi-select (popolato dall'unione `contentRaw + new_assets`) + source_section_id select (sezioni di Fase 3). Sezione separata per `new_assets` (Fase 4-only).
+
+Validazione client-side allentata; il backend applica le validazioni complete.
+
+### `LessonSlidesGenerateDialog.tsx`
+
+4 modes (`generate-lesson | regenerate-lesson | generate-all | regenerate-all`). Textarea `regeneration_hint` (max 2000) opzionale, visibile solo per modes regenerate.
+
+### `LessonSlidesPdfExportDialog.tsx`
+
+Dialog scelta template per export PDF slide. Usa `slideTemplatesApi.list(orgId)` (template `slide_templates`, **non** `pdf_templates`). Conferma: invia `pdf_template_id` o `null` (fallback `_default_slide_template_dict` server-side).
+
+## `CourseLessonSpeechView.tsx` (Fase 5 + PDF discorso)
+
+Tab "Discorso" del wizard. Mirror strutturale di `CourseLessonSlidesView` ma
+scoped sui campi `speech_*` e `speech_pdf_*`.
+
+Pre-condizione: empty state se `eligibleForGen === 0` (nessuna lezione con
+`slides_status ∈ ready/approved`) — invita a tornare alla Fase 4.
+
+Header e per-lezione row come Fase 4. CTA: Genera/Rigenera/Approva/Edit + Esporta PDF/Scarica PDF.
+
+Stale alerts: `<StalenessAlert kind="speech">` (a monte: slides/content/structure/architecture) e `<StalenessAlert kind="speechPdf">` (PDF disallineato dal `speech_raw`).
+
+### `LessonSpeechView.tsx` (viewer read-only)
+
+Lista verticale **raggruppata per slide** (mirror del PDF). Helper `formatMmSs(seconds)` per timeline. Per ciascuna entry di `slide_to_segments_map`:
+- Card header: badge slide_number + titolo slide (lookup da `slides_raw`) + durata totale slide
+- Lista segmenti in ordine, ognuno:
+  - timeline cumulativa `[mm:ss — mm:ss]` (calcolata sommando le durate precedenti)
+  - durata `Ns`
+  - testo segmento (paragrafo con leading-relaxed)
+  - delivery notes in italic (se non vuote)
+
+### `LessonSpeechEditDialog.tsx`
+
+Editor del `speech_raw`. Lista slide (lookup da `slides_raw`) con segmenti raggruppati. Per ciascun segmento:
+- `segment_id` (read-only chip)
+- Selettore `slide_id` (popolato dalle slide della lezione)
+- Textarea `text` con **warning chip TTS-safety inline** (regex client-side che duplica il BE per UX immediata: caratteri proibiti `* _ ` # \ $`, abbreviazioni `es.`, `etc.`, `ca.`, `p.es.`, `i.e.`, `e.g.`, comandi LaTeX `\frac`, `\sum`, ...)
+- Input `estimated_duration_seconds` (number) con bottone **"Auto"** che ricalcola da `wordCount(text) × 60 / wpm` (`wpm = 130 IT / 150 EN`)
+- Textarea `delivery_notes` (1 riga, opzionale)
+- Bottone "Rimuovi" + "Aggiungi segmento" sotto ciascuna slide
+
+Footer dialog: warning verde se `sum(durations) ∈ [target × 0.95, target × 1.05]`, ambra altrimenti con valori `actual / low / high / target`.
+
+Submit ricostruisce automaticamente `slide_to_segments_map` (raggruppando i segmenti per `slide_id` nell'ordine delle slide originali) e i totali derivati prima di chiamare l'API.
+
+### `LessonSpeechGenerateDialog.tsx`
+
+4 modes come Fase 4. Hint placeholder con esempi tipici TTS (es. "Tono più informale", "Aggiungi una domanda retorica nelle slide concept").
+
+### `LessonSpeechPdfExportDialog.tsx`
+
+Dialog scelta template per export PDF discorso. Usa `pdfTemplatesApi.list(orgId)` (template `pdf_templates` — **stesso** del PDF lezione testo, perché il discorso è prosa pura A4 portrait single-column).
+
+## Helper riusabili
+
+### `lib/staleness.ts`
+
+7 helper di stale-detection cascata. Tutti restituiscono `boolean`. La logica è una semplice serie di `isAfter(modified, generated)` confrontando timestamp `*_modified_at` (settati solo dai CRUD manuali) con `*_generated_at` (settati solo dai worker AI):
+
+```ts
+isStructureStale(module): module.architecture_modified_at > module.lessons_structure_generated_at
+isContentStale(lesson, module): structure | architecture > content_generated_at
+isPdfStale(lesson): content_generated_at | content_modified_at > pdf_generated_at
+isSlidesStale(lesson, module): content | structure | architecture > slides_generated_at
+isSlidesPdfStale(lesson): slides_generated_at | slides_modified_at > slides_pdf_generated_at
+isSpeechStale(lesson, module): slides | content | structure | architecture > speech_generated_at
+isSpeechPdfStale(lesson): speech_generated_at | speech_modified_at > speech_pdf_generated_at
+```
+
+### `lib/slides.ts`
+
+`resolveAsset(assetId, contentRaw, newAssets) → { kind: 'visual'|'table'|'equation'|'example'|'new_visual', payload }` per il rendering degli asset slide. Mirror della logica backend `_resolve_asset_for_slide`.
+
+### `components/shared/ApprovalBadge.tsx`
+
+Badge "approvato" cross-fase. `level: 'architecture' | 'module' | 'lessonContent' | 'lessonSlides' | 'lessonSpeech'`.
+
+### `components/shared/StalenessAlert.tsx`
+
+Alert "qualcosa a monte è cambiato". `kind: 'structure' | 'content' | 'pdf' | 'slides' | 'speech' | 'speechPdf'`. Etichetta + CTA opzionale via i18n `courses.staleness.{kind}.{label,action}`.
 
 ## Dipendenze frontend nuove
 

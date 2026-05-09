@@ -258,7 +258,7 @@ stati inseriti testi più lunghi, il downgrade fallirà.
 
 ---
 
-## `alembic/versions/0009_courses.py` — `0013_architecture_progress.py`
+## `alembic/versions/0009_courses.py` — `0024_lesson_speech_pdf.py`
 
 **Migrazioni del dominio Corsi**. Lista sintetica (vedi
 [Courses 01 — Data model](../courses/01-data-model.md) per il dettaglio
@@ -271,6 +271,17 @@ dei campi):
 | `0011_course_document_summary_meta` | Su `course_document`: `text_extracted_at`, `text_chars_extracted`, `summary_tokens`, `summary_attempts`. |
 | `0012_lesson_bibliography` | `course_lesson.recommended_bibliography` JSONB default `[]`. |
 | `0013_architecture_progress` | `course.architecture_progress` (smallint default 0), `architecture_progress_phase` (varchar 50). |
+| `0014_lesson_structure` | Su `course_module` 10 colonne `lessons_structure_*` (Fase 2): status/raw/tokens/attempts/error/generated_at/approved_at/regeneration_hint/progress/progress_phase. + CHECK constraints. |
+| `0015_lesson_content` | Su `course_lesson` 10 colonne `content_*` (Fase 3) + 4 campi struttura Fase 2 (`learning_objectives`, `mandatory_topics`, `prerequisites`, `section_outline`). Su `course` 5 colonne `glossary_*` (§10.1). |
+| `0016_lesson_pdf_export` | Su `course_lesson` 8 colonne `pdf_*` (§7) + FK `pdf_template_id → pdf_templates.id` ON DELETE SET NULL. |
+| `0017_didactic_setup_confirmed` | `course.didactic_setup_confirmed_at TIMESTAMPTZ NULL` per lock setup didattico (Tab 1+2 read-only quando valorizzato). |
+| `0018_stale_detection_timestamps` | 3 colonne `*_modified_at` per stale-detection cascata: `course_module.architecture_modified_at`, `course_lesson.lesson_structure_modified_at`, `course_lesson.content_modified_at`. Set solo da CRUD manuali, mai dai worker AI. |
+| `0019_lesson_slides` | Su `course_lesson` 11 colonne `slides_*` (Fase 4): status/raw/tokens/attempts/error/generated_at/approved_at/modified_at/regeneration_hint/progress/progress_phase + CHECK constraints. Su `course.status` aggiunge `slides_approved` al CHECK constraint (drop-and-recreate, simmetrico a content_approved). |
+| `0020_lesson_slides_pdf` | Su `course_lesson` 8 colonne `slides_pdf_*` (Fase 4 PDF) + FK iniziale a `pdf_templates.id` (poi rerouted in 0022). |
+| `0021_pdf_template_kind` | Su `pdf_templates` aggiunge `kind` VARCHAR(20) ('lesson' \| 'slides') come discriminatore tra template per lezione testo e template per slide. **Decisione poi rivista dalla 0022**. |
+| `0022_unify_slide_templates` | Cambia destinazione FK `course_lesson.slides_pdf_template_id` da `pdf_templates(id)` → `slide_templates(id)` (azzera prima i valori esistenti perché incompatibili). Aggiunge `slide_templates.margin_mm` (default 20) + `slide_templates.background_opacity_pct` (default 15) con CHECK constraints. **Drop** del campo `pdf_templates.kind` (rollback di 0021). Decisione di prodotto: i template per le slide (avatar video + export PDF Fase 4) vengono unificati su `slide_templates`; `pdf_templates` resta dedicato a PDF lezione testo + PDF discorso (entrambi prosa A4 portrait). |
+| `0023_lesson_speech` | Su `course_lesson` 11 colonne `speech_*` (Fase 5): mirror integrale di `slides_*`. Su `course.status` aggiunge `speech_approved` al CHECK constraint (drop-and-recreate, simmetrico a slides_approved). |
+| `0024_lesson_speech_pdf` | Su `course_lesson` 8 colonne `speech_pdf_*` (Fase 5 PDF) + FK `speech_pdf_template_id → pdf_templates.id` ON DELETE SET NULL (NON `slide_templates`: il discorso è prosa pura, usa lo stesso template del PDF lezione testo). |
 
 **Vincoli notevoli**:
 
@@ -278,17 +289,27 @@ dei campi):
 - `uq_course_lesson_code` UNIQUE su `(course_id, lesson_code)` — globale
   nel corso, NON per modulo. Vedi nota su renumber in
   [Manual editing](../courses/04-manual-editing.md).
+- `course.status` CHECK constraint con **17 valori** dopo le migrations
+  0019/0023 (aggiunti `slides_approved` e `speech_approved`).
 - ON DELETE CASCADE su tutte le FK `course → modules → lessons` e su
   `course → documents`.
+- ON DELETE SET NULL su tutte le FK template (`pdf_template_id`,
+  `slides_pdf_template_id`, `speech_pdf_template_id`) per non bloccare
+  l'eliminazione di un template usato da export passati.
+
+**Round-trip testato**: tutte le migration hanno `downgrade()` che
+ripristina lo schema precedente bit-a-bit (dropping CHECK constraints
+nell'ordine inverso, dropping colonne in ordine inverso, ripristinando
+gli stati intermedi delle FK in 0022/0024).
 
 **Seed**:
 
 - `_seed_languages`: 24 lingue UE (codici BCP47).
-- `_seed_course_taxonomies`: 7 tassonomie di sistema con righe iniziali
-  in IT/EN (categoria, stile_insegnamento, area_disciplinare, target,
-  livello, focus, formato).
-- `_seed_course_permissions`: aggiunge i 6 codici a `permissions` e i
-  mapping default a `role_permissions` per ciascun ruolo.
+- `_seed_course_taxonomies`: 8 tassonomie di sistema con righe iniziali
+  in IT/EN (categoria, stile_insegnamento, profondita_contenuto, ruolo_docente,
+  dimensione_pubblico, livello_conoscenza, destinatari, livello_eqf).
+- `_seed_course_permissions`: aggiunge i codici `course:*` a `permissions`
+  e i mapping default a `role_permissions` per ciascun ruolo.
 
 ---
 

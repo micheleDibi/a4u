@@ -255,6 +255,11 @@ PK composta `(membership_id, permission_id)`.
 
 ## `slide_templates`
 
+Template **unificato** per slide: avatar video + export PDF slide
+(Fase 4). La migration 0022 ha unificato i template (rimosso `kind`
+discriminator da `pdf_templates`, FK `course_lesson.slides_pdf_template_id`
+puntata a `slide_templates`).
+
 | Colonna | Tipo | Default |
 |---|---|---|
 | `id` | UUID PK | |
@@ -268,6 +273,9 @@ PK composta `(membership_id, permission_id)`.
 | `secondary_color` | char(7) NOT NULL | `#9C27B0` |
 | `font_family` | varchar(120) NOT NULL | `Roboto` |
 | `slide_size` | varchar(8) NOT NULL | `16:9` |
+| `margin_mm` | smallint NOT NULL | `20` (CHECK 0..60, aggiunto in 0022) |
+| `background_opacity_pct` | smallint NOT NULL | `15` (CHECK 0..100, aggiunto in 0022) |
+| `is_default` | boolean NOT NULL | `false` |
 | `created_by_user_id` | UUID FK SET NULL | |
 | timestamps | | |
 
@@ -275,15 +283,31 @@ PK composta `(membership_id, permission_id)`.
 
 ## `pdf_templates`
 
-Stessi campi di `slide_templates` + specifici PDF:
+Template per PDF lezione testo (§7) e PDF discorso (Fase 5). Entrambi
+A4 portrait single-column block-flow.
 
-| Colonna | Default |
-|---|---|
-| `page_size` (varchar(8) NOT NULL) | `A4` |
-| `header_height_mm` (smallint NOT NULL) | `20` |
-| `footer_height_mm` (smallint NOT NULL) | `15` |
-| `margin_mm` (smallint NOT NULL) | `20` |
-| `background_opacity_pct` (smallint NOT NULL) | `15` (0..100, opacità della filigrana di sfondo) |
+| Colonna | Tipo | Default |
+|---|---|---|
+| `id` | UUID PK | |
+| `organization_id` | UUID FK CASCADE INDEX | |
+| `name` | varchar(120) NOT NULL | |
+| `background_image_path` | varchar(500) | nullable |
+| `logo_left_path` | varchar(500) | nullable |
+| `logo_right_path` | varchar(500) | nullable |
+| `text_color` | char(7) NOT NULL | `#1F1F1F` |
+| `primary_color` | char(7) NOT NULL | `#1976D2` |
+| `secondary_color` | char(7) NOT NULL | `#9C27B0` |
+| `font_family` | varchar(120) NOT NULL | `Roboto` |
+| `page_size` | varchar(8) NOT NULL | `A4` |
+| `header_height_mm` | smallint NOT NULL | `20` |
+| `footer_height_mm` | smallint NOT NULL | `15` |
+| `margin_mm` | smallint NOT NULL | `20` |
+| `background_opacity_pct` | smallint NOT NULL | `15` (0..100, opacità della filigrana di sfondo) |
+| `is_default` | boolean NOT NULL | `false` |
+| `created_by_user_id` | UUID FK SET NULL | |
+| timestamps | | |
+
+> **Nota storica**: la migration 0021 introduceva un campo `kind` (`lesson` | `slides`) come discriminatore tra template per il PDF lezione testo e per il PDF slide. La 0022 ha invertito la decisione: `kind` è stato rimosso e i template per le slide sono stati unificati con quelli dell'avatar (`slide_templates`). Da 0022 in poi, `pdf_templates` serve **solo** PDF lezione testo e PDF discorso (entrambi prosa A4 portrait), mentre `slide_templates` serve avatar e PDF slide.
 
 ---
 

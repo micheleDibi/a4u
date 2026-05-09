@@ -51,20 +51,22 @@ Stack: **React 18 + Vite + Tailwind v4 + shadcn/ui + i18next** (24 lingue UE).
 ### Courses (dominio principale)
 
 Documentazione dedicata della feature **Corsi** — pipeline AI a 5 fasi
-(implementate: Pre-processing + Fase 1 + Fase 2 + Fase 3 + glossario +
-export PDF; pendenti: Fase 4 slide + Fase 5 discorso) + CRUD manuale di
-moduli/lezioni:
+**tutte implementate** (Pre-processing + Fase 1 + Fase 2 + Fase 3 +
+Fase 4 slide + Fase 5 discorso + glossario + tre pipeline PDF: testo /
+slide / discorso) + CRUD manuale completo per ogni payload AI:
 
 - [Courses overview](courses/README.md)
-- [01 — Data model](courses/01-data-model.md): course, course_document, course_module, course_lesson, course_taxonomy_term, language.
+- [01 — Data model](courses/01-data-model.md): course, course_document, course_module, course_lesson (con campi tutte le fasi), course_taxonomy_term, slide_template, language.
 - [02 — Document pre-processing](courses/02-document-preprocessing.md): worker estrazione testo + summarize OpenAI (Appendice A).
 - [03 — Architecture generation (Fase 1)](courses/03-architecture-generation.md): worker AI con progress tracking + materializzazione moduli/lezioni.
 - [04 — Manual editing & AI lesson generation](courses/04-manual-editing.md): CRUD inline + auto-trigger AI sui moduli aggiunti manualmente.
-- [05 — API reference (corsi)](courses/05-api-reference.md): endpoint sotto `/orgs/{org_id}/courses`.
-- [06 — Frontend](courses/06-frontend.md): pages, dialog, optimistic update, ETA display, KaTeX, i18n.
+- [05 — API reference (corsi)](courses/05-api-reference.md): ~50 endpoint sotto `/orgs/{org_id}/courses` (Fasi 1-5 + 3 pipeline PDF).
+- [06 — Frontend](courses/06-frontend.md): pages con 8 tab (Base/Didattica/Documenti/Architettura/Struttura/Contenuti/Slide/Discorso), dialog, optimistic update, ETA display, KaTeX, TipTap, TTS-safety inline.
 - [07 — Lesson structure (Fase 2)](courses/07-lesson-structure.md): worker parallelo per generare struttura lezioni (obiettivi, temi, prerequisiti, scaletta).
 - [08 — Lesson content (Fase 3) + Glossario](courses/08-lesson-content.md): worker parallelo per testo lezione + asset visivi (Mermaid + LaTeX + tabelle), glossario corso, editor TipTap user-friendly.
-- [09 — PDF export (§7)](courses/09-pdf-export.md): export PDF lezione via WeasyPrint (CSS Paged Media completo) + Playwright pre-render Mermaid + latex2mathml.
+- [09 — PDF export](courses/09-pdf-export.md): tre pipeline PDF (testo §7 + slide Fase 4 + discorso Fase 5) via WeasyPrint + Playwright pre-render Mermaid + latex2mathml.
+- [10 — Lesson slides (Fase 4)](courses/10-lesson-slides.md): worker parallelo per generare slide della presentazione (riusa asset Fase 3 + nuovi asset, body field opzionale, 16 tipi slide).
+- [11 — Lesson speech (Fase 5)](courses/11-lesson-speech.md): worker parallelo per generare discorso temporizzato TTS-friendly (vincolo durata ±5%, 130 wpm IT / 150 wpm EN, 8 validazioni inclusa TTS-safety).
 
 ### Database & API
 

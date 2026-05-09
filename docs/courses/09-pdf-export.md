@@ -1,10 +1,29 @@
-# 09 — PDF export delle lezioni (§7)
+# 09 — PDF export delle lezioni
 
-Esportazione delle lezioni in PDF usando il template grafico configurato per
-l'organizzazione del corso (`pdf_templates`). Specifica §7 di
-`prompt_generazione_corsi.md`.
+Esportazione PDF delle lezioni usando il template grafico configurato
+per l'organizzazione del corso. **Tre pipeline distinte** coesistono e
+sono indipendenti:
 
-## Obiettivo
+| Pipeline | Trigger | Template | Path file | Sezione |
+|---|---|---|---|---|
+| **Lezione testo** (§7) | `content_status ∈ ready/approved` | `pdf_templates` | `{org}/{course}/{lesson}.pdf` | [Lezione testo (§7)](#lezione-testo-7) |
+| **Slide** (Fase 4) | `slides_status ∈ ready/approved` | `slide_templates` (unificato con avatar — migration 0022) | `{org}/{course}/{lesson}_slides.pdf` | [Slide (Fase 4)](#slide-fase-4) |
+| **Discorso** (Fase 5) | `speech_status ∈ ready/approved` | `pdf_templates` (riusa il template della lezione testo) | `{org}/{course}/{lesson}_speech.pdf` | [Discorso (Fase 5)](#discorso-fase-5) |
+
+Tutte usano lo stesso stack di base (Jinja2 + WeasyPrint) ma differiscono
+per layout (A4 portrait / 16:9 / per-slide grouping), input dati
+(`content_raw` / `slides_raw` + `content_raw` / `speech_raw` +
+`slides_raw`) e necessità di pre-render Mermaid (sì per testo+slide, no
+per discorso che è prosa pura).
+
+**Reset PDF su rigenerazione AI a monte**: quando l'utente rigenera il
+content / le slide / il discorso, lo status del PDF a valle viene
+resettato a `empty` per impedire il download di un PDF stale (vedi
+`request_lesson_*_generation` in service file).
+
+---
+
+## Lezione testo (§7)
 
 Per ogni lezione con `content_status ∈ {ready, approved}`, l'utente può
 generare un **PDF stampabile**: copertina con logo + titolo, body con
@@ -496,3 +515,173 @@ dependencies = [
 6. **Diff-detection** automatico tra `content_raw` modificato e PDF già
    generato: il badge resta `ready` finché l'utente non clicca "Rigenera
    PDF" esplicitamente.
+
+---
+
+## Slide (Fase 4)
+
+Pipeline parallela e indipendente dal PDF testo. Stato per-lezione su
+`course_lesson.slides_pdf_*` (8 colonne, migration 0020 + FK migrata a
+`slide_templates` in 0022). Path file: suffisso `_slides.pdf`.
+
+### Stack
+
+Stesso del PDF testo — **WeasyPrint** + **Jinja2** + **Playwright** per
+pre-render mermaid. Differenze principali:
+- Layout: A4 **portrait single-column block-flow** (mantenuto dal feedback utente: niente layout 16:9 landscape — il PDF deve essere comodo da stampare e leggere)
+- Template: `slide_templates` (16:9 originariamente per avatar video, ora unificato anche per il PDF slide via migration 0022 con campi aggiunti `margin_mm` + `background_opacity_pct`)
+- Asset rendering: stesso pattern di Fase 3 (visual/table/equation/example) + supporto a `new_assets` di Fase 4
+
+### Slide split (bullet+asset → 2 pagine)
+
+Il template `lesson_slides_pdf.html.j2` espande visualmente le slide
+con `references_assets ≠ []` AND (`bullets ≠ []` OR `body ≠ ''`) in
+**due pagine consecutive** con lo stesso titolo:
+
+- **pagina N**: tag "Lezione X" + titolo + body + bullet (niente asset)
+- **pagina N+1**: stesso titolo + asset isolato (niente bullet, niente body)
+
+Vantaggio: gli asset (specialmente Mermaid) hanno l'intero body a
+disposizione per il rendering, niente competizione verticale, niente
+workaround di scaling SVG. La numerazione pagina viene ricalcolata
+sulla sequenza espansa.
+
+Le slide pure-bullet (no asset) o pure-asset (no bullet) restano
+single-page.
+
+### Mermaid rendering
+
+I diagrammi Mermaid vengono incapsulati in `<img>` con **data-URI base64** anziché inseriti come SVG inline. Motivo: nel contesto slide PDF, un SVG inline con attributi `width="X" height="Y"` espliciti emessi da Mermaid 10.9.x ignora il vincolo CSS `max-height` e sborda dal body. Un `<img>` invece è un replaced element con aspect ratio intrinseca, e `max-width + max-height` gli applicano scaling proporzionale corretto.
+
+```python
+def _svg_to_data_uri(svg: str) -> str:
+    payload = base64.b64encode(svg.encode("utf-8")).decode("ascii")
+    return f"data:image/svg+xml;base64,{payload}"
+```
+
+Encoding base64 (non URL-encoding) perché l'SVG di Mermaid contiene molti `"` (attributi viewBox, xmlns, ...) che romperebbero un `src="..."` HTML.
+
+### Asset resolver
+
+`_resolve_asset_for_slide(asset_id, content_raw, new_assets)` cerca
+nell'ordine:
+1. `content_raw["visual_assets"]` (Fase 3) — `kind="visual"`
+2. `content_raw["tables"]` — `kind="table"`
+3. `content_raw["equations"]` — `kind="equation"`
+4. `content_raw["examples"]` — `kind="example"`
+5. `slides_raw["new_assets"]` (Fase 4) — `kind="new_visual"` (ricicla il rendering visual)
+
+Mirror della logica frontend `lib/slides.resolveAsset()`.
+
+### API endpoints (4 nuovi)
+
+| Metodo | Path | Permesso | Effetto |
+|---|---|---|---|
+| `POST` | `/lessons/{lid}/slides-pdf/export?pdf_template_id={uuid?}` | `course:generate` | Set `slides_pdf_status='pending'`. **202**. |
+| `POST` | `/lessons-slides-pdf/export-all?pdf_template_id={uuid?}` | `course:generate` | Tutte le lezioni esportabili. |
+| `POST` | `/lessons-slides-pdf/cancel-all` | `course:generate` | Annulla `pending`/`processing`. |
+| `GET` | `/lessons/{lid}/slides-pdf/download` | `course:view` | Scarica `application/pdf`. |
+
+### Frontend
+
+Tab "Slide" (`CourseLessonSlidesView.tsx`) ha bottoni primary "Esporta PDF" / "Scarica PDF" / "Aggiorna PDF" (con stale logic via `isSlidesPdfStale`) e kebab "Rigenera PDF". Dialog `LessonSpeechPdfExportDialog`... wait, refuso — dialog è `LessonSlidesPdfExportDialog.tsx` che usa `slideTemplatesApi.list(orgId)` (template avatar+slide).
+
+### File rilevanti
+
+```
+backend/app/services/course_lesson_slides_pdf_service.py   # render + materialize + slide split + mermaid pre-render
+backend/app/services/course_lesson_slides_pdf_worker.py    # worker (cap=2, riusa course_lesson_pdf_*)
+backend/app/templates/lesson_slides_pdf.html.j2            # template Jinja A4 portrait
+backend/alembic/versions/0020_lesson_slides_pdf.py         # 8 colonne slides_pdf_*
+backend/alembic/versions/0022_unify_slide_templates.py     # FK slides_pdf_template_id → slide_templates
+frontend/src/pages/org/courses/components/LessonSlidesPdfExportDialog.tsx
+```
+
+---
+
+## Discorso (Fase 5)
+
+Pipeline parallela e indipendente dal PDF slide. Stato per-lezione su
+`course_lesson.speech_pdf_*` (8 colonne, migration 0024). Path file:
+suffisso `_speech.pdf`.
+
+### Stack
+
+Solo **WeasyPrint** + **Jinja2** — niente Mermaid pre-render (il
+discorso è prosa pura, niente asset visivi). Template `pdf_templates`
+(stesso del PDF lezione testo, perché il discorso è anch'esso testo
+single-column block-flow A4 portrait).
+
+### Layout per-slide grouping
+
+Confermato dall'utente come scelta di design: il PDF discorso è
+**raggruppato per slide** (non lineare). Per ciascuna entry di
+`slide_to_segments_map`:
+
+- **Header slide**: badge `slide_number` + titolo slide (lookup da `slides_raw`) + durata totale slide
+- **Lista segmenti** in ordine, ognuno:
+  - riga timeline `[mm:ss — mm:ss]` cumulativa (calcolata da `format_timeline()` server-side)
+  - durata `Ns` in font monospace
+  - testo segmento (font serif, line-height 1.5, justify)
+  - delivery notes in italic muted (se non vuote)
+- Separatore tra slide
+
+Cover con badge "DISCORSO" + "Lezione N" + titolo + corso + meta-row con durata totale e word count.
+
+Footer pagina: `{course.title} · {lesson.title} · pageNum/total`.
+
+### `format_timeline` helper
+
+```python
+def format_timeline(
+    slide_to_segments_map: list[dict],
+    seg_by_id: dict[str, dict],
+) -> list[dict]:
+    """Calcola la timeline cumulativa per ciascuna slide.
+    Output: lista di entries pronte per Jinja con start_mmss, end_mmss,
+    duration_label, slide_total_label."""
+```
+
+Il cumulativo è calcolato seguendo l'ordine slide → segment_ids[] del
+map. Mirror della logica frontend `LessonSpeechView.tsx` per
+consistenza UI/PDF.
+
+### API endpoints (4 nuovi)
+
+| Metodo | Path | Permesso | Effetto |
+|---|---|---|---|
+| `POST` | `/lessons/{lid}/speech-pdf/export?pdf_template_id={uuid?}` | `course:generate` | Set `speech_pdf_status='pending'`. **202**. |
+| `POST` | `/lessons-speech-pdf/export-all?pdf_template_id={uuid?}` | `course:generate` | Tutte le lezioni esportabili. |
+| `POST` | `/lessons-speech-pdf/cancel-all` | `course:generate` | Annulla. |
+| `GET` | `/lessons/{lid}/speech-pdf/download` | `course:view` | Scarica `application/pdf`. |
+
+### Frontend
+
+Tab "Discorso" (`CourseLessonSpeechView.tsx`) ha gli stessi bottoni del PDF slide. Dialog `LessonSpeechPdfExportDialog.tsx` usa `pdfTemplatesApi.list(orgId)` (NO `slide_templates` — il discorso è prosa, usa il template lezione).
+
+### File rilevanti
+
+```
+backend/app/services/course_lesson_speech_pdf_service.py   # render + materialize + format_timeline (riusa helper di base)
+backend/app/services/course_lesson_speech_pdf_worker.py    # worker (cap=2, riusa course_lesson_pdf_*)
+backend/app/templates/lesson_speech_pdf.html.j2            # template Jinja A4 portrait per-slide grouping
+backend/alembic/versions/0024_lesson_speech_pdf.py         # 8 colonne speech_pdf_*
+frontend/src/pages/org/courses/components/LessonSpeechPdfExportDialog.tsx
+```
+
+---
+
+## Settings comuni
+
+I worker delle 3 pipeline PDF condividono le stesse settings env
+(`course_lesson_pdf_*`) per uniformità. WeasyPrint è il bottleneck CPU,
+quindi il cap=2 di default si applica al totale concorrenza
+intra-pipeline. Se necessario, si può separare tramite altre env (non
+ancora implementato).
+
+```env
+COURSE_LESSON_PDF_POLL_INTERVAL_SECONDS=4
+COURSE_LESSON_PDF_MAX_CONCURRENCY=2
+COURSE_LESSON_PDF_AUTO_RETRY_MAX=5
+GENERATED_PDFS_DIR=generated_pdfs
+```

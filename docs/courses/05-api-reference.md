@@ -263,7 +263,154 @@ Auto-trigger: il worker Fase 3 chiama internamente
 `ensure_glossary_ready` al primo task del corso se
 `glossary_status not in ('ready','approved')`.
 
-## Export PDF lezioni (§7)
+## Slide della lezione (Fase 4)
+
+Granularità lezione. Vedi [10 — Lesson slides](10-lesson-slides.md).
+
+### `POST /orgs/{org_id}/courses/{course_id}/lessons/{lesson_id}/slides/generate`
+
+`course:generate`. Body `{regeneration_hint: string | null}` (max 2000 char).
+202 → `CourseOut`. Set `lesson.slides_status='pending'`. Worker parallelo
+(cap default 3) dispatcha al prossimo tick.
+
+Pre-condizione: `lesson.content_status ∈ {ready, approved}` (servono le slide
+hanno bisogno di `content_raw` come input).
+
+**Side-effect**: se la lezione aveva un `slides_pdf_status` in `ready/failed`,
+viene resettato a `empty` (il PDF slide diventa obsoleto).
+
+Errori:
+- `409 invalid_course_status_for_slides` se `course.status` non ammette Fase 4.
+- `409 lesson_content_not_ready_for_slides` se la lezione non ha contenuto pronto.
+
+### `POST /orgs/{org_id}/courses/{course_id}/lessons-slides/generate-all`
+
+`course:generate`. Body `{regeneration_hint: string | null}`. 202 → `CourseOut`.
+Marca tutte le lezioni con `content_status ∈ {ready, approved}` come `pending`.
+Reset `slides_pdf_status='empty'` per tutte.
+
+### `POST /orgs/{org_id}/courses/{course_id}/lessons-slides/generate-missing`
+
+`course:generate`. 202 → `CourseOut`. Marca SOLO le lezioni con
+`slides_status='empty'` AND `content_status ∈ {ready, approved}`. Utile dopo
+aggiunta di una nuova lezione manuale.
+
+### `POST /orgs/{org_id}/courses/{course_id}/lessons-slides/cancel-all`
+
+`course:generate`. 200 → `CourseOut`. Annulla tutte le generazioni `pending|processing`.
+
+### `POST /orgs/{org_id}/courses/{course_id}/lessons/{lesson_id}/slides/approve`
+
+`course:generate`. Solo se `lesson.slides_status='ready'`. 200 → `CourseOut`.
+
+### `POST /orgs/{org_id}/courses/{course_id}/lessons-slides/approve-all`
+
+`course:generate`. Approva tutte le lezioni `ready`. 200 → `CourseOut` con
+`status='slides_approved'` se tutte sono diventate approved.
+
+### `PATCH /orgs/{org_id}/courses/{course_id}/lessons/{lesson_id}/slides`
+
+`course:edit`. Body `LessonSlidesUpdateInput` (campi opzionali):
+
+```json
+{
+  "slides": [{"slide_number": 1, "slide_id": "S01", "type": "title", "title": "...", "body": "...", "bullets": [], "references_assets": [], "source_section_id": ""}],
+  "new_assets": [{"asset_id": "fig_new_1", "asset_type": "diagram", "format": "mermaid", "content": "...", "caption": "...", "alt_text": "..."}]
+}
+```
+
+200 → `CourseOut`. Set `lesson.slides_modified_at = now()`.
+
+Errori:
+- `409 lesson_slides_not_editable` se status non in `ready/approved`.
+- `422` su validazione (slide_id duplicati, slide_number non sequenziali, references_assets verso ID inesistenti).
+
+## Discorso temporizzato (Fase 5)
+
+Granularità lezione. Vedi [11 — Lesson speech](11-lesson-speech.md).
+
+### `POST /orgs/{org_id}/courses/{course_id}/lessons/{lesson_id}/speech/generate`
+
+`course:generate`. Body `{regeneration_hint: string | null}` (max 2000 char).
+202 → `CourseOut`. Set `lesson.speech_status='pending'`. Worker parallelo
+(cap default 3) dispatcha al prossimo tick.
+
+Pre-condizione: `lesson.slides_status ∈ {ready, approved}` (servono le slide
+come input alla generazione del discorso).
+
+**Side-effect**: reset `speech_pdf_status='empty'` (PDF obsoleto).
+
+Errori:
+- `409 invalid_course_status_for_speech` se `course.status` non ammette Fase 5.
+- `409 lesson_slides_not_ready_for_speech` se la lezione non ha slide pronte.
+
+### `POST /orgs/{org_id}/courses/{course_id}/lessons-speech/generate-all`
+
+`course:generate`. Body `{regeneration_hint: string | null}`. 202 → `CourseOut`.
+Marca tutte le lezioni con `slides_status ∈ {ready, approved}` come `pending`.
+
+### `POST /orgs/{org_id}/courses/{course_id}/lessons-speech/generate-missing`
+
+`course:generate`. 202 → `CourseOut`. Marca SOLO le lezioni con
+`speech_status='empty'` AND `slides_status ∈ {ready, approved}`.
+
+### `POST /orgs/{org_id}/courses/{course_id}/lessons-speech/cancel-all`
+
+`course:generate`. 200 → `CourseOut`.
+
+### `POST /orgs/{org_id}/courses/{course_id}/lessons/{lesson_id}/speech/approve`
+
+`course:generate`. Solo se `lesson.speech_status='ready'`. 200 → `CourseOut`.
+
+### `POST /orgs/{org_id}/courses/{course_id}/lessons-speech/approve-all`
+
+`course:generate`. 200 → `CourseOut` con `status='speech_approved'` se applicabile.
+
+### `PATCH /orgs/{org_id}/courses/{course_id}/lessons/{lesson_id}/speech`
+
+`course:edit`. Body `LessonSpeechUpdateInput`:
+
+```json
+{
+  "speech_segments": [
+    {
+      "segment_id": "SEG001",
+      "slide_id": "S01",
+      "text": "Benvenuti, in questa lezione...",
+      "estimated_duration_seconds": 25,
+      "delivery_notes": "Tono caloroso."
+    }
+  ],
+  "slide_to_segments_map": [
+    {
+      "slide_id": "S01",
+      "segment_ids": ["SEG001"],
+      "slide_total_duration_seconds": 25
+    }
+  ]
+}
+```
+
+Validazioni server-side (8 regole §8.5, vedi [11 — Lesson speech](11-lesson-speech.md)):
+1. ogni `slide_id` esiste in `slides_raw.slides`
+2. ogni slide ha almeno un segmento
+3. `segment_id` univoci
+4. `sum(estimated_duration_seconds) ∈ [target × 0.95, target × 1.05]`
+5. word count coerente con duration × wpm (130 IT / 150 EN) ±15% (soft warning)
+6. `slide_to_segments_map` coerente
+7. **TTS-safety**: testo segmento privo di caratteri proibiti (`*`, `_`, `` ` ``, `#`, `\`, `$`), abbreviazioni (`es.`, `etc.`, ...), comandi LaTeX
+8. durate per slide quadrate alla somma segmenti
+
+200 → `CourseOut`. Set `lesson.speech_modified_at = now()`.
+
+Errori:
+- `409 lesson_speech_not_editable` se status non in `ready/approved`.
+- `422 lesson_speech_tts_unsafe` se il testo viola TTS-safety.
+- `422 lesson_speech_duration_out_of_range` se durata totale fuori ±5%.
+- `422 lesson_speech_uncovered_slides` se almeno una slide non ha segmenti.
+- `422 lesson_speech_map_*` su inconsistenze nel `slide_to_segments_map`.
+
+## Export PDF lezione testo (§7)
 
 Granularità lezione. Vedi [09 — PDF export](09-pdf-export.md).
 
@@ -313,6 +460,62 @@ Il worker post-Playwright re-controlla lo status e scarta il path se non
 {title}.pdf"`. 404 se `pdf_status != 'ready'` (`pdf_not_ready`) o se il
 file non esiste sul filesystem (`pdf_file_missing`).
 
+## Export PDF slide (Fase 4)
+
+Pipeline parallela e indipendente dal PDF testo. Path file:
+`{org}/{course}/{lesson}_slides.pdf`. Template: `slide_templates`
+(unificato con avatar video — migration 0022).
+
+### `POST /orgs/{org_id}/courses/{course_id}/lessons/{lesson_id}/slides-pdf/export`
+
+`course:generate`. 202 → `CourseOut`. Pre-condizione:
+`lesson.slides_status ∈ {ready, approved}`. Query opzionale
+`?pdf_template_id={uuid}` (validato come `slide_template`, NON
+`pdf_template`).
+
+### `POST /orgs/{org_id}/courses/{course_id}/lessons-slides-pdf/export-all`
+
+`course:generate`. 202 → `CourseOut`. Marca tutte le lezioni con slide
+ready/approved come `slides_pdf_status='pending'`.
+
+### `POST /orgs/{org_id}/courses/{course_id}/lessons-slides-pdf/cancel-all`
+
+`course:generate`. 200 → `CourseOut`.
+
+### `GET /orgs/{org_id}/courses/{course_id}/lessons/{lesson_id}/slides-pdf/download`
+
+`course:view`. Restituisce `application/pdf` con filename
+`"{course} — {lesson_code} {title} (slide).pdf"`. 404 se
+`slides_pdf_status != 'ready'` (`slides_pdf_not_ready`) o file mancante
+(`slides_pdf_file_missing`).
+
+## Export PDF discorso (Fase 5)
+
+Pipeline parallela e indipendente dal PDF slide. Path file:
+`{org}/{course}/{lesson}_speech.pdf`. Template: `pdf_templates`
+(stesso del PDF lezione testo — A4 portrait, single-column block-flow).
+
+### `POST /orgs/{org_id}/courses/{course_id}/lessons/{lesson_id}/speech-pdf/export`
+
+`course:generate`. 202 → `CourseOut`. Pre-condizione:
+`lesson.speech_status ∈ {ready, approved}`. Query opzionale
+`?pdf_template_id={uuid}` (validato come `pdf_template`, kind=lesson).
+
+### `POST /orgs/{org_id}/courses/{course_id}/lessons-speech-pdf/export-all`
+
+`course:generate`. 202 → `CourseOut`.
+
+### `POST /orgs/{org_id}/courses/{course_id}/lessons-speech-pdf/cancel-all`
+
+`course:generate`. 200 → `CourseOut`.
+
+### `GET /orgs/{org_id}/courses/{course_id}/lessons/{lesson_id}/speech-pdf/download`
+
+`course:view`. Restituisce `application/pdf` con filename
+`"{course} — {lesson_code} {title} (discorso).pdf"`. 404 se
+`speech_pdf_status != 'ready'` (`speech_pdf_not_ready`) o file mancante
+(`speech_pdf_file_missing`).
+
 ---
 
 ## Errori specifici
@@ -340,3 +543,42 @@ file non esiste sul filesystem (`pdf_file_missing`).
 | `pdf_not_ready` | 404 | Download richiesto su `pdf_status` ≠ ready |
 | `pdf_file_missing` | 404 | File PDF mancante sul filesystem (DB ha `pdf_path` ma il file è stato rimosso) |
 | `pdf_template_not_found` | 404 | `pdf_template_id` query param non appartiene all'org del corso |
+| `slide_template_not_found` | 404 | `pdf_template_id` query param (per slide PDF) non appartiene all'org come `slide_template` |
+| `invalid_course_status_for_slides` | 409 | Generate slide da course.status non ammesso (Fase 4) |
+| `lesson_content_not_ready_for_slides` | 409 | Generate slide su lezione senza content ready/approved |
+| `lesson_slides_not_editable` | 409 | PATCH slide fuori da `ready/approved` |
+| `lesson_slides_not_ready` | 409 | Approve slide su lezione non in `ready` |
+| `lesson_slides_id_mismatch` | 422 | Output AI ha `lesson_id` diverso dal `lesson_code` atteso |
+| `lesson_slides_total_mismatch` | 422 | `total_slides ≠ len(slides)` |
+| `lesson_slides_nonsequential` | 422 | `slide_number` non sequenziali 1..N |
+| `lesson_slides_duplicate_slide_id` | 422 | `slide_id` duplicati |
+| `lesson_slides_duplicate_new_asset_id` | 422 | `new_asset_id` duplicati |
+| `lesson_slides_unknown_asset_ref` | 422 | `references_assets` punta a ID non risolvibile |
+| `lesson_slides_unknown_source_section` | 422 | `source_section_id` non esiste in Fase 3 |
+| `lesson_slides_count_out_of_range` | 422 | total_slides molto fuori range atteso per durata lezione |
+| `slides_pdf_already_in_progress` | 409 | Export PDF slide già in corso |
+| `invalid_lesson_slides_status_for_pdf` | 409 | Export PDF slide da lezione senza slide ready/approved |
+| `no_eligible_lessons_for_slides_pdf` | 409 | Export-all PDF slide senza lezioni esportabili |
+| `slides_pdf_not_ready` | 404 | Download PDF slide su `slides_pdf_status` ≠ ready |
+| `slides_pdf_file_missing` | 404 | File PDF slide mancante |
+| `invalid_course_status_for_speech` | 409 | Generate discorso da course.status non ammesso (Fase 5) |
+| `lesson_slides_not_ready_for_speech` | 409 | Generate discorso su lezione senza slide ready/approved |
+| `lesson_speech_not_editable` | 409 | PATCH discorso fuori da `ready/approved` |
+| `lesson_speech_not_ready` | 409 | Approve discorso su lezione non in `ready` |
+| `lesson_speech_id_mismatch` | 422 | Output AI con `lesson_id` errato |
+| `lesson_speech_no_slides_input` | 422 | `slides_raw` mancante o malformato |
+| `lesson_speech_unknown_slide_ref` | 422 | Segmento ancora a `slide_id` inesistente |
+| `lesson_speech_uncovered_slides` | 422 | Almeno una slide senza segmento di parlato |
+| `lesson_speech_duplicate_segment_id` | 422 | `segment_id` duplicati |
+| `lesson_speech_duration_out_of_range` | 422 | `sum(estimated_duration_seconds)` fuori da [target × 0.95, target × 1.05] |
+| `lesson_speech_tts_unsafe` | 422 | Testo segmento contiene caratteri/abbreviazioni/LaTeX proibiti |
+| `lesson_speech_map_unknown_slide` | 422 | `slide_to_segments_map` referenzia slide inesistente |
+| `lesson_speech_map_unknown_segment` | 422 | `slide_to_segments_map` referenzia segmento inesistente |
+| `lesson_speech_map_inconsistent_slide_id` | 422 | Mappatura segmento incoerente con `speech_segments` |
+| `lesson_speech_map_duration_mismatch` | 422 | `slide_total_duration_seconds` ≠ somma durate segmenti slide |
+| `lesson_speech_map_orphan_segments` | 422 | Segmenti non listati in `slide_to_segments_map` |
+| `speech_pdf_already_in_progress` | 409 | Export PDF discorso già in corso |
+| `invalid_lesson_speech_status_for_pdf` | 409 | Export PDF discorso da lezione senza discorso ready/approved |
+| `no_eligible_lessons_for_speech_pdf` | 409 | Export-all PDF discorso senza lezioni esportabili |
+| `speech_pdf_not_ready` | 404 | Download PDF discorso su `speech_pdf_status` ≠ ready |
+| `speech_pdf_file_missing` | 404 | File PDF discorso mancante |

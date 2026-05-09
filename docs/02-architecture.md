@@ -190,10 +190,18 @@ app.main lifespan startup:
    course_architecture_worker.start_worker()        # Fase 1 architettura
    course_lesson_structure_worker.start_worker()    # Fase 2 struttura lezioni (parallelo)
    course_lesson_content_worker.start_worker()      # Fase 3 contenuto lezione (parallelo)
-   course_lesson_pdf_worker.start_worker()          # §7 export PDF (parallelo)
+   course_lesson_slides_worker.start_worker()       # Fase 4 slide (parallelo)
+   course_lesson_pdf_worker.start_worker()          # §7 export PDF lezione testo (parallelo)
+   course_lesson_slides_pdf_worker.start_worker()   # Fase 4 export PDF slide (parallelo)
+   course_lesson_speech_worker.start_worker()       # Fase 5 discorso (parallelo)
+   course_lesson_speech_pdf_worker.start_worker()   # Fase 5 export PDF discorso (parallelo)
    yield
    # shutdown in ordine inverso
 ```
+
+10 worker async totali. I sei worker della pipeline AI corso (architecture,
+structure, content, slides, speech, document) + i tre worker PDF (testo,
+slide, discorso) + il worker MiniMax avatar.
 
 ### Pattern "single-task" (avatar, document, architecture)
 
@@ -221,12 +229,20 @@ async def _run_loop():
         await asyncio.wait_for(_stop_event.wait(), timeout=POLL_INTERVAL)
 ```
 
-### Pattern "batch parallelo" (lesson_structure, lesson_content, lesson_pdf)
+### Pattern "batch parallelo" (lesson_structure, lesson_content, lesson_slides, lesson_speech, lesson_pdf, lesson_slides_pdf, lesson_speech_pdf)
 
 Worker che processano N task in parallelo con cap di concorrenza
-(`asyncio.Semaphore`) e dedup (`_inflight: set[UUID]`). Default cap:
-5/3/2 (Fase 2 / Fase 3 / PDF). Vedi
-`app/services/course_lesson_content_worker.py` come template.
+(`asyncio.Semaphore`) e dedup (`_inflight: set[UUID]` con claim atomico
+**prima** del semaforo, anti-double-dispatch). Default cap:
+
+- **5** — Fase 2 (struttura)
+- **3** — Fase 3 (content), Fase 4 (slide), Fase 5 (discorso)
+- **2** — i tre worker PDF (testo / slide / discorso) — condividono `COURSE_LESSON_PDF_MAX_CONCURRENCY` perché tutti CPU-bound su WeasyPrint
+
+Tutti hanno **auto-retry trasparente** prima del fail terminale: la UI
+vede solo "in elaborazione" finché passa, mai il messaggio di errore
+recuperabile. Vedi `app/services/course_lesson_content_worker.py` come
+template canonico.
 
 ```python
 _inflight: set[UUID] = set()

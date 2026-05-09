@@ -399,8 +399,21 @@ per replicarlo qui.
 
 In sintesi:
 
-- `Course` ha lo state machine `draft → architecture_pending → architecture_ready → architecture_approved` (più `architecture_failed`).
-- `CourseDocument` ha il proprio state machine `pending → processing → ready/failed` per il pre-processing AI.
+- `Course` ha uno state machine a 17 valori che copre l'intera pipeline AI a 5 fasi: `draft → architecture_* → lessons_structure_* → content_* → slides_* → speech_* → published / archived`. Ogni `*_pending/_ready/_approved` è derivato dagli stati per-modulo (Fase 2) o per-lezione (Fasi 3-5).
+- `CourseDocument` ha il proprio state machine `pending → processing → ready/failed` per il pre-processing AI (Appendice A).
+- `CourseModule` ha 10 colonne `lessons_structure_*` per Fase 2 + `architecture_modified_at` per stale-detection.
+- `CourseLesson` è la tabella più ampia: oltre ai campi base e Fase 2 (`learning_objectives`, `mandatory_topics`, `prerequisites`, `section_outline`), ha 4 blocchi di colonne per le pipeline AI/PDF:
+  - **Fase 3 — Contenuto** (11 colonne `content_*` + `content_modified_at`, migration 0015)
+  - **§7 — PDF lezione testo** (8 colonne `pdf_*`, migration 0016, FK `pdf_templates`)
+  - **Fase 4 — Slide** (11 colonne `slides_*` + `slides_modified_at`, migration 0019)
+  - **Fase 4 — PDF slide** (8 colonne `slides_pdf_*`, migration 0020, FK `slide_templates` dopo unification 0022)
+  - **Fase 5 — Discorso** (11 colonne `speech_*` + `speech_modified_at`, migration 0023)
+  - **Fase 5 — PDF discorso** (8 colonne `speech_pdf_*`, migration 0024, FK `pdf_templates`)
+  
+  Costanti tuple esposte dal modello: `LESSON_CONTENT_STATUSES`, `LESSON_PDF_STATUSES`, `LESSON_SLIDES_STATUSES`, `LESSON_SPEECH_STATUSES` (`empty | pending | processing | ready | approved | failed` per quelli con `approved`; `empty | pending | processing | ready | failed` per i PDF).
 - `CourseModule` e `CourseLesson` hanno UNIQUE su codici `M{N}`/`M{N}.L{K}` scoped al corso (vedi nota sul renumber in [Manual editing](../courses/04-manual-editing.md)).
-- `CourseTaxonomyTerm` modella i 7 tassonomi (categoria, stile insegnamento, ecc.) con righe seedate e custom per organizzazione.
+- `CourseTaxonomyTerm` modella i 8 tassonomi (categoria, stile insegnamento, profondità contenuto, ruolo docente, dimensione pubblico, livello conoscenza, destinatari, livello EQF) con righe seedate e custom per organizzazione.
 - `Language` è una piccola lookup table (`code`, `name_native`, `name_en`).
+- `SlideTemplate` (modello a parte) è il template **unificato** per avatar video + export PDF slide (Fase 4) — vedi [migration 0022](10-alembic.md). Aggiunge `margin_mm` + `background_opacity_pct` rispetto alla forma originale.
+
+Tutti i `*_modified_at` sono settati **solo dai CRUD manuali**, mai dai worker AI: la cascata di stale-detection (vedi `frontend/src/lib/staleness.ts`) si basa su questa proprietà per non auto-segnalare le rigenerazioni AI come stale.

@@ -15,9 +15,11 @@ Stato corrente delle 5 fasi della pipeline (vedi
 | Fase 1 — Architettura del corso (§4) | ✅ Implementata |
 | Fase 2 — Struttura lezioni (§5) | ✅ Implementata |
 | Fase 3 — Contenuti (§6) + Glossario (§10.1) | ✅ Implementata |
-| §7 — Export PDF lezioni | ✅ Implementata |
-| Fase 4 — Slide | ⏳ |
-| Fase 5 — Discorso (§8) | ⏳ |
+| §7 — Export PDF lezione testo | ✅ Implementata |
+| Fase 4 — Slide della lezione | ✅ Implementata |
+| Fase 4 — Export PDF slide | ✅ Implementata |
+| Fase 5 — Discorso temporizzato (§8) | ✅ Implementata |
+| Fase 5 — Export PDF discorso | ✅ Implementata |
 
 A complemento è disponibile un **CRUD manuale** dei moduli e delle lezioni
 con generazione AI per singolo modulo quando l'utente lo aggiunge manualmente.
@@ -77,38 +79,59 @@ Il `creator` è unico per organizzazione e si trasferisce con `transfer-creator`
   [Courses 01 — Data model](courses/01-data-model.md).
 - **Permessi `course:*`**: `view`, `create`, `edit`, `delete`, `assign`,
   `generate`, più `course_config:manage`.
-- **Pipeline AI Pre-processing + Fase 1 + Fase 2 + Fase 3 + Glossario + Export PDF**:
-  sei worker async (lifespan-managed). Le fasi batch (Fase 2, Fase 3, PDF)
-  dispatchano i task **in parallelo** con `asyncio.Semaphore` (cap configurabile)
-  e sessioni DB per task; il claim atomico in `_tick` dedupa anche con coda
-  satura. Servizi OpenAI per ogni fase (`openai_summarize_service`,
-  `openai_architecture_service`, `openai_module_lessons_service`,
-  `openai_lesson_structure_service`, `openai_lesson_content_service`,
-  `openai_glossary_service`, e il `openai_client` condiviso con helper
-  `apply_reasoning_effort` per gpt-5.x/o1/o3/o4) + validazione stretta via
-  Pydantic + JSON Schema strict di OpenAI + auto-retry trasparente per gestire
-  errori transienti (rate limit, timeout, validazione recuperabile).
-- **CRUD manuale moduli/lezioni** con rinumerazione automatica dei codici
-  (M1, M1.L1, ecc.) e fix anti-collisione su reorder. Più endpoint
-  PATCH dedicati per la struttura (Fase 2) e il contenuto (Fase 3) della
-  singola lezione, e endpoint export PDF (singolo / batch / cancel-all).
-- **UI editor a tab** (6 voci in modalità edit): Informazioni di base,
+- **Pipeline AI completa (Pre-processing + Fasi 1-5 + Glossario + 3 PDF)**:
+  dieci worker async (lifespan-managed). Le fasi batch (struttura, content,
+  slide, discorso, e i tre PDF) dispatchano i task **in parallelo** con
+  `asyncio.Semaphore` (cap configurabile per ciascuna fase) e sessioni DB
+  per task; il claim atomico in `_tick` dedupa anche con coda satura. Tutti
+  i worker hanno **auto-retry trasparente** prima del fail terminale. Servizi
+  OpenAI per ciascuna fase (`openai_summarize_service`, `openai_architecture_service`,
+  `openai_module_lessons_service`, `openai_lesson_structure_service`,
+  `openai_lesson_content_service`, `openai_lesson_slides_service`,
+  `openai_lesson_speech_service`, `openai_glossary_service`, e il
+  `openai_client` condiviso con helper `apply_reasoning_effort` per
+  gpt-5.x/o1/o3/o4) + validazione stretta via Pydantic + JSON Schema strict
+  di OpenAI.
+- **Tre pipeline PDF** indipendenti (`pdf_*` testo, `slides_pdf_*` slide,
+  `speech_pdf_*` discorso) con stack comune (WeasyPrint + Jinja2 + Playwright
+  per pre-render Mermaid solo dove serve) ma layout dedicati: A4 portrait
+  single-column per testo e discorso, slide split bullet/asset per il PDF
+  slide, per-slide grouping con timeline cumulativa per il PDF discorso.
+- **CRUD manuale completo** per tutti i payload AI (moduli, lezioni
+  architettura, struttura Fase 2, contenuto Fase 3, slide Fase 4, discorso
+  Fase 5) con rinumerazione automatica dei codici (M1, M1.L1, ecc.) e fix
+  anti-collisione su reorder. Endpoint PATCH dedicati per ciascuna fase + 4
+  endpoint export PDF per ciascuna delle tre pipeline.
+- **Stale-detection cascata** (`*_modified_at` settati solo dai CRUD,
+  `isStructureStale → isContentStale → isPdfStale → isSlidesStale →
+  isSlidesPdfStale → isSpeechStale → isSpeechPdfStale`): la UI segnala
+  con `<StalenessAlert>` che qualcosa a monte è cambiato dopo l'ultima
+  generazione AI a valle, ma non blocca — è un suggerimento. Vedi
+  [Courses README — Stale-detection](courses/README.md#stale-detection-cascata).
+- **TTS-safety validation** lato BE+FE per Fase 5 (regola §8.5 punto 5):
+  testo segmento privo di caratteri proibiti (`*`, `_`, `` ` ``, `#`, `\`, `$`),
+  abbreviazioni note (`es.`, `etc.`, ...), comandi LaTeX (`\frac`, `\sum`, ...).
+  Hard fail server-side; warning chip inline nell'editor frontend per UX
+  immediata. Words-per-minute env-driven (130 IT / 150 EN) per la coerenza
+  durata × word_count.
+- **UI editor a tab** (8 voci in modalità edit): Informazioni di base,
   Inquadramento didattico, Documenti, Architettura, Struttura lezioni,
-  **Contenuti lezioni** (con sub-pannello glossario + export PDF) — con
-  auto-save debounced, polling per stato pipeline (esteso a tutti i worker),
-  optimistic update sui reorder, **ETA + tempo medio per task** durante i
-  batch (`useBatchEta` / `useTaskEta`), Mermaid live (con pre-validazione
-  syntax e error UI controllata), KaTeX, editor TipTap user-friendly per
-  il contenuto lezione, progress bar per le operazioni AI.
+  Contenuti lezioni, **Slide**, **Discorso** — con auto-save debounced,
+  polling per stato pipeline (esteso a tutti i 10 worker), optimistic update
+  sui reorder, **ETA + tempo medio per task** durante i batch
+  (`useBatchEta` / `useTaskEta`), Mermaid live (con pre-validazione syntax
+  e error UI controllata), KaTeX, editor TipTap user-friendly per il
+  contenuto lezione, editor segmenti con TTS-safety inline + auto-durata
+  da word count, progress bar per ogni operazione AI/PDF.
 
 ## Cosa NON è ancora incluso (e perché)
 
-- **Fasi 4-5 della pipeline AI** (slide + discorso): in roadmap. Le fasi
-  precedenti sono prerequisito.
 - **Generazione PPTX effettiva** dai template slide (oggi solo preview
-  HTML; il PDF lezione è invece pienamente implementato via WeasyPrint —
-  vedi [Courses 09 — PDF export](courses/09-pdf-export.md)).
-- **Slide builder** dei corsi (Fase 4).
+  HTML + export PDF slide via WeasyPrint — il rendering native PowerPoint
+  richiede python-pptx che non è ancora integrato).
+- **Pipeline TTS+video**: il `speech_raw` è già nello schema giusto per
+  servire un futuro pipeline TTS (es. ElevenLabs/Azure) + montaggio video
+  con sincronizzazione slide. Vedi [Courses 11 — Lesson speech §forward-compat](courses/11-lesson-speech.md).
 - **Invio email reali** per inviti/reset password (l'API ritorna il token in chiaro,
   predisposto per integrazione SMTP).
 - **Multi-lingua attiva**: i18n predisposto. **IT/EN canoniche**, le altre 22
