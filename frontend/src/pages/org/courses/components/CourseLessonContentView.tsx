@@ -11,6 +11,7 @@ import {
   FileText,
   Hourglass,
   Loader2,
+  MoreHorizontal,
   Pencil,
   RotateCcw,
   Sparkles,
@@ -29,6 +30,12 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Progress } from "@/components/ui/progress";
 import { useBatchEta } from "@/hooks/useBatchEta";
 import { extractApiError } from "@/lib/errors";
@@ -774,6 +781,98 @@ function LessonContentRow({
       pdfStatus === "ready" ||
       pdfStatus === "failed");
 
+  // CTA primaria contenuto — l'azione "next-step" più ovvia per lo stato
+  // corrente. Quando assente il bottone non viene reso (lo stato è
+  // visibile dal badge o dalla progress bar).
+  const primaryContentCta = (() => {
+    if (!canGenerate) return null;
+    if (status === "empty") {
+      return (
+        <Button size="sm" onClick={() => onGenerate("generate-lesson")}>
+          <Sparkles className="size-3.5" />
+          {t("courses.lessonsContent.lesson.generate")}
+        </Button>
+      );
+    }
+    if (status === "failed") {
+      return (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => onGenerate("generate-lesson")}
+        >
+          <RotateCcw className="size-3.5" />
+          {t("courses.lessonsContent.lesson.retry")}
+        </Button>
+      );
+    }
+    if (status === "ready") {
+      return (
+        <Button size="sm" onClick={onApprove} disabled={isApproving}>
+          <CheckCircle2 className="size-3.5" />
+          {t("courses.lessonsContent.lesson.approve")}
+        </Button>
+      );
+    }
+    return null;
+  })();
+
+  // CTA primaria PDF — l'azione più ovvia per lo stato corrente.
+  // Solo una alla volta, niente bottoni multipli affiancati per il PDF.
+  const primaryPdfCta = (() => {
+    if (isPdfProcessing) {
+      return (
+        <Button
+          size="sm"
+          variant="outline"
+          disabled
+          title={t("courses.lessonsPdf.lesson.exporting")}
+        >
+          <Loader2 className="size-3.5 animate-spin" />
+          {lesson.pdf_progress}%
+        </Button>
+      );
+    }
+    if (pdfStatus === "ready") {
+      return (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={onDownloadPdf}
+          title={t("courses.lessonsPdf.lesson.download")}
+        >
+          <Download className="size-3.5" />
+          {t("courses.lessonsPdf.lesson.download")}
+        </Button>
+      );
+    }
+    if (canGenerate && canExportPdf) {
+      return (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={onExportPdf}
+          disabled={isExportingPdf}
+        >
+          <FileText className="size-3.5" />
+          {pdfStatus === "failed"
+            ? t("courses.lessonsPdf.lesson.retry")
+            : t("courses.lessonsPdf.lesson.export")}
+        </Button>
+      );
+    }
+    return null;
+  })();
+
+  // Voci del menu kebab (azioni secondarie, meno frequenti). Mostriamo
+  // il trigger SOLO se almeno una voce è applicabile, così su lezioni
+  // empty/processing la riga resta minimale.
+  const canRegenerateContent =
+    canGenerate && (status === "ready" || status === "approved");
+  const canRegeneratePdf =
+    canGenerate && pdfStatus === "ready" && isReady && !isExportingPdf;
+  const hasMenuItems = canRegenerateContent || canRegeneratePdf;
+
   return (
     <div className="rounded-md border bg-muted/10">
       <div className="flex w-full items-center gap-2 px-3 py-2">
@@ -795,47 +894,9 @@ function LessonContentRow({
           </span>
         </button>
         <LessonContentStatusBadge status={status} />
-        {canGenerate && status === "empty" && (
-          <Button
-            size="sm"
-            variant="default"
-            onClick={() => onGenerate("generate-lesson")}
-          >
-            <Sparkles className="size-3.5" />
-            {t("courses.lessonsContent.lesson.generate")}
-          </Button>
-        )}
-        {canGenerate && (status === "ready" || status === "approved") && (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => onGenerate("regenerate-lesson")}
-          >
-            <Sparkles className="size-3.5" />
-            {t("courses.lessonsContent.lesson.regenerate")}
-          </Button>
-        )}
-        {canGenerate && status === "failed" && (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => onGenerate("generate-lesson")}
-          >
-            <RotateCcw className="size-3.5" />
-            {t("courses.lessonsContent.lesson.retry")}
-          </Button>
-        )}
-        {canGenerate && status === "ready" && (
-          <Button
-            size="sm"
-            variant="default"
-            onClick={onApprove}
-            disabled={isApproving}
-          >
-            <CheckCircle2 className="size-3.5" />
-            {t("courses.lessonsContent.lesson.approve")}
-          </Button>
-        )}
+        <LessonPdfStatusBadge status={pdfStatus} />
+        {primaryContentCta}
+        {primaryPdfCta}
         {canEdit && isReady && lesson.content_raw && (
           <Button
             type="button"
@@ -843,54 +904,49 @@ function LessonContentRow({
             size="icon"
             className="size-7"
             onClick={onEdit}
+            title={t("courses.lessonsContent.lesson.edit")}
           >
             <Pencil className="size-3.5" />
           </Button>
         )}
-        {/* PDF actions */}
-        {canGenerate && canExportPdf && pdfStatus !== "ready" && (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={onExportPdf}
-            disabled={isExportingPdf}
-          >
-            <FileText className="size-3.5" />
-            {pdfStatus === "failed"
-              ? t("courses.lessonsPdf.lesson.retry")
-              : t("courses.lessonsPdf.lesson.export")}
-          </Button>
+        {hasMenuItems && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-7"
+                aria-label={t("common.moreActions")}
+              >
+                <MoreHorizontal className="size-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {canRegenerateContent && (
+                <DropdownMenuItem
+                  onClick={() => onGenerate("regenerate-lesson")}
+                >
+                  <Sparkles className="size-3.5" />
+                  {t("courses.lessonsContent.lesson.regenerate")}
+                </DropdownMenuItem>
+              )}
+              {canRegeneratePdf && (
+                <DropdownMenuItem onClick={onExportPdf}>
+                  <FileText className="size-3.5" />
+                  {t("courses.lessonsPdf.lesson.regenerate")}
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
-        {pdfStatus === "ready" && (
-          <Button
-            type="button"
-            size="sm"
-            variant="default"
-            onClick={onDownloadPdf}
-            title={t("courses.lessonsPdf.lesson.download")}
-          >
-            <Download className="size-3.5" />
-            {t("courses.lessonsPdf.lesson.download")}
-          </Button>
-        )}
-        {isPdfProcessing && (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled
-            title={t("courses.lessonsPdf.lesson.exporting")}
-          >
-            <Loader2 className="size-3.5 animate-spin" />
-            {lesson.pdf_progress}%
-          </Button>
-        )}
-        <LessonPdfStatusBadge status={pdfStatus} />
       </div>
 
-      {/* Stato pending/processing — Progress live */}
-      {isProcessing && (
+      {/* Progress bar live — priorità: contenuto > PDF.
+          Se la lezione sta ancora generando il contenuto, NON mostriamo
+          la PDF progress (il PDF non può partire prima che il contenuto
+          sia ready, quindi è uno stato impossibile in pratica). */}
+      {isProcessing ? (
         <div className="space-y-2 border-t px-4 py-3">
           <div className="flex items-baseline justify-between text-xs">
             <span className="flex items-center gap-2 text-muted-foreground">
@@ -910,21 +966,7 @@ function LessonContentRow({
           </div>
           <Progress value={lesson.content_progress} />
         </div>
-      )}
-
-      {/* Stato failed (raggiunto solo dopo 5 retry automatici esauriti).
-          Niente messaggio di errore tecnico — il badge di stato e il
-          pulsante "Riprova" sono sufficienti per l'utente. */}
-
-      {/* Render contenuto se ready/approved e expanded */}
-      {expanded && isReady && lesson.content_raw && (
-        <div className="border-t px-4 py-4">
-          <LessonContentView content={lesson.content_raw} />
-        </div>
-      )}
-
-      {/* PDF — progress quando in flight */}
-      {isPdfProcessing && (
+      ) : isPdfProcessing ? (
         <div className="space-y-2 border-t px-4 py-3">
           <div className="flex items-baseline justify-between text-xs">
             <span className="flex items-center gap-2 text-muted-foreground">
@@ -940,21 +982,30 @@ function LessonContentRow({
           </div>
           <Progress value={lesson.pdf_progress} />
         </div>
+      ) : null}
+
+      {/* Render contenuto se ready/approved e expanded */}
+      {expanded && isReady && lesson.content_raw && (
+        <div className="border-t px-4 py-4">
+          <LessonContentView content={lesson.content_raw} />
+        </div>
       )}
 
-      {/* PDF — failed (raggiunto solo dopo 5 retry automatici esauriti).
-          Vedi nota sopra. */}
+      {/* Stato failed (raggiunto solo dopo 5 retry automatici esauriti).
+          Niente messaggio di errore tecnico — il badge di stato e il
+          pulsante "Riprova" sono sufficienti per l'utente. */}
     </div>
   );
 }
 
 function LessonPdfStatusBadge({ status }: { status: LessonPdfStatus }) {
   const { t } = useTranslation();
-  if (status === "empty") return null;
+  // Nascondi quando il PDF è ok (empty = mai esportato, ready = scaricabile
+  // → l'azione "Scarica PDF" già comunica lo stato senza ridondanza).
+  // Mostra solo quando c'è informazione utile: in coda, in corso, fallito.
+  if (status === "empty" || status === "ready") return null;
   const variant = (() => {
     switch (status) {
-      case "ready":
-        return "secondary";
       case "pending":
       case "processing":
         return "outline";
@@ -977,12 +1028,14 @@ function LessonContentStatusBadge({
   status: LessonContentStatus;
 }) {
   const { t } = useTranslation();
+  // Nascondi quando lo stato è `ready`: la CTA "Approva" comunica già il
+  // prossimo passo. Mantieni il badge per `approved` (Step 6 sostituirà
+  // con `ApprovalBadge` uniforme) e per gli stati di transizione/errore.
+  if (status === "ready") return null;
   const variant = (() => {
     switch (status) {
       case "approved":
         return "default";
-      case "ready":
-        return "secondary";
       case "pending":
       case "processing":
         return "outline";

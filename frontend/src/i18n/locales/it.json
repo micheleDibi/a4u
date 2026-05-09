@@ -19,6 +19,7 @@
     "back": "Indietro",
     "next": "Avanti",
     "actions": "Azioni",
+    "moreActions": "Altre azioni",
     "of": "di",
     "noResults": "Nessun risultato",
     "copy": "Copia",
@@ -545,6 +546,7 @@
         "regenerate": "Rigenera",
         "retry": "Riprova",
         "approve": "Approva",
+        "edit": "Modifica",
         "failed": "Generazione fallita",
         "edit": "Modifica"
       },
@@ -738,6 +740,7 @@
         "retry": "Riprova export",
         "exporting": "Esportazione PDF in corso...",
         "download": "Scarica PDF",
+        "regenerate": "Rigenera PDF",
         "failed": "Export PDF fallito"
       },
       "phases": {

@@ -19,6 +19,7 @@
     "back": "Back",
     "next": "Next",
     "actions": "Actions",
+    "moreActions": "More actions",
     "of": "of",
     "noResults": "No results",
     "copy": "Copy",
@@ -738,6 +739,7 @@
         "retry": "Retry export",
         "exporting": "Exporting PDF...",
         "download": "Download PDF",
+        "regenerate": "Regenerate PDF",
         "failed": "PDF export failed"
       },
       "phases": {
