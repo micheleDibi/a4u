@@ -810,7 +810,9 @@ async def approve_all_lessons_speech(
     actor_id: uuid.UUID,
 ) -> Course:
     """Approva tutti i discorsi `ready` del corso. Richiede che TUTTE le
-    lezioni che hanno discorso siano `ready` o già `approved`."""
+    lezioni che hanno discorso siano `ready` o già `approved`. Idempotente:
+    se sono già tutti `approved` (o se l'utente clicca due volte) ritorna
+    success senza errore."""
     all_lessons: list[CourseLesson] = [
         lesson for m in course.modules for lesson in m.lessons
     ]
@@ -825,12 +827,20 @@ async def approve_all_lessons_speech(
             code="not_all_lessons_speech_ready",
         )
 
-    eligible = [l for l in all_lessons if l.speech_status == "ready"]
-    if not eligible:
+    with_speech = [
+        l for l in all_lessons
+        if l.speech_status in ("ready", "approved")
+    ]
+    if not with_speech:
         raise ConflictError(
-            "Nessuna lezione con discorso `ready` da approvare.",
+            "Nessuna lezione ha il discorso generato. Genera prima il discorso.",
             code="no_speech_to_approve",
         )
+
+    eligible = [l for l in all_lessons if l.speech_status == "ready"]
+    # Idempotente: se sono già tutti approved, no-op success.
+    if not eligible:
+        return await _refresh_full(db, course)
 
     now = _now()
     approved_count = 0

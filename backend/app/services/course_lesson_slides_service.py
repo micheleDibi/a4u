@@ -718,7 +718,9 @@ async def approve_all_lessons_slides(
     actor_id: uuid.UUID,
 ) -> Course:
     """Approva tutte le slide `ready` del corso. Richiede che TUTTE le
-    lezioni che hanno slide siano `ready` o già `approved`."""
+    lezioni che hanno slide siano `ready` o già `approved`. Idempotente:
+    se sono già tutte `approved` (o se l'utente clicca due volte) ritorna
+    success senza errore."""
     all_lessons: list[CourseLesson] = [
         lesson for m in course.modules for lesson in m.lessons
     ]
@@ -733,12 +735,20 @@ async def approve_all_lessons_slides(
             code="not_all_lessons_slides_ready",
         )
 
-    eligible = [l for l in all_lessons if l.slides_status == "ready"]
-    if not eligible:
+    with_slides = [
+        l for l in all_lessons
+        if l.slides_status in ("ready", "approved")
+    ]
+    if not with_slides:
         raise ConflictError(
-            "Nessuna lezione con slide `ready` da approvare.",
+            "Nessuna lezione ha slide generate. Genera prima le slide.",
             code="no_slides_to_approve",
         )
+
+    eligible = [l for l in all_lessons if l.slides_status == "ready"]
+    # Idempotente: se sono già tutte approved, no-op success.
+    if not eligible:
+        return await _refresh_full(db, course)
 
     now = _now()
     approved_count = 0

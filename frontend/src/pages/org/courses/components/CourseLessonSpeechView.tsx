@@ -118,6 +118,11 @@ export function CourseLessonSpeechView({
     qc.invalidateQueries({ queryKey: detailKey });
     qc.invalidateQueries({ queryKey: ["courses", "list", orgId] });
   };
+  // Su errore di una mutation, forziamo refetch per riallineare cache
+  // con verità del BE (evita loop "errore → cache stale → riprovo → errore").
+  const refetchOnError = () => {
+    qc.invalidateQueries({ queryKey: detailKey });
+  };
 
   const allLessons = useMemo(
     () => course.modules.flatMap((m) => m.lessons),
@@ -260,10 +265,12 @@ export function CourseLessonSpeechView({
       setCache(fresh);
       toast.success(t("courses.lessonsSpeech.toast.lessonApproved"));
     },
-    onError: (err) =>
+    onError: (err) => {
+      refetchOnError();
       toast.error(
         extractApiError(err).message ?? t("courses.lessonsSpeech.toast.error"),
-      ),
+      );
+    },
   });
 
   const approveAllMut = useMutation({
@@ -272,10 +279,12 @@ export function CourseLessonSpeechView({
       setCache(fresh);
       toast.success(t("courses.lessonsSpeech.toast.allApproved"));
     },
-    onError: (err) =>
+    onError: (err) => {
+      refetchOnError();
       toast.error(
         extractApiError(err).message ?? t("courses.lessonsSpeech.toast.error"),
-      ),
+      );
+    },
   });
 
   const cancelAllMut = useMutation({

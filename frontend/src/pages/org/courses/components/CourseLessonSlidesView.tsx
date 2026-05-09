@@ -117,6 +117,11 @@ export function CourseLessonSlidesView({
     qc.invalidateQueries({ queryKey: detailKey });
     qc.invalidateQueries({ queryKey: ["courses", "list", orgId] });
   };
+  // Su errore di una mutation, forziamo refetch per riallineare cache
+  // con verità del BE (evita loop "errore → cache stale → riprovo → errore").
+  const refetchOnError = () => {
+    qc.invalidateQueries({ queryKey: detailKey });
+  };
 
   const allLessons = useMemo(
     () => course.modules.flatMap((m) => m.lessons),
@@ -259,10 +264,12 @@ export function CourseLessonSlidesView({
       setCache(fresh);
       toast.success(t("courses.lessonsSlides.toast.lessonApproved"));
     },
-    onError: (err) =>
+    onError: (err) => {
+      refetchOnError();
       toast.error(
         extractApiError(err).message ?? t("courses.lessonsSlides.toast.error"),
-      ),
+      );
+    },
   });
 
   const approveAllMut = useMutation({
@@ -271,10 +278,12 @@ export function CourseLessonSlidesView({
       setCache(fresh);
       toast.success(t("courses.lessonsSlides.toast.allApproved"));
     },
-    onError: (err) =>
+    onError: (err) => {
+      refetchOnError();
       toast.error(
         extractApiError(err).message ?? t("courses.lessonsSlides.toast.error"),
-      ),
+      );
+    },
   });
 
   const cancelAllMut = useMutation({
