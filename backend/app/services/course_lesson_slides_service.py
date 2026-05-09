@@ -483,6 +483,15 @@ async def request_lesson_slides_generation(
     lesson.slides_regeneration_hint = (
         regeneration_hint.strip() if regeneration_hint else None
     )
+    # Il PDF slide diventa obsoleto: i nuovi slides_raw potrebbero
+    # avere titoli, bullet, body, asset diversi. Resettare lo status
+    # PDF a `empty` impedisce all'utente di scaricare il PDF vecchio
+    # via il bottone "Scarica PDF" — dovrà ri-esportarlo.
+    if lesson.slides_pdf_status in ("ready", "failed"):
+        lesson.slides_pdf_status = "empty"
+        lesson.slides_pdf_progress = 0
+        lesson.slides_pdf_progress_phase = None
+        lesson.slides_pdf_error = None
 
     _recompute_course_slides_status(course)
 
@@ -543,6 +552,12 @@ async def request_all_lessons_slides_generation(
         lesson.slides_progress = 0
         lesson.slides_progress_phase = None
         lesson.slides_regeneration_hint = hint_clean
+        # Reset PDF slide: diventa obsoleto perché slides_raw cambierà.
+        if lesson.slides_pdf_status in ("ready", "failed"):
+            lesson.slides_pdf_status = "empty"
+            lesson.slides_pdf_progress = 0
+            lesson.slides_pdf_progress_phase = None
+            lesson.slides_pdf_error = None
 
     course.status = "slides_pending"
 
