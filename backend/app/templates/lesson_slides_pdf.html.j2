@@ -83,17 +83,26 @@
       height: 1mm;
     }
 
-    /* Body container: inset come la preview (sx 18mm, dx 24mm,
-       top 50mm, bottom 38mm), centrato verticalmente. */
+    /* Body container: inset sx/dx come la preview, top 40mm,
+       bottom 62mm per RISERVARE il quadrante bottom-right da circa
+       65×46mm dove andrà l'avatar (l'avatar verrà aggiunto in un
+       secondo momento). Niente contenuto deve finire sotto l'avatar
+       né sotto il footer.
+
+       Layout interno: top-aligned (flex-start) e overflow-hidden, in
+       modo che assets molto alti (es. mermaid generati con tanti nodi)
+       NON sbordino verso l'alto (sopra il titolo) né verso il basso
+       (sotto la slide / sopra l'avatar). */
     .slide-body {
       position: absolute;
       left: 18mm;
       right: 24mm;
-      top: 50mm;
-      bottom: 38mm;
+      top: 40mm;
+      bottom: 62mm;
       display: flex;
       flex-direction: column;
-      justify-content: center;
+      justify-content: flex-start;
+      overflow: hidden;
       z-index: 2;
     }
     .slide-tag {
@@ -121,19 +130,21 @@
       color: {{ tpl.text_color }};
     }
 
-    /* Bullet con dot a gradiente come nella preview. */
+    /* Bullet con dot a gradiente come nella preview. flex-shrink:0
+       per evitare che si comprimano quando ci sono asset alti. */
     .slide-bullets {
-      margin: 7mm 0 0;
+      margin: 5mm 0 0;
       padding: 0;
       list-style: none;
+      flex-shrink: 0;
     }
     .slide-bullets li {
       display: flex;
       align-items: flex-start;
       gap: 4mm;
       font-size: 11pt;
-      line-height: 1.4;
-      margin: 0 0 3mm;
+      line-height: 1.35;
+      margin: 0 0 2.5mm;
       opacity: 0.88;
       color: {{ tpl.text_color }};
     }
@@ -142,30 +153,59 @@
       flex-shrink: 0;
       width: 3mm;
       height: 3mm;
-      margin-top: 1.5mm;
+      margin-top: 1.3mm;
       border-radius: 50%;
       background: linear-gradient(135deg,
         {{ tpl.primary_color }},
         {{ tpl.secondary_color }});
     }
 
-    /* Asset (diagrammi, formule, tabelle, esempi) sotto i bullet. */
-    .slide-assets { margin-top: 5mm; }
-    .slide-asset {
-      margin: 3mm 0;
-      max-width: 100%;
+    /* Asset (diagrammi, formule, tabelle, esempi) sotto i bullet.
+       `flex: 1 1 auto; min-height: 0` insieme a overflow:hidden sul
+       body permettono al contenitore di vincolare l'altezza degli
+       asset SVG/img/table senza sbordare. Il `max-height: 60mm`
+       sugli asset visivi è il cap concreto: WeasyPrint scala l'SVG
+       proporzionalmente entro questo box. */
+    .slide-assets {
+      flex: 1 1 auto;
+      min-height: 0;
+      margin-top: 4mm;
+      display: flex;
+      flex-direction: column;
+      gap: 2mm;
+      overflow: hidden;
     }
-    .slide-asset svg { max-width: 100%; height: auto; }
-    .slide-asset img { max-width: 100%; height: auto; }
+    .slide-asset {
+      max-width: 100%;
+      max-height: 60mm;
+      overflow: hidden;
+    }
+    .slide-asset svg {
+      max-width: 100%;
+      max-height: 60mm;
+      height: auto;
+      display: block;
+      margin: 0 auto;
+    }
+    .slide-asset img {
+      max-width: 100%;
+      max-height: 60mm;
+      height: auto;
+      display: block;
+      margin: 0 auto;
+    }
     .slide-asset table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 9pt;
+      font-size: 8.5pt;
+      table-layout: fixed;
     }
     .slide-asset th, .slide-asset td {
-      border: 0.5pt solid #ccc;
-      padding: 1mm 2mm;
+      border: 0.4pt solid #ccc;
+      padding: 0.8mm 1.5mm;
       text-align: left;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
     }
     .slide-asset .caption {
       font-size: 8pt;
@@ -183,11 +223,14 @@
       border-radius: 1mm;
     }
 
-    /* Footer: linea sottile + organizzazione · corso, page counter dx. */
+    /* Footer: linea sottile + organizzazione · corso, page counter dx.
+       `right: 85mm` riserva la fascia bottom-right ~80mm per l'avatar
+       (avatar largo ~65mm + 5mm di safety + 15mm di inset destro).
+       Senza questa riserva, il page counter finirebbe sotto l'avatar. */
     .slide-footer {
       position: absolute;
       left: 18mm;
-      right: 18mm;
+      right: 85mm;
       bottom: 10mm;
       display: flex;
       align-items: flex-end;
