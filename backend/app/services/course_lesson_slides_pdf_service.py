@@ -93,12 +93,6 @@ _jinja_env = Environment(
 # ---------------------------------------------------------------------------
 
 
-def _labels_for(language: str) -> dict[str, str]:
-    if (language or "it").lower().startswith("en"):
-        return {"speaker_hint": "Speaker notes"}
-    return {"speaker_hint": "Note"}
-
-
 def _slide_type_label(language: str, slide_type: str) -> str:
     """Traduce il tipo slide in label leggibile per il PDF.
 
@@ -158,7 +152,9 @@ def _build_slide_asset_html(
     """
     if kind == "visual" or kind == "new_visual":
         # Asset visuale (mermaid o image_*).
-        return base_pdf._render_visual_asset_block(asset, mermaid_svg_map)
+        return base_pdf._render_visual_asset_block(
+            asset, mermaid_svg_map=mermaid_svg_map
+        )
     if kind == "table":
         return base_pdf._render_table_block(asset)
     if kind == "equation":
@@ -253,7 +249,6 @@ def render_slides_html(
     new_assets = slides_raw.get("new_assets") or []
 
     language = (course.language_code or "it").lower()
-    labels = _labels_for(language)
 
     if pdf_template is not None:
         tpl_dict = base_pdf._format_pdf_template_for_render(
@@ -292,7 +287,6 @@ def render_slides_html(
                 "type_label": _slide_type_label(language, slide_type),
                 "title": s.get("title", ""),
                 "bullets": s.get("bullets") or [],
-                "speaker_hint": s.get("speaker_hint", ""),
                 "assets_html": assets_html,
             }
         )
@@ -300,7 +294,6 @@ def render_slides_html(
     template = _jinja_env.get_template("lesson_slides_pdf.html.j2")
     html = template.render(
         language=language,
-        labels=labels,
         course={"title": course.title, "language": language},
         lesson={"title": lesson.title, "lesson_code": lesson.lesson_code},
         organization_name=(organization.name if organization else None),
@@ -336,10 +329,11 @@ async def materialize_lesson_slides_pdf(
             db,
             organization_id=course.organization_id,
             template_id=lesson.slides_pdf_template_id,
+            kind="slides",
         )
     else:
         pdf_template = await base_pdf._get_default_pdf_template(
-            db, organization_id=course.organization_id
+            db, organization_id=course.organization_id, kind="slides"
         )
 
     slides_raw = lesson.slides_raw or {}
@@ -409,6 +403,7 @@ async def request_lesson_slides_pdf(
             db,
             organization_id=course.organization_id,
             template_id=pdf_template_id,
+            kind="slides",
         )
         lesson.slides_pdf_template_id = pdf_template_id
 
@@ -463,6 +458,7 @@ async def request_all_lessons_slides_pdf(
             db,
             organization_id=course.organization_id,
             template_id=pdf_template_id,
+            kind="slides",
         )
 
     for lesson in eligible:
