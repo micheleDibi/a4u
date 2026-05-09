@@ -266,6 +266,9 @@ export interface CourseLessonOut {
   content_approved_at: string | null;
   content_tokens: LessonContentTokens | null;
   content_regeneration_hint: string | null;
+  // Stale-detection — set solo da CRUD manuale, non dai worker AI.
+  lesson_structure_modified_at: string | null;
+  content_modified_at: string | null;
   content_raw: LessonContentRaw | null;
   // §7 — Export PDF
   pdf_status: LessonPdfStatus;
@@ -303,6 +306,9 @@ export interface CourseModuleOut {
   lessons_structure_approved_at: string | null;
   lessons_structure_tokens: LessonStructureTokens | null;
   lessons_structure_regeneration_hint: string | null;
+  // Stale-detection — set quando l'utente modifica modulo o sue lezioni
+  // architettura. NON toccato dai worker AI.
+  architecture_modified_at: string | null;
 }
 
 export interface LessonStructureUpdateInput {

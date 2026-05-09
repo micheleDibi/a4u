@@ -146,6 +146,21 @@ class CourseLesson(UUIDPKMixin, TimestampMixin, Base):
     content_approved_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Stale-detection — modifica manuale dei 4 campi JSONB di Fase 2
+    # (learning_objectives, mandatory_topics, prerequisites, section_outline).
+    # Set da `course_lesson_structure_crud.update_lesson_structure`; il
+    # worker AI di Fase 2 NON tocca questa colonna. Confrontato lato FE
+    # con `content_generated_at` per dedurre stale del contenuto.
+    lesson_structure_modified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Stale-detection — modifica manuale di `content_raw` (Fase 3). Set
+    # da `course_lesson_content_crud.update_lesson_content`; il worker AI
+    # di Fase 3 NON tocca questa colonna. Confrontato lato FE con
+    # `pdf_generated_at` per dedurre stale del PDF.
+    content_modified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     content_regeneration_hint: Mapped[str | None] = mapped_column(
         Text, nullable=True
     )

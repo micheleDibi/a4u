@@ -102,6 +102,15 @@ class CourseModule(UUIDPKMixin, TimestampMixin, Base):
     lessons_structure_approved_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Stale-detection: timestamp dell'ultima modifica MANUALE al modulo
+    # (titolo/descrizione del modulo o titolo/sintesi/bibliografia delle
+    # sue lezioni di architettura). Set ESCLUSIVAMENTE dai CRUD endpoint
+    # in `course_architecture_crud.py`; i worker AI NON lo toccano.
+    # Frontend lo confronta con `lessons_structure_generated_at` per
+    # dedurre quando la struttura lezioni del modulo è da rigenerare.
+    architecture_modified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     lessons_structure_regeneration_hint: Mapped[str | None] = mapped_column(
         Text, nullable=True
     )

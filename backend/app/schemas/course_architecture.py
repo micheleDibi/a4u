@@ -95,6 +95,11 @@ class CourseLessonOut(ORMModel):
     content_approved_at: datetime | None = None
     content_tokens: dict[str, Any] | None = None
     content_regeneration_hint: str | None = None
+    # Stale-detection: timestamp dell'ultima modifica manuale (NON i
+    # worker AI). Usati lato FE per calcolare se un downstream è
+    # disallineato. Vedi `lib/staleness.ts` nel frontend.
+    lesson_structure_modified_at: datetime | None = None
+    content_modified_at: datetime | None = None
     # Output AI completo (verbatim §6.3) — nullable finché non generato.
     content_raw: dict[str, Any] | None = None
 
@@ -130,6 +135,9 @@ class CourseModuleOut(ORMModel):
     lessons_structure_approved_at: datetime | None = None
     lessons_structure_tokens: dict[str, Any] | None = None
     lessons_structure_regeneration_hint: str | None = None
+    # Stale-detection: timestamp dell'ultima modifica manuale al modulo
+    # o alle sue lezioni di architettura. Vedi `lib/staleness.ts` FE.
+    architecture_modified_at: datetime | None = None
 
 
 class CourseArchitectureOut(BaseModel):

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -206,6 +207,10 @@ async def update_lesson_content(
     current_raw.setdefault("estimated_word_count", 0)
 
     lesson.content_raw = current_raw
+    # Stale-detection: marca il content come modificato manualmente. Il
+    # FE confronta con `pdf_generated_at` per dedurre se il PDF
+    # downstream è stale. I worker AI di Fase 3 NON toccano questo campo.
+    lesson.content_modified_at = datetime.now(UTC)
 
     await write_audit(
         db,

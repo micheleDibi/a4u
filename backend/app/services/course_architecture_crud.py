@@ -19,6 +19,7 @@ draft → pending → ready → approved.
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -42,6 +43,29 @@ from app.services.openai_client import OpenAINotConfiguredError
 log = get_logger("app.course_architecture.crud")
 
 EDITABLE_STATUSES = {"architecture_ready", "architecture_approved"}
+
+
+def _now() -> datetime:
+    return datetime.now(UTC)
+
+
+def _touch_module(module: CourseModule) -> None:
+    """Marca il modulo come modificato per la stale-detection downstream.
+
+    Set di `architecture_modified_at` al timestamp corrente. Il frontend
+    confronta con `lessons_structure_generated_at` per decidere se
+    suggerire una rigenerazione della struttura. NON va chiamato dai
+    worker AI.
+    """
+    module.architecture_modified_at = _now()
+
+
+async def _touch_module_by_id(
+    db: AsyncSession, module_id: uuid.UUID
+) -> None:
+    module = await db.get(CourseModule, module_id)
+    if module is not None:
+        _touch_module(module)
 
 
 def _ensure_editable(course: Course) -> None:
@@ -164,6 +188,7 @@ async def create_module(
     )
     db.add(module)
     await db.flush()
+    _touch_module(module)
     await write_audit(
         db,
         action="course.module.created",
@@ -193,6 +218,7 @@ async def update_module(
         module.title = payload.title.strip()
     if payload.description is not None:
         module.description = payload.description.strip()
+    _touch_module(module)
     await write_audit(
         db,
         action="course.module.updated",
@@ -221,6 +247,14 @@ async def delete_module(
     await db.delete(module)
     await db.flush()
     await _renumber_modules(db, course.id)
+    # Renumber ha cambiato i `module_code` dei moduli superstiti: marca
+    # tutti come modificati così la struttura/contenuto downstream sa
+    # che i riferimenti potrebbero essere stale.
+    res = await db.execute(
+        select(CourseModule).where(CourseModule.course_id == course.id)
+    )
+    for surviving in res.scalars().all():
+        _touch_module(surviving)
     await write_audit(
         db,
         action="course.module.deleted",
@@ -294,6 +328,11 @@ async def reorder_modules(
             lesson.lesson_code = f"{m.module_code}.L{new_pos}"
     await db.flush()
 
+    # Tutti i moduli hanno nuovi codici/posizioni: marca tutti come
+    # modificati per la stale-detection downstream.
+    for m in by_id.values():
+        _touch_module(m)
+
     await write_audit(
         db,
         action="course.modules.reordered",
@@ -345,6 +384,7 @@ async def create_lesson(
     )
     db.add(lesson)
     await db.flush()
+    _touch_module(module)
     await write_audit(
         db,
         action="course.lesson.created",
@@ -384,6 +424,7 @@ async def update_lesson(
         lesson.recommended_bibliography = [
             b.model_dump() for b in payload.recommended_bibliography
         ]
+    await _touch_module_by_id(db, lesson.module_id)
     await write_audit(
         db,
         action="course.lesson.updated",
@@ -416,6 +457,7 @@ async def delete_lesson(
     await db.delete(lesson)
     await db.flush()
     await _renumber_lessons(db, module_id)
+    await _touch_module_by_id(db, module_id)
     await write_audit(
         db,
         action="course.lesson.deleted",
@@ -466,6 +508,7 @@ async def reorder_lessons(
         l.position = new_pos
         l.lesson_code = f"{module.module_code}.L{new_pos}"
     await db.flush()
+    _touch_module(module)
     await write_audit(
         db,
         action="course.lessons.reordered",
@@ -603,6 +646,7 @@ async def regenerate_module_lessons(
             )
         )
     await db.flush()
+    _touch_module(module)
 
     await write_audit(
         db,

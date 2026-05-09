@@ -10,6 +10,7 @@ scelta esplicita del docente.
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -147,6 +148,11 @@ async def update_lesson_structure(
     if not changed:
         # Nessun campo passato → no-op silenzioso (ritorna lo stato attuale).
         return course
+
+    # Stale-detection: marca la struttura come modificata manualmente. Il
+    # FE confronta con `content_generated_at` per dedurre se il contenuto
+    # downstream è stale. I worker AI di Fase 2 NON toccano questo campo.
+    lesson.lesson_structure_modified_at = datetime.now(UTC)
 
     await write_audit(
         db,
