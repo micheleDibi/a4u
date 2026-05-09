@@ -83,18 +83,22 @@
       height: 1mm;
     }
 
-    /* Body container: inset sx/dx come la preview, top 40mm,
-       bottom 62mm per riservare il quadrante bottom-right (~65×46mm)
-       dove andrà l'avatar in un secondo momento. Block flow normale —
-       le slide con asset sono già state separate dal backend in
-       pagine dedicate, quindi non c'è competizione verticale tra
-       bullet e asset. */
+    /* Body container: inset sx/dx come la preview, top 35mm,
+       bottom 55mm. Lo spazio bottom-right (avatar futuro) non viene
+       riservato dal body: l'asset è centrato orizzontalmente, quindi
+       non intrude la zona avatar; quando l'avatar sarà aggiunto,
+       sarà drawn ON TOP del body. Block flow normale — slide con
+       asset sono già su pagine dedicate dal backend.
+
+       Body height = 210 - 35 - 55 = 120mm. Spazio disponibile per
+       l'asset dopo tag (~5mm) + titolo (~14mm) + margine (4mm) =
+       ~97mm. L'asset CSS è capped a 80mm per safety. */
     .slide-body {
       position: absolute;
       left: 18mm;
       right: 24mm;
-      top: 40mm;
-      bottom: 62mm;
+      top: 35mm;
+      bottom: 55mm;
       overflow: hidden;
       z-index: 2;
     }
@@ -166,7 +170,7 @@
       display: block;
       margin: 0 auto;
       max-width: 100%;
-      max-height: 95mm;
+      max-height: 80mm;
       width: auto;
       height: auto;
       object-fit: contain;
