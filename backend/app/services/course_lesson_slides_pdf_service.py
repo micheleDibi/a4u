@@ -19,7 +19,6 @@ template dedicato per layout slide (A4 landscape, una slide per pagina).
 from __future__ import annotations
 
 import asyncio
-import base64
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -141,23 +140,6 @@ def _slide_type_label(language: str, slide_type: str) -> str:
     return labels_it.get(slide_type, slide_type)
 
 
-def _svg_to_data_uri(svg: str) -> str:
-    """Converte un blocco SVG in una data-URI base64 utilizzabile come
-    `src` di `<img>`. Strategia adottata per il PDF SLIDE: usando
-    `<img>` al posto dell'SVG inline, WeasyPrint applica correttamente
-    `object-fit: contain`, scalando l'immagine in modo proporzionale
-    all'effettivo box del container (anche quando questo si è
-    ristretto perché i bullet hanno consumato spazio).
-
-    Encoding: base64 (non URL-encode). Le virgolette doppie negli
-    attributi SVG (es. `viewBox="0 0 800 400"`) NON sono safe in un
-    `src="..."` HTML — termina l'attributo a metà payload. base64 le
-    elimina dall'output e produce un payload sempre safe.
-    """
-    payload = base64.b64encode(svg.encode("utf-8")).decode("ascii")
-    return f"data:image/svg+xml;base64,{payload}"
-
-
 def _build_slide_asset_html(
     asset: dict[str, Any],
     *,
@@ -166,48 +148,13 @@ def _build_slide_asset_html(
 ) -> str:
     """Costruisce il blocco HTML per un asset referenziato da una slide.
 
-    Per gli asset visuali Mermaid (kind in {visual, new_visual} con
-    format mermaid), bypassa `_render_visual_asset_block` e produce
-    direttamente un'inclusione dell'SVG con dimensioni in mm
-    calcolate dal viewBox. È l'unico modo per garantire scaling
-    proporzionale stabile sotto WeasyPrint.
-
-    Per gli altri kind delega agli helper del PDF lezione testo (che
-    nel contesto slide funzionano: tabelle/equation/example non hanno
-    il problema dello scaling SVG).
+    Delega gli helper di `course_lesson_pdf_service`: lo stesso
+    rendering del PDF lezione testo. Funziona affidabilmente perché
+    nel layout slide gli asset hanno una pagina dedicata (vedi
+    `_expand_slide_for_rendering`), quindi non sono in competizione
+    con i bullet per lo spazio verticale.
     """
     if kind == "visual" or kind == "new_visual":
-        fmt = asset.get("format", "")
-        if fmt == "mermaid":
-            asset_id = str(asset.get("asset_id", ""))
-            svg = (mermaid_svg_map or {}).get(asset_id) if asset_id else None
-            caption = (asset.get("caption") or "").strip()
-            if svg:
-                # Wrap the SVG in <img> so object-fit:contain applies
-                # and the diagram scales proportionally to whatever
-                # container size the flex layout assigns. Inline SVG
-                # under WeasyPrint doesn't shrink reliably; <img>
-                # does.
-                data_uri = _svg_to_data_uri(svg)
-                body = (
-                    f'<img class="mermaid-svg" src="{data_uri}" alt="" />'
-                )
-            else:
-                content = asset.get("content", "") or ""
-                body = (
-                    f'<pre class="mermaid-fallback">'
-                    f"{base_pdf._html_escape_text(content)}</pre>"
-                )
-            caption_html = (
-                f'<figcaption>{base_pdf._html_escape_text(caption)}</figcaption>'
-                if caption
-                else ""
-            )
-            return (
-                f'<figure class="visual">'
-                f'<div class="figure-body">{body}</div>{caption_html}</figure>'
-            )
-        # image_prompt / image_search_query / description → fallback testo.
         return base_pdf._render_visual_asset_block(
             asset, mermaid_svg_map=mermaid_svg_map
         )
@@ -394,20 +341,30 @@ def render_slides_html(
         tpl_dict = _default_slide_template_dict()
 
     mmap = mermaid_svg_map or {}
+    # Espansione: se una slide ha sia bullet sia asset, viene divisa in
+    # due pagine consecutive con lo stesso titolo:
+    #   - pagina N: tag "Lezione X" + titolo + bullet (niente asset)
+    #   - pagina N+1: tag "Lezione X" + titolo (stesso) + asset (niente
+    #     bullet)
+    # Vantaggio: gli asset hanno sempre l'intero body a disposizione
+    # per il rendering — niente competizione verticale, niente
+    # workaround di scaling SVG. La numerazione `slide_number` viene
+    # ricalcolata sulla sequenza di pagine effettive.
     rendered_slides: list[dict[str, Any]] = []
     for s in slides_raw.get("slides") or []:
         if not isinstance(s, dict):
             continue
         slide_type = s.get("type", "concept")
-        # Asset HTML embeds.
+        title = s.get("title", "")
+        type_label = _slide_type_label(language, slide_type)
+        bullets = list(s.get("bullets") or [])
+
         assets_html: list[str] = []
         for aid in s.get("references_assets") or []:
             resolved = _resolve_asset_for_slide(
                 aid, content_raw, new_assets
             )
             if resolved is None:
-                # Asset non trovato: skip silenzioso (la validazione lo
-                # avrebbe già impedito al materialize).
                 continue
             kind, payload = resolved
             html = _build_slide_asset_html(
@@ -415,17 +372,31 @@ def render_slides_html(
             )
             if html:
                 assets_html.append(html)
-        rendered_slides.append(
-            {
-                "slide_number": s.get("slide_number"),
-                "slide_id": s.get("slide_id"),
-                "type": slide_type,
-                "type_label": _slide_type_label(language, slide_type),
-                "title": s.get("title", ""),
-                "bullets": s.get("bullets") or [],
-                "assets_html": assets_html,
-            }
-        )
+
+        base_entry = {
+            "slide_id": s.get("slide_id"),
+            "type": slide_type,
+            "type_label": type_label,
+            "title": title,
+        }
+
+        if assets_html and bullets:
+            # Split: bullet page, poi asset page (stesso titolo).
+            rendered_slides.append(
+                {**base_entry, "bullets": bullets, "assets_html": []}
+            )
+            rendered_slides.append(
+                {**base_entry, "bullets": [], "assets_html": assets_html}
+            )
+        else:
+            rendered_slides.append(
+                {**base_entry, "bullets": bullets, "assets_html": assets_html}
+            )
+
+    # Riassegna slide_number / total in base alla sequenza espansa.
+    total_slides = len(rendered_slides)
+    for i, rs in enumerate(rendered_slides, start=1):
+        rs["slide_number"] = i
 
     # Etichetta "Lezione N" derivata dal lesson_code (es. M1.L4 → 4).
     # Se il codice non rispetta il pattern atteso, fall-back a stringa
@@ -451,7 +422,7 @@ def render_slides_html(
         organization_name=(organization.name if organization else None),
         tpl=tpl_dict,
         slides=rendered_slides,
-        total_slides=len(rendered_slides),
+        total_slides=total_slides,
     )
     return html
 

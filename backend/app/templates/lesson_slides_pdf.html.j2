@@ -84,24 +84,17 @@
     }
 
     /* Body container: inset sx/dx come la preview, top 40mm,
-       bottom 62mm per RISERVARE il quadrante bottom-right da circa
-       65×46mm dove andrà l'avatar (l'avatar verrà aggiunto in un
-       secondo momento). Niente contenuto deve finire sotto l'avatar
-       né sotto il footer.
-
-       Layout interno: top-aligned (flex-start) e overflow-hidden, in
-       modo che assets molto alti (es. mermaid generati con tanti nodi)
-       NON sbordino verso l'alto (sopra il titolo) né verso il basso
-       (sotto la slide / sopra l'avatar). */
+       bottom 62mm per riservare il quadrante bottom-right (~65×46mm)
+       dove andrà l'avatar in un secondo momento. Block flow normale —
+       le slide con asset sono già state separate dal backend in
+       pagine dedicate, quindi non c'è competizione verticale tra
+       bullet e asset. */
     .slide-body {
       position: absolute;
       left: 18mm;
       right: 24mm;
       top: 40mm;
       bottom: 62mm;
-      display: flex;
-      flex-direction: column;
-      justify-content: flex-start;
       overflow: hidden;
       z-index: 2;
     }
@@ -121,13 +114,11 @@
       color: {{ tpl.text_color }};
     }
 
-    /* Bullet con dot a gradiente come nella preview. flex-shrink:0
-       per evitare che si comprimano quando ci sono asset alti. */
+    /* Bullet con dot a gradiente come nella preview. */
     .slide-bullets {
       margin: 5mm 0 0;
       padding: 0;
       list-style: none;
-      flex-shrink: 0;
     }
     .slide-bullets li {
       display: flex;
@@ -151,85 +142,55 @@
         {{ tpl.secondary_color }});
     }
 
-    /* Asset (diagrammi, formule, tabelle, esempi) sotto i bullet.
-       `.slide-assets` occupa tutto lo spazio rimanente del body
-       (flex: 1) con `min-height: 0` per permettere ai figli di
-       scendere sotto la loro altezza intrinseca. */
+    /* Asset: nelle pagine "asset-only" (split dal backend), il body
+       ha tutto lo spazio disponibile (~108mm × 255mm). Lasciamo che
+       SVG/img si scalino al naturale entro il container, con un
+       max-height generoso. */
     .slide-assets {
-      flex: 1 1 0;
-      min-height: 0;
       margin-top: 4mm;
-      display: flex;
-      flex-direction: column;
-      gap: 2mm;
-      overflow: hidden;
     }
     .slide-asset {
-      flex: 1 1 0;
-      min-height: 0;
       max-width: 100%;
+      margin: 2mm 0;
       text-align: center;
     }
     .slide-asset figure {
       margin: 0;
-      height: 100%;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
+      max-width: 100%;
     }
     .slide-asset .figure-body {
-      width: 100%;
-      flex: 1 1 0;
-      min-height: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    /* Mermaid: arriva come <img> con data-URI SVG. `object-fit:
-       contain` fa lo scaling proporzionale all'effettivo box
-       assegnato dal layout flex — niente clipping. */
-    .slide-asset img.mermaid-svg {
-      display: block;
       max-width: 100%;
-      max-height: 100%;
-      width: auto;
-      height: auto;
-      object-fit: contain;
     }
-    .slide-asset svg {
-      display: block;
-      margin: 0 auto;
-      max-width: 100%;
-      max-height: 100%;
-    }
+    .slide-asset svg,
     .slide-asset img {
       display: block;
       margin: 0 auto;
       max-width: 100%;
-      max-height: 100%;
+      max-height: 95mm;
+      height: auto;
     }
     .slide-asset table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 8.5pt;
-      table-layout: fixed;
+      font-size: 9pt;
     }
     .slide-asset th, .slide-asset td {
       border: 0.4pt solid #ccc;
-      padding: 0.8mm 1.5mm;
+      padding: 1mm 2mm;
       text-align: left;
       word-wrap: break-word;
       overflow-wrap: break-word;
     }
-    .slide-asset .caption {
-      font-size: 8pt;
+    .slide-asset .caption,
+    .slide-asset figcaption {
+      font-size: 9pt;
       font-style: italic;
       opacity: 0.7;
-      margin-top: 1mm;
+      margin-top: 2mm;
       text-align: center;
     }
-    .slide-asset .placeholder {
+    .slide-asset .placeholder,
+    .slide-asset .placeholder-image {
       border: 0.5pt dashed #ccc;
       padding: 4mm;
       font-size: 9pt;
