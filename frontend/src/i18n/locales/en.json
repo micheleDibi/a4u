@@ -95,8 +95,8 @@
     "deleted": "Course deleted",
     "assigneeUpdated": "Assignee updated",
     "search": "Search by title or objectives…",
-    "saveAndContinue": "Save and continue",
     "saveNow": "Save now",
+    "createAndContinue": "Create and continue",
     "filters": {
       "allStatuses": "All statuses"
     },
@@ -182,7 +182,8 @@
     "autoSave": {
       "saving": "Saving…",
       "savedAt": "Saved at {{time}}",
-      "error": "Save error: {{message}}"
+      "error": "Save error: {{message}}",
+      "errorShort": "Save failed"
     },
     "deleteConfirm": {
       "title": "Delete the course?",

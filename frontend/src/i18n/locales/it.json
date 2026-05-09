@@ -95,8 +95,8 @@
     "deleted": "Corso eliminato",
     "assigneeUpdated": "Assegnatario aggiornato",
     "search": "Cerca per titolo o obiettivi…",
-    "saveAndContinue": "Salva e continua",
     "saveNow": "Salva ora",
+    "createAndContinue": "Crea e continua",
     "filters": {
       "allStatuses": "Tutti gli stati"
     },
@@ -182,7 +182,8 @@
     "autoSave": {
       "saving": "Salvataggio…",
       "savedAt": "Salvato alle {{time}}",
-      "error": "Errore di salvataggio: {{message}}"
+      "error": "Errore di salvataggio: {{message}}",
+      "errorShort": "Salvataggio fallito"
     },
     "deleteConfirm": {
       "title": "Eliminare il corso?",

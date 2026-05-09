@@ -14,7 +14,9 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
+  AlertCircle,
   ArrowLeft,
+  ArrowRight,
   CheckCircle2,
   Loader2,
   Minus,
@@ -404,7 +406,7 @@ export default function CourseEditorPage({ mode }: Props) {
       : course?.title || t("courses.edit");
 
   return (
-    <div className="space-y-6 pb-24">
+    <div className="space-y-6">
       <PageHeader
         title={
           <span className="flex items-center gap-3">
@@ -424,6 +426,46 @@ export default function CourseEditorPage({ mode }: Props) {
           mode === "create"
             ? t("courses.createSubtitle")
             : t("courses.editSubtitle")
+        }
+        actions={
+          mode === "edit" && saveState.kind !== "idle" ? (
+            <div className="flex items-center gap-2 text-xs">
+              {saveState.kind === "saving" && (
+                <span className="flex items-center gap-1.5 text-muted-foreground">
+                  <Loader2 className="size-3.5 animate-spin" />
+                  {t("courses.autoSave.saving")}
+                </span>
+              )}
+              {saveState.kind === "saved" && (
+                <span className="flex items-center gap-1.5 text-muted-foreground">
+                  <CheckCircle2 className="size-3.5 text-green-600" />
+                  {t("courses.autoSave.savedAt", {
+                    time: saveState.at.toLocaleTimeString(),
+                  })}
+                </span>
+              )}
+              {saveState.kind === "error" && (
+                <>
+                  <span
+                    className="flex items-center gap-1.5 text-destructive"
+                    title={saveState.message}
+                  >
+                    <AlertCircle className="size-3.5" />
+                    {t("courses.autoSave.errorShort")}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={performAutoSave}
+                    disabled={updateMut.isPending}
+                  >
+                    <Save className="size-3.5" />
+                    {t("courses.saveNow")}
+                  </Button>
+                </>
+              )}
+            </div>
+          ) : null
         }
       />
 
@@ -702,6 +744,23 @@ export default function CourseEditorPage({ mode }: Props) {
               </div>
             </CardContent>
           </Card>
+          {mode === "create" && !readOnly && (
+            <div className="flex justify-end">
+              <Button
+                onClick={submit}
+                disabled={createMut.isPending || !draft.title.trim()}
+                size="lg"
+              >
+                {createMut.isPending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : null}
+                {createMut.isPending
+                  ? t("common.saving")
+                  : t("courses.createAndContinue")}
+                {!createMut.isPending && <ArrowRight className="size-4" />}
+              </Button>
+            </div>
+          )}
         </TabsContent>
 
         {/* Tab — Inquadramento didattico (categoria spostata in Base) */}
@@ -888,52 +947,6 @@ export default function CourseEditorPage({ mode }: Props) {
           </TabsContent>
         )}
       </Tabs>
-
-      {/* Sticky footer */}
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-        <div className="container flex flex-wrap items-center justify-end gap-3 px-6 py-3 sm:px-8">
-          <div className="me-auto flex items-center gap-2 text-xs text-muted-foreground">
-            {mode === "edit" && (
-              <>
-                {saveState.kind === "saving" && (
-                  <span>{t("courses.autoSave.saving")}</span>
-                )}
-                {saveState.kind === "saved" && (
-                  <span>
-                    {t("courses.autoSave.savedAt", {
-                      time: saveState.at.toLocaleTimeString(),
-                    })}
-                  </span>
-                )}
-                {saveState.kind === "error" && (
-                  <span className="text-destructive">
-                    {t("courses.autoSave.error", { message: saveState.message })}
-                  </span>
-                )}
-              </>
-            )}
-          </div>
-          <Button
-            variant="ghost"
-            onClick={() => navigate(`/orgs/${orgId}/corsi`)}
-          >
-            {t("common.cancel")}
-          </Button>
-          {!readOnly && (
-            <Button
-              onClick={submit}
-              disabled={createMut.isPending || updateMut.isPending}
-            >
-              <Save className="size-4" />
-              {mode === "create"
-                ? createMut.isPending
-                  ? t("common.saving")
-                  : t("courses.saveAndContinue")
-                : t("courses.saveNow")}
-            </Button>
-          )}
-        </div>
-      </div>
 
       {course && (
         <GenerateArchitectureDialog
