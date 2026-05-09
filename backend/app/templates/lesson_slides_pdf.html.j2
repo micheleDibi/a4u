@@ -171,16 +171,16 @@
       max-height: 70mm;
       text-align: center;
     }
-    /* SVG di Mermaid: senza attributi width/height espliciti (li
-       strippa `_strip_mermaid_max_width` lato BE), si scala in modo
-       proporzionale entro i constraint del container. */
+    /* SVG di Mermaid: il backend (`_fit_svg_inline`) inietta
+       width/height in mm calcolati dal viewBox, così WeasyPrint
+       rispetta il box senza clip. I CSS qui sotto sono safety-net
+       in caso il viewBox manchi (l'SVG si limita comunque al
+       container). */
     .slide-asset svg {
       display: block;
       margin: 0 auto;
       max-width: 100%;
       max-height: 70mm;
-      width: auto;
-      height: auto;
     }
     .slide-asset img {
       display: block;

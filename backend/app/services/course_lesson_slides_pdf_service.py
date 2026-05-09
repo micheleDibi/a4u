@@ -19,6 +19,8 @@ template dedicato per layout slide (A4 landscape, una slide per pagina).
 from __future__ import annotations
 
 import asyncio
+import re
+import urllib.parse
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -140,6 +142,59 @@ def _slide_type_label(language: str, slide_type: str) -> str:
     return labels_it.get(slide_type, slide_type)
 
 
+# Pattern per estrarre il root <svg ...> e iniettarci width/height
+# in mm calcolati dall'aspect ratio del viewBox. Strategia adottata
+# per il PDF SLIDE: inline SVG con dimensioni esplicite in mm fa
+# rispettare a WeasyPrint sia max-width sia max-height, evitando il
+# clipping che si verificava quando il browser/WP doveva indovinare
+# l'altezza da `width: 100%` + `max-height: 70mm`.
+_SVG_OPEN_RE = re.compile(r"<svg\b([^>]*)>", re.IGNORECASE)
+_VIEWBOX_RE = re.compile(
+    r'viewBox\s*=\s*"\s*([\d.\-eE]+)\s+([\d.\-eE]+)\s+([\d.\-eE]+)\s+([\d.\-eE]+)\s*"',
+    re.IGNORECASE,
+)
+
+
+def _fit_svg_inline(svg: str, *, max_width_mm: float, max_height_mm: float) -> str:
+    """Ritorna l'SVG con `width="Xmm" height="Ymm"` espliciti calcolati
+    proporzionalmente per stare dentro (max_width_mm × max_height_mm),
+    preservando l'aspect ratio dal viewBox.
+
+    Se manca il viewBox o il match fallisce, ritorna l'SVG invariato e
+    si conta sui CSS fallback nel template.
+    """
+    open_m = _SVG_OPEN_RE.search(svg)
+    vb_m = _VIEWBOX_RE.search(svg)
+    if not open_m or not vb_m:
+        return svg
+    try:
+        _x, _y, vb_w, vb_h = (float(g) for g in vb_m.groups())
+    except (TypeError, ValueError):
+        return svg
+    if vb_w <= 0 or vb_h <= 0:
+        return svg
+    aspect = vb_w / vb_h
+    h_if_w_max = max_width_mm / aspect
+    if h_if_w_max <= max_height_mm:
+        target_w_mm = max_width_mm
+        target_h_mm = h_if_w_max
+    else:
+        target_h_mm = max_height_mm
+        target_w_mm = max_height_mm * aspect
+    new_attrs = f' width="{target_w_mm:.2f}mm" height="{target_h_mm:.2f}mm"'
+    open_tag = open_m.group(0)
+    # `_strip_mermaid_max_width` lato base_pdf ha già rimosso eventuali
+    # width/height precedenti — quindi possiamo appenderli direttamente.
+    new_open = open_tag[:-1] + new_attrs + ">"
+    return svg.replace(open_tag, new_open, 1)
+
+
+# Box di rendering disponibile per ogni asset di slide (cap massimo).
+# Se la slide ha pochi bullet, l'asset può crescere fino a questo limite.
+SLIDE_ASSET_MAX_WIDTH_MM = 230.0
+SLIDE_ASSET_MAX_HEIGHT_MM = 70.0
+
+
 def _build_slide_asset_html(
     asset: dict[str, Any],
     *,
@@ -148,10 +203,45 @@ def _build_slide_asset_html(
 ) -> str:
     """Costruisce il blocco HTML per un asset referenziato da una slide.
 
-    Riusa le helper di `course_lesson_pdf_service` per i diversi tipi.
+    Per gli asset visuali Mermaid (kind in {visual, new_visual} con
+    format mermaid), bypassa `_render_visual_asset_block` e produce
+    direttamente un'inclusione dell'SVG con dimensioni in mm
+    calcolate dal viewBox. È l'unico modo per garantire scaling
+    proporzionale stabile sotto WeasyPrint.
+
+    Per gli altri kind delega agli helper del PDF lezione testo (che
+    nel contesto slide funzionano: tabelle/equation/example non hanno
+    il problema dello scaling SVG).
     """
     if kind == "visual" or kind == "new_visual":
-        # Asset visuale (mermaid o image_*).
+        fmt = asset.get("format", "")
+        if fmt == "mermaid":
+            asset_id = str(asset.get("asset_id", ""))
+            svg = (mermaid_svg_map or {}).get(asset_id) if asset_id else None
+            caption = (asset.get("caption") or "").strip()
+            if svg:
+                fitted = _fit_svg_inline(
+                    svg,
+                    max_width_mm=SLIDE_ASSET_MAX_WIDTH_MM,
+                    max_height_mm=SLIDE_ASSET_MAX_HEIGHT_MM,
+                )
+                body = f'<div class="mermaid-svg">{fitted}</div>'
+            else:
+                content = asset.get("content", "") or ""
+                body = (
+                    f'<pre class="mermaid-fallback">'
+                    f"{base_pdf._html_escape_text(content)}</pre>"
+                )
+            caption_html = (
+                f'<figcaption>{base_pdf._html_escape_text(caption)}</figcaption>'
+                if caption
+                else ""
+            )
+            return (
+                f'<figure class="visual">'
+                f'<div class="figure-body">{body}</div>{caption_html}</figure>'
+            )
+        # image_prompt / image_search_query / description → fallback testo.
         return base_pdf._render_visual_asset_block(
             asset, mermaid_svg_map=mermaid_svg_map
         )
