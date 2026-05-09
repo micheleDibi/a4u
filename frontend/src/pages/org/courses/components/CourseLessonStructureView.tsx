@@ -26,6 +26,7 @@ import {
   type LessonStructureUpdateInput,
   type LessonsStructureModuleStatus,
 } from "@/api/courses";
+import { ApprovalBadge } from "@/components/shared/ApprovalBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -493,6 +494,12 @@ function ModuleCard({
           </div>
           <div className="flex items-center gap-2">
             <ModuleStatusBadge status={status} />
+            {status === "approved" && (
+              <ApprovalBadge
+                level="module"
+                approvedAt={module.lessons_structure_approved_at}
+              />
+            )}
             {canGenerate && status === "empty" && (
               <Button
                 size="sm"
@@ -785,10 +792,11 @@ function LessonStructureRow({
 
 function ModuleStatusBadge({ status }: { status: LessonsStructureModuleStatus }) {
   const { t } = useTranslation();
+  // Per `approved` rendiamo l'ApprovalBadge cross-fase. Mostriamo il
+  // badge nativo solo per gli stati di transizione/lavorazione/errore.
+  if (status === "approved") return null;
   const variant = (() => {
     switch (status) {
-      case "approved":
-        return "default";
       case "ready":
         return "secondary";
       case "pending":

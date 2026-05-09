@@ -27,6 +27,7 @@ import {
   type LessonContentUpdateInput,
   type LessonPdfStatus,
 } from "@/api/courses";
+import { ApprovalBadge } from "@/components/shared/ApprovalBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -894,6 +895,12 @@ function LessonContentRow({
           </span>
         </button>
         <LessonContentStatusBadge status={status} />
+        {status === "approved" && (
+          <ApprovalBadge
+            level="lessonContent"
+            approvedAt={lesson.content_approved_at}
+          />
+        )}
         <LessonPdfStatusBadge status={pdfStatus} />
         {primaryContentCta}
         {primaryPdfCta}
@@ -1028,14 +1035,13 @@ function LessonContentStatusBadge({
   status: LessonContentStatus;
 }) {
   const { t } = useTranslation();
-  // Nascondi quando lo stato è `ready`: la CTA "Approva" comunica già il
-  // prossimo passo. Mantieni il badge per `approved` (Step 6 sostituirà
-  // con `ApprovalBadge` uniforme) e per gli stati di transizione/errore.
-  if (status === "ready") return null;
+  // Per `approved` rendiamo l'ApprovalBadge cross-fase (gestito a livello
+  // di LessonContentRow). Per `ready` la CTA "Approva" comunica il next
+  // step, quindi badge nascosto. Mostriamo solo gli stati di
+  // transizione/errore: empty, pending, processing, failed.
+  if (status === "ready" || status === "approved") return null;
   const variant = (() => {
     switch (status) {
-      case "approved":
-        return "default";
       case "pending":
       case "processing":
         return "outline";

@@ -775,6 +775,18 @@
         "exportCta": "Export",
         "exportAllCta": "Export all"
       }
+    },
+    "approval": {
+      "tooltipApprovedAt": "Approved at {{time}}",
+      "architecture": {
+        "approved": "Architecture approved"
+      },
+      "module": {
+        "approved": "Module approved"
+      },
+      "lessonContent": {
+        "approved": "Content approved"
+      }
     }
   },
   "courseSettings": {

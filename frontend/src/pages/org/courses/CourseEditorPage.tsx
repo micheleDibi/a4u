@@ -49,6 +49,7 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { ApprovalBadge } from "@/components/shared/ApprovalBadge";
 import { useLanguages } from "@/hooks/useLanguages";
 import { useTaskEta } from "@/hooks/useTaskEta";
 import { flagFor } from "@/i18n/flags";
@@ -1094,9 +1095,14 @@ function ArchitectureSection({
   return (
     <div className="space-y-3">
       {course.status === "architecture_approved" && (
-        <div className="flex items-center gap-2 rounded-md bg-brand/10 p-2 text-sm text-brand">
-          <CheckCircle2 className="size-4" />
-          {t("courses.architecture.approvedBanner")}
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-brand/20 bg-brand/5 p-2 text-sm">
+          <ApprovalBadge
+            level="architecture"
+            approvedAt={course.architecture_generated_at}
+          />
+          <span className="text-muted-foreground">
+            {t("courses.architecture.approvedBanner")}
+          </span>
         </div>
       )}
       {course.status === "architecture_ready" && (
