@@ -7,6 +7,8 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  Download,
+  FileText,
   Hourglass,
   Loader2,
   MoreHorizontal,
@@ -39,7 +41,7 @@ import { Progress } from "@/components/ui/progress";
 import { useBatchEta } from "@/hooks/useBatchEta";
 import { extractApiError } from "@/lib/errors";
 import { formatDuration } from "@/lib/formatDuration";
-import { isSlidesStale } from "@/lib/staleness";
+import { isSlidesPdfStale, isSlidesStale } from "@/lib/staleness";
 
 import { LessonSlidesEditDialog } from "./LessonSlidesEditDialog";
 import { LessonSlidesView } from "./LessonSlidesView";
@@ -47,6 +49,10 @@ import {
   LessonSlidesGenerateDialog,
   type LessonSlidesGenerateMode,
 } from "./LessonSlidesGenerateDialog";
+import {
+  LessonSlidesPdfExportDialog,
+  type LessonSlidesPdfExportMode,
+} from "./LessonSlidesPdfExportDialog";
 
 interface Props {
   course: CourseOut;
@@ -68,6 +74,16 @@ type EditDialogState =
   | { kind: "closed" }
   | { kind: "open"; lesson: CourseLessonOut };
 
+type PdfExportDialogState =
+  | { kind: "closed" }
+  | {
+      kind: "open";
+      mode: LessonSlidesPdfExportMode;
+      lessonId?: string;
+      lessonLabel?: string;
+      initialTemplateId?: string | null;
+    };
+
 /**
  * Vista del tab "Slide" (Fase 4 §7). Gestisce trigger generazione (per
  * lezione e batch), approval (per lezione e batch), cancel, e il
@@ -88,6 +104,9 @@ export function CourseLessonSlidesView({
     kind: "closed",
   });
   const [editDialog, setEditDialog] = useState<EditDialogState>({
+    kind: "closed",
+  });
+  const [pdfExportDialog, setPdfExportDialog] = useState<PdfExportDialogState>({
     kind: "closed",
   });
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -290,6 +309,106 @@ export function CourseLessonSlidesView({
       ),
   });
 
+  // === PDF export ===
+
+  const exportPdfMut = useMutation({
+    mutationFn: ({
+      lessonId,
+      templateId,
+    }: {
+      lessonId: string;
+      templateId: string | null;
+    }) =>
+      coursesApi.lessonSlidesPdf.exportLesson(
+        orgId,
+        course.id,
+        lessonId,
+        templateId,
+      ),
+    onSuccess: (fresh) => {
+      setCache(fresh);
+      setPdfExportDialog({ kind: "closed" });
+      toast.success(t("courses.lessonsSlidesPdf.toast.lessonStarted"));
+    },
+    onError: (err) =>
+      toast.error(
+        extractApiError(err).message ??
+          t("courses.lessonsSlidesPdf.toast.error"),
+      ),
+  });
+
+  const exportAllPdfMut = useMutation({
+    mutationFn: (templateId: string | null) =>
+      coursesApi.lessonSlidesPdf.exportAll(orgId, course.id, templateId),
+    onSuccess: (fresh) => {
+      setCache(fresh);
+      setPdfExportDialog({ kind: "closed" });
+      toast.success(t("courses.lessonsSlidesPdf.toast.batchStarted"));
+    },
+    onError: (err) =>
+      toast.error(
+        extractApiError(err).message ??
+          t("courses.lessonsSlidesPdf.toast.error"),
+      ),
+  });
+
+  const cancelAllPdfMut = useMutation({
+    mutationFn: () => coursesApi.lessonSlidesPdf.cancelAll(orgId, course.id),
+    onSuccess: (fresh) => {
+      setCache(fresh);
+      toast.success(t("courses.lessonsSlidesPdf.toast.cancelled"));
+    },
+    onError: (err) =>
+      toast.error(
+        extractApiError(err).message ??
+          t("courses.lessonsSlidesPdf.toast.error"),
+      ),
+  });
+
+  const downloadPdf = async (lesson: CourseLessonOut) => {
+    try {
+      const { blob, filename } = await coursesApi.lessonSlidesPdf.download(
+        orgId,
+        course.id,
+        lesson.id,
+      );
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename ?? `${lesson.lesson_code}_slides.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5_000);
+    } catch (err) {
+      toast.error(
+        extractApiError(err).message ??
+          t("courses.lessonsSlidesPdf.toast.error"),
+      );
+    }
+  };
+
+  // PDF aggregate
+  const pdfAggregate = useMemo(() => {
+    let pdfActive = 0;
+    for (const l of allLessons) {
+      if (
+        l.slides_pdf_status === "pending" ||
+        l.slides_pdf_status === "processing"
+      )
+        pdfActive += 1;
+    }
+    return { pdfActive };
+  }, [allLessons]);
+  const anyPdfActive = pdfAggregate.pdfActive > 0;
+  const exportablePdfCount = allLessons.filter(
+    (l) =>
+      (l.slides_status === "ready" || l.slides_status === "approved") &&
+      (l.slides_pdf_status === "empty" ||
+        l.slides_pdf_status === "ready" ||
+        l.slides_pdf_status === "failed"),
+  ).length;
+
   // Empty state: nessuna lezione con content pronto → invita a Fase 3.
   if (eligibleForGen === 0) {
     return (
@@ -368,6 +487,30 @@ export function CourseLessonSlidesView({
                 >
                   <CheckCircle2 className="size-4" />
                   {t("courses.lessonsSlides.approveAll")}
+                </Button>
+              )}
+              {canGenerate && anyPdfActive && (
+                <Button
+                  variant="destructive"
+                  onClick={() => cancelAllPdfMut.mutate()}
+                  disabled={cancelAllPdfMut.isPending}
+                >
+                  <StopCircle className="size-4" />
+                  {t("courses.lessonsSlidesPdf.cancelAll")}
+                </Button>
+              )}
+              {canGenerate && exportablePdfCount > 0 && !anyPdfActive && (
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    setPdfExportDialog({ kind: "open", mode: "all" })
+                  }
+                  disabled={exportAllPdfMut.isPending}
+                >
+                  <FileText className="size-4" />
+                  {t("courses.lessonsSlidesPdf.exportAll", {
+                    count: exportablePdfCount,
+                  })}
                 </Button>
               )}
             </div>
@@ -451,6 +594,24 @@ export function CourseLessonSlidesView({
                 : undefined
             }
             onEdit={(lesson) => setEditDialog({ kind: "open", lesson })}
+            onExportPdf={(lessonId, llabel, currentTemplateId) =>
+              setPdfExportDialog({
+                kind: "open",
+                mode: "single",
+                lessonId,
+                lessonLabel: llabel,
+                initialTemplateId: currentTemplateId,
+              })
+            }
+            onDownloadPdf={(lesson) => {
+              void downloadPdf(lesson);
+            }}
+            exportingPdfId={
+              exportPdfMut.isPending
+                ? (exportPdfMut.variables as { lessonId: string } | undefined)
+                    ?.lessonId
+                : undefined
+            }
           />
         ))}
       </div>
@@ -495,6 +656,29 @@ export function CourseLessonSlidesView({
           }
         />
       )}
+
+      {pdfExportDialog.kind === "open" && (
+        <LessonSlidesPdfExportDialog
+          open={true}
+          mode={pdfExportDialog.mode}
+          lessonLabel={pdfExportDialog.lessonLabel}
+          exportableCount={exportablePdfCount}
+          initialTemplateId={pdfExportDialog.initialTemplateId}
+          orgId={orgId}
+          isPending={exportPdfMut.isPending || exportAllPdfMut.isPending}
+          onClose={() => setPdfExportDialog({ kind: "closed" })}
+          onConfirm={(templateId) => {
+            if (pdfExportDialog.mode === "single" && pdfExportDialog.lessonId) {
+              exportPdfMut.mutate({
+                lessonId: pdfExportDialog.lessonId,
+                templateId,
+              });
+            } else if (pdfExportDialog.mode === "all") {
+              exportAllPdfMut.mutate(templateId);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -519,6 +703,13 @@ interface ModuleSlidesCardProps {
   onApprove: (lessonId: string) => void;
   approvingId: string | undefined;
   onEdit: (lesson: CourseLessonOut) => void;
+  onExportPdf: (
+    lessonId: string,
+    lessonLabel: string,
+    currentTemplateId: string | null,
+  ) => void;
+  onDownloadPdf: (lesson: CourseLessonOut) => void;
+  exportingPdfId: string | undefined;
 }
 
 function ModuleSlidesCard({
@@ -533,6 +724,9 @@ function ModuleSlidesCard({
   onApprove,
   approvingId,
   onEdit,
+  onExportPdf,
+  onDownloadPdf,
+  exportingPdfId,
 }: ModuleSlidesCardProps) {
   return (
     <Card>
@@ -562,6 +756,15 @@ function ModuleSlidesCard({
               isApproving={approvingId === lesson.id}
               lessonLabel={lessonLabel(lesson.lesson_code)}
               onEdit={() => onEdit(lesson)}
+              onExportPdf={() =>
+                onExportPdf(
+                  lesson.id,
+                  lessonLabel(lesson.lesson_code),
+                  lesson.slides_pdf_template_id,
+                )
+              }
+              onDownloadPdf={() => onDownloadPdf(lesson)}
+              isExportingPdf={exportingPdfId === lesson.id}
             />
           ))}
         </CardContent>
@@ -586,6 +789,9 @@ interface LessonSlidesRowProps {
   isApproving: boolean;
   lessonLabel: string;
   onEdit: () => void;
+  onExportPdf: () => void;
+  onDownloadPdf: () => void;
+  isExportingPdf: boolean;
 }
 
 function LessonSlidesRow({
@@ -600,11 +806,23 @@ function LessonSlidesRow({
   isApproving,
   lessonLabel,
   onEdit,
+  onExportPdf,
+  onDownloadPdf,
+  isExportingPdf,
 }: LessonSlidesRowProps) {
   const { t } = useTranslation();
   const status = lesson.slides_status;
   const isProcessing = status === "pending" || status === "processing";
   const isReady = status === "ready" || status === "approved";
+  const pdfStatus = lesson.slides_pdf_status;
+  const isPdfProcessing =
+    pdfStatus === "pending" || pdfStatus === "processing";
+  const canExportPdf =
+    isReady &&
+    (pdfStatus === "empty" ||
+      pdfStatus === "ready" ||
+      pdfStatus === "failed");
+  const pdfStale = isSlidesPdfStale(lesson);
 
   // Pre-condizione: per generare slide servono contenuti ready/approved.
   const canStartGeneration =
@@ -647,10 +865,69 @@ function LessonSlidesRow({
     return null;
   })();
 
-  // Voci kebab: rigenera quando ready/approved.
+  // Voci kebab: rigenera + (futuro) Esporta/Rigenera PDF.
   const canRegenerate =
     canStartGeneration && (status === "ready" || status === "approved");
-  const hasMenuItems = canRegenerate;
+  const canRegeneratePdf =
+    canGenerate && pdfStatus === "ready" && isReady && !isExportingPdf;
+  const hasMenuItems = canRegenerate || canRegeneratePdf;
+
+  // CTA primaria PDF (Scarica / Esporta), quando applicabile.
+  const primaryPdfCta = (() => {
+    if (!isReady) return null;
+    if (isPdfProcessing) {
+      return (
+        <Button
+          size="sm"
+          variant="outline"
+          disabled
+          title={t("courses.lessonsSlidesPdf.lesson.exporting", {
+            defaultValue: "Export in corso…",
+          })}
+        >
+          <Loader2 className="size-3.5 animate-spin" />
+          {lesson.slides_pdf_progress}%
+        </Button>
+      );
+    }
+    if (pdfStatus === "ready") {
+      return (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={onDownloadPdf}
+          title={t("courses.lessonsSlidesPdf.lesson.download", {
+            defaultValue: "Scarica PDF",
+          })}
+        >
+          <Download className="size-3.5" />
+          {t("courses.lessonsSlidesPdf.lesson.download", {
+            defaultValue: "Scarica PDF",
+          })}
+        </Button>
+      );
+    }
+    if (canGenerate && canExportPdf) {
+      return (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={onExportPdf}
+          disabled={isExportingPdf}
+        >
+          <FileText className="size-3.5" />
+          {pdfStatus === "failed"
+            ? t("courses.lessonsSlidesPdf.lesson.retry", {
+                defaultValue: "Riprova",
+              })
+            : t("courses.lessonsSlidesPdf.lesson.export", {
+                defaultValue: "Esporta PDF",
+              })}
+        </Button>
+      );
+    }
+    return null;
+  })();
 
   const slidesCount = lesson.slides_raw?.total_slides ?? 0;
 
@@ -689,6 +966,7 @@ function LessonSlidesRow({
           />
         )}
         {primaryCta}
+        {primaryPdfCta}
         {canEdit && isReady && lesson.slides_raw && (
           <Button
             type="button"
@@ -723,22 +1001,40 @@ function LessonSlidesRow({
                   {t("courses.lessonsSlides.lesson.regenerate")}
                 </DropdownMenuItem>
               )}
+              {canRegeneratePdf && (
+                <DropdownMenuItem onClick={onExportPdf}>
+                  <FileText className="size-3.5" />
+                  {t("courses.lessonsSlidesPdf.lesson.regenerate", {
+                    defaultValue: "Rigenera PDF",
+                  })}
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         )}
       </div>
 
-      {/* Stale alert */}
-      {stale && !isProcessing && (
-        <div className="border-t px-4 py-3">
-          <StalenessAlert
-            kind="slides"
-            variant="inline"
-            onAction={
-              canStartGeneration ? () => onGenerate("regenerate-lesson") : undefined
-            }
-            hideAction={!canStartGeneration}
-          />
+      {/* Stale alerts */}
+      {(stale || pdfStale) && !isProcessing && !isPdfProcessing && (
+        <div className="space-y-2 border-t px-4 py-3">
+          {stale && (
+            <StalenessAlert
+              kind="slides"
+              variant="inline"
+              onAction={
+                canStartGeneration ? () => onGenerate("regenerate-lesson") : undefined
+              }
+              hideAction={!canStartGeneration}
+            />
+          )}
+          {pdfStale && (
+            <StalenessAlert
+              kind="pdf"
+              variant="inline"
+              onAction={canGenerate ? onExportPdf : undefined}
+              hideAction={!canGenerate}
+            />
+          )}
         </div>
       )}
 

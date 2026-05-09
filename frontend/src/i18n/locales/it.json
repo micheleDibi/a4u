@@ -861,6 +861,38 @@
         "error": "Operazione fallita. Riprova."
       }
     },
+    "lessonsSlidesPdf": {
+      "exportAll": "Esporta PDF slide ({{count}})",
+      "cancelAll": "Ferma export PDF",
+      "lesson": {
+        "export": "Esporta PDF",
+        "retry": "Riprova export",
+        "download": "Scarica PDF",
+        "regenerate": "Rigenera PDF",
+        "exporting": "Export in corso…"
+      },
+      "dialog": {
+        "exportLesson": {
+          "title": "Esporta PDF slide — {{lesson}}",
+          "description": "Scegli il template grafico da applicare al PDF delle slide."
+        },
+        "exportAll": {
+          "title": "Esporta PDF slide di tutte le lezioni",
+          "description": "{{count}} lezioni verranno esportate in PDF (una slide per pagina)."
+        },
+        "templateLabel": "Template",
+        "noTemplates": "Nessun template configurato per l'organizzazione. Verrà usato il template di default integrato.",
+        "exportCta": "Esporta",
+        "exportAllCta": "Esporta tutto",
+        "defaultBadge": "Default"
+      },
+      "toast": {
+        "batchStarted": "Export PDF slide avviato su tutte le lezioni.",
+        "lessonStarted": "Export PDF slide avviato.",
+        "cancelled": "Export annullato.",
+        "error": "Operazione fallita. Riprova."
+      }
+    },
     "glossary": {
       "title": "Glossario del corso",
       "termsCount_one": "{{count}} termine",

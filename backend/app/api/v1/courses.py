@@ -52,6 +52,7 @@ from app.services import (
     course_lesson_content_service,
     course_lesson_pdf_service,
     course_lesson_slides_crud,
+    course_lesson_slides_pdf_service,
     course_lesson_slides_service,
     course_lesson_structure_crud,
     course_lesson_structure_service,
@@ -1458,6 +1459,139 @@ async def download_lesson_pdf(
             "File PDF mancante sul filesystem.", code="pdf_file_missing"
         )
     filename = course_lesson_pdf_service.pdf_filename_for_download(
+        course.title, lesson
+    )
+    return FileResponse(
+        path=str(abs_path),
+        media_type="application/pdf",
+        filename=filename,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Fase 4 §7 — Export PDF SLIDE
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{course_id}/lessons/{lesson_id}/slides-pdf/export",
+    response_model=CourseOut,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def export_lesson_slides_pdf(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    lesson_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    pdf_template_id: Annotated[uuid.UUID | None, Query()] = None,
+    _=require(P.COURSE_GENERATE),
+) -> CourseOut:
+    """Avvia l'export PDF delle slide di una singola lezione (Fase 4).
+    Imposta `lesson.slides_pdf_status='pending'`. Vincoli: la lezione
+    deve avere `slides_status` ∈ ready/approved.
+    """
+    await _ensure_org(db, org_id)
+    course = await _load_course_for_edit(
+        db, org_id=org_id, course_id=course_id, current=current
+    )
+    lesson = await course_lesson_slides_service.get_lesson_or_404(
+        db, course=course, lesson_id=lesson_id
+    )
+    course = await course_lesson_slides_pdf_service.request_lesson_slides_pdf(
+        db,
+        course=course,
+        lesson=lesson,
+        actor_id=current.id,
+        pdf_template_id=pdf_template_id,
+    )
+    return CourseOut.model_validate(course)
+
+
+@router.post(
+    "/{course_id}/lessons-slides-pdf/export-all",
+    response_model=CourseOut,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def export_all_lessons_slides_pdf(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    pdf_template_id: Annotated[uuid.UUID | None, Query()] = None,
+    _=require(P.COURSE_GENERATE),
+) -> CourseOut:
+    """Avvia l'export PDF slide per TUTTE le lezioni esportabili."""
+    await _ensure_org(db, org_id)
+    course = await _load_course_for_edit(
+        db, org_id=org_id, course_id=course_id, current=current
+    )
+    course = await course_lesson_slides_pdf_service.request_all_lessons_slides_pdf(
+        db,
+        course=course,
+        actor_id=current.id,
+        pdf_template_id=pdf_template_id,
+    )
+    return CourseOut.model_validate(course)
+
+
+@router.post(
+    "/{course_id}/lessons-slides-pdf/cancel-all",
+    response_model=CourseOut,
+)
+async def cancel_all_lessons_slides_pdf(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_GENERATE),
+) -> CourseOut:
+    """Annulla tutti gli export PDF slide in flight."""
+    await _ensure_org(db, org_id)
+    course = await _load_course_for_edit(
+        db, org_id=org_id, course_id=course_id, current=current
+    )
+    course = await course_lesson_slides_pdf_service.cancel_all_slides_pdf_exports(
+        db, course=course, actor_id=current.id
+    )
+    return CourseOut.model_validate(course)
+
+
+@router.get(
+    "/{course_id}/lessons/{lesson_id}/slides-pdf/download",
+)
+async def download_lesson_slides_pdf(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    lesson_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_VIEW),
+) -> FileResponse:
+    """Scarica il PDF slide. 404 se non disponibile."""
+    await _ensure_org(db, org_id)
+    course = await course_lesson_slides_service.load_course_full(
+        db, course_id=course_id
+    )
+    if course is None or course.organization_id != org_id:
+        raise NotFoundError("Corso non trovato.", code="course_not_found")
+    lesson = await course_lesson_slides_service.get_lesson_or_404(
+        db, course=course, lesson_id=lesson_id
+    )
+    if lesson.slides_pdf_status != "ready" or not lesson.slides_pdf_path:
+        raise NotFoundError(
+            "PDF slide non disponibile per questa lezione.",
+            code="slides_pdf_not_ready",
+        )
+    abs_path = course_lesson_pdf_service.pdf_absolute_path(
+        lesson.slides_pdf_path
+    )
+    if not abs_path.is_file():
+        raise NotFoundError(
+            "File PDF slide mancante sul filesystem.",
+            code="slides_pdf_file_missing",
+        )
+    filename = course_lesson_slides_pdf_service.slides_pdf_filename_for_download(
         course.title, lesson
     )
     return FileResponse(

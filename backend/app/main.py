@@ -26,6 +26,7 @@ from app.services import (
     course_document_worker,
     course_lesson_content_worker,
     course_lesson_pdf_worker,
+    course_lesson_slides_pdf_worker,
     course_lesson_slides_worker,
     course_lesson_structure_worker,
 )
@@ -88,11 +89,15 @@ async def lifespan(app: FastAPI):
     # Worker export PDF lezioni (§7). Cap=2: Chromium pesa, niente
     # rate-limit ma I/O+CPU intensive.
     course_lesson_pdf_worker.start_worker()
+    # Worker export PDF SLIDE (Fase 4 §7). Stessa pipeline del PDF
+    # lezione testo, template dedicato per layout slide A4 landscape.
+    course_lesson_slides_pdf_worker.start_worker()
 
     log.info("startup_complete", env=settings.env)
     try:
         yield
     finally:
+        await course_lesson_slides_pdf_worker.stop_worker()
         await course_lesson_pdf_worker.stop_worker()
         await course_lesson_slides_worker.stop_worker()
         await course_lesson_content_worker.stop_worker()

@@ -131,6 +131,16 @@ class CourseLessonOut(ORMModel):
     # Output AI completo (verbatim §7.3) — nullable finché non generato.
     slides_raw: dict[str, Any] | None = None
 
+    # §7 — Export PDF delle slide
+    slides_pdf_status: str = "empty"
+    slides_pdf_progress: int = 0
+    slides_pdf_progress_phase: str | None = None
+    slides_pdf_error: str | None = None
+    slides_pdf_attempts: int = 0
+    slides_pdf_generated_at: datetime | None = None
+    slides_pdf_template_id: uuid.UUID | None = None
+    slides_pdf_path: str | None = None
+
 
 class CourseModuleOut(ORMModel):
     id: uuid.UUID

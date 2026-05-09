@@ -362,6 +362,15 @@ export interface CourseLessonOut {
   // Stale-detection — set solo da CRUD manuale, non dal worker AI.
   slides_modified_at: string | null;
   slides_raw: LessonSlidesRaw | null;
+  // §7 — Export PDF delle slide
+  slides_pdf_status: LessonPdfStatus;
+  slides_pdf_progress: number;
+  slides_pdf_progress_phase: string | null;
+  slides_pdf_error: string | null;
+  slides_pdf_attempts: number;
+  slides_pdf_generated_at: string | null;
+  slides_pdf_template_id: string | null;
+  slides_pdf_path: string | null;
 }
 
 export interface LessonStructureTokens {
@@ -1077,6 +1086,60 @@ export const coursesApi = {
     ): Promise<{ blob: Blob; filename: string | null }> => {
       const res = await apiClient.get<Blob>(
         `${base(orgId)}/${courseId}/lessons/${lessonId}/pdf/download`,
+        { responseType: "blob" }
+      );
+      const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
+      const m = /filename\*?="?([^";]+)"?/i.exec(cd);
+      const filename = m ? decodeURIComponent(m[1]) : null;
+      return { blob: res.data, filename };
+    },
+  },
+  lessonSlidesPdf: {
+    exportLesson: async (
+      orgId: string,
+      courseId: string,
+      lessonId: string,
+      pdfTemplateId?: string | null
+    ): Promise<CourseOut> => {
+      const res = await apiClient.post<CourseOut>(
+        `${base(orgId)}/${courseId}/lessons/${lessonId}/slides-pdf/export`,
+        undefined,
+        pdfTemplateId
+          ? { params: { pdf_template_id: pdfTemplateId } }
+          : undefined
+      );
+      return res.data;
+    },
+    exportAll: async (
+      orgId: string,
+      courseId: string,
+      pdfTemplateId?: string | null
+    ): Promise<CourseOut> => {
+      const res = await apiClient.post<CourseOut>(
+        `${base(orgId)}/${courseId}/lessons-slides-pdf/export-all`,
+        undefined,
+        pdfTemplateId
+          ? { params: { pdf_template_id: pdfTemplateId } }
+          : undefined
+      );
+      return res.data;
+    },
+    cancelAll: async (
+      orgId: string,
+      courseId: string
+    ): Promise<CourseOut> => {
+      const res = await apiClient.post<CourseOut>(
+        `${base(orgId)}/${courseId}/lessons-slides-pdf/cancel-all`
+      );
+      return res.data;
+    },
+    download: async (
+      orgId: string,
+      courseId: string,
+      lessonId: string
+    ): Promise<{ blob: Blob; filename: string | null }> => {
+      const res = await apiClient.get<Blob>(
+        `${base(orgId)}/${courseId}/lessons/${lessonId}/slides-pdf/download`,
         { responseType: "blob" }
       );
       const cd = (res.headers["content-disposition"] as string | undefined) ?? "";

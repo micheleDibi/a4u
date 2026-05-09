@@ -88,3 +88,19 @@ export function isSlidesStale(
     return true;
   return false;
 }
+
+/**
+ * Il PDF delle slide è stale se le slide sono state rigenerate o
+ * modificate manualmente dopo l'ultimo export PDF slide.
+ *
+ * Si applica solo a PDF già pronti (`slides_pdf_status === 'ready'`).
+ */
+export function isSlidesPdfStale(lesson: CourseLessonOut): boolean {
+  if (lesson.slides_pdf_status !== "ready") return false;
+  if (!lesson.slides_pdf_generated_at) return false;
+  if (isAfter(lesson.slides_generated_at, lesson.slides_pdf_generated_at))
+    return true;
+  if (isAfter(lesson.slides_modified_at, lesson.slides_pdf_generated_at))
+    return true;
+  return false;
+}

@@ -860,6 +860,38 @@
         "error": "Operation failed. Try again."
       }
     },
+    "lessonsSlidesPdf": {
+      "exportAll": "Export slides PDF ({{count}})",
+      "cancelAll": "Stop PDF export",
+      "lesson": {
+        "export": "Export PDF",
+        "retry": "Retry export",
+        "download": "Download PDF",
+        "regenerate": "Regenerate PDF",
+        "exporting": "Export in progress…"
+      },
+      "dialog": {
+        "exportLesson": {
+          "title": "Export slides PDF — {{lesson}}",
+          "description": "Choose the graphic template for the slides PDF."
+        },
+        "exportAll": {
+          "title": "Export slides PDF for all lessons",
+          "description": "{{count}} lessons will be exported to PDF (one slide per page)."
+        },
+        "templateLabel": "Template",
+        "noTemplates": "No template configured for the organization. The built-in default will be used.",
+        "exportCta": "Export",
+        "exportAllCta": "Export all",
+        "defaultBadge": "Default"
+      },
+      "toast": {
+        "batchStarted": "Slides PDF export started on all lessons.",
+        "lessonStarted": "Slides PDF export started.",
+        "cancelled": "Export cancelled.",
+        "error": "Operation failed. Try again."
+      }
+    },
     "glossary": {
       "title": "Course glossary",
       "termsCount_one": "{{count}} term",

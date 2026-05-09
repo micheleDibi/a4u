@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="{{ language }}">
+<head>
+  <meta charset="utf-8" />
+  <title>{{ course.title }} — {{ lesson.title }} — Slide</title>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: "{{ tpl.font_family }}", "Inter", "DejaVu Sans",
+                    "Liberation Sans", sans-serif;
+      color: {{ tpl.text_color }};
+    }
+
+    /* Pagina: A4 landscape per layout slide. */
+    @page {
+      size: A4 landscape;
+      margin: 1.2cm 1.5cm 1.2cm 1.5cm;
+      @bottom-right {
+        content: counter(page) " / " counter(pages);
+        font-family: "{{ tpl.font_family }}", sans-serif;
+        font-size: 9pt;
+        color: {{ tpl.text_color }};
+      }
+      @bottom-left {
+        content: "{{ course.title|e }} — {{ lesson.title|e }}";
+        font-size: 9pt;
+        color: {{ tpl.text_color }};
+        opacity: 0.6;
+      }
+    }
+
+    .slide {
+      page-break-after: always;
+      min-height: 18cm;
+      display: flex;
+      flex-direction: column;
+    }
+    .slide:last-child { page-break-after: auto; }
+
+    .slide-header {
+      border-bottom: 2px solid {{ tpl.primary_color }};
+      padding-bottom: 0.4cm;
+      margin-bottom: 0.6cm;
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 1cm;
+    }
+    .slide-title {
+      font-size: 22pt;
+      font-weight: 700;
+      color: {{ tpl.primary_color }};
+      margin: 0;
+      flex: 1;
+    }
+    .slide-meta {
+      font-size: 9pt;
+      color: {{ tpl.text_color }};
+      opacity: 0.6;
+      white-space: nowrap;
+    }
+    .slide-meta .slide-type {
+      display: inline-block;
+      padding: 0.1cm 0.3cm;
+      border-radius: 0.2cm;
+      background: {{ tpl.secondary_color }};
+      color: white;
+      font-weight: 600;
+      margin-right: 0.3cm;
+    }
+
+    .slide-body {
+      flex: 1;
+      font-size: 13pt;
+      line-height: 1.55;
+    }
+    .slide-body ul {
+      list-style: disc;
+      padding-left: 0.8cm;
+      margin: 0.2cm 0 0.6cm 0;
+    }
+    .slide-body li { margin-bottom: 0.3cm; }
+
+    .slide-asset {
+      margin: 0.4cm 0;
+      max-width: 100%;
+    }
+    .slide-asset svg { max-width: 100%; height: auto; }
+    .slide-asset img { max-width: 100%; height: auto; }
+    .slide-asset table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 10pt;
+    }
+    .slide-asset th, .slide-asset td {
+      border: 1px solid #ccc;
+      padding: 0.15cm 0.3cm;
+      text-align: left;
+    }
+    .slide-asset .caption {
+      font-size: 9pt;
+      font-style: italic;
+      color: {{ tpl.text_color }};
+      opacity: 0.7;
+      margin-top: 0.2cm;
+      text-align: center;
+    }
+    .slide-asset .placeholder {
+      border: 1px dashed #ccc;
+      padding: 0.5cm;
+      font-size: 10pt;
+      color: #888;
+      text-align: center;
+      border-radius: 0.2cm;
+    }
+
+    .slide-footer {
+      margin-top: auto;
+      padding-top: 0.5cm;
+      border-top: 1px solid #e5e5e5;
+      font-size: 9pt;
+      font-style: italic;
+      color: {{ tpl.text_color }};
+      opacity: 0.7;
+    }
+    .slide-footer .label {
+      font-style: normal;
+      font-weight: 600;
+      opacity: 1;
+    }
+
+    math { font-size: 13pt; }
+  </style>
+</head>
+<body>
+  {% for slide in slides %}
+  <div class="slide">
+    <div class="slide-header">
+      <h1 class="slide-title">{{ slide.title }}</h1>
+      <div class="slide-meta">
+        <span class="slide-type">{{ slide.type_label }}</span>
+        {{ slide.slide_number }} / {{ total_slides }}
+      </div>
+    </div>
+    <div class="slide-body">
+      {% if slide.bullets %}
+      <ul>
+        {% for b in slide.bullets %}
+        <li>{{ b }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% for asset_html in slide.assets_html %}
+      <div class="slide-asset">{{ asset_html|safe }}</div>
+      {% endfor %}
+    </div>
+    {% if slide.speaker_hint %}
+    <div class="slide-footer">
+      <span class="label">{{ labels.speaker_hint }}:</span>
+      {{ slide.speaker_hint }}
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</body>
+</html>

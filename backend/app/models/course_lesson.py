@@ -98,6 +98,15 @@ class CourseLesson(UUIDPKMixin, TimestampMixin, Base):
             "slides_progress >= 0 AND slides_progress <= 100",
             name="ck_course_lesson_slides_progress",
         ),
+        CheckConstraint(
+            "slides_pdf_status IN "
+            "('empty','pending','processing','ready','failed')",
+            name="ck_course_lesson_slides_pdf_status",
+        ),
+        CheckConstraint(
+            "slides_pdf_progress >= 0 AND slides_pdf_progress <= 100",
+            name="ck_course_lesson_slides_pdf_progress",
+        ),
     )
 
     module_id: Mapped[uuid.UUID] = mapped_column(
@@ -252,6 +261,34 @@ class CourseLesson(UUIDPKMixin, TimestampMixin, Base):
     )
     slides_progress_phase: Mapped[str | None] = mapped_column(
         String(50), nullable=True
+    )
+
+    # §7 — Export PDF delle slide (pipeline async, scoped a livello lezione,
+    # distinto dal pdf_* della lezione testo). Stato `ready` significa
+    # "PDF disponibile a `slides_pdf_path`".
+    slides_pdf_status: Mapped[str] = mapped_column(
+        String(40), nullable=False, default="empty", server_default="empty"
+    )
+    slides_pdf_progress: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, default=0, server_default="0"
+    )
+    slides_pdf_progress_phase: Mapped[str | None] = mapped_column(
+        String(50), nullable=True
+    )
+    slides_pdf_path: Mapped[str | None] = mapped_column(
+        String(500), nullable=True
+    )
+    slides_pdf_template_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("pdf_templates.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    slides_pdf_attempts: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, default=0, server_default="0"
+    )
+    slides_pdf_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    slides_pdf_generated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
 
     module: Mapped["CourseModule"] = relationship(
