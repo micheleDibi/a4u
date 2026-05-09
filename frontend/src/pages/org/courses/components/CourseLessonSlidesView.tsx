@@ -10,6 +10,7 @@ import {
   Hourglass,
   Loader2,
   MoreHorizontal,
+  Pencil,
   RotateCcw,
   Sparkles,
   StopCircle,
@@ -21,6 +22,7 @@ import {
   type CourseModuleOut,
   type CourseOut,
   type LessonSlidesStatus,
+  type LessonSlidesUpdateInput,
 } from "@/api/courses";
 import { ApprovalBadge } from "@/components/shared/ApprovalBadge";
 import { StalenessAlert } from "@/components/shared/StalenessAlert";
@@ -39,6 +41,7 @@ import { extractApiError } from "@/lib/errors";
 import { formatDuration } from "@/lib/formatDuration";
 import { isSlidesStale } from "@/lib/staleness";
 
+import { LessonSlidesEditDialog } from "./LessonSlidesEditDialog";
 import { LessonSlidesView } from "./LessonSlidesView";
 import {
   LessonSlidesGenerateDialog,
@@ -61,6 +64,10 @@ type GenerateDialogState =
       lessonLabel?: string;
     };
 
+type EditDialogState =
+  | { kind: "closed" }
+  | { kind: "open"; lesson: CourseLessonOut };
+
 /**
  * Vista del tab "Slide" (Fase 4 §7). Gestisce trigger generazione (per
  * lezione e batch), approval (per lezione e batch), cancel, e il
@@ -70,7 +77,7 @@ type GenerateDialogState =
  */
 export function CourseLessonSlidesView({
   course,
-  canEdit: _canEdit,
+  canEdit,
   canGenerate,
   orgId,
 }: Props) {
@@ -78,6 +85,9 @@ export function CourseLessonSlidesView({
   const qc = useQueryClient();
 
   const [generateDialog, setGenerateDialog] = useState<GenerateDialogState>({
+    kind: "closed",
+  });
+  const [editDialog, setEditDialog] = useState<EditDialogState>({
     kind: "closed",
   });
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -260,6 +270,26 @@ export function CourseLessonSlidesView({
       ),
   });
 
+  const updateLessonMut = useMutation({
+    mutationFn: ({
+      lessonId,
+      payload,
+    }: {
+      lessonId: string;
+      payload: LessonSlidesUpdateInput;
+    }) =>
+      coursesApi.lessonSlides.updateLesson(orgId, course.id, lessonId, payload),
+    onSuccess: (fresh) => {
+      setCache(fresh);
+      setEditDialog({ kind: "closed" });
+      toast.success(t("courses.lessonsSlides.toast.lessonUpdated"));
+    },
+    onError: (err) =>
+      toast.error(
+        extractApiError(err).message ?? t("courses.lessonsSlides.toast.error"),
+      ),
+  });
+
   // Empty state: nessuna lezione con content pronto → invita a Fase 3.
   if (eligibleForGen === 0) {
     return (
@@ -393,6 +423,7 @@ export function CourseLessonSlidesView({
           <ModuleSlidesCard
             key={module.id}
             module={module}
+            canEdit={canEdit}
             canGenerate={canGenerate}
             moduleLabel={moduleLabel(module.module_code)}
             lessonLabel={lessonLabel}
@@ -419,11 +450,12 @@ export function CourseLessonSlidesView({
                 ? (approveLessonMut.variables as string | undefined)
                 : undefined
             }
+            onEdit={(lesson) => setEditDialog({ kind: "open", lesson })}
           />
         ))}
       </div>
 
-      {/* === Dialog === */}
+      {/* === Dialogs === */}
       {generateDialog.kind === "open" && (
         <LessonSlidesGenerateDialog
           open={true}
@@ -446,6 +478,23 @@ export function CourseLessonSlidesView({
           }}
         />
       )}
+
+      {editDialog.kind === "open" && editDialog.lesson.slides_raw && (
+        <LessonSlidesEditDialog
+          open={true}
+          lessonLabel={lessonLabel(editDialog.lesson.lesson_code)}
+          initial={editDialog.lesson.slides_raw}
+          contentRaw={editDialog.lesson.content_raw}
+          isPending={updateLessonMut.isPending}
+          onClose={() => setEditDialog({ kind: "closed" })}
+          onSubmit={(payload) =>
+            updateLessonMut.mutate({
+              lessonId: editDialog.lesson.id,
+              payload,
+            })
+          }
+        />
+      )}
     </div>
   );
 }
@@ -456,6 +505,7 @@ export function CourseLessonSlidesView({
 
 interface ModuleSlidesCardProps {
   module: CourseModuleOut;
+  canEdit: boolean;
   canGenerate: boolean;
   moduleLabel: string;
   lessonLabel: (code: string) => string;
@@ -468,10 +518,12 @@ interface ModuleSlidesCardProps {
   ) => void;
   onApprove: (lessonId: string) => void;
   approvingId: string | undefined;
+  onEdit: (lesson: CourseLessonOut) => void;
 }
 
 function ModuleSlidesCard({
   module,
+  canEdit,
   canGenerate,
   moduleLabel,
   lessonLabel,
@@ -480,6 +532,7 @@ function ModuleSlidesCard({
   onGenerate,
   onApprove,
   approvingId,
+  onEdit,
 }: ModuleSlidesCardProps) {
   return (
     <Card>
@@ -500,6 +553,7 @@ function ModuleSlidesCard({
               parentModule={module}
               expanded={expanded.has(lesson.id)}
               onToggle={() => onToggle(lesson.id)}
+              canEdit={canEdit}
               canGenerate={canGenerate}
               onGenerate={(mode) =>
                 onGenerate(mode, lesson.id, lessonLabel(lesson.lesson_code))
@@ -507,6 +561,7 @@ function ModuleSlidesCard({
               onApprove={() => onApprove(lesson.id)}
               isApproving={approvingId === lesson.id}
               lessonLabel={lessonLabel(lesson.lesson_code)}
+              onEdit={() => onEdit(lesson)}
             />
           ))}
         </CardContent>
@@ -524,11 +579,13 @@ interface LessonSlidesRowProps {
   parentModule: CourseModuleOut;
   expanded: boolean;
   onToggle: () => void;
+  canEdit: boolean;
   canGenerate: boolean;
   onGenerate: (mode: LessonSlidesGenerateMode) => void;
   onApprove: () => void;
   isApproving: boolean;
   lessonLabel: string;
+  onEdit: () => void;
 }
 
 function LessonSlidesRow({
@@ -536,11 +593,13 @@ function LessonSlidesRow({
   parentModule,
   expanded,
   onToggle,
+  canEdit,
   canGenerate,
   onGenerate,
   onApprove,
   isApproving,
   lessonLabel,
+  onEdit,
 }: LessonSlidesRowProps) {
   const { t } = useTranslation();
   const status = lesson.slides_status;
@@ -630,6 +689,18 @@ function LessonSlidesRow({
           />
         )}
         {primaryCta}
+        {canEdit && isReady && lesson.slides_raw && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-7"
+            onClick={onEdit}
+            title={t("courses.lessonsSlides.lesson.edit")}
+          >
+            <Pencil className="size-3.5" />
+          </Button>
+        )}
         {hasMenuItems && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
