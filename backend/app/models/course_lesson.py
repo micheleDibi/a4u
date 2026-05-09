@@ -42,6 +42,15 @@ LESSON_PDF_STATUSES: tuple[str, ...] = (
     "failed",
 )
 
+LESSON_SLIDES_STATUSES: tuple[str, ...] = (
+    "empty",
+    "pending",
+    "processing",
+    "ready",
+    "approved",
+    "failed",
+)
+
 
 class CourseLesson(UUIDPKMixin, TimestampMixin, Base):
     """Lezione del corso (Fase 1, §4 di prompt_generazione_corsi.md).
@@ -79,6 +88,15 @@ class CourseLesson(UUIDPKMixin, TimestampMixin, Base):
         CheckConstraint(
             "pdf_progress >= 0 AND pdf_progress <= 100",
             name="ck_course_lesson_pdf_progress",
+        ),
+        CheckConstraint(
+            "slides_status IN "
+            "('empty','pending','processing','ready','approved','failed')",
+            name="ck_course_lesson_slides_status",
+        ),
+        CheckConstraint(
+            "slides_progress >= 0 AND slides_progress <= 100",
+            name="ck_course_lesson_slides_progress",
         ),
     )
 
@@ -194,6 +212,46 @@ class CourseLesson(UUIDPKMixin, TimestampMixin, Base):
     pdf_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     pdf_generated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+
+    # §7 — Fase 4: Slide della lezione (pipeline async, scoped a lezione).
+    # Popolata dal worker `course_lesson_slides_worker` quando la lezione
+    # passa per `processing → ready`. Modificabile a mano via PATCH
+    # /lessons/{id}/slides (richiede status `ready` o `approved`).
+    slides_status: Mapped[str] = mapped_column(
+        String(40), nullable=False, default="empty", server_default="empty"
+    )
+    slides_raw: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB, nullable=True
+    )
+    slides_tokens: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB, nullable=True
+    )
+    slides_attempts: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, default=0, server_default="0"
+    )
+    slides_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    slides_generated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    slides_approved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Stale-detection — modifica manuale del `slides_raw` (Fase 4). Set
+    # da `course_lesson_slides_crud.update_lesson_slides`; il worker AI
+    # di Fase 4 NON tocca questa colonna. Confrontato lato FE col PDF
+    # slide e con upstream (content/structure/architecture).
+    slides_modified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    slides_regeneration_hint: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )
+    slides_progress: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, default=0, server_default="0"
+    )
+    slides_progress_phase: Mapped[str | None] = mapped_column(
+        String(50), nullable=True
     )
 
     module: Mapped["CourseModule"] = relationship(

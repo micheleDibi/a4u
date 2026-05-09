@@ -45,6 +45,7 @@ COURSE_STATUSES: tuple[str, ...] = (
     "content_approved",
     "slides_pending",
     "slides_ready",
+    "slides_approved",
     "speech_pending",
     "speech_ready",
     "published",

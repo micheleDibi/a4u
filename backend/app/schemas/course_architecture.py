@@ -115,6 +115,22 @@ class CourseLessonOut(ORMModel):
     # l'endpoint dedicato per il download anziché esporre il path raw.
     pdf_path: str | None = None
 
+    # Fase 4 — Slide della lezione (§7) — meta + payload AI
+    slides_status: str = "empty"
+    slides_progress: int = 0
+    slides_progress_phase: str | None = None
+    slides_error: str | None = None
+    slides_attempts: int = 0
+    slides_generated_at: datetime | None = None
+    slides_approved_at: datetime | None = None
+    slides_tokens: dict[str, Any] | None = None
+    slides_regeneration_hint: str | None = None
+    # Stale-detection: timestamp dell'ultima modifica manuale al
+    # `slides_raw`. Set da CRUD; worker AI NON lo tocca.
+    slides_modified_at: datetime | None = None
+    # Output AI completo (verbatim §7.3) — nullable finché non generato.
+    slides_raw: dict[str, Any] | None = None
+
 
 class CourseModuleOut(ORMModel):
     id: uuid.UUID
