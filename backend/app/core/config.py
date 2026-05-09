@@ -102,6 +102,18 @@ class Settings(BaseSettings):
     # `course_lesson_structure_auto_retry_max`.
     course_lesson_content_auto_retry_max: int = 5
 
+    # Fase 4 — Slide della lezione (§7).
+    # Output 4-8k tokens + reasoning. Cap=16000 per non troncare.
+    openai_lesson_slides_model: str = "gpt-5.5"
+    openai_lesson_slides_max_tokens: int = 16_000
+    openai_lesson_slides_reasoning_effort: str = "medium"
+    course_lesson_slides_poll_interval_seconds: int = 4
+    # Cap=3 come content: input ~8-18k, output ~4-8k, niente bottleneck.
+    course_lesson_slides_max_concurrency: int = 3
+    # Auto-retry trasparente per l'utente. Vedi
+    # `course_lesson_structure_auto_retry_max`.
+    course_lesson_slides_auto_retry_max: int = 5
+
     # §7 — Export PDF lezioni.
     # Cap=2: rendering Playwright è I/O+CPU intensive (Chromium istanza).
     course_lesson_pdf_poll_interval_seconds: int = 4

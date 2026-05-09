@@ -26,6 +26,7 @@ from app.services import (
     course_document_worker,
     course_lesson_content_worker,
     course_lesson_pdf_worker,
+    course_lesson_slides_worker,
     course_lesson_structure_worker,
 )
 
@@ -80,6 +81,10 @@ async def lifespan(app: FastAPI):
     # delle lezioni pending con cap (default 3). Auto-genera glossario al
     # primo task se assente (§10.1).
     course_lesson_content_worker.start_worker()
+    # Worker generazione slide lezioni (Fase 4 — §7). Dispatch parallelo
+    # delle lezioni con `slides_status='pending'`. Pre-condizione:
+    # `content_status ∈ (ready, approved)`.
+    course_lesson_slides_worker.start_worker()
     # Worker export PDF lezioni (§7). Cap=2: Chromium pesa, niente
     # rate-limit ma I/O+CPU intensive.
     course_lesson_pdf_worker.start_worker()
@@ -89,6 +94,7 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         await course_lesson_pdf_worker.stop_worker()
+        await course_lesson_slides_worker.stop_worker()
         await course_lesson_content_worker.stop_worker()
         await course_lesson_structure_worker.stop_worker()
         await course_architecture_worker.stop_worker()
