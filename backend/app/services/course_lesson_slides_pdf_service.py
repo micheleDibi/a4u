@@ -19,7 +19,7 @@ template dedicato per layout slide (A4 landscape, una slide per pagina).
 from __future__ import annotations
 
 import asyncio
-import urllib.parse
+import base64
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -142,19 +142,20 @@ def _slide_type_label(language: str, slide_type: str) -> str:
 
 
 def _svg_to_data_uri(svg: str) -> str:
-    """Converte un blocco SVG in una data-URI utilizzabile come `src`
-    di `<img>`. Strategia adottata per il PDF SLIDE: usando `<img>`
-    al posto dell'SVG inline, WeasyPrint applica correttamente
+    """Converte un blocco SVG in una data-URI base64 utilizzabile come
+    `src` di `<img>`. Strategia adottata per il PDF SLIDE: usando
+    `<img>` al posto dell'SVG inline, WeasyPrint applica correttamente
     `object-fit: contain`, scalando l'immagine in modo proporzionale
     all'effettivo box del container (anche quando questo si è
-    ristretto perché i bullet hanno consumato spazio). Con SVG
-    inline questo non era affidabile: WeasyPrint mostrava il SVG a
-    larghezza piena e lo clippava verticalmente.
+    ristretto perché i bullet hanno consumato spazio).
+
+    Encoding: base64 (non URL-encode). Le virgolette doppie negli
+    attributi SVG (es. `viewBox="0 0 800 400"`) NON sono safe in un
+    `src="..."` HTML — termina l'attributo a metà payload. base64 le
+    elimina dall'output e produce un payload sempre safe.
     """
-    # urlencode: serve solo a evitare caratteri problematici (`#`, `%`)
-    # nella URL. Mantiene il quoting minimale per leggibilità.
-    encoded = urllib.parse.quote(svg, safe="<>=:/, ;.()[]\"'")
-    return f"data:image/svg+xml;utf8,{encoded}"
+    payload = base64.b64encode(svg.encode("utf-8")).decode("ascii")
+    return f"data:image/svg+xml;base64,{payload}"
 
 
 def _build_slide_asset_html(
