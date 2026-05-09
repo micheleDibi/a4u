@@ -19,6 +19,7 @@ template dedicato per layout slide (A4 landscape, una slide per pagina).
 from __future__ import annotations
 
 import asyncio
+import base64
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -140,6 +141,16 @@ def _slide_type_label(language: str, slide_type: str) -> str:
     return labels_it.get(slide_type, slide_type)
 
 
+def _svg_to_data_uri(svg: str) -> str:
+    """Converte SVG → `data:image/svg+xml;base64,...` per uso in
+    `<img src=...>`. Encoding base64 perché l'SVG contiene molti `"`
+    (attributi viewBox, xmlns, ecc.) che romperebbero un `src="..."`
+    HTML se URL-encodato troppo permissivamente.
+    """
+    payload = base64.b64encode(svg.encode("utf-8")).decode("ascii")
+    return f"data:image/svg+xml;base64,{payload}"
+
+
 def _build_slide_asset_html(
     asset: dict[str, Any],
     *,
@@ -148,13 +159,44 @@ def _build_slide_asset_html(
 ) -> str:
     """Costruisce il blocco HTML per un asset referenziato da una slide.
 
-    Delega gli helper di `course_lesson_pdf_service`: lo stesso
-    rendering del PDF lezione testo. Funziona affidabilmente perché
-    nel layout slide gli asset hanno una pagina dedicata (vedi
-    `_expand_slide_for_rendering`), quindi non sono in competizione
-    con i bullet per lo spazio verticale.
+    I diagrammi Mermaid vengono incapsulati in `<img>` con data-URI
+    base64 anziché inseriti come SVG inline: nel contesto slide PDF
+    questo è l'unico modo affidabile per far rispettare a WeasyPrint
+    `max-height`. Un SVG inline con attributi `width="X" height="Y"`
+    espliciti emessi da Mermaid 10.9.x ignora il vincolo CSS, e il
+    diagramma sborda dal body venendo tagliato. Un `<img>` invece è
+    un replaced element con aspect ratio intrinseca: max-width e
+    max-height combinati gli applicano scaling proporzionale.
+
+    Gli altri asset (table/equation/example) usano gli helper del
+    PDF lezione testo invariati, perché non hanno il problema dello
+    scaling SVG.
     """
     if kind == "visual" or kind == "new_visual":
+        fmt = asset.get("format", "")
+        if fmt == "mermaid":
+            asset_id = str(asset.get("asset_id", ""))
+            svg = (mermaid_svg_map or {}).get(asset_id) if asset_id else None
+            caption = (asset.get("caption") or "").strip()
+            caption_html = (
+                f'<figcaption>{base_pdf._html_escape_text(caption)}</figcaption>'
+                if caption
+                else ""
+            )
+            if svg:
+                data_uri = _svg_to_data_uri(svg)
+                body = f'<img class="mermaid-svg" src="{data_uri}" alt="" />'
+            else:
+                content = asset.get("content", "") or ""
+                body = (
+                    f'<pre class="mermaid-fallback">'
+                    f"{base_pdf._html_escape_text(content)}</pre>"
+                )
+            return (
+                f'<figure class="visual">'
+                f'<div class="figure-body">{body}</div>{caption_html}</figure>'
+            )
+        # image_prompt / image_search_query / description: fallback testo.
         return base_pdf._render_visual_asset_block(
             asset, mermaid_svg_map=mermaid_svg_map
         )
