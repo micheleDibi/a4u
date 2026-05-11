@@ -1,6 +1,6 @@
 import { type ColumnDef, type PaginationState } from "@tanstack/react-table";
 import { Plus } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -167,6 +167,17 @@ function CreateUserDialog({
   const [fullName, setFullName] = useState("");
   const [password, setPassword] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
+  // Reset dei campi a ogni riapertura del dialog: il componente resta
+  // montato tra un'apertura e l'altra (Radix gestisce solo la visibility),
+  // quindi senza questo lo stato locale persiste dalla creazione precedente.
+  useEffect(() => {
+    if (open) {
+      setEmail("");
+      setFullName("");
+      setPassword("");
+      setIsAdmin(false);
+    }
+  }, [open]);
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="sm:max-w-md">
