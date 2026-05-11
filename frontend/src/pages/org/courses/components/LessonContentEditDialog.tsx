@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Save, Trash2, Plus, ChevronDown, ChevronRight, Copy, Check } from "lucide-react";
 import { toast } from "sonner";
@@ -86,18 +86,12 @@ export function LessonContentEditDialog({
     initial.references,
   );
 
-  useEffect(() => {
-    if (!open) return;
-    setIntroduction(initial.introduction);
-    setSummary(initial.summary);
-    setKeyTakeaways(initial.key_takeaways);
-    setSections(initial.sections);
-    setVisualAssets(initial.visual_assets);
-    setTables(initial.tables);
-    setEquations(initial.equations);
-    setExamples(initial.examples);
-    setReferences(initial.references);
-  }, [open, initial]);
+  // NB: stato inizializzato lazy nei useState sopra (UNA volta al mount).
+  // Niente reset su re-render del parent: `initial` arriva come inline-object
+  // dal parent e cambia riferimento ad ogni render (es. polling TanStack
+  // Query), quindi un useEffect con `[open, initial]` resetterebbe lo state
+  // mentre l'utente sta modificando — facendo sparire i campi appena aggiunti
+  // (Aggiungi sezione/asset/tabella/equazione/esempio/riferimento).
 
   const handleSubmit = () => {
     const payload: LessonContentUpdateInput = {

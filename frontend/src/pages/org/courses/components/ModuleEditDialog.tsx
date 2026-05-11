@@ -49,25 +49,26 @@ export function ModuleEditDialog({
   onSubmit,
 }: Props) {
   const { t } = useTranslation();
-  const [draft, setDraft] = useState<ModuleDraft>({
-    title: "",
-    description: "",
-  });
+  // Lazy init: clona `initial` UNA volta al mount (il parent conditional-
+  // renderizza, quindi nuovo mount = nuovi initial). Vedi note in
+  // LessonStructureEditDialog: con `[open, initial]` come deps, ogni re-render
+  // del parent resetterebbe lo state perché `initial` è inline-object.
+  const [draft, setDraft] = useState<ModuleDraft>(() => ({
+    title: initial?.title ?? "",
+    description: initial?.description ?? "",
+  }));
   const titleRef = useRef<HTMLInputElement>(null);
 
+  // Autofocus dopo l'animazione di apertura del Dialog Radix.
   useEffect(() => {
     if (!open) return;
-    setDraft({
-      title: initial?.title ?? "",
-      description: initial?.description ?? "",
-    });
-    // Autofocus dopo l'animazione di apertura del Dialog Radix.
     const id = window.setTimeout(() => {
       titleRef.current?.focus();
       titleRef.current?.select();
     }, 80);
     return () => window.clearTimeout(id);
-  }, [open, initial]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const trimmedTitle = draft.title.trim();
   const valid = trimmedTitle.length > 0;

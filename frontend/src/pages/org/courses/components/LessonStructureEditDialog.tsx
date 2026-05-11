@@ -85,26 +85,38 @@ export function LessonStructureEditDialog({
   onSubmit,
 }: Props) {
   const { t } = useTranslation();
-  const [objectives, setObjectives] = useState<string[]>([]);
-  const [topics, setTopics] = useState<LessonStructureMandatoryTopic[]>([]);
-  const [prereqs, setPrereqs] = useState<string[]>([]);
-  const [sections, setSections] = useState<LessonStructureSectionOutline[]>([]);
-  const firstFieldRef = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    setObjectives([...initial.learning_objectives]);
-    setTopics(initial.mandatory_topics.map((t) => ({ ...t })));
-    setPrereqs([...initial.prerequisites]);
-    setSections(
+  // Lazy init: clona `initial` UNA sola volta al mount. Il parent conditional-
+  // renderizza il dialog (`{kind === "open" && <... />}`), quindi un nuovo
+  // mount = nuovo set di iniziali. Prima si usava un useEffect con deps
+  // `[open, initial]`, ma `initial` è passato inline dal parent: ogni re-render
+  // (es. polling TanStack Query) creava un nuovo riferimento e l'effect
+  // resettava lo state, cancellando i campi appena aggiunti dall'utente.
+  const [objectives, setObjectives] = useState<string[]>(() => [
+    ...initial.learning_objectives,
+  ]);
+  const [topics, setTopics] = useState<LessonStructureMandatoryTopic[]>(() =>
+    initial.mandatory_topics.map((t) => ({ ...t })),
+  );
+  const [prereqs, setPrereqs] = useState<string[]>(() => [
+    ...initial.prerequisites,
+  ]);
+  const [sections, setSections] = useState<LessonStructureSectionOutline[]>(
+    () =>
       initial.section_outline.map((s) => ({
         ...s,
         covers_topic_ids: [...s.covers_topic_ids],
-      }))
-    );
+      })),
+  );
+  const firstFieldRef = useRef<HTMLTextAreaElement>(null);
+
+  // Focus iniziale: solo al mount, una volta. `open` non cambia mai durante
+  // la vita del componente (il parent lo conditional-renderizza).
+  useEffect(() => {
+    if (!open) return;
     const id = window.setTimeout(() => firstFieldRef.current?.focus(), 80);
     return () => window.clearTimeout(id);
-  }, [open, initial]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const topicIds = useMemo(() => topics.map((tt) => tt.topic_id), [topics]);
 

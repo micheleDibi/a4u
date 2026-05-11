@@ -74,28 +74,28 @@ export function LessonEditDialog({
   onSubmit,
 }: Props) {
   const { t } = useTranslation();
-  const [draft, setDraft] = useState<LessonDraft>({
-    title: "",
-    summary: "",
-    is_introductory: false,
-    recommended_bibliography: [],
-  });
+  // Lazy init dello state: clona `initial` UNA volta al mount. Vedi note in
+  // LessonStructureEditDialog: `initial` è inline-object dal parent e cambia
+  // riferimento ad ogni re-render, quindi un useEffect con `[open, initial]`
+  // resetterebbe lo state mentre l'utente sta modificando.
+  const [draft, setDraft] = useState<LessonDraft>(() => ({
+    title: initial?.title ?? "",
+    summary: initial?.summary ?? "",
+    is_introductory: initial?.is_introductory ?? false,
+    recommended_bibliography: initial?.recommended_bibliography ?? [],
+  }));
   const titleRef = useRef<HTMLInputElement>(null);
 
+  // Focus iniziale: solo al mount, una volta.
   useEffect(() => {
     if (!open) return;
-    setDraft({
-      title: initial?.title ?? "",
-      summary: initial?.summary ?? "",
-      is_introductory: initial?.is_introductory ?? false,
-      recommended_bibliography: initial?.recommended_bibliography ?? [],
-    });
     const id = window.setTimeout(() => {
       titleRef.current?.focus();
       titleRef.current?.select();
     }, 80);
     return () => window.clearTimeout(id);
-  }, [open, initial]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const trimmedTitle = draft.title.trim();
   const valid = trimmedTitle.length > 0;

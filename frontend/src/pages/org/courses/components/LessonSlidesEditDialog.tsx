@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ChevronDown,
@@ -106,18 +106,16 @@ export function LessonSlidesEditDialog({
   onSubmit,
 }: Props) {
   const { t } = useTranslation();
-  const [slides, setSlides] = useState<LessonSlideItem[]>(initial.slides);
+  // Lazy init: clona `initial` UNA volta al mount. Vedi note in
+  // LessonStructureEditDialog: `initial` è inline-object dal parent e cambia
+  // riferimento ad ogni re-render (polling TanStack Query), quindi un effect
+  // con `[open, initial]` resetterebbe lo state mentre l'utente sta
+  // modificando — facendo sparire le slide/asset appena aggiunti.
+  const [slides, setSlides] = useState<LessonSlideItem[]>(() => initial.slides);
   const [newAssets, setNewAssets] = useState<LessonSlideNewAsset[]>(
-    initial.new_assets,
+    () => initial.new_assets,
   );
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-
-  useEffect(() => {
-    if (!open) return;
-    setSlides(initial.slides);
-    setNewAssets(initial.new_assets);
-    setExpanded(new Set());
-  }, [open, initial]);
 
   // Asset disponibili per le multi-select references_assets.
   const availableAssets = useMemo(

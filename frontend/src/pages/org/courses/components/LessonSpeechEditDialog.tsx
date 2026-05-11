@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AlertTriangle, Plus, Save, Trash2 } from "lucide-react";
 
@@ -140,20 +140,14 @@ export function LessonSpeechEditDialog({
     }));
   }, [slidesRaw, t]);
 
+  // Lazy init: clona `initial.speech_segments` UNA volta al mount. Vedi note
+  // in LessonStructureEditDialog: senza questo, l'effect su `[open, initial]`
+  // (o sue sotto-proprietà) rifirerebbe ad ogni re-render del parent
+  // (TanStack Query polling cambia il riferimento dell'array) — resettando
+  // lo state mentre l'utente aggiunge/modifica segmenti.
   const [segments, setSegments] = useState<DraftSegment[]>(() =>
     initial.speech_segments.map((s, idx) => ({ ...s, _key: `init-${idx}` })),
   );
-
-  useEffect(() => {
-    if (open) {
-      setSegments(
-        initial.speech_segments.map((s, idx) => ({
-          ...s,
-          _key: `init-${idx}`,
-        })),
-      );
-    }
-  }, [open, initial.speech_segments]);
 
   const segmentIdsSet = useMemo(
     () => new Set(segments.map((s) => s.segment_id)),
