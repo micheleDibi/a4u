@@ -62,21 +62,19 @@
       width: 100%;
       padding-bottom: 4pt;
       border-bottom: 0.5pt solid {{ tpl.secondary_color }}66;
-    }
-    .page-header::after {
-      content: "";
-      display: block;
-      clear: both;
+      display: flex;
+      align-items: center;
     }
     .page-header .logo-left {
       max-height: {{ tpl.header_height_mm if tpl.header_height_mm else 12 }}mm;
       max-width: 50mm;
-      float: left;
+      object-fit: contain;
     }
     .page-header .logo-right {
       max-height: {{ tpl.header_height_mm if tpl.header_height_mm else 12 }}mm;
       max-width: 50mm;
-      float: right;
+      object-fit: contain;
+      margin-left: auto;
     }
     {% endif %}
 
