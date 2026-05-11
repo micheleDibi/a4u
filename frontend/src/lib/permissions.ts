@@ -17,6 +17,7 @@ export const P = {
   COURSE_EDIT: "course:edit",
   COURSE_DELETE: "course:delete",
   COURSE_GENERATE: "course:generate",
+  COURSE_SAVE_DRAFT: "course:save_draft",
 } as const;
 
 export type PermissionCode = (typeof P)[keyof typeof P];

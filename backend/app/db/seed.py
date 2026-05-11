@@ -111,6 +111,12 @@ PERMISSION_DESCRIPTIONS: dict[str, str] = {
         "Avviare la generazione AI dei contenuti del corso (architettura, "
         "lezioni, slide, discorso TTS) a partire dai parametri configurati."
     ),
+    "course:save_draft": (
+        "Salvare un corso come bozza dalle schede 'Informazioni di base' e "
+        "'Inquadramento didattico' senza confermare il setup didattico. "
+        "Utile quando un amministratore crea uno stub di corso (es. solo "
+        "titolo e CFU) e lo assegna a un altro utente che lo completerà."
+    ),
 }
 
 # Prompt seedati per la generazione clip MiniMax. Sono in inglese

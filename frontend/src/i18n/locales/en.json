@@ -98,6 +98,8 @@
     "search": "Search by title or objectives…",
     "saveNow": "Save now",
     "createAndContinue": "Create and continue",
+    "saveAsDraft": "Save as draft",
+    "savedAsDraftToast": "Course saved as draft.",
     "wizard": {
       "continueToDidactic": "Continue to Didactic setup",
       "confirmDidacticAndContinue": "Confirm and continue",
@@ -1515,7 +1517,8 @@
     "course:assign": "Assign courses",
     "course:edit": "Edit courses",
     "course:delete": "Delete courses",
-    "course:generate": "Generate course content"
+    "course:generate": "Generate course content",
+    "course:save_draft": "Save course as draft"
   },
   "permissionDescriptions": {
     "member:view": "View the list of organization members with name, email, role and join date. Prerequisite for almost every other action on members.",
@@ -1533,7 +1536,8 @@
     "course:assign": "Change the assignee of an existing course, transferring responsibility to another organization member.",
     "course:edit": "Edit all course parameters (title, objectives, taxonomies, key topics, documents). Implies visibility of every course in the organization, not just assigned ones.",
     "course:delete": "Delete a course and all its uploaded documents. This is irreversible.",
-    "course:generate": "Trigger AI generation of course content (architecture, lessons, slides, audio). Available in future iterations."
+    "course:generate": "Trigger AI generation of course content (architecture, lessons, slides, audio). Available in future iterations.",
+    "course:save_draft": "Save a course as a draft from the 'Basic info' and 'Didactic framing' tabs without confirming the setup. Lets an admin create a course stub (e.g. just title and credits) and assign it to another user to complete."
   },
   "roles": {
     "creator": "Creator",

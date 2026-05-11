@@ -98,6 +98,8 @@
     "search": "Cerca per titolo o obiettivi…",
     "saveNow": "Salva ora",
     "createAndContinue": "Crea e continua",
+    "saveAsDraft": "Salva come bozza",
+    "savedAsDraftToast": "Corso salvato come bozza.",
     "wizard": {
       "continueToDidactic": "Continua a Inquadramento didattico",
       "confirmDidacticAndContinue": "Conferma e continua",
@@ -1516,7 +1518,8 @@
     "course:assign": "Assegna corsi",
     "course:edit": "Modifica corsi",
     "course:delete": "Elimina corsi",
-    "course:generate": "Genera contenuti corso"
+    "course:generate": "Genera contenuti corso",
+    "course:save_draft": "Salva corso come bozza"
   },
   "permissionDescriptions": {
     "member:view": "Vedere l'elenco dei membri dell'organizzazione con nome, email, ruolo e data di iscrizione. Prerequisito per quasi tutte le altre azioni sui membri.",
@@ -1534,7 +1537,8 @@
     "course:assign": "Cambiare l'assegnatario di un corso esistente, spostando la responsabilità del corso su un altro membro dell'organizzazione.",
     "course:edit": "Modificare tutti i parametri di un corso (titolo, obiettivi, tassonomie, argomenti chiave, documenti). Implica la visibilità su tutti i corsi dell'organizzazione, non solo quelli assegnati.",
     "course:delete": "Eliminare un corso e tutti i suoi documenti caricati. Operazione irreversibile.",
-    "course:generate": "Avviare la generazione AI dei contenuti del corso (architettura, lezioni, slide, audio). Disponibile in iterazioni successive."
+    "course:generate": "Avviare la generazione AI dei contenuti del corso (architettura, lezioni, slide, audio). Disponibile in iterazioni successive.",
+    "course:save_draft": "Salvare un corso come bozza dalle schede 'Informazioni di base' e 'Inquadramento didattico' senza confermare il setup. Permette a un amministratore di creare uno stub di corso (es. solo titolo e CFU) e assegnarlo poi a un altro utente che lo completerà."
   },
   "roles": {
     "creator": "Creatore",

@@ -163,6 +163,7 @@ export default function CourseEditorPage({ mode }: Props) {
   const canEdit = useHasPermission(P.COURSE_EDIT, orgId);
   const canAssign = useHasPermission(P.COURSE_ASSIGN, orgId);
   const canGenerate = useHasPermission(P.COURSE_GENERATE, orgId);
+  const canSaveDraft = useHasPermission(P.COURSE_SAVE_DRAFT, orgId);
 
   const courseQuery = useQuery({
     queryKey: ["courses", "detail", orgId, courseId],
@@ -367,6 +368,26 @@ export default function CourseEditorPage({ mode }: Props) {
     onError: (err) => toast.error(extractApiError(err).message),
   });
 
+  // "Salva come bozza": in create mode crea il corso ma preserva il tab
+  // corrente (così l'utente resta dov'era invece di essere spinto a "didactic"
+  // come fa createMut). In edit mode il flusso è gestito direttamente da
+  // saveDraft() chiamando performAutoSave + toast — niente network call qui.
+  const saveDraftMut = useMutation({
+    mutationFn: (payload: CourseCreateInput) => coursesApi.create(orgId, payload),
+    onSuccess: (fresh) => {
+      qc.invalidateQueries({ queryKey: ["courses", "list", orgId] });
+      qc.setQueryData(["courses", "detail", orgId, fresh.id], fresh);
+      toast.success(t("courses.savedAsDraftToast"));
+      try {
+        localStorage.setItem(`course-editor-tab:${fresh.id}`, activeTab);
+      } catch {
+        // ignore
+      }
+      navigate(`/orgs/${orgId}/corsi/${fresh.id}`, { replace: true });
+    },
+    onError: (err) => toast.error(extractApiError(err).message),
+  });
+
   // Architettura — Fase 1.
   const [archDialogOpen, setArchDialogOpen] = useState(false);
   const generateArchMut = useMutation({
@@ -486,6 +507,32 @@ export default function CourseEditorPage({ mode }: Props) {
       createMut.mutate(payload);
     } else {
       performAutoSave();
+    }
+  };
+
+  // "Salva come bozza": come submit() ma in create mode usa saveDraftMut
+  // (che preserva il tab corrente) e in edit mode mostra un toast esplicito
+  // dopo il flush dell'auto-save. Niente conferma del setup didattico.
+  const saveDraft = () => {
+    if (!draft) return;
+    if (!draft.title.trim()) {
+      toast.error(t("courses.errors.titleRequired"));
+      return;
+    }
+    if (mode === "create") {
+      const payload: CourseCreateInput = {
+        title: draft.title.trim(),
+        objectives: draft.objectives.trim(),
+        language_code: draft.language_code,
+        cfu: draft.cfu,
+        argomenti_chiave: draft.argomenti_chiave,
+        assignee_user_id: draft.assignee_user_id,
+        taxonomies: draft.taxonomies,
+      };
+      saveDraftMut.mutate(payload);
+    } else {
+      performAutoSave();
+      toast.success(t("courses.savedAsDraftToast"));
     }
   };
 
@@ -917,7 +964,28 @@ export default function CourseEditorPage({ mode }: Props) {
               </div>
             </CardContent>
           </Card>
-          <div className="flex justify-end">
+          <div className="flex flex-wrap justify-end gap-2">
+            {canSaveDraft && !setupLocked && (
+              <Button
+                size="lg"
+                variant="secondary"
+                onClick={saveDraft}
+                disabled={
+                  !draft.title.trim() ||
+                  createMut.isPending ||
+                  saveDraftMut.isPending
+                }
+              >
+                {saveDraftMut.isPending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Save className="size-4" />
+                )}
+                {saveDraftMut.isPending
+                  ? t("common.saving")
+                  : t("courses.saveAsDraft")}
+              </Button>
+            )}
             <Button
               size="lg"
               variant="outline"
@@ -1040,7 +1108,28 @@ export default function CourseEditorPage({ mode }: Props) {
             </CardContent>
           </Card>
           {mode === "create" && (
-            <div className="flex justify-end">
+            <div className="flex flex-wrap justify-end gap-2">
+              {canSaveDraft && (
+                <Button
+                  size="lg"
+                  variant="secondary"
+                  onClick={saveDraft}
+                  disabled={
+                    !draft.title.trim() ||
+                    createMut.isPending ||
+                    saveDraftMut.isPending
+                  }
+                >
+                  {saveDraftMut.isPending ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Save className="size-4" />
+                  )}
+                  {saveDraftMut.isPending
+                    ? t("common.saving")
+                    : t("courses.saveAsDraft")}
+                </Button>
+              )}
               <Button
                 onClick={submit}
                 disabled={createMut.isPending || !draft.title.trim()}
@@ -1057,7 +1146,18 @@ export default function CourseEditorPage({ mode }: Props) {
             </div>
           )}
           {mode === "edit" && (
-            <div className="flex justify-end">
+            <div className="flex flex-wrap justify-end gap-2">
+              {canSaveDraft && !setupLocked && (
+                <Button
+                  size="lg"
+                  variant="secondary"
+                  onClick={saveDraft}
+                  disabled={!draft.title.trim()}
+                >
+                  <Save className="size-4" />
+                  {t("courses.saveAsDraft")}
+                </Button>
+              )}
               {setupLocked ? (
                 <Button
                   size="lg"
