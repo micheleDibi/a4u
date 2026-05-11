@@ -1,12 +1,22 @@
+import { Check, ChevronsUpDown } from "lucide-react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Button } from "@/components/ui/button";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { useOrgMembers } from "@/hooks/useOrgMembers";
+import { cn } from "@/lib/utils";
 
 interface Props {
   orgId: string;
@@ -17,29 +27,91 @@ interface Props {
 
 export function MemberSelect({ orgId, value, onChange, disabled }: Props) {
   const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
   const query = useOrgMembers(orgId);
   const members = query.data ?? [];
 
+  const selected = members.find((m) => m.user_id === value);
+
   return (
-    <Select value={value ?? undefined} onValueChange={onChange} disabled={disabled}>
-      <SelectTrigger>
-        <SelectValue placeholder={t("courses.fields.assigneePlaceholder")} />
-      </SelectTrigger>
-      <SelectContent>
-        {members.map((m) => (
-          <SelectItem key={m.user_id} value={m.user_id}>
-            <span className="font-medium">{m.user_full_name}</span>
-            <span className="ms-2 text-muted-foreground">
-              · {t(`roles.${m.role_code}`, { defaultValue: m.role_name_it })}
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          disabled={disabled}
+          className="w-full justify-between text-start font-normal"
+        >
+          {selected ? (
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="truncate font-medium">
+                {selected.user_full_name}
+              </span>
+              <span className="truncate text-xs text-muted-foreground">
+                ·{" "}
+                {t(`roles.${selected.role_code}`, {
+                  defaultValue: selected.role_name_it,
+                })}
+              </span>
             </span>
-          </SelectItem>
-        ))}
-        {members.length === 0 && (
-          <div className="p-2 text-xs text-muted-foreground">
-            {t("courses.fields.noMembers")}
-          </div>
-        )}
-      </SelectContent>
-    </Select>
+          ) : (
+            <span className="text-muted-foreground">
+              {t("courses.fields.assigneePlaceholder")}
+            </span>
+          )}
+          <ChevronsUpDown className="ms-2 size-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        className="w-[--radix-popover-trigger-width] p-0"
+        align="start"
+      >
+        <Command
+          filter={(itemValue, search) => {
+            // itemValue è "<full_name> <email>" (lowercase grazie a cmdk).
+            // Match case-insensitive su ogni token della search query.
+            const tokens = search.toLowerCase().split(/\s+/).filter(Boolean);
+            return tokens.every((tok) => itemValue.includes(tok)) ? 1 : 0;
+          }}
+        >
+          <CommandInput placeholder={t("common.search")} />
+          <CommandList>
+            <CommandEmpty>{t("courses.fields.noMembers")}</CommandEmpty>
+            <CommandGroup>
+              {members.map((m) => (
+                <CommandItem
+                  key={m.user_id}
+                  value={`${m.user_full_name} ${m.user_email}`}
+                  onSelect={() => {
+                    onChange(m.user_id);
+                    setOpen(false);
+                  }}
+                >
+                  <Check
+                    className={cn(
+                      "size-4",
+                      value === m.user_id ? "opacity-100" : "opacity-0",
+                    )}
+                  />
+                  <div className="flex min-w-0 flex-col">
+                    <span className="truncate font-medium">
+                      {m.user_full_name}
+                    </span>
+                    <span className="truncate text-xs text-muted-foreground">
+                      {m.user_email} ·{" "}
+                      {t(`roles.${m.role_code}`, {
+                        defaultValue: m.role_name_it,
+                      })}
+                    </span>
+                  </div>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }
