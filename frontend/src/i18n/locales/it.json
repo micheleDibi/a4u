@@ -1546,7 +1546,16 @@
     "creator": "Creatore",
     "org_admin": "Amministratore organizzazione",
     "manager": "Manager",
-    "member": "Membro"
+    "member": "Membro",
+    "capabilitiesTitle": "Capacità del ruolo {{role}}",
+    "capabilitiesHelp": "Configurazione predefinita. Può essere personalizzata in 'Permessi' dell'organizzazione."
+  },
+  "permissionCategories": {
+    "members": "Gestione membri",
+    "templates": "Template (slide / PDF)",
+    "organization": "Organizzazione",
+    "coursesView": "Visualizzazione corsi",
+    "coursesManage": "Gestione corsi"
   },
   "errors": {
     "generic": "Si è verificato un errore",

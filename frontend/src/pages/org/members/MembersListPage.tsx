@@ -2,6 +2,7 @@ import { type ColumnDef } from "@tanstack/react-table";
 import {
   ArrowLeftRight,
   Copy,
+  Info,
   LockKeyhole,
   MoreHorizontal,
   Trash2,
@@ -20,6 +21,7 @@ import { useHasPermission } from "@/auth/PermissionGate";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { DataTable } from "@/components/shared/DataTable";
+import { RolePermissionsBox } from "@/components/shared/RolePermissionsBox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -38,6 +40,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -141,21 +148,48 @@ export default function MembersListPage() {
           return <span className="text-sm">{m.role_name_it}</span>;
         }
         return (
-          <Select
-            value={m.role_code}
-            onValueChange={(v) => changeRoleMut.mutate({ userId: m.user_id, role: v as RoleCode })}
-          >
-            <SelectTrigger className="h-8 w-48">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {ROLES_NO_CREATOR.map((r) => (
-                <SelectItem key={r} value={r}>
-                  {t(`roles.${r}`)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex items-center gap-1.5">
+            <Select
+              value={m.role_code}
+              onValueChange={(v) => changeRoleMut.mutate({ userId: m.user_id, role: v as RoleCode })}
+            >
+              <SelectTrigger className="h-8 w-48">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {ROLES_NO_CREATOR.map((r) => (
+                  <SelectItem key={r} value={r}>
+                    {t(`roles.${r}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                  aria-label={t("roles.capabilitiesTitle", {
+                    role: t(`roles.${m.role_code}`),
+                  })}
+                >
+                  <Info className="size-4" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent
+                className="w-80 max-h-[60vh] overflow-y-auto p-0"
+                align="start"
+              >
+                <RolePermissionsBox
+                  roleCode={m.role_code as RoleCode}
+                  compact
+                  className="border-0"
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
         );
       },
     },
@@ -272,6 +306,7 @@ export default function MembersListPage() {
                     </SelectContent>
                   </Select>
                 </div>
+                <RolePermissionsBox roleCode={inviteRole} />
                 {inviteMut.isError && (
                   <Alert variant="destructive">
                     <AlertDescription>{extractApiError(inviteMut.error).message}</AlertDescription>

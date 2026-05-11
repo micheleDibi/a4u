@@ -1545,7 +1545,16 @@
     "creator": "Creator",
     "org_admin": "Organization admin",
     "manager": "Manager",
-    "member": "Member"
+    "member": "Member",
+    "capabilitiesTitle": "{{role}} capabilities",
+    "capabilitiesHelp": "Default configuration. Can be customized via organization 'Permissions'."
+  },
+  "permissionCategories": {
+    "members": "Member management",
+    "templates": "Templates (slide / PDF)",
+    "organization": "Organization",
+    "coursesView": "Course visibility",
+    "coursesManage": "Course management"
   },
   "errors": {
     "generic": "An error occurred",

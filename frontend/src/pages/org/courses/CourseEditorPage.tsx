@@ -1540,25 +1540,19 @@ function ArchitectureSection({
     );
   }
 
-  // Editing manuale è permesso in tutti gli stati "stabili" downstream
-  // (ready/approved delle fasi successive). Lo stale-detection sui
-  // moduli segnala alla struttura/contenuto downstream quando una
-  // modifica all'architettura ha invalidato qualcosa più giù.
-  // Esclusi: `*_pending` (worker AI in scrittura, race condition),
-  // `published`/`archived` (corso terminato), `draft` (architettura non
-  // ancora generata).
+  // Editing manuale dell'architettura è sempre permesso, allineato al
+  // pattern di lezioni-struttura/contenuti/slide/discorso: il worker AI
+  // di architettura scrive solo quando lo status è `architecture_pending`
+  // (caso gestito sopra con il branch `isPending`); negli altri stati il
+  // backend accetta i PATCH e lo stale-detection a cascata propaga le
+  // invalidazioni downstream. Restano fuori solo `published`/`archived`
+  // (corso terminato) e `draft` (nessuna architettura ancora generata).
   const editable =
     canEdit &&
-    [
-      "architecture_ready",
-      "architecture_approved",
-      "lessons_structure_ready",
-      "lessons_structure_approved",
-      "content_ready",
-      "content_approved",
-      "slides_ready",
-      "speech_ready",
-    ].includes(course.status);
+    course.status !== "draft" &&
+    course.status !== "architecture_pending" &&
+    course.status !== "published" &&
+    course.status !== "archived";
 
   return (
     <div className="space-y-3">
