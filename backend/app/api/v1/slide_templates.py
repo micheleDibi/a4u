@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 
 from app.core.deps import CurrentUser, DbSession
-from app.core.permissions import P, require
+from app.core.permissions import P, require, require_membership
 from app.schemas.template import SlideTemplateBase, SlideTemplateOut
 from app.services import template_service
 from app.services.file_service import save_upload_image
@@ -38,8 +38,12 @@ def _form_slide_template(
 
 @router.get("", response_model=list[SlideTemplateOut])
 async def list_templates(
-    org_id: uuid.UUID, db: DbSession, _=require(P.TEMPLATE_SLIDE_MANAGE)
+    org_id: uuid.UUID, db: DbSession, _=require_membership()
 ) -> list[SlideTemplateOut]:
+    # Lettura: chiunque sia membro dell'org può listare i template (servono
+    # per scegliere il template all'export PDF delle slide). La gestione
+    # (create/update/delete/set-default) resta gated su
+    # `template:slide:manage`.
     items = await template_service.list_slide_templates(db, org_id)
     return [SlideTemplateOut.model_validate(it) for it in items]
 
@@ -72,7 +76,7 @@ async def create_template(
 
 @router.get("/{template_id}", response_model=SlideTemplateOut)
 async def get_template(
-    org_id: uuid.UUID, template_id: uuid.UUID, db: DbSession, _=require(P.TEMPLATE_SLIDE_MANAGE)
+    org_id: uuid.UUID, template_id: uuid.UUID, db: DbSession, _=require_membership()
 ) -> SlideTemplateOut:
     tpl = await template_service.get_slide_template(db, org_id, template_id)
     return SlideTemplateOut.model_validate(tpl)

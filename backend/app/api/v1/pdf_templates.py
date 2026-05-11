@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, File, Form, UploadFile
 
 from app.core.audit import write_audit
 from app.core.deps import CurrentUser, DbSession
-from app.core.permissions import P, require
+from app.core.permissions import P, require, require_membership
 from app.schemas.template import PdfTemplateBase, PdfTemplateOut
 from app.services import template_service
 from app.services.file_service import delete_upload, save_upload_image
@@ -43,8 +43,12 @@ def _form_pdf_template(
 
 @router.get("", response_model=list[PdfTemplateOut])
 async def list_templates(
-    org_id: uuid.UUID, db: DbSession, _=require(P.TEMPLATE_PDF_MANAGE)
+    org_id: uuid.UUID, db: DbSession, _=require_membership()
 ) -> list[PdfTemplateOut]:
+    # Lettura: chiunque sia membro dell'org può listare i template (servono
+    # per scegliere il template all'export PDF di lezione/discorso). La
+    # gestione (create/update/delete/set-default) resta gated su
+    # `template:pdf:manage`.
     items = await template_service.list_pdf_templates(db, org_id)
     return [PdfTemplateOut.model_validate(it) for it in items]
 
@@ -77,7 +81,7 @@ async def create_template(
 
 @router.get("/{template_id}", response_model=PdfTemplateOut)
 async def get_template(
-    org_id: uuid.UUID, template_id: uuid.UUID, db: DbSession, _=require(P.TEMPLATE_PDF_MANAGE)
+    org_id: uuid.UUID, template_id: uuid.UUID, db: DbSession, _=require_membership()
 ) -> PdfTemplateOut:
     tpl = await template_service.get_pdf_template(db, org_id, template_id)
     return PdfTemplateOut.model_validate(tpl)
