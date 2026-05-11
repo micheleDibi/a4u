@@ -17,6 +17,7 @@ export type CourseStatus =
   | "slides_approved"
   | "speech_pending"
   | "speech_ready"
+  | "speech_approved"
   | "published"
   | "archived";
 

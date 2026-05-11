@@ -617,7 +617,7 @@ export default function CourseEditorPage({ mode }: Props) {
                   course.status !== "lessons_structure_ready" &&
                   course.status !== "lessons_structure_approved" &&
                   !course.status.startsWith("content_") &&
-                  !["slides_pending", "slides_ready", "speech_pending", "speech_ready", "published"].includes(
+                  !["slides_pending", "slides_ready", "slides_approved", "speech_pending", "speech_ready", "speech_approved", "published"].includes(
                     course.status
                   ))
               }
@@ -632,7 +632,7 @@ export default function CourseEditorPage({ mode }: Props) {
                 !course ||
                 (course.status !== "lessons_structure_approved" &&
                   !course.status.startsWith("content_") &&
-                  !["slides_pending", "slides_ready", "slides_approved", "speech_pending", "speech_ready", "published"].includes(
+                  !["slides_pending", "slides_ready", "slides_approved", "speech_pending", "speech_ready", "speech_approved", "published"].includes(
                     course.status
                   ))
               }

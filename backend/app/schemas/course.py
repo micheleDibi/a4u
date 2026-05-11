@@ -25,8 +25,10 @@ CourseStatus = Literal[
     "content_approved",
     "slides_pending",
     "slides_ready",
+    "slides_approved",
     "speech_pending",
     "speech_ready",
+    "speech_approved",
     "published",
     "archived",
 ]

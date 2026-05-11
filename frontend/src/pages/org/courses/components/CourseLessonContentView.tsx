@@ -399,7 +399,7 @@ export function CourseLessonContentView({
     if (
       course.status !== "lessons_structure_approved" &&
       !course.status.startsWith("content_") &&
-      !["slides_pending", "slides_ready", "speech_pending", "speech_ready", "published", "archived"].includes(
+      !["slides_pending", "slides_ready", "slides_approved", "speech_pending", "speech_ready", "speech_approved", "published", "archived"].includes(
         course.status,
       )
     ) {
