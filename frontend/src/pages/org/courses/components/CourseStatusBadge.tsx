@@ -21,6 +21,7 @@ const VARIANTS: Record<
   slides_approved: "brand",
   speech_pending: "warning",
   speech_ready: "brand",
+  speech_approved: "brand",
   published: "default",
   archived: "outline",
 };
