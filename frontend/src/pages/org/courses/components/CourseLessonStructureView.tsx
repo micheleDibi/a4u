@@ -722,24 +722,25 @@ function LessonStructureRow({
             empty={lesson.mandatory_topics.length === 0}
           >
             <ul className="space-y-2 text-sm">
-              {lesson.mandatory_topics.map((tt) => (
-                <li key={tt.topic_id}>
-                  <div className="flex items-baseline gap-2">
-                    <Badge
-                      variant="outline"
-                      className="font-mono text-[10px] shrink-0"
-                    >
-                      {tt.topic_id}
-                    </Badge>
-                    <span className="font-medium">{tt.topic}</span>
-                  </div>
-                  {tt.rationale && (
-                    <p className="mt-0.5 ml-12 text-xs text-muted-foreground leading-relaxed">
-                      {tt.rationale}
-                    </p>
-                  )}
-                </li>
-              ))}
+              {lesson.mandatory_topics.map((tt, idx) => {
+                const match = tt.topic_id.match(/\.T(\d+)$/);
+                const topicNum = match ? match[1] : String(idx + 1);
+                return (
+                  <li key={tt.topic_id}>
+                    <div className="flex items-baseline gap-2">
+                      <Badge variant="outline" className="text-[10px] shrink-0">
+                        {t("courses.architecture.topicLabel", { n: topicNum })}
+                      </Badge>
+                      <span className="font-medium">{tt.topic}</span>
+                    </div>
+                    {tt.rationale && (
+                      <p className="mt-0.5 ml-12 text-xs text-muted-foreground leading-relaxed">
+                        {tt.rationale}
+                      </p>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           </Subsection>
 
@@ -763,14 +764,16 @@ function LessonStructureRow({
             empty={lesson.section_outline.length === 0}
           >
             <ol className="space-y-2 text-sm">
-              {lesson.section_outline.map((s) => (
+              {lesson.section_outline.map((s, idx) => {
+                const sMatch = s.section_id.match(/\.S(\d+)$/);
+                const sectionNum = sMatch ? sMatch[1] : String(idx + 1);
+                return (
                 <li key={s.section_id}>
                   <div className="flex items-baseline gap-2">
-                    <Badge
-                      variant="outline"
-                      className="font-mono text-[10px] shrink-0"
-                    >
-                      {s.section_id}
+                    <Badge variant="outline" className="text-[10px] shrink-0">
+                      {t("courses.architecture.sectionLabel", {
+                        n: sectionNum,
+                      })}
                     </Badge>
                     <span className="font-medium">{s.title}</span>
                   </div>
@@ -781,19 +784,26 @@ function LessonStructureRow({
                   )}
                   {s.covers_topic_ids.length > 0 && (
                     <div className="mt-1 ml-12 flex flex-wrap gap-1">
-                      {s.covers_topic_ids.map((cid) => (
-                        <Badge
-                          key={cid}
-                          variant="secondary"
-                          className="font-mono text-[10px]"
-                        >
-                          {cid}
-                        </Badge>
-                      ))}
+                      {s.covers_topic_ids.map((cid) => {
+                        const tMatch = cid.match(/\.T(\d+)$/);
+                        const topicNum = tMatch ? tMatch[1] : cid;
+                        return (
+                          <Badge
+                            key={cid}
+                            variant="secondary"
+                            className="text-[10px]"
+                          >
+                            {t("courses.architecture.topicLabel", {
+                              n: topicNum,
+                            })}
+                          </Badge>
+                        );
+                      })}
                     </div>
                   )}
                 </li>
-              ))}
+                );
+              })}
             </ol>
           </Subsection>
         </div>

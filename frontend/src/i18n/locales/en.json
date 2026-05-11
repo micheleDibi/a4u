@@ -190,6 +190,7 @@
       "slides_approved": "Slides — approved",
       "speech_pending": "Speech — queued",
       "speech_ready": "Speech — ready",
+      "speech_approved": "Speech — approved",
       "published": "Published",
       "archived": "Archived"
     },
@@ -300,6 +301,8 @@
       "elapsed": "Elapsed: {{time}}",
       "moduleLabel": "Module {{n}}",
       "lessonLabel": "Lesson {{n}}",
+      "topicLabel": "Topic {{n}}",
+      "sectionLabel": "Section {{n}}",
       "moduleGenerating": "Generating lessons…",
       "moduleGenerateLessons": "Generate lessons with AI",
       "moduleLessonsGenerated": "Lessons generated",
