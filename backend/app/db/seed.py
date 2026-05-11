@@ -85,8 +85,14 @@ PERMISSION_DESCRIPTIONS: dict[str, str] = {
         "struttura di un nuovo corso."
     ),
     "course:view": (
-        "Vedere l'elenco dei corsi dell'organizzazione. Senza il permesso "
-        "di modifica, il membro vede solo i corsi a lui assegnati."
+        "Vedere i corsi a sé assegnati. Per vedere anche i corsi assegnati "
+        "ad altri membri dell'organizzazione serve il permesso "
+        "'course:view_all'."
+    ),
+    "course:view_all": (
+        "Vedere TUTTI i corsi dell'organizzazione, inclusi quelli assegnati "
+        "ad altri membri. Senza questo permesso l'utente vede solo i corsi "
+        "a sé assegnati (anche se ha 'course:edit')."
     ),
     "course:create": (
         "Creare nuovi corsi nell'organizzazione, scegliendo titolo, "
@@ -100,8 +106,8 @@ PERMISSION_DESCRIPTIONS: dict[str, str] = {
     "course:edit": (
         "Modificare i parametri di un corso (titolo, obiettivi, "
         "tassonomie, CFU, argomenti chiave, lingua) e gestire i documenti "
-        "di riferimento. Necessario anche per visualizzare tutti i corsi "
-        "dell'organizzazione (non solo quelli assegnati)."
+        "di riferimento. Non implica la visibilità sui corsi degli altri "
+        "membri: per quella serve 'course:view_all'."
     ),
     "course:delete": (
         "Eliminare un corso e tutti i suoi documenti di riferimento. "

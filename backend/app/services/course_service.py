@@ -2,7 +2,7 @@
 
 Pattern:
 - list filtrato per organization_id + ulteriore filtro per assegnatario se
-  l'utente non ha `course:edit` (membro vede solo i propri corsi).
+  l'utente non ha `course:view_all` (membro vede solo i propri corsi).
 - create con snapshot dei parametri di `OrganizationCourseSettings`
   (immutabili dopo creazione: cambi successivi ai parametri org NON si
   propagano).
@@ -171,11 +171,11 @@ async def list_courses(
         Course.organization_id == organization_id
     )
 
-    # Filtro membro: chi NON ha course:edit vede solo i corsi assegnati
+    # Filtro membro: chi NON ha course:view_all vede solo i corsi assegnati
     # a sé. Platform admin (resolve_permissions ritorna ALL) bypassa.
     if (
         not current_user.is_platform_admin
-        and P.COURSE_EDIT not in granted_permissions
+        and P.COURSE_VIEW_ALL not in granted_permissions
     ):
         base_q = base_q.where(Course.assignee_user_id == current_user.id)
         count_q = count_q.where(Course.assignee_user_id == current_user.id)
@@ -219,10 +219,11 @@ async def get_course(
     course = (await db.execute(q)).scalar_one_or_none()
     if course is None:
         raise NotFoundError("Corso non trovato.", code="course_not_found")
-    # Filtro membro
+    # Filtro membro: visibilità al di fuori dei propri corsi richiede
+    # course:view_all (separato da course:edit dopo lo split del 2026-05-11).
     if (
         not current_user.is_platform_admin
-        and P.COURSE_EDIT not in granted_permissions
+        and P.COURSE_VIEW_ALL not in granted_permissions
         and course.assignee_user_id != current_user.id
     ):
         raise NotFoundError("Corso non trovato.", code="course_not_found")

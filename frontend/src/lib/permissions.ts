@@ -12,6 +12,7 @@ export const P = {
   ORG_UPDATE: "org:update",
   COURSE_CONFIG_MANAGE: "course_config:manage",
   COURSE_VIEW: "course:view",
+  COURSE_VIEW_ALL: "course:view_all",
   COURSE_CREATE: "course:create",
   COURSE_ASSIGN: "course:assign",
   COURSE_EDIT: "course:edit",
