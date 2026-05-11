@@ -104,7 +104,9 @@
       "continueToDocuments": "Continua a Documenti",
       "continueToArchitecture": "Continua ad Architettura",
       "continueToLessonsStructure": "Continua a Struttura lezioni",
-      "continueToLessonContent": "Continua a Contenuti"
+      "continueToLessonContent": "Continua a Contenuti",
+      "continueToLessonSlides": "Continua a Slide",
+      "continueToLessonSpeech": "Continua a Discorso"
     },
     "setup": {
       "lockedBanner": "Setup didattico confermato. I parametri non sono modificabili. Sblocca per riaprire le modifiche.",

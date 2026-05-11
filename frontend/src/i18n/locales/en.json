@@ -104,7 +104,9 @@
       "continueToDocuments": "Continue to Documents",
       "continueToArchitecture": "Continue to Architecture",
       "continueToLessonsStructure": "Continue to Lessons structure",
-      "continueToLessonContent": "Continue to Content"
+      "continueToLessonContent": "Continue to Content",
+      "continueToLessonSlides": "Continue to Slides",
+      "continueToLessonSpeech": "Continue to Speech"
     },
     "setup": {
       "lockedBanner": "Didactic setup confirmed. Parameters are not editable. Unlock to reopen edits.",

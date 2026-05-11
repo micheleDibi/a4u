@@ -660,11 +660,13 @@ export default function CourseEditorPage({ mode }: Props) {
               value="lesson-speech"
               disabled={
                 !course ||
-                (course.status !== "slides_ready" &&
-                  course.status !== "slides_approved" &&
-                  !["speech_pending", "speech_ready", "speech_approved", "published"].includes(
-                    course.status
-                  ))
+                !course.modules?.some((m) =>
+                  m.lessons?.some(
+                    (l) =>
+                      l.slides_status === "ready" ||
+                      l.slides_status === "approved",
+                  ),
+                )
               }
             >
               {t("courses.tabs.lessonSpeech")}
@@ -1211,6 +1213,21 @@ export default function CourseEditorPage({ mode }: Props) {
               canEdit={canEdit}
               canGenerate={canGenerate}
             />
+            {(course.status === "content_approved" ||
+              course.status.startsWith("slides_") ||
+              course.status.startsWith("speech_") ||
+              course.status === "published") && (
+              <div className="flex justify-end">
+                <Button
+                  size="lg"
+                  variant="outline"
+                  onClick={() => setActiveTab("lesson-slides")}
+                >
+                  {t("courses.wizard.continueToLessonSlides")}
+                  <ArrowRight className="size-4" />
+                </Button>
+              </div>
+            )}
           </TabsContent>
         )}
 
@@ -1223,6 +1240,23 @@ export default function CourseEditorPage({ mode }: Props) {
               canEdit={canEdit}
               canGenerate={canGenerate}
             />
+            {course.modules?.some((m) =>
+              m.lessons?.some(
+                (l) =>
+                  l.slides_status === "ready" || l.slides_status === "approved",
+              ),
+            ) && (
+              <div className="flex justify-end">
+                <Button
+                  size="lg"
+                  variant="outline"
+                  onClick={() => setActiveTab("lesson-speech")}
+                >
+                  {t("courses.wizard.continueToLessonSpeech")}
+                  <ArrowRight className="size-4" />
+                </Button>
+              </div>
+            )}
           </TabsContent>
         )}
 
