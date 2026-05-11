@@ -160,10 +160,15 @@ export default function CourseEditorPage({ mode }: Props) {
   const { me } = useAuth();
   const langs = useLanguages();
 
-  const canEdit = useHasPermission(P.COURSE_EDIT, orgId);
+  const canEditOrg = useHasPermission(P.COURSE_EDIT, orgId);
   const canAssign = useHasPermission(P.COURSE_ASSIGN, orgId);
   const canGenerate = useHasPermission(P.COURSE_GENERATE, orgId);
   const canSaveDraft = useHasPermission(P.COURSE_SAVE_DRAFT, orgId);
+  // `canEdit` finale: include il caso "assegnatario del corso" (anche un
+  // Member senza COURSE_EDIT) — per consentire all'utente a cui il corso
+  // è stato passato come bozza di completarne basic info + didattico.
+  // L'assegnatario viene letto da `course?.assignee` ed è calcolato sotto
+  // dopo che `courseQuery` ha caricato i dati.
 
   const courseQuery = useQuery({
     queryKey: ["courses", "detail", orgId, courseId],
@@ -254,6 +259,10 @@ export default function CourseEditorPage({ mode }: Props) {
   )?.role_code;
   const canUnlockSetup =
     me?.user.is_platform_admin || myRoleCode === "creator" || myRoleCode === "org_admin";
+  // L'assegnatario può editare basic info + didattico anche senza COURSE_EDIT
+  // sull'org (mirror del check BE in `_ensure_can_edit_basic`).
+  const isAssignee = !!course && !!me && course.assignee?.id === me.user.id;
+  const canEdit = canEditOrg || isAssignee;
   const readOnly = (mode === "edit" && !canEdit) || setupLocked;
 
   // Wizard tab — controlled + persisted in localStorage per courseId.
@@ -291,6 +300,17 @@ export default function CourseEditorPage({ mode }: Props) {
       // ignore
     }
   }, [activeTab, mode, tabStorageKey]);
+  // Pre-confirm setup: solo "base" e "didactic" sono accessibili.
+  // Se localStorage aveva salvato un tab più avanti (es. corso ripreso
+  // dopo un unlock), rientriamo su didactic così l'utente vede dove
+  // serve agire prima di poter continuare.
+  useEffect(() => {
+    if (mode !== "edit" || !course) return;
+    if (setupLocked) return;
+    if (activeTab !== "base" && activeTab !== "didactic") {
+      setActiveTab("didactic");
+    }
+  }, [mode, course, setupLocked, activeTab]);
 
   const defaultLang = i18n.resolvedLanguage?.split("-")[0] || "it";
   const [draft, setDraft] = useState<DraftState | null>(null);
@@ -644,17 +664,17 @@ export default function CourseEditorPage({ mode }: Props) {
           <TabsTrigger value="didactic">
             {t("courses.tabs.didactic")}
           </TabsTrigger>
-          {mode === "edit" && (
+          {mode === "edit" && setupLocked && (
             <TabsTrigger value="documents">
               {t("courses.tabs.documents")}
             </TabsTrigger>
           )}
-          {mode === "edit" && (
+          {mode === "edit" && setupLocked && (
             <TabsTrigger value="architecture">
               {t("courses.tabs.architecture")}
             </TabsTrigger>
           )}
-          {mode === "edit" && (
+          {mode === "edit" && setupLocked && (
             <TabsTrigger
               value="lessons-structure"
               disabled={
@@ -672,7 +692,7 @@ export default function CourseEditorPage({ mode }: Props) {
               {t("courses.tabs.lessonsStructure")}
             </TabsTrigger>
           )}
-          {mode === "edit" && (
+          {mode === "edit" && setupLocked && (
             <TabsTrigger
               value="lesson-content"
               disabled={
@@ -687,7 +707,7 @@ export default function CourseEditorPage({ mode }: Props) {
               {t("courses.tabs.lessonContent")}
             </TabsTrigger>
           )}
-          {mode === "edit" && (
+          {mode === "edit" && setupLocked && (
             <TabsTrigger
               value="lesson-slides"
               disabled={
@@ -702,7 +722,7 @@ export default function CourseEditorPage({ mode }: Props) {
               {t("courses.tabs.lessonSlides")}
             </TabsTrigger>
           )}
-          {mode === "edit" && (
+          {mode === "edit" && setupLocked && (
             <TabsTrigger
               value="lesson-speech"
               disabled={
@@ -844,6 +864,7 @@ export default function CourseEditorPage({ mode }: Props) {
                       setDraft({ ...draft, assignee_user_id: v })
                     }
                     disabled={readOnly || (mode === "edit" && !canAssign)}
+                    fallback={course?.assignee ?? null}
                   />
                 </div>
               </div>

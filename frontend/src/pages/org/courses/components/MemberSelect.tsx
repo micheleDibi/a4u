@@ -18,20 +18,46 @@ import {
 import { useOrgMembers } from "@/hooks/useOrgMembers";
 import { cn } from "@/lib/utils";
 
+interface AssigneeFallback {
+  id: string;
+  full_name: string;
+  email: string;
+}
+
 interface Props {
   orgId: string;
   value: string | null | undefined;
   onChange: (value: string) => void;
   disabled?: boolean;
+  /** Mostrato quando `value` non è nella lista membri (es. l'utente non
+   *  ha `member:view`, quindi `/orgs/{id}/members` ritorna 403): permette
+   *  comunque di vedere il nome dell'assegnatario invece del placeholder. */
+  fallback?: AssigneeFallback | null;
 }
 
-export function MemberSelect({ orgId, value, onChange, disabled }: Props) {
+export function MemberSelect({
+  orgId,
+  value,
+  onChange,
+  disabled,
+  fallback,
+}: Props) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const query = useOrgMembers(orgId);
   const members = query.data ?? [];
 
-  const selected = members.find((m) => m.user_id === value);
+  const selectedFromList = members.find((m) => m.user_id === value);
+  const selected = selectedFromList ?? (
+    fallback && fallback.id === value
+      ? {
+          user_id: fallback.id,
+          user_full_name: fallback.full_name,
+          role_code: "",
+          role_name_it: "",
+        }
+      : undefined
+  );
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -49,12 +75,14 @@ export function MemberSelect({ orgId, value, onChange, disabled }: Props) {
               <span className="truncate font-medium">
                 {selected.user_full_name}
               </span>
-              <span className="truncate text-xs text-muted-foreground">
-                ·{" "}
-                {t(`roles.${selected.role_code}`, {
-                  defaultValue: selected.role_name_it,
-                })}
-              </span>
+              {selected.role_code && (
+                <span className="truncate text-xs text-muted-foreground">
+                  ·{" "}
+                  {t(`roles.${selected.role_code}`, {
+                    defaultValue: selected.role_name_it,
+                  })}
+                </span>
+              )}
             </span>
           ) : (
             <span className="text-muted-foreground">

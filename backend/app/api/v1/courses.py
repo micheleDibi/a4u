@@ -8,8 +8,8 @@ from fastapi.responses import FileResponse
 from sqlalchemy import select
 
 from app.core.deps import CurrentUser, DbSession
-from app.core.errors import NotFoundError
-from app.core.permissions import P, require, resolve_permissions
+from app.core.errors import NotFoundError, PermissionDeniedError
+from app.core.permissions import P, require, require_membership, resolve_permissions
 from app.models.membership import Membership
 from app.models.organization import Organization
 from app.schemas.common import Page, PageMeta
@@ -144,6 +144,25 @@ async def get_course(
     return CourseOut.model_validate(course)
 
 
+def _ensure_can_edit_basic(course, current, granted: set[str]) -> None:
+    """Permette di modificare le info di base + inquadramento didattico a:
+    - chi ha P.COURSE_EDIT sull'organizzazione, oppure
+    - l'assegnatario del corso (anche un Member, che di default non ha
+      COURSE_EDIT) — caso d'uso: admin crea una bozza con 'Salva come bozza'
+      e la passa a un altro utente perché la completi.
+    Platform admin passa via `resolve_permissions` (riceve tutti i permessi).
+    """
+    if P.COURSE_EDIT in granted:
+        return
+    if course.assignee_user_id == current.id:
+        return
+    raise PermissionDeniedError(
+        f"Permessi mancanti: {P.COURSE_EDIT}",
+        code="permission_denied",
+        meta={"missing": [P.COURSE_EDIT]},
+    )
+
+
 @router.patch("/{course_id}", response_model=CourseOut)
 async def update_course(
     org_id: uuid.UUID,
@@ -151,7 +170,7 @@ async def update_course(
     payload: CourseUpdateInput,
     db: DbSession,
     current: CurrentUser,
-    _=require(P.COURSE_EDIT),
+    _=require_membership(),
 ) -> CourseOut:
     await _ensure_org(db, org_id)
     granted = await resolve_permissions(db, user=current, organization_id=org_id)
@@ -162,6 +181,7 @@ async def update_course(
         current_user=current,
         granted_permissions=granted,
     )
+    _ensure_can_edit_basic(course, current, granted)
     course = await course_service.update_course(
         db, course=course, payload=payload, actor_id=current.id
     )
@@ -178,7 +198,7 @@ async def confirm_didactic_setup(
     course_id: uuid.UUID,
     db: DbSession,
     current: CurrentUser,
-    _=require(P.COURSE_EDIT),
+    _=require_membership(),
 ) -> CourseOut:
     """Conferma il setup didattico (Tab 1 + Tab 2). Idempotente."""
     await _ensure_org(db, org_id)
@@ -190,6 +210,7 @@ async def confirm_didactic_setup(
         current_user=current,
         granted_permissions=granted,
     )
+    _ensure_can_edit_basic(course, current, granted)
     course = await course_service.confirm_didactic_setup(
         db, course=course, actor_id=current.id
     )
