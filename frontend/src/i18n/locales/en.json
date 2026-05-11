@@ -451,45 +451,52 @@
         "emptyHint": "Structure not yet generated.",
         "objective": {
           "add": "Add objective",
+          "empty": "No objective defined. Add at least one learning objective.",
           "placeholder": "E.g. The student will be able to apply the k-NN algorithm to a labeled dataset.",
-          "prefixHintIt": "Start with \"Lo studente sarà in grado di…\".",
-          "prefixHintEn": "Start with \"The student will be able to…\".",
+          "prefixHint": "Course language: {{language}}. Start each objective with \"The student will be able to…\" (EN) or \"Lo studente sarà in grado di…\" (IT).",
+          "prefixWarning": "Hint: start the objective with the recommended formula for the course language.",
           "remove": "Remove objective",
           "moveUp": "Move up",
           "moveDown": "Move down"
         },
         "topic": {
           "add": "Add topic",
+          "hint": "Define the mandatory topics the lesson must cover. Each topic will be linked to one or more sections of the outline.",
+          "empty": "No topic defined. Add at least one mandatory topic.",
           "fields": {
             "topicId": "ID",
             "topic": "Topic",
-            "rationale": "Rationale"
+            "topicPlaceholder": "E.g. k-Nearest Neighbors algorithm",
+            "rationale": "Rationale",
+            "rationalePlaceholder": "E.g. It is fundamental to understand the idea of instance-based learning."
           },
-          "topicPlaceholder": "E.g. k-Nearest Neighbors algorithm",
-          "rationalePlaceholder": "E.g. It is fundamental to understand the idea of instance-based learning.",
           "idHint": "Unique topic identifier (e.g. T1, T2…).",
           "duplicateId": "Duplicate ID",
           "remove": "Remove topic"
         },
         "prerequisite": {
           "add": "Add prerequisite",
+          "hint": "Knowledge required before tackling the lesson (previous lessons, concepts, tools).",
+          "empty": "No prerequisite defined.",
           "placeholder": "E.g. Basic knowledge of Euclidean distance.",
           "remove": "Remove prerequisite"
         },
         "section": {
           "add": "Add section",
+          "hint": "Split the lesson into successive sections. Each section should cover one or more mandatory topics.",
+          "empty": "No section defined. Add at least one section.",
           "fields": {
             "sectionId": "ID",
             "title": "Title",
+            "titlePlaceholder": "E.g. Formal definition of k-NN",
             "purpose": "Purpose",
-            "coversTopics": "Covered topics"
+            "purposePlaceholder": "E.g. Introduce the mathematical formulation of the k-NN algorithm.",
+            "coversTopics": "Covered topics",
+            "coversNoTopics": "No topics available. Add a mandatory topic first."
           },
-          "titlePlaceholder": "E.g. Formal definition of k-NN",
-          "purposePlaceholder": "E.g. Introduce the mathematical formulation of the k-NN algorithm.",
           "coverageHint": "Select one or more mandatory topics covered by this section.",
           "uncoveredWarning": "Warning: some mandatory topics are not covered by any section: {{ids}}",
           "duplicateId": "Duplicate ID",
-          "noTopicsHint": "No topics available. Add a mandatory topic first.",
           "remove": "Remove section",
           "moveUp": "Move up",
           "moveDown": "Move down"

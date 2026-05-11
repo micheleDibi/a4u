@@ -451,45 +451,52 @@
         "emptyHint": "Struttura non ancora generata.",
         "objective": {
           "add": "Aggiungi obiettivo",
+          "empty": "Nessun obiettivo definito. Aggiungi almeno un obiettivo formativo.",
           "placeholder": "Es. Lo studente sarà in grado di applicare l'algoritmo k-NN a un dataset etichettato.",
-          "prefixHintIt": "Inizia con \"Lo studente sarà in grado di…\".",
-          "prefixHintEn": "Start with \"The student will be able to…\".",
+          "prefixHint": "Lingua corso: {{language}}. Inizia ogni obiettivo con \"Lo studente sarà in grado di…\" (IT) o \"The student will be able to…\" (EN).",
+          "prefixWarning": "Suggerimento: inizia l'obiettivo con la formula consigliata per la lingua del corso.",
           "remove": "Rimuovi obiettivo",
           "moveUp": "Sposta su",
           "moveDown": "Sposta giù"
         },
         "topic": {
           "add": "Aggiungi tema",
+          "hint": "Definisci i temi obbligatori che la lezione deve coprire. Ogni tema sarà poi collegato a una o più sezioni della scaletta.",
+          "empty": "Nessun tema definito. Aggiungi almeno un tema obbligatorio.",
           "fields": {
             "topicId": "ID",
             "topic": "Tema",
-            "rationale": "Razionale"
+            "topicPlaceholder": "Es. Algoritmo k-Nearest Neighbors",
+            "rationale": "Razionale",
+            "rationalePlaceholder": "Es. È fondamentale per comprendere l'idea di apprendimento basato su istanze."
           },
-          "topicPlaceholder": "Es. Algoritmo k-Nearest Neighbors",
-          "rationalePlaceholder": "Es. È fondamentale per comprendere l'idea di apprendimento basato su istanze.",
           "idHint": "Identificatore univoco del tema (es. T1, T2…).",
           "duplicateId": "ID duplicato",
           "remove": "Rimuovi tema"
         },
         "prerequisite": {
           "add": "Aggiungi prerequisito",
+          "hint": "Conoscenze richieste prima di affrontare la lezione (lezioni precedenti, concetti, strumenti).",
+          "empty": "Nessun prerequisito definito.",
           "placeholder": "Es. Conoscenza di base della distanza euclidea.",
           "remove": "Rimuovi prerequisito"
         },
         "section": {
           "add": "Aggiungi sezione",
+          "hint": "Suddividi la lezione in sezioni successive. Ogni sezione dovrebbe coprire uno o più temi obbligatori.",
+          "empty": "Nessuna sezione definita. Aggiungi almeno una sezione.",
           "fields": {
             "sectionId": "ID",
             "title": "Titolo",
+            "titlePlaceholder": "Es. Definizione formale di k-NN",
             "purpose": "Scopo",
-            "coversTopics": "Temi trattati"
+            "purposePlaceholder": "Es. Introdurre la formulazione matematica dell'algoritmo k-NN.",
+            "coversTopics": "Temi trattati",
+            "coversNoTopics": "Nessun tema disponibile. Aggiungi prima un tema obbligatorio."
           },
-          "titlePlaceholder": "Es. Definizione formale di k-NN",
-          "purposePlaceholder": "Es. Introdurre la formulazione matematica dell'algoritmo k-NN.",
           "coverageHint": "Seleziona uno o più temi obbligatori coperti da questa sezione.",
           "uncoveredWarning": "Attenzione: alcuni temi obbligatori non sono coperti da nessuna sezione: {{ids}}",
           "duplicateId": "ID duplicato",
-          "noTopicsHint": "Nessun tema disponibile. Aggiungi prima un tema obbligatorio.",
           "remove": "Rimuovi sezione",
           "moveUp": "Sposta su",
           "moveDown": "Sposta giù"
