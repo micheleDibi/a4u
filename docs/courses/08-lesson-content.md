@@ -259,6 +259,16 @@ backend, schema e renderer di vista invariati.
     testuali (introduction, sections.content, summary, examples.content,
     equations.explanation). Niente "promemoria di sincronizzare a
     mano" — l'editor fa cascade.
+  - **"Evidenzia dove usato"** (`HighlightUsageButton`): accanto ad
+    ogni `RefIdField` cerca la prima occorrenza di `[KIND:id]` nei
+    campi scansionabili (intro → sezioni → summary → esempi →
+    explanation equazioni), apre il `SectionGroup` che la contiene
+    (i `SectionGroup` sono controllati `open`/`onToggle` dallo stato
+    padre proprio per supportare l'auto-espansione), scrolla in vista
+    e applica un flash visivo `ring-2 ring-amber-400` per ~2.2s. Per
+    i `references[]` (citazioni senza ID-token) lo stesso pulsante fa
+    un substring match case-insensitive della `citation` — best-effort.
+    Se nessuna occorrenza viene trovata → toast informativo.
 
 ### Polling
 

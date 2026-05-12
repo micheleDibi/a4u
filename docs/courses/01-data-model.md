@@ -31,7 +31,7 @@ Tabella principale del corso. Snapshot dei parametri della org al momento della 
 | `pedagogical_rationale` | text | nullable | output Fase 1 |
 | `architecture_raw` | JSONB | nullable | output completo OpenAI (audit) |
 | `architecture_attempts` | smallint | NOT NULL, default 0 | counter |
-| `architecture_tokens` | JSONB | nullable | `{prompt, completion, total, model}` |
+| `architecture_tokens` | JSONB | nullable | telemetria AI — vedi [Convenzione `*_tokens`](#convenzione-_tokens-telemetria-ai-per-chiamata) |
 | `architecture_error` | text | nullable | ultimo errore |
 | `architecture_generated_at` | datetime tz | nullable | |
 | `architecture_regeneration_hint` | text | nullable | hint utente per ultima rigenerazione |
@@ -40,7 +40,7 @@ Tabella principale del corso. Snapshot dei parametri della org al momento della 
 | `didactic_setup_confirmed_at` | datetime tz | nullable | lock setup didattico (Tab 1+2 read-only quando valorizzato) — migration 0017 |
 | `glossary_status` | str(40) | NOT NULL, default `empty`, CHECK ∈ 6 valori | Fase 3 — §10.1 (migration 0015) |
 | `glossary_raw` | JSONB | nullable | `{course_id, terms:[{term, translation, usage_note}]}` |
-| `glossary_tokens` | JSONB | nullable | `{prompt, completion, total, model}` |
+| `glossary_tokens` | JSONB | nullable | schema legacy `{prompt, completion, total, model}` — NON arricchito col tracking esteso |
 | `glossary_generated_at` | datetime tz | nullable | |
 | `glossary_error` | text | nullable | ultimo errore |
 | timestamps | datetime tz | NOT NULL | |
@@ -79,6 +79,59 @@ Regola comune: almeno 1 in `pending|processing|failed` → `*_pending`; tutte in
 - `modules → CourseModule[]` (cascade delete, ordered by position)
 - `lessons → CourseLesson[]` (cascade delete, ordered by position)
 - 8 × `*_term → CourseTaxonomyTerm | None`
+
+---
+
+## Convenzione: `*_tokens` (telemetria AI per chiamata)
+
+Tutti i campi JSONB chiamati `*_tokens` (su `course`, `course_module`,
+`course_lesson`) condividono uno **schema uniforme** popolato dai 5
+service AI (architettura, struttura lezioni, contenuti, slide, discorso).
+È uno schema arricchito: i record vecchi avevano solo le 4 chiavi
+originali (`model`, `prompt`, `completion`, `total`); i nuovi record
+contengono anche i campi di tracking introdotti dal commit `764588f`.
+
+```python
+{
+    # === Campi originali (backward compat) ===
+    "model": str,                    # es. "gpt-5.5"
+    "prompt": int,                   # = OpenAI usage.prompt_tokens
+    "completion": int,               # = OpenAI usage.completion_tokens
+    "total": int,                    # = OpenAI usage.total_tokens
+
+    # === Campi nuovi (telemetria) ===
+    "reasoning_effort": str | None,  # da settings al call-time; None se modello non-reasoning
+    "reasoning_tokens": int,         # = usage.completion_tokens_details.reasoning_tokens (sub di completion)
+    "cached_tokens": int,            # = usage.prompt_tokens_details.cached_tokens (sub di prompt)
+    "duration_ms": int,              # time.monotonic() attorno alla chiamata HTTP
+    "cost_usd": float | None,        # estimate_cost_usd(...) — None se pricing del modello sconosciuto
+}
+```
+
+Note:
+- `reasoning_tokens` è già contato dentro `completion` (non additivo).
+- `cached_tokens` è già contato dentro `prompt` (non additivo).
+- `cost_usd = None` quando il modello non è in `MODEL_PRICING` (stato
+  accettabile: tracking best-effort, niente eccezioni).
+- I record antecedenti al commit `764588f` mancano dei 5 campi nuovi;
+  consumer futuri devono leggerli con `.get(key, default)`.
+
+Il calcolo è centralizzato in `app.services.openai_pricing`:
+
+| Funzione | Scopo |
+|---|---|
+| `MODEL_PRICING: dict[str, dict[str, float]]` | Prezzi USD per 1M token (input, output, cached_input) — aggiornare quando OpenAI cambia listino |
+| `supports_reasoning(model)` | True per `gpt-5*`, `o1*`, `o3*`, `o4*` |
+| `estimate_cost_usd(model, prompt, completion, reasoning_tokens=0, cached_tokens=0) -> float \| None` | `(prompt - cached) * input + cached * cached_input + completion * output`; None se modello sconosciuto |
+| `build_usage_dict(*, model, reasoning_effort_setting, openai_usage, duration_ms)` | Helper unico chiamato dai 5 service AI per costruire il dict da salvare |
+
+Migration: **nessuna** — JSONB è schema-less, l'arricchimento è
+retro-compatibile.
+
+Glossario corso (`course.glossary_tokens`): esplicitamente NON tracciato
+con il nuovo schema arricchito — è considerato out-of-scope rispetto
+alle 5 fasi principali. Il campo continua a usare il vecchio schema
+`{model, prompt, completion, total}`.
 
 ---
 
@@ -126,7 +179,7 @@ Moduli generati dalla Fase 1 (o creati/modificati manualmente). I 10 campi
 | `description` | text | NOT NULL, default `""` |
 | `lessons_structure_status` | str(40) | NOT NULL, default `empty`, CHECK ∈ 6 valori |
 | `lessons_structure_raw` | JSONB | nullable (output AI completo §5.3) |
-| `lessons_structure_tokens` | JSONB | nullable (`{prompt, completion, total, model}`) |
+| `lessons_structure_tokens` | JSONB | nullable — telemetria AI (vedi convenzione `*_tokens` in cima al doc) |
 | `lessons_structure_attempts` | smallint | NOT NULL, default 0 |
 | `lessons_structure_error` | str(500) | nullable |
 | `lessons_structure_generated_at` | datetime tz | nullable |
@@ -178,7 +231,7 @@ Tabella estesa per **5 fasi della pipeline AI**: Fase 2 (struttura), Fase 3
 |---|---|---|
 | `content_status` | str(40) | NOT NULL, default `empty`, CHECK ∈ 6 valori — migration 0015 |
 | `content_raw` | JSONB | nullable — output AI completo verbatim §6.3 |
-| `content_tokens` | JSONB | nullable — `{prompt, completion, total, model}` |
+| `content_tokens` | JSONB | nullable — telemetria AI (vedi convenzione `*_tokens` in cima al doc) |
 | `content_attempts` | smallint | NOT NULL, default 0 |
 | `content_error` | text | nullable |
 | `content_generated_at` | datetime tz | nullable |
@@ -207,7 +260,7 @@ Tabella estesa per **5 fasi della pipeline AI**: Fase 2 (struttura), Fase 3
 |---|---|---|
 | `slides_status` | str(40) | NOT NULL, default `empty`, CHECK ∈ 6 valori — migration 0019 |
 | `slides_raw` | JSONB | nullable — output AI completo verbatim §7.3 |
-| `slides_tokens` | JSONB | nullable — `{prompt, completion, total, model}` |
+| `slides_tokens` | JSONB | nullable — telemetria AI (vedi convenzione `*_tokens` in cima al doc) |
 | `slides_attempts` | smallint | NOT NULL, default 0 |
 | `slides_error` | text | nullable |
 | `slides_generated_at` | datetime tz | nullable |
@@ -236,7 +289,7 @@ Tabella estesa per **5 fasi della pipeline AI**: Fase 2 (struttura), Fase 3
 |---|---|---|
 | `speech_status` | str(40) | NOT NULL, default `empty`, CHECK ∈ 6 valori — migration 0023 |
 | `speech_raw` | JSONB | nullable — output AI completo verbatim §8.4 |
-| `speech_tokens` | JSONB | nullable — `{prompt, completion, total, model}` |
+| `speech_tokens` | JSONB | nullable — telemetria AI (vedi convenzione `*_tokens` in cima al doc) |
 | `speech_attempts` | smallint | NOT NULL, default 0 |
 | `speech_error` | text | nullable |
 | `speech_generated_at` | datetime tz | nullable |

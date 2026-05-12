@@ -96,12 +96,14 @@ Tutti sotto namespace `course:*`. Vedi [06 — Permissions](../06-permissions.md
 
 | Codice | Significato |
 |---|---|
-| `course:view` | Vedere i corsi assegnati (member) o tutti (org_admin/creator) |
-| `course:create` | Creare un nuovo corso |
-| `course:edit` | Modificare titolo, obiettivi, tassonomie, parametri, documenti, e fare CRUD manuale di moduli/lezioni e dei payload AI (struttura, contenuto, slide, discorso) |
+| `course:view` | Vedere i corsi a sé assegnati |
+| `course:view_all` | Visibilità cross-utente (vedi anche i corsi assegnati ad altri membri). Additivo a `view`. |
+| `course:create` | Creare un nuovo corso con setup didattico completo |
+| `course:save_draft` | Salvare uno stub di corso senza setup didattico (titolo + CFU + assegnatario) — pensato per admin che seminano bozze |
+| `course:edit` | Modificare titolo, obiettivi, tassonomie, parametri, documenti, e fare CRUD manuale di moduli/lezioni e dei payload AI (struttura, contenuto, slide, discorso). Non implica visibilità cross-utente. |
 | `course:delete` | Eliminare un corso (cascade documenti + architettura) |
 | `course:assign` | Cambiare l'assegnatario |
-| `course:generate` | Avviare la generazione AI a tutte le fasi (1-5) + export PDF (lezione/slide/discorso) + approvare i payload generati |
+| `course:generate` | Avviare la generazione AI a tutte le fasi (1-5) + export PDF (lezione/slide/discorso, anche batch per-modulo) + approvare i payload generati |
 | `course_config:manage` | Modificare `OrganizationCourseSettings` |
 
 ## File chiave (mappa rapida)
@@ -149,6 +151,8 @@ backend/app/
 │   ├── course_lesson_speech_worker.py       # Fase 5 — worker async PARALLELO (cap=3) + pre-check slides ready
 │   ├── course_lesson_speech_pdf_service.py  # Fase 5 — render PDF discorso (pdf_template) + format_timeline cumulativa
 │   ├── course_lesson_speech_pdf_worker.py   # Fase 5 — worker PDF discorso PARALLELO (cap=2)
+│   ├── course_module_pdf_service.py         # Bundle batch per-modulo: merge_module_pdfs (pypdf) + zip_module_pdfs (zipfile) per tutte e 3 le pipeline PDF
+│   ├── openai_pricing.py                    # Pricing table per modello OpenAI + estimate_cost_usd + build_usage_dict (telemetria *_tokens)
 │   ├── course_glossary_service.py           # §10.1 — sync glossario (regenerate + ensure_glossary_ready)
 │   ├── course_lesson_pdf_service.py         # §7 — render HTML lezione testo + Playwright + materialize_lesson_pdf
 │   ├── course_lesson_pdf_worker.py          # §7 — worker async PARALLELO (cap=2) + cancel-check
@@ -191,7 +195,7 @@ backend/app/
 
 ```
 frontend/src/
-├── api/courses.ts                                  # client REST corsi (namespace lessonsStructure + lessonsContent + lessonPdf + lessonSlides + lessonSlidesPdf + lessonSpeech + lessonSpeechPdf + glossary)
+├── api/courses.ts                                  # client REST corsi (namespace lessonsStructure + lessonsContent + lessonPdf + lessonSlides + lessonSlidesPdf + lessonSpeech + lessonSpeechPdf + glossary). I 3 namespace PDF includono downloadModuleMerged + downloadModuleZip per il bundle per-modulo.
 ├── lib/
 │   ├── staleness.ts                                # 7 helper di stale-detection cascata (struttura → contenuto → PDF → slide → PDF slide → discorso → PDF discorso)
 │   └── slides.ts                                   # resolveAsset() per render asset slide (visual/table/equation/example/new_visual)
@@ -216,7 +220,7 @@ frontend/src/
         ├── CourseLessonSlidesView.tsx              # Tab 7 — vista slide Fase 4 + PDF slide
         ├── CourseLessonSpeechView.tsx              # Tab 8 — vista discorso Fase 5 + PDF discorso
         ├── LessonContentView.tsx                   # render lezione (foglio bianco) per status ready/approved
-        ├── LessonContentEditDialog.tsx             # editor user-friendly con RichText/Table/Latex/Mermaid + RefIdField + auto-sync refs
+        ├── LessonContentEditDialog.tsx             # editor user-friendly con RichText/Table/Latex/Mermaid + RefIdField + auto-sync refs + "Evidenzia dove usato" (scroll+flash su prima occorrenza di [KIND:id] / substring per references)
         ├── LessonContentGenerateDialog.tsx         # dialog generate/regenerate Fase 3
         ├── LessonSlidesView.tsx                    # render read-only slide (card per slide)
         ├── LessonSlidesEditDialog.tsx              # editor manuale slide (slide list + bullets + body + new_assets)

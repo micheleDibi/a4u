@@ -460,6 +460,30 @@ Il worker post-Playwright re-controlla lo status e scarta il path se non
 {title}.pdf"`. 404 se `pdf_status != 'ready'` (`pdf_not_ready`) o se il
 file non esiste sul filesystem (`pdf_file_missing`).
 
+### `GET /orgs/{org_id}/courses/{course_id}/modules/{module_id}/lessons-pdf/download-merged`
+
+`course:view`. Bundle batch per-modulo: un singolo PDF concatenato di
+tutte le lezioni del modulo, in ordine di `lesson_code`. Costruito con
+`pypdf.PdfWriter.append()` (preserva metadati, font, immagini incorporate
+e segnalibri di partenza di ogni PDF lezione). Filename:
+`"{course} — {module_code} {module_title} (Contenuti).pdf"`.
+
+Pre-condizione: TUTTE le lezioni del modulo devono avere
+`pdf_status='ready'` con file presente sul filesystem. Errori:
+- `409 module_has_no_lessons` — modulo senza lezioni.
+- `409 module_pdfs_not_ready` — almeno una lezione non in `ready`
+  (con `meta.missing_lessons = [lesson_id, ...]`).
+- `404 module_pdf_file_missing` — file mancante sul FS per una lezione.
+
+### `GET /orgs/{org_id}/courses/{course_id}/modules/{module_id}/lessons-pdf/download-zip`
+
+`course:view`. Stessa pre-condizione del merged. Restituisce uno
+`application/zip` (`ZIP_DEFLATED`) con UN PDF per lezione, filename
+identico al download per-lezione singola (così se l'utente esegue
+l'unzip ottiene file ordinati e nominati come si aspetta). Filename
+dello zip: `"{course} — {module_code} {module_title} (Contenuti).zip"`.
+Stessi codici d'errore del merged.
+
 ## Export PDF slide (Fase 4)
 
 Pipeline parallela e indipendente dal PDF testo. Path file:
@@ -489,6 +513,19 @@ ready/approved come `slides_pdf_status='pending'`.
 `slides_pdf_status != 'ready'` (`slides_pdf_not_ready`) o file mancante
 (`slides_pdf_file_missing`).
 
+### `GET /orgs/{org_id}/courses/{course_id}/modules/{module_id}/lessons-slides-pdf/download-merged`
+
+`course:view`. Equivalente per la pipeline slide: un solo PDF concatenato
+di tutte le slide del modulo. Pre-condizione:
+`slides_pdf_status='ready'` su tutte le lezioni. Filename:
+`"{course} — {module_code} {module_title} (Slide).pdf"`. Stessi codici
+d'errore del merged contenuti.
+
+### `GET /orgs/{org_id}/courses/{course_id}/modules/{module_id}/lessons-slides-pdf/download-zip`
+
+`course:view`. ZIP delle slide per ogni lezione. Filename:
+`"{course} — {module_code} {module_title} (Slide).zip"`.
+
 ## Export PDF discorso (Fase 5)
 
 Pipeline parallela e indipendente dal PDF slide. Path file:
@@ -515,6 +552,25 @@ Pipeline parallela e indipendente dal PDF slide. Path file:
 `"{course} — {lesson_code} {title} (discorso).pdf"`. 404 se
 `speech_pdf_status != 'ready'` (`speech_pdf_not_ready`) o file mancante
 (`speech_pdf_file_missing`).
+
+### `GET /orgs/{org_id}/courses/{course_id}/modules/{module_id}/lessons-speech-pdf/download-merged`
+
+`course:view`. Equivalente per la pipeline discorso. Pre-condizione:
+`speech_pdf_status='ready'` su tutte le lezioni. Filename:
+`"{course} — {module_code} {module_title} (Discorso).pdf"`.
+
+### `GET /orgs/{org_id}/courses/{course_id}/modules/{module_id}/lessons-speech-pdf/download-zip`
+
+`course:view`. ZIP del discorso per ogni lezione. Filename:
+`"{course} — {module_code} {module_title} (Discorso).zip"`.
+
+> I 6 endpoint batch per-modulo (merged + zip × 3 pipeline) sono
+> implementati in `course_module_pdf_service.py` con due primitive
+> condivise: `merge_module_pdfs(...)` (pypdf) e `zip_module_pdfs(...)`
+> (stdlib `zipfile`). Il `kind` (`content`/`slides`/`speech`) seleziona
+> quale `*_pdf_status`/`*_pdf_path` leggere, ma il resolver del path
+> assoluto è unico (`course_lesson_pdf_service.pdf_absolute_path`)
+> perché tutti e tre i PDF condividono la stessa root.
 
 ---
 
@@ -582,3 +638,6 @@ Pipeline parallela e indipendente dal PDF slide. Path file:
 | `no_eligible_lessons_for_speech_pdf` | 409 | Export-all PDF discorso senza lezioni esportabili |
 | `speech_pdf_not_ready` | 404 | Download PDF discorso su `speech_pdf_status` ≠ ready |
 | `speech_pdf_file_missing` | 404 | File PDF discorso mancante |
+| `module_has_no_lessons` | 409 | Bundle PDF modulo richiesto su un modulo senza lezioni |
+| `module_pdfs_not_ready` | 409 | Bundle PDF modulo (merged/zip) richiesto quando almeno una lezione non ha `*_pdf_status='ready'`. `meta.missing_lessons` elenca gli UUID delle lezioni mancanti |
+| `module_pdf_file_missing` | 404 | Bundle PDF modulo: file mancante sul filesystem per una delle lezioni (DB ha `*_pdf_path` ma il file è stato rimosso) |

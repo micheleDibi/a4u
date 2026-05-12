@@ -319,7 +319,50 @@ Path-traversal protection: ogni path relativo viene risolto e
 validato con `Path.relative_to(upload_root)`. Path che escono dalla
 root vengono rifiutati con `pdf_template_asset_outside_upload_root`.
 
-## API endpoints (4 nuovi)
+### `course_module_pdf_service.py` — bundle per-modulo
+
+Aggregazione "post-export": presuppone che TUTTE le lezioni del modulo
+abbiano già il PDF della pipeline richiesta in stato `ready` con il
+file presente sul filesystem. Niente render: solo concatenazione di
+file già scritti dai worker per-lezione.
+
+Pipeline supportate via `PdfKind = Literal["content", "slides", "speech"]`.
+Le tre primitive per-kind (status, path, filename per download) sono
+centralizzate in `_lesson_pdf_status` / `_lesson_pdf_path` /
+`_lesson_pdf_filename`. Il resolver del path assoluto è invece unico
+(`pdf_absolute_path`) perché tutti e tre i PDF condividono la stessa
+root: il `kind` è già codificato nel suffisso del nome file
+(`{lesson_id}.pdf`, `_slides.pdf`, `_speech.pdf`).
+
+Pre-condition (helper `_ensure_all_pdfs_ready`):
+- modulo non vuoto → altrimenti `409 module_has_no_lessons`
+- tutte le lezioni in stato `ready` con `*_pdf_path` valorizzato →
+  altrimenti `409 module_pdfs_not_ready` con
+  `meta.missing_lessons = [lesson_id, ...]`
+- file presente sul filesystem per ognuna → altrimenti
+  `404 module_pdf_file_missing`
+
+Due funzioni pubbliche, entrambe sincrone in-memory:
+
+- `merge_module_pdfs(*, kind, course, module) -> bytes` — concatena
+  con `pypdf.PdfWriter.append(...)` (preserva metadati, font, immagini
+  incorporate, bookmark di partenza di ogni PDF lezione). Ogni lezione
+  riceve un outline-item (segnalibro) col titolo. Ordinamento lezioni:
+  parsing del `lesson_code` regex `^M\d+\.L(\d+)$` con zero-padding,
+  fallback all'ordine inserito.
+- `zip_module_pdfs(*, kind, course, module) -> bytes` — stdlib
+  `zipfile.ZipFile(mode="w", compression=zipfile.ZIP_DEFLATED)`,
+  un'entry per lezione con `arcname` = filename utente-friendly
+  identico al download per-lezione singola.
+
+Helper filename: `module_merged_filename(...)` e
+`module_zip_filename(...)`, entrambi con suffisso `(Contenuti)` /
+`(Slide)` / `(Discorso)` derivato da `_kind_label(kind)`.
+
+Dipendenza: `pypdf>=4.0` (aggiunto a `pyproject.toml`). La libreria
+stdlib `zipfile` non aggiunge dipendenze.
+
+## API endpoints (4 + 2 nuovi)
 
 Tutti sotto `/orgs/{org_id}/courses/{course_id}/...`.
 
@@ -329,11 +372,18 @@ Tutti sotto `/orgs/{org_id}/courses/{course_id}/...`.
 | `POST` | `/lessons-pdf/export-all?pdf_template_id={uuid?}` | `course:generate` | Set tutte le lezioni esportabili `pending`. **202**. |
 | `POST` | `/lessons-pdf/cancel-all` | `course:generate` | Annulla `pending`/`processing` → `failed`. |
 | `GET` | `/lessons/{lid}/pdf/download` | `course:view` | Scarica il PDF. 404 se `pdf_status != ready`. |
+| `GET` | `/modules/{mid}/lessons-pdf/download-merged` | `course:view` | Bundle modulo: un solo PDF concatenato di tutte le lezioni. |
+| `GET` | `/modules/{mid}/lessons-pdf/download-zip` | `course:view` | ZIP modulo: un PDF per lezione. |
 
 Tutti i POST restituiscono `CourseOut` aggiornato. Il GET restituisce
 `FileResponse(application/pdf)` con `Content-Disposition: attachment;
 filename="..."` (filename costruito da `course.title — lesson_code
 lesson.title.pdf`, sanitizzato).
+
+Gli analoghi 2 endpoint batch-per-modulo esistono anche per la pipeline
+slide (`/modules/{mid}/lessons-slides-pdf/{download-merged,download-zip}`)
+e discorso (`/modules/{mid}/lessons-speech-pdf/{download-merged,download-zip}`).
+Vedi anche `course_module_pdf_service.py` qui sotto.
 
 ### Scelta del template grafico
 
@@ -573,7 +623,7 @@ nell'ordine:
 
 Mirror della logica frontend `lib/slides.resolveAsset()`.
 
-### API endpoints (4 nuovi)
+### API endpoints (4 + 2 nuovi)
 
 | Metodo | Path | Permesso | Effetto |
 |---|---|---|---|
@@ -581,6 +631,8 @@ Mirror della logica frontend `lib/slides.resolveAsset()`.
 | `POST` | `/lessons-slides-pdf/export-all?pdf_template_id={uuid?}` | `course:generate` | Tutte le lezioni esportabili. |
 | `POST` | `/lessons-slides-pdf/cancel-all` | `course:generate` | Annulla `pending`/`processing`. |
 | `GET` | `/lessons/{lid}/slides-pdf/download` | `course:view` | Scarica `application/pdf`. |
+| `GET` | `/modules/{mid}/lessons-slides-pdf/download-merged` | `course:view` | Bundle modulo (PDF unico delle slide). |
+| `GET` | `/modules/{mid}/lessons-slides-pdf/download-zip` | `course:view` | ZIP modulo (1 PDF slide per lezione). |
 
 ### Frontend
 
@@ -646,7 +698,7 @@ Il cumulativo è calcolato seguendo l'ordine slide → segment_ids[] del
 map. Mirror della logica frontend `LessonSpeechView.tsx` per
 consistenza UI/PDF.
 
-### API endpoints (4 nuovi)
+### API endpoints (4 + 2 nuovi)
 
 | Metodo | Path | Permesso | Effetto |
 |---|---|---|---|
@@ -654,6 +706,8 @@ consistenza UI/PDF.
 | `POST` | `/lessons-speech-pdf/export-all?pdf_template_id={uuid?}` | `course:generate` | Tutte le lezioni esportabili. |
 | `POST` | `/lessons-speech-pdf/cancel-all` | `course:generate` | Annulla. |
 | `GET` | `/lessons/{lid}/speech-pdf/download` | `course:view` | Scarica `application/pdf`. |
+| `GET` | `/modules/{mid}/lessons-speech-pdf/download-merged` | `course:view` | Bundle modulo (PDF unico del discorso). |
+| `GET` | `/modules/{mid}/lessons-speech-pdf/download-zip` | `course:view` | ZIP modulo (1 PDF discorso per lezione). |
 
 ### Frontend
 

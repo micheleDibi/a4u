@@ -20,12 +20,14 @@ in questa iterazione (i codici platform-only sono enforced via `is_platform_admi
 | `org:transfer_creator` | Trasferire il ruolo `creator` a un altro membro |
 | `org:update` | Modificare i dati anagrafici dell'org |
 | `course_config:manage` | Gestire i parametri di configurazione dei corsi (moduli per CFU, lezioni, durata, verifica finale) a livello di organizzazione |
-| `course:view` | Visualizzare i corsi dell'org. I `member` vedono solo quelli assegnati. |
+| `course:view` | Vedere i corsi a sé assegnati |
+| `course:view_all` | Vedere TUTTI i corsi dell'organizzazione, inclusi quelli assegnati ad altri membri (additivo rispetto a `course:view`) |
 | `course:create` | Creare un nuovo corso |
-| `course:edit` | Modificare metadati corso, documenti, moduli, lezioni (CRUD manuale) |
+| `course:edit` | Modificare metadati corso, documenti, moduli, lezioni (CRUD manuale). Non implica visibilità cross-utente — per quella serve `course:view_all`. |
+| `course:save_draft` | Salvare un corso come bozza dalle schede "Base"/"Didattica" senza confermare il setup didattico (stub minimo: titolo + CFU + assegnatario) |
 | `course:delete` | Eliminare un corso (cascade su documenti, moduli, lezioni) |
 | `course:assign` | Cambiare il `assignee_user_id` di un corso |
-| `course:generate` | Triggerare la pipeline AI (architettura, lezioni del modulo, fasi successive) e approvare l'architettura |
+| `course:generate` | Triggerare la pipeline AI (architettura, struttura, contenuti, slide, discorso) + export PDF (lezione/slide/discorso) + approvazione dei payload generati |
 
 > **Avatar**: la gestione dell'avatar **non passa** dal modello RBAC. Ogni
 > utente può creare/modificare/eliminare il **proprio** avatar
@@ -43,8 +45,8 @@ Definiti in `R` (codice) e seedati in `organization_roles`. Ogni ruolo ha un
 | Code | rank | Default permissions |
 |---|---|---|
 | `creator` | 10 | **TUTTI** i codici di `ALL_PERMISSION_CODES` |
-| `org_admin` | 20 | `member:view`, `member:invite`, `member:assign_role`, `member:remove`, `template:slide:manage`, `template:pdf:manage`, `org:update`, `course_config:manage`, `course:view`, `course:create`, `course:edit`, `course:delete`, `course:assign`, `course:generate` |
-| `manager` | 30 | `member:view`, `course:view` |
+| `org_admin` | 20 | `member:view`, `member:invite`, `member:assign_role`, `member:remove`, `template:slide:manage`, `template:pdf:manage`, `org:update`, `course_config:manage`, `course:view`, `course:view_all`, `course:create`, `course:edit`, `course:save_draft`, `course:delete`, `course:assign`, `course:generate` |
+| `manager` | 30 | `member:view`, `course:view`, `course:view_all`, `course:create`, `course:edit`, `course:save_draft`, `course:assign`, `course:generate` |
 | `member` | 40 | `course:view` (filtrato server-side: solo corsi assegnati) |
 
 I default sono caricati in `role_permissions` da `seed.ensure_seed` la prima
@@ -177,30 +179,48 @@ permesso). Le pagine `PermissionsManagerPage` (admin globale) e
 
 ## Permessi del dominio Corsi
 
-Tutti e 6 i permessi `course:*` + `course_config:manage` sono **seedati e
+Tutti gli 8 permessi `course:*` + `course_config:manage` sono **seedati e
 attivi**. Pattern di gating:
 
-- `course:view` filtra la list/dettaglio. Per i `member`, il service
-  `course_service.list_courses` aggiunge `WHERE assignee_user_id = me.id`.
+- `course:view` filtra la list/dettaglio: l'utente vede SOLO i corsi a sé
+  assegnati. Il service `course_service.list_courses` aggiunge
+  `WHERE assignee_user_id = me.id` se l'utente non ha `course:view_all`.
+- `course:view_all` è additivo: rimuove il filtro server-side per
+  l'assegnatario e fa vedere tutti i corsi dell'org. Pensato per ruoli
+  manager/admin che devono monitorare il lavoro altrui senza per forza
+  averne l'edit.
 - `course:edit` gating per: PATCH corso (auto-save), upload/delete documento,
-  reprocess documento, CRUD manuale moduli/lezioni, reorder.
-- `course:create` gating sul pulsante "Nuovo corso" e POST `/courses`.
+  reprocess documento, CRUD manuale moduli/lezioni, reorder. NON garantisce
+  la visibilità sui corsi degli altri membri: l'utente con `edit` ma senza
+  `view_all` può comunque editare solo i propri corsi assegnati.
+- `course:save_draft` gating sul POST `/courses` quando il payload non ha
+  il setup didattico completato (`didactic_setup_confirmed=false`). Permette
+  a un admin di creare uno "stub" di corso (solo titolo + CFU +
+  assegnatario) e affidarlo a un altro utente che lo completerà.
+- `course:create` gating sul pulsante "Nuovo corso" e POST `/courses` con
+  setup completo.
 - `course:delete` gating su DELETE corso.
 - `course:assign` gating su PATCH `/courses/{id}/assignee` (separato da edit
   perché spesso lo deve poter fare un manager senza dargli edit).
 - `course:generate` gating su: trigger architettura, approve, regenerate,
-  generate-lessons del modulo singolo. Stato del corso oltre il permesso
-  (es. il bottone "Genera" è abilitato solo se `status='draft'`/`architecture_failed`).
+  generate-lessons del modulo singolo, generazione contenuti/slide/discorso,
+  export PDF (lezione/slide/discorso, anche batch per-modulo). Stato del
+  corso oltre il permesso (es. "Genera architettura" è abilitato solo se
+  `status='draft'`/`architecture_failed`).
 
 Vedi [Courses API reference](courses/05-api-reference.md) per la mappa
 permission ↔ endpoint completa.
 
 ### Note di implementazione
 
-- Migrazione `0009_course_permissions` aggiunge le 6 righe in `permissions`
-  e i mapping default in `role_permissions` per `creator`, `org_admin`,
-  `manager`, `member`.
+- I codici `course:*` (oggi 8) sono seedati da `app.db.seed.ensure_seed`
+  e mappati ai ruoli di default in `ROLE_DEFAULT_PERMISSIONS`
+  (`backend/app/core/permissions.py`).
 - `frontend/src/lib/permissions.ts` espone i codici via `P.COURSE_*` e li
   include in `ALL_PERMISSIONS` per le pagine di gestione permessi.
 - Le `<PermissionGate code="course:...">` controllano la visibilità dei
   pulsanti CRUD nell'editor corso.
+- `course:view_all` e `course:save_draft` sono stati introdotti dopo lo
+  scaffold iniziale (commit `a4e6caa` e `03cb8c3` rispettivamente) per
+  separare la "visibilità cross-utente" dall'`edit` e per permettere a un
+  admin di seminare bozze di corso che altri membri completeranno.

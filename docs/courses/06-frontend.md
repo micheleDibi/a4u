@@ -343,6 +343,15 @@ Layout:
   - Bottoni contestuali content (Generate / Regenerate / Retry / Approve / Edit)
   - Bottoni contestuali PDF (Esporta PDF | Scarica PDF | Rigenera PDF)
   - Progress bar live durante content generation o PDF rendering
+- **Header del modulo** — quando TUTTE le lezioni del modulo hanno
+  `pdf_status='ready'`, compaiono due bottoni outline:
+  - "Scarica modulo" → `coursesApi.lessonPdf.downloadModuleMerged(...)`
+    → PDF unico concatenato.
+  - "Esporta modulo" → `coursesApi.lessonPdf.downloadModuleZip(...)` →
+    ZIP con un PDF per lezione.
+  Stesso pattern è applicato a `CourseLessonSlidesView` (gating su
+  `slides_pdf_status === "ready"`) e `CourseLessonSpeechView` (gating
+  su `speech_pdf_status === "ready"`).
 - **Render lezione espansa** (status `ready`/`approved`): via
   `LessonContentView` (Mermaid live, KaTeX, tabelle, esempi).
 
@@ -376,6 +385,23 @@ dell'ID canonico con pulsante copy + input rinominabile. La rinomina invoca
 `[KIND:newId]` su tutti i campi testuali (introduction, sections.content,
 summary, examples.content, equations.explanation). L'utente non deve
 ricordarsi di sincronizzare i riferimenti a mano.
+
+### "Evidenzia dove usato"
+
+Accanto a ciascun `RefIdField` (asset/tabella/equazione/esempio) c'è il
+pulsante **`HighlightUsageButton`** che cerca la prima occorrenza di
+`[KIND:id]` nei campi scansionabili (intro → sezioni → summary → esempi
+→ explanation delle equazioni), apre il `SectionGroup` che la contiene
+(se collassato), scrolla in vista e applica un flash visivo
+(`ring-2 ring-amber-400`) per ~2.2s. I `SectionGroup` sono **controllati**
+(`open`/`onToggle` lifted nello stato padre) proprio per supportare
+l'auto-espansione. Se nessuna occorrenza viene trovata → toast
+informativo (nessuna eccezione).
+
+Per i `references[]` (citazioni bibliografiche senza ID-token) lo stesso
+pulsante esegue invece un substring match case-insensitive della
+`citation` nei campi scansionabili — best-effort, perché le citazioni
+quasi mai compaiono verbatim nel testo. Se non c'è match → toast.
 
 ## `CourseLessonSlidesView.tsx` (Fase 4 + PDF slide)
 
