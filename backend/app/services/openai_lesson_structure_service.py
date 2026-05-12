@@ -12,6 +12,7 @@ Errori → `OpenAILessonStructureError` (sottoclasse di `OpenAIError`).
 from __future__ import annotations
 
 import json
+import time
 from typing import Any
 
 import httpx
@@ -25,6 +26,7 @@ from app.services.openai_client import (
     apply_reasoning_effort,
     get_client,
 )
+from app.services.openai_pricing import build_usage_dict
 
 log = get_logger("app.openai_lesson_structure")
 
@@ -225,6 +227,7 @@ async def generate_lesson_structure(
         model=settings.openai_lesson_structure_model,
         reasoning_effort=body.get("reasoning_effort"),
     )
+    t0 = time.monotonic()
     try:
         async with get_client(timeout=300.0) as client:
             resp = await client.post("/chat/completions", json=body)
@@ -235,6 +238,7 @@ async def generate_lesson_structure(
         raise OpenAILessonStructureError(
             status=None, message=f"Errore HTTP verso OpenAI: {exc}"
         ) from exc
+    duration_ms = int((time.monotonic() - t0) * 1000)
 
     if resp.status_code >= 400:
         try:
@@ -330,17 +334,18 @@ async def generate_lesson_structure(
             payload=parsed,
         ) from exc
 
-    usage_raw = data.get("usage") or {}
-    usage = {
-        "prompt": int(usage_raw.get("prompt_tokens") or 0),
-        "completion": int(usage_raw.get("completion_tokens") or 0),
-        "total": int(usage_raw.get("total_tokens") or 0),
-        "model": settings.openai_lesson_structure_model,
-    }
+    usage = build_usage_dict(
+        model=settings.openai_lesson_structure_model,
+        reasoning_effort_setting=settings.openai_lesson_structure_reasoning_effort,
+        openai_usage=data.get("usage") or {},
+        duration_ms=duration_ms,
+    )
     log.info(
         "openai_lesson_structure_response",
         module_id=structure.module_id,
         lessons=len(structure.lessons),
         tokens=usage["total"],
+        duration_ms=usage["duration_ms"],
+        cost_usd=usage["cost_usd"],
     )
     return structure, usage
