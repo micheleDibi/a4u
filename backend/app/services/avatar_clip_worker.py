@@ -40,7 +40,6 @@ async def _start_pending(db: AsyncSession, clip: AvatarClip, avatar: Avatar) -> 
             prompt=clip.prompt_text,
         )
     except minimax_service.MinimaxNotConfiguredError:
-        # Non spammo log: lo stato resta pending finché l'admin configura la key.
         return
     except minimax_service.MinimaxError as exc:
         clip.status = "failed"
