@@ -640,7 +640,10 @@
         "refCode": "Reference code",
         "refCopy": "Copy reference",
         "refCopied": "Copied: {{token}}",
-        "refCopyFailed": "Could not copy to clipboard"
+        "refCopyFailed": "Could not copy to clipboard",
+        "highlightUsage": "Highlight usage",
+        "refNoOccurrences": "No occurrence of {{token}} in the lesson text.",
+        "refIdMissing": "Set an identifier first."
       },
       "dialog": {
         "generateLesson": {
@@ -885,6 +888,16 @@
         "regenerate": "Regenerate PDF",
         "exporting": "Export in progress…"
       },
+      "module": {
+        "downloadMerged": {
+          "label": "Download module",
+          "title": "Download a single PDF with the slides of all lessons of the module"
+        },
+        "exportZip": {
+          "label": "Export module",
+          "title": "Download a ZIP with one slides PDF per lesson of the module"
+        }
+      },
       "dialog": {
         "exportLesson": {
           "title": "Export slides PDF — {{lesson}}",
@@ -1025,6 +1038,16 @@
         "regenerate": "Regenerate PDF",
         "exporting": "Export in progress…"
       },
+      "module": {
+        "downloadMerged": {
+          "label": "Download module",
+          "title": "Download a single PDF with the speech of all lessons of the module"
+        },
+        "exportZip": {
+          "label": "Export module",
+          "title": "Download a ZIP with one speech PDF per lesson of the module"
+        }
+      },
       "dialog": {
         "exportLesson": {
           "title": "Export speech PDF — {{lesson}}",
@@ -1082,6 +1105,16 @@
         "download": "Download PDF",
         "regenerate": "Regenerate PDF",
         "failed": "PDF export failed"
+      },
+      "module": {
+        "downloadMerged": {
+          "label": "Download module",
+          "title": "Download a single PDF with all lessons of the module"
+        },
+        "exportZip": {
+          "label": "Export module",
+          "title": "Download a ZIP with one PDF per lesson of the module"
+        }
       },
       "phases": {
         "preparing": "Preparing...",

@@ -1,7 +1,18 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Save, Trash2, Plus, ChevronDown, ChevronRight, Copy, Check } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  Eye,
+  Plus,
+  Save,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
+
+import { cn } from "@/lib/utils";
 
 import type {
   LessonContentEquation,
@@ -93,6 +104,158 @@ export function LessonContentEditDialog({
   // mentre l'utente sta modificando — facendo sparire i campi appena aggiunti
   // (Aggiungi sezione/asset/tabella/equazione/esempio/riferimento).
 
+  // SectionGroup controlled state — necessario per "Evidenzia dove usato",
+  // che deve poter espandere programmaticamente il gruppo che contiene la
+  // prima occorrenza del token (es. equazione → gruppo "Equazioni").
+  type GroupKey =
+    | "text"
+    | "visualAssets"
+    | "tables"
+    | "equations"
+    | "examples"
+    | "references";
+  const [openGroups, setOpenGroups] = useState<Record<GroupKey, boolean>>({
+    text: true,
+    visualAssets: false,
+    tables: false,
+    equations: false,
+    examples: false,
+    references: false,
+  });
+  const toggleGroup = (key: GroupKey) =>
+    setOpenGroups((prev) => ({ ...prev, [key]: !prev[key] }));
+
+  // Refs ai contenitori dei campi scansionabili (intro/summary/sections/
+  // examples/equations), keyed da stringa stabile (es. "intro", "section-3",
+  // "equation-1-explanation"). Servono per scrollIntoView + flash visivo.
+  const fieldRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
+  const setFieldRef = (key: string) => (el: HTMLDivElement | null) => {
+    if (el) fieldRefs.current.set(key, el);
+    else fieldRefs.current.delete(key);
+  };
+  const [highlightKey, setHighlightKey] = useState<string | null>(null);
+  const highlightTimeoutRef = useRef<number | null>(null);
+
+  const findFirstOccurrence = (token: string): string | null => {
+    if (introduction.includes(token)) return "intro";
+    for (let i = 0; i < sections.length; i++) {
+      if (sections[i].content.includes(token)) return `section-${i}`;
+    }
+    if (summary.includes(token)) return "summary";
+    for (let i = 0; i < examples.length; i++) {
+      if (examples[i].content.includes(token)) return `example-${i}-content`;
+    }
+    for (let i = 0; i < equations.length; i++) {
+      if (equations[i].explanation.includes(token)) {
+        return `equation-${i}-explanation`;
+      }
+    }
+    return null;
+  };
+
+  const groupForFieldKey = (key: string): GroupKey | null => {
+    if (key === "intro" || key === "summary" || key.startsWith("section-")) {
+      return "text";
+    }
+    if (key.startsWith("example-")) return "examples";
+    if (key.startsWith("equation-")) return "equations";
+    return null;
+  };
+
+  const triggerHighlight = (key: string) => {
+    const groupKey = groupForFieldKey(key);
+    if (groupKey) {
+      setOpenGroups((prev) =>
+        prev[groupKey] ? prev : { ...prev, [groupKey]: true },
+      );
+    }
+    if (highlightTimeoutRef.current !== null) {
+      window.clearTimeout(highlightTimeoutRef.current);
+    }
+    setHighlightKey(key);
+    window.requestAnimationFrame(() => {
+      const el = fieldRefs.current.get(key);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    });
+    highlightTimeoutRef.current = window.setTimeout(() => {
+      setHighlightKey(null);
+      highlightTimeoutRef.current = null;
+    }, 2200);
+  };
+
+  const highlightUsage = (kind: RefKind, id: string) => {
+    const trimmed = id.trim();
+    if (!trimmed) {
+      toast.info(t("courses.lessonsContent.editor.refIdMissing"));
+      return;
+    }
+    const token = `[${kind}:${trimmed}]`;
+    const key = findFirstOccurrence(token);
+    if (!key) {
+      toast.info(
+        t("courses.lessonsContent.editor.refNoOccurrences", { token }),
+      );
+      return;
+    }
+    triggerHighlight(key);
+  };
+
+  // Riferimenti bibliografici: non hanno un id-token tipo [FIG:n], ma una
+  // citation di testo libero. Best-effort substring match (case-insensitive)
+  // della citation nei campi scansionabili.
+  const highlightReferenceUsage = (citation: string) => {
+    const needle = citation.trim();
+    if (!needle) {
+      toast.info(t("courses.lessonsContent.editor.refIdMissing"));
+      return;
+    }
+    const lower = needle.toLowerCase();
+    const has = (s: string) => s.toLowerCase().includes(lower);
+    let key: string | null = null;
+    if (has(introduction)) key = "intro";
+    else {
+      for (let i = 0; i < sections.length; i++) {
+        if (has(sections[i].content)) {
+          key = `section-${i}`;
+          break;
+        }
+      }
+      if (!key && has(summary)) key = "summary";
+      if (!key) {
+        for (let i = 0; i < examples.length; i++) {
+          if (has(examples[i].content)) {
+            key = `example-${i}-content`;
+            break;
+          }
+        }
+      }
+      if (!key) {
+        for (let i = 0; i < equations.length; i++) {
+          if (has(equations[i].explanation)) {
+            key = `equation-${i}-explanation`;
+            break;
+          }
+        }
+      }
+    }
+    if (!key) {
+      toast.info(
+        t("courses.lessonsContent.editor.refNoOccurrences", { token: needle }),
+      );
+      return;
+    }
+    triggerHighlight(key);
+  };
+
+  const fieldHighlightClass = (key: string) =>
+    cn(
+      "transition-all duration-300",
+      highlightKey === key &&
+        "ring-2 ring-amber-400 ring-offset-2 ring-offset-background rounded-md",
+    );
+
   const handleSubmit = () => {
     const payload: LessonContentUpdateInput = {
       introduction,
@@ -162,8 +325,15 @@ export function LessonContentEditDialog({
 
         <div className="space-y-6 py-2">
           {/* === Testo della lezione === */}
-          <SectionGroup title={t("courses.lessonsContent.editor.text")} defaultOpen>
-            <div className="space-y-1.5">
+          <SectionGroup
+            title={t("courses.lessonsContent.editor.text")}
+            open={openGroups.text}
+            onToggle={() => toggleGroup("text")}
+          >
+            <div
+              ref={setFieldRef("intro")}
+              className={cn("space-y-1.5", fieldHighlightClass("intro"))}
+            >
               <Label>{t("courses.lessonsContent.render.intro")}</Label>
               <RichTextEditor
                 value={introduction}
@@ -176,7 +346,11 @@ export function LessonContentEditDialog({
             {sections.map((section, idx) => (
               <div
                 key={idx}
-                className="space-y-2 rounded-md border bg-muted/20 p-3"
+                ref={setFieldRef(`section-${idx}`)}
+                className={cn(
+                  "space-y-2 rounded-md border bg-muted/20 p-3",
+                  fieldHighlightClass(`section-${idx}`),
+                )}
               >
                 <Input
                   value={section.title}
@@ -205,7 +379,10 @@ export function LessonContentEditDialog({
               </div>
             ))}
 
-            <div className="space-y-1.5">
+            <div
+              ref={setFieldRef("summary")}
+              className={cn("space-y-1.5", fieldHighlightClass("summary"))}
+            >
               <Label>{t("courses.lessonsContent.render.summary")}</Label>
               <RichTextEditor
                 value={summary}
@@ -255,7 +432,11 @@ export function LessonContentEditDialog({
           </SectionGroup>
 
           {/* === Asset visivi === */}
-          <SectionGroup title={t("courses.lessonsContent.editor.visualAssets")}>
+          <SectionGroup
+            title={t("courses.lessonsContent.editor.visualAssets")}
+            open={openGroups.visualAssets}
+            onToggle={() => toggleGroup("visualAssets")}
+          >
             {visualAssets.map((asset, idx) => (
               <VisualAssetEditor
                 key={idx}
@@ -271,6 +452,7 @@ export function LessonContentEditDialog({
                 onDelete={() =>
                   setVisualAssets(visualAssets.filter((_, i) => i !== idx))
                 }
+                onHighlightUsage={() => highlightUsage("FIG", asset.asset_id)}
                 disabled={isPending}
               />
             ))}
@@ -299,24 +481,36 @@ export function LessonContentEditDialog({
           </SectionGroup>
 
           {/* === Tabelle === */}
-          <SectionGroup title={t("courses.lessonsContent.editor.tables")}>
+          <SectionGroup
+            title={t("courses.lessonsContent.editor.tables")}
+            open={openGroups.tables}
+            onToggle={() => toggleGroup("tables")}
+          >
             {tables.map((table, idx) => (
               <div
                 key={idx}
                 className="space-y-2 rounded-md border bg-muted/20 p-3"
               >
-                <RefIdField
-                  kind="TAB"
-                  id={table.table_id}
-                  onChange={(id) => {
-                    const oldId = table.table_id;
-                    const next = [...tables];
-                    next[idx] = { ...table, table_id: id };
-                    setTables(next);
-                    patchRefs("TAB", oldId, id);
-                  }}
-                  disabled={isPending}
-                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex-1 min-w-0">
+                    <RefIdField
+                      kind="TAB"
+                      id={table.table_id}
+                      onChange={(id) => {
+                        const oldId = table.table_id;
+                        const next = [...tables];
+                        next[idx] = { ...table, table_id: id };
+                        setTables(next);
+                        patchRefs("TAB", oldId, id);
+                      }}
+                      disabled={isPending}
+                    />
+                  </div>
+                  <HighlightUsageButton
+                    onClick={() => highlightUsage("TAB", table.table_id)}
+                    disabled={isPending || !table.table_id.trim()}
+                  />
+                </div>
                 <Input
                   value={table.caption}
                   onChange={(e) => {
@@ -372,24 +566,36 @@ export function LessonContentEditDialog({
           </SectionGroup>
 
           {/* === Equazioni === */}
-          <SectionGroup title={t("courses.lessonsContent.editor.equations")}>
+          <SectionGroup
+            title={t("courses.lessonsContent.editor.equations")}
+            open={openGroups.equations}
+            onToggle={() => toggleGroup("equations")}
+          >
             {equations.map((eq, idx) => (
               <div
                 key={idx}
                 className="space-y-2 rounded-md border bg-muted/20 p-3"
               >
-                <RefIdField
-                  kind="EQ"
-                  id={eq.equation_id}
-                  onChange={(id) => {
-                    const oldId = eq.equation_id;
-                    const next = [...equations];
-                    next[idx] = { ...eq, equation_id: id };
-                    setEquations(next);
-                    patchRefs("EQ", oldId, id);
-                  }}
-                  disabled={isPending}
-                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex-1 min-w-0">
+                    <RefIdField
+                      kind="EQ"
+                      id={eq.equation_id}
+                      onChange={(id) => {
+                        const oldId = eq.equation_id;
+                        const next = [...equations];
+                        next[idx] = { ...eq, equation_id: id };
+                        setEquations(next);
+                        patchRefs("EQ", oldId, id);
+                      }}
+                      disabled={isPending}
+                    />
+                  </div>
+                  <HighlightUsageButton
+                    onClick={() => highlightUsage("EQ", eq.equation_id)}
+                    disabled={isPending || !eq.equation_id.trim()}
+                  />
+                </div>
                 <Input
                   value={eq.label}
                   onChange={(e) => {
@@ -409,7 +615,13 @@ export function LessonContentEditDialog({
                   }}
                   disabled={isPending}
                 />
-                <div className="space-y-1.5">
+                <div
+                  ref={setFieldRef(`equation-${idx}-explanation`)}
+                  className={cn(
+                    "space-y-1.5",
+                    fieldHighlightClass(`equation-${idx}-explanation`),
+                  )}
+                >
                   <Label className="text-xs">
                     {t("courses.lessonsContent.editor.equationExplanation")}
                   </Label>
@@ -461,24 +673,36 @@ export function LessonContentEditDialog({
           </SectionGroup>
 
           {/* === Esempi === */}
-          <SectionGroup title={t("courses.lessonsContent.editor.examples")}>
+          <SectionGroup
+            title={t("courses.lessonsContent.editor.examples")}
+            open={openGroups.examples}
+            onToggle={() => toggleGroup("examples")}
+          >
             {examples.map((ex, idx) => (
               <div
                 key={idx}
                 className="space-y-2 rounded-md border bg-muted/20 p-3"
               >
-                <RefIdField
-                  kind="EX"
-                  id={ex.example_id}
-                  onChange={(id) => {
-                    const oldId = ex.example_id;
-                    const next = [...examples];
-                    next[idx] = { ...ex, example_id: id };
-                    setExamples(next);
-                    patchRefs("EX", oldId, id);
-                  }}
-                  disabled={isPending}
-                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex-1 min-w-0">
+                    <RefIdField
+                      kind="EX"
+                      id={ex.example_id}
+                      onChange={(id) => {
+                        const oldId = ex.example_id;
+                        const next = [...examples];
+                        next[idx] = { ...ex, example_id: id };
+                        setExamples(next);
+                        patchRefs("EX", oldId, id);
+                      }}
+                      disabled={isPending}
+                    />
+                  </div>
+                  <HighlightUsageButton
+                    onClick={() => highlightUsage("EX", ex.example_id)}
+                    disabled={isPending || !ex.example_id.trim()}
+                  />
+                </div>
                 <Input
                   value={ex.title}
                   onChange={(e) => {
@@ -489,16 +713,21 @@ export function LessonContentEditDialog({
                   placeholder={t("courses.lessonsContent.editor.exampleTitle")}
                   disabled={isPending}
                 />
-                <RichTextEditor
-                  value={ex.content}
-                  onChange={(md) => {
-                    const next = [...examples];
-                    next[idx] = { ...ex, content: md };
-                    setExamples(next);
-                  }}
-                  disabled={isPending}
-                  size="md"
-                />
+                <div
+                  ref={setFieldRef(`example-${idx}-content`)}
+                  className={fieldHighlightClass(`example-${idx}-content`)}
+                >
+                  <RichTextEditor
+                    value={ex.content}
+                    onChange={(md) => {
+                      const next = [...examples];
+                      next[idx] = { ...ex, content: md };
+                      setExamples(next);
+                    }}
+                    disabled={isPending}
+                    size="md"
+                  />
+                </div>
                 <Button
                   type="button"
                   variant="ghost"
@@ -535,9 +764,13 @@ export function LessonContentEditDialog({
           </SectionGroup>
 
           {/* === References === */}
-          <SectionGroup title={t("courses.lessonsContent.render.references")}>
+          <SectionGroup
+            title={t("courses.lessonsContent.render.references")}
+            open={openGroups.references}
+            onToggle={() => toggleGroup("references")}
+          >
             {references.map((ref, idx) => (
-              <div key={idx} className="flex gap-2">
+              <div key={idx} className="flex flex-wrap gap-2">
                 <Select
                   value={ref.source}
                   onValueChange={(v) => {
@@ -562,6 +795,7 @@ export function LessonContentEditDialog({
                   </SelectContent>
                 </Select>
                 <Input
+                  className="flex-1 min-w-[200px]"
                   value={ref.citation}
                   onChange={(e) => {
                     const next = [...references];
@@ -569,6 +803,10 @@ export function LessonContentEditDialog({
                     setReferences(next);
                   }}
                   disabled={isPending}
+                />
+                <HighlightUsageButton
+                  onClick={() => highlightReferenceUsage(ref.citation)}
+                  disabled={isPending || !ref.citation.trim()}
                 />
                 <Button
                   type="button"
@@ -619,18 +857,18 @@ export function LessonContentEditDialog({
 
 interface SectionGroupProps {
   title: string;
-  defaultOpen?: boolean;
+  open: boolean;
+  onToggle: () => void;
   children: React.ReactNode;
 }
 
-function SectionGroup({ title, defaultOpen = false, children }: SectionGroupProps) {
-  const [open, setOpen] = useState(defaultOpen);
+function SectionGroup({ title, open, onToggle, children }: SectionGroupProps) {
   return (
     <div className="rounded-lg border">
       <button
         type="button"
         className="flex w-full items-center gap-2 border-b bg-muted/30 px-4 py-2 text-left text-sm font-semibold hover:bg-muted/50"
-        onClick={() => setOpen((v) => !v)}
+        onClick={onToggle}
       >
         {open ? (
           <ChevronDown className="size-4" />
@@ -709,6 +947,7 @@ interface VisualAssetEditorProps {
   onChange: (updates: Partial<LessonContentVisualAsset>) => void;
   onIdRename: (oldId: string, newId: string) => void;
   onDelete: () => void;
+  onHighlightUsage: () => void;
   disabled: boolean;
 }
 
@@ -717,21 +956,30 @@ function VisualAssetEditor({
   onChange,
   onIdRename,
   onDelete,
+  onHighlightUsage,
   disabled,
 }: VisualAssetEditorProps) {
   const { t } = useTranslation();
   return (
     <div className="space-y-2 rounded-md border bg-muted/20 p-3">
-      <RefIdField
-        kind="FIG"
-        id={asset.asset_id}
-        onChange={(id) => {
-          const oldId = asset.asset_id;
-          onChange({ asset_id: id });
-          onIdRename(oldId, id);
-        }}
-        disabled={disabled}
-      />
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex-1 min-w-0">
+          <RefIdField
+            kind="FIG"
+            id={asset.asset_id}
+            onChange={(id) => {
+              const oldId = asset.asset_id;
+              onChange({ asset_id: id });
+              onIdRename(oldId, id);
+            }}
+            disabled={disabled}
+          />
+        </div>
+        <HighlightUsageButton
+          onClick={onHighlightUsage}
+          disabled={disabled || !asset.asset_id.trim()}
+        />
+      </div>
       <div className="grid grid-cols-2 gap-2">
         <Select
           value={asset.asset_type}
@@ -825,5 +1073,27 @@ function VisualAssetEditor({
         {t("common.delete")}
       </Button>
     </div>
+  );
+}
+
+interface HighlightUsageButtonProps {
+  onClick: () => void;
+  disabled?: boolean;
+}
+
+function HighlightUsageButton({ onClick, disabled }: HighlightUsageButtonProps) {
+  const { t } = useTranslation();
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      onClick={onClick}
+      disabled={disabled}
+      title={t("courses.lessonsContent.editor.highlightUsage")}
+    >
+      <Eye className="size-3.5" />
+      {t("courses.lessonsContent.editor.highlightUsage")}
+    </Button>
   );
 }

@@ -1239,6 +1239,36 @@ export const coursesApi = {
       const filename = m ? decodeURIComponent(m[1]) : null;
       return { blob: res.data, filename };
     },
+    /** Scarica un singolo PDF concatenato di tutte le lezioni del modulo. */
+    downloadModuleMerged: async (
+      orgId: string,
+      courseId: string,
+      moduleId: string
+    ): Promise<{ blob: Blob; filename: string | null }> => {
+      const res = await apiClient.get<Blob>(
+        `${base(orgId)}/${courseId}/modules/${moduleId}/lessons-pdf/download-merged`,
+        { responseType: "blob" }
+      );
+      const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
+      const m = /filename\*?="?([^";]+)"?/i.exec(cd);
+      const filename = m ? decodeURIComponent(m[1]) : null;
+      return { blob: res.data, filename };
+    },
+    /** Scarica uno ZIP con un PDF per ogni lezione del modulo. */
+    downloadModuleZip: async (
+      orgId: string,
+      courseId: string,
+      moduleId: string
+    ): Promise<{ blob: Blob; filename: string | null }> => {
+      const res = await apiClient.get<Blob>(
+        `${base(orgId)}/${courseId}/modules/${moduleId}/lessons-pdf/download-zip`,
+        { responseType: "blob" }
+      );
+      const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
+      const m = /filename\*?="?([^";]+)"?/i.exec(cd);
+      const filename = m ? decodeURIComponent(m[1]) : null;
+      return { blob: res.data, filename };
+    },
   },
   lessonSlidesPdf: {
     exportLesson: async (
@@ -1286,6 +1316,34 @@ export const coursesApi = {
     ): Promise<{ blob: Blob; filename: string | null }> => {
       const res = await apiClient.get<Blob>(
         `${base(orgId)}/${courseId}/lessons/${lessonId}/slides-pdf/download`,
+        { responseType: "blob" }
+      );
+      const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
+      const m = /filename\*?="?([^";]+)"?/i.exec(cd);
+      const filename = m ? decodeURIComponent(m[1]) : null;
+      return { blob: res.data, filename };
+    },
+    downloadModuleMerged: async (
+      orgId: string,
+      courseId: string,
+      moduleId: string
+    ): Promise<{ blob: Blob; filename: string | null }> => {
+      const res = await apiClient.get<Blob>(
+        `${base(orgId)}/${courseId}/modules/${moduleId}/lessons-slides-pdf/download-merged`,
+        { responseType: "blob" }
+      );
+      const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
+      const m = /filename\*?="?([^";]+)"?/i.exec(cd);
+      const filename = m ? decodeURIComponent(m[1]) : null;
+      return { blob: res.data, filename };
+    },
+    downloadModuleZip: async (
+      orgId: string,
+      courseId: string,
+      moduleId: string
+    ): Promise<{ blob: Blob; filename: string | null }> => {
+      const res = await apiClient.get<Blob>(
+        `${base(orgId)}/${courseId}/modules/${moduleId}/lessons-slides-pdf/download-zip`,
         { responseType: "blob" }
       );
       const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
@@ -1346,6 +1404,34 @@ export const coursesApi = {
     ): Promise<{ blob: Blob; filename: string | null }> => {
       const res = await apiClient.get<Blob>(
         `${base(orgId)}/${courseId}/lessons/${lessonId}/speech-pdf/download`,
+        { responseType: "blob" }
+      );
+      const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
+      const m = /filename\*?="?([^";]+)"?/i.exec(cd);
+      const filename = m ? decodeURIComponent(m[1]) : null;
+      return { blob: res.data, filename };
+    },
+    downloadModuleMerged: async (
+      orgId: string,
+      courseId: string,
+      moduleId: string
+    ): Promise<{ blob: Blob; filename: string | null }> => {
+      const res = await apiClient.get<Blob>(
+        `${base(orgId)}/${courseId}/modules/${moduleId}/lessons-speech-pdf/download-merged`,
+        { responseType: "blob" }
+      );
+      const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
+      const m = /filename\*?="?([^";]+)"?/i.exec(cd);
+      const filename = m ? decodeURIComponent(m[1]) : null;
+      return { blob: res.data, filename };
+    },
+    downloadModuleZip: async (
+      orgId: string,
+      courseId: string,
+      moduleId: string
+    ): Promise<{ blob: Blob; filename: string | null }> => {
+      const res = await apiClient.get<Blob>(
+        `${base(orgId)}/${courseId}/modules/${moduleId}/lessons-speech-pdf/download-zip`,
         { responseType: "blob" }
       );
       const cd = (res.headers["content-disposition"] as string | undefined) ?? "";

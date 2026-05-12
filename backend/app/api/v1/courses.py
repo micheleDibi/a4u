@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, File, Query, Response, UploadFile, status
 from fastapi.responses import FileResponse
@@ -63,6 +63,7 @@ from app.services import (
     course_lesson_speech_service,
     course_lesson_structure_crud,
     course_lesson_structure_service,
+    course_module_pdf_service,
     course_service,
 )
 
@@ -1963,4 +1964,228 @@ async def download_lesson_speech_pdf(
         path=str(abs_path),
         media_type="application/pdf",
         filename=filename,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Bundle PDF per modulo (Contenuti / Slide / Discorso)
+# ---------------------------------------------------------------------------
+# Per ciascuna delle 3 pipeline PDF esistono 2 endpoint a livello di modulo:
+#   - download-merged → singolo PDF concatenato (pypdf.PdfWriter.append)
+#   - download-zip    → uno .zip con un PDF per ogni lezione
+# Visibili in UI nei tab Contenuti / Slide / Discorso accanto al titolo del
+# modulo, solo quando TUTTE le lezioni del modulo hanno il PDF in stato
+# `ready`. Lato BE la pre-condizione viene ri-controllata in
+# `_ensure_all_pdfs_ready` (vedi `course_module_pdf_service`).
+
+
+def _quoted_filename(name: str) -> str:
+    """Escape per `Content-Disposition: attachment; filename="..."`."""
+    return name.replace('"', "")
+
+
+async def _load_course_module_or_404(
+    db: DbSession,
+    *,
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    module_id: uuid.UUID,
+) -> tuple[Any, Any]:
+    """Carica corso (con moduli + lezioni) e ritorna `(course, module)`.
+    Usa `course_lesson_pdf_service.load_course_full` (eager-load) e
+    cerca il modulo nel grafo. 404 se non trovato."""
+    course = await course_lesson_pdf_service.load_course_full(
+        db, course_id=course_id
+    )
+    if course is None or course.organization_id != org_id:
+        raise NotFoundError("Corso non trovato.", code="course_not_found")
+    module = next(
+        (m for m in course.modules if m.id == module_id), None
+    )
+    if module is None:
+        raise NotFoundError(
+            "Modulo non trovato in questo corso.", code="module_not_found"
+        )
+    return course, module
+
+
+def _module_pdf_response(
+    *, content: bytes, filename: str, media_type: str
+) -> Response:
+    """Helper di risposta per i bundle modulo (merged PDF / ZIP)."""
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{_quoted_filename(filename)}"'
+            ),
+        },
+    )
+
+
+# --- Contenuti (Fase 3) -----------------------------------------------------
+
+
+@router.get(
+    "/{course_id}/modules/{module_id}/lessons-pdf/download-merged",
+)
+async def download_module_pdf_merged(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    module_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_VIEW),
+) -> Response:
+    """PDF unico concatenato di TUTTI i PDF lezione del modulo."""
+    await _ensure_org(db, org_id)
+    course, module = await _load_course_module_or_404(
+        db, org_id=org_id, course_id=course_id, module_id=module_id
+    )
+    content = course_module_pdf_service.merge_module_pdfs(
+        kind="content", course=course, module=module
+    )
+    filename = course_module_pdf_service.module_merged_filename(
+        "content", course, module
+    )
+    return _module_pdf_response(
+        content=content, filename=filename, media_type="application/pdf"
+    )
+
+
+@router.get(
+    "/{course_id}/modules/{module_id}/lessons-pdf/download-zip",
+)
+async def download_module_pdf_zip(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    module_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_VIEW),
+) -> Response:
+    """ZIP con un PDF per ogni lezione del modulo."""
+    await _ensure_org(db, org_id)
+    course, module = await _load_course_module_or_404(
+        db, org_id=org_id, course_id=course_id, module_id=module_id
+    )
+    content = course_module_pdf_service.zip_module_pdfs(
+        kind="content", course=course, module=module
+    )
+    filename = course_module_pdf_service.module_zip_filename(
+        "content", course, module
+    )
+    return _module_pdf_response(
+        content=content, filename=filename, media_type="application/zip"
+    )
+
+
+# --- Slide (Fase 4) ---------------------------------------------------------
+
+
+@router.get(
+    "/{course_id}/modules/{module_id}/lessons-slides-pdf/download-merged",
+)
+async def download_module_slides_pdf_merged(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    module_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_VIEW),
+) -> Response:
+    await _ensure_org(db, org_id)
+    course, module = await _load_course_module_or_404(
+        db, org_id=org_id, course_id=course_id, module_id=module_id
+    )
+    content = course_module_pdf_service.merge_module_pdfs(
+        kind="slides", course=course, module=module
+    )
+    filename = course_module_pdf_service.module_merged_filename(
+        "slides", course, module
+    )
+    return _module_pdf_response(
+        content=content, filename=filename, media_type="application/pdf"
+    )
+
+
+@router.get(
+    "/{course_id}/modules/{module_id}/lessons-slides-pdf/download-zip",
+)
+async def download_module_slides_pdf_zip(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    module_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_VIEW),
+) -> Response:
+    await _ensure_org(db, org_id)
+    course, module = await _load_course_module_or_404(
+        db, org_id=org_id, course_id=course_id, module_id=module_id
+    )
+    content = course_module_pdf_service.zip_module_pdfs(
+        kind="slides", course=course, module=module
+    )
+    filename = course_module_pdf_service.module_zip_filename(
+        "slides", course, module
+    )
+    return _module_pdf_response(
+        content=content, filename=filename, media_type="application/zip"
+    )
+
+
+# --- Discorso (Fase 5) ------------------------------------------------------
+
+
+@router.get(
+    "/{course_id}/modules/{module_id}/lessons-speech-pdf/download-merged",
+)
+async def download_module_speech_pdf_merged(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    module_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_VIEW),
+) -> Response:
+    await _ensure_org(db, org_id)
+    course, module = await _load_course_module_or_404(
+        db, org_id=org_id, course_id=course_id, module_id=module_id
+    )
+    content = course_module_pdf_service.merge_module_pdfs(
+        kind="speech", course=course, module=module
+    )
+    filename = course_module_pdf_service.module_merged_filename(
+        "speech", course, module
+    )
+    return _module_pdf_response(
+        content=content, filename=filename, media_type="application/pdf"
+    )
+
+
+@router.get(
+    "/{course_id}/modules/{module_id}/lessons-speech-pdf/download-zip",
+)
+async def download_module_speech_pdf_zip(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    module_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_VIEW),
+) -> Response:
+    await _ensure_org(db, org_id)
+    course, module = await _load_course_module_or_404(
+        db, org_id=org_id, course_id=course_id, module_id=module_id
+    )
+    content = course_module_pdf_service.zip_module_pdfs(
+        kind="speech", course=course, module=module
+    )
+    filename = course_module_pdf_service.module_zip_filename(
+        "speech", course, module
+    )
+    return _module_pdf_response(
+        content=content, filename=filename, media_type="application/zip"
     )

@@ -8,6 +8,7 @@ import {
   ChevronDown,
   ChevronRight,
   Download,
+  FileArchive,
   FileText,
   Hourglass,
   Loader2,
@@ -397,6 +398,60 @@ export function CourseLessonSlidesView({
     }
   };
 
+  const downloadModuleMerged = async (
+    moduleId: string,
+    fallbackName: string,
+  ) => {
+    try {
+      const { blob, filename } =
+        await coursesApi.lessonSlidesPdf.downloadModuleMerged(
+          orgId,
+          course.id,
+          moduleId,
+        );
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename ?? `${fallbackName}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5_000);
+    } catch (err) {
+      toast.error(
+        extractApiError(err).message ??
+          t("courses.lessonsSlidesPdf.toast.error"),
+      );
+    }
+  };
+
+  const downloadModuleZip = async (
+    moduleId: string,
+    fallbackName: string,
+  ) => {
+    try {
+      const { blob, filename } =
+        await coursesApi.lessonSlidesPdf.downloadModuleZip(
+          orgId,
+          course.id,
+          moduleId,
+        );
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename ?? `${fallbackName}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5_000);
+    } catch (err) {
+      toast.error(
+        extractApiError(err).message ??
+          t("courses.lessonsSlidesPdf.toast.error"),
+      );
+    }
+  };
+
   // PDF aggregate
   const pdfAggregate = useMemo(() => {
     let pdfActive = 0;
@@ -621,6 +676,12 @@ export function CourseLessonSlidesView({
                     ?.lessonId
                 : undefined
             }
+            onDownloadModuleMerged={(moduleId, fallback) => {
+              void downloadModuleMerged(moduleId, fallback);
+            }}
+            onDownloadModuleZip={(moduleId, fallback) => {
+              void downloadModuleZip(moduleId, fallback);
+            }}
           />
         ))}
       </div>
@@ -719,6 +780,8 @@ interface ModuleSlidesCardProps {
   ) => void;
   onDownloadPdf: (lesson: CourseLessonOut) => void;
   exportingPdfId: string | undefined;
+  onDownloadModuleMerged: (moduleId: string, fallbackName: string) => void;
+  onDownloadModuleZip: (moduleId: string, fallbackName: string) => void;
 }
 
 function ModuleSlidesCard({
@@ -736,15 +799,48 @@ function ModuleSlidesCard({
   onExportPdf,
   onDownloadPdf,
   exportingPdfId,
+  onDownloadModuleMerged,
+  onDownloadModuleZip,
 }: ModuleSlidesCardProps) {
+  const { t } = useTranslation();
+  const allPdfsReady =
+    module.lessons.length > 0 &&
+    module.lessons.every((l) => l.slides_pdf_status === "ready");
+  const fallbackName = `${module.module_code} ${module.title}`;
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center gap-2">
-          <Badge variant="outline" className="font-mono text-xs">
-            {moduleLabel}
-          </Badge>
-          <h4 className="text-sm font-semibold">{module.title}</h4>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <Badge variant="outline" className="font-mono text-xs">
+              {moduleLabel}
+            </Badge>
+            <h4 className="text-sm font-semibold truncate">{module.title}</h4>
+          </div>
+          {allPdfsReady && (
+            <div className="flex items-center gap-2 shrink-0">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => onDownloadModuleMerged(module.id, fallbackName)}
+                title={t("courses.lessonsSlidesPdf.module.downloadMerged.title")}
+              >
+                <Download className="size-3.5" />
+                {t("courses.lessonsSlidesPdf.module.downloadMerged.label")}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => onDownloadModuleZip(module.id, fallbackName)}
+                title={t("courses.lessonsSlidesPdf.module.exportZip.title")}
+              >
+                <FileArchive className="size-3.5" />
+                {t("courses.lessonsSlidesPdf.module.exportZip.label")}
+              </Button>
+            </div>
+          )}
         </div>
       </CardHeader>
       {module.lessons.length > 0 && (

@@ -641,7 +641,10 @@
         "refCode": "Codice riferimento",
         "refCopy": "Copia il riferimento",
         "refCopied": "Copiato: {{token}}",
-        "refCopyFailed": "Impossibile copiare negli appunti"
+        "refCopyFailed": "Impossibile copiare negli appunti",
+        "highlightUsage": "Evidenzia dove usato",
+        "refNoOccurrences": "Nessuna occorrenza di {{token}} nel testo della lezione.",
+        "refIdMissing": "Imposta prima un identificatore."
       },
       "dialog": {
         "generateLesson": {
@@ -886,6 +889,16 @@
         "regenerate": "Rigenera PDF",
         "exporting": "Export in corso…"
       },
+      "module": {
+        "downloadMerged": {
+          "label": "Scarica modulo",
+          "title": "Scarica un unico PDF con le slide di tutte le lezioni del modulo"
+        },
+        "exportZip": {
+          "label": "Esporta modulo",
+          "title": "Scarica uno ZIP con un PDF slide per ogni lezione del modulo"
+        }
+      },
       "dialog": {
         "exportLesson": {
           "title": "Esporta PDF slide — {{lesson}}",
@@ -1026,6 +1039,16 @@
         "regenerate": "Rigenera PDF",
         "exporting": "Export in corso…"
       },
+      "module": {
+        "downloadMerged": {
+          "label": "Scarica modulo",
+          "title": "Scarica un unico PDF con il discorso di tutte le lezioni del modulo"
+        },
+        "exportZip": {
+          "label": "Esporta modulo",
+          "title": "Scarica uno ZIP con un PDF discorso per ogni lezione del modulo"
+        }
+      },
       "dialog": {
         "exportLesson": {
           "title": "Esporta PDF discorso — {{lesson}}",
@@ -1083,6 +1106,16 @@
         "download": "Scarica PDF",
         "regenerate": "Rigenera PDF",
         "failed": "Export PDF fallito"
+      },
+      "module": {
+        "downloadMerged": {
+          "label": "Scarica modulo",
+          "title": "Scarica un unico PDF con tutte le lezioni del modulo"
+        },
+        "exportZip": {
+          "label": "Esporta modulo",
+          "title": "Scarica uno ZIP con un PDF per ogni lezione del modulo"
+        }
       },
       "phases": {
         "preparing": "Preparazione...",
