@@ -135,6 +135,27 @@ export function LessonContentEditDialog({
   };
   const [highlightKey, setHighlightKey] = useState<string | null>(null);
   const highlightTimeoutRef = useRef<number | null>(null);
+  // Riferimento all'elemento `<code>` che TipTap usa per renderizzare il
+  // token `[KIND:id]` (vedi `protectTokens` in `RichTextEditor.tsx`).
+  // Mantenuto per ripulire l'inline-style di flash quando il timer scade
+  // o quando si avvia un nuovo flash su un token diverso.
+  const flashedTokenElRef = useRef<HTMLElement | null>(null);
+
+  const applyTokenFlash = (el: HTMLElement) => {
+    el.style.backgroundColor = "rgb(251 191 36 / 0.45)"; // amber-400 @45%
+    el.style.outline = "2px solid rgb(251 191 36)"; // amber-400
+    el.style.outlineOffset = "1px";
+    el.style.borderRadius = "3px";
+    el.style.transition = "background-color 200ms, outline 200ms";
+  };
+
+  const clearTokenFlash = (el: HTMLElement) => {
+    el.style.backgroundColor = "";
+    el.style.outline = "";
+    el.style.outlineOffset = "";
+    el.style.borderRadius = "";
+    el.style.transition = "";
+  };
 
   const findFirstOccurrence = (token: string): string | null => {
     if (introduction.includes(token)) return "intro";
@@ -162,7 +183,7 @@ export function LessonContentEditDialog({
     return null;
   };
 
-  const triggerHighlight = (key: string) => {
+  const triggerHighlight = (key: string, token: string | null = null) => {
     const groupKey = groupForFieldKey(key);
     if (groupKey) {
       setOpenGroups((prev) =>
@@ -172,15 +193,38 @@ export function LessonContentEditDialog({
     if (highlightTimeoutRef.current !== null) {
       window.clearTimeout(highlightTimeoutRef.current);
     }
+    // Se c'è un flash precedente ancora attivo su un altro token, ripuliscilo.
+    if (flashedTokenElRef.current) {
+      clearTokenFlash(flashedTokenElRef.current);
+      flashedTokenElRef.current = null;
+    }
     setHighlightKey(key);
     window.requestAnimationFrame(() => {
-      const el = fieldRefs.current.get(key);
-      if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      const fieldEl = fieldRefs.current.get(key);
+      if (!fieldEl) return;
+      // Scroll iniziale al container come fallback / contesto.
+      fieldEl.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (!token) return;
+      // TipTap rende ogni `[KIND:id]` come `<code>{token}</code>` (vedi
+      // `protectTokens` in `RichTextEditor.tsx`), quindi basta cercare il
+      // primo `<code>` con `textContent === token`.
+      const codes = fieldEl.querySelectorAll("code");
+      for (const c of Array.from(codes)) {
+        if (c.textContent === token) {
+          applyTokenFlash(c as HTMLElement);
+          flashedTokenElRef.current = c as HTMLElement;
+          // Re-scroll per centrare il token specifico, non il contenitore.
+          c.scrollIntoView({ behavior: "smooth", block: "center" });
+          break;
+        }
       }
     });
     highlightTimeoutRef.current = window.setTimeout(() => {
       setHighlightKey(null);
+      if (flashedTokenElRef.current) {
+        clearTokenFlash(flashedTokenElRef.current);
+        flashedTokenElRef.current = null;
+      }
       highlightTimeoutRef.current = null;
     }, 2200);
   };
@@ -199,7 +243,7 @@ export function LessonContentEditDialog({
       );
       return;
     }
-    triggerHighlight(key);
+    triggerHighlight(key, token);
   };
 
   // Riferimenti bibliografici: non hanno un id-token tipo [FIG:n], ma una
