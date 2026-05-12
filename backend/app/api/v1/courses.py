@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import urllib.parse
 import uuid
 from typing import Annotated, Any
 
@@ -1979,9 +1980,23 @@ async def download_lesson_speech_pdf(
 # `_ensure_all_pdfs_ready` (vedi `course_module_pdf_service`).
 
 
-def _quoted_filename(name: str) -> str:
-    """Escape per `Content-Disposition: attachment; filename="..."`."""
-    return name.replace('"', "")
+def _content_disposition_attachment(filename: str) -> str:
+    """Costruisce il valore di `Content-Disposition: attachment; ...` con
+    fallback RFC 5987 per filename non-ASCII.
+
+    Starlette serializza gli header HTTP in latin-1, quindi caratteri tipo
+    em-dash (—), lettere accentate, ecc. esplodono con `UnicodeEncodeError`
+    se messi direttamente nel `filename=`. La forma standard
+    `filename*=UTF-8''<percent-encoded>` è supportata da tutti i browser
+    moderni e ha precedenza sulla `filename=` ASCII di fallback.
+    """
+    # Fallback ASCII (browser molto vecchi): caratteri non-ASCII → "?".
+    ascii_fallback = (
+        filename.encode("ascii", errors="replace").decode("ascii").replace('"', "")
+    )
+    # Forma RFC 5987 (browser moderni): UTF-8 percent-encoded.
+    encoded = urllib.parse.quote(filename, safe="")
+    return f'attachment; filename="{ascii_fallback}"; filename*=UTF-8\'\'{encoded}'
 
 
 async def _load_course_module_or_404(
@@ -2017,9 +2032,7 @@ def _module_pdf_response(
         content=content,
         media_type=media_type,
         headers={
-            "Content-Disposition": (
-                f'attachment; filename="{_quoted_filename(filename)}"'
-            ),
+            "Content-Disposition": _content_disposition_attachment(filename),
         },
     )
 
