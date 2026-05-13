@@ -101,7 +101,6 @@ REQUISITI — ASSET VISIVI
 
 - 1-3 diagrammi/schemi per lezione (NON per la lezione introduttiva,
   dove sono opzionali e tipicamente 0-1)
-- 0-3 immagini illustrative se i contenuti lo richiedono
 - formule LaTeX TUTTE le volte che la disciplina lo richiede
 - tabelle quando devi confrontare alternative o riassumere
   classificazioni
@@ -113,8 +112,10 @@ l'asset rendering — non devono apparire al lettore finale, ma servono
 al parser). La `caption` è una breve descrizione semantica leggibile.
 
 FORMATI ACCETTATI:
-- diagram, schema, chart → format = "mermaid", content = codice Mermaid
-- image, illustration → format = "image_prompt" o "image_search_query"
+- visual_assets → SOLO `format = "mermaid"`, content = codice Mermaid
+  valido. NON generare prompt per immagini, query di ricerca o
+  descrizioni testuali: l'utente caricherà eventualmente immagini
+  reali a mano dall'editor.
 - formula → format = "latex" (senza delimitatori $...$)
 - table → format = "markdown"
 
@@ -202,24 +203,9 @@ LESSON_CONTENT_JSON_SCHEMA: dict[str, Any] = {
                     "type": "object",
                     "properties": {
                         "asset_id": {"type": "string"},
-                        "asset_type": {
-                            "type": "string",
-                            "enum": [
-                                "diagram",
-                                "schema",
-                                "image",
-                                "illustration",
-                                "chart",
-                            ],
-                        },
                         "format": {
                             "type": "string",
-                            "enum": [
-                                "mermaid",
-                                "image_prompt",
-                                "image_search_query",
-                                "description",
-                            ],
+                            "enum": ["mermaid"],
                         },
                         "content": {"type": "string"},
                         "caption": {"type": "string"},
@@ -227,7 +213,6 @@ LESSON_CONTENT_JSON_SCHEMA: dict[str, Any] = {
                     },
                     "required": [
                         "asset_id",
-                        "asset_type",
                         "format",
                         "content",
                         "caption",

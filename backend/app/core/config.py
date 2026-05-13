@@ -128,6 +128,14 @@ class Settings(BaseSettings):
     # `course_lesson_structure_auto_retry_max`.
     course_lesson_speech_auto_retry_max: int = 5
 
+    # Image → Mermaid: chiamata Vision API on-demand quando l'utente
+    # carica un'immagine nell'editor lezione e clicca "Digitalizza".
+    # Modello deve supportare input multimodale (image_url). gpt-4o è
+    # vision-capable e non-reasoning (effort = None default).
+    openai_image_to_mermaid_model: str = "gpt-4o"
+    openai_image_to_mermaid_reasoning_effort: str | None = None
+    openai_image_to_mermaid_max_tokens: int = 4_000
+
     # §7 — Export PDF lezioni.
     # Cap=2: rendering Playwright è I/O+CPU intensive (Chromium istanza).
     course_lesson_pdf_poll_interval_seconds: int = 4

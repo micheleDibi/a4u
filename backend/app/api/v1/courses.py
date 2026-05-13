@@ -6,10 +6,12 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, File, Query, Response, UploadFile, status
 from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 
+from app.core.config import get_settings
 from app.core.deps import CurrentUser, DbSession
-from app.core.errors import NotFoundError, PermissionDeniedError
+from app.core.errors import ConflictError, NotFoundError, PermissionDeniedError
 from app.core.permissions import P, require, require_membership, resolve_permissions
 from app.models.membership import Membership
 from app.models.organization import Organization
@@ -66,6 +68,12 @@ from app.services import (
     course_lesson_structure_service,
     course_module_pdf_service,
     course_service,
+    file_service,
+)
+from app.services.openai_client import OpenAINotConfiguredError
+from app.services.openai_image_to_mermaid_service import (
+    OpenAIImageToMermaidError,
+    convert_image_to_mermaid,
 )
 
 router = APIRouter(prefix="/orgs/{org_id}/courses", tags=["courses"])
@@ -1966,6 +1974,171 @@ async def download_lesson_speech_pdf(
         media_type="application/pdf",
         filename=filename,
     )
+
+
+# ---------------------------------------------------------------------------
+# Lesson assets (upload immagine + Vision API image→Mermaid)
+# ---------------------------------------------------------------------------
+# L'editor lezione permette di caricare un'immagine come asset visivo. Due
+# scelte successive all'upload (UX lato frontend):
+#   1) "Mantieni come immagine" → l'asset rimane `format=image` con
+#      `content` = path pubblico relativo (es. `lesson_assets/{cid}/{uuid}.png`).
+#   2) "Digitalizza in Mermaid" → backend chiama OpenAI Vision; se il modello
+#      produce codice Mermaid valido, l'editor sostituisce localmente
+#      `format=mermaid` + `content=<codice>`. L'immagine fisica viene poi
+#      pulita al successivo salvataggio dal cleanup orfani in
+#      `update_lesson_content_raw`.
+
+
+class _LessonAssetConvertInput(BaseModel):
+    """Body del POST /lesson-assets/convert-to-mermaid."""
+
+    path: str = Field(min_length=1, max_length=500)
+
+
+class _LessonAssetUploadOut(BaseModel):
+    path: str
+    url: str
+
+
+class _LessonAssetConvertOut(BaseModel):
+    mermaid_code: str
+    usage: dict[str, Any]
+
+
+def _validate_lesson_asset_path(path: str, *, course_id: uuid.UUID) -> str:
+    """Verifica che `path` sia un asset di QUESTO corso (no cross-tenant
+    leak). Accetta sia il path relativo (`lesson_assets/{cid}/{uuid}.ext`)
+    sia il path pubblico (`/uploads/lesson_assets/...`) — normalizza al
+    relativo."""
+    rel = path.removeprefix("/uploads/").lstrip("/")
+    expected_prefix = f"lesson_assets/{course_id}/"
+    if not rel.startswith(expected_prefix):
+        raise NotFoundError(
+            "Asset non trovato in questo corso.",
+            code="lesson_asset_not_in_course",
+        )
+    # Niente segmenti `..` o doppi slash.
+    parts = rel.split("/")
+    if any(p in {"", ".", ".."} for p in parts):
+        raise NotFoundError(
+            "Path asset non valido.", code="invalid_lesson_asset_path"
+        )
+    return rel
+
+
+@router.post(
+    "/{course_id}/lesson-assets/upload",
+    response_model=_LessonAssetUploadOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_lesson_asset(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    file: Annotated[UploadFile, File(...)],
+    _=require(P.COURSE_EDIT),
+) -> _LessonAssetUploadOut:
+    """Carica un'immagine come asset visivo per il corso.
+
+    Validazione MIME (jpg/png/webp) + size (5 MB max) + ri-encoding via
+    Pillow (strip EXIF). Salvataggio in `lesson_assets/{course_id}/{uuid}.{ext}`.
+    Ritorna `{ path, url }` da inserire nell'asset visivo come
+    `content = path` + `format = "image"`.
+    """
+    await _ensure_org(db, org_id)
+    granted = await resolve_permissions(
+        db, user=current, organization_id=org_id
+    )
+    # Verifica visibilità + esistenza corso (404 silenzioso se non visto).
+    await course_service.get_course(
+        db,
+        organization_id=org_id,
+        course_id=course_id,
+        current_user=current,
+        granted_permissions=granted,
+    )
+    public_path = await file_service.save_upload_image(
+        file,
+        subdir=f"lesson_assets/{course_id}",
+        max_dimension=2400,
+    )
+    rel = public_path.removeprefix("/uploads/")
+    return _LessonAssetUploadOut(path=rel, url=public_path)
+
+
+@router.post(
+    "/{course_id}/lesson-assets/convert-to-mermaid",
+    response_model=_LessonAssetConvertOut,
+)
+async def convert_lesson_asset_to_mermaid(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    payload: _LessonAssetConvertInput,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_EDIT),
+) -> _LessonAssetConvertOut:
+    """Trasforma un'immagine caricata in codice Mermaid via OpenAI Vision.
+
+    Pre-condition: il path deve essere un asset di questo corso (cross-tenant
+    isolation). Errori: `409 image_to_mermaid_failed` se il modello produce
+    output non valido / UNRECOGNIZED, oppure se la API key OpenAI non è
+    configurata.
+    """
+    await _ensure_org(db, org_id)
+    granted = await resolve_permissions(
+        db, user=current, organization_id=org_id
+    )
+    course = await course_service.get_course(
+        db,
+        organization_id=org_id,
+        course_id=course_id,
+        current_user=current,
+        granted_permissions=granted,
+    )
+    rel = _validate_lesson_asset_path(payload.path, course_id=course_id)
+    settings = get_settings()
+    target = settings.upload_root / rel
+    if not target.is_file():
+        raise NotFoundError(
+            "File asset mancante sul filesystem.",
+            code="lesson_asset_file_missing",
+        )
+    # Inferenza MIME dall'estensione (i file passati dal nostro save_upload_image
+    # sono già normalizzati a .png/.jpg/.webp).
+    ext = target.suffix.lower()
+    mime_by_ext = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".webp": "image/webp",
+    }
+    mime_type = mime_by_ext.get(ext)
+    if mime_type is None:
+        raise ConflictError(
+            f"Estensione immagine non supportata: {ext}",
+            code="lesson_asset_unsupported_ext",
+        )
+    image_bytes = target.read_bytes()
+    try:
+        mermaid_code, usage = await convert_image_to_mermaid(
+            image_bytes=image_bytes,
+            mime_type=mime_type,
+            language_code=course.language_code,
+        )
+    except OpenAINotConfiguredError as exc:
+        raise ConflictError(
+            "OpenAI non è configurato sul server.",
+            code="openai_not_configured",
+        ) from exc
+    except OpenAIImageToMermaidError as exc:
+        raise ConflictError(
+            exc.message,
+            code="image_to_mermaid_failed",
+        ) from exc
+    return _LessonAssetConvertOut(mermaid_code=mermaid_code, usage=usage)
 
 
 # ---------------------------------------------------------------------------

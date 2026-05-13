@@ -45,7 +45,13 @@ ALLOWED_AUDIO_EXT_BY_MIME = {
 
 # Whitelist dei subdir consentiti sotto upload_root. Path-like accettati,
 # es. "avatars", "avatars/{user_id}", "avatars/{user_id}/clips".
-_ALLOWED_SUBDIR_ROOTS = {"organizations", "avatars", "templates", "courses"}
+_ALLOWED_SUBDIR_ROOTS = {
+    "organizations",
+    "avatars",
+    "templates",
+    "courses",
+    "lesson_assets",
+}
 
 # Documenti di riferimento dei corsi: tipi accettati per il pre-processing
 # di Appendice A (riassunto strutturato). Il file viene salvato as-is, no

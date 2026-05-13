@@ -154,8 +154,24 @@ function SlideAssetRender({
         </figure>
       );
     }
-    // Per image_prompt / image_search_query / description: placeholder
-    // (il rendering immagini AI-generated è una feature separata).
+    if (a.format === "image") {
+      return (
+        <figure className="space-y-1">
+          <img
+            src={`/uploads/${a.content}`}
+            alt={a.alt_text || ""}
+            className="block max-h-[24rem] w-auto max-w-full rounded"
+          />
+          {a.caption && (
+            <figcaption className="text-xs italic text-muted-foreground">
+              {a.caption}
+            </figcaption>
+          )}
+        </figure>
+      );
+    }
+    // Per image_prompt / image_search_query / description (legacy):
+    // placeholder testuale.
     return (
       <figure className="space-y-1">
         <div className="rounded-md border bg-muted/30 p-4 text-center text-xs text-muted-foreground">

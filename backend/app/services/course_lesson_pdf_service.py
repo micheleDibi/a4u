@@ -351,6 +351,23 @@ def _render_visual_asset_block(
                 f'<pre class="mermaid-fallback">{_html_escape_text(content)}</pre>'
             )
         return f'<figure class="visual"><div class="figure-body">{body}</div>{caption_html}</figure>'
+    if fmt == "image":
+        # Asset immagine caricato dall'utente (path relativo `lesson_assets/...`).
+        # Riusiamo il resolver dei template asset: legge dal filesystem e
+        # produce una data URL base64 — WeasyPrint-friendly senza dipendenze
+        # di rete.
+        alt = _html_escape_text(asset.get("alt_text") or "")
+        data_url = _resolve_template_asset_url(content)
+        if data_url:
+            body = (
+                f'<img class="uploaded-image" src="{data_url}" alt="{alt}" />'
+            )
+        else:
+            body = (
+                f'<div class="placeholder-image">[immagine mancante: '
+                f'{_html_escape_text(content)}]</div>'
+            )
+        return f'<figure class="visual"><div class="figure-body">{body}</div>{caption_html}</figure>'
     if fmt in {"image_prompt", "image_search_query", "description"}:
         body = (
             f'<div class="placeholder-image">{_html_escape_text(content)}</div>'

@@ -613,7 +613,7 @@
       },
       "editor": {
         "text": "Lesson text",
-        "visualAssets": "Visual assets (diagrams, schemas, images)",
+        "visualAssets": "Visual assets (Mermaid diagrams or uploaded images)",
         "tables": "Tables",
         "equations": "Equations",
         "examples": "Examples",
@@ -624,19 +624,19 @@
         "exampleTitle": "Example title",
         "assetContent": "Content / description",
         "altText": "Alternative text (accessibility description)",
-        "assetTypes": {
-          "diagram": "Diagram",
-          "schema": "Schema",
-          "image": "Image",
-          "illustration": "Illustration",
-          "chart": "Chart"
+        "assetActions": {
+          "addVisualAsset": "Add visual asset",
+          "uploadImage": "Upload image",
+          "writeMermaid": "Write Mermaid by hand",
+          "convertToMermaid": "Convert to Mermaid",
+          "convertingToMermaid": "Converting…",
+          "convertedToMermaid": "Image converted to Mermaid.",
+          "convertToMermaidFailed": "Conversion failed. Try again.",
+          "imageUploaded": "Image uploaded.",
+          "imageUploadFailed": "Image upload failed.",
+          "uploading": "Uploading…"
         },
-        "assetFormats": {
-          "mermaid": "Mermaid diagram",
-          "image_prompt": "Image prompt",
-          "image_search_query": "Image search query",
-          "description": "Text description"
-        },
+        "legacyAssetBanner": "Legacy asset, no longer editable. Delete it and recreate as a Mermaid diagram or an uploaded image.",
         "refCode": "Reference code",
         "refCopy": "Copy reference",
         "refCopied": "Copied: {{token}}",
@@ -830,8 +830,6 @@
         "removeSlide": "Remove slide",
         "noSourceSection": "(none)",
         "assetIdLabel": "Asset ID",
-        "assetTypeLabel": "Type",
-        "assetFormatLabel": "Format",
         "assetContent": "Content",
         "assetCaption": "Caption",
         "assetAltText": "Alt text"

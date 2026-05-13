@@ -40,20 +40,31 @@ class LessonContentSection(BaseModel):
 
 
 class LessonContentVisualAsset(BaseModel):
-    """Asset visivo: diagram, schema, image, illustration, chart.
+    """Asset visivo: oggi solo Mermaid + immagine caricata.
 
-    Solo `asset_id`/`asset_type`/`format`/`content` sono obbligatori
-    per la resa. `caption` e `alt_text` sono nice-to-have e possono
-    essere vuoti se l'AI li omette.
+    `format`:
+    - `mermaid`: `content` è codice Mermaid (renderizzato live).
+    - `image`: `content` è un path pubblico relativo (es.
+      `lesson_assets/{course_id}/{uuid}.png`); l'immagine viene
+      servita da StaticFiles in `/uploads/...`.
+    - `image_prompt|image_search_query|description`: SOLO LEGACY in
+      lettura. Sono valori di vecchi corsi pre-refactor; il frontend
+      di scrittura non li produce più. Restano accettati qui per non
+      far esplodere il parsing dei `content_raw` storici.
+
+    `extra="ignore"` per tollerare il vecchio campo `asset_type`
+    (rimosso dal refactor) presente nei record antecedenti.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
     asset_id: str = Field(min_length=1, max_length=50)
-    asset_type: Literal[
-        "diagram", "schema", "image", "illustration", "chart"
-    ]
     format: Literal[
-        "mermaid", "image_prompt", "image_search_query", "description"
+        "mermaid",
+        "image",
+        # — legacy, read-only —
+        "image_prompt",
+        "image_search_query",
+        "description",
     ]
     content: str = Field(min_length=1)
     caption: str = Field(default="", max_length=600)

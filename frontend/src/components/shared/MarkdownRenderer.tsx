@@ -212,6 +212,27 @@ function VisualAssetBlock({ asset }: { asset: LessonContentVisualAsset }) {
       </figure>
     );
   }
+  if (asset.format === "image") {
+    // Immagine caricata dall'utente. `content` è un path relativo (es.
+    // `lesson_assets/{cid}/{uuid}.png`); il file è servito da StaticFiles
+    // su `/uploads/...`.
+    return (
+      <figure className="my-6 overflow-hidden rounded-lg border border-border bg-card">
+        <div className="flex justify-center bg-muted/30 p-4">
+          <img
+            src={`/uploads/${asset.content}`}
+            alt={asset.alt_text || ""}
+            className="max-h-[28rem] w-auto max-w-full rounded"
+          />
+        </div>
+        {asset.caption && (
+          <figcaption className="border-t border-border bg-muted/20 px-4 py-2 text-xs italic text-muted-foreground">
+            {asset.caption}
+          </figcaption>
+        )}
+      </figure>
+    );
+  }
   if (
     asset.format === "image_prompt" ||
     asset.format === "image_search_query" ||

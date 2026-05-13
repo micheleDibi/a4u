@@ -614,7 +614,7 @@
       },
       "editor": {
         "text": "Testo della lezione",
-        "visualAssets": "Asset visivi (diagrammi, schemi, immagini)",
+        "visualAssets": "Asset visivi (diagrammi Mermaid o immagini)",
         "tables": "Tabelle",
         "equations": "Equazioni",
         "examples": "Esempi",
@@ -625,19 +625,19 @@
         "exampleTitle": "Titolo dell'esempio",
         "assetContent": "Contenuto / descrizione",
         "altText": "Testo alternativo (descrizione per accessibilità)",
-        "assetTypes": {
-          "diagram": "Diagramma",
-          "schema": "Schema",
-          "image": "Immagine",
-          "illustration": "Illustrazione",
-          "chart": "Grafico"
+        "assetActions": {
+          "addVisualAsset": "Aggiungi asset visivo",
+          "uploadImage": "Carica immagine",
+          "writeMermaid": "Scrivi Mermaid a mano",
+          "convertToMermaid": "Digitalizza in Mermaid",
+          "convertingToMermaid": "Conversione in corso…",
+          "convertedToMermaid": "Immagine convertita in Mermaid.",
+          "convertToMermaidFailed": "Conversione fallita. Riprova.",
+          "imageUploaded": "Immagine caricata.",
+          "imageUploadFailed": "Caricamento immagine fallito.",
+          "uploading": "Caricamento…"
         },
-        "assetFormats": {
-          "mermaid": "Diagramma Mermaid",
-          "image_prompt": "Prompt per immagine",
-          "image_search_query": "Ricerca immagine",
-          "description": "Descrizione testuale"
-        },
+        "legacyAssetBanner": "Asset legacy non più editabile. Eliminalo e ricrealo come diagramma Mermaid o immagine caricata.",
         "refCode": "Codice riferimento",
         "refCopy": "Copia il riferimento",
         "refCopied": "Copiato: {{token}}",
@@ -831,8 +831,6 @@
         "removeSlide": "Rimuovi slide",
         "noSourceSection": "(nessuna)",
         "assetIdLabel": "ID asset",
-        "assetTypeLabel": "Tipo",
-        "assetFormatLabel": "Formato",
         "assetContent": "Contenuto",
         "assetCaption": "Didascalia",
         "assetAltText": "Testo alternativo"

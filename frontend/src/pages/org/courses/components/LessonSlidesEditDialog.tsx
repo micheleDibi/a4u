@@ -58,20 +58,10 @@ const SLIDE_TYPES: SlideType[] = [
   "bibliography",
 ];
 
-const NEW_ASSET_TYPES = [
-  "diagram",
-  "schema",
-  "image",
-  "illustration",
-  "chart",
-] as const;
-
-const NEW_ASSET_FORMATS = [
-  "mermaid",
-  "image_prompt",
-  "image_search_query",
-  "description",
-] as const;
+// Dopo il refactor degli asset visivi (solo Mermaid e immagini caricate),
+// nell'editor slide gli asset nuovi possono essere solo Mermaid scritto a
+// mano. L'upload immagine resta limitato al content editor di Fase 3 (per
+// non duplicare il flow). `asset_type` è stato rimosso dal modello.
 
 interface Props {
   open: boolean;
@@ -204,7 +194,6 @@ export function LessonSlidesEditDialog({
       ...prev,
       {
         asset_id: id,
-        asset_type: "diagram",
         format: "mermaid",
         content: "",
         caption: "",
@@ -563,60 +552,12 @@ function NewAssetEditCard({
 }: NewAssetEditCardProps) {
   return (
     <div className="space-y-3 rounded-md border bg-muted/20 p-3">
-      <div className="grid gap-3 sm:grid-cols-3">
-        <div className="space-y-1.5">
-          <Label>{t("courses.lessonsSlides.editor.assetIdLabel")}</Label>
-          <Input
-            value={asset.asset_id}
-            onChange={(e) => onUpdate({ asset_id: e.target.value })}
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label>{t("courses.lessonsSlides.editor.assetTypeLabel")}</Label>
-          <Select
-            value={asset.asset_type}
-            onValueChange={(v) =>
-              onUpdate({
-                asset_type:
-                  v as (typeof NEW_ASSET_TYPES)[number],
-              })
-            }
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {NEW_ASSET_TYPES.map((at) => (
-                <SelectItem key={at} value={at}>
-                  {at}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1.5">
-          <Label>{t("courses.lessonsSlides.editor.assetFormatLabel")}</Label>
-          <Select
-            value={asset.format}
-            onValueChange={(v) =>
-              onUpdate({
-                format:
-                  v as (typeof NEW_ASSET_FORMATS)[number],
-              })
-            }
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {NEW_ASSET_FORMATS.map((fm) => (
-                <SelectItem key={fm} value={fm}>
-                  {fm}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+      <div className="space-y-1.5">
+        <Label>{t("courses.lessonsSlides.editor.assetIdLabel")}</Label>
+        <Input
+          value={asset.asset_id}
+          onChange={(e) => onUpdate({ asset_id: e.target.value })}
+        />
       </div>
       <div className="space-y-1.5">
         <Label>{t("courses.lessonsSlides.editor.assetContent")}</Label>

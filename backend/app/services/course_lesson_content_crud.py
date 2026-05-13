@@ -19,6 +19,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
+from app.core.config import get_settings
 from app.core.errors import ConflictError
 from app.core.logging import get_logger
 from app.models.course import Course
@@ -140,6 +141,69 @@ def _validate_consistency(
         )
 
 
+def _extract_image_asset_paths(
+    visual_assets: list[Any] | None,
+) -> set[str]:
+    """Ritorna i `content` (path relativi) degli asset con `format=image`."""
+    paths: set[str] = set()
+    for a in visual_assets or []:
+        if not isinstance(a, dict):
+            continue
+        if a.get("format") == "image":
+            content = a.get("content")
+            if isinstance(content, str) and content.strip():
+                paths.add(content.strip())
+    return paths
+
+
+def _cleanup_removed_image_assets(
+    *,
+    old_visual_assets: list[Any] | None,
+    new_visual_assets: list[Any] | None,
+    course_id: uuid.UUID,
+) -> None:
+    """Elimina dal filesystem i file degli asset immagine rimossi.
+
+    Best-effort: log warning se il file non esiste o se l'unlink fallisce,
+    senza propagare. Safety check: il path deve essere sotto
+    `lesson_assets/{course_id}/`.
+    """
+    old_paths = _extract_image_asset_paths(old_visual_assets)
+    new_paths = _extract_image_asset_paths(new_visual_assets)
+    to_remove = old_paths - new_paths
+    if not to_remove:
+        return
+    settings = get_settings()
+    expected_prefix = f"lesson_assets/{course_id}/"
+    for rel in to_remove:
+        normalized = rel.removeprefix("/uploads/").lstrip("/")
+        if not normalized.startswith(expected_prefix):
+            # Path fuori dal corso → non tocco (potrebbe essere un asset
+            # di un altro corso, un path malformato, o un valore legacy).
+            log.warning(
+                "lesson_asset_cleanup_skipped_outside_course",
+                path=rel,
+                course_id=str(course_id),
+            )
+            continue
+        if any(p in {"", ".", ".."} for p in normalized.split("/")):
+            log.warning("lesson_asset_cleanup_skipped_invalid", path=rel)
+            continue
+        target = settings.upload_root / normalized
+        if not target.is_file():
+            log.warning("lesson_asset_cleanup_file_missing", path=rel)
+            continue
+        try:
+            target.unlink()
+            log.info("lesson_asset_cleanup_deleted", path=rel)
+        except OSError as exc:
+            log.warning(
+                "lesson_asset_cleanup_unlink_failed",
+                path=rel,
+                error=str(exc),
+            )
+
+
 async def update_lesson_content(
     db: AsyncSession,
     *,
@@ -156,6 +220,10 @@ async def update_lesson_content(
     current_raw: dict[str, Any] = dict(lesson.content_raw or {})
 
     _validate_consistency(payload=payload, current_raw=current_raw)
+
+    # Snapshot dei visual_assets attuali PRIMA dell'update — serve per il
+    # cleanup file (asset rimossi con format=image → unlink dopo commit).
+    old_visual_assets: list[Any] = list(current_raw.get("visual_assets") or [])
 
     changed: dict[str, int | str] = {}
 
@@ -226,6 +294,17 @@ async def update_lesson_content(
         },
     )
     await db.commit()
+
+    # Cleanup file orfani dopo il commit: se l'update ha sostituito o
+    # rimosso asset di tipo `image`, eliminiamo i file dal filesystem.
+    # Eseguito dopo il commit per evitare di perdere file in caso di
+    # rollback. Best-effort, log warning se qualcosa fallisce.
+    if "visual_assets" in changed:
+        _cleanup_removed_image_assets(
+            old_visual_assets=old_visual_assets,
+            new_visual_assets=current_raw.get("visual_assets"),
+            course_id=course.id,
+        )
 
     from app.services import course_lesson_content_service
 

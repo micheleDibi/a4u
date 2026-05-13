@@ -694,6 +694,8 @@ export function CourseLessonContentView({
           open={true}
           lessonLabel={lessonLabel(editDialog.lesson.lesson_code)}
           initial={editDialog.lesson.content_raw}
+          orgId={orgId}
+          courseId={course.id}
           isPending={updateLessonMut.isPending}
           onClose={() => setEditDialog({ kind: "closed" })}
           onSubmit={(payload) =>

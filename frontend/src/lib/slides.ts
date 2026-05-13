@@ -82,7 +82,7 @@ export function listAvailableAssets(
       out.push({
         id: a.asset_id,
         kind: "visual",
-        label: `${a.asset_id} (${a.asset_type})`,
+        label: `${a.asset_id} (${a.format})`,
         caption: a.caption,
       });
     }
@@ -116,7 +116,7 @@ export function listAvailableAssets(
     out.push({
       id: na.asset_id,
       kind: "new_visual",
-      label: `${na.asset_id} (${na.asset_type}, new)`,
+      label: `${na.asset_id} (${na.format}, new)`,
       caption: na.caption,
     });
   }

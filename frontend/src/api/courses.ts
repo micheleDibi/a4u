@@ -158,10 +158,36 @@ export interface LessonContentSection {
   topics_addressed: string[];
 }
 
+/**
+ * Asset visivo di una lezione.
+ *
+ * Nuovi asset prodotti dal frontend hanno solo `format` ∈ { "mermaid", "image" }.
+ * I valori `image_prompt | image_search_query | description` sono LEGACY:
+ * presenti nei corsi pre-refactor, vengono ancora renderizzati come
+ * placeholder testuale (vedi `MarkdownRenderer.VisualAssetBlock`) ma l'editor
+ * non li produce più.
+ *
+ * Il campo `asset_type` è stato rimosso (era puramente metadata; nessun
+ * codice di rendering lo leggeva). Vecchi record JSONB possono ancora
+ * contenerlo: Pydantic backend ha `extra="ignore"` per tollerarlo.
+ */
+export type LessonContentVisualAssetFormat =
+  | "mermaid"
+  | "image"
+  // — legacy read-only —
+  | "image_prompt"
+  | "image_search_query"
+  | "description";
+
 export interface LessonContentVisualAsset {
   asset_id: string;
-  asset_type: "diagram" | "schema" | "image" | "illustration" | "chart";
-  format: "mermaid" | "image_prompt" | "image_search_query" | "description";
+  format: LessonContentVisualAssetFormat;
+  /**
+   * - `format="mermaid"`: codice Mermaid.
+   * - `format="image"`: path pubblico relativo (es. `lesson_assets/{cid}/{uuid}.png`).
+   *   Per renderizzare l'immagine usare `/uploads/${content}`.
+   * - legacy: testo libero (prompt, query, descrizione).
+   */
   content: string;
   caption: string;
   alt_text: string;
@@ -286,8 +312,7 @@ export interface LessonSlideItem {
 
 export interface LessonSlideNewAsset {
   asset_id: string;
-  asset_type: "diagram" | "schema" | "image" | "illustration" | "chart";
-  format: "mermaid" | "image_prompt" | "image_search_query" | "description";
+  format: LessonContentVisualAssetFormat;
   content: string;
   caption: string;
   alt_text: string;
@@ -1438,6 +1463,42 @@ export const coursesApi = {
       const m = /filename\*?="?([^";]+)"?/i.exec(cd);
       const filename = m ? decodeURIComponent(m[1]) : null;
       return { blob: res.data, filename };
+    },
+  },
+  lessonAssets: {
+    /** Carica un'immagine come asset visivo per il corso. Ritorna il path
+     *  pubblico (`/uploads/lesson_assets/...`) e il path relativo (da
+     *  usare come `content` dell'asset con `format="image"`). */
+    upload: async (
+      orgId: string,
+      courseId: string,
+      file: File,
+    ): Promise<{ path: string; url: string }> => {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await apiClient.post<{ path: string; url: string }>(
+        `${base(orgId)}/${courseId}/lesson-assets/upload`,
+        formData,
+        { headers: { "Content-Type": "multipart/form-data" } },
+      );
+      return res.data;
+    },
+    /** Chiede al backend di trasformare l'immagine caricata in codice
+     *  Mermaid via OpenAI Vision. `path` è quello restituito da `upload`.
+     *  Solleva su errore (la UI mostra toast e lascia l'asset invariato). */
+    convertToMermaid: async (
+      orgId: string,
+      courseId: string,
+      path: string,
+    ): Promise<{ mermaid_code: string; usage: Record<string, unknown> }> => {
+      const res = await apiClient.post<{
+        mermaid_code: string;
+        usage: Record<string, unknown>;
+      }>(
+        `${base(orgId)}/${courseId}/lesson-assets/convert-to-mermaid`,
+        { path },
+      );
+      return res.data;
     },
   },
 };

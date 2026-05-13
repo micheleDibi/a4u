@@ -243,6 +243,16 @@
       font-family: "Menlo", "Consolas", monospace; font-size: 9pt;
       white-space: pre-wrap;
     }
+    /* Immagini caricate dall'utente come asset visivi (format=image).
+       Forziamo larghezza piena del container + altezza max coerente con
+       quella dei diagrammi Mermaid per evitare overflow di pagina. */
+    .uploaded-image {
+      max-width: 100%;
+      max-height: {{ max_figure_height_cm }}cm;
+      height: auto;
+      display: block;
+      margin: 0 auto;
+    }
     /* Le figure mermaid usano padding ridotto per dare più spazio
        al diagramma: la fig-body normale ha 3mm, qui scende a 1mm.
        NB la figure resta dentro i margini di testo del documento
