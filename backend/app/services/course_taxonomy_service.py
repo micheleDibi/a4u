@@ -23,6 +23,7 @@ from app.schemas.course_taxonomy import (
     TaxonomyTermUpdate,
     TaxonomyType,
 )
+from app.services import course_taxonomy_cache
 from app.services.openai_translate_service import (
     OpenAINotConfiguredError,
     OpenAITranslateError,
@@ -141,6 +142,7 @@ async def create_term(
     db.add(term)
     await db.flush()
     await db.refresh(term)
+    course_taxonomy_cache.invalidate(taxonomy_type)
     await write_audit(
         db,
         action="course_taxonomy.create",
@@ -234,6 +236,7 @@ async def update_term(
     await db.flush()
     await db.refresh(term)
     if diff:
+        course_taxonomy_cache.invalidate(term.taxonomy_type)
         await write_audit(
             db,
             action="course_taxonomy.update",
@@ -262,6 +265,7 @@ async def delete_term(
     taxonomy_type = term.taxonomy_type
     await db.delete(term)
     await db.flush()
+    course_taxonomy_cache.invalidate(taxonomy_type)
     await write_audit(
         db,
         action="course_taxonomy.delete",
@@ -311,6 +315,7 @@ async def move_term(
     term.sort_order, other.sort_order = other.sort_order, term.sort_order
     await db.flush()
     await db.refresh(term)
+    course_taxonomy_cache.invalidate(term.taxonomy_type)
     await write_audit(
         db,
         action="course_taxonomy.move",
@@ -433,6 +438,7 @@ async def auto_translate_term(
     if translated_labels or translated_descriptions:
         await db.flush()
         await db.refresh(term)
+        course_taxonomy_cache.invalidate(term.taxonomy_type)
 
     await write_audit(
         db,
@@ -585,6 +591,7 @@ async def bulk_auto_translate_taxonomy(
 
     if translated_labels or translated_descriptions:
         await db.flush()
+        course_taxonomy_cache.invalidate(taxonomy_type)
 
     await write_audit(
         db,

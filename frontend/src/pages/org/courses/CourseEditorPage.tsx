@@ -54,6 +54,21 @@ import { Textarea } from "@/components/ui/textarea";
 import { ApprovalBadge } from "@/components/shared/ApprovalBadge";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { useLanguages } from "@/hooks/useLanguages";
+import { useTaxonomyTermsBulk } from "@/hooks/useTaxonomyTerms";
+import type { TaxonomyType } from "@/api/courseTaxonomy";
+
+// Tutte le tassonomie che la pagina monta in `<TaxonomyTermSelect>`.
+// Pre-caricarle in bulk evita 8 roundtrip separati al mount.
+const TAXONOMY_TYPES_USED: readonly TaxonomyType[] = [
+  "category",
+  "target_audience",
+  "eqf_level",
+  "knowledge_level",
+  "audience_size",
+  "teacher_role",
+  "teaching_style",
+  "content_depth",
+] as const;
 import { useTaskEta } from "@/hooks/useTaskEta";
 import { flagFor } from "@/i18n/flags";
 import { extractApiError } from "@/lib/errors";
@@ -159,6 +174,11 @@ export default function CourseEditorPage({ mode }: Props) {
   const qc = useQueryClient();
   const { me } = useAuth();
   const langs = useLanguages();
+
+  // Prefetch in batch di tutte le tassonomie usate nei Select. Un solo
+  // roundtrip invece di 8; popola la cache TanStack per-tipo così i
+  // `<TaxonomyTermSelect>` figli leggono cache hit istantanei.
+  useTaxonomyTermsBulk(TAXONOMY_TYPES_USED);
 
   const canEditOrg = useHasPermission(P.COURSE_EDIT, orgId);
   const canAssign = useHasPermission(P.COURSE_ASSIGN, orgId);

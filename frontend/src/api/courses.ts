@@ -1512,4 +1512,19 @@ export const courseTaxonomyPublicApi = {
     );
     return res.data;
   },
+  /**
+   * Batch lookup: una sola request HTTP per ottenere più tassonomie in
+   * un colpo. Riduce 7-8 roundtrip a 1. Combinato con la cache TanStack
+   * popolata da `useTaxonomyTermsBulk`, le successive `useTaxonomyTerms`
+   * leggono dalla cache senza network.
+   */
+  listActiveBulk: async (
+    types: readonly TaxonomyType[],
+  ): Promise<Record<TaxonomyType, TaxonomyTermOut[]>> => {
+    const res = await apiClient.get<Record<TaxonomyType, TaxonomyTermOut[]>>(
+      "/course-taxonomy/bulk",
+      { params: { types: types.join(",") } },
+    );
+    return res.data;
+  },
 };
