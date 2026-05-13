@@ -136,12 +136,16 @@ pre-renderizzato in un blocco HTML e iniettato sulla riga propria
 
 | Tipo | Output |
 |---|---|
-| `FIG` (visual_assets) | `<figure class="visual"><div class="mermaid-svg">{svg_pre_renderizzato}</div></figure>` per mermaid (SVG inline); placeholder testuale altrimenti |
+| `FIG` (visual_assets) con `format="mermaid"` | `<figure class="visual"><div class="mermaid-svg">{svg_pre_renderizzato}</div></figure>` (SVG inline) |
+| `FIG` (visual_assets) con `format="image"` | `<figure class="visual"><img class="uploaded-image" src="data:{mime};base64,..." /></figure>` — file su filesystem letto via `_resolve_template_asset_url` e embeddato come data URL (no fetch HTTP da Playwright/WeasyPrint) |
+| `FIG` legacy (`image_prompt|image_search_query|description`) | `<div class="placeholder-image">{content}</div>` — testo italico, senza grafica |
 | `TAB` (tables) | `<figure class="table">` con tabella renderizzata da markdown-it |
 | `EQ` (equations) | `<figure class="equation"><div class="math-block"><math>...</math></div></figure>` (MathML pre-renderizzato) |
 | `EX` (examples) | `<aside class="example">...</aside>` con titolo + corpo markdown |
 
 Asset orfano (riferimento senza definizione): `<div class="missing-asset">`.
+Asset `format="image"` ma file mancante sul filesystem:
+`<div class="placeholder-image">[immagine mancante: {path}]</div>`.
 
 **Template rendering** (`render_lesson_html`)
 
@@ -223,6 +227,24 @@ e da lì a `_build_asset_html_map`, che lo iniezta nei blocchi
 `<figure class="visual"><div class="mermaid-svg">{svg}</div></figure>`.
 Se il rendering fallisce (rete, sintassi mermaid), il template emette
 `<pre class="mermaid-fallback">` col codice originale.
+
+**Immagini caricate (`format="image"`)**
+
+Niente pre-rendering: il file è già un'immagine binaria sul filesystem
+(jpg/png/webp, salvato via `file_service.save_upload_image` in
+`{UPLOAD_ROOT}/lesson_assets/{course_id}/{uuid}.{ext}`).
+
+Il renderer `_render_visual_asset_block` (commit `92d5f37`) riusa
+`_resolve_template_asset_url(asset.content)` — la stessa funzione usata
+per loghi/sfondi del template PDF: legge i bytes dal filesystem e li
+embedda nell'HTML come `data:{mime};base64,...`. WeasyPrint consuma le
+data URL senza fetch HTTP, il PDF risultante ha l'immagine inline.
+
+CSS lato template (`lesson_pdf.html.j2`): `.uploaded-image` ha
+`max-width: 100%` e `max-height: {{ max_figure_height_cm }}cm` per
+evitare overflow di pagina. Lo stesso pattern è replicato in
+`lesson_slides_pdf.html.j2` per le slide che referenziano un
+`[FIG:...]` di tipo image.
 
 **WeasyPrint** (`generate_pdf_bytes`)
 

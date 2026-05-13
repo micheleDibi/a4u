@@ -315,7 +315,7 @@ aggiunta di una nuova lezione manuale.
 ```json
 {
   "slides": [{"slide_number": 1, "slide_id": "S01", "type": "title", "title": "...", "body": "...", "bullets": [], "references_assets": [], "source_section_id": ""}],
-  "new_assets": [{"asset_id": "fig_new_1", "asset_type": "diagram", "format": "mermaid", "content": "...", "caption": "...", "alt_text": "..."}]
+  "new_assets": [{"asset_id": "fig_new_1", "format": "mermaid", "content": "...", "caption": "...", "alt_text": "..."}]
 }
 ```
 
@@ -409,6 +409,67 @@ Errori:
 - `422 lesson_speech_duration_out_of_range` se durata totale fuori ±5%.
 - `422 lesson_speech_uncovered_slides` se almeno una slide non ha segmenti.
 - `422 lesson_speech_map_*` su inconsistenze nel `slide_to_segments_map`.
+
+## Lesson assets (upload immagini + image→Mermaid)
+
+Endpoint complementari all'editor contenuti (Fase 3) per gestire gli
+asset visivi del nuovo flusso (commit `92d5f37`): l'utente carica
+un'immagine come asset, decide se mantenerla così com'è (`format=image`)
+o digitalizzarla in codice Mermaid via OpenAI Vision (`format=mermaid`).
+Vedi anche [08 — Lesson content](08-lesson-content.md#asset-visivi-mermaid--immagini-caricate).
+
+### `POST /orgs/{org_id}/courses/{course_id}/lesson-assets/upload`
+
+`course:edit`. Multipart `file` (campo unico). 201 →
+`{ "path": "lesson_assets/{course_id}/{uuid}.{ext}", "url": "/uploads/lesson_assets/{course_id}/{uuid}.{ext}" }`.
+
+- Pipeline: validazione MIME (`image/jpeg|image/png|image/webp`) +
+  size (≤ `upload_max_mb`, default 5 MB) + ri-encoding via Pillow (strip
+  metadata EXIF, resize a 2400px max-dimension) → salvataggio in
+  `{UPLOAD_ROOT}/lesson_assets/{course_id}/{uuid}.{ext}`. Riusa
+  `file_service.save_upload_image` (vedi
+  [`file_service.py:81`](../../backend/app/services/file_service.py)).
+- L'asset NON viene scritto nel `content_raw` dal backend: il frontend
+  riceve `path` e lo inserisce nel suo stato locale come
+  `visual_assets[*]` con `format="image"` + `content=path`. Il salvataggio
+  avviene poi al PATCH normale del `content_raw`.
+
+Errori:
+- `422 invalid_mime`, `422 file_too_large`, `422 invalid_image`,
+  `422 empty_file`, `422 invalid_subdir` (dal layer file_service).
+
+### `POST /orgs/{org_id}/courses/{course_id}/lesson-assets/convert-to-mermaid`
+
+`course:edit`. Body JSON `{ "path": "lesson_assets/{course_id}/{uuid}.png" }`.
+200 → `{ "mermaid_code": "flowchart TD\n  A --> B\n  ...", "usage": {...} }`.
+
+- Carica il file dal filesystem (verificando che il path sia sotto
+  `lesson_assets/{course_id}/` — niente cross-tenant leak), lo encoda in
+  base64 e chiama OpenAI Vision via
+  `openai_image_to_mermaid_service.convert_image_to_mermaid`.
+- Modello: `settings.openai_image_to_mermaid_model` (default `gpt-4o`).
+- Validazione Mermaid superficiale: il codice deve iniziare con una
+  keyword nota (`flowchart|graph|sequenceDiagram|classDiagram|stateDiagram|erDiagram|gantt|pie|journey|mindmap|timeline|...`).
+  La validazione semantica vera avviene sul frontend tramite la live
+  preview dell'editor Mermaid.
+- L'`usage` ritornato (token + costo USD via
+  `openai_pricing.build_usage_dict`) è solo informativo: il backend NON
+  lo persiste (la conversione è on-demand, non parte di una pipeline batch).
+- L'immagine originale NON viene cancellata qui — sarà rimossa dal
+  cleanup orfani al successivo PATCH `content_raw` se l'asset viene
+  modificato da `format=image` a `format=mermaid`.
+
+Errori:
+- `404 lesson_asset_not_in_course` — path fuori dal subdir
+  `lesson_assets/{course_id}/` (cross-tenant safety).
+- `404 invalid_lesson_asset_path` — path malformato (`..`, doppi slash).
+- `404 lesson_asset_file_missing` — file non più sul filesystem.
+- `409 lesson_asset_unsupported_ext` — estensione non in `{png, jpg, jpeg, webp}`.
+- `409 openai_not_configured` — `OPENAI_API_KEY` mancante.
+- `409 image_to_mermaid_failed` — modello ha risposto `UNRECOGNIZED`
+  (immagine senza schema riconoscibile), output non-Mermaid, errore HTTP
+  da OpenAI, o response in formato inatteso. `meta.message` contiene un
+  testo localizzato per la UI.
 
 ## Export PDF lezione testo (§7)
 
@@ -641,3 +702,10 @@ Pipeline parallela e indipendente dal PDF slide. Path file:
 | `module_has_no_lessons` | 409 | Bundle PDF modulo richiesto su un modulo senza lezioni |
 | `module_pdfs_not_ready` | 409 | Bundle PDF modulo (merged/zip) richiesto quando almeno una lezione non ha `*_pdf_status='ready'`. `meta.missing_lessons` elenca gli UUID delle lezioni mancanti |
 | `module_pdf_file_missing` | 404 | Bundle PDF modulo: file mancante sul filesystem per una delle lezioni (DB ha `*_pdf_path` ma il file è stato rimosso) |
+| `lesson_asset_not_in_course` | 404 | Endpoint `/lesson-assets/convert-to-mermaid`: path fuori dal subdir `lesson_assets/{course_id}/` (cross-tenant safety) |
+| `invalid_lesson_asset_path` | 404 | Path lesson asset malformato (`..`, doppi slash) |
+| `lesson_asset_file_missing` | 404 | File lesson asset non più sul filesystem |
+| `lesson_asset_unsupported_ext` | 409 | Estensione lesson asset non in `{png, jpg, jpeg, webp}` |
+| `openai_not_configured` | 409 | `OPENAI_API_KEY` non configurata sul server (rilevato anche dall'endpoint image→Mermaid) |
+| `image_to_mermaid_failed` | 409 | Conversione Vision API fallita: `UNRECOGNIZED`, output non-Mermaid, o errore HTTP da OpenAI |
+| `invalid_mime` / `file_too_large` / `invalid_image` / `empty_file` / `invalid_subdir` | 422 | Errori validation di `file_service.save_upload_image` su upload (lesson asset, template, avatar, document) |

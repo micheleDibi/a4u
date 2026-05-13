@@ -139,7 +139,7 @@ backend/app/
 │   ├── course_lesson_structure_crud.py      # Fase 2 — edit manuale struttura lezione
 │   ├── course_lesson_structure_worker.py    # Fase 2 — worker async PARALLELO + semaforo cap concorrenza
 │   ├── course_lesson_content_service.py     # Fase 3 — orchestrazione + 10 validazioni §6.4 + approve
-│   ├── course_lesson_content_crud.py        # Fase 3 — edit manuale content_raw
+│   ├── course_lesson_content_crud.py        # Fase 3 — edit manuale content_raw + cleanup sync degli asset image rimossi (os.unlink dopo commit)
 │   ├── course_lesson_content_worker.py      # Fase 3 — worker async PARALLELO + auto-trigger glossary
 │   ├── course_lesson_slides_service.py      # Fase 4 — validazione §7.4 + materializzazione + approve + recompute_course_slides_status
 │   ├── course_lesson_slides_crud.py         # Fase 4 — edit manuale slides_raw
@@ -162,7 +162,8 @@ backend/app/
 │   ├── openai_summarize_service.py          # Appendice A
 │   ├── openai_architecture_service.py       # §4
 │   ├── openai_lesson_structure_service.py   # §5 (system prompt + JSON schema strict)
-│   ├── openai_lesson_content_service.py     # §6 (system prompt + JSON schema completo + addendum §9.3)
+│   ├── openai_lesson_content_service.py     # §6 (system prompt + JSON schema completo + addendum §9.3) — visual_assets ora restrittivo a format=mermaid
+│   ├── openai_image_to_mermaid_service.py   # Vision API on-demand: trasforma un'immagine caricata in codice Mermaid (modello dedicato openai_image_to_mermaid_*)
 │   ├── openai_lesson_slides_service.py      # §7 slides (system prompt + JSON schema strict + REGENERATION_SUFFIX §9.4)
 │   ├── openai_lesson_speech_service.py      # §8 (system prompt + JSON schema strict + REGENERATION_SUFFIX §9.5 + WORDS_PER_MINUTE)
 │   ├── openai_glossary_service.py           # §10.1 (10-30 termini, JSON schema strict)
@@ -195,7 +196,7 @@ backend/app/
 
 ```
 frontend/src/
-├── api/courses.ts                                  # client REST corsi (namespace lessonsStructure + lessonsContent + lessonPdf + lessonSlides + lessonSlidesPdf + lessonSpeech + lessonSpeechPdf + glossary). I 3 namespace PDF includono downloadModuleMerged + downloadModuleZip per il bundle per-modulo.
+├── api/courses.ts                                  # client REST corsi (namespace lessonsStructure + lessonsContent + lessonPdf + lessonSlides + lessonSlidesPdf + lessonSpeech + lessonSpeechPdf + lessonAssets + glossary). I 3 namespace PDF includono downloadModuleMerged + downloadModuleZip per il bundle per-modulo. Namespace lessonAssets: upload(file) + convertToMermaid(path) per il flow asset visivi Mermaid/image.
 ├── lib/
 │   ├── staleness.ts                                # 7 helper di stale-detection cascata (struttura → contenuto → PDF → slide → PDF slide → discorso → PDF discorso)
 │   └── slides.ts                                   # resolveAsset() per render asset slide (visual/table/equation/example/new_visual)
@@ -220,7 +221,7 @@ frontend/src/
         ├── CourseLessonSlidesView.tsx              # Tab 7 — vista slide Fase 4 + PDF slide
         ├── CourseLessonSpeechView.tsx              # Tab 8 — vista discorso Fase 5 + PDF discorso
         ├── LessonContentView.tsx                   # render lezione (foglio bianco) per status ready/approved
-        ├── LessonContentEditDialog.tsx             # editor user-friendly con RichText/Table/Latex/Mermaid + RefIdField + auto-sync refs + "Evidenzia dove usato" (scroll+flash su prima occorrenza di [KIND:id] / substring per references)
+        ├── LessonContentEditDialog.tsx             # editor user-friendly con RichText/Table/Latex/Mermaid + RefIdField + auto-sync refs + AddVisualAssetMenu (upload immagine / scrivi Mermaid) + bottone "Digitalizza in Mermaid" via Vision API + "Evidenzia dove usato" (scroll+flash su contenitore + token <code>)
         ├── LessonContentGenerateDialog.tsx         # dialog generate/regenerate Fase 3
         ├── LessonSlidesView.tsx                    # render read-only slide (card per slide)
         ├── LessonSlidesEditDialog.tsx              # editor manuale slide (slide list + bullets + body + new_assets)

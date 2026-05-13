@@ -12,8 +12,12 @@ Per ogni lezione approvata in Fase 2 (con `learning_objectives`,
 - **Testo Markdown completo** in stile capitolo di manuale: introduzione
   → sezioni (in ordine della `section_outline`) → sintesi →
   key_takeaways.
-- **Asset visivi**: Mermaid (diagram/schema/chart), formule LaTeX,
-  tabelle markdown, image_prompt/image_search_query (placeholder).
+- **Asset visivi**: diagrammi Mermaid (renderizzati live) o immagini
+  caricate dall'utente (`format=image`, vedi
+  [§ Asset visivi: Mermaid + immagini caricate](#asset-visivi-mermaid--immagini-caricate)
+  per il workflow), formule LaTeX, tabelle markdown. Record legacy
+  (`image_prompt|image_search_query|description`) ancora supportati in
+  lettura come placeholder.
 - **Esempi**, **references**, **coverage_check**.
 
 > **Nota**: il campo `exercises_for_self_study` previsto nella spec
@@ -243,8 +247,8 @@ backend, schema e renderer di vista invariati.
 - `LessonContentEditDialog.tsx` — `max-w-6xl` con pannello unico
   scrollabile organizzato in `SectionGroup` collassabili:
   - Testo della lezione (intro / sections / summary) → `RichTextEditor`
-  - Asset visivi → `MermaidEditor` quando `format='mermaid'`,
-    `<Textarea>` semplice per gli altri formati
+  - Asset visivi → vedi sezione [Asset visivi: Mermaid + immagini caricate](#asset-visivi-mermaid--immagini-caricate)
+    qui sotto.
   - Tabelle → `TableEditor`
   - Formule → `LatexEditor` (latex) + `RichTextEditor` (explanation)
   - Esempi → `RichTextEditor`
@@ -265,10 +269,70 @@ backend, schema e renderer di vista invariati.
     explanation equazioni), apre il `SectionGroup` che la contiene
     (i `SectionGroup` sono controllati `open`/`onToggle` dallo stato
     padre proprio per supportare l'auto-espansione), scrolla in vista
-    e applica un flash visivo `ring-2 ring-amber-400` per ~2.2s. Per
-    i `references[]` (citazioni senza ID-token) lo stesso pulsante fa
-    un substring match case-insensitive della `citation` — best-effort.
-    Se nessuna occorrenza viene trovata → toast informativo.
+    e applica un flash visivo `ring-2 ring-amber-400` per ~2.2s.
+    **Inoltre evidenzia anche il `<code>{token}</code>`** specifico
+    dentro il paragrafo (background amber-400 al 45% + outline) — il
+    `RichTextEditor` rende ogni token come `<code>` grazie a
+    `protectTokens`, quindi basta un `querySelectorAll("code")` con
+    match esatto sul textContent (commit `f53906c`).
+    Per i `references[]` (citazioni senza ID-token) il pulsante fa
+    invece un substring match case-insensitive della `citation` —
+    best-effort. Se nessuna occorrenza viene trovata → toast informativo.
+
+#### Asset visivi: Mermaid + immagini caricate
+
+Refactor del commit `92d5f37`. Pre-refactor lo schema aveva `asset_type`
+(diagramma/schema/...) + `format` (mermaid/image_prompt/...). Oggi:
+
+- L'editor produce solo asset con `format ∈ { "mermaid", "image" }`.
+- L'AI Fase 3 genera solo `format="mermaid"` (JSON schema strict).
+- Asset legacy (`image_prompt|image_search_query|description`) restano
+  in DB e vengono renderizzati come placeholder testuale. L'editor li
+  mostra come banner readonly: l'utente deve eliminarli e ricrearli.
+
+**Workflow nuovo asset** (componente `AddVisualAssetMenu`):
+
+```
+[+ Aggiungi asset visivo]
+    │
+    ▼
+┌──────────────────────────────────┐
+│ Carica immagine                  │ → file picker (jpg/png/webp ≤5 MB)
+│ Scrivi Mermaid a mano            │
+└──────────────────────────────────┘
+```
+
+- **Carica immagine** → POST `/lesson-assets/upload` →
+  `path = lesson_assets/{cid}/{uuid}.png` → push asset con
+  `format="image"`, `content=path`. L'editor mostra preview `<img>` +
+  bottone `[✨ Digitalizza in Mermaid]`.
+- **Scrivi Mermaid a mano** → push asset con `format="mermaid"`,
+  `content=""`. L'editor apre subito `MermaidEditor` (live preview).
+
+**Digitalizza in Mermaid** (Vision API) — sull'asset `format="image"`:
+
+- POST `/lesson-assets/convert-to-mermaid` con `path = asset.content`.
+- Backend (`openai_image_to_mermaid_service`): encode base64 → call
+  OpenAI Vision (`settings.openai_image_to_mermaid_model`, default
+  `gpt-4o`) con un system prompt che chiede solo codice Mermaid, niente
+  prosa, niente fence. Se l'immagine non contiene uno schema
+  riconoscibile, il modello risponde `UNRECOGNIZED` → il service
+  solleva `OpenAIImageToMermaidError` → endpoint 409
+  `image_to_mermaid_failed`.
+- Validazione superficiale del codice: deve iniziare con una keyword
+  Mermaid nota (`flowchart|graph|sequenceDiagram|classDiagram|...`).
+  La validazione semantica vera avviene sul frontend tramite live
+  preview di `MermaidEditor`.
+- Successo → editor sostituisce localmente `format="mermaid"` +
+  `content=<codice>`. Il file PNG resta sul disco fino al successivo
+  salvataggio del `content_raw`, dove il cleanup orfani lo elimina.
+
+**Cleanup file orfani** (`course_lesson_content_crud._cleanup_removed_image_assets`):
+al PATCH `content_raw`, il service confronta `old_visual_assets` con
+`new_visual_assets` e per ogni asset rimosso con `format="image"`
+esegue `os.unlink` best-effort dopo `db.commit()`. Safety check: il
+path deve essere sotto `lesson_assets/{course_id}/`, niente `..` o
+slash strani — niente cancellazioni cross-tenant o path traversal.
 
 ### Polling
 
@@ -337,8 +401,11 @@ schema strict). Per accelerare drasticamente un corso grande, abbassare a
 
 ## Cosa NON fa questa iterazione (out of scope)
 
-1. **Generazione effettiva delle immagini** (DALL-E / Stable
-   Diffusion): mostriamo solo il `image_prompt` come placeholder.
+1. **Generazione AI ex-novo di immagini** (DALL·E / Stable Diffusion):
+   il backend non chiama nessun text-to-image. L'AI Fase 3 produce solo
+   codice Mermaid; le immagini "vere" arrivano da upload utente
+   (eventualmente convertibili in Mermaid via Vision API, vedi
+   `openai_image_to_mermaid_service`).
 2. **Cascade invalidation di Fase 4-5** su edit di Fase 3.
 3. **Versioning storico** delle rigenerazioni (`content_raw` snapshotta
    solo l'ultima versione).
@@ -346,12 +413,13 @@ schema strict). Per accelerare drasticamente un corso grande, abbassare a
    trigger manuale).
 5. **Multi-lingua del glossario** (generato 1 volta nella
    `course.language_code`).
-6. **Image search effettiva** (Bing/Pexels) — `image_search_query` è un
-   placeholder testuale.
-7. **Streaming** dell'output AI (json_schema strict richiede non-streaming).
-8. **Esercizi auto-studio**: l'iterazione precedente includeva
+6. **Streaming** dell'output AI (json_schema strict richiede non-streaming).
+7. **Esercizi auto-studio**: l'iterazione precedente includeva
    `exercises_for_self_study`; ora rimosso dal prompt e dallo schema.
 
 > **Già fatto** (era out-of-scope nelle versioni precedenti del
-> documento): editor WYSIWYG del markdown — vedi sezione
-> "Componenti shared (editing) — editor user-friendly" sopra.
+> documento):
+> - editor WYSIWYG del markdown — vedi sezione "Componenti shared
+>   (editing) — editor user-friendly" sopra;
+> - upload immagini come asset visivo + conversione vision → Mermaid
+>   (commit `92d5f37`).

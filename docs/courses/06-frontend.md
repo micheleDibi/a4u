@@ -373,8 +373,9 @@ markdown/LaTeX/Mermaid all'utente finale:
 | Campo | Editor |
 |---|---|
 | `introduction` / `sections[].content` / `summary` / `examples[].content` / `equations[].explanation` | `RichTextEditor` (TipTap) |
-| `visual_assets[].content` con `format='mermaid'` | `MermaidEditor` |
-| `visual_assets[].content` con altri formati | `<Textarea>` semplice |
+| `visual_assets[]` con `format='mermaid'` | `MermaidEditor` (preview live) |
+| `visual_assets[]` con `format='image'` | preview `<img>` + bottone "Digitalizza in Mermaid" (Vision API) |
+| `visual_assets[]` legacy (`image_prompt|image_search_query|description`) | banner "Asset legacy" + `<Textarea>` readonly |
 | `tables[].markdown` | `TableEditor` |
 | `equations[].latex` | `LatexEditor` |
 | `key_takeaways[]` / `references[]` | `<Input>` lista |
@@ -386,6 +387,28 @@ dell'ID canonico con pulsante copy + input rinominabile. La rinomina invoca
 summary, examples.content, equations.explanation). L'utente non deve
 ricordarsi di sincronizzare i riferimenti a mano.
 
+### Asset visivi: aggiunta + upload + digitalizza (`AddVisualAssetMenu`)
+
+Refactor del commit `92d5f37`. Il pulsante "+ Aggiungi asset visivo"
+è ora un **dropdown** con due opzioni:
+
+- **"Carica immagine"** → apre file picker (`accept="image/png,image/jpeg,image/webp"`),
+  poi `coursesApi.lessonAssets.upload(orgId, courseId, file)` →
+  ritorna `{ path, url }` → l'editor aggiunge un nuovo asset con
+  `format="image"` e `content=path`.
+- **"Scrivi Mermaid a mano"** → asset nuovo con `format="mermaid"`,
+  `content=""` e `MermaidEditor` subito aperto.
+
+Sull'asset `format="image"` l'editor mostra una preview `<img>` con
+height max ~80 (320px) e un pulsante secondario `[✨ Digitalizza in
+Mermaid]`. Click → `coursesApi.lessonAssets.convertToMermaid(orgId,
+courseId, path)` → su successo l'editor sostituisce localmente
+`format`/`content` (immagine → codice Mermaid). Su errore (incluso il
+caso `UNRECOGNIZED`) toast con messaggio dal backend, asset invariato.
+
+Vedi anche [08 — Lesson content § Asset visivi: Mermaid + immagini caricate](08-lesson-content.md#asset-visivi-mermaid--immagini-caricate)
+per i dettagli del workflow + cleanup file orfani lato backend.
+
 ### "Evidenzia dove usato"
 
 Accanto a ciascun `RefIdField` (asset/tabella/equazione/esempio) c'è il
@@ -393,15 +416,24 @@ pulsante **`HighlightUsageButton`** che cerca la prima occorrenza di
 `[KIND:id]` nei campi scansionabili (intro → sezioni → summary → esempi
 → explanation delle equazioni), apre il `SectionGroup` che la contiene
 (se collassato), scrolla in vista e applica un flash visivo
-(`ring-2 ring-amber-400`) per ~2.2s. I `SectionGroup` sono **controllati**
-(`open`/`onToggle` lifted nello stato padre) proprio per supportare
-l'auto-espansione. Se nessuna occorrenza viene trovata → toast
-informativo (nessuna eccezione).
+(`ring-2 ring-amber-400`) per ~2.2s sul wrapper.
+
+Dal commit `f53906c` il pulsante **evidenzia anche il token `[KIND:id]`
+specifico dentro il paragrafo** (sfondo amber-400 al 45% + outline). Il
+targeting è banale: `RichTextEditor.protectTokens` avvolge ogni token
+in un `<code>`, quindi un `fieldEl.querySelectorAll("code")` con match
+esatto sul `textContent` trova il nodo. Inline styles applicati via JS
++ cleanup al timeout. Niente decorazioni ProseMirror, niente CSS file.
+
+I `SectionGroup` sono **controllati** (`open`/`onToggle` lifted nello
+stato padre) proprio per supportare l'auto-espansione. Se nessuna
+occorrenza viene trovata → toast informativo (nessuna eccezione).
 
 Per i `references[]` (citazioni bibliografiche senza ID-token) lo stesso
 pulsante esegue invece un substring match case-insensitive della
 `citation` nei campi scansionabili — best-effort, perché le citazioni
-quasi mai compaiono verbatim nel testo. Se non c'è match → toast.
+quasi mai compaiono verbatim nel testo. Niente token highlight in questo
+caso (solo flash sul wrapper). Se non c'è match → toast.
 
 ## `CourseLessonSlidesView.tsx` (Fase 4 + PDF slide)
 

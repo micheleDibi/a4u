@@ -354,6 +354,55 @@ Vincoli applicati nella materializzazione/edit (vedi §5.4 della spec):
 - L'unione di `covers_topic_ids` su tutte le sezioni copre TUTTI i `topic_id` di
   `mandatory_topics`.
 
+### Asset visivi: schema corrente
+
+`content_raw.visual_assets[*]` segue lo schema `LessonContentVisualAsset`
+(`backend/app/schemas/course_lesson_content.py:42`):
+
+```python
+{
+  "asset_id": str,            # 1-50 chars, univoco per lezione/tipo
+  "format": Literal[
+    # produciibili dall'editor + dall'AI Fase 3
+    "mermaid",   # `content` = codice Mermaid
+    "image",     # `content` = path relativo (es. lesson_assets/{cid}/{uuid}.png)
+    # — legacy read-only —
+    "image_prompt",
+    "image_search_query",
+    "description",
+  ],
+  "content": str,
+  "caption": str,
+  "alt_text": str,
+  # asset_type: REMOVED (Pydantic `extra="ignore"` su record vecchi).
+}
+```
+
+Pre-refactor (commit `92d5f37`) lo schema aveva anche `asset_type`
+(`diagram|schema|image|illustration|chart`) — etichetta semantica mai
+letta dai renderer. Rimosso dal codice; i record JSONB esistenti possono
+ancora contenere il campo, viene ignorato dal Pydantic in lettura.
+
+**`format` ammessi**:
+- `mermaid`: l'unica modalità "code-based". Renderizzata in lezione via
+  `MermaidDiagram` (lazy) e in PDF via Playwright pre-render → SVG inline.
+- `image`: immagine caricata dall'utente via
+  `POST /lesson-assets/upload`. `content` è un path relativo sotto
+  `lesson_assets/{course_id}/{uuid}.{ext}` servito da
+  `StaticFiles("/uploads", ...)`. Rendering: `<img src="/uploads/...">`
+  in lezione; data-URL base64 inline nel PDF
+  (`_resolve_template_asset_url` in `course_lesson_pdf_service.py`).
+- `image_prompt | image_search_query | description`: SOLO legacy. Erano
+  i 3 format pre-refactor; l'editor non li produce più. In lettura
+  vengono renderizzati come placeholder testuale (vedi
+  `MarkdownRenderer.VisualAssetBlock`).
+
+**Cleanup file orfani**: quando un asset con `format=image` viene rimosso
+da `content_raw.visual_assets` via PATCH, `update_lesson_content`
+(`course_lesson_content_crud.py`) esegue `os.unlink` best-effort sul
+file fisico dopo `db.commit()` (safety check: il path deve essere sotto
+`lesson_assets/{course_id}/`).
+
 ### Schema `slides_raw` (Fase 4 — §7.3)
 
 ```json
@@ -375,7 +424,6 @@ Vincoli applicati nella materializzazione/edit (vedi §5.4 della spec):
   "new_assets": [
     {
       "asset_id": "fig_new_1",
-      "asset_type": "diagram",
       "format": "mermaid",
       "content": "graph LR\nA --> B",
       "caption": "...",
@@ -384,6 +432,13 @@ Vincoli applicati nella materializzazione/edit (vedi §5.4 della spec):
   ]
 }
 ```
+
+Nota: il campo `asset_type` (5 etichette) è stato rimosso dallo schema —
+era puramente metadata, nessun renderer (frontend o template PDF) lo
+leggeva. Record antecedenti possono ancora contenerlo nel JSONB: la
+Pydantic `LessonContentVisualAsset` ha `extra="ignore"` per tollerarlo.
+Vedi anche la sezione [Asset visivi: schema corrente](#asset-visivi-schema-corrente)
+qui sotto.
 
 `slide.type` ∈ `title | agenda | prerequisites | concept | definition | diagram | formula | table | example | case_study | exercise | discussion | summary | takeaways | references | bibliography`. `body` è prosa breve (1-3 frasi, max 600 char) per evitare slide tutte-bullet visivamente piatte.
 

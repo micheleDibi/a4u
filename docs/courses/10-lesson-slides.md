@@ -155,7 +155,6 @@ Settings env-driven:
   "new_assets": [
     {
       "asset_id": "fig_new_recap",
-      "asset_type": "diagram",
       "format": "mermaid",
       "content": "graph LR\nIntro --> Body --> Summary",
       "caption": "Mappa concettuale di sintesi",
