@@ -60,7 +60,10 @@ dev = [
 #   di coqui-tts è troppo lasco e pip risolverebbe a 4.43/4.44 senza
 #   quella funzione → ImportError al primo import di TTS.api.
 video = [
-    "coqui-tts>=0.24.0",
+    # `[codec]` aggiunge `torchcodec` (dep richiesta da PyTorch >=2.9 per
+    # audio I/O — senza, import di TTS solleva
+    # `From Pytorch 2.9, the torchcodec library is required...`).
+    "coqui-tts[codec]>=0.24.0",
     "torch>=2.1.0",
     "torchaudio>=2.1.0",
     "transformers>=4.45.0,<5",
