@@ -34,7 +34,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
     # del volume /app/uploads così sopravvive al restart del container.
     HOME=/app \
     TTS_HOME=/app/.tts_cache \
-    XDG_CACHE_HOME=/tmp/cache
+    XDG_CACHE_HOME=/tmp/cache \
+    # Accetta automaticamente la licenza Coqui Public Model License (CPML)
+    # per XTTS-v2 — senza, al primo download il modello chiede [y/n] via
+    # input() che in container non-TTY restituisce EOF e fa fallire il job.
+    # CPML = uso non-commerciale gratuito. Per uso commerciale: licensing@coqui.ai.
+    # Vedi: https://coqui.ai/cpml
+    COQUI_TOS_AGREED=1
 
 # Runtime deps in due gruppi:
 #  - WeasyPrint (Pango, GDK-Pixbuf, HarfBuzz, libffi, fonts) per il
