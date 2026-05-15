@@ -250,9 +250,24 @@ class XTTSService:
             import torch  # noqa: F401
             from TTS.api import TTS  # type: ignore[import-untyped]
         except ImportError as exc:  # pragma: no cover
+            missing = getattr(exc, "name", None) or "TTS/torch"
+            log.error(
+                "xtts_import_failed",
+                missing_module=missing,
+                error=str(exc),
+                hint=(
+                    "Verifica che l'immagine Docker sia stata buildata "
+                    "con l'extra `[video]` (`pip install '.[video]'` nel "
+                    "builder stage). Se hai aggiornato di recente, "
+                    "rebuilda con `docker compose build backend --no-cache`."
+                ),
+            )
             raise XTTSNotAvailableError(
-                "Coqui-TTS o PyTorch non installati. Esegui "
-                "`pip install coqui-tts torch torchaudio soundfile`."
+                f"Stack TTS non disponibile: modulo `{missing}` mancante. "
+                f"Sul deploy Docker, rebuilda il container backend "
+                f"(`docker compose build backend --no-cache`) — il "
+                f"Dockerfile installa l'extra `[video]` automaticamente. "
+                f"Per locale dev: `pip install '.[video]'` nel venv backend."
             ) from exc
 
         self._device = self._detect_device()
