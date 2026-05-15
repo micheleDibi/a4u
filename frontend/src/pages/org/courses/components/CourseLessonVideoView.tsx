@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
@@ -65,7 +65,6 @@ export function CourseLessonVideoView({
   const inFlight =
     (data?.pending_count ?? 0) + (data?.processing_count ?? 0);
   const anyActive = inFlight > 0;
-  const allReady = total > 0 && data?.ready_count === total;
   const failedCount = data?.failed_count ?? 0;
 
   const eta = useBatchEta(
