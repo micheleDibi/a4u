@@ -20,7 +20,21 @@ RUN pip install --upgrade pip \
 
 FROM python:3.12-slim AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
-    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+    # === Cache dir scrivibili per stack TTS/scientific Python ===
+    # Numba (JIT di librosa, dep di Coqui-TTS) di default scrive il cache
+    # delle funzioni dentro site-packages/, che è read-only per l'utente
+    # non-root → "no locator available for file". Reindirizziamo a /tmp.
+    NUMBA_CACHE_DIR=/tmp/numba_cache \
+    # MPLCONFIGDIR evita warning di matplotlib su HOME non writable.
+    MPLCONFIGDIR=/tmp/matplotlib \
+    # HOME=/app (default per useradd -d /app) — TTS scarica il modello
+    # XTTS-v2 (~1.8 GB) in $TTS_HOME se settato, altrimenti in
+    # $HOME/.local/share/tts. Esplicitiamo TTS_HOME su una subdir writable
+    # del volume /app/uploads così sopravvive al restart del container.
+    HOME=/app \
+    TTS_HOME=/app/.tts_cache \
+    XDG_CACHE_HOME=/tmp/cache
 
 # Runtime deps in due gruppi:
 #  - WeasyPrint (Pango, GDK-Pixbuf, HarfBuzz, libffi, fonts) per il
@@ -60,7 +74,10 @@ COPY --chown=app:app . /app
 RUN mkdir -p /app/uploads/organizations /app/uploads/avatars /app/uploads/templates \
              /app/uploads/courses /app/uploads/lesson_assets /app/uploads/lesson_videos \
              /app/generated_pdfs \
-    && chown -R app:app /app/uploads /app/generated_pdfs
+             /app/.tts_cache \
+             /tmp/numba_cache /tmp/matplotlib /tmp/cache \
+    && chown -R app:app /app/uploads /app/generated_pdfs /app/.tts_cache \
+                       /tmp/numba_cache /tmp/matplotlib /tmp/cache
 USER app
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
