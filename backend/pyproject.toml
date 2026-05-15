@@ -53,10 +53,17 @@ dev = [
 # Installazione richiede ~3 GB (torch + coqui-tts) + ~1.8 GB di modello
 # scaricato lazy al primo job. Inoltre serve `ffmpeg` binario in PATH.
 # Abilita con `pip install '.[video]'`.
+#
+# Note pinning:
+# - `transformers>=4.45,<5`: coqui-tts internamente importa
+#   `isin_mps_friendly` (introdotto in transformers 4.45). Il requirement
+#   di coqui-tts è troppo lasco e pip risolverebbe a 4.43/4.44 senza
+#   quella funzione → ImportError al primo import di TTS.api.
 video = [
     "coqui-tts>=0.24.0",
     "torch>=2.1.0",
     "torchaudio>=2.1.0",
+    "transformers>=4.45.0,<5",
 ]
 
 [build-system]
