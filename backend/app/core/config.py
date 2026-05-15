@@ -148,6 +148,39 @@ class Settings(BaseSettings):
     # niente object storage in MVP.
     generated_pdfs_dir: str = "generated_pdfs"
 
+    # §9 — Generazione video MP4 (TTS XTTS-v2 + slide PNG + ffmpeg).
+    # Pre-condizione runtime: speech_status='approved' AND
+    # slides_status='approved' AND course.assignee.avatar.audio_path
+    # esiste su filesystem.
+    #
+    # XTTS-v2 multilingual cloning. Device auto-detect: CUDA → MPS → CPU.
+    # 1:1 RTF garantito solo su CUDA (~0.2x). Su CPU RTF reale ~5-10x.
+    xtts_model_name: str = "tts_models/multilingual/multi-dataset/xtts_v2"
+    xtts_device: str = "auto"  # auto | cuda | mps | cpu
+    xtts_speed: float = 1.0
+    # Da batch_generate.py:24 dello script `XTTS-v2-cloning-voice-test`:
+    # chunk ~180 char riduce le allucinazioni e copre frasi tipiche IT/EN.
+    xtts_max_chars_per_chunk: int = 180
+    xtts_sample_rate: int = 24000  # output WAV nativo XTTS-v2
+    # Reset periodico per mitigare memory growth Coqui-TTS su long-running.
+    xtts_reset_after_jobs: int = 50
+
+    # Worker video: pesante (XTTS+ffmpeg). Default safe = 1.
+    course_lesson_video_poll_interval_seconds: int = 4
+    course_lesson_video_max_concurrency: int = 1
+    course_lesson_video_auto_retry_max: int = 3
+
+    # Encoding ffmpeg (1080p @ 30fps H.264 + AAC).
+    video_resolution: str = "1920x1080"
+    video_framerate: int = 30
+    video_audio_bitrate: str = "192k"
+    video_audio_sample_rate: int = 48000
+    video_video_codec: str = "libx264"
+    video_crf: int = 23  # quality 1080p tipico YouTube
+    video_pixel_format: str = "yuv420p"  # compat HTML5/Quicktime
+    lesson_video_max_mb: int = 500  # safety upper bound
+    ffmpeg_binary: str = "ffmpeg"
+
     bootstrap_admin_email: str | None = None
     bootstrap_admin_password: str | None = None
     bootstrap_admin_full_name: str = "Platform Admin"

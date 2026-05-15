@@ -51,6 +51,7 @@ _ALLOWED_SUBDIR_ROOTS = {
     "templates",
     "courses",
     "lesson_assets",
+    "lesson_videos",
 }
 
 # Documenti di riferimento dei corsi: tipi accettati per il pre-processing

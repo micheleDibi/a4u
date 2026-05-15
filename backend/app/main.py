@@ -31,6 +31,7 @@ from app.services import (
     course_lesson_speech_pdf_worker,
     course_lesson_speech_worker,
     course_lesson_structure_worker,
+    course_lesson_video_worker,
 )
 
 
@@ -68,7 +69,14 @@ async def lifespan(app: FastAPI):
 
     # Crea cartelle upload se mancanti
     settings.upload_root.mkdir(parents=True, exist_ok=True)
-    for sub in ("organizations", "avatars", "templates", "courses"):
+    for sub in (
+        "organizations",
+        "avatars",
+        "templates",
+        "courses",
+        "lesson_assets",
+        "lesson_videos",
+    ):
         (settings.upload_root / sub).mkdir(parents=True, exist_ok=True)
 
     # Worker MiniMax (genera/polla clip avatar). Resuma task pending da DB.
@@ -101,11 +109,16 @@ async def lifespan(app: FastAPI):
     # Worker export PDF DISCORSO (Fase 5 §8). Stessa pipeline del PDF
     # lezione testo, template dedicato per layout per-slide con timeline.
     course_lesson_speech_pdf_worker.start_worker()
+    # Worker generazione video MP4 (Fase 6 — §9). Cap=1 di default
+    # (XTTS-v2 + ffmpeg pesanti). Pre-condizione: speech+slides approved
+    # AND Avatar.audio_path dell'assegnatario presente.
+    course_lesson_video_worker.start_worker()
 
     log.info("startup_complete", env=settings.env)
     try:
         yield
     finally:
+        await course_lesson_video_worker.stop_worker()
         await course_lesson_speech_pdf_worker.stop_worker()
         await course_lesson_speech_worker.stop_worker()
         await course_lesson_slides_pdf_worker.stop_worker()

@@ -134,7 +134,8 @@
       "lessonsStructure": "Lesson structure",
       "lessonContent": "Content",
       "lessonSlides": "Slides",
-      "lessonSpeech": "Speech"
+      "lessonSpeech": "Speech",
+      "lessonVideo": "Video"
     },
     "sections": {
       "basics": "Basic information",
@@ -1190,6 +1191,49 @@
       "speechPdf": {
         "label": "PDF out of sync with current speech",
         "action": "Regenerate PDF"
+      }
+    },
+    "video": {
+      "tabTitle": "Lesson videos",
+      "noLessons": "No lessons available for video generation.",
+      "completedLabel": "videos ready",
+      "failedSuffix": "failed",
+      "inFlight": "{{n}} in progress",
+      "etaLabel": "Estimated time",
+      "staleAlert": "Speech or slides modified since last generation. Regenerate the video.",
+      "status": {
+        "empty": "Not generated",
+        "pending": "Queued",
+        "processing": "Processing",
+        "completed": "Ready",
+        "failed": "Failed",
+        "cancelled": "Cancelled"
+      },
+      "phases": {
+        "preparing": "Preparing",
+        "tts": "Voice synthesis",
+        "slides": "Slide rendering",
+        "encode": "Video encoding"
+      },
+      "actions": {
+        "generate": "Generate video",
+        "regenerate": "Regenerate",
+        "cancel": "Cancel",
+        "cancelAll": "Cancel all",
+        "download": "Download MP4",
+        "generateAll": "Generate all ({{count}})"
+      },
+      "errors": {
+        "speech_not_approved": "Approve the lesson speech first",
+        "slides_not_approved": "Approve the lesson slides first",
+        "voice_sample_missing": "The course assignee has no voice sample configured",
+        "video_already_in_progress": "Video generation already running for this lesson",
+        "no_eligible_lessons_for_video": "No lesson eligible for video generation"
+      },
+      "tokens": {
+        "duration": "Duration",
+        "device": "Device",
+        "size": "Size"
       }
     }
   },

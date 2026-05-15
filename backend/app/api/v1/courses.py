@@ -51,6 +51,11 @@ from app.schemas.course_lesson_structure import (
     LessonStructureUpdateInput,
     LessonsStructureGenerateInput,
 )
+from app.schemas.course_lesson_video import (
+    LessonVideoBatchOut,
+    LessonVideoGenerateInput,
+    LessonVideoStatusOut,
+)
 from app.services import (
     course_architecture_crud,
     course_architecture_service,
@@ -66,6 +71,7 @@ from app.services import (
     course_lesson_speech_service,
     course_lesson_structure_crud,
     course_lesson_structure_service,
+    course_lesson_video_service,
     course_module_pdf_service,
     course_service,
     file_service,
@@ -2374,4 +2380,200 @@ async def download_module_speech_pdf_zip(
     )
     return _module_pdf_response(
         content=content, filename=filename, media_type="application/zip"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Fase 6 — Generazione video MP4 (§9)
+# ---------------------------------------------------------------------------
+
+
+async def _voice_sample_for_course(db, course: object) -> Any:
+    """Helper: ritorna il Path del campione vocale o None."""
+    return await course_lesson_video_service.resolve_voice_sample_path(
+        db, assignee_user_id=course.assignee_user_id
+    )
+
+
+@router.post(
+    "/{course_id}/lessons/{lesson_id}/video/generate",
+    response_model=LessonVideoStatusOut,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def generate_lesson_video(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    lesson_id: uuid.UUID,
+    payload: LessonVideoGenerateInput,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_GENERATE),
+) -> LessonVideoStatusOut:
+    """Trigger generazione video MP4 (TTS XTTS-v2 + slide PNG + ffmpeg).
+
+    Pre-condizioni: `speech_status='approved'` AND `slides_status='approved'`
+    AND `Avatar.audio_path` dell'assegnatario presente. 409 con codice
+    specifico (`speech_not_approved`/`slides_not_approved`/`voice_sample_missing`)
+    se manca un pre-requisito.
+    """
+    _ = payload  # input vuoto (riservato per future opzioni preset)
+    await _ensure_org(db, org_id)
+    course = await _load_course_for_edit(
+        db, org_id=org_id, course_id=course_id, current=current
+    )
+    lesson = await course_lesson_video_service.get_lesson_or_404(
+        course=course, lesson_id=lesson_id
+    )
+    voice = await _voice_sample_for_course(db, course)
+    lesson = await course_lesson_video_service.request_lesson_video(
+        db,
+        course=course,
+        lesson=lesson,
+        actor_id=current.id,
+        voice_sample_path=voice,
+    )
+    return course_lesson_video_service.build_status_out(
+        lesson, voice_sample_available=voice is not None
+    )
+
+
+@router.post(
+    "/{course_id}/lessons-video/generate-batch",
+    response_model=LessonVideoBatchOut,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def generate_all_lessons_video(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_GENERATE),
+) -> LessonVideoBatchOut:
+    """Trigger batch: marca come `pending` tutte le lezioni eleggibili
+    (speech+slides approved AND video non già in flight). Il worker le
+    elabora una alla volta (cap default 1, configurabile)."""
+    await _ensure_org(db, org_id)
+    course = await _load_course_for_edit(
+        db, org_id=org_id, course_id=course_id, current=current
+    )
+    voice = await _voice_sample_for_course(db, course)
+    await course_lesson_video_service.request_all_lessons_video(
+        db,
+        course=course,
+        actor_id=current.id,
+        voice_sample_path=voice,
+    )
+    course = await _load_course_for_edit(
+        db, org_id=org_id, course_id=course_id, current=current
+    )
+    return course_lesson_video_service.build_batch_out(
+        course, voice_sample_available=voice is not None
+    )
+
+
+@router.post(
+    "/{course_id}/lessons/{lesson_id}/video/cancel",
+    response_model=LessonVideoStatusOut,
+)
+async def cancel_lesson_video(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    lesson_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_GENERATE),
+) -> LessonVideoStatusOut:
+    """Annulla la generazione di una singola lezione (`pending`/`processing`
+    → `cancelled`). Idempotente."""
+    await _ensure_org(db, org_id)
+    course = await _load_course_for_edit(
+        db, org_id=org_id, course_id=course_id, current=current
+    )
+    lesson = await course_lesson_video_service.get_lesson_or_404(
+        course=course, lesson_id=lesson_id
+    )
+    lesson = await course_lesson_video_service.cancel_lesson_video(
+        db, course=course, lesson=lesson, actor_id=current.id
+    )
+    voice = await _voice_sample_for_course(db, course)
+    return course_lesson_video_service.build_status_out(
+        lesson, voice_sample_available=voice is not None
+    )
+
+
+@router.post(
+    "/{course_id}/lessons-video/cancel-batch",
+    response_model=LessonVideoBatchOut,
+)
+async def cancel_all_lessons_video(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_GENERATE),
+) -> LessonVideoBatchOut:
+    """Annulla la generazione di tutte le lezioni in flight."""
+    await _ensure_org(db, org_id)
+    course = await _load_course_for_edit(
+        db, org_id=org_id, course_id=course_id, current=current
+    )
+    await course_lesson_video_service.cancel_all_lesson_videos(
+        db, course=course, actor_id=current.id
+    )
+    course = await _load_course_for_edit(
+        db, org_id=org_id, course_id=course_id, current=current
+    )
+    voice = await _voice_sample_for_course(db, course)
+    return course_lesson_video_service.build_batch_out(
+        course, voice_sample_available=voice is not None
+    )
+
+
+@router.get(
+    "/{course_id}/lessons/{lesson_id}/video/status",
+    response_model=LessonVideoStatusOut,
+)
+async def get_lesson_video_status(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    lesson_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_VIEW),
+) -> LessonVideoStatusOut:
+    """Polling-friendly status di una singola lezione (usato dal FE per
+    aggiornare progress bar + ETA mentre il worker lavora)."""
+    await _ensure_org(db, org_id)
+    course = await _load_course_for_edit(
+        db, org_id=org_id, course_id=course_id, current=current
+    )
+    lesson = await course_lesson_video_service.get_lesson_or_404(
+        course=course, lesson_id=lesson_id
+    )
+    voice = await _voice_sample_for_course(db, course)
+    return course_lesson_video_service.build_status_out(
+        lesson, voice_sample_available=voice is not None
+    )
+
+
+@router.get(
+    "/{course_id}/lessons-video/status",
+    response_model=LessonVideoBatchOut,
+)
+async def get_course_videos_status(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_VIEW),
+) -> LessonVideoBatchOut:
+    """Aggregato pagina-corso: contatori + items per costruire la tab
+    Video del CourseEditorPage."""
+    await _ensure_org(db, org_id)
+    course = await _load_course_for_edit(
+        db, org_id=org_id, course_id=course_id, current=current
+    )
+    voice = await _voice_sample_for_course(db, course)
+    return course_lesson_video_service.build_batch_out(
+        course, voice_sample_available=voice is not None
     )

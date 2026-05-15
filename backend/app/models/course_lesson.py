@@ -60,6 +60,15 @@ LESSON_SPEECH_STATUSES: tuple[str, ...] = (
     "failed",
 )
 
+LESSON_VIDEO_STATUSES: tuple[str, ...] = (
+    "empty",
+    "pending",
+    "processing",
+    "ready",
+    "failed",
+    "cancelled",
+)
+
 
 class CourseLesson(UUIDPKMixin, TimestampMixin, Base):
     """Lezione del corso (Fase 1, §4 di prompt_generazione_corsi.md).
@@ -133,6 +142,15 @@ class CourseLesson(UUIDPKMixin, TimestampMixin, Base):
         CheckConstraint(
             "speech_pdf_progress >= 0 AND speech_pdf_progress <= 100",
             name="ck_course_lesson_speech_pdf_progress",
+        ),
+        CheckConstraint(
+            "video_status IN "
+            "('empty','pending','processing','ready','failed','cancelled')",
+            name="ck_course_lesson_video_status",
+        ),
+        CheckConstraint(
+            "video_progress >= 0 AND video_progress <= 100",
+            name="ck_course_lesson_video_progress",
         ),
     )
 
@@ -386,6 +404,35 @@ class CourseLesson(UUIDPKMixin, TimestampMixin, Base):
     speech_pdf_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     speech_pdf_generated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+
+    # §9 — Generazione video MP4 della lezione (TTS XTTS-v2 + slide PNG +
+    # ffmpeg). Pre-condizione: `speech_status='approved'` AND
+    # `slides_status='approved'`. Voce: `Avatar.audio_path` dell'utente
+    # assegnatario (`course.assignee_user_id` → users.id → avatars.user_id).
+    # Stato `ready` significa "MP4 disponibile a `video_path`".
+    video_status: Mapped[str] = mapped_column(
+        String(40), nullable=False, default="empty", server_default="empty"
+    )
+    video_progress: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, default=0, server_default="0"
+    )
+    video_progress_phase: Mapped[str | None] = mapped_column(
+        String(50), nullable=True
+    )
+    video_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    video_attempts: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, default=0, server_default="0"
+    )
+    video_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    video_generated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # video_tokens schema: {audio_duration_s, video_duration_s,
+    # encode_duration_ms, tts_duration_ms, device, model_xtts,
+    # num_segments, num_slides, file_size_bytes}.
+    video_tokens: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB, nullable=True
     )
 
     module: Mapped["CourseModule"] = relationship(

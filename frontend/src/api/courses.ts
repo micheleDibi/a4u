@@ -1501,7 +1501,134 @@ export const coursesApi = {
       return res.data;
     },
   },
+  lessonVideo: {
+    /** Trigger generazione video MP4 per una singola lezione (Fase 6 §9).
+     *  Pre-condizioni runtime: speech_status='approved' AND
+     *  slides_status='approved' AND voce assegnatario presente.
+     *  Errori dettagliati via `code` (`voice_sample_missing`, ...). */
+    generateLesson: async (
+      orgId: string,
+      courseId: string,
+      lessonId: string,
+    ): Promise<LessonVideoStatusOut> => {
+      const res = await apiClient.post<LessonVideoStatusOut>(
+        `${base(orgId)}/${courseId}/lessons/${lessonId}/video/generate`,
+        {},
+      );
+      return res.data;
+    },
+    generateBatch: async (
+      orgId: string,
+      courseId: string,
+    ): Promise<LessonVideoBatchOut> => {
+      const res = await apiClient.post<LessonVideoBatchOut>(
+        `${base(orgId)}/${courseId}/lessons-video/generate-batch`,
+        {},
+      );
+      return res.data;
+    },
+    cancelLesson: async (
+      orgId: string,
+      courseId: string,
+      lessonId: string,
+    ): Promise<LessonVideoStatusOut> => {
+      const res = await apiClient.post<LessonVideoStatusOut>(
+        `${base(orgId)}/${courseId}/lessons/${lessonId}/video/cancel`,
+        {},
+      );
+      return res.data;
+    },
+    cancelBatch: async (
+      orgId: string,
+      courseId: string,
+    ): Promise<LessonVideoBatchOut> => {
+      const res = await apiClient.post<LessonVideoBatchOut>(
+        `${base(orgId)}/${courseId}/lessons-video/cancel-batch`,
+        {},
+      );
+      return res.data;
+    },
+    /** Polling-friendly status per UI progress bar. */
+    getLessonStatus: async (
+      orgId: string,
+      courseId: string,
+      lessonId: string,
+    ): Promise<LessonVideoStatusOut> => {
+      const res = await apiClient.get<LessonVideoStatusOut>(
+        `${base(orgId)}/${courseId}/lessons/${lessonId}/video/status`,
+      );
+      return res.data;
+    },
+    getCourseStatus: async (
+      orgId: string,
+      courseId: string,
+    ): Promise<LessonVideoBatchOut> => {
+      const res = await apiClient.get<LessonVideoBatchOut>(
+        `${base(orgId)}/${courseId}/lessons-video/status`,
+      );
+      return res.data;
+    },
+  },
 };
+
+// ---------------------------------------------------------------------------
+// Tipi Fase 6 — Video MP4 (§9)
+// ---------------------------------------------------------------------------
+
+export type LessonVideoStatus =
+  | "empty"
+  | "pending"
+  | "processing"
+  | "ready"
+  | "failed"
+  | "cancelled";
+
+export type LessonVideoPhase =
+  | "preparing"
+  | "tts"
+  | "rendering_slides"
+  | "encoding"
+  | null;
+
+export interface LessonVideoTokens {
+  audio_duration_s?: number;
+  video_duration_s?: number;
+  encode_duration_ms?: number;
+  tts_duration_ms?: number;
+  device?: string;
+  model_xtts?: string;
+  num_segments?: number;
+  num_slides?: number;
+  file_size_bytes?: number;
+}
+
+export interface LessonVideoStatusOut {
+  lesson_id: string;
+  lesson_code: string;
+  status: LessonVideoStatus;
+  progress: number;
+  progress_phase: LessonVideoPhase;
+  video_url: string | null;
+  error: string | null;
+  attempts: number;
+  generated_at: string | null;
+  tokens: LessonVideoTokens | null;
+  is_stale: boolean;
+  speech_approved: boolean;
+  slides_approved: boolean;
+  voice_sample_available: boolean;
+}
+
+export interface LessonVideoBatchOut {
+  items: LessonVideoStatusOut[];
+  total: number;
+  ready_count: number;
+  processing_count: number;
+  pending_count: number;
+  failed_count: number;
+  eligible_count: number;
+  aggregate_progress: number;
+}
 
 // Per il Select read-only delle tassonomie attive (riusa endpoint
 // pubblico `/course-taxonomy/{type}`).

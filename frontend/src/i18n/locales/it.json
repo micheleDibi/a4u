@@ -134,7 +134,8 @@
       "lessonsStructure": "Struttura lezioni",
       "lessonContent": "Contenuti",
       "lessonSlides": "Slide",
-      "lessonSpeech": "Discorso"
+      "lessonSpeech": "Discorso",
+      "lessonVideo": "Video"
     },
     "sections": {
       "basics": "Informazioni di base",
@@ -1191,6 +1192,49 @@
       "speechPdf": {
         "label": "PDF non allineato al discorso attuale",
         "action": "Rigenera PDF"
+      }
+    },
+    "video": {
+      "tabTitle": "Video lezioni",
+      "noLessons": "Nessuna lezione disponibile per la generazione video.",
+      "completedLabel": "video pronti",
+      "failedSuffix": "falliti",
+      "inFlight": "{{n}} in corso",
+      "etaLabel": "Tempo stimato",
+      "staleAlert": "Discorso o slide modificati dopo l'ultima generazione. Rigenera il video.",
+      "status": {
+        "empty": "Non generato",
+        "pending": "In coda",
+        "processing": "In elaborazione",
+        "completed": "Pronto",
+        "failed": "Fallito",
+        "cancelled": "Annullato"
+      },
+      "phases": {
+        "preparing": "Preparazione",
+        "tts": "Sintesi voce",
+        "slides": "Rendering slide",
+        "encode": "Encoding video"
+      },
+      "actions": {
+        "generate": "Genera video",
+        "regenerate": "Rigenera",
+        "cancel": "Annulla",
+        "cancelAll": "Annulla tutti",
+        "download": "Scarica MP4",
+        "generateAll": "Genera tutti ({{count}})"
+      },
+      "errors": {
+        "speech_not_approved": "Approva prima il discorso della lezione",
+        "slides_not_approved": "Approva prima le slide della lezione",
+        "voice_sample_missing": "L'assegnatario del corso non ha un campione vocale configurato",
+        "video_already_in_progress": "Generazione video già in corso per questa lezione",
+        "no_eligible_lessons_for_video": "Nessuna lezione eleggibile alla generazione video"
+      },
+      "tokens": {
+        "duration": "Durata",
+        "device": "Device",
+        "size": "Dimensione"
       }
     }
   },
