@@ -8,7 +8,15 @@ WORKDIR /build
 # Hatchling (build backend) richiede sia pyproject.toml che il package `app/`.
 COPY pyproject.toml ./
 COPY app ./app
-RUN pip install --upgrade pip && pip install --no-cache-dir .
+# Pre-installa torch + torchaudio CPU-only (~200 MB invece di ~2 GB CUDA).
+# Per server CON GPU CUDA, sostituire l'index URL con il default pip o
+# `https://download.pytorch.org/whl/cu121` (CUDA 12.1).
+# Poi installa il pacchetto + extra `[video]` (coqui-tts pesa ~300 MB con
+# le sue deps gruut/spacy/etc.). torch è già lì → pip lo lascia stare.
+RUN pip install --upgrade pip \
+    && pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu \
+        "torch>=2.1.0" "torchaudio>=2.1.0" \
+    && pip install --no-cache-dir ".[video]"
 
 FROM python:3.12-slim AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
