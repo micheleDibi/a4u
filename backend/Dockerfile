@@ -31,6 +31,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libxcomposite1 libxdamage1 libxfixes3 libxext6 \
         libcups2 libatk1.0-0 libatk-bridge2.0-0 libatspi2.0-0 \
         libdrm2 libxss1 \
+        # Video generation (Fase 6 §9): ffmpeg per encoding MP4
+        # + libsndfile1 per soundfile (lettura/scrittura WAV).
+        ffmpeg libsndfile1 \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd -r app && useradd -r -g app -d /app app
 
@@ -47,6 +50,7 @@ RUN python -m playwright install chromium \
 
 COPY --chown=app:app . /app
 RUN mkdir -p /app/uploads/organizations /app/uploads/avatars /app/uploads/templates \
+             /app/uploads/courses /app/uploads/lesson_assets /app/uploads/lesson_videos \
              /app/generated_pdfs \
     && chown -R app:app /app/uploads /app/generated_pdfs
 USER app
