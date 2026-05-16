@@ -265,7 +265,15 @@ class Course(UUIDPKMixin, TimestampMixin, Base):
 
     # Relationships
     organization: Mapped["Organization"] = relationship("Organization")
-    language: Mapped["Language"] = relationship("Language")
+    # Due FK puntano a `languages.code` (`language_code` e
+    # `video_language_code`), quindi serve `foreign_keys=` esplicito
+    # altrimenti SQLAlchemy non sa quale colonna usare per il join.
+    language: Mapped["Language"] = relationship(
+        "Language", foreign_keys=[language_code]
+    )
+    video_language: Mapped["Language | None"] = relationship(
+        "Language", foreign_keys=[video_language_code]
+    )
     assignee: Mapped["User"] = relationship(
         "User", foreign_keys=[assignee_user_id]
     )
