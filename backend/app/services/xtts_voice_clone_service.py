@@ -212,6 +212,16 @@ class XTTSService:
         settings = get_settings()
         try:
             import torch  # noqa: F401
+            # NNPACK è una lib di acceleration Conv2d che funziona solo su
+            # alcune CPU (ARM / x86 con flag specifici). Su VM cloud
+            # generiche stampa `Could not initialize NNPACK! Reason:
+            # Unsupported hardware.` ad ogni primo uso di Conv2d → rumore
+            # nei log. Lo disabilitiamo: PyTorch usa il backend C++/oneDNN
+            # (più lento del 10-20% ma uniforme su qualunque CPU).
+            try:
+                torch.backends.nnpack.enabled = False
+            except Exception:  # pragma: no cover
+                pass
             from TTS.api import TTS  # type: ignore[import-untyped]
         except ImportError as exc:  # pragma: no cover
             missing = getattr(exc, "name", None) or "TTS/torch"
