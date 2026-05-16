@@ -104,6 +104,9 @@ class CourseOut(ORMModel):
     title: str
     objectives: str
     language_code: str
+    # Override TTS per i video lezione (Fase 6 §9). NULL = usa language_code.
+    # Quando valorizzato, deve essere in XTTS_SUPPORTED_LANGUAGES.
+    video_language_code: str | None = None
     argomenti_chiave: list[str] = Field(default_factory=list)
     cfu: int
     modules_count: int
@@ -163,6 +166,10 @@ class CourseUpdateInput(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
     objectives: str | None = Field(default=None, max_length=8000)
     language_code: str | None = Field(default=None, min_length=2, max_length=10)
+    # Override TTS — None lascia inalterato, "" o stringa speciale "__null__"
+    # azzera (vedi `update_course` per la semantica). Per ora accettiamo
+    # solo None (no change) o un codice in XTTS_SUPPORTED_LANGUAGES.
+    video_language_code: str | None = Field(default=None, max_length=10)
     cfu: int | None = Field(default=None, ge=1, le=200)
     argomenti_chiave: list[str] | None = Field(default=None, max_length=30)
     taxonomies: TaxonomyAssignments | None = None

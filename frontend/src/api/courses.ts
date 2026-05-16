@@ -558,6 +558,8 @@ export interface CourseOut {
   title: string;
   objectives: string;
   language_code: string;
+  // Override TTS per i video lezione (Fase 6 §9). Null = usa language_code.
+  video_language_code: string | null;
   argomenti_chiave: string[];
   cfu: number;
   modules_count: number;
@@ -615,6 +617,8 @@ export interface CourseUpdateInput {
   title?: string;
   objectives?: string;
   language_code?: string;
+  // Override TTS — passare un codice XTTS_SUPPORTED o "" per resettare a null.
+  video_language_code?: string | null;
   cfu?: number;
   argomenti_chiave?: string[];
   taxonomies?: TaxonomyAssignmentsInput;
@@ -1617,6 +1621,30 @@ export interface LessonVideoStatusOut {
   speech_approved: boolean;
   slides_approved: boolean;
   voice_sample_available: boolean;
+  // Fase 6 §9 rifinitura: pre-training latents dell'assegnatario.
+  voice_latents_ready: boolean;
+  voice_latents_status:
+    | "pending"
+    | "processing"
+    | "ready"
+    | "failed"
+    | null;
+}
+
+// XTTS-v2 supporta 16 lingue (allineato a `clone_voice.py:14-17` dello
+// script di riferimento). Filtra il dropdown lingua TTS nel tab Video.
+export const XTTS_SUPPORTED_LANGUAGES = [
+  "it", "en", "es", "fr", "de", "pt", "pl", "tr",
+  "ru", "nl", "cs", "ar", "zh-cn", "ja", "hu", "ko",
+] as const;
+export type XttsLanguage = (typeof XTTS_SUPPORTED_LANGUAGES)[number];
+
+export function isXttsLanguage(code: string | null | undefined): code is XttsLanguage {
+  if (!code) return false;
+  const lower = code.toLowerCase();
+  if (lower.startsWith("zh")) return true;
+  const head = lower.includes("-") ? lower.split("-")[0] : lower;
+  return (XTTS_SUPPORTED_LANGUAGES as readonly string[]).includes(head);
 }
 
 export interface LessonVideoBatchOut {

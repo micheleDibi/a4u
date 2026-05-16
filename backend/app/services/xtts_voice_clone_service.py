@@ -1,27 +1,28 @@
 """XTTS-v2 voice cloning service per la Fase 6 (generazione video MP4).
 
-Wrapper attorno a Coqui TTS XTTS-v2 (`tts_models/multilingual/multi-
-dataset/xtts_v2`). Replica e ottimizza i pattern dello script di
-riferimento `C:\\Users\\michele\\Downloads\\XTTS-v2-cloning-voice-test`:
+Replica fedelmente lo script di riferimento
+`C:\\Users\\michele\\Downloads\\XTTS-v2-cloning-voice-test\\batch_generate.py`:
+i parametri di inference e di chunking sono allineati 1:1 (temperature 0.65,
+niente length/repetition/top params override, rstrip punteggiatura,
+silenzio 250ms tra chunk, parametri di config a `get_conditioning_latents`).
 
+Architettura:
 - **Singleton lazy**: il modello (~1.8 GB) viene caricato una sola volta
   alla prima richiesta. Stati condivisi tra worker concurrent.
-- **Latents cache per sha256(voice_sample)**: `gpt_cond_latent +
-  speaker_embedding` sono computati una volta per voce. Riusati per
-  tutte le lezioni dello stesso assegnatario (es. 10 lezioni → 1 sola
-  estrazione invece di 10).
+- **Latents cache in-memory**: `gpt_cond_latent + speaker_embedding`
+  estratti via `_ensure_latents()` sono cached per sha256(voice_sample)
+  così run consecutivi della stessa voce non re-estraggono.
+- **Latents cache su disco**: `extract_latents_to_file()` salva i tensori
+  in `*.pt` — usato dal worker pre-training (`avatar_tts_latents_worker`)
+  al momento dell'upload audio. Il worker video carica via
+  `load_latents_from_file()` e li passa a `synthesize_text()` come
+  `precomputed_latents`, saltando del tutto `_ensure_latents()`.
 - **Auto-detect device**: `cuda → mps → cpu`. Su CUDA RTF ≈ 0.2× (1:1
   facilmente raggiunto). Su CPU RTF ≈ 5-10× — l'utente vedrà ETA reale.
-- **Chunking**: testi splittati su `.!?:` con cap a `xtts_max_chars_per_chunk`
-  (default 180 char come `batch_generate.py:24`) per ridurre allucinazioni
-  e gestire frasi lunghe.
-- **Progress callback**: ogni chunk emette un tick; il worker la usa per
-  aggiornare `video_progress` con ease-out.
 - **Reset periodico** ogni `xtts_reset_after_jobs` (default 50): mitiga
   memory growth Coqui-TTS noto su long-running.
 
-Output: WAV float32 24000 Hz mono (sample rate nativo XTTS-v2). Il worker
-ricampiona/aggrega via ffmpeg.
+Output: WAV float32 24000 Hz mono (sample rate nativo XTTS-v2).
 """
 from __future__ import annotations
 
@@ -38,6 +39,27 @@ from app.core.config import get_settings
 from app.core.logging import get_logger
 
 log = get_logger("app.xtts")
+
+
+# ---------------------------------------------------------------------------
+# Lingue supportate (16, come SUPPORTED_LANGUAGES in clone_voice.py)
+# ---------------------------------------------------------------------------
+
+# Lista TASSATIVAMENTE allineata a `clone_voice.py:14-17` dello script
+# di riferimento. NON aggiungere `hi` (non supportato dallo script).
+XTTS_SUPPORTED_LANGUAGES: frozenset[str] = frozenset(
+    {
+        "it", "en", "es", "fr", "de", "pt", "pl", "tr",
+        "ru", "nl", "cs", "ar", "zh-cn", "ja", "hu", "ko",
+    }
+)
+
+
+def is_language_supported(code: str | None) -> bool:
+    """True se `code` (post-normalize) è in XTTS_SUPPORTED_LANGUAGES."""
+    if not code:
+        return False
+    return normalize_language_code(code) in XTTS_SUPPORTED_LANGUAGES
 
 
 # ---------------------------------------------------------------------------
@@ -59,102 +81,52 @@ class XTTSVoiceSampleError(XTTSError):
 
 
 # ---------------------------------------------------------------------------
-# Helpers (split chunks, sha256)
+# Chunking — replica `batch_generate.py:28-51`
 # ---------------------------------------------------------------------------
 
-
-# Pattern di terminazione "forte": . ! ? : seguito da spazio o fine stringa.
-# Replica `batch_generate.py:28-51` dello script di riferimento.
-_TERMINATORS = (".", "!", "?", ":")
-_SOFT_TERMINATORS = (",", ";")
+# Regex pattern dello script originale.
+_STRONG_SPLIT_RE = re.compile(r"(?<=[.!?:])\s+")
+_SOFT_SPLIT_RE = re.compile(r"(?<=,)\s+")
+# rstrip applicato a ogni chunk (anti-"punto" del normalizer XTTS).
+_CHUNK_TRIM_CHARS = ".:;,"
 
 
 def split_into_chunks(text: str, max_chars: int) -> list[str]:
-    """Divide il testo in chunk ≤ `max_chars` rispettando i punti di
-    terminazione naturali (.!?:). Se un chunk supera ancora `max_chars`,
-    si splitta su `,` o `;`. Fallback brutale: split per spazi.
+    """Divide il testo in chunk ≤ `max_chars` rispettando i terminatori
+    forti (.!?:). Per chunk > max_chars, split ulteriore su `,`.
 
-    Vuoto/whitespace → lista vuota (caller deve gestire).
+    Identico a `chunk_text()` di `batch_generate.py:28-51` dello script
+    di riferimento. Rimuove la punteggiatura finale di ogni chunk per
+    evitare che il normalizer italiano XTTS legga `.` come "punto".
     """
     cleaned = (text or "").strip()
     if not cleaned:
         return []
-    if len(cleaned) <= max_chars:
-        return [cleaned]
 
-    # Pass 1: split su terminatori forti.
-    sentences: list[str] = []
-    cursor = 0
-    for i, ch in enumerate(cleaned):
-        if ch in _TERMINATORS:
-            sentences.append(cleaned[cursor : i + 1].strip())
-            cursor = i + 1
-    tail = cleaned[cursor:].strip()
-    if tail:
-        sentences.append(tail)
-
-    # Pass 2: merge consecutive sentences fino a max_chars (greedy).
-    chunks: list[str] = []
-    buf = ""
-    for s in sentences:
-        if not buf:
-            buf = s
+    parts = _STRONG_SPLIT_RE.split(cleaned)
+    out: list[str] = []
+    for p in parts:
+        p = p.strip().rstrip(_CHUNK_TRIM_CHARS)
+        if not p:
             continue
-        if len(buf) + 1 + len(s) <= max_chars:
-            buf = f"{buf} {s}"
-        else:
-            chunks.append(buf)
-            buf = s
-    if buf:
-        chunks.append(buf)
-
-    # Pass 3: chunk ancora troppo lungo? Split su terminatori soft.
-    result: list[str] = []
-    for c in chunks:
-        if len(c) <= max_chars:
-            result.append(c)
+        if len(p) <= max_chars:
+            out.append(p)
             continue
-        sub_cursor = 0
-        sub_chunks: list[str] = []
-        sub_buf = ""
-        for i, ch in enumerate(c):
-            if ch in _SOFT_TERMINATORS:
-                sub_chunks.append(c[sub_cursor : i + 1].strip())
-                sub_cursor = i + 1
-        rest = c[sub_cursor:].strip()
-        if rest:
-            sub_chunks.append(rest)
-        for sc in sub_chunks:
-            if not sub_buf:
-                sub_buf = sc
+        # Sotto-split su virgola.
+        sub = _SOFT_SPLIT_RE.split(p)
+        buf = ""
+        for s in sub:
+            s = s.strip().rstrip(_CHUNK_TRIM_CHARS)
+            if not s:
                 continue
-            if len(sub_buf) + 1 + len(sc) <= max_chars:
-                sub_buf = f"{sub_buf} {sc}"
+            if buf and len(buf) + 1 + len(s) > max_chars:
+                out.append(buf)
+                buf = s
             else:
-                result.append(sub_buf)
-                sub_buf = sc
-        if sub_buf:
-            result.append(sub_buf)
-
-    # Pass 4: fallback assoluto se ancora troppo lungo (split su spazi).
-    final: list[str] = []
-    for c in result:
-        if len(c) <= max_chars:
-            final.append(c)
-            continue
-        words = c.split()
-        wbuf = ""
-        for w in words:
-            cand = f"{wbuf} {w}".strip()
-            if len(cand) <= max_chars:
-                wbuf = cand
-            else:
-                if wbuf:
-                    final.append(wbuf)
-                wbuf = w
-        if wbuf:
-            final.append(wbuf)
-    return final
+                buf = f"{buf} {s}".strip() if buf else s
+        if buf:
+            out.append(buf)
+    return out
 
 
 def sha256_file(path: Path, chunk_size: int = 65536) -> str:
@@ -178,11 +150,10 @@ class XTTSService:
     """Singleton lazy per il modello XTTS-v2.
 
     Accesso via `XTTSService.get()`. La prima chiamata scarica/carica il
-    modello (~1.8 GB → cache locale `~/.local/share/tts/` o `%APPDATA%/tts`).
+    modello (~1.8 GB → cache locale `$TTS_HOME` o `~/.local/share/tts/`).
 
     Thread-safe rispetto al singleton (lock), ma le sintesi inference
-    sono sequenziali sul device: un solo `inference()` alla volta. Il
-    worker enforced via `video_max_concurrency=1` di default.
+    sono sequenziali sul device: un solo `inference()` alla volta.
     """
 
     _instance: "XTTSService | None" = None
@@ -193,9 +164,6 @@ class XTTSService:
         self._device: str | None = None
         self._latents_cache: dict[str, tuple[Any, Any]] = {}
         self._job_counter: int = 0
-        # Thread pool per offloading dell'inference (operazione CPU/GPU
-        # bound, sincrona). Un solo worker per evitare contention sul
-        # device (XTTS non è thread-safe per device singolo).
         self._executor = ThreadPoolExecutor(
             max_workers=1, thread_name_prefix="xtts"
         )
@@ -215,22 +183,19 @@ class XTTSService:
 
     @classmethod
     async def reset(cls) -> None:
-        """Distrugge il singleton (modello + cache latents). Usato dal
-        worker dopo N job per mitigare memory leak Coqui-TTS."""
+        """Distrugge il singleton (modello + cache latents)."""
         async with cls._init_lock:
             if cls._instance is not None:
                 cls._instance._shutdown()
             cls._instance = None
 
     def _shutdown(self) -> None:
-        """Libera risorse modello + cache. Sincrono."""
         try:
             self._executor.shutdown(wait=False, cancel_futures=True)
         except Exception:  # pragma: no cover
             pass
         self._latents_cache.clear()
         self._model = None
-        # Suggerisci a torch di liberare la cache CUDA (no-op su CPU/MPS).
         try:
             import torch
 
@@ -240,7 +205,6 @@ class XTTSService:
             pass
 
     async def _load_model_async(self) -> None:
-        """Carica il modello in un thread (operazione bloccante)."""
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(self._executor, self._load_model_sync)
 
@@ -262,9 +226,7 @@ class XTTSService:
             raise XTTSNotAvailableError(
                 f"Stack TTS non importabile: {error_str}. "
                 f"Modulo segnalato: `{missing}`. "
-                f"Su Docker: `docker compose build backend --no-cache` "
-                f"(controlla i log del backend per lo stacktrace completo). "
-                f"Su dev locale: `pip install '.[video]'`."
+                f"Su Docker: `docker compose build backend --no-cache`."
             ) from exc
 
         self._device = self._detect_device()
@@ -273,7 +235,6 @@ class XTTSService:
             model=settings.xtts_model_name,
             device=self._device,
         )
-        # `gpu` legacy non più necessario in Coqui-TTS recente; .to(device).
         model = TTS(model_name=settings.xtts_model_name, progress_bar=False)
         model = model.to(self._device)
         self._model = model
@@ -303,33 +264,52 @@ class XTTSService:
 
     # -- voice cloning -------------------------------------------------
 
-    def _ensure_latents(self, voice_sample_path: Path) -> tuple[Any, Any]:
-        """Estrae/legge dalla cache i conditioning latents per la voce.
+    def _get_tts_model(self) -> Any:
+        """Restituisce il sotto-modello effettivo (`tts.synthesizer.tts_model`).
+        Solleva XTTSError se il modello non è caricato."""
+        if self._model is None:
+            raise XTTSError("Modello XTTS non caricato.")
+        return self._model.synthesizer.tts_model
 
-        Coqui-TTS XTTS-v2:
-            gpt_cond_latent, speaker_embedding = model.synthesizer
-                .tts_model.get_conditioning_latents(audio_path=[str(p)])
+    def extract_latents(self, voice_sample_path: Path) -> tuple[Any, Any]:
+        """Estrae i conditioning latents per una voce SENZA cache.
+
+        Replica `batch_generate.py:74-79`: passa esplicitamente
+        `gpt_cond_len`, `gpt_cond_chunk_len`, `max_ref_length` dal config
+        del modello (vs default Coqui che possono cambiare tra release).
+
+        Restituisce `(gpt_cond_latent, speaker_embedding)`. Usato dal
+        worker pre-training (`avatar_tts_latents_service`).
         """
+        tts_model = self._get_tts_model()
+        config = tts_model.config
+        try:
+            gcl, se = tts_model.get_conditioning_latents(
+                audio_path=[str(voice_sample_path)],
+                gpt_cond_len=config.gpt_cond_len,
+                gpt_cond_chunk_len=config.gpt_cond_chunk_len,
+                max_ref_length=config.max_ref_len,
+            )
+        except Exception as exc:
+            raise XTTSVoiceSampleError(
+                f"Estrazione latents fallita: {exc}"
+            ) from exc
+        return gcl, se
+
+    def _ensure_latents(self, voice_sample_path: Path) -> tuple[Any, Any]:
+        """Versione cached (sha256 in-memory) di `extract_latents()`.
+        Usata da `synthesize_segment()` quando il caller non ha i latents
+        pre-computati (fallback legacy)."""
         sha = sha256_file(voice_sample_path)
         hit = self._latents_cache.get(sha)
         if hit is not None:
             return hit
-        if self._model is None:
-            raise XTTSError("Modello XTTS non caricato.")
         log.info(
             "xtts_compute_latents",
             voice_sha=sha[:12],
             voice_path=str(voice_sample_path.name),
         )
-        try:
-            gcl, se = self._model.synthesizer.tts_model.get_conditioning_latents(
-                audio_path=[str(voice_sample_path)]
-            )
-        except Exception as exc:
-            raise XTTSVoiceSampleError(
-                f"Impossibile estrarre conditioning latents dal campione "
-                f"vocale: {exc}"
-            ) from exc
+        gcl, se = self.extract_latents(voice_sample_path)
         self._latents_cache[sha] = (gcl, se)
         return gcl, se
 
@@ -337,36 +317,53 @@ class XTTSService:
         self,
         *,
         text: str,
-        voice_sample_path: Path,
         language: str,
+        voice_sample_path: Path | None = None,
+        precomputed_latents: tuple[Any, Any] | None = None,
         on_chunk_progress: Callable[[int, int], None] | None = None,
     ) -> np.ndarray:
         """Sintetizza testo TTS con voice cloning.
 
         Args:
             text: testo da pronunciare. Chunking interno su `.!?:`.
-            voice_sample_path: WAV/MP3/OGG di riferimento (6-10s, mono).
-            language: ISO 639-1 (es. "it", "en"). XTTS-v2 supporta 16.
+            language: ISO 639-1 normalizzato (`it`, `en`, ..., `zh-cn`).
+            voice_sample_path: WAV/MP3/OGG di riferimento (legacy fallback).
+                Richiesto se `precomputed_latents=None`.
+            precomputed_latents: `(gpt_cond_latent, speaker_embedding)`
+                già estratti (es. caricati da `*.pt` salvato dal worker
+                pre-training). Quando fornito, salta l'estrazione e va
+                direttamente all'inferenza — ~5-15s di saving al primo job.
             on_chunk_progress: callback(done, total) per progress UI.
 
         Returns:
             ndarray float32 1D mono a `xtts_sample_rate` (24000 Hz).
+            Tra un chunk e l'altro è inserito 250 ms di silenzio
+            (`SILENCE_BETWEEN_CHUNKS_MS = 250` dello script originale).
         """
-        if not voice_sample_path.is_file():
-            raise XTTSVoiceSampleError(
-                f"Campione vocale non trovato: {voice_sample_path}"
-            )
         settings = get_settings()
         chunks = split_into_chunks(text, settings.xtts_max_chars_per_chunk)
         if not chunks:
             return np.zeros(0, dtype=np.float32)
 
-        # Offloading thread-pool: l'inference TTS è sincrono e
-        # CPU/GPU-bound. asyncio.run_in_executor evita di bloccare il loop.
         loop = asyncio.get_running_loop()
-        gcl, se = await loop.run_in_executor(
-            self._executor, self._ensure_latents, voice_sample_path
-        )
+
+        # Risolvi i latents: precomputed se forniti, altrimenti estrai
+        # dal sample (con cache in-memory).
+        if precomputed_latents is not None:
+            gcl, se = precomputed_latents
+        else:
+            if voice_sample_path is None or not voice_sample_path.is_file():
+                raise XTTSVoiceSampleError(
+                    "Né `precomputed_latents` né `voice_sample_path` valido — "
+                    "impossibile procedere."
+                )
+            gcl, se = await loop.run_in_executor(
+                self._executor, self._ensure_latents, voice_sample_path
+            )
+
+        # 250ms di silenzio tra chunk, allineato a batch_generate.py:26.
+        sr = settings.xtts_sample_rate
+        silence = np.zeros(int(sr * 0.25), dtype=np.float32)
 
         results: list[np.ndarray] = []
         total = len(chunks)
@@ -380,6 +377,8 @@ class XTTSService:
                 se,
             )
             results.append(wav)
+            if i < total - 1:
+                results.append(silence)
             if on_chunk_progress is not None:
                 try:
                     on_chunk_progress(i + 1, total)
@@ -393,7 +392,6 @@ class XTTSService:
                 jobs=self._job_counter,
                 threshold=settings.xtts_reset_after_jobs,
             )
-            # Reset asincrono: si schedula, non blocchiamo il chiamante.
             asyncio.create_task(self.__class__.reset())
 
         if not results:
@@ -407,65 +405,134 @@ class XTTSService:
         gpt_cond_latent: Any,
         speaker_embedding: Any,
     ) -> np.ndarray:
-        """Inference sincrona di un singolo chunk. Eseguito nel thread
-        pool del singleton."""
-        settings = get_settings()
-        # Coqui-TTS XTTS-v2 inference API:
-        # out = model.synthesizer.tts_model.inference(text, language,
-        #     gpt_cond_latent, speaker_embedding, temperature=..., speed=...)
-        # out["wav"]: list[float] (Python list) → convertiamo in ndarray.
+        """Inference sincrona di un singolo chunk.
+
+        Parametri allineati 1:1 a `batch_generate.py:84-91`:
+        - `temperature=0.65` (non 0.7)
+        - `enable_text_splitting=False` (chunking gestito da noi)
+        - NIENTE override di `length_penalty`/`repetition_penalty`/`top_k`/
+          `top_p`/`speed`: lo script originale usa i default Coqui per
+          tutti questi. Modificarli ha portato a degradi qualitativi.
+
+        Il `rstrip(".:;,")` è già applicato a monte da `split_into_chunks`,
+        ma lo ripetiamo qui difensivamente.
+        """
+        text = (text or "").strip().rstrip(_CHUNK_TRIM_CHARS)
         out = self._model.synthesizer.tts_model.inference(
             text=text,
             language=language,
             gpt_cond_latent=gpt_cond_latent,
             speaker_embedding=speaker_embedding,
-            temperature=0.7,
-            length_penalty=1.0,
-            repetition_penalty=2.0,
-            top_k=50,
-            top_p=0.85,
-            speed=settings.xtts_speed,
-            enable_text_splitting=False,  # chunking gestito da noi
+            temperature=0.65,
+            enable_text_splitting=False,
         )
         wav = out.get("wav") if isinstance(out, dict) else out
         return np.asarray(wav, dtype=np.float32).reshape(-1)
 
 
 # ---------------------------------------------------------------------------
-# Convenience wrapper
+# Convenience wrappers
 # ---------------------------------------------------------------------------
 
 
 async def synthesize_text(
     *,
     text: str,
-    voice_sample_path: Path,
     language: str,
+    voice_sample_path: Path | None = None,
+    precomputed_latents: tuple[Any, Any] | None = None,
     on_chunk_progress: Callable[[int, int], None] | None = None,
 ) -> tuple[np.ndarray, int]:
-    """Helper one-shot per il worker. Restituisce (audio, sample_rate)."""
+    """Helper one-shot per il worker video.
+
+    Preferisce `precomputed_latents` se forniti (più veloce: skip estrazione).
+    Restituisce `(audio_float32, sample_rate)`.
+    """
     settings = get_settings()
     svc = await XTTSService.get()
     audio = await svc.synthesize_segment(
         text=text,
         voice_sample_path=voice_sample_path,
+        precomputed_latents=precomputed_latents,
         language=language,
         on_chunk_progress=on_chunk_progress,
     )
     return audio, settings.xtts_sample_rate
 
 
+async def extract_latents_to_file(
+    voice_sample_path: Path, output_path: Path
+) -> None:
+    """Estrae i conditioning latents e li serializza in `output_path` (.pt).
+
+    Sicurezza: il file viene salvato come dict
+    `{"gpt_cond_latent": Tensor, "speaker_embedding": Tensor}` per
+    permettere `torch.load(weights_only=True)` al re-loading.
+    """
+    import torch  # type: ignore[import-untyped]
+
+    svc = await XTTSService.get()
+    loop = asyncio.get_running_loop()
+    gcl, se = await loop.run_in_executor(
+        svc._executor, svc.extract_latents, voice_sample_path
+    )
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(
+        {"gpt_cond_latent": gcl, "speaker_embedding": se},
+        str(output_path),
+    )
+    log.info(
+        "xtts_latents_saved",
+        path=str(output_path),
+        size_bytes=output_path.stat().st_size,
+    )
+
+
+async def load_latents_from_file(
+    latents_path: Path,
+) -> tuple[Any, Any]:
+    """Carica i conditioning latents salvati da `extract_latents_to_file`.
+
+    Usato dal worker video per skippare l'estrazione (~5-15s) ad ogni job.
+    Usa `weights_only=True` quando supportato (PyTorch >=2.1) per safety.
+    """
+    import torch  # type: ignore[import-untyped]
+
+    if not latents_path.is_file():
+        raise XTTSVoiceSampleError(
+            f"File latents non trovato: {latents_path}"
+        )
+
+    loop = asyncio.get_running_loop()
+
+    def _load() -> tuple[Any, Any]:
+        try:
+            data = torch.load(
+                str(latents_path), map_location="cpu", weights_only=True
+            )
+        except TypeError:  # pragma: no cover — torch <2.1
+            data = torch.load(str(latents_path), map_location="cpu")
+        gcl = data["gpt_cond_latent"]
+        se = data["speaker_embedding"]
+        return gcl, se
+
+    return await loop.run_in_executor(None, _load)
+
+
 def normalize_language_code(language_code: str) -> str:
-    """XTTS-v2 supporta: it, en, es, fr, de, pt, pl, tr, ru, nl, cs,
-    ar, zh-cn, hu, ko, ja, hi. Estrae il primo segmento prima di '-'
-    e lowercase. Mantiene `zh-cn` come caso speciale.
+    """Normalizza un codice lingua per XTTS-v2.
+
+    Regole (allineate a `clone_voice.py` + comportamento osservato Coqui):
+    - lowercase
+    - rimuove country code (`it-IT` → `it`)
+    - speciale `zh*` → `zh-cn`
+    - se non in `XTTS_SUPPORTED_LANGUAGES`, fallback a `it`
     """
     code = (language_code or "it").strip().lower()
     if code.startswith("zh"):
         return "zh-cn"
-    # rimuove eventuale country code (it-IT → it)
     if "-" in code:
         code = code.split("-")[0]
-    if not re.match(r"^[a-z]{2}$", code):
+    if code not in XTTS_SUPPORTED_LANGUAGES:
         return "it"
     return code

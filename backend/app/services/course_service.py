@@ -373,6 +373,37 @@ async def update_course(
         }
         course.language_code = payload.language_code
 
+    if (
+        payload.video_language_code is not None
+        and payload.video_language_code != course.video_language_code
+    ):
+        # Fase 6 §9: validazione contro XTTS_SUPPORTED_LANGUAGES.
+        # Sentinel "" = reset a NULL (uso default language_code).
+        from app.services.xtts_voice_clone_service import (
+            XTTS_SUPPORTED_LANGUAGES,
+            normalize_language_code,
+        )
+
+        new_video_lang: str | None
+        if payload.video_language_code == "":
+            new_video_lang = None
+        else:
+            normalized = normalize_language_code(payload.video_language_code)
+            if normalized not in XTTS_SUPPORTED_LANGUAGES:
+                raise ValidationAppError(
+                    f"Lingua TTS non supportata: '{payload.video_language_code}'. "
+                    f"Supportate: {sorted(XTTS_SUPPORTED_LANGUAGES)}",
+                    code="unsupported_video_language",
+                )
+            # Verifica anche l'esistenza nella table `languages` per il FK.
+            await _validate_language(db, language_code=normalized)
+            new_video_lang = normalized
+        diff["video_language_code"] = {
+            "old": course.video_language_code,
+            "new": new_video_lang,
+        }
+        course.video_language_code = new_video_lang
+
     if payload.cfu is not None and payload.cfu != course.cfu:
         # Ricalcolo modules_count usando lo stesso modules_per_cfu snapshot
         # implicito: deriviamo dal rapporto attuale.

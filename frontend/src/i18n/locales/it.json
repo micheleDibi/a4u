@@ -1228,9 +1228,16 @@
         "speech_not_approved": "Approva prima il discorso della lezione",
         "slides_not_approved": "Approva prima le slide della lezione",
         "voice_sample_missing": "L'assegnatario del corso non ha un campione vocale configurato",
+        "voice_latents_not_ready": "Addestramento voce in corso — la generazione video sarà disponibile a fine processo.",
+        "voice_latents_failed": "Addestramento voce fallito. L'assegnatario deve ricaricare l'audio nel proprio profilo Avatar.",
         "video_already_in_progress": "Generazione video già in corso per questa lezione",
-        "no_eligible_lessons_for_video": "Nessuna lezione eleggibile alla generazione video"
+        "no_eligible_lessons_for_video": "Nessuna lezione eleggibile alla generazione video",
+        "unsupported_language": "La lingua del corso non è supportata da XTTS-v2. Scegli una lingua di lettura compatibile.",
+        "audio_too_short": "L'audio deve durare almeno 6 secondi."
       },
+      "languageLabel": "Lingua voce",
+      "languageHint": "Lingua usata dal TTS per leggere il discorso. Default: lingua del corso.",
+      "languageFollowCourse": "Segui corso ({{lang}})",
       "tokens": {
         "duration": "Durata",
         "device": "Device",
@@ -1542,6 +1549,20 @@
     "deleteConfirm": {
       "title": "Eliminare l'avatar?",
       "message": "Verranno eliminati immagine, audio e tutti i clip generati."
+    },
+    "ttsLatents": {
+      "title": "Addestramento voce",
+      "hint": "Stiamo pre-addestrando il modello vocale dal tuo audio. Operazione automatica, una tantum: alla fine la generazione video sarà più veloce.",
+      "bannerReupload": "Ricarica l'audio per riprovare l'addestramento.",
+      "status": {
+        "pending": "In coda per l'addestramento",
+        "processing": "Addestramento in corso…",
+        "ready": "Voce pronta per i video",
+        "failed": "Addestramento fallito"
+      }
+    },
+    "audio": {
+      "tooShort": "L'audio deve durare almeno 6 secondi."
     }
   },
   "avatarConfig": {

@@ -115,6 +115,14 @@ class Course(UUIDPKMixin, TimestampMixin, Base):
         ForeignKey("languages.code", ondelete="RESTRICT"),
         nullable=False,
     )
+    # Override opzionale per la lingua della voce nei video MP4 (Fase 6).
+    # Quando NULL, il worker video usa `language_code`. Validato lato API
+    # contro `XTTS_SUPPORTED_LANGUAGES` di xtts_voice_clone_service.
+    video_language_code: Mapped[str | None] = mapped_column(
+        String(10),
+        ForeignKey("languages.code", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     categoria_term_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),

@@ -39,7 +39,7 @@ from app.db.session import async_session_factory
 from app.models.course_lesson import CourseLesson
 from app.services import (
     course_lesson_video_service,
-    lesson_slides_png_service,
+    lesson_slides_video_render_service,
     lesson_video_compose_service,
     xtts_voice_clone_service,
 )
@@ -144,11 +144,16 @@ async def _run_tts_phase(
     lesson_id: uuid.UUID,
     *,
     speech_raw: dict[str, Any],
-    voice_sample_path: Path,
+    precomputed_latents: tuple[Any, Any] | None,
+    voice_sample_path: Path | None,
     language_code: str,
 ) -> tuple[dict[str, np.ndarray], int, float]:
     """Sintetizza l'audio per ogni segment via XTTS. Aggiorna il progress
     (0→60%) man mano che procede.
+
+    Preferisce `precomputed_latents` (pre-trainati al momento dell'upload
+    audio nell'avatar) per saltare ~5-15s di estrazione inline a ogni job.
+    Fallback su `voice_sample_path` se i latents non sono ancora pronti.
 
     Returns:
         (audio_per_segment, sample_rate, tts_duration_seconds)
@@ -176,8 +181,9 @@ async def _run_tts_phase(
 
         audio, sr = await xtts_voice_clone_service.synthesize_text(
             text=text,
-            voice_sample_path=voice_sample_path,
             language=lang,
+            precomputed_latents=precomputed_latents,
+            voice_sample_path=voice_sample_path,
         )
         audio_per_segment[sid] = audio
         sample_rate = sr
@@ -220,7 +226,7 @@ async def _run_slides_phase(
         )
         settings = get_settings()
         png_paths, slide_id_order = (
-            await lesson_slides_png_service.render_slides_to_png(
+            await lesson_slides_video_render_service.render_slides_to_png(
                 tdb,
                 course=course,
                 lesson=lesson,
@@ -355,18 +361,33 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
             await db.commit()
             return
 
-        voice_sample_path = (
-            await course_lesson_video_service.resolve_voice_sample_path(
+        # Risolvi avatar dell'assegnatario per voce + latents cache.
+        assignee_avatar = (
+            await course_lesson_video_service.resolve_assignee_avatar(
                 db, assignee_user_id=course.assignee_user_id
             )
         )
-        if voice_sample_path is None:
+        if assignee_avatar is None or not assignee_avatar.audio_path:
             _apply_failure(
                 lesson,
                 error=(
-                    "L'assegnatario del corso non ha un campione vocale "
-                    "configurato (Avatar.audio_path mancante o file "
-                    "non trovato sul filesystem)."
+                    "L'assegnatario del corso non ha caricato un campione "
+                    "vocale (Avatar.audio_path mancante)."
+                ),
+                phase="precheck",
+                recoverable=False,
+                auto_retry_max=settings.course_lesson_video_auto_retry_max,
+            )
+            await db.commit()
+            return
+        if assignee_avatar.tts_latents_status != "ready":
+            _apply_failure(
+                lesson,
+                error=(
+                    f"L'addestramento della voce dell'assegnatario non è "
+                    f"ancora completato (stato: "
+                    f"{assignee_avatar.tts_latents_status}). Attendi il "
+                    f"completamento o ri-carica l'audio."
                 ),
                 phase="precheck",
                 recoverable=False,
@@ -386,7 +407,23 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
         speech_raw = lesson_video_compose_service.parse_speech_raw(
             lesson.speech_raw
         )
-        language_code = course.language_code or "it"
+        # Override per-corso (Fase 6 §9 rifinitura): lingua TTS configurabile
+        # dal tab Video. NULL → fallback su `course.language_code`.
+        language_code = (
+            course.video_language_code or course.language_code or "it"
+        )
+        # Path filesystem latents pre-trainati.
+        latents_abs_path = (
+            course_lesson_video_service.resolve_assignee_latents_path(
+                assignee_avatar
+            )
+        )
+        # Fallback path audio (usato solo se latents non caricabili).
+        voice_sample_path = (
+            await course_lesson_video_service.resolve_voice_sample_path(
+                db, assignee_user_id=course.assignee_user_id
+            )
+        )
 
     # Esecuzione fuori dalla sessione DB iniziale: le fasi aprono sessioni
     # proprie quando serve (per ridurre lock contention).
@@ -399,9 +436,35 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
 
     try:
         # --- Phase 1: TTS ---
+        # Carica i latents pre-trainati da disco (fast path: ~10ms vs
+        # ~5-15s di re-estrazione). Se il file manca per qualche motivo
+        # (eliminato manualmente, race con re-upload), fallback su
+        # voice_sample_path che farà l'estrazione inline.
+        precomputed_latents = None
+        if latents_abs_path is not None and latents_abs_path.is_file():
+            try:
+                precomputed_latents = (
+                    await xtts_voice_clone_service.load_latents_from_file(
+                        latents_abs_path
+                    )
+                )
+                log.info(
+                    "lesson_video_latents_loaded",
+                    lesson_id=str(lesson_id),
+                    path=str(latents_abs_path),
+                )
+            except Exception as exc:  # noqa: BLE001
+                log.warning(
+                    "lesson_video_latents_load_failed",
+                    lesson_id=str(lesson_id),
+                    path=str(latents_abs_path),
+                    error=str(exc),
+                )
+
         audio_per_segment, sample_rate, tts_seconds = await _run_tts_phase(
             lesson_id,
             speech_raw=speech_raw,
+            precomputed_latents=precomputed_latents,
             voice_sample_path=voice_sample_path,
             language_code=language_code,
         )

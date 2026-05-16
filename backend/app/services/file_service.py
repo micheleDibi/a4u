@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import uuid
 from io import BytesIO
 from pathlib import Path
@@ -147,13 +148,53 @@ async def save_upload_image(
     return f"/uploads/{safe_subdir}/{filename}"
 
 
+# Durata minima di un campione vocale per essere usabile come reference
+# XTTS-v2. Sotto i 6s la clonazione produce voci instabili (XTTS è
+# trainato su sample ~6-10s). Valore allineato a `clone_voice.py:46`.
+MIN_AUDIO_DURATION_SECONDS = 6.0
+
+
+async def probe_audio_duration_seconds(path: Path) -> float | None:
+    """Durata audio in secondi via `ffprobe`. Ritorna None se ffprobe
+    fallisce / output non parsable (caller decide se fail-open o fail-close).
+
+    Funziona su WAV/MP3/M4A/WebM/OGG senza decoder Python (richiede solo
+    il binario `ffprobe`, già installato come parte del package ffmpeg).
+    """
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "ffprobe",
+            "-v", "quiet",
+            "-show_entries", "format=duration",
+            "-of", "csv=p=0",
+            str(path),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        stdout, _ = await proc.communicate()
+        text = stdout.decode("utf-8", errors="replace").strip()
+        if not text:
+            return None
+        return float(text)
+    except (FileNotFoundError, ValueError, asyncio.CancelledError) as exc:
+        log.warning("ffprobe_failed", path=str(path), error=str(exc))
+        return None
+
+
 async def save_upload_audio(
     upload: UploadFile,
     *,
     subdir: str,
     filename_stem: str | None = None,
+    min_duration_seconds: float | None = MIN_AUDIO_DURATION_SECONDS,
 ) -> str:
-    """Salva un upload audio (no transcoding). Ritorna il path pubblico."""
+    """Salva un upload audio (no transcoding). Ritorna il path pubblico.
+
+    Se `min_duration_seconds` non None, valida la durata via ffprobe
+    e rifiuta upload più brevi (default 6s per il caso voice cloning
+    XTTS). Passare None per skippare la validazione (es. clip avatar
+    già esistenti).
+    """
     settings = get_settings()
     safe_subdir = _validate_subdir(subdir)
     mime = (upload.content_type or "").lower()
@@ -179,6 +220,28 @@ async def save_upload_audio(
     target_path = target_dir / filename
     _ensure_within(settings.upload_root, target_path)
     target_path.write_bytes(raw)
+
+    # Validazione durata: richiede file su disco (ffprobe non legge stdin
+    # affidabilmente per webm/m4a).
+    if min_duration_seconds is not None and min_duration_seconds > 0:
+        duration = await probe_audio_duration_seconds(target_path)
+        if duration is None:
+            log.warning(
+                "audio_duration_unknown",
+                path=str(target_path),
+                note="ffprobe failed — proceeding without enforcement",
+            )
+        elif duration < min_duration_seconds:
+            try:
+                target_path.unlink()
+            except OSError:  # pragma: no cover
+                pass
+            raise ValidationAppError(
+                f"L'audio deve durare almeno {min_duration_seconds:.0f} "
+                f"secondi (rilevato: {duration:.1f}s).",
+                code="audio_too_short",
+            )
+
     log.info("file_saved_audio", subdir=safe_subdir, filename=filename, size=len(raw))
     return f"/uploads/{safe_subdir}/{filename}"
 

@@ -32,12 +32,21 @@ class AvatarOut(ORMModel):
     user_id: uuid.UUID
     audio_lang: str | None = None
     clips_status: str
+    # Stato del pre-training XTTS latents (Fase 6 §9 rifinitura).
+    # pending → processing → ready | failed. Quando `ready`, il backend
+    # carica i latents da `tts_latents_path` per ogni job video saltando
+    # ~5-15s di re-estrazione.
+    tts_latents_status: str = "pending"
+    tts_latents_generated_at: datetime | None = None
+    tts_latents_error: str | None = None
     created_at: datetime
     updated_at: datetime
     clips: list[AvatarClipOut] = Field(default_factory=list)
 
     image_path: str = Field(exclude=True)
-    audio_path: str = Field(exclude=True)
+    audio_path: str | None = Field(default=None, exclude=True)
+    # `tts_latents_path` resta interno: il file `.pt` non è esposto al FE.
+    tts_latents_path: str | None = Field(default=None, exclude=True)
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -46,8 +55,12 @@ class AvatarOut(ORMModel):
 
     @computed_field  # type: ignore[prop-decorator]
     @property
-    def audio_url(self) -> str:
-        return storage_service.public_url(self.audio_path)
+    def audio_url(self) -> str | None:
+        return (
+            storage_service.public_url(self.audio_path)
+            if self.audio_path
+            else None
+        )
 
 
 class AvatarClipPromptOut(ORMModel):

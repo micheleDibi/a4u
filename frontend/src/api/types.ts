@@ -146,13 +146,27 @@ export interface AvatarClipOut {
   video_url: string | null;
 }
 
+export type AvatarTtsLatentsStatus =
+  | "pending"
+  | "processing"
+  | "ready"
+  | "failed";
+
 export interface AvatarOut {
   id: UUID;
   user_id: UUID;
   audio_lang: string | null;
   clips_status: AvatarClipsAggregateStatus;
+  // Fase 6 §9 — pre-training XTTS dei conditioning latents al momento
+  // dell'upload audio. Quando `ready`, la generazione video usa i
+  // latents da disco saltando ~5-15s di re-estrazione per ogni job.
+  tts_latents_status: AvatarTtsLatentsStatus;
+  tts_latents_generated_at: string | null;
+  tts_latents_error: string | null;
   image_url: string;
-  audio_url: string;
+  // Null se l'utente non ha (ancora) caricato l'audio della voce —
+  // possibile dopo migration 0026 che ha forzato re-upload.
+  audio_url: string | null;
   created_at: string;
   updated_at: string;
   clips: AvatarClipOut[];

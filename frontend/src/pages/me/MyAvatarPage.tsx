@@ -62,9 +62,15 @@ export default function MyAvatarPage() {
     refetchInterval: (q) => {
       const data = q.state.data;
       if (!data) return false;
-      return data.clips_status === "pending" || data.clips_status === "processing"
-        ? POLLING_INTERVAL_MS
-        : false;
+      // Polling anche durante il pre-training latents XTTS (Fase 6 §9):
+      // così l'utente vede il badge transitare pending → processing → ready
+      // senza dover refresha la pagina.
+      const clipsActive =
+        data.clips_status === "pending" || data.clips_status === "processing";
+      const latentsActive =
+        data.tts_latents_status === "pending" ||
+        data.tts_latents_status === "processing";
+      return clipsActive || latentsActive ? POLLING_INTERVAL_MS : false;
     },
   });
 
@@ -246,6 +252,12 @@ export default function MyAvatarPage() {
                   existingUrl={data?.audio_url ?? null}
                   onChange={setAudioFile}
                 />
+
+                {/* Stato pre-training XTTS latents (Fase 6 §9). Visibile
+                    solo se l'utente ha un audio caricato. */}
+                {data?.audio_url && (
+                  <TtsLatentsBadge avatar={data} />
+                )}
               </TabsContent>
             </Tabs>
           </CardContent>
@@ -604,6 +616,58 @@ function ClipsAggregateBadge({ status }: { status: string }) {
       <Loader2 className="size-3 animate-spin" />
       {status === "processing" ? t("myAvatar.processing") : t("myAvatar.pending")}
     </Badge>
+  );
+}
+
+function TtsLatentsBadge({ avatar }: { avatar: AvatarOut }) {
+  const { t } = useTranslation();
+  const status = avatar.tts_latents_status;
+  return (
+    <div className="rounded-lg border border-border bg-muted/30 px-4 py-3">
+      <div className="flex items-start gap-2 text-xs uppercase tracking-wider text-muted-foreground">
+        <Mic className="size-3.5" />
+        {t("myAvatar.ttsLatents.title")}
+      </div>
+      <div className="mt-2 flex items-center gap-2">
+        {status === "ready" && (
+          <Badge
+            variant="secondary"
+            className="bg-emerald-100 text-emerald-900 dark:bg-emerald-500/15 dark:text-emerald-300"
+          >
+            <CheckCircle2 className="size-3" />
+            {t("myAvatar.ttsLatents.status.ready")}
+          </Badge>
+        )}
+        {status === "processing" && (
+          <Badge variant="secondary">
+            <Loader2 className="size-3 animate-spin" />
+            {t("myAvatar.ttsLatents.status.processing")}
+          </Badge>
+        )}
+        {status === "pending" && (
+          <Badge variant="secondary">
+            <Loader2 className="size-3 animate-spin" />
+            {t("myAvatar.ttsLatents.status.pending")}
+          </Badge>
+        )}
+        {status === "failed" && (
+          <Badge variant="destructive">
+            <XCircle className="size-3" />
+            {t("myAvatar.ttsLatents.status.failed")}
+          </Badge>
+        )}
+      </div>
+      {status === "failed" && (
+        <p className="mt-2 text-xs text-destructive">
+          {avatar.tts_latents_error || t("myAvatar.ttsLatents.bannerReupload")}
+        </p>
+      )}
+      {(status === "pending" || status === "processing") && (
+        <p className="mt-2 text-xs text-muted-foreground">
+          {t("myAvatar.ttsLatents.hint")}
+        </p>
+      )}
+    </div>
   );
 }
 

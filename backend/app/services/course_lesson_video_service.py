@@ -89,6 +89,16 @@ async def get_lesson_or_404(
 # ---------------------------------------------------------------------------
 
 
+async def resolve_assignee_avatar(
+    db: AsyncSession, *, assignee_user_id: uuid.UUID
+) -> Avatar | None:
+    """Carica l'Avatar (con campi `tts_latents_*`) dell'assegnatario."""
+    res = await db.execute(
+        select(Avatar).where(Avatar.user_id == assignee_user_id)
+    )
+    return res.scalar_one_or_none()
+
+
 async def resolve_voice_sample_path(
     db: AsyncSession, *, assignee_user_id: uuid.UUID
 ) -> Path | None:
@@ -100,10 +110,9 @@ async def resolve_voice_sample_path(
     componiamo l'absolute path.
     """
     settings = get_settings()
-    res = await db.execute(
-        select(Avatar).where(Avatar.user_id == assignee_user_id)
+    avatar = await resolve_assignee_avatar(
+        db, assignee_user_id=assignee_user_id
     )
-    avatar = res.scalar_one_or_none()
     if avatar is None or not avatar.audio_path:
         return None
     rel = avatar.audio_path
@@ -118,6 +127,27 @@ async def resolve_voice_sample_path(
     if not target.is_file():
         return None
     return target
+
+
+def resolve_assignee_latents_path(avatar: Avatar | None) -> Path | None:
+    """Path filesystem assoluto del file `.pt` dei conditioning latents
+    pre-trainati per l'avatar (Fase 6 §9 rifinitura). Ritorna None se
+    l'avatar non ha latents pronti o se il path non è valido.
+    """
+    if avatar is None or avatar.tts_latents_status != "ready":
+        return None
+    if not avatar.tts_latents_path:
+        return None
+    settings = get_settings()
+    rel = avatar.tts_latents_path
+    if rel.startswith("/uploads/"):
+        rel = rel.removeprefix("/uploads/")
+    target = (settings.upload_root / rel).resolve()
+    try:
+        target.relative_to(settings.upload_root.resolve())
+    except ValueError:  # pragma: no cover
+        return None
+    return target if target.is_file() else None
 
 
 # ---------------------------------------------------------------------------
@@ -173,7 +203,11 @@ def _is_stale(lesson: CourseLesson) -> bool:
 
 
 def build_status_out(
-    lesson: CourseLesson, *, voice_sample_available: bool
+    lesson: CourseLesson,
+    *,
+    voice_sample_available: bool,
+    voice_latents_ready: bool = False,
+    voice_latents_status: str | None = None,
 ) -> LessonVideoStatusOut:
     return LessonVideoStatusOut(
         lesson_id=str(lesson.id),
@@ -190,17 +224,26 @@ def build_status_out(
         speech_approved=lesson.speech_status == "approved",
         slides_approved=lesson.slides_status == "approved",
         voice_sample_available=voice_sample_available,
+        voice_latents_ready=voice_latents_ready,
+        voice_latents_status=voice_latents_status,
     )
 
 
-def is_lesson_eligible(lesson: CourseLesson, *, voice_sample_available: bool) -> bool:
+def is_lesson_eligible(
+    lesson: CourseLesson,
+    *,
+    voice_sample_available: bool,
+    voice_latents_ready: bool = True,
+) -> bool:
     """Lezione eleggibile alla generazione video: speech+slides approved
-    AND voice sample presente AND video non già in corso."""
+    AND voice sample presente AND latents pronti AND video non già in corso."""
     if lesson.speech_status not in EXPORTABLE_SPEECH_STATUSES:
         return False
     if lesson.slides_status not in EXPORTABLE_SLIDES_STATUSES:
         return False
     if not voice_sample_available:
+        return False
+    if not voice_latents_ready:
         return False
     if lesson.video_status not in VALID_VIDEO_REQUEST_STATUSES + ("ready",):
         return False
@@ -208,7 +251,11 @@ def is_lesson_eligible(lesson: CourseLesson, *, voice_sample_available: bool) ->
 
 
 def build_batch_out(
-    course: Course, *, voice_sample_available: bool
+    course: Course,
+    *,
+    voice_sample_available: bool,
+    voice_latents_ready: bool = False,
+    voice_latents_status: str | None = None,
 ) -> LessonVideoBatchOut:
     """Costruisce l'aggregato pagina-corso. Niente DB extra: i dati sono
     nei lesson già eager-loaded."""
@@ -227,7 +274,10 @@ def build_batch_out(
     for module in course.modules:
         for lesson in module.lessons:
             item = build_status_out(
-                lesson, voice_sample_available=voice_sample_available
+                lesson,
+                voice_sample_available=voice_sample_available,
+                voice_latents_ready=voice_latents_ready,
+                voice_latents_status=voice_latents_status,
             )
             items.append(item)
             counts[item.status] = counts.get(item.status, 0) + 1
@@ -235,7 +285,9 @@ def build_batch_out(
                 in_flight += 1
                 progress_sum += item.progress
             if is_lesson_eligible(
-                lesson, voice_sample_available=voice_sample_available
+                lesson,
+                voice_sample_available=voice_sample_available,
+                voice_latents_ready=voice_latents_ready,
             ):
                 eligible += 1
 
@@ -266,11 +318,12 @@ async def request_lesson_video(
     lesson: CourseLesson,
     actor_id: uuid.UUID,
     voice_sample_path: Path | None,
+    voice_latents_ready: bool = False,
 ) -> CourseLesson:
     """Marca la lezione come `video_status='pending'`. Vincoli:
     - speech+slides `approved`
     - video status ∈ empty/ready/failed/cancelled
-    - voice sample presente
+    - voice sample presente E latents pronti
     """
     if lesson.speech_status not in EXPORTABLE_SPEECH_STATUSES:
         raise ConflictError(
@@ -289,6 +342,13 @@ async def request_lesson_video(
             f"L'assegnatario del corso non ha un campione vocale "
             f"configurato (Avatar.audio_path mancante).",
             code="voice_sample_missing",
+        )
+    if not voice_latents_ready:
+        raise ConflictError(
+            "L'addestramento della voce dell'assegnatario non è ancora "
+            "completato. Attendi qualche minuto o invita l'assegnatario "
+            "a ri-caricare un campione audio.",
+            code="voice_latents_not_ready",
         )
     if lesson.video_status not in VALID_VIDEO_REQUEST_STATUSES:
         raise ConflictError(
@@ -325,6 +385,7 @@ async def request_all_lessons_video(
     course: Course,
     actor_id: uuid.UUID,
     voice_sample_path: Path | None,
+    voice_latents_ready: bool = False,
 ) -> list[CourseLesson]:
     """Marca tutte le lezioni eleggibili come `video_status='pending'`.
 
@@ -336,12 +397,20 @@ async def request_all_lessons_video(
             "L'assegnatario del corso non ha un campione vocale configurato.",
             code="voice_sample_missing",
         )
+    if not voice_latents_ready:
+        raise ConflictError(
+            "L'addestramento della voce dell'assegnatario non è ancora "
+            "completato.",
+            code="voice_latents_not_ready",
+        )
 
     eligible: list[CourseLesson] = []
     for module in course.modules:
         for lesson in module.lessons:
             if is_lesson_eligible(
-                lesson, voice_sample_available=True
+                lesson,
+                voice_sample_available=True,
+                voice_latents_ready=True,
             ):
                 eligible.append(lesson)
 

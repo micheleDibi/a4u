@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
@@ -7,6 +8,7 @@ import {
   Download,
   FilmIcon,
   Hourglass,
+  Languages,
   Loader2,
   PlayCircle,
   RotateCcw,
@@ -14,11 +16,25 @@ import {
   StopCircle,
 } from "lucide-react";
 
-import type { CourseOut, LessonVideoStatusOut } from "@/api/courses";
+import {
+  coursesApi,
+  isXttsLanguage,
+  XTTS_SUPPORTED_LANGUAGES,
+  type CourseOut,
+  type LessonVideoStatusOut,
+} from "@/api/courses";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useBatchEta } from "@/hooks/useBatchEta";
 import {
   useCancelAllVideos,
@@ -29,6 +45,7 @@ import {
 } from "@/hooks/useLessonVideo";
 import { extractApiError } from "@/lib/errors";
 import { formatDuration } from "@/lib/formatDuration";
+import { flagFor } from "@/i18n/flags";
 
 interface Props {
   course: CourseOut;
@@ -52,11 +69,33 @@ export function CourseLessonVideoView({
   orgId,
 }: Props) {
   const { t } = useTranslation();
+  const qc = useQueryClient();
   const statusQuery = useCourseVideoStatus(orgId, course.id);
   const generateLessonMut = useGenerateLessonVideo();
   const generateAllMut = useGenerateAllVideos();
   const cancelLessonMut = useCancelLessonVideo();
   const cancelAllMut = useCancelAllVideos();
+
+  // Mutation lingua TTS — patch parziale del corso. Invalida la query del
+  // corso e quella del batch video per riallineare l'UI.
+  const updateVideoLangMut = useMutation({
+    mutationFn: (next: string | null) =>
+      coursesApi.update(orgId, course.id, {
+        video_language_code: next === null ? "" : next,
+      }),
+    onSuccess: (fresh) => {
+      qc.setQueryData(["courses", "detail", orgId, course.id], fresh);
+      qc.invalidateQueries({ queryKey: ["courses", "list", orgId] });
+    },
+    onError: (err) => toast.error(extractApiError(err).message),
+  });
+
+  // Lingua effettivamente usata per il TTS (override → corso → fallback "it").
+  const effectiveVideoLang =
+    course.video_language_code || course.language_code || "it";
+  // Lingua di default del corso supportata da XTTS? Se no, l'override è
+  // obbligatorio: mostriamo un banner di avviso.
+  const courseLangSupported = isXttsLanguage(course.language_code);
 
   const data = statusQuery.data;
   const items = data?.items ?? [];
@@ -210,16 +249,105 @@ export function CourseLessonVideoView({
   // Pre-requisiti globali (banner sopra il batch).
   const firstItem = items[0];
   const voiceAvailable = firstItem?.voice_sample_available ?? false;
+  const voiceLatentsReady = firstItem?.voice_latents_ready ?? false;
+  const voiceLatentsStatus = firstItem?.voice_latents_status ?? null;
 
   return (
     <div className="space-y-4">
-      {/* Banner pre-requisiti */}
+      {/* Selettore lingua TTS (Fase 6 §9 rifinitura). Sopra tutto, sempre
+          visibile. La lingua effettiva del TTS è override (se valorizzato)
+          altrimenti la lingua del corso. */}
+      <Card>
+        <CardContent className="flex flex-wrap items-center gap-3 py-4">
+          <Languages className="size-5 shrink-0 text-primary" />
+          <div className="flex-1 min-w-[200px]">
+            <Label className="text-sm font-medium">
+              {t("courses.video.languageLabel")}
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              {t("courses.video.languageHint")}
+            </p>
+          </div>
+          <Select
+            value={effectiveVideoLang}
+            onValueChange={(v) => {
+              // "default" è il sentinel UI per "ripristina da corso".
+              if (v === "__course_default__") {
+                updateVideoLangMut.mutate(null);
+              } else {
+                updateVideoLangMut.mutate(v);
+              }
+            }}
+            disabled={!canGenerate || updateVideoLangMut.isPending}
+          >
+            <SelectTrigger className="w-[200px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {courseLangSupported && (
+                <SelectItem value="__course_default__">
+                  <span className="text-muted-foreground">
+                    {t("courses.video.languageFollowCourse", {
+                      lang: course.language_code?.toUpperCase() ?? "",
+                    })}
+                  </span>
+                </SelectItem>
+              )}
+              {XTTS_SUPPORTED_LANGUAGES.map((code) => {
+                const Flag = flagFor(code.split("-")[0]);
+                return (
+                  <SelectItem key={code} value={code}>
+                    <span className="inline-flex items-center gap-2">
+                      <Flag className="size-4" />
+                      <span className="uppercase">{code}</span>
+                    </span>
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
+        </CardContent>
+      </Card>
+
+      {/* Banner: lingua corso non supportata da XTTS — l'utente deve scegliere
+          esplicitamente un override compatibile. */}
+      {!courseLangSupported && !course.video_language_code && (
+        <Card className="border-amber-300/60 bg-amber-50/40 dark:bg-amber-900/10">
+          <CardContent className="flex items-center gap-3 py-3 text-sm">
+            <AlertCircle className="size-4 shrink-0 text-amber-600" />
+            <span className="flex-1">
+              {t("courses.video.errors.unsupported_language")}
+            </span>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Banner pre-requisiti — voice sample mancante */}
       {!voiceAvailable && total > 0 && (
         <Card className="border-amber-300/60 bg-amber-50/40 dark:bg-amber-900/10">
           <CardContent className="flex items-center gap-3 py-3 text-sm">
             <AlertCircle className="size-4 shrink-0 text-amber-600" />
             <span className="flex-1">
               {t("courses.video.errors.voice_sample_missing")}
+            </span>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Banner pre-requisiti — latents voce non pronti (assignee ha audio
+          ma il worker non ha ancora finito l'estrazione). */}
+      {voiceAvailable && !voiceLatentsReady && total > 0 && (
+        <Card className="border-amber-300/60 bg-amber-50/40 dark:bg-amber-900/10">
+          <CardContent className="flex items-center gap-3 py-3 text-sm">
+            {voiceLatentsStatus === "failed" ? (
+              <AlertCircle className="size-4 shrink-0 text-destructive" />
+            ) : (
+              <Loader2 className="size-4 shrink-0 animate-spin text-amber-600" />
+            )}
+            <span className="flex-1">
+              {voiceLatentsStatus === "failed"
+                ? t("courses.video.errors.voice_latents_failed")
+                : t("courses.video.errors.voice_latents_not_ready")}
             </span>
           </CardContent>
         </Card>
@@ -250,7 +378,11 @@ export function CourseLessonVideoView({
               <Button
                 size="sm"
                 onClick={onGenerateAll}
-                disabled={generateAllMut.isPending || !voiceAvailable}
+                disabled={
+                  generateAllMut.isPending ||
+                  !voiceAvailable ||
+                  !voiceLatentsReady
+                }
               >
                 <Sparkles className="size-4" />
                 {t("courses.video.actions.generateAll", { count: eligible })}
@@ -320,6 +452,7 @@ export function CourseLessonVideoView({
                 item.speech_approved &&
                 item.slides_approved &&
                 voiceAvailable &&
+                voiceLatentsReady &&
                 !inProgress;
               return (
                 <Card key={lesson.id}>

@@ -1227,9 +1227,16 @@
         "speech_not_approved": "Approve the lesson speech first",
         "slides_not_approved": "Approve the lesson slides first",
         "voice_sample_missing": "The course assignee has no voice sample configured",
+        "voice_latents_not_ready": "Voice training in progress — video generation will be available once it completes.",
+        "voice_latents_failed": "Voice training failed. The assignee must re-upload the audio in their Avatar profile.",
         "video_already_in_progress": "Video generation already running for this lesson",
-        "no_eligible_lessons_for_video": "No lesson eligible for video generation"
+        "no_eligible_lessons_for_video": "No lesson eligible for video generation",
+        "unsupported_language": "The course language is not supported by XTTS-v2. Choose a compatible voice language.",
+        "audio_too_short": "Audio must be at least 6 seconds long."
       },
+      "languageLabel": "Voice language",
+      "languageHint": "Language used by the TTS to read the speech. Defaults to the course language.",
+      "languageFollowCourse": "Follow course ({{lang}})",
       "tokens": {
         "duration": "Duration",
         "device": "Device",
@@ -1541,6 +1548,20 @@
     "deleteConfirm": {
       "title": "Delete the avatar?",
       "message": "Image, audio, and all generated clips will be deleted."
+    },
+    "ttsLatents": {
+      "title": "Voice training",
+      "hint": "We're pre-training the voice model from your audio. This runs automatically once: video generation will be faster afterwards.",
+      "bannerReupload": "Re-upload the audio to retry training.",
+      "status": {
+        "pending": "Queued for training",
+        "processing": "Training in progress…",
+        "ready": "Voice ready for videos",
+        "failed": "Training failed"
+      }
+    },
+    "audio": {
+      "tooShort": "Audio must be at least 6 seconds long."
     }
   },
   "avatarConfig": {

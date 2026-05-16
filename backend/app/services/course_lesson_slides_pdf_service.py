@@ -361,8 +361,17 @@ def render_slides_html(
     slide_template: SlideTemplate | None,
     public_base_url: str | None = None,
     mermaid_svg_map: dict[str, str] | None = None,
+    enable_split: bool = True,
 ) -> str:
-    """Pure-function: HTML completo delle slide pronto per WeasyPrint."""
+    """Pure-function: HTML completo delle slide pronto per WeasyPrint.
+
+    `enable_split` (default True): per il PDF cartaceo, una slide con
+    bullet+asset viene splittata su 2 pagine consecutive (pattern visivo
+    necessario per A4 landscape, spazio verticale limitato). Per la
+    pipeline video (`lesson_slides_video_render_service`) chiamare con
+    `enable_split=False`: 1 slide JSON → 1 pagina renderizzata, niente
+    duplicazioni che complicherebbero il mapping audio↔frame.
+    """
     slides_raw = lesson.slides_raw or {}
     if not slides_raw:
         raise ConflictError(
@@ -427,8 +436,11 @@ def render_slides_html(
         # Split: una slide con bullet/body MA anche asset → 2 pagine,
         # asset isolato. Il body resta sulla pagina con bullet (o, se
         # non ci sono bullet ma c'è solo body, sulla pagina-body).
+        # Disabilitato (`enable_split=False`) per la pipeline video, dove
+        # serve un mapping 1:1 slide↔frame per allocare correttamente
+        # l'audio TTS del segment di quella slide.
         has_text_content = bool(bullets) or bool(body_text)
-        if assets_html and has_text_content:
+        if enable_split and assets_html and has_text_content:
             rendered_slides.append(
                 {**base_entry, "bullets": bullets, "assets_html": []}
             )
