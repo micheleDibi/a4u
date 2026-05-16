@@ -211,6 +211,8 @@ class XTTSService:
     def _load_model_sync(self) -> None:
         settings = get_settings()
         try:
+            import os
+
             import torch  # noqa: F401
             # NNPACK è una lib di acceleration Conv2d che funziona solo su
             # alcune CPU (ARM / x86 con flag specifici). Su VM cloud
@@ -222,6 +224,22 @@ class XTTSService:
                 torch.backends.nnpack.enabled = False
             except Exception:  # pragma: no cover
                 pass
+            # Su VM con CPU emulata (QEMU senza AVX) torch a volte parte
+            # con thread=1 anche con più vCPU disponibili. Forziamo
+            # esplicitamente intra-op + inter-op threads = nproc.
+            # Preprocessing audio + encoder beneficiano del parallelismo;
+            # il decoder GPT autoregressivo no (è seriale per natura).
+            try:
+                cpu_count = os.cpu_count() or 1
+                torch.set_num_threads(cpu_count)
+                torch.set_num_interop_threads(max(1, cpu_count // 2))
+                log.info(
+                    "xtts_torch_threads_set",
+                    intra_op=cpu_count,
+                    inter_op=max(1, cpu_count // 2),
+                )
+            except Exception as exc:  # pragma: no cover
+                log.debug("xtts_torch_threads_skip", error=str(exc))
             from TTS.api import TTS  # type: ignore[import-untyped]
         except ImportError as exc:  # pragma: no cover
             missing = getattr(exc, "name", None) or "TTS/torch"

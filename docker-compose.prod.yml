@@ -92,6 +92,13 @@ services:
       COURSE_LESSON_SLIDES_AUTO_RETRY_MAX: ${COURSE_LESSON_SLIDES_AUTO_RETRY_MAX:-5}
       COURSE_LESSON_SPEECH_AUTO_RETRY_MAX: ${COURSE_LESSON_SPEECH_AUTO_RETRY_MAX:-5}
       COURSE_LESSON_PDF_AUTO_RETRY_MAX: ${COURSE_LESSON_PDF_AUTO_RETRY_MAX:-5}
+      # Threading torch/numpy/scientific Python (XTTS, librosa). Su VM
+      # senza AVX/AVX2 (CPU QEMU emulate, ecc.) il default può partire
+      # con thread=1 → preprocessing audio molto lento. Settare a nproc.
+      # Override esempio in `.env`: OMP_NUM_THREADS=4
+      OMP_NUM_THREADS: ${OMP_NUM_THREADS:-2}
+      MKL_NUM_THREADS: ${MKL_NUM_THREADS:-2}
+      OPENBLAS_NUM_THREADS: ${OPENBLAS_NUM_THREADS:-2}
       # Rate limiting login
       RATE_LIMIT_LOGIN_PER_MIN: ${RATE_LIMIT_LOGIN_PER_MIN:-5}
       LOGIN_LOCKOUT_THRESHOLD: ${LOGIN_LOCKOUT_THRESHOLD:-10}
