@@ -38,18 +38,43 @@ from app.services import course_lesson_slides_pdf_service as slides_pdf
 log = get_logger("app.lesson_slides_video_render")
 
 
-# Mini-CSS injected dentro <head> dell'HTML PDF: rimuove il page-break
-# che WeasyPrint userebbe per separare le slide e forza il body a
-# scrollare verticalmente con una slide sotto l'altra. Playwright così
-# vede tutti gli elementi `.slide` e può screenshottarli uno per uno.
+# CSS injected nell'<head> dell'HTML PDF per il rendering video. Tre
+# obiettivi:
+# 1. Eliminare il page-break PDF (WeasyPrint-specific) per far stare
+#    tutte le slide nel DOM scrollabile di Playwright.
+# 2. Centrare la slide nel viewport 1920×1080 (flexbox sul body) — il
+#    template PDF di base usa flow normale, top-left.
+# 3. Scalare la slide A4 landscape (~1123×794 px @96dpi) per riempire
+#    1080 px di altezza, mantenendo l'aspect ratio del PDF. Bordi
+#    bianchi solo laterali (~196 px per lato), simmetrici. Niente
+#    banda bianca sotto.
+#
+# Scale factor calcolato: 1080 / (210mm × 3.7795 px/mm) ≈ 1.361.
+# Aspect A4 landscape: 297:210 ≈ 1.414 → larghezza scalata 1527 px →
+# (1920 - 1527) / 2 ≈ 196 px per lato.
 _VIDEO_OVERRIDE_CSS = """
 <style>
-  html, body { background: #ffffff; }
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden !important;
+  }
+  body {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
   @page { margin: 0; }
   .slide {
+    margin: 0 !important;
     page-break-after: auto !important;
     break-after: auto !important;
-    margin: 0 0 16px 0;
+    flex-shrink: 0 !important;
+    transform: scale(1.361);
+    transform-origin: center center;
   }
 </style>
 """
