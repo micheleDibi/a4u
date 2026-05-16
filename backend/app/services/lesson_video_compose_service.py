@@ -205,7 +205,7 @@ async def compose_lesson_video(
                     "-tune",
                     "stillimage",
                     "-preset",
-                    "medium",
+                    settings.video_preset,
                     "-crf",
                     str(settings.video_crf),
                     "-pix_fmt",

@@ -177,6 +177,13 @@ class Settings(BaseSettings):
     video_audio_sample_rate: int = 48000
     video_video_codec: str = "libx264"
     video_crf: int = 23  # quality 1080p tipico YouTube
+    # libx264 preset: trade-off velocità/compressione. Per slide statiche
+    # (`-tune stillimage`) `veryfast` produce file identico a `medium` in
+    # qualità percepita ma è 3-5× più veloce. Su CPU senza AVX (QEMU VM)
+    # questo taglia ~70% del tempo di encoding. Valori validi:
+    # ultrafast, superfast, veryfast, faster, fast, medium, slow, slower,
+    # veryslow. Override via env `VIDEO_PRESET`.
+    video_preset: str = "veryfast"
     video_pixel_format: str = "yuv420p"  # compat HTML5/Quicktime
     lesson_video_max_mb: int = 500  # safety upper bound
     ffmpeg_binary: str = "ffmpeg"
