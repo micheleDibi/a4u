@@ -210,7 +210,11 @@ def is_lesson_eligible(
     voice_sample_available: bool,
 ) -> bool:
     """Lezione eleggibile alla generazione video: speech+slides approved
-    AND voice sample presente AND video non già in corso."""
+    AND voice sample presente AND video non già in corso.
+
+    Le lezioni-verifica (`is_assessment`) non sono mai eleggibili."""
+    if lesson.is_assessment:
+        return False
     if lesson.speech_status not in EXPORTABLE_SPEECH_STATUSES:
         return False
     if lesson.slides_status not in EXPORTABLE_SLIDES_STATUSES:
@@ -243,6 +247,9 @@ def build_batch_out(
     in_flight = 0
     for module in course.modules:
         for lesson in module.lessons:
+            # La lezione-verifica non fa parte della pipeline video.
+            if lesson.is_assessment:
+                continue
             item = build_status_out(
                 lesson,
                 voice_sample_available=voice_sample_available,
@@ -291,6 +298,12 @@ async def request_lesson_video(
     - video status ∈ empty/ready/failed/cancelled
     - voice sample presente
     """
+    if lesson.is_assessment:
+        raise ConflictError(
+            f"La lezione {lesson.lesson_code} è una verifica delle "
+            f"competenze: non genera video.",
+            code="lesson_is_assessment_not_eligible",
+        )
     if lesson.speech_status not in EXPORTABLE_SPEECH_STATUSES:
         raise ConflictError(
             f"Lezione {lesson.lesson_code}: il discorso deve essere "

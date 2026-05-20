@@ -807,9 +807,11 @@ function ModuleSpeechCard({
   onDownloadModuleZip,
 }: ModuleSpeechCardProps) {
   const { t } = useTranslation();
+  // La lezione-verifica non genera discorso: esclusa da liste e conteggi.
+  const speechLessons = module.lessons.filter((l) => !l.is_assessment);
   const allPdfsReady =
-    module.lessons.length > 0 &&
-    module.lessons.every((l) => l.speech_pdf_status === "ready");
+    speechLessons.length > 0 &&
+    speechLessons.every((l) => l.speech_pdf_status === "ready");
   const fallbackName = `${module.module_code} ${module.title}`;
   return (
     <Card>
@@ -847,9 +849,9 @@ function ModuleSpeechCard({
           )}
         </div>
       </CardHeader>
-      {module.lessons.length > 0 && (
+      {speechLessons.length > 0 && (
         <CardContent className="space-y-2">
-          {module.lessons.map((lesson) => (
+          {speechLessons.map((lesson) => (
             <LessonSpeechRow
               key={lesson.id}
               lesson={lesson}

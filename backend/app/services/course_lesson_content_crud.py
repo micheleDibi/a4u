@@ -24,7 +24,10 @@ from app.core.errors import ConflictError
 from app.core.logging import get_logger
 from app.models.course import Course
 from app.models.course_lesson import CourseLesson
-from app.schemas.course_lesson_content import LessonContentUpdateInput
+from app.schemas.course_lesson_content import (
+    LessonAssessmentUpdateInput,
+    LessonContentUpdateInput,
+)
 
 log = get_logger("app.course_lesson_content_crud")
 
@@ -305,6 +308,108 @@ async def update_lesson_content(
             new_visual_assets=current_raw.get("visual_assets"),
             course_id=course.id,
         )
+
+    from app.services import course_lesson_content_service
+
+    return await course_lesson_content_service._refresh_full(db, course)
+
+
+async def update_lesson_assessment(
+    db: AsyncSession,
+    *,
+    course: Course,
+    lesson: CourseLesson,
+    payload: LessonAssessmentUpdateInput,
+    actor_id: uuid.UUID,
+) -> Course:
+    """Patch parziale della verifica delle competenze — `content_raw` di
+    una lezione `is_assessment`. Edit non degrada lo stato."""
+    _ensure_editable(lesson)
+    current_raw: dict[str, Any] = dict(lesson.content_raw or {})
+
+    mc = (
+        [q.model_dump() for q in payload.multiple_choice_questions]
+        if payload.multiple_choice_questions is not None
+        else list(current_raw.get("multiple_choice_questions") or [])
+    )
+    open_q = (
+        [q.model_dump() for q in payload.open_questions]
+        if payload.open_questions is not None
+        else list(current_raw.get("open_questions") or [])
+    )
+
+    # Validazioni hard: question_id univoci, opzione corretta valida.
+    question_ids = [
+        q.get("question_id") for q in (mc + open_q) if isinstance(q, dict)
+    ]
+    if any(not qid or not str(qid).strip() for qid in question_ids):
+        raise ConflictError(
+            "Ogni domanda deve avere un `question_id` non vuoto.",
+            code="lesson_assessment_question_id_required",
+        )
+    if len(set(question_ids)) != len(question_ids):
+        raise ConflictError(
+            "I `question_id` devono essere univoci.",
+            code="lesson_assessment_duplicate_question_id",
+        )
+    for q in mc:
+        if not isinstance(q, dict):
+            continue
+        opt_ids = [
+            o.get("option_id") for o in (q.get("options") or [])
+            if isinstance(o, dict)
+        ]
+        if len(opt_ids) < 2:
+            raise ConflictError(
+                f"La domanda {q.get('question_id')} deve avere almeno "
+                f"2 opzioni.",
+                code="lesson_assessment_too_few_options",
+            )
+        if len(set(opt_ids)) != len(opt_ids):
+            raise ConflictError(
+                f"Domanda {q.get('question_id')}: `option_id` duplicati.",
+                code="lesson_assessment_duplicate_option_id",
+            )
+        if q.get("correct_option_id") not in opt_ids:
+            raise ConflictError(
+                f"Domanda {q.get('question_id')}: l'opzione corretta non "
+                f"corrisponde ad alcuna opzione.",
+                code="lesson_assessment_invalid_correct_option",
+            )
+
+    changed: dict[str, int] = {}
+    if payload.multiple_choice_questions is not None:
+        current_raw["multiple_choice_questions"] = mc
+        changed["multiple_choice_questions"] = len(mc)
+    if payload.open_questions is not None:
+        current_raw["open_questions"] = open_q
+        changed["open_questions"] = len(open_q)
+
+    if not changed:
+        return course
+
+    current_raw.setdefault("lesson_id", lesson.lesson_code)
+    current_raw.setdefault("lesson_title", lesson.title)
+    current_raw["is_assessment"] = True
+
+    lesson.content_raw = current_raw
+    lesson.content_modified_at = datetime.now(UTC)
+
+    await write_audit(
+        db,
+        action="course.lesson.content.updated",
+        actor_user_id=actor_id,
+        organization_id=course.organization_id,
+        target_type="course_lesson",
+        target_id=str(lesson.id),
+        metadata={
+            "course_id": str(course.id),
+            "lesson_code": lesson.lesson_code,
+            "is_assessment": True,
+            "fields": changed,
+        },
+    )
+    await db.commit()
 
     from app.services import course_lesson_content_service
 

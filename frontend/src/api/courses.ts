@@ -269,6 +269,46 @@ export interface LessonContentUpdateInput {
   coverage_check?: LessonContentCoverageCheck;
 }
 
+// --- Verifica delle competenze (content_raw quando is_assessment) ---
+
+export interface AssessmentMCOption {
+  option_id: string;
+  text: string;
+}
+
+export interface AssessmentMCQuestion {
+  question_id: string;
+  text: string;
+  options: AssessmentMCOption[];
+  correct_option_id: string;
+}
+
+export interface AssessmentOpenQuestion {
+  question_id: string;
+  text: string;
+  expected_answer: string;
+}
+
+export interface LessonAssessmentRaw {
+  lesson_id: string;
+  lesson_title: string;
+  is_assessment: true;
+  multiple_choice_questions: AssessmentMCQuestion[];
+  open_questions: AssessmentOpenQuestion[];
+}
+
+export interface LessonAssessmentUpdateInput {
+  multiple_choice_questions?: AssessmentMCQuestion[];
+  open_questions?: AssessmentOpenQuestion[];
+}
+
+/** Narrowing: `content_raw` di una lezione-verifica vs lezione normale. */
+export function isAssessmentRaw(
+  raw: LessonContentRaw | LessonAssessmentRaw | null | undefined,
+): raw is LessonAssessmentRaw {
+  return !!raw && (raw as LessonAssessmentRaw).is_assessment === true;
+}
+
 // ---------------------------------------------------------------------------
 // Fase 4 — Slide della lezione (§7)
 // ---------------------------------------------------------------------------
@@ -394,6 +434,9 @@ export interface CourseLessonOut {
   title: string;
   summary: string;
   is_introductory: boolean;
+  // Lezione di verifica delle competenze (ultima del modulo quando
+  // assessment_lesson_enabled è attivo). content_raw è LessonAssessmentRaw.
+  is_assessment: boolean;
   recommended_bibliography: RecommendedBibliographyItem[];
   // Fase 2 — struttura formativa (§5)
   learning_objectives: string[];
@@ -413,7 +456,7 @@ export interface CourseLessonOut {
   // Stale-detection — set solo da CRUD manuale, non dai worker AI.
   lesson_structure_modified_at: string | null;
   content_modified_at: string | null;
-  content_raw: LessonContentRaw | null;
+  content_raw: LessonContentRaw | LessonAssessmentRaw | null;
   // §7 — Export PDF
   pdf_status: LessonPdfStatus;
   pdf_progress: number;
@@ -1037,6 +1080,18 @@ export const coursesApi = {
     ): Promise<CourseOut> => {
       const res = await apiClient.patch<CourseOut>(
         `${base(orgId)}/${courseId}/lessons/${lessonId}/content`,
+        payload
+      );
+      return res.data;
+    },
+    updateAssessment: async (
+      orgId: string,
+      courseId: string,
+      lessonId: string,
+      payload: LessonAssessmentUpdateInput
+    ): Promise<CourseOut> => {
+      const res = await apiClient.patch<CourseOut>(
+        `${base(orgId)}/${courseId}/lessons/${lessonId}/assessment`,
         payload
       );
       return res.data;

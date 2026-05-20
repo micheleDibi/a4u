@@ -21,6 +21,7 @@ import {
 
 import {
   coursesApi,
+  isAssessmentRaw,
   type CourseLessonOut,
   type CourseModuleOut,
   type CourseOut,
@@ -715,7 +716,11 @@ export function CourseLessonSlidesView({
           open={true}
           lessonLabel={lessonLabel(editDialog.lesson.lesson_code)}
           initial={editDialog.lesson.slides_raw}
-          contentRaw={editDialog.lesson.content_raw}
+          contentRaw={
+            isAssessmentRaw(editDialog.lesson.content_raw)
+              ? null
+              : editDialog.lesson.content_raw
+          }
           isPending={updateLessonMut.isPending}
           onClose={() => setEditDialog({ kind: "closed" })}
           onSubmit={(payload) =>
@@ -803,9 +808,11 @@ function ModuleSlidesCard({
   onDownloadModuleZip,
 }: ModuleSlidesCardProps) {
   const { t } = useTranslation();
+  // La lezione-verifica non genera slide: esclusa da liste e conteggi.
+  const slidesLessons = module.lessons.filter((l) => !l.is_assessment);
   const allPdfsReady =
-    module.lessons.length > 0 &&
-    module.lessons.every((l) => l.slides_pdf_status === "ready");
+    slidesLessons.length > 0 &&
+    slidesLessons.every((l) => l.slides_pdf_status === "ready");
   const fallbackName = `${module.module_code} ${module.title}`;
   return (
     <Card>
@@ -843,9 +850,9 @@ function ModuleSlidesCard({
           )}
         </div>
       </CardHeader>
-      {module.lessons.length > 0 && (
+      {slidesLessons.length > 0 && (
         <CardContent className="space-y-2">
-          {module.lessons.map((lesson) => (
+          {slidesLessons.map((lesson) => (
             <LessonSlidesRow
               key={lesson.id}
               lesson={lesson}
@@ -1171,7 +1178,11 @@ function LessonSlidesRow({
         <div className="border-t px-4 py-4">
           <LessonSlidesView
             slides={lesson.slides_raw}
-            contentRaw={lesson.content_raw}
+            contentRaw={
+              isAssessmentRaw(lesson.content_raw)
+                ? null
+                : lesson.content_raw
+            }
           />
         </div>
       )}

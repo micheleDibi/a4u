@@ -38,6 +38,53 @@ def _now() -> datetime:
 
 
 # ---------------------------------------------------------------------------
+# Lezione di verifica delle competenze (ultima lezione di ogni modulo)
+# ---------------------------------------------------------------------------
+
+# Titolo standard della lezione-verifica, per lingua del corso. Lingue
+# non mappate → inglese. Il titolo resta comunque modificabile a mano.
+_ASSESSMENT_LESSON_TITLES: dict[str, str] = {
+    "it": "Verifica delle competenze",
+    "en": "Competence assessment",
+    "es": "Evaluación de competencias",
+    "fr": "Évaluation des compétences",
+    "de": "Kompetenzüberprüfung",
+    "pt": "Avaliação de competências",
+    "nl": "Competentietoets",
+}
+
+
+def _assessment_lesson_title(language_code: str) -> str:
+    code = (language_code or "en").lower().split("-")[0]
+    return _ASSESSMENT_LESSON_TITLES.get(
+        code, _ASSESSMENT_LESSON_TITLES["en"]
+    )
+
+
+def _assessment_enabled(course: Course) -> bool:
+    """True se ogni modulo deve avere una lezione-verifica come ultima.
+
+    Richiede `lessons_per_module >= 2`: un modulo di sola verifica, senza
+    lezioni didattiche, non avrebbe senso.
+    """
+    return (
+        bool(course.assessment_lesson_enabled)
+        and course.lessons_per_module >= 2
+    )
+
+
+def _architecture_lessons_per_module(course: Course) -> int:
+    """Numero di lezioni DIDATTICHE che l'AI deve generare per modulo.
+
+    Quando la verifica è attiva la lezione-verifica viene aggiunta dal
+    codice di materializzazione, quindi l'AI ne produce una in meno.
+    """
+    if _assessment_enabled(course):
+        return course.lessons_per_module - 1
+    return course.lessons_per_module
+
+
+# ---------------------------------------------------------------------------
 # Prompt building (§4.2)
 # ---------------------------------------------------------------------------
 
@@ -131,6 +178,7 @@ def build_user_prompt(course: Course) -> str:
     """
     settings = get_settings()
     lang = course.language_code
+    arch_lessons = _architecture_lessons_per_module(course)
 
     argomenti = course.argomenti_chiave or []
     argomenti_lista = (
@@ -155,7 +203,7 @@ def build_user_prompt(course: Course) -> str:
         f"- Stile di insegnamento: {_term_label(course.stile_insegnamento, lang)}",
         f"- Profondità del contenuto: {_term_label(course.profondita_contenuto, lang)}",
         f"- Numero di moduli: {course.modules_count}",
-        f"- Numero di lezioni per modulo: {course.lessons_per_module}",
+        f"- Numero di lezioni didattiche per modulo: {arch_lessons}",
         f"- Lingua: {lang}",
         f"- Ruolo del docente: {_term_label(course.ruolo_docente, lang)}",
         f"- Dimensione del pubblico: {_term_label(course.dimensione_pubblico, lang)}",
@@ -169,11 +217,20 @@ def build_user_prompt(course: Course) -> str:
         "",
         "## Compito",
         "",
-        f"Progetta l'architettura del corso producendo:",
+        "Progetta l'architettura del corso producendo:",
         f"- ESATTAMENTE {course.modules_count} moduli",
-        f"- per OGNI modulo ESATTAMENTE {course.lessons_per_module} lezioni",
+        f"- per OGNI modulo ESATTAMENTE {arch_lessons} lezioni",
         "- la PRIMA lezione del PRIMO modulo (M1.L1) marcata come introduttiva",
         "  con bibliografia consigliata",
+        *(
+            [
+                "- NOTA: oltre a queste, ogni modulo avrà una lezione finale "
+                "di verifica delle competenze generata automaticamente: NON "
+                "includerla nell'output (genera solo le lezioni didattiche).",
+            ]
+            if _assessment_enabled(course)
+            else []
+        ),
         "",
         "Restituisci il risultato nel formato JSON richiesto.",
     ]
@@ -211,6 +268,10 @@ def _format_current_architecture_for_prompt(course: Course) -> str:
         if m.description:
             parts.append(m.description)
         for lesson in m.lessons:
+            # La lezione-verifica è ricreata dal codice ad ogni
+            # materializzazione: non rimandarla all'AI in rigenerazione.
+            if lesson.is_assessment:
+                continue
             intro_marker = " (introduttiva)" if lesson.is_introductory else ""
             parts.append(f"- {lesson.lesson_code}{intro_marker}: {lesson.title}")
             if lesson.summary:
@@ -319,11 +380,12 @@ async def materialize_architecture(
             f"atteso ({course.modules_count}).",
             code="architecture_modules_count_mismatch",
         )
+    arch_lessons = _architecture_lessons_per_module(course)
     for m_idx, m in enumerate(architecture.modules, start=1):
-        if len(m.lessons) != course.lessons_per_module:
+        if len(m.lessons) != arch_lessons:
             raise ConflictError(
                 f"Modulo {m.module_id}: {len(m.lessons)} lezioni ≠ "
-                f"atteso ({course.lessons_per_module}).",
+                f"atteso ({arch_lessons}).",
                 code="architecture_lessons_count_mismatch",
             )
         for l_idx, lesson in enumerate(m.lessons, start=1):
@@ -394,6 +456,23 @@ async def materialize_architecture(
                     recommended_bibliography=[
                         b.model_dump() for b in lesson.recommended_bibliography
                     ],
+                )
+            )
+        # Ultima lezione del modulo = verifica delle competenze (aggiunta
+        # dal codice, non dall'AI). Vedi `_assessment_enabled`.
+        if _assessment_enabled(course):
+            assessment_position = len(m.lessons) + 1
+            db.add(
+                CourseLesson(
+                    module_id=module.id,
+                    course_id=course.id,
+                    position=assessment_position,
+                    lesson_code=f"{module.module_code}.L{assessment_position}",
+                    title=_assessment_lesson_title(course.language_code),
+                    summary="",
+                    is_introductory=False,
+                    is_assessment=True,
+                    recommended_bibliography=[],
                 )
             )
 

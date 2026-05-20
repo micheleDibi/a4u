@@ -612,6 +612,32 @@
           "suggerimento_generale": "General suggestion"
         }
       },
+      "assessment": {
+        "badge": "Assessment",
+        "render": {
+          "mcTitle": "Multiple-choice questions",
+          "openTitle": "Open questions",
+          "correctAnswer": "Correct answer",
+          "expectedAnswer": "Expected answer",
+          "empty": "No questions generated."
+        },
+        "editor": {
+          "title": "Edit assessment — {{lesson}}",
+          "description": "Add, remove or fix the competence-assessment questions.",
+          "mcSection": "Multiple-choice questions",
+          "openSection": "Open questions",
+          "questionText": "Question text",
+          "optionText": "Option text",
+          "markCorrect": "Select the radio to mark the correct option.",
+          "expectedAnswer": "Expected answer (for grading)",
+          "addMc": "Add question",
+          "addOpen": "Add question",
+          "addOption": "Add option"
+        },
+        "toast": {
+          "updated": "Assessment updated."
+        }
+      },
       "editor": {
         "text": "Lesson text",
         "visualAssets": "Visual assets (Mermaid diagrams or uploaded images)",

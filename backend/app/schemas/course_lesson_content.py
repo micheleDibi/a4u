@@ -22,7 +22,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.common import ORMModel
 
-
 # ---------------------------------------------------------------------------
 # Output AI (§6.3) — validato dopo la chiamata OpenAI
 # ---------------------------------------------------------------------------
@@ -144,6 +143,56 @@ class LessonContentOutput(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Verifica delle competenze (`content_raw` quando `lesson.is_assessment`)
+# ---------------------------------------------------------------------------
+
+
+class AssessmentMCOption(BaseModel):
+    """Una opzione di risposta di una domanda a scelta multipla."""
+
+    model_config = ConfigDict(extra="forbid")
+    option_id: str = Field(min_length=1, max_length=10)  # es. "A".."D"
+    text: str = Field(min_length=1, max_length=1000)
+
+
+class AssessmentMCQuestion(BaseModel):
+    """Domanda a scelta multipla: testo, opzioni, opzione corretta."""
+
+    model_config = ConfigDict(extra="forbid")
+    question_id: str = Field(min_length=1, max_length=20)
+    text: str = Field(min_length=1, max_length=2000)
+    options: list[AssessmentMCOption] = Field(min_length=2, max_length=6)
+    correct_option_id: str = Field(min_length=1, max_length=10)
+
+
+class AssessmentOpenQuestion(BaseModel):
+    """Domanda aperta: testo + traccia di risposta attesa (per la correzione)."""
+
+    model_config = ConfigDict(extra="forbid")
+    question_id: str = Field(min_length=1, max_length=20)
+    text: str = Field(min_length=1, max_length=2000)
+    expected_answer: str = Field(min_length=1, max_length=4000)
+
+
+class LessonAssessmentOutput(BaseModel):
+    """Output AI per una lezione di verifica delle competenze.
+
+    Polimorfico con `LessonContentOutput`: entrambi vivono nella colonna
+    `course_lesson.content_raw`. Il discriminante è la chiave
+    `is_assessment` (qui sempre True) + il flag `lesson.is_assessment`.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    lesson_id: str
+    lesson_title: str
+    is_assessment: Literal[True] = True
+    multiple_choice_questions: list[AssessmentMCQuestion] = Field(
+        default_factory=list
+    )
+    open_questions: list[AssessmentOpenQuestion] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
 # Input dal frontend
 # ---------------------------------------------------------------------------
 
@@ -174,6 +223,19 @@ class LessonContentUpdateInput(BaseModel):
     examples: list[LessonContentExample] | None = None
     references: list[LessonContentReference] | None = None
     coverage_check: LessonContentCoverageCheck | None = None
+
+
+class LessonAssessmentUpdateInput(BaseModel):
+    """Body per `PATCH /lessons/{lid}/assessment` (CRUD manuale verifica).
+
+    Entrambe le liste opzionali; l'edit non degrada lo status. Validazione
+    di consistenza (id univoci, una sola opzione corretta) nel service.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    multiple_choice_questions: list[AssessmentMCQuestion] | None = None
+    open_questions: list[AssessmentOpenQuestion] | None = None
 
 
 # ---------------------------------------------------------------------------

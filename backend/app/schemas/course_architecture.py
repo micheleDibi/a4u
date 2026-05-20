@@ -77,6 +77,7 @@ class CourseLessonOut(ORMModel):
     title: str
     summary: str
     is_introductory: bool
+    is_assessment: bool = False
     recommended_bibliography: list[dict[str, Any]] = Field(default_factory=list)
 
     # Fase 2 — struttura formativa (§5)

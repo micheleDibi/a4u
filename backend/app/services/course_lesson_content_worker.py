@@ -222,8 +222,12 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
         lesson.content_progress_phase = "preparing_prompt"
         await db.commit()
 
-        # Glossary gate: se non disponibile, genera sync inline.
-        if course_full.glossary_status not in ("ready", "approved"):
+        # Glossary gate: se non disponibile, genera sync inline. La
+        # lezione-verifica non usa il glossario → salta il gate.
+        if not lesson.is_assessment and course_full.glossary_status not in (
+            "ready",
+            "approved",
+        ):
             try:
                 course_full = await course_glossary_service.ensure_glossary_ready(
                     db, course=course_full, actor_id=None
@@ -264,9 +268,16 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                 return
 
         regen = course_lesson_content_service.is_regeneration_for_lesson(lesson)
-        user_prompt = course_lesson_content_service.build_user_prompt(
-            course_full, lesson
-        )
+        if lesson.is_assessment:
+            user_prompt = (
+                course_lesson_content_service.build_assessment_user_prompt(
+                    course_full, lesson
+                )
+            )
+        else:
+            user_prompt = course_lesson_content_service.build_user_prompt(
+                course_full, lesson
+            )
 
         # Aggiorna progresso → calling_openai e avvia ticker
         lesson.content_progress = 15
@@ -282,13 +293,22 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
 
         try:
             try:
-                content_output, usage = (
-                    await openai_lesson_content_service.generate_lesson_content(
-                        user_prompt=user_prompt,
-                        language_code=course_full.language_code,
-                        is_regeneration=regen,
+                if lesson.is_assessment:
+                    content_output, usage = (
+                        await openai_lesson_content_service.generate_lesson_assessment(
+                            user_prompt=user_prompt,
+                            language_code=course_full.language_code,
+                            is_regeneration=regen,
+                        )
                     )
-                )
+                else:
+                    content_output, usage = (
+                        await openai_lesson_content_service.generate_lesson_content(
+                            user_prompt=user_prompt,
+                            language_code=course_full.language_code,
+                            is_regeneration=regen,
+                        )
+                    )
             except OpenAINotConfiguredError:
                 # NON recuperabile (config issue) → terminal subito.
                 settings = get_settings()
@@ -380,14 +400,24 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
         await db.commit()
 
         try:
-            await course_lesson_content_service.materialize_lesson_content(
-                db,
-                course=course_full,
-                lesson=lesson,
-                output=content_output,
-                raw=content_output.model_dump(),
-                usage=usage,
-            )
+            if lesson.is_assessment:
+                await course_lesson_content_service.materialize_lesson_assessment(
+                    db,
+                    course=course_full,
+                    lesson=lesson,
+                    output=content_output,
+                    raw=content_output.model_dump(),
+                    usage=usage,
+                )
+            else:
+                await course_lesson_content_service.materialize_lesson_content(
+                    db,
+                    course=course_full,
+                    lesson=lesson,
+                    output=content_output,
+                    raw=content_output.model_dump(),
+                    usage=usage,
+                )
         except Exception as exc:
             settings = get_settings()
             terminal = not _apply_failure(
@@ -419,6 +449,21 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
             await db.commit()
             return
 
+        if lesson.is_assessment:
+            phase_metadata: dict = {
+                "is_assessment": True,
+                "mc_questions": len(content_output.multiple_choice_questions),
+                "open_questions": len(content_output.open_questions),
+            }
+        else:
+            phase_metadata = {
+                "sections": len(content_output.sections),
+                "visual_assets": len(content_output.visual_assets),
+                "tables": len(content_output.tables),
+                "equations": len(content_output.equations),
+                "examples": len(content_output.examples),
+                "estimated_word_count": content_output.estimated_word_count,
+            }
         await write_audit(
             db,
             action="course.lesson.content.generated",
@@ -429,12 +474,7 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
             metadata={
                 "course_id": str(course_full.id),
                 "lesson_code": lesson.lesson_code,
-                "sections": len(content_output.sections),
-                "visual_assets": len(content_output.visual_assets),
-                "tables": len(content_output.tables),
-                "equations": len(content_output.equations),
-                "examples": len(content_output.examples),
-                "estimated_word_count": content_output.estimated_word_count,
+                **phase_metadata,
                 "tokens_total": usage.get("total"),
                 "tokens_prompt": usage.get("prompt"),
                 "tokens_completion": usage.get("completion"),
@@ -448,8 +488,7 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
             "lesson_content_generated",
             lesson_id=str(lesson.id),
             lesson_code=lesson.lesson_code,
-            sections=len(content_output.sections),
-            words=content_output.estimated_word_count,
+            is_assessment=lesson.is_assessment,
             tokens=usage.get("total"),
         )
 

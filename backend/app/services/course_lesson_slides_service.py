@@ -388,10 +388,14 @@ def _recompute_course_slides_status(course: Course) -> None:
     - TUTTE in `ready|approved` (con almeno 1 ready) → `slides_ready`
     - se nessuna lezione è in stato Fase 4 (tutte `empty`) → invariato.
     """
+    # La lezione-verifica (is_assessment) non genera slide: esclusa dal
+    # calcolo, altrimenti il suo `slides_status='empty'` permanente
+    # bloccherebbe per sempre lo stato `slides_approved` del corso.
     statuses = [
         lesson.slides_status
         for m in course.modules
         for lesson in m.lessons
+        if not lesson.is_assessment
     ]
     if not statuses:
         return
@@ -456,6 +460,12 @@ async def request_lesson_slides_generation(
     """Sposta lo status della lezione a `pending` e annota l'eventuale
     hint. Il worker prenderà la riga al prossimo tick e la elabora in
     parallelo. Pre-condizione: `lesson.content_status ∈ (ready, approved)`."""
+    if lesson.is_assessment:
+        raise ConflictError(
+            f"La lezione {lesson.lesson_code} è una verifica delle "
+            f"competenze: non genera slide.",
+            code="lesson_is_assessment_not_eligible",
+        )
     if course.status not in VALID_COURSE_SLIDES_GENERATE_FROM_STATUSES:
         raise ConflictError(
             f"Stato corso non valido per Fase 4: {course.status}. "
@@ -538,6 +548,7 @@ async def request_all_lessons_slides_generation(
         for m in course.modules
         for lesson in m.lessons
         if lesson.content_status in ("ready", "approved")
+        and not lesson.is_assessment
     ]
     if not eligible:
         raise ConflictError(
@@ -597,6 +608,7 @@ async def request_missing_lessons_slides_generation(
         for lesson in m.lessons
         if lesson.slides_status == "empty"
         and lesson.content_status in ("ready", "approved")
+        and not lesson.is_assessment
     ]
     if not missing:
         raise ConflictError(

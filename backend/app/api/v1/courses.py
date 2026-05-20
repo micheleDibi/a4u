@@ -36,6 +36,7 @@ from app.schemas.course_architecture import (
 )
 from app.schemas.course_glossary import GlossaryRegenerateInput
 from app.schemas.course_lesson_content import (
+    LessonAssessmentUpdateInput,
     LessonContentGenerateInput,
     LessonContentUpdateInput,
 )
@@ -1133,6 +1134,43 @@ async def update_lesson_content(
         db, course=course, lesson_id=lesson_id
     )
     course = await course_lesson_content_crud.update_lesson_content(
+        db,
+        course=course,
+        lesson=lesson,
+        payload=payload,
+        actor_id=current.id,
+    )
+    return CourseOut.model_validate(course)
+
+
+@router.patch(
+    "/{course_id}/lessons/{lesson_id}/assessment",
+    response_model=CourseOut,
+)
+async def update_lesson_assessment(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    lesson_id: uuid.UUID,
+    payload: LessonAssessmentUpdateInput,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_EDIT),
+) -> CourseOut:
+    """Patch manuale della verifica delle competenze (`content_raw` di una
+    lezione `is_assessment`). Richiede lezione in `ready`/`approved`."""
+    await _ensure_org(db, org_id)
+    course = await _load_course_for_edit(
+        db, org_id=org_id, course_id=course_id, current=current
+    )
+    lesson = await course_lesson_content_service.get_lesson_or_404(
+        db, course=course, lesson_id=lesson_id
+    )
+    if not lesson.is_assessment:
+        raise ConflictError(
+            f"La lezione {lesson.lesson_code} non è una verifica.",
+            code="lesson_not_assessment",
+        )
+    course = await course_lesson_content_crud.update_lesson_assessment(
         db,
         course=course,
         lesson=lesson,

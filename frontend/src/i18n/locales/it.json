@@ -613,6 +613,32 @@
           "suggerimento_generale": "Suggerimento generale"
         }
       },
+      "assessment": {
+        "badge": "Verifica",
+        "render": {
+          "mcTitle": "Domande a scelta multipla",
+          "openTitle": "Domande aperte",
+          "correctAnswer": "Risposta corretta",
+          "expectedAnswer": "Risposta attesa",
+          "empty": "Nessuna domanda generata."
+        },
+        "editor": {
+          "title": "Modifica verifica — {{lesson}}",
+          "description": "Aggiungi, rimuovi o correggi le domande della verifica delle competenze.",
+          "mcSection": "Domande a scelta multipla",
+          "openSection": "Domande aperte",
+          "questionText": "Testo della domanda",
+          "optionText": "Testo dell'opzione",
+          "markCorrect": "Seleziona il pallino per indicare l'opzione corretta.",
+          "expectedAnswer": "Risposta attesa (per la correzione)",
+          "addMc": "Aggiungi domanda",
+          "addOpen": "Aggiungi domanda",
+          "addOption": "Aggiungi opzione"
+        },
+        "toast": {
+          "updated": "Verifica aggiornata."
+        }
+      },
       "editor": {
         "text": "Testo della lezione",
         "visualAssets": "Asset visivi (diagrammi Mermaid o immagini)",

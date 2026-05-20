@@ -1104,6 +1104,12 @@ async def request_lesson_pdf(
       - `lesson.pdf_status` deve essere `empty`, `ready` o `failed`
         (NON `pending`/`processing` — già accodato/in flight)
     """
+    if lesson.is_assessment:
+        raise ConflictError(
+            f"La lezione {lesson.lesson_code} è una verifica delle "
+            f"competenze: non è esportabile in PDF.",
+            code="lesson_is_assessment_no_pdf",
+        )
     if lesson.content_status not in EXPORTABLE_CONTENT_STATUSES:
         raise ConflictError(
             f"Lezione {lesson.lesson_code} non ha contenuto stabile "
@@ -1174,6 +1180,7 @@ async def request_all_lessons_pdf(
             if (
                 lesson.content_status in EXPORTABLE_CONTENT_STATUSES
                 and lesson.pdf_status in VALID_PDF_REQUEST_STATUSES
+                and not lesson.is_assessment
             ):
                 eligible.append(lesson)
     if not eligible:

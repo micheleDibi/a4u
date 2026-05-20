@@ -630,6 +630,7 @@ async def request_all_lessons_slides_pdf(
             if (
                 lesson.slides_status in EXPORTABLE_SLIDES_STATUSES
                 and lesson.slides_pdf_status in VALID_SLIDES_PDF_REQUEST_STATUSES
+                and not lesson.is_assessment
             ):
                 eligible.append(lesson)
     if not eligible:

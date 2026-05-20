@@ -31,7 +31,10 @@ from app.core.logging import get_logger
 from app.models.course import Course
 from app.models.course_lesson import CourseLesson
 from app.models.course_module import CourseModule
-from app.schemas.course_lesson_content import LessonContentOutput
+from app.schemas.course_lesson_content import (
+    LessonAssessmentOutput,
+    LessonContentOutput,
+)
 from app.services.course_architecture_service import (
     _build_documents_context,
     _term_label,
@@ -358,6 +361,133 @@ def build_user_prompt(course: Course, lesson: CourseLesson) -> str:
 def is_regeneration_for_lesson(lesson: CourseLesson) -> bool:
     """True se è una rigenerazione (§9.3): esiste già un content_raw o un hint."""
     return bool(lesson.content_raw or lesson.content_regeneration_hint)
+
+
+# ---------------------------------------------------------------------------
+# Prompt building — verifica delle competenze (lezione is_assessment)
+# ---------------------------------------------------------------------------
+
+
+def _format_module_competences(module: CourseModule | None) -> str:
+    """Lista PIATTA di obiettivi formativi e temi obbligatori delle lezioni
+    didattiche del modulo. Volutamente NON raggruppata per lezione: la
+    verifica non deve poter citare singole lezioni."""
+    if module is None:
+        return "(nessun argomento disponibile)"
+    objectives: list[str] = []
+    topics: list[str] = []
+    for lesson in module.lessons:
+        if lesson.is_assessment:
+            continue
+        for o in lesson.learning_objectives or []:
+            objectives.append(str(o))
+        for t in lesson.mandatory_topics or []:
+            if isinstance(t, dict) and t.get("topic"):
+                topic = str(t.get("topic"))
+                rationale = str(t.get("rationale") or "")
+                topics.append(f"{topic} — {rationale}" if rationale else topic)
+    parts: list[str] = []
+    if objectives:
+        parts.append("Obiettivi formativi del modulo:")
+        parts += [f"- {o}" for o in objectives]
+    if topics:
+        if parts:
+            parts.append("")
+        parts.append("Argomenti trattati nel modulo:")
+        parts += [f"- {t}" for t in topics]
+    return "\n".join(parts) if parts else "(nessun argomento disponibile)"
+
+
+def _format_current_assessment(lesson: CourseLesson) -> str:
+    """Serializza la verifica attuale (`content_raw`) per il prompt di
+    rigenerazione."""
+    raw = lesson.content_raw
+    if not raw or not isinstance(raw, dict):
+        return "(nessuna verifica precedente)"
+    parts: list[str] = []
+    for q in raw.get("multiple_choice_questions") or []:
+        if not isinstance(q, dict):
+            continue
+        parts.append(f"[Scelta multipla] {q.get('text', '')}")
+        for opt in q.get("options") or []:
+            if isinstance(opt, dict):
+                mark = (
+                    " (corretta)"
+                    if opt.get("option_id") == q.get("correct_option_id")
+                    else ""
+                )
+                parts.append(
+                    f"  {opt.get('option_id', '')}. {opt.get('text', '')}{mark}"
+                )
+    for q in raw.get("open_questions") or []:
+        if isinstance(q, dict):
+            parts.append(f"[Aperta] {q.get('text', '')}")
+    return "\n".join(parts) if parts else "(nessuna verifica precedente)"
+
+
+def build_assessment_user_prompt(course: Course, lesson: CourseLesson) -> str:
+    """User prompt per la verifica delle competenze di un modulo (lezione
+    `is_assessment`). Gli argomenti derivano dalla struttura Fase 2 delle
+    lezioni didattiche sorelle, già disponibile: la verifica si genera in
+    parallelo alle lezioni."""
+    lang = course.language_code
+    module = _find_module_for_lesson(course, lesson)
+    module_title = module.title if module else "?"
+    module_description = (
+        (module.description if module else "") or "(non specificata)"
+    )
+    mc_count = course.multiple_choice_questions_count
+    open_count = course.open_questions_count
+
+    blocks = [
+        "## Contesto del corso",
+        "",
+        f"- Titolo: {course.title}",
+        f"- Categoria: {_term_label(course.categoria, lang)}",
+        f"- Profondità del contenuto: {_term_label(course.profondita_contenuto, lang)}",
+        f"- Livello EQF: {_term_label(course.livello_eqf, lang)}",
+        f"- Lingua: {lang}",
+        "",
+        "## Modulo da verificare",
+        "",
+        f"Titolo: {module_title}",
+        f"Descrizione: {module_description}",
+        "",
+        "## Competenze e argomenti del modulo",
+        "",
+        _format_module_competences(module),
+        "",
+        "## Compito",
+        "",
+        f"Produci una verifica delle competenze con ESATTAMENTE {mc_count} "
+        f"domande a scelta multipla e {open_count} domande aperte, che "
+        "coprano in modo equilibrato gli argomenti del modulo elencati sopra.",
+        "Le domande NON devono fare riferimento a singole lezioni: "
+        "verificano la padronanza complessiva del modulo.",
+        f"Usa lesson_id `{lesson.lesson_code}` e lesson_title `{lesson.title}`.",
+        "Restituisci il risultato nel formato JSON richiesto.",
+    ]
+
+    if lesson.content_regeneration_hint or lesson.content_raw:
+        blocks.extend(
+            [
+                "",
+                "## Versione attuale della verifica (DA RIVEDERE)",
+                "",
+                _format_current_assessment(lesson),
+            ]
+        )
+        if lesson.content_regeneration_hint:
+            blocks.extend(
+                [
+                    "",
+                    "## Indicazioni del docente per la rigenerazione",
+                    "",
+                    lesson.content_regeneration_hint,
+                ]
+            )
+
+    return "\n".join(blocks)
 
 
 # ---------------------------------------------------------------------------
@@ -776,6 +906,79 @@ async def materialize_lesson_content(
     lesson.content_progress_phase = None
 
     # 9. Side-effect course-level
+    _recompute_course_content_status(course)
+
+
+async def materialize_lesson_assessment(
+    db: AsyncSession,
+    *,
+    course: Course,
+    lesson: CourseLesson,
+    output: LessonAssessmentOutput,
+    raw: dict[str, Any],
+    usage: dict[str, Any],
+) -> None:
+    """Valida e scrive la verifica delle competenze nella colonna
+    `content_raw` della lezione `is_assessment`. Riusa il ciclo
+    `content_status` della Fase 3.
+    """
+    # 1. Match lesson_id ↔ lesson_code
+    if output.lesson_id != lesson.lesson_code:
+        raise ConflictError(
+            f"L'AI ha prodotto lesson_id `{output.lesson_id}`, "
+            f"atteso `{lesson.lesson_code}`.",
+            code="lesson_assessment_id_mismatch",
+        )
+
+    # 2. question_id univoci (su scelta multipla + aperte)
+    question_ids = [q.question_id for q in output.multiple_choice_questions]
+    question_ids += [q.question_id for q in output.open_questions]
+    if len(set(question_ids)) != len(question_ids):
+        raise ConflictError(
+            f"question_id duplicati nella verifica {lesson.lesson_code}.",
+            code="lesson_assessment_duplicate_question_id",
+        )
+
+    # 3. Ogni domanda multipla: option_id univoci + correct_option_id valido
+    for q in output.multiple_choice_questions:
+        opt_ids = [o.option_id for o in q.options]
+        if len(set(opt_ids)) != len(opt_ids):
+            raise ConflictError(
+                f"option_id duplicati nella domanda {q.question_id}.",
+                code="lesson_assessment_duplicate_option_id",
+            )
+        if q.correct_option_id not in opt_ids:
+            raise ConflictError(
+                f"Domanda {q.question_id}: correct_option_id "
+                f"`{q.correct_option_id}` non corrisponde ad alcuna opzione.",
+                code="lesson_assessment_invalid_correct_option",
+            )
+
+    # 4. Soft check: conteggio domande vs snapshot del corso (solo warning)
+    if (
+        len(output.multiple_choice_questions)
+        != course.multiple_choice_questions_count
+        or len(output.open_questions) != course.open_questions_count
+    ):
+        log.warning(
+            "lesson_assessment_question_count_mismatch",
+            lesson_code=lesson.lesson_code,
+            mc_generated=len(output.multiple_choice_questions),
+            mc_expected=course.multiple_choice_questions_count,
+            open_generated=len(output.open_questions),
+            open_expected=course.open_questions_count,
+        )
+
+    # 5. Apply — scrive content_raw + meta
+    lesson.content_raw = raw
+    lesson.content_tokens = usage
+    lesson.content_status = "ready"
+    lesson.content_generated_at = _now()
+    lesson.content_error = None
+    lesson.content_progress = 100
+    lesson.content_progress_phase = None
+
+    # 6. Side-effect course-level (la verifica partecipa alla Fase 3)
     _recompute_course_content_status(course)
 
 

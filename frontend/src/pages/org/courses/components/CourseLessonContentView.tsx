@@ -21,9 +21,11 @@ import {
 
 import {
   coursesApi,
+  isAssessmentRaw,
   type CourseLessonOut,
   type CourseModuleOut,
   type CourseOut,
+  type LessonAssessmentUpdateInput,
   type LessonContentStatus,
   type LessonContentUpdateInput,
   type LessonPdfStatus,
@@ -45,6 +47,8 @@ import { extractApiError } from "@/lib/errors";
 import { formatDuration } from "@/lib/formatDuration";
 import { isContentStale, isPdfStale } from "@/lib/staleness";
 
+import { LessonAssessmentEditDialog } from "./LessonAssessmentEditDialog";
+import { LessonAssessmentView } from "./LessonAssessmentView";
 import { LessonContentEditDialog } from "./LessonContentEditDialog";
 import {
   LessonContentGenerateDialog,
@@ -211,6 +215,7 @@ export function CourseLessonContentView({
   const anyPdfActive = pdfAggregate.pdfActive > 0;
   const exportableCount = allLessons.filter(
     (l) =>
+      !l.is_assessment &&
       (l.content_status === "ready" || l.content_status === "approved") &&
       (l.pdf_status === "empty" ||
         l.pdf_status === "ready" ||
@@ -436,6 +441,31 @@ export function CourseLessonContentView({
       setCache(fresh);
       setEditDialog({ kind: "closed" });
       toast.success(t("courses.lessonsContent.toast.lessonUpdated"));
+    },
+    onError: (err) =>
+      toast.error(
+        extractApiError(err).message ?? t("courses.lessonsContent.toast.error"),
+      ),
+  });
+
+  const updateAssessmentMut = useMutation({
+    mutationFn: ({
+      lessonId,
+      payload,
+    }: {
+      lessonId: string;
+      payload: LessonAssessmentUpdateInput;
+    }) =>
+      coursesApi.lessonContent.updateAssessment(
+        orgId,
+        course.id,
+        lessonId,
+        payload,
+      ),
+    onSuccess: (fresh) => {
+      setCache(fresh);
+      setEditDialog({ kind: "closed" });
+      toast.success(t("courses.lessonsContent.assessment.toast.updated"));
     },
     onError: (err) =>
       toast.error(
@@ -689,23 +719,43 @@ export function CourseLessonContentView({
         />
       )}
 
-      {editDialog.kind === "open" && editDialog.lesson.content_raw && (
-        <LessonContentEditDialog
-          open={true}
-          lessonLabel={lessonLabel(editDialog.lesson.lesson_code)}
-          initial={editDialog.lesson.content_raw}
-          orgId={orgId}
-          courseId={course.id}
-          isPending={updateLessonMut.isPending}
-          onClose={() => setEditDialog({ kind: "closed" })}
-          onSubmit={(payload) =>
-            updateLessonMut.mutate({
-              lessonId: editDialog.lesson.id,
-              payload,
-            })
-          }
-        />
-      )}
+      {editDialog.kind === "open" &&
+        editDialog.lesson.content_raw &&
+        isAssessmentRaw(editDialog.lesson.content_raw) && (
+          <LessonAssessmentEditDialog
+            open={true}
+            lessonLabel={lessonLabel(editDialog.lesson.lesson_code)}
+            initial={editDialog.lesson.content_raw}
+            isPending={updateAssessmentMut.isPending}
+            onClose={() => setEditDialog({ kind: "closed" })}
+            onSubmit={(payload) =>
+              updateAssessmentMut.mutate({
+                lessonId: editDialog.lesson.id,
+                payload,
+              })
+            }
+          />
+        )}
+
+      {editDialog.kind === "open" &&
+        editDialog.lesson.content_raw &&
+        !isAssessmentRaw(editDialog.lesson.content_raw) && (
+          <LessonContentEditDialog
+            open={true}
+            lessonLabel={lessonLabel(editDialog.lesson.lesson_code)}
+            initial={editDialog.lesson.content_raw}
+            orgId={orgId}
+            courseId={course.id}
+            isPending={updateLessonMut.isPending}
+            onClose={() => setEditDialog({ kind: "closed" })}
+            onSubmit={(payload) =>
+              updateLessonMut.mutate({
+                lessonId: editDialog.lesson.id,
+                payload,
+              })
+            }
+          />
+        )}
 
       {pdfExportDialog.kind === "open" && (
         <LessonPdfExportDialog
@@ -783,9 +833,11 @@ function ModuleContentCard({
   onDownloadModuleZip,
 }: ModuleContentCardProps) {
   const { t } = useTranslation();
+  // La lezione-verifica non ha PDF: esclusa dal conteggio "tutti pronti".
+  const pdfLessons = module.lessons.filter((l) => !l.is_assessment);
   const allPdfsReady =
-    module.lessons.length > 0 &&
-    module.lessons.every((l) => l.pdf_status === "ready");
+    pdfLessons.length > 0 &&
+    pdfLessons.every((l) => l.pdf_status === "ready");
   const fallbackName = `${module.module_code} ${module.title}`;
   return (
     <Card>
@@ -904,6 +956,7 @@ function LessonContentRow({
 }: LessonContentRowProps) {
   const { t } = useTranslation();
   const status = lesson.content_status;
+  const isAssessment = lesson.is_assessment;
   const isProcessing = status === "pending" || status === "processing";
   const isReady = status === "ready" || status === "approved";
   const pdfStatus = lesson.pdf_status;
@@ -1004,14 +1057,18 @@ function LessonContentRow({
   const canRegenerateContent =
     canGenerate && (status === "ready" || status === "approved");
   const canRegeneratePdf =
-    canGenerate && pdfStatus === "ready" && isReady && !isExportingPdf;
+    canGenerate &&
+    pdfStatus === "ready" &&
+    isReady &&
+    !isExportingPdf &&
+    !isAssessment;
   const hasMenuItems = canRegenerateContent || canRegeneratePdf;
 
   // Stale-detection: il contenuto è stale se la struttura della lezione o
   // l'architettura del modulo padre sono state modificate dopo l'ultima
   // generazione del content. Il PDF è stale se il content è cambiato dopo.
   const contentStale = isContentStale(lesson, parentModule);
-  const pdfStale = isPdfStale(lesson);
+  const pdfStale = !isAssessment && isPdfStale(lesson);
 
   return (
     <div className="rounded-md border bg-muted/10">
@@ -1033,6 +1090,11 @@ function LessonContentRow({
             {lesson.title}
           </span>
         </button>
+        {isAssessment && (
+          <Badge variant="secondary" className="text-[11px]">
+            {t("courses.lessonsContent.assessment.badge")}
+          </Badge>
+        )}
         <LessonContentStatusBadge status={status} />
         {status === "approved" && (
           <ApprovalBadge
@@ -1040,9 +1102,9 @@ function LessonContentRow({
             approvedAt={lesson.content_approved_at}
           />
         )}
-        <LessonPdfStatusBadge status={pdfStatus} />
+        {!isAssessment && <LessonPdfStatusBadge status={pdfStatus} />}
         {primaryContentCta}
-        {primaryPdfCta}
+        {!isAssessment && primaryPdfCta}
         {canEdit && isReady && lesson.content_raw && (
           <Button
             type="button"
@@ -1158,7 +1220,11 @@ function LessonContentRow({
       {/* Render contenuto se ready/approved e expanded */}
       {expanded && isReady && lesson.content_raw && (
         <div className="border-t px-4 py-4">
-          <LessonContentView content={lesson.content_raw} />
+          {isAssessmentRaw(lesson.content_raw) ? (
+            <LessonAssessmentView assessment={lesson.content_raw} />
+          ) : (
+            <LessonContentView content={lesson.content_raw} />
+          )}
         </div>
       )}
 

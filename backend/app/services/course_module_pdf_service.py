@@ -108,7 +108,10 @@ def _ordered_lessons(module: CourseModule) -> list[CourseLesson]:
             return (0, m.group(1).zfill(6))
         return (1, l.lesson_code or "")
 
-    return sorted(list(module.lessons), key=_key)
+    # La lezione-verifica non ha PDF: esclusa dal merge/zip di modulo.
+    return sorted(
+        [l for l in module.lessons if not l.is_assessment], key=_key
+    )
 
 
 def _ensure_all_pdfs_ready(

@@ -19,7 +19,10 @@ import httpx
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
-from app.schemas.course_lesson_content import LessonContentOutput
+from app.schemas.course_lesson_content import (
+    LessonAssessmentOutput,
+    LessonContentOutput,
+)
 from app.services.openai_client import (
     OpenAIError,
     OpenAINotConfiguredError,
@@ -520,3 +523,255 @@ async def generate_lesson_content(
         cost_usd=usage["cost_usd"],
     )
     return lesson_content, usage
+
+
+# ---------------------------------------------------------------------------
+# Verifica delle competenze (lezione `is_assessment`) — Fase 3
+# ---------------------------------------------------------------------------
+
+
+def _assessment_system_prompt(language_code: str) -> str:
+    return f"""\
+Sei un docente universitario esperto di valutazione dell'apprendimento.
+Il tuo compito è redigere una VERIFICA DELLE COMPETENZE per un modulo di
+un corso: un elenco di domande a scelta multipla e di domande aperte che
+misurano le competenze e le conoscenze trattate nel modulo.
+
+REQUISITI GENERALI
+- Lingua: {language_code}.
+- Le domande verificano la PADRONANZA degli argomenti del modulo nel suo
+  insieme, non la memoria di una singola lezione.
+- DIVIETO ASSOLUTO: non fare MAI riferimento a lezioni specifiche. Non
+  scrivere "nella lezione X", "come visto nella lezione...", non citare
+  titoli né codici di lezione. Ogni domanda deve essere autoconsistente,
+  comprensibile da sola, formulata come verifica di competenza.
+- Non citare codici interni (es. M1.L2, T1, S3).
+- Copri in modo equilibrato TUTTI gli argomenti forniti in input.
+- Varia il livello cognitivo (ricordare, comprendere, applicare, analizzare).
+
+DOMANDE A SCELTA MULTIPLA
+- Ogni domanda ha ESATTAMENTE 4 opzioni, con `option_id` "A", "B", "C", "D".
+- ESATTAMENTE una opzione è corretta: indicala in `correct_option_id`.
+- I distrattori (opzioni errate) devono essere plausibili e pertinenti,
+  non palesemente assurdi.
+- Evita "tutte le precedenti" / "nessuna delle precedenti".
+
+DOMANDE APERTE
+- `text`: la consegna della domanda.
+- `expected_answer`: una traccia sintetica della risposta attesa — i
+  punti chiave / i criteri che il docente userà per la correzione (non
+  un tema svolto per esteso).
+
+QUANTITÀ
+- Produci ESATTAMENTE il numero di domande a scelta multipla e di domande
+  aperte indicato nell'input.
+- `question_id` univoci e brevi (es. "MC1", "MC2", ..., "OP1", "OP2").
+
+Output: SOLO JSON valido conforme allo schema."""
+
+
+LESSON_ASSESSMENT_JSON_SCHEMA: dict[str, Any] = {
+    "name": "lesson_assessment",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "properties": {
+            "lesson_id": {"type": "string"},
+            "lesson_title": {"type": "string"},
+            "multiple_choice_questions": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "question_id": {"type": "string"},
+                        "text": {"type": "string"},
+                        "options": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "option_id": {"type": "string"},
+                                    "text": {"type": "string"},
+                                },
+                                "required": ["option_id", "text"],
+                                "additionalProperties": False,
+                            },
+                        },
+                        "correct_option_id": {"type": "string"},
+                    },
+                    "required": [
+                        "question_id",
+                        "text",
+                        "options",
+                        "correct_option_id",
+                    ],
+                    "additionalProperties": False,
+                },
+            },
+            "open_questions": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "question_id": {"type": "string"},
+                        "text": {"type": "string"},
+                        "expected_answer": {"type": "string"},
+                    },
+                    "required": ["question_id", "text", "expected_answer"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        "required": [
+            "lesson_id",
+            "lesson_title",
+            "multiple_choice_questions",
+            "open_questions",
+        ],
+        "additionalProperties": False,
+    },
+}
+
+
+async def generate_lesson_assessment(
+    *,
+    user_prompt: str,
+    language_code: str,
+    is_regeneration: bool,
+) -> tuple[LessonAssessmentOutput, dict[str, Any]]:
+    """Chiama OpenAI per generare la verifica delle competenze di un modulo.
+
+    Stessa configurazione modello/token della generazione contenuti
+    (Fase 3 — usa `openai_lesson_content_*`). Ritorna `(assessment, usage)`.
+    Solleva `OpenAILessonContentError` su errore HTTP/parsing/schema,
+    `OpenAINotConfiguredError` se la API key è assente.
+    """
+    settings = get_settings()
+    system_prompt = _assessment_system_prompt(language_code)
+    if is_regeneration:
+        system_prompt = system_prompt + REGENERATION_SUFFIX
+
+    body = {
+        "model": settings.openai_lesson_content_model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": LESSON_ASSESSMENT_JSON_SCHEMA,
+        },
+        "max_completion_tokens": settings.openai_lesson_content_max_tokens,
+    }
+    apply_reasoning_effort(
+        body,
+        settings.openai_lesson_content_model,
+        settings.openai_lesson_content_reasoning_effort,
+    )
+    log.info(
+        "openai_lesson_assessment_request",
+        chars=len(user_prompt),
+        regeneration=is_regeneration,
+        model=settings.openai_lesson_content_model,
+    )
+    t0 = time.monotonic()
+    try:
+        async with get_client(timeout=600.0) as client:
+            resp = await client.post("/chat/completions", json=body)
+    except OpenAINotConfiguredError:
+        raise
+    except httpx.HTTPError as exc:
+        log.error("openai_lesson_assessment_http_error", error=str(exc))
+        raise OpenAILessonContentError(
+            status=None, message=f"Errore HTTP verso OpenAI: {exc}"
+        ) from exc
+    duration_ms = int((time.monotonic() - t0) * 1000)
+
+    if resp.status_code >= 400:
+        try:
+            payload = resp.json()
+        except Exception:
+            payload = {"text": resp.text}
+        message = (
+            payload.get("error", {}).get("message")
+            if isinstance(payload, dict)
+            else None
+        )
+        log.error(
+            "openai_lesson_assessment_api_error",
+            status=resp.status_code,
+            message=message or "unknown",
+        )
+        raise OpenAILessonContentError(
+            status=resp.status_code,
+            message=message
+            or f"OpenAI ha risposto con HTTP {resp.status_code}.",
+            payload=payload,
+        )
+
+    data = resp.json()
+    try:
+        choice = data["choices"][0]
+        content = choice["message"]["content"]
+        finish_reason = choice.get("finish_reason")
+    except (KeyError, IndexError, TypeError) as exc:
+        log.error("openai_lesson_assessment_unexpected_response", payload=data)
+        raise OpenAILessonContentError(
+            status=resp.status_code,
+            message="Risposta OpenAI in formato inatteso.",
+            payload=data,
+        ) from exc
+
+    if not content or not content.strip():
+        log.error(
+            "openai_lesson_assessment_empty_content",
+            finish_reason=finish_reason,
+            max_tokens=settings.openai_lesson_content_max_tokens,
+        )
+        raise OpenAILessonContentError(
+            status=resp.status_code,
+            message=(
+                f"OpenAI ha restituito un contenuto vuoto "
+                f"(finish_reason={finish_reason}). Riprova; se persiste "
+                f"aumenta OPENAI_LESSON_CONTENT_MAX_TOKENS."
+            ),
+            payload=data,
+        )
+
+    try:
+        parsed = json.loads(content)
+    except json.JSONDecodeError as exc:
+        log.error(
+            "openai_lesson_assessment_json_decode_failed",
+            content=content[:500],
+        )
+        raise OpenAILessonContentError(
+            status=resp.status_code,
+            message=f"OpenAI non ha restituito JSON valido: {exc}",
+        ) from exc
+
+    try:
+        assessment = LessonAssessmentOutput.model_validate(parsed)
+    except Exception as exc:
+        log.error("openai_lesson_assessment_schema_invalid", error=str(exc))
+        raise OpenAILessonContentError(
+            status=resp.status_code,
+            message=f"Output OpenAI non conforme allo schema: {exc}",
+            payload=parsed,
+        ) from exc
+
+    usage = build_usage_dict(
+        model=settings.openai_lesson_content_model,
+        reasoning_effort_setting=settings.openai_lesson_content_reasoning_effort,
+        openai_usage=data.get("usage") or {},
+        duration_ms=duration_ms,
+    )
+    log.info(
+        "openai_lesson_assessment_response",
+        lesson_id=assessment.lesson_id,
+        mc_questions=len(assessment.multiple_choice_questions),
+        open_questions=len(assessment.open_questions),
+        tokens=usage["total"],
+        cost_usd=usage["cost_usd"],
+    )
+    return assessment, usage

@@ -465,10 +465,14 @@ def _recompute_course_speech_status(course: Course) -> None:
     - TUTTE in `ready|approved` (con almeno 1 ready) → `speech_ready`
     - se nessuna lezione è in stato Fase 5 (tutte `empty`) → invariato.
     """
+    # La lezione-verifica (is_assessment) non genera discorso: esclusa
+    # dal calcolo, altrimenti il suo `speech_status='empty'` permanente
+    # bloccherebbe per sempre lo stato `speech_approved` del corso.
     statuses = [
         lesson.speech_status
         for m in course.modules
         for lesson in m.lessons
+        if not lesson.is_assessment
     ]
     if not statuses:
         return
@@ -558,6 +562,12 @@ async def request_lesson_speech_generation(
     hint. Il worker prenderà la riga al prossimo tick e la elabora in
     parallelo. Pre-condizione: `lesson.slides_status ∈ (ready, approved)`.
     """
+    if lesson.is_assessment:
+        raise ConflictError(
+            f"La lezione {lesson.lesson_code} è una verifica delle "
+            f"competenze: non genera discorso.",
+            code="lesson_is_assessment_not_eligible",
+        )
     if course.status not in VALID_COURSE_SPEECH_GENERATE_FROM_STATUSES:
         raise ConflictError(
             f"Stato corso non valido per Fase 5: {course.status}. "
@@ -635,6 +645,7 @@ async def request_all_lessons_speech_generation(
         for m in course.modules
         for lesson in m.lessons
         if lesson.slides_status in ("ready", "approved")
+        and not lesson.is_assessment
     ]
     if not eligible:
         raise ConflictError(
@@ -689,6 +700,7 @@ async def request_missing_lessons_speech_generation(
         for lesson in m.lessons
         if lesson.speech_status == "empty"
         and lesson.slides_status in ("ready", "approved")
+        and not lesson.is_assessment
     ]
     if not missing:
         raise ConflictError(

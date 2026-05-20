@@ -132,6 +132,8 @@ def _format_modules_map_compact(course: Course) -> str:
     for m in course.modules:
         lesson_parts: list[str] = []
         for lesson in m.lessons:
+            if lesson.is_assessment:
+                continue  # la verifica non ha struttura didattica
             intro = " (introduttiva)" if lesson.is_introductory else ""
             lesson_parts.append(f"{lesson.lesson_code} {lesson.title}{intro}")
         lessons_str = ", ".join(lesson_parts) if lesson_parts else "(nessuna lezione)"
@@ -145,6 +147,8 @@ def _format_current_module_lessons_detailed(module: CourseModule) -> str:
         return "(Nessuna lezione)"
     parts: list[str] = []
     for lesson in module.lessons:
+        if lesson.is_assessment:
+            continue  # la verifica non ha struttura didattica
         intro = " [INTRODUTTIVA]" if lesson.is_introductory else ""
         parts.append(f"- {lesson.lesson_code}{intro}: {lesson.title}")
         if lesson.summary:
@@ -157,6 +161,8 @@ def _format_current_module_phase2(module: CourseModule) -> str:
     di rigenerazione (§9.2). Usa i 4 campi JSONB delle lezioni."""
     parts: list[str] = []
     for lesson in module.lessons:
+        if lesson.is_assessment:
+            continue  # la verifica non ha struttura didattica
         parts.append(f"### Lezione {lesson.lesson_code} — {lesson.title}")
         if lesson.is_introductory:
             parts.append("(Lezione introduttiva)")
@@ -439,17 +445,21 @@ async def materialize_module_structure(
     NOTA: il caller (worker o sync endpoint) deve avere già caricato
     `module.lessons` e `course.modules` con eager-load.
     """
+    # La lezione-verifica (is_assessment) non ha struttura didattica:
+    # esclusa dalla Fase 2 (non passata all'AI, non conteggiata qui).
+    didactic_lessons = [l for l in module.lessons if not l.is_assessment]
+
     # 1. Lessons count match
-    if len(output.lessons) != len(module.lessons):
+    if len(output.lessons) != len(didactic_lessons):
         raise ConflictError(
             f"Numero lezioni in output ({len(output.lessons)}) ≠ "
-            f"atteso ({len(module.lessons)}) per modulo {module.module_code}.",
+            f"atteso ({len(didactic_lessons)}) per modulo {module.module_code}.",
             code="lessons_structure_lessons_count_mismatch",
         )
 
     # 2. lesson_id → lesson_code matching: l'AI usa gli ID di Fase 1
     #    (es. "M1.L1"). Costruisci una mappa per il merge.
-    lessons_by_code = {l.lesson_code: l for l in module.lessons}
+    lessons_by_code = {l.lesson_code: l for l in didactic_lessons}
 
     # 3. Validazione per-lezione + apply
     for ai_lesson in output.lessons:

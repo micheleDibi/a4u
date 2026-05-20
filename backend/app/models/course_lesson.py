@@ -173,6 +173,13 @@ class CourseLesson(UUIDPKMixin, TimestampMixin, Base):
     is_introductory: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    # Lezione di verifica delle competenze: l'ultima lezione di ogni
+    # modulo quando `course.assessment_lesson_enabled` è attivo. Non ha
+    # contenuto didattico: `content_raw` ospita un elenco di domande
+    # (vedi `LessonAssessmentOutput`). Esclusa da Fasi 4/5/6 e PDF.
+    is_assessment: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     recommended_bibliography: Mapped[list[Any]] = mapped_column(
         JSONB, nullable=False, default=list, server_default="[]"
     )
