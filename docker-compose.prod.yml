@@ -36,6 +36,14 @@ services:
       MINIMAX_CLIP_DURATION: ${MINIMAX_CLIP_DURATION:-6}
       MINIMAX_CLIP_RESOLUTION: ${MINIMAX_CLIP_RESOLUTION:-1080P}
       MINIMAX_POLL_INTERVAL_SECONDS: ${MINIMAX_POLL_INTERVAL_SECONDS:-10}
+      # RunPod Serverless — TTS XTTS-v2 su GPU per la generazione video
+      # (Fase 6 §9). Vuoto = generazione video disabilitata. Il worker
+      # gira nella cartella `XTTS/` del repo (immagine Docker dedicata).
+      RUNPOD_API_KEY: ${RUNPOD_API_KEY:-}
+      RUNPOD_TTS_ENDPOINT_ID: ${RUNPOD_TTS_ENDPOINT_ID:-}
+      RUNPOD_BASE_URL: ${RUNPOD_BASE_URL:-https://api.runpod.ai}
+      RUNPOD_TTS_TIMEOUT_SECONDS: ${RUNPOD_TTS_TIMEOUT_SECONDS:-1800}
+      RUNPOD_TTS_POLL_INTERVAL_SECONDS: ${RUNPOD_TTS_POLL_INTERVAL_SECONDS:-3}
       # OpenAI (traduzione i18n + summarization + generazione corso AI).
       # Ogni fase del pipeline corso usa un modello configurabile a parte:
       # _model: name del modello, _max_tokens: budget di output.

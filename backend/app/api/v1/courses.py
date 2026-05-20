@@ -2388,31 +2388,17 @@ async def download_module_speech_pdf_zip(
 # ---------------------------------------------------------------------------
 
 
-async def _voice_sample_for_course(db, course: object) -> Any:
-    """Helper legacy: ritorna il Path del campione vocale o None."""
-    return await course_lesson_video_service.resolve_voice_sample_path(
-        db, assignee_user_id=course.assignee_user_id
-    )
-
-
 async def _video_assignee_context(db, course: object) -> dict[str, Any]:
-    """Helper: risolve avatar + voice_sample + latents status per costruire
-    i DTO video. Tre lookup in una sola helper per evitare duplicazione."""
-    avatar = await course_lesson_video_service.resolve_assignee_avatar(
-        db, assignee_user_id=course.assignee_user_id
-    )
+    """Helper: risolve il campione vocale dell'assegnatario per costruire
+    i DTO video."""
     voice_sample_path = (
         await course_lesson_video_service.resolve_voice_sample_path(
             db, assignee_user_id=course.assignee_user_id
         )
     )
-    latents_status = avatar.tts_latents_status if avatar else None
-    latents_ready = latents_status == "ready"
     return {
         "voice_sample_path": voice_sample_path,
         "voice_sample_available": voice_sample_path is not None,
-        "voice_latents_ready": latents_ready,
-        "voice_latents_status": latents_status,
     }
 
 
@@ -2452,13 +2438,10 @@ async def generate_lesson_video(
         lesson=lesson,
         actor_id=current.id,
         voice_sample_path=ctx["voice_sample_path"],
-        voice_latents_ready=ctx["voice_latents_ready"],
     )
     return course_lesson_video_service.build_status_out(
         lesson,
         voice_sample_available=ctx["voice_sample_available"],
-        voice_latents_ready=ctx["voice_latents_ready"],
-        voice_latents_status=ctx["voice_latents_status"],
     )
 
 
@@ -2487,7 +2470,6 @@ async def generate_all_lessons_video(
         course=course,
         actor_id=current.id,
         voice_sample_path=ctx["voice_sample_path"],
-        voice_latents_ready=ctx["voice_latents_ready"],
     )
     course = await _load_course_for_edit(
         db, org_id=org_id, course_id=course_id, current=current
@@ -2496,8 +2478,6 @@ async def generate_all_lessons_video(
     return course_lesson_video_service.build_batch_out(
         course,
         voice_sample_available=ctx["voice_sample_available"],
-        voice_latents_ready=ctx["voice_latents_ready"],
-        voice_latents_status=ctx["voice_latents_status"],
     )
 
 
@@ -2529,8 +2509,6 @@ async def cancel_lesson_video(
     return course_lesson_video_service.build_status_out(
         lesson,
         voice_sample_available=ctx["voice_sample_available"],
-        voice_latents_ready=ctx["voice_latents_ready"],
-        voice_latents_status=ctx["voice_latents_status"],
     )
 
 
@@ -2560,8 +2538,6 @@ async def cancel_all_lessons_video(
     return course_lesson_video_service.build_batch_out(
         course,
         voice_sample_available=ctx["voice_sample_available"],
-        voice_latents_ready=ctx["voice_latents_ready"],
-        voice_latents_status=ctx["voice_latents_status"],
     )
 
 
@@ -2590,8 +2566,6 @@ async def get_lesson_video_status(
     return course_lesson_video_service.build_status_out(
         lesson,
         voice_sample_available=ctx["voice_sample_available"],
-        voice_latents_ready=ctx["voice_latents_ready"],
-        voice_latents_status=ctx["voice_latents_status"],
     )
 
 
@@ -2616,6 +2590,4 @@ async def get_course_videos_status(
     return course_lesson_video_service.build_batch_out(
         course,
         voice_sample_available=ctx["voice_sample_available"],
-        voice_latents_ready=ctx["voice_latents_ready"],
-        voice_latents_status=ctx["voice_latents_status"],
     )

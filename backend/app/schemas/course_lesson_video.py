@@ -76,11 +76,6 @@ class LessonVideoStatusOut(ORMModel):
     speech_approved: bool = False
     slides_approved: bool = False
     voice_sample_available: bool = False
-    # Stato del pre-training latents dell'assegnatario (Fase 6 §9
-    # rifinitura). True quando `Avatar.tts_latents_status == 'ready'`.
-    voice_latents_ready: bool = False
-    # Status raw per la UI: 'pending'|'processing'|'ready'|'failed'|None.
-    voice_latents_status: str | None = None
 
 
 class LessonVideoMetaOut(ORMModel):

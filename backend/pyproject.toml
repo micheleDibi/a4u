@@ -31,12 +31,9 @@ dependencies = [
     "weasyprint>=63.0",
     "latex2mathml>=3.77",
     "pypdf>=4.0",
-    # Video MP4 generation (Fase 6 §9) — deps base "leggere" (~50 MB):
-    # numpy/soundfile vengono importate top-level dai service video, per
-    # cui devono essere installate anche se la feature video non è in uso.
-    # Le deps pesanti (`coqui-tts`, `torch`, `torchaudio`, ~3 GB) sono
-    # nell'extra `[video]`: il backend si avvia senza, e il worker video
-    # solleva un errore chiaro al primo trigger se mancano.
+    # Video MP4 generation (Fase 6 §9): numpy/soundfile per assemblare
+    # l'audio ricevuto da RunPod prima dell'encoding ffmpeg. Il TTS gira
+    # su RunPod GPU (cartella `XTTS/`), niente torch/coqui nel backend.
     "numpy>=1.26.0",
     "soundfile>=0.12.0",
 ]
@@ -48,25 +45,6 @@ dev = [
     "ruff>=0.8.0",
     "mypy>=1.13.0",
     "types-passlib",
-]
-# Opzionale: TTS XTTS-v2 per la generazione video MP4 (Fase 6 §9).
-# Installazione richiede ~3 GB (torch + coqui-tts) + ~1.8 GB di modello
-# scaricato lazy al primo job. Inoltre serve `ffmpeg` binario in PATH.
-# Abilita con `pip install '.[video]'`.
-#
-# Note pinning:
-# - `transformers>=4.45,<5`: coqui-tts internamente importa
-#   `isin_mps_friendly` (introdotto in transformers 4.45). Il requirement
-#   di coqui-tts è troppo lasco e pip risolverebbe a 4.43/4.44 senza
-#   quella funzione → ImportError al primo import di TTS.api.
-video = [
-    # `[codec]` aggiunge `torchcodec` (dep richiesta da PyTorch >=2.9 per
-    # audio I/O — senza, import di TTS solleva
-    # `From Pytorch 2.9, the torchcodec library is required...`).
-    "coqui-tts[codec]>=0.24.0",
-    "torch>=2.1.0",
-    "torchaudio>=2.1.0",
-    "transformers>=4.45.0,<5",
 ]
 
 [build-system]

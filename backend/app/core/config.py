@@ -148,24 +148,21 @@ class Settings(BaseSettings):
     # niente object storage in MVP.
     generated_pdfs_dir: str = "generated_pdfs"
 
-    # §9 — Generazione video MP4 (TTS XTTS-v2 + slide PNG + ffmpeg).
+    # §9 — Generazione video MP4 (TTS XTTS-v2 su RunPod + slide + ffmpeg).
     # Pre-condizione runtime: speech_status='approved' AND
     # slides_status='approved' AND course.assignee.avatar.audio_path
-    # esiste su filesystem.
+    # esiste su filesystem AND servizio TTS RunPod configurato.
     #
-    # XTTS-v2 multilingual cloning. Device auto-detect: CUDA → MPS → CPU.
-    # 1:1 RTF garantito solo su CUDA (~0.2x). Su CPU RTF reale ~5-10x.
-    xtts_model_name: str = "tts_models/multilingual/multi-dataset/xtts_v2"
-    xtts_device: str = "auto"  # auto | cuda | mps | cpu
-    xtts_speed: float = 1.0
-    # Da batch_generate.py:24 dello script `XTTS-v2-cloning-voice-test`:
-    # chunk ~180 char riduce le allucinazioni e copre frasi tipiche IT/EN.
-    xtts_max_chars_per_chunk: int = 180
-    xtts_sample_rate: int = 24000  # output WAV nativo XTTS-v2
-    # Reset periodico per mitigare memory growth Coqui-TTS su long-running.
-    xtts_reset_after_jobs: int = 50
+    # TTS XTTS-v2 su RunPod Serverless GPU (vedi cartella `XTTS/`): il
+    # backend invia un job per video e consuma i segment in streaming.
+    runpod_api_key: str | None = None
+    runpod_tts_endpoint_id: str | None = None
+    runpod_base_url: str = "https://api.runpod.ai"
+    # Timeout wall-clock totale di un job TTS (assorbe il cold start GPU).
+    runpod_tts_timeout_seconds: int = 1800
+    runpod_tts_poll_interval_seconds: int = 3
 
-    # Worker video: pesante (XTTS+ffmpeg). Default safe = 1.
+    # Worker video: orchestrazione (TTS remoto + slide + ffmpeg). Default 1.
     course_lesson_video_poll_interval_seconds: int = 4
     course_lesson_video_max_concurrency: int = 1
     course_lesson_video_auto_retry_max: int = 3
@@ -211,6 +208,8 @@ class Settings(BaseSettings):
         "bootstrap_admin_password",
         "minimax_api_key",
         "openai_api_key",
+        "runpod_api_key",
+        "runpod_tts_endpoint_id",
         mode="before",
     )
     @classmethod

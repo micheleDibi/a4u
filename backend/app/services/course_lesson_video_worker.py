@@ -13,8 +13,8 @@ Pre-condizioni runtime (verificate dopo il claim):
 - `Avatar.audio_path` dell'assegnatario presente su filesystem
 
 Pipeline (3 fasi con cancel-check tra una e l'altra):
-1. TTS XTTS-v2 (0→60%): un segment alla volta, voice cloning dal
-   campione dell'assegnatario.
+1. TTS XTTS-v2 su RunPod GPU (0→60%): voice cloning dal campione
+   dell'assegnatario, sintesi in streaming (1 risultato per segment).
 2. Slides PNG (60→80%): Playwright headless 1920×1080.
 3. Encoding ffmpeg (80→100%): per-slide MP4 + concat finale.
 
@@ -41,7 +41,7 @@ from app.services import (
     course_lesson_video_service,
     lesson_slides_video_render_service,
     lesson_video_compose_service,
-    xtts_voice_clone_service,
+    runpod_tts_client,
 )
 
 log = get_logger("app.course_lesson_video.worker")
@@ -144,53 +144,39 @@ async def _run_tts_phase(
     lesson_id: uuid.UUID,
     *,
     speech_raw: dict[str, Any],
-    precomputed_latents: tuple[Any, Any] | None,
-    voice_sample_path: Path | None,
+    voice_sample_path: Path,
     language_code: str,
 ) -> tuple[dict[str, np.ndarray], int, float]:
-    """Sintetizza l'audio per ogni segment via XTTS. Aggiorna il progress
-    (0→60%) man mano che procede.
+    """Sintetizza l'audio dei segment via il worker TTS su RunPod GPU.
 
-    Preferisce `precomputed_latents` (pre-trainati al momento dell'upload
-    audio nell'avatar) per saltare ~5-15s di estrazione inline a ogni job.
-    Fallback su `voice_sample_path` se i latents non sono ancora pronti.
+    RunPod consegna i segment in streaming: il progress (0→60%) avanza
+    man mano che ciascun segment viene ricevuto.
 
     Returns:
         (audio_per_segment, sample_rate, tts_duration_seconds)
     """
-    segments = speech_raw.get("speech_segments") or []
-    total = max(1, len(segments))
-    lang = xtts_voice_clone_service.normalize_language_code(language_code)
     started = time.monotonic()
 
-    audio_per_segment: dict[str, np.ndarray] = {}
-    sample_rate = get_settings().xtts_sample_rate
+    # Cancel-check prima di avviare il job remoto.
+    if await _check_cancelled(lesson_id):
+        raise asyncio.CancelledError("Generazione annullata")
 
-    for i, seg in enumerate(segments):
-        if not isinstance(seg, dict):
-            continue
-        sid = str(seg.get("segment_id") or "")
-        text = (seg.get("text") or "").strip()
-        if not sid or not text:
-            continue
-
-        # Cancel-check prima di ogni segment (ognuno è 1-30s, vale la pena
-        # rispondere rapidamente).
+    async def _on_segment(done: int, total: int) -> None:
+        # Mapping progress lineare 0→60% sui segment ricevuti da RunPod.
+        # Il cancel-check qui rende l'annullamento reattivo (~ogni poll).
         if await _check_cancelled(lesson_id):
             raise asyncio.CancelledError("Generazione annullata")
-
-        audio, sr = await xtts_voice_clone_service.synthesize_text(
-            text=text,
-            language=lang,
-            precomputed_latents=precomputed_latents,
-            voice_sample_path=voice_sample_path,
-        )
-        audio_per_segment[sid] = audio
-        sample_rate = sr
-
-        # Mapping progress lineare 0→60% sul segment index.
-        pct = int(((i + 1) / total) * 60)
+        pct = int((done / max(1, total)) * 60)
         await _set_progress(lesson_id, pct=pct, phase="tts")
+
+    audio_per_segment, sample_rate = (
+        await runpod_tts_client.synthesize_lesson_audio(
+            speech_raw=speech_raw,
+            voice_sample_path=voice_sample_path,
+            language_code=language_code,
+            on_segment_progress=_on_segment,
+        )
+    )
 
     tts_seconds = time.monotonic() - started
     return audio_per_segment, sample_rate, tts_seconds
@@ -361,7 +347,7 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
             await db.commit()
             return
 
-        # Risolvi avatar dell'assegnatario per voce + latents cache.
+        # Risolvi l'avatar dell'assegnatario per il campione vocale.
         assignee_avatar = (
             await course_lesson_video_service.resolve_assignee_avatar(
                 db, assignee_user_id=course.assignee_user_id
@@ -380,14 +366,13 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
             )
             await db.commit()
             return
-        if assignee_avatar.tts_latents_status != "ready":
+        # Pre-check: il servizio TTS RunPod dev'essere configurato.
+        if not runpod_tts_client.is_configured():
             _apply_failure(
                 lesson,
                 error=(
-                    f"L'addestramento della voce dell'assegnatario non è "
-                    f"ancora completato (stato: "
-                    f"{assignee_avatar.tts_latents_status}). Attendi il "
-                    f"completamento o ri-carica l'audio."
+                    "Servizio TTS non configurato: impostare RUNPOD_API_KEY "
+                    "e RUNPOD_TTS_ENDPOINT_ID."
                 ),
                 phase="precheck",
                 recoverable=False,
@@ -412,18 +397,23 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
         language_code = (
             course.video_language_code or course.language_code or "it"
         )
-        # Path filesystem latents pre-trainati.
-        latents_abs_path = (
-            course_lesson_video_service.resolve_assignee_latents_path(
-                assignee_avatar
-            )
-        )
-        # Fallback path audio (usato solo se latents non caricabili).
+        # Campione vocale dell'assegnatario — inviato a RunPod per il
+        # voice cloning.
         voice_sample_path = (
             await course_lesson_video_service.resolve_voice_sample_path(
                 db, assignee_user_id=course.assignee_user_id
             )
         )
+        if voice_sample_path is None or not voice_sample_path.is_file():
+            _apply_failure(
+                lesson,
+                error="Campione vocale dell'assegnatario non trovato su disco.",
+                phase="precheck",
+                recoverable=False,
+                auto_retry_max=settings.course_lesson_video_auto_retry_max,
+            )
+            await db.commit()
+            return
 
     # Esecuzione fuori dalla sessione DB iniziale: le fasi aprono sessioni
     # proprie quando serve (per ridurre lock contention).
@@ -435,36 +425,10 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
     work_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        # --- Phase 1: TTS ---
-        # Carica i latents pre-trainati da disco (fast path: ~10ms vs
-        # ~5-15s di re-estrazione). Se il file manca per qualche motivo
-        # (eliminato manualmente, race con re-upload), fallback su
-        # voice_sample_path che farà l'estrazione inline.
-        precomputed_latents = None
-        if latents_abs_path is not None and latents_abs_path.is_file():
-            try:
-                precomputed_latents = (
-                    await xtts_voice_clone_service.load_latents_from_file(
-                        latents_abs_path
-                    )
-                )
-                log.info(
-                    "lesson_video_latents_loaded",
-                    lesson_id=str(lesson_id),
-                    path=str(latents_abs_path),
-                )
-            except Exception as exc:  # noqa: BLE001
-                log.warning(
-                    "lesson_video_latents_load_failed",
-                    lesson_id=str(lesson_id),
-                    path=str(latents_abs_path),
-                    error=str(exc),
-                )
-
+        # --- Phase 1: TTS (RunPod GPU) ---
         audio_per_segment, sample_rate, tts_seconds = await _run_tts_phase(
             lesson_id,
             speech_raw=speech_raw,
-            precomputed_latents=precomputed_latents,
             voice_sample_path=voice_sample_path,
             language_code=language_code,
         )
@@ -507,18 +471,11 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
             return
 
         # --- Save metadata ---
-        from app.services.xtts_voice_clone_service import XTTSService
-
-        try:
-            xtts_device = (await XTTSService.get()).device
-        except Exception:  # pragma: no cover
-            xtts_device = "unknown"
-
         tokens = {
             **encode_tokens,
             "tts_duration_ms": int(tts_seconds * 1000),
-            "device": xtts_device,
-            "model_xtts": settings.xtts_model_name,
+            "device": "runpod",
+            "model_xtts": "tts_models/multilingual/multi-dataset/xtts_v2",
             "num_segments": len(audio_per_segment),
             "num_slides": len(png_paths),
         }

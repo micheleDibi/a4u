@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.git
+.gitignore
+test_local.py
+README.md
+*.wav
+*.flac
+*.mp3
+*.webm
+sample.*

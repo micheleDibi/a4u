@@ -1,0 +1,13 @@
+# Dipendenze del worker RunPod Serverless XTTS-v2.
+# torch + torchaudio NON sono qui: il Dockerfile li installa dall'index
+# CUDA dedicato (build GPU). Vedi Dockerfile.
+#
+# Pinning (allineato all'extra [video] del backend):
+# - coqui-tts[codec]: [codec] aggiunge torchcodec, richiesto da PyTorch
+#   >=2.9 per l'audio I/O.
+# - transformers>=4.45: coqui-tts importa `isin_mps_friendly` (4.45+).
+coqui-tts[codec]>=0.24.0
+transformers>=4.45.0,<5
+runpod>=1.6.0
+soundfile>=0.12.0
+numpy>=1.26.0

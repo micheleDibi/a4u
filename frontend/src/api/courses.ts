@@ -1621,14 +1621,6 @@ export interface LessonVideoStatusOut {
   speech_approved: boolean;
   slides_approved: boolean;
   voice_sample_available: boolean;
-  // Fase 6 §9 rifinitura: pre-training latents dell'assegnatario.
-  voice_latents_ready: boolean;
-  voice_latents_status:
-    | "pending"
-    | "processing"
-    | "ready"
-    | "failed"
-    | null;
 }
 
 // XTTS-v2 supporta 16 lingue (allineato a `clone_voice.py:14-17` dello

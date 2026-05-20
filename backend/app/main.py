@@ -22,7 +22,6 @@ from app.middleware.request_id import RequestIDMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.services import (
     avatar_clip_worker,
-    avatar_tts_latents_worker,
     course_architecture_worker,
     course_document_worker,
     course_lesson_content_worker,
@@ -110,27 +109,17 @@ async def lifespan(app: FastAPI):
     # Worker export PDF DISCORSO (Fase 5 §8). Stessa pipeline del PDF
     # lezione testo, template dedicato per layout per-slide con timeline.
     course_lesson_speech_pdf_worker.start_worker()
-    # Worker generazione video MP4 (Fase 6 — §9). Cap=1 di default
-    # (XTTS-v2 + ffmpeg pesanti). Pre-condizione: speech+slides approved
-    # AND Avatar.audio_path dell'assegnatario presente AND latents pronti.
+    # Worker generazione video MP4 (Fase 6 — §9). Cap=1 di default.
+    # Orchestrazione: TTS su RunPod GPU + slide Playwright + ffmpeg.
+    # Pre-condizione: speech+slides approved AND Avatar.audio_path
+    # dell'assegnatario presente AND servizio TTS RunPod configurato.
     course_lesson_video_worker.start_worker()
-    # Worker pre-training XTTS latents (Fase 6 §9 rifinitura): estrae
-    # `gpt_cond_latent + speaker_embedding` per ogni avatar con
-    # `tts_latents_status='pending'` AND `audio_path` non-NULL. Risparmia
-    # ~5-15s di estrazione inline a ogni job video. Cap implicito = 1
-    # (XTTSService è singleton thread-pooled).
-    avatar_tts_latents_worker.start_worker()
 
     log.info("startup_complete", env=settings.env)
     try:
         yield
     finally:
-        # Ordine di stop: prima i worker che CONSUMANO i latents (video),
-        # poi quello che li PRODUCE (latents). Altrimenti rischiamo che il
-        # worker latents si fermi mentre il worker video sta cercando di
-        # caricare un .pt.
         await course_lesson_video_worker.stop_worker()
-        await avatar_tts_latents_worker.stop_worker()
         await course_lesson_speech_pdf_worker.stop_worker()
         await course_lesson_speech_worker.stop_worker()
         await course_lesson_slides_pdf_worker.stop_worker()

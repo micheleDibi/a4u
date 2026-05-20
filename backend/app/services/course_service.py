@@ -379,7 +379,7 @@ async def update_course(
     ):
         # Fase 6 §9: validazione contro XTTS_SUPPORTED_LANGUAGES.
         # Sentinel "" = reset a NULL (uso default language_code).
-        from app.services.xtts_voice_clone_service import (
+        from app.services.tts_languages import (
             XTTS_SUPPORTED_LANGUAGES,
             normalize_language_code,
         )

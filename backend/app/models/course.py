@@ -117,7 +117,7 @@ class Course(UUIDPKMixin, TimestampMixin, Base):
     )
     # Override opzionale per la lingua della voce nei video MP4 (Fase 6).
     # Quando NULL, il worker video usa `language_code`. Validato lato API
-    # contro `XTTS_SUPPORTED_LANGUAGES` di xtts_voice_clone_service.
+    # contro `XTTS_SUPPORTED_LANGUAGES` di app.services.tts_languages.
     video_language_code: Mapped[str | None] = mapped_column(
         String(10),
         ForeignKey("languages.code", ondelete="SET NULL"),

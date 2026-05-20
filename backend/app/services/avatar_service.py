@@ -89,7 +89,6 @@ async def upsert_my_avatar(
         assert existing is not None
         new_image_path = existing.image_path
 
-    audio_changed = False
     if audio_upload is not None:
         new_audio_path = await file_service.save_upload_audio(
             audio_upload,
@@ -98,7 +97,6 @@ async def upsert_my_avatar(
         )
         if existing and existing.audio_path and existing.audio_path != new_audio_path:
             storage_service.delete(existing.audio_path)
-        audio_changed = True
     else:
         assert existing is not None
         new_audio_path = existing.audio_path
@@ -110,9 +108,6 @@ async def upsert_my_avatar(
             audio_path=new_audio_path,
             audio_lang=audio_lang,
             clips_status="pending",
-            # Latents extraction in background dal worker
-            # `avatar_tts_latents_worker` al prossimo tick (poll 4s).
-            tts_latents_status="pending",
         )
         db.add(avatar)
     else:
@@ -121,13 +116,6 @@ async def upsert_my_avatar(
         avatar.audio_path = new_audio_path
         if audio_lang is not None:
             avatar.audio_lang = audio_lang or None
-        # Fase 6 §9: cambio audio → invalida latents pre-trainati e
-        # rimetti lo status a `pending`. Il worker
-        # `avatar_tts_latents_worker` ri-estrarrà al prossimo tick.
-        if audio_changed:
-            from app.services import avatar_tts_latents_service
-
-            avatar_tts_latents_service.mark_latents_pending(avatar)
 
     await db.flush()
     await db.refresh(avatar)

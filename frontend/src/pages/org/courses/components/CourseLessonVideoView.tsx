@@ -249,8 +249,6 @@ export function CourseLessonVideoView({
   // Pre-requisiti globali (banner sopra il batch).
   const firstItem = items[0];
   const voiceAvailable = firstItem?.voice_sample_available ?? false;
-  const voiceLatentsReady = firstItem?.voice_latents_ready ?? false;
-  const voiceLatentsStatus = firstItem?.voice_latents_status ?? null;
 
   return (
     <div className="space-y-4">
@@ -334,25 +332,6 @@ export function CourseLessonVideoView({
         </Card>
       )}
 
-      {/* Banner pre-requisiti — latents voce non pronti (assignee ha audio
-          ma il worker non ha ancora finito l'estrazione). */}
-      {voiceAvailable && !voiceLatentsReady && total > 0 && (
-        <Card className="border-amber-300/60 bg-amber-50/40 dark:bg-amber-900/10">
-          <CardContent className="flex items-center gap-3 py-3 text-sm">
-            {voiceLatentsStatus === "failed" ? (
-              <AlertCircle className="size-4 shrink-0 text-destructive" />
-            ) : (
-              <Loader2 className="size-4 shrink-0 animate-spin text-amber-600" />
-            )}
-            <span className="flex-1">
-              {voiceLatentsStatus === "failed"
-                ? t("courses.video.errors.voice_latents_failed")
-                : t("courses.video.errors.voice_latents_not_ready")}
-            </span>
-          </CardContent>
-        </Card>
-      )}
-
       {/* Aggregate banner */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-3 pb-3">
@@ -378,11 +357,7 @@ export function CourseLessonVideoView({
               <Button
                 size="sm"
                 onClick={onGenerateAll}
-                disabled={
-                  generateAllMut.isPending ||
-                  !voiceAvailable ||
-                  !voiceLatentsReady
-                }
+                disabled={generateAllMut.isPending || !voiceAvailable}
               >
                 <Sparkles className="size-4" />
                 {t("courses.video.actions.generateAll", { count: eligible })}
@@ -452,7 +427,6 @@ export function CourseLessonVideoView({
                 item.speech_approved &&
                 item.slides_approved &&
                 voiceAvailable &&
-                voiceLatentsReady &&
                 !inProgress;
               return (
                 <Card key={lesson.id}>
