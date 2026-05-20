@@ -28,8 +28,10 @@ const LANG_TO_COUNTRY: Record<string, string> = {
   // Lingue extra-UE: le 6 di XTTS-v2 non-UE (tr, ru, ar, zh, ja, ko)
   // piu' altre comuni. `ar` → Arabia Saudita (l'arabo non ha un singolo
   // paese; `SA` e' la scelta convenzionale). `zh` copre anche `zh-cn`.
+  // `ua` e' un alias non-standard per l'ucraino (`uk`) usato da alcuni
+  // record creati via UI admin.
   ar: "SA", he: "IL", hi: "IN", ja: "JP", ko: "KR", nb: "NO",
-  no: "NO", ru: "RU", tr: "TR", uk: "UA", zh: "CN",
+  no: "NO", ru: "RU", tr: "TR", ua: "UA", uk: "UA", zh: "CN",
 };
 
 /**

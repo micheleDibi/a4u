@@ -216,7 +216,7 @@ export default function MyAvatarPage() {
                       </SelectTrigger>
                       <SelectContent>
                         {langs.map((l) => {
-                          const Flag = flagFor(l.code);
+                          const Flag = flagFor(l.code, l.flag_country_code);
                           return (
                             <SelectItem key={l.code} value={l.code}>
                               <span className="inline-flex items-center gap-2">

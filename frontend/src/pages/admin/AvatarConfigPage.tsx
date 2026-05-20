@@ -274,6 +274,9 @@ function VoiceScriptsSection() {
           <VoiceScriptRow
             key={s.language_code}
             script={s}
+            flagCountryCode={
+              langs.find((l) => l.code === s.language_code)?.flag_country_code
+            }
             onSave={(text) => upsertMut.mutate({ lang: s.language_code, text })}
             onDelete={() => setToRemove(s.language_code)}
           />
@@ -299,7 +302,7 @@ function VoiceScriptsSection() {
                 </SelectTrigger>
                 <SelectContent>
                   {availableLangs.map((l) => {
-                    const Flag = flagFor(l.code);
+                    const Flag = flagFor(l.code, l.flag_country_code);
                     return (
                       <SelectItem key={l.code} value={l.code}>
                         <span className="inline-flex items-center gap-2">
@@ -361,18 +364,24 @@ function VoiceScriptsSection() {
 
 interface VoiceScriptRowProps {
   script: AvatarVoiceScriptOut;
+  flagCountryCode?: string | null;
   onSave: (text: string) => void;
   onDelete: () => void;
 }
 
-function VoiceScriptRow({ script, onSave, onDelete }: VoiceScriptRowProps) {
+function VoiceScriptRow({
+  script,
+  flagCountryCode,
+  onSave,
+  onDelete,
+}: VoiceScriptRowProps) {
   const { t } = useTranslation();
   const [text, setText] = useState(script.text);
   const [editing, setEditing] = useState(false);
   useEffect(() => {
     setText(script.text);
   }, [script.text]);
-  const Flag = flagFor(script.language_code);
+  const Flag = flagFor(script.language_code, flagCountryCode);
   const dirty = text !== script.text;
 
   const cancel = () => {
