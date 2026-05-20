@@ -79,6 +79,27 @@ def _decode_segment_audio(audio_b64: str) -> np.ndarray:
     return arr.reshape(-1)
 
 
+def _build_voice_sample_url(voice_sample_path: Path) -> str:
+    """URL pubblico del campione vocale, scaricabile dal worker RunPod.
+
+    Il file vive sotto `upload_root` ed e' servito da `/uploads/...`. Il
+    worker GPU lo scarica via HTTP invece di riceverlo inline base64 nel
+    payload del job: un audio di pochi MB come base64 sfora il limite di
+    payload di `/run` di RunPod (sintomo: `voice_sample_b64 mancante`).
+    """
+    settings = get_settings()
+    try:
+        rel = voice_sample_path.resolve().relative_to(
+            settings.upload_root.resolve()
+        )
+    except ValueError as exc:
+        raise RunpodTtsError(
+            f"Voice sample fuori da upload_root: {voice_sample_path}"
+        ) from exc
+    base = settings.public_base_url.rstrip("/")
+    return f"{base}/uploads/{rel.as_posix()}"
+
+
 async def synthesize_lesson_audio(
     *,
     speech_raw: dict[str, Any],
@@ -120,16 +141,18 @@ async def synthesize_lesson_audio(
 
     if not voice_sample_path.is_file():
         raise RunpodTtsError(f"Voice sample non trovato: {voice_sample_path}")
+    if voice_sample_path.stat().st_size == 0:
+        raise RunpodTtsError(f"Voice sample vuoto: {voice_sample_path}")
 
-    voice_b64 = base64.b64encode(voice_sample_path.read_bytes()).decode("ascii")
-    voice_fmt = voice_sample_path.suffix.lstrip(".").lower() or "wav"
+    voice_sample_url = _build_voice_sample_url(voice_sample_path)
     language = normalize_language_code(language_code)
 
+    # Il voice sample viaggia come URL: il worker RunPod lo scarica. Il
+    # payload del job resta leggero (solo URL + testo dei segment).
     payload = {
         "input": {
             "language_code": language,
-            "voice_sample_b64": voice_b64,
-            "voice_sample_format": voice_fmt,
+            "voice_sample_url": voice_sample_url,
             "segments": segments,
         }
     }

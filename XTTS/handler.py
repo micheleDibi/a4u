@@ -13,10 +13,10 @@ rispetto alla versione CPU e' il device `cuda`.
 Schema input del job:
     {"input": {
         "language_code": "it",
-        "voice_sample_b64": "<base64 del file audio di riferimento>",
-        "voice_sample_format": "webm",   # estensione, per il file temp
+        "voice_sample_url": "<URL pubblico del file audio di riferimento>",
         "segments": [{"segment_id": "...", "text": "..."}]
     }}
+(`voice_sample_b64` inline e' ancora accettato come fallback.)
 
 Output — un `yield` per segment (consumabile via endpoint /stream):
     {"segment_id": "...", "audio_b64": "<FLAC base64>",
@@ -34,6 +34,7 @@ import re
 import subprocess
 import tempfile
 import traceback
+import urllib.request
 
 # La licenza Coqui CPML va accettata PRIMA di importare TTS.
 os.environ.setdefault("COQUI_TOS_AGREED", "1")
@@ -200,22 +201,37 @@ def handler(job):
     tmp_paths: list[str] = []
     try:
         language = normalize_language_code(job_input.get("language_code") or "it")
+        voice_url = job_input.get("voice_sample_url")
         voice_b64 = job_input.get("voice_sample_b64")
-        voice_fmt = (job_input.get("voice_sample_format") or "wav").lstrip(".") or "wav"
         segments = job_input.get("segments") or []
 
-        if not voice_b64:
-            yield {"error": "voice_sample_b64 mancante"}
+        if not voice_url and not voice_b64:
+            yield {"error": "voice_sample_url o voice_sample_b64 mancante"}
             return
         if not segments:
             yield {"error": "nessun segment fornito"}
             return
 
-        # Scrivi il sample su file temp.
-        raw_path = tempfile.NamedTemporaryFile(suffix=f".{voice_fmt}", delete=False).name
+        # Recupera il sample di riferimento. Preferito: download da URL
+        # (payload del job leggero, robusto). Fallback: base64 inline.
+        if voice_url:
+            try:
+                with urllib.request.urlopen(voice_url, timeout=120) as resp:
+                    audio_bytes = resp.read()
+            except Exception as exc:
+                yield {"error": f"download del voice sample fallito: {exc}"}
+                return
+        else:
+            audio_bytes = base64.b64decode(voice_b64)
+        if not audio_bytes:
+            yield {"error": "voice sample vuoto"}
+            return
+
+        # Scrivi il sample su file temp (ffmpeg rileva il formato da solo).
+        raw_path = tempfile.NamedTemporaryFile(suffix=".audio", delete=False).name
         tmp_paths.append(raw_path)
         with open(raw_path, "wb") as f:
-            f.write(base64.b64decode(voice_b64))
+            f.write(audio_bytes)
 
         # Normalizza a WAV mono via ffmpeg (robustezza formati).
         try:

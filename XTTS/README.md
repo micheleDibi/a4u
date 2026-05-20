@@ -86,14 +86,17 @@ la fase audio.
 {
   "input": {
     "language_code": "it",
-    "voice_sample_b64": "<base64 del file audio di riferimento>",
-    "voice_sample_format": "webm",
+    "voice_sample_url": "https://.../uploads/avatars/<user>/audio.webm",
     "segments": [
       { "segment_id": "seg-1", "text": "Testo del primo segmento." }
     ]
   }
 }
 ```
+
+Il worker scarica il `voice_sample_url` (deve essere pubblicamente
+raggiungibile dai worker RunPod — è la stessa URL `/uploads/...` che usa
+MiniMax). `voice_sample_b64` inline resta accettato come fallback.
 
 **Output** — un elemento per segment, consumato via
 `GET /v2/{endpoint_id}/stream/{job_id}` (o tutti insieme in `output` via
