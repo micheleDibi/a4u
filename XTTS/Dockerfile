@@ -23,9 +23,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# torch + torchaudio build CUDA 12.1 dall'index dedicato (variante GPU).
+# torch + torchaudio build CUDA 12.1, versione pinnata. 2.4.1 ha:
+# i wheel cu121 per Python 3.10 (base Ubuntu 22.04), l'API
+# `register_pytree_node` richiesta da transformers >= 4.45, ed e'
+# compatibile con numpy 1.x. NON usare un range aperto: il resolver
+# pip puo' regredire a un torch troppo vecchio.
 RUN pip3 install --no-cache-dir \
-        "torch>=2.1.0" "torchaudio>=2.1.0" \
+        "torch==2.4.1" "torchaudio==2.4.1" \
         --index-url https://download.pytorch.org/whl/cu121
 
 COPY requirements.txt .
