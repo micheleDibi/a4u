@@ -322,13 +322,15 @@ export function CourseArchitectureView({ course, canEdit, orgId }: Props) {
             {t("courses.architecture.module.add")}
           </Button>
         )}
-        <ModuleEditDialog
-          open={moduleDialog.kind !== "closed"}
-          mode={moduleDialog.kind === "edit" ? "edit" : "create"}
-          isPending={moduleCreateMut.isPending}
-          onClose={() => setModuleDialog({ kind: "closed" })}
-          onSubmit={(draft) => moduleCreateMut.mutate(draft)}
-        />
+        {moduleDialog.kind !== "closed" && (
+          <ModuleEditDialog
+            open={true}
+            mode={moduleDialog.kind === "edit" ? "edit" : "create"}
+            isPending={moduleCreateMut.isPending}
+            onClose={() => setModuleDialog({ kind: "closed" })}
+            onSubmit={(draft) => moduleCreateMut.mutate(draft)}
+          />
+        )}
       </div>
     );
   }
@@ -623,93 +625,97 @@ export function CourseArchitectureView({ course, canEdit, orgId }: Props) {
         </Button>
       )}
 
-      <ModuleEditDialog
-        open={moduleDialog.kind !== "closed"}
-        mode={moduleDialog.kind === "edit" ? "edit" : "create"}
-        initial={
-          moduleDialog.kind === "edit"
-            ? {
-                title: moduleDialog.module.title,
-                description: moduleDialog.module.description,
-              }
-            : undefined
-        }
-        meta={
-          moduleDialog.kind === "edit"
-            ? {
-                code: moduleLabel(moduleDialog.module.module_code),
-                lessonsCount: moduleDialog.module.lessons.length,
-              }
-            : undefined
-        }
-        isPending={moduleCreateMut.isPending || moduleUpdateMut.isPending}
-        onClose={() => setModuleDialog({ kind: "closed" })}
-        onSubmit={(draft) => {
-          if (moduleDialog.kind === "edit") {
-            moduleUpdateMut.mutate({
-              id: moduleDialog.module.id,
-              payload: draft,
-            });
-          } else {
-            moduleCreateMut.mutate(draft);
+      {moduleDialog.kind !== "closed" && (
+        <ModuleEditDialog
+          open={true}
+          mode={moduleDialog.kind === "edit" ? "edit" : "create"}
+          initial={
+            moduleDialog.kind === "edit"
+              ? {
+                  title: moduleDialog.module.title,
+                  description: moduleDialog.module.description,
+                }
+              : undefined
           }
-        }}
-      />
+          meta={
+            moduleDialog.kind === "edit"
+              ? {
+                  code: moduleLabel(moduleDialog.module.module_code),
+                  lessonsCount: moduleDialog.module.lessons.length,
+                }
+              : undefined
+          }
+          isPending={moduleCreateMut.isPending || moduleUpdateMut.isPending}
+          onClose={() => setModuleDialog({ kind: "closed" })}
+          onSubmit={(draft) => {
+            if (moduleDialog.kind === "edit") {
+              moduleUpdateMut.mutate({
+                id: moduleDialog.module.id,
+                payload: draft,
+              });
+            } else {
+              moduleCreateMut.mutate(draft);
+            }
+          }}
+        />
+      )}
 
-      <LessonEditDialog
-        open={lessonDialog.kind !== "closed"}
-        mode={lessonDialog.kind === "edit" ? "edit" : "create"}
-        initial={
-          lessonDialog.kind === "edit"
-            ? {
-                title: lessonDialog.lesson.title,
-                summary: lessonDialog.lesson.summary,
-                is_introductory: lessonDialog.lesson.is_introductory,
-                recommended_bibliography:
-                  lessonDialog.lesson.recommended_bibliography,
-              }
-            : undefined
-        }
-        meta={(() => {
-          if (lessonDialog.kind === "edit") {
-            const parent = course.modules.find(
-              (m) => m.id === lessonDialog.lesson.module_id
-            );
-            return {
-              code: lessonLabel(lessonDialog.lesson.lesson_code),
-              moduleLabel: parent
-                ? `${moduleLabel(parent.module_code)} — ${parent.title}`
-                : undefined,
-            };
+      {lessonDialog.kind !== "closed" && (
+        <LessonEditDialog
+          open={true}
+          mode={lessonDialog.kind === "edit" ? "edit" : "create"}
+          initial={
+            lessonDialog.kind === "edit"
+              ? {
+                  title: lessonDialog.lesson.title,
+                  summary: lessonDialog.lesson.summary,
+                  is_introductory: lessonDialog.lesson.is_introductory,
+                  recommended_bibliography:
+                    lessonDialog.lesson.recommended_bibliography,
+                }
+              : undefined
           }
-          if (lessonDialog.kind === "create") {
-            const parent = course.modules.find(
-              (m) => m.id === lessonDialog.moduleId
-            );
-            return {
-              moduleLabel: parent
-                ? `${moduleLabel(parent.module_code)} — ${parent.title}`
-                : undefined,
-            };
-          }
-          return undefined;
-        })()}
-        isPending={lessonCreateMut.isPending || lessonUpdateMut.isPending}
-        onClose={() => setLessonDialog({ kind: "closed" })}
-        onSubmit={(draft) => {
-          if (lessonDialog.kind === "edit") {
-            lessonUpdateMut.mutate({
-              id: lessonDialog.lesson.id,
-              payload: draft,
-            });
-          } else if (lessonDialog.kind === "create") {
-            lessonCreateMut.mutate({
-              moduleId: lessonDialog.moduleId,
-              payload: draft,
-            });
-          }
-        }}
-      />
+          meta={(() => {
+            if (lessonDialog.kind === "edit") {
+              const parent = course.modules.find(
+                (m) => m.id === lessonDialog.lesson.module_id
+              );
+              return {
+                code: lessonLabel(lessonDialog.lesson.lesson_code),
+                moduleLabel: parent
+                  ? `${moduleLabel(parent.module_code)} — ${parent.title}`
+                  : undefined,
+              };
+            }
+            if (lessonDialog.kind === "create") {
+              const parent = course.modules.find(
+                (m) => m.id === lessonDialog.moduleId
+              );
+              return {
+                moduleLabel: parent
+                  ? `${moduleLabel(parent.module_code)} — ${parent.title}`
+                  : undefined,
+              };
+            }
+            return undefined;
+          })()}
+          isPending={lessonCreateMut.isPending || lessonUpdateMut.isPending}
+          onClose={() => setLessonDialog({ kind: "closed" })}
+          onSubmit={(draft) => {
+            if (lessonDialog.kind === "edit") {
+              lessonUpdateMut.mutate({
+                id: lessonDialog.lesson.id,
+                payload: draft,
+              });
+            } else if (lessonDialog.kind === "create") {
+              lessonCreateMut.mutate({
+                moduleId: lessonDialog.moduleId,
+                payload: draft,
+              });
+            }
+          }}
+        />
+      )}
 
       <ConfirmDialog
         open={!!confirmDelete}
