@@ -17,13 +17,19 @@ const FALLBACK = EU as unknown as FlagComp;
 /**
  * Mappa di fallback codice lingua (ISO 639-1) → codice paese ISO 3166-1.
  * Usata SOLO se la lingua non ha un `flag_country_code` esplicito.
- * Coperti i 24 idiomi UE storici della piattaforma.
+ * Copre i 24 idiomi UE + le lingue extra-UE supportate da XTTS-v2.
  */
 const LANG_TO_COUNTRY: Record<string, string> = {
+  // 24 idiomi UE storici della piattaforma.
   bg: "BG", cs: "CZ", da: "DK", de: "DE", el: "GR", en: "GB",
   es: "ES", et: "EE", fi: "FI", fr: "FR", ga: "IE", hr: "HR",
   hu: "HU", it: "IT", lt: "LT", lv: "LV", mt: "MT", nl: "NL",
   pl: "PL", pt: "PT", ro: "RO", sk: "SK", sl: "SI", sv: "SE",
+  // Lingue extra-UE: le 6 di XTTS-v2 non-UE (tr, ru, ar, zh, ja, ko)
+  // piu' altre comuni. `ar` → Arabia Saudita (l'arabo non ha un singolo
+  // paese; `SA` e' la scelta convenzionale). `zh` copre anche `zh-cn`.
+  ar: "SA", he: "IL", hi: "IN", ja: "JP", ko: "KR", nb: "NO",
+  no: "NO", ru: "RU", tr: "TR", uk: "UA", zh: "CN",
 };
 
 /**
