@@ -39,6 +39,7 @@ from app.db.session import async_session_factory
 from app.models.course_lesson import CourseLesson
 from app.services import (
     course_lesson_video_service,
+    lesson_audio_cache,
     lesson_slides_video_render_service,
     lesson_video_compose_service,
     runpod_tts_client,
@@ -143,23 +144,44 @@ async def _check_cancelled(lesson_id: uuid.UUID) -> bool:
 async def _run_tts_phase(
     lesson_id: uuid.UUID,
     *,
+    course_id: uuid.UUID,
     speech_raw: dict[str, Any],
     voice_sample_path: Path,
     language_code: str,
 ) -> tuple[dict[str, np.ndarray], int, float]:
-    """Sintetizza l'audio dei segment via il worker TTS su RunPod GPU.
+    """Ottiene l'audio dei segment: dalla cache su disco se disponibile,
+    altrimenti sintetizzandolo via il worker TTS su RunPod GPU.
 
-    RunPod consegna i segment in streaming: il progress (0→60%) avanza
-    man mano che ciascun segment viene ricevuto.
+    Se discorso, lingua e campione vocale non sono cambiati dall'ultima
+    generazione, l'audio viene ricaricato dalla cache senza richiamare
+    RunPod (niente costo GPU, niente attesa). Altrimenti RunPod consegna
+    i segment in streaming (progress 0→60%) e il risultato viene salvato
+    in cache per le rigenerazioni successive.
 
     Returns:
         (audio_per_segment, sample_rate, tts_duration_seconds)
     """
     started = time.monotonic()
 
-    # Cancel-check prima di avviare il job remoto.
+    # Cancel-check prima di toccare cache / avviare il job remoto.
     if await _check_cancelled(lesson_id):
         raise asyncio.CancelledError("Generazione annullata")
+
+    # Cache hit: riusa l'audio già sintetizzato (stesso discorso/voce).
+    cache_key = lesson_audio_cache.compute_cache_key(
+        speech_raw=speech_raw,
+        voice_sample_path=voice_sample_path,
+        language_code=language_code,
+    )
+    cached = lesson_audio_cache.load(course_id, lesson_id, cache_key=cache_key)
+    if cached is not None:
+        log.info(
+            "lesson_video_tts_cache_hit",
+            lesson_id=str(lesson_id),
+            segments=len(cached),
+        )
+        await _set_progress(lesson_id, pct=60, phase="tts")
+        return cached, runpod_tts_client.SAMPLE_RATE, 0.0
 
     async def _on_segment(done: int, total: int) -> None:
         # Mapping progress lineare 0→60% sui segment ricevuti da RunPod.
@@ -177,6 +199,18 @@ async def _run_tts_phase(
             on_segment_progress=_on_segment,
         )
     )
+
+    # Salva in cache per le rigenerazioni future. Best effort: un errore
+    # qui non deve far fallire la generazione del video.
+    try:
+        lesson_audio_cache.save(
+            course_id,
+            lesson_id,
+            cache_key=cache_key,
+            audio_per_segment=audio_per_segment,
+        )
+    except Exception as exc:  # pragma: no cover
+        log.warning("lesson_video_tts_cache_save_failed", error=str(exc))
 
     tts_seconds = time.monotonic() - started
     return audio_per_segment, sample_rate, tts_seconds
@@ -435,6 +469,7 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
         # --- Phase 1: TTS (RunPod GPU) ---
         audio_per_segment, sample_rate, tts_seconds = await _run_tts_phase(
             lesson_id,
+            course_id=course_id,
             speech_raw=speech_raw,
             voice_sample_path=voice_sample_path,
             language_code=language_code,
