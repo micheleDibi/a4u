@@ -4,8 +4,8 @@ Documentazione di riferimento:
 https://platform.minimax.io/docs/guides/video-generation
 
 Flusso:
-  1. POST /v1/video_generation con `first_frame_image` + `last_frame_image`
-     (entrambi uguali, per ottenere clip loopabili) e `prompt`. Ritorna `task_id`.
+  1. POST /v1/video_generation con `first_frame_image` (image-to-video)
+     e `prompt`. Ritorna `task_id`.
   2. Polling GET /v1/query/video_generation?task_id=... ogni 10s.
      Quando lo status è `success`, la risposta contiene `file_id`.
   3. GET /v1/files/retrieve?file_id=... ritorna il `download_url` reale.
@@ -79,13 +79,17 @@ async def start_video_generation(
     prompt: str,
     duration: int | None = None,
 ) -> str:
-    """Avvia un job MiniMax. `last_frame_image == first_frame_image` per loop."""
+    """Avvia un job MiniMax image-to-video dal `first_frame_image`.
+
+    Niente `last_frame_image`: MiniMax-Hailuo-2.3 non supporta la
+    modalità First-and-Last-Frame-Video. La loopabilità della clip è
+    guidata dal prompt ("seamless looping animation").
+    """
     settings = get_settings()
     body = {
         "model": settings.minimax_video_model,
         "prompt": prompt[:1990],
         "first_frame_image": image_url,
-        "last_frame_image": image_url,
         "duration": duration if duration is not None else settings.minimax_clip_duration,
         "resolution": settings.minimax_clip_resolution,
     }
