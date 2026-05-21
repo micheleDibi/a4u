@@ -81,6 +81,7 @@ async def upsert_my_avatar(
             image_upload,
             subdir=_user_subdir(user_id),
             filename_stem="image",
+            square=True,
         )
         if existing and existing.image_path and existing.image_path != new_image_path:
             storage_service.delete(existing.image_path)

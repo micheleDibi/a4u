@@ -42,8 +42,17 @@ function readAsDataURL(file: File): Promise<string> {
 }
 
 function buildCenteredSquare(imgW: number, imgH: number): CropType {
+  // Lato del quadrato limitato dalla dimensione più corta: per
+  // un'immagine orizzontale partire dalla larghezza sforerebbe
+  // l'altezza e il crop iniziale non sarebbe un quadrato valido
+  // dentro i bordi dell'immagine.
   return centerCrop(
-    makeAspectCrop({ unit: "%", width: 80 }, 1, imgW, imgH),
+    makeAspectCrop(
+      imgW >= imgH ? { unit: "%", height: 90 } : { unit: "%", width: 90 },
+      1,
+      imgW,
+      imgH
+    ),
     imgW,
     imgH
   );
@@ -62,8 +71,11 @@ async function cropToFile(
 
   const sx = crop.x * scaleX;
   const sy = crop.y * scaleY;
-  const sw = crop.width * scaleX;
-  const sh = crop.height * scaleY;
+  // Regione sorgente forzata QUADRATA (lato = il minore fra larghezza
+  // e altezza scalate): il crop è già vincolato 1:1 da react-image-crop,
+  // ma così l'output è un quadrato esatto anche con arrotondamenti o
+  // rendering non perfettamente in scala — niente immagini deformate.
+  const side = Math.min(crop.width * scaleX, crop.height * scaleY);
 
   const canvas = document.createElement("canvas");
   canvas.width = outputSize;
@@ -71,7 +83,7 @@ async function cropToFile(
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Canvas context unavailable");
   ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(image, sx, sy, sw, sh, 0, 0, outputSize, outputSize);
+  ctx.drawImage(image, sx, sy, side, side, 0, 0, outputSize, outputSize);
 
   const blob: Blob = await new Promise((resolve, reject) => {
     canvas.toBlob(

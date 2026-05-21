@@ -86,18 +86,35 @@ def _ensure_within(root: Path, target: Path) -> None:
         raise ValidationAppError("Percorso file non valido.", code="invalid_path") from exc
 
 
+def _center_crop_square(img: Image.Image) -> Image.Image:
+    """Ritaglia il quadrato centrale dell'immagine (lato = dimensione
+    più corta). Se è già quadrata la ritorna invariata."""
+    w, h = img.size
+    if w == h:
+        return img
+    side = min(w, h)
+    left = (w - side) // 2
+    top = (h - side) // 2
+    return img.crop((left, top, left + side, top + side))
+
+
 async def save_upload_image(
     upload: UploadFile,
     *,
     subdir: str,
     max_dimension: int = 4096,
     filename_stem: str | None = None,
+    square: bool = False,
 ) -> str:
     """Salva un upload immagine validato, ri-encoded da Pillow per strippare metadata.
 
     Ritorna il percorso pubblico relativo (es. `/uploads/organizations/<uuid>.jpg`).
     `filename_stem` permette di forzare il nome (senza estensione) per pattern
     deterministici come `image` (l'estensione è scelta in base al formato).
+    `square=True`: ritaglia l'immagine al quadrato centrale (1:1) prima
+    di salvarla — usato per l'immagine avatar, così le clip MiniMax
+    image-to-video (che seguono le proporzioni dell'immagine sorgente)
+    risultano quadrate.
     """
     settings = get_settings()
     safe_subdir = _validate_subdir(subdir)
@@ -118,6 +135,8 @@ async def save_upload_image(
     try:
         with Image.open(BytesIO(raw)) as img:
             img = ImageOps.exif_transpose(img)
+            if square:
+                img = _center_crop_square(img)
             fmt = (img.format or "").upper()
             if fmt not in ALLOWED_IMAGE_EXT_BY_FORMAT:
                 fmt = "PNG" if img.mode in ("RGBA", "LA") else "JPEG"
