@@ -125,8 +125,14 @@ export function CourseLessonSlidesView({
     qc.invalidateQueries({ queryKey: detailKey });
   };
 
+  // La lezione-verifica (is_assessment) non genera slide: esclusa da
+  // tutti i conteggi aggregati, dal progress e dai trigger batch di
+  // questa vista (le righe sono già filtrate in ModuleSlidesCard).
   const allLessons = useMemo(
-    () => course.modules.flatMap((m) => m.lessons),
+    () =>
+      course.modules
+        .flatMap((m) => m.lessons)
+        .filter((l) => !l.is_assessment),
     [course.modules],
   );
 
