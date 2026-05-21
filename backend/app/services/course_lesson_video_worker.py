@@ -248,19 +248,26 @@ async def _run_encode_phase(
     total = max(1, len(png_paths))
     last_pct: list[int] = [80]
 
+    # Il loop principale possiede il pool di connessioni asyncpg. Lo
+    # catturiamo ORA, mentre siamo sul main loop: il callback
+    # `_on_progress` viene invocato dal thread di compose, dove
+    # `asyncio.get_event_loop()` restituirebbe il loop temporaneo del
+    # thread — schedularvi un'operazione DB lega le connessioni a un
+    # loop sbagliato ("got Future attached to a different loop").
+    main_loop = asyncio.get_running_loop()
+
     def _on_progress(done: int, _total: int) -> None:
         # Mapping 80→97 sui segment encodati (3% riservati al concat finale).
         pct = 80 + int((done / total) * 17)
         last_pct[0] = pct
-        # Aggiornamento progress async-from-sync: schedula su loop principale
-        # se possibile, altrimenti skip (best effort).
+        # Aggiornamento progress async-from-sync: schedula `_set_progress`
+        # SEMPRE sul loop principale (proprietario del pool DB), mai sul
+        # loop del thread di compose. Best effort: su errore si salta.
         try:
-            loop = asyncio.get_event_loop()
-            if loop and loop.is_running():
-                asyncio.run_coroutine_threadsafe(
-                    _set_progress(lesson_id, pct=pct, phase="encoding"),
-                    loop,
-                )
+            asyncio.run_coroutine_threadsafe(
+                _set_progress(lesson_id, pct=pct, phase="encoding"),
+                main_loop,
+            )
         except Exception:  # pragma: no cover
             pass
 
