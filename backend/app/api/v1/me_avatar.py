@@ -6,7 +6,11 @@ from fastapi import APIRouter, File, Form, Query, Response, UploadFile, status
 
 from app.core.deps import CurrentUser, DbSession
 from app.core.errors import NotFoundError
-from app.schemas.avatar import AvatarOut, AvatarVoiceScriptOut
+from app.schemas.avatar import (
+    AvatarMusetalkParamsUpdate,
+    AvatarOut,
+    AvatarVoiceScriptOut,
+)
 from app.services import avatar_config_service, avatar_service
 
 router = APIRouter(prefix="/me/avatar", tags=["me-avatar"])
@@ -72,4 +76,26 @@ async def regenerate_clips(db: DbSession, current: CurrentUser) -> AvatarOut:
     if avatar is None:
         raise NotFoundError("Nessun avatar.", code="avatar_not_found")
     avatar = await avatar_service.regenerate_clips(db, avatar=avatar, actor_id=current.id)
+    return AvatarOut.model_validate(avatar)
+
+
+@router.patch("/musetalk-params", response_model=AvatarOut)
+async def update_musetalk_params(
+    payload: AvatarMusetalkParamsUpdate,
+    db: DbSession,
+    current: CurrentUser,
+) -> AvatarOut:
+    """Aggiorna i parametri MuseTalk per-avatar usati dal «Video con
+    Avatar» delle lezioni (lip-sync dell'avatar sovrapposto al video)."""
+    avatar = await avatar_service.get_my_avatar(db, current.id)
+    if avatar is None:
+        raise NotFoundError("Nessun avatar.", code="avatar_not_found")
+    avatar = await avatar_service.update_musetalk_params(
+        db,
+        avatar=avatar,
+        extra_margin=payload.musetalk_extra_margin,
+        left_cheek_width=payload.musetalk_left_cheek_width,
+        right_cheek_width=payload.musetalk_right_cheek_width,
+        actor_id=current.id,
+    )
     return AvatarOut.model_validate(avatar)

@@ -36,6 +36,11 @@ dependencies = [
     # su RunPod GPU (cartella `XTTS/`), niente torch/coqui nel backend.
     "numpy>=1.26.0",
     "soundfile>=0.12.0",
+    # "Video con Avatar" (§9b): il client MuseTalk vendored
+    # (`app/musetalk_client/`) gira come subprocess e usa boto3 per
+    # Cloudflare R2 (S3-compatible) e requests per l'endpoint RunPod.
+    "boto3>=1.35.0",
+    "requests>=2.32.0",
 ]
 
 [project.optional-dependencies]

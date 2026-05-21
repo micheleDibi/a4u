@@ -135,7 +135,8 @@
       "lessonContent": "Contenuti",
       "lessonSlides": "Slide",
       "lessonSpeech": "Discorso",
-      "lessonVideo": "Video"
+      "lessonVideo": "Video",
+      "lessonAvatarVideo": "Video con avatar"
     },
     "sections": {
       "basics": "Informazioni di base",
@@ -1280,6 +1281,49 @@
         "device": "Device",
         "size": "Dimensione"
       }
+    },
+    "avatarVideo": {
+      "tabTitle": "Video con avatar",
+      "description": "Sovrappone al video della lezione un avatar parlante con lip-sync, sincronizzato sull'audio. Richiede il video della lezione già generato e le clip dell'avatar dell'assegnatario.",
+      "noLessons": "Nessuna lezione disponibile per la generazione del video con avatar.",
+      "completedLabel": "video con avatar pronti",
+      "failedSuffix": "falliti",
+      "inFlight": "{{n}} in corso",
+      "etaLabel": "Tempo stimato",
+      "staleAlert": "Il video della lezione è stato rigenerato dopo l'ultima generazione. Rigenera il video con avatar.",
+      "status": {
+        "empty": "Non generato",
+        "pending": "In coda",
+        "processing": "In elaborazione",
+        "completed": "Pronto",
+        "failed": "Fallito",
+        "cancelled": "Annullato"
+      },
+      "phases": {
+        "preparing": "Preparazione audio",
+        "lipsync": "Lip-sync avatar",
+        "overlay": "Composizione video"
+      },
+      "actions": {
+        "generate": "Genera video",
+        "regenerate": "Rigenera",
+        "cancel": "Annulla",
+        "cancelAll": "Annulla tutti",
+        "download": "Scarica MP4",
+        "generateAll": "Genera tutti ({{count}})"
+      },
+      "errors": {
+        "lesson_video_not_ready": "Genera prima il video della lezione (scheda «Video»)",
+        "avatar_clips_not_ready": "L'avatar dell'assegnatario del corso non ha clip pronte: genera le clip dell'avatar dalla pagina «Mio avatar»",
+        "lesson_is_assessment_not_eligible": "Le lezioni di verifica non generano video",
+        "avatar_video_already_in_progress": "Generazione del video con avatar già in corso per questa lezione",
+        "no_eligible_lessons_for_avatar_video": "Nessuna lezione eleggibile alla generazione del video con avatar"
+      },
+      "tokens": {
+        "duration": "Durata",
+        "clips": "Clip avatar",
+        "size": "Dimensione"
+      }
     }
   },
   "courseSettings": {
@@ -1589,6 +1633,14 @@
     },
     "audio": {
       "tooShort": "L'audio deve durare almeno 6 secondi."
+    },
+    "musetalk": {
+      "title": "Avatar parlante — parametri avanzati",
+      "hint": "Parametri MuseTalk per il lip-sync usato nei «Video con avatar» delle lezioni. I valori predefiniti funzionano per la maggior parte degli avatar: modificali solo se il ritaglio del volto non è preciso.",
+      "extraMargin": "Margine extra",
+      "leftCheek": "Larghezza guancia sx",
+      "rightCheek": "Larghezza guancia dx",
+      "saved": "Parametri avatar parlante salvati"
     }
   },
   "avatarConfig": {

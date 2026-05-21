@@ -52,6 +52,11 @@ from app.schemas.course_lesson_structure import (
     LessonStructureUpdateInput,
     LessonsStructureGenerateInput,
 )
+from app.schemas.course_lesson_avatar_video import (
+    LessonAvatarVideoBatchOut,
+    LessonAvatarVideoGenerateInput,
+    LessonAvatarVideoStatusOut,
+)
 from app.schemas.course_lesson_video import (
     LessonVideoBatchOut,
     LessonVideoGenerateInput,
@@ -61,6 +66,7 @@ from app.services import (
     course_architecture_crud,
     course_architecture_service,
     course_glossary_service,
+    course_lesson_avatar_video_service,
     course_lesson_content_crud,
     course_lesson_content_service,
     course_lesson_pdf_service,
@@ -2628,4 +2634,216 @@ async def get_course_videos_status(
     return course_lesson_video_service.build_batch_out(
         course,
         voice_sample_available=ctx["voice_sample_available"],
+    )
+
+
+# ---------------------------------------------------------------------------
+# Fase 6b — Video con Avatar (lip-sync MuseTalk) (§9b)
+# ---------------------------------------------------------------------------
+
+
+async def _avatar_video_context(db, course: object) -> dict[str, Any]:
+    """Helper: risolve l'avatar dell'assegnatario per costruire i DTO
+    del «Video con Avatar»."""
+    avatar = None
+    if course.assignee_user_id is not None:
+        avatar = await course_lesson_avatar_video_service.resolve_assignee_avatar(
+            db, assignee_user_id=course.assignee_user_id
+        )
+    return {
+        "avatar": avatar,
+        "avatar_clips_ready": course_lesson_avatar_video_service.avatar_is_ready(
+            avatar
+        ),
+    }
+
+
+@router.post(
+    "/{course_id}/lessons/{lesson_id}/avatar-video/generate",
+    response_model=LessonAvatarVideoStatusOut,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def generate_lesson_avatar_video(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    lesson_id: uuid.UUID,
+    payload: LessonAvatarVideoGenerateInput,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_GENERATE),
+) -> LessonAvatarVideoStatusOut:
+    """Trigger generazione del «Video con Avatar»: il lip-sync MuseTalk
+    dell'avatar sovrapposto al video MP4 già generato della lezione.
+
+    Pre-condizioni: `video_status='ready'` AND l'avatar dell'assegnatario
+    ha ≥ 1 clip pronta. 409 con codice specifico
+    (`lesson_video_not_ready`/`avatar_clips_not_ready`) se manca un
+    pre-requisito.
+    """
+    _ = payload  # input vuoto (riservato per future opzioni)
+    await _ensure_org(db, org_id)
+    course = await _load_course_for_edit(
+        db, org_id=org_id, course_id=course_id, current=current
+    )
+    lesson = await course_lesson_avatar_video_service.get_lesson_or_404(
+        course=course, lesson_id=lesson_id
+    )
+    ctx = await _avatar_video_context(db, course)
+    lesson = await course_lesson_avatar_video_service.request_lesson_avatar_video(
+        db,
+        course=course,
+        lesson=lesson,
+        actor_id=current.id,
+        avatar=ctx["avatar"],
+    )
+    return course_lesson_avatar_video_service.build_status_out(
+        lesson,
+        avatar_clips_ready=ctx["avatar_clips_ready"],
+    )
+
+
+@router.post(
+    "/{course_id}/lessons-avatar-video/generate-batch",
+    response_model=LessonAvatarVideoBatchOut,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def generate_all_lessons_avatar_video(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_GENERATE),
+) -> LessonAvatarVideoBatchOut:
+    """Trigger batch: marca come `pending` tutte le lezioni eleggibili
+    (video della lezione `ready` AND avatar con clip pronte AND non già
+    in flight). Il worker le elabora una alla volta."""
+    await _ensure_org(db, org_id)
+    course = await _load_course_for_edit(
+        db, org_id=org_id, course_id=course_id, current=current
+    )
+    ctx = await _avatar_video_context(db, course)
+    await course_lesson_avatar_video_service.request_all_lessons_avatar_video(
+        db,
+        course=course,
+        actor_id=current.id,
+        avatar=ctx["avatar"],
+    )
+    course = await _load_course_for_edit(
+        db, org_id=org_id, course_id=course_id, current=current
+    )
+    ctx = await _avatar_video_context(db, course)
+    return course_lesson_avatar_video_service.build_batch_out(
+        course,
+        avatar_clips_ready=ctx["avatar_clips_ready"],
+    )
+
+
+@router.post(
+    "/{course_id}/lessons/{lesson_id}/avatar-video/cancel",
+    response_model=LessonAvatarVideoStatusOut,
+)
+async def cancel_lesson_avatar_video(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    lesson_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_GENERATE),
+) -> LessonAvatarVideoStatusOut:
+    """Annulla la generazione di una singola lezione (`pending`/`processing`
+    → `cancelled`). Idempotente."""
+    await _ensure_org(db, org_id)
+    course = await _load_course_for_edit(
+        db, org_id=org_id, course_id=course_id, current=current
+    )
+    lesson = await course_lesson_avatar_video_service.get_lesson_or_404(
+        course=course, lesson_id=lesson_id
+    )
+    lesson = await course_lesson_avatar_video_service.cancel_lesson_avatar_video(
+        db, course=course, lesson=lesson, actor_id=current.id
+    )
+    ctx = await _avatar_video_context(db, course)
+    return course_lesson_avatar_video_service.build_status_out(
+        lesson,
+        avatar_clips_ready=ctx["avatar_clips_ready"],
+    )
+
+
+@router.post(
+    "/{course_id}/lessons-avatar-video/cancel-batch",
+    response_model=LessonAvatarVideoBatchOut,
+)
+async def cancel_all_lessons_avatar_video(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_GENERATE),
+) -> LessonAvatarVideoBatchOut:
+    """Annulla la generazione di tutte le lezioni in flight."""
+    await _ensure_org(db, org_id)
+    course = await _load_course_for_edit(
+        db, org_id=org_id, course_id=course_id, current=current
+    )
+    await course_lesson_avatar_video_service.cancel_all_lesson_avatar_videos(
+        db, course=course, actor_id=current.id
+    )
+    course = await _load_course_for_edit(
+        db, org_id=org_id, course_id=course_id, current=current
+    )
+    ctx = await _avatar_video_context(db, course)
+    return course_lesson_avatar_video_service.build_batch_out(
+        course,
+        avatar_clips_ready=ctx["avatar_clips_ready"],
+    )
+
+
+@router.get(
+    "/{course_id}/lessons/{lesson_id}/avatar-video/status",
+    response_model=LessonAvatarVideoStatusOut,
+)
+async def get_lesson_avatar_video_status(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    lesson_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_VIEW),
+) -> LessonAvatarVideoStatusOut:
+    """Polling-friendly status di una singola lezione."""
+    await _ensure_org(db, org_id)
+    course = await _load_course_for_edit(
+        db, org_id=org_id, course_id=course_id, current=current
+    )
+    lesson = await course_lesson_avatar_video_service.get_lesson_or_404(
+        course=course, lesson_id=lesson_id
+    )
+    ctx = await _avatar_video_context(db, course)
+    return course_lesson_avatar_video_service.build_status_out(
+        lesson,
+        avatar_clips_ready=ctx["avatar_clips_ready"],
+    )
+
+
+@router.get(
+    "/{course_id}/lessons-avatar-video/status",
+    response_model=LessonAvatarVideoBatchOut,
+)
+async def get_course_avatar_videos_status(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_VIEW),
+) -> LessonAvatarVideoBatchOut:
+    """Aggregato pagina-corso: contatori + items per la scheda
+    «Video con Avatar» del CourseEditorPage."""
+    await _ensure_org(db, org_id)
+    course = await _load_course_for_edit(
+        db, org_id=org_id, course_id=course_id, current=current
+    )
+    ctx = await _avatar_video_context(db, course)
+    return course_lesson_avatar_video_service.build_batch_out(
+        course,
+        avatar_clips_ready=ctx["avatar_clips_ready"],
     )

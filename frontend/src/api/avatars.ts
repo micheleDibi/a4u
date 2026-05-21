@@ -1,5 +1,9 @@
 import { apiClient } from "./client";
-import type { AvatarOut, AvatarVoiceScriptOut } from "./types";
+import type {
+  AvatarMusetalkParamsUpdate,
+  AvatarOut,
+  AvatarVoiceScriptOut,
+} from "./types";
 
 export interface MyAvatarUpsertFields {
   audio_lang?: string;
@@ -36,6 +40,13 @@ export const myAvatarApi = {
   },
   async regenerateClips() {
     const res = await apiClient.post<AvatarOut>("/me/avatar/clips/regenerate");
+    return res.data;
+  },
+  async updateMusetalkParams(params: AvatarMusetalkParamsUpdate) {
+    const res = await apiClient.patch<AvatarOut>(
+      "/me/avatar/musetalk-params",
+      params,
+    );
     return res.data;
   },
   async getVoiceScript(lang?: string): Promise<AvatarVoiceScriptOut | null> {

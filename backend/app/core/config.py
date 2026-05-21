@@ -185,6 +185,39 @@ class Settings(BaseSettings):
     lesson_video_max_mb: int = 500  # safety upper bound
     ffmpeg_binary: str = "ffmpeg"
 
+    # §9b — "Video con Avatar" (lip-sync MuseTalk su RunPod).
+    # Il client MuseTalk vendored (`app/musetalk_client/`) gira come
+    # subprocess isolato: genera un video di avatar parlante e il worker
+    # `course_lesson_avatar_video_worker` lo sovrappone in basso a destra
+    # al video MP4 già generato della lezione. Pre-condizione runtime:
+    # `video_status='ready'` AND l'avatar dell'assegnatario ha clip pronte.
+    #
+    # RunPod: stesso account del TTS (`runpod_api_key` riusato), endpoint
+    # serverless dedicato a MuseTalk. R2 (Cloudflare, S3-compatible) è lo
+    # storage di transito per video/audio/output del job. Queste credenziali
+    # vengono passate al subprocess come variabili d'ambiente.
+    runpod_musetalk_endpoint_id: str | None = None
+    r2_endpoint: str | None = None
+    r2_bucket: str | None = None
+    r2_access_key_id: str | None = None
+    r2_secret_access_key: str | None = None
+
+    # Worker video con avatar: orchestrazione subprocess MuseTalk +
+    # overlay ffmpeg. Cap=1 (un job GPU per volta, costoso).
+    course_lesson_avatar_video_poll_interval_seconds: int = 4
+    course_lesson_avatar_video_max_concurrency: int = 1
+    course_lesson_avatar_video_auto_retry_max: int = 3
+    # Timeout wall-clock del subprocess MuseTalk (preprocess + lipsync +
+    # download). Generoso: assorbe cold start GPU + audio molto lunghi.
+    course_lesson_avatar_video_timeout_seconds: int = 10800
+
+    # Overlay dell'avatar sul video della lezione. Quadrato (le clip
+    # MiniMax sono 1:1), ancorato in basso a destra.
+    #   scale  = lato del quadrato come frazione della larghezza del video
+    #   margin = distanza dai bordi destro/inferiore, in pixel
+    avatar_video_overlay_scale: float = 0.24
+    avatar_video_overlay_margin: int = 24
+
     bootstrap_admin_email: str | None = None
     bootstrap_admin_password: str | None = None
     bootstrap_admin_full_name: str = "Platform Admin"
@@ -210,6 +243,11 @@ class Settings(BaseSettings):
         "openai_api_key",
         "runpod_api_key",
         "runpod_tts_endpoint_id",
+        "runpod_musetalk_endpoint_id",
+        "r2_endpoint",
+        "r2_bucket",
+        "r2_access_key_id",
+        "r2_secret_access_key",
         mode="before",
     )
     @classmethod

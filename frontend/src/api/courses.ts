@@ -1628,6 +1628,75 @@ export const coursesApi = {
       return res.data;
     },
   },
+  lessonAvatarVideo: {
+    /** Trigger generazione del «Video con Avatar» per una singola lezione
+     *  (Fase 6b §9b): lip-sync MuseTalk sovrapposto al video MP4 della
+     *  lezione. Pre-condizioni: `video_status='ready'` AND avatar
+     *  dell'assegnatario con clip pronte. Errori via `code`
+     *  (`lesson_video_not_ready`, `avatar_clips_not_ready`, ...). */
+    generateLesson: async (
+      orgId: string,
+      courseId: string,
+      lessonId: string,
+    ): Promise<LessonAvatarVideoStatusOut> => {
+      const res = await apiClient.post<LessonAvatarVideoStatusOut>(
+        `${base(orgId)}/${courseId}/lessons/${lessonId}/avatar-video/generate`,
+        {},
+      );
+      return res.data;
+    },
+    generateBatch: async (
+      orgId: string,
+      courseId: string,
+    ): Promise<LessonAvatarVideoBatchOut> => {
+      const res = await apiClient.post<LessonAvatarVideoBatchOut>(
+        `${base(orgId)}/${courseId}/lessons-avatar-video/generate-batch`,
+        {},
+      );
+      return res.data;
+    },
+    cancelLesson: async (
+      orgId: string,
+      courseId: string,
+      lessonId: string,
+    ): Promise<LessonAvatarVideoStatusOut> => {
+      const res = await apiClient.post<LessonAvatarVideoStatusOut>(
+        `${base(orgId)}/${courseId}/lessons/${lessonId}/avatar-video/cancel`,
+        {},
+      );
+      return res.data;
+    },
+    cancelBatch: async (
+      orgId: string,
+      courseId: string,
+    ): Promise<LessonAvatarVideoBatchOut> => {
+      const res = await apiClient.post<LessonAvatarVideoBatchOut>(
+        `${base(orgId)}/${courseId}/lessons-avatar-video/cancel-batch`,
+        {},
+      );
+      return res.data;
+    },
+    /** Polling-friendly status per UI progress bar. */
+    getLessonStatus: async (
+      orgId: string,
+      courseId: string,
+      lessonId: string,
+    ): Promise<LessonAvatarVideoStatusOut> => {
+      const res = await apiClient.get<LessonAvatarVideoStatusOut>(
+        `${base(orgId)}/${courseId}/lessons/${lessonId}/avatar-video/status`,
+      );
+      return res.data;
+    },
+    getCourseStatus: async (
+      orgId: string,
+      courseId: string,
+    ): Promise<LessonAvatarVideoBatchOut> => {
+      const res = await apiClient.get<LessonAvatarVideoBatchOut>(
+        `${base(orgId)}/${courseId}/lessons-avatar-video/status`,
+      );
+      return res.data;
+    },
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -1703,6 +1772,64 @@ export interface LessonVideoBatchOut {
   failed_count: number;
   eligible_count: number;
   aggregate_progress: number;
+}
+
+// ---------------------------------------------------------------------------
+// Tipi Fase 6b — Video con Avatar (lip-sync MuseTalk) (§9b)
+// ---------------------------------------------------------------------------
+
+export type LessonAvatarVideoStatus =
+  | "empty"
+  | "pending"
+  | "processing"
+  | "ready"
+  | "failed"
+  | "cancelled";
+
+export type LessonAvatarVideoPhase =
+  | "preparing"
+  | "lipsync"
+  | "overlay"
+  | null;
+
+export interface LessonAvatarVideoTokens {
+  audio_duration_s?: number;
+  lipsync_duration_s?: number;
+  overlay_duration_ms?: number;
+  total_duration_s?: number;
+  runpod_job_id?: string;
+  num_ready_clips?: number;
+  overlay_scale?: number;
+  file_size_bytes?: number;
+}
+
+export interface LessonAvatarVideoStatusOut {
+  lesson_id: string;
+  lesson_code: string;
+  status: LessonAvatarVideoStatus;
+  progress: number;
+  progress_phase: LessonAvatarVideoPhase;
+  video_url: string | null;
+  error: string | null;
+  attempts: number;
+  generated_at: string | null;
+  tokens: LessonAvatarVideoTokens | null;
+  is_stale: boolean;
+  // Pre-requisiti runtime per disabilitare "Genera" con tooltip mirato.
+  lesson_video_ready: boolean;
+  avatar_clips_ready: boolean;
+}
+
+export interface LessonAvatarVideoBatchOut {
+  items: LessonAvatarVideoStatusOut[];
+  total: number;
+  ready_count: number;
+  processing_count: number;
+  pending_count: number;
+  failed_count: number;
+  eligible_count: number;
+  aggregate_progress: number;
+  avatar_clips_ready: boolean;
 }
 
 // Per il Select read-only delle tassonomie attive (riusa endpoint

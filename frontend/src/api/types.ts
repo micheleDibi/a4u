@@ -146,11 +146,21 @@ export interface AvatarClipOut {
   video_url: string | null;
 }
 
+export interface AvatarMusetalkParamsUpdate {
+  musetalk_extra_margin: number;
+  musetalk_left_cheek_width: number;
+  musetalk_right_cheek_width: number;
+}
+
 export interface AvatarOut {
   id: UUID;
   user_id: UUID;
   audio_lang: string | null;
   clips_status: AvatarClipsAggregateStatus;
+  // Parametri MuseTalk per il "Video con Avatar" delle lezioni.
+  musetalk_extra_margin: number;
+  musetalk_left_cheek_width: number;
+  musetalk_right_cheek_width: number;
   image_url: string;
   // Null se l'utente non ha (ancora) caricato l'audio della voce —
   // possibile dopo migration 0026 che ha forzato re-upload.

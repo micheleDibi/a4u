@@ -32,6 +32,10 @@ class AvatarOut(ORMModel):
     user_id: uuid.UUID
     audio_lang: str | None = None
     clips_status: str
+    # Parametri MuseTalk per il «Video con Avatar» delle lezioni.
+    musetalk_extra_margin: int
+    musetalk_left_cheek_width: int
+    musetalk_right_cheek_width: int
     created_at: datetime
     updated_at: datetime
     clips: list[AvatarClipOut] = Field(default_factory=list)
@@ -52,6 +56,17 @@ class AvatarOut(ORMModel):
             if self.audio_path
             else None
         )
+
+
+class AvatarMusetalkParamsUpdate(BaseModel):
+    """Parametri MuseTalk per-avatar usati dalla generazione del «Video
+    con Avatar» delle lezioni. Tutti obbligatori: la UI invia sempre i
+    tre valori. I default del modello sono i valori del comando MuseTalk
+    testato manualmente (15 / 110 / 110)."""
+
+    musetalk_extra_margin: int = Field(ge=0, le=200)
+    musetalk_left_cheek_width: int = Field(ge=0, le=400)
+    musetalk_right_cheek_width: int = Field(ge=0, le=400)
 
 
 class AvatarClipPromptOut(ORMModel):

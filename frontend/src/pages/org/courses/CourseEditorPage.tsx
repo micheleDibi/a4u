@@ -81,6 +81,7 @@ import { CourseLessonContentView } from "./components/CourseLessonContentView";
 import { CourseLessonSlidesView } from "./components/CourseLessonSlidesView";
 import { CourseLessonSpeechView } from "./components/CourseLessonSpeechView";
 import { CourseLessonVideoView } from "./components/CourseLessonVideoView";
+import { CourseLessonAvatarVideoView } from "./components/CourseLessonAvatarVideoView";
 import { CourseStatusBadge } from "./components/CourseStatusBadge";
 import { GenerateArchitectureDialog } from "./components/GenerateArchitectureDialog";
 import { KeywordTagsInput } from "./components/KeywordTagsInput";
@@ -299,6 +300,7 @@ export default function CourseEditorPage({ mode }: Props) {
     "lesson-slides",
     "lesson-speech",
     "lesson-video",
+    "lesson-avatar-video",
   ] as const;
   type TabId = (typeof TAB_ORDER)[number];
   const tabStorageKey = courseId ? `course-editor-tab:${courseId}` : null;
@@ -776,6 +778,23 @@ export default function CourseEditorPage({ mode }: Props) {
               }
             >
               {t("courses.tabs.lessonVideo")}
+            </TabsTrigger>
+          )}
+          {mode === "edit" && setupLocked && (
+            <TabsTrigger
+              value="lesson-avatar-video"
+              disabled={
+                !course ||
+                !course.modules?.some((m) =>
+                  m.lessons?.some(
+                    (l) =>
+                      l.speech_status === "approved" &&
+                      l.slides_status === "approved",
+                  ),
+                )
+              }
+            >
+              {t("courses.tabs.lessonAvatarVideo")}
             </TabsTrigger>
           )}
         </TabsList>
@@ -1436,6 +1455,17 @@ export default function CourseEditorPage({ mode }: Props) {
         {mode === "edit" && course && (
           <TabsContent value="lesson-video" className="space-y-4">
             <CourseLessonVideoView
+              course={course}
+              orgId={orgId}
+              canGenerate={canGenerate}
+            />
+          </TabsContent>
+        )}
+
+        {/* Tab — Video con Avatar (Fase 6b) */}
+        {mode === "edit" && course && (
+          <TabsContent value="lesson-avatar-video" className="space-y-4">
+            <CourseLessonAvatarVideoView
               course={course}
               orgId={orgId}
               canGenerate={canGenerate}

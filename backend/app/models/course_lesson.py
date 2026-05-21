@@ -69,6 +69,15 @@ LESSON_VIDEO_STATUSES: tuple[str, ...] = (
     "cancelled",
 )
 
+LESSON_AVATAR_VIDEO_STATUSES: tuple[str, ...] = (
+    "empty",
+    "pending",
+    "processing",
+    "ready",
+    "failed",
+    "cancelled",
+)
+
 
 class CourseLesson(UUIDPKMixin, TimestampMixin, Base):
     """Lezione del corso (Fase 1, §4 di prompt_generazione_corsi.md).
@@ -151,6 +160,15 @@ class CourseLesson(UUIDPKMixin, TimestampMixin, Base):
         CheckConstraint(
             "video_progress >= 0 AND video_progress <= 100",
             name="ck_course_lesson_video_progress",
+        ),
+        CheckConstraint(
+            "avatar_video_status IN "
+            "('empty','pending','processing','ready','failed','cancelled')",
+            name="ck_course_lesson_avatar_video_status",
+        ),
+        CheckConstraint(
+            "avatar_video_progress >= 0 AND avatar_video_progress <= 100",
+            name="ck_course_lesson_avatar_video_progress",
         ),
     )
 
@@ -439,6 +457,40 @@ class CourseLesson(UUIDPKMixin, TimestampMixin, Base):
     # encode_duration_ms, tts_duration_ms, device, model_xtts,
     # num_segments, num_slides, file_size_bytes}.
     video_tokens: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB, nullable=True
+    )
+
+    # Scheda "Video con Avatar" — video MP4 della lezione con l'avatar
+    # parlante (lip-sync MuseTalk) sovrapposto in basso a destra.
+    # Pre-condizione: `video_status='ready'` (il video della lezione
+    # esiste già) AND l'avatar dell'assegnatario ha clip pronte. Il
+    # worker `course_lesson_avatar_video_worker` estrae l'audio dal
+    # video della lezione (sync garantita), genera il lip-sync via
+    # MuseTalk su RunPod e lo sovrappone con ffmpeg al video esistente.
+    # Stato `ready` significa "MP4 disponibile a `avatar_video_path`".
+    avatar_video_status: Mapped[str] = mapped_column(
+        String(40), nullable=False, default="empty", server_default="empty"
+    )
+    avatar_video_progress: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, default=0, server_default="0"
+    )
+    avatar_video_progress_phase: Mapped[str | None] = mapped_column(
+        String(50), nullable=True
+    )
+    avatar_video_path: Mapped[str | None] = mapped_column(
+        String(500), nullable=True
+    )
+    avatar_video_attempts: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, default=0, server_default="0"
+    )
+    avatar_video_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    avatar_video_generated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # avatar_video_tokens schema: {lipsync_duration_s, overlay_duration_ms,
+    # runpod_job_id, runpod_execution_time_s, num_unique_clips,
+    # manifest_cache_hit, file_size_bytes}.
+    avatar_video_tokens: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB, nullable=True
     )
 

@@ -28,6 +28,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -334,6 +335,9 @@ export default function MyAvatarPage() {
           </div>
         </section>
       )}
+
+      {/* === MUSETALK PARAMS (avanzato) === */}
+      {hasAvatar && data && <MusetalkParamsSection avatar={data} />}
 
       <ConfirmDialog
         open={confirmDelete}
@@ -661,5 +665,133 @@ function ClipCard({ clip }: { clip: AvatarClipOut }) {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * Sezione avanzata: parametri MuseTalk per-avatar usati dal «Video con
+ * Avatar» delle lezioni (lip-sync dell'avatar sovrapposto al video).
+ * I default coincidono con i valori del comando MuseTalk testato.
+ */
+function MusetalkParamsSection({ avatar }: { avatar: AvatarOut }) {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const [extraMargin, setExtraMargin] = useState(avatar.musetalk_extra_margin);
+  const [leftCheek, setLeftCheek] = useState(avatar.musetalk_left_cheek_width);
+  const [rightCheek, setRightCheek] = useState(
+    avatar.musetalk_right_cheek_width,
+  );
+
+  // Re-sync se l'avatar viene ricaricato dal server.
+  useEffect(() => {
+    setExtraMargin(avatar.musetalk_extra_margin);
+    setLeftCheek(avatar.musetalk_left_cheek_width);
+    setRightCheek(avatar.musetalk_right_cheek_width);
+  }, [
+    avatar.musetalk_extra_margin,
+    avatar.musetalk_left_cheek_width,
+    avatar.musetalk_right_cheek_width,
+  ]);
+
+  const mut = useMutation({
+    mutationFn: () =>
+      myAvatarApi.updateMusetalkParams({
+        musetalk_extra_margin: extraMargin,
+        musetalk_left_cheek_width: leftCheek,
+        musetalk_right_cheek_width: rightCheek,
+      }),
+    onSuccess: () => {
+      toast.success(t("myAvatar.musetalk.saved"));
+      qc.invalidateQueries({ queryKey: ["my-avatar"] });
+    },
+    onError: (err) => toast.error(extractApiError(err).message),
+  });
+
+  const dirty =
+    extraMargin !== avatar.musetalk_extra_margin ||
+    leftCheek !== avatar.musetalk_left_cheek_width ||
+    rightCheek !== avatar.musetalk_right_cheek_width;
+
+  return (
+    <section className="space-y-4">
+      <div>
+        <h2 className="text-base font-semibold">
+          {t("myAvatar.musetalk.title")}
+        </h2>
+        <p className="text-xs text-muted-foreground">
+          {t("myAvatar.musetalk.hint")}
+        </p>
+      </div>
+      <Card>
+        <CardContent className="space-y-4 p-4">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <MusetalkField
+              label={t("myAvatar.musetalk.extraMargin")}
+              value={extraMargin}
+              min={0}
+              max={200}
+              onChange={setExtraMargin}
+            />
+            <MusetalkField
+              label={t("myAvatar.musetalk.leftCheek")}
+              value={leftCheek}
+              min={0}
+              max={400}
+              onChange={setLeftCheek}
+            />
+            <MusetalkField
+              label={t("myAvatar.musetalk.rightCheek")}
+              value={rightCheek}
+              min={0}
+              max={400}
+              onChange={setRightCheek}
+            />
+          </div>
+          <div className="flex justify-end">
+            <Button
+              size="sm"
+              onClick={() => mut.mutate()}
+              disabled={!dirty || mut.isPending}
+            >
+              {mut.isPending ? t("common.saving") : t("common.save")}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </section>
+  );
+}
+
+function MusetalkField({
+  label,
+  value,
+  min,
+  max,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  onChange: (n: number) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+        {label}
+      </Label>
+      <Input
+        type="number"
+        min={min}
+        max={max}
+        value={value}
+        onChange={(e) => {
+          const n = Number(e.target.value);
+          if (Number.isFinite(n)) {
+            onChange(Math.max(min, Math.min(max, Math.round(n))));
+          }
+        }}
+      />
+    </div>
   );
 }

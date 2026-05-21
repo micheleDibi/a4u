@@ -187,6 +187,37 @@ async def regenerate_clips(
     return avatar
 
 
+async def update_musetalk_params(
+    db: AsyncSession,
+    *,
+    avatar: Avatar,
+    extra_margin: int,
+    left_cheek_width: int,
+    right_cheek_width: int,
+    actor_id: uuid.UUID,
+) -> Avatar:
+    """Aggiorna i parametri MuseTalk per-avatar usati dalla generazione
+    del «Video con Avatar» delle lezioni."""
+    avatar.musetalk_extra_margin = extra_margin
+    avatar.musetalk_left_cheek_width = left_cheek_width
+    avatar.musetalk_right_cheek_width = right_cheek_width
+    await db.flush()
+    await db.refresh(avatar)
+    await write_audit(
+        db,
+        action="avatar.musetalk_params.update",
+        actor_user_id=actor_id,
+        target_type="avatar",
+        target_id=str(avatar.id),
+        metadata={
+            "extra_margin": extra_margin,
+            "left_cheek_width": left_cheek_width,
+            "right_cheek_width": right_cheek_width,
+        },
+    )
+    return avatar
+
+
 async def delete_my_avatar(
     db: AsyncSession, *, avatar: Avatar, actor_id: uuid.UUID
 ) -> None:

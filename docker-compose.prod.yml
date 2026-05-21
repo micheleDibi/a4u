@@ -44,6 +44,17 @@ services:
       RUNPOD_BASE_URL: ${RUNPOD_BASE_URL:-https://api.runpod.ai}
       RUNPOD_TTS_TIMEOUT_SECONDS: ${RUNPOD_TTS_TIMEOUT_SECONDS:-1800}
       RUNPOD_TTS_POLL_INTERVAL_SECONDS: ${RUNPOD_TTS_POLL_INTERVAL_SECONDS:-3}
+      # RunPod Serverless — MuseTalk lip-sync per il "Video con Avatar"
+      # (Fase 6b §9b). Stesso account del TTS (RUNPOD_API_KEY riusato),
+      # endpoint dedicato. R2 (Cloudflare, S3-compatible) = storage di
+      # transito. Vuoti = "Video con Avatar" disabilitato.
+      RUNPOD_MUSETALK_ENDPOINT_ID: ${RUNPOD_MUSETALK_ENDPOINT_ID:-}
+      R2_ENDPOINT: ${R2_ENDPOINT:-}
+      R2_BUCKET: ${R2_BUCKET:-}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      AVATAR_VIDEO_OVERLAY_SCALE: ${AVATAR_VIDEO_OVERLAY_SCALE:-0.24}
+      AVATAR_VIDEO_OVERLAY_MARGIN: ${AVATAR_VIDEO_OVERLAY_MARGIN:-24}
       # OpenAI (traduzione i18n + summarization + generazione corso AI).
       # Ogni fase del pipeline corso usa un modello configurabile a parte:
       # _model: name del modello, _max_tokens: budget di output.

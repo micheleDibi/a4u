@@ -24,6 +24,7 @@ from app.services import (
     avatar_clip_worker,
     course_architecture_worker,
     course_document_worker,
+    course_lesson_avatar_video_worker,
     course_lesson_content_worker,
     course_lesson_pdf_worker,
     course_lesson_slides_pdf_worker,
@@ -76,6 +77,7 @@ async def lifespan(app: FastAPI):
         "courses",
         "lesson_assets",
         "lesson_videos",
+        "lesson_avatar_videos",
     ):
         (settings.upload_root / sub).mkdir(parents=True, exist_ok=True)
 
@@ -114,11 +116,17 @@ async def lifespan(app: FastAPI):
     # Pre-condizione: speech+slides approved AND Avatar.audio_path
     # dell'assegnatario presente AND servizio TTS RunPod configurato.
     course_lesson_video_worker.start_worker()
+    # Worker "Video con Avatar" (Fase 6b — §9b). Cap=1 di default.
+    # Orchestrazione: subprocess MuseTalk lip-sync su RunPod GPU +
+    # overlay ffmpeg. Pre-condizione: video della lezione `ready` AND
+    # avatar dell'assegnatario con clip pronte AND MuseTalk configurato.
+    course_lesson_avatar_video_worker.start_worker()
 
     log.info("startup_complete", env=settings.env)
     try:
         yield
     finally:
+        await course_lesson_avatar_video_worker.stop_worker()
         await course_lesson_video_worker.stop_worker()
         await course_lesson_speech_pdf_worker.stop_worker()
         await course_lesson_speech_worker.stop_worker()
