@@ -658,6 +658,12 @@ function LessonStructureRow({
             {t("courses.architecture.lesson.introductory")}
           </Badge>
         )}
+        {lesson.is_assessment && (
+          <Badge variant="secondary" className="text-[11px]">
+            <ListChecks className="size-3" />
+            {t("courses.architecture.lesson.assessment")}
+          </Badge>
+        )}
         <span className="flex-1 text-sm font-medium truncate">
           {lesson.title}
         </span>

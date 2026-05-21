@@ -335,6 +335,7 @@
         "editTitle": "Modifica lezione",
         "dialogDescription": "Definisci titolo, sintesi e — se è la lezione introduttiva — i libri di testo consigliati. Il codice (M1.L1…) viene assegnato automaticamente.",
         "introductory": "Introduttiva",
+        "assessment": "Verifica competenze",
         "fields": {
           "title": "Titolo della lezione",
           "titlePlaceholder": "Es. Algoritmi di classificazione supervisionata",
