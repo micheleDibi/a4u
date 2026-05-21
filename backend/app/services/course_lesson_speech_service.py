@@ -126,6 +126,37 @@ def validate_tts_safety(text: str) -> list[str]:
     return violations
 
 
+# Mappa di traduzione: ogni carattere proibito → spazio.
+_TTS_SANITIZE_TRANSLATION = {
+    ord(c): " " for c in _TTS_SAFETY_FORBIDDEN_CHARS
+}
+
+
+def sanitize_tts_text(text: str) -> str:
+    """Rende un testo TTS-safe rimuovendo gli artefatti di formattazione.
+
+    Rimuove i comandi LaTeX e sostituisce i caratteri di formattazione
+    proibiti (asterisco, trattino basso, backtick, cancelletto,
+    backslash, dollaro) con uno spazio, poi normalizza gli spazi. Le
+    abbreviazioni (es., etc., ...) NON vengono toccate: restano gestite
+    da validate_tts_safety come hard-fail (espanderle richiederebbe
+    logica per-lingua).
+
+    Usata in materialize_lesson_speech: meglio sanificare un discorso
+    valido che farlo fallire per un carattere markdown sfuggito all'AI.
+    """
+    if not text:
+        return text
+    # Comandi LaTeX prima (contengono `\`, che il passo dopo rimuove).
+    cleaned = _TTS_SAFETY_LATEX_RE.sub(" ", text)
+    cleaned = cleaned.translate(_TTS_SANITIZE_TRANSLATION)
+    # Collassa gli spazi introdotti (preserva i newline) e toglie lo
+    # spazio prima della punteggiatura.
+    cleaned = re.sub(r"[^\S\n]+", " ", cleaned)
+    cleaned = re.sub(r" +([,.;:!?])", r"\1", cleaned)
+    return cleaned.strip()
+
+
 # ---------------------------------------------------------------------------
 # Eager loading
 # ---------------------------------------------------------------------------
@@ -501,8 +532,16 @@ async def materialize_lesson_speech(
             code="lesson_speech_map_orphan_segments",
         )
 
-    # 8. TTS-safety
+    # 8. TTS-safety: prima sanifica i caratteri di formattazione
+    #    proibiti e i comandi LaTeX (artefatti che il TTS
+    #    mispronuncerebbe), poi valida ciò che resta. La sanitizzazione
+    #    muta `seg.text` → `raw` va ri-dumpato.
+    text_sanitized = False
     for seg in output.speech_segments:
+        cleaned = sanitize_tts_text(seg.text)
+        if cleaned and cleaned != seg.text:
+            seg.text = cleaned
+            text_sanitized = True
         violations = validate_tts_safety(seg.text)
         if violations:
             raise ConflictError(
@@ -510,6 +549,14 @@ async def materialize_lesson_speech(
                 f"{'; '.join(violations[:5])}.",
                 code="lesson_speech_tts_unsafe",
             )
+    if text_sanitized:
+        log.info(
+            "lesson_speech_text_sanitized",
+            lesson_code=lesson.lesson_code,
+        )
+        # `raw` (persistito allo step 9) deve riflettere il testo
+        # sanificato.
+        raw = output.model_dump()
 
     # 9. Apply — scrive speech_raw + meta
     lesson.speech_raw = raw
