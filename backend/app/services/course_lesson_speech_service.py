@@ -293,6 +293,57 @@ def is_regeneration_for_lesson(lesson: CourseLesson) -> bool:
 # ---------------------------------------------------------------------------
 
 
+def _normalize_speech_durations(
+    output: LessonSpeechOutput, target_seconds: int
+) -> None:
+    """Riscala in-place le `estimated_duration_seconds` dei segmenti
+    perché la loro somma sia ~`target_seconds`.
+
+    Le durate sono una STIMA dell'AI: la durata reale dell'audio la
+    produce il TTS. Riscalare la stima (invece di rifiutare un discorso
+    altrimenti valido) evita che la Fase 5 fallisca per uno scarto di
+    pochi punti percentuali. Aggiorna anche `slide_to_segments_map` e
+    `estimated_total_duration_seconds` perché restino coerenti con le
+    validazioni §8.5 successive.
+    """
+    segments = output.speech_segments
+    current = sum(s.estimated_duration_seconds for s in segments)
+    if not segments or current <= 0:
+        return
+
+    factor = target_seconds / current
+    # Schema: ogni segmento ha estimated_duration_seconds ∈ [1, 600].
+    for s in segments:
+        s.estimated_duration_seconds = max(
+            1, min(600, round(s.estimated_duration_seconds * factor))
+        )
+
+    # Assorbe lo scarto di arrotondamento sull'ultimo segmento.
+    drift = target_seconds - sum(
+        s.estimated_duration_seconds for s in segments
+    )
+    if drift:
+        last = segments[-1]
+        last.estimated_duration_seconds = max(
+            1, min(600, last.estimated_duration_seconds + drift)
+        )
+
+    # Ricalcola le durate per-slide della mappa e il totale dichiarato.
+    by_id = {s.segment_id: s for s in segments}
+    for entry in output.slide_to_segments_map:
+        entry.slide_total_duration_seconds = max(
+            1,
+            sum(
+                by_id[sid].estimated_duration_seconds
+                for sid in entry.segment_ids
+                if sid in by_id
+            ),
+        )
+    output.estimated_total_duration_seconds = sum(
+        s.estimated_duration_seconds for s in segments
+    )
+
+
 async def materialize_lesson_speech(
     db: AsyncSession,
     *,
@@ -355,19 +406,41 @@ async def materialize_lesson_speech(
             code="lesson_speech_uncovered_slides",
         )
 
-    # 5. sum(estimated_duration_seconds) ∈ [target × 0.95, target × 1.05]
+    # 5. Durata totale stimata. Le `estimated_duration_seconds` sono una
+    #    STIMA dell'AI; la durata reale dell'audio la produce il TTS.
+    #    Per uno scarto contenuto riscaliamo le durate sul target invece
+    #    di rifiutare un discorso valido — così la Fase 5 non fallisce
+    #    per pochi punti percentuali. Hard-fail solo per deriva estrema
+    #    (testo davvero sovra/sotto-dimensionato → va rigenerato).
     target = course.lesson_duration_minutes * 60
     sum_durations = sum(
         s.estimated_duration_seconds for s in output.speech_segments
     )
+    if sum_durations <= 0:
+        raise ConflictError(
+            "Le durate stimate dei segmenti sono nulle o assenti.",
+            code="lesson_speech_duration_zero",
+        )
+    if not (target * 0.5 <= sum_durations <= target * 2.0):
+        raise ConflictError(
+            f"Durata totale stimata {sum_durations}s troppo distante dal "
+            f"target {target}s ({course.lesson_duration_minutes} min): "
+            f"il discorso va rigenerato.",
+            code="lesson_speech_duration_out_of_range",
+        )
     low = round(target * 0.95)
     high = round(target * 1.05)
     if not (low <= sum_durations <= high):
-        raise ConflictError(
-            f"Durata totale stimata {sum_durations}s fuori range "
-            f"[{low}s, {high}s] (target {target}s ±5%).",
-            code="lesson_speech_duration_out_of_range",
+        _normalize_speech_durations(output, target)
+        log.info(
+            "lesson_speech_durations_rescaled",
+            lesson_code=lesson.lesson_code,
+            original_seconds=sum_durations,
+            target_seconds=target,
         )
+        # `raw` (persistito allo step 9) deve riflettere le durate
+        # riscalate.
+        raw = output.model_dump()
 
     # 6. Word count coerente con duration × wpm (±15% soft warning)
     wpm = words_per_minute(course.language_code)

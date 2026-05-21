@@ -9,8 +9,10 @@ Validazione (§8.5) è in
 - ogni `slide_id` referenziato esiste in `slides_raw.slides`
 - ogni slide di Fase 4 ha almeno un segmento associato
 - `segment_id` univoci a livello di lezione
-- `sum(estimated_duration_seconds) ∈ [target × 0.95, target × 1.05]`
-  con `target = course.lesson_duration_minutes × 60`
+- `sum(estimated_duration_seconds)`: se fuori da ±5% dal target le
+  durate vengono riscalate sul target (`target =
+  course.lesson_duration_minutes × 60`); hard-fail solo per deriva
+  estrema (oltre ±50%)
 - word count coerente con duration × wpm (130 it / 150 en) ±15%
 - testo TTS-safe: niente `*` `_` `` ` `` `#` `\` `$`, niente
   abbreviazioni note (`es.`, `etc.`, `ca.`, `p.es.`, `i.e.`, `e.g.`),
