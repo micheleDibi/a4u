@@ -98,13 +98,15 @@ Il worker scarica il `voice_sample_url` (deve essere pubblicamente
 raggiungibile dai worker RunPod — è la stessa URL `/uploads/...` che usa
 MiniMax). `voice_sample_b64` inline resta accettato come fallback.
 
-**Output** — un elemento per segment, consumato via
-`GET /v2/{endpoint_id}/stream/{job_id}` (o tutti insieme in `output` via
-`/status/{job_id}` a job concluso):
+**Output** — un elemento per **chunk** audio (~12s), consumato via
+`GET /v2/{endpoint_id}/stream/{job_id}`. L'audio è inviato per chunk e
+non per intero segmento: un segmento lungo come blob unico sforerebbe i
+limiti dello stream di RunPod e andrebbe perso. Il client ricompone i
+chunk per `segment_id`, ordinati per `chunk_index`:
 
 ```json
-{ "segment_id": "seg-1", "audio_b64": "<FLAC base64>",
-  "sample_rate": 24000, "index": 0, "total": 1 }
+{ "segment_id": "seg-1", "chunk_index": 0, "chunk_total": 4,
+  "audio_b64": "<FLAC base64>", "sample_rate": 24000 }
 ```
 
 Errore fatale: `{ "error": "..." }`.

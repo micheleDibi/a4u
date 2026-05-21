@@ -5,8 +5,9 @@ vocale gira ora su GPU remota (vedi la cartella `XTTS/` del repo). Questo
 modulo e' un client HTTP puro — nessuna dipendenza torch/coqui.
 
 Flusso: invia 1 job per video (tutti i segment), consuma lo stream
-incrementale di RunPod (1 risultato per segment, FLAC base64), decodifica
-in array numpy float32 @ 24000 Hz — stesso contratto del vecchio TTS.
+incrementale di RunPod (l'handler invia l'audio per CHUNK, FLAC base64),
+ricompone i chunk per segment e decodifica in array numpy float32
+@ 24000 Hz — stesso contratto del vecchio TTS.
 """
 from __future__ import annotations
 
@@ -183,7 +184,11 @@ async def synthesize_lesson_audio(
             on_segment_progress=on_segment_progress,
         )
 
-    audio_per_segment: dict[str, np.ndarray] = {}
+    # Gli output sono CHUNK audio (più chunk per `segment_id`, ciascuno
+    # con `chunk_index`). Raggruppa per segment, ordina i chunk e
+    # concatena. Retro-compatibile con l'handler vecchio (1 output per
+    # segment, senza `chunk_index` → trattato come chunk 0).
+    chunks_by_segment: dict[str, list[tuple[int, np.ndarray]]] = {}
     for out in outputs:
         if not isinstance(out, dict):
             continue
@@ -193,15 +198,37 @@ async def synthesize_lesson_audio(
         audio_b64 = out.get("audio_b64")
         if not sid or not audio_b64:
             continue
-        audio_per_segment[sid] = _decode_segment_audio(audio_b64)
+        chunk_index = int(out.get("chunk_index") or 0)
+        chunks_by_segment.setdefault(sid, []).append(
+            (chunk_index, _decode_segment_audio(audio_b64))
+        )
+
+    audio_per_segment: dict[str, np.ndarray] = {}
+    for sid, parts in chunks_by_segment.items():
+        parts.sort(key=lambda p: p[0])
+        audio_per_segment[sid] = np.concatenate([a for _idx, a in parts])
 
     if not audio_per_segment:
         raise RunpodJobFailedError("Il job RunPod non ha prodotto alcun audio.")
+
+    # Completezza: ogni segment richiesto DEVE avere audio. Un audio
+    # incompleto darebbe un video monco e desincronizzato → meglio
+    # fallire qui (il worker fa auto-retry) che produrre un video rotto.
+    requested_ids = {s["segment_id"] for s in segments}
+    missing_ids = requested_ids - set(audio_per_segment)
+    if missing_ids:
+        raise RunpodJobFailedError(
+            f"Audio TTS incompleto: ricevuti {len(audio_per_segment)}/"
+            f"{len(requested_ids)} segmenti "
+            f"(mancanti: {sorted(missing_ids)[:8]})."
+        )
 
     log.info(
         "runpod_tts_job_done",
         job_id=job_id,
         segments_received=len(audio_per_segment),
+        segments_requested=len(requested_ids),
+        chunks_received=len(outputs),
     )
     return audio_per_segment, SAMPLE_RATE
 
@@ -241,21 +268,34 @@ async def _collect_outputs(
     poll_s: int,
     on_segment_progress: Callable[[int, int], Awaitable[None]] | None,
 ) -> list[Any]:
-    """Raccoglie gli output del job.
+    """Raccoglie gli output (chunk audio) del job.
 
-    Usa `/stream` (incrementale → progress per-segment); se `/stream`
-    fallisce, passa a `/status` polling (output completo a job concluso).
+    Usa `/stream` (incrementale → progress per-segment). A job
+    `COMPLETED` continua a drenare `/stream` finché una risposta torna
+    senza nuovi item: lo stream è incrementale e a job concluso può
+    restare ancora output bufferizzato — uscire al primo `COMPLETED`
+    perderebbe i chunk finali. Se `/stream` fallisce, passa a `/status`
+    polling (output completo a job concluso).
     """
     collected: list[Any] = []
+    seen_segments: set[str] = set()
     use_stream = True
 
+    def _track(out: Any) -> None:
+        collected.append(out)
+        if isinstance(out, dict):
+            sid = out.get("segment_id")
+            if sid:
+                seen_segments.add(str(sid))
+
     async def _bump() -> None:
-        # CancelledError (BaseException) NON viene soppressa da
-        # suppress(Exception): propaga e interrompe lo stream quando il
-        # job video viene annullato.
+        # Progress sui SEGMENT distinti visti (gli output sono chunk:
+        # più chunk per segment). CancelledError (BaseException) NON
+        # viene soppressa da suppress(Exception): propaga e interrompe
+        # lo stream quando il job video viene annullato.
         if on_segment_progress is not None:
             with contextlib.suppress(Exception):  # pragma: no cover
-                await on_segment_progress(min(len(collected), total), total)
+                await on_segment_progress(min(len(seen_segments), total), total)
 
     while True:
         if time.monotonic() > deadline:
@@ -278,18 +318,25 @@ async def _collect_outputs(
                 use_stream = False
                 continue
             data = resp.json()
-            for item in data.get("stream") or []:
+            stream_items = data.get("stream") or []
+            for item in stream_items:
                 out = item.get("output") if isinstance(item, dict) else None
                 if out is not None:
-                    collected.append(out)
+                    _track(out)
             await _bump()
             status = data.get("status")
-            if status == "COMPLETED":
-                return collected
             if status in _FAILED_STATES:
                 raise RunpodJobFailedError(
                     f"Job RunPod {status}: {data.get('error') or data}"
                 )
+            if status == "COMPLETED":
+                # Job concluso: continua a drenare `/stream` finché una
+                # risposta non torna senza nuovi item — solo allora
+                # tutti i chunk sono stati raccolti.
+                if not stream_items:
+                    return collected
+                await asyncio.sleep(0.5)
+                continue
         else:
             try:
                 resp = await client.get(

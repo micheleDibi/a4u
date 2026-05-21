@@ -18,9 +18,12 @@ Schema input del job:
     }}
 (`voice_sample_b64` inline e' ancora accettato come fallback.)
 
-Output — un `yield` per segment (consumabile via endpoint /stream):
-    {"segment_id": "...", "audio_b64": "<FLAC base64>",
-     "sample_rate": 24000, "index": 0, "total": 12}
+Output — un `yield` per CHUNK audio (~12s, payload piccolo che lo
+stream di RunPod consegna in modo affidabile; un intero segmento come
+blob unico sforerebbe i limiti dello stream e verrebbe perso). Il
+client ricompone i chunk per `segment_id`, ordinati per `chunk_index`:
+    {"segment_id": "...", "chunk_index": 0, "chunk_total": 4,
+     "audio_b64": "<FLAC base64>", "sample_rate": 24000}
 
 Errore fatale:
     {"error": "messaggio"}
@@ -167,20 +170,35 @@ def _infer_chunk(text: str, language: str, gpt_cond_latent, speaker_embedding) -
     return np.asarray(wav, dtype=np.float32).reshape(-1)
 
 
-def _synthesize_segment(text: str, language: str, gpt_cond_latent, speaker_embedding) -> np.ndarray:
-    """Sintetizza un segment: chunking + inference per chunk + 250 ms di
-    silenzio tra i chunk. Ritorna float32 mono @ 24000 Hz."""
+def _synthesize_segment_chunks(text: str, language: str, gpt_cond_latent, speaker_embedding):
+    """Sintetizza un segment chunk per chunk. Generator: yield un dict
+    `{index, total, audio}` per ciascun chunk.
+
+    Ogni chunk include 250 ms di silenzio finale tranne l'ultimo, cosi'
+    il client deve solo concatenare i chunk in ordine per ottenere
+    l'audio del segment (identico alla vecchia sintesi per-segmento).
+    Inviare l'audio per chunk (~12s, payload piccolo) invece che come
+    unico blob per segment evita che i segmenti lunghi sforino i limiti
+    dello stream di RunPod e vengano persi.
+
+    Se il testo non produce alcun chunk, yield un singolo chunk di
+    silenzio breve cosi' il segment resta comunque rappresentato.
+    """
     chunks = split_into_chunks(text, MAX_CHARS)
     if not chunks:
-        return np.zeros(0, dtype=np.float32)
+        yield {
+            "index": 0,
+            "total": 1,
+            "audio": np.zeros(int(SAMPLE_RATE * 0.1), dtype=np.float32),
+        }
+        return
     silence = np.zeros(int(SAMPLE_RATE * SILENCE_MS / 1000), dtype=np.float32)
-    results: list[np.ndarray] = []
     total = len(chunks)
     for i, chunk in enumerate(chunks):
-        results.append(_infer_chunk(chunk, language, gpt_cond_latent, speaker_embedding))
+        audio = _infer_chunk(chunk, language, gpt_cond_latent, speaker_embedding)
         if i < total - 1:
-            results.append(silence)
-    return np.concatenate(results).astype(np.float32, copy=False)
+            audio = np.concatenate([audio, silence]).astype(np.float32, copy=False)
+        yield {"index": i, "total": total, "audio": audio}
 
 
 def _encode_flac_b64(audio: np.ndarray) -> str:
@@ -191,11 +209,12 @@ def _encode_flac_b64(audio: np.ndarray) -> str:
 
 
 def handler(job):
-    """Generator handler RunPod: un `yield` per segment.
+    """Generator handler RunPod: un `yield` per CHUNK audio.
 
     Estrae i conditioning latents dal voice sample UNA sola volta, poi
-    sintetizza ogni segment in streaming cosi' nessun singolo payload
-    supera il cap di ~10 MB di RunPod.
+    sintetizza ogni segment chunk per chunk. Ogni chunk e' un payload
+    piccolo: lo stream di RunPod lo consegna in modo affidabile, mentre
+    un intero segmento lungo come blob unico verrebbe perso.
     """
     job_input = job.get("input") or {}
     tmp_paths: list[str] = []
@@ -257,18 +276,22 @@ def handler(job):
             text = ((seg or {}).get("text") or "").strip()
             if not seg_id or not text:
                 continue
-            audio = _synthesize_segment(text, language, gpt_cond_latent, speaker_embedding)
             try:
                 runpod.serverless.progress_update(job, f"segment {i + 1}/{total}")
             except Exception:
                 pass
-            yield {
-                "segment_id": seg_id,
-                "audio_b64": _encode_flac_b64(audio),
-                "sample_rate": SAMPLE_RATE,
-                "index": i,
-                "total": total,
-            }
+            # Sintesi e invio PER CHUNK: ogni chunk e' un payload
+            # piccolo (~12s) consegnato in modo affidabile dallo stream.
+            for chunk in _synthesize_segment_chunks(
+                text, language, gpt_cond_latent, speaker_embedding
+            ):
+                yield {
+                    "segment_id": seg_id,
+                    "chunk_index": chunk["index"],
+                    "chunk_total": chunk["total"],
+                    "audio_b64": _encode_flac_b64(chunk["audio"]),
+                    "sample_rate": SAMPLE_RATE,
+                }
     except Exception as exc:  # pragma: no cover
         yield {
             "error": f"{type(exc).__name__}: {exc}",

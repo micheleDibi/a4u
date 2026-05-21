@@ -34,19 +34,30 @@ def main() -> None:
         },
     }
 
-    count = 0
+    seen_segments: set[str] = set()
+    chunk_count = 0
     for result in h.handler(job):
         if "error" in result:
             print("ERRORE:", result["error"])
             sys.exit(1)
         data, sr = sf.read(io.BytesIO(base64.b64decode(result["audio_b64"])))
-        print(f"  segment {result['segment_id']}: {len(data)} campioni @ {sr} Hz")
+        seen_segments.add(result["segment_id"])
+        chunk_count += 1
+        print(
+            f"  segment {result['segment_id']} chunk "
+            f"{result.get('chunk_index')}/{result.get('chunk_total')}: "
+            f"{len(data)} campioni @ {sr} Hz"
+        )
         assert sr == 24000, f"sample rate inatteso: {sr}"
         assert len(data) > 0, "audio vuoto"
-        count += 1
 
-    assert count == 2, f"attesi 2 segment, ricevuti {count}"
-    print("OK — handler funzionante.")
+    assert seen_segments == {"s1", "s2"}, (
+        f"attesi i segment s1, s2; ricevuti {sorted(seen_segments)}"
+    )
+    print(
+        f"OK — handler funzionante ({chunk_count} chunk, "
+        f"{len(seen_segments)} segment)."
+    )
 
 
 if __name__ == "__main__":
