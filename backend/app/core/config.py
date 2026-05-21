@@ -47,7 +47,7 @@ class Settings(BaseSettings):
 
     minimax_api_key: str | None = None
     minimax_base_url: str = "https://api.minimax.io"
-    minimax_video_model: str = "MiniMax-Hailuo-02"
+    minimax_video_model: str = "MiniMax-Hailuo-2.3"
     minimax_clip_duration: int = 6
     minimax_clip_resolution: str = "1080P"
     minimax_poll_interval_seconds: int = 10

@@ -7,7 +7,10 @@ aveva lasciato (recovery). Niente Celery, nessun broker esterno.
 from __future__ import annotations
 
 import asyncio
+import shutil
+import tempfile
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from sqlalchemy import select
@@ -30,6 +33,97 @@ log = get_logger("app.avatar.worker")
 
 def _now() -> datetime:
     return datetime.now(tz=UTC)
+
+
+# ---------------------------------------------------------------------------
+# Normalizzazione clip → quadrato 1:1 (stesse proporzioni dell'immagine avatar)
+# ---------------------------------------------------------------------------
+
+
+async def _run_cmd(args: list[str]) -> tuple[int, bytes, bytes]:
+    """Esegue un comando in subprocess async → (returncode, stdout, stderr)."""
+    proc = await asyncio.create_subprocess_exec(
+        *args,
+        stdin=asyncio.subprocess.DEVNULL,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    out, err = await proc.communicate()
+    return proc.returncode or 0, out, err
+
+
+async def _probe_video_dims(path: Path) -> tuple[int, int] | None:
+    """Larghezza×altezza del primo stream video via ffprobe, o None."""
+    settings = get_settings()
+    ffprobe = settings.ffmpeg_binary.replace("ffmpeg", "ffprobe")
+    ret, out, _err = await _run_cmd(
+        [
+            ffprobe,
+            "-v", "error",
+            "-select_streams", "v:0",
+            "-show_entries", "stream=width,height",
+            "-of", "csv=p=0:s=x",
+            str(path),
+        ]
+    )
+    if ret != 0:
+        return None
+    try:
+        w_str, h_str = out.decode("utf-8", "replace").strip().split("x")
+        return int(w_str), int(h_str)
+    except Exception:  # pragma: no cover
+        return None
+
+
+async def _normalize_clip_to_square(data: bytes) -> bytes:
+    """Ritaglia la clip MiniMax a un quadrato 1:1 centrato.
+
+    L'immagine avatar è 1:1, quindi anche la clip deve esserlo. Se è già
+    quadrata viene restituita invariata (niente re-encode). Su qualunque
+    errore si restituisce la clip originale: meglio una clip dalle
+    proporzioni sbagliate che nessuna clip.
+    """
+    settings = get_settings()
+    tmp_dir = Path(tempfile.mkdtemp(prefix="a4u_clip_"))
+    try:
+        src = tmp_dir / "in.mp4"
+        src.write_bytes(data)
+        dims = await _probe_video_dims(src)
+        if dims is None:
+            log.warning("clip_probe_failed")
+            return data
+        w, h = dims
+        if w == h:
+            return data  # già 1:1
+        dst = tmp_dir / "out.mp4"
+        ret, _out, err = await _run_cmd(
+            [
+                settings.ffmpeg_binary,
+                "-y",
+                "-i", str(src),
+                "-vf", "crop='min(iw,ih)':'min(iw,ih)'",
+                "-c:v", "libx264",
+                "-preset", "veryfast",
+                "-crf", "20",
+                "-pix_fmt", "yuv420p",
+                "-c:a", "copy",
+                "-movflags", "+faststart",
+                str(dst),
+            ]
+        )
+        if ret != 0 or not dst.exists():
+            log.warning(
+                "clip_square_crop_failed",
+                error=err.decode("utf-8", "replace")[-400:],
+            )
+            return data
+        log.info("clip_squared", original=f"{w}x{h}")
+        return dst.read_bytes()
+    except Exception as exc:  # pragma: no cover — non bloccare la clip
+        log.warning("clip_normalize_error", error=str(exc))
+        return data
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 async def _start_pending(db: AsyncSession, clip: AvatarClip, avatar: Avatar) -> None:
@@ -75,6 +169,8 @@ async def _poll_processing(db: AsyncSession, clip: AvatarClip, avatar: Avatar) -
         except minimax_service.MinimaxError as exc:
             log.warning("clip_download_failed", clip_id=str(clip.id), error=str(exc))
             return
+        # Normalizza a 1:1 — stesse proporzioni dell'immagine avatar.
+        data = await _normalize_clip_to_square(data)
         path = storage_service.save_bytes(
             subdir=f"avatars/{avatar.user_id}/clips",
             filename=f"{clip.id}.mp4",

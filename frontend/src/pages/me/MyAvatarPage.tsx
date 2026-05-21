@@ -615,14 +615,14 @@ function ClipCard({ clip }: { clip: AvatarClipOut }) {
 
   return (
     <Card className="overflow-hidden">
-      <div className="relative aspect-video bg-muted">
+      <div className="relative aspect-square bg-muted">
         {isReady ? (
           <video
             controls
             loop
             playsInline
             src={clip.video_url ?? undefined}
-            className="size-full object-cover"
+            className="size-full object-contain"
           />
         ) : (
           <div className="flex size-full flex-col items-center justify-center gap-2 text-muted-foreground">
