@@ -615,7 +615,18 @@
         }
       },
       "assessment": {
-        "badge": "Verifica",
+        "exportCsv": "Esporta CSV",
+        "csv": {
+          "filename": "verifica_competenze",
+          "number": "N.",
+          "type": "Tipo",
+          "question": "Domanda",
+          "option": "Opzione",
+          "correctAnswer": "Risposta corretta",
+          "expectedAnswer": "Risposta attesa",
+          "typeMc": "Scelta multipla",
+          "typeOpen": "Domanda aperta"
+        },
         "render": {
           "mcTitle": "Domande a scelta multipla",
           "openTitle": "Domande aperte",
@@ -637,7 +648,8 @@
           "addOption": "Aggiungi opzione"
         },
         "toast": {
-          "updated": "Verifica aggiornata."
+          "updated": "Verifica aggiornata.",
+          "csvExported": "CSV esportato."
         }
       },
       "editor": {

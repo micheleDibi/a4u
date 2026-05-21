@@ -25,6 +25,7 @@ import {
   type CourseLessonOut,
   type CourseModuleOut,
   type CourseOut,
+  type LessonAssessmentRaw,
   type LessonAssessmentUpdateInput,
   type LessonContentStatus,
   type LessonContentUpdateInput,
@@ -59,6 +60,82 @@ import {
   LessonPdfExportDialog,
   type LessonPdfExportMode,
 } from "./LessonPdfExportDialog";
+
+// --- Export CSV della verifica delle competenze ---
+
+interface AssessmentCsvLabels {
+  number: string;
+  type: string;
+  question: string;
+  option: string;
+  correctAnswer: string;
+  expectedAnswer: string;
+  typeMc: string;
+  typeOpen: string;
+}
+
+/** Quota un campo CSV se contiene separatore, virgolette o newline. */
+function csvCell(value: string): string {
+  const s = value ?? "";
+  return /[";\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+/**
+ * CSV delle domande di una verifica (separatore `;`; il chiamante
+ * antepone un BOM UTF-8 → Excel-friendly). Una riga per domanda; le
+ * colonne opzione sono dimensionate sul massimo numero di opzioni fra
+ * le domande a scelta multipla.
+ */
+function buildAssessmentCsv(
+  raw: LessonAssessmentRaw,
+  labels: AssessmentCsvLabels,
+): string {
+  const mc = raw.multiple_choice_questions ?? [];
+  const open = raw.open_questions ?? [];
+  const maxOptions = mc.reduce(
+    (max, q) => Math.max(max, q.options?.length ?? 0),
+    0,
+  );
+
+  const header: string[] = [labels.number, labels.type, labels.question];
+  for (let i = 0; i < maxOptions; i += 1) {
+    header.push(`${labels.option} ${i + 1}`);
+  }
+  header.push(labels.correctAnswer, labels.expectedAnswer);
+
+  const rows: string[][] = [header];
+  let n = 0;
+
+  for (const q of mc) {
+    n += 1;
+    const row: string[] = [String(n), labels.typeMc, q.text];
+    for (let i = 0; i < maxOptions; i += 1) {
+      const opt = q.options?.[i];
+      row.push(opt ? `${opt.option_id}) ${opt.text}` : "");
+    }
+    const correct = q.options?.find(
+      (o) => o.option_id === q.correct_option_id,
+    );
+    row.push(
+      correct
+        ? `${correct.option_id}) ${correct.text}`
+        : q.correct_option_id,
+      "",
+    );
+    rows.push(row);
+  }
+  for (const q of open) {
+    n += 1;
+    const row: string[] = [String(n), labels.typeOpen, q.text];
+    for (let i = 0; i < maxOptions; i += 1) {
+      row.push("");
+    }
+    row.push("", q.expected_answer);
+    rows.push(row);
+  }
+
+  return rows.map((r) => r.map(csvCell).join(";")).join("\r\n");
+}
 
 interface Props {
   course: CourseOut;
@@ -1070,6 +1147,52 @@ function LessonContentRow({
   const contentStale = isContentStale(lesson, parentModule);
   const pdfStale = !isAssessment && isPdfStale(lesson);
 
+  // Export CSV delle domande della verifica — client-side, dai dati
+  // già presenti in content_raw.
+  const assessmentRaw = isAssessmentRaw(lesson.content_raw)
+    ? lesson.content_raw
+    : null;
+  const canExportAssessmentCsv =
+    !!assessmentRaw &&
+    (assessmentRaw.multiple_choice_questions.length > 0 ||
+      assessmentRaw.open_questions.length > 0);
+
+  const handleExportAssessmentCsv = () => {
+    if (!assessmentRaw) return;
+    const csv = buildAssessmentCsv(assessmentRaw, {
+      number: t("courses.lessonsContent.assessment.csv.number"),
+      type: t("courses.lessonsContent.assessment.csv.type"),
+      question: t("courses.lessonsContent.assessment.csv.question"),
+      option: t("courses.lessonsContent.assessment.csv.option"),
+      correctAnswer: t(
+        "courses.lessonsContent.assessment.csv.correctAnswer",
+      ),
+      expectedAnswer: t(
+        "courses.lessonsContent.assessment.csv.expectedAnswer",
+      ),
+      typeMc: t("courses.lessonsContent.assessment.csv.typeMc"),
+      typeOpen: t("courses.lessonsContent.assessment.csv.typeOpen"),
+    });
+    // BOM UTF-8 → Excel mostra correttamente gli accenti.
+    const bom = String.fromCharCode(0xfeff);
+    const blob = new Blob([bom + csv], {
+      type: "text/csv;charset=utf-8;",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${lesson.lesson_code}_${t(
+      "courses.lessonsContent.assessment.csv.filename",
+    )}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5_000);
+    toast.success(
+      t("courses.lessonsContent.assessment.toast.csvExported"),
+    );
+  };
+
   return (
     <div className="rounded-md border bg-muted/10">
       <div className="flex w-full items-center gap-2 px-3 py-2">
@@ -1090,11 +1213,6 @@ function LessonContentRow({
             {lesson.title}
           </span>
         </button>
-        {isAssessment && (
-          <Badge variant="secondary" className="text-[11px]">
-            {t("courses.lessonsContent.assessment.badge")}
-          </Badge>
-        )}
         <LessonContentStatusBadge status={status} />
         {status === "approved" && (
           <ApprovalBadge
@@ -1105,6 +1223,17 @@ function LessonContentRow({
         {!isAssessment && <LessonPdfStatusBadge status={pdfStatus} />}
         {primaryContentCta}
         {!isAssessment && primaryPdfCta}
+        {isAssessment && canExportAssessmentCsv && (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={handleExportAssessmentCsv}
+          >
+            <Download className="size-3.5" />
+            {t("courses.lessonsContent.assessment.exportCsv")}
+          </Button>
+        )}
         {canEdit && isReady && lesson.content_raw && (
           <Button
             type="button"

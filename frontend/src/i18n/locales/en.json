@@ -614,7 +614,18 @@
         }
       },
       "assessment": {
-        "badge": "Assessment",
+        "exportCsv": "Export CSV",
+        "csv": {
+          "filename": "competence_assessment",
+          "number": "No.",
+          "type": "Type",
+          "question": "Question",
+          "option": "Option",
+          "correctAnswer": "Correct answer",
+          "expectedAnswer": "Expected answer",
+          "typeMc": "Multiple choice",
+          "typeOpen": "Open question"
+        },
         "render": {
           "mcTitle": "Multiple-choice questions",
           "openTitle": "Open questions",
@@ -636,7 +647,8 @@
           "addOption": "Add option"
         },
         "toast": {
-          "updated": "Assessment updated."
+          "updated": "Assessment updated.",
+          "csvExported": "CSV exported."
         }
       },
       "editor": {
