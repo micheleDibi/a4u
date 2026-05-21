@@ -49,40 +49,69 @@ PRINCIPI
    ha bisogno, REFERENZIALI tramite il loro ID nel campo
    `references_assets`. NON ricreare lo stesso contenuto.
 
-2. NUOVI ASSET solo se necessario: puoi proporre nuovi asset in
+2. UNA SLIDE DEDICATA PER OGNI ASSET VISIVO E PER OGNI TABELLA
+   (regola tassativa, vale identica per slide e video):
+   - Ogni asset visivo (`visual_assets`: diagrammi Mermaid e
+     immagini) e ogni tabella (`tables`) va su una SLIDE TUTTA SUA,
+     separata. NON va MAI inserito in una slide di contenuto.
+   - Una slide dedicata referenzia ESATTAMENTE UN asset visivo o
+     UNA tabella: `references_assets` contiene quell'unico ID. È
+     VIETATO referenziare due o più asset visivi/tabelle nella
+     stessa slide — se servono due diagrammi, fai due slide.
+   - La slide dedicata ha: `title` chiaro che introduce l'asset,
+     `body` breve (1-2 frasi) che lo spiega/contestualizza, zero
+     bullet (o pochissimi). `type` = `diagram` per un
+     `visual_asset`, `table` per una `tables`.
+   - Le slide di contenuto (concept, definition, summary, ...)
+     portano la prosa e i bullet e NON contengono diagrammi,
+     immagini o tabelle: la loro `references_assets` resta vuota.
+   - ECCEZIONE — equazioni ed esempi NON sono asset visivi:
+     `equations` ed `examples` possono restare inline in una slide
+     di contenuto/formula/example, anche più d'uno, senza slide
+     dedicata. Il limite "uno per slide" vale SOLO per asset
+     visivi e tabelle.
+
+3. NUOVI ASSET solo se necessario: puoi proporre nuovi asset in
    `new_assets` solo se il contenuto del testo richiede una
    visualizzazione che NON è già stata prodotta in Fase 3 (es. uno
    schema di sintesi, un'icona di sezione, un grafico di confronto
    non presente). Usa lo stesso formato di Fase 3 (mermaid/latex/
    markdown/image_prompt). Per evitare collisioni di ID, prefissa con
-   `*_new_*` (es. `fig_new_1`, `tab_new_2`).
+   `*_new_*` (es. `fig_new_1`, `tab_new_2`). Anche i `new_assets`
+   seguono il punto 2: una slide dedicata ciascuno.
 
-3. NUMERO DI SLIDE: stima ~2-3 minuti per slide di contenuto, meno
+4. NUMERO DI SLIDE: stima ~2-3 minuti per slide di contenuto, meno
    per slide di apertura/transizione/agenda. Anche le lezioni brevi
    richiedono un overhead strutturale fisso (~6 slide: titolo, agenda,
    prerequisiti, sintesi, takeaways, riferimenti). Per
-   {{minuti_per_lezione}} minuti, target indicativo:
+   {{minuti_per_lezione}} minuti, target indicativo delle slide di
+   contenuto + struttura:
    - 15 min →  6-10 slide   (overhead strutturale + 1-3 di contenuto)
    - 20 min →  8-12 slide
    - 30 min → 12-15 slide
    - 45 min → 18-23 slide
    - 60 min → 22-30 slide
    - 90 min → 32-42 slide
-   Adatta in funzione della densità del contenuto.
+   A questi numeri si AGGIUNGE una slide dedicata per ogni asset
+   visivo e per ogni tabella (punto 2): con 5 asset visivi e 2
+   tabelle il totale cresce di ~7 slide. Adatta in funzione della
+   densità del contenuto.
 
-4. STRUTTURA STANDARD:
+5. STRUTTURA STANDARD:
    - 1 slide titolo
    - 1 slide agenda/obiettivi della lezione
    - 0-1 slide richiamo prerequisiti (se non introduttiva)
    - sviluppo dei contenuti seguendo le sezioni del testo, con slide
-     di tipo concept, definition, example, diagram, formula, table
-     come appropriato
+     di tipo concept, definition, example, formula come appropriato;
+     SUBITO DOPO la slide di contenuto che introduce un asset visivo
+     o una tabella, inserisci la slide dedicata a quell'asset (tipo
+     diagram / table) — così il discorso scorre in modo coerente
    - 1+ slide di sintesi
    - 1 slide takeaways
    - 1 slide riferimenti (per lezione introduttiva: anche bibliografia
      consigliata)
 
-5. CONTENUTO PER SLIDE
+6. CONTENUTO PER SLIDE
    - title: max 8 parole, evocativo ma chiaro
    - body: opzionale, 1-3 frasi di prosa breve (max ~50 parole, ~400
      caratteri) per accompagnare/contestualizzare i bullet o
@@ -92,24 +121,30 @@ PRINCIPI
      visivamente piatta e pesante da leggere. Tipicamente:
        * title slide → body 1 frase (sottotitolo)
        * concept/definition → body 2-3 frasi + 0-3 bullet di esempio
+       * slide dedicata diagram/table → body 1-2 frasi che
+         introducono l'asset, 0 bullet
        * agenda/takeaways → body vuoto, 3-6 bullet
        * summary → body 1-2 frasi conclusive
    - bullets: 0-6 punti, max ~14 parole per punto. Linguaggio adatto
-     al livello EQF {{livello_eqf}}. Le slide possono avere 0 bullet
-     se contengono principalmente un asset (es. slide con un solo
-     diagramma e caption) o se la prosa di `body` è già esaustiva.
-   - references_assets: lista di asset ID di Fase 3 mostrati nella slide
+     al livello EQF {{livello_eqf}}. Le slide dedicate a un asset
+     visivo/tabella hanno 0 bullet (o pochissimi).
+   - references_assets: SOLO sulle slide dedicate, con UN SOLO ID di
+     asset visivo o tabella. Le slide di contenuto la lasciano vuota
+     (gli `equations`/`examples` inline sono l'unica eccezione).
    - source_section_id: la sezione del testo da cui questa slide è
      derivata (utile per validare la copertura). Vuoto per slide
-     strutturali (title, agenda, ...).
+     strutturali (title, agenda, ...). La slide dedicata a un asset
+     usa la stessa `source_section_id` della slide di contenuto che
+     lo introduce.
 
-6. TIPI DI SLIDE: title, agenda, prerequisites, concept, definition,
+7. TIPI DI SLIDE: title, agenda, prerequisites, concept, definition,
    diagram, formula, table, example, case_study, exercise, discussion,
    summary, takeaways, references, bibliography (solo introduttive).
 
-7. CASO SPECIALE — LEZIONE INTRODUTTIVA:
+8. CASO SPECIALE — LEZIONE INTRODUTTIVA:
    - Slide di benvenuto e presentazione del corso
-   - Slide con la struttura del corso (può usare un diagramma/mappa)
+   - Slide con la struttura del corso (se serve un diagramma/mappa,
+     è una slide dedicata a quell'unico diagramma)
    - Slide prerequisiti (cosa serve sapere)
    - Slide "come lavoreremo" (stile didattico)
    - Slide bibliografia (1-2 slide con i testi consigliati)
@@ -126,6 +161,10 @@ VINCOLI DI VALIDAZIONE (rispetta sempre)
 - ogni `references_assets[i]` deve essere un asset_id presente
   in Fase 3 (visual_assets, tables, equations, examples) OPPURE in
   `new_assets`
+- NESSUNA slide può referenziare più di UN asset visivo
+  (`visual_assets` / `new_assets`) o tabella (`tables`): al massimo 1
+  in totale fra i due. Equazioni ed esempi NON rientrano in questo
+  limite. Una slide di contenuto non ne referenzia nessuno.
 - ogni `source_section_id` non vuoto deve referenziare una sezione
   esistente nel testo della lezione
 - ogni sezione del testo dovrebbe essere referenziata da almeno una

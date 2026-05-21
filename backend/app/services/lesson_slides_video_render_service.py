@@ -12,10 +12,10 @@ Approccio:
 2. Genera HTML completo via `slides_pdf.render_slides_html(..., enable_split=False)`
    — ottiene esattamente l'HTML che produrrebbe il PDF (con tutti gli
    asset risolti, MathML inline, ecc.), senza lo split bullet/asset.
-3. Apre Playwright con viewport **1920×1080**, carica l'HTML, e per
-   ciascun `.slide` (A4 landscape ~1123×794 px @96dpi) prende uno
-   screenshot dell'elemento. Il browser scala/centra naturalmente la
-   slide nel frame 16:9 → bordi bianchi laterali simmetrici.
+3. Apre Playwright con viewport **1980×1400** (stessa proporzione
+   A4 landscape delle slide), carica l'HTML, scala ogni `.slide` per
+   riempire ESATTAMENTE il frame e ne fa lo screenshot. Niente bande
+   bianche: il video ha la stessa forma delle slide.
 
 Output: lista ordinata di PNG 1:1 con `slides_raw.slides[].slide_id`
 (niente split → niente complessità di mapping audio↔frame).
@@ -38,44 +38,46 @@ from app.services import course_lesson_slides_pdf_service as slides_pdf
 log = get_logger("app.lesson_slides_video_render")
 
 
-# CSS injected nell'<head> dell'HTML PDF per il rendering video. Tre
-# obiettivi:
-# 1. Eliminare il page-break PDF (WeasyPrint-specific) per far stare
-#    tutte le slide nel DOM scrollabile di Playwright.
-# 2. Centrare la slide nel viewport 1920×1080 (flexbox sul body) — il
-#    template PDF di base usa flow normale, top-left.
-# 3. Scalare la slide A4 landscape (~1123×794 px @96dpi) per riempire
-#    1080 px di altezza, mantenendo l'aspect ratio del PDF. Bordi
-#    bianchi solo laterali (~196 px per lato), simmetrici. Niente
-#    banda bianca sotto.
+# Risoluzione del video: stessa proporzione delle slide (A4 landscape
+# 297:210). 1980×1400 è esattamente 297:210 (= 99:70 ×20), entrambe pari
+# → niente distorsione, niente bande bianche, output ~2K nitido.
+VIDEO_WIDTH = 1980
+VIDEO_HEIGHT = 1400
+
+# CSS injected nell'<head> dell'HTML PDF per il rendering video:
+# 1. Elimina il page-break PDF (WeasyPrint) per far stare tutte le
+#    slide nel DOM di Playwright.
+# 2. Centra la slide nel viewport (flexbox sul body).
+# 3. Scala la slide A4 landscape (~1122.5×793.7 px @96dpi) per RIEMPIRE
+#    ESATTAMENTE il viewport 1980×1400 — stessa proporzione → copertura
+#    totale, nessuna banda bianca, nessuna distorsione.
 #
-# Scale factor calcolato: 1080 / (210mm × 3.7795 px/mm) ≈ 1.361.
-# Aspect A4 landscape: 297:210 ≈ 1.414 → larghezza scalata 1527 px →
-# (1920 - 1527) / 2 ≈ 196 px per lato.
-_VIDEO_OVERRIDE_CSS = """
+# Scale factor: 1980 / (297mm × 96/25.4 px/mm) ≈ 1.7639.
+_VIDEO_SLIDE_SCALE = 1.7639
+_VIDEO_OVERRIDE_CSS = f"""
 <style>
-  html, body {
+  html, body {{
     margin: 0 !important;
     padding: 0 !important;
     background: #ffffff !important;
-    width: 1920px;
-    height: 1080px;
+    width: {VIDEO_WIDTH}px;
+    height: {VIDEO_HEIGHT}px;
     overflow: hidden !important;
-  }
-  body {
+  }}
+  body {{
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
-  }
-  @page { margin: 0; }
-  .slide {
+  }}
+  @page {{ margin: 0; }}
+  .slide {{
     margin: 0 !important;
     page-break-after: auto !important;
     break-after: auto !important;
     flex-shrink: 0 !important;
-    transform: scale(1.361);
+    transform: scale({_VIDEO_SLIDE_SCALE});
     transform-origin: center center;
-  }
+  }}
 </style>
 """
 
@@ -83,13 +85,12 @@ _VIDEO_OVERRIDE_CSS = """
 async def _screenshot_slides_async(
     html: str, output_dir: Path
 ) -> list[Path]:
-    """Playwright headless: viewport 1920×1080, screenshot per ogni .slide.
+    """Playwright headless: viewport 1980×1400, screenshot per ogni .slide.
 
-    Le slide nel template PDF sono `position: relative; width: 297mm;
-    height: 210mm` → a 96dpi sono ~1123×794 px. Dentro viewport 1920×1080
-    risultano centrate orizzontalmente con bordi bianchi laterali
-    (~398px per lato) e padding verticale automatico (~143px).
-    Aspect mantenuto, contenuto identico al PDF.
+    Le slide del template PDF sono `width: 297mm; height: 210mm` (A4
+    landscape). Il viewport 1980×1400 ha la stessa proporzione: la
+    slide viene scalata per riempirlo esattamente, senza bande bianche
+    e senza distorsione. Contenuto identico al PDF.
     """
     from playwright.async_api import async_playwright  # type: ignore
 
@@ -100,7 +101,7 @@ async def _screenshot_slides_async(
         browser = await pw.chromium.launch(args=["--no-sandbox"])
         try:
             ctx = await browser.new_context(
-                viewport={"width": 1920, "height": 1080},
+                viewport={"width": VIDEO_WIDTH, "height": VIDEO_HEIGHT},
                 device_scale_factor=1,
             )
             page = await ctx.new_page()
@@ -117,9 +118,9 @@ async def _screenshot_slides_async(
             slides = await page.query_selector_all(".slide")
             log.info("video_render_slides_found", count=len(slides))
 
-            # Per ogni slide: setto il body a contenere solo questa
-            # slide, così Playwright la centra nel viewport e la
-            # screenshotta full-frame 1920×1080 con padding bianco.
+            # Per ogni slide: nascondo le altre, così Playwright
+            # centra questa nel viewport 1980×1400 e la screenshotta
+            # full-frame (la slide riempie l'intero frame).
             for i, slide_handle in enumerate(slides):
                 # Nascondi tutte le altre slide via display:none.
                 await page.evaluate(
@@ -134,8 +135,8 @@ async def _screenshot_slides_async(
                 # Aspetto un repaint.
                 await page.wait_for_timeout(50)
                 png_path = output_dir / f"slide_{i + 1:03d}.png"
-                # Screenshot del viewport pieno: slide centrata + bordi
-                # bianchi naturali.
+                # Screenshot del viewport pieno: la slide lo riempie
+                # interamente, stessa proporzione delle slide.
                 await page.screenshot(
                     path=str(png_path),
                     type="png",
@@ -177,7 +178,7 @@ async def render_slides_to_png(
     output_dir: Path,
     public_base_url: str | None = None,
 ) -> tuple[list[Path], list[str]]:
-    """Renderizza le slide della lezione come PNG 1920×1080, una per slide.
+    """Renderizza le slide della lezione come PNG 1980×1400, una per slide.
 
     Riusa al 100% la pipeline del PDF:
     - `_prerender_mermaid_for_slides` per Mermaid SVG inline
@@ -187,7 +188,7 @@ async def render_slides_to_png(
 
     Returns:
         Tupla `(png_paths, slide_id_order)` parallela:
-        - `png_paths`: PNG 1920×1080 in ordine di apparizione DOM
+        - `png_paths`: PNG 1980×1400 in ordine di apparizione DOM
         - `slide_id_order`: `slide_id` corrispondente (1:1 con
           `slides_raw.slides[]`, niente split)
     """

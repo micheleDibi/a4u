@@ -285,8 +285,19 @@ async def materialize_lesson_slides(
             code="lesson_slides_duplicate_slide_id",
         )
 
-    # 5. total_slides nel range atteso per minuti_per_lezione
+    # 5. total_slides nel range atteso per minuti_per_lezione.
+    # Le slide dedicate agli asset visivi/tabelle (una per asset, §7.1
+    # punto 2) si AGGIUNGONO al range di contenuto+struttura: il tetto
+    # cresce di un'unità per ogni asset visivo/tabella di Fase 3 e per
+    # ogni new_asset di Fase 4.
     low, high = _expected_slide_range(course.lesson_duration_minutes)
+    _cr = lesson.content_raw or {}
+    asset_slides = (
+        len([a for a in (_cr.get("visual_assets") or []) if isinstance(a, dict)])
+        + len([t for t in (_cr.get("tables") or []) if isinstance(t, dict)])
+        + len(output.new_assets)
+    )
+    high += asset_slides
     if not (low <= output.total_slides <= high):
         log.warning(
             "lesson_slides_out_of_range",
@@ -294,6 +305,7 @@ async def materialize_lesson_slides(
             total_slides=output.total_slides,
             expected_low=low,
             expected_high=high,
+            asset_slides=asset_slides,
             minutes=course.lesson_duration_minutes,
         )
         # Soft warning, non bloccante (con tolleranza già applicata, hard
@@ -307,6 +319,9 @@ async def materialize_lesson_slides(
 
     # 6. references_assets risolvibili (in content_raw OR in new_assets)
     valid_asset_ids: set[str] = set()
+    # Sottoinsieme "asset visivi + tabelle": solo questi sono soggetti
+    # al limite di max 1 per slide (equazioni ed esempi esclusi).
+    visual_or_table_ids: set[str] = set()
     content_raw = lesson.content_raw or {}
     for key in ("visual_assets", "tables", "equations", "examples"):
         for a in content_raw.get(key, []) or []:
@@ -314,9 +329,15 @@ async def materialize_lesson_slides(
                 # Asset_id può essere asset_id, table_id, equation_id, example_id.
                 for id_key in ("asset_id", "table_id", "equation_id", "example_id"):
                     if id_key in a and a[id_key]:
-                        valid_asset_ids.add(str(a[id_key]))
+                        aid = str(a[id_key])
+                        valid_asset_ids.add(aid)
+                        if key in ("visual_assets", "tables"):
+                            visual_or_table_ids.add(aid)
     for na in output.new_assets:
         valid_asset_ids.add(na.asset_id)
+        # I new_assets di Fase 4 sono sempre visivi (diagram/schema/
+        # image/illustration/chart) → contano come asset visivo.
+        visual_or_table_ids.add(na.asset_id)
 
     # asset_id in new_assets devono essere univoci
     new_asset_ids = [na.asset_id for na in output.new_assets]
@@ -334,6 +355,21 @@ async def materialize_lesson_slides(
                     f"`{aid}` non presente in Fase 3 né in new_assets.",
                     code="lesson_slides_unknown_asset_ref",
                 )
+
+    # 6b. Max 1 asset visivo o tabella per slide: ogni asset visivo/
+    # tabella va su una slide dedicata propria (§7.1 punto 2).
+    # Equazioni ed esempi non rientrano nel limite.
+    for s in output.slides:
+        visual_refs = [
+            aid for aid in s.references_assets if aid in visual_or_table_ids
+        ]
+        if len(visual_refs) > 1:
+            raise ConflictError(
+                f"Slide {s.slide_id}: referenzia {len(visual_refs)} "
+                f"asset visivi/tabelle ({', '.join(visual_refs)}); "
+                f"ammesso al massimo 1 per slide.",
+                code="lesson_slides_multiple_visual_assets",
+            )
 
     # 7. source_section_id (se non vuoto) deve referenziare una sezione
     valid_section_ids = {

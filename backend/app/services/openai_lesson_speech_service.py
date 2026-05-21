@@ -99,9 +99,28 @@ REGOLE — STRUTTURA E SINCRONIZZAZIONE
 - Una slide può avere PIÙ segmenti se contiene più momenti narrativi
   (es. introduzione del concetto + esempio). Ma per slide brevi un
   unico segmento va bene.
+- Il discorso è un FILO UNICO E COERENTE che attraversa tutte le
+  slide nell'ordine dato: ogni slide riprende esplicitamente quanto
+  detto nella precedente e prepara la successiva. Niente segmenti
+  scollegati, niente ripetizioni inutili.
 - Tra slide, includi una transizione esplicita ("Passiamo ora a
   vedere...", "Quanto detto ci porta a...") nel primo segmento della
   slide successiva.
+- SLIDE DEDICATE AGLI ASSET VISIVI E ALLE TABELLE: alcune slide
+  (`type` = diagram o table, o comunque con un ID in
+  `references_assets`) sono dedicate a un singolo asset visivo o a
+  una tabella. Per queste slide il parlato deve:
+  - collegarsi al concetto introdotto nelle slide di contenuto
+    immediatamente precedenti ("Vediamo ora questo concetto
+    rappresentato nello schema seguente...", "La tabella che
+    appare riassume quanto abbiamo appena descritto...");
+  - DESCRIVERE e COMMENTARE a voce ciò che l'asset mostra: risolvi
+    l'ID in `references_assets` consultando gli asset di Fase 3
+    (visual_assets, tables) e spiega il diagramma o la tabella
+    passo per passo, in prosa — MAI leggere codice Mermaid o
+    sintassi markdown;
+  - chiudere riconducendo l'asset al discorso generale prima di
+    passare alla slide successiva.
 
 REGOLE — DIMENSIONAMENTO
 

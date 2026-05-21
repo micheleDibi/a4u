@@ -524,7 +524,7 @@ export function CourseLessonVideoView({
                         <video
                           controls
                           preload="metadata"
-                          className="aspect-video w-full bg-black"
+                          className="aspect-[99/70] w-full bg-black"
                           src={item.video_url}
                         >
                           <PlayCircle className="size-12" />

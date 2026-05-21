@@ -433,14 +433,17 @@ def render_slides_html(
             "body": body_text,
         }
 
-        # Split: una slide con bullet/body MA anche asset → 2 pagine,
-        # asset isolato. Il body resta sulla pagina con bullet (o, se
-        # non ci sono bullet ma c'è solo body, sulla pagina-body).
-        # Disabilitato (`enable_split=False`) per la pipeline video, dove
-        # serve un mapping 1:1 slide↔frame per allocare correttamente
-        # l'audio TTS del segment di quella slide.
-        has_text_content = bool(bullets) or bool(body_text)
-        if enable_split and assets_html and has_text_content:
+        # Split: una slide LEGACY con bullet E asset → 2 pagine, asset
+        # isolato. Dalla regola Fase 4 "un asset visivo/tabella per
+        # slide dedicata" in poi, una slide o ha bullet (contenuto,
+        # niente asset) o è dedicata a UN asset (titolo + body breve +
+        # asset, niente bullet): in nessuno dei due casi si splitta, e
+        # PDF e video rendono identici (1 slide JSON → 1 pagina). Lo
+        # split resta solo come fallback per i corsi generati prima di
+        # quella regola. Una slide dedicata a un asset NON va mai
+        # separata dal suo titolo.
+        # Disabilitato del tutto con `enable_split=False` (pipeline video).
+        if enable_split and assets_html and bullets:
             rendered_slides.append(
                 {**base_entry, "bullets": bullets, "assets_html": []}
             )
