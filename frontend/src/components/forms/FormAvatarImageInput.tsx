@@ -2,8 +2,6 @@ import "react-image-crop/dist/ReactCrop.css";
 import { Crop, Trash2, Upload, User } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import ReactCrop, {
-  centerCrop,
-  makeAspectCrop,
   type Crop as CropType,
   type PixelCrop,
 } from "react-image-crop";
@@ -41,21 +39,23 @@ function readAsDataURL(file: File): Promise<string> {
   });
 }
 
-function buildCenteredSquare(imgW: number, imgH: number): CropType {
-  // Lato del quadrato limitato dalla dimensione più corta: per
-  // un'immagine orizzontale partire dalla larghezza sforerebbe
-  // l'altezza e il crop iniziale non sarebbe un quadrato valido
-  // dentro i bordi dell'immagine.
-  return centerCrop(
-    makeAspectCrop(
-      imgW >= imgH ? { unit: "%", height: 90 } : { unit: "%", width: 90 },
-      1,
-      imgW,
-      imgH
-    ),
-    imgW,
-    imgH
-  );
+function buildCenteredSquare(
+  renderedW: number,
+  renderedH: number
+): PixelCrop {
+  // Crop in PIXEL con lato uguale (width === height): è un quadrato
+  // 1:1 esatto a schermo PER COSTRUZIONE, qualunque siano le
+  // proporzioni dell'immagine. Un crop in `%` invece risulta 1:1 solo
+  // se l'aspect del contenitore è perfetto — fragile. Lato = 90% della
+  // dimensione minore renderizzata, centrato.
+  const side = Math.min(renderedW, renderedH) * 0.9;
+  return {
+    unit: "px",
+    width: side,
+    height: side,
+    x: (renderedW - side) / 2,
+    y: (renderedH - side) / 2,
+  };
 }
 
 async function cropToFile(
@@ -240,7 +240,7 @@ export function FormAvatarImageInput({
             <DialogDescription>{t("myAvatar.cropHint")}</DialogDescription>
           </DialogHeader>
           {dialogSrc && (
-            <div className="flex max-h-[60vh] justify-center overflow-auto bg-muted/40 p-2">
+            <div className="flex justify-center bg-muted/40 p-2">
               <ReactCrop
                 crop={crop}
                 onChange={(_pc, pCrop) => setCrop(pCrop)}
@@ -251,31 +251,36 @@ export function FormAvatarImageInput({
                 minWidth={50}
                 minHeight={50}
               >
+                {/* maxHeight inline: vince sulla CSS di react-image-crop
+                    che azzera il max-height dell'img → l'immagine resta
+                    dentro il dialog, intera, senza scrollbar. */}
                 <img
                   ref={imgRef}
                   src={dialogSrc}
                   alt=""
                   onLoad={() => {
-                    // Il crop iniziale 1:1 dipende dalla PROPORZIONE con
-                    // cui l'immagine è realmente renderizzata. Si attende
-                    // un frame (layout/apertura dialog stabili), poi si
-                    // misura il box reso con getBoundingClientRect;
-                    // naturalWidth/Height come fallback. Conta solo
-                    // l'aspect: un crop in % con l'aspect corretto è un
-                    // quadrato esatto a schermo, qualunque sia la
-                    // scalatura CSS dell'immagine.
+                    // Crop iniziale calcolato dopo il settle del layout
+                    // sulle dimensioni renderizzate reali dell'immagine.
+                    // buildCenteredSquare ritorna un crop in PIXEL
+                    // quadrato → 1:1 garantito. Si setta anche
+                    // completedCrop così "Applica ritaglio" è subito
+                    // attivo con il quadrato di default.
                     requestAnimationFrame(() => {
                       const img = imgRef.current;
                       if (!img) return;
                       const rect = img.getBoundingClientRect();
-                      const w = rect.width || img.naturalWidth;
-                      const h = rect.height || img.naturalHeight;
-                      if (w > 0 && h > 0) {
-                        setCrop(buildCenteredSquare(w, h));
+                      if (rect.width > 0 && rect.height > 0) {
+                        const initial = buildCenteredSquare(
+                          rect.width,
+                          rect.height
+                        );
+                        setCrop(initial);
+                        setCompletedCrop(initial);
                       }
                     });
                   }}
-                  className="max-h-[55vh] w-auto"
+                  className="w-auto"
+                  style={{ maxHeight: "55vh" }}
                 />
               </ReactCrop>
             </div>
