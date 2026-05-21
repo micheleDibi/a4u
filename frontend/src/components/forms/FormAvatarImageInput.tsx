@@ -255,18 +255,25 @@ export function FormAvatarImageInput({
                   ref={imgRef}
                   src={dialogSrc}
                   alt=""
-                  onLoad={(e) => {
-                    const img = e.currentTarget;
-                    // naturalWidth/naturalHeight: affidabili e coerenti
-                    // al load. width/height possono restituire
-                    // dimensioni di layout non ancora stabilizzate →
-                    // proporzione errata passata a makeAspectCrop → il
-                    // crop iniziale risulta rettangolare, non quadrato.
-                    const initial = buildCenteredSquare(
-                      img.naturalWidth,
-                      img.naturalHeight
-                    );
-                    setCrop(initial);
+                  onLoad={() => {
+                    // Il crop iniziale 1:1 dipende dalla PROPORZIONE con
+                    // cui l'immagine è realmente renderizzata. Si attende
+                    // un frame (layout/apertura dialog stabili), poi si
+                    // misura il box reso con getBoundingClientRect;
+                    // naturalWidth/Height come fallback. Conta solo
+                    // l'aspect: un crop in % con l'aspect corretto è un
+                    // quadrato esatto a schermo, qualunque sia la
+                    // scalatura CSS dell'immagine.
+                    requestAnimationFrame(() => {
+                      const img = imgRef.current;
+                      if (!img) return;
+                      const rect = img.getBoundingClientRect();
+                      const w = rect.width || img.naturalWidth;
+                      const h = rect.height || img.naturalHeight;
+                      if (w > 0 && h > 0) {
+                        setCrop(buildCenteredSquare(w, h));
+                      }
+                    });
                   }}
                   className="max-h-[55vh] w-auto"
                 />
