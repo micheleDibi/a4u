@@ -257,7 +257,15 @@ export function FormAvatarImageInput({
                   alt=""
                   onLoad={(e) => {
                     const img = e.currentTarget;
-                    const initial = buildCenteredSquare(img.width, img.height);
+                    // naturalWidth/naturalHeight: affidabili e coerenti
+                    // al load. width/height possono restituire
+                    // dimensioni di layout non ancora stabilizzate →
+                    // proporzione errata passata a makeAspectCrop → il
+                    // crop iniziale risulta rettangolare, non quadrato.
+                    const initial = buildCenteredSquare(
+                      img.naturalWidth,
+                      img.naturalHeight
+                    );
                     setCrop(initial);
                   }}
                   className="max-h-[55vh] w-auto"
