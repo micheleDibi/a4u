@@ -438,8 +438,9 @@ async def _run_musetalk_subprocess(
                 "musetalk_stdout", lesson_id=str(lesson_id), line=line[:300]
             )
             await _on_musetalk_line(lesson_id, line, parsed)
-            # Cancel-check sui poll (heartbeat ~60s): annullamento reattivo.
-            if line.startswith("[poll") and await _check_cancelled(lesson_id):
+            # Cancel-check ad ogni milestone del client (build/probe/
+            # upload/submit/poll/dload): annullamento reattivo.
+            if await _check_cancelled(lesson_id):
                 cancelled = True
                 return
 
@@ -476,6 +477,88 @@ async def _run_musetalk_subprocess(
         runpod_job_id=parsed.get("runpod_job_id"),
     )
     return parsed
+
+
+# ---------------------------------------------------------------------------
+# Preparazione clip per MuseTalk (downscale)
+# ---------------------------------------------------------------------------
+
+
+async def _prepare_musetalk_clips(
+    lesson_id: uuid.UUID,
+    *,
+    source_dir: Path,
+    target_dir: Path,
+    resolution: int,
+) -> Path:
+    """Ridimensiona le clip dell'avatar a `resolution`×`resolution` in
+    `target_dir`, e ritorna `target_dir` (la `--clips-dir` da passare a
+    MuseTalk).
+
+    Le clip MiniMax sono 1080×1080: a quella risoluzione il lip-sync su
+    RunPod sfora il tetto di 60 min (blending + encode + RAM scalano con
+    l'area del frame). A `resolution` (default 640) i tempi rientrano —
+    l'avatar nel video finale è solo ~475px, nessuna perdita visibile.
+
+    Una clip viene riconvertita solo se la copia in `target_dir` manca o è
+    più vecchia del sorgente: finché le clip dell'avatar non cambiano i
+    file mantengono mtime/dimensione stabili, quindi l'hash del set di clip
+    di MuseTalk resta stabile → il preprocessing resta in cache.
+    """
+    settings = get_settings()
+    target_dir.mkdir(parents=True, exist_ok=True)
+    sources = sorted(source_dir.glob("*.mp4"))
+    source_names = {s.name for s in sources}
+
+    # Pulizia: rimuovi le clip ridimensionate il cui sorgente non c'è più.
+    for stale in target_dir.glob("*.mp4"):
+        if stale.name not in source_names:
+            stale.unlink(missing_ok=True)
+
+    rebuilt = 0
+    for src in sources:
+        dst = target_dir / src.name
+        if dst.is_file() and dst.stat().st_mtime >= src.stat().st_mtime:
+            continue  # già aggiornata → riuso (hash cache stabile)
+        # `force_original_aspect_ratio=increase` + crop: quadrato esatto
+        # senza distorsione, robusto anche se una clip non fosse 1:1.
+        ret, _out, err = await _run_cmd(
+            [
+                settings.ffmpeg_binary,
+                "-y", "-hide_banner", "-loglevel", "error",
+                "-i", str(src),
+                "-vf",
+                f"scale={resolution}:{resolution}:"
+                f"force_original_aspect_ratio=increase,"
+                f"crop={resolution}:{resolution}",
+                "-c:v", "libx264",
+                "-preset", "veryfast",
+                "-crf", "18",
+                "-pix_fmt", "yuv420p",
+                "-an",
+                str(dst),
+            ]
+        )
+        if ret != 0 or not dst.is_file() or dst.stat().st_size == 0:
+            dst.unlink(missing_ok=True)
+            raise RuntimeError(
+                f"Ridimensionamento clip avatar fallito ({src.name}): "
+                + err.decode("utf-8", "replace")[-300:]
+            )
+        rebuilt += 1
+
+    if not any(target_dir.glob("*.mp4")):
+        raise RuntimeError(
+            "Nessuna clip avatar disponibile dopo il ridimensionamento."
+        )
+    log.info(
+        "musetalk_clips_prepared",
+        lesson_id=str(lesson_id),
+        resolution=resolution,
+        total=len(sources),
+        rebuilt=rebuilt,
+    )
+    return target_dir
 
 
 # ---------------------------------------------------------------------------
@@ -604,6 +687,7 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
             return
 
         # Snapshot dei valori che servono fuori dalla sessione DB.
+        avatar_user_id = avatar.user_id
         musetalk_extra_margin = avatar.musetalk_extra_margin
         musetalk_left = avatar.musetalk_left_cheek_width
         musetalk_right = avatar.musetalk_right_cheek_width
@@ -633,11 +717,25 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
 
     started = time.monotonic()
     try:
+        # --- Phase 0: ridimensiona le clip dell'avatar per MuseTalk --
+        if await _check_cancelled(lesson_id):
+            log.info("avatar_video_cancelled_pre_clips", lesson_id=str(lesson_id))
+            return
+        await _set_progress(lesson_id, pct=2, phase="preparing")
+        musetalk_clips_dir = await _prepare_musetalk_clips(
+            lesson_id,
+            source_dir=clips_dir,
+            target_dir=svc.avatar_musetalk_clips_dir(
+                avatar_user_id, settings.avatar_video_clip_resolution
+            ),
+            resolution=settings.avatar_video_clip_resolution,
+        )
+
         # --- Phase 1: estrazione audio dal video della lezione -------
         if await _check_cancelled(lesson_id):
             log.info("avatar_video_cancelled_pre_audio", lesson_id=str(lesson_id))
             return
-        await _set_progress(lesson_id, pct=3, phase="preparing")
+        await _set_progress(lesson_id, pct=6, phase="preparing")
         audio_path = work_dir / "lesson_audio.wav"
         await _extract_audio(base_video_path, audio_path)
         audio_duration = await _probe_duration(audio_path)
@@ -653,7 +751,7 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
         lipsync_t0 = time.monotonic()
         parsed = await _run_musetalk_subprocess(
             lesson_id,
-            clips_dir=clips_dir,
+            clips_dir=musetalk_clips_dir,
             audio_path=audio_path,
             output_path=lipsync_path,
             intermediate_dir=work_dir / "intermediate",
@@ -746,11 +844,14 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
             lesson_db = await db.get(CourseLesson, lesson_id)
             if lesson_db is None:
                 return
+            # Un timeout RunPod (`TIMED_OUT`) si ripeterebbe identico:
+            # niente retry. Gli errori transitori restano recuperabili.
+            recoverable = "TIMED_OUT" not in str(exc)
             terminal = not _apply_failure(
                 lesson_db,
                 error=str(exc),
                 phase=lesson_db.avatar_video_progress_phase or "unknown",
-                recoverable=True,
+                recoverable=recoverable,
                 auto_retry_max=settings.course_lesson_avatar_video_auto_retry_max,
             )
             if terminal:

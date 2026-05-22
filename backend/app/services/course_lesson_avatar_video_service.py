@@ -57,6 +57,7 @@ __all__ = [
     "count_ready_clips",
     "avatar_is_ready",
     "avatar_clips_dir",
+    "avatar_musetalk_clips_dir",
     "avatar_video_relative_path",
     "avatar_video_absolute_path",
     "avatar_video_public_url",
@@ -114,6 +115,25 @@ def avatar_clips_dir(user_id: uuid.UUID) -> Path:
     """
     settings = get_settings()
     return (settings.upload_root / "avatars" / str(user_id) / "clips").resolve()
+
+
+def avatar_musetalk_clips_dir(user_id: uuid.UUID, resolution: int) -> Path:
+    """Cartella delle clip dell'avatar ridimensionate per MuseTalk.
+
+    `{upload_root}/avatars/{user_id}/clips_musetalk_{resolution}/`. Le clip
+    MiniMax originali (1080×1080) sono troppo grandi per il lip-sync su
+    RunPod (il job sfora il tetto di 60 min); il worker ne tiene qui una
+    copia ridimensionata e punta lì `--clips-dir`. La risoluzione è nel
+    nome della cartella: cambiare il setting crea una cartella nuova,
+    senza file stantii.
+    """
+    settings = get_settings()
+    return (
+        settings.upload_root
+        / "avatars"
+        / str(user_id)
+        / f"clips_musetalk_{resolution}"
+    ).resolve()
 
 
 # ---------------------------------------------------------------------------

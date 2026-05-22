@@ -55,6 +55,7 @@ services:
       R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
       AVATAR_VIDEO_OVERLAY_SCALE: ${AVATAR_VIDEO_OVERLAY_SCALE:-0.24}
       AVATAR_VIDEO_OVERLAY_MARGIN: ${AVATAR_VIDEO_OVERLAY_MARGIN:-24}
+      AVATAR_VIDEO_CLIP_RESOLUTION: ${AVATAR_VIDEO_CLIP_RESOLUTION:-640}
       # OpenAI (traduzione i18n + summarization + generazione corso AI).
       # Ogni fase del pipeline corso usa un modello configurabile a parte:
       # _model: name del modello, _max_tokens: budget di output.

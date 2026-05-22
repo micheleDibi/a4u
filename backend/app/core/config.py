@@ -217,6 +217,14 @@ class Settings(BaseSettings):
     #   margin = distanza dai bordi destro/inferiore, in pixel
     avatar_video_overlay_scale: float = 0.24
     avatar_video_overlay_margin: int = 24
+    # Risoluzione (lato del quadrato) a cui a4u ridimensiona le clip
+    # dell'avatar prima di passarle a MuseTalk. Le clip MiniMax sono
+    # 1080×1080: a quella risoluzione il lip-sync su RunPod sfora il tetto
+    # di 60 min (blending + encode + RAM scalano con l'area del frame).
+    # 640 riporta i tempi nella norma senza perdita visibile — nel video
+    # finale l'avatar è ~475px. Vedi
+    # `course_lesson_avatar_video_worker._prepare_musetalk_clips`.
+    avatar_video_clip_resolution: int = 640
 
     bootstrap_admin_email: str | None = None
     bootstrap_admin_password: str | None = None
