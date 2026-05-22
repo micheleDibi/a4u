@@ -202,17 +202,29 @@ async def _probe_duration(path: Path) -> float | None:
 
 async def _extract_audio(video_path: Path, audio_out: Path) -> None:
     """Estrae la traccia audio dal video MP4 della lezione in un WAV mono
-    16 kHz. È esattamente l'audio su cui MuseTalk farà il lip-sync, quindi
-    l'avatar resta sincronizzato con lo scorrere delle slide. 16 kHz mono
-    è il formato che Whisper (interno a MuseTalk) usa comunque: nessuna
-    perdita per il lip-sync e upload R2 più leggero."""
+    16 kHz — l'audio su cui MuseTalk farà il lip-sync.
+
+    `aresample=async=1` è essenziale: la traccia audio del video lezione
+    può contenere gap di timeline (pause/silenzi fra i segment del
+    discorso). Senza questo filtro ffmpeg li **compatterebbe**, l'avatar
+    verrebbe sincronizzato su una timeline più corta dell'audio del video
+    finale e si desincronizzerebbe progressivamente (drift cumulativo).
+    Con `async=1` i gap restano (riempiti di silenzio): la durata estratta
+    coincide con quella dell'audio del video finale e l'avatar combacia.
+
+    16 kHz mono è il formato che Whisper (interno a MuseTalk) usa comunque:
+    nessuna perdita per il lip-sync e upload R2 più leggero."""
     settings = get_settings()
     ret, _out, err = await _run_cmd(
         [
             settings.ffmpeg_binary,
             "-y", "-hide_banner", "-loglevel", "error",
             "-i", str(video_path),
-            "-vn", "-ac", "1", "-ar", "16000",
+            "-vn",
+            # Preserva i gap di timeline dell'audio (silenzio) invece di
+            # compattarli — vedi docstring: è la causa del drift avatar.
+            "-af", "aresample=async=1:first_pts=0",
+            "-ac", "1", "-ar", "16000",
             "-c:a", "pcm_s16le",
             str(audio_out),
         ]
@@ -565,7 +577,7 @@ async def _prepare_musetalk_clips(
 
 
 # ---------------------------------------------------------------------------
-# Diagnostica drift A/V (temporanea)
+# Diagnostica A/V (osservabilità)
 # ---------------------------------------------------------------------------
 
 
@@ -849,9 +861,8 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
         lipsync_seconds = time.monotonic() - lipsync_t0
         await _set_progress(lesson_id, pct=85, phase="lipsync")
 
-        # --- Diagnostica drift avatar/audio (temporanea) -------------
-        # Logga le proprietà A/V degli intermedi e conserva il lip-sync
-        # grezzo di MuseTalk per ispezione.
+        # Diagnostica A/V: logga fps/durata di audio, video assemblato,
+        # output MuseTalk e video lezione (osservabilità).
         await _log_av_diagnostics(
             lesson_id,
             audio_path=audio_path,
@@ -859,19 +870,6 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
             lipsync_path=lipsync_path,
             base_video_path=base_video_path,
         )
-        try:
-            debug_dir = settings.upload_root / "avatar_video_debug"
-            debug_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(
-                lipsync_path, debug_dir / f"{lesson_id}-lipsync.mp4"
-            )
-            log.info(
-                "avatar_video_debug_lipsync_saved",
-                lesson_id=str(lesson_id),
-                url=f"/uploads/avatar_video_debug/{lesson_id}-lipsync.mp4",
-            )
-        except Exception as exc:  # noqa: BLE001
-            log.warning("avatar_video_debug_copy_failed", error=str(exc))
 
         if await _check_cancelled(lesson_id):
             log.info(
