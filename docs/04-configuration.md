@@ -67,7 +67,7 @@ forwardate con `${VAR:-default}` per ogni knob significativo).
 |---|---|---|
 | `MINIMAX_API_KEY` | _(vuoto)_ | API key MiniMax. Se vuoto, le clip avatar restano in stato `pending` finché non viene configurata. |
 | `MINIMAX_BASE_URL` | `https://api.minimax.io` | Base URL del provider. |
-| `MINIMAX_VIDEO_MODEL` | `MiniMax-Hailuo-02` | Modello video. |
+| `MINIMAX_VIDEO_MODEL` | `MiniMax-Hailuo-2.3` | Modello video. |
 | `MINIMAX_CLIP_DURATION` | `6` | Durata in secondi di ogni clip. |
 | `MINIMAX_CLIP_RESOLUTION` | `1080P` | Risoluzione richiesta al provider. |
 | `MINIMAX_POLL_INTERVAL_SECONDS` | `10` | Intervallo del worker che processa le clip pending/processing. |
@@ -271,14 +271,14 @@ inferiore (struttura/coerenza un filo meno raffinate, output ancora ottimi).
 ## MiniMax integration
 
 L'avatar utente genera 5 brevi clip video (loop) tramite il modello
-`MiniMax-Hailuo-02`. Il backend invia immagine + prompt al provider, fa
+`MiniMax-Hailuo-2.3`. Il backend invia immagine + prompt al provider, fa
 polling del task e scarica il `.mp4` finale. La logica vive in
 `app/services/minimax_service.py` + worker `avatar_clip_worker.py`.
 
 ### Ottenere una API key
 
 1. Registrarsi su `https://api.minimax.io` (o il dominio di provider
-   equivalente abilitato per Hailuo-02).
+   equivalente abilitato per Hailuo-2.3).
 2. Generare una API key dalla dashboard.
 3. Valorizzare `MINIMAX_API_KEY` nel `.env`.
 

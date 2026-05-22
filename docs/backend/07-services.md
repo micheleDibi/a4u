@@ -114,7 +114,7 @@ sincroni o `async` semplici e non aprono sessioni DB.
 
 ## `app/services/minimax_service.py`
 
-**Scopo**: client del provider MiniMax (modello `MiniMax-Hailuo-02`).
+**Scopo**: client del provider MiniMax (modello `MiniMax-Hailuo-2.3`).
 Wrapping di `httpx.AsyncClient` con header `Authorization: Bearer
 <MINIMAX_API_KEY>`. Le chiamate sono `async` e non toccano DB.
 

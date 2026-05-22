@@ -78,7 +78,7 @@ Il `creator` è unico per organizzazione e si trasferisce con `transfer-creator`
    registrazione browser) registrato leggendo uno **script
    standardizzato per lingua** servito dall'admin (utile al futuro
    voice cloning) + 5 clip video generate in background tramite MiniMax
-   Hailuo-02.
+   Hailuo-2.3.
 10. Configurazione admin dei prompt clip e degli script di lettura
     audio per ciascuna lingua.
 11. Opacità della filigrana di sfondo configurabile per ogni template
