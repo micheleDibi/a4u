@@ -60,6 +60,12 @@ DTO TypeScript che rispecchiano gli output Pydantic.
   `AvatarClipPromptOut`, `AvatarVoiceScriptOut` `{ language_code, text,
   created_at, updated_at }`, `AvatarClipStatus`,
   `AvatarClipsAggregateStatus`.
+  - `AvatarOut` include i 3 campi `musetalk_extra_margin`,
+    `musetalk_left_cheek_width`, `musetalk_right_cheek_width` (`number`):
+    parametri MuseTalk per-avatar usati dal «Video con Avatar» delle
+    lezioni.
+- `AvatarMusetalkParamsUpdate`: body del PATCH dei parametri MuseTalk —
+  i 3 campi `musetalk_*` come `number` obbligatori.
 - `PermissionOverrideEntry`.
 - `OrganizationCourseSettingsOut`: `{ id, organization_id,
   modules_per_cfu, lessons_per_module, lesson_duration_minutes,
@@ -213,6 +219,13 @@ myAvatarApi.remove(): Promise<void>
 myAvatarApi.regenerateClips(): Promise<AvatarOut>
 // POST /me/avatar/clips/regenerate
 
+myAvatarApi.updateMusetalkParams(
+  params: AvatarMusetalkParamsUpdate,
+): Promise<AvatarOut>
+// PATCH /me/avatar/musetalk-params
+// Aggiorna i 3 parametri MuseTalk per-avatar (extra margin + larghezza
+// guance sx/dx) usati dal lip-sync del «Video con Avatar» delle lezioni.
+
 myAvatarApi.getVoiceScript(lang?: string): Promise<AvatarVoiceScriptOut | null>
 // GET /me/avatar/voice-script?lang=...
 // Risolve il testo da leggere durante la registrazione, con fallback
@@ -346,10 +359,14 @@ dei namespace esposti:
 ```ts
 coursesApi.{
   list, create, get, update, updateAssignee, delete: del,
+  setup: { confirmDidactic, unlock },
   documents: { upload, list, get, reprocess, delete },
   architecture: { generate, approve },
   modules: { create, update, delete, reorder, generateLessons },
   lessons: { create, update, delete, reorder },
+  lessonsStructure, lessonContent, lessonSlides, lessonSpeech,
+  glossary, lessonPdf, lessonSlidesPdf, lessonSpeechPdf, lessonAssets,
+  lessonVideo, lessonAvatarVideo,
 }
 ```
 
@@ -360,3 +377,134 @@ troppo basso.
 
 **Helper di tipo**: `CourseOut`, `CourseDocumentOut`, `CourseModuleOut`,
 `CourseLessonOut`, `RecommendedBibliographyItem`, `DocumentSummaryOut`.
+
+### Verifica delle competenze — tipi e namespace
+
+Quando `CourseLessonOut.is_assessment` è `true`, il `content_raw` della
+lezione è un `LessonAssessmentRaw` (non un `LessonContentRaw`). Tipi
+correlati esposti da `courses.ts`:
+
+- `AssessmentMCOption` `{ option_id, text }`.
+- `AssessmentMCQuestion` `{ question_id, text, options, correct_option_id }`.
+- `AssessmentOpenQuestion` `{ question_id, text, expected_answer }`.
+- `LessonAssessmentRaw` `{ lesson_id, lesson_title, is_assessment: true,
+  multiple_choice_questions, open_questions }`.
+- `LessonAssessmentUpdateInput` — liste opzionali per l'editing manuale.
+- `isAssessmentRaw(raw)` — type-guard che narrowa
+  `LessonContentRaw | LessonAssessmentRaw` su `LessonAssessmentRaw`.
+
+L'editing manuale della verifica passa per
+`coursesApi.lessonContent.updateAssessment(orgId, courseId, lessonId,
+payload: LessonAssessmentUpdateInput)` → `PATCH
+/{course}/lessons/{lesson}/assessment`.
+
+### `coursesApi.lessonVideo` — Video MP4 della lezione (Fase 6)
+
+Namespace che mappa gli endpoint del video MP4 della lezione (vedi
+[Courses 12 — Lesson video](../courses/12-lesson-video.md)). 6 metodi:
+
+```ts
+coursesApi.lessonVideo.generateLesson(orgId, courseId, lessonId)
+// POST /{course}/lessons/{lesson}/video/generate -> LessonVideoStatusOut
+
+coursesApi.lessonVideo.generateBatch(orgId, courseId)
+// POST /{course}/lessons-video/generate-batch -> LessonVideoBatchOut
+
+coursesApi.lessonVideo.cancelLesson(orgId, courseId, lessonId)
+// POST /{course}/lessons/{lesson}/video/cancel -> LessonVideoStatusOut
+
+coursesApi.lessonVideo.cancelBatch(orgId, courseId)
+// POST /{course}/lessons-video/cancel-batch -> LessonVideoBatchOut
+
+coursesApi.lessonVideo.getLessonStatus(orgId, courseId, lessonId)
+// GET /{course}/lessons/{lesson}/video/status -> LessonVideoStatusOut
+
+coursesApi.lessonVideo.getCourseStatus(orgId, courseId)
+// GET /{course}/lessons-video/status -> LessonVideoBatchOut
+```
+
+Gli endpoint di status sono polling-friendly (il FE rinfresca ogni 2 s
+mentre c'è almeno un job in flight, vedi
+[08 — Hooks](08-hooks.md)). `generateLesson`/`generateBatch` falliscono
+con un `code` specifico (`speech_not_approved`, `slides_not_approved`,
+`voice_sample_missing`, ...) quando le pre-condizioni mancano.
+
+Tipi associati:
+
+- `LessonVideoStatus` = `empty | pending | processing | ready | failed |
+  cancelled`.
+- `LessonVideoPhase` = `preparing | tts | rendering_slides | encoding |
+  null`.
+- `LessonVideoTokens` — telemetria della run (`audio_duration_s`,
+  `video_duration_s`, `encode_duration_ms`, `tts_duration_ms`, `device`,
+  `model_xtts`, `num_segments`, `num_slides`, `file_size_bytes`).
+- `LessonVideoStatusOut` — `{ lesson_id, lesson_code, status, progress,
+  progress_phase, video_url, error, attempts, generated_at, tokens,
+  is_stale, speech_approved, slides_approved, voice_sample_available }`.
+- `LessonVideoBatchOut` — `{ items, total, ready_count,
+  processing_count, pending_count, failed_count, eligible_count,
+  aggregate_progress }`.
+
+**`XTTS_SUPPORTED_LANGUAGES`**: array `const` delle 16 lingue supportate
+da XTTS-v2 (`it, en, es, fr, de, pt, pl, tr, ru, nl, cs, ar, zh-cn, ja,
+hu, ko`). Tipo derivato `XttsLanguage`. La helper `isXttsLanguage(code)`
+è un type-guard che tollera varianti (`zh-*`, codici con suffisso
+regionale): filtra il dropdown della lingua TTS nel tab Video.
+
+### `coursesApi.lessonAvatarVideo` — Video con Avatar (Fase 6b)
+
+Namespace che mappa gli endpoint del «Video con Avatar» (lip-sync
+MuseTalk sovrapposto al video MP4 della lezione; vedi
+[Courses 13 — Avatar video](../courses/13-avatar-video.md)). Stessi 6
+metodi del namespace `lessonVideo`, su path `avatar-video` /
+`lessons-avatar-video`:
+
+```ts
+coursesApi.lessonAvatarVideo.generateLesson(orgId, courseId, lessonId)
+// POST /{course}/lessons/{lesson}/avatar-video/generate
+//   -> LessonAvatarVideoStatusOut
+
+coursesApi.lessonAvatarVideo.generateBatch(orgId, courseId)
+// POST /{course}/lessons-avatar-video/generate-batch
+//   -> LessonAvatarVideoBatchOut
+
+coursesApi.lessonAvatarVideo.cancelLesson(orgId, courseId, lessonId)
+// POST /{course}/lessons/{lesson}/avatar-video/cancel
+//   -> LessonAvatarVideoStatusOut
+
+coursesApi.lessonAvatarVideo.cancelBatch(orgId, courseId)
+// POST /{course}/lessons-avatar-video/cancel-batch
+//   -> LessonAvatarVideoBatchOut
+
+coursesApi.lessonAvatarVideo.getLessonStatus(orgId, courseId, lessonId)
+// GET /{course}/lessons/{lesson}/avatar-video/status
+//   -> LessonAvatarVideoStatusOut
+
+coursesApi.lessonAvatarVideo.getCourseStatus(orgId, courseId)
+// GET /{course}/lessons-avatar-video/status
+//   -> LessonAvatarVideoBatchOut
+```
+
+`generateLesson`/`generateBatch` falliscono con un `code`
+(`lesson_video_not_ready`, `avatar_clips_not_ready`, ...) quando le
+pre-condizioni mancano.
+
+Tipi associati:
+
+- `LessonAvatarVideoStatus` = `empty | pending | processing | ready |
+  failed | cancelled`.
+- `LessonAvatarVideoPhase` = `preparing | lipsync | overlay | null`.
+- `LessonAvatarVideoTokens` — telemetria (`audio_duration_s`,
+  `lipsync_duration_s`, `overlay_duration_ms`, `total_duration_s`,
+  `runpod_job_id`, `num_ready_clips`, `overlay_scale`,
+  `file_size_bytes`).
+- `LessonAvatarVideoStatusOut` — `{ lesson_id, lesson_code, status,
+  progress, progress_phase, video_url, error, attempts, generated_at,
+  tokens, is_stale, lesson_video_ready, avatar_clips_ready }`.
+- `LessonAvatarVideoBatchOut` — come `LessonVideoBatchOut` più il campo
+  `avatar_clips_ready: boolean` (eleggibilità globale dell'avatar
+  dell'assegnatario).
+
+> Per l'override TTS per-corso, `CourseOut.video_language_code`
+> (nullable) e `CourseUpdateInput.video_language_code` (passare `""` per
+> resettare a `null`) sono già esposti dai DTO di `courses.ts`.

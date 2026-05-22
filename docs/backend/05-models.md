@@ -295,17 +295,32 @@ Tabella: `avatars`. Avatar globale per utente (1:1, cross-org).
 |---|---|---|
 | `id` | UUID | PK |
 | `user_id` | UUID FK `users.id` CASCADE | UNIQUE NOT NULL (1:1 con `User`) |
-| `image_path` | str(500) | nullable, frame sorgente per le clip (JPEG quadrato 1024×1024) |
-| `audio_path` | str(500) | nullable, traccia audio dell'utente |
-| `audio_lang` | str(8) | nullable (`it`, `en`, ...) |
+| `image_path` | str(500) | NOT NULL, frame sorgente per le clip (JPEG quadrato 1024×1024) |
+| `audio_path` | str(500) | nullable da migration `0026`, traccia audio dell'utente |
+| `audio_lang` | str(10) | nullable (`it`, `en`, ...) |
 | `clips_status` | str(16) NOT NULL default `pending` | aggregato (∈ `pending`, `processing`, `ready`, `partial`, `failed`) |
+| `musetalk_extra_margin` | smallint NOT NULL default `15` | parametro MuseTalk per il "Video con Avatar" — flag CLI `--extra-margin` |
+| `musetalk_left_cheek_width` | smallint NOT NULL default `110` | parametro MuseTalk — flag CLI `--left-cheek-width` |
+| `musetalk_right_cheek_width` | smallint NOT NULL default `110` | parametro MuseTalk — flag CLI `--right-cheek-width` |
 | timestamps | | |
 
-Relazione `clips: list[AvatarClip]` con cascade delete.
+Relazione `clips: list[AvatarClip]` con cascade delete (`lazy="selectin"`).
 
 > Il vecchio campo `audio_text` (testo libero scritto dall'utente) è stato
 > rimosso: lo script da leggere durante la registrazione viene ora
 > dall'admin via `AvatarVoiceScript`.
+
+> I tre campi `musetalk_*` (migration `0029`) sono i parametri del
+> lip-sync MuseTalk per la scheda "Video con Avatar" delle lezioni:
+> vengono passati a `synth_random_lipsync` dal worker
+> `course_lesson_avatar_video_worker`. I default sono i valori del
+> comando MuseTalk testato manualmente; sono modificabili dalla pagina
+> "Mio Avatar" via `PATCH /me/avatar/musetalk-params`.
+
+> Le 4 colonne `tts_latents_*` introdotte dalla migration `0026` (cache
+> su disco dei latenti XTTS per voce) sono state **rimosse** dalla
+> migration `0027` quando il TTS è migrato su RunPod GPU: l'estrazione
+> dei latenti avviene al volo sulla GPU remota.
 
 ---
 
@@ -399,18 +414,22 @@ per replicarlo qui.
 
 In sintesi:
 
-- `Course` ha uno state machine a 17 valori che copre l'intera pipeline AI a 5 fasi: `draft → architecture_* → lessons_structure_* → content_* → slides_* → speech_* → published / archived`. Ogni `*_pending/_ready/_approved` è derivato dagli stati per-modulo (Fase 2) o per-lezione (Fasi 3-5).
+- `Course` ha uno state machine a 17 valori che copre l'intera pipeline AI a 5 fasi: `draft → architecture_* → lessons_structure_* → content_* → slides_* → speech_* → published / archived`. Ogni `*_pending/_ready/_approved` è derivato dagli stati per-modulo (Fase 2) o per-lezione (Fasi 3-5). Ha inoltre `video_language_code` (VARCHAR(10) nullable, FK `languages.code` ON DELETE SET NULL, migration `0026`): override opzionale della lingua della voce TTS nei video MP4 (Fase 6); NULL → fallback su `language_code`. La relationship `video_language` richiede `foreign_keys=` esplicito perché due FK puntano a `languages.code`.
 - `CourseDocument` ha il proprio state machine `pending → processing → ready/failed` per il pre-processing AI (Appendice A).
 - `CourseModule` ha 10 colonne `lessons_structure_*` per Fase 2 + `architecture_modified_at` per stale-detection.
-- `CourseLesson` è la tabella più ampia: oltre ai campi base e Fase 2 (`learning_objectives`, `mandatory_topics`, `prerequisites`, `section_outline`), ha 4 blocchi di colonne per le pipeline AI/PDF:
+- `CourseLesson` è la tabella più ampia: oltre ai campi base e Fase 2 (`learning_objectives`, `mandatory_topics`, `prerequisites`, `section_outline`), ha questi blocchi di colonne per le pipeline AI/PDF/video:
   - **Fase 3 — Contenuto** (11 colonne `content_*` + `content_modified_at`, migration 0015)
   - **§7 — PDF lezione testo** (8 colonne `pdf_*`, migration 0016, FK `pdf_templates`)
   - **Fase 4 — Slide** (11 colonne `slides_*` + `slides_modified_at`, migration 0019)
   - **Fase 4 — PDF slide** (8 colonne `slides_pdf_*`, migration 0020, FK `slide_templates` dopo unification 0022)
   - **Fase 5 — Discorso** (11 colonne `speech_*` + `speech_modified_at`, migration 0023)
   - **Fase 5 — PDF discorso** (8 colonne `speech_pdf_*`, migration 0024, FK `pdf_templates`)
-  
-  Costanti tuple esposte dal modello: `LESSON_CONTENT_STATUSES`, `LESSON_PDF_STATUSES`, `LESSON_SLIDES_STATUSES`, `LESSON_SPEECH_STATUSES` (`empty | pending | processing | ready | approved | failed` per quelli con `approved`; `empty | pending | processing | ready | failed` per i PDF).
+  - **Fase 6 — Video MP4 lezione** (8 colonne `video_*`, migration 0025): `video_status`, `video_progress`, `video_progress_phase`, `video_path`, `video_attempts`, `video_error`, `video_generated_at`, `video_tokens` (JSONB). Index `ix_course_lesson_course_video_status` su `(course_id, video_status)`.
+  - **Fase 6b — Video con Avatar** (8 colonne `avatar_video_*`, migration 0029, gemelle delle `video_*`): `avatar_video_status`, `avatar_video_progress`, `avatar_video_progress_phase`, `avatar_video_path`, `avatar_video_attempts`, `avatar_video_error`, `avatar_video_generated_at`, `avatar_video_tokens` (JSONB). Index `ix_course_lesson_course_avatar_video_status` su `(course_id, avatar_video_status)`.
+
+  Inoltre il flag `is_assessment` (BOOLEAN NOT NULL default `false`, migration 0028): quando `true` la lezione è una **verifica delle competenze** (ultima lezione del modulo quando `course.assessment_lesson_enabled`); riusa `content_raw` per ospitare l'elenco di domande ed è esclusa dalle pipeline Fasi 4/5/6 e dagli export PDF.
+
+  Costanti tuple esposte dal modello: `LESSON_CONTENT_STATUSES`, `LESSON_PDF_STATUSES`, `LESSON_SLIDES_STATUSES`, `LESSON_SPEECH_STATUSES`, `LESSON_VIDEO_STATUSES`, `LESSON_AVATAR_VIDEO_STATUSES` (`empty | pending | processing | ready | approved | failed` per content/slides/speech; `empty | pending | processing | ready | failed` per i PDF; `empty | pending | processing | ready | failed | cancelled` per `video_*` e `avatar_video_*`). Tutti i CHECK constraint `video_status`/`avatar_video_status` e i progress 0-100 sono in `__table_args__`.
 - `CourseModule` e `CourseLesson` hanno UNIQUE su codici `M{N}`/`M{N}.L{K}` scoped al corso (vedi nota sul renumber in [Manual editing](../courses/04-manual-editing.md)).
 - `CourseTaxonomyTerm` modella i 8 tassonomi (categoria, stile insegnamento, profondità contenuto, ruolo docente, dimensione pubblico, livello conoscenza, destinatari, livello EQF) con righe seedate e custom per organizzazione.
 - `Language` è una piccola lookup table (`code`, `name_native`, `name_en`).

@@ -265,14 +265,32 @@ Output di una singola clip:
 
 Output dell'avatar utente (1:1 con `User`):
 - `id: UUID`, `user_id: UUID`,
-- `image_path: str | None`, `audio_path: str | None`,
 - `audio_lang: str | None`,
-- `clips_status: AvatarClipsAggregateStatus`,
+- `clips_status: str`,
+- `musetalk_extra_margin: int`, `musetalk_left_cheek_width: int`,
+  `musetalk_right_cheek_width: int` — parametri MuseTalk per la scheda
+  "Video con Avatar" delle lezioni,
 - `clips: list[AvatarClipOut]` (ordinate per `position`),
 - `created_at`, `updated_at`.
 
+`image_path` e `audio_path` sono campi `Field(exclude=True)`: non
+compaiono nel JSON. Al loro posto due `@computed_field`:
+- `image_url: str` — `storage_service.public_url(image_path)`,
+- `audio_url: str | None` — `public_url(audio_path)` o `None`.
+
 > Il campo `audio_text` è stato rimosso. Lo script da leggere è ora
 > esposto via `AvatarVoiceScriptOut`.
+
+### `class AvatarMusetalkParamsUpdate(BaseModel)`
+
+Body per `PATCH /me/avatar/musetalk-params`. Tutti e tre i campi sono
+obbligatori (la UI invia sempre i tre valori):
+- `musetalk_extra_margin: int = Field(ge=0, le=200)`,
+- `musetalk_left_cheek_width: int = Field(ge=0, le=400)`,
+- `musetalk_right_cheek_width: int = Field(ge=0, le=400)`.
+
+I default del modello ORM sono i valori del comando MuseTalk testato
+manualmente (15 / 110 / 110).
 
 ### `class AvatarVoiceScriptOut(ORMModel)`
 
@@ -307,3 +325,147 @@ Tutti opzionali: `prompt`, `label_it`, `is_active`.
 ### `class AvatarClipPromptReorder(BaseModel)`
 
 - `ordered_ids: list[UUID]`.
+
+---
+
+## Schemi del dominio Corsi
+
+La maggior parte degli schemi del dominio Corso (Fasi 1-5, PDF) è
+documentata nella sezione dedicata. Sotto sono documentati gli schemi
+delle feature recenti — verifica delle competenze (Fase 3) e generazione
+video (Fasi 6 / 6b) — che hanno endpoint backend di riferimento.
+
+---
+
+## `app/schemas/course_lesson_content.py` — classi assessment
+
+Oltre agli schemi della Fase 3 (contenuto didattico, `LessonContent*`),
+questo file definisce gli schemi della **verifica delle competenze**: il
+payload polimorfico che vive in `course_lesson.content_raw` quando
+`lesson.is_assessment`.
+
+### `class AssessmentMCOption(BaseModel)`
+
+Una opzione di una domanda a scelta multipla. `extra="forbid"`.
+- `option_id: str` (1..10) — es. `"A"`..`"D"`,
+- `text: str` (1..1000).
+
+### `class AssessmentMCQuestion(BaseModel)`
+
+Domanda a scelta multipla. `extra="forbid"`.
+- `question_id: str` (1..20),
+- `text: str` (1..2000),
+- `options: list[AssessmentMCOption]` (2..6 elementi),
+- `correct_option_id: str` (1..10) — referenzia un `option_id` esistente.
+
+### `class AssessmentOpenQuestion(BaseModel)`
+
+Domanda aperta con traccia di risposta attesa (per la correzione).
+`extra="forbid"`.
+- `question_id: str` (1..20),
+- `text: str` (1..2000),
+- `expected_answer: str` (1..4000).
+
+### `class LessonAssessmentOutput(BaseModel)`
+
+Output AI per una lezione di verifica. Polimorfico con
+`LessonContentOutput`: entrambi vivono in `content_raw`, il discriminante
+è la chiave `is_assessment`. `extra="forbid"`.
+- `lesson_id: str`, `lesson_title: str`,
+- `is_assessment: Literal[True] = True`,
+- `multiple_choice_questions: list[AssessmentMCQuestion]`,
+- `open_questions: list[AssessmentOpenQuestion]`.
+
+### `class LessonAssessmentUpdateInput(BaseModel)`
+
+Body per `PATCH /lessons/{lid}/assessment` (CRUD manuale della verifica).
+Entrambe le liste opzionali; l'edit non degrada lo status. Validazione
+di consistenza (id univoci, una sola opzione corretta) nel service.
+`extra="forbid"`.
+- `multiple_choice_questions: list[AssessmentMCQuestion] | None`,
+- `open_questions: list[AssessmentOpenQuestion] | None`.
+
+---
+
+## `app/schemas/course_lesson_video.py`
+
+DTO della **Fase 6 — generazione video MP4 della lezione** (§9). Il
+video è prodotto dal worker `course_lesson_video_worker`.
+
+### `class LessonVideoGenerateInput(BaseModel)`
+
+Body opzionale per `POST .../video/generate` (riservato a future opzioni
+come override risoluzione/preset). **Attualmente vuoto**, `extra="forbid"`.
+
+### `class LessonVideoStatusOut(ORMModel)`
+
+Stato video di una lezione singola:
+- `lesson_id: str`, `lesson_code: str`,
+- `status: str` (`empty|pending|processing|ready|failed|cancelled`),
+- `progress: int = 0`, `progress_phase: str | None`,
+- `video_url: str | None` — path pubblico `/uploads/...` quando `ready`,
+- `error: str | None`, `attempts: int = 0`,
+- `generated_at: datetime | None`,
+- `tokens: dict | None` — metadata della run (durate, device, num_*),
+- `is_stale: bool` — `True` se il video è stato generato prima di un
+  cambio a discorso o slide (`speech_modified_at`/`slides_modified_at`/
+  `speech_approved_at`/`slides_approved_at`),
+- pre-requisiti runtime: `speech_approved: bool`, `slides_approved: bool`,
+  `voice_sample_available: bool` (il FE li usa per disabilitare "Genera").
+
+### `class LessonVideoMetaOut(ORMModel)`
+
+Meta video di lezione esposto in `CourseLessonOut` per le pagine indice:
+`video_status`, `video_progress`, `video_progress_phase`, `video_path`,
+`video_error`, `video_attempts`, `video_generated_at`, `video_tokens`.
+
+### `class LessonVideoBatchOut(BaseModel)`
+
+Snapshot batch a livello corso (`GET .../lessons-video/status`):
+- `items: list[LessonVideoStatusOut]`,
+- `total`, `ready_count`, `processing_count`, `pending_count`,
+  `failed_count` (int),
+- `eligible_count: int` — lezioni eleggibili (speech+slides approved AND
+  voice sample disponibile); usato dal bottone "Genera tutti",
+- `aggregate_progress: int` — 0-100, media sulle lezioni in flight.
+
+---
+
+## `app/schemas/course_lesson_avatar_video.py`
+
+DTO della **Fase 6b — "Video con Avatar"** (§9b): il video MP4 della
+lezione con l'avatar parlante (lip-sync MuseTalk) sovrapposto. Prodotto
+dal worker `course_lesson_avatar_video_worker`.
+
+### `class LessonAvatarVideoGenerateInput(BaseModel)`
+
+Body opzionale per `POST .../avatar-video/generate` (riservato a future
+opzioni). **Attualmente vuoto**, `extra="forbid"`.
+
+### `class LessonAvatarVideoStatusOut(ORMModel)`
+
+Stato del video con avatar di una lezione singola:
+- `lesson_id: str`, `lesson_code: str`,
+- `status: str` (`empty|pending|processing|ready|failed|cancelled`),
+- `progress: int = 0`, `progress_phase: str | None`,
+- `video_url: str | None` — path pubblico `/uploads/...` quando `ready`,
+- `error: str | None`, `attempts: int = 0`,
+- `generated_at: datetime | None`,
+- `tokens: dict | None`,
+- `is_stale: bool` — `True` se il video con avatar è più vecchio
+  dell'ultima rigenerazione del video della lezione
+  (`avatar_video_generated_at < video_generated_at`),
+- pre-requisiti runtime: `lesson_video_ready: bool` (il video della
+  lezione esiste), `avatar_clips_ready: bool` (l'avatar ha clip pronte).
+
+### `class LessonAvatarVideoBatchOut(BaseModel)`
+
+Snapshot batch a livello corso (`GET .../lessons-avatar-video/status`):
+- `items: list[LessonAvatarVideoStatusOut]`,
+- `total`, `ready_count`, `processing_count`, `pending_count`,
+  `failed_count` (int),
+- `eligible_count: int` — lezioni eleggibili (video lezione `ready` AND
+  avatar con clip pronte),
+- `aggregate_progress: int` — 0-100, media sulle lezioni in flight,
+- `avatar_clips_ready: bool` — stato course-level dell'avatar
+  dell'assegnatario: se `false` nessuna lezione è eleggibile.

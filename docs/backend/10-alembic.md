@@ -313,6 +313,174 @@ gli stati intermedi delle FK in 0022/0024).
 
 ---
 
+## `alembic/versions/0025_lesson_video.py`
+
+**Migrazione video MP4 della lezione (Fase 6 §9)**: aggiunge i campi per
+la generazione del video MP4 della lezione (TTS XTTS-v2 + slide PNG +
+ffmpeg). Vedi [Courses 12 — Lesson video](../courses/12-lesson-video.md).
+
+### Sequenza `upgrade()`
+
+1. Su `course_lesson`, 8 colonne `video_*`:
+   - `video_status` `VARCHAR(40)` NOT NULL `server_default='empty'`
+     (`empty|pending|processing|ready|failed|cancelled`).
+   - `video_progress` `SMALLINT` NOT NULL `server_default='0'` (0-100).
+   - `video_progress_phase` `VARCHAR(50)` nullable
+     (`preparing|tts|rendering_slides|encoding`).
+   - `video_path` `VARCHAR(500)` nullable — path relativo
+     (`lesson_videos/...`).
+   - `video_attempts` `SMALLINT` NOT NULL `server_default='0'`.
+   - `video_error` `TEXT` nullable.
+   - `video_generated_at` `TIMESTAMPTZ` nullable.
+   - `video_tokens` `JSONB` nullable — metadata della run
+     (`audio_duration_s`, `video_duration_s`, `encode_duration_ms`,
+     `tts_duration_ms`, `device`, `model_xtts`, `num_segments`,
+     `num_slides`, `file_size_bytes`).
+2. CHECK constraint `ck_course_lesson_video_status` sui 6 valori di
+   `video_status`.
+3. CHECK constraint `ck_course_lesson_video_progress`
+   (`video_progress >= 0 AND video_progress <= 100`).
+4. Index `ix_course_lesson_course_video_status` su
+   `(course_id, video_status)` per le query batch.
+
+### Sequenza `downgrade()`
+
+Drop dell'index, dei 2 CHECK constraint e delle 8 colonne in ordine
+inverso.
+
+---
+
+## `alembic/versions/0026_avatar_tts_latents_and_course_video_language.py`
+
+**Migrazione rifinitura Fase 6**: tre cambi correlati attorno al TTS dei
+video. Due dei tre interventi (la cache di latenti XTTS) sono stati poi
+rimossi dalla `0027` quando il TTS è migrato su RunPod.
+
+### Sequenza `upgrade()`
+
+1. **Cache latenti TTS dell'avatar** — su `avatars`, 4 colonne
+   `tts_latents_*` per persistere su disco i conditioning latents XTTS-v2
+   estratti una sola volta per voce:
+   - `tts_latents_status` `VARCHAR(16)` NOT NULL `server_default='pending'`.
+   - `tts_latents_path` `VARCHAR(500)` nullable.
+   - `tts_latents_generated_at` `TIMESTAMPTZ` nullable.
+   - `tts_latents_error` `TEXT` nullable.
+   - CHECK constraint `ck_avatar_tts_latents_status`
+     (`pending|processing|ready|failed`).
+2. **Force re-upload audio** — `avatars.audio_path` reso NULLABLE; poi
+   `UPDATE avatars SET audio_path = NULL, audio_lang = NULL` per tutti
+   gli avatar esistenti (gli audio pre-esistenti non hanno mai avuto i
+   latents estratti; scelta consapevole di ripartire puliti). Il file
+   fisico su `/uploads/avatars/*` resta, viene rimosso solo il
+   riferimento DB.
+3. **Lingua TTS per-corso** — `course.video_language_code`
+   `VARCHAR(10)` nullable: override opzionale della
+   `course.language_code` per la voce nei video (NULL → fallback su
+   `language_code`). FK `fk_course_video_language → languages.code`
+   ON DELETE SET NULL.
+
+### Sequenza `downgrade()`
+
+In ordine inverso: drop della FK e di `course.video_language_code`;
+`audio_path` rimesso a NOT NULL (le righe NULL ricevono prima un
+placeholder `''`, i path eliminati non sono ripristinabili); drop del
+CHECK constraint e delle 4 colonne `tts_latents_*`.
+
+---
+
+## `alembic/versions/0027_drop_avatar_tts_latents.py`
+
+**Migrazione rimozione cache latenti TTS**: con la migrazione del TTS su
+RunPod Serverless (GPU) l'estrazione dei conditioning latents avviene al
+volo (~1 s su GPU), quindi il sottosistema di pre-training dei latents
+perde scopo.
+
+### Sequenza `upgrade()`
+
+Drop del CHECK constraint `ck_avatar_tts_latents_status` e delle 4
+colonne `avatars.tts_latents_*` introdotte dalla `0026`.
+
+`course.video_language_code` (anch'essa introdotta dalla `0026`)
+**resta**: è la lingua TTS per-corso, ancora necessaria con RunPod.
+
+### Sequenza `downgrade()`
+
+Ricrea le 4 colonne `tts_latents_*` e il relativo CHECK constraint
+(stessa definizione della `0026`).
+
+---
+
+## `alembic/versions/0028_assessment_lesson.py`
+
+**Migrazione lezione di verifica delle competenze**: aggiunge il flag
+`is_assessment` a `course_lesson`. Quando
+`course.assessment_lesson_enabled` è attivo, l'ultima lezione di ogni
+modulo viene materializzata come verifica delle competenze (domande a
+scelta multipla + aperte) invece che come lezione didattica. Vedi
+[Courses 14 — Assessment lesson](../courses/14-assessment-lesson.md).
+
+### Sequenza `upgrade()`
+
+`op.add_column("course_lesson", sa.Column("is_assessment",
+sa.Boolean(), nullable=False, server_default=sa.text("false")))`. Il
+default server-side `false` garantisce zero impatto sulle lezioni
+esistenti.
+
+### Sequenza `downgrade()`
+
+`op.drop_column("course_lesson", "is_assessment")`.
+
+---
+
+## `alembic/versions/0029_avatar_video.py`
+
+**Migrazione "Video con Avatar" (Fase 6b §9b)**: aggiunge i campi per la
+scheda "Video con Avatar" delle lezioni — un video di avatar parlante
+(lip-sync MuseTalk su RunPod) sovrapposto al video MP4 già generato
+della lezione. Vedi
+[Courses 13 — Avatar video](../courses/13-avatar-video.md).
+
+### Sequenza `upgrade()`
+
+1. Su `avatars`, 3 colonne `musetalk_*` — parametri MuseTalk per-avatar
+   passati a `synth_random_lipsync`, con default = i valori del comando
+   testato manualmente:
+   - `musetalk_extra_margin` `SMALLINT` NOT NULL `server_default='15'`.
+   - `musetalk_left_cheek_width` `SMALLINT` NOT NULL
+     `server_default='110'`.
+   - `musetalk_right_cheek_width` `SMALLINT` NOT NULL
+     `server_default='110'`.
+2. Su `course_lesson`, 8 colonne `avatar_video_*` — gemelle delle
+   `video_*` della `0025`:
+   - `avatar_video_status` `VARCHAR(40)` NOT NULL `server_default='empty'`
+     (`empty|pending|processing|ready|failed|cancelled`).
+   - `avatar_video_progress` `SMALLINT` NOT NULL `server_default='0'`
+     (0-100).
+   - `avatar_video_progress_phase` `VARCHAR(50)` nullable
+     (`preparing|lipsync|overlay`).
+   - `avatar_video_path` `VARCHAR(500)` nullable — path relativo
+     (`lesson_avatar_videos/...`).
+   - `avatar_video_attempts` `SMALLINT` NOT NULL `server_default='0'`.
+   - `avatar_video_error` `TEXT` nullable.
+   - `avatar_video_generated_at` `TIMESTAMPTZ` nullable.
+   - `avatar_video_tokens` `JSONB` nullable — metadata della run.
+3. CHECK constraint `ck_course_lesson_avatar_video_status` sui 6 valori
+   di `avatar_video_status`.
+4. CHECK constraint `ck_course_lesson_avatar_video_progress`
+   (`avatar_video_progress >= 0 AND avatar_video_progress <= 100`).
+5. Index `ix_course_lesson_course_avatar_video_status` su
+   `(course_id, avatar_video_status)` per le query batch.
+
+Tutti i default sono invariati: zero impatto sulle righe esistenti.
+
+### Sequenza `downgrade()`
+
+Drop dell'index, dei 2 CHECK constraint, delle 8 colonne
+`avatar_video_*` e delle 3 colonne `musetalk_*`, tutto in ordine
+inverso.
+
+---
+
 ## Workflow per nuove migrazioni
 
 ```bash

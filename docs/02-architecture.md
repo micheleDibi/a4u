@@ -27,16 +27,25 @@
                      │  StaticFiles /uploads           │
                      │  rate-limit (slowapi)           │
                      │  exception handlers             │
-                     └──────────────────┬──────────────┘
-                                        │ async (asyncpg)
-                                        ▼
-                     ┌─────────────────────────────────┐
-                     │      PostgreSQL 16              │
-                     │  citext extension               │
-                     │  uuid-ossp extension            │
-                     │  statement_timeout=30s          │
-                     └─────────────────────────────────┘
+                     │  12 worker async (lifespan)     │
+                     └────┬───────────────────────┬────┘
+                          │ async (asyncpg)       │ HTTP / subprocess
+                          ▼                       ▼
+        ┌─────────────────────────┐   ┌──────────────────────────────────┐
+        │      PostgreSQL 16      │   │   Servizi esterni                │
+        │  citext extension       │   │  • OpenAI  (pipeline AI 1-5)     │
+        │  uuid-ossp extension    │   │  • MiniMax (clip avatar)         │
+        │  statement_timeout=30s  │   │  • RunPod GPU — TTS XTTS-v2      │
+        └─────────────────────────┘   │  • RunPod GPU — MuseTalk lipsync │
+                                      │  • Cloudflare R2 (transito)      │
+                                      └──────────────────────────────────┘
 ```
+
+I servizi esterni sono tutti opzionali: senza, la rispettiva feature
+resta disabilitata (i task restano `pending` o le rotte rispondono con
+un errore di pre-condizione). I task GPU-intensivi (TTS, lip-sync) sono
+delegati a due endpoint **RunPod Serverless GPU**: il backend non ha né
+torch/coqui né i modelli di lip-sync, è solo un client HTTP/subprocess.
 
 ## Layer del backend
 
@@ -185,23 +194,55 @@ process del backend, e si fermano sullo shutdown.
 
 ```
 app.main lifespan startup:
-   avatar_clip_worker.start_worker()                # MiniMax video gen
-   course_document_worker.start_worker()            # Pre-processing AI documenti corso
-   course_architecture_worker.start_worker()        # Fase 1 architettura
-   course_lesson_structure_worker.start_worker()    # Fase 2 struttura lezioni (parallelo)
-   course_lesson_content_worker.start_worker()      # Fase 3 contenuto lezione (parallelo)
-   course_lesson_slides_worker.start_worker()       # Fase 4 slide (parallelo)
-   course_lesson_pdf_worker.start_worker()          # §7 export PDF lezione testo (parallelo)
-   course_lesson_slides_pdf_worker.start_worker()   # Fase 4 export PDF slide (parallelo)
-   course_lesson_speech_worker.start_worker()       # Fase 5 discorso (parallelo)
-   course_lesson_speech_pdf_worker.start_worker()   # Fase 5 export PDF discorso (parallelo)
+   avatar_clip_worker.start_worker()                  # MiniMax video gen
+   course_document_worker.start_worker()              # Pre-processing AI documenti corso
+   course_architecture_worker.start_worker()          # Fase 1 architettura
+   course_lesson_structure_worker.start_worker()      # Fase 2 struttura lezioni (parallelo)
+   course_lesson_content_worker.start_worker()        # Fase 3 contenuto lezione (parallelo)
+   course_lesson_slides_worker.start_worker()         # Fase 4 slide (parallelo)
+   course_lesson_pdf_worker.start_worker()            # §7 export PDF lezione testo (parallelo)
+   course_lesson_slides_pdf_worker.start_worker()     # Fase 4 export PDF slide (parallelo)
+   course_lesson_speech_worker.start_worker()         # Fase 5 discorso (parallelo)
+   course_lesson_speech_pdf_worker.start_worker()     # Fase 5 export PDF discorso (parallelo)
+   course_lesson_video_worker.start_worker()          # Fase 6 video MP4 (RunPod TTS + slide + ffmpeg)
+   course_lesson_avatar_video_worker.start_worker()   # Fase 6b "Video con Avatar" (MuseTalk + overlay ffmpeg)
    yield
    # shutdown in ordine inverso
 ```
 
-10 worker async totali. I sei worker della pipeline AI corso (architecture,
+12 worker async totali. I sei worker della pipeline AI corso (architecture,
 structure, content, slides, speech, document) + i tre worker PDF (testo,
-slide, discorso) + il worker MiniMax avatar.
+slide, discorso) + il worker MiniMax avatar + i due worker video
+(Fase 6 e Fase 6b).
+
+### Worker video (Fase 6 / 6b)
+
+I due worker video (`course_lesson_video_worker`,
+`course_lesson_avatar_video_worker`) seguono lo stesso pattern dei
+worker batch (semaphore + `_inflight` + claim atomico + auto-retry
+trasparente + auto-resume al boot), ma con cap di concorrenza **1** di
+default: un solo job GPU per volta. A differenza dei worker AI, **non**
+chiamano OpenAI — orchestrano lavoro esterno:
+
+- **Fase 6 — `course_lesson_video_worker`**: sintetizza il discorso via
+  endpoint RunPod GPU TTS (`runpod_tts_client`, un job per video,
+  streaming incrementale per-segment), renderizza le slide a PNG con
+  Playwright, e compone l'MP4 con ffmpeg. L'audio TTS è messo in cache
+  su disco (`lesson_audio_cache`): una rigenerazione che non cambia
+  testo/voce/lingua salta del tutto RunPod.
+- **Fase 6b — `course_lesson_avatar_video_worker`**: prende il video MP4
+  della Fase 6, lancia il client MuseTalk vendored
+  (`backend/app/musetalk_client/`) come subprocess — che produce un
+  avatar parlante con lip-sync sull'endpoint RunPod GPU MuseTalk usando
+  Cloudflare R2 come storage di transito — e sovrappone l'avatar in
+  basso a destra con ffmpeg.
+
+Un **timeout RunPod** è errore terminale (si ripeterebbe identico), non
+auto-retry. Le pre-condizioni mancanti (speech/slides non approvati,
+campione vocale assente, video della lezione non pronto, ecc.) vanno a
+`failed` immediato. Dettagli in
+[Courses 12 — Lesson video](courses/12-lesson-video.md) e
+[Courses 13 — Avatar video](courses/13-avatar-video.md).
 
 ### Pattern "single-task" (avatar, document, architecture)
 
@@ -229,7 +270,7 @@ async def _run_loop():
         await asyncio.wait_for(_stop_event.wait(), timeout=POLL_INTERVAL)
 ```
 
-### Pattern "batch parallelo" (lesson_structure, lesson_content, lesson_slides, lesson_speech, lesson_pdf, lesson_slides_pdf, lesson_speech_pdf)
+### Pattern "batch parallelo" (lesson_structure, lesson_content, lesson_slides, lesson_speech, lesson_pdf, lesson_slides_pdf, lesson_speech_pdf, lesson_video, lesson_avatar_video)
 
 Worker che processano N task in parallelo con cap di concorrenza
 (`asyncio.Semaphore`) e dedup (`_inflight: set[UUID]` con claim atomico
@@ -238,6 +279,7 @@ Worker che processano N task in parallelo con cap di concorrenza
 - **5** — Fase 2 (struttura)
 - **3** — Fase 3 (content), Fase 4 (slide), Fase 5 (discorso)
 - **2** — i tre worker PDF (testo / slide / discorso) — condividono `COURSE_LESSON_PDF_MAX_CONCURRENCY` perché tutti CPU-bound su WeasyPrint
+- **1** — i due worker video (Fase 6 e Fase 6b): un solo job GPU per volta (vedi "Worker video" sotto)
 
 Tutti hanno **auto-retry trasparente** prima del fail terminale: la UI
 vede solo "in elaborazione" finché passa, mai il messaggio di errore

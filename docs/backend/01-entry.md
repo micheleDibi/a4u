@@ -41,19 +41,47 @@ lifespan (startup + shutdown).
      bootstrap admin (idempotente);
    - commit.
    In caso di errore: logga e rilancia (l'app non parte).
-5. Crea le sub-cartelle `uploads/{organizations,avatars,templates}` se
-   mancanti.
-6. Avvia il worker MiniMax: `avatar_clip_worker.start()` lancia un
-   `asyncio.Task` singleton che processa le clip in stato
-   `pending`/`processing` ogni `MINIMAX_POLL_INTERVAL_SECONDS`. Il task è
-   memorizzato in `app.state.avatar_clip_worker_task` per il teardown.
-   Lo stato delle clip è in DB, quindi il worker recupera automaticamente
-   le clip lasciate in sospeso da un restart.
+5. Crea `upload_root` e le sue sub-cartelle se mancanti:
+   `organizations`, `avatars`, `templates`, `courses`, `lesson_assets`,
+   `lesson_videos`, `lesson_avatar_videos`. (`lesson_videos` ospita gli
+   MP4 della Fase 6; `lesson_avatar_videos` i "Video con avatar" della
+   Fase 6b.)
+6. Avvia, in ordine, i worker async di background. Ognuno è esposto dal
+   suo modulo in `app/services/` con la coppia
+   `start_worker()` / `stop_worker()`: `start_worker()` lancia un
+   `asyncio.Task` singleton che fa polling del DB; lo stato è sempre
+   persistito su DB, quindi a ogni restart i worker recuperano da soli i
+   task lasciati in sospeso. I worker avviati:
+   - `avatar_clip_worker` — genera/polla le clip avatar su MiniMax
+     (ogni `MINIMAX_POLL_INTERVAL_SECONDS`).
+   - `course_document_worker` — pre-processing dei documenti di corso
+     (Appendice A → riassunto strutturato).
+   - `course_architecture_worker` — generazione architettura corso
+     (Fase 1).
+   - `course_lesson_structure_worker` — generazione struttura lezioni
+     (Fase 2), dispatch parallelo dei moduli `pending`.
+   - `course_lesson_content_worker` — generazione contenuti lezioni
+     (Fase 3), dispatch parallelo con cap di concorrenza.
+   - `course_lesson_slides_worker` — generazione slide lezioni (Fase 4).
+   - `course_lesson_pdf_worker` — export PDF lezione testo.
+   - `course_lesson_slides_pdf_worker` — export PDF slide (Fase 4).
+   - `course_lesson_speech_worker` — generazione discorso temporizzato
+     (Fase 5).
+   - `course_lesson_speech_pdf_worker` — export PDF discorso (Fase 5).
+   - `course_lesson_video_worker` — generazione video MP4 (Fase 6):
+     orchestra TTS su RunPod GPU + slide Playwright + ffmpeg (cap 1 di
+     default).
+   - `course_lesson_avatar_video_worker` — "Video con avatar"
+     (Fase 6b): orchestra il subprocess MuseTalk di lip-sync su RunPod
+     GPU + overlay ffmpeg (cap 1 di default).
 7. Logga `startup_complete`.
 
 **Sezione shutdown**:
 
-1. `await avatar_clip_worker.stop()` (cancella il task e attende il join).
+1. `await ..._worker.stop_worker()` per tutti i worker, in ordine
+   inverso rispetto allo startup (da `course_lesson_avatar_video_worker`
+   a `avatar_clip_worker`): ogni `stop_worker()` cancella il task e ne
+   attende il join.
 2. `await engine.dispose()`.
 3. Logga `shutdown_complete`.
 
@@ -76,8 +104,10 @@ Costruisce l'app:
      `allow_credentials=True`, `allow_methods` ristretti,
      `allow_headers=["Authorization","Content-Type","X-Request-ID"]`,
      `max_age=600`.
-5. **StaticFiles**: monta `UPLOAD_DIR` su `/uploads` per servire le immagini
-   caricate. Crea la cartella se manca.
+5. **StaticFiles**: monta `UPLOAD_DIR` su `/uploads` per servire i file
+   caricati (immagini di org/avatar/template, asset delle lezioni) e i
+   video generati delle lezioni — `StaticFiles` supporta nativamente
+   l'HTTP Range usato dai player. Crea la cartella se manca.
 6. **Routers**: `app.include_router(api_router)` (prefisso `/api/v1`).
 7. **Exception handlers**: `register_exception_handlers(app)` configura i
    gestori per `AppError`, `StarletteHTTPException`,

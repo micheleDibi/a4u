@@ -17,7 +17,7 @@ Pulsante "Nuovo corso" gated da `course:create`.
 
 ## `CourseEditorPage.tsx`
 
-Editor tab-based. Layout principale: **`<Tabs>`** con 8 voci (in modalità edit;
+Editor tab-based. Layout principale: **`<Tabs>`** con 10 voci (in modalità edit;
 in create solo le prime 2):
 
 1. **Informazioni di base** — title, objectives, argomenti chiave, categoria,
@@ -30,8 +30,11 @@ in create solo le prime 2):
 6. **Contenuti lezioni** — solo edit, gated su `course.status >= lessons_structure_approved`. AI batch/per-lezione (Fase 3) + glossario + **export PDF testo** (§7).
 7. **Slide** — solo edit, gated su `course.status ∈ {content_ready, content_approved, slides_*, speech_*, published}`. AI batch/per-lezione (Fase 4) + edit manuale + **export PDF slide**.
 8. **Discorso** — solo edit, gated su `course.status ∈ {slides_ready, slides_approved, speech_*, published}`. AI batch/per-lezione (Fase 5) + edit manuale + **export PDF discorso**.
+9. **Video** (`lesson-video`) — solo edit + `setupLocked`, disabilitato finché nessuna lezione ha `speech_status='approved'` AND `slides_status='approved'`. Generazione video MP4 (Fase 6).
+10. **Video con avatar** (`lesson-avatar-video`) — solo edit + `setupLocked`, stesso gating del tab Video. Generazione del video con avatar parlante (Fase 6b).
 
-Tab persistente per courseId in localStorage (`course-editor-tab:{courseId}`). Tab disabled (con relativo gating su course.status) restano visibili ma greyed-out finché la pre-condizione a monte non è soddisfatta.
+`TAB_ORDER` enumera le 10 voci; `TabId` ne è il tipo derivato. Tab
+persistente per courseId in localStorage (`course-editor-tab:{courseId}`). Tab disabled (con relativo gating su course.status) restano visibili ma greyed-out finché la pre-condizione a monte non è soddisfatta.
 
 ### Lock setup didattico
 
@@ -56,6 +59,12 @@ Debounce 1500ms su `draft` change. Stable diff via `JSON.stringify(draft) === JS
 - 4s se almeno una lezione è in `speech_pdf_status ∈ {pending, processing}` (Fase 5 PDF)
 - 5s se `glossary_status ∈ {pending, processing}` (§10.1)
 - altrimenti `false`
+
+I tab **Video** (Fase 6) e **Video con avatar** (Fase 6b) hanno un
+polling proprio, indipendente dal `useQuery` del corso: gli hook
+`useCourseVideoStatus` / `useCourseAvatarVideoStatus` interrogano gli
+endpoint `*-video/status` e rinfrescano ogni **2s** finché almeno una
+lezione è in flight (`pending`/`processing`), poi si fermano.
 
 ### Sticky footer
 
@@ -352,13 +361,35 @@ Layout:
   Stesso pattern è applicato a `CourseLessonSlidesView` (gating su
   `slides_pdf_status === "ready"`) e `CourseLessonSpeechView` (gating
   su `speech_pdf_status === "ready"`).
-- **Render lezione espansa** (status `ready`/`approved`): via
-  `LessonContentView` (Mermaid live, KaTeX, tabelle, esempi).
+- **Render lezione espansa** (status `ready`/`approved`): per le lezioni
+  didattiche via `LessonContentView` (Mermaid live, KaTeX, tabelle,
+  esempi); per le lezioni di **verifica** (`is_assessment`) via
+  `LessonAssessmentView`. Il branch è guidato dal type-guard
+  `isAssessmentRaw(content_raw)`.
+- **Lezioni di verifica** (`is_assessment`): la pipeline PDF è
+  disattivata (niente `LessonPdfStatusBadge`, niente CTA PDF, escluse dal
+  conteggio "tutti i PDF pronti" e da "Esporta tutti i PDF"). Al loro
+  posto la row mostra un bottone **"Esporta CSV"** quando ci sono
+  domande. Per la modifica apre `LessonAssessmentEditDialog` invece di
+  `LessonContentEditDialog`. Vedi [14 — Assessment lesson](14-assessment-lesson.md).
+
+### Export CSV della verifica (client-side)
+
+Helper interni a `CourseLessonContentView.tsx`: `buildAssessmentCsv()` +
+`csvCell()` (quoting RFC-4180, separatore `;`). Una riga per domanda; le
+colonne opzione sono dimensionate sul massimo numero di opzioni fra le
+MC. `handleExportAssessmentCsv()` antepone un BOM UTF-8 (Excel-friendly),
+crea un `Blob` `text/csv` e lo scarica via `<a download>`. Nessuna
+chiamata al backend: il CSV è costruito interamente lato client dal
+`content_raw` già in cache.
 
 ### Mutations
 
 - Content: `generateLessonMut`, `generateAllMut`, `approveLessonMut`,
   `approveAllMut`, `editLessonMut`
+- Assessment: `editLessonMut` invia `LessonAssessmentUpdateInput` a
+  `coursesApi.lessonContent.updateAssessment` quando la lezione editata
+  è `is_assessment`
 - Glossary: `regenerateGlossaryMut`
 - PDF (§7): `exportPdfMut`, `exportAllPdfMut`, `cancelAllPdfMut`,
   `downloadPdfMut` (blob via `coursesApi.lessonPdf.download` →
@@ -517,6 +548,103 @@ Submit ricostruisce automaticamente `slide_to_segments_map` (raggruppando i segm
 ### `LessonSpeechPdfExportDialog.tsx`
 
 Dialog scelta template per export PDF discorso. Usa `pdfTemplatesApi.list(orgId)` (template `pdf_templates` — **stesso** del PDF lezione testo, perché il discorso è prosa pura A4 portrait single-column).
+
+## Verifica delle competenze (assessment)
+
+Vedi [14 — Assessment lesson](14-assessment-lesson.md) per il flusso
+completo. La verifica vive **dentro la scheda Contenuti** (Fase 3): non
+ha un tab proprio. Due componenti dedicati, più i marker descritti
+sopra in `CourseLessonContentView.tsx`.
+
+### `LessonAssessmentView.tsx` (viewer read-only)
+
+Render della verifica nel corpo espanso di una lezione `is_assessment`.
+Una sezione per le domande a scelta multipla (opzioni in lista,
+**opzione corretta evidenziata** in verde con icona `CheckCircle2`) e
+una per le domande aperte (testo + box "Risposta attesa"). Empty state
+se non ci sono domande.
+
+### `LessonAssessmentEditDialog.tsx`
+
+Editor del `content_raw` di una verifica (`max-w-3xl`, `<ScrollArea>`
+interno). Due sezioni:
+- **Scelta multipla**: per domanda testo + lista opzioni (2..6) +
+  `radio` per marcare l'opzione corretta. Le `option_id` (A..F) sono
+  ri-assegnate per indice in fase di submit; lo stato locale traccia
+  `correctIndex`, non l'id.
+- **Domande aperte**: testo + risposta attesa.
+
+`question_id` generati lato client (`q-{8 hex}`). Submit invia
+`LessonAssessmentUpdateInput`; la validazione hard è server-side.
+
+Le righe `is_assessment` della scheda **Struttura lezioni** mostrano un
+badge "Verifica competenze" (icona `ListChecks`), analogo al badge
+"Introduttiva" delle lezioni didattiche.
+
+## `CourseLessonVideoView.tsx` (Fase 6 — Video)
+
+Tab "Video" del wizard. Genera il video MP4 della lezione (slide +
+discorso parlato con voce clonata). Vedi
+[12 — Lesson video](12-lesson-video.md).
+
+Layout:
+
+- **Card selettore lingua TTS** (sempre in cima): `Select` sulle 16
+  lingue `XTTS_SUPPORTED_LANGUAGES`, più il sentinel
+  `__course_default__` (visibile solo se la lingua del corso è
+  supportata) per resettare l'override a NULL. La mutation patcha
+  `course.video_language_code` (stringa vuota → reset). La lingua
+  effettiva è override → corso → `"it"`.
+- **Banner lingua non supportata**: se la lingua del corso non è in
+  `XTTS_SUPPORTED_LANGUAGES` e non c'è override, banner ambra che invita
+  a scegliere una lingua compatibile.
+- **Banner voice sample mancante**: ambra quando l'avatar
+  dell'assegnatario non ha il campione vocale.
+- **Aggregate card**: progress aggregato + CTA "Genera tutti" /
+  "Annulla tutti", contatori `ready/total`, badge lezioni `failed`,
+  **ETA** (via `useBatchEta`) durante un batch attivo.
+- **Card per lezione** (raggruppate per modulo): status badge, alert
+  pre-requisiti mancanti (speech/slides non approvati), alert "stale",
+  errore; CTA Genera/Rigenera/Annulla/Scarica; progress bar live con
+  label fase durante la generazione; **player HTML5** `<video>`
+  (`aspect-[99/70]`) quando `ready`; riga di metadata dai `tokens`
+  (durata, device, dimensione file).
+
+Hook: `useLessonVideo.ts` — `useCourseVideoStatus`, `useLessonVideoStatus`
+(per-lezione) + 4 mutation hook (`useGenerateLessonVideo`,
+`useGenerateAllVideos`, `useCancelLessonVideo`, `useCancelAllVideos`).
+Refetch ogni 2s finché ci sono job in flight. API:
+`coursesApi.lessonVideo` (6 metodi).
+
+## `CourseLessonAvatarVideoView.tsx` (Fase 6b — Video con avatar)
+
+Tab "Video con avatar" del wizard. Mirror strutturale di
+`CourseLessonVideoView`: prende il video MP4 già generato e ci
+sovrappone l'avatar parlante (lip-sync MuseTalk). Vedi
+[13 — Avatar video](13-avatar-video.md).
+
+Layout:
+
+- **Banner avatar senza clip**: ambra quando l'avatar dell'assegnatario
+  non ha clip MiniMax pronte (`avatar_clips_ready === false`).
+- **Aggregate card**: descrizione + progress aggregato + CTA "Genera
+  tutti" / "Annulla tutti", contatori, badge `failed`, **ETA**.
+- **Card per lezione**: status badge, alert "video della lezione non
+  pronto" / "stale" / errore; CTA Genera/Rigenera/Annulla/Scarica;
+  progress bar con fasi `preparing / lipsync / overlay`; player HTML5;
+  metadata dai `tokens` (durata, n. clip, dimensione file).
+
+Nessun selettore lingua (l'audio è ereditato dal video della lezione).
+
+Hook: `useLessonAvatarVideo.ts` — `useCourseAvatarVideoStatus` + 4
+mutation hook (`useGenerateLessonAvatarVideo`, `useGenerateAllAvatarVideos`,
+`useCancelLessonAvatarVideo`, `useCancelAllAvatarVideos`). Refetch ogni
+2s finché ci sono job in flight. API: `coursesApi.lessonAvatarVideo`.
+
+I tre parametri MuseTalk per-avatar (`musetalk_extra_margin`,
+`musetalk_left_cheek_width`, `musetalk_right_cheek_width`) si
+configurano da `MyAvatarPage.tsx` (sezione avanzata) via
+`PATCH /me/avatar/musetalk-params`, non da questa scheda.
 
 ## Helper riusabili
 

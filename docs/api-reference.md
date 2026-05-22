@@ -24,7 +24,7 @@ Convenzioni:
 - [Slide templates](#slide-templates)
 - [PDF templates](#pdf-templates)
 - [Course settings](#course-settings)
-- [**Corsi** (CRUD + pipeline AI)](courses/05-api-reference.md) — 21 endpoint sotto `/orgs/{org_id}/courses` (lista, CRUD, documenti, architettura, moduli, lezioni). Documentati in file dedicato.
+- [**Corsi** (CRUD + pipeline AI)](courses/05-api-reference.md) — endpoint sotto `/orgs/{org_id}/courses` (lista, CRUD, documenti, architettura, moduli, lezioni, contenuti, slide, discorso, export PDF, video MP4 — Fase 6 — e "Video con avatar" — Fase 6b — più la verifica delle competenze). Documentati in file dedicato.
 - [Mio avatar](#mio-avatar)
 - [Admin: avatar config](#admin-avatar-config)
 - [Admin: i18n](#admin-i18n)
@@ -432,6 +432,30 @@ Utile in caso di `failed`/`partial` o se sono cambiati i prompt admin.
 
 Risposta: `AvatarOut` con `clips_status="pending"`.
 
+### `PATCH /me/avatar/musetalk-params`
+
+Aggiorna i tre parametri MuseTalk per-avatar usati dalla generazione del
+"Video con avatar" delle lezioni (Fase 6b, lip-sync dell'avatar
+sovrapposto al video — vedi
+[Courses 13 — Avatar video](courses/13-avatar-video.md)).
+
+Body `AvatarMusetalkParamsUpdate` (tutti e tre i campi obbligatori, la UI
+invia sempre i valori correnti):
+
+```json
+{
+  "musetalk_extra_margin": 15,
+  "musetalk_left_cheek_width": 110,
+  "musetalk_right_cheek_width": 110
+}
+```
+
+Range: `musetalk_extra_margin` 0..200; `musetalk_left_cheek_width` e
+`musetalk_right_cheek_width` 0..400.
+
+Risposta `200`: `AvatarOut`. `404 avatar_not_found` se l'utente corrente
+non ha ancora un avatar.
+
 ---
 
 ## Admin: avatar config
@@ -554,7 +578,8 @@ fa upsert dei risultati. Audit `i18n.translations.auto_translate` con
 | `MeOut` | user, organizations[{organization_id, organization_name, role_code, role_name_it, permissions[]}], is_platform_admin |
 | `SlideTemplateOut` | id, organization_id, name, background_image_path, logo_left_path, logo_right_path, text_color, primary_color, secondary_color, font_family, slide_size, created_at, updated_at |
 | `PdfTemplateOut` | + page_size, header_height_mm, footer_height_mm, margin_mm, background_opacity_pct |
-| `AvatarOut` | id, user_id, image_path, audio_path, audio_lang, clips_status, clips: AvatarClipOut[], created_at, updated_at |
+| `AvatarOut` | id, user_id, audio_lang, clips_status, musetalk_extra_margin, musetalk_left_cheek_width, musetalk_right_cheek_width, image_url, audio_url, clips: AvatarClipOut[], created_at, updated_at (`image_path`/`audio_path` esclusi: esposti come `image_url`/`audio_url`) |
+| `AvatarMusetalkParamsUpdate` | musetalk_extra_margin (0..200), musetalk_left_cheek_width (0..400), musetalk_right_cheek_width (0..400) |
 | `AvatarClipOut` | id, avatar_id, position, prompt_text, status, video_path, error_message, started_at, completed_at, created_at, updated_at |
 | `AvatarClipPromptOut` | id, position, prompt, label_it, is_active, created_at, updated_at |
 | `AvatarVoiceScriptOut` | language_code, text, created_at, updated_at |
@@ -584,6 +609,7 @@ fa upsert dei risultati. Audit `i18n.translations.auto_translate` con
 | `not_creator` | 403 | Non sei creator (transfer-creator) |
 | `not_found` | 404 | Risorsa generica non trovata |
 | `organization_not_found` / `user_not_found` / etc. | 404 | Risorse specifiche |
+| `avatar_not_found` | 404 | Operazioni `/me/avatar` (delete, regenerate clip, `PATCH .../musetalk-params`) quando l'utente non ha un avatar |
 | `conflict` | 409 | IntegrityError DB |
 | `already_member` | 409 | Utente già iscritto all'org |
 | `creator_exists` | 409 | Org ha già un creator |

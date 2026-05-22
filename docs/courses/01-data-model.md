@@ -15,6 +15,7 @@ Tabella principale del corso. Snapshot dei parametri della org al momento della 
 | `title` | str(200) | NOT NULL | |
 | `objectives` | text | NOT NULL, default `""` | |
 | `language_code` | str(10) | FK `languages.code` RESTRICT | |
+| `video_language_code` | str(10) | FK `languages.code` SET NULL, nullable | override per-corso della lingua TTS dei video (Fase 6) — migration 0026. NULL → fallback su `language_code`. Validato lato API contro `XTTS_SUPPORTED_LANGUAGES` (`tts_languages.py`) |
 | `argomenti_chiave` | JSONB | NOT NULL, default `[]` | lista di stringhe (max 30) |
 | `cfu` | smallint | NOT NULL, CHECK `>= 1` | snapshot |
 | `modules_count` | smallint | NOT NULL, CHECK `>= 1` | snapshot derivato |
@@ -78,6 +79,7 @@ Regola comune: almeno 1 in `pending|processing|failed` → `*_pending`; tutte in
 - `documents → CourseDocument[]` (cascade delete)
 - `modules → CourseModule[]` (cascade delete, ordered by position)
 - `lessons → CourseLesson[]` (cascade delete, ordered by position)
+- `language → Language` / `video_language → Language | None` (due FK distinte verso `languages.code`, `foreign_keys=` esplicito)
 - 8 × `*_term → CourseTaxonomyTerm | None`
 
 ---
@@ -203,8 +205,10 @@ Lezioni dei moduli. La lezione introduttiva (`is_introductory=true`) ha la
 `learning_objectives`, `mandatory_topics`, `prerequisites`, `section_outline`
 sono il payload di Fase 2 (popolati dal worker o dall'edit manuale).
 
-Tabella estesa per **5 fasi della pipeline AI**: Fase 2 (struttura), Fase 3
-(contenuto + PDF), Fase 4 (slide + PDF slide), Fase 5 (discorso + PDF discorso).
+Tabella estesa per **5 fasi della pipeline AI** + 2 fasi di generazione
+video: Fase 2 (struttura), Fase 3 (contenuto + PDF), Fase 4 (slide + PDF
+slide), Fase 5 (discorso + PDF discorso), Fase 6 (video MP4), Fase 6b
+(video con avatar).
 
 ### Identità + Fase 1/2 (architettura + struttura)
 
@@ -218,6 +222,7 @@ Tabella estesa per **5 fasi della pipeline AI**: Fase 2 (struttura), Fase 3
 | `title` | str(300) | NOT NULL |
 | `summary` | text | NOT NULL, default `""` |
 | `is_introductory` | bool | NOT NULL, default false |
+| `is_assessment` | bool | NOT NULL, default false — lezione di verifica delle competenze (migration 0028). Vedi [14 — Assessment lesson](14-assessment-lesson.md) |
 | `recommended_bibliography` | JSONB | NOT NULL, default `[]` |
 | `learning_objectives` | JSONB | NOT NULL, default `[]` (Fase 2) |
 | `mandatory_topics` | JSONB | NOT NULL, default `[]` (Fase 2) |
@@ -312,7 +317,47 @@ Tabella estesa per **5 fasi della pipeline AI**: Fase 2 (struttura), Fase 3
 | `speech_pdf_error` | text | nullable |
 | `speech_pdf_generated_at` | datetime tz | nullable |
 
-UNIQUE `(module_id, position)`, UNIQUE `(course_id, lesson_code)`. Index su `module_id` e `course_id`.
+### Fase 6 — Video MP4 della lezione
+
+8 colonne `video_*` — pipeline async (TTS RunPod + slide PNG + ffmpeg).
+Pre-condizione runtime: `speech_status='approved'` AND
+`slides_status='approved'`. Vedi [12 — Lesson video](12-lesson-video.md).
+
+| Campo | Tipo | Vincoli |
+|---|---|---|
+| `video_status` | str(40) | NOT NULL, default `empty`, CHECK ∈ 6 valori (`empty\|pending\|processing\|ready\|failed\|cancelled`) — migration 0025 |
+| `video_progress` | smallint | NOT NULL, default 0, CHECK 0..100 |
+| `video_progress_phase` | str(50) | nullable — `preparing / tts / rendering_slides / encoding` |
+| `video_path` | str(500) | nullable — path relativo (`lesson_videos/...`) |
+| `video_attempts` | smallint | NOT NULL, default 0 |
+| `video_error` | text | nullable |
+| `video_generated_at` | datetime tz | nullable |
+| `video_tokens` | JSONB | nullable — telemetria run: `audio_duration_s, video_duration_s, encode_duration_ms, tts_duration_ms, device, model_xtts, num_segments, num_slides, file_size_bytes` |
+
+### Fase 6b — Video con avatar
+
+8 colonne `avatar_video_*` — gemelle delle `video_*`. Pipeline async che
+sovrappone l'avatar parlante (lip-sync MuseTalk) al video MP4 già
+generato. Pre-condizione runtime: `video_status='ready'`. Vedi
+[13 — Avatar video](13-avatar-video.md).
+
+| Campo | Tipo | Vincoli |
+|---|---|---|
+| `avatar_video_status` | str(40) | NOT NULL, default `empty`, CHECK ∈ 6 valori (`empty\|pending\|processing\|ready\|failed\|cancelled`) — migration 0029 |
+| `avatar_video_progress` | smallint | NOT NULL, default 0, CHECK 0..100 |
+| `avatar_video_progress_phase` | str(50) | nullable — `preparing / lipsync / overlay` |
+| `avatar_video_path` | str(500) | nullable — path relativo (`lesson_avatar_videos/...`) |
+| `avatar_video_attempts` | smallint | NOT NULL, default 0 |
+| `avatar_video_error` | text | nullable |
+| `avatar_video_generated_at` | datetime tz | nullable |
+| `avatar_video_tokens` | JSONB | nullable — telemetria run: `lipsync_duration_s, overlay_duration_ms, runpod_job_id, runpod_execution_time_s, num_unique_clips, manifest_cache_hit, file_size_bytes` |
+
+> Le colonne `video_*` e `avatar_video_*` **non** usano lo schema
+> uniforme `*_tokens` della telemetria AI (vedi sopra): non c'è una
+> chiamata OpenAI dietro. Sono dict di telemetria di pipeline (durate,
+> dimensioni file, device) con uno schema proprio per fase.
+
+UNIQUE `(module_id, position)`, UNIQUE `(course_id, lesson_code)`. Index su `module_id` e `course_id`. Due index dedicati alle query batch dei video: `ix_course_lesson_course_video_status` su `(course_id, video_status)` e `ix_course_lesson_course_avatar_video_status` su `(course_id, avatar_video_status)`.
 
 `recommended_bibliography` è una lista di:
 
@@ -533,7 +578,7 @@ Il template `pdf_templates` (lezione testo + discorso, A4 portrait) resta separa
 - `CourseOut`, `CourseListItemOut`, `CourseCreateInput`, `CourseUpdateInput`
 - `CourseDocumentOut`, `CourseDocumentDetailOut`
 - `CourseModuleOut` (esteso con meta Fase 2 + `architecture_modified_at`)
-- `CourseLessonOut` (esteso con campi tutte le fasi: Fase 2 / Fase 3 + PDF / Fase 4 + PDF slide / Fase 5 + PDF discorso)
+- `CourseLessonOut` (esteso con campi tutte le fasi: Fase 2 / Fase 3 + PDF / Fase 4 + PDF slide / Fase 5 + PDF discorso / Fase 6 video / Fase 6b video con avatar / `is_assessment`)
 - `DocumentSummaryOut` + sotto-tipi (`KeyConcept`, `Definition`, ecc.)
 - `RecommendedBibliographyItem`
 - `ArchitectureTokens`, `LessonStructureTokens`, `LessonContentTokens`, `LessonSlidesTokens`, `LessonSpeechTokens`, `GlossaryTokens`
@@ -542,4 +587,7 @@ Il template `pdf_templates` (lezione testo + discorso, A4 portrait) resta separa
 - Fase 3: `LessonContentRaw` + sotto-tipi (`Section`, `VisualAsset`, `Table`, `Equation`, `Example`, `Reference`, `CoverageCheck`), `LessonContentUpdateInput`
 - Fase 4: `LessonSlideItem` (con `body` field + `references_assets[]`), `LessonSlideNewAsset`, `LessonSlidesRaw`, `LessonSlidesUpdateInput`, `SlideType` (16 valori)
 - Fase 5: `LessonSpeechSegment`, `LessonSlideSegmentsMapEntry`, `LessonSpeechRaw`, `LessonSpeechUpdateInput`
+- Fase 6: `LessonVideoStatus`, `LessonVideoPhase`, `LessonVideoTokens`, `LessonVideoStatusOut`, `LessonVideoBatchOut` + `XTTS_SUPPORTED_LANGUAGES` / `isXttsLanguage` (override lingua TTS)
+- Fase 6b: `LessonAvatarVideoStatus`, `LessonAvatarVideoPhase`, `LessonAvatarVideoTokens`, `LessonAvatarVideoStatusOut`, `LessonAvatarVideoBatchOut`
+- Assessment: `LessonAssessmentRaw`, `LessonAssessmentUpdateInput`, type-guard `isAssessmentRaw` (`content_raw` polimorfico `LessonContentRaw | LessonAssessmentRaw`)
 - `GlossaryRaw`, `GlossaryTerm`

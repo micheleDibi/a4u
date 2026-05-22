@@ -37,6 +37,36 @@ languages ─┬─< avatar_voice_scripts
 > con tutti i campi, vincoli, indici e state machine. Lo schema è
 > riassunto qui in apertura del diagramma; il dettaglio per-colonna è
 > centralizzato nel doc dedicato per evitare duplicazioni.
+>
+> **Colonne aggiunte dalle migration `0025`-`0029`** (dettaglio
+> per-colonna in [Courses 01 — Data model](../courses/01-data-model.md)):
+> - `0025_lesson_video` — `course_lesson`: 8 colonne `video_*`
+>   (`video_status` CHECK ∈ `empty|pending|processing|ready|failed|cancelled`,
+>   `video_progress` CHECK 0..100, `video_progress_phase`, `video_path`,
+>   `video_attempts`, `video_error`, `video_generated_at`,
+>   `video_tokens` JSONB). Index `ix_course_lesson_course_video_status`
+>   su `(course_id, video_status)`.
+> - `0026_avatar_tts_latents_and_course_video_language` — `course`:
+>   `video_language_code` VARCHAR(10) nullable, FK `languages.code` ON
+>   DELETE SET NULL (override lingua TTS dei video).
+> - `0028_assessment_lesson` — `course_lesson`: `is_assessment` BOOLEAN
+>   NOT NULL DEFAULT `false` (lezione di verifica delle competenze).
+> - `0029_avatar_video` — `course_lesson`: 8 colonne `avatar_video_*`
+>   (gemelle delle `video_*`: `avatar_video_status` CHECK ∈ stessi 6
+>   valori, `avatar_video_progress` CHECK 0..100,
+>   `avatar_video_progress_phase`, `avatar_video_path`,
+>   `avatar_video_attempts`, `avatar_video_error`,
+>   `avatar_video_generated_at`, `avatar_video_tokens` JSONB). Index
+>   `ix_course_lesson_course_avatar_video_status` su
+>   `(course_id, avatar_video_status)`. La stessa migration aggiunge i
+>   tre `musetalk_*` su `avatars` (vedi tabella `avatars` sotto).
+>
+> Tutte le colonne `course_lesson` aggiunte da queste migration hanno
+> `server_default` (`empty` / `0` / `false`): zero impatto sulle righe
+> esistenti. I CHECK constraint sono `ck_course_lesson_video_status`,
+> `ck_course_lesson_video_progress`,
+> `ck_course_lesson_avatar_video_status`,
+> `ck_course_lesson_avatar_video_progress`.
 
 ---
 
@@ -319,13 +349,25 @@ Avatar globale per utente (1:1, cross-org).
 |---|---|---|
 | `id` | UUID PK | |
 | `user_id` | UUID FK `users.id` CASCADE | UNIQUE NOT NULL |
-| `image_path` | varchar(500) | nullable |
-| `audio_path` | varchar(500) | nullable |
-| `audio_lang` | varchar(8) | nullable |
+| `image_path` | varchar(500) | NOT NULL |
+| `audio_path` | varchar(500) | nullable (NULLABLE da `0026`) |
+| `audio_lang` | varchar(10) | nullable |
 | `clips_status` | varchar(16) NOT NULL | `pending` (∈ `pending`, `processing`, `ready`, `partial`, `failed`) |
+| `musetalk_extra_margin` | smallint NOT NULL | `15` — parametro MuseTalk per il "Video con Avatar" (`0029`) |
+| `musetalk_left_cheek_width` | smallint NOT NULL | `110` — parametro MuseTalk (`0029`) |
+| `musetalk_right_cheek_width` | smallint NOT NULL | `110` — parametro MuseTalk (`0029`) |
 | timestamps | timestamptz | |
 
 **Indici**: `uq_avatars_user_id` (UNIQUE su `user_id`).
+
+> I tre campi `musetalk_*` (migration `0029`) sono i parametri del
+> comando MuseTalk (`--extra-margin` / `--left-cheek-width` /
+> `--right-cheek-width`) usati dalla generazione del "Video con Avatar"
+> delle lezioni. Default = valori del comando testato manualmente.
+> Modificabili da "Mio Avatar" via `PATCH /me/avatar/musetalk-params`.
+> La migration `0026` aveva inoltre introdotto 4 colonne `tts_latents_*`
+> per la cache dei latenti XTTS, poi **rimosse** dalla `0027` quando il
+> TTS è migrato su RunPod (i campi non esistono più sullo schema).
 
 > Il vecchio campo `audio_text` (testo libero scritto dall'utente) è stato
 > rimosso dalla migrazione `0005`. Lo script che l'utente legge durante la

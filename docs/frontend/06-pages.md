@@ -8,6 +8,18 @@ permessi richiesti, dati caricati, comportamenti chiave.
 > `GenerateArchitectureDialog`, `CourseArchitectureView`,
 > `CourseDocumentUploader`) sono documentate in
 > [Courses 06 — Frontend](../courses/06-frontend.md), non duplicate qui.
+>
+> Il `CourseEditorPage` è un wizard a tab con `TAB_ORDER`:
+> `base`, `didactic`, `documents`, `architecture`, `lessons-structure`,
+> `lesson-content`, `lesson-slides`, `lesson-speech`, **`lesson-video`**
+> ("Video"), **`lesson-avatar-video`** ("Video con avatar"). Le ultime
+> due schede sono visibili solo dopo il lock del setup didattico e
+> abilitate (`TabsTrigger` non `disabled`) quando almeno una lezione ha
+> sia `speech_status === "approved"` sia `slides_status === "approved"`.
+> Renderizzano rispettivamente `CourseLessonVideoView` (Fase 6) e
+> `CourseLessonAvatarVideoView` (Fase 6b), descritte in
+> [05 — Components](05-components.md) e nelle doc Courses 12/13. Il tab
+> attivo è persistito in `localStorage["course-editor-tab:{courseId}"]`.
 
 ---
 
@@ -465,6 +477,18 @@ UI:
   overlay nera in alto-sinistra del player. Le `ready` mostrano
   `<video controls loop>` con `src=video_path`; le `failed` mostrano
   l'`error_message`.
+- **Sezione "Avatar parlante — parametri avanzati"** (componente locale
+  `MusetalkParamsSection`, visibile solo se l'avatar esiste): card con
+  3 campi numerici (componente locale `MusetalkField`) per i parametri
+  MuseTalk per-avatar usati dal lip-sync del «Video con Avatar» delle
+  lezioni:
+  - `musetalk_extra_margin` (range 0..200),
+  - `musetalk_left_cheek_width` (range 0..400),
+  - `musetalk_right_cheek_width` (range 0..400).
+  Lo stato locale si ri-sincronizza quando l'avatar è ricaricato dal
+  server. Bottone "Salva" abilitato solo se i valori sono `dirty`;
+  salva via `myAvatarApi.updateMusetalkParams(...)` e invalida la query
+  `["my-avatar"]`. Testi sotto `myAvatar.musetalk.*`.
 - **Skeleton loading state** durante la query iniziale.
 - `<ConfirmDialog>` per la cancellazione (icona cestino dello status
   banner).

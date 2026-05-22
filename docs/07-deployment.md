@@ -18,7 +18,14 @@ fa proxy verso il backend).
   `COURSE_LESSON_PDF_MAX_CONCURRENCY=2` di default servono ~800 MB extra in
   picco; WeasyPrint stesso è leggero ~50 MB/render).
 - Almeno **5 GB disco** per immagini Docker, browser Chromium di
-  Playwright (~300 MB), generated PDFs e uploads.
+  Playwright (~300 MB), generated PDFs e uploads. **I video MP4 generati**
+  (Fasi 6/6b) vivono nel volume `uploads` e pesano ~25 MB ogni 10 min di
+  lezione: per corsi con molte lezioni video preventivare spazio extra
+  (un corso da 30 lezioni × ~15 min ≈ 1-1,5 GB di soli video, ×2 se si
+  genera anche la variante con avatar).
+- I task GPU (TTS XTTS-v2, MuseTalk lip-sync) **non** girano sul server:
+  sono delegati a endpoint RunPod (vedi "Prerequisiti esterni"). Il
+  server fa solo orchestrazione, render slide e encoding ffmpeg.
 - Una porta pubblica (80 e/o 443) e un dominio con DNS che punta al server.
 
 #### Installare Docker (server senza Docker)
@@ -48,17 +55,79 @@ In alternativa segui la procedura manuale da
 <https://docs.docker.com/engine/install/> per la tua distro
 specifica.
 
+### Prerequisiti esterni (servizi cloud)
+
+Oltre al server Docker, la generazione dei contenuti richiede alcuni
+servizi esterni. **Sono tutti opzionali**: senza, la piattaforma
+funziona e le rispettive feature restano disabilitate (i task restano
+in `pending` o le rotte rispondono con un errore di pre-condizione).
+
+| Servizio | Necessario per | Variabili |
+|---|---|---|
+| **OpenAI** (o gateway compatibile) | Pipeline AI corso (Fasi 1-5, glossario, traduzioni i18n) | `OPENAI_API_KEY`, `OPENAI_BASE_URL` |
+| **MiniMax** | Clip video dell'avatar utente | `MINIMAX_API_KEY` |
+| **RunPod — endpoint TTS** | Video MP4 della lezione (Fase 6) | `RUNPOD_API_KEY`, `RUNPOD_TTS_ENDPOINT_ID` |
+| **RunPod — endpoint MuseTalk** | "Video con Avatar" (Fase 6b) | `RUNPOD_API_KEY` (riusato), `RUNPOD_MUSETALK_ENDPOINT_ID` |
+| **Cloudflare R2** | "Video con Avatar" — storage di transito | `R2_ENDPOINT`, `R2_BUCKET`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` |
+
+#### RunPod — due endpoint Serverless GPU
+
+La generazione video delega i task GPU-intensivi a **due endpoint RunPod
+Serverless GPU** distinti, sullo stesso account (la `RUNPOD_API_KEY` è
+unica):
+
+1. **Endpoint TTS XTTS-v2** — sintesi vocale del discorso. L'immagine
+   Docker si costruisce **dalla cartella `XTTS/` del repo**:
+
+   ```bash
+   cd XTTS
+   docker build --platform linux/amd64 -t <registry>/a4u-xtts:latest .
+   docker push <registry>/a4u-xtts:latest
+   ```
+
+   `--platform linux/amd64` è obbligatorio (RunPod gira su x86, anche se
+   builda da Mac ARM). Push su GHCR o Docker Hub, poi crea un endpoint
+   RunPod Serverless da quell'immagine (GPU RTX 4090 / L40S, scale-to-zero
+   con `Active Workers=0`, `Execution Timeout ≥ 900s`). Procedura
+   dettagliata, contratto I/O e costi: `XTTS/README.md`.
+
+2. **Endpoint MuseTalk** — lip-sync dell'avatar parlante. Endpoint
+   serverless dedicato, costruito dall'immagine del progetto MuseTalk-API.
+   Il client che lo invoca è vendored in `backend/app/musetalk_client/`
+   ed è già nell'immagine del backend.
+
+Annota gli **Endpoint ID** di entrambi e valorizza
+`RUNPOD_TTS_ENDPOINT_ID` / `RUNPOD_MUSETALK_ENDPOINT_ID`.
+
+#### Cloudflare R2 — bucket di transito
+
+Il client MuseTalk usa un bucket R2 (S3-compatible) come storage di
+transito per i file del job. Crea un bucket dalla dashboard Cloudflare,
+genera un token S3 (access key id + secret) e valorizza le quattro
+variabili `R2_*` (`R2_ENDPOINT` ha forma
+`https://<account>.r2.cloudflarestorage.com`).
+
+> **NB su `PUBLIC_BASE_URL`** — i worker RunPod scaricano via HTTP il
+> campione vocale dell'avatar (`/uploads/...`) e l'immagine sorgente per
+> MiniMax. In produzione `PUBLIC_BASE_URL` deve quindi puntare a un
+> dominio pubblicamente raggiungibile; in dev locale serve un tunnel
+> (ngrok). Vedi [04 — Configuration](04-configuration.md).
+
 ### Servizi e relativi runtime requirements
 
 | Servizio | Immagine base | Runtime extra |
 |---|---|---|
 | `postgres` | `postgres:16-alpine` | – |
-| `backend` | `python:3.12-slim` | Pango/Cairo (WeasyPrint), Chromium di Playwright (mermaid pre-render) — già nel `Dockerfile` |
+| `backend` | `python:3.12-slim` | Pango/Cairo (WeasyPrint), Chromium di Playwright (mermaid pre-render), `ffmpeg` (encoding video Fase 6/6b) — già nel `Dockerfile` |
 | `frontend` | `node:20` (build) → `nginx:alpine` (runtime) | – |
 
 > **Importante** — il `backend/Dockerfile` installa Pango/Cairo +
 > Chromium con tutte le sue runtime deps (libnss, libgbm, libasound,
-> ...) nel layer runtime. NON serve installare nulla a parte sul host.
+> ...) + `ffmpeg` nel layer runtime. NON serve installare nulla a parte
+> sul host. Il TTS XTTS-v2 e il lip-sync MuseTalk **non** girano nel
+> container backend: sono delegati a endpoint RunPod GPU (vedi
+> "Prerequisiti esterni" sopra). Il client MuseTalk è vendored in
+> `backend/app/musetalk_client/` e gira come subprocess.
 
 ### Workflow di deploy (prima volta)
 
@@ -125,6 +194,19 @@ BOOTSTRAP_ADMIN_FULL_NAME=Platform Admin
 # AI services (opzionali ma necessari per generazione contenuti)
 OPENAI_API_KEY=sk-...
 MINIMAX_API_KEY=...
+
+# Video MP4 della lezione — Fase 6 (opzionale)
+# Endpoint RunPod Serverless GPU del TTS XTTS-v2 (immagine da XTTS/).
+RUNPOD_API_KEY=...
+RUNPOD_TTS_ENDPOINT_ID=...
+
+# "Video con Avatar" — Fase 6b (opzionale)
+# Secondo endpoint RunPod (MuseTalk) + bucket Cloudflare R2 di transito.
+RUNPOD_MUSETALK_ENDPOINT_ID=...
+R2_ENDPOINT=https://<account>.r2.cloudflarestorage.com
+R2_BUCKET=...
+R2_ACCESS_KEY_ID=...
+R2_SECRET_ACCESS_KEY=...
 
 # Error monitoring (opzionale)
 SENTRY_DSN=
@@ -193,16 +275,24 @@ BACKEND_PORT=9001
 - Env: `ENV=production`, `LOG_FORMAT=json`, `COOKIE_SECURE=true`.
 - `DATABASE_URL` punta a `postgres` (rete docker).
 - Volumi persistenti:
-  - `uploads:/app/uploads` — loghi org + PDF template, avatar, materiali corso.
+  - `uploads:/app/uploads` — loghi org + PDF template, avatar, materiali
+    corso, video MP4 generati (`lesson_videos/`, `lesson_avatar_videos/`),
+    cache audio TTS (`lesson_audio/`), manifest MuseTalk
+    (`musetalk_manifests/`).
   - `generated_pdfs:/app/generated_pdfs` — PDF lezioni renderizzati (sovrascritti ad ogni rigenerazione).
 - Chromium di Playwright in `/ms-playwright` (path condiviso, env
-  `PLAYWRIGHT_BROWSERS_PATH`). Usato solo per pre-render Mermaid → SVG
-  (il PDF finale è prodotto da WeasyPrint, vedi
-  [09 — PDF export](courses/09-pdf-export.md)).
-- Tutti gli env knob significativi (MiniMax, OpenAI per ogni fase,
-  worker concurrency/auto-retry, reasoning_effort) sono forwardati con
-  `${VAR:-default}` → puoi sovrascriverli in `.env` senza toccare il
-  compose file.
+  `PLAYWRIGHT_BROWSERS_PATH`). Usato per pre-render Mermaid → SVG (il PDF
+  finale è prodotto da WeasyPrint, vedi
+  [09 — PDF export](courses/09-pdf-export.md)) e per il rendering delle
+  slide a PNG nella generazione video (Fase 6).
+- `ffmpeg` per l'encoding del video MP4 della lezione e l'overlay
+  dell'avatar (Fasi 6/6b).
+- Tutti gli env knob significativi (MiniMax, RunPod TTS + MuseTalk, R2,
+  OpenAI per ogni fase, worker concurrency/auto-retry, reasoning_effort,
+  encoding video, overlay avatar) sono forwardati con `${VAR:-default}`
+  nel blocco `environment:` di `docker-compose.prod.yml` → puoi
+  sovrascriverli in `.env` senza toccare il compose file. Le credenziali
+  RunPod/R2 vengono lette dal backend e propagate al subprocess MuseTalk.
 - Healthcheck su `/api/v1/system/health`.
 
 #### `frontend`

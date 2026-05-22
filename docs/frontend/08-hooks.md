@@ -9,6 +9,8 @@ li espongono.
 - `useEffectiveOrgId()` → `src/hooks/useEffectiveOrgId.ts`.
 - `useBatchEta(tasks)` → `src/hooks/useBatchEta.ts` (ETA per batch AI).
 - `useTaskEta(key, isActive, progress)` → `src/hooks/useTaskEta.ts` (ETA per task singolo).
+- `useLessonVideo*` → `src/hooks/useLessonVideo.ts` (query/mutation del video MP4 della lezione, Fase 6).
+- `useLessonAvatarVideo*` → `src/hooks/useLessonAvatarVideo.ts` (query/mutation del «Video con Avatar», Fase 6b).
 
 Helper correlati:
 - `formatDuration(ms)` → `src/lib/formatDuration.ts` (formattatore "1m 30s" da ms).
@@ -176,6 +178,98 @@ formatDuration(100)        // "<1s"
 
 Usato accoppiato a `useBatchEta` / `useTaskEta` per evitare di duplicare
 la logica di rendering "tempo umano".
+
+---
+
+## `useLessonVideo.ts` — hook del video MP4 della lezione (Fase 6)
+
+**Scopo**: query di stato (con polling) e mutation per la generazione
+del video MP4 della lezione (vedi
+[Courses 12 — Lesson video](../courses/12-lesson-video.md)). Wrappano
+`coursesApi.lessonVideo`.
+
+Costanti modulo: `REFETCH_ACTIVE_MS = 2_000`, `REFETCH_IDLE_MS = false`,
+`STALE_MS = 1_000`. Query key: `["course-video-status", orgId, courseId]`
+e `["lesson-video-status", orgId, courseId, lessonId]`.
+
+### Query hook
+
+```ts
+function useLessonVideoStatus(
+  orgId, courseId, lessonId,
+): UseQueryResult<LessonVideoStatusOut>;
+
+function useCourseVideoStatus(
+  orgId, courseId,
+): UseQueryResult<LessonVideoBatchOut>;
+```
+
+- `useLessonVideoStatus` — status di una singola lezione.
+- `useCourseVideoStatus` — aggregato pagina-corso (card "Genera tutti i
+  video" + lista per-lezione).
+- Entrambi: `enabled` solo con tutti gli id valorizzati; `refetchInterval`
+  dinamico — refetch ogni **2 s** finché un job è in flight
+  (`status ∈ {pending, processing}` per la singola, oppure
+  `pending_count + processing_count > 0` per l'aggregato), poi si ferma.
+
+### Mutation hook
+
+```ts
+function useGenerateLessonVideo(); // generate per lezione
+function useGenerateAllVideos();   // generate batch
+function useCancelLessonVideo();   // cancel per lezione
+function useCancelAllVideos();     // cancel batch
+```
+
+Ogni mutation, su `onSuccess`, invalida **sia** lo status del corso
+(`course-video-status`) **sia** lo status puntuale della lezione
+(`lesson-video-status`), così la tab Video e il banner pagina-corso
+restano coerenti. Le mutation batch invalidano il prefisso
+`["lesson-video-status", orgId, courseId]`.
+
+Usati da `CourseLessonVideoView.tsx` (vedi
+[05 — Components](05-components.md)).
+
+---
+
+## `useLessonAvatarVideo.ts` — hook del «Video con Avatar» (Fase 6b)
+
+**Scopo**: query di stato (con polling) e mutation per il «Video con
+Avatar» — lip-sync MuseTalk sovrapposto al video della lezione (vedi
+[Courses 13 — Avatar video](../courses/13-avatar-video.md)). Wrappano
+`coursesApi.lessonAvatarVideo`.
+
+Stesse costanti di `useLessonVideo.ts`. Query key:
+`["course-avatar-video-status", orgId, courseId]` e
+`["lesson-avatar-video-status", orgId, courseId, lessonId]`.
+
+### Query hook
+
+```ts
+function useCourseAvatarVideoStatus(
+  orgId, courseId,
+): UseQueryResult<LessonAvatarVideoBatchOut>;
+```
+
+Aggregato pagina-corso per la scheda «Video con avatar»: card "Genera
+tutti" + lista per-lezione. `refetchInterval` dinamico — refetch ogni
+**2 s** se `pending_count + processing_count > 0`, poi si ferma.
+
+> A differenza di `useLessonVideo.ts` non c'è un hook di status
+> per-lezione: la scheda «Video con avatar» usa solo l'aggregato.
+
+### Mutation hook
+
+```ts
+function useGenerateLessonAvatarVideo();
+function useGenerateAllAvatarVideos();
+function useCancelLessonAvatarVideo();
+function useCancelAllAvatarVideos();
+```
+
+Su `onSuccess` invalidano l'aggregato `course-avatar-video-status` e lo
+status puntuale `lesson-avatar-video-status` (le batch invalidano il
+prefisso). Usati da `CourseLessonAvatarVideoView.tsx`.
 
 ---
 

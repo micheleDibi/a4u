@@ -252,6 +252,40 @@ Errori:
 - `409 lesson_content_not_editable` se status non in `ready/approved`.
 - `422` su validazione (asset_id duplicati, etc.).
 
+### `PATCH /orgs/{org_id}/courses/{course_id}/lessons/{lesson_id}/assessment`
+
+`course:edit`. Patch manuale della **verifica delle competenze** — il
+`content_raw` di una lezione `is_assessment`. Vedi
+[14 — Assessment lesson](14-assessment-lesson.md).
+
+Body `LessonAssessmentUpdateInput` (liste opzionali):
+
+```json
+{
+  "multiple_choice_questions": [
+    {
+      "question_id": "q-1a2b3c4d",
+      "text": "...",
+      "options": [{"option_id": "A", "text": "..."}, {"option_id": "B", "text": "..."}],
+      "correct_option_id": "A"
+    }
+  ],
+  "open_questions": [
+    {"question_id": "q-5e6f7a8b", "text": "...", "expected_answer": "..."}
+  ]
+}
+```
+
+200 → `CourseOut`. Guard `lesson.is_assessment` + status `ready`/`approved`.
+Stesse validazioni MC della materializzazione AI (`question_id` unici,
+ogni MC con esattamente una opzione corretta, `correct_option_id`
+referenzia un'opzione esistente).
+
+Errori:
+- `409 lesson_not_assessment` se la lezione non è una verifica.
+- `409 lesson_content_not_editable` se status non in `ready/approved`.
+- `422` su validazione (MC con 0 o 2 opzioni corrette, ID duplicati).
+
 ## Glossario (§10.1)
 
 ### `POST /orgs/{org_id}/courses/{course_id}/glossary/regenerate`
@@ -633,6 +667,135 @@ Pipeline parallela e indipendente dal PDF slide. Path file:
 > assoluto è unico (`course_lesson_pdf_service.pdf_absolute_path`)
 > perché tutti e tre i PDF condividono la stessa root.
 
+## Video MP4 della lezione (Fase 6)
+
+Granularità lezione. Pipeline async (TTS RunPod GPU + slide PNG +
+ffmpeg), nessuna chiamata OpenAI. Vedi
+[12 — Lesson video](12-lesson-video.md). I 6 endpoint sono in
+`courses.py` (sezione "Fase 6"), service `course_lesson_video_service.py`.
+
+Le **lezioni di verifica** (`is_assessment`) non sono mai eleggibili.
+
+### `POST /orgs/{org_id}/courses/{course_id}/lessons/{lesson_id}/video/generate`
+
+`course:generate`. Body `LessonVideoGenerateInput` (oggetto vuoto,
+`extra="forbid"`; riservato a future opzioni preset). 202 →
+`LessonVideoStatusOut`. Set `lesson.video_status='pending'`; il worker
+prende al prossimo tick.
+
+Pre-condizioni: `speech_status='approved'` AND `slides_status='approved'`
+AND `Avatar.audio_path` dell'assegnatario del corso presente.
+
+Errori:
+- `409 speech_not_approved` se il discorso non è approvato.
+- `409 slides_not_approved` se le slide non sono approvate.
+- `409 voice_sample_missing` se l'avatar dell'assegnatario non ha il
+  campione vocale.
+
+### `POST /orgs/{org_id}/courses/{course_id}/lessons-video/generate-batch`
+
+`course:generate`. 202 → `LessonVideoBatchOut`. Marca come `pending`
+tutte le lezioni eleggibili (speech+slides approved AND video non già in
+flight). Il worker le elabora una alla volta (cap default 1).
+
+### `POST /orgs/{org_id}/courses/{course_id}/lessons/{lesson_id}/video/cancel`
+
+`course:generate`. 200 → `LessonVideoStatusOut`. `pending`/`processing`
+→ `cancelled`. Idempotente.
+
+### `POST /orgs/{org_id}/courses/{course_id}/lessons-video/cancel-batch`
+
+`course:generate`. 200 → `LessonVideoBatchOut`. Annulla tutte le
+generazioni video in flight.
+
+### `GET /orgs/{org_id}/courses/{course_id}/lessons/{lesson_id}/video/status`
+
+`course:view`. 200 → `LessonVideoStatusOut`. Polling-friendly: il FE
+rinfresca ogni 2 s mentre c'è almeno un job in flight.
+
+### `GET /orgs/{org_id}/courses/{course_id}/lessons-video/status`
+
+`course:view`. 200 → `LessonVideoBatchOut` — aggregato pagina-corso
+(`items`, contatori, `eligible_count`, `aggregate_progress`) pronto per
+la scheda "Video".
+
+## Video con avatar (Fase 6b)
+
+Granularità lezione. Sovrappone l'avatar parlante (lip-sync MuseTalk su
+RunPod) al video MP4 già generato. Vedi
+[13 — Avatar video](13-avatar-video.md). I 6 endpoint sono in
+`courses.py` (sezione "Fase 6b"), service
+`course_lesson_avatar_video_service.py`.
+
+### `POST /orgs/{org_id}/courses/{course_id}/lessons/{lesson_id}/avatar-video/generate`
+
+`course:generate`. Body `LessonAvatarVideoGenerateInput` (oggetto vuoto,
+`extra="forbid"`). 202 → `LessonAvatarVideoStatusOut`. Set
+`lesson.avatar_video_status='pending'`.
+
+Pre-condizioni: `video_status='ready'` (il video MP4 della lezione deve
+esistere) AND l'avatar dell'assegnatario ha ≥ 1 clip MiniMax pronta.
+
+Errori:
+- `409 lesson_video_not_ready` se il video della lezione non è `ready`.
+- `409 avatar_clips_not_ready` se l'avatar dell'assegnatario non ha clip
+  pronte.
+
+### `POST /orgs/{org_id}/courses/{course_id}/lessons-avatar-video/generate-batch`
+
+`course:generate`. 202 → `LessonAvatarVideoBatchOut`. Marca come
+`pending` tutte le lezioni eleggibili (video della lezione `ready` AND
+avatar con clip pronte AND non già in flight). Worker uno alla volta.
+
+### `POST /orgs/{org_id}/courses/{course_id}/lessons/{lesson_id}/avatar-video/cancel`
+
+`course:generate`. 200 → `LessonAvatarVideoStatusOut`. `pending`/
+`processing` → `cancelled`. Idempotente.
+
+### `POST /orgs/{org_id}/courses/{course_id}/lessons-avatar-video/cancel-batch`
+
+`course:generate`. 200 → `LessonAvatarVideoBatchOut`. Annulla tutte le
+generazioni in flight.
+
+### `GET /orgs/{org_id}/courses/{course_id}/lessons/{lesson_id}/avatar-video/status`
+
+`course:view`. 200 → `LessonAvatarVideoStatusOut`. Polling-friendly.
+
+### `GET /orgs/{org_id}/courses/{course_id}/lessons-avatar-video/status`
+
+`course:view`. 200 → `LessonAvatarVideoBatchOut` — aggregato
+pagina-corso per la scheda "Video con avatar" (`items`, contatori,
+`eligible_count`, `aggregate_progress`, `avatar_clips_ready`).
+
+---
+
+## Parametri MuseTalk dell'avatar
+
+### `PATCH /me/avatar/musetalk-params`
+
+Endpoint sotto `/api/v1/me/avatar` (router `me_avatar.py`), **non**
+sotto `/orgs/.../courses`. Aggiorna i tre parametri MuseTalk per-avatar
+usati dalla generazione del "Video con avatar" delle lezioni (Fase 6b).
+Solo autenticazione utente (agisce sull'avatar dell'utente corrente),
+nessun permesso org.
+
+Body `AvatarMusetalkParamsUpdate` (tutti obbligatori, la UI invia
+sempre i tre valori):
+
+```json
+{
+  "musetalk_extra_margin": 15,
+  "musetalk_left_cheek_width": 110,
+  "musetalk_right_cheek_width": 110
+}
+```
+
+Range: `musetalk_extra_margin` 0..200, `musetalk_left_cheek_width` e
+`musetalk_right_cheek_width` 0..400. 200 → `AvatarOut`.
+
+Errori:
+- `404 avatar_not_found` se l'utente non ha un avatar.
+
 ---
 
 ## Errori specifici
@@ -709,3 +872,10 @@ Pipeline parallela e indipendente dal PDF slide. Path file:
 | `openai_not_configured` | 409 | `OPENAI_API_KEY` non configurata sul server (rilevato anche dall'endpoint image→Mermaid) |
 | `image_to_mermaid_failed` | 409 | Conversione Vision API fallita: `UNRECOGNIZED`, output non-Mermaid, o errore HTTP da OpenAI |
 | `invalid_mime` / `file_too_large` / `invalid_image` / `empty_file` / `invalid_subdir` | 422 | Errori validation di `file_service.save_upload_image` su upload (lesson asset, template, avatar, document) |
+| `lesson_not_assessment` | 409 | PATCH `/lessons/{id}/assessment` su una lezione che non è una verifica (`is_assessment=false`) |
+| `speech_not_approved` | 409 | Generate video (Fase 6) su lezione con `speech_status` ≠ approved |
+| `slides_not_approved` | 409 | Generate video (Fase 6) su lezione con `slides_status` ≠ approved |
+| `voice_sample_missing` | 409 | Generate video (Fase 6) quando l'avatar dell'assegnatario non ha il campione vocale (`Avatar.audio_path` NULL) |
+| `lesson_video_not_ready` | 409 | Generate video con avatar (Fase 6b) su lezione con `video_status` ≠ ready |
+| `avatar_clips_not_ready` | 409 | Generate video con avatar (Fase 6b) quando l'avatar dell'assegnatario non ha clip MiniMax pronte |
+| `avatar_not_found` | 404 | `PATCH /me/avatar/musetalk-params` quando l'utente corrente non ha un avatar |

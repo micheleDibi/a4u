@@ -386,3 +386,154 @@ La variant `warning` rende un badge ambra (`bg-amber-100 text-amber-900`
 in light, `bg-amber-500/20 text-amber-300` in dark) ed è usata nelle
 pagine i18n (header e righe non tradotte) per segnalare visivamente le
 voci che richiedono attenzione.
+
+---
+
+## Componenti del dominio Corsi — schede del `CourseEditorPage`
+
+> I componenti riusabili del dominio Corsi vivono in
+> `src/pages/org/courses/components/`. Le schede AI documentate in
+> [Courses 06 — Frontend](../courses/06-frontend.md) non sono duplicate
+> qui. Le 4 sezioni che seguono coprono le schede aggiunte dopo le
+> Fasi 1-5 (Video, Video con avatar, verifica delle competenze).
+
+### `src/pages/org/courses/components/CourseLessonVideoView.tsx`
+
+Vista della scheda **"Video"** del `CourseEditorPage` — generazione del
+video MP4 della lezione (Fase 6 §9; vedi
+[Courses 12 — Lesson video](../courses/12-lesson-video.md)).
+
+#### Props
+
+```ts
+{
+  course: CourseOut;
+  canGenerate: boolean;   // permesso course:generate
+  orgId: string;
+}
+```
+
+#### Struttura
+
+- **Selettore lingua TTS** (card in cima, sempre visibile): `<Select>`
+  limitato a `XTTS_SUPPORTED_LANGUAGES` (16 lingue). Il valore "segui
+  corso" è il sentinel `__course_default__` → setta
+  `video_language_code` a `null`. La mutation è una patch parziale del
+  corso (`coursesApi.update`) che invalida le query corso + batch video.
+- **Banner di avviso** (ambra) se la lingua del corso non è supportata
+  da XTTS e non c'è override (`courses.video.errors.unsupported_language`),
+  e se il campione vocale dell'assegnatario manca
+  (`courses.video.errors.voice_sample_missing`).
+- **Card aggregata**: titolo, contatore `ready_count/total`, badge
+  `failed_count`, jobs in flight, ETA (`useBatchEta`), `<Progress>` con
+  la percentuale aggregata calcolata client-side. Bottoni "Genera tutti"
+  / "Annulla tutti" condizionati a `canGenerate` ed `eligible_count`.
+- **Card per lezione** (raggruppate per modulo): badge di stato, alert
+  pre-requisiti (`speech_not_approved`, `slides_not_approved`),
+  `staleAlert` se `is_stale`, messaggio di errore se `failed`. Bottoni
+  per lezione: Scarica MP4 (anchor `download`), Annulla (se in flight),
+  Genera/Rigenera. Mentre il job è attivo mostra la fase
+  (`phaseLabel`) + progress per-lezione. Quando `ready` rende un
+  `<video controls>` (aspect `99/70`) e una riga di telemetria
+  (`tokens`).
+
+Stato live via `useCourseVideoStatus` (polling 2 s). Mutation hook:
+`useGenerateLessonVideo`, `useGenerateAllVideos`,
+`useCancelLessonVideo`, `useCancelAllVideos` (vedi
+[08 — Hooks](08-hooks.md)).
+
+### `src/pages/org/courses/components/CourseLessonAvatarVideoView.tsx`
+
+Vista della scheda **"Video con avatar"** del `CourseEditorPage` —
+lip-sync MuseTalk di un avatar parlante sovrapposto al video MP4 della
+lezione (Fase 6b §9b; vedi
+[Courses 13 — Avatar video](../courses/13-avatar-video.md)).
+
+#### Props
+
+Identiche a `CourseLessonVideoView`: `{ course, canGenerate, orgId }`.
+
+#### Struttura
+
+Mirror della scheda "Video", senza il selettore lingua TTS:
+
+- **Banner pre-requisiti** (ambra): se l'avatar dell'assegnatario non ha
+  clip pronte (`courses.avatarVideo.errors.avatar_clips_not_ready`),
+  letto da `data.avatar_clips_ready`.
+- **Card aggregata** con descrizione, contatore `ready_count/total`,
+  badge `failed_count`, jobs in flight + ETA (`useBatchEta`),
+  `<Progress>`. Bottoni "Genera tutti" / "Annulla tutti".
+- **Card per lezione** (per modulo): badge di stato, alert
+  `lesson_video_not_ready` (il video MP4 della lezione deve esistere
+  prima), `staleAlert`, errore se `failed`. Bottoni Scarica/Annulla/
+  Genera/Rigenera; fase + progress per-lezione mentre attivo; `<video>`
+  e riga `tokens` (`duration`, `clips`, `size`) quando `ready`.
+
+Stato live via `useCourseAvatarVideoStatus` (polling 2 s). Mutation
+hook: `useGenerateLessonAvatarVideo`, `useGenerateAllAvatarVideos`,
+`useCancelLessonAvatarVideo`, `useCancelAllAvatarVideos`.
+
+### `src/pages/org/courses/components/LessonAssessmentView.tsx`
+
+Render **read-only** di una lezione di verifica delle competenze (vedi
+[Courses 14 — Assessment lesson](../courses/14-assessment-lesson.md)).
+Renderizzato nel corpo espanso delle righe `is_assessment` della scheda
+Contenuti.
+
+#### Props
+
+```ts
+{
+  assessment: LessonAssessmentRaw;
+}
+```
+
+#### Comportamento
+
+- Sezione **domande a scelta multipla**: lista numerata di domande;
+  ogni opzione con prefisso lettera; l'opzione corretta
+  (`option_id === correct_option_id`) è evidenziata in emerald con
+  un'icona `CheckCircle2` + label `correctAnswer`.
+- Sezione **domande aperte**: lista numerata; per ognuna un box
+  tratteggiato con la `expected_answer` (traccia di risposta attesa).
+- Se non ci sono domande, mostra un placeholder
+  (`courses.lessonsContent.assessment.render.empty`).
+- Nessuno stato interno. Tutti i testi sotto
+  `courses.lessonsContent.assessment.render.*`.
+
+### `src/pages/org/courses/components/LessonAssessmentEditDialog.tsx`
+
+Editor modal dedicato della verifica delle competenze. Aperto dalla
+scheda Contenuti sulle righe `is_assessment`.
+
+#### Props
+
+```ts
+{
+  open: boolean;
+  isPending: boolean;
+  lessonLabel: string;
+  initial: LessonAssessmentRaw;
+  onClose: () => void;
+  onSubmit: (payload: LessonAssessmentUpdateInput) => void;
+}
+```
+
+#### Comportamento
+
+- Stato locale lazy-init dal prop `initial` (il parent fa
+  conditional-render del dialog).
+- **Domande a scelta multipla**: per ognuna testo + 2..6 opzioni +
+  selezione dell'opzione corretta via radio. L'opzione corretta è
+  tracciata **per indice** (`correctIndex`), non per id: in submit le
+  opzioni vengono ri-lettarate `A, B, C, …` (costante `OPTION_LETTERS`,
+  `MAX_OPTIONS = 6`). Mutators per aggiungere/rimuovere domande e
+  opzioni (minimo 2 opzioni per domanda).
+- **Domande aperte**: per ognuna testo + risposta attesa
+  (`expected_answer`). Mutators add/remove.
+- `submit` costruisce un `LessonAssessmentUpdateInput` (testi
+  trimmati, `correct_option_id` ricalcolato dalla lettera) e chiama
+  `onSubmit`.
+- Contenuto in `<ScrollArea>` (max 65vh). Footer con Annulla + Salva
+  (label `common.saving` mentre `isPending`).
+- Testi sotto `courses.lessonsContent.assessment.editor.*`.

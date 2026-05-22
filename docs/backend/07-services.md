@@ -183,6 +183,283 @@ Tutto lo stato è in DB: al riavvio, le clip in `processing` con
 
 ---
 
+## `app/services/runpod_tts_client.py`
+
+**Scopo**: client HTTP del servizio TTS XTTS-v2 su **RunPod Serverless
+(GPU)**. Sostituisce il vecchio `xtts_voice_clone_service` in-process: la
+sintesi vocale gira ora su GPU remota (handler nella cartella `XTTS/` del
+repo), questo modulo è un client puro — nessuna dipendenza torch/coqui.
+
+### Costanti / eccezioni
+
+- `SAMPLE_RATE = 24000`.
+- `RunpodTtsError` (base, recuperabile), `RunpodNotConfiguredError`,
+  `RunpodJobFailedError`, `RunpodTimeoutError`.
+
+### Funzioni
+
+- `is_configured() -> bool`: True se `RUNPOD_API_KEY` e
+  `RUNPOD_TTS_ENDPOINT_ID` sono entrambi presenti.
+- `synthesize_lesson_audio(*, speech_raw, voice_sample_path,
+  language_code, on_segment_progress=None) -> tuple[dict[str, np.ndarray],
+  int]`: sintetizza l'audio di **tutti** i segment con un solo job.
+  Ritorna `({segment_id: ndarray float32 mono}, 24000)`.
+
+Dettagli del contratto:
+
+- **Un job per video** (non uno per segment). Il payload contiene
+  `language_code`, `voice_sample_url`, `segments` (lista
+  `{segment_id, text}` non vuoti).
+- Il **campione vocale viaggia come URL pubblico** (`/uploads/...`), non
+  base64 inline: un audio di pochi MB in base64 sfora il limite di
+  payload di `/run`. Il worker GPU lo scarica via HTTP.
+- L'handler restituisce l'audio **per chunk** (FLAC base64, con
+  `chunk_index` per segment): il client li raggruppa per `segment_id`,
+  li ordina e li concatena.
+- Consuma lo **stream incrementale** `/stream/{job_id}` per il progress
+  per-segment; a job `COMPLETED` continua a drenare lo stream finché una
+  risposta torna senza nuovi item (altrimenti perde i chunk finali
+  bufferizzati). Se `/stream` fallisce, fallback a `/status` polling.
+- **Controllo di completezza**: ogni `segment_id` richiesto DEVE avere
+  audio, altrimenti `RunpodJobFailedError` (un audio incompleto darebbe
+  un video monco — il worker fa auto-retry).
+
+---
+
+## `app/services/lesson_audio_cache.py`
+
+**Scopo**: cache su disco dell'audio TTS delle lezioni, per evitare di
+richiamare RunPod (costo GPU + attesa) quando la parte audio di un video
+non è cambiata.
+
+L'audio sintetizzato viene salvato come un WAV per segment
+(`seg_NNN.wav`, PCM_16 @ 24000 Hz) + un `manifest.json`, sotto
+`{upload_root}/lesson_audio/{course_id}/{lesson_id}/`.
+
+### Funzioni
+
+- `compute_cache_key(*, speech_raw, voice_sample_path, language_code)
+  -> str`: hash SHA-256 di testo dei segment (ordinati per id), lingua e
+  contenuto del campione vocale. Se uno qualunque cambia la chiave cambia
+  → la cache si invalida da sola.
+- `load(course_id, lesson_id, *, cache_key) -> dict[str, np.ndarray] |
+  None`: ricarica l'audio se il manifest combacia; `None` se
+  assente/diverso/incompleto/corrotto.
+- `save(course_id, lesson_id, *, cache_key, audio_per_segment) -> None`:
+  sovrascrive la cache della lezione (un WAV per segment + manifest).
+
+---
+
+## `app/services/lesson_slides_video_render_service.py`
+
+**Scopo**: render Playwright delle slide come PNG per il video MP4.
+Riusa **al 100%** la pipeline del PDF slide (Fase 4): stesso template
+(`lesson_slides_pdf.html.j2`), stesso pre-render Mermaid → SVG, stessa
+risoluzione di asset (LaTeX → MathML, immagini caricate). Sostituisce il
+vecchio `lesson_slides_png_service.py` (template custom, eliminato).
+
+### Costanti
+
+- `VIDEO_WIDTH = 1980`, `VIDEO_HEIGHT = 1400` — A4 landscape 297:210.
+
+### Funzione
+
+- `render_slides_to_png(db, *, course, lesson, output_dir,
+  public_base_url=None) -> tuple[list[Path], list[str]]`: genera l'HTML
+  PDF (con `enable_split=False`: 1 slide JSON → 1 frame video), inietta
+  un override CSS che neutralizza i page-break PDF e scala ogni `.slide`
+  per riempire il viewport 1980×1400, e screenshotta ogni slide.
+  Ritorna `(png_paths, slide_id_order)` parallele, 1:1 con
+  `slides_raw.slides[].slide_id`.
+
+Lo screenshot Playwright gira in un loop dedicato
+(`ProactorEventLoop` su Windows per `subprocess_exec`), invocato via
+`asyncio.to_thread`.
+
+---
+
+## `app/services/lesson_video_compose_service.py`
+
+**Scopo**: composizione del MP4 finale (slide PNG + audio TTS) via
+ffmpeg.
+
+### Errori
+
+- `VideoComposeError` — errore di composizione, recuperabile.
+
+### Funzioni
+
+- `compose_lesson_video(*, lesson_speech_raw, png_paths, slide_id_order,
+  audio_per_segment, audio_sample_rate, output_path, on_progress=None)
+  -> dict`: per ogni slide concatena i WAV TTS dei suoi `segment_ids`
+  (da `speech.slide_to_segments_map`; slide senza segment → 2 s di
+  silenzio), produce un MP4 per slide (`ffmpeg -loop 1` immagine + audio,
+  `-tune stillimage`) e fa il concat finale via demuxer `concat`
+  (`-c copy`, niente re-encode). Ritorna metadata `audio_duration_s`,
+  `video_duration_s`, `encode_duration_ms`, `num_segments_encoded`,
+  `file_size_bytes`.
+- `compose_lesson_video_sync(**kwargs) -> dict`: wrapper sync che crea un
+  `ProactorEventLoop` dedicato (su Windows serve per `subprocess_exec`);
+  il worker lo invoca via `asyncio.to_thread`.
+- `parse_speech_raw(raw) -> dict`: normalizza `speech_raw` (dict o
+  stringa JSON).
+
+---
+
+## `app/services/course_lesson_video_service.py`
+
+**Scopo**: API pubblica + helper per la Fase 6 (generazione video MP4).
+Usato dalle rotte; il rendering vero è nel worker.
+
+### Funzioni
+
+- `request_lesson_video` / `request_all_lessons_video`: enqueue
+  (`video_status='pending'`); validano le pre-condizioni (speech+slides
+  `approved`, voice sample presente, lezione non `is_assessment`) e
+  sollevano `ConflictError` con `code` specifico
+  (`speech_not_approved`, `slides_not_approved`, `voice_sample_missing`,
+  `lesson_is_assessment_not_eligible`, ...).
+- `cancel_lesson_video` / `cancel_all_lesson_videos`: `pending`/
+  `processing` → `cancelled` (idempotente).
+- `load_course_full`, `get_lesson_or_404`, `resolve_assignee_avatar`,
+  `resolve_voice_sample_path`: helper di caricamento (la voce è
+  `Avatar.audio_path` dell'assegnatario del corso).
+- `video_relative_path` / `video_absolute_path` / `video_public_url`:
+  helper di path (`lesson_videos/{course_id}/{lesson_id}.mp4`).
+- `build_status_out` / `build_batch_out` / `is_lesson_eligible`:
+  costruiscono i DTO (`LessonVideoStatusOut`, `LessonVideoBatchOut`) con
+  `is_stale`, `eligible_count`, `aggregate_progress`.
+- `save_video_metadata`: persistenza finale post-encoding (non commita).
+
+---
+
+## `app/services/course_lesson_video_worker.py`
+
+**Scopo**: worker async della Fase 6, lanciato in `app.main.lifespan`.
+Pattern speculare ai worker delle Fasi 2-5: semaphore + set `_inflight`
++ claim atomico via status.
+
+3 fasi con cancel-check tra una e l'altra:
+
+1. **TTS** (0→60%): audio dei segment dalla cache su disco se possibile,
+   altrimenti via `runpod_tts_client` (streaming → progress per-segment),
+   poi salvato in cache.
+2. **Slide PNG** (60→80%): `lesson_slides_video_render_service`.
+3. **Encoding** (80→100%): `lesson_video_compose_service`.
+
+Caratteristiche:
+
+- Cap di concorrenza `course_lesson_video_max_concurrency` (default 1).
+- **Auto-retry trasparente**: errori recuperabili (timeout/errore
+  RunPod, errore ffmpeg) con `attempts < course_lesson_video_auto_retry_max`
+  (default 3) → status riportato a `pending`; pre-condizioni mancanti →
+  `failed` terminale.
+- **Nota tecnica**: il callback di progress dell'encoding è invocato dal
+  thread di compose; il worker cattura il loop principale (proprietario
+  del pool asyncpg) con `asyncio.get_running_loop()` e usa
+  `run_coroutine_threadsafe`, altrimenti l'update DB finirebbe su un loop
+  sbagliato (`Future attached to a different loop`).
+
+---
+
+## `app/services/course_lesson_avatar_video_service.py`
+
+**Scopo**: API pubblica + helper per la Fase 6b ("Video con Avatar").
+Riusa `load_course_full`, `get_lesson_or_404`, `resolve_assignee_avatar`
+da `course_lesson_video_service`.
+
+### Funzioni
+
+- `request_lesson_avatar_video` / `request_all_lessons_avatar_video`:
+  enqueue con validazione pre-condizioni (`lesson_video_not_ready`,
+  `avatar_clips_not_ready`, `lesson_is_assessment_not_eligible`, ...).
+- `cancel_lesson_avatar_video` / `cancel_all_lesson_avatar_videos`:
+  `pending`/`processing` → `cancelled`.
+- `count_ready_clips` / `avatar_is_ready`: eleggibilità dell'avatar
+  (≥ 1 clip MiniMax `ready` con file).
+- `avatar_clips_dir(user_id)` / `avatar_musetalk_clips_dir(user_id,
+  resolution)`: path delle clip originali / ridimensionate per MuseTalk.
+- `avatar_video_relative_path` / `avatar_video_absolute_path` /
+  `avatar_video_public_url`: helper di path
+  (`lesson_avatar_videos/{course_id}/{lesson_id}.mp4`).
+- `build_status_out` / `build_batch_out` / `is_lesson_eligible`: DTO
+  (`LessonAvatarVideoStatusOut`, `LessonAvatarVideoBatchOut`).
+- `save_avatar_video_metadata`: persistenza finale post-overlay.
+
+---
+
+## `app/services/course_lesson_avatar_video_worker.py`
+
+**Scopo**: worker async della Fase 6b, lanciato in `app.main.lifespan`.
+Pattern speculare a `course_lesson_video_worker` (semaphore, claim
+atomico, auto-retry, cancel-check). Cap di concorrenza 1.
+
+3 fasi con cancel-check:
+
+1. **Preparazione** (1→8%): `_prepare_musetalk_clips` ridimensiona le
+   clip dell'avatar a `avatar_video_clip_resolution` (default 640;
+   le clip MiniMax 1080×1080 farebbero sforare il tetto di 60 min del
+   job RunPod) — una clip è riconvertita solo se cambia il sorgente, così
+   l'hash del set resta stabile e il preprocessing MuseTalk resta in
+   cache; `_extract_audio` estrae la traccia audio dal video MP4 della
+   lezione (WAV mono 16 kHz, con `aresample=async=1` per **non
+   compattare** i gap di timeline — altrimenti l'avatar si
+   desincronizza).
+2. **Lip-sync MuseTalk** (10→85%): `_run_musetalk_subprocess` lancia il
+   client vendored come subprocess isolato (vedi sotto).
+3. **Overlay** (86→100%): `_overlay_avatar` sovrappone con ffmpeg
+   l'avatar (quadrato in basso a destra, lato `avatar_video_overlay_scale`
+   della larghezza, margine `avatar_video_overlay_margin`) al video della
+   lezione, `-c:a copy` conserva la traccia audio.
+
+Caratteristiche:
+
+- Un **timeout RunPod (`TIMED_OUT`)** è errore **terminale** (si
+  ripeterebbe identico); gli errori transitori vanno in auto-retry
+  (`course_lesson_avatar_video_auto_retry_max`, default 3).
+- Diagnostica `avatar_video_av_diag`: dopo il lip-sync il worker logga
+  fps/durata di audio estratto, video assemblato, output MuseTalk e
+  video lezione (osservabilità sul drift A/V).
+
+---
+
+## `app/musetalk_client/` — client MuseTalk vendored
+
+**Non è codice a4u da modificare.** È una **copia verbatim** del client
+`scripts/client/` del progetto esterno **MuseTalk-API**:
+
+```
+app/musetalk_client/
+├── README.md                       # "vendored, NON modificare"
+└── scripts/
+    ├── __init__.py
+    └── client/
+        ├── __init__.py
+        ├── synth_random_lipsync.py  # entry-point CLI
+        ├── runpod_client.py         # R2 (boto3) + RunPod API (requests)
+        ├── video_assembler.py       # probe/sample/concat/trim ffmpeg
+        └── clip_manifest.py         # cache preprocessing per set di clip
+```
+
+Principi dell'integrazione:
+
+- I file non vengono **mai modificati a mano**: per aggiornarli si
+  ri-copia dal progetto sorgente.
+- Il client gira come **subprocess isolato** —
+  `python -m scripts.client.synth_random_lipsync` con `cwd` sulla
+  cartella vendored (così `import scripts.client...` si risolve) — e
+  legge la configurazione solo da variabili d'ambiente, che
+  `course_lesson_avatar_video_worker` gli passa esplicitamente
+  (credenziali RunPod/R2).
+- Dipendenze del client: `boto3` (R2, S3-compatible) e `requests` (HTTP
+  RunPod), dichiarate in `backend/pyproject.toml`.
+
+> Il vecchio TTS in-process `xtts_voice_clone_service` (torch + coqui nel
+> container) è stato **rimosso**: la sintesi vocale gira ora su RunPod
+> GPU serverless via `runpod_tts_client`.
+
+---
+
 ## `app/services/auth_service.py`
 
 **Scopo**: login, refresh con rotation, revoca refresh token. Lockout/audit/
@@ -786,12 +1063,17 @@ sintetica:
 
 | Service | Documentato in | Scopo |
 |---|---|---|
-| `course_lesson_content_service.py` | [Courses 08](../courses/08-lesson-content.md) | Orchestrazione + 10 validazioni §6.4 + materializzazione + approve |
-| `course_lesson_content_crud.py` | [Courses 08](../courses/08-lesson-content.md) | Edit manuale `content_raw` + sync ref per asset rinominati |
-| `course_lesson_content_worker.py` | [Courses 08](../courses/08-lesson-content.md) | Worker parallelo (cap=3 default) per lezione + auto-trigger glossario |
+| `course_lesson_content_service.py` | [Courses 08](../courses/08-lesson-content.md) | Orchestrazione + 10 validazioni §6.4 + materializzazione + approve. Branch su `is_assessment`: `build_assessment_user_prompt`, `materialize_lesson_assessment` per le lezioni di verifica |
+| `course_lesson_content_crud.py` | [Courses 08](../courses/08-lesson-content.md) | Edit manuale `content_raw` + sync ref per asset rinominati + `update_lesson_assessment` (verifica delle competenze) |
+| `course_lesson_content_worker.py` | [Courses 08](../courses/08-lesson-content.md) | Worker parallelo (cap=3 default) per lezione + auto-trigger glossario. Genera anche le lezioni-verifica `is_assessment` |
 | `course_glossary_service.py` | [Courses 08](../courses/08-lesson-content.md) | Glossario corso (§10.1) — sync + ensure_glossary_ready |
-| `openai_lesson_content_service.py` | [Courses 08](../courses/08-lesson-content.md) | Wrapper OpenAI Fase 3 + addendum §9.3 in rigenerazione |
+| `openai_lesson_content_service.py` | [Courses 08](../courses/08-lesson-content.md) | Wrapper OpenAI Fase 3 + addendum §9.3 in rigenerazione + `generate_lesson_assessment` (verifica) |
 | `openai_glossary_service.py` | [Courses 08](../courses/08-lesson-content.md) | Wrapper OpenAI glossario (10-30 termini) |
+
+> Verifica delle competenze (`is_assessment`): vedi
+> [Courses 14 — Assessment lesson](../courses/14-assessment-lesson.md).
+> La verifica riusa l'intero ciclo `content_*` della Fase 3 (stessi
+> worker e service, branch su `lesson.is_assessment`).
 
 ### §7 — PDF lezione testo
 
@@ -822,10 +1104,30 @@ sintetica:
 | `course_lesson_speech_pdf_service.py` | [Courses 09](../courses/09-pdf-export.md) | Render PDF discorso A4 portrait per-slide grouping + format_timeline cumulativa |
 | `course_lesson_speech_pdf_worker.py` | [Courses 09](../courses/09-pdf-export.md) | Worker parallelo (cap=2, riusa env `course_lesson_pdf_*`) |
 
+### Fase 6 — Video MP4 della lezione
+
+I service di Fase 6 sono documentati per intero più sopra in questo file
+(`runpod_tts_client`, `lesson_audio_cache`,
+`lesson_slides_video_render_service`, `lesson_video_compose_service`,
+`course_lesson_video_service`, `course_lesson_video_worker`) e in
+[Courses 12 — Lesson video](../courses/12-lesson-video.md). È la prima
+fase non-AI della pipeline: nessuna chiamata OpenAI, orchestra TTS su
+RunPod GPU + rendering Playwright + encoding ffmpeg.
+
+### Fase 6b — Video con Avatar (lip-sync MuseTalk)
+
+Service documentati più sopra (`course_lesson_avatar_video_service`,
+`course_lesson_avatar_video_worker`) + il pacchetto vendored
+`app/musetalk_client/`, e in
+[Courses 13 — Avatar video](../courses/13-avatar-video.md). Sovrappone
+un avatar parlante (lip-sync MuseTalk su RunPod GPU) al video MP4 già
+generato della lezione.
+
 ### Pattern condivisi (tutti i worker AI)
 
 - **Lifecycle**: registrati in `app/main.py` lifespan; ognuno espone `start_worker()` (idempotente) + `async stop_worker()` (gracefully attende task in flight con timeout 15s).
-- **Concorrenza**: `asyncio.Semaphore(N)` con N da env `COURSE_LESSON_*_MAX_CONCURRENCY`. Cap separati per ogni fase (5 struttura, 3 content/slides/speech, 2 PDF).
+- **Concorrenza**: `asyncio.Semaphore(N)` con N da env `COURSE_LESSON_*_MAX_CONCURRENCY`. Cap separati per ogni fase (5 struttura, 3 content/slides/speech, 2 PDF, 1 video e 1 avatar-video — un job GPU per volta).
+- I worker delle **Fasi 6 e 6b** (`course_lesson_video_worker`, `course_lesson_avatar_video_worker`) condividono lo stesso scheletro (semaphore + `_inflight` + claim atomico + auto-retry + cancel-check tra fasi) pur non chiamando OpenAI; il loro `_apply_failure` ha `auto_retry_max` default 3.
 - **Atomic claim** (anti-double-dispatch): `_inflight: set[UUID]` + `_inflight_lock: asyncio.Lock` con claim **PRIMA** del semaforo (pattern fix `87fbf70`). Evita che task in coda dietro al semaforo vengano ri-dispatched dal tick successivo.
 - **Auto-retry trasparente**: helper `_apply_failure(lesson, *, error, recoverable, auto_retry_max)`. Errori recuperabili (rate-limit OpenAI, validazione, materializzazione) tornano a `pending` finché `attempts < auto_retry_max` (default 5). La UI vede solo "in elaborazione" finché passa.
 - **Cancel-check post-OpenAI**: dopo la chiamata OpenAI/render PDF, refresh dello status dal DB; se `!= 'processing'` (utente ha cancellato), scarta il risultato senza scrivere.

@@ -72,6 +72,86 @@ forwardate con `${VAR:-default}` per ogni knob significativo).
 | `MINIMAX_CLIP_RESOLUTION` | `1080P` | Risoluzione richiesta al provider. |
 | `MINIMAX_POLL_INTERVAL_SECONDS` | `10` | Intervallo del worker che processa le clip pending/processing. |
 
+### RunPod — TTS XTTS-v2 (Fase 6 — video MP4 della lezione)
+
+La generazione del video MP4 della lezione (Fase 6) sintetizza il
+discorso con XTTS-v2 su un endpoint **RunPod Serverless GPU** (l'handler
+è nella cartella `XTTS/` del repo). Il backend è solo un client HTTP: non
+ha torch/coqui. Se `RUNPOD_API_KEY` o `RUNPOD_TTS_ENDPOINT_ID` non sono
+valorizzate, la generazione video resta disabilitata.
+
+| Variabile | Default | Descrizione |
+|---|---|---|
+| `RUNPOD_API_KEY` | _(vuoto)_ | API key RunPod. Vuoto → generazione video disabilitata. Riusato anche per l'endpoint MuseTalk (stesso account). |
+| `RUNPOD_TTS_ENDPOINT_ID` | _(vuoto)_ | Endpoint ID dell'endpoint Serverless GPU del TTS XTTS-v2. Vuoto → generazione video disabilitata. |
+| `RUNPOD_BASE_URL` | `https://api.runpod.ai` | Base URL dell'API RunPod. |
+| `RUNPOD_TTS_TIMEOUT_SECONDS` | `1800` (30 min) | Timeout wall-clock totale di un job TTS (assorbe il cold start della GPU). |
+| `RUNPOD_TTS_POLL_INTERVAL_SECONDS` | `3` | Intervallo di polling del job TTS quando si fa fallback su `/status`. |
+
+### RunPod MuseTalk + Cloudflare R2 (Fase 6b — "Video con Avatar")
+
+Il "Video con Avatar" (Fase 6b) sovrappone al video MP4 della lezione un
+avatar parlante con lip-sync prodotto da **MuseTalk** su un secondo
+endpoint RunPod Serverless GPU. Il client MuseTalk è vendored in
+`backend/app/musetalk_client/` e gira come subprocess isolato; **Cloudflare
+R2** (storage S3-compatible) è lo storage di transito per
+video/audio/output del job. Queste variabili vengono passate al
+subprocess come environment. Se mancano, il "Video con Avatar" è
+disabilitato.
+
+| Variabile | Default | Descrizione |
+|---|---|---|
+| `RUNPOD_MUSETALK_ENDPOINT_ID` | _(vuoto)_ | Endpoint ID dell'endpoint Serverless GPU dedicato a MuseTalk. Stesso account del TTS (`RUNPOD_API_KEY` riusato). Vuoto → "Video con Avatar" disabilitato. |
+| `R2_ENDPOINT` | _(vuoto)_ | URL dell'endpoint R2 (`https://<account>.r2.cloudflarestorage.com`). |
+| `R2_BUCKET` | _(vuoto)_ | Nome del bucket R2 di transito. |
+| `R2_ACCESS_KEY_ID` | _(vuoto)_ | Access key ID R2. |
+| `R2_SECRET_ACCESS_KEY` | _(vuoto)_ | Secret access key R2. |
+
+### Worker video (Fase 6) e video-con-avatar (Fase 6b)
+
+I due worker async che orchestrano la generazione video. Cap di
+concorrenza `1` di default: un solo job GPU per volta (costoso). Gli
+auto-retry sono prudenti perché ogni tentativo richiede minuti.
+
+| Variabile | Default | Descrizione |
+|---|---|---|
+| `COURSE_LESSON_VIDEO_POLL_INTERVAL_SECONDS` | `4` | Polling del worker video MP4. |
+| `COURSE_LESSON_VIDEO_MAX_CONCURRENCY` | `1` | Cap di video generati in parallelo. Il TTS gira su RunPod; localmente restano slide-render (Playwright) + encoding (ffmpeg). |
+| `COURSE_LESSON_VIDEO_AUTO_RETRY_MAX` | `3` | Retry trasparenti su errore recuperabile (timeout/errore RunPod, errore ffmpeg) prima di `failed`. Le pre-condizioni mancanti vanno a `failed` immediato. |
+| `COURSE_LESSON_AVATAR_VIDEO_POLL_INTERVAL_SECONDS` | `4` | Polling del worker "Video con Avatar". |
+| `COURSE_LESSON_AVATAR_VIDEO_MAX_CONCURRENCY` | `1` | Cap di video-con-avatar generati in parallelo. |
+| `COURSE_LESSON_AVATAR_VIDEO_AUTO_RETRY_MAX` | `3` | Retry trasparenti su errore transitorio. Un timeout RunPod (`TIMED_OUT`) è invece terminale (si ripeterebbe identico). |
+| `COURSE_LESSON_AVATAR_VIDEO_TIMEOUT_SECONDS` | `10800` (3 h) | Timeout wall-clock del subprocess MuseTalk (preprocess + lip-sync + download). Generoso: assorbe cold start GPU + audio molto lunghi. |
+
+### Encoding video (ffmpeg)
+
+Parametri dell'encoding ffmpeg del video MP4 della lezione. Richiede il
+binario `ffmpeg` in PATH (o un path assoluto).
+
+| Variabile | Default | Descrizione |
+|---|---|---|
+| `VIDEO_RESOLUTION` | `1920x1080` | Risoluzione di riferimento dell'encoding. |
+| `VIDEO_FRAMERATE` | `30` | Frame rate del video. |
+| `VIDEO_AUDIO_BITRATE` | `192k` | Bitrate della traccia audio AAC. |
+| `VIDEO_AUDIO_SAMPLE_RATE` | `48000` | Sample rate dell'audio del video. |
+| `VIDEO_VIDEO_CODEC` | `libx264` | Codec video (H.264). |
+| `VIDEO_CRF` | `23` | Constant Rate Factor (`18` alta qualità, `28` compresso). |
+| `VIDEO_PRESET` | `veryfast` | Preset libx264. Per slide statiche (`-tune stillimage`) `veryfast` dà qualità identica a `medium` ma 3-5× più veloce. Valori: `ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow`. |
+| `VIDEO_PIXEL_FORMAT` | `yuv420p` | Pixel format (compat HTML5/QuickTime). |
+| `LESSON_VIDEO_MAX_MB` | `500` | Safety upper bound sulla dimensione del file video. |
+| `FFMPEG_BINARY` | `ffmpeg` | Nome o path assoluto del binario ffmpeg. |
+
+### Overlay avatar (Fase 6b)
+
+Parametri della sovrapposizione dell'avatar parlante sul video MP4 della
+lezione, e del downscale delle clip prima del lip-sync.
+
+| Variabile | Default | Descrizione |
+|---|---|---|
+| `AVATAR_VIDEO_OVERLAY_SCALE` | `0.24` | Lato del quadrato dell'avatar come frazione della larghezza del video (0,24 = 24 %). L'avatar è ancorato in basso a destra. |
+| `AVATAR_VIDEO_OVERLAY_MARGIN` | `24` | Distanza dell'avatar dai bordi destro/inferiore, in pixel. |
+| `AVATAR_VIDEO_CLIP_RESOLUTION` | `640` | Risoluzione (lato del quadrato) a cui le clip MiniMax (1080×1080) vengono ridimensionate prima del lip-sync su RunPod. A 1080 il job sforerebbe il tetto di 60 min; 640 riporta i tempi nella norma senza perdita visibile. |
+
 ### OpenAI — modelli e budget token
 
 Tutte le pipeline AI condividono `OPENAI_API_KEY` + `OPENAI_BASE_URL`. Ogni
@@ -237,6 +317,53 @@ provider. Il worker pollia ogni `MINIMAX_POLL_INTERVAL_SECONDS` (default
 10s); lo stato aggregato dell'avatar (`clips_status`) passa
 `pending → processing → ready` (o `partial`/`failed`).
 
+## RunPod integration — TTS XTTS-v2 e MuseTalk lip-sync
+
+Le ultime due fasi della pipeline corsi (video MP4 della lezione e
+"Video con Avatar") delegano i task GPU-intensivi a **due endpoint
+RunPod Serverless GPU** distinti. Il backend non ha né torch/coqui né i
+modelli di lip-sync: è solo un client HTTP/subprocess.
+
+| Endpoint | Variabile endpoint ID | Cosa fa | Storage di transito |
+|---|---|---|---|
+| **TTS XTTS-v2** (Fase 6) | `RUNPOD_TTS_ENDPOINT_ID` | Sintesi vocale del discorso con voce clonata dell'avatar | — (campione vocale via URL `/uploads/...`) |
+| **MuseTalk** (Fase 6b) | `RUNPOD_MUSETALK_ENDPOINT_ID` | Lip-sync dell'avatar parlante | Cloudflare R2 (`R2_*`) |
+
+`RUNPOD_API_KEY` è **unica** e condivisa dai due endpoint (stesso
+account RunPod). `RUNPOD_BASE_URL` è comune.
+
+### Ottenere gli endpoint RunPod
+
+1. Registrarsi su `https://www.runpod.io` e generare una API key dalla
+   sezione *Settings → API Keys* (permesso sugli endpoint serverless).
+2. **TTS**: costruire l'immagine Docker dalla cartella `XTTS/` del repo
+   (`docker build --platform linux/amd64 ...`), pushare su un registry
+   (GHCR/Docker Hub), creare un endpoint RunPod Serverless da quell'immagine.
+   Procedura completa in `XTTS/README.md`.
+3. **MuseTalk**: creare un secondo endpoint serverless dedicato a MuseTalk
+   (immagine del progetto MuseTalk-API).
+4. Valorizzare `RUNPOD_API_KEY`, `RUNPOD_TTS_ENDPOINT_ID` e
+   `RUNPOD_MUSETALK_ENDPOINT_ID` nel `.env`.
+
+### Cloudflare R2
+
+Il client MuseTalk usa un bucket R2 (S3-compatible) come storage di
+transito per i file di video/audio/output del job. Creare un bucket R2
+dalla dashboard Cloudflare e generare un token S3 (access key id +
+secret); valorizzare `R2_ENDPOINT`, `R2_BUCKET`, `R2_ACCESS_KEY_ID`,
+`R2_SECRET_ACCESS_KEY`.
+
+### Comportamento se RunPod/R2 non sono configurati
+
+- Se `RUNPOD_API_KEY` o `RUNPOD_TTS_ENDPOINT_ID` mancano: la generazione
+  del video MP4 è disabilitata. Le rotte `video/generate` rifiutano a
+  monte; il worker non avvia job.
+- Se `RUNPOD_MUSETALK_ENDPOINT_ID` o una delle `R2_*` mancano: il "Video
+  con Avatar" è disabilitato (il worker fallisce con un errore di
+  pre-condizione esplicito).
+- Le altre funzioni della piattaforma (incluse le Fasi AI 1-5 e i PDF)
+  non sono toccate.
+
 ## OpenAI integration — overview pipeline corsi
 
 Il dominio Corsi usa lo stesso `OPENAI_API_KEY` per **sei** pipeline AI,
@@ -291,5 +418,16 @@ In aggiunta ai `.env`:
 - `SENTRY_DSN` valorizzato.
 - `FRONTEND_PORT` / `BACKEND_PORT` impostate se la 80 è occupata o se
   servi via reverse proxy esterno.
+- `RUNPOD_API_KEY` + `RUNPOD_TTS_ENDPOINT_ID` per abilitare la
+  generazione video; `RUNPOD_MUSETALK_ENDPOINT_ID` + `R2_*` per il
+  "Video con Avatar". In produzione `PUBLIC_BASE_URL` deve essere
+  raggiungibile dai worker RunPod (è da lì che scaricano il campione
+  vocale dell'avatar).
+
+> **Threading scientifico (XTTS/librosa)**: `docker-compose.prod.yml`
+> forwarda `OMP_NUM_THREADS` / `MKL_NUM_THREADS` / `OPENBLAS_NUM_THREADS`
+> (default `2`). Su VM senza AVX/AVX2 il default può degradare il
+> preprocessing audio residuo lato backend; impostarli a `nproc` nel
+> `.env` se necessario.
 
 Vedi anche [07 — Deployment](07-deployment.md).

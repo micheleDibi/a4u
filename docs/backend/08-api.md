@@ -26,6 +26,8 @@ I router inclusi:
 - `admin_avatar_config` (`/admin/avatar-config/prompts*`,
   `/admin/avatar-config/voice-scripts*`)
 - `admin_i18n` (`/admin/i18n/languages*`)
+- `courses` (`/orgs/{org_id}/courses*` — dominio Corsi: Fasi 1-6,
+  export PDF; il dettaglio Fasi 1-5 è nella sezione Courses)
 
 ---
 
@@ -394,6 +396,16 @@ deve leggere durante la registrazione audio. Risoluzione tramite
 `avatar_config_service.get_voice_script_with_fallback` (lang richiesta →
 lingua di default piattaforma → qualsiasi script disponibile → null).
 
+### `PATCH /me/avatar/musetalk-params`
+
+Body `AvatarMusetalkParamsUpdate { musetalk_extra_margin,
+musetalk_left_cheek_width, musetalk_right_cheek_width }` (tutti
+obbligatori, con i range `Field(ge=..., le=...)`). Aggiorna i tre
+parametri MuseTalk dell'avatar dell'utente corrente — usati dalla scheda
+"Video con Avatar" delle lezioni per il lip-sync. 404 `avatar_not_found`
+se l'utente non ha ancora un avatar. Chiama
+`avatar_service.update_musetalk_params`, restituisce `AvatarOut`.
+
 ---
 
 ## `app/api/v1/admin_avatar_config.py`
@@ -482,6 +494,65 @@ qui `language.untranslated_count` è popolato.
 risponde con `AutoTranslateResponse { code, requested, translated,
 skipped, errors }`. Errore `422 openai_not_configured` se
 `OPENAI_API_KEY` non è configurata.
+
+---
+
+## `app/api/v1/courses.py` — dominio Corsi
+
+Il router del dominio Corso (`/orgs/{org_id}/courses`) è ampio: il
+dettaglio completo degli endpoint delle Fasi 1-5 e degli export PDF è
+documentato nella sezione Courses. Qui sono documentati gli endpoint
+delle feature recenti.
+
+### `PATCH /{course_id}/lessons/{lesson_id}/assessment`
+
+Permesso: `course:edit`. Body `LessonAssessmentUpdateInput`. Patch
+manuale della **verifica delle competenze** (`content_raw` di una
+lezione `is_assessment`). Guard `lesson.is_assessment` (altrimenti
+`409 lesson_not_assessment`); richiede lezione in `ready`/`approved`.
+Chiama `course_lesson_content_crud.update_lesson_assessment`,
+restituisce `CourseOut`.
+
+### Fase 6 — Generazione video MP4 (§9)
+
+Endpoint del router courses. `generate`/`generate-batch` rispondono
+`202 Accepted`; lo status è polling-friendly.
+
+| Metodo | Path | Permesso |
+|---|---|---|
+| POST | `/{course_id}/lessons/{lesson_id}/video/generate` | `course:generate` |
+| POST | `/{course_id}/lessons-video/generate-batch` | `course:generate` |
+| POST | `/{course_id}/lessons/{lesson_id}/video/cancel` | `course:generate` |
+| POST | `/{course_id}/lessons-video/cancel-batch` | `course:generate` |
+| GET | `/{course_id}/lessons/{lesson_id}/video/status` | `course:view` |
+| GET | `/{course_id}/lessons-video/status` | `course:view` |
+
+`generate` / `generate-batch` validano le pre-condizioni a monte e
+rispondono `409` con `code` specifico se manca un pre-requisito
+(`speech_not_approved`, `slides_not_approved`, `voice_sample_missing`,
+`lesson_is_assessment_not_eligible`, `video_already_in_progress`,
+`no_eligible_lessons_for_video`). Body opzionale `LessonVideoGenerateInput`
+(attualmente vuoto). I DTO `LessonVideoStatusOut` / `LessonVideoBatchOut`
+sono costruiti da `course_lesson_video_service`.
+
+### Fase 6b — Video con Avatar (lip-sync MuseTalk) (§9b)
+
+| Metodo | Path | Permesso |
+|---|---|---|
+| POST | `/{course_id}/lessons/{lesson_id}/avatar-video/generate` | `course:generate` |
+| POST | `/{course_id}/lessons-avatar-video/generate-batch` | `course:generate` |
+| POST | `/{course_id}/lessons/{lesson_id}/avatar-video/cancel` | `course:generate` |
+| POST | `/{course_id}/lessons-avatar-video/cancel-batch` | `course:generate` |
+| GET | `/{course_id}/lessons/{lesson_id}/avatar-video/status` | `course:view` |
+| GET | `/{course_id}/lessons-avatar-video/status` | `course:view` |
+
+`generate` / `generate-batch` rispondono `202 Accepted` e validano le
+pre-condizioni; `409` con `code` specifico (`lesson_video_not_ready`,
+`avatar_clips_not_ready`, `lesson_is_assessment_not_eligible`,
+`avatar_video_already_in_progress`, `no_eligible_lessons_for_avatar_video`).
+Body opzionale `LessonAvatarVideoGenerateInput` (attualmente vuoto). I DTO
+`LessonAvatarVideoStatusOut` / `LessonAvatarVideoBatchOut` sono costruiti
+da `course_lesson_avatar_video_service`.
 
 ---
 

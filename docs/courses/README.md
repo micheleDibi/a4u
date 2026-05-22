@@ -161,7 +161,7 @@ backend/app/
 ├── api/v1/me_avatar.py                      # avatar utente + PATCH /me/avatar/musetalk-params
 └── alembic/versions/
     ├── 0009 … 0024                          # foundation corsi + Fasi 1-5 + 3 PDF (vedi doc 10-alembic.md)
-    ├── 0025_lesson_video.py                 # Fase 6 — 9 colonne video_* su course_lesson
+    ├── 0025_lesson_video.py                 # Fase 6 — 8 colonne video_* su course_lesson
     ├── 0026_avatar_tts_latents_and_course_video_language.py  # course.video_language_code (+ cache latenti XTTS, poi rimossa)
     ├── 0027_drop_avatar_tts_latents.py      # rimuove la cache latenti XTTS (TTS migrato su RunPod GPU)
     ├── 0028_assessment_lesson.py            # flag is_assessment su course_lesson

@@ -53,7 +53,7 @@ errore non recuperabile (no auto-retry); l'API la rifiuta a monte con
 
 ## 3. Data model
 
-Migration **`0025_lesson_video.py`** — 9 colonne `video_*` su
+Migration **`0025_lesson_video.py`** — 8 colonne `video_*` su
 `course_lesson`:
 
 | Colonna | Tipo | Note |
@@ -267,7 +267,7 @@ Vedi [04 — Configuration](../04-configuration.md). Variabili rilevanti:
 
 | Migration | Cosa |
 |---|---|
-| `0025_lesson_video.py` | 9 colonne `video_*` + 2 CHECK + index batch |
+| `0025_lesson_video.py` | 8 colonne `video_*` + 2 CHECK + index batch |
 | `0026_avatar_tts_latents_and_course_video_language.py` | `course.video_language_code` (+ cache latenti XTTS, poi rimossa) |
 | `0027_drop_avatar_tts_latents.py` | rimuove la cache latenti XTTS (TTS migrato su RunPod) |
 
