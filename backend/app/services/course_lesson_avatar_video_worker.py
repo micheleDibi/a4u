@@ -25,6 +25,7 @@ Output: `/uploads/lesson_avatar_videos/{course_id}/{lesson_id}.mp4`.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import re
 import shutil
@@ -403,6 +404,8 @@ async def _run_musetalk_subprocess(
         "--left-cheek-width", str(left_cheek_width),
         "--right-cheek-width", str(right_cheek_width),
         "--seed", str(seed),
+        # Conserva `video_completo` per la diagnostica del drift A/V.
+        "--keep-intermediate",
     ]
     log.info(
         "musetalk_subprocess_start",
@@ -559,6 +562,84 @@ async def _prepare_musetalk_clips(
         rebuilt=rebuilt,
     )
     return target_dir
+
+
+# ---------------------------------------------------------------------------
+# Diagnostica drift A/V (temporanea)
+# ---------------------------------------------------------------------------
+
+
+async def _probe_av(path: Path) -> dict[str, Any]:
+    """ffprobe sintetico di un file A/V → durata format + proprietà degli
+    stream video/audio. Usato dalla diagnostica del drift avatar/audio."""
+    if not path.is_file():
+        return {"exists": False}
+    settings = get_settings()
+    ffprobe = settings.ffmpeg_binary.replace("ffmpeg", "ffprobe")
+    ret, out, _err = await _run_cmd(
+        [
+            ffprobe, "-v", "error", "-of", "json",
+            "-show_entries",
+            "format=duration:stream=codec_type,r_frame_rate,"
+            "avg_frame_rate,nb_frames,duration,sample_rate",
+            str(path),
+        ]
+    )
+    if ret != 0:
+        return {"exists": True, "probe_failed": True}
+    try:
+        data = json.loads(out.decode("utf-8", "replace"))
+    except Exception:  # pragma: no cover
+        return {"exists": True, "probe_parse_failed": True}
+    res: dict[str, Any] = {
+        "exists": True,
+        "size_mb": round(path.stat().st_size / 1e6, 1),
+        "format_duration": (data.get("format") or {}).get("duration"),
+    }
+    for s in data.get("streams") or []:
+        if s.get("codec_type") == "video":
+            res["v_r_fps"] = s.get("r_frame_rate")
+            res["v_avg_fps"] = s.get("avg_frame_rate")
+            res["v_nb_frames"] = s.get("nb_frames")
+            res["v_duration"] = s.get("duration")
+        elif s.get("codec_type") == "audio":
+            res["a_duration"] = s.get("duration")
+            res["a_sample_rate"] = s.get("sample_rate")
+            res["a_nb_frames"] = s.get("nb_frames")
+    return res
+
+
+async def _log_av_diagnostics(
+    lesson_id: uuid.UUID,
+    *,
+    audio_path: Path,
+    intermediate_dir: Path,
+    lipsync_path: Path,
+    base_video_path: Path,
+) -> None:
+    """Logga (`avatar_video_av_diag`) le proprietà A/V di: audio estratto,
+    video assemblato da MuseTalk, output lip-sync, video lezione. Serve a
+    investigare il drift avatar/audio. Best effort: mai fatale."""
+    targets: list[tuple[str, Path]] = [("lesson_audio", audio_path)]
+    try:
+        vcs = sorted(intermediate_dir.glob("video_completo_*.mp4"))
+        if vcs:
+            targets.append(("video_completo", vcs[-1]))
+    except Exception:  # pragma: no cover
+        pass
+    targets.append(("lipsync", lipsync_path))
+    targets.append(("base_video", base_video_path))
+    for label, path in targets:
+        try:
+            info = await _probe_av(path)
+        except Exception as exc:  # pragma: no cover
+            info = {"probe_error": str(exc)}
+        log.info(
+            "avatar_video_av_diag",
+            lesson_id=str(lesson_id),
+            target=label,
+            **info,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -767,6 +848,30 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
         )
         lipsync_seconds = time.monotonic() - lipsync_t0
         await _set_progress(lesson_id, pct=85, phase="lipsync")
+
+        # --- Diagnostica drift avatar/audio (temporanea) -------------
+        # Logga le proprietà A/V degli intermedi e conserva il lip-sync
+        # grezzo di MuseTalk per ispezione.
+        await _log_av_diagnostics(
+            lesson_id,
+            audio_path=audio_path,
+            intermediate_dir=work_dir / "intermediate",
+            lipsync_path=lipsync_path,
+            base_video_path=base_video_path,
+        )
+        try:
+            debug_dir = settings.upload_root / "avatar_video_debug"
+            debug_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(
+                lipsync_path, debug_dir / f"{lesson_id}-lipsync.mp4"
+            )
+            log.info(
+                "avatar_video_debug_lipsync_saved",
+                lesson_id=str(lesson_id),
+                url=f"/uploads/avatar_video_debug/{lesson_id}-lipsync.mp4",
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning("avatar_video_debug_copy_failed", error=str(exc))
 
         if await _check_cancelled(lesson_id):
             log.info(
