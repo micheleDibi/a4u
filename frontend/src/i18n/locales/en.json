@@ -9,6 +9,7 @@
     "delete": "Delete",
     "edit": "Edit",
     "add": "Add",
+    "apply": "Apply",
     "loading": "Loading…",
     "saving": "Saving…",
     "creating": "Creating…",
@@ -83,6 +84,12 @@
     "taxonomies": "Course taxonomies",
     "courses": "Courses"
   },
+  "dateRangeField": {
+    "placeholder": "All dates",
+    "from": "From",
+    "to": "To",
+    "clear": "Clear"
+  },
   "courses": {
     "title": "Courses",
     "subtitle": "Create and manage your organization's courses.",
@@ -124,7 +131,20 @@
       }
     },
     "filters": {
-      "allStatuses": "All statuses"
+      "allStatuses": "All statuses",
+      "allAssignees": "All assignees",
+      "allLanguages": "All languages",
+      "reset": "Reset filters"
+    },
+    "list": {
+      "pipelineHeader": "Pipeline",
+      "progressChip": {
+        "content": "Content generated: {{done}} of {{total}}",
+        "slides": "Slides generated: {{done}} of {{total}}",
+        "videos": "Videos created: {{done}} of {{total}}",
+        "avatarVideos": "Avatar videos created: {{done}} of {{total}}",
+        "noLessons": "Course has no didactic lessons yet"
+      }
     },
     "tabs": {
       "base": "Basic information",
@@ -157,6 +177,7 @@
       "noMembers": "No members available.",
       "status": "Status",
       "modulesCount": "Modules",
+      "createdAt": "Created",
       "updatedAt": "Updated",
       "cfu": "Credits",
       "cfuHint": "Number of academic credits. Determines the number of modules and lessons.",

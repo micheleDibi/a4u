@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import urllib.parse
 import uuid
-from typing import Annotated, Any
+from datetime import datetime
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, File, Query, Response, UploadFile, status
 from fastapi.responses import FileResponse
@@ -22,9 +23,11 @@ from app.schemas.course import (
     CourseDocumentDetailOut,
     CourseDocumentOut,
     CourseListItemOut,
+    CourseListLessonsProgress,
     CourseOut,
     CourseStatus,
     CourseUpdateInput,
+    UserCompact,
 )
 from app.schemas.course_architecture import (
     CourseArchitectureGenerateInput,
@@ -110,10 +113,20 @@ async def list_courses(
     page_size: Annotated[int, Query(ge=1, le=200)] = 20,
     q: Annotated[str | None, Query(max_length=200)] = None,
     course_status: Annotated[CourseStatus | None, Query(alias="status")] = None,
+    assignee_user_id: Annotated[uuid.UUID | None, Query()] = None,
+    language_code: Annotated[str | None, Query(max_length=10)] = None,
+    created_after: Annotated[datetime | None, Query()] = None,
+    created_before: Annotated[datetime | None, Query()] = None,
+    updated_after: Annotated[datetime | None, Query()] = None,
+    updated_before: Annotated[datetime | None, Query()] = None,
+    sort_by: Annotated[
+        Literal["created_at", "updated_at"], Query()
+    ] = "updated_at",
+    sort_dir: Annotated[Literal["asc", "desc"], Query()] = "desc",
 ) -> Page[CourseListItemOut]:
     await _ensure_org(db, org_id)
     granted = await resolve_permissions(db, user=current, organization_id=org_id)
-    items, total = await course_service.list_courses(
+    items, total, agg_map = await course_service.list_courses(
         db,
         organization_id=org_id,
         current_user=current,
@@ -122,9 +135,40 @@ async def list_courses(
         page_size=page_size,
         q=q,
         status=course_status,
+        assignee_user_id=assignee_user_id,
+        language_code=language_code,
+        created_after=created_after,
+        created_before=created_before,
+        updated_after=updated_after,
+        updated_before=updated_before,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
     )
+
+    def _build_item(c: Any) -> CourseListItemOut:
+        agg = agg_map.get(c.id)
+        progress = CourseListLessonsProgress(
+            total=int(agg.total) if agg else 0,
+            content_ready=int(agg.content_ready) if agg else 0,
+            slides_ready=int(agg.slides_ready) if agg else 0,
+            videos_ready=int(agg.videos_ready) if agg else 0,
+            avatar_videos_ready=int(agg.avatar_videos_ready) if agg else 0,
+        )
+        return CourseListItemOut(
+            id=c.id,
+            title=c.title,
+            status=c.status,
+            language_code=c.language_code,
+            assignee=UserCompact.model_validate(c.assignee),
+            modules_count=c.modules_count,
+            cfu=c.cfu,
+            updated_at=c.updated_at,
+            created_at=c.created_at,
+            lessons_progress=progress,
+        )
+
     return Page[CourseListItemOut](
-        items=[CourseListItemOut.model_validate(c) for c in items],
+        items=[_build_item(c) for c in items],
         meta=PageMeta(page=page, page_size=page_size, total=total),
     )
 

@@ -583,6 +583,19 @@ export interface GlossaryTokens {
   model: string;
 }
 
+export interface CourseListLessonsProgress {
+  /** Conteggio lezioni didattiche (esclude `is_assessment=true`). */
+  total: number;
+  /** Lezioni con `content_status` in ('ready','approved'). */
+  content_ready: number;
+  /** Lezioni con `slides_status` in ('ready','approved'). */
+  slides_ready: number;
+  /** Lezioni con `video_status == 'ready'`. */
+  videos_ready: number;
+  /** Lezioni con `avatar_video_status == 'ready'`. */
+  avatar_videos_ready: number;
+}
+
 export interface CourseListItemOut {
   id: string;
   title: string;
@@ -593,6 +606,7 @@ export interface CourseListItemOut {
   cfu: number;
   updated_at: string;
   created_at: string;
+  lessons_progress: CourseListLessonsProgress;
 }
 
 export interface CourseOut {
@@ -673,6 +687,18 @@ export interface CourseListParams {
   page_size?: number;
   q?: string;
   status?: CourseStatus;
+  assignee_user_id?: string;
+  language_code?: string;
+  /** ISO 8601 datetime string (inclusive lower bound on `created_at`). */
+  created_after?: string;
+  /** ISO 8601 datetime string (inclusive upper bound on `created_at`). */
+  created_before?: string;
+  /** ISO 8601 datetime string (inclusive lower bound on `updated_at`). */
+  updated_after?: string;
+  /** ISO 8601 datetime string (inclusive upper bound on `updated_at`). */
+  updated_before?: string;
+  sort_by?: "created_at" | "updated_at";
+  sort_dir?: "asc" | "desc";
 }
 
 export interface PageMeta {
@@ -699,6 +725,14 @@ export const coursesApi = {
         page_size: params.page_size ?? 20,
         q: params.q || undefined,
         status: params.status || undefined,
+        assignee_user_id: params.assignee_user_id || undefined,
+        language_code: params.language_code || undefined,
+        created_after: params.created_after || undefined,
+        created_before: params.created_before || undefined,
+        updated_after: params.updated_after || undefined,
+        updated_before: params.updated_before || undefined,
+        sort_by: params.sort_by || undefined,
+        sort_dir: params.sort_dir || undefined,
       },
     });
     return res.data;

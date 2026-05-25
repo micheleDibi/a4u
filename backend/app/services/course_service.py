@@ -31,6 +31,7 @@ from app.core.errors import (
 from app.core.permissions import P, R
 from app.models.course import Course
 from app.models.course_document import CourseDocument
+from app.models.course_lesson import CourseLesson
 from app.models.course_taxonomy import CourseTaxonomyTerm
 from app.models.language import Language
 from app.models.membership import Membership
@@ -165,7 +166,25 @@ async def list_courses(
     page_size: int,
     q: str | None = None,
     status: str | None = None,
-) -> tuple[list[Course], int]:
+    assignee_user_id: uuid.UUID | None = None,
+    language_code: str | None = None,
+    created_after: datetime | None = None,
+    created_before: datetime | None = None,
+    updated_after: datetime | None = None,
+    updated_before: datetime | None = None,
+    sort_by: str = "updated_at",
+    sort_dir: str = "desc",
+) -> tuple[list[Course], int, dict[uuid.UUID, Any]]:
+    """List dei corsi paginata + filtrata + ordinata, con aggregazione
+    delle lezioni per indicatori di completezza pipeline.
+
+    Ritorna `(items, total, agg_map)` dove `agg_map[course_id]` è una
+    Row con i campi `total/content_ready/slides_ready/videos_ready/
+    avatar_videos_ready` (escluse le lezioni `is_assessment=True` dal
+    denominatore). Se un corso non ha lezioni il suo id non è in
+    `agg_map`: il caller deve trattare l'assenza come "tutti i contatori
+    a 0".
+    """
     base_q = select(Course).where(Course.organization_id == organization_id)
     count_q = select(func.count(Course.id)).where(
         Course.organization_id == organization_id
@@ -191,16 +210,82 @@ async def list_courses(
     if status:
         base_q = base_q.where(Course.status == status)
         count_q = count_q.where(Course.status == status)
+    if assignee_user_id:
+        base_q = base_q.where(Course.assignee_user_id == assignee_user_id)
+        count_q = count_q.where(Course.assignee_user_id == assignee_user_id)
+    if language_code:
+        base_q = base_q.where(Course.language_code == language_code)
+        count_q = count_q.where(Course.language_code == language_code)
+    if created_after is not None:
+        base_q = base_q.where(Course.created_at >= created_after)
+        count_q = count_q.where(Course.created_at >= created_after)
+    if created_before is not None:
+        base_q = base_q.where(Course.created_at <= created_before)
+        count_q = count_q.where(Course.created_at <= created_before)
+    if updated_after is not None:
+        base_q = base_q.where(Course.updated_at >= updated_after)
+        count_q = count_q.where(Course.updated_at >= updated_after)
+    if updated_before is not None:
+        base_q = base_q.where(Course.updated_at <= updated_before)
+        count_q = count_q.where(Course.updated_at <= updated_before)
+
+    # Ordinamento: solo created_at | updated_at, asc | desc. Tie-break su id
+    # per stabilità della paginazione.
+    sort_col = Course.created_at if sort_by == "created_at" else Course.updated_at
+    sort_expr = sort_col.asc() if sort_dir == "asc" else sort_col.desc()
 
     base_q = (
         base_q.options(selectinload(Course.assignee))
-        .order_by(Course.updated_at.desc())
+        .order_by(sort_expr, Course.id)
         .offset((page - 1) * page_size)
         .limit(page_size)
     )
     items = list((await db.execute(base_q)).scalars().all())
     total = int((await db.execute(count_q)).scalar_one())
-    return items, total
+
+    # Aggregazione lezioni per i corsi della pagina corrente. Una query
+    # sola con `COUNT(*) FILTER (WHERE …)` (pattern Postgres standard).
+    # Esclude `is_assessment=true` dal denominatore — vedi
+    # `CourseListLessonsProgress` per i criteri esatti.
+    agg_map: dict[uuid.UUID, Any] = {}
+    if items:
+        course_ids = [c.id for c in items]
+        not_assessment = CourseLesson.is_assessment.is_(False)
+        agg_q = (
+            select(
+                CourseLesson.course_id,
+                func.count().filter(not_assessment).label("total"),
+                func.count()
+                .filter(
+                    not_assessment,
+                    CourseLesson.content_status.in_(["ready", "approved"]),
+                )
+                .label("content_ready"),
+                func.count()
+                .filter(
+                    not_assessment,
+                    CourseLesson.slides_status.in_(["ready", "approved"]),
+                )
+                .label("slides_ready"),
+                func.count()
+                .filter(
+                    not_assessment,
+                    CourseLesson.video_status == "ready",
+                )
+                .label("videos_ready"),
+                func.count()
+                .filter(
+                    not_assessment,
+                    CourseLesson.avatar_video_status == "ready",
+                )
+                .label("avatar_videos_ready"),
+            )
+            .where(CourseLesson.course_id.in_(course_ids))
+            .group_by(CourseLesson.course_id)
+        )
+        agg_map = {row.course_id: row for row in (await db.execute(agg_q)).all()}
+
+    return items, total, agg_map
 
 
 async def get_course(

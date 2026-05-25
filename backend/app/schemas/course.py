@@ -86,6 +86,27 @@ class CourseDocumentDetailOut(CourseDocumentOut):
     summary: DocumentSummaryOut | None = None
 
 
+class CourseListLessonsProgress(BaseModel):
+    """Avanzamento pipeline delle lezioni didattiche di un corso (esclude
+    le lezioni di verifica `is_assessment=true` dal denominatore).
+
+    Criteri:
+    - `content_ready`: `content_status` ∈ ('ready','approved')
+    - `slides_ready`: `slides_status` ∈ ('ready','approved')
+    - `videos_ready`: `video_status == 'ready'`
+    - `avatar_videos_ready`: `avatar_video_status == 'ready'`
+
+    `total == 0` → il corso non ha lezioni didattiche (es. solo
+    verifica): la UI lo visualizza con "—" invece di "0/0".
+    """
+
+    total: int
+    content_ready: int
+    slides_ready: int
+    videos_ready: int
+    avatar_videos_ready: int
+
+
 class CourseListItemOut(ORMModel):
     id: uuid.UUID
     title: str
@@ -96,6 +117,7 @@ class CourseListItemOut(ORMModel):
     cfu: int
     updated_at: datetime
     created_at: datetime
+    lessons_progress: CourseListLessonsProgress
 
 
 class CourseOut(ORMModel):

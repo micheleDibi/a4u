@@ -1,6 +1,11 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import {
+  Link,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
@@ -8,11 +13,14 @@ import {
   type PaginationState,
 } from "@tanstack/react-table";
 import {
+  ArrowDown,
+  ArrowUp,
   BookOpenCheck,
   Edit,
   MoreHorizontal,
   Plus,
   Trash2,
+  X,
 } from "lucide-react";
 import {
   coursesApi,
@@ -23,7 +31,12 @@ import { useHasPermission } from "@/auth/PermissionGate";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { DataTable } from "@/components/shared/DataTable";
+import {
+  DateRangeField,
+  type DateRangeValue,
+} from "@/components/forms/DateRangeField";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -31,6 +44,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -38,11 +52,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { useLanguages } from "@/hooks/useLanguages";
+import { useOrgMembers } from "@/hooks/useOrgMembers";
 import { flagFor } from "@/i18n/flags";
 import { extractApiError } from "@/lib/errors";
 import { P } from "@/lib/permissions";
+import { CoursePipelineRowChips } from "./components/CoursePipelineRowChips";
 import { CourseStatusBadge } from "./components/CourseStatusBadge";
 
+// Tutti i 17 valori di `course.status` (mirror di backend
+// `CourseStatus`). Esposti raw nel filtro: il bucketing macro-fase è
+// solo nella dashboard, qui l'utente filtra per stato esatto.
 const STATUS_FILTERS: CourseStatus[] = [
   "draft",
   "architecture_pending",
@@ -50,20 +71,89 @@ const STATUS_FILTERS: CourseStatus[] = [
   "architecture_approved",
   "lessons_structure_pending",
   "lessons_structure_ready",
+  "lessons_structure_approved",
   "content_pending",
   "content_ready",
+  "content_approved",
   "slides_pending",
   "slides_ready",
+  "slides_approved",
   "speech_pending",
   "speech_ready",
+  "speech_approved",
   "published",
   "archived",
 ];
 
 const ALL_STATUS = "__all__";
+const ALL_ASSIGNEES = "__all__";
+const ALL_LANGUAGES = "__all__";
+
+type SortBy = "created_at" | "updated_at";
+type SortDir = "asc" | "desc";
+
+// ---------------------------------------------------------------------------
+// URL state helpers — la sorgente di verità per i filtri è il
+// querystring (refresh-safe + condivisibile). Le funzioni qui sotto
+// (de)serializzano i tipi.
+// ---------------------------------------------------------------------------
+
+interface ListFilters {
+  q: string;
+  status: string; // CourseStatus | ALL_STATUS
+  assignee_user_id: string; // UUID | ALL_ASSIGNEES
+  language_code: string; // ISO | ALL_LANGUAGES
+  created: DateRangeValue;
+  updated: DateRangeValue;
+  sort_by: SortBy;
+  sort_dir: SortDir;
+}
+
+function readFiltersFromURL(sp: URLSearchParams): ListFilters {
+  return {
+    q: sp.get("q") ?? "",
+    status: sp.get("status") ?? ALL_STATUS,
+    assignee_user_id: sp.get("assignee_user_id") ?? ALL_ASSIGNEES,
+    language_code: sp.get("language_code") ?? ALL_LANGUAGES,
+    created: {
+      from: sp.get("created_after") ?? undefined,
+      to: sp.get("created_before") ?? undefined,
+    },
+    updated: {
+      from: sp.get("updated_after") ?? undefined,
+      to: sp.get("updated_before") ?? undefined,
+    },
+    sort_by: ((sp.get("sort_by") as SortBy) ?? "updated_at") as SortBy,
+    sort_dir: ((sp.get("sort_dir") as SortDir) ?? "desc") as SortDir,
+  };
+}
+
+function hasActiveFilters(f: ListFilters): boolean {
+  return (
+    !!f.q ||
+    f.status !== ALL_STATUS ||
+    f.assignee_user_id !== ALL_ASSIGNEES ||
+    f.language_code !== ALL_LANGUAGES ||
+    !!f.created.from ||
+    !!f.created.to ||
+    !!f.updated.from ||
+    !!f.updated.to ||
+    f.sort_by !== "updated_at" ||
+    f.sort_dir !== "desc"
+  );
+}
+
+// Converte "YYYY-MM-DD" → datetime ISO con orario di inizio/fine giornata
+// (così "Creato a 31/03" include tutto il 31/03, non solo 00:00).
+function dateToIsoLower(d: string | undefined): string | undefined {
+  return d ? `${d}T00:00:00Z` : undefined;
+}
+function dateToIsoUpper(d: string | undefined): string | undefined {
+  return d ? `${d}T23:59:59Z` : undefined;
+}
 
 export default function CoursesListPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const params = useParams();
   const orgId = params.orgId!;
   const navigate = useNavigate();
@@ -72,22 +162,151 @@ export default function CoursesListPage() {
   const canCreate = useHasPermission(P.COURSE_CREATE, orgId);
   const canDelete = useHasPermission(P.COURSE_DELETE, orgId);
 
-  const [pagination, setPagination] = useState<PaginationState>({
-    pageIndex: 0,
-    pageSize: 25,
-  });
-  const [q, setQ] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>(ALL_STATUS);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const filters = useMemo(() => readFiltersFromURL(searchParams), [searchParams]);
+
+  // Search input: state locale per typing reattivo + debounce 300ms in URL.
+  const [qInput, setQInput] = useState(filters.q);
+  const debouncedQ = useDebouncedValue(qInput, 300);
+
+  // Sync `qInput` ↔ URL nelle due direzioni:
+  // 1) Quando l'utente digita → debouncedQ aggiorna l'URL.
+  // 2) Quando l'URL cambia da fuori (es. reset) → `qInput` si allinea.
+  useEffect(() => {
+    if (debouncedQ === filters.q) return;
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (debouncedQ) next.set("q", debouncedQ);
+        else next.delete("q");
+        next.delete("page");
+        return next;
+      },
+      { replace: true },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedQ]);
+
+  useEffect(() => {
+    if (filters.q !== qInput) setQInput(filters.q);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.q]);
+
+  function updateFilter(key: string, value: string | null) {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (value === null || value === "" || value === ALL_STATUS) {
+        next.delete(key);
+      } else {
+        next.set(key, value);
+      }
+      next.delete("page"); // ogni cambio filtro torna a pagina 1
+      return next;
+    });
+  }
+
+  function updateDateRange(
+    prefix: "created" | "updated",
+    range: DateRangeValue,
+  ) {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      const afterKey = `${prefix}_after`;
+      const beforeKey = `${prefix}_before`;
+      if (range.from) next.set(afterKey, range.from);
+      else next.delete(afterKey);
+      if (range.to) next.set(beforeKey, range.to);
+      else next.delete(beforeKey);
+      next.delete("page");
+      return next;
+    });
+  }
+
+  function resetAllFilters() {
+    setSearchParams(new URLSearchParams());
+    setQInput("");
+  }
+
+  function toggleSort(col: SortBy) {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      const currentBy = (next.get("sort_by") as SortBy) ?? "updated_at";
+      const currentDir = (next.get("sort_dir") as SortDir) ?? "desc";
+      if (currentBy === col) {
+        // toggle dir
+        const newDir: SortDir = currentDir === "desc" ? "asc" : "desc";
+        if (col === "updated_at" && newDir === "desc") {
+          next.delete("sort_by");
+          next.delete("sort_dir");
+        } else {
+          next.set("sort_by", col);
+          next.set("sort_dir", newDir);
+        }
+      } else {
+        next.set("sort_by", col);
+        next.set("sort_dir", "desc");
+      }
+      return next;
+    });
+  }
+
+  // Pagination state derivata da URL.
+  const pageNumber = parseInt(searchParams.get("page") ?? "1", 10) || 1;
+  const pageSize =
+    parseInt(searchParams.get("page_size") ?? "25", 10) || 25;
+  const pagination: PaginationState = {
+    pageIndex: Math.max(0, pageNumber - 1),
+    pageSize,
+  };
+  function onPaginationChange(next: PaginationState) {
+    setSearchParams((prev) => {
+      const sp = new URLSearchParams(prev);
+      if (next.pageIndex === 0) sp.delete("page");
+      else sp.set("page", String(next.pageIndex + 1));
+      if (next.pageSize === 25) sp.delete("page_size");
+      else sp.set("page_size", String(next.pageSize));
+      return sp;
+    });
+  }
+
+  // Membri + lingue per i dropdown dei filtri.
+  const membersQuery = useOrgMembers(orgId);
+  const languages = useLanguages();
+
   const [toDelete, setToDelete] = useState<CourseListItemOut | null>(null);
 
   const query = useQuery({
-    queryKey: ["courses", "list", orgId, pagination.pageIndex, pagination.pageSize, q, statusFilter],
+    queryKey: [
+      "courses",
+      "list",
+      orgId,
+      pagination.pageIndex,
+      pagination.pageSize,
+      filters,
+    ],
     queryFn: () =>
       coursesApi.list(orgId, {
         page: pagination.pageIndex + 1,
         page_size: pagination.pageSize,
-        q: q || undefined,
-        status: statusFilter !== ALL_STATUS ? (statusFilter as CourseStatus) : undefined,
+        q: filters.q || undefined,
+        status:
+          filters.status !== ALL_STATUS
+            ? (filters.status as CourseStatus)
+            : undefined,
+        assignee_user_id:
+          filters.assignee_user_id !== ALL_ASSIGNEES
+            ? filters.assignee_user_id
+            : undefined,
+        language_code:
+          filters.language_code !== ALL_LANGUAGES
+            ? filters.language_code
+            : undefined,
+        created_after: dateToIsoLower(filters.created.from),
+        created_before: dateToIsoUpper(filters.created.to),
+        updated_after: dateToIsoLower(filters.updated.from),
+        updated_before: dateToIsoUpper(filters.updated.to),
+        sort_by: filters.sort_by,
+        sort_dir: filters.sort_dir,
       }),
   });
 
@@ -99,6 +318,50 @@ export default function CoursesListPage() {
     },
     onError: (err) => toast.error(extractApiError(err).message),
   });
+
+  const dateFormatter = useMemo(
+    () =>
+      new Intl.DateTimeFormat(i18n.language, {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    [i18n.language],
+  );
+
+  function SortableHeader({
+    label,
+    col,
+  }: {
+    label: string;
+    col: SortBy;
+  }) {
+    const active = filters.sort_by === col;
+    const dir = filters.sort_dir;
+    return (
+      <button
+        type="button"
+        onClick={() => toggleSort(col)}
+        className={
+          "inline-flex items-center gap-1 -mx-2 px-2 py-1 rounded transition-colors hover:bg-muted/60 " +
+          (active ? "text-foreground" : "text-muted-foreground")
+        }
+      >
+        <span>{label}</span>
+        {active ? (
+          dir === "asc" ? (
+            <ArrowUp className="size-3.5" />
+          ) : (
+            <ArrowDown className="size-3.5" />
+          )
+        ) : (
+          <ArrowDown className="size-3.5 opacity-40" />
+        )}
+      </button>
+    );
+  }
 
   const columns: ColumnDef<CourseListItemOut>[] = [
     {
@@ -143,23 +406,37 @@ export default function CoursesListPage() {
       },
     },
     {
-      id: "modules",
-      header: t("courses.fields.modulesCount"),
+      id: "pipeline",
+      header: t("courses.list.pipelineHeader"),
       cell: ({ row }) => (
-        <span className="text-sm text-muted-foreground">
-          {t("courses.summary.modulesShort", {
-            modules: row.original.modules_count,
-            cfu: row.original.cfu,
-          })}
+        <CoursePipelineRowChips progress={row.original.lessons_progress} />
+      ),
+    },
+    {
+      id: "created",
+      header: () => (
+        <SortableHeader
+          label={t("courses.fields.createdAt")}
+          col="created_at"
+        />
+      ),
+      cell: ({ row }) => (
+        <span className="text-sm text-muted-foreground tabular-nums">
+          {dateFormatter.format(new Date(row.original.created_at))}
         </span>
       ),
     },
     {
       id: "updated",
-      header: t("courses.fields.updatedAt"),
+      header: () => (
+        <SortableHeader
+          label={t("courses.fields.updatedAt")}
+          col="updated_at"
+        />
+      ),
       cell: ({ row }) => (
-        <span className="text-sm text-muted-foreground">
-          {new Date(row.original.updated_at).toLocaleString()}
+        <span className="text-sm text-muted-foreground tabular-nums">
+          {dateFormatter.format(new Date(row.original.updated_at))}
         </span>
       ),
     },
@@ -198,6 +475,8 @@ export default function CoursesListPage() {
     },
   ];
 
+  const activeFilters = hasActiveFilters(filters);
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -215,45 +494,141 @@ export default function CoursesListPage() {
         }
       />
 
-      <div className="flex flex-wrap items-center gap-2">
-        <Input
-          placeholder={t("courses.search")}
-          value={q}
-          onChange={(e) => {
-            setQ(e.target.value);
-            setPagination((p) => ({ ...p, pageIndex: 0 }));
-          }}
-          className="max-w-md"
-        />
-        <Select
-          value={statusFilter}
-          onValueChange={(v) => {
-            setStatusFilter(v);
-            setPagination((p) => ({ ...p, pageIndex: 0 }));
-          }}
-        >
-          <SelectTrigger className="w-56">
-            <SelectValue placeholder={t("courses.filters.allStatuses")} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL_STATUS}>
-              {t("courses.filters.allStatuses")}
-            </SelectItem>
-            {STATUS_FILTERS.map((s) => (
-              <SelectItem key={s} value={s}>
-                {t(`courses.statuses.${s}`)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+      {/* Toolbar filtri */}
+      <Card>
+        <CardContent className="space-y-4 p-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="min-w-[220px] flex-1 space-y-1">
+              <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                {t("courses.search")}
+              </Label>
+              <Input
+                placeholder={t("courses.search")}
+                value={qInput}
+                onChange={(e) => setQInput(e.target.value)}
+                className="h-9"
+              />
+            </div>
+
+            <div className="min-w-[180px] flex-1 space-y-1">
+              <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                {t("courses.fields.assignee")}
+              </Label>
+              <Select
+                value={filters.assignee_user_id}
+                onValueChange={(v) => updateFilter("assignee_user_id", v)}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue
+                    placeholder={t("courses.filters.allAssignees")}
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL_ASSIGNEES}>
+                    {t("courses.filters.allAssignees")}
+                  </SelectItem>
+                  {(membersQuery.data ?? []).map((m) => (
+                    <SelectItem key={m.user_id} value={m.user_id}>
+                      {m.user_full_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="min-w-[180px] flex-1 space-y-1">
+              <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                {t("courses.fields.status")}
+              </Label>
+              <Select
+                value={filters.status}
+                onValueChange={(v) => updateFilter("status", v)}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue
+                    placeholder={t("courses.filters.allStatuses")}
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL_STATUS}>
+                    {t("courses.filters.allStatuses")}
+                  </SelectItem>
+                  {STATUS_FILTERS.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {t(`courses.statuses.${s}`)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="min-w-[160px] flex-1 space-y-1">
+              <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                {t("courses.fields.language")}
+              </Label>
+              <Select
+                value={filters.language_code}
+                onValueChange={(v) => updateFilter("language_code", v)}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue
+                    placeholder={t("courses.filters.allLanguages")}
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL_LANGUAGES}>
+                    {t("courses.filters.allLanguages")}
+                  </SelectItem>
+                  {languages.map((l) => {
+                    const Flag = flagFor(l.code, l.flag_country_code);
+                    return (
+                      <SelectItem key={l.code} value={l.code}>
+                        <span className="inline-flex items-center gap-2">
+                          <Flag className="size-3.5 rounded-sm shadow-[0_0_0_1px_rgba(0,0,0,0.08)]" />
+                          <span>{l.name_native}</span>
+                        </span>
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <DateRangeField
+              label={t("courses.fields.createdAt")}
+              value={filters.created}
+              onChange={(v) => updateDateRange("created", v)}
+              className="min-w-[220px] flex-1"
+            />
+
+            <DateRangeField
+              label={t("courses.fields.updatedAt")}
+              value={filters.updated}
+              onChange={(v) => updateDateRange("updated", v)}
+              className="min-w-[220px] flex-1"
+            />
+          </div>
+
+          {activeFilters && (
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={resetAllFilters}
+              >
+                <X className="size-4" />
+                {t("courses.filters.reset")}
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {query.data?.items.length === 0 && !query.isLoading ? (
         <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border p-10 text-center">
           <BookOpenCheck className="size-8 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">
-            {t("courses.empty")}
-          </p>
+          <p className="text-sm text-muted-foreground">{t("courses.empty")}</p>
           {canCreate && (
             <Button asChild variant="outline" size="sm">
               <Link to={`/orgs/${orgId}/corsi/nuovo`}>
@@ -270,7 +645,7 @@ export default function CoursesListPage() {
           loading={query.isLoading}
           rowCount={query.data?.meta.total}
           pagination={pagination}
-          onPaginationChange={setPagination}
+          onPaginationChange={onPaginationChange}
           rowKey={(r) => r.id}
           emptyMessage={t("courses.empty")}
         />

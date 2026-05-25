@@ -9,6 +9,7 @@
     "delete": "Elimina",
     "edit": "Modifica",
     "add": "Aggiungi",
+    "apply": "Applica",
     "loading": "Caricamento…",
     "saving": "Salvataggio…",
     "creating": "Creazione…",
@@ -83,6 +84,12 @@
     "taxonomies": "Tassonomie corsi",
     "courses": "Corsi"
   },
+  "dateRangeField": {
+    "placeholder": "Tutte le date",
+    "from": "Da",
+    "to": "A",
+    "clear": "Pulisci"
+  },
   "courses": {
     "title": "Corsi",
     "subtitle": "Crea e gestisci i corsi della tua organizzazione.",
@@ -124,7 +131,20 @@
       }
     },
     "filters": {
-      "allStatuses": "Tutti gli stati"
+      "allStatuses": "Tutti gli stati",
+      "allAssignees": "Tutti gli assegnatari",
+      "allLanguages": "Tutte le lingue",
+      "reset": "Reset filtri"
+    },
+    "list": {
+      "pipelineHeader": "Pipeline",
+      "progressChip": {
+        "content": "Contenuti generati: {{done}} di {{total}}",
+        "slides": "Slide generate: {{done}} di {{total}}",
+        "videos": "Video creati: {{done}} di {{total}}",
+        "avatarVideos": "Video con avatar creati: {{done}} di {{total}}",
+        "noLessons": "Il corso non ha ancora lezioni didattiche"
+      }
     },
     "tabs": {
       "base": "Informazioni di base",
@@ -157,6 +177,7 @@
       "noMembers": "Nessun membro disponibile.",
       "status": "Stato",
       "modulesCount": "Moduli",
+      "createdAt": "Creato",
       "updatedAt": "Aggiornato",
       "cfu": "CFU",
       "cfuHint": "Numero di crediti formativi del corso. Determina il numero di moduli e lezioni.",
