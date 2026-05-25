@@ -54,7 +54,18 @@ export function DuplicateCourseDialog({ orgId, course, onClose }: Props) {
       coursesApi.duplicate(orgId, course.id, target),
     onSuccess: () => {
       toast.success(t("courses.duplicate.toast.success"));
+      // Invalidate immediata + re-invalidate ogni 2s per 16s totali.
+      // Il backend crea il `target_course` solo nella phase
+      // `cloning_structure` del worker (~5-10s dopo il job pending).
+      // Senza questi refetch ravvicinati, l'utente non vede comparire
+      // la nuova riga finché il polling regolare (3s) non scatta — e
+      // quello parte solo dopo che `target_course_id` è valorizzato.
       qc.invalidateQueries({ queryKey: ["courses", "list", orgId] });
+      for (let i = 1; i <= 8; i++) {
+        window.setTimeout(() => {
+          qc.invalidateQueries({ queryKey: ["courses", "list", orgId] });
+        }, i * 2000);
+      }
       onClose();
     },
     onError: (err) =>
