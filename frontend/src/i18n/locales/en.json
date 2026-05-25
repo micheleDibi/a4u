@@ -1811,7 +1811,83 @@
   "dashboard": {
     "admin": {
       "title": "Admin panel",
-      "subtitle": "Global a4u platform management"
+      "subtitle": "Global a4u platform management",
+      "kpi": {
+        "users": "Users",
+        "usersActiveSublabel": "{{active}} active",
+        "usersActive30d": "Active 30d",
+        "orgs": "Organizations",
+        "courses": "Courses",
+        "lessons": "Lessons",
+        "costAi": "Total AI cost",
+        "costAiSublabel": "{{last30d}} last 30d"
+      },
+      "pipelineCourses": {
+        "title": "Courses pipeline",
+        "empty": "No courses yet"
+      },
+      "pipelineLessons": {
+        "title": "Lessons pipeline",
+        "content": "Content",
+        "slides": "Slides",
+        "speech": "Speech",
+        "video": "Video",
+        "avatarVideo": "Avatar video",
+        "empty": "No lessons"
+      },
+      "cost": {
+        "title": "AI cost",
+        "total": "Total",
+        "last7d": "Last 7 days",
+        "last30d": "Last 30 days",
+        "byPhase": "By pipeline phase",
+        "phaseLabel": {
+          "architecture": "Architecture",
+          "structure": "Lessons structure",
+          "content": "Content",
+          "slides": "Slides",
+          "speech": "Speech"
+        }
+      },
+      "avatarClips": {
+        "title": "Avatar clips",
+        "empty": "No clips"
+      },
+      "loginActivity": {
+        "title": "Login activity (7d)",
+        "success": "Successes",
+        "failure": "Failures"
+      },
+      "auditRecent": {
+        "title": "Recent activity",
+        "empty": "No recent activity"
+      },
+      "manage": {
+        "title": "Management",
+        "subtitle": "CRUD tools for platform management"
+      }
+    },
+    "shared": {
+      "statusBucket": {
+        "draft": "Draft",
+        "architecture": "Architecture",
+        "structure": "Structure",
+        "content": "Content",
+        "slides": "Slides",
+        "speech": "Speech",
+        "published": "Published",
+        "archived": "Archived"
+      },
+      "lifecycle": {
+        "empty": "Empty",
+        "pending": "Pending",
+        "processing": "Processing",
+        "ready": "Ready",
+        "approved": "Approved",
+        "failed": "Failed",
+        "cancelled": "Cancelled",
+        "partial": "Partial"
+      }
     },
     "org": {
       "subtitle": "Role: {{role}}",

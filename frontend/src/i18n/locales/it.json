@@ -1812,7 +1812,83 @@
   "dashboard": {
     "admin": {
       "title": "Pannello di amministrazione",
-      "subtitle": "Gestione globale della piattaforma a4u"
+      "subtitle": "Gestione globale della piattaforma a4u",
+      "kpi": {
+        "users": "Utenti",
+        "usersActiveSublabel": "{{active}} attivi",
+        "usersActive30d": "Attivi 30g",
+        "orgs": "Organizzazioni",
+        "courses": "Corsi",
+        "lessons": "Lezioni",
+        "costAi": "Costo AI totale",
+        "costAiSublabel": "{{last30d}} ultimi 30g"
+      },
+      "pipelineCourses": {
+        "title": "Pipeline corsi",
+        "empty": "Nessun corso ancora creato"
+      },
+      "pipelineLessons": {
+        "title": "Pipeline lezioni",
+        "content": "Contenuto",
+        "slides": "Slide",
+        "speech": "Discorso",
+        "video": "Video",
+        "avatarVideo": "Video con avatar",
+        "empty": "Nessuna lezione"
+      },
+      "cost": {
+        "title": "Costo AI",
+        "total": "Totale",
+        "last7d": "Ultimi 7 giorni",
+        "last30d": "Ultimi 30 giorni",
+        "byPhase": "Per fase pipeline",
+        "phaseLabel": {
+          "architecture": "Architettura",
+          "structure": "Struttura lezioni",
+          "content": "Contenuti",
+          "slides": "Slide",
+          "speech": "Discorso"
+        }
+      },
+      "avatarClips": {
+        "title": "Avatar clips",
+        "empty": "Nessuna clip"
+      },
+      "loginActivity": {
+        "title": "Attività login (7g)",
+        "success": "Successi",
+        "failure": "Fallimenti"
+      },
+      "auditRecent": {
+        "title": "Attività recente",
+        "empty": "Nessuna attività recente"
+      },
+      "manage": {
+        "title": "Gestione",
+        "subtitle": "Strumenti CRUD per la gestione della piattaforma"
+      }
+    },
+    "shared": {
+      "statusBucket": {
+        "draft": "Bozze",
+        "architecture": "Architettura",
+        "structure": "Struttura",
+        "content": "Contenuti",
+        "slides": "Slide",
+        "speech": "Discorso",
+        "published": "Pubblicato",
+        "archived": "Archiviato"
+      },
+      "lifecycle": {
+        "empty": "Vuoto",
+        "pending": "In coda",
+        "processing": "In corso",
+        "ready": "Pronto",
+        "approved": "Approvato",
+        "failed": "Fallito",
+        "cancelled": "Annullato",
+        "partial": "Parziale"
+      }
     },
     "org": {
       "subtitle": "Ruolo: {{role}}",
