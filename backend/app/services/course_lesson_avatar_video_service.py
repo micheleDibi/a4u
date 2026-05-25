@@ -27,6 +27,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
@@ -79,6 +80,45 @@ VALID_AVATAR_VIDEO_REQUEST_STATUSES: tuple[str, ...] = (
     "failed",
     "cancelled",
 )
+
+
+# ---------------------------------------------------------------------------
+# Course status — auto-transizione Fase 6b (Video con Avatar)
+# ---------------------------------------------------------------------------
+
+
+async def _recompute_course_avatar_video_status(
+    db: AsyncSession, course_id: uuid.UUID
+) -> None:
+    """Aggiorna `course.status` in base agli stati avatar-video delle
+    lezioni non-assessment del corso. Da chiamare DOPO aver mutato un
+    `lesson.avatar_video_status` e PRIMA del commit.
+
+    Regole (simmetriche a `_recompute_course_video_status` di Fase 6):
+    - almeno 1 lezione in `pending|processing|failed` → `avatar_video_pending`
+    - almeno 1 `ready` e tutte in `ready|cancelled|empty` → `avatar_video_ready`
+    - tutte `cancelled`/`empty` → invariato (lascia lo stato di Fase 6).
+    """
+    res = await db.execute(
+        select(CourseLesson.avatar_video_status)
+        .where(CourseLesson.course_id == course_id)
+        .where(CourseLesson.is_assessment.is_(False))
+    )
+    statuses = list(res.scalars().all())
+    if not statuses:
+        return
+    new_status: str | None = None
+    if any(s in ("pending", "processing", "failed") for s in statuses):
+        new_status = "avatar_video_pending"
+    elif any(s == "ready" for s in statuses) and all(
+        s in ("ready", "cancelled", "empty") for s in statuses
+    ):
+        new_status = "avatar_video_ready"
+    if new_status is None:
+        return
+    course = await db.get(Course, course_id)
+    if course is not None:
+        course.status = new_status
 
 
 # ---------------------------------------------------------------------------
@@ -347,6 +387,7 @@ async def request_lesson_avatar_video(
             "lesson_code": lesson.lesson_code,
         },
     )
+    await _recompute_course_avatar_video_status(db, course.id)
     await db.commit()
     await db.refresh(lesson)
     return lesson
@@ -402,6 +443,7 @@ async def request_all_lessons_avatar_video(
             "lesson_codes": [lesson.lesson_code for lesson in eligible],
         },
     )
+    await _recompute_course_avatar_video_status(db, course.id)
     await db.commit()
     for lesson in eligible:
         await db.refresh(lesson)
@@ -435,6 +477,7 @@ async def cancel_lesson_avatar_video(
             "lesson_code": lesson.lesson_code,
         },
     )
+    await _recompute_course_avatar_video_status(db, course.id)
     await db.commit()
     await db.refresh(lesson)
     return lesson
@@ -469,6 +512,7 @@ async def cancel_all_lesson_avatar_videos(
                 ],
             },
         )
+        await _recompute_course_avatar_video_status(db, course.id)
     await db.commit()
     for lesson in affected:
         await db.refresh(lesson)

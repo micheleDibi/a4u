@@ -44,7 +44,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -81,6 +80,10 @@ const STATUS_FILTERS: CourseStatus[] = [
   "speech_pending",
   "speech_ready",
   "speech_approved",
+  "video_pending",
+  "video_ready",
+  "avatar_video_pending",
+  "avatar_video_ready",
   "published",
   "archived",
 ];
@@ -319,7 +322,18 @@ export default function CoursesListPage() {
     onError: (err) => toast.error(extractApiError(err).message),
   });
 
+  // Formato compatto per la cella (data + ora su una sola riga) e formato
+  // esteso per il tooltip di hover (utile a verificare l'ora precisa).
   const dateFormatter = useMemo(
+    () =>
+      new Intl.DateTimeFormat(i18n.language, {
+        day: "2-digit",
+        month: "2-digit",
+        year: "2-digit",
+      }),
+    [i18n.language],
+  );
+  const dateFormatterFull = useMemo(
     () =>
       new Intl.DateTimeFormat(i18n.language, {
         day: "2-digit",
@@ -380,7 +394,10 @@ export default function CoursesListPage() {
       id: "assignee",
       header: t("courses.fields.assignee"),
       cell: ({ row }) => (
-        <span className="text-sm text-muted-foreground">
+        <span
+          className="block max-w-[180px] truncate text-sm text-muted-foreground"
+          title={row.original.assignee.full_name}
+        >
           {row.original.assignee.full_name}
         </span>
       ),
@@ -388,7 +405,11 @@ export default function CoursesListPage() {
     {
       id: "status",
       header: t("courses.fields.status"),
-      cell: ({ row }) => <CourseStatusBadge status={row.original.status} />,
+      cell: ({ row }) => (
+        <span className="whitespace-nowrap">
+          <CourseStatusBadge status={row.original.status} />
+        </span>
+      ),
     },
     {
       id: "lang",
@@ -407,9 +428,17 @@ export default function CoursesListPage() {
     },
     {
       id: "pipeline",
-      header: t("courses.list.pipelineHeader"),
+      header: () => (
+        <span className="whitespace-nowrap">
+          {t("courses.list.pipelineHeader")}
+        </span>
+      ),
+      // Min-width sulla cella così i 4 chip (≈ 195px) non causano
+      // overflow né wrap quando il browser distribuisce le colonne.
       cell: ({ row }) => (
-        <CoursePipelineRowChips progress={row.original.lessons_progress} />
+        <div className="min-w-[200px]">
+          <CoursePipelineRowChips progress={row.original.lessons_progress} />
+        </div>
       ),
     },
     {
@@ -421,7 +450,10 @@ export default function CoursesListPage() {
         />
       ),
       cell: ({ row }) => (
-        <span className="text-sm text-muted-foreground tabular-nums">
+        <span
+          className="whitespace-nowrap text-sm text-muted-foreground tabular-nums"
+          title={dateFormatterFull.format(new Date(row.original.created_at))}
+        >
           {dateFormatter.format(new Date(row.original.created_at))}
         </span>
       ),
@@ -435,7 +467,10 @@ export default function CoursesListPage() {
         />
       ),
       cell: ({ row }) => (
-        <span className="text-sm text-muted-foreground tabular-nums">
+        <span
+          className="whitespace-nowrap text-sm text-muted-foreground tabular-nums"
+          title={dateFormatterFull.format(new Date(row.original.updated_at))}
+        >
           {dateFormatter.format(new Date(row.original.updated_at))}
         </span>
       ),
@@ -494,133 +529,113 @@ export default function CoursesListPage() {
         }
       />
 
-      {/* Toolbar filtri */}
+      {/* Toolbar filtri — tutto su una sola riga (wrap su schermi
+          stretti). Niente Label sopra i controlli: ogni Select mostra
+          "Tutti …" come placeholder/selezione di default, e il
+          DateRangeField include la propria label nel trigger button. */}
       <Card>
-        <CardContent className="space-y-4 p-4">
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="min-w-[220px] flex-1 space-y-1">
-              <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                {t("courses.search")}
-              </Label>
-              <Input
-                placeholder={t("courses.search")}
-                value={qInput}
-                onChange={(e) => setQInput(e.target.value)}
-                className="h-9"
+        <CardContent className="flex flex-wrap items-center gap-2 p-3">
+          <Input
+            placeholder={t("courses.search")}
+            value={qInput}
+            onChange={(e) => setQInput(e.target.value)}
+            className="h-9 min-w-[200px] max-w-sm flex-1"
+          />
+
+          <Select
+            value={filters.assignee_user_id}
+            onValueChange={(v) => updateFilter("assignee_user_id", v)}
+          >
+            <SelectTrigger className="h-9 w-[180px]">
+              <SelectValue
+                placeholder={t("courses.filters.allAssignees")}
               />
-            </div>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_ASSIGNEES}>
+                {t("courses.filters.allAssignees")}
+              </SelectItem>
+              {(membersQuery.data ?? []).map((m) => (
+                <SelectItem key={m.user_id} value={m.user_id}>
+                  {m.user_full_name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-            <div className="min-w-[180px] flex-1 space-y-1">
-              <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                {t("courses.fields.assignee")}
-              </Label>
-              <Select
-                value={filters.assignee_user_id}
-                onValueChange={(v) => updateFilter("assignee_user_id", v)}
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue
-                    placeholder={t("courses.filters.allAssignees")}
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL_ASSIGNEES}>
-                    {t("courses.filters.allAssignees")}
+          <Select
+            value={filters.status}
+            onValueChange={(v) => updateFilter("status", v)}
+          >
+            <SelectTrigger className="h-9 w-[200px]">
+              <SelectValue
+                placeholder={t("courses.filters.allStatuses")}
+              />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_STATUS}>
+                {t("courses.filters.allStatuses")}
+              </SelectItem>
+              {STATUS_FILTERS.map((s) => (
+                <SelectItem key={s} value={s}>
+                  {t(`courses.statuses.${s}`)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select
+            value={filters.language_code}
+            onValueChange={(v) => updateFilter("language_code", v)}
+          >
+            <SelectTrigger className="h-9 w-[160px]">
+              <SelectValue
+                placeholder={t("courses.filters.allLanguages")}
+              />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_LANGUAGES}>
+                {t("courses.filters.allLanguages")}
+              </SelectItem>
+              {languages.map((l) => {
+                const Flag = flagFor(l.code, l.flag_country_code);
+                return (
+                  <SelectItem key={l.code} value={l.code}>
+                    <span className="inline-flex items-center gap-2">
+                      <Flag className="size-3.5 rounded-sm shadow-[0_0_0_1px_rgba(0,0,0,0.08)]" />
+                      <span>{l.name_native}</span>
+                    </span>
                   </SelectItem>
-                  {(membersQuery.data ?? []).map((m) => (
-                    <SelectItem key={m.user_id} value={m.user_id}>
-                      {m.user_full_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+                );
+              })}
+            </SelectContent>
+          </Select>
 
-            <div className="min-w-[180px] flex-1 space-y-1">
-              <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                {t("courses.fields.status")}
-              </Label>
-              <Select
-                value={filters.status}
-                onValueChange={(v) => updateFilter("status", v)}
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue
-                    placeholder={t("courses.filters.allStatuses")}
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL_STATUS}>
-                    {t("courses.filters.allStatuses")}
-                  </SelectItem>
-                  {STATUS_FILTERS.map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {t(`courses.statuses.${s}`)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          <DateRangeField
+            label={t("courses.fields.createdAt")}
+            value={filters.created}
+            onChange={(v) => updateDateRange("created", v)}
+            className="w-[200px]"
+          />
 
-            <div className="min-w-[160px] flex-1 space-y-1">
-              <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                {t("courses.fields.language")}
-              </Label>
-              <Select
-                value={filters.language_code}
-                onValueChange={(v) => updateFilter("language_code", v)}
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue
-                    placeholder={t("courses.filters.allLanguages")}
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL_LANGUAGES}>
-                    {t("courses.filters.allLanguages")}
-                  </SelectItem>
-                  {languages.map((l) => {
-                    const Flag = flagFor(l.code, l.flag_country_code);
-                    return (
-                      <SelectItem key={l.code} value={l.code}>
-                        <span className="inline-flex items-center gap-2">
-                          <Flag className="size-3.5 rounded-sm shadow-[0_0_0_1px_rgba(0,0,0,0.08)]" />
-                          <span>{l.name_native}</span>
-                        </span>
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <DateRangeField
-              label={t("courses.fields.createdAt")}
-              value={filters.created}
-              onChange={(v) => updateDateRange("created", v)}
-              className="min-w-[220px] flex-1"
-            />
-
-            <DateRangeField
-              label={t("courses.fields.updatedAt")}
-              value={filters.updated}
-              onChange={(v) => updateDateRange("updated", v)}
-              className="min-w-[220px] flex-1"
-            />
-          </div>
+          <DateRangeField
+            label={t("courses.fields.updatedAt")}
+            value={filters.updated}
+            onChange={(v) => updateDateRange("updated", v)}
+            className="w-[200px]"
+          />
 
           {activeFilters && (
-            <div className="flex justify-end">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={resetAllFilters}
-              >
-                <X className="size-4" />
-                {t("courses.filters.reset")}
-              </Button>
-            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={resetAllFilters}
+              className="h-9 shrink-0"
+            >
+              <X className="size-4" />
+              {t("courses.filters.reset")}
+            </Button>
           )}
         </CardContent>
       </Card>

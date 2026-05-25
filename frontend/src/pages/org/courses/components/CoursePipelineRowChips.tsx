@@ -66,7 +66,7 @@ function ProgressChip({
 
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium tabular-nums transition-colors ${TONE_CLASSES[tone]}`}
+      className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] font-medium tabular-nums transition-colors ${TONE_CLASSES[tone]}`}
       title={tooltip}
     >
       <Icon className="size-3" />
@@ -82,8 +82,11 @@ interface CoursePipelineRowChipsProps {
 export function CoursePipelineRowChips({
   progress,
 }: CoursePipelineRowChipsProps) {
+  // `flex` (no wrap) + `whitespace-nowrap` per tenere i 4 chip su una
+  // singola riga. La larghezza minima della colonna è impostata dal
+  // header in `CoursesListPage` per evitare overflow.
   return (
-    <div className="flex flex-wrap gap-1">
+    <div className="flex flex-nowrap items-center gap-1 whitespace-nowrap">
       <ProgressChip
         icon={FileText}
         done={progress.content_ready}

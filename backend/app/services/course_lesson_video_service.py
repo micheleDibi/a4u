@@ -48,6 +48,48 @@ VALID_VIDEO_REQUEST_STATUSES: tuple[str, ...] = (
 )
 # Pre-condizione di contenuto upstream.
 EXPORTABLE_SPEECH_STATUSES: tuple[str, ...] = ("approved",)
+
+
+# ---------------------------------------------------------------------------
+# Course status — auto-transizione Fase 6 (Video)
+# ---------------------------------------------------------------------------
+
+
+async def _recompute_course_video_status(
+    db: AsyncSession, course_id: uuid.UUID
+) -> None:
+    """Aggiorna `course.status` in base agli stati video delle lezioni
+    non-assessment del corso. Da chiamare DOPO aver mutato un
+    `lesson.video_status` e PRIMA del commit (lavora nella sessione
+    corrente; il Course viene preso dall'identity map se già in scope).
+
+    Regole (simmetriche a slides/speech ma a 2 stati, perché
+    `video_status` a livello lezione non ha 'approved'):
+    - almeno 1 lezione in `pending|processing|failed` → `video_pending`
+    - almeno 1 `ready` e tutte in `ready|cancelled|empty` → `video_ready`
+    - tutte `cancelled`/`empty` (nessuna mai avviata o tutte annullate)
+      → invariato (lascia lo stato precedente di Fase 5).
+    """
+    res = await db.execute(
+        select(CourseLesson.video_status)
+        .where(CourseLesson.course_id == course_id)
+        .where(CourseLesson.is_assessment.is_(False))
+    )
+    statuses = list(res.scalars().all())
+    if not statuses:
+        return
+    new_status: str | None = None
+    if any(s in ("pending", "processing", "failed") for s in statuses):
+        new_status = "video_pending"
+    elif any(s == "ready" for s in statuses) and all(
+        s in ("ready", "cancelled", "empty") for s in statuses
+    ):
+        new_status = "video_ready"
+    if new_status is None:
+        return
+    course = await db.get(Course, course_id)
+    if course is not None:
+        course.status = new_status
 EXPORTABLE_SLIDES_STATUSES: tuple[str, ...] = ("approved",)
 
 
@@ -346,6 +388,7 @@ async def request_lesson_video(
             "lesson_code": lesson.lesson_code,
         },
     )
+    await _recompute_course_video_status(db, course.id)
     await db.commit()
     await db.refresh(lesson)
     return lesson
@@ -403,6 +446,7 @@ async def request_all_lessons_video(
             "lesson_codes": [l.lesson_code for l in eligible],
         },
     )
+    await _recompute_course_video_status(db, course.id)
     await db.commit()
     for lesson in eligible:
         await db.refresh(lesson)
@@ -436,6 +480,7 @@ async def cancel_lesson_video(
             "lesson_code": lesson.lesson_code,
         },
     )
+    await _recompute_course_video_status(db, course.id)
     await db.commit()
     await db.refresh(lesson)
     return lesson
@@ -468,6 +513,7 @@ async def cancel_all_lesson_videos(
                 "cancelled_lesson_codes": [l.lesson_code for l in affected],
             },
         )
+        await _recompute_course_video_status(db, course.id)
     await db.commit()
     for lesson in affected:
         await db.refresh(lesson)

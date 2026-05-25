@@ -22,6 +22,10 @@ const VARIANTS: Record<
   speech_pending: "warning",
   speech_ready: "brand",
   speech_approved: "brand",
+  video_pending: "warning",
+  video_ready: "brand",
+  avatar_video_pending: "warning",
+  avatar_video_ready: "brand",
   published: "default",
   archived: "outline",
 };

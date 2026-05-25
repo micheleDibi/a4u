@@ -372,6 +372,9 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                 recoverable=False,
                 auto_retry_max=settings.course_lesson_video_auto_retry_max,
             )
+            await course_lesson_video_service._recompute_course_video_status(
+                db, course_id
+            )
             await db.commit()
             return
         if lesson.slides_status != "approved":
@@ -384,6 +387,9 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                 phase="precheck",
                 recoverable=False,
                 auto_retry_max=settings.course_lesson_video_auto_retry_max,
+            )
+            await course_lesson_video_service._recompute_course_video_status(
+                db, course_id
             )
             await db.commit()
             return
@@ -405,6 +411,9 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                 recoverable=False,
                 auto_retry_max=settings.course_lesson_video_auto_retry_max,
             )
+            await course_lesson_video_service._recompute_course_video_status(
+                db, course_id
+            )
             await db.commit()
             return
         # Pre-check: il servizio TTS RunPod dev'essere configurato.
@@ -419,6 +428,9 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                 recoverable=False,
                 auto_retry_max=settings.course_lesson_video_auto_retry_max,
             )
+            await course_lesson_video_service._recompute_course_video_status(
+                db, course_id
+            )
             await db.commit()
             return
 
@@ -428,6 +440,9 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
         lesson.video_error = None
         lesson.video_progress = 1
         lesson.video_progress_phase = "preparing"
+        await course_lesson_video_service._recompute_course_video_status(
+            db, course_id
+        )
         await db.commit()
 
         speech_raw = lesson_video_compose_service.parse_speech_raw(
@@ -452,6 +467,9 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                 phase="precheck",
                 recoverable=False,
                 auto_retry_max=settings.course_lesson_video_auto_retry_max,
+            )
+            await course_lesson_video_service._recompute_course_video_status(
+                db, course_id
             )
             await db.commit()
             return
@@ -546,6 +564,9 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                     **tokens,
                 },
             )
+            await course_lesson_video_service._recompute_course_video_status(
+                db, course_id
+            )
             await db.commit()
 
         log.info(
@@ -587,6 +608,9 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                         "attempts": lesson_db.video_attempts,
                     },
                 )
+            await course_lesson_video_service._recompute_course_video_status(
+                db, course_id
+            )
             await db.commit()
     finally:
         try:

@@ -214,6 +214,10 @@
       "speech_pending": "Discorso — in coda",
       "speech_ready": "Discorso — pronto",
       "speech_approved": "Discorso — approvato",
+      "video_pending": "Video — in coda",
+      "video_ready": "Video — pronto",
+      "avatar_video_pending": "Video con avatar — in coda",
+      "avatar_video_ready": "Video con avatar — pronto",
       "published": "Pubblicato",
       "archived": "Archiviato"
     },

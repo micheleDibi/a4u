@@ -214,6 +214,10 @@
       "speech_pending": "Speech — queued",
       "speech_ready": "Speech — ready",
       "speech_approved": "Speech — approved",
+      "video_pending": "Video — queued",
+      "video_ready": "Video — ready",
+      "avatar_video_pending": "Avatar video — queued",
+      "avatar_video_ready": "Avatar video — ready",
       "published": "Published",
       "archived": "Archived"
     },

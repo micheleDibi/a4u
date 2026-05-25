@@ -14,10 +14,11 @@ import {
 // ---------------------------------------------------------------------------
 // Date range field — Popover + 2 native `<input type="date">`.
 //
-// Trigger button mostra il range corrente ("Da DD/MM/YY a DD/MM/YY") o un
-// placeholder. Click apre Popover con due input "Da" / "A" + bottoni
-// "Pulisci" / "OK". Zero dipendenze nuove: il calendario nativo del
-// browser appare al click sull'input (più gentile su mobile).
+// Il bottone trigger include la `label` come prefisso (così il campo è
+// auto-esplicativo anche senza Label esterno): "📅 Creato" quando vuoto,
+// "📅 Creato: 01/03/26 — 31/03/26" quando popolato. Click apre Popover
+// con due input "Da" / "A" + bottoni "Pulisci" / "Applica". Zero
+// dipendenze nuove.
 // ---------------------------------------------------------------------------
 
 export interface DateRangeValue {
@@ -31,8 +32,6 @@ interface DateRangeFieldProps {
   label: string;
   value: DateRangeValue;
   onChange: (next: DateRangeValue) => void;
-  /** Placeholder mostrato sul trigger quando il range è vuoto. */
-  placeholder?: string;
   className?: string;
 }
 
@@ -48,77 +47,67 @@ export function DateRangeField({
   label,
   value,
   onChange,
-  placeholder,
   className,
 }: DateRangeFieldProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<DateRangeValue>(value);
 
-  // Tieni il draft allineato al value quando arriva da fuori (es. reset filtri).
-  // Usa useEffect via setState; senza, il reset esterno non si propaga.
-
   const hasValue = !!value.from || !!value.to;
-
-  const triggerLabel = hasValue
+  const rangeText = hasValue
     ? `${fmtShort(value.from) || "…"} — ${fmtShort(value.to) || "…"}`
-    : placeholder ?? t("dateRangeField.placeholder");
+    : null;
 
   return (
-    <div className={className}>
-      <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-        {label}
-      </Label>
-      <Popover
-        open={open}
-        onOpenChange={(o) => {
-          setOpen(o);
-          if (o) setDraft(value);
-        }}
-      >
-        <PopoverTrigger asChild>
-          <Button
-            type="button"
-            variant="outline"
-            className="mt-1 h-9 w-full justify-between font-normal"
-          >
-            <span className="flex items-center gap-2 truncate">
-              <CalendarDays className="size-4 shrink-0 text-muted-foreground" />
-              <span
-                className={
-                  hasValue
-                    ? "truncate text-foreground"
-                    : "truncate text-muted-foreground"
-                }
-              >
-                {triggerLabel}
+    <Popover
+      open={open}
+      onOpenChange={(o) => {
+        setOpen(o);
+        if (o) setDraft(value);
+      }}
+    >
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          className={
+            "h-9 justify-between font-normal " + (className ?? "")
+          }
+        >
+          <span className="flex min-w-0 items-center gap-1.5 truncate">
+            <CalendarDays className="size-4 shrink-0 text-muted-foreground" />
+            <span className="truncate text-foreground">{label}</span>
+            {rangeText && (
+              <span className="truncate text-muted-foreground">
+                : {rangeText}
               </span>
-            </span>
-            {hasValue && (
-              <span
-                role="button"
-                tabIndex={0}
-                aria-label={t("dateRangeField.clear")}
-                onClick={(e) => {
+            )}
+          </span>
+          {hasValue && (
+            <span
+              role="button"
+              tabIndex={0}
+              aria-label={t("dateRangeField.clear")}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onChange({});
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
                   e.stopPropagation();
                   onChange({});
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    onChange({});
-                  }
-                }}
-                className="ms-2 grid size-5 shrink-0 cursor-pointer place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-              >
-                <X className="size-3.5" />
-              </span>
-            )}
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent align="start" className="w-72 p-3">
+                }
+              }}
+              className="ms-2 grid size-5 shrink-0 cursor-pointer place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <X className="size-3.5" />
+            </span>
+          )}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-72 p-3">
           <div className="space-y-3">
             <div className="space-y-1.5">
               <Label
@@ -181,6 +170,5 @@ export function DateRangeField({
           </div>
         </PopoverContent>
       </Popover>
-    </div>
   );
 }

@@ -702,6 +702,7 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                 recoverable=False,
                 auto_retry_max=retry_max,
             )
+            await svc._recompute_course_avatar_video_status(db, course_id)
             await db.commit()
             return
         if lesson.video_status != "ready" or not lesson.video_path:
@@ -715,6 +716,7 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                 recoverable=False,
                 auto_retry_max=retry_max,
             )
+            await svc._recompute_course_avatar_video_status(db, course_id)
             await db.commit()
             return
 
@@ -731,6 +733,7 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                 recoverable=False,
                 auto_retry_max=retry_max,
             )
+            await svc._recompute_course_avatar_video_status(db, course_id)
             await db.commit()
             return
 
@@ -751,6 +754,7 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                 recoverable=False,
                 auto_retry_max=retry_max,
             )
+            await svc._recompute_course_avatar_video_status(db, course_id)
             await db.commit()
             return
         assert avatar is not None
@@ -764,6 +768,7 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                 recoverable=False,
                 auto_retry_max=retry_max,
             )
+            await svc._recompute_course_avatar_video_status(db, course_id)
             await db.commit()
             return
 
@@ -776,6 +781,7 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                 recoverable=False,
                 auto_retry_max=retry_max,
             )
+            await svc._recompute_course_avatar_video_status(db, course_id)
             await db.commit()
             return
 
@@ -792,6 +798,7 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
         lesson.avatar_video_error = None
         lesson.avatar_video_progress = 1
         lesson.avatar_video_progress_phase = "preparing"
+        await svc._recompute_course_avatar_video_status(db, course_id)
         await db.commit()
 
     # === Esecuzione fuori dalla sessione DB iniziale =================
@@ -928,6 +935,7 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                     **tokens,
                 },
             )
+            await svc._recompute_course_avatar_video_status(db, course_id)
             await db.commit()
 
         log.info(
@@ -972,6 +980,7 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                         "attempts": lesson_db.avatar_video_attempts,
                     },
                 )
+            await svc._recompute_course_avatar_video_status(db, course_id)
             await db.commit()
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
