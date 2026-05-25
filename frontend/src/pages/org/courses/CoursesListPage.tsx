@@ -172,6 +172,9 @@ export default function CoursesListPage() {
   const canDelete = useHasPermission(P.COURSE_DELETE, orgId);
   const canDuplicate = useHasPermission(P.COURSE_DUPLICATE, orgId);
 
+  const [searchParams, setSearchParams] = useSearchParams();
+  const filters = useMemo(() => readFiltersFromURL(searchParams), [searchParams]);
+
   useSetNovaContext({
     page: "courses.list",
     fields: {
@@ -191,9 +194,6 @@ export default function CoursesListPage() {
     },
     orgId,
   });
-
-  const [searchParams, setSearchParams] = useSearchParams();
-  const filters = useMemo(() => readFiltersFromURL(searchParams), [searchParams]);
 
   // Search input: state locale per typing reattivo + debounce 300ms in URL.
   const [qInput, setQInput] = useState(filters.q);
