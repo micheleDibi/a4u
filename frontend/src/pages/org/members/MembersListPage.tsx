@@ -8,10 +8,10 @@ import {
   Trash2,
   UserPlus,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { invitationsApi } from "@/api/invitations";
 import { membershipsApi } from "@/api/memberships";
@@ -75,6 +75,19 @@ export default function MembersListPage() {
   const [inviteToken, setInviteToken] = useState<string | null>(null);
   const [toRemove, setToRemove] = useState<MembershipOut | null>(null);
   const [toTransfer, setToTransfer] = useState<MembershipOut | null>(null);
+
+  // Quick action dalla command palette: `?invite=1` apre il dialog
+  // d'invito (se l'utente ha il permesso). Il query param viene ripulito
+  // così che un refresh non riapra il dialog.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    if (searchParams.get("invite") === "1" && canInvite) {
+      setInviteOpen(true);
+      const next = new URLSearchParams(searchParams);
+      next.delete("invite");
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, canInvite, setSearchParams]);
 
   const members = useQuery({
     queryKey: ["org", orgId, "members"],
