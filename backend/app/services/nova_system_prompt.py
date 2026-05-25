@@ -18,6 +18,34 @@ from typing import Any
 # e injection via campo form dell'utente.
 MAX_FIELDS_JSON_CHARS = 800
 
+
+# Mappa identifier di pagina (FE) → descrizione leggibile usata nel
+# system prompt. Mirror dei page identifier in
+# `frontend/src/components/nova/NovaWidget.tsx::derivePageFromPath`.
+PAGE_LABELS: dict[str, str] = {
+    "app.home": "Home — landing autenticata",
+    "app.unknown": "Piattaforma a4u",
+    "org.dashboard": "Dashboard dell'organizzazione",
+    "courses.list": "Lista corsi dell'organizzazione",
+    "course.create": "Creazione nuovo corso",
+    "course.editor": "Editor del corso (tab Base / Inquadramento / Documenti / Architettura / Struttura lezioni / Contenuti / Slide / Discorso / Video / Video con avatar)",
+    "members.list": "Lista membri dell'organizzazione (inviti, ruoli)",
+    "member.permissions": "Permessi di un singolo membro (override per membership)",
+    "templates.slide.list": "Lista template grafici per slide",
+    "templates.slide.editor": "Editor di un template slide",
+    "templates.pdf.list": "Lista template PDF (lezione/discorso)",
+    "templates.pdf.editor": "Editor di un template PDF",
+    "course.settings": "Configurazioni corsi dell'organizzazione (parametri AI di default)",
+    "me.avatar": "Avatar personale: immagine, voce, clip MiniMax, parametri MuseTalk",
+}
+
+
+def get_page_label(page: str) -> str:
+    """Ritorna la descrizione leggibile di un page identifier. Fallback
+    su 'Piattaforma a4u' per identifier sconosciuti.
+    """
+    return PAGE_LABELS.get(page, "Piattaforma a4u (pagina generica)")
+
 # Mappa code lingua → nome leggibile, usato nelle istruzioni "Rispondi
 # in {lingua}". Le 24 lingue UI sono supportate; per quelle non in mappa
 # si usa il code raw.
@@ -137,7 +165,8 @@ def build_system_prompt(
     5. Tono e formato della risposta
     """
     lang_name = get_language_name(language_code)
-    safe_page = (page or "").strip()[:80] or "sconosciuta"
+    safe_page_id = (page or "").strip()[:80] or "app.unknown"
+    page_label = get_page_label(safe_page_id)
     fields_json = _serialize_fields(fields or {})
 
     return f"""Tu sei **Nova**, l'assistente AI conversazionale della piattaforma **a4u**. Il tuo UNICO scopo è aiutare gli utenti a usare a4u.
@@ -157,11 +186,14 @@ def build_system_prompt(
 {PLATFORM_KNOWLEDGE}
 
 === CONTESTO DELLA SCHERMATA CORRENTE ===
-L'utente si trova attualmente sulla pagina identificata da: **{safe_page}**.
+Identificativo pagina: `{safe_page_id}`
+Descrizione: {page_label}
 Campi compilati / stato visibile della UI (JSON, può essere vuoto):
 {fields_json}
 
 Usa queste informazioni per personalizzare la risposta. Se l'utente fa una domanda generica ("come faccio?"), interpretala nel contesto della pagina corrente. Se i campi indicano uno stato specifico (es. un filtro attivo, un titolo bozza), tienine conto nei suggerimenti.
+
+IMPORTANTE: NON dire mai all'utente "pagina sconosciuta", "pagina non specificata", "non posso dirti dove ti trovi". Se l'identificativo pagina è generico (`app.unknown` o `app.home`), considera che l'utente è nella piattaforma a4u e proponi proattivamente le aree principali (corsi, organizzazione, membri, template, avatar personale).
 
 === TONO E FORMATO DI RISPOSTA ===
 - Conciso ma utile: 2-4 frasi in {lang_name}, massimo ~120 parole.
@@ -177,14 +209,19 @@ def build_welcome_prompt(*, language_code: str, page: str) -> str:
     widget. Richiede a Nova un saluto breve e contestuale alla pagina.
     """
     lang_name = get_language_name(language_code)
-    safe_page = (page or "").strip()[:80] or "sconosciuta"
+    safe_page_id = (page or "").strip()[:80] or "app.unknown"
+    page_label = get_page_label(safe_page_id)
 
     return f"""Tu sei **Nova**, assistente AI di a4u. Rispondi in {lang_name}.
 
-L'utente ha appena aperto il widget. Genera UN messaggio di benvenuto breve (1-2 frasi, max 40 parole) e specifico alla pagina **{safe_page}**:
+L'utente ha appena aperto il widget. È sulla pagina **{page_label}** (id: `{safe_page_id}`).
+
+Genera UN messaggio di benvenuto breve (1-2 frasi, max 40 parole):
 - saluta brevemente (es. "Ciao!" / "Hi!" — adattato alla lingua)
-- menziona la pagina in modo naturale
-- proponi 1-2 cose concrete che puoi spiegare relative a quella pagina
+- menziona in modo naturale l'area in cui si trova (USA la descrizione leggibile, NON l'identificativo tecnico tipo "courses.list")
+- proponi 1-2 cose concrete che puoi spiegare relative a quell'area
+
+IMPORTANTE: NON dire MAI "pagina sconosciuta", "pagina non specificata" o frasi simili. Se la pagina è generica (`app.unknown` / `app.home`), saluta semplicemente e proponi le aree principali della piattaforma (corsi, membri, template, avatar personale).
 
 Stile: amichevole, asciutto, niente emoji, niente preamboli. Vai dritto al punto.
 

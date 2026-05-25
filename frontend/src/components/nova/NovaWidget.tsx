@@ -8,6 +8,7 @@ import {
 } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
+import { useLocation } from "react-router-dom";
 import { Send, X } from "lucide-react";
 
 import {
@@ -37,6 +38,36 @@ import { NovaAvatar, NOVA_FRAMES_COUNT } from "./NovaAvatar";
 
 const HISTORY_PAYLOAD_CAP = 10;
 
+/**
+ * Mappa il `pathname` corrente a un identificativo "page" leggibile da
+ * Nova. Usato come fallback quando una pagina non ha chiamato
+ * `useSetNovaContext`. Match in ordine: i pattern più specifici prima.
+ */
+function derivePageFromPath(pathname: string): string {
+  if (pathname.startsWith("/me/avatar")) return "me.avatar";
+  if (pathname.match(/^\/orgs\/[^/]+\/corsi\/nuovo/)) return "course.create";
+  if (pathname.match(/^\/orgs\/[^/]+\/corsi\/[^/]+$/)) return "course.editor";
+  if (pathname.match(/^\/orgs\/[^/]+\/corsi$/)) return "courses.list";
+  if (
+    pathname.match(/^\/orgs\/[^/]+\/members\/[^/]+\/permissions$/)
+  )
+    return "member.permissions";
+  if (pathname.match(/^\/orgs\/[^/]+\/members$/)) return "members.list";
+  if (pathname.match(/^\/orgs\/[^/]+\/templates\/slide\/[^/]+$/))
+    return "templates.slide.editor";
+  if (pathname.match(/^\/orgs\/[^/]+\/templates\/slide$/))
+    return "templates.slide.list";
+  if (pathname.match(/^\/orgs\/[^/]+\/templates\/pdf\/[^/]+$/))
+    return "templates.pdf.editor";
+  if (pathname.match(/^\/orgs\/[^/]+\/templates\/pdf$/))
+    return "templates.pdf.list";
+  if (pathname.match(/^\/orgs\/[^/]+\/configurazioni\/corsi$/))
+    return "course.settings";
+  if (pathname.match(/^\/orgs\/[^/]+$/)) return "org.dashboard";
+  if (pathname === "/" || pathname === "") return "app.home";
+  return "app.unknown";
+}
+
 interface ChatMessage {
   id: string;
   role: "user" | "assistant";
@@ -50,6 +81,7 @@ function newId(): string {
 export function NovaWidget() {
   const { t, i18n } = useTranslation();
   const novaCtx = useNovaContext();
+  const location = useLocation();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -69,15 +101,19 @@ export function NovaWidget() {
   // lingua dell'utente.
   const languageCode = (i18n.language || "it").slice(0, 10);
 
-  // Payload "context" per BE — costruito al volo da `useNovaContext`.
-  const contextPayload: NovaPageContextPayload = useMemo(
-    () => ({
-      page: novaCtx?.page ?? "unknown",
+  // Payload "context" per BE. Se una pagina ha chiamato
+  // `useSetNovaContext` con campi salient, li usiamo. Altrimenti
+  // deriviamo il `page` dal `pathname` (mapping URL → identifier).
+  // Estraiamo anche `orgId` dal pathname come ultima risorsa.
+  const contextPayload: NovaPageContextPayload = useMemo(() => {
+    const derivedPage = derivePageFromPath(location.pathname);
+    const derivedOrgMatch = location.pathname.match(/^\/orgs\/([^/]+)/);
+    return {
+      page: novaCtx?.page || derivedPage,
       fields: novaCtx?.fields ?? {},
-      org_id: novaCtx?.orgId ?? null,
-    }),
-    [novaCtx],
-  );
+      org_id: novaCtx?.orgId ?? derivedOrgMatch?.[1] ?? null,
+    };
+  }, [novaCtx, location.pathname]);
 
   // === Mutations =====================================================
 
