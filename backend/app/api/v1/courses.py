@@ -14,6 +14,7 @@ from app.core.config import get_settings
 from app.core.deps import CurrentUser, DbSession
 from app.core.errors import ConflictError, NotFoundError, PermissionDeniedError
 from app.core.permissions import P, require, require_membership, resolve_permissions
+from app.models.course import Course
 from app.models.membership import Membership
 from app.models.organization import Organization
 from app.schemas.common import Page, PageMeta

@@ -374,22 +374,36 @@ export default function CoursesListPage() {
     {
       id: "title",
       header: t("courses.fields.title"),
-      cell: ({ row }) => (
-        <div className="flex flex-col gap-1">
-          <Link
-            to={`/orgs/${orgId}/corsi/${row.original.id}`}
-            className="block max-w-[320px] truncate font-medium hover:underline"
-          >
-            {row.original.title}
-          </Link>
-          {row.original.duplication_job && (
-            <CourseDuplicationBadge
-              orgId={orgId}
-              job={row.original.duplication_job}
-            />
-          )}
-        </div>
-      ),
+      cell: ({ row }) => {
+        const isDuplicating = !!row.original.duplication_job;
+        return (
+          <div className="flex flex-col gap-1">
+            {isDuplicating ? (
+              // Riga "locked" durante la duplicazione: niente link al
+              // course editor, solo testo + badge con bottone Annulla.
+              <span
+                className="block max-w-[320px] truncate font-medium text-muted-foreground"
+                title={row.original.title}
+              >
+                {row.original.title}
+              </span>
+            ) : (
+              <Link
+                to={`/orgs/${orgId}/corsi/${row.original.id}`}
+                className="block max-w-[320px] truncate font-medium hover:underline"
+              >
+                {row.original.title}
+              </Link>
+            )}
+            {row.original.duplication_job && (
+              <CourseDuplicationBadge
+                orgId={orgId}
+                job={row.original.duplication_job}
+              />
+            )}
+          </div>
+        );
+      },
     },
     {
       id: "assignee",
@@ -449,63 +463,71 @@ export default function CoursesListPage() {
       // Il dropdown ospita anche le info "Creato" / "Aggiornato"
       // (rimosse dalla tabella per evitare lo scroll orizzontale).
       // Ordinamento per data si fa con il Select "Ordina" nella toolbar.
-      cell: ({ row }) => (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon">
-              <MoreHorizontal className="size-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-60">
-            <DropdownMenuLabel className="font-normal">
-              <div className="space-y-1 text-xs">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-muted-foreground">
-                    {t("courses.fields.createdAt")}
-                  </span>
-                  <span className="tabular-nums">
-                    {dateFormatter.format(new Date(row.original.created_at))}
-                  </span>
+      // Durante una duplicazione attiva (`duplication_job != null`) il
+      // dropdown è completamente nascosto: l'unica azione consentita
+      // sulla riga è "Annulla" nel `CourseDuplicationBadge` del titolo.
+      cell: ({ row }) => {
+        if (row.original.duplication_job) {
+          return null;
+        }
+        return (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon">
+                <MoreHorizontal className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-60">
+              <DropdownMenuLabel className="font-normal">
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-muted-foreground">
+                      {t("courses.fields.createdAt")}
+                    </span>
+                    <span className="tabular-nums">
+                      {dateFormatter.format(new Date(row.original.created_at))}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-muted-foreground">
+                      {t("courses.fields.updatedAt")}
+                    </span>
+                    <span className="tabular-nums">
+                      {dateFormatter.format(new Date(row.original.updated_at))}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-muted-foreground">
-                    {t("courses.fields.updatedAt")}
-                  </span>
-                  <span className="tabular-nums">
-                    {dateFormatter.format(new Date(row.original.updated_at))}
-                  </span>
-                </div>
-              </div>
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onSelect={() =>
-                navigate(`/orgs/${orgId}/corsi/${row.original.id}`)
-              }
-            >
-              <Edit className="size-4" />
-              {t("common.edit")}
-            </DropdownMenuItem>
-            {canDuplicate && !row.original.duplication_job && (
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
               <DropdownMenuItem
-                onSelect={() => setToDuplicate(row.original)}
+                onSelect={() =>
+                  navigate(`/orgs/${orgId}/corsi/${row.original.id}`)
+                }
               >
-                <Languages className="size-4" />
-                {t("courses.duplicate.action")}
+                <Edit className="size-4" />
+                {t("common.edit")}
               </DropdownMenuItem>
-            )}
-            {canDelete && (
-              <DropdownMenuItem
-                onSelect={() => setToDelete(row.original)}
-                className="text-destructive focus:text-destructive"
-              >
-                <Trash2 className="size-4" />
-                {t("common.delete")}
-              </DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      ),
+              {canDuplicate && (
+                <DropdownMenuItem
+                  onSelect={() => setToDuplicate(row.original)}
+                >
+                  <Languages className="size-4" />
+                  {t("courses.duplicate.action")}
+                </DropdownMenuItem>
+              )}
+              {canDelete && (
+                <DropdownMenuItem
+                  onSelect={() => setToDelete(row.original)}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="size-4" />
+                  {t("common.delete")}
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        );
+      },
     },
   ];
 

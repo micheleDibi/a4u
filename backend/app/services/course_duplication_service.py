@@ -86,7 +86,7 @@ async def request_course_duplication(
 
     # Controllo applicativo (il DB ha anche un unique parziale come
     # safety net contro race condition).
-    existing = (
+    existing_active = (
         await db.execute(
             select(CourseDuplicationJob).where(
                 CourseDuplicationJob.source_course_id == source_course.id,
@@ -96,10 +96,35 @@ async def request_course_duplication(
             )
         )
     ).scalar_one_or_none()
-    if existing is not None:
+    if existing_active is not None:
         raise ConflictError(
             "Una duplicazione in questa lingua è già in corso per questo corso.",
             code="duplicate_already_in_progress",
+        )
+
+    # Blocco extra: se esiste già un target course di una duplicazione
+    # precedente per la stessa coppia (source, target_lang), rifiuta la
+    # nuova richiesta. Questo evita che dopo un fallimento del worker
+    # l'utente possa generare più corsi-stub duplicati in DB cliccando
+    # ripetutamente. L'utente deve prima eliminare il target esistente.
+    prior_with_target = (
+        await db.execute(
+            select(CourseDuplicationJob)
+            .where(
+                CourseDuplicationJob.source_course_id == source_course.id,
+                CourseDuplicationJob.target_language_code
+                == target_language_code,
+                CourseDuplicationJob.target_course_id.is_not(None),
+            )
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if prior_with_target is not None:
+        raise ConflictError(
+            "Esiste già un corso duplicato in questa lingua per questo "
+            "corso sorgente. Elimina il corso target prima di richiedere "
+            "una nuova duplicazione.",
+            code="duplicate_target_already_exists",
         )
 
     job = CourseDuplicationJob(
