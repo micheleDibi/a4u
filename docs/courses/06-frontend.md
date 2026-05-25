@@ -12,7 +12,47 @@ Pagine, componenti e pattern per il dominio Corsi.
 
 ## `CoursesListPage.tsx`
 
-Tabella paginata con search, filtro status, badge stato, click → editor.
+Tabella paginata in stile "operations view" — l'utente può filtrare
+rapidamente, ordinare per data, e vedere a colpo d'occhio il progresso
+pipeline (contenuti / slide / video / avatar) per ogni corso senza
+aprirlo.
+
+**Toolbar filtri** (sopra la tabella, in `Card`):
+
+- Search testuale su titolo/obiettivi (debounce 300ms via
+  `useDebouncedValue`).
+- Select **Assegnatario** (popolato da `useOrgMembers(orgId)`).
+- Select **Stato** con tutti i 17 valori di `course.status` + "Tutti".
+- Select **Lingua** (da `useLanguages()`, con bandiera + nome nativo).
+- Due **`DateRangeField`** (Popover + 2 input date nativi): "Creato" e
+  "Aggiornato".
+- Bottone **Reset filtri** (visibile solo se almeno un filtro è
+  attivo).
+
+**Stato dei filtri sincronizzato in URL** via `useSearchParams`:
+`?status=draft&assignee_user_id=…&created_after=2026-03-01&sort_by=created_at`.
+Refresh-safe + condivisibile. Default `updated_at desc` omesso
+dall'URL per pulizia.
+
+**Ordinamento**: header cliccabili sulle colonne **"Creato"** e
+**"Aggiornato"**: click cambia `sort_by/sort_dir`, freccia su/giù
+indica l'ordine attivo. Default `updated_at desc`.
+
+**Colonne** (in ordine): Titolo, Assegnatario, Stato (`CourseStatusBadge`),
+Lingua (bandiera + ISO), **Pipeline** (4 chip via
+`CoursePipelineRowChips`, vedi [frontend/05](../frontend/05-components.md)),
+Creato (sortable), Aggiornato (sortable), Azioni (menu).
+
+**Search input**: state locale `qInput` reattivo + `debouncedQ` con 300ms
+che scrive in URL solo dopo il debounce. Sync bidirezionale: se l'URL
+cambia da fuori (es. reset), `qInput` si allinea.
+
+**Reset filtri**: svuota interamente il querystring (tranne path) e
+azzera `qInput`. Pagina 1.
+
+**Pagination**: pageIndex e pageSize derivati da URL (`?page=2&page_size=50`),
+default 1 e 25. Pagina 1 e size 25 omessi dall'URL.
+
 Pulsante "Nuovo corso" gated da `course:create`.
 
 ## `CourseEditorPage.tsx`

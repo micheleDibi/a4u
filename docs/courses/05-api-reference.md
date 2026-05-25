@@ -9,21 +9,62 @@ errori `{code, message, request_id?, meta?}`, content-type JSON salvo upload.
 
 ### `GET /orgs/{org_id}/courses`
 
-Lista paginata.
-
-Query: `page`, `page_size`, `q` (titolo/obiettivi), `status`.
+Lista paginata + filtri + ordinamento + indicatori di completezza
+pipeline per ogni corso.
 
 `course:view`. I `member` vedono solo i corsi a loro assegnati (filtro
-service-side); `org_admin`/`creator` vedono tutto.
+service-side); chi ha `course:view_all` (org_admin / creator / platform
+admin) vede tutto.
 
-Risposta:
+Query params (tutti opzionali):
+
+| Param | Tipo | Default | Note |
+|---|---|---|---|
+| `page` | int ≥ 1 | 1 | paginazione 1-based |
+| `page_size` | int 1..200 | 20 | |
+| `q` | str ≤ 200 | — | ricerca ILIKE su `title` + `objectives` |
+| `status` | `CourseStatus` | — | uno dei 17 valori (vedi `01-data-model`) |
+| `assignee_user_id` | UUID | — | filtra per docente assegnato |
+| `language_code` | str ≤ 10 | — | filtra per lingua corso |
+| `created_after` | ISO datetime | — | inclusivo `created_at ≥` |
+| `created_before` | ISO datetime | — | inclusivo `created_at ≤` |
+| `updated_after` | ISO datetime | — | inclusivo `updated_at ≥` |
+| `updated_before` | ISO datetime | — | inclusivo `updated_at ≤` |
+| `sort_by` | `created_at` \| `updated_at` | `updated_at` | colonna di ordinamento |
+| `sort_dir` | `asc` \| `desc` | `desc` | direzione |
+
+Tie-break su `id` per stabilità della paginazione.
+
+Risposta (`Page[CourseListItemOut]`):
 
 ```json
 {
-  "items": [{ "id": "...", "title": "...", "status": "draft", ... }],
+  "items": [{
+    "id": "...",
+    "title": "...",
+    "status": "content_ready",
+    "language_code": "it",
+    "assignee": { "id": "...", "email": "...", "full_name": "..." },
+    "modules_count": 5,
+    "cfu": 6,
+    "updated_at": "2026-05-12T14:23:00Z",
+    "created_at": "2026-05-01T09:00:00Z",
+    "lessons_progress": {
+      "total": 8,            // lezioni didattiche (esclude is_assessment)
+      "content_ready": 5,    // content_status in ('ready','approved')
+      "slides_ready": 3,     // slides_status in ('ready','approved')
+      "videos_ready": 0,     // video_status == 'ready'
+      "avatar_videos_ready": 0  // avatar_video_status == 'ready'
+    }
+  }],
   "meta": { "page": 1, "page_size": 20, "total": 47 }
 }
 ```
+
+`lessons_progress` è calcolato da una seconda query aggregata
+(`COUNT(*) FILTER (WHERE …)` Postgres) sui soli `course_id` della
+pagina corrente. Se il corso non ha lezioni didattiche `total` è 0 e i
+contatori sono tutti 0 (la UI lo visualizza con "—").
 
 ### `POST /orgs/{org_id}/courses`
 

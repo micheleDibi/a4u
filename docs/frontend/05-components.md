@@ -207,6 +207,43 @@ file audio uniforme verso il chiamante.
   (`URL.createObjectURL` con cleanup) o l'`existingUrl` lato server.
 - Bottone "Rimuovi" → `onChange(null)` + `onRemoveExisting?.()`.
 
+## `src/components/forms/DateRangeField.tsx`
+
+Date range field riusabile. Pulsante che mostra il range corrente
+(`Da DD/MM/YY a DD/MM/YY`) o un placeholder; click apre `Popover` con
+due `<input type="date">` (Da / A) + bottoni "Pulisci" / "Applica".
+Zero dipendenze nuove: il calendario nativo del browser si apre al
+click sull'input (UX gentile su mobile).
+
+### Props
+
+```ts
+interface DateRangeValue {
+  from?: string; // "YYYY-MM-DD" (lower bound, inclusivo)
+  to?: string;   // "YYYY-MM-DD" (upper bound, inclusivo)
+}
+
+interface DateRangeFieldProps {
+  label: string;
+  value: DateRangeValue;
+  onChange: (next: DateRangeValue) => void;
+  placeholder?: string;
+  className?: string;
+}
+```
+
+### Comportamento
+
+- Trigger mostra `Da DD/MM/YY — A DD/MM/YY` (con `…` se uno dei due è
+  vuoto) oppure il placeholder.
+- Se il range ha valori, una "X" inline sul trigger pulisce il campo
+  senza aprire il popover.
+- Popover usa `draft` locale + commit con "Applica" (così il
+  `onChange` non viene chiamato a ogni keystroke).
+- Testi sotto `dateRangeField.*` + `common.apply`.
+
+Usato in `CoursesListPage` per i filtri "Creato" e "Aggiornato".
+
 ---
 
 ## `src/components/feedback/ErrorBoundary.tsx`
@@ -535,6 +572,31 @@ Contenuti.
   (`courses.lessonsContent.assessment.render.empty`).
 - Nessuno stato interno. Tutti i testi sotto
   `courses.lessonsContent.assessment.render.*`.
+
+### `src/pages/org/courses/components/CoursePipelineRowChips.tsx`
+
+4 chip compatti per la colonna **Pipeline** di `CoursesListPage`. Per
+ogni stadio della pipeline (Contenuti / Slide / Video / Video con
+avatar) mostra `[icona] [ratio]` con colore di sfondo graduato:
+
+- `total === 0` → muted (ratio `—`)
+- `done === 0` → empty (gray)
+- `0 < done < total` → partial (amber)
+- `done === total` → done (emerald)
+
+Hover → tooltip via attributo `title` con label localizzata
+(`courses.list.progressChip.*`).
+
+```ts
+interface CoursePipelineRowChipsProps {
+  progress: CourseListLessonsProgress;
+  // { total, content_ready, slides_ready, videos_ready, avatar_videos_ready }
+}
+```
+
+Icone (lucide): `FileText` (contenuti), `Presentation` (slide), `Video`
+(video), `Smile` (avatar). Usa il tipo `CourseListLessonsProgress` di
+`@/api/courses` (vedi [02 — API client](02-api-client.md)).
 
 ### `src/pages/org/courses/components/LessonAssessmentEditDialog.tsx`
 

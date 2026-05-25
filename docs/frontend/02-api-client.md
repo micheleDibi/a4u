@@ -378,6 +378,45 @@ troppo basso.
 **Helper di tipo**: `CourseOut`, `CourseDocumentOut`, `CourseModuleOut`,
 `CourseLessonOut`, `RecommendedBibliographyItem`, `DocumentSummaryOut`.
 
+### `coursesApi.list` — params + tipo restituito
+
+```ts
+interface CourseListParams {
+  page?: number;
+  page_size?: number;
+  q?: string;
+  status?: CourseStatus;
+  assignee_user_id?: string;
+  language_code?: string;
+  /** ISO 8601 datetime, inclusivi su `created_at`/`updated_at`. */
+  created_after?: string;
+  created_before?: string;
+  updated_after?: string;
+  updated_before?: string;
+  sort_by?: "created_at" | "updated_at";
+  sort_dir?: "asc" | "desc";
+}
+
+interface CourseListItemOut {
+  id, title, status, language_code, assignee, modules_count, cfu,
+  updated_at, created_at,
+  lessons_progress: CourseListLessonsProgress;
+}
+
+interface CourseListLessonsProgress {
+  /** Lezioni didattiche (esclude `is_assessment=true`). */
+  total: number;
+  content_ready: number;       // content_status in ('ready','approved')
+  slides_ready: number;        // slides_status in ('ready','approved')
+  videos_ready: number;        // video_status == 'ready'
+  avatar_videos_ready: number; // avatar_video_status == 'ready'
+}
+```
+
+Usato da `CoursesListPage` per filtri/ordinamento e dalla colonna
+**Pipeline** (componente `CoursePipelineRowChips` — vedi
+[05 — Components](05-components.md)).
+
 ### Verifica delle competenze — tipi e namespace
 
 Quando `CourseLessonOut.is_assessment` è `true`, il `content_raw` della

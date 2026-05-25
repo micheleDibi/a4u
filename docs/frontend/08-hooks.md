@@ -310,6 +310,22 @@ default ragionevole. Richiede `course:view` nell'org (gate backend).
 
 ---
 
+## `useDebouncedValue<T>(value, delayMs)` — `src/hooks/useDebouncedValue.ts`
+
+**Scopo**: ritarda l'aggiornamento di un valore reattivo finché non è
+rimasto stabile per `delayMs` ms. Utile per ricerche testuali / filtri
+che colpiscono la rete senza spamare query per ogni keystroke.
+
+```ts
+function useDebouncedValue<T>(value: T, delayMs?: number = 300): T;
+```
+
+Implementazione semplice (`setTimeout` + `clearTimeout` in `useEffect`),
+zero dipendenze. Usato da `CoursesListPage` per il debounce della
+search testuale nei filtri (300 ms, sync verso `useSearchParams`).
+
+---
+
 ## Quando aggiungere hooks
 
 Promuovere a `src/hooks/` quando:
@@ -320,8 +336,6 @@ Promuovere a `src/hooks/` quando:
 
 ### Esempi candidati per il futuro
 
-- `useDebouncedValue<T>(value, delay)`: per le ricerche con debounce nei
-  TextField (oggi inline nei pages).
 - `useOrganization()`: helper che combina `useParams().orgId` con
   `me.organizations.find(...)`.
 - `useIsPlatformAdmin()`: shorthand per `useAuth().me?.is_platform_admin`.
