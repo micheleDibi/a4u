@@ -7,6 +7,7 @@ from app.models.avatar_clip_prompt import AvatarClipPrompt
 from app.models.avatar_voice_script import AvatarVoiceScript
 from app.models.course import Course
 from app.models.course_document import CourseDocument
+from app.models.course_duplication_job import CourseDuplicationJob
 from app.models.course_lesson import CourseLesson
 from app.models.course_module import CourseModule
 from app.models.course_taxonomy import CourseTaxonomyTerm
@@ -36,6 +37,7 @@ __all__ = [
     "AvatarVoiceScript",
     "Course",
     "CourseDocument",
+    "CourseDuplicationJob",
     "CourseLesson",
     "CourseModule",
     "CourseTaxonomyTerm",

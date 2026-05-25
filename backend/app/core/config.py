@@ -226,6 +226,15 @@ class Settings(BaseSettings):
     # `course_lesson_avatar_video_worker._prepare_musetalk_clips`.
     avatar_video_clip_resolution: int = 640
 
+    # Worker duplicazione corso in altra lingua. Job lungo (5-15 min per
+    # corso medio): cap globale=1 per evitare conflitti di rate-limit
+    # OpenAI tra job. Dentro al job, le lezioni vengono tradotte in
+    # parallelo cap=3 per fase (mirror del content worker).
+    course_duplication_poll_interval_seconds: int = 4
+    course_duplication_max_concurrent_jobs: int = 1
+    course_duplication_lesson_translate_concurrency: int = 3
+    course_duplication_auto_retry_max: int = 5
+
     bootstrap_admin_email: str | None = None
     bootstrap_admin_password: str | None = None
     bootstrap_admin_full_name: str = "Platform Admin"

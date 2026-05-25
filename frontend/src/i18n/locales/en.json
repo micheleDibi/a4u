@@ -102,6 +102,24 @@
     "saved": "Course saved",
     "deleted": "Course deleted",
     "assigneeUpdated": "Assignee updated",
+    "duplicate": {
+      "action": "Duplicate in another language",
+      "dialog": {
+        "title": "Duplicate course in another language",
+        "message": "A new identical course will be created, AI-translated into the selected language. Videos and avatar videos are NOT copied: they must be regenerated manually in the duplicated course.",
+        "targetLanguage": "Target language",
+        "confirm": "Start duplication"
+      },
+      "badge": {
+        "label": "Duplicating",
+        "cancel": "Cancel duplication",
+        "cancelled": "Duplication cancelled."
+      },
+      "toast": {
+        "success": "Duplication started in background. The course will appear in the list with progress.",
+        "error": "Error starting duplication."
+      }
+    },
     "search": "Search by title or objectives…",
     "saveNow": "Save now",
     "createAndContinue": "Create and continue",
@@ -1755,7 +1773,8 @@
     "course:edit": "Edit courses",
     "course:delete": "Delete courses",
     "course:generate": "Generate course content",
-    "course:save_draft": "Save course as draft"
+    "course:save_draft": "Save course as draft",
+    "course:duplicate": "Duplicate course in another language"
   },
   "permissionDescriptions": {
     "member:view": "View the list of organization members with name, email, role and join date. Prerequisite for almost every other action on members.",
@@ -1775,7 +1794,8 @@
     "course:edit": "Edit all course parameters (title, objectives, taxonomies, key topics, documents). Does not imply visibility on other members' courses: for that you need 'course:view_all'.",
     "course:delete": "Delete a course and all its uploaded documents. This is irreversible.",
     "course:generate": "Trigger AI generation of course content (architecture, lessons, slides, audio). Available in future iterations.",
-    "course:save_draft": "Save a course as a draft from the 'Basic info' and 'Didactic framing' tabs without confirming the setup. Lets an admin create a course stub (e.g. just title and credits) and assign it to another user to complete."
+    "course:save_draft": "Save a course as a draft from the 'Basic info' and 'Didactic framing' tabs without confirming the setup. Lets an admin create a course stub (e.g. just title and credits) and assign it to another user to complete.",
+    "course:duplicate": "Duplicate an existing course into another language. Starts a background job that automatically translates via AI all contents (architecture, lessons, slides, speech, glossary, document summaries). Video MP4 and Avatar Video are not copied: they must be regenerated manually."
   },
   "roles": {
     "creator": "Creator",

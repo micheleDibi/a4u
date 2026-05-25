@@ -122,6 +122,17 @@ class CourseListItemOut(ORMModel):
     updated_at: datetime
     created_at: datetime
     lessons_progress: CourseListLessonsProgress
+    # Popolato dal service `list_courses` quando un job di duplicazione
+    # è attivo (`status` ∈ pending|processing) e ha questo corso come
+    # `target_course_id`. Usato dalla UI per il badge "Duplicazione in
+    # corso XX%" sulla riga del corso target.
+    duplication_job: "CourseDuplicationJobCompact | None" = None
+
+
+# Late import per evitare ciclo con `course_duplication.py`.
+from app.schemas.course_duplication import CourseDuplicationJobCompact  # noqa: E402
+
+CourseListItemOut.model_rebuild()
 
 
 class CourseOut(ORMModel):

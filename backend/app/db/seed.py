@@ -123,6 +123,13 @@ PERMISSION_DESCRIPTIONS: dict[str, str] = {
         "Utile quando un amministratore crea uno stub di corso (es. solo "
         "titolo e CFU) e lo assegna a un altro utente che lo completerà."
     ),
+    "course:duplicate": (
+        "Duplicare un corso esistente in un'altra lingua. Avvia un job di "
+        "background che traduce automaticamente via AI tutti i contenuti "
+        "(architettura, lezioni, slide, discorso, glossario, riassunti dei "
+        "documenti). Video MP4 e Video con Avatar non vengono copiati: "
+        "andranno rigenerati manualmente nel nuovo corso."
+    ),
 }
 
 # Prompt seedati per la generazione clip MiniMax. Sono in inglese

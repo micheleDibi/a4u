@@ -31,6 +31,7 @@ from app.core.errors import (
 from app.core.permissions import P, R
 from app.models.course import Course
 from app.models.course_document import CourseDocument
+from app.models.course_duplication_job import CourseDuplicationJob
 from app.models.course_lesson import CourseLesson
 from app.models.course_taxonomy import CourseTaxonomyTerm
 from app.models.language import Language
@@ -174,16 +175,24 @@ async def list_courses(
     updated_before: datetime | None = None,
     sort_by: str = "updated_at",
     sort_dir: str = "desc",
-) -> tuple[list[Course], int, dict[uuid.UUID, Any]]:
+) -> tuple[
+    list[Course],
+    int,
+    dict[uuid.UUID, Any],
+    dict[uuid.UUID, "CourseDuplicationJob"],
+]:
     """List dei corsi paginata + filtrata + ordinata, con aggregazione
     delle lezioni per indicatori di completezza pipeline.
 
-    Ritorna `(items, total, agg_map)` dove `agg_map[course_id]` è una
-    Row con i campi `total/content_ready/slides_ready/videos_ready/
-    avatar_videos_ready` (escluse le lezioni `is_assessment=True` dal
-    denominatore). Se un corso non ha lezioni il suo id non è in
-    `agg_map`: il caller deve trattare l'assenza come "tutti i contatori
-    a 0".
+    Ritorna `(items, total, agg_map, duplication_jobs_map)`:
+    - `agg_map[course_id]` → Row con `total/content_ready/slides_ready/
+      videos_ready/avatar_videos_ready` (escluse le lezioni
+      `is_assessment=True` dal denominatore). Se un corso non ha
+      lezioni il suo id non è in `agg_map`: assenza = tutti i
+      contatori a 0.
+    - `duplication_jobs_map[target_course_id]` → `CourseDuplicationJob`
+      attivo (status ∈ pending|processing) di cui il corso è target.
+      Usato dalla UI per il badge "Duplicazione in corso XX%".
     """
     base_q = select(Course).where(Course.organization_id == organization_id)
     count_q = select(func.count(Course.id)).where(
@@ -285,7 +294,20 @@ async def list_courses(
         )
         agg_map = {row.course_id: row for row in (await db.execute(agg_q)).all()}
 
-    return items, total, agg_map
+    # Job di duplicazione attivi (pending|processing) di cui i corsi
+    # della pagina sono target. Usato dal FE per il badge.
+    duplication_jobs_map: dict[uuid.UUID, CourseDuplicationJob] = {}
+    if items:
+        course_ids = [c.id for c in items]
+        dup_q = select(CourseDuplicationJob).where(
+            CourseDuplicationJob.target_course_id.in_(course_ids),
+            CourseDuplicationJob.status.in_(("pending", "processing")),
+        )
+        for job in (await db.execute(dup_q)).scalars().all():
+            if job.target_course_id is not None:
+                duplication_jobs_map[job.target_course_id] = job
+
+    return items, total, agg_map, duplication_jobs_map
 
 
 async def get_course(

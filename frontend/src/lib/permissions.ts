@@ -19,6 +19,7 @@ export const P = {
   COURSE_DELETE: "course:delete",
   COURSE_GENERATE: "course:generate",
   COURSE_SAVE_DRAFT: "course:save_draft",
+  COURSE_DUPLICATE: "course:duplicate",
 } as const;
 
 export type PermissionCode = (typeof P)[keyof typeof P];
@@ -48,11 +49,13 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<RoleCode, readonly PermissionCode[
     P.COURSE_CONFIG_MANAGE,
     P.COURSE_VIEW, P.COURSE_VIEW_ALL, P.COURSE_CREATE, P.COURSE_ASSIGN,
     P.COURSE_EDIT, P.COURSE_DELETE, P.COURSE_GENERATE, P.COURSE_SAVE_DRAFT,
+    P.COURSE_DUPLICATE,
   ],
   manager: [
     P.MEMBER_VIEW,
     P.COURSE_VIEW, P.COURSE_VIEW_ALL, P.COURSE_CREATE, P.COURSE_ASSIGN,
     P.COURSE_EDIT, P.COURSE_GENERATE, P.COURSE_SAVE_DRAFT,
+    P.COURSE_DUPLICATE,
   ],
   member: [P.COURSE_VIEW],
 };
@@ -85,6 +88,7 @@ export const PERMISSION_CATEGORIES: ReadonlyArray<{
     permissions: [
       P.COURSE_CONFIG_MANAGE, P.COURSE_CREATE, P.COURSE_SAVE_DRAFT,
       P.COURSE_ASSIGN, P.COURSE_EDIT, P.COURSE_DELETE, P.COURSE_GENERATE,
+      P.COURSE_DUPLICATE,
     ],
   },
 ];

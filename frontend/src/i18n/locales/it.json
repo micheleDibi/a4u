@@ -102,6 +102,24 @@
     "saved": "Corso salvato",
     "deleted": "Corso eliminato",
     "assigneeUpdated": "Assegnatario aggiornato",
+    "duplicate": {
+      "action": "Duplica in altra lingua",
+      "dialog": {
+        "title": "Duplica corso in altra lingua",
+        "message": "Verrà creato un nuovo corso identico, tradotto via AI nella lingua selezionata. I video e i video con avatar non saranno copiati: andranno rigenerati manualmente nel corso duplicato.",
+        "targetLanguage": "Lingua di destinazione",
+        "confirm": "Avvia duplicazione"
+      },
+      "badge": {
+        "label": "Duplicazione in corso",
+        "cancel": "Annulla duplicazione",
+        "cancelled": "Duplicazione annullata."
+      },
+      "toast": {
+        "success": "Duplicazione avviata in background. Il corso comparirà in lista con il progresso.",
+        "error": "Errore durante l'avvio della duplicazione."
+      }
+    },
     "search": "Cerca per titolo o obiettivi…",
     "saveNow": "Salva ora",
     "createAndContinue": "Crea e continua",
@@ -1756,7 +1774,8 @@
     "course:edit": "Modifica corsi",
     "course:delete": "Elimina corsi",
     "course:generate": "Genera contenuti corso",
-    "course:save_draft": "Salva corso come bozza"
+    "course:save_draft": "Salva corso come bozza",
+    "course:duplicate": "Duplica corso in altra lingua"
   },
   "permissionDescriptions": {
     "member:view": "Vedere l'elenco dei membri dell'organizzazione con nome, email, ruolo e data di iscrizione. Prerequisito per quasi tutte le altre azioni sui membri.",
@@ -1776,7 +1795,8 @@
     "course:edit": "Modificare tutti i parametri di un corso (titolo, obiettivi, tassonomie, argomenti chiave, documenti). Non implica la visibilità sui corsi degli altri membri: per quella serve 'course:view_all'.",
     "course:delete": "Eliminare un corso e tutti i suoi documenti caricati. Operazione irreversibile.",
     "course:generate": "Avviare la generazione AI dei contenuti del corso (architettura, lezioni, slide, audio). Disponibile in iterazioni successive.",
-    "course:save_draft": "Salvare un corso come bozza dalle schede 'Informazioni di base' e 'Inquadramento didattico' senza confermare il setup. Permette a un amministratore di creare uno stub di corso (es. solo titolo e CFU) e assegnarlo poi a un altro utente che lo completerà."
+    "course:save_draft": "Salvare un corso come bozza dalle schede 'Informazioni di base' e 'Inquadramento didattico' senza confermare il setup. Permette a un amministratore di creare uno stub di corso (es. solo titolo e CFU) e assegnarlo poi a un altro utente che lo completerà.",
+    "course:duplicate": "Duplicare un corso esistente in un'altra lingua. Avvia un job di background che traduce automaticamente via AI tutti i contenuti (architettura, lezioni, slide, discorso, glossario, riassunti dei documenti). Video MP4 e Video con Avatar non vengono copiati: andranno rigenerati manualmente."
   },
   "roles": {
     "creator": "Creatore",

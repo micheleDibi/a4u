@@ -587,6 +587,33 @@ export interface GlossaryTokens {
   model: string;
 }
 
+export type CourseDuplicationJobStatus =
+  | "pending"
+  | "processing"
+  | "ready"
+  | "failed";
+
+export interface CourseDuplicationJobCompact {
+  id: string;
+  source_course_id: string;
+  target_course_id: string | null;
+  target_language_code: string;
+  status: CourseDuplicationJobStatus;
+  progress: number;
+  progress_phase: string | null;
+}
+
+export interface CourseDuplicationJobOut extends CourseDuplicationJobCompact {
+  error: string | null;
+  attempts: number;
+  tokens: Record<string, unknown> | null;
+  requested_by_user_id: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface CourseListLessonsProgress {
   /** Conteggio lezioni didattiche (esclude `is_assessment=true`). */
   total: number;
@@ -611,6 +638,10 @@ export interface CourseListItemOut {
   updated_at: string;
   created_at: string;
   lessons_progress: CourseListLessonsProgress;
+  /** Popolato quando il corso è target di un job di duplicazione attivo
+   *  (status pending|processing). Driver del badge "Duplicazione in
+   *  corso XX%" sulla riga. */
+  duplication_job?: CourseDuplicationJobCompact | null;
 }
 
 export interface CourseOut {
@@ -765,6 +796,37 @@ export const coursesApi = {
   },
   remove: async (orgId: string, courseId: string): Promise<void> => {
     await apiClient.delete(`${base(orgId)}/${courseId}`);
+  },
+  // --- Duplicazione corso in altra lingua (background job) ----------
+  duplicate: async (
+    orgId: string,
+    courseId: string,
+    target_language_code: string
+  ): Promise<CourseDuplicationJobOut> => {
+    const res = await apiClient.post<CourseDuplicationJobOut>(
+      `${base(orgId)}/${courseId}/duplicate`,
+      undefined,
+      { params: { target_language_code } }
+    );
+    return res.data;
+  },
+  listDuplications: async (
+    orgId: string,
+    courseId: string
+  ): Promise<CourseDuplicationJobOut[]> => {
+    const res = await apiClient.get<CourseDuplicationJobOut[]>(
+      `${base(orgId)}/${courseId}/duplications`
+    );
+    return res.data;
+  },
+  cancelDuplication: async (
+    orgId: string,
+    jobId: string
+  ): Promise<CourseDuplicationJobOut> => {
+    const res = await apiClient.post<CourseDuplicationJobOut>(
+      `${base(orgId)}/duplication-jobs/${jobId}/cancel`
+    );
+    return res.data;
   },
   updateAssignee: async (
     orgId: string,

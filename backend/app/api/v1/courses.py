@@ -65,9 +65,14 @@ from app.schemas.course_lesson_video import (
     LessonVideoGenerateInput,
     LessonVideoStatusOut,
 )
+from app.schemas.course_duplication import (
+    CourseDuplicationJobCompact,
+    CourseDuplicationJobOut,
+)
 from app.services import (
     course_architecture_crud,
     course_architecture_service,
+    course_duplication_service,
     course_glossary_service,
     course_lesson_avatar_video_service,
     course_lesson_content_crud,
@@ -126,7 +131,7 @@ async def list_courses(
 ) -> Page[CourseListItemOut]:
     await _ensure_org(db, org_id)
     granted = await resolve_permissions(db, user=current, organization_id=org_id)
-    items, total, agg_map = await course_service.list_courses(
+    items, total, agg_map, duplication_jobs_map = await course_service.list_courses(
         db,
         organization_id=org_id,
         current_user=current,
@@ -154,6 +159,12 @@ async def list_courses(
             videos_ready=int(agg.videos_ready) if agg else 0,
             avatar_videos_ready=int(agg.avatar_videos_ready) if agg else 0,
         )
+        dup_job = duplication_jobs_map.get(c.id)
+        dup_job_out = (
+            CourseDuplicationJobCompact.model_validate(dup_job)
+            if dup_job is not None
+            else None
+        )
         return CourseListItemOut(
             id=c.id,
             title=c.title,
@@ -165,6 +176,7 @@ async def list_courses(
             updated_at=c.updated_at,
             created_at=c.created_at,
             lessons_progress=progress,
+            duplication_job=dup_job_out,
         )
 
     return Page[CourseListItemOut](
@@ -370,6 +382,109 @@ async def delete_course(
     )
     await course_service.delete_course(db, course=course, actor_id=current.id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ---------------------------------------------------------------------------
+# Duplicazione corso in altra lingua (background job via worker)
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{course_id}/duplicate",
+    response_model=CourseDuplicationJobOut,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def duplicate_course(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    target_language_code: Annotated[str, Query(min_length=2, max_length=10)],
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_DUPLICATE),
+) -> CourseDuplicationJobOut:
+    """Crea un job di duplicazione `pending`. Il worker
+    `course_duplication_worker` lo prende in carico, clona la shell del
+    corso target e traduce via OpenAI tutti i contenuti.
+
+    Video MP4 e Video con Avatar NON vengono copiati: nel target
+    partono da `empty`.
+    """
+    await _ensure_org(db, org_id)
+    granted = await resolve_permissions(db, user=current, organization_id=org_id)
+    source = await course_service.get_course(
+        db,
+        organization_id=org_id,
+        course_id=course_id,
+        current_user=current,
+        granted_permissions=granted,
+    )
+    job = await course_duplication_service.request_course_duplication(
+        db,
+        source_course=source,
+        target_language_code=target_language_code,
+        actor_id=current.id,
+    )
+    return CourseDuplicationJobOut.model_validate(job)
+
+
+@router.get(
+    "/{course_id}/duplications",
+    response_model=list[CourseDuplicationJobOut],
+)
+async def list_course_duplications(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_VIEW),
+) -> list[CourseDuplicationJobOut]:
+    """Lista tutti i job (qualsiasi stato) in cui il corso è source o
+    target. Usato dalla UI per poll del progresso del job attivo.
+    """
+    await _ensure_org(db, org_id)
+    granted = await resolve_permissions(db, user=current, organization_id=org_id)
+    # Verifica visibilità del corso (404 silenzioso se non visto).
+    await course_service.get_course(
+        db,
+        organization_id=org_id,
+        course_id=course_id,
+        current_user=current,
+        granted_permissions=granted,
+    )
+    jobs = await course_duplication_service.list_duplications_for_course(
+        db, course_id=course_id
+    )
+    return [CourseDuplicationJobOut.model_validate(j) for j in jobs]
+
+
+@router.post(
+    "/duplication-jobs/{job_id}/cancel",
+    response_model=CourseDuplicationJobOut,
+)
+async def cancel_course_duplication(
+    org_id: uuid.UUID,
+    job_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_DUPLICATE),
+) -> CourseDuplicationJobOut:
+    """Annulla un job di duplicazione `pending` o `processing` →
+    `failed`. Idempotente. Il corso target eventualmente già creato
+    resta in DB (l'utente decide se eliminarlo a mano).
+    """
+    await _ensure_org(db, org_id)
+    job = await course_duplication_service.get_job_or_404(db, job_id=job_id)
+    # Verifica che il source course appartenga all'organizzazione.
+    source = await db.get(Course, job.source_course_id)
+    if source is None or source.organization_id != org_id:
+        raise NotFoundError(
+            "Job di duplicazione non trovato.",
+            code="duplication_job_not_found",
+        )
+    job = await course_duplication_service.cancel_duplication(
+        db, job=job, actor_id=current.id
+    )
+    return CourseDuplicationJobOut.model_validate(job)
 
 
 @router.get(

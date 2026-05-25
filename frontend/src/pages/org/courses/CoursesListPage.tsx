@@ -17,6 +17,7 @@ import {
   ArrowUp,
   BookOpenCheck,
   Edit,
+  Languages,
   MoreHorizontal,
   Plus,
   Trash2,
@@ -59,8 +60,10 @@ import { useOrgMembers } from "@/hooks/useOrgMembers";
 import { flagFor } from "@/i18n/flags";
 import { extractApiError } from "@/lib/errors";
 import { P } from "@/lib/permissions";
+import { CourseDuplicationBadge } from "./components/CourseDuplicationBadge";
 import { CoursePipelineRowChips } from "./components/CoursePipelineRowChips";
 import { CourseStatusBadge } from "./components/CourseStatusBadge";
+import { DuplicateCourseDialog } from "./components/DuplicateCourseDialog";
 
 // Tutti i 17 valori di `course.status` (mirror di backend
 // `CourseStatus`). Esposti raw nel filtro: il bucketing macro-fase è
@@ -166,6 +169,7 @@ export default function CoursesListPage() {
 
   const canCreate = useHasPermission(P.COURSE_CREATE, orgId);
   const canDelete = useHasPermission(P.COURSE_DELETE, orgId);
+  const canDuplicate = useHasPermission(P.COURSE_DUPLICATE, orgId);
 
   const [searchParams, setSearchParams] = useSearchParams();
   const filters = useMemo(() => readFiltersFromURL(searchParams), [searchParams]);
@@ -271,6 +275,8 @@ export default function CoursesListPage() {
   const languages = useLanguages();
 
   const [toDelete, setToDelete] = useState<CourseListItemOut | null>(null);
+  const [toDuplicate, setToDuplicate] =
+    useState<CourseListItemOut | null>(null);
 
   const query = useQuery({
     queryKey: [
@@ -305,6 +311,19 @@ export default function CoursesListPage() {
         sort_by: filters.sort_by,
         sort_dir: filters.sort_dir,
       }),
+    // Polling automatico se almeno un corso della pagina ha un job di
+    // duplicazione attivo: il badge mostra il progress in tempo reale.
+    refetchInterval: (q) => {
+      const data = q.state.data;
+      if (!data) return false;
+      const hasActiveJob = data.items.some(
+        (it) =>
+          it.duplication_job &&
+          (it.duplication_job.status === "pending" ||
+            it.duplication_job.status === "processing"),
+      );
+      return hasActiveJob ? 3000 : false;
+    },
   });
 
   const deleteMut = useMutation({
@@ -335,12 +354,20 @@ export default function CoursesListPage() {
       id: "title",
       header: t("courses.fields.title"),
       cell: ({ row }) => (
-        <Link
-          to={`/orgs/${orgId}/corsi/${row.original.id}`}
-          className="block max-w-[320px] truncate font-medium hover:underline"
-        >
-          {row.original.title}
-        </Link>
+        <div className="flex flex-col gap-1">
+          <Link
+            to={`/orgs/${orgId}/corsi/${row.original.id}`}
+            className="block max-w-[320px] truncate font-medium hover:underline"
+          >
+            {row.original.title}
+          </Link>
+          {row.original.duplication_job && (
+            <CourseDuplicationBadge
+              orgId={orgId}
+              job={row.original.duplication_job}
+            />
+          )}
+        </div>
       ),
     },
     {
@@ -438,6 +465,14 @@ export default function CoursesListPage() {
               <Edit className="size-4" />
               {t("common.edit")}
             </DropdownMenuItem>
+            {canDuplicate && !row.original.duplication_job && (
+              <DropdownMenuItem
+                onSelect={() => setToDuplicate(row.original)}
+              >
+                <Languages className="size-4" />
+                {t("courses.duplicate.action")}
+              </DropdownMenuItem>
+            )}
             {canDelete && (
               <DropdownMenuItem
                 onSelect={() => setToDelete(row.original)}
@@ -666,6 +701,14 @@ export default function CoursesListPage() {
           }
         }}
       />
+
+      {toDuplicate && (
+        <DuplicateCourseDialog
+          orgId={orgId}
+          course={toDuplicate}
+          onClose={() => setToDuplicate(null)}
+        />
+      )}
     </div>
   );
 }

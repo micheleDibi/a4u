@@ -24,6 +24,7 @@ from app.services import (
     avatar_clip_worker,
     course_architecture_worker,
     course_document_worker,
+    course_duplication_worker,
     course_lesson_avatar_video_worker,
     course_lesson_content_worker,
     course_lesson_pdf_worker,
@@ -121,11 +122,16 @@ async def lifespan(app: FastAPI):
     # overlay ffmpeg. Pre-condizione: video della lezione `ready` AND
     # avatar dell'assegnatario con clip pronte AND MuseTalk configurato.
     course_lesson_avatar_video_worker.start_worker()
+    # Worker duplicazione corso in altra lingua. Cap globale 1 (ogni
+    # job può consumare molti token OpenAI). Traduce architecture +
+    # content + slides + speech + glossary + document summaries.
+    course_duplication_worker.start_worker()
 
     log.info("startup_complete", env=settings.env)
     try:
         yield
     finally:
+        await course_duplication_worker.stop_worker()
         await course_lesson_avatar_video_worker.stop_worker()
         await course_lesson_video_worker.stop_worker()
         await course_lesson_speech_pdf_worker.stop_worker()
