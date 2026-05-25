@@ -9,15 +9,13 @@ Snapshot cached server-side TTL 60s in `admin_metrics_service`.
 """
 from __future__ import annotations
 
-import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class StatusCount(BaseModel):
-    """Conteggio per uno status (course.status, course_lesson.*_status,
-    avatar_clips.status, ecc.)."""
+    """Conteggio per uno status (course.status, course_lesson.*_status, ecc.)."""
 
     status: str
     count: int
@@ -72,10 +70,6 @@ class CostMetrics(BaseModel):
     by_phase: list[CostByPhase]
 
 
-class AvatarClipsMetrics(BaseModel):
-    by_status: list[StatusCount]  # pending|processing|ready|failed
-
-
 class LoginDayMetric(BaseModel):
     date: str  # YYYY-MM-DD (UTC)
     success: int
@@ -86,16 +80,6 @@ class LoginActivityMetrics(BaseModel):
     last_7d: list[LoginDayMetric]  # esattamente 7 entries, ordine cronologico
     success_total_7d: int
     failure_total_7d: int
-
-
-class AuditRecentEntry(BaseModel):
-    id: uuid.UUID
-    created_at: datetime
-    action: str
-    actor_user_name: str | None = None
-    organization_name: str | None = None
-    target_type: str | None = None
-    target_id: str | None = None
 
 
 class AdminMetricsOut(BaseModel):
@@ -111,6 +95,4 @@ class AdminMetricsOut(BaseModel):
     courses: CoursesMetrics
     lessons: LessonsMetrics
     cost: CostMetrics
-    avatar_clips: AvatarClipsMetrics
     login_activity: LoginActivityMetrics
-    audit_recent: list[AuditRecentEntry] = Field(default_factory=list)

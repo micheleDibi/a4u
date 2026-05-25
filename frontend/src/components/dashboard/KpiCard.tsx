@@ -12,6 +12,11 @@ interface KpiCardProps {
   tone?: "default" | "muted";
 }
 
+/**
+ * Tile metrica grande. Hover lift discreto + icona in tinta primary
+ * (oppure muted) per dare una nota di colore consistente con
+ * l'identità del prodotto.
+ */
 export function KpiCard({
   label,
   value,
@@ -20,17 +25,17 @@ export function KpiCard({
   tone = "default",
 }: KpiCardProps) {
   return (
-    <Card>
-      <CardContent className="flex items-start justify-between gap-3 p-4">
-        <div className="min-w-0 space-y-1">
-          <div className="truncate text-xs uppercase tracking-wide text-muted-foreground">
+    <Card className="transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:border-foreground/15">
+      <CardContent className="flex items-start justify-between gap-3 p-5">
+        <div className="min-w-0 space-y-1.5">
+          <div className="truncate text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
             {label}
           </div>
           <div
             className={
               tone === "muted"
-                ? "text-2xl font-semibold text-muted-foreground"
-                : "text-2xl font-semibold"
+                ? "text-3xl font-semibold tabular-nums text-muted-foreground"
+                : "text-3xl font-semibold tabular-nums"
             }
           >
             {value}
@@ -40,8 +45,15 @@ export function KpiCard({
           )}
         </div>
         {Icon && (
-          <div className="grid size-9 shrink-0 place-items-center rounded-md bg-muted text-foreground">
-            <Icon className="size-4" />
+          <div
+            className={
+              "grid size-10 shrink-0 place-items-center rounded-lg transition-colors " +
+              (tone === "muted"
+                ? "bg-muted text-muted-foreground"
+                : "bg-primary/10 text-primary")
+            }
+          >
+            <Icon className="size-5" />
           </div>
         )}
       </CardContent>

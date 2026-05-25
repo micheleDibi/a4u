@@ -50,10 +50,6 @@ export interface CostMetrics {
   by_phase: CostByPhase[];
 }
 
-export interface AvatarClipsMetrics {
-  by_status: StatusCount[];
-}
-
 export interface LoginDayMetric {
   date: string; // YYYY-MM-DD UTC
   success: number;
@@ -66,16 +62,6 @@ export interface LoginActivityMetrics {
   failure_total_7d: number;
 }
 
-export interface AuditRecentEntry {
-  id: string;
-  created_at: string;
-  action: string;
-  actor_user_name: string | null;
-  organization_name: string | null;
-  target_type: string | null;
-  target_id: string | null;
-}
-
 export interface AdminMetricsOut {
   generated_at: string;
   users: UsersMetrics;
@@ -83,9 +69,7 @@ export interface AdminMetricsOut {
   courses: CoursesMetrics;
   lessons: LessonsMetrics;
   cost: CostMetrics;
-  avatar_clips: AvatarClipsMetrics;
   login_activity: LoginActivityMetrics;
-  audit_recent: AuditRecentEntry[];
 }
 
 // ---------------------------------------------------------------------------

@@ -19,8 +19,6 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import Float, case, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.audit_log import AuditLog
-from app.models.avatar_clip import AvatarClip
 from app.models.course import Course
 from app.models.course_lesson import CourseLesson
 from app.models.course_module import CourseModule
@@ -29,8 +27,6 @@ from app.models.organization import Organization
 from app.models.user import User
 from app.schemas.admin_metrics import (
     AdminMetricsOut,
-    AuditRecentEntry,
-    AvatarClipsMetrics,
     CostByPhase,
     CostMetrics,
     CoursesMetrics,
@@ -82,9 +78,7 @@ async def _compute(db: AsyncSession) -> AdminMetricsOut:
     courses_metrics = await _courses(db)
     lessons_metrics = await _lessons(db)
     cost_metrics = await _cost(db, cutoff_7d=cutoff_7d, cutoff_30d=cutoff_30d)
-    avatar_clips_metrics = await _avatar_clips(db)
     login_metrics = await _login_activity(db, cutoff_7d=cutoff_7d)
-    audit = await _audit_recent(db, limit=20)
 
     return AdminMetricsOut(
         generated_at=now,
@@ -93,9 +87,7 @@ async def _compute(db: AsyncSession) -> AdminMetricsOut:
         courses=courses_metrics,
         lessons=lessons_metrics,
         cost=cost_metrics,
-        avatar_clips=avatar_clips_metrics,
         login_activity=login_metrics,
-        audit_recent=audit,
     )
 
 
@@ -239,19 +231,6 @@ async def _cost(
     )
 
 
-async def _avatar_clips(db: AsyncSession) -> AvatarClipsMetrics:
-    rows = (
-        await db.execute(
-            select(AvatarClip.status, func.count(AvatarClip.id)).group_by(
-                AvatarClip.status
-            )
-        )
-    ).all()
-    return AvatarClipsMetrics(
-        by_status=[StatusCount(status=s, count=int(c)) for s, c in rows]
-    )
-
-
 async def _login_activity(
     db: AsyncSession, *, cutoff_7d: datetime
 ) -> LoginActivityMetrics:
@@ -292,37 +271,3 @@ async def _login_activity(
         success_total_7d=sum(d.success for d in last_7d),
         failure_total_7d=sum(d.failure for d in last_7d),
     )
-
-
-async def _audit_recent(
-    db: AsyncSession, *, limit: int
-) -> list[AuditRecentEntry]:
-    rows = (
-        await db.execute(
-            select(
-                AuditLog.id,
-                AuditLog.created_at,
-                AuditLog.action,
-                AuditLog.target_type,
-                AuditLog.target_id,
-                User.full_name.label("actor_name"),
-                Organization.name.label("org_name"),
-            )
-            .outerjoin(User, AuditLog.actor_user_id == User.id)
-            .outerjoin(Organization, AuditLog.organization_id == Organization.id)
-            .order_by(AuditLog.created_at.desc())
-            .limit(limit)
-        )
-    ).all()
-    return [
-        AuditRecentEntry(
-            id=r.id,
-            created_at=r.created_at,
-            action=r.action,
-            target_type=r.target_type,
-            target_id=r.target_id,
-            actor_user_name=r.actor_name,
-            organization_name=r.org_name,
-        )
-        for r in rows
-    ]

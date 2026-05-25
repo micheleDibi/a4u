@@ -1824,10 +1824,12 @@
       },
       "pipelineCourses": {
         "title": "Courses pipeline",
+        "subtitle": "All courses broken down by pipeline phase",
         "empty": "No courses yet"
       },
       "pipelineLessons": {
         "title": "Lessons pipeline",
+        "subtitle": "Status per phase across {{total}} total lessons",
         "content": "Content",
         "slides": "Slides",
         "speech": "Speech",
@@ -1837,6 +1839,7 @@
       },
       "cost": {
         "title": "AI cost",
+        "subtitle": "Cumulative OpenAI spend per pipeline phase",
         "total": "Total",
         "last7d": "Last 7 days",
         "last30d": "Last 30 days",
@@ -1849,18 +1852,11 @@
           "speech": "Speech"
         }
       },
-      "avatarClips": {
-        "title": "Avatar clips",
-        "empty": "No clips"
-      },
       "loginActivity": {
         "title": "Login activity (7d)",
+        "subtitle": "Login attempts over the last 7 days",
         "success": "Successes",
         "failure": "Failures"
-      },
-      "auditRecent": {
-        "title": "Recent activity",
-        "empty": "No recent activity"
       },
       "manage": {
         "title": "Management",
@@ -1902,40 +1898,18 @@
       },
       "pipelineCourses": {
         "title": "Courses pipeline",
+        "subtitle": "All courses in this organization, broken down by phase",
         "empty": "No courses"
       },
       "pipelineLessons": {
         "title": "Lessons pipeline",
+        "subtitle": "Status per phase across {{total}} total lessons",
         "content": "Content",
         "slides": "Slides",
         "speech": "Speech",
         "video": "Video",
         "avatarVideo": "Avatar video",
         "empty": "No lessons"
-      },
-      "workload": {
-        "title": "Teacher workload",
-        "subtitle": "Courses per assignee (top 10)",
-        "empty": "No courses assigned"
-      },
-      "avatarReadiness": {
-        "title": "Teacher avatars",
-        "subtitle": "Ready for video generation (audio + ready clips)",
-        "centerLabel": "teachers",
-        "ready": "Ready",
-        "partial": "Partial",
-        "notReady": "Not ready",
-        "empty": "No teachers assigned"
-      },
-      "members": {
-        "title": "Members by role",
-        "empty": "No members",
-        "pendingInvitations_one": "{{count}} pending invitation",
-        "pendingInvitations_other": "{{count}} pending invitations"
-      },
-      "auditRecent": {
-        "title": "Recent activity",
-        "empty": "No recent activity"
       },
       "manage": {
         "title": "Management",

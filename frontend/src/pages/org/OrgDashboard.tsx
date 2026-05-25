@@ -1,7 +1,6 @@
 import {
   BookOpen,
   GraduationCap,
-  Mail,
   Presentation,
   ScrollText,
   Smile,
@@ -12,16 +11,15 @@ import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
-import { organizationsApi } from "@/api/organizations";
 import type {
-  AssigneeWorkload,
-  AvatarReadiness as AvatarReadinessData,
-  OrgMetricsOut,
-} from "@/api/orgMetrics";
+  LessonsPhaseBreakdown,
+  StatusCount,
+} from "@/api/adminMetrics";
+import { organizationsApi } from "@/api/organizations";
+import type { OrgMetricsOut } from "@/api/orgMetrics";
 import { useAuth } from "@/auth/AuthContext";
 import { useHasPermission } from "@/auth/PermissionGate";
-import { ActivityList } from "@/components/dashboard/ActivityList";
-import { DonutMini } from "@/components/dashboard/DonutMini";
+import { CoursePipelineDetail } from "@/components/dashboard/CoursePipelineDetail";
 import { KpiCard } from "@/components/dashboard/KpiCard";
 import {
   StatusBarChart,
@@ -37,48 +35,25 @@ import {
 } from "@/components/ui/card";
 import { useOrgMetrics } from "@/hooks/useOrgMetrics";
 import { P } from "@/lib/permissions";
-import {
-  COURSE_BUCKET_COLORS,
-  COURSE_MACRO_ORDER,
-  type CourseMacroBucket,
-  courseBucketFor,
-  sortByLifecycleOrder,
-  statusColor,
-} from "@/lib/statusColors";
-
-// ---------------------------------------------------------------------------
-// Palette ruoli (locale al dominio org dashboard).
-// ---------------------------------------------------------------------------
-
-const ROLE_COLOR: Record<string, { bg: string; hex: string }> = {
-  creator: { bg: "bg-emerald-600", hex: "#059669" },
-  org_admin: { bg: "bg-blue-500", hex: "#3b82f6" },
-  manager: { bg: "bg-violet-500", hex: "#8b5cf6" },
-  member: { bg: "bg-zinc-500", hex: "#71717a" },
-};
-const ROLE_FALLBACK = { bg: "bg-zinc-400", hex: "#a1a1aa" };
+import { sortByLifecycleOrder, statusColor } from "@/lib/statusColors";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function bucketize(
-  raw: { status: string; count: number }[],
-): { bucket: CourseMacroBucket; count: number }[] {
-  const counts = new Map<CourseMacroBucket, number>();
-  for (const it of raw) {
-    const b = courseBucketFor(it.status);
-    if (!b) continue;
-    counts.set(b, (counts.get(b) ?? 0) + it.count);
-  }
-  return COURSE_MACRO_ORDER.map((b) => ({
-    bucket: b,
-    count: counts.get(b) ?? 0,
-  })).filter((x) => x.count > 0);
+function pickCount(
+  raw: StatusCount[] | undefined,
+  status: string,
+): number {
+  return raw?.find((s) => s.status === status)?.count ?? 0;
+}
+
+function formatInt(n: number | undefined): string {
+  return (n ?? 0).toLocaleString();
 }
 
 function lifecycleItems(
-  raw: { status: string; count: number }[],
+  raw: StatusCount[],
   t: (k: string) => string,
 ): StatusBarItem[] {
   return sortByLifecycleOrder(raw).map((s) => ({
@@ -89,20 +64,16 @@ function lifecycleItems(
   }));
 }
 
-function pickCount(
-  raw: { status: string; count: number }[] | undefined,
-  status: string,
-): number {
-  return raw?.find((s) => s.status === status)?.count ?? 0;
-}
-
-const PHASE_KEYS = [
+const PHASE_KEYS: {
+  key: string;
+  field: keyof LessonsPhaseBreakdown;
+}[] = [
   { key: "content", field: "content" },
   { key: "slides", field: "slides" },
   { key: "speech", field: "speech" },
   { key: "video", field: "video" },
   { key: "avatarVideo", field: "avatar_video" },
-] as const;
+];
 
 // ---------------------------------------------------------------------------
 // Page
@@ -113,8 +84,6 @@ export default function OrgDashboard() {
   const { me } = useAuth();
   const { t } = useTranslation();
 
-  // Nome org: dalla membership corrente; fallback per platform admin che
-  // visita un'org senza essere membro (riusa la query già esistente).
   const membership = me?.organizations.find(
     (o) => o.organization_id === orgId,
   );
@@ -139,136 +108,60 @@ export default function OrgDashboard() {
 
       <KpiStrip data={data} />
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">
-              {t("dashboard.org.pipelineCourses.title")}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <StatusBarChart
-              emptyLabel={t("dashboard.org.pipelineCourses.empty")}
-              items={
-                data
-                  ? bucketize(data.courses.by_status).map(
-                      ({ bucket, count }) => ({
-                        key: bucket,
-                        label: t(
-                          `dashboard.shared.statusBucket.${bucket}`,
-                        ),
-                        count,
-                        color: COURSE_BUCKET_COLORS[bucket].bg,
-                      }),
-                    )
-                  : []
-              }
-            />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">
-              {t("dashboard.org.pipelineLessons.title")}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 pt-0">
-            {PHASE_KEYS.map(({ key, field }) => (
-              <div key={key} className="space-y-1">
-                <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                  {t(`dashboard.org.pipelineLessons.${key}`)}
-                </div>
-                <StatusBarChart
-                  compact
-                  emptyLabel={t("dashboard.org.pipelineLessons.empty")}
-                  items={
-                    data ? lifecycleItems(data.lessons.phases[field], t) : []
-                  }
-                />
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">
-              {t("dashboard.org.workload.title")}
-            </CardTitle>
-            <CardDescription>
-              {t("dashboard.org.workload.subtitle")}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <WorkloadList
-              items={data?.courses.by_assignee ?? []}
-              emptyLabel={t("dashboard.org.workload.empty")}
-            />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">
-              {t("dashboard.org.avatarReadiness.title")}
-            </CardTitle>
-            <CardDescription>
-              {t("dashboard.org.avatarReadiness.subtitle")}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <AvatarReadinessWidget data={data?.avatar_readiness} />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">
-              {t("dashboard.org.members.title")}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0 space-y-3">
-            <StatusBarChart
-              emptyLabel={t("dashboard.org.members.empty")}
-              items={
-                data
-                  ? data.members.by_role.map((r) => ({
-                      key: r.role_code,
-                      label: r.role_name_it ?? r.role_code,
-                      count: r.count,
-                      color: (ROLE_COLOR[r.role_code] ?? ROLE_FALLBACK).bg,
-                    }))
-                  : []
-              }
-            />
-            {data && data.members.pending_invitations > 0 && (
-              <div className="flex items-center gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs dark:bg-amber-950/40">
-                <Mail className="size-3.5 text-amber-700 dark:text-amber-400" />
-                <span className="text-amber-900 dark:text-amber-300">
-                  {t("dashboard.org.members.pendingInvitations", {
-                    count: data.members.pending_invitations,
-                  })}
-                </span>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">
+            {t("dashboard.org.pipelineCourses.title")}
+          </CardTitle>
+          <CardDescription>
+            {t("dashboard.org.pipelineCourses.subtitle")}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <CoursePipelineDetail
+            items={data?.courses.by_status ?? []}
+            total={data?.courses.total ?? 0}
+            emptyLabel={t("dashboard.org.pipelineCourses.empty")}
+          />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">
-            {t("dashboard.org.auditRecent.title")}
+            {t("dashboard.org.pipelineLessons.title")}
           </CardTitle>
+          <CardDescription>
+            {t("dashboard.org.pipelineLessons.subtitle", {
+              total: formatInt(data?.lessons.total),
+            })}
+          </CardDescription>
         </CardHeader>
-        <CardContent className="pt-0">
-          <ActivityList
-            items={data?.audit_recent ?? []}
-            emptyLabel={t("dashboard.org.auditRecent.empty")}
-          />
+        <CardContent className="grid gap-3 pt-0 md:grid-cols-2 xl:grid-cols-5">
+          {PHASE_KEYS.map(({ key, field }) => {
+            const items = data ? data.lessons.phases[field] : [];
+            const phaseTotal = items.reduce((s, i) => s + i.count, 0);
+            return (
+              <div
+                key={key}
+                className="space-y-2 rounded-lg border p-3 transition-colors hover:border-foreground/15"
+              >
+                <div className="flex items-baseline justify-between">
+                  <div className="truncate text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                    {t(`dashboard.org.pipelineLessons.${key}`)}
+                  </div>
+                  <div className="text-sm font-semibold tabular-nums">
+                    {phaseTotal}
+                  </div>
+                </div>
+                <StatusBarChart
+                  compact
+                  emptyLabel={t("dashboard.org.pipelineLessons.empty")}
+                  items={lifecycleItems(items, t)}
+                />
+              </div>
+            );
+          })}
         </CardContent>
       </Card>
 
@@ -283,7 +176,6 @@ export default function OrgDashboard() {
 
 function KpiStrip({ data }: { data: OrgMetricsOut | undefined }) {
   const { t } = useTranslation();
-  const fmt = (n: number | undefined) => (n ?? 0).toLocaleString();
   const coursesPublished = pickCount(data?.courses.by_status, "published");
   const lessonsVideoReady = pickCount(data?.lessons.phases.video, "ready");
 
@@ -292,117 +184,37 @@ function KpiStrip({ data }: { data: OrgMetricsOut | undefined }) {
       <KpiCard
         icon={GraduationCap}
         label={t("dashboard.org.kpi.coursesTotal")}
-        value={fmt(data?.courses.total)}
+        value={formatInt(data?.courses.total)}
       />
       <KpiCard
         icon={GraduationCap}
         label={t("dashboard.org.kpi.coursesPublished")}
-        value={fmt(coursesPublished)}
+        value={formatInt(coursesPublished)}
       />
       <KpiCard
         icon={BookOpen}
         label={t("dashboard.org.kpi.lessonsTotal")}
-        value={fmt(data?.lessons.total)}
+        value={formatInt(data?.lessons.total)}
       />
       <KpiCard
         icon={Smile}
         label={t("dashboard.org.kpi.lessonsVideoReady")}
-        value={fmt(lessonsVideoReady)}
+        value={formatInt(lessonsVideoReady)}
       />
       <KpiCard
         icon={Users}
         label={t("dashboard.org.kpi.members")}
-        value={fmt(data?.members.total)}
+        value={formatInt(data?.members.total)}
       />
       <KpiCard
         icon={UserCheck}
         label={t("dashboard.org.kpi.pendingInvitations")}
-        value={fmt(data?.members.pending_invitations)}
+        value={formatInt(data?.members.pending_invitations)}
         tone={
           data && data.members.pending_invitations > 0 ? "default" : "muted"
         }
       />
     </div>
-  );
-}
-
-function WorkloadList({
-  items,
-  emptyLabel,
-}: {
-  items: AssigneeWorkload[];
-  emptyLabel: string;
-}) {
-  if (items.length === 0) {
-    return (
-      <div className="py-6 text-center text-sm text-muted-foreground">
-        {emptyLabel}
-      </div>
-    );
-  }
-  const max = Math.max(1, ...items.map((i) => i.course_count));
-  return (
-    <ul className="space-y-2">
-      {items.map((it) => (
-        <li key={it.user_id} className="space-y-1">
-          <div className="flex items-center text-sm">
-            <span className="truncate">{it.name ?? "—"}</span>
-            <span className="ms-auto font-medium tabular-nums">
-              {it.course_count}
-            </span>
-          </div>
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-            <div
-              className="h-full bg-blue-500"
-              style={{ width: `${(it.course_count / max) * 100}%` }}
-            />
-          </div>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function AvatarReadinessWidget({
-  data,
-}: {
-  data: AvatarReadinessData | undefined;
-}) {
-  const { t } = useTranslation();
-  if (!data || data.total_assignees === 0) {
-    return (
-      <div className="py-6 text-center text-sm text-muted-foreground">
-        {t("dashboard.org.avatarReadiness.empty")}
-      </div>
-    );
-  }
-  return (
-    <DonutMini
-      centerLabel={t("dashboard.org.avatarReadiness.centerLabel")}
-      items={[
-        {
-          key: "ready",
-          label: t("dashboard.org.avatarReadiness.ready"),
-          count: data.ready,
-          color: statusColor("ready").bg,
-          hex: statusColor("ready").hex,
-        },
-        {
-          key: "partial",
-          label: t("dashboard.org.avatarReadiness.partial"),
-          count: data.partial,
-          color: statusColor("partial").bg,
-          hex: statusColor("partial").hex,
-        },
-        {
-          key: "not_ready",
-          label: t("dashboard.org.avatarReadiness.notReady"),
-          count: data.not_ready,
-          color: "bg-zinc-300 dark:bg-zinc-600",
-          hex: "#d4d4d8",
-        },
-      ]}
-    />
   );
 }
 
@@ -451,10 +263,10 @@ function ManageSection({ orgId }: { orgId: string }) {
           const Icon = it.icon;
           return (
             <Link key={it.to} to={it.to} className="group">
-              <Card className="h-full transition-colors group-hover:border-foreground/20">
+              <Card className="h-full transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:border-foreground/15">
                 <CardContent className="flex flex-col gap-3 p-6">
-                  <div className="grid size-9 place-items-center rounded-md bg-muted text-foreground">
-                    <Icon className="size-4" />
+                  <div className="grid size-10 place-items-center rounded-lg bg-primary/10 text-primary">
+                    <Icon className="size-5" />
                   </div>
                   <div>
                     <CardTitle className="text-base">{it.title}</CardTitle>
