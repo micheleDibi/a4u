@@ -3,6 +3,16 @@
     "name": "a4u",
     "tagline": "Piattaforma corsi universitari"
   },
+  "nova": {
+    "title": "Nova",
+    "subtitle": "Assistente a4u",
+    "placeholder": "Chiedi a Nova…",
+    "send": "Invia",
+    "openButton": "Apri Nova",
+    "closeButton": "Chiudi Nova",
+    "welcomeFallback": "Ciao! Sono Nova, il tuo assistente a4u. Come posso aiutarti?",
+    "errorTechnical": "Ho avuto un problema tecnico. Riprova tra poco."
+  },
   "common": {
     "save": "Salva",
     "cancel": "Annulla",

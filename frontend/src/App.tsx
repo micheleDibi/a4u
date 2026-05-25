@@ -4,6 +4,7 @@ import { AuthProvider } from "./auth/AuthContext";
 import { CommandPaletteProvider } from "./components/CommandPalette";
 import { ErrorBoundary } from "./components/feedback/ErrorBoundary";
 import { Toaster } from "./components/ui/sonner";
+import { NovaContextProvider } from "./contexts/NovaContext";
 import { ThemeProvider } from "./providers/ThemeProvider";
 import { router } from "./routes/router";
 
@@ -24,10 +25,12 @@ export default function App() {
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
-            <CommandPaletteProvider>
-              <Toaster />
-              <RouterProvider router={router} />
-            </CommandPaletteProvider>
+            <NovaContextProvider>
+              <CommandPaletteProvider>
+                <Toaster />
+                <RouterProvider router={router} />
+              </CommandPaletteProvider>
+            </NovaContextProvider>
           </AuthProvider>
         </QueryClientProvider>
       </ErrorBoundary>

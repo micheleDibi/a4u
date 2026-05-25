@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Menu } from "lucide-react";
-import { Outlet } from "react-router-dom";
+import { Outlet, useLocation } from "react-router-dom";
 import { CommandPaletteDialog } from "@/components/CommandPalette";
+import { NovaWidget } from "@/components/nova/NovaWidget";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Sidebar } from "./Sidebar";
@@ -10,10 +11,15 @@ const SIDEBAR_WIDTH = 256;
 
 export function AppLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const location = useLocation();
+  // Nova è nascosto sulle pagine admin: chi amministra la piattaforma
+  // conosce già le funzionalità a memoria.
+  const hideNova = location.pathname.startsWith("/admin");
 
   return (
     <div className="flex min-h-screen bg-background">
       <CommandPaletteDialog />
+      {!hideNova && <NovaWidget />}
       <aside
         className="hidden lg:block"
         style={{ width: SIDEBAR_WIDTH }}

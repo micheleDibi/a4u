@@ -54,6 +54,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useSetNovaContext } from "@/contexts/NovaContext";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useLanguages } from "@/hooks/useLanguages";
 import { useOrgMembers } from "@/hooks/useOrgMembers";
@@ -170,6 +171,26 @@ export default function CoursesListPage() {
   const canCreate = useHasPermission(P.COURSE_CREATE, orgId);
   const canDelete = useHasPermission(P.COURSE_DELETE, orgId);
   const canDuplicate = useHasPermission(P.COURSE_DUPLICATE, orgId);
+
+  useSetNovaContext({
+    page: "courses.list",
+    fields: {
+      filterStatus:
+        filters.status !== ALL_STATUS ? filters.status : null,
+      filterAssignee:
+        filters.assignee_user_id !== ALL_ASSIGNEES
+          ? filters.assignee_user_id
+          : null,
+      filterLanguage:
+        filters.language_code !== ALL_LANGUAGES
+          ? filters.language_code
+          : null,
+      searchQuery: filters.q || null,
+      sortBy: filters.sort_by,
+      sortDir: filters.sort_dir,
+    },
+    orgId,
+  });
 
   const [searchParams, setSearchParams] = useSearchParams();
   const filters = useMemo(() => readFiltersFromURL(searchParams), [searchParams]);

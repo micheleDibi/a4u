@@ -235,6 +235,18 @@ class Settings(BaseSettings):
     course_duplication_lesson_translate_concurrency: int = 3
     course_duplication_auto_retry_max: int = 5
 
+    # Nova — assistente AI contestuale floating widget. Stateless DB-side.
+    # Modello veloce ed economico (chat conversazionale, no JSON schema).
+    openai_nova_model: str = "gpt-4o-mini"
+    openai_nova_max_tokens: int = 512
+    openai_nova_temperature: float = 0.7
+    # Cap di messaggi di history inviati dal FE al BE per ogni chat.
+    # Mantiene il filo del discorso senza esplodere i token.
+    nova_history_cap: int = 10
+    # Rate limit per utente (slowapi). 30/min = ~1 msg ogni 2s, generoso
+    # per una conversazione fluida ma stoppa abuse.
+    nova_rate_limit_per_minute: int = 30
+
     bootstrap_admin_email: str | None = None
     bootstrap_admin_password: str | None = None
     bootstrap_admin_full_name: str = "Platform Admin"

@@ -15,6 +15,7 @@ from app.api.v1 import (
     invitations,
     me_avatar,
     memberships,
+    nova,
     org_metrics,
     organization_course_settings,
     pdf_templates,
@@ -42,3 +43,4 @@ api_router.include_router(organization_course_settings.router)
 api_router.include_router(course_taxonomy.router)
 api_router.include_router(courses.router)
 api_router.include_router(me_avatar.router)
+api_router.include_router(nova.router)

@@ -53,6 +53,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { ApprovalBadge } from "@/components/shared/ApprovalBadge";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+import { useSetNovaContext } from "@/contexts/NovaContext";
 import { useLanguages } from "@/hooks/useLanguages";
 import { useTaxonomyTermsBulk } from "@/hooks/useTaxonomyTerms";
 import type { TaxonomyType } from "@/api/courseTaxonomy";
@@ -186,6 +187,14 @@ export default function CourseEditorPage({ mode }: Props) {
   const canAssign = useHasPermission(P.COURSE_ASSIGN, orgId);
   const canGenerate = useHasPermission(P.COURSE_GENERATE, orgId);
   const canSaveDraft = useHasPermission(P.COURSE_SAVE_DRAFT, orgId);
+
+  useSetNovaContext({
+    page: mode === "create" ? "course.create" : "course.editor",
+    fields: {
+      courseId: courseId ?? null,
+    },
+    orgId,
+  });
   // `canEdit` finale: include il caso "assegnatario del corso" (anche un
   // Member senza COURSE_EDIT) — per consentire all'utente a cui il corso
   // è stato passato come bozza di completarne basic info + didattico.

@@ -3,6 +3,16 @@
     "name": "a4u",
     "tagline": "University courses platform"
   },
+  "nova": {
+    "title": "Nova",
+    "subtitle": "a4u assistant",
+    "placeholder": "Ask Nova…",
+    "send": "Send",
+    "openButton": "Open Nova",
+    "closeButton": "Close Nova",
+    "welcomeFallback": "Hi! I'm Nova, your a4u assistant. How can I help you?",
+    "errorTechnical": "I had a technical hiccup. Please try again shortly."
+  },
   "common": {
     "save": "Save",
     "cancel": "Cancel",
