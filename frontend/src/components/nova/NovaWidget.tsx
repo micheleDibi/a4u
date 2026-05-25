@@ -8,6 +8,7 @@ import {
 } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
+import { useLocation } from "react-router-dom";
 import { Send, X } from "lucide-react";
 
 import {
@@ -21,7 +22,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
-import { NovaAvatar } from "./NovaAvatar";
+import { NovaAvatar, NOVA_FRAMES_COUNT } from "./NovaAvatar";
 
 // Floating widget di Nova: avatar animato bottom-right + chat panel
 // espandibile. Stato locale (no DB persistence, no localStorage):
@@ -50,11 +51,22 @@ function newId(): string {
 export function NovaWidget() {
   const { t, i18n } = useTranslation();
   const novaCtx = useNovaContext();
+  const location = useLocation();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [welcomeSent, setWelcomeSent] = useState(false);
   const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
+
+  // Frame casuale dell'avatar: cambia ad ogni cambio pagina (e quindi
+  // anche tra login diversi, perché il login monta una nuova istanza
+  // della layout root e fa partire da un pathname iniziale).
+  const [avatarFrame, setAvatarFrame] = useState(
+    () => Math.floor(Math.random() * NOVA_FRAMES_COUNT) + 1,
+  );
+  useEffect(() => {
+    setAvatarFrame(Math.floor(Math.random() * NOVA_FRAMES_COUNT) + 1);
+  }, [location.pathname]);
 
   // Lingua corrente UI — passata al BE per generare la risposta nella
   // lingua dell'utente.
@@ -172,7 +184,8 @@ export function NovaWidget() {
 
   // === Render ========================================================
 
-  // Bottone collassato (avatar animato fixed bottom-right).
+  // Bottone collassato: solo l'immagine PNG, senza cerchio/sfondo.
+  // Una sola immagine random per sessione/pagina (no animazione).
   if (!open) {
     return (
       <button
@@ -181,12 +194,11 @@ export function NovaWidget() {
         aria-label={t("nova.openButton")}
         className={cn(
           "fixed bottom-4 right-4 z-40",
-          "flex h-14 w-14 items-center justify-center",
-          "rounded-full bg-background shadow-lg ring-1 ring-border",
           "transition-transform hover:scale-105 active:scale-95",
+          "drop-shadow-lg",
         )}
       >
-        <NovaAvatar size={56} paused={false} />
+        <NovaAvatar size={112} frame={avatarFrame} />
       </button>
     );
   }
@@ -204,7 +216,7 @@ export function NovaWidget() {
     >
       {/* Header */}
       <div className="flex items-center gap-2 border-b border-border px-3 py-2">
-        <NovaAvatar size={36} isPending={isPending} />
+        <NovaAvatar size={40} frame={avatarFrame} />
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-semibold">
             {t("nova.title")}

@@ -1,45 +1,22 @@
-import { useEffect, useState } from "react";
-
-// 19 frame PNG dell'avatar di Nova in `public/nova/nova-1.png` …
-// `nova-19.png`. L'animazione idle cambia frame ogni `intervalMs`.
-// Durante `isPending` la frequenza accelera per dare la sensazione
-// che Nova stia "pensando".
+// Avatar di Nova: una singola immagine PNG (NO animazione ciclica).
+// L'index del frame è gestito dal parent (`NovaWidget`) che lo
+// randomizza quando l'utente cambia pagina o ricarica.
 
 const TOTAL_FRAMES = 19;
 
 interface Props {
-  /** Pixel del lato (square). Default 56 (button) / 32 (header). */
+  /** Pixel del lato (square). */
   size?: number;
-  /** Velocità in millisecondi tra un frame e l'altro. */
-  intervalMs?: number;
-  /** Se true, accelera l'animazione (Nova sta "pensando"). */
-  isPending?: boolean;
-  /** Disabilita l'animazione (mostra solo frame 1). Default false. */
-  paused?: boolean;
+  /** Indice del frame (1..19). Default 1. */
+  frame?: number;
   className?: string;
 }
 
-export function NovaAvatar({
-  size = 56,
-  intervalMs = 150,
-  isPending = false,
-  paused = false,
-  className,
-}: Props) {
-  const [frame, setFrame] = useState(1);
-
-  useEffect(() => {
-    if (paused) return;
-    const speed = isPending ? 80 : intervalMs;
-    const id = window.setInterval(() => {
-      setFrame((f) => (f % TOTAL_FRAMES) + 1);
-    }, speed);
-    return () => window.clearInterval(id);
-  }, [intervalMs, isPending, paused]);
-
+export function NovaAvatar({ size = 80, frame = 1, className }: Props) {
+  const safeFrame = Math.max(1, Math.min(TOTAL_FRAMES, frame));
   return (
     <img
-      src={`/nova/nova-${frame}.png`}
+      src={`/nova/nova-${safeFrame}.png`}
       alt="Nova"
       width={size}
       height={size}
@@ -51,3 +28,5 @@ export function NovaAvatar({
     />
   );
 }
+
+export const NOVA_FRAMES_COUNT = TOTAL_FRAMES;
