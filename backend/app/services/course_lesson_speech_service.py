@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.audit import write_audit
+from app.core.course_phase_order import advance_course_status
 from app.core.errors import ConflictError, NotFoundError
 from app.core.logging import get_logger
 from app.models.course import Course
@@ -598,17 +599,17 @@ def _recompute_course_speech_status(course: Course) -> None:
         return
 
     if any(s in ("pending", "processing", "failed") for s in statuses):
-        course.status = "speech_pending"
+        advance_course_status(course, "speech_pending")
         return
 
     if all(s == "approved" for s in statuses):
-        course.status = "speech_approved"
+        advance_course_status(course, "speech_approved")
         return
 
     if all(s in ("ready", "approved") for s in statuses) and any(
         s == "ready" for s in statuses
     ):
-        course.status = "speech_ready"
+        advance_course_status(course, "speech_ready")
         return
 
 
@@ -782,6 +783,9 @@ async def request_all_lessons_speech_generation(
         lesson.speech_regeneration_hint = hint_clean
         _reset_speech_pdf_if_needed(lesson)
 
+    # Regressione esplicita: l'utente sta richiedendo (ri)generazione.
+    # NON usiamo advance_course_status qui — vogliamo riallineare la
+    # fase del corso a Fase 5 anche se era più avanti.
     course.status = "speech_pending"
 
     await write_audit(
@@ -836,6 +840,7 @@ async def request_missing_lessons_speech_generation(
         lesson.speech_progress_phase = None
         lesson.speech_regeneration_hint = None
 
+    # Regressione esplicita: vedi commento in `request_generation`.
     course.status = "speech_pending"
 
     await write_audit(

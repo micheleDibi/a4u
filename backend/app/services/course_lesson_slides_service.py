@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.audit import write_audit
+from app.core.course_phase_order import advance_course_status
 from app.core.errors import ConflictError, NotFoundError
 from app.core.logging import get_logger
 from app.models.course import Course
@@ -437,17 +438,17 @@ def _recompute_course_slides_status(course: Course) -> None:
         return
 
     if any(s in ("pending", "processing", "failed") for s in statuses):
-        course.status = "slides_pending"
+        advance_course_status(course, "slides_pending")
         return
 
     if all(s == "approved" for s in statuses):
-        course.status = "slides_approved"
+        advance_course_status(course, "slides_approved")
         return
 
     if all(s in ("ready", "approved") for s in statuses) and any(
         s == "ready" for s in statuses
     ):
-        course.status = "slides_ready"
+        advance_course_status(course, "slides_ready")
         return
 
 
@@ -606,6 +607,9 @@ async def request_all_lessons_slides_generation(
             lesson.slides_pdf_progress_phase = None
             lesson.slides_pdf_error = None
 
+    # Regressione esplicita: l'utente sta richiedendo (ri)generazione.
+    # NON usiamo advance_course_status qui — vogliamo riallineare la
+    # fase del corso a Fase 4 anche se era più avanti.
     course.status = "slides_pending"
 
     await write_audit(
@@ -660,6 +664,7 @@ async def request_missing_lessons_slides_generation(
         lesson.slides_progress_phase = None
         lesson.slides_regeneration_hint = None
 
+    # Regressione esplicita: vedi commento in `request_generation`.
     course.status = "slides_pending"
 
     await write_audit(

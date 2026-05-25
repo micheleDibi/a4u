@@ -25,6 +25,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.audit import write_audit
 from app.core.config import get_settings
+from app.core.course_phase_order import advance_course_status
 from app.core.errors import ConflictError, NotFoundError
 from app.core.logging import get_logger
 from app.models.course import Course
@@ -391,6 +392,9 @@ async def request_all_modules_generation(
         m.lessons_structure_progress_phase = None
         m.lessons_structure_regeneration_hint = hint_clean
 
+    # Regressione esplicita: l'utente sta richiedendo (ri)generazione.
+    # NON usiamo advance_course_status qui — vogliamo riallineare la
+    # fase del corso a Fase 2 anche se era più avanti.
     course.status = "lessons_structure_pending"
 
     await write_audit(
@@ -648,17 +652,17 @@ def _recompute_course_lessons_structure_status(course: Course) -> None:
         return
 
     if any(s in ("pending", "processing", "failed") for s in statuses):
-        course.status = "lessons_structure_pending"
+        advance_course_status(course, "lessons_structure_pending")
         return
 
     if all(s == "approved" for s in statuses):
-        course.status = "lessons_structure_approved"
+        advance_course_status(course, "lessons_structure_approved")
         return
 
     if all(s in ("ready", "approved") for s in statuses) and any(
         s == "ready" for s in statuses
     ):
-        course.status = "lessons_structure_ready"
+        advance_course_status(course, "lessons_structure_ready")
         return
 
     # Tutti `empty` o mix con `empty` → non triggerato, lascia status corrente.

@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
 from app.core.config import get_settings
+from app.core.course_phase_order import advance_course_status
 from app.core.errors import ConflictError
 from app.core.logging import get_logger
 from app.models.avatar import Avatar
@@ -118,7 +119,7 @@ async def _recompute_course_avatar_video_status(
         return
     course = await db.get(Course, course_id)
     if course is not None:
-        course.status = new_status
+        advance_course_status(course, new_status)
 
 
 # ---------------------------------------------------------------------------
