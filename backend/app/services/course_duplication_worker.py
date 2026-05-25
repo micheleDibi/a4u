@@ -32,8 +32,16 @@ from __future__ import annotations
 
 import asyncio
 import time
+import traceback
 import uuid
 from datetime import UTC, datetime
+
+# Cap di durata massima per un singolo job di duplicazione: oltre il quale
+# il worker lo termina forzatamente e lo segna come `failed`. Evita job
+# "appesi" indefinitamente per timeout silenti di OpenAI o bug di
+# materializzazione. 30 min copre con margine un corso ragionevolmente
+# grande (10 lezioni × 4 fasi tradotte ≈ 5-10 min in condizioni normali).
+_JOB_TOTAL_TIMEOUT_SECONDS = 30 * 60
 
 from sqlalchemy import select
 
@@ -371,13 +379,19 @@ async def _process_one(job_id: uuid.UUID) -> None:
                 )
             await db.commit()
     except Exception as exc:  # noqa: BLE001
+        log.error(
+            "course_duplication_unhandled_exception",
+            job_id=str(job_id),
+            error=str(exc),
+            tb=traceback.format_exc()[:2000],
+        )
         async with async_session_factory() as db:
             job = await db.get(CourseDuplicationJob, job_id)
             if job is None:
                 return
             terminal = not _apply_failure(
                 job,
-                error=str(exc),
+                error=f"{type(exc).__name__}: {str(exc)[:400]}",
                 recoverable=True,
                 auto_retry_max=retry_max,
             )
@@ -449,16 +463,44 @@ async def _translate_lessons_phase(
 
 
 async def _bound_process(job_id: uuid.UUID) -> None:
-    """Wrap `_process_one` con cap globale di concorrenza."""
+    """Wrap `_process_one` con cap globale di concorrenza + timeout totale.
+
+    Se `_process_one` non termina entro `_JOB_TOTAL_TIMEOUT_SECONDS`,
+    il job viene cancellato (CancelledError) e marcato `failed` con
+    error "job_total_timeout". Evita stati appesi indefinitamente.
+    """
     assert _semaphore is not None
     try:
         async with _semaphore:
-            await _process_one(job_id)
+            try:
+                await asyncio.wait_for(
+                    _process_one(job_id),
+                    timeout=_JOB_TOTAL_TIMEOUT_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                log.error(
+                    "course_duplication_job_total_timeout",
+                    job_id=str(job_id),
+                    timeout_seconds=_JOB_TOTAL_TIMEOUT_SECONDS,
+                )
+                async with async_session_factory() as db:
+                    job = await db.get(CourseDuplicationJob, job_id)
+                    if job is not None and job.status in (
+                        "pending",
+                        "processing",
+                    ):
+                        job.status = "failed"
+                        job.error = (
+                            f"Timeout totale del job ({_JOB_TOTAL_TIMEOUT_SECONDS // 60} min)."
+                        )
+                        job.finished_at = datetime.now(UTC)
+                        await db.commit()
     except Exception as exc:  # pragma: no cover
         log.error(
             "course_duplication_worker_unexpected",
             job_id=str(job_id),
             error=str(exc),
+            tb=traceback.format_exc()[:1000],
         )
     finally:
         async with _inflight_lock:
