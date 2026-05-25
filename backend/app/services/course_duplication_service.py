@@ -326,6 +326,13 @@ def _walk_translate_path(
     return leaves
 
 
+# Cap di stringhe per ogni chiamata OpenAI. Batch più grandi fanno
+# scattare il timeout HTTP del client (default 120s) — `gpt-4o-mini`
+# può impiegare 2-3 min per tradurre 100+ items con output JSON. Con
+# chunk da 25 ogni chiamata finisce in 15-30s, sotto soglia.
+_TRANSLATE_CHUNK_SIZE = 25
+
+
 async def _translate_jsonb_inplace(
     data: Any,
     *,
@@ -337,13 +344,18 @@ async def _translate_jsonb_inplace(
     key_prefix: str = "",
 ) -> dict[str, Any]:
     """Estrae tutte le foglie stringa dichiarate in `paths`, le traduce
-    con un singolo `translate_batch`, e le riapplica in-place su `data`.
+    a chunk via `translate_batch`, e le riapplica in-place su `data`.
 
-    Ritorna un dict con statistiche di token aggregati (per audit job).
+    Chunking: i batch grandi (es. `architecture_raw` con 100+ items)
+    fanno scattare il timeout HTTP del client OpenAI. Splittiamo in
+    chunk da `_TRANSLATE_CHUNK_SIZE` items e facciamo chiamate
+    sequenziali.
 
     Stringhe vuote o non-stringhe vengono ignorate. Il `key_prefix`
-    serve a evitare collisioni quando si fa il merge dei batch (es.
-    "lesson_{id}_") in chiamate concorrenti.
+    serve a evitare collisioni di chiavi tra chiamate concorrenti
+    (es. lezioni diverse tradotte in parallelo).
+
+    Ritorna un dict con statistiche aggregate per audit job.
     """
     if data is None:
         return {"strings_translated": 0}
@@ -360,19 +372,36 @@ async def _translate_jsonb_inplace(
     if not items:
         return {"strings_translated": 0}
 
-    translated = await translate_batch(
-        items=items,
-        source_lang_code=source_lang_code,
-        source_lang_name=source_lang_name,
-        target_lang_code=target_lang_code,
-        target_lang_name=target_lang_name,
-    )
+    # Chunking: max `_TRANSLATE_CHUNK_SIZE` items per chiamata OpenAI.
+    keys = list(items.keys())
+    translated: dict[str, str] = {}
+    for chunk_start in range(0, len(keys), _TRANSLATE_CHUNK_SIZE):
+        chunk_keys = keys[chunk_start : chunk_start + _TRANSLATE_CHUNK_SIZE]
+        chunk_items = {k: items[k] for k in chunk_keys}
+        chunk_translated = await translate_batch(
+            items=chunk_items,
+            source_lang_code=source_lang_code,
+            source_lang_name=source_lang_name,
+            target_lang_code=target_lang_code,
+            target_lang_name=target_lang_name,
+        )
+        translated.update(chunk_translated)
+        log.info(
+            "nova_duplication_chunk_translated",
+            chunk_start=chunk_start,
+            chunk_size=len(chunk_items),
+            received=len(chunk_translated),
+            total_items=len(keys),
+        )
+
+    applied = 0
     for (parent, key), unique_key in zip(addresses, items.keys()):
         new = translated.get(unique_key)
         if new is None or not isinstance(new, str):
             continue
         parent[key] = new
-    return {"strings_translated": len(items)}
+        applied += 1
+    return {"strings_translated": applied}
 
 
 # ---------------------------------------------------------------------------
