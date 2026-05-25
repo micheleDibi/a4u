@@ -1164,9 +1164,14 @@ async def request_all_lessons_pdf(
     course: Course,
     actor_id: uuid.UUID,
     pdf_template_id: uuid.UUID | None = None,
+    only_missing: bool = False,
 ) -> Course:
     """Marca TUTTE le lezioni esportabili (`content_status` ∈
     ready/approved e `pdf_status` ∈ empty/ready/failed) come `pending`.
+
+    Se `only_missing=True`, esclude le lezioni con PDF già `ready`:
+    filtra a `pdf_status ∈ (empty, failed)`. Utile per il pulsante
+    "Genera PDF mancanti" che rigenera solo ciò che non è pronto.
 
     Se `pdf_template_id` è fornito, lo applica a tutte le lezioni
     eligibili (override del template scelto in passato per ogni
@@ -1174,12 +1179,15 @@ async def request_all_lessons_pdf(
     (il worker fall-back al default dell'org per le lezioni che non
     hanno un template specificato).
     """
+    pdf_status_filter: tuple[str, ...] = (
+        ("empty", "failed") if only_missing else VALID_PDF_REQUEST_STATUSES
+    )
     eligible: list[CourseLesson] = []
     for module in course.modules:
         for lesson in module.lessons:
             if (
                 lesson.content_status in EXPORTABLE_CONTENT_STATUSES
-                and lesson.pdf_status in VALID_PDF_REQUEST_STATUSES
+                and lesson.pdf_status in pdf_status_filter
                 and not lesson.is_assessment
             ):
                 eligible.append(lesson)

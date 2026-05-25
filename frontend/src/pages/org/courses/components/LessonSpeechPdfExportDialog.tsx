@@ -19,7 +19,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { pdfTemplatesApi } from "@/api/pdfTemplates";
 import type { PdfTemplateOut } from "@/api/types";
 
-export type LessonSpeechPdfExportMode = "single" | "all";
+export type LessonSpeechPdfExportMode = "single" | "all" | "missing";
 
 interface Props {
   open: boolean;
@@ -89,16 +89,24 @@ export function LessonSpeechPdfExportDialog({
     onConfirm(selectedId);
   };
 
-  const isBatch = mode === "all";
-  const titleKey = isBatch
-    ? "courses.lessonsSpeechPdf.dialog.exportAll.title"
-    : "courses.lessonsSpeechPdf.dialog.exportLesson.title";
-  const descriptionKey = isBatch
-    ? "courses.lessonsSpeechPdf.dialog.exportAll.description"
-    : "courses.lessonsSpeechPdf.dialog.exportLesson.description";
-  const ctaKey = isBatch
-    ? "courses.lessonsSpeechPdf.dialog.exportAllCta"
-    : "courses.lessonsSpeechPdf.dialog.exportCta";
+  const titleKey =
+    mode === "all"
+      ? "courses.lessonsSpeechPdf.dialog.exportAll.title"
+      : mode === "missing"
+        ? "courses.lessonsSpeechPdf.dialog.exportMissing.title"
+        : "courses.lessonsSpeechPdf.dialog.exportLesson.title";
+  const descriptionKey =
+    mode === "all"
+      ? "courses.lessonsSpeechPdf.dialog.exportAll.description"
+      : mode === "missing"
+        ? "courses.lessonsSpeechPdf.dialog.exportMissing.description"
+        : "courses.lessonsSpeechPdf.dialog.exportLesson.description";
+  const ctaKey =
+    mode === "all"
+      ? "courses.lessonsSpeechPdf.dialog.exportAllCta"
+      : mode === "missing"
+        ? "courses.lessonsSpeechPdf.dialog.exportMissingCta"
+        : "courses.lessonsSpeechPdf.dialog.exportCta";
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>

@@ -625,14 +625,23 @@ async def request_all_lessons_slides_pdf(
     course: Course,
     actor_id: uuid.UUID,
     pdf_template_id: uuid.UUID | None = None,
+    only_missing: bool = False,
 ) -> Course:
-    """Marca tutte le lezioni esportabili come slides_pdf_status='pending'."""
+    """Marca tutte le lezioni esportabili come slides_pdf_status='pending'.
+
+    Se `only_missing=True`, esclude le lezioni con PDF slide già
+    `ready`: filtra a `slides_pdf_status ∈ (empty, failed)`. Utile per
+    "Genera PDF slide mancanti".
+    """
+    pdf_status_filter: tuple[str, ...] = (
+        ("empty", "failed") if only_missing else VALID_SLIDES_PDF_REQUEST_STATUSES
+    )
     eligible: list[CourseLesson] = []
     for module in course.modules:
         for lesson in module.lessons:
             if (
                 lesson.slides_status in EXPORTABLE_SLIDES_STATUSES
-                and lesson.slides_pdf_status in VALID_SLIDES_PDF_REQUEST_STATUSES
+                and lesson.slides_pdf_status in pdf_status_filter
                 and not lesson.is_assessment
             ):
                 eligible.append(lesson)

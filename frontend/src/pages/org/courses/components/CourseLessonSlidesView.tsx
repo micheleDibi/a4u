@@ -157,27 +157,26 @@ export function CourseLessonSlidesView({
         failedCount: 0,
       };
     }
-    let sum = 0;
+    // La percentuale riflette solo le lezioni EFFETTIVAMENTE completate
+    // (ready/approved). Le lezioni in produzione non contribuiscono al
+    // percent: vedi commento equivalente in CourseLessonContentView.
     let completed = 0;
     let activeCount = 0;
     let failedCount = 0;
     for (const l of allLessons) {
       const status = l.slides_status;
       if (status === "ready" || status === "approved") {
-        sum += 100;
         completed += 1;
       } else if (status === "processing" || status === "pending") {
-        sum += l.slides_progress || 0;
         activeCount += 1;
       } else if (status === "failed") {
-        sum += 0;
         failedCount += 1;
       }
     }
     return {
       completed,
       total,
-      percent: Math.round(sum / total),
+      percent: Math.round((completed / total) * 100),
       activeCount,
       failedCount,
     };
@@ -355,12 +354,29 @@ export function CourseLessonSlidesView({
   });
 
   const exportAllPdfMut = useMutation({
-    mutationFn: (templateId: string | null) =>
-      coursesApi.lessonSlidesPdf.exportAll(orgId, course.id, templateId),
-    onSuccess: (fresh) => {
+    mutationFn: ({
+      templateId,
+      onlyMissing,
+    }: {
+      templateId: string | null;
+      onlyMissing: boolean;
+    }) =>
+      coursesApi.lessonSlidesPdf.exportAll(
+        orgId,
+        course.id,
+        templateId,
+        onlyMissing,
+      ),
+    onSuccess: (fresh, vars) => {
       setCache(fresh);
       setPdfExportDialog({ kind: "closed" });
-      toast.success(t("courses.lessonsSlidesPdf.toast.batchStarted"));
+      toast.success(
+        t(
+          vars.onlyMissing
+            ? "courses.lessonsSlidesPdf.toast.missingStarted"
+            : "courses.lessonsSlidesPdf.toast.batchStarted",
+        ),
+      );
     },
     onError: (err) =>
       toast.error(
@@ -479,6 +495,13 @@ export function CourseLessonSlidesView({
         l.slides_pdf_status === "ready" ||
         l.slides_pdf_status === "failed"),
   ).length;
+  // Lezioni eleggibili senza PDF slide pronto. Driver del pulsante
+  // "Genera PDF slide mancanti".
+  const missingPdfCount = allLessons.filter(
+    (l) =>
+      (l.slides_status === "ready" || l.slides_status === "approved") &&
+      (l.slides_pdf_status === "empty" || l.slides_pdf_status === "failed"),
+  ).length;
 
   // Empty state: nessuna lezione con content pronto → invita a Fase 3.
   if (eligibleForGen === 0) {
@@ -584,6 +607,23 @@ export function CourseLessonSlidesView({
                   })}
                 </Button>
               )}
+              {canGenerate &&
+                missingPdfCount > 0 &&
+                missingPdfCount < exportablePdfCount &&
+                !anyPdfActive && (
+                  <Button
+                    variant="outline"
+                    onClick={() =>
+                      setPdfExportDialog({ kind: "open", mode: "missing" })
+                    }
+                    disabled={exportAllPdfMut.isPending}
+                  >
+                    <FileText className="size-4" />
+                    {t("courses.lessonsSlidesPdf.generateMissing", {
+                      count: missingPdfCount,
+                    })}
+                  </Button>
+                )}
             </div>
           </div>
         </CardHeader>
@@ -743,7 +783,11 @@ export function CourseLessonSlidesView({
           open={true}
           mode={pdfExportDialog.mode}
           lessonLabel={pdfExportDialog.lessonLabel}
-          exportableCount={exportablePdfCount}
+          exportableCount={
+            pdfExportDialog.mode === "missing"
+              ? missingPdfCount
+              : exportablePdfCount
+          }
           initialTemplateId={pdfExportDialog.initialTemplateId}
           orgId={orgId}
           isPending={exportPdfMut.isPending || exportAllPdfMut.isPending}
@@ -755,7 +799,9 @@ export function CourseLessonSlidesView({
                 templateId,
               });
             } else if (pdfExportDialog.mode === "all") {
-              exportAllPdfMut.mutate(templateId);
+              exportAllPdfMut.mutate({ templateId, onlyMissing: false });
+            } else if (pdfExportDialog.mode === "missing") {
+              exportAllPdfMut.mutate({ templateId, onlyMissing: true });
             }
           }}
         />

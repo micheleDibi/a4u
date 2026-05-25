@@ -414,14 +414,23 @@ async def request_all_lessons_speech_pdf(
     course: Course,
     actor_id: uuid.UUID,
     pdf_template_id: uuid.UUID | None = None,
+    only_missing: bool = False,
 ) -> Course:
-    """Marca tutte le lezioni esportabili come speech_pdf_status='pending'."""
+    """Marca tutte le lezioni esportabili come speech_pdf_status='pending'.
+
+    Se `only_missing=True`, esclude le lezioni con PDF discorso già
+    `ready`: filtra a `speech_pdf_status ∈ (empty, failed)`. Utile per
+    "Genera PDF discorso mancanti".
+    """
+    pdf_status_filter: tuple[str, ...] = (
+        ("empty", "failed") if only_missing else VALID_SPEECH_PDF_REQUEST_STATUSES
+    )
     eligible: list[CourseLesson] = []
     for module in course.modules:
         for lesson in module.lessons:
             if (
                 lesson.speech_status in EXPORTABLE_SPEECH_STATUSES
-                and lesson.speech_pdf_status in VALID_SPEECH_PDF_REQUEST_STATUSES
+                and lesson.speech_pdf_status in pdf_status_filter
             ):
                 eligible.append(lesson)
     if not eligible:

@@ -1719,14 +1719,19 @@ async def export_all_lessons_pdf(
     db: DbSession,
     current: CurrentUser,
     pdf_template_id: Annotated[uuid.UUID | None, Query()] = None,
+    only_missing: Annotated[bool, Query()] = False,
     _=require(P.COURSE_GENERATE),
 ) -> CourseOut:
     """Avvia l'export PDF per TUTTE le lezioni esportabili del corso
     (`content_status` ∈ ready/approved e `pdf_status` non in flight).
 
-    Query param opzionale `pdf_template_id`: applica lo stesso template
-    a tutte le lezioni esportabili (override). Se omesso, ogni lezione
-    usa il proprio `pdf_template_id` salvato (o il default dell'org).
+    Query params opzionali:
+    - `pdf_template_id`: applica lo stesso template a tutte le lezioni
+      esportabili (override). Se omesso, ogni lezione usa il proprio
+      `pdf_template_id` salvato (o il default dell'org).
+    - `only_missing`: se `true`, esclude le lezioni con PDF già pronto
+      (`pdf_status='ready'`) e rigenera solo i mancanti. Utile per il
+      pulsante "Genera PDF mancanti".
     """
     await _ensure_org(db, org_id)
     course = await _load_course_for_edit(
@@ -1737,6 +1742,7 @@ async def export_all_lessons_pdf(
         course=course,
         actor_id=current.id,
         pdf_template_id=pdf_template_id,
+        only_missing=only_missing,
     )
     return CourseOut.model_validate(course)
 
@@ -1855,9 +1861,13 @@ async def export_all_lessons_slides_pdf(
     db: DbSession,
     current: CurrentUser,
     pdf_template_id: Annotated[uuid.UUID | None, Query()] = None,
+    only_missing: Annotated[bool, Query()] = False,
     _=require(P.COURSE_GENERATE),
 ) -> CourseOut:
-    """Avvia l'export PDF slide per TUTTE le lezioni esportabili."""
+    """Avvia l'export PDF slide per TUTTE le lezioni esportabili.
+
+    Se `only_missing=true`, esclude le lezioni con PDF slide già pronto.
+    """
     await _ensure_org(db, org_id)
     course = await _load_course_for_edit(
         db, org_id=org_id, course_id=course_id, current=current
@@ -1867,6 +1877,7 @@ async def export_all_lessons_slides_pdf(
         course=course,
         actor_id=current.id,
         pdf_template_id=pdf_template_id,
+        only_missing=only_missing,
     )
     return CourseOut.model_validate(course)
 
@@ -1988,9 +1999,13 @@ async def export_all_lessons_speech_pdf(
     db: DbSession,
     current: CurrentUser,
     pdf_template_id: Annotated[uuid.UUID | None, Query()] = None,
+    only_missing: Annotated[bool, Query()] = False,
     _=require(P.COURSE_GENERATE),
 ) -> CourseOut:
-    """Avvia l'export PDF discorso per TUTTE le lezioni esportabili."""
+    """Avvia l'export PDF discorso per TUTTE le lezioni esportabili.
+
+    Se `only_missing=true`, esclude le lezioni con PDF discorso già pronto.
+    """
     await _ensure_org(db, org_id)
     course = await _load_course_for_edit(
         db, org_id=org_id, course_id=course_id, current=current
@@ -2000,6 +2015,7 @@ async def export_all_lessons_speech_pdf(
         course=course,
         actor_id=current.id,
         pdf_template_id=pdf_template_id,
+        only_missing=only_missing,
     )
     return CourseOut.model_validate(course)
 

@@ -944,14 +944,15 @@
       }
     },
     "lessonsSlidesPdf": {
-      "exportAll": "Esporta PDF slide ({{count}})",
-      "cancelAll": "Ferma export PDF",
+      "exportAll": "Genera PDF slide ({{count}})",
+      "generateMissing": "Genera PDF slide mancanti ({{count}})",
+      "cancelAll": "Ferma generazione PDF",
       "lesson": {
-        "export": "Esporta PDF",
-        "retry": "Riprova export",
+        "export": "Genera PDF",
+        "retry": "Riprova generazione",
         "download": "Scarica PDF",
         "regenerate": "Rigenera PDF",
-        "exporting": "Export in corso…"
+        "exporting": "Generazione in corso…"
       },
       "module": {
         "downloadMerged": {
@@ -965,23 +966,29 @@
       },
       "dialog": {
         "exportLesson": {
-          "title": "Esporta PDF slide — {{lesson}}",
+          "title": "Genera PDF slide — {{lesson}}",
           "description": "Scegli il template grafico da applicare al PDF delle slide."
         },
         "exportAll": {
-          "title": "Esporta PDF slide di tutte le lezioni",
-          "description": "{{count}} lezioni verranno esportate in PDF (una slide per pagina)."
+          "title": "Genera PDF slide di tutte le lezioni",
+          "description": "{{count}} lezioni verranno generate in PDF (una slide per pagina)."
+        },
+        "exportMissing": {
+          "title": "Genera PDF slide mancanti",
+          "description": "{{count}} lezioni senza PDF verranno generate."
         },
         "templateLabel": "Template",
         "noTemplates": "Nessun template configurato per l'organizzazione. Verrà usato il template di default integrato.",
-        "exportCta": "Esporta",
-        "exportAllCta": "Esporta tutto",
+        "exportCta": "Genera",
+        "exportAllCta": "Genera tutto",
+        "exportMissingCta": "Genera mancanti",
         "defaultBadge": "Default"
       },
       "toast": {
-        "batchStarted": "Export PDF slide avviato su tutte le lezioni.",
-        "lessonStarted": "Export PDF slide avviato.",
-        "cancelled": "Export annullato.",
+        "batchStarted": "Generazione PDF slide avviata su tutte le lezioni.",
+        "missingStarted": "Generazione PDF slide avviata sulle lezioni mancanti.",
+        "lessonStarted": "Generazione PDF slide avviata.",
+        "cancelled": "Generazione annullata.",
         "error": "Operazione fallita. Riprova."
       }
     },
@@ -1094,14 +1101,15 @@
       }
     },
     "lessonsSpeechPdf": {
-      "exportAll": "Esporta PDF discorso ({{count}})",
-      "cancelAll": "Ferma export PDF",
+      "exportAll": "Genera PDF discorso ({{count}})",
+      "generateMissing": "Genera PDF discorso mancanti ({{count}})",
+      "cancelAll": "Ferma generazione PDF",
       "lesson": {
-        "export": "Esporta PDF",
-        "retry": "Riprova export",
+        "export": "Genera PDF discorso",
+        "retry": "Riprova generazione",
         "download": "Scarica PDF",
         "regenerate": "Rigenera PDF",
-        "exporting": "Export in corso…"
+        "exporting": "Generazione in corso…"
       },
       "module": {
         "downloadMerged": {
@@ -1115,23 +1123,29 @@
       },
       "dialog": {
         "exportLesson": {
-          "title": "Esporta PDF discorso — {{lesson}}",
+          "title": "Genera PDF discorso — {{lesson}}",
           "description": "Scegli il template grafico da applicare al PDF del discorso."
         },
         "exportAll": {
-          "title": "Esporta PDF discorso di tutte le lezioni",
-          "description": "{{count}} lezioni verranno esportate in PDF (testo del discorso raggruppato per slide con timeline)."
+          "title": "Genera PDF discorso di tutte le lezioni",
+          "description": "{{count}} lezioni verranno generate in PDF (testo del discorso raggruppato per slide con timeline)."
+        },
+        "exportMissing": {
+          "title": "Genera PDF discorso mancanti",
+          "description": "{{count}} lezioni senza PDF verranno generate."
         },
         "templateLabel": "Template",
         "noTemplates": "Nessun template configurato per l'organizzazione. Verrà usato il template di default integrato.",
-        "exportCta": "Esporta",
-        "exportAllCta": "Esporta tutto",
+        "exportCta": "Genera",
+        "exportAllCta": "Genera tutto",
+        "exportMissingCta": "Genera mancanti",
         "defaultBadge": "Default"
       },
       "toast": {
-        "batchStarted": "Export PDF discorso avviato su tutte le lezioni.",
-        "lessonStarted": "Export PDF discorso avviato.",
-        "cancelled": "Export annullato.",
+        "batchStarted": "Generazione PDF discorso avviata su tutte le lezioni.",
+        "missingStarted": "Generazione PDF discorso avviata sulle lezioni mancanti.",
+        "lessonStarted": "Generazione PDF discorso avviata.",
+        "cancelled": "Generazione annullata.",
         "error": "Operazione fallita. Riprova."
       }
     },
@@ -1161,15 +1175,16 @@
       "titleRequired": "Il titolo è obbligatorio."
     },
     "lessonsPdf": {
-      "exportAll": "Esporta PDF ({{count}})",
-      "cancelAll": "Annulla export PDF",
+      "exportAll": "Genera PDF ({{count}})",
+      "generateMissing": "Genera PDF mancanti ({{count}})",
+      "cancelAll": "Annulla generazione PDF",
       "lesson": {
-        "export": "Esporta PDF",
-        "retry": "Riprova export",
-        "exporting": "Esportazione PDF in corso...",
+        "export": "Genera PDF",
+        "retry": "Riprova generazione",
+        "exporting": "Generazione PDF in corso...",
         "download": "Scarica PDF",
         "regenerate": "Rigenera PDF",
-        "failed": "Export PDF fallito"
+        "failed": "Generazione PDF fallita"
       },
       "module": {
         "downloadMerged": {
@@ -1194,25 +1209,31 @@
         "failed": "PDF fallito"
       },
       "toast": {
-        "lessonStarted": "Export PDF avviato.",
-        "batchStarted": "Export PDF di tutte le lezioni avviato.",
-        "cancelled": "Export PDF annullato.",
-        "error": "Errore durante l'export PDF."
+        "lessonStarted": "Generazione PDF avviata.",
+        "batchStarted": "Generazione PDF di tutte le lezioni avviata.",
+        "missingStarted": "Generazione PDF avviata sulle lezioni mancanti.",
+        "cancelled": "Generazione PDF annullata.",
+        "error": "Errore durante la generazione PDF."
       },
       "dialog": {
         "exportLesson": {
-          "title": "Esporta PDF — {{lesson}}",
+          "title": "Genera PDF — {{lesson}}",
           "description": "Scegli il template grafico da applicare al PDF della lezione."
         },
         "exportAll": {
-          "title": "Esporta PDF di tutte le lezioni",
-          "description": "Verranno esportate {{count}} lezioni con il template grafico selezionato."
+          "title": "Genera PDF di tutte le lezioni",
+          "description": "Verranno generate {{count}} lezioni con il template grafico selezionato."
+        },
+        "exportMissing": {
+          "title": "Genera PDF delle lezioni mancanti",
+          "description": "{{count}} lezioni senza PDF verranno generate con il template grafico selezionato."
         },
         "templateLabel": "Template grafico",
         "defaultBadge": "Predefinito",
         "noTemplates": "Nessun template configurato per l'organizzazione. Verrà usato il template di default integrato.",
-        "exportCta": "Esporta",
-        "exportAllCta": "Esporta tutto"
+        "exportCta": "Genera",
+        "exportAllCta": "Genera tutto",
+        "exportMissingCta": "Genera mancanti"
       }
     },
     "approval": {

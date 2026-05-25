@@ -19,7 +19,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { slideTemplatesApi } from "@/api/slideTemplates";
 import type { SlideTemplateOut } from "@/api/types";
 
-export type LessonSlidesPdfExportMode = "single" | "all";
+export type LessonSlidesPdfExportMode = "single" | "all" | "missing";
 
 interface Props {
   open: boolean;
@@ -83,16 +83,24 @@ export function LessonSlidesPdfExportDialog({
     onConfirm(selectedId);
   };
 
-  const isBatch = mode === "all";
-  const titleKey = isBatch
-    ? "courses.lessonsSlidesPdf.dialog.exportAll.title"
-    : "courses.lessonsSlidesPdf.dialog.exportLesson.title";
-  const descriptionKey = isBatch
-    ? "courses.lessonsSlidesPdf.dialog.exportAll.description"
-    : "courses.lessonsSlidesPdf.dialog.exportLesson.description";
-  const ctaKey = isBatch
-    ? "courses.lessonsSlidesPdf.dialog.exportAllCta"
-    : "courses.lessonsSlidesPdf.dialog.exportCta";
+  const titleKey =
+    mode === "all"
+      ? "courses.lessonsSlidesPdf.dialog.exportAll.title"
+      : mode === "missing"
+        ? "courses.lessonsSlidesPdf.dialog.exportMissing.title"
+        : "courses.lessonsSlidesPdf.dialog.exportLesson.title";
+  const descriptionKey =
+    mode === "all"
+      ? "courses.lessonsSlidesPdf.dialog.exportAll.description"
+      : mode === "missing"
+        ? "courses.lessonsSlidesPdf.dialog.exportMissing.description"
+        : "courses.lessonsSlidesPdf.dialog.exportLesson.description";
+  const ctaKey =
+    mode === "all"
+      ? "courses.lessonsSlidesPdf.dialog.exportAllCta"
+      : mode === "missing"
+        ? "courses.lessonsSlidesPdf.dialog.exportMissingCta"
+        : "courses.lessonsSlidesPdf.dialog.exportCta";
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -103,7 +111,7 @@ export function LessonSlidesPdfExportDialog({
             {t(titleKey, {
               lesson: lessonLabel ?? "",
               count: exportableCount ?? 0,
-              defaultValue: "Esporta PDF slide",
+              defaultValue: "Genera PDF slide",
             })}
           </DialogTitle>
           <DialogDescription>

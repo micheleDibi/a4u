@@ -157,27 +157,26 @@ export function CourseLessonSpeechView({
         failedCount: 0,
       };
     }
-    let sum = 0;
+    // La percentuale riflette solo le lezioni EFFETTIVAMENTE completate
+    // (ready/approved). Le lezioni in produzione non contribuiscono al
+    // percent: vedi commento equivalente in CourseLessonContentView.
     let completed = 0;
     let activeCount = 0;
     let failedCount = 0;
     for (const l of allLessons) {
       const status = l.speech_status;
       if (status === "ready" || status === "approved") {
-        sum += 100;
         completed += 1;
       } else if (status === "processing" || status === "pending") {
-        sum += l.speech_progress || 0;
         activeCount += 1;
       } else if (status === "failed") {
-        sum += 0;
         failedCount += 1;
       }
     }
     return {
       completed,
       total,
-      percent: Math.round(sum / total),
+      percent: Math.round((completed / total) * 100),
       activeCount,
       failedCount,
     };
@@ -355,12 +354,29 @@ export function CourseLessonSpeechView({
   });
 
   const exportAllPdfMut = useMutation({
-    mutationFn: (templateId: string | null) =>
-      coursesApi.lessonSpeechPdf.exportAll(orgId, course.id, templateId),
-    onSuccess: (fresh) => {
+    mutationFn: ({
+      templateId,
+      onlyMissing,
+    }: {
+      templateId: string | null;
+      onlyMissing: boolean;
+    }) =>
+      coursesApi.lessonSpeechPdf.exportAll(
+        orgId,
+        course.id,
+        templateId,
+        onlyMissing,
+      ),
+    onSuccess: (fresh, vars) => {
       setCache(fresh);
       setPdfExportDialog({ kind: "closed" });
-      toast.success(t("courses.lessonsSpeechPdf.toast.batchStarted"));
+      toast.success(
+        t(
+          vars.onlyMissing
+            ? "courses.lessonsSpeechPdf.toast.missingStarted"
+            : "courses.lessonsSpeechPdf.toast.batchStarted",
+        ),
+      );
     },
     onError: (err) =>
       toast.error(
@@ -480,6 +496,15 @@ export function CourseLessonSpeechView({
         l.speech_pdf_status === "failed" ||
         l.speech_pdf_status === undefined),
   ).length;
+  // Lezioni eleggibili senza PDF discorso pronto. Driver del pulsante
+  // "Genera PDF discorso mancanti".
+  const missingPdfCount = allLessons.filter(
+    (l) =>
+      (l.speech_status === "ready" || l.speech_status === "approved") &&
+      (l.speech_pdf_status === "empty" ||
+        l.speech_pdf_status === "failed" ||
+        l.speech_pdf_status === undefined),
+  ).length;
 
   // Empty state: nessuna lezione con slide pronte → invita a Fase 4.
   if (eligibleForGen === 0) {
@@ -571,6 +596,23 @@ export function CourseLessonSpeechView({
                   {t("courses.lessonsSpeechPdf.cancelAll")}
                 </Button>
               )}
+              {canGenerate &&
+                missingPdfCount > 0 &&
+                missingPdfCount < exportablePdfCount &&
+                !anyPdfActive && (
+                  <Button
+                    variant="outline"
+                    onClick={() =>
+                      setPdfExportDialog({ kind: "open", mode: "missing" })
+                    }
+                    disabled={exportAllPdfMut.isPending}
+                  >
+                    <FileText className="size-4" />
+                    {t("courses.lessonsSpeechPdf.generateMissing", {
+                      count: missingPdfCount,
+                    })}
+                  </Button>
+                )}
               {canGenerate && exportablePdfCount > 0 && !anyPdfActive && (
                 <Button
                   variant="outline"
@@ -742,7 +784,11 @@ export function CourseLessonSpeechView({
           open={true}
           mode={pdfExportDialog.mode}
           lessonLabel={pdfExportDialog.lessonLabel}
-          exportableCount={exportablePdfCount}
+          exportableCount={
+            pdfExportDialog.mode === "missing"
+              ? missingPdfCount
+              : exportablePdfCount
+          }
           initialTemplateId={pdfExportDialog.initialTemplateId}
           orgId={orgId}
           isPending={exportPdfMut.isPending || exportAllPdfMut.isPending}
@@ -754,7 +800,9 @@ export function CourseLessonSpeechView({
                 templateId,
               });
             } else if (pdfExportDialog.mode === "all") {
-              exportAllPdfMut.mutate(templateId);
+              exportAllPdfMut.mutate({ templateId, onlyMissing: false });
+            } else if (pdfExportDialog.mode === "missing") {
+              exportAllPdfMut.mutate({ templateId, onlyMissing: true });
             }
           }}
         />

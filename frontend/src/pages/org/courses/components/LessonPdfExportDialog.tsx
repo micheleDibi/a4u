@@ -19,7 +19,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { pdfTemplatesApi } from "@/api/pdfTemplates";
 import type { PdfTemplateOut } from "@/api/types";
 
-export type LessonPdfExportMode = "single" | "all";
+export type LessonPdfExportMode = "single" | "all" | "missing";
 
 interface Props {
   open: boolean;
@@ -85,16 +85,24 @@ export function LessonPdfExportDialog({
     onConfirm(selectedId);
   };
 
-  const isBatch = mode === "all";
-  const titleKey = isBatch
-    ? "courses.lessonsPdf.dialog.exportAll.title"
-    : "courses.lessonsPdf.dialog.exportLesson.title";
-  const descriptionKey = isBatch
-    ? "courses.lessonsPdf.dialog.exportAll.description"
-    : "courses.lessonsPdf.dialog.exportLesson.description";
-  const ctaKey = isBatch
-    ? "courses.lessonsPdf.dialog.exportAllCta"
-    : "courses.lessonsPdf.dialog.exportCta";
+  const titleKey =
+    mode === "all"
+      ? "courses.lessonsPdf.dialog.exportAll.title"
+      : mode === "missing"
+        ? "courses.lessonsPdf.dialog.exportMissing.title"
+        : "courses.lessonsPdf.dialog.exportLesson.title";
+  const descriptionKey =
+    mode === "all"
+      ? "courses.lessonsPdf.dialog.exportAll.description"
+      : mode === "missing"
+        ? "courses.lessonsPdf.dialog.exportMissing.description"
+        : "courses.lessonsPdf.dialog.exportLesson.description";
+  const ctaKey =
+    mode === "all"
+      ? "courses.lessonsPdf.dialog.exportAllCta"
+      : mode === "missing"
+        ? "courses.lessonsPdf.dialog.exportMissingCta"
+        : "courses.lessonsPdf.dialog.exportCta";
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -105,7 +113,7 @@ export function LessonPdfExportDialog({
             {t(titleKey, {
               lesson: lessonLabel ?? "",
               count: exportableCount ?? 0,
-              defaultValue: isBatch ? "Esporta PDF" : "Esporta PDF",
+              defaultValue: "Genera PDF",
             })}
           </DialogTitle>
           <DialogDescription>

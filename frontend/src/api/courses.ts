@@ -1317,14 +1317,16 @@ export const coursesApi = {
     exportAll: async (
       orgId: string,
       courseId: string,
-      pdfTemplateId?: string | null
+      pdfTemplateId?: string | null,
+      onlyMissing?: boolean
     ): Promise<CourseOut> => {
+      const params: Record<string, string | boolean> = {};
+      if (pdfTemplateId) params.pdf_template_id = pdfTemplateId;
+      if (onlyMissing) params.only_missing = true;
       const res = await apiClient.post<CourseOut>(
         `${base(orgId)}/${courseId}/lessons-pdf/export-all`,
         undefined,
-        pdfTemplateId
-          ? { params: { pdf_template_id: pdfTemplateId } }
-          : undefined
+        Object.keys(params).length ? { params } : undefined
       );
       return res.data;
     },
@@ -1411,14 +1413,16 @@ export const coursesApi = {
     exportAll: async (
       orgId: string,
       courseId: string,
-      pdfTemplateId?: string | null
+      pdfTemplateId?: string | null,
+      onlyMissing?: boolean
     ): Promise<CourseOut> => {
+      const params: Record<string, string | boolean> = {};
+      if (pdfTemplateId) params.pdf_template_id = pdfTemplateId;
+      if (onlyMissing) params.only_missing = true;
       const res = await apiClient.post<CourseOut>(
         `${base(orgId)}/${courseId}/lessons-slides-pdf/export-all`,
         undefined,
-        pdfTemplateId
-          ? { params: { pdf_template_id: pdfTemplateId } }
-          : undefined
+        Object.keys(params).length ? { params } : undefined
       );
       return res.data;
     },
@@ -1493,14 +1497,16 @@ export const coursesApi = {
     exportAll: async (
       orgId: string,
       courseId: string,
-      pdfTemplateId?: string | null
+      pdfTemplateId?: string | null,
+      onlyMissing?: boolean
     ): Promise<CourseOut> => {
+      const params: Record<string, string | boolean> = {};
+      if (pdfTemplateId) params.pdf_template_id = pdfTemplateId;
+      if (onlyMissing) params.only_missing = true;
       const res = await apiClient.post<CourseOut>(
         `${base(orgId)}/${courseId}/lessons-speech-pdf/export-all`,
         undefined,
-        pdfTemplateId
-          ? { params: { pdf_template_id: pdfTemplateId } }
-          : undefined
+        Object.keys(params).length ? { params } : undefined
       );
       return res.data;
     },
