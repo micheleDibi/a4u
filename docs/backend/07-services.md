@@ -423,6 +423,94 @@ Caratteristiche:
 
 ---
 
+## `app/services/course_duplication_paths.py`
+
+**Single-source-of-truth dichiarativa** dei path JSON da tradurre per
+ogni struttura JSONB del corso. Esporta costanti come
+`CONTENT_RAW_TRANSLATE_PATHS`, `SLIDES_RAW_TRANSLATE_PATHS`,
+`SPEECH_RAW_TRANSLATE_PATHS`, `ARCHITECTURE_TRANSLATE_PATHS`,
+`GLOSSARY_TRANSLATE_PATHS`, `DOCUMENT_SUMMARY_TRANSLATE_PATHS`,
+`ASSESSMENT_RAW_TRANSLATE_PATHS`, `LESSON_JSONB_TRANSLATE_PATHS`,
+`MODULE_TRANSLATE_FIELDS`, `LESSON_TRANSLATE_FIELDS`,
+`COURSE_METADATA_TRANSLATE_FIELDS`. Sintassi path:
+- `"a"` → object field string
+- `"a.b"` → nested object
+- `"a[]"` → array di stringhe
+- `"a[].b"` → field di oggetti in array
+
+Tutto ciò che NON è dichiarato resta AS-IS (UUID, codice mermaid,
+LaTeX, format Literal, ID, numeri, booleani).
+
+Vedi [Courses 15 — Duplicazione corso](../courses/15-course-duplication.md)
+per la tabella completa di cosa è tradotto vs cosa è preservato.
+
+---
+
+## `app/services/course_duplication_service.py`
+
+**Scopo**: orchestrazione della **duplicazione corso in altra lingua**.
+
+API pubblica:
+- `request_course_duplication(db, source_course, target_language_code,
+  actor_id) → CourseDuplicationJob` — crea job `pending`. Valida:
+  lingua diversa, lingua attiva in DB, no job già attivo per stessa
+  coppia (controllo applicativo + unique parziale DB).
+- `cancel_duplication(db, job, actor_id) → CourseDuplicationJob` —
+  idempotente. Mette `pending|processing` → `failed` con error
+  "Annullata dall'utente".
+- `list_duplications_for_course(db, course_id) → list[Job]` — qualsiasi
+  stato, source o target.
+
+Helper interni chiamati dal worker:
+- `_clone_course_structure(db, source, target_language_code, job)` —
+  clona shell del target con metadati, taxonomy, configurazione AI.
+  Documenti copiati fisicamente su filesystem (`shutil.copy2` con nuovo
+  `filename_stored = uuid.uuid4().hex + ext`). I JSONB testuali
+  (`architecture_raw`, `content_raw`, `slides_raw`, `speech_raw`,
+  `glossary_raw`, `documents.summary`) sono copiati AS-IS via
+  `_deepcopy_json` — saranno tradotti in-place dalle fasi successive.
+  Video, avatar video e PDF resettati a `empty` con path `None`.
+- `_translate_jsonb_inplace(data, paths, source_lang_*, target_lang_*)`
+  — estrae le foglie testuali secondo `paths`, fa un singolo
+  `translate_batch` (efficienza token), e riapplica in-place. Usa
+  `sqlalchemy.orm.attributes.flag_modified` per marcare JSONB dirty.
+- 7 funzioni granulari: `_translate_course_metadata`,
+  `_translate_architecture`, `_translate_lesson` (con `phase ∈
+  meta|content|slides|speech`), `_translate_glossary` (azzera anche
+  `terms[].translation` perché era già una traduzione contestuale),
+  `_translate_document_summaries` (aggiorna anche
+  `summary.detected_language` al nuovo codice).
+- `_finalize(db, source, target)` — allinea
+  `target.status = source.status` via `advance_course_status`
+  (monotonia: video/avatar restano `empty`).
+
+---
+
+## `app/services/course_duplication_worker.py`
+
+**Scopo**: worker async dedicato, lanciato in `app.main.lifespan`.
+Pattern speculare a `course_lesson_content_worker` ma scoped a livello
+JOB (non lezione). Cap globale 1
+(`course_duplication_max_concurrent_jobs`); dentro al job le lezioni
+sono tradotte in parallelo cap 3 per fase
+(`course_duplication_lesson_translate_concurrency`).
+
+Pipeline `_process_one(job_id)` in 8 fasi: `loading_source` (2%) →
+`cloning_structure` (5%→8%) → `translating_architecture` (12%→20%) →
+`translating_lesson_metadata` (22%→28%) → `translating_content`
+(30%→50%) → `translating_slides` (55%→70%) → `translating_speech`
+(75%→85%) → `translating_glossary_documents` (88%→95%) → `finalizing`
+(95%→100%). `_check_cancelled` fra le fasi per uscire pulitamente.
+
+Auto-retry trasparente (`course_duplication_auto_retry_max=5`):
+`OpenAIError` transient → job torna a `pending` con `attempts+1`. Cap
+esaurito → `failed`. `OpenAINotConfiguredError` è terminale subito.
+
+Audit log: `course.duplicate.request`, `course.duplicate.completed`,
+`course.duplicate.failed`, `course.duplicate.cancelled`.
+
+---
+
 ## `app/musetalk_client/` — client MuseTalk vendored
 
 **Non è codice a4u da modificare.** È una **copia verbatim** del client

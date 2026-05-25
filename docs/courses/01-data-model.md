@@ -571,6 +571,66 @@ Il template `pdf_templates` (lezione testo + discorso, A4 portrait) resta separa
 
 ---
 
+## `course_duplication_job` — `app/models/course_duplication_job.py`
+
+Tabella di orchestrazione per il job background di **duplicazione corso
+in altra lingua** (vedi [15 — Duplicazione corso](15-course-duplication.md)).
+Creata dalla migration 0031.
+
+### Colonne
+
+- `id` UUID PK
+- `source_course_id` UUID FK `course(id)` ON DELETE CASCADE — corso
+  sorgente
+- `target_course_id` UUID FK `course(id)` ON DELETE SET NULL nullable —
+  popolato dopo la phase `cloning_structure` del worker
+- `target_language_code` VARCHAR(10) FK `languages(code)` ON DELETE
+  RESTRICT — lingua target
+- `status` VARCHAR(40) NOT NULL `server_default='pending'` — CHECK in
+  `('pending','processing','ready','failed')`
+- `progress` SMALLINT NOT NULL `server_default='0'` — CHECK 0..100
+- `progress_phase` VARCHAR(50) nullable — fase corrente del worker
+  (`loading_source` / `cloning_structure` / `translating_*` /
+  `finalizing`)
+- `error` TEXT nullable — messaggio se `status='failed'`
+- `attempts` SMALLINT NOT NULL `server_default='0'` — counter retry
+  trasparente (cap 5)
+- `tokens` JSONB nullable — aggregato cost / wall_clock_seconds
+- `requested_by_user_id` UUID FK `users(id)` ON DELETE SET NULL — chi
+  ha avviato la duplicazione
+- `started_at`, `finished_at` TIMESTAMPTZ nullable
+- `created_at`, `updated_at` TIMESTAMPTZ NOT NULL `default now()`
+
+### Indici e vincoli
+
+- 3 index plain: `source_course_id`, `target_course_id`, `status`
+- **Unique parziale** `uq_course_duplication_active` su
+  `(source_course_id, target_language_code) WHERE status IN
+  ('pending','processing')` — impedisce job concorrenti per stessa
+  coppia (source, lingua) a livello DB
+- 2 CHECK constraint: `ck_course_duplication_job_status` (enum),
+  `ck_course_duplication_job_progress` (0..100)
+
+### Relationships
+
+- `source_course` / `target_course` → `Course` (entrambi
+  `foreign_keys=` esplicito perché due FK sulla stessa tabella)
+- `target_language` → `Language`
+- `requested_by` → `User`
+
+### Note di runtime
+
+- Il worker `course_duplication_worker` polla questa tabella ogni 4s
+  (cap globale 1 job alla volta) e dispatcha `_process_one` su
+  semaforo locale cap 3 per le lezioni dentro al job.
+- `CourseListItemOut.duplication_job` (embedded in `CourseDuplicationJobCompact`)
+  viene popolato dal `course_service.list_courses` con i job attivi
+  (status ∈ pending|processing) i cui `target_course_id` sono nella
+  pagina corrente. Il FE polla la lista ogni 3s finché ci sono job
+  attivi nella pagina.
+
+---
+
 ## Frontend mirror types
 
 `frontend/src/api/courses.ts` espone i tipi TypeScript speculari:
@@ -591,3 +651,4 @@ Il template `pdf_templates` (lezione testo + discorso, A4 portrait) resta separa
 - Fase 6b: `LessonAvatarVideoStatus`, `LessonAvatarVideoPhase`, `LessonAvatarVideoTokens`, `LessonAvatarVideoStatusOut`, `LessonAvatarVideoBatchOut`
 - Assessment: `LessonAssessmentRaw`, `LessonAssessmentUpdateInput`, type-guard `isAssessmentRaw` (`content_raw` polimorfico `LessonContentRaw | LessonAssessmentRaw`)
 - `GlossaryRaw`, `GlossaryTerm`
+- Duplicazione: `CourseDuplicationJobStatus` (`pending|processing|ready|failed`), `CourseDuplicationJobCompact` (embed in `CourseListItemOut.duplication_job`), `CourseDuplicationJobOut` (response endpoint dedicati)

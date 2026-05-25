@@ -13,7 +13,7 @@ Serve a:
 - consentire `from app.models import *  # noqa: F401,F403` in `alembic/env.py`.
 
 `__all__`: `AuditLog, Avatar, AvatarClip, AvatarClipPrompt,
-AvatarVoiceScript, Course, CourseDocument, CourseLesson, CourseModule,
+AvatarVoiceScript, Course, CourseDocument, CourseDuplicationJob, CourseLesson, CourseModule,
 CourseTaxonomyTerm, Invitation, Language, LoginAttempt, Membership,
 MembershipPermissionOverride, Organization, OrganizationCourseSettings,
 OrganizationRole, OrganizationRolePermission, PdfTemplate, Permission,
@@ -434,5 +434,6 @@ In sintesi:
 - `CourseTaxonomyTerm` modella i 8 tassonomi (categoria, stile insegnamento, profondità contenuto, ruolo docente, dimensione pubblico, livello conoscenza, destinatari, livello EQF) con righe seedate e custom per organizzazione.
 - `Language` è una piccola lookup table (`code`, `name_native`, `name_en`).
 - `SlideTemplate` (modello a parte) è il template **unificato** per avatar video + export PDF slide (Fase 4) — vedi [migration 0022](10-alembic.md). Aggiunge `margin_mm` + `background_opacity_pct` rispetto alla forma originale.
+- `CourseDuplicationJob` (`backend/app/models/course_duplication_job.py`, migration 0031) orchestra il job background di **duplicazione corso in altra lingua**. Campi: `source_course_id` / `target_course_id` (entrambi FK `course.id`, il secondo SET NULL — popolato dopo la phase `cloning_structure`), `target_language_code` (FK `languages.code` RESTRICT), `status` (CHECK in `pending|processing|ready|failed`), `progress` (0-100), `progress_phase`, `error`, `attempts`, `tokens` JSONB (audit cost), `requested_by_user_id`. Unique parziale `uq_course_duplication_active` su `(source_course_id, target_language_code) WHERE status IN ('pending','processing')` impedisce job concorrenti a livello DB. Vedi [Courses 15 — Duplicazione corso](../courses/15-course-duplication.md).
 
 Tutti i `*_modified_at` sono settati **solo dai CRUD manuali**, mai dai worker AI: la cascata di stale-detection (vedi `frontend/src/lib/staleness.ts`) si basa su questa proprietà per non auto-segnalare le rigenerazioni AI come stale.

@@ -102,6 +102,48 @@ taxonomies, architettura meta + progress).
 `course:delete`. 204. Cascade su documenti, moduli, lezioni; rimuove anche file
 caricati su disco.
 
+## Duplicazione corso in altra lingua
+
+Vedi [15 — Duplicazione corso in altra lingua](15-course-duplication.md) per
+il design completo (pipeline worker, traduzione, embed nella lista).
+
+### `POST /orgs/{org_id}/courses/{course_id}/duplicate?target_language_code=X`
+
+`course:duplicate`. 202. Crea un job `pending`; il worker
+`course_duplication_worker` lo prende in carico, clona la shell del
+corso target e traduce via OpenAI tutti i contenuti.
+
+Query: `target_language_code` obbligatorio (codice ISO, deve essere
+diverso dalla lingua corrente del corso e corrispondere a una
+`Language` attiva in DB).
+
+Response: `CourseDuplicationJobOut` con `id`, `status="pending"`,
+`progress=0`, `target_course_id=null` (popolato dopo la phase
+`cloning_structure`).
+
+Errori:
+- `409 duplicate_same_language` — lingua target uguale alla lingua del
+  corso sorgente.
+- `409 duplicate_already_in_progress` — esiste già un job
+  `pending`/`processing` per la stessa coppia `(source, target_lang)`.
+- `404 language_not_available` — la lingua non esiste in DB o non è
+  attiva.
+
+### `GET /orgs/{org_id}/courses/{course_id}/duplications`
+
+`course:view`. Lista tutti i job (qualsiasi stato) in cui il corso è
+source O target. Ordinato per `created_at` DESC. Usato dalla UI per
+verifiche puntuali; in generale la lista corsi embed il job attivo
+direttamente in `CourseListItemOut.duplication_job` (con polling 3s
+quando ci sono job attivi nella pagina).
+
+### `POST /orgs/{org_id}/duplication-jobs/{job_id}/cancel`
+
+`course:duplicate`. Cancel idempotente di un job
+`pending`/`processing` → `failed` con error "Annullata dall'utente".
+Il corso target eventualmente già creato resta in DB con i contenuti
+parzialmente tradotti.
+
 ## Documenti
 
 ### `POST /orgs/{org_id}/courses/{course_id}/documents`

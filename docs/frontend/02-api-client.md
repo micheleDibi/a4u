@@ -437,6 +437,36 @@ L'editing manuale della verifica passa per
 payload: LessonAssessmentUpdateInput)` → `PATCH
 /{course}/lessons/{lesson}/assessment`.
 
+### `coursesApi.duplicate` — Duplicazione corso in altra lingua
+
+3 funzioni che wrappano gli endpoint di duplicazione (vedi
+[Courses 15](../courses/15-course-duplication.md) + [Courses
+05 — API reference](../courses/05-api-reference.md)):
+
+```ts
+coursesApi.duplicate(orgId, courseId, target_language_code)
+// POST /{course}/duplicate?target_language_code=X -> CourseDuplicationJobOut
+
+coursesApi.listDuplications(orgId, courseId)
+// GET /{course}/duplications -> CourseDuplicationJobOut[]
+
+coursesApi.cancelDuplication(orgId, jobId)
+// POST /duplication-jobs/{job_id}/cancel -> CourseDuplicationJobOut
+```
+
+Tipi esposti:
+- `CourseDuplicationJobStatus = "pending"|"processing"|"ready"|"failed"`
+- `CourseDuplicationJobCompact` (subset embed in `CourseListItemOut`)
+- `CourseDuplicationJobOut` (response completa)
+
+`CourseListItemOut` ora include `duplication_job?:
+CourseDuplicationJobCompact | null` — valorizzato quando il corso è
+**target** di un job attivo. Il `CoursesListPage` lo usa per:
+1. nascondere la voce "Duplica in altra lingua" nel menu (`!duplication_job`)
+2. render del `CourseDuplicationBadge` sotto il titolo
+3. attivare `refetchInterval: 3000` finché ci sono job attivi nella
+   pagina
+
 ### `coursesApi.lessonVideo` — Video MP4 della lezione (Fase 6)
 
 Namespace che mappa gli endpoint del video MP4 della lezione (vedi

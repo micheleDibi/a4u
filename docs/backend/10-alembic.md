@@ -481,6 +481,62 @@ inverso.
 
 ---
 
+## `alembic/versions/0030_course_video_avatar_status.py`
+
+**Estensione `CourseStatus` con 4 nuovi valori** per le Fasi 6 / 6b
+(prima non rappresentate a livello corso): estende il CHECK constraint
+`ck_course_status_valid` con `video_pending`, `video_ready`,
+`avatar_video_pending`, `avatar_video_ready`. I service video/avatar
+ricalcolano automaticamente `course.status` dopo ogni mutazione del
+relativo `*_status` di una lezione (simmetrico a slides/speech). Vedi
+[Courses 12 — Lesson video](../courses/12-lesson-video.md) e
+[Courses 13 — Avatar video](../courses/13-avatar-video.md).
+
+---
+
+## `alembic/versions/0031_course_duplication.py`
+
+**Tabella `course_duplication_job`** per orchestrare il job background
+di duplicazione corso in altra lingua. Vedi
+[Courses 15 — Duplicazione corso](../courses/15-course-duplication.md).
+
+### Sequenza `upgrade()`
+
+1. `CREATE TABLE course_duplication_job` con:
+   - PK `id UUID`.
+   - FK `source_course_id` → `course(id) ON DELETE CASCADE`.
+   - FK `target_course_id` → `course(id) ON DELETE SET NULL`
+     (popolata dopo la phase `cloning_structure` del worker).
+   - FK `target_language_code` → `languages(code) ON DELETE RESTRICT`.
+   - `status` VARCHAR(40) NOT NULL `server_default='pending'`.
+   - `progress` SMALLINT NOT NULL `server_default='0'`.
+   - `progress_phase` VARCHAR(50) nullable.
+   - `error` TEXT nullable.
+   - `attempts` SMALLINT NOT NULL `server_default='0'`.
+   - `tokens` JSONB nullable (aggregato cost/token).
+   - FK `requested_by_user_id` → `users(id) ON DELETE SET NULL`.
+   - `started_at`, `finished_at` TIMESTAMPTZ nullable.
+   - `created_at`, `updated_at` TIMESTAMPTZ NOT NULL `default now()`.
+2. CHECK constraint `ck_course_duplication_job_status` su
+   `status IN ('pending','processing','ready','failed')`.
+3. CHECK constraint `ck_course_duplication_job_progress`
+   (`progress >= 0 AND progress <= 100`).
+4. Index `ix_course_duplication_job_source` su `source_course_id`.
+5. Index `ix_course_duplication_job_target` su `target_course_id`.
+6. Index `ix_course_duplication_job_status` su `status`.
+7. **Unique parziale** `uq_course_duplication_active` su
+   `(source_course_id, target_language_code) WHERE status IN
+   ('pending','processing')` — impedisce a livello DB job concorrenti
+   per la stessa coppia (source, lingua target). Funzionalità
+   Postgres-only.
+
+### Sequenza `downgrade()`
+
+`DROP INDEX uq_course_duplication_active` + drop dei 3 index normali +
+`DROP TABLE course_duplication_job`.
+
+---
+
 ## Workflow per nuove migrazioni
 
 ```bash

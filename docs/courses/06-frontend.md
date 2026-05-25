@@ -55,6 +55,29 @@ default 1 e 25. Pagina 1 e size 25 omessi dall'URL.
 
 Pulsante "Nuovo corso" gated da `course:create`.
 
+**Menu azioni di riga (`⋮`)**: include "Modifica", "Duplica in altra
+lingua" (gated `course:duplicate`, nascosto se il corso è già target
+di un job di duplicazione attivo), "Elimina" (gated `course:delete`).
+La voce di duplicazione apre il `DuplicateCourseDialog`.
+
+**Duplicazione corso in altra lingua**:
+- `DuplicateCourseDialog` (`components/`): dialog con `Select` di
+  lingue (popolato da `useLanguages()`, escludendo la lingua corrente
+  del corso). Mutation `coursesApi.duplicate(orgId, courseId,
+  target_language_code)`. Su success: toast + invalidate
+  `["courses","list",orgId]`.
+- `CourseDuplicationBadge` (`components/`): badge "Duplicazione in
+  corso XX%" + bandiera lingua target + progress bar + bottone
+  Annulla inline. Renderizzato sotto il titolo della riga quando
+  `course.duplication_job != null`.
+- **Polling automatico**: `useQuery refetchInterval` condizionato a
+  3000ms quando almeno una riga della pagina corrente ha un
+  `duplication_job` in `pending`/`processing`. Quando tutti i job
+  completano, polling disabilitato.
+
+Vedi [15 — Duplicazione corso in altra lingua](15-course-duplication.md)
+per il design completo (pipeline worker, traduzione, permessi).
+
 ## `CourseEditorPage.tsx`
 
 Editor tab-based. Layout principale: **`<Tabs>`** con 10 voci (in modalità edit;

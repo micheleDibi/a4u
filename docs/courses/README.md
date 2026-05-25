@@ -19,6 +19,7 @@ iterazioni a partire dalla foundation. Ogni file di codice rilevante è document
 - [12 — Lesson video (Fase 6)](12-lesson-video.md): generazione del video MP4 della lezione — TTS XTTS-v2 su RunPod GPU + rendering slide Playwright + encoding ffmpeg — §9.
 - [13 — Avatar video (Fase 6b)](13-avatar-video.md): scheda "Video con Avatar" — lip-sync MuseTalk (RunPod GPU + Cloudflare R2) sovrapposto al video MP4 della lezione — §9b.
 - [14 — Assessment lesson](14-assessment-lesson.md): lezione di **verifica delle competenze** — l'ultima lezione di ogni modulo quando la verifica finale è attiva.
+- [15 — Duplicazione corso in altra lingua](15-course-duplication.md): job background che clona un corso e ne traduce via OpenAI architecture/lessons/slides/speech/glossary/document summaries nella lingua target. Video e Video con Avatar non vengono copiati (l'utente li rigenera). Nuovo permesso `COURSE_DUPLICATE`.
 
 ## Stato pipeline (5 fasi AI + video + verifica)
 

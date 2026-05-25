@@ -554,6 +554,25 @@ Body opzionale `LessonAvatarVideoGenerateInput` (attualmente vuoto). I DTO
 `LessonAvatarVideoStatusOut` / `LessonAvatarVideoBatchOut` sono costruiti
 da `course_lesson_avatar_video_service`.
 
+### Duplicazione corso in altra lingua
+
+| Metodo | Path | Permesso |
+|---|---|---|
+| POST | `/{course_id}/duplicate?target_language_code=X` | `course:duplicate` |
+| GET  | `/{course_id}/duplications` | `course:view` |
+| POST | `/duplication-jobs/{job_id}/cancel` | `course:duplicate` |
+
+`POST /duplicate` risponde `202 Accepted` con `CourseDuplicationJobOut`.
+Validazioni: lingua target ≠ lingua sorgente (`409
+duplicate_same_language`), lingua esistente e attiva (`404
+language_not_available`), nessun job già attivo per stessa coppia (`409
+duplicate_already_in_progress`, garantito anche da un unique parziale
+DB). Il worker `course_duplication_worker` prende in carico, clona la
+shell del corso target e traduce via OpenAI tutti i contenuti
+(architecture, content, slides, speech, glossary, document summaries).
+Video MP4 e Video con Avatar resettati a `empty`. Vedi
+[Courses 15](../courses/15-course-duplication.md).
+
 ---
 
 ## `app/api/v1/admin_metrics.py` — dashboard admin

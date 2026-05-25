@@ -472,6 +472,37 @@ Snapshot batch a livello corso (`GET .../lessons-avatar-video/status`):
 
 ---
 
+## `app/schemas/course_duplication.py`
+
+DTO della **duplicazione corso in altra lingua** (vedi
+[Courses 15](../courses/15-course-duplication.md)). Le response degli
+endpoint dedicati `POST /duplicate` / `GET /duplications` /
+`POST /duplication-jobs/{id}/cancel` usano `CourseDuplicationJobOut`;
+la lista corsi embed `CourseDuplicationJobCompact` in
+`CourseListItemOut.duplication_job` per il badge progress.
+
+### `type JobStatus = Literal["pending","processing","ready","failed"]`
+
+Status del job di duplicazione (mirror del CHECK constraint DB).
+
+### `class CourseDuplicationJobCompact(ORMModel)`
+
+Sottoinsieme per embed in `CourseListItemOut`. Campi:
+- `id`, `source_course_id`, `target_course_id` (`uuid.UUID | None`),
+- `target_language_code: str`,
+- `status: JobStatus`,
+- `progress: int` (0-100), `progress_phase: str | None`.
+
+### `class CourseDuplicationJobOut(ORMModel)`
+
+Response completa di un job. Estende il compact con:
+- `error: str | None`, `attempts: int`,
+- `tokens: dict | None` (aggregato cost / wall_clock_seconds),
+- `requested_by_user_id: uuid.UUID | None`,
+- `started_at`, `finished_at`, `created_at`, `updated_at` (datetime).
+
+---
+
 ## `app/schemas/admin_metrics.py`
 
 DTO per `GET /admin/metrics` (dashboard pannello admin). I conteggi per

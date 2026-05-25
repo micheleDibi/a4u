@@ -598,6 +598,42 @@ Icone (lucide): `FileText` (contenuti), `Presentation` (slide), `Video`
 (video), `Smile` (avatar). Usa il tipo `CourseListLessonsProgress` di
 `@/api/courses` (vedi [02 — API client](02-api-client.md)).
 
+### `src/pages/org/courses/components/DuplicateCourseDialog.tsx`
+
+Dialog che apre dalla voce "Duplica in altra lingua" nel menu `⋮`
+della lista corsi. Mostra un `Select` di lingue (popolato da
+`useLanguages()`, escludendo `course.language_code` corrente), con
+bandiera e nome nativo. Al submit chiama
+`coursesApi.duplicate(orgId, courseId, target_language_code)`. Su
+success: toast + `qc.invalidateQueries(["courses","list",orgId])` +
+close. Su error: toast con `extractApiError(err).message`.
+
+Props:
+```ts
+{ orgId: string; course: CourseListItemOut; onClose: () => void }
+```
+
+Vedi [Courses 15](../../courses/15-course-duplication.md).
+
+### `src/pages/org/courses/components/CourseDuplicationBadge.tsx`
+
+Badge progress visibile nella riga della lista corsi quando il corso
+è target di un job di duplicazione attivo
+(`course.duplication_job != null`). Render:
+- Badge "Duplicazione in corso" + bandiera della lingua target
+  (`flagFor(job.target_language_code)`)
+- Progress bar 0-100% su `job.progress`
+- Bottone Annulla inline (icona `X`) — chiama
+  `coursesApi.cancelDuplication(orgId, job.id)`
+
+Polling automatico ogni 3s a livello pagina (gestito da
+`CoursesListPage` via `useQuery refetchInterval` condizionato).
+
+Props:
+```ts
+{ orgId: string; job: CourseDuplicationJobCompact }
+```
+
 ### `src/pages/org/courses/components/LessonAssessmentEditDialog.tsx`
 
 Editor modal dedicato della verifica delle competenze. Aperto dalla

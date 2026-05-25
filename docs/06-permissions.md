@@ -28,6 +28,7 @@ in questa iterazione (i codici platform-only sono enforced via `is_platform_admi
 | `course:delete` | Eliminare un corso (cascade su documenti, moduli, lezioni) |
 | `course:assign` | Cambiare il `assignee_user_id` di un corso |
 | `course:generate` | Triggerare la pipeline AI (architettura, struttura, contenuti, slide, discorso) + export PDF (lezione/slide/discorso) + approvazione dei payload generati |
+| `course:duplicate` | Duplicare un corso in altra lingua: avvia un job background che traduce via AI architettura/lezioni/slide/discorso/glossario/summary documenti. Video e Video con Avatar non sono copiati. |
 
 > **Avatar**: la gestione dell'avatar **non passa** dal modello RBAC. Ogni
 > utente può creare/modificare/eliminare il **proprio** avatar
@@ -45,8 +46,8 @@ Definiti in `R` (codice) e seedati in `organization_roles`. Ogni ruolo ha un
 | Code | rank | Default permissions |
 |---|---|---|
 | `creator` | 10 | **TUTTI** i codici di `ALL_PERMISSION_CODES` |
-| `org_admin` | 20 | `member:view`, `member:invite`, `member:assign_role`, `member:remove`, `template:slide:manage`, `template:pdf:manage`, `org:update`, `course_config:manage`, `course:view`, `course:view_all`, `course:create`, `course:edit`, `course:save_draft`, `course:delete`, `course:assign`, `course:generate` |
-| `manager` | 30 | `member:view`, `course:view`, `course:view_all`, `course:create`, `course:edit`, `course:save_draft`, `course:assign`, `course:generate` |
+| `org_admin` | 20 | `member:view`, `member:invite`, `member:assign_role`, `member:remove`, `template:slide:manage`, `template:pdf:manage`, `org:update`, `course_config:manage`, `course:view`, `course:view_all`, `course:create`, `course:edit`, `course:save_draft`, `course:delete`, `course:assign`, `course:generate`, `course:duplicate` |
+| `manager` | 30 | `member:view`, `course:view`, `course:view_all`, `course:create`, `course:edit`, `course:save_draft`, `course:assign`, `course:generate`, `course:duplicate` |
 | `member` | 40 | `course:view` (filtrato server-side: solo corsi assegnati) |
 
 I default sono caricati in `role_permissions` da `seed.ensure_seed` la prima
@@ -207,13 +208,17 @@ attivi**. Pattern di gating:
   export PDF (lezione/slide/discorso, anche batch per-modulo). Stato del
   corso oltre il permesso (es. "Genera architettura" è abilitato solo se
   `status='draft'`/`architecture_failed`).
+- `course:duplicate` gating su POST `/courses/{id}/duplicate` (avvia job
+  background) e POST `/duplication-jobs/{id}/cancel`. La voce "Duplica in
+  altra lingua" nel dropdown della lista corsi è nascosta senza il permesso.
+  Vedi [Courses 15 — Duplicazione corso](courses/15-course-duplication.md).
 
 Vedi [Courses API reference](courses/05-api-reference.md) per la mappa
 permission ↔ endpoint completa.
 
 ### Note di implementazione
 
-- I codici `course:*` (oggi 8) sono seedati da `app.db.seed.ensure_seed`
+- I codici `course:*` (oggi 9) sono seedati da `app.db.seed.ensure_seed`
   e mappati ai ruoli di default in `ROLE_DEFAULT_PERMISSIONS`
   (`backend/app/core/permissions.py`).
 - `frontend/src/lib/permissions.ts` espone i codici via `P.COURSE_*` e li

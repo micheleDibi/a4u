@@ -26,7 +26,7 @@ Convenzioni:
 - [Slide templates](#slide-templates)
 - [PDF templates](#pdf-templates)
 - [Course settings](#course-settings)
-- [**Corsi** (CRUD + pipeline AI)](courses/05-api-reference.md) — endpoint sotto `/orgs/{org_id}/courses` (lista, CRUD, documenti, architettura, moduli, lezioni, contenuti, slide, discorso, export PDF, video MP4 — Fase 6 — e "Video con avatar" — Fase 6b — più la verifica delle competenze). Documentati in file dedicato.
+- [**Corsi** (CRUD + pipeline AI)](courses/05-api-reference.md) — endpoint sotto `/orgs/{org_id}/courses` (lista, CRUD, documenti, architettura, moduli, lezioni, contenuti, slide, discorso, export PDF, video MP4 — Fase 6 — e "Video con avatar" — Fase 6b — più la verifica delle competenze e la **duplicazione corso in altra lingua** via job background con traduzione AI). Documentati in file dedicato.
 - [Mio avatar](#mio-avatar)
 - [Admin: avatar config](#admin-avatar-config)
 - [Admin: i18n](#admin-i18n)
