@@ -65,12 +65,37 @@ Stati di errore:
 
 ### `src/pages/admin/AdminDashboard.tsx`
 
-**Path**: `/admin`.
+**Path**: `/admin`. Dashboard con metriche platform-wide, alimentata
+dall'endpoint `GET /admin/metrics` (cache backend TTL 60s).
 
-Tre `<Card>`:
-- Organizzazioni → `/admin/organizations`.
-- Utenti → `/admin/users`.
-- Permessi globali → `/admin/permissions`.
+Hook: `useAdminMetrics()` (refetch 60s, staleTime 30s — vedi
+[08 — Hooks](08-hooks.md)). I widget rendono `data ?? []` durante il
+loading, niente skeleton dedicato.
+
+Sezioni (in ordine):
+
+1. **KPI strip** (6 `KpiCard`): Utenti / Attivi 30g / Organizzazioni /
+   Corsi / Lezioni / Costo AI totale (icone `Users`, `UserCheck`,
+   `Building2`, `GraduationCap`, `BookOpen`, `DollarSign`).
+2. **Pipeline corsi** — `StatusBarChart` con i 17 status raw
+   raggruppati in 8 macro-bucket via `courseBucketFor()` di
+   `lib/statusColors.ts`.
+3. **Pipeline lezioni** — 5 `StatusBarChart` compatti uno per fase
+   (content / slides / speech / video / avatar_video).
+4. **Costo AI** — 3 `Stat` inline (totale / 7g / 30g) + lista
+   breakdown per fase (architecture / structure / content / slides /
+   speech). Formattato in USD via `Intl.NumberFormat`.
+5. **Avatar clips** — `DonutMini` con il breakdown per status.
+6. **Login activity (7g)** — bar chart custom inline:
+   `LoginActivityChart` (verde sotto = success, rosso sopra = failure,
+   stacked per giorno). Totali settimanali in legenda.
+7. **Attività recente** — `ActivityList` con le ultime 20 entry
+   `audit_logs` (icona dinamica per `action`, tempo relativo).
+8. **Gestione** — le 3 card di navigazione esistenti (Organizzazioni /
+   Utenti / Permessi globali) ricollocate in fondo come "tools".
+
+I 4 widget riusabili stanno in `src/components/dashboard/` (vedi
+[05 — Components](05-components.md)).
 
 ### `src/pages/admin/OrganizationsListPage.tsx`
 
@@ -249,16 +274,44 @@ AI" e l'header.
 
 ### `src/pages/org/OrgDashboard.tsx`
 
-**Path**: `/orgs/:orgId`.
+**Path**: `/orgs/:orgId`. Dashboard organizzazione con metriche
+operative, alimentata dall'endpoint `GET /orgs/{orgId}/metrics`
+(niente cache server-side).
 
-Hooks:
-- `useAuth()` per `me`.
-- `useHasPermission(P.MEMBER_VIEW | TEMPLATE_SLIDE_MANAGE | TEMPLATE_PDF_MANAGE)`.
+Hook: `useOrgMetrics(orgId)` (refetch 60s, staleTime 30s). Header
+mostra il nome dell'org (da `me.organizations` o fallback per platform
+admin via `organizationsApi.get`) + ruolo dell'utente.
 
-Cards mostrate solo se permesso:
-- Membri.
-- Template slide.
-- Template PDF.
+> **Niente sezione Costo AI**: scelta di prodotto esplicita. Le viste
+> org-scoped non espongono `cost_usd`/totali token; questi dati sono
+> visibili solo nella `AdminDashboard` (platform-wide). Vedi memoria
+> `feedback_no_api_costs_in_org_views`.
+
+Sezioni (in ordine):
+
+1. **KPI strip** (6 `KpiCard`): Corsi totali / Corsi pubblicati /
+   Lezioni totali / Lezioni con video pronto / Membri / Inviti pending.
+   Gli ultimi due valori usano `tone="muted"` quando sono 0.
+2. **Pipeline corsi** — `StatusBarChart` con bucket macro (stesso
+   helper di `AdminDashboard`).
+3. **Pipeline lezioni** — 5 `StatusBarChart` compatti per le 5 fasi
+   (content / slides / speech / video / avatar_video) **filtrate per
+   `organization_id`**.
+4. **Workload docenti** — lista top 10 assegnatari con barra relativa
+   `count / max`. Componente locale `WorkloadList`.
+5. **Avatar readiness docenti** — `DonutMini` con ready / partial /
+   not_ready: indica quanti docenti assegnati hanno audio + clip
+   pronte per la generazione video (Fase 6/6b).
+6. **Membri per ruolo** — `StatusBarChart` con palette dedicata
+   (`ROLE_COLOR` locale: creator=emerald, org_admin=blue,
+   manager=violet, member=zinc). Sotto, se `pending_invitations > 0`,
+   banner ambra con il conteggio degli inviti pending.
+7. **Attività recente org** — `ActivityList` con ultime 20 entry
+   `audit_logs WHERE organization_id = :org` (niente colonna org nel
+   render, ridondante).
+8. **Gestione** — le 3 card di navigazione esistenti (Membri /
+   Template slide / Template PDF) ricollocate in fondo. Gating
+   invariato (`useHasPermission(P.MEMBER_VIEW | TEMPLATE_*_MANAGE)`).
 
 ### `src/pages/org/members/MembersListPage.tsx`
 
@@ -266,6 +319,13 @@ Cards mostrate solo se permesso:
 
 State: `inviteOpen`, `inviteEmail`, `inviteRole`, `inviteToken`,
 `toRemove`, `toTransfer`.
+
+> **Quick action dalla command palette**: se l'URL contiene
+> `?invite=1` (es. arrivando dal comando "Invita membro" della
+> palette) e l'utente ha `P.MEMBER_INVITE`, un `useEffect` apre
+> automaticamente il dialog d'invito e ripulisce il query param via
+> `setSearchParams(.., { replace: true })` per non riaprirlo a
+> refresh successivi.
 
 Hooks:
 - `useQuery` membri.

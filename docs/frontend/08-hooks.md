@@ -273,6 +273,43 @@ prefisso). Usati da `CourseLessonAvatarVideoView.tsx`.
 
 ---
 
+## `useAdminMetrics()` — `src/hooks/useAdminMetrics.ts`
+
+**Scopo**: snapshot metriche platform-wide per la `AdminDashboard`
+(vedi [06 — Pages](06-pages.md)). Wrapper su `adminMetricsApi.get()`.
+
+Costanti: `REFETCH_MS = 60_000` (coerente con il TTL della cache
+backend), `STALE_MS = 30_000`. Query key: `["admin-metrics"]`.
+
+```ts
+function useAdminMetrics(): UseQueryResult<AdminMetricsOut>;
+```
+
+Nessun argomento (l'endpoint è singleton). `refetchOnWindowFocus`
+disabilitato — la cache backend rende inutile il fetch on focus.
+Richiede `is_platform_admin=true` lato server (403 altrimenti).
+
+---
+
+## `useOrgMetrics(orgId)` — `src/hooks/useOrgMetrics.ts`
+
+**Scopo**: snapshot metriche org-scoped per la `OrgDashboard`. Wrapper
+su `orgMetricsApi.get(orgId)`.
+
+Stesse costanti di `useAdminMetrics`. Query key: `["org-metrics",
+orgId]`. `enabled` solo con `orgId` valorizzato.
+
+```ts
+function useOrgMetrics(
+  orgId: string | null | undefined,
+): UseQueryResult<OrgMetricsOut>;
+```
+
+Niente cache lato server (org-scoped già scoped); refetch 60s come
+default ragionevole. Richiede `course:view` nell'org (gate backend).
+
+---
+
 ## Quando aggiungere hooks
 
 Promuovere a `src/hooks/` quando:

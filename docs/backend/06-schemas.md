@@ -469,3 +469,136 @@ Snapshot batch a livello corso (`GET .../lessons-avatar-video/status`):
 - `aggregate_progress: int` — 0-100, media sulle lezioni in flight,
 - `avatar_clips_ready: bool` — stato course-level dell'avatar
   dell'assegnatario: se `false` nessuna lezione è eleggibile.
+
+---
+
+## `app/schemas/admin_metrics.py`
+
+DTO per `GET /admin/metrics` (dashboard pannello admin). I conteggi per
+status (`by_status`) sono restituiti **raw**; il bucketing in macro-fasi
+avviene lato frontend per mantenere localizzate le label e cambiabili
+senza migrazione backend. Snapshot cached server-side TTL 60s in
+`admin_metrics_service`.
+
+### `class StatusCount(BaseModel)`
+
+Conteggio per uno status. Riutilizzato in vari blocchi:
+- `status: str`, `count: int`.
+
+### `class UsersMetrics(BaseModel)`
+
+- `total`, `active` (`is_active=true`),
+- `active_last_30d` (`last_login_at >= now()-30d`).
+
+### `class OrgsMetrics(BaseModel)`
+
+- `total` — `WHERE deleted_at IS NULL`.
+
+### `class CoursesMetrics(BaseModel)`
+
+- `total: int`,
+- `by_status: list[StatusCount]` — 17 valori possibili
+  (vedi [Courses 01](../courses/01-data-model.md)).
+
+### `class LessonsPhaseBreakdown(BaseModel)`
+
+Conteggi per ciascuna delle 5 fasi pipeline per-lezione:
+- `content`, `slides`, `speech`, `video`, `avatar_video` — ognuno
+  `list[StatusCount]`.
+
+### `class LessonsMetrics(BaseModel)`
+
+- `total: int`, `phases: LessonsPhaseBreakdown`.
+
+### `class CostByPhase(BaseModel)`
+
+Costo OpenAI cumulato per una fase: `phase: str` (architecture |
+structure | content | slides | speech), `cost_usd: float`.
+
+Nota: `Course.glossary_tokens` usa lo schema vecchio senza `cost_usd` e
+NON compare in `by_phase`.
+
+### `class CostMetrics(BaseModel)`
+
+- `total_usd`, `last_7d_usd`, `last_30d_usd: float`,
+- `by_phase: list[CostByPhase]` (5 entries).
+
+### `class AvatarClipsMetrics(BaseModel)`
+
+- `by_status: list[StatusCount]` — `pending|processing|ready|failed`.
+
+### `class LoginDayMetric(BaseModel)`
+
+- `date: str` (YYYY-MM-DD UTC), `success: int`, `failure: int`.
+
+### `class LoginActivityMetrics(BaseModel)`
+
+- `last_7d: list[LoginDayMetric]` — sempre 7 entries (zero-fill),
+- `success_total_7d`, `failure_total_7d: int`.
+
+### `class AuditRecentEntry(BaseModel)`
+
+- `id: UUID`, `created_at: datetime`, `action: str`,
+- `actor_user_name: str | None`, `organization_name: str | None`,
+- `target_type: str | None`, `target_id: str | None`.
+
+### `class AdminMetricsOut(BaseModel)`
+
+Top-level DTO. Contiene tutti i blocchi sopra + `generated_at:
+datetime`.
+
+---
+
+## `app/schemas/org_metrics.py`
+
+DTO per `GET /orgs/{org_id}/metrics` (dashboard organizzazione). Importa
+`StatusCount` e `LessonsPhaseBreakdown` da `admin_metrics` per non
+duplicare le stesse shape. **Niente costi AI nel payload** (scelta di
+prodotto — vedi memoria `feedback_no_api_costs_in_org_views`).
+
+### `class AssigneeWorkload(BaseModel)`
+
+Carico di lavoro di un docente. Restituiti i **top 10** per numero di
+corsi.
+- `user_id: UUID`, `name: str | None`, `course_count: int`.
+
+### `class RoleCount(BaseModel)`
+
+- `role_code: str` (creator | org_admin | manager | member),
+- `role_name_it: str | None`, `count: int`.
+
+### `class AvatarReadiness(BaseModel)`
+
+Stato avatar dei docenti assegnati a qualche corso dell'org:
+- `total_assignees: int`,
+- `ready: int` — ha `audio_path` AND ≥1 clip MiniMax `ready`,
+- `partial: int` — solo uno dei due,
+- `not_ready: int` — nessun avatar oppure niente audio né clip pronte.
+
+### `class CoursesMetrics(BaseModel)`
+
+- `total: int`, `by_status: list[StatusCount]`,
+- `by_assignee: list[AssigneeWorkload]` — top 10.
+
+(Diverso da `admin_metrics.CoursesMetrics`: ha in più `by_assignee`.)
+
+### `class LessonsMetrics(BaseModel)`
+
+- `total: int`, `phases: LessonsPhaseBreakdown`.
+
+### `class MembersMetrics(BaseModel)`
+
+- `total: int`, `by_role: list[RoleCount]`,
+- `pending_invitations: int` (`accepted_at IS NULL AND revoked_at IS
+  NULL AND expires_at > now()`).
+
+### `class AuditRecentEntry(BaseModel)`
+
+Come `admin_metrics.AuditRecentEntry` ma **senza `organization_name`**
+(ridondante: tutte le entry sono già filtrate per `organization_id`).
+
+### `class OrgMetricsOut(BaseModel)`
+
+Top-level DTO. Contiene `courses / lessons / modules_total / members /
+avatar_readiness / audit_recent` + `generated_at`. **Nessun campo
+`cost`** né campi `cost_usd`/totali token.

@@ -19,7 +19,9 @@ Convenzioni:
 - [Admin: organizations](#admin-organizations)
 - [Admin: users](#admin-users)
 - [Admin: permissions](#admin-permissions)
+- [Admin: metrics (dashboard)](#admin-metrics)
 - [Memberships & permessi](#memberships)
+- [Org: metrics (dashboard)](#org-metrics)
 - [Invitations](#invitations)
 - [Slide templates](#slide-templates)
 - [PDF templates](#pdf-templates)
@@ -196,6 +198,25 @@ Errori:
 
 ---
 
+## Admin: metrics
+
+### `GET /admin/metrics`
+
+Permesso: `is_platform_admin`. Restituisce uno snapshot di metriche
+**platform-wide** per la dashboard admin (utenti, organizzazioni, corsi
+e lezioni per status, costo AI cumulato dalle 5 fasi pipeline corsi
+con totale + ultimi 7g + ultimi 30g, avatar clips readiness, login
+activity 7g, ultime 20 entry di audit log). Cache server-side TTL 60s.
+
+Risposta: `AdminMetricsOut` — vedi
+[Backend 06 — Schemas](backend/06-schemas.md) (sezione
+`app/schemas/admin_metrics.py`).
+
+Errori:
+- `403 platform_admin_required` se l'utente non è platform admin.
+
+---
+
 ## Memberships
 
 > `org_id` come path. Prefisso completo: `/api/v1/orgs/{org_id}/...`
@@ -256,6 +277,31 @@ Errori:
 - `404 not_a_member`.
 
 Effetto atomico: caller→`org_admin`, target→`creator`.
+
+---
+
+## Org: metrics
+
+### `GET /orgs/{org_id}/metrics`
+
+Permesso: `course:view` (qualsiasi membership che possa vedere i corsi
+dell'org). Restituisce uno snapshot **org-scoped** per la dashboard
+organizzazione: corsi e lezioni per status filtrati per `org_id`,
+workload per assegnatario (top 10), avatar readiness dei docenti
+assegnati, membri per ruolo, inviti pending, ultime 20 entry di audit
+log dell'org. Niente cache server-side.
+
+> Il payload **non** contiene costi AI: scelta di prodotto. I costi
+> sono visibili solo nella dashboard admin platform-wide
+> (`GET /admin/metrics`).
+
+Risposta: `OrgMetricsOut` — vedi
+[Backend 06 — Schemas](backend/06-schemas.md) (sezione
+`app/schemas/org_metrics.py`).
+
+Errori:
+- `403 permission_denied` se l'utente non ha `course:view` nell'org.
+- `403 not_a_member` se non è membro dell'org (e non platform admin).
 
 ---
 

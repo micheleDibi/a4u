@@ -1134,3 +1134,76 @@ generato della lezione.
 - **JSON schema strict**: tutte le chiamate OpenAI usano `response_format: {type: 'json_schema', json_schema: {strict: true, schema: {...}}}`. Validazione Pydantic post-call per ulteriore safety.
 - **Audit log** per ogni azione mutating: `course.created`, `course.document.summary.ready`, `course.architecture.generated`, `course.lesson.content.generated`, `course.lesson.slides.generated`, `course.lesson.speech.generated`, `course.lesson.{slides,speech}_pdf.generated`, ecc.
 - **Stale-detection setter**: i CRUD manuali settano `*_modified_at = now()` per la cascata staleness; i worker AI non lo toccano.
+
+---
+
+## `app/services/admin_metrics_service.py`
+
+**Scopo**: aggregazioni platform-wide per `GET /admin/metrics` (dashboard
+pannello admin).
+
+Cache in-memory TTL 60s (`_cache: tuple[float, AdminMetricsOut] | None`
++ `asyncio.Lock` anti-thundering-herd al primo hit dopo scadenza).
+Niente persistenza: dashboard informativa, una staleness < 60s è
+accettabile e risparmia decine di query a ogni refresh del browser.
+
+### Funzioni pubbliche
+
+- `get_admin_metrics(db) -> AdminMetricsOut` — entry-point con cache.
+- `invalidate_cache()` — forza refresh al prossimo `get` (per test).
+
+### Aggregazioni interne (helper `_users` / `_orgs` / `_courses` / `_lessons` / `_cost` / `_avatar_clips` / `_login_activity` / `_audit_recent`)
+
+- **Users**: COUNT totali / `is_active=true` / `last_login_at >= now()-30d`.
+- **Orgs**: COUNT `WHERE deleted_at IS NULL`.
+- **Courses**: COUNT + GROUP BY `status` (17 valori, restituiti raw).
+- **Lessons**: COUNT + GROUP BY su ciascuno dei 5 `*_status`
+  (content / slides / speech / video / avatar_video).
+- **Cost**: `SUM((tokens->>'cost_usd')::float)` sulle 5 fasi che usano lo
+  schema arricchito (`Course.architecture_tokens` /
+  `CourseModule.lessons_structure_tokens` /
+  `CourseLesson.content_tokens` / `.slides_tokens` / `.speech_tokens`).
+  Glossary escluso (schema vecchio senza `cost_usd`). Totale + ultimi 7
+  giorni + ultimi 30 giorni, filtrato per `*_generated_at` con
+  `func.case((generated_at >= cutoff, cost), else_=None)`.
+- **Avatar clips**: GROUP BY `status`.
+- **Login activity 7g**: bucket per-giorno UTC con zero-fill su 7 entry.
+- **Audit recente**: ultime 20 entry con `OUTER JOIN User` (actor name)
+  + `OUTER JOIN Organization` (org name).
+
+---
+
+## `app/services/org_metrics_service.py`
+
+**Scopo**: aggregazioni org-scoped per `GET /orgs/{org_id}/metrics`
+(dashboard organizzazione).
+
+Niente cache (il traffico è già scoped per-org/utente). **Niente costi
+AI nel payload**: il service non calcola nemmeno `SUM(cost_usd)` per non
+sprecare query — scelta di prodotto (vedi memoria
+`feedback_no_api_costs_in_org_views`).
+
+### Funzione pubblica
+
+- `compute_org_metrics(db, *, org_id) -> OrgMetricsOut`.
+
+### Aggregazioni interne
+
+- **Courses**: COUNT WHERE `organization_id` + GROUP BY `status` + top
+  10 per `assignee_user_id` con `JOIN User` per il nome
+  (`AssigneeWorkload`).
+- **Lessons**: COUNT + GROUP BY `*_status` con `JOIN Course ON
+  course_id WHERE Course.organization_id`. Riutilizza lo stesso pattern
+  di `admin_metrics_service._by_lesson_status`.
+- **Modules**: COUNT con `JOIN Course`.
+- **Members**: COUNT membership + GROUP BY role (`JOIN
+  OrganizationRole.code/name_it`) + `pending_invitations`
+  (`accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now()`).
+- **Avatar readiness**: per ogni `assignee_user_id` distinto dei corsi
+  dell'org, classifica come `ready` (audio + ≥1 clip MiniMax `ready`) /
+  `partial` (uno dei due) / `not_ready` (nessuno). Implementato con due
+  query: una su `Avatar.audio_path IS NOT NULL`, una su `OUTER JOIN
+  AvatarClip ON status='ready'`.
+- **Audit recente**: ultime 20 entry `WHERE organization_id = :org` con
+  `OUTER JOIN User` per actor name (no JOIN Organization perché
+  ridondante).

@@ -556,6 +556,49 @@ da `course_lesson_avatar_video_service`.
 
 ---
 
+## `app/api/v1/admin_metrics.py` — dashboard admin
+
+Router `/admin/metrics`, tag `admin-metrics`. Gate: `PlatformAdmin` DI
+(via dependency `_: PlatformAdmin` che richiede
+`me.is_platform_admin=true`).
+
+### `GET /admin/metrics`
+
+Permesso: `is_platform_admin`. Restituisce `AdminMetricsOut` con snapshot
+platform-wide (vedi [06 — Schemas](06-schemas.md)). Cache lato service
+TTL 60s (vedi [07 — Services](07-services.md) `admin_metrics_service`).
+
+Nessun parametro di query. Risposta `200` con i blocchi
+`generated_at, users, orgs, courses, lessons, cost, avatar_clips,
+login_activity, audit_recent`. `403 platform_admin_required` se non
+admin.
+
+Chiama `admin_metrics_service.get_admin_metrics(db)`.
+
+---
+
+## `app/api/v1/org_metrics.py` — dashboard organizzazione
+
+Router `/orgs`, tag `org-metrics`. Gate: `require(P.COURSE_VIEW)`
+(qualsiasi membership che possa vedere i corsi dell'org). Path
+`/orgs/{org_id}/metrics`.
+
+### `GET /orgs/{org_id}/metrics`
+
+Permesso: `course:view`. Restituisce `OrgMetricsOut` filtrato per
+`organization_id`. Niente cache server-side (org-scoped, traffico già
+ridotto). Il payload **non** contiene costi AI per scelta di prodotto
+(vedi memoria `feedback_no_api_costs_in_org_views`).
+
+Risposta `200`: `{generated_at, courses, lessons, modules_total,
+members, avatar_readiness, audit_recent}`. `403 permission_denied` se
+l'utente non ha `course:view` nell'org. `403 not_a_member` se non è
+membro dell'org (e non è platform admin).
+
+Chiama `org_metrics_service.compute_org_metrics(db, org_id=org_id)`.
+
+---
+
 ## Convenzioni risposte
 
 Tutte le risposte di errore sono nel formato:

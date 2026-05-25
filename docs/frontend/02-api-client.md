@@ -508,3 +508,68 @@ Tipi associati:
 > Per l'override TTS per-corso, `CourseOut.video_language_code`
 > (nullable) e `CourseUpdateInput.video_language_code` (passare `""` per
 > resettare a `null`) sono già esposti dai DTO di `courses.ts`.
+
+---
+
+## `src/api/adminMetrics.ts`
+
+Client per la dashboard del pannello admin. Mirror di
+`backend/app/schemas/admin_metrics.py`. Espone tipi + un singolo metodo.
+
+### Tipi
+
+- `StatusCount` — `{ status: string; count: number }`. Riusato da
+  `orgMetrics.ts`.
+- `UsersMetrics` — `{ total, active, active_last_30d }`.
+- `OrgsMetrics` — `{ total }`.
+- `CoursesMetrics` — `{ total, by_status: StatusCount[] }`.
+- `LessonsPhaseBreakdown` — `{ content, slides, speech, video,
+  avatar_video }` ognuno `StatusCount[]`.
+- `LessonsMetrics` — `{ total, phases }`.
+- `CostByPhase` — `{ phase, cost_usd }`.
+- `CostMetrics` — `{ total_usd, last_7d_usd, last_30d_usd, by_phase }`.
+- `AvatarClipsMetrics` — `{ by_status }`.
+- `LoginDayMetric` — `{ date (YYYY-MM-DD UTC), success, failure }`.
+- `LoginActivityMetrics` — `{ last_7d, success_total_7d, failure_total_7d }`.
+- `AuditRecentEntry` — `{ id, created_at, action, actor_user_name,
+  organization_name, target_type, target_id }`.
+- `AdminMetricsOut` — top-level con `generated_at` + tutti i blocchi.
+
+### `adminMetricsApi`
+
+```ts
+adminMetricsApi.get(): Promise<AdminMetricsOut>
+// GET /admin/metrics — gate is_platform_admin
+```
+
+Singolo endpoint snapshot. Cache lato server TTL 60s.
+
+---
+
+## `src/api/orgMetrics.ts`
+
+Client per la dashboard dell'organizzazione. Mirror di
+`backend/app/schemas/org_metrics.py`. Importa `StatusCount` e
+`LessonsPhaseBreakdown` da `adminMetrics.ts` per non duplicare le shape.
+**Niente campi di costo** AI/token nel payload (scelta di prodotto).
+
+### Tipi
+
+- `AssigneeWorkload` — `{ user_id, name, course_count }`. Top 10
+  restituiti dal backend.
+- `RoleCount` — `{ role_code, role_name_it, count }`.
+- `AvatarReadiness` — `{ total_assignees, ready, partial, not_ready }`.
+- `OrgCoursesMetrics` — `{ total, by_status, by_assignee }`.
+- `OrgLessonsMetrics` — `{ total, phases }`.
+- `OrgMembersMetrics` — `{ total, by_role, pending_invitations }`.
+- `OrgAuditRecentEntry` — come `AuditRecentEntry` ma **senza
+  `organization_name`** (ridondante).
+- `OrgMetricsOut` — top-level con `generated_at, courses, lessons,
+  modules_total, members, avatar_readiness, audit_recent`.
+
+### `orgMetricsApi`
+
+```ts
+orgMetricsApi.get(orgId: string): Promise<OrgMetricsOut>
+// GET /orgs/{orgId}/metrics — gate course:view
+```

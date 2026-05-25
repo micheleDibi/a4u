@@ -348,32 +348,67 @@ proporzioni).
 
 ## `src/components/CommandPalette.tsx`
 
-`⌘K` palette globale. Le voci sono raggruppate per sezione e dipendono
-dallo stato `me` e dall'org effettiva.
+`⌘K` / `Ctrl+K` palette globale. **Registry dichiarativo**: invece di
+JSX inline con conditional rendering, le voci sono dichiarate in un
+array `COMMANDS: CommandEntry[]` con metadata di visibilità. Per
+aggiungere un comando basta append a `COMMANDS`, niente modifiche al
+body del componente.
 
-> **Cambio rilevante**: per leggere l'org corrente il palette ora usa
-> `useEffectiveOrgId()` (in precedenza usava `useParams().orgId`). Le
-> voci della sezione "Organizzazione" appaiono quindi anche su rotte
-> non-org (es. `/admin/...`, `/me/avatar`), continuando a puntare
-> all'**ultima org visitata** memorizzata in `localStorage`.
+Org corrente via `useEffectiveOrgId()` (ultima org visitata in
+`localStorage`): le voci org-scoped appaiono anche su rotte non-org.
 
-Voci attualmente esposte:
+### Shape di una entry
 
-- **Per platform admin** (`me.is_platform_admin`):
-  Dashboard, Organizzazioni, Utenti, Permessi, **Lingue**
-  (`/admin/i18n`), **Configurazioni — Avatar**
-  (`/admin/configurazioni/avatar`).
-- **Quando l'org effettiva è risolta**:
-  dashboard org + Membri + **Parametri corsi**
-  (`/orgs/:id/configurazioni/corsi`, icona `GraduationCap`, label
-  `nav.courseSettings`) + Template slide + Template PDF. La vecchia
-  voce "Avatars" org-scoped è stata rimossa (l'avatar è ora personale,
-  non org-scoped).
-- **Sezione "Personale"** (per ogni utente loggato):
-  **Mio avatar** (icona `Smile`) → `/me/avatar`.
-- **Sezione preferenze**: Light / Dark / System (icone `Sun`, `Moon`,
-  `Laptop`; quest'ultima sostituisce il duplicato `Sun` precedente).
-- **Sezione "Cambia lingua"**: lista delle 24 lingue UE (invariata).
+```ts
+type CommandEntry = {
+  id: string;
+  group: "navigation" | "actions" | "preferences";
+  labelKey: string;          // i18n
+  shortcutKey?: string;       // hint a destra
+  icon: LucideIcon;
+  action: (ctx: CommandContext) => void;
+  requirePlatformAdmin?: boolean;
+  requireOrgId?: boolean;
+  requirePermission?: PermissionCode;  // bypassato per platform admin
+};
+```
+
+Il filtro `visible(cmd)` applica i tre gate; la lingua è dinamica
+(generata da `useLanguages()`) e resta come gruppo separato dopo il
+registry.
+
+### Comandi esposti
+
+**Navigation — platform admin** (`requirePlatformAdmin`):
+Dashboard, Organizzazioni, Utenti, Permessi, Lingue, Configurazioni —
+Avatar, Configurazioni — Tassonomie.
+
+**Navigation — org** (`requireOrgId` + `requirePermission`):
+Dashboard org, Membri (`P.MEMBER_VIEW`), Corsi (`P.COURSE_VIEW`),
+Parametri corsi (`P.COURSE_CONFIG_MANAGE`), Template slide
+(`P.TEMPLATE_SLIDE_MANAGE`), Template PDF (`P.TEMPLATE_PDF_MANAGE`).
+
+**Navigation — personale**: Mio avatar (sempre, se loggato).
+
+**Actions — quick-create** (org-scoped, gated per permesso):
+- "Nuovo corso" → `/orgs/{id}/corsi/nuovo` (`P.COURSE_CREATE`).
+- "Invita membro" → `/orgs/{id}/members?invite=1`
+  (`P.MEMBER_INVITE`) — apre il dialog d'invito automaticamente (vedi
+  `MembersListPage` in [06 — Pages](06-pages.md)).
+- "Nuovo template slide" → `/orgs/{id}/templates/slide/new`
+  (`P.TEMPLATE_SLIDE_MANAGE`).
+- "Nuovo template PDF" → `/orgs/{id}/templates/pdf/new`
+  (`P.TEMPLATE_PDF_MANAGE`).
+
+**Actions — platform admin**: Nuova organizzazione.
+
+**Preferences**: Light / Dark / System (`useTheme().setTheme`).
+
+**Switch language**: 24 lingue UE (`useLanguages()`).
+
+> Permessi org-scoped letti dal `me.organizations[].permissions` per
+> l'org corrente; platform admin bypassa il check. Niente chiamate
+> server: il filtro è completamente client-side.
 
 ---
 
@@ -537,3 +572,115 @@ scheda Contenuti sulle righe `is_assessment`.
 - Contenuto in `<ScrollArea>` (max 65vh). Footer con Annulla + Salva
   (label `common.saving` mentre `isPending`).
 - Testi sotto `courses.lessonsContent.assessment.editor.*`.
+
+---
+
+## Widget dashboard — `src/components/dashboard/`
+
+4 widget riusabili **CSS-only** (nessuna libreria charts), usati sia da
+`AdminDashboard` sia da `OrgDashboard` (vedi [06 — Pages](06-pages.md)).
+
+### `KpiCard.tsx`
+
+Tile metrica grande: label uppercase, valore (numero o stringa
+formattata), sublabel opzionale, icona opzionale a destra.
+
+```ts
+props: {
+  label: string;
+  value: string | number;
+  sublabel?: string;
+  icon?: LucideIcon;
+  tone?: "default" | "muted";  // muted = valore in grigio
+}
+```
+
+### `StatusBarChart.tsx`
+
+Barra orizzontale stacked segmentata per status + legenda con dot
+colorato. Tooltip via attributo `title` (label + count).
+
+```ts
+interface StatusBarItem {
+  key: string;         // chiave React (es. status raw)
+  label: string;       // label localizzata
+  count: number;
+  color: string;       // classe Tailwind bg-*
+}
+props: {
+  items: StatusBarItem[];
+  emptyLabel?: string;
+  compact?: boolean;   // barra più sottile, no spacing
+}
+```
+
+Usato per: pipeline corsi (8 bucket course.status), pipeline lezioni
+(per ognuna delle 5 fasi), distribuzione membri per ruolo.
+
+### `DonutMini.tsx`
+
+Donut compatto via `conic-gradient` (CSS pure, niente SVG/canvas) +
+foro centrale con il totale. Legenda laterale con dot, label e count.
+
+```ts
+interface DonutItem {
+  key: string;
+  label: string;
+  count: number;
+  color: string;  // classe Tailwind bg-* per il dot legenda
+  hex: string;    // hex equivalente per il conic-gradient
+}
+props: {
+  items: DonutItem[];
+  centerLabel?: string;  // uppercase small sotto il numero
+  size?: number;          // px lato esterno (default 140)
+}
+```
+
+Coppia `bg`/`hex` necessaria perché `conic-gradient` richiede colori
+inline mentre la legenda usa classi Tailwind. Mapping centralizzato in
+[`lib/statusColors.ts`](#libstatuscolorsts).
+
+Usato per: avatar clips readiness (admin), avatar readiness docenti
+(org).
+
+### `ActivityList.tsx`
+
+Lista compatta di eventi audit log con icona contestuale, attore,
+organizzazione (opzionale per viste org-scoped), e timestamp relativo
+("5m fa" / "2h fa" / "3g fa" / data localizzata).
+
+```ts
+interface ActivityEntry {
+  id: string;
+  created_at: string;
+  action: string;
+  actor_user_name: string | null;
+  organization_name?: string | null;  // omesso nelle viste org-scoped
+  target_type?: string | null;
+}
+props: {
+  items: ActivityEntry[];
+  emptyLabel?: string;
+  maxItems?: number;
+}
+```
+
+Icone derivate dal prefisso `action` (`auth.*` → LogIn, `organization.*`
+→ Building2, `course.lesson*` → BookOpenCheck, ecc.). Time-ago via
+`@/lib/formatTimeAgo.ts` (zero deps).
+
+### `lib/statusColors.ts`
+
+Helper di palette unificato:
+- `statusColor(status)` → `{ bg: Tailwind class, hex: string }`.
+  Lifecycle generico (empty/pending/processing/ready/approved/failed/
+  cancelled/partial), course.status (draft/published/archived), login
+  (success/failure).
+- `courseBucketFor(status)` → `CourseMacroBucket | null`. Mappa i 17
+  valori di `course.status` in 8 bucket visivi (draft / architecture /
+  structure / content / slides / speech / published / archived).
+- `COURSE_BUCKET_COLORS` — palette dedicata ai bucket macro (violet,
+  sky, blue, cyan, teal, emerald).
+- `sortByLifecycleOrder(items)` — ordine canonico
+  approved → ready → processing → pending → failed → ecc.
