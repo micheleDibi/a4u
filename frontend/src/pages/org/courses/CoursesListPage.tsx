@@ -41,6 +41,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -230,24 +232,16 @@ export default function CoursesListPage() {
     setQInput("");
   }
 
-  function toggleSort(col: SortBy) {
+  function setSort(by: SortBy, dir: SortDir) {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
-      const currentBy = (next.get("sort_by") as SortBy) ?? "updated_at";
-      const currentDir = (next.get("sort_dir") as SortDir) ?? "desc";
-      if (currentBy === col) {
-        // toggle dir
-        const newDir: SortDir = currentDir === "desc" ? "asc" : "desc";
-        if (col === "updated_at" && newDir === "desc") {
-          next.delete("sort_by");
-          next.delete("sort_dir");
-        } else {
-          next.set("sort_by", col);
-          next.set("sort_dir", newDir);
-        }
+      if (by === "updated_at" && dir === "desc") {
+        // Default: pulisci i parametri (URL più leggibile).
+        next.delete("sort_by");
+        next.delete("sort_dir");
       } else {
-        next.set("sort_by", col);
-        next.set("sort_dir", "desc");
+        next.set("sort_by", by);
+        next.set("sort_dir", dir);
       }
       return next;
     });
@@ -322,18 +316,9 @@ export default function CoursesListPage() {
     onError: (err) => toast.error(extractApiError(err).message),
   });
 
-  // Formato compatto per la cella (data + ora su una sola riga) e formato
-  // esteso per il tooltip di hover (utile a verificare l'ora precisa).
+  // Format esteso (data + ora) per il pannello info nel dropdown dei
+  // tre-puntini di ogni riga. La lista non mostra più le colonne data.
   const dateFormatter = useMemo(
-    () =>
-      new Intl.DateTimeFormat(i18n.language, {
-        day: "2-digit",
-        month: "2-digit",
-        year: "2-digit",
-      }),
-    [i18n.language],
-  );
-  const dateFormatterFull = useMemo(
     () =>
       new Intl.DateTimeFormat(i18n.language, {
         day: "2-digit",
@@ -344,38 +329,6 @@ export default function CoursesListPage() {
       }),
     [i18n.language],
   );
-
-  function SortableHeader({
-    label,
-    col,
-  }: {
-    label: string;
-    col: SortBy;
-  }) {
-    const active = filters.sort_by === col;
-    const dir = filters.sort_dir;
-    return (
-      <button
-        type="button"
-        onClick={() => toggleSort(col)}
-        className={
-          "inline-flex items-center gap-1 -mx-2 px-2 py-1 rounded transition-colors hover:bg-muted/60 " +
-          (active ? "text-foreground" : "text-muted-foreground")
-        }
-      >
-        <span>{label}</span>
-        {active ? (
-          dir === "asc" ? (
-            <ArrowUp className="size-3.5" />
-          ) : (
-            <ArrowDown className="size-3.5" />
-          )
-        ) : (
-          <ArrowDown className="size-3.5 opacity-40" />
-        )}
-      </button>
-    );
-  }
 
   const columns: ColumnDef<CourseListItemOut>[] = [
     {
@@ -442,43 +395,12 @@ export default function CoursesListPage() {
       ),
     },
     {
-      id: "created",
-      header: () => (
-        <SortableHeader
-          label={t("courses.fields.createdAt")}
-          col="created_at"
-        />
-      ),
-      cell: ({ row }) => (
-        <span
-          className="whitespace-nowrap text-sm text-muted-foreground tabular-nums"
-          title={dateFormatterFull.format(new Date(row.original.created_at))}
-        >
-          {dateFormatter.format(new Date(row.original.created_at))}
-        </span>
-      ),
-    },
-    {
-      id: "updated",
-      header: () => (
-        <SortableHeader
-          label={t("courses.fields.updatedAt")}
-          col="updated_at"
-        />
-      ),
-      cell: ({ row }) => (
-        <span
-          className="whitespace-nowrap text-sm text-muted-foreground tabular-nums"
-          title={dateFormatterFull.format(new Date(row.original.updated_at))}
-        >
-          {dateFormatter.format(new Date(row.original.updated_at))}
-        </span>
-      ),
-    },
-    {
       id: "actions",
       header: "",
       size: 64,
+      // Il dropdown ospita anche le info "Creato" / "Aggiornato"
+      // (rimosse dalla tabella per evitare lo scroll orizzontale).
+      // Ordinamento per data si fa con il Select "Ordina" nella toolbar.
       cell: ({ row }) => (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -486,7 +408,28 @@ export default function CoursesListPage() {
               <MoreHorizontal className="size-4" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
+          <DropdownMenuContent align="end" className="w-60">
+            <DropdownMenuLabel className="font-normal">
+              <div className="space-y-1 text-xs">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-muted-foreground">
+                    {t("courses.fields.createdAt")}
+                  </span>
+                  <span className="tabular-nums">
+                    {dateFormatter.format(new Date(row.original.created_at))}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-muted-foreground">
+                    {t("courses.fields.updatedAt")}
+                  </span>
+                  <span className="tabular-nums">
+                    {dateFormatter.format(new Date(row.original.updated_at))}
+                  </span>
+                </div>
+              </div>
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
             <DropdownMenuItem
               onSelect={() =>
                 navigate(`/orgs/${orgId}/corsi/${row.original.id}`)
@@ -624,6 +567,47 @@ export default function CoursesListPage() {
             onChange={(v) => updateDateRange("updated", v)}
             className="w-[200px]"
           />
+
+          {/* Ordinamento — sostituisce gli header sortable delle colonne
+              data (rimosse). Encoding "sort_by:sort_dir" come singolo
+              value per il Select. */}
+          <Select
+            value={`${filters.sort_by}:${filters.sort_dir}`}
+            onValueChange={(v) => {
+              const [by, dir] = v.split(":") as [SortBy, SortDir];
+              setSort(by, dir);
+            }}
+          >
+            <SelectTrigger className="h-9 w-[200px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="updated_at:desc">
+                <span className="inline-flex items-center gap-1.5">
+                  <ArrowDown className="size-3.5" />
+                  {t("courses.fields.updatedAt")}
+                </span>
+              </SelectItem>
+              <SelectItem value="updated_at:asc">
+                <span className="inline-flex items-center gap-1.5">
+                  <ArrowUp className="size-3.5" />
+                  {t("courses.fields.updatedAt")}
+                </span>
+              </SelectItem>
+              <SelectItem value="created_at:desc">
+                <span className="inline-flex items-center gap-1.5">
+                  <ArrowDown className="size-3.5" />
+                  {t("courses.fields.createdAt")}
+                </span>
+              </SelectItem>
+              <SelectItem value="created_at:asc">
+                <span className="inline-flex items-center gap-1.5">
+                  <ArrowUp className="size-3.5" />
+                  {t("courses.fields.createdAt")}
+                </span>
+              </SelectItem>
+            </SelectContent>
+          </Select>
 
           {activeFilters && (
             <Button
