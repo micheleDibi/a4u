@@ -8,7 +8,6 @@ import {
 } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { useLocation } from "react-router-dom";
 import { Send, X } from "lucide-react";
 
 import {
@@ -51,22 +50,20 @@ function newId(): string {
 export function NovaWidget() {
   const { t, i18n } = useTranslation();
   const novaCtx = useNovaContext();
-  const location = useLocation();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [welcomeSent, setWelcomeSent] = useState(false);
   const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
 
-  // Frame casuale dell'avatar: cambia ad ogni cambio pagina (e quindi
-  // anche tra login diversi, perché il login monta una nuova istanza
-  // della layout root e fa partire da un pathname iniziale).
-  const [avatarFrame, setAvatarFrame] = useState(
+  // Frame casuale dell'avatar: randomizzato UNA VOLTA al mount del
+  // widget. Dato che il login fa rimontare `AppLayout` (e quindi
+  // questo widget), ogni nuovo login produce automaticamente un
+  // frame diverso. Nessun cambio durante la navigazione: il PNG
+  // resta lo stesso finché l'utente non rilogga o ricarica la pagina.
+  const [avatarFrame] = useState(
     () => Math.floor(Math.random() * NOVA_FRAMES_COUNT) + 1,
   );
-  useEffect(() => {
-    setAvatarFrame(Math.floor(Math.random() * NOVA_FRAMES_COUNT) + 1);
-  }, [location.pathname]);
 
   // Lingua corrente UI — passata al BE per generare la risposta nella
   // lingua dell'utente.
