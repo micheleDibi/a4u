@@ -528,12 +528,10 @@ Client per la dashboard del pannello admin. Mirror di
 - `LessonsMetrics` — `{ total, phases }`.
 - `CostByPhase` — `{ phase, cost_usd }`.
 - `CostMetrics` — `{ total_usd, last_7d_usd, last_30d_usd, by_phase }`.
-- `AvatarClipsMetrics` — `{ by_status }`.
 - `LoginDayMetric` — `{ date (YYYY-MM-DD UTC), success, failure }`.
 - `LoginActivityMetrics` — `{ last_7d, success_total_7d, failure_total_7d }`.
-- `AuditRecentEntry` — `{ id, created_at, action, actor_user_name,
-  organization_name, target_type, target_id }`.
-- `AdminMetricsOut` — top-level con `generated_at` + tutti i blocchi.
+- `AdminMetricsOut` — top-level `{ generated_at, users, orgs, courses,
+  lessons, cost, login_activity }`.
 
 ### `adminMetricsApi`
 
@@ -555,17 +553,11 @@ Client per la dashboard dell'organizzazione. Mirror di
 
 ### Tipi
 
-- `AssigneeWorkload` — `{ user_id, name, course_count }`. Top 10
-  restituiti dal backend.
-- `RoleCount` — `{ role_code, role_name_it, count }`.
-- `AvatarReadiness` — `{ total_assignees, ready, partial, not_ready }`.
-- `OrgCoursesMetrics` — `{ total, by_status, by_assignee }`.
+- `OrgCoursesMetrics` — `{ total, by_status }`.
 - `OrgLessonsMetrics` — `{ total, phases }`.
-- `OrgMembersMetrics` — `{ total, by_role, pending_invitations }`.
-- `OrgAuditRecentEntry` — come `AuditRecentEntry` ma **senza
-  `organization_name`** (ridondante).
-- `OrgMetricsOut` — top-level con `generated_at, courses, lessons,
-  modules_total, members, avatar_readiness, audit_recent`.
+- `OrgMembersMetrics` — `{ total, pending_invitations }`.
+- `OrgMetricsOut` — top-level `{ generated_at, courses, lessons,
+  members }`.
 
 ### `orgMetricsApi`
 

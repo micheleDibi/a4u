@@ -69,33 +69,39 @@ Stati di errore:
 dall'endpoint `GET /admin/metrics` (cache backend TTL 60s).
 
 Hook: `useAdminMetrics()` (refetch 60s, staleTime 30s — vedi
-[08 — Hooks](08-hooks.md)). I widget rendono `data ?? []` durante il
-loading, niente skeleton dedicato.
+[08 — Hooks](08-hooks.md)).
 
 Sezioni (in ordine):
 
 1. **KPI strip** (6 `KpiCard`): Utenti / Attivi 30g / Organizzazioni /
    Corsi / Lezioni / Costo AI totale (icone `Users`, `UserCheck`,
-   `Building2`, `GraduationCap`, `BookOpen`, `DollarSign`).
-2. **Pipeline corsi** — `StatusBarChart` con i 17 status raw
-   raggruppati in 8 macro-bucket via `courseBucketFor()` di
-   `lib/statusColors.ts`.
-3. **Pipeline lezioni** — 5 `StatusBarChart` compatti uno per fase
-   (content / slides / speech / video / avatar_video).
-4. **Costo AI** — 3 `Stat` inline (totale / 7g / 30g) + lista
-   breakdown per fase (architecture / structure / content / slides /
-   speech). Formattato in USD via `Intl.NumberFormat`.
-5. **Avatar clips** — `DonutMini` con il breakdown per status.
-6. **Login activity (7g)** — bar chart custom inline:
-   `LoginActivityChart` (verde sotto = success, rosso sopra = failure,
-   stacked per giorno). Totali settimanali in legenda.
-7. **Attività recente** — `ActivityList` con le ultime 20 entry
-   `audit_logs` (icona dinamica per `action`, tempo relativo).
-8. **Gestione** — le 3 card di navigazione esistenti (Organizzazioni /
-   Utenti / Permessi globali) ricollocate in fondo come "tools".
+   `Building2`, `GraduationCap`, `BookOpen`, `DollarSign`). Icone in
+   tinta primary, hover lift.
+2. **Pipeline corsi** — `CoursePipelineDetail` (full-width card).
+   Mostra tutti i 17 stati di `course.status` raggruppati nelle 8
+   macro-fasi (draft / architecture / structure / content / slides /
+   speech / published / archived). Per le 5 fasi intermedie espone il
+   breakdown per sub-stato `pending / ready / approved`.
+3. **Pipeline lezioni** — full-width card con 5 `StatusBarChart`
+   compatti (md:2 / xl:5 colonne), uno per fase (content / slides /
+   speech / video / avatar_video). Ogni mini-card ha label + totale
+   inline.
+4. **Costo AI + Login activity** — riga a 2/3 + 1/3:
+   - Costo AI: 3 `Stat` (totale enfatizzato / 7g / 30g) + lista
+     breakdown per fase (architecture / structure / content / slides /
+     speech). Formattato USD via `Intl.NumberFormat`.
+   - Login activity (7g): bar chart custom inline `LoginActivityChart`
+     (verde = success in basso, rosso = failure in alto, stacked per
+     giorno). Label asse X = nome breve del giorno della settimana
+     localizzato (`toLocaleDateString({ weekday: "short" })`). Totali
+     settimanali in legenda.
+5. **Gestione** — le 3 card di navigazione esistenti (Organizzazioni /
+   Utenti / Permessi globali) ricollocate in fondo come "tools" con
+   hover lift e icona primary tint.
 
-I 4 widget riusabili stanno in `src/components/dashboard/` (vedi
-[05 — Components](05-components.md)).
+> Widget rimossi rispetto alla prima versione: "Avatar clips"
+> (`DonutMini`) e "Attività recente" (`ActivityList`). I componenti
+> restano disponibili in `components/dashboard/` per usi futuri.
 
 ### `src/pages/admin/OrganizationsListPage.tsx`
 
@@ -291,27 +297,24 @@ Sezioni (in ordine):
 
 1. **KPI strip** (6 `KpiCard`): Corsi totali / Corsi pubblicati /
    Lezioni totali / Lezioni con video pronto / Membri / Inviti pending.
-   Gli ultimi due valori usano `tone="muted"` quando sono 0.
-2. **Pipeline corsi** — `StatusBarChart` con bucket macro (stesso
-   helper di `AdminDashboard`).
-3. **Pipeline lezioni** — 5 `StatusBarChart` compatti per le 5 fasi
-   (content / slides / speech / video / avatar_video) **filtrate per
-   `organization_id`**.
-4. **Workload docenti** — lista top 10 assegnatari con barra relativa
-   `count / max`. Componente locale `WorkloadList`.
-5. **Avatar readiness docenti** — `DonutMini` con ready / partial /
-   not_ready: indica quanti docenti assegnati hanno audio + clip
-   pronte per la generazione video (Fase 6/6b).
-6. **Membri per ruolo** — `StatusBarChart` con palette dedicata
-   (`ROLE_COLOR` locale: creator=emerald, org_admin=blue,
-   manager=violet, member=zinc). Sotto, se `pending_invitations > 0`,
-   banner ambra con il conteggio degli inviti pending.
-7. **Attività recente org** — `ActivityList` con ultime 20 entry
-   `audit_logs WHERE organization_id = :org` (niente colonna org nel
-   render, ridondante).
-8. **Gestione** — le 3 card di navigazione esistenti (Membri /
+   Gli ultimi due usano `tone="muted"` quando sono 0.
+2. **Pipeline corsi** — `CoursePipelineDetail` (full-width card) con
+   tutti i 17 stati raggruppati nelle 8 macro-fasi. Vedi
+   [05 — Components](05-components.md) per il design del widget.
+3. **Pipeline lezioni** — full-width card con 5 `StatusBarChart`
+   compatti (md:2 / xl:5 colonne) per le 5 fasi
+   (content / slides / speech / video / avatar_video), filtrate per
+   `organization_id`.
+4. **Gestione** — le 3 card di navigazione esistenti (Membri /
    Template slide / Template PDF) ricollocate in fondo. Gating
    invariato (`useHasPermission(P.MEMBER_VIEW | TEMPLATE_*_MANAGE)`).
+
+> Widget rimossi rispetto alla prima versione: "Workload docenti"
+> (lista top-10), "Avatar readiness docenti" (`DonutMini`),
+> "Membri per ruolo" (`StatusBarChart`), "Attività recente"
+> (`ActivityList`). Backend cleanup: l'endpoint `org_metrics` non
+> calcola più `by_assignee` / `by_role` / `avatar_readiness` /
+> `audit_recent` / `modules_total` — meno query a ogni refresh.
 
 ### `src/pages/org/members/MembersListPage.tsx`
 

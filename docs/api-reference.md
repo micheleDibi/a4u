@@ -203,10 +203,10 @@ Errori:
 ### `GET /admin/metrics`
 
 Permesso: `is_platform_admin`. Restituisce uno snapshot di metriche
-**platform-wide** per la dashboard admin (utenti, organizzazioni, corsi
+**platform-wide** per la dashboard admin: utenti, organizzazioni, corsi
 e lezioni per status, costo AI cumulato dalle 5 fasi pipeline corsi
-con totale + ultimi 7g + ultimi 30g, avatar clips readiness, login
-activity 7g, ultime 20 entry di audit log). Cache server-side TTL 60s.
+(totale + ultimi 7g + ultimi 30g), login activity 7g. Cache server-side
+TTL 60s.
 
 Risposta: `AdminMetricsOut` — vedi
 [Backend 06 — Schemas](backend/06-schemas.md) (sezione
@@ -287,9 +287,7 @@ Effetto atomico: caller→`org_admin`, target→`creator`.
 Permesso: `course:view` (qualsiasi membership che possa vedere i corsi
 dell'org). Restituisce uno snapshot **org-scoped** per la dashboard
 organizzazione: corsi e lezioni per status filtrati per `org_id`,
-workload per assegnatario (top 10), avatar readiness dei docenti
-assegnati, membri per ruolo, inviti pending, ultime 20 entry di audit
-log dell'org. Niente cache server-side.
+totale membri, inviti pending. Niente cache server-side.
 
 > Il payload **non** contiene costi AI: scelta di prodotto. I costi
 > sono visibili solo nella dashboard admin platform-wide

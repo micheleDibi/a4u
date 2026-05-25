@@ -1152,11 +1152,12 @@ accettabile e risparmia decine di query a ogni refresh del browser.
 - `get_admin_metrics(db) -> AdminMetricsOut` — entry-point con cache.
 - `invalidate_cache()` — forza refresh al prossimo `get` (per test).
 
-### Aggregazioni interne (helper `_users` / `_orgs` / `_courses` / `_lessons` / `_cost` / `_avatar_clips` / `_login_activity` / `_audit_recent`)
+### Aggregazioni interne (helper `_users` / `_orgs` / `_courses` / `_lessons` / `_cost` / `_login_activity`)
 
 - **Users**: COUNT totali / `is_active=true` / `last_login_at >= now()-30d`.
 - **Orgs**: COUNT `WHERE deleted_at IS NULL`.
-- **Courses**: COUNT + GROUP BY `status` (17 valori, restituiti raw).
+- **Courses**: COUNT + GROUP BY `status` (17 valori, restituiti raw — il
+  frontend li raggruppa nel widget `CoursePipelineDetail`).
 - **Lessons**: COUNT + GROUP BY su ciascuno dei 5 `*_status`
   (content / slides / speech / video / avatar_video).
 - **Cost**: `SUM((tokens->>'cost_usd')::float)` sulle 5 fasi che usano lo
@@ -1166,10 +1167,7 @@ accettabile e risparmia decine di query a ogni refresh del browser.
   Glossary escluso (schema vecchio senza `cost_usd`). Totale + ultimi 7
   giorni + ultimi 30 giorni, filtrato per `*_generated_at` con
   `func.case((generated_at >= cutoff, cost), else_=None)`.
-- **Avatar clips**: GROUP BY `status`.
 - **Login activity 7g**: bucket per-giorno UTC con zero-fill su 7 entry.
-- **Audit recente**: ultime 20 entry con `OUTER JOIN User` (actor name)
-  + `OUTER JOIN Organization` (org name).
 
 ---
 
@@ -1189,21 +1187,10 @@ sprecare query — scelta di prodotto (vedi memoria
 
 ### Aggregazioni interne
 
-- **Courses**: COUNT WHERE `organization_id` + GROUP BY `status` + top
-  10 per `assignee_user_id` con `JOIN User` per il nome
-  (`AssigneeWorkload`).
+- **Courses**: COUNT WHERE `organization_id` + GROUP BY `status`
+  (restituito raw, il FE lo raggruppa via `CoursePipelineDetail`).
 - **Lessons**: COUNT + GROUP BY `*_status` con `JOIN Course ON
   course_id WHERE Course.organization_id`. Riutilizza lo stesso pattern
   di `admin_metrics_service._by_lesson_status`.
-- **Modules**: COUNT con `JOIN Course`.
-- **Members**: COUNT membership + GROUP BY role (`JOIN
-  OrganizationRole.code/name_it`) + `pending_invitations`
+- **Members**: COUNT membership + `pending_invitations`
   (`accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now()`).
-- **Avatar readiness**: per ogni `assignee_user_id` distinto dei corsi
-  dell'org, classifica come `ready` (audio + ≥1 clip MiniMax `ready`) /
-  `partial` (uno dei due) / `not_ready` (nessuno). Implementato con due
-  query: una su `Avatar.audio_path IS NOT NULL`, una su `OUTER JOIN
-  AvatarClip ON status='ready'`.
-- **Audit recente**: ultime 20 entry `WHERE organization_id = :org` con
-  `OUTER JOIN User` per actor name (no JOIN Organization perché
-  ridondante).

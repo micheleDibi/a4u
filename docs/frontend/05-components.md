@@ -577,13 +577,19 @@ scheda Contenuti sulle righe `is_assessment`.
 
 ## Widget dashboard — `src/components/dashboard/`
 
-4 widget riusabili **CSS-only** (nessuna libreria charts), usati sia da
-`AdminDashboard` sia da `OrgDashboard` (vedi [06 — Pages](06-pages.md)).
+Widget riusabili **CSS-only** (nessuna libreria charts), usati da
+`AdminDashboard` e/o `OrgDashboard` (vedi [06 — Pages](06-pages.md)).
+`DonutMini` e `ActivityList` esistono nel codice ma **non sono
+attualmente usati** dalle dashboard (rimangono disponibili per usi
+futuri — il bundle splitting li elimina dal chunk delle pagine se non
+referenziati).
 
 ### `KpiCard.tsx`
 
-Tile metrica grande: label uppercase, valore (numero o stringa
-formattata), sublabel opzionale, icona opzionale a destra.
+Tile metrica grande: label uppercase tracking-wider, valore `text-3xl
+tabular-nums`, sublabel opzionale, icona opzionale in tinta primary
+(`bg-primary/10 text-primary`) o muted. Hover: lift discreto
+(`-translate-y-0.5`) + shadow.
 
 ```ts
 props: {
@@ -591,7 +597,7 @@ props: {
   value: string | number;
   sublabel?: string;
   icon?: LucideIcon;
-  tone?: "default" | "muted";  // muted = valore in grigio
+  tone?: "default" | "muted";  // muted = valore in grigio + icona neutra
 }
 ```
 
@@ -614,10 +620,37 @@ props: {
 }
 ```
 
-Usato per: pipeline corsi (8 bucket course.status), pipeline lezioni
-(per ognuna delle 5 fasi), distribuzione membri per ruolo.
+Usato per: pipeline lezioni (5 fasi, uno per ciascuna).
 
-### `DonutMini.tsx`
+### `CoursePipelineDetail.tsx`
+
+Widget specifico per la "Pipeline corsi" delle dashboard. Mostra
+**tutti i 17 stati** di `course.status` raggruppati nelle **8
+macro-fasi** (draft, architecture, structure, content, slides, speech,
+published, archived). Ogni fase è una card responsiva (1/2/3/4 colonne)
+con:
+
+- nome fase + percentuale del totale
+- numero totale grande (`text-3xl tabular-nums`)
+- progress bar colorata (colore specifico della fase da
+  `COURSE_BUCKET_COLORS`)
+- per le **5 fasi intermedie** (architecture..speech) breakdown per
+  sub-stato `pending / ready / approved` con counts inline
+
+Le card con count 0 sono mostrate con `opacity-60` per dare il senso di
+"cosa potrebbe esserci" senza distrarre.
+
+```ts
+props: {
+  items: StatusCount[];    // raw, 17 statuses
+  total: number;
+  emptyLabel?: string;
+}
+```
+
+Empty state: se `total === 0`, render di un messaggio centrato.
+
+### `DonutMini.tsx` _(non in uso)_
 
 Donut compatto via `conic-gradient` (CSS pure, niente SVG/canvas) +
 foro centrale con il totale. Legenda laterale con dot, label e count.
@@ -639,12 +672,10 @@ props: {
 
 Coppia `bg`/`hex` necessaria perché `conic-gradient` richiede colori
 inline mentre la legenda usa classi Tailwind. Mapping centralizzato in
-[`lib/statusColors.ts`](#libstatuscolorsts).
+[`lib/statusColors.ts`](#libstatuscolorsts). Resta disponibile per uso
+futuro.
 
-Usato per: avatar clips readiness (admin), avatar readiness docenti
-(org).
-
-### `ActivityList.tsx`
+### `ActivityList.tsx` _(non in uso)_
 
 Lista compatta di eventi audit log con icona contestuale, attore,
 organizzazione (opzionale per viste org-scoped), e timestamp relativo
@@ -668,7 +699,7 @@ props: {
 
 Icone derivate dal prefisso `action` (`auth.*` → LogIn, `organization.*`
 → Building2, `course.lesson*` → BookOpenCheck, ecc.). Time-ago via
-`@/lib/formatTimeAgo.ts` (zero deps).
+`@/lib/formatTimeAgo.ts` (zero deps). Resta disponibile per uso futuro.
 
 ### `lib/statusColors.ts`
 
