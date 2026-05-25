@@ -1891,7 +1891,56 @@
     },
     "org": {
       "subtitle": "Role: {{role}}",
-      "platformAdmin": "Platform admin"
+      "platformAdmin": "Platform admin",
+      "kpi": {
+        "coursesTotal": "Total courses",
+        "coursesPublished": "Published courses",
+        "lessonsTotal": "Total lessons",
+        "lessonsVideoReady": "Lessons with video ready",
+        "members": "Members",
+        "pendingInvitations": "Pending invitations"
+      },
+      "pipelineCourses": {
+        "title": "Courses pipeline",
+        "empty": "No courses"
+      },
+      "pipelineLessons": {
+        "title": "Lessons pipeline",
+        "content": "Content",
+        "slides": "Slides",
+        "speech": "Speech",
+        "video": "Video",
+        "avatarVideo": "Avatar video",
+        "empty": "No lessons"
+      },
+      "workload": {
+        "title": "Teacher workload",
+        "subtitle": "Courses per assignee (top 10)",
+        "empty": "No courses assigned"
+      },
+      "avatarReadiness": {
+        "title": "Teacher avatars",
+        "subtitle": "Ready for video generation (audio + ready clips)",
+        "centerLabel": "teachers",
+        "ready": "Ready",
+        "partial": "Partial",
+        "notReady": "Not ready",
+        "empty": "No teachers assigned"
+      },
+      "members": {
+        "title": "Members by role",
+        "empty": "No members",
+        "pendingInvitations_one": "{{count}} pending invitation",
+        "pendingInvitations_other": "{{count}} pending invitations"
+      },
+      "auditRecent": {
+        "title": "Recent activity",
+        "empty": "No recent activity"
+      },
+      "manage": {
+        "title": "Management",
+        "subtitle": "Members, slide and PDF templates for the organization"
+      }
     },
     "noOrg": {
       "title": "Welcome",

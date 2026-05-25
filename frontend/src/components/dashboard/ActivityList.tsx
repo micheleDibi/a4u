@@ -22,7 +22,8 @@ export interface ActivityEntry {
   created_at: string;
   action: string;
   actor_user_name: string | null;
-  organization_name: string | null;
+  /** Opzionale: nelle viste org-scoped è omesso (sempre la stessa org). */
+  organization_name?: string | null;
   target_type?: string | null;
 }
 

@@ -1892,7 +1892,56 @@
     },
     "org": {
       "subtitle": "Ruolo: {{role}}",
-      "platformAdmin": "Admin piattaforma"
+      "platformAdmin": "Admin piattaforma",
+      "kpi": {
+        "coursesTotal": "Corsi totali",
+        "coursesPublished": "Corsi pubblicati",
+        "lessonsTotal": "Lezioni totali",
+        "lessonsVideoReady": "Lezioni con video pronto",
+        "members": "Membri",
+        "pendingInvitations": "Inviti pending"
+      },
+      "pipelineCourses": {
+        "title": "Pipeline corsi",
+        "empty": "Nessun corso"
+      },
+      "pipelineLessons": {
+        "title": "Pipeline lezioni",
+        "content": "Contenuto",
+        "slides": "Slide",
+        "speech": "Discorso",
+        "video": "Video",
+        "avatarVideo": "Video con avatar",
+        "empty": "Nessuna lezione"
+      },
+      "workload": {
+        "title": "Workload docenti",
+        "subtitle": "Corsi per assegnatario (top 10)",
+        "empty": "Nessun corso assegnato"
+      },
+      "avatarReadiness": {
+        "title": "Avatar docenti",
+        "subtitle": "Pronti per generazione video (audio + clip ready)",
+        "centerLabel": "docenti",
+        "ready": "Pronti",
+        "partial": "Parziali",
+        "notReady": "Non pronti",
+        "empty": "Nessun docente assegnato"
+      },
+      "members": {
+        "title": "Membri per ruolo",
+        "empty": "Nessun membro",
+        "pendingInvitations_one": "{{count}} invito pending",
+        "pendingInvitations_other": "{{count}} inviti pending"
+      },
+      "auditRecent": {
+        "title": "Attività recente",
+        "empty": "Nessuna attività recente"
+      },
+      "manage": {
+        "title": "Gestione",
+        "subtitle": "Membri, template slide e PDF dell'organizzazione"
+      }
     },
     "noOrg": {
       "title": "Benvenuto",

@@ -15,6 +15,7 @@ from app.api.v1 import (
     invitations,
     me_avatar,
     memberships,
+    org_metrics,
     organization_course_settings,
     pdf_templates,
     slide_templates,
@@ -33,6 +34,7 @@ api_router.include_router(admin_avatar_config.router)
 api_router.include_router(admin_course_taxonomy.router)
 api_router.include_router(admin_metrics.router)
 api_router.include_router(memberships.router)
+api_router.include_router(org_metrics.router)
 api_router.include_router(invitations.router)
 api_router.include_router(slide_templates.router)
 api_router.include_router(pdf_templates.router)
