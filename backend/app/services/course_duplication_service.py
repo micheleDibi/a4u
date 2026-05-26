@@ -19,6 +19,7 @@ Espone:
 """
 from __future__ import annotations
 
+import asyncio
 import shutil
 import uuid
 from datetime import UTC, datetime
@@ -343,6 +344,26 @@ _TRANSLATE_CHUNK_SIZE = 25
 _TRANSLATE_RETRY_MAX_ATTEMPTS = 4  # 1 initial + 3 retry
 _TRANSLATE_RETRY_BACKOFF_BASE_SECONDS = 1.0
 
+# Cap globale di chiamate OpenAI translate concorrenti. Tutte le
+# chiamate di duplicazione corso (architecture, moduli, lezioni)
+# passano da questo semaforo. Evita di superare il rate-limit OpenAI
+# e tiene sotto controllo la pressione su Cloudflare (che ci risponde
+# con 520 quando saturiamo). 40 è ben sotto i 5000 RPM di gpt-4o-mini
+# tier 2 ma sufficiente per parallelizzare aggressivamente le phase.
+_TRANSLATE_GLOBAL_CONCURRENCY_LIMIT = 40
+_translate_global_sem: asyncio.Semaphore | None = None
+
+
+def _get_translate_global_sem() -> asyncio.Semaphore:
+    """Lazy init del semaforo globale (deve essere creato dentro un
+    event loop attivo, non a module-load time)."""
+    global _translate_global_sem
+    if _translate_global_sem is None:
+        _translate_global_sem = asyncio.Semaphore(
+            _TRANSLATE_GLOBAL_CONCURRENCY_LIMIT
+        )
+    return _translate_global_sem
+
 
 async def _translate_batch_resilient(
     *,
@@ -359,19 +380,22 @@ async def _translate_batch_resilient(
 
     `op_label` è una stringa di contesto opzionale per i log
     (es. "content lesson_id=…" o "architecture").
-    """
-    import asyncio
 
+    Tutte le chiamate sono serializzate da `_translate_global_sem`
+    (cap 40 concorrenti) per evitare di saturare OpenAI/Cloudflare.
+    """
     last_exc: OpenAITranslateError | None = None
+    sem = _get_translate_global_sem()
     for attempt in range(1, _TRANSLATE_RETRY_MAX_ATTEMPTS + 1):
         try:
-            return await translate_batch(
-                items=items,
-                source_lang_code=source_lang_code,
-                source_lang_name=source_lang_name,
-                target_lang_code=target_lang_code,
-                target_lang_name=target_lang_name,
-            )
+            async with sem:
+                return await translate_batch(
+                    items=items,
+                    source_lang_code=source_lang_code,
+                    source_lang_name=source_lang_name,
+                    target_lang_code=target_lang_code,
+                    target_lang_name=target_lang_name,
+                )
         except OpenAITranslateError as exc:
             # 4xx: errore applicativo (auth, validation, ecc.) — non
             # ritentabile, fail subito.
@@ -440,10 +464,13 @@ async def _translate_jsonb_inplace(
     if not items:
         return {"strings_translated": 0}
 
-    # Chunking: max `_TRANSLATE_CHUNK_SIZE` items per chiamata OpenAI.
+    # Chunking PARALLELO: i chunk vengono lanciati tutti insieme via
+    # `asyncio.gather`. Il `_translate_global_sem` interno limita la
+    # concorrenza effettiva a 40 chiamate OpenAI simultanee.
     keys = list(items.keys())
     translated: dict[str, str] = {}
-    for chunk_start in range(0, len(keys), _TRANSLATE_CHUNK_SIZE):
+
+    async def _translate_one_chunk(chunk_start: int) -> dict[str, str]:
         chunk_keys = keys[chunk_start : chunk_start + _TRANSLATE_CHUNK_SIZE]
         chunk_items = {k: items[k] for k in chunk_keys}
         chunk_translated = await _translate_batch_resilient(
@@ -454,7 +481,6 @@ async def _translate_jsonb_inplace(
             target_lang_name=target_lang_name,
             op_label=f"jsonb chunk={chunk_start} prefix={key_prefix[:30]}",
         )
-        translated.update(chunk_translated)
         log.info(
             "course_duplication_chunk_translated",
             chunk_start=chunk_start,
@@ -462,6 +488,23 @@ async def _translate_jsonb_inplace(
             received=len(chunk_translated),
             total_items=len(keys),
         )
+        return chunk_translated
+
+    chunk_starts = list(range(0, len(keys), _TRANSLATE_CHUNK_SIZE))
+    chunk_results = await asyncio.gather(
+        *[_translate_one_chunk(cs) for cs in chunk_starts],
+        return_exceptions=True,
+    )
+    for cs, result in zip(chunk_starts, chunk_results):
+        if isinstance(result, Exception):
+            log.warning(
+                "course_duplication_chunk_failed",
+                chunk_start=cs,
+                error=str(result)[:200],
+                prefix=key_prefix[:30],
+            )
+            continue
+        translated.update(result)
 
     applied = 0
     for (parent, key), unique_key in zip(addresses, items.keys()):
@@ -785,8 +828,16 @@ async def _translate_architecture(
 
         flag_modified(target, "architecture_raw")
 
-    # 2) Moduli — campi diretti
-    for module in target.modules:
+    # 2) Moduli — campi diretti + lessons_structure_raw, IN PARALLELO.
+    # Ogni modulo è una task indipendente: traduce i suoi campi
+    # (`title`/`description`) e il proprio `lessons_structure_raw`
+    # (~250 items in 11 chunk paralleli). Il `_translate_global_sem`
+    # interno serializza al massimo 40 chiamate OpenAI simultanee, il
+    # resto aspetta.
+    from sqlalchemy.orm.attributes import flag_modified
+
+    async def _translate_one_module(module: Any) -> int:
+        local_count = 0
         items: dict[str, str] = {}
         for field in _paths.MODULE_TRANSLATE_FIELDS:
             value = getattr(module, field, None)
@@ -805,26 +856,38 @@ async def _translate_architecture(
                 key = f"m{module.position}_{field}"
                 if key in translated:
                     setattr(module, field, translated[key])
-            stats["strings_translated"] += len(items)
+            local_count += len(items)
 
-        # lessons_structure_raw
         if module.lessons_structure_raw:
             s = await _translate_jsonb_inplace(
                 module.lessons_structure_raw,
-                # Re-uso ARCHITECTURE-like paths: l'oggetto modulare ha
-                # `lessons[].title/summary/recommended_bibliography[]`.
-                # In realtà lessons_structure_raw è LessonStructureModuleOutput
-                # con `lessons[].learning_objectives/...`.
                 paths=_LESSONS_STRUCTURE_RAW_PATHS,
                 source_lang_code=source_lang_code,
                 source_lang_name=source_lang_name,
                 target_lang_code=target_lang_code,
                 target_lang_name=target_lang_name,
+                # Prefisso univoco per evitare collisioni di chiavi fra
+                # moduli che corrono in parallelo (chunk keys condivisi
+                # nello stesso global sem).
+                key_prefix=f"m{module.position}_",
             )
-            stats["strings_translated"] += s["strings_translated"]
-            from sqlalchemy.orm.attributes import flag_modified
-
+            local_count += s["strings_translated"]
             flag_modified(module, "lessons_structure_raw")
+        return local_count
+
+    module_results = await asyncio.gather(
+        *[_translate_one_module(m) for m in target.modules],
+        return_exceptions=True,
+    )
+    for module, result in zip(target.modules, module_results):
+        if isinstance(result, Exception):
+            log.warning(
+                "course_duplication_module_translate_error",
+                module_position=module.position,
+                error=str(result)[:200],
+            )
+            continue
+        stats["strings_translated"] += result
     return stats
 
 

@@ -585,11 +585,23 @@ async def _translate_lessons_combined_phase(
         )
         lesson_ids: list[uuid.UUID] = [row[0] for row in res.all()]
 
+    if not lesson_ids:
+        return
+
+    # Track delle phase fallite nella first pass per la second pass.
+    failed_phases: list[tuple[uuid.UUID, str]] = []
+    failed_phases_lock = asyncio.Lock()
+
     async def _translate_one_phase(
-        lesson_id: uuid.UUID, phase: str
+        lesson_id: uuid.UUID,
+        phase: str,
+        *,
+        track_failure: bool = True,
     ) -> bool:
         """Carica la lezione in una sessione propria, traduce la phase
-        indicata, commit. Ritorna True se ok, False se errore."""
+        indicata, commit. Ritorna True se ok, False se errore.
+        Se `track_failure=True`, in caso di errore appende a
+        `failed_phases` per la second pass."""
         try:
             async with async_session_factory() as ldb:
                 lesson = await ldb.get(CourseLesson, lesson_id)
@@ -613,6 +625,9 @@ async def _translate_lessons_combined_phase(
                 phase=phase,
                 error=str(exc)[:300],
             )
+            if track_failure:
+                async with failed_phases_lock:
+                    failed_phases.append((lesson_id, phase))
             return False
 
     async def _do_one(lesson_id: uuid.UUID) -> None:
@@ -620,9 +635,7 @@ async def _translate_lessons_combined_phase(
             # Le 3 phase in parallelo: ognuna apre la propria sessione
             # DB, fetch la lesson, traduce il proprio JSONB
             # (content_raw / slides_raw / speech_raw — campi DISGIUNTI,
-            # nessun race), commit. Postgres serializza eventuali
-            # UPDATE concorrenti sulla stessa riga via row-lock — i 3
-            # commit completano nell'ordine in cui arrivano.
+            # nessun race), commit.
             await asyncio.gather(
                 _translate_one_phase(lesson_id, "content"),
                 _translate_one_phase(lesson_id, "slides"),
@@ -630,31 +643,64 @@ async def _translate_lessons_combined_phase(
                 return_exceptions=True,
             )
 
-    if not lesson_ids:
-        return
-
+    # First pass: tutte le phase di tutte le lezioni in parallelo
+    # (limitato dal cap di lezioni concorrenti + global translate sem
+    # dentro _translate_batch_resilient).
     results = await asyncio.gather(
         *[_do_one(lid) for lid in lesson_ids],
         return_exceptions=True,
     )
-    failures = [
+
+    # Second pass: ri-tentare SOLO le phase fallite dopo 20s di pausa
+    # (lascia tempo a OpenAI/Cloudflare di stabilizzarsi). Le phase
+    # fallite sono solitamente dovute a glitch transient (520 CF,
+    # timeout di rete). La second pass NON traccia ulteriori failure:
+    # se fallisce anche qui, la phase resta non tradotta (l'utente
+    # potrà rilanciarla manualmente dal tab corrispondente).
+    if failed_phases:
+        snapshot = list(failed_phases)
+        failed_phases.clear()
+        log.info(
+            "course_duplication_lesson_second_pass_start",
+            failed_count=len(snapshot),
+        )
+        await asyncio.sleep(20)
+        second_pass_results = await asyncio.gather(
+            *[
+                _translate_one_phase(lid, phase, track_failure=False)
+                for lid, phase in snapshot
+            ],
+            return_exceptions=True,
+        )
+        recovered = sum(1 for r in second_pass_results if r is True)
+        permanent = len(snapshot) - recovered
+        log.info(
+            "course_duplication_lesson_second_pass_done",
+            recovered=recovered,
+            still_failed=permanent,
+        )
+
+    # Conta failure di alto livello (eccezioni inattese di `_do_one`,
+    # non phase singole): se >50% delle lezioni hanno avuto fail di
+    # task → retry del job (probabilmente OpenAI down).
+    task_failures = [
         (lid, exc)
         for lid, exc in zip(lesson_ids, results)
         if isinstance(exc, BaseException)
     ]
-    if failures:
+    if task_failures:
         log.warning(
             "course_duplication_combined_phase_failures",
-            failed=len(failures),
+            failed=len(task_failures),
             total=len(lesson_ids),
             sample=[
                 {"lesson_id": str(lid), "error": str(exc)[:200]}
-                for lid, exc in failures[:5]
+                for lid, exc in task_failures[:5]
             ],
         )
-    if failures and len(failures) > len(lesson_ids) * 0.5:
+    if task_failures and len(task_failures) > len(lesson_ids) * 0.5:
         raise RuntimeError(
-            f"Combined phase: {len(failures)}/{len(lesson_ids)} lezioni "
+            f"Combined phase: {len(task_failures)}/{len(lesson_ids)} lezioni "
             f"fallite a livello task (>50%). Attivo retry del job."
         )
 
