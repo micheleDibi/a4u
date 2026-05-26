@@ -232,11 +232,13 @@ class Settings(BaseSettings):
     # parallelo cap=3 per fase (mirror del content worker).
     course_duplication_poll_interval_seconds: int = 4
     course_duplication_max_concurrent_jobs: int = 1
-    # Cap di lezioni tradotte in parallelo (per phase). Alzato da 3 a 6:
-    # `gpt-4o-mini` gestisce bene 6 chiamate concorrenti senza rate-limit,
-    # e con la fase combinata (content+slides+speech per lezione in sequenza)
-    # questo dimezza il tempo totale di duplicazione.
-    course_duplication_lesson_translate_concurrency: int = 6
+    # Cap di lezioni tradotte in parallelo (per phase). Con la phase
+    # combined (content+slides+speech in parallelo dentro la stessa
+    # lezione) ogni lezione consuma 3 connessioni OpenAI concorrenti, e
+    # con cap 10 lezioni in parallelo arriviamo a 30 chiamate
+    # concorrenti — ben sotto il rate-limit di gpt-4o-mini tier 2
+    # (5000 RPM).
+    course_duplication_lesson_translate_concurrency: int = 10
     course_duplication_auto_retry_max: int = 5
     # Timeout massimo (in minuti) per un job di duplicazione completo.
     # Oltre questo limite il job viene marcato `failed` e il target

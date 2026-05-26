@@ -565,13 +565,18 @@ async def _translate_lessons_combined_phase(
     target_lang_name: str,
     lesson_cap: int,
 ) -> None:
-    """Traduce content + slides + speech di ogni lezione in sequenza
-    dentro la stessa task. Parallelismo dato dal cap `lesson_cap` fra
-    lezioni (default 6). Sostituisce le 3 wave separate (content,
-    slides, speech) per ridurre il tempo totale a ~1/3.
+    """Traduce content + slides + speech di ogni lezione IN PARALLELO
+    (3 sessioni DB separate, 3 chiamate OpenAI concorrenti per
+    lezione). Parallelismo globale dato dal cap `lesson_cap` fra
+    lezioni (default 10).
 
-    Resilienza: una lezione fallita non interrompe le altre. Soglia
-    50% di fail per attivare retry del job.
+    Stima tempo per lezione: max(content_time, slides_time, speech_time)
+    = ~30s invece di ~75s sequenziali. Totale corso 80 lezioni con
+    cap 10 ≈ 4 min (vs ~17 min sequenziale).
+
+    Resilienza: ogni phase di ogni lezione è in try/except dedicato
+    con la sua sessione (un fallimento isolato non rompe le altre).
+    Soglia 50% di fail TOTALE per attivare retry del job.
     """
     sem = asyncio.Semaphore(lesson_cap)
     async with async_session_factory() as db:
@@ -580,36 +585,50 @@ async def _translate_lessons_combined_phase(
         )
         lesson_ids: list[uuid.UUID] = [row[0] for row in res.all()]
 
-    async def _do_one(lesson_id: uuid.UUID) -> None:
-        async with sem:
+    async def _translate_one_phase(
+        lesson_id: uuid.UUID, phase: str
+    ) -> bool:
+        """Carica la lezione in una sessione propria, traduce la phase
+        indicata, commit. Ritorna True se ok, False se errore."""
+        try:
             async with async_session_factory() as ldb:
                 lesson = await ldb.get(CourseLesson, lesson_id)
                 if lesson is None:
-                    return
-                # 3 phase sequenziali dentro la stessa session/transazione.
-                # Un fallimento di una phase NON blocca le altre 2 (try
-                # per phase). Se almeno una passa, qualcosa di tradotto
-                # rimane.
-                for phase in ("content", "slides", "speech"):
-                    try:
-                        await _svc._translate_lesson(
-                            ldb,
-                            lesson=lesson,
-                            source_lang_code=source_lang_code,
-                            source_lang_name=source_lang_name,
-                            target_lang_code=target_lang_code,
-                            target_lang_name=target_lang_name,
-                            phase=phase,
-                        )
-                    except Exception as exc:  # noqa: BLE001
-                        log.warning(
-                            "course_duplication_lesson_phase_inner_error",
-                            lesson_id=str(lesson_id),
-                            phase=phase,
-                            error=str(exc)[:300],
-                        )
-                        # Continua con la phase successiva.
+                    return False
+                await _svc._translate_lesson(
+                    ldb,
+                    lesson=lesson,
+                    source_lang_code=source_lang_code,
+                    source_lang_name=source_lang_name,
+                    target_lang_code=target_lang_code,
+                    target_lang_name=target_lang_name,
+                    phase=phase,
+                )
                 await ldb.commit()
+                return True
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "course_duplication_lesson_phase_inner_error",
+                lesson_id=str(lesson_id),
+                phase=phase,
+                error=str(exc)[:300],
+            )
+            return False
+
+    async def _do_one(lesson_id: uuid.UUID) -> None:
+        async with sem:
+            # Le 3 phase in parallelo: ognuna apre la propria sessione
+            # DB, fetch la lesson, traduce il proprio JSONB
+            # (content_raw / slides_raw / speech_raw — campi DISGIUNTI,
+            # nessun race), commit. Postgres serializza eventuali
+            # UPDATE concorrenti sulla stessa riga via row-lock — i 3
+            # commit completano nell'ordine in cui arrivano.
+            await asyncio.gather(
+                _translate_one_phase(lesson_id, "content"),
+                _translate_one_phase(lesson_id, "slides"),
+                _translate_one_phase(lesson_id, "speech"),
+                return_exceptions=True,
+            )
 
     if not lesson_ids:
         return
