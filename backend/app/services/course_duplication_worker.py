@@ -452,8 +452,14 @@ async def _process_one(job_id: uuid.UUID) -> None:
 
         # --- Phase 8: finalize -------------------------------------------
         async with async_session_factory() as db:
-            source = await db.get(Course, source_id)
-            target = await db.get(Course, target.id)
+            # CRITICAL: target deve essere caricato con eager load delle
+            # relationships modules + lessons. `_finalize` itera su
+            # target.modules[].lessons[] per downgradare speech_status;
+            # se le relationship non sono caricate, SQLAlchemy async
+            # tenta lazy load -> MissingGreenlet -> retry -> dopo 5
+            # retry esauriti, cleanup del target -> CORSO SPARITO.
+            source = await _svc.load_source_full(db, course_id=source_id)
+            target = await _svc.load_target_full(db, course_id=target.id)
             job = await db.get(CourseDuplicationJob, job_id)
             if source is None or target is None or job is None:
                 return
