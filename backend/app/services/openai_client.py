@@ -88,16 +88,71 @@ class OpenAINotConfiguredError(OpenAIError):
         )
 
 
-def get_client(timeout: float = 120.0) -> httpx.AsyncClient:
-    """Costruisce un client HTTP per OpenAI. Solleva se la API key manca."""
+# Client httpx SINGLETON condiviso da tutti i servizi OpenAI.
+# Prima costruivamo un AsyncClient nuovo ad ogni chiamata, il che con
+# 150+ chiamate concorrenti (duplicazione corso) significava:
+#   - 150 TLS handshake ridondanti (~50-200ms ciascuno persi)
+#   - 150 pool di connessioni separati, niente connection reuse
+#   - Saturazione facile dei socket / file descriptor
+#   - `httpx.ReadTimeout` o `RemoteProtocolError` frequenti con
+#     status=None (i log mostrano "[OpenAI None] Errore HTTP verso OpenAI: ")
+#
+# Singleton + Limits ampi + keepalive_expiry lungo:
+#   - 1 sola istanza httpx.AsyncClient riusata
+#   - Connection pool max 300 connessioni totali, 100 keepalive
+#   - Keepalive expiry 60s -> connessioni TLS riusate per chiamate
+#     consecutive verso lo stesso host (api.openai.com)
+#   - Pool acquire timeout 60s -> evita PoolTimeout silenti
+_shared_client: httpx.AsyncClient | None = None
+
+
+class _SharedClientProxy:
+    """Context manager che ritorna il client httpx singleton senza
+    chiuderlo all'uscita dal `async with`. Mantiene compatibilita' con
+    i call-site esistenti che usano `async with get_client() as c:`."""
+
+    def __init__(self, client: httpx.AsyncClient) -> None:
+        self._client = client
+
+    async def __aenter__(self) -> httpx.AsyncClient:
+        return self._client
+
+    async def __aexit__(self, *_args: Any) -> None:
+        # NO close: il client e' condiviso a livello processo.
+        return None
+
+
+def get_client(timeout: float = 600.0) -> _SharedClientProxy:
+    """Ritorna un context manager attorno al client httpx singleton.
+
+    Il parametro `timeout` e' mantenuto per backward compat ma e'
+    IGNORATO: il timeout effettivo del client e' `read=600s` (sufficiente
+    per output JSON lunghi di lesson_content/slides/speech). Per servizi
+    che vogliono timeout piu' stretti, passare `timeout=N` direttamente
+    a `client.post(url, json=body, timeout=N)`.
+    """
+    global _shared_client
     settings = get_settings()
     if not settings.openai_api_key:
         raise OpenAINotConfiguredError()
-    return httpx.AsyncClient(
-        base_url=settings.openai_base_url.rstrip("/"),
-        headers={
-            "Authorization": f"Bearer {settings.openai_api_key}",
-            "Content-Type": "application/json",
-        },
-        timeout=timeout,
-    )
+    if _shared_client is None:
+        _shared_client = httpx.AsyncClient(
+            base_url=settings.openai_base_url.rstrip("/"),
+            headers={
+                "Authorization": f"Bearer {settings.openai_api_key}",
+                "Content-Type": "application/json",
+            },
+            timeout=httpx.Timeout(
+                connect=10.0,
+                read=600.0,
+                write=30.0,
+                pool=60.0,
+            ),
+            limits=httpx.Limits(
+                max_connections=300,
+                max_keepalive_connections=100,
+                keepalive_expiry=60.0,
+            ),
+        )
+    _ = timeout  # parametro accettato ma non usato (backward compat)
+    return _SharedClientProxy(_shared_client)
