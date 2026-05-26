@@ -65,6 +65,11 @@ class Settings(BaseSettings):
     # default fallisce con transient persistenti (5xx, timeout) anche
     # dopo i retry interni. Piu' costoso ma piu' stabile.
     openai_model_fallback: str = "gpt-4o"
+    # Cap globale di chiamate OpenAI translate concorrenti durante la
+    # duplicazione corso. 80 e' al ~3% del rate-limit gpt-4o-mini tier
+    # 2 (30000 RPM): margine ampio per gestire i 520 transient di
+    # Cloudflare senza saturare. Alzabile in prod via env.
+    openai_translate_global_concurrency: int = 80
     openai_translate_batch_size: int = 40
     openai_summarize_model: str = "gpt-4o-mini"
     openai_summarize_max_tokens: int = 8000
@@ -244,12 +249,12 @@ class Settings(BaseSettings):
     course_duplication_max_concurrent_jobs: int = 1
     # Cap di lezioni tradotte in parallelo (per phase). Con la phase
     # combined (content+slides+speech in parallelo dentro la stessa
-    # lezione) ogni lezione consuma 3 connessioni OpenAI + 3 connessioni
-    # DB. Cap 15 → 45 chiamate concorrenti, ancora ben sotto rate-limit
-    # gpt-4o-mini tier 2 (5000 RPM) e dentro il pool DB (80 connessioni).
-    # Override via env per spingere ulteriormente
-    # (`A4U_COURSE_DUPLICATION_LESSON_TRANSLATE_CONCURRENCY=20`).
-    course_duplication_lesson_translate_concurrency: int = 15
+    # lezione) ogni lezione consuma 3 task local + N chiamate OpenAI
+    # (chunk parallelizzati dentro ogni phase). Cap 20 → 60 task local
+    # → fino a ~60-120 chiamate OpenAI concorrenti, capped dal
+    # `openai_translate_global_concurrency` (80). Pool DB 80 connessioni
+    # supporta 60 sessioni concorrenti con margine.
+    course_duplication_lesson_translate_concurrency: int = 20
     course_duplication_auto_retry_max: int = 5
     # Timeout massimo (in minuti) per un job di duplicazione completo.
     # Oltre questo limite il job viene marcato `failed` e il target

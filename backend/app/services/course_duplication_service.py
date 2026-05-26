@@ -346,11 +346,10 @@ _TRANSLATE_RETRY_BACKOFF_BASE_SECONDS = 1.0
 
 # Cap globale di chiamate OpenAI translate concorrenti. Tutte le
 # chiamate di duplicazione corso (architecture, moduli, lezioni)
-# passano da questo semaforo. Evita di superare il rate-limit OpenAI
-# e tiene sotto controllo la pressione su Cloudflare (che ci risponde
-# con 520 quando saturiamo). 40 è ben sotto i 5000 RPM di gpt-4o-mini
-# tier 2 ma sufficiente per parallelizzare aggressivamente le phase.
-_TRANSLATE_GLOBAL_CONCURRENCY_LIMIT = 40
+# passano da questo semaforo. gpt-4o-mini tier 2 supporta 30000 RPM:
+# con 80 concorrenti × ~5s per chiamata = ~960 RPM, ben sotto il
+# limite. Configurabile via
+# `A4U_OPENAI_TRANSLATE_GLOBAL_CONCURRENCY` per fine-tuning prod.
 _translate_global_sem: asyncio.Semaphore | None = None
 
 
@@ -359,9 +358,12 @@ def _get_translate_global_sem() -> asyncio.Semaphore:
     event loop attivo, non a module-load time)."""
     global _translate_global_sem
     if _translate_global_sem is None:
-        _translate_global_sem = asyncio.Semaphore(
-            _TRANSLATE_GLOBAL_CONCURRENCY_LIMIT
+        from app.core.config import get_settings
+
+        limit = int(
+            get_settings().openai_translate_global_concurrency
         )
+        _translate_global_sem = asyncio.Semaphore(max(1, limit))
     return _translate_global_sem
 
 
