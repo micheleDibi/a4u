@@ -83,18 +83,24 @@ async def translate_batch(
     source_lang_name: str,
     target_lang_code: str,
     target_lang_name: str,
+    model_override: str | None = None,
 ) -> dict[str, str]:
     """Traduce un batch di stringhe via OpenAI Chat Completions.
 
     `items`: dict {key: source_text}. Ritorna dict {key: translated_text}.
     Le chiavi che la API non riesce a tradurre (o restituisce vuote) vengono
     omesse dall'output: il chiamante decide se considerarle skippate.
+
+    `model_override`: se valorizzato, usa questo model invece del default
+    da settings. Pensato per fallback automatico su modelli piu' stabili
+    (es. gpt-4o) quando il default (gpt-4o-mini) ha transient persistenti.
     """
     if not items:
         return {}
     settings = get_settings()
+    model = model_override or settings.openai_model
     body = {
-        "model": settings.openai_model,
+        "model": model,
         "messages": [
             {
                 "role": "system",
@@ -114,7 +120,7 @@ async def translate_batch(
         "openai_translate_request",
         target=target_lang_code,
         items=len(items),
-        model=settings.openai_model,
+        model=model,
     )
     try:
         async with get_client() as client:

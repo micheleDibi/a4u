@@ -373,6 +373,7 @@ async def _translate_batch_resilient(
     target_lang_code: str,
     target_lang_name: str,
     op_label: str = "",
+    model_override: str | None = None,
 ) -> dict[str, str]:
     """Wrapper attorno a `translate_batch` con retry esponenziale sui
     soli errori transient (status >= 500 o status None = httpx error).
@@ -395,6 +396,7 @@ async def _translate_batch_resilient(
                     source_lang_name=source_lang_name,
                     target_lang_code=target_lang_code,
                     target_lang_name=target_lang_name,
+                    model_override=model_override,
                 )
         except OpenAITranslateError as exc:
             # 4xx: errore applicativo (auth, validation, ecc.) — non
@@ -434,6 +436,7 @@ async def _translate_jsonb_inplace(
     target_lang_code: str,
     target_lang_name: str,
     key_prefix: str = "",
+    model_override: str | None = None,
 ) -> dict[str, Any]:
     """Estrae tutte le foglie stringa dichiarate in `paths`, le traduce
     a chunk via `translate_batch`, e le riapplica in-place su `data`.
@@ -480,6 +483,7 @@ async def _translate_jsonb_inplace(
             target_lang_code=target_lang_code,
             target_lang_name=target_lang_name,
             op_label=f"jsonb chunk={chunk_start} prefix={key_prefix[:30]}",
+            model_override=model_override,
         )
         log.info(
             "course_duplication_chunk_translated",
@@ -913,6 +917,7 @@ async def _translate_lesson(
     target_lang_code: str,
     target_lang_name: str,
     phase: str,
+    model_override: str | None = None,
 ) -> dict[str, Any]:
     """Traduce una singola lezione per la fase indicata.
 
@@ -922,6 +927,9 @@ async def _translate_lesson(
     - `content`: lesson.content_raw (rispettando is_assessment)
     - `slides`: lesson.slides_raw
     - `speech`: lesson.speech_raw
+
+    `model_override`: se valorizzato, usa un model diverso dal default
+    (es. "gpt-4o" come fallback su transient persistenti di gpt-4o-mini).
     """
     from sqlalchemy.orm.attributes import flag_modified
 
@@ -941,6 +949,7 @@ async def _translate_lesson(
                 target_lang_code=target_lang_code,
                 target_lang_name=target_lang_name,
                 op_label=f"lesson_meta {lesson.lesson_code or lesson.id}",
+                model_override=model_override,
             )
             for field in _paths.LESSON_TRANSLATE_FIELDS:
                 if field in translated:
@@ -958,6 +967,7 @@ async def _translate_lesson(
                 source_lang_name=source_lang_name,
                 target_lang_code=target_lang_code,
                 target_lang_name=target_lang_name,
+                model_override=model_override,
             )
             stats["strings_translated"] += s["strings_translated"]
             flag_modified(lesson, field)
@@ -976,6 +986,7 @@ async def _translate_lesson(
                 source_lang_name=source_lang_name,
                 target_lang_code=target_lang_code,
                 target_lang_name=target_lang_name,
+                model_override=model_override,
             )
             stats["strings_translated"] += s["strings_translated"]
             flag_modified(lesson, "content_raw")
@@ -989,6 +1000,7 @@ async def _translate_lesson(
                 source_lang_name=source_lang_name,
                 target_lang_code=target_lang_code,
                 target_lang_name=target_lang_name,
+                model_override=model_override,
             )
             stats["strings_translated"] += s["strings_translated"]
             flag_modified(lesson, "slides_raw")
@@ -1002,6 +1014,7 @@ async def _translate_lesson(
                 source_lang_name=source_lang_name,
                 target_lang_code=target_lang_code,
                 target_lang_name=target_lang_name,
+                model_override=model_override,
             )
             stats["strings_translated"] += s["strings_translated"]
             flag_modified(lesson, "speech_raw")

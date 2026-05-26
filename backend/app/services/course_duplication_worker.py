@@ -675,20 +675,26 @@ async def _translate_lessons_combined_phase(
         job_id, detail=f"0/{total_lessons} lezioni completate"
     )
 
-    # Track delle phase fallite nella first pass per la second pass.
-    failed_phases: list[tuple[uuid.UUID, str]] = []
-    failed_phases_lock = asyncio.Lock()
+    # Multi-pass persistente con fallback model.
+    # Lista di lavoro: (lesson_id, phase) per ogni lezione e ognuna
+    # delle 3 phase. Ad ogni pass, tutte le coppie ancora pending
+    # vengono ritentate. Le pass 5-6 usano fallback model (gpt-4o)
+    # piu' stabile per le residue, cosi' alla fine TUTTE le phase
+    # sono tradotte (o quasi -- log.error se ne restano).
+    pending_work: set[tuple[uuid.UUID, str]] = set()
+    for lid in lesson_ids:
+        for phase in ("content", "slides", "speech"):
+            pending_work.add((lid, phase))
+    pending_lock = asyncio.Lock()
 
     async def _translate_one_phase(
         lesson_id: uuid.UUID,
         phase: str,
         *,
-        track_failure: bool = True,
+        model_override: str | None = None,
     ) -> bool:
         """Carica la lezione in una sessione propria, traduce la phase
-        indicata, commit. Ritorna True se ok, False se errore.
-        Se `track_failure=True`, in caso di errore appende a
-        `failed_phases` per la second pass."""
+        indicata, commit. Ritorna True se ok, False se errore."""
         try:
             async with async_session_factory() as ldb:
                 lesson = await ldb.get(CourseLesson, lesson_id)
@@ -702,6 +708,7 @@ async def _translate_lessons_combined_phase(
                     target_lang_code=target_lang_code,
                     target_lang_name=target_lang_name,
                     phase=phase,
+                    model_override=model_override,
                 )
                 await ldb.commit()
                 return True
@@ -711,103 +718,130 @@ async def _translate_lessons_combined_phase(
                 lesson_id=str(lesson_id),
                 phase=phase,
                 error=str(exc)[:300],
+                model=model_override or "default",
             )
-            if track_failure:
-                async with failed_phases_lock:
-                    failed_phases.append((lesson_id, phase))
             return False
 
-    async def _do_one(lesson_id: uuid.UUID) -> None:
+    async def _attempt_one(
+        lesson_id: uuid.UUID,
+        phase: str,
+        *,
+        model_override: str | None = None,
+        is_first_completion: bool = False,
+    ) -> None:
+        """Esegue un tentativo di traduzione phase. Se ok, rimuove da
+        pending_work. Aggiorna il counter sotto-progresso solo al
+        PRIMO successo di una lezione (cioe' quando tutte e 3 le phase
+        di quella lezione hanno avuto almeno un tentativo riuscito o
+        terminale nel pass corrente)."""
         nonlocal completed_counter
         async with sem:
-            # Le 3 phase in parallelo: ognuna apre la propria sessione
-            # DB, fetch la lesson, traduce il proprio JSONB
-            # (content_raw / slides_raw / speech_raw — campi DISGIUNTI,
-            # nessun race), commit.
-            await asyncio.gather(
-                _translate_one_phase(lesson_id, "content"),
-                _translate_one_phase(lesson_id, "slides"),
-                _translate_one_phase(lesson_id, "speech"),
-                return_exceptions=True,
+            ok = await _translate_one_phase(
+                lesson_id, phase, model_override=model_override
             )
-        # Counter sotto-progresso: incrementa e propaga al FE. Update
-        # DB e un singolo UPDATE per lezione (trascurabile col cap
-        # concorrenza attuale).
-        async with completed_lock:
-            completed_counter += 1
-            current = completed_counter
-        await _set_progress_detail(
-            job_id,
-            detail=f"{current}/{total_lessons} lezioni completate",
-        )
+        if ok:
+            async with pending_lock:
+                pending_work.discard((lesson_id, phase))
 
-    # First pass: tutte le phase di tutte le lezioni in parallelo
-    # (limitato dal cap di lezioni concorrenti + global translate sem
-    # dentro _translate_batch_resilient).
-    results = await asyncio.gather(
-        *[_do_one(lid) for lid in lesson_ids],
-        return_exceptions=True,
-    )
+    # Pass plan: ogni tupla e' (sleep_before_seconds, model_override).
+    # Il modello None usa il default (gpt-4o-mini). I pass 5-6 usano
+    # il fallback model (gpt-4o) per ultime phase pending.
+    settings_local = get_settings()
+    default_model = settings_local.openai_model
+    fallback_model = settings_local.openai_model_fallback
+    pass_plan: list[tuple[int, str | None]] = [
+        (0, None),               # Pass 1: default
+        (30, None),              # Pass 2: default + 30s wait
+        (90, None),              # Pass 3: default + 90s wait
+        (180, None),             # Pass 4: default + 3 min wait
+        (30, fallback_model),    # Pass 5: fallback gpt-4o + 30s wait
+        (60, fallback_model),    # Pass 6: fallback gpt-4o + 1 min wait
+    ]
 
-    # Second pass: ri-tentare SOLO le phase fallite dopo 20s di pausa
-    # (lascia tempo a OpenAI/Cloudflare di stabilizzarsi). Le phase
-    # fallite sono solitamente dovute a glitch transient (520 CF,
-    # timeout di rete). La second pass NON traccia ulteriori failure:
-    # se fallisce anche qui, la phase resta non tradotta (l'utente
-    # potrà rilanciarla manualmente dal tab corrispondente).
-    if failed_phases:
-        snapshot = list(failed_phases)
-        failed_phases.clear()
+    initial_count = len(pending_work)
+    # Tracking per FE sub-progress: contiamo lezioni "completamente
+    # processate" intese come "tutte e 3 le phase tentate e o riuscite
+    # o non piu' pending nel pass corrente". Per semplicita' qui
+    # contiamo lezioni che NON hanno piu' phase pending.
+    async def _update_completion_counter() -> None:
+        nonlocal completed_counter
+        async with pending_lock:
+            pending_lessons = {lid for lid, _ in pending_work}
+        done = total_lessons - len(pending_lessons)
+        if done != completed_counter:
+            completed_counter = done
+            await _set_progress_detail(
+                job_id,
+                detail=f"{done}/{total_lessons} lezioni completate",
+            )
+
+    for pass_idx, (sleep_s, model_override) in enumerate(pass_plan, start=1):
+        if not pending_work:
+            break
+        if sleep_s > 0:
+            log.info(
+                "course_duplication_combined_pass_wait",
+                pass_num=pass_idx,
+                wait_seconds=sleep_s,
+                pending=len(pending_work),
+                model=model_override or default_model,
+            )
+            await _set_progress_detail(
+                job_id,
+                detail=(
+                    f"Attesa {sleep_s}s prima del pass {pass_idx}/6 "
+                    f"({len(pending_work)} phase da tradurre)…"
+                ),
+            )
+            await asyncio.sleep(sleep_s)
+
+        snapshot = list(pending_work)
         log.info(
-            "course_duplication_lesson_second_pass_start",
-            failed_count=len(snapshot),
+            "course_duplication_combined_pass_start",
+            pass_num=pass_idx,
+            pending=len(snapshot),
+            initial=initial_count,
+            model=model_override or default_model,
         )
-        await asyncio.sleep(20)
-        second_pass_results = await asyncio.gather(
+        await asyncio.gather(
             *[
-                _translate_one_phase(lid, phase, track_failure=False)
+                _attempt_one(lid, phase, model_override=model_override)
                 for lid, phase in snapshot
             ],
             return_exceptions=True,
         )
-        recovered = sum(1 for r in second_pass_results if r is True)
-        permanent = len(snapshot) - recovered
+        await _update_completion_counter()
         log.info(
-            "course_duplication_lesson_second_pass_done",
-            recovered=recovered,
-            still_failed=permanent,
+            "course_duplication_combined_pass_done",
+            pass_num=pass_idx,
+            recovered=len(snapshot) - len(pending_work),
+            still_pending=len(pending_work),
+            model=model_override or default_model,
         )
 
-    # Conta failure di alto livello (eccezioni inattese di `_do_one`,
-    # non phase singole): se >50% delle lezioni hanno avuto fail di
-    # task → retry del job (probabilmente OpenAI down).
-    task_failures = [
-        (lid, exc)
-        for lid, exc in zip(lesson_ids, results)
-        if isinstance(exc, BaseException)
-    ]
-    if task_failures:
-        log.warning(
-            "course_duplication_combined_phase_failures",
-            failed=len(task_failures),
-            total=len(lesson_ids),
+    # Logging finale: se restano phase pending dopo tutti i 6 pass +
+    # fallback model, l'utente deve esserne informato. Il job procede
+    # comunque al finalize (no retry totale): l'utente potra' rigenerare
+    # manualmente dal tab specifico della lezione.
+    if pending_work:
+        residual = sorted(pending_work)
+        log.error(
+            "course_duplication_combined_residual_failures",
+            count=len(residual),
             sample=[
-                {"lesson_id": str(lid), "error": str(exc)[:200]}
-                for lid, exc in task_failures[:5]
+                {"lesson_id": str(lid), "phase": phase}
+                for lid, phase in residual[:20]
             ],
         )
-    # Soglia retry alzata da 50% a 90%: la second pass interna recupera
-    # gia' le phase fallite con backoff, e ogni retry totale del job
-    # rifa' inutilmente architecture+meta+combined (anche con
-    # resume-from-progress, la combined da sola e' 5-10 min). Meglio
-    # tollerare qualche lezione parziale (l'utente la rigenera dal tab)
-    # che rifare tutto. Soglia 90% scatta solo se OpenAI e' totalmente
-    # down -- caso in cui il retry ha senso.
-    if task_failures and len(task_failures) > len(lesson_ids) * 0.9:
-        raise RuntimeError(
-            f"Combined phase: {len(task_failures)}/{len(lesson_ids)} lezioni "
-            f"fallite a livello task (>90%). Attivo retry del job."
+    else:
+        log.info(
+            "course_duplication_combined_phase_fully_converged",
+            initial=initial_count,
         )
+    # NESSUN raise RuntimeError: anche se restano phase pending, NON
+    # scateniamo retry totale del job. La phase 5 ha gia' fatto 6 pass
+    # con backoff progressivo + fallback model, rifare TUTTO da capo
+    # non risolverebbe nulla.
 
 
 # ---------------------------------------------------------------------------
