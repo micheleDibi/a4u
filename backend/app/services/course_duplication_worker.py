@@ -217,6 +217,13 @@ async def _process_one(job_id: uuid.UUID) -> None:
         source_lang_name = source_lang_row.name_native
         target_lang_name = target_lang_row.name_native
 
+        # Memorizza il progress raggiunto dall'attempt precedente PRIMA
+        # di resettarlo: serve per il resume-from-progress (skip delle
+        # phase gia' completate nei retry). Senza questo, ogni retry
+        # rifa' architecture + meta + glossary da capo, sprecando 10-20
+        # minuti su corsi grandi.
+        resume_from_pct = job.progress if (job.attempts or 0) > 0 else 0
+
         job.status = "processing"
         job.attempts = (job.attempts or 0) + 1
         job.error = None
@@ -224,6 +231,14 @@ async def _process_one(job_id: uuid.UUID) -> None:
         job.progress_phase = "loading_source"
         job.started_at = datetime.now(UTC)
         await db.commit()
+
+    if resume_from_pct > 0:
+        log.info(
+            "course_duplication_resume_from_progress",
+            job_id=str(job_id),
+            resume_from_pct=resume_from_pct,
+            attempts=job.attempts,
+        )
 
     try:
         # --- Phase 1: load source full -----------------------------------
@@ -271,29 +286,41 @@ async def _process_one(job_id: uuid.UUID) -> None:
             await _set_progress(job_id, pct=8, phase="cloning_structure")
 
         # --- Phase 3: translate architecture + metadata ------------------
-        async with async_session_factory() as db:
-            target = await _svc.load_target_full(db, course_id=target.id)
-            assert target is not None
-            await _set_progress(
-                job_id, pct=12, phase="translating_architecture"
+        # SKIP se gia' completata in un attempt precedente (resume).
+        if resume_from_pct < 20:
+            async with async_session_factory() as db:
+                target = await _svc.load_target_full(db, course_id=target.id)
+                assert target is not None
+                await _set_progress(
+                    job_id, pct=12, phase="translating_architecture"
+                )
+                await _svc._translate_course_metadata(
+                    db,
+                    target=target,
+                    source_lang_code=source_lang_code,
+                    source_lang_name=source_lang_name,
+                    target_lang_code=target_lang_code,
+                    target_lang_name=target_lang_name,
+                )
+                await _svc._translate_architecture(
+                    db,
+                    target=target,
+                    source_lang_code=source_lang_code,
+                    source_lang_name=source_lang_name,
+                    target_lang_code=target_lang_code,
+                    target_lang_name=target_lang_name,
+                )
+                await db.commit()
+                await _set_progress(
+                    job_id, pct=20, phase="translating_architecture"
+                )
+        else:
+            log.info(
+                "course_duplication_phase_skipped_resume",
+                job_id=str(job_id),
+                phase="translating_architecture",
+                resume_from_pct=resume_from_pct,
             )
-            await _svc._translate_course_metadata(
-                db,
-                target=target,
-                source_lang_code=source_lang_code,
-                source_lang_name=source_lang_name,
-                target_lang_code=target_lang_code,
-                target_lang_name=target_lang_name,
-            )
-            await _svc._translate_architecture(
-                db,
-                target=target,
-                source_lang_code=source_lang_code,
-                source_lang_name=source_lang_name,
-                target_lang_code=target_lang_code,
-                target_lang_name=target_lang_name,
-            )
-            await db.commit()
             await _set_progress(
                 job_id, pct=20, phase="translating_architecture"
             )
@@ -305,21 +332,33 @@ async def _process_one(job_id: uuid.UUID) -> None:
         # --- Phase 4: lessons meta (campi diretti CourseLesson) ---------
         # Wave veloce, separata dal combined per non saturare le sessioni
         # DB con dati troppo grandi tutti in una volta.
-        await _set_progress(
-            job_id, pct=25, phase="translating_lesson_metadata"
-        )
-        await _translate_lessons_phase(
-            target_id=target.id,
-            phase="meta",
-            source_lang_code=source_lang_code,
-            source_lang_name=source_lang_name,
-            target_lang_code=target_lang_code,
-            target_lang_name=target_lang_name,
-            lesson_cap=lesson_cap,
-        )
-        await _set_progress(
-            job_id, pct=35, phase="translating_lesson_metadata"
-        )
+        # SKIP se gia' completata in un attempt precedente (resume).
+        if resume_from_pct < 35:
+            await _set_progress(
+                job_id, pct=25, phase="translating_lesson_metadata"
+            )
+            await _translate_lessons_phase(
+                target_id=target.id,
+                phase="meta",
+                source_lang_code=source_lang_code,
+                source_lang_name=source_lang_name,
+                target_lang_code=target_lang_code,
+                target_lang_name=target_lang_name,
+                lesson_cap=lesson_cap,
+            )
+            await _set_progress(
+                job_id, pct=35, phase="translating_lesson_metadata"
+            )
+        else:
+            log.info(
+                "course_duplication_phase_skipped_resume",
+                job_id=str(job_id),
+                phase="translating_lesson_metadata",
+                resume_from_pct=resume_from_pct,
+            )
+            await _set_progress(
+                job_id, pct=35, phase="translating_lesson_metadata"
+            )
         if await _check_cancelled(job_id):
             log.info(
                 "course_duplication_cancelled_post_meta",
@@ -355,29 +394,41 @@ async def _process_one(job_id: uuid.UUID) -> None:
             return
 
         # --- Phase 7: glossary + documents --------------------------------
-        async with async_session_factory() as db:
-            target = await _svc.load_target_full(db, course_id=target.id)
-            assert target is not None
-            await _set_progress(
-                job_id, pct=88, phase="translating_glossary_documents"
+        # SKIP se gia' completata in un attempt precedente (resume).
+        if resume_from_pct < 95:
+            async with async_session_factory() as db:
+                target = await _svc.load_target_full(db, course_id=target.id)
+                assert target is not None
+                await _set_progress(
+                    job_id, pct=88, phase="translating_glossary_documents"
+                )
+                await _svc._translate_glossary(
+                    db,
+                    target=target,
+                    source_lang_code=source_lang_code,
+                    source_lang_name=source_lang_name,
+                    target_lang_code=target_lang_code,
+                    target_lang_name=target_lang_name,
+                )
+                await _svc._translate_document_summaries(
+                    db,
+                    target=target,
+                    source_lang_code=source_lang_code,
+                    source_lang_name=source_lang_name,
+                    target_lang_code=target_lang_code,
+                    target_lang_name=target_lang_name,
+                )
+                await db.commit()
+                await _set_progress(
+                    job_id, pct=95, phase="translating_glossary_documents"
+                )
+        else:
+            log.info(
+                "course_duplication_phase_skipped_resume",
+                job_id=str(job_id),
+                phase="translating_glossary_documents",
+                resume_from_pct=resume_from_pct,
             )
-            await _svc._translate_glossary(
-                db,
-                target=target,
-                source_lang_code=source_lang_code,
-                source_lang_name=source_lang_name,
-                target_lang_code=target_lang_code,
-                target_lang_name=target_lang_name,
-            )
-            await _svc._translate_document_summaries(
-                db,
-                target=target,
-                source_lang_code=source_lang_code,
-                source_lang_name=source_lang_name,
-                target_lang_code=target_lang_code,
-                target_lang_name=target_lang_name,
-            )
-            await db.commit()
             await _set_progress(
                 job_id, pct=95, phase="translating_glossary_documents"
             )
@@ -745,10 +796,17 @@ async def _translate_lessons_combined_phase(
                 for lid, exc in task_failures[:5]
             ],
         )
-    if task_failures and len(task_failures) > len(lesson_ids) * 0.5:
+    # Soglia retry alzata da 50% a 90%: la second pass interna recupera
+    # gia' le phase fallite con backoff, e ogni retry totale del job
+    # rifa' inutilmente architecture+meta+combined (anche con
+    # resume-from-progress, la combined da sola e' 5-10 min). Meglio
+    # tollerare qualche lezione parziale (l'utente la rigenera dal tab)
+    # che rifare tutto. Soglia 90% scatta solo se OpenAI e' totalmente
+    # down -- caso in cui il retry ha senso.
+    if task_failures and len(task_failures) > len(lesson_ids) * 0.9:
         raise RuntimeError(
             f"Combined phase: {len(task_failures)}/{len(lesson_ids)} lezioni "
-            f"fallite a livello task (>50%). Attivo retry del job."
+            f"fallite a livello task (>90%). Attivo retry del job."
         )
 
 
