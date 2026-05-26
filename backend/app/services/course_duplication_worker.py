@@ -370,22 +370,36 @@ async def _process_one(job_id: uuid.UUID) -> None:
         # Per ogni lezione, le 3 phase si eseguono sequenzialmente dentro
         # la sua task (3 chiamate OpenAI sequenziali). Il parallelismo
         # globale è dato dal cap di concorrenza fra lezioni (default 6).
-        # Risultato: ~1/3 del tempo rispetto a 3 wave separate.
-        await _set_progress(
-            job_id, pct=40, phase="translating_lesson_content_slides_speech"
-        )
-        await _translate_lessons_combined_phase(
-            job_id=job_id,
-            target_id=target.id,
-            source_lang_code=source_lang_code,
-            source_lang_name=source_lang_name,
-            target_lang_code=target_lang_code,
-            target_lang_name=target_lang_name,
-            lesson_cap=lesson_cap,
-        )
-        await _set_progress(
-            job_id, pct=85, phase="translating_lesson_content_slides_speech"
-        )
+        # SKIP se gia' completata in un attempt precedente (resume).
+        # Senza questo guard, un fail nella phase 7 (glossary) faceva
+        # ricominciare la combined da capo (counter 0/N) al retry,
+        # sprecando minuti su lavoro gia' fatto.
+        if resume_from_pct < 85:
+            await _set_progress(
+                job_id, pct=40, phase="translating_lesson_content_slides_speech"
+            )
+            await _translate_lessons_combined_phase(
+                job_id=job_id,
+                target_id=target.id,
+                source_lang_code=source_lang_code,
+                source_lang_name=source_lang_name,
+                target_lang_code=target_lang_code,
+                target_lang_name=target_lang_name,
+                lesson_cap=lesson_cap,
+            )
+            await _set_progress(
+                job_id, pct=85, phase="translating_lesson_content_slides_speech"
+            )
+        else:
+            log.info(
+                "course_duplication_phase_skipped_resume",
+                job_id=str(job_id),
+                phase="translating_lesson_content_slides_speech",
+                resume_from_pct=resume_from_pct,
+            )
+            await _set_progress(
+                job_id, pct=85, phase="translating_lesson_content_slides_speech"
+            )
         if await _check_cancelled(job_id):
             log.info(
                 "course_duplication_cancelled_post_combined",
