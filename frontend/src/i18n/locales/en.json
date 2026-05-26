@@ -123,7 +123,18 @@
       "badge": {
         "label": "Duplicating",
         "cancel": "Cancel duplication",
-        "cancelled": "Duplication cancelled."
+        "cancelled": "Duplication cancelled.",
+        "step": "Step {{current}} of {{total}}",
+        "phases": {
+          "pending": "Waiting to start…",
+          "loading_source": "Loading source course",
+          "cloning_structure": "Cloning course structure",
+          "translating_architecture": "Translating architecture and modules",
+          "translating_lesson_metadata": "Translating lesson titles and objectives",
+          "translating_lesson_content_slides_speech": "Translating contents, slides and speech",
+          "translating_glossary_documents": "Translating glossary and documents",
+          "finalizing": "Finalizing"
+        }
       },
       "toast": {
         "success": "Duplication started in background. The course will appear in the list with progress.",

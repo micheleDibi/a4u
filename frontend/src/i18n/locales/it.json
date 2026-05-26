@@ -121,9 +121,20 @@
         "confirm": "Avvia duplicazione"
       },
       "badge": {
-        "label": "Duplicazione in corso",
+        "label": "Duplicazione",
         "cancel": "Annulla duplicazione",
-        "cancelled": "Duplicazione annullata."
+        "cancelled": "Duplicazione annullata.",
+        "step": "Fase {{current}} di {{total}}",
+        "phases": {
+          "pending": "In attesa di avvio…",
+          "loading_source": "Caricamento corso sorgente",
+          "cloning_structure": "Clonazione struttura corso",
+          "translating_architecture": "Traduzione architettura e moduli",
+          "translating_lesson_metadata": "Traduzione titoli e obiettivi lezioni",
+          "translating_lesson_content_slides_speech": "Traduzione contenuti, slide e discorso",
+          "translating_glossary_documents": "Traduzione glossario e documenti",
+          "finalizing": "Finalizzazione"
+        }
       },
       "toast": {
         "success": "Duplicazione avviata in background. Il corso comparirà in lista con il progresso.",
