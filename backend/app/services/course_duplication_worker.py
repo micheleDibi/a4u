@@ -653,7 +653,12 @@ async def _translate_lessons_combined_phase(
     con la sua sessione (un fallimento isolato non rompe le altre).
     Soglia 50% di fail TOTALE per attivare retry del job.
     """
-    sem = asyncio.Semaphore(lesson_cap)
+    # Il sem locale capa il numero di task `_attempt_one` concorrenti.
+    # Ogni task = 1 phase (content/slides/speech) di 1 lezione = 1
+    # sessione DB. Cap = lesson_cap * 3 per mantenere il throughput
+    # equivalente al precedente design (15 lezioni × 3 phase parallele).
+    # 45 sessioni DB concorrenti sono ben sotto il pool (80).
+    sem = asyncio.Semaphore(lesson_cap * 3)
     async with async_session_factory() as db:
         res = await db.execute(
             select(CourseLesson.id).where(CourseLesson.course_id == target_id)
@@ -727,14 +732,9 @@ async def _translate_lessons_combined_phase(
         phase: str,
         *,
         model_override: str | None = None,
-        is_first_completion: bool = False,
     ) -> None:
         """Esegue un tentativo di traduzione phase. Se ok, rimuove da
-        pending_work. Aggiorna il counter sotto-progresso solo al
-        PRIMO successo di una lezione (cioe' quando tutte e 3 le phase
-        di quella lezione hanno avuto almeno un tentativo riuscito o
-        terminale nel pass corrente)."""
-        nonlocal completed_counter
+        pending_work e aggiorna il sub-progress per il FE."""
         async with sem:
             ok = await _translate_one_phase(
                 lesson_id, phase, model_override=model_override
@@ -742,6 +742,9 @@ async def _translate_lessons_combined_phase(
         if ok:
             async with pending_lock:
                 pending_work.discard((lesson_id, phase))
+            # Update incrementale del sub-progress: contiamo lezioni
+            # totalmente complete (nessuna phase ancora pending).
+            await _update_completion_counter()
 
     # Pass plan: ogni tupla e' (sleep_before_seconds, model_override).
     # Il modello None usa il default (gpt-4o-mini). I pass 5-6 usano
