@@ -27,8 +27,14 @@ class Settings(BaseSettings):
     log_format: Literal["console", "json"] = "console"
 
     database_url: str = "postgresql+asyncpg://a4u:a4u_dev_password@localhost:5432/a4u"
-    database_pool_size: int = 10
-    database_max_overflow: int = 20
+    # Pool DB: alzato da 10/20 a 20/60 per supportare la duplicazione corso
+    # con concorrenza alta. La phase combined apre 3 sessioni in parallelo
+    # per lezione (content + slides + speech in 3 sessioni separate); con
+    # cap 15-20 lezioni concorrenti si arriva a 45-60 connessioni dedicate
+    # al worker. Postgres default supporta 100 connessioni totali, abbiamo
+    # ~20 di margine per le richieste utente normali.
+    database_pool_size: int = 20
+    database_max_overflow: int = 60
 
     jwt_secret: str = Field(min_length=32)
     jwt_algorithm: str = "HS256"
@@ -234,11 +240,12 @@ class Settings(BaseSettings):
     course_duplication_max_concurrent_jobs: int = 1
     # Cap di lezioni tradotte in parallelo (per phase). Con la phase
     # combined (content+slides+speech in parallelo dentro la stessa
-    # lezione) ogni lezione consuma 3 connessioni OpenAI concorrenti, e
-    # con cap 10 lezioni in parallelo arriviamo a 30 chiamate
-    # concorrenti — ben sotto il rate-limit di gpt-4o-mini tier 2
-    # (5000 RPM).
-    course_duplication_lesson_translate_concurrency: int = 10
+    # lezione) ogni lezione consuma 3 connessioni OpenAI + 3 connessioni
+    # DB. Cap 15 → 45 chiamate concorrenti, ancora ben sotto rate-limit
+    # gpt-4o-mini tier 2 (5000 RPM) e dentro il pool DB (80 connessioni).
+    # Override via env per spingere ulteriormente
+    # (`A4U_COURSE_DUPLICATION_LESSON_TRANSLATE_CONCURRENCY=20`).
+    course_duplication_lesson_translate_concurrency: int = 15
     course_duplication_auto_retry_max: int = 5
     # Timeout massimo (in minuti) per un job di duplicazione completo.
     # Oltre questo limite il job viene marcato `failed` e il target
