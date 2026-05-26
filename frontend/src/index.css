@@ -34,6 +34,13 @@
   --color-brand: hsl(var(--brand));
   --color-brand-foreground: hsl(var(--brand-foreground));
 
+  --color-sidebar: hsl(var(--sidebar));
+  --color-sidebar-foreground: hsl(var(--sidebar-foreground));
+  --color-sidebar-muted-foreground: hsl(var(--sidebar-muted-foreground));
+  --color-sidebar-accent: hsl(var(--sidebar-accent));
+  --color-sidebar-accent-foreground: hsl(var(--sidebar-accent-foreground));
+  --color-sidebar-border: hsl(var(--sidebar-border));
+
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
@@ -63,6 +70,15 @@
   --ring: 240 5% 65%;
   --brand: 239 84% 67%;
   --brand-foreground: 0 0% 100%;
+  /* Sidebar — scura sia in light che in dark per dare contrasto netto
+     col main content. Token separati dai colori base così non si
+     contamina il resto dell'app. */
+  --sidebar: 240 6% 10%;
+  --sidebar-foreground: 0 0% 98%;
+  --sidebar-muted-foreground: 240 5% 65%;
+  --sidebar-accent: 240 4% 18%;
+  --sidebar-accent-foreground: 0 0% 98%;
+  --sidebar-border: 240 4% 20%;
   --radius: 0.5rem;
 }
 
@@ -88,6 +104,14 @@
   --ring: 240 4% 64%;
   --brand: 239 92% 73%;
   --brand-foreground: 240 10% 3.9%;
+  /* In dark mode sidebar ancora più scura del background, così resta
+     visivamente distinta dall'area centrale. */
+  --sidebar: 240 8% 4%;
+  --sidebar-foreground: 0 0% 98%;
+  --sidebar-muted-foreground: 240 5% 60%;
+  --sidebar-accent: 240 5% 14%;
+  --sidebar-accent-foreground: 0 0% 98%;
+  --sidebar-border: 240 5% 18%;
 }
 
 * {
@@ -107,6 +131,24 @@ body {
   font-feature-settings: "rlig" 1, "calt" 1;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Override scoped: dentro `.sidebar-controls` i token base
+   (background/foreground/accent/border/input) puntano ai token
+   `sidebar-*`. Serve a far ereditare lo stile scuro ai componenti
+   shadcn riutilizzati nel footer/header della sidebar (Button ghost,
+   Button outline, OrgSwitcher, UserMenu, ecc.) senza dover passare
+   className uno a uno. I Popover/Dropdown sono renderizzati in
+   Portal fuori da questo wrapper, quindi mantengono il tema globale. */
+.sidebar-controls {
+  --background: var(--sidebar);
+  --foreground: var(--sidebar-foreground);
+  --muted: var(--sidebar-accent);
+  --muted-foreground: var(--sidebar-muted-foreground);
+  --accent: var(--sidebar-accent);
+  --accent-foreground: var(--sidebar-accent-foreground);
+  --border: var(--sidebar-border);
+  --input: var(--sidebar-border);
 }
 
 ::-webkit-scrollbar {
