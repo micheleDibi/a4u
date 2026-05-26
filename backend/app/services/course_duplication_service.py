@@ -44,7 +44,10 @@ from app.models.course_lesson import CourseLesson
 from app.models.course_module import CourseModule
 from app.models.language import Language
 from app.services import course_duplication_paths as _paths
-from app.services.openai_translate_service import translate_batch
+from app.services.openai_translate_service import (
+    OpenAITranslateError,
+    translate_batch,
+)
 
 log = get_logger("app.course_duplication.service")
 
@@ -332,6 +335,71 @@ def _walk_translate_path(
 # chunk da 25 ogni chiamata finisce in 15-30s, sotto soglia.
 _TRANSLATE_CHUNK_SIZE = 25
 
+# Retry su errori transient (5xx, connection reset, timeout). OpenAI /
+# Cloudflare restituiscono spesso 520/502/None in modo intermittente:
+# senza retry, una percentuale non trascurabile di lezioni resta
+# parzialmente tradotta. Backoff esponenziale (1s, 3s, 9s) per dare
+# tempo al servizio remoto di recuperare.
+_TRANSLATE_RETRY_MAX_ATTEMPTS = 4  # 1 initial + 3 retry
+_TRANSLATE_RETRY_BACKOFF_BASE_SECONDS = 1.0
+
+
+async def _translate_batch_resilient(
+    *,
+    items: dict[str, str],
+    source_lang_code: str,
+    source_lang_name: str,
+    target_lang_code: str,
+    target_lang_name: str,
+    op_label: str = "",
+) -> dict[str, str]:
+    """Wrapper attorno a `translate_batch` con retry esponenziale sui
+    soli errori transient (status >= 500 o status None = httpx error).
+    Errori 4xx (auth/validation) NON vengono ritentati.
+
+    `op_label` è una stringa di contesto opzionale per i log
+    (es. "content lesson_id=…" o "architecture").
+    """
+    import asyncio
+
+    last_exc: OpenAITranslateError | None = None
+    for attempt in range(1, _TRANSLATE_RETRY_MAX_ATTEMPTS + 1):
+        try:
+            return await translate_batch(
+                items=items,
+                source_lang_code=source_lang_code,
+                source_lang_name=source_lang_name,
+                target_lang_code=target_lang_code,
+                target_lang_name=target_lang_name,
+            )
+        except OpenAITranslateError as exc:
+            # 4xx: errore applicativo (auth, validation, ecc.) — non
+            # ritentabile, fail subito.
+            if exc.status is not None and 400 <= exc.status < 500:
+                raise
+            last_exc = exc
+            if attempt < _TRANSLATE_RETRY_MAX_ATTEMPTS:
+                sleep_s = _TRANSLATE_RETRY_BACKOFF_BASE_SECONDS * (
+                    3 ** (attempt - 1)
+                )
+                log.warning(
+                    "course_duplication_translate_retry",
+                    attempt=attempt,
+                    max_attempts=_TRANSLATE_RETRY_MAX_ATTEMPTS,
+                    status=exc.status,
+                    error=str(exc)[:200],
+                    op=op_label[:80],
+                    sleep_seconds=sleep_s,
+                )
+                await asyncio.sleep(sleep_s)
+                continue
+            # Esauriti i retry: rilancia l'ultima eccezione.
+            raise
+    # Non dovrebbe arrivarci, ma per type-checker:
+    if last_exc is not None:
+        raise last_exc
+    return {}
+
 
 async def _translate_jsonb_inplace(
     data: Any,
@@ -378,12 +446,13 @@ async def _translate_jsonb_inplace(
     for chunk_start in range(0, len(keys), _TRANSLATE_CHUNK_SIZE):
         chunk_keys = keys[chunk_start : chunk_start + _TRANSLATE_CHUNK_SIZE]
         chunk_items = {k: items[k] for k in chunk_keys}
-        chunk_translated = await translate_batch(
+        chunk_translated = await _translate_batch_resilient(
             items=chunk_items,
             source_lang_code=source_lang_code,
             source_lang_name=source_lang_name,
             target_lang_code=target_lang_code,
             target_lang_name=target_lang_name,
+            op_label=f"jsonb chunk={chunk_start} prefix={key_prefix[:30]}",
         )
         translated.update(chunk_translated)
         log.info(
@@ -667,12 +736,13 @@ async def _translate_course_metadata(
                 items[f"argomenti_chiave_{i}"] = val
     if not items:
         return {"strings_translated": 0}
-    translated = await translate_batch(
+    translated = await _translate_batch_resilient(
         items=items,
         source_lang_code=source_lang_code,
         source_lang_name=source_lang_name,
         target_lang_code=target_lang_code,
         target_lang_name=target_lang_name,
+        op_label="course_metadata",
     )
     for field in _paths.COURSE_METADATA_TRANSLATE_FIELDS:
         if field in translated:
@@ -723,12 +793,13 @@ async def _translate_architecture(
             if isinstance(value, str) and value.strip():
                 items[f"m{module.position}_{field}"] = value
         if items:
-            translated = await translate_batch(
+            translated = await _translate_batch_resilient(
                 items=items,
                 source_lang_code=source_lang_code,
                 source_lang_name=source_lang_name,
                 target_lang_code=target_lang_code,
                 target_lang_name=target_lang_name,
+                op_label=f"module m{module.position}",
             )
             for field in _paths.MODULE_TRANSLATE_FIELDS:
                 key = f"m{module.position}_{field}"
@@ -800,12 +871,13 @@ async def _translate_lesson(
             if isinstance(value, str) and value.strip():
                 items[field] = value
         if items:
-            translated = await translate_batch(
+            translated = await _translate_batch_resilient(
                 items=items,
                 source_lang_code=source_lang_code,
                 source_lang_name=source_lang_name,
                 target_lang_code=target_lang_code,
                 target_lang_name=target_lang_name,
+                op_label=f"lesson_meta {lesson.lesson_code or lesson.id}",
             )
             for field in _paths.LESSON_TRANSLATE_FIELDS:
                 if field in translated:
