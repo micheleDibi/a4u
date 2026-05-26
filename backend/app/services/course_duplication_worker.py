@@ -39,9 +39,10 @@ from datetime import UTC, datetime
 # Cap di durata massima per un singolo job di duplicazione: oltre il quale
 # il worker lo termina forzatamente e lo segna come `failed`. Evita job
 # "appesi" indefinitamente per timeout silenti di OpenAI o bug di
-# materializzazione. 30 min copre con margine un corso ragionevolmente
-# grande (10 lezioni × 4 fasi tradotte ≈ 5-10 min in condizioni normali).
-_JOB_TOTAL_TIMEOUT_SECONDS = 30 * 60
+# materializzazione. Configurabile via
+# `settings.course_duplication_job_timeout_minutes` (default 90 min).
+def _get_job_total_timeout_seconds() -> int:
+    return max(60, int(get_settings().course_duplication_job_timeout_minutes) * 60)
 
 from sqlalchemy import select
 
@@ -647,23 +648,25 @@ async def _translate_lessons_combined_phase(
 async def _bound_process(job_id: uuid.UUID) -> None:
     """Wrap `_process_one` con cap globale di concorrenza + timeout totale.
 
-    Se `_process_one` non termina entro `_JOB_TOTAL_TIMEOUT_SECONDS`,
+    Se `_process_one` non termina entro
+    `settings.course_duplication_job_timeout_minutes` (default 90 min),
     il job viene cancellato (CancelledError) e marcato `failed` con
     error "job_total_timeout". Evita stati appesi indefinitamente.
     """
     assert _semaphore is not None
+    timeout_seconds = _get_job_total_timeout_seconds()
     try:
         async with _semaphore:
             try:
                 await asyncio.wait_for(
                     _process_one(job_id),
-                    timeout=_JOB_TOTAL_TIMEOUT_SECONDS,
+                    timeout=timeout_seconds,
                 )
             except asyncio.TimeoutError:
                 log.error(
                     "course_duplication_job_total_timeout",
                     job_id=str(job_id),
-                    timeout_seconds=_JOB_TOTAL_TIMEOUT_SECONDS,
+                    timeout_seconds=timeout_seconds,
                 )
                 async with async_session_factory() as db:
                     job = await db.get(CourseDuplicationJob, job_id)
@@ -673,7 +676,7 @@ async def _bound_process(job_id: uuid.UUID) -> None:
                     ):
                         job.status = "failed"
                         job.error = (
-                            f"Timeout totale del job ({_JOB_TOTAL_TIMEOUT_SECONDS // 60} min)."
+                            f"Timeout totale del job ({timeout_seconds // 60} min)."
                         )
                         job.finished_at = datetime.now(UTC)
                         # Cleanup target su timeout — stesso comportamento

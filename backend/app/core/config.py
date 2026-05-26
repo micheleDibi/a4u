@@ -238,6 +238,12 @@ class Settings(BaseSettings):
     # questo dimezza il tempo totale di duplicazione.
     course_duplication_lesson_translate_concurrency: int = 6
     course_duplication_auto_retry_max: int = 5
+    # Timeout massimo (in minuti) per un job di duplicazione completo.
+    # Oltre questo limite il job viene marcato `failed` e il target
+    # course viene eliminato automaticamente. 90 min copre con margine
+    # un corso da 100 lezioni con il retry esponenziale attivo
+    # (un corso da 80 lezioni in condizioni normali finisce in ~30 min).
+    course_duplication_job_timeout_minutes: int = 90
 
     # Nova — assistente AI contestuale floating widget. Stateless DB-side.
     # Modello veloce ed economico (chat conversazionale, no JSON schema).
