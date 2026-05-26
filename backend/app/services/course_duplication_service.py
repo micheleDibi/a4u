@@ -28,6 +28,8 @@ from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.session import async_session_factory
 from sqlalchemy.orm import selectinload
 
 from app.core.audit import write_audit
@@ -835,65 +837,77 @@ async def _translate_architecture(
         flag_modified(target, "architecture_raw")
 
     # 2) Moduli — campi diretti + lessons_structure_raw, IN PARALLELO.
-    # Ogni modulo è una task indipendente: traduce i suoi campi
-    # (`title`/`description`) e il proprio `lessons_structure_raw`
-    # (~250 items in 11 chunk paralleli). Il `_translate_global_sem`
-    # interno serializza al massimo 40 chiamate OpenAI simultanee, il
-    # resto aspetta.
+    # CRITICAL: ogni task apre la PROPRIA sessione DB. Modificare
+    # istanze ORM attaccate alla stessa AsyncSession da task gather
+    # concorrenti causa "greenlet_spawn has not been called" durante
+    # il flush (vedi commit precedente che lo causava). Ogni modulo
+    # va isolato in una sessione dedicata: fetch by id, modify,
+    # commit, close.
     from sqlalchemy.orm.attributes import flag_modified
 
-    async def _translate_one_module(module: Any) -> int:
-        local_count = 0
-        items: dict[str, str] = {}
-        for field in _paths.MODULE_TRANSLATE_FIELDS:
-            value = getattr(module, field, None)
-            if isinstance(value, str) and value.strip():
-                items[f"m{module.position}_{field}"] = value
-        if items:
-            translated = await _translate_batch_resilient(
-                items=items,
-                source_lang_code=source_lang_code,
-                source_lang_name=source_lang_name,
-                target_lang_code=target_lang_code,
-                target_lang_name=target_lang_name,
-                op_label=f"module m{module.position}",
-            )
-            for field in _paths.MODULE_TRANSLATE_FIELDS:
-                key = f"m{module.position}_{field}"
-                if key in translated:
-                    setattr(module, field, translated[key])
-            local_count += len(items)
+    module_ids_positions = [(m.id, m.position) for m in target.modules]
 
-        if module.lessons_structure_raw:
-            s = await _translate_jsonb_inplace(
-                module.lessons_structure_raw,
-                paths=_LESSONS_STRUCTURE_RAW_PATHS,
-                source_lang_code=source_lang_code,
-                source_lang_name=source_lang_name,
-                target_lang_code=target_lang_code,
-                target_lang_name=target_lang_name,
-                # Prefisso univoco per evitare collisioni di chiavi fra
-                # moduli che corrono in parallelo (chunk keys condivisi
-                # nello stesso global sem).
-                key_prefix=f"m{module.position}_",
-            )
-            local_count += s["strings_translated"]
-            flag_modified(module, "lessons_structure_raw")
-        return local_count
+    async def _translate_one_module(module_id: uuid.UUID, position: int) -> int:
+        async with async_session_factory() as ldb:
+            module = await ldb.get(CourseModule, module_id)
+            if module is None:
+                return 0
+            local_count = 0
+            items: dict[str, str] = {}
+            for field in _paths.MODULE_TRANSLATE_FIELDS:
+                value = getattr(module, field, None)
+                if isinstance(value, str) and value.strip():
+                    items[f"m{position}_{field}"] = value
+            if items:
+                translated = await _translate_batch_resilient(
+                    items=items,
+                    source_lang_code=source_lang_code,
+                    source_lang_name=source_lang_name,
+                    target_lang_code=target_lang_code,
+                    target_lang_name=target_lang_name,
+                    op_label=f"module m{position}",
+                )
+                for field in _paths.MODULE_TRANSLATE_FIELDS:
+                    key = f"m{position}_{field}"
+                    if key in translated:
+                        setattr(module, field, translated[key])
+                local_count += len(items)
+
+            if module.lessons_structure_raw:
+                s = await _translate_jsonb_inplace(
+                    module.lessons_structure_raw,
+                    paths=_LESSONS_STRUCTURE_RAW_PATHS,
+                    source_lang_code=source_lang_code,
+                    source_lang_name=source_lang_name,
+                    target_lang_code=target_lang_code,
+                    target_lang_name=target_lang_name,
+                    # Prefisso univoco per evitare collisioni di chiavi fra
+                    # moduli che corrono in parallelo (chunk keys condivisi
+                    # nello stesso global sem).
+                    key_prefix=f"m{position}_",
+                )
+                local_count += s["strings_translated"]
+                flag_modified(module, "lessons_structure_raw")
+            await ldb.commit()
+            return local_count
 
     module_results = await asyncio.gather(
-        *[_translate_one_module(m) for m in target.modules],
+        *[_translate_one_module(mid, pos) for mid, pos in module_ids_positions],
         return_exceptions=True,
     )
-    for module, result in zip(target.modules, module_results):
+    for (module_id, position), result in zip(
+        module_ids_positions, module_results
+    ):
         if isinstance(result, Exception):
             log.warning(
                 "course_duplication_module_translate_error",
-                module_position=module.position,
+                module_position=position,
+                module_id=str(module_id),
                 error=str(result)[:200],
             )
             continue
-        stats["strings_translated"] += result
+        if isinstance(result, int):
+            stats["strings_translated"] += result
     return stats
 
 
