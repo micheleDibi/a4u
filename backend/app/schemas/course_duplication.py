@@ -29,6 +29,10 @@ class CourseDuplicationJobCompact(ORMModel):
     status: JobStatus
     progress: int = Field(ge=0, le=100)
     progress_phase: str | None = None
+    progress_detail: str | None = None
+    # Esposto nel Compact per consentire al FE di calcolare l'ETA
+    # ("~X min rimanenti") nel badge senza richiedere lo schema full.
+    started_at: datetime | None = None
 
 
 class CourseDuplicationJobOut(ORMModel):
@@ -42,6 +46,7 @@ class CourseDuplicationJobOut(ORMModel):
     status: JobStatus
     progress: int = Field(ge=0, le=100)
     progress_phase: str | None = None
+    progress_detail: str | None = None
     error: str | None = None
     attempts: int
     tokens: dict[str, Any] | None = None

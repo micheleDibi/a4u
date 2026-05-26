@@ -125,6 +125,11 @@
         "cancel": "Annulla duplicazione",
         "cancelled": "Duplicazione annullata.",
         "step": "Fase {{current}} di {{total}}",
+        "stepsTitle": "Pipeline di duplicazione",
+        "etaCalculating": "Calcolo tempo rimanente…",
+        "etaSeconds": "~{{seconds}}s rimanenti",
+        "etaMinutes": "~{{minutes}} min rimanenti",
+        "etaHours": "~{{hours}}h {{minutes}} min rimanenti",
         "phases": {
           "pending": "In attesa di avvio…",
           "loading_source": "Caricamento corso sorgente",

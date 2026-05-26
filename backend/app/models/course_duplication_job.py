@@ -86,6 +86,11 @@ class CourseDuplicationJob(UUIDPKMixin, TimestampMixin, Base):
         SmallInteger, nullable=False, default=0, server_default="0"
     )
     progress_phase: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # Sotto-progresso a granularita fine (es. "23/48 lezioni completate").
+    # Popolato dal worker nella combined phase per dare all'utente un
+    # feedback piu informativo del solo progress_phase. NULL per fasi
+    # brevi (loading_source, finalizing, ecc.).
+    progress_detail: Mapped[str | None] = mapped_column(String(200), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     attempts: Mapped[int] = mapped_column(
         SmallInteger, nullable=False, default=0, server_default="0"

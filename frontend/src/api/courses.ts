@@ -601,6 +601,10 @@ export interface CourseDuplicationJobCompact {
   status: CourseDuplicationJobStatus;
   progress: number;
   progress_phase: string | null;
+  /** Sotto-progresso a granularità fine (es. "23/48 lezioni completate"). */
+  progress_detail: string | null;
+  /** ISO timestamp. Usato dal FE per calcolare l'ETA stimato. */
+  started_at: string | null;
 }
 
 export interface CourseDuplicationJobOut extends CourseDuplicationJobCompact {

@@ -118,15 +118,37 @@ def _apply_failure(
 
 
 async def _set_progress(
-    job_id: uuid.UUID, *, pct: int, phase: str | None
+    job_id: uuid.UUID,
+    *,
+    pct: int,
+    phase: str | None,
+    detail: str | None = None,
 ) -> None:
-    """Aggiorna progress + phase su una sessione propria (lock breve)."""
+    """Aggiorna progress + phase (+ optional detail) su una sessione
+    propria (lock breve)."""
     async with async_session_factory() as tdb:
         job = await tdb.get(CourseDuplicationJob, job_id)
         if job is None:
             return
         job.progress = max(0, min(100, pct))
         job.progress_phase = phase
+        # `detail` viene SEMPRE riscritto (None per phase brevi che
+        # non hanno un sotto-progresso significativo).
+        job.progress_detail = detail
+        await tdb.commit()
+
+
+async def _set_progress_detail(
+    job_id: uuid.UUID, *, detail: str | None
+) -> None:
+    """Aggiorna SOLO il sotto-progresso (es. counter lezioni
+    completate). Non tocca progress/phase, evitando di ridurre %
+    accidentalmente fra due aggiornamenti."""
+    async with async_session_factory() as tdb:
+        job = await tdb.get(CourseDuplicationJob, job_id)
+        if job is None:
+            return
+        job.progress_detail = detail
         await tdb.commit()
 
 
@@ -314,6 +336,7 @@ async def _process_one(job_id: uuid.UUID) -> None:
             job_id, pct=40, phase="translating_lesson_content_slides_speech"
         )
         await _translate_lessons_combined_phase(
+            job_id=job_id,
             target_id=target.id,
             source_lang_code=source_lang_code,
             source_lang_name=source_lang_name,
@@ -558,6 +581,7 @@ async def _translate_lessons_phase(
 
 async def _translate_lessons_combined_phase(
     *,
+    job_id: uuid.UUID,
     target_id: uuid.UUID,
     source_lang_code: str,
     source_lang_name: str,
@@ -587,6 +611,18 @@ async def _translate_lessons_combined_phase(
 
     if not lesson_ids:
         return
+
+    total_lessons = len(lesson_ids)
+    # Counter atomic per il sotto-progresso "X/Y lezioni completate".
+    # Incrementato a fine di ogni `_do_one` (= dopo che le 3 phase di
+    # quella lezione hanno terminato, ok o errore che sia).
+    completed_counter = 0
+    completed_lock = asyncio.Lock()
+    # Push iniziale del detail cosi il FE vede subito "0/N lezioni"
+    # appena la combined phase parte.
+    await _set_progress_detail(
+        job_id, detail=f"0/{total_lessons} lezioni completate"
+    )
 
     # Track delle phase fallite nella first pass per la second pass.
     failed_phases: list[tuple[uuid.UUID, str]] = []
@@ -631,6 +667,7 @@ async def _translate_lessons_combined_phase(
             return False
 
     async def _do_one(lesson_id: uuid.UUID) -> None:
+        nonlocal completed_counter
         async with sem:
             # Le 3 phase in parallelo: ognuna apre la propria sessione
             # DB, fetch la lesson, traduce il proprio JSONB
@@ -642,6 +679,16 @@ async def _translate_lessons_combined_phase(
                 _translate_one_phase(lesson_id, "speech"),
                 return_exceptions=True,
             )
+        # Counter sotto-progresso: incrementa e propaga al FE. Update
+        # DB e un singolo UPDATE per lezione (trascurabile col cap
+        # concorrenza attuale).
+        async with completed_lock:
+            completed_counter += 1
+            current = completed_counter
+        await _set_progress_detail(
+            job_id,
+            detail=f"{current}/{total_lessons} lezioni completate",
+        )
 
     # First pass: tutte le phase di tutte le lezioni in parallelo
     # (limitato dal cap di lezioni concorrenti + global translate sem

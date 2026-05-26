@@ -133,6 +133,30 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Shimmer animation per la progress bar della duplicazione corso.
+   Quando una phase impiega minuti, l'utente ha bisogno di un
+   indicatore visivo di "vita" anche se il numero % non si muove.
+   La barra mantiene il colore primary ma sovrappone un gradient che
+   scorre da sinistra a destra. */
+@keyframes a4u-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+.progress-shimmer > div {
+  background-image: linear-gradient(
+    90deg,
+    hsl(var(--primary)) 0%,
+    hsl(var(--primary) / 0.55) 50%,
+    hsl(var(--primary)) 100%
+  );
+  background-size: 200% 100%;
+  animation: a4u-shimmer 2s linear infinite;
+}
+
 /* Override scoped: dentro `.sidebar-controls` i token base
    (background/foreground/accent/border/input) puntano ai token
    `sidebar-*`. Serve a far ereditare lo stile scuro ai componenti

@@ -125,6 +125,11 @@
         "cancel": "Cancel duplication",
         "cancelled": "Duplication cancelled.",
         "step": "Step {{current}} of {{total}}",
+        "stepsTitle": "Duplication pipeline",
+        "etaCalculating": "Calculating remaining time…",
+        "etaSeconds": "~{{seconds}}s remaining",
+        "etaMinutes": "~{{minutes}} min remaining",
+        "etaHours": "~{{hours}}h {{minutes}} min remaining",
         "phases": {
           "pending": "Waiting to start…",
           "loading_source": "Loading source course",
