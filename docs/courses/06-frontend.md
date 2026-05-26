@@ -65,18 +65,38 @@ La voce di duplicazione apre il `DuplicateCourseDialog`.
   lingue (popolato da `useLanguages()`, escludendo la lingua corrente
   del corso). Mutation `coursesApi.duplicate(orgId, courseId,
   target_language_code)`. Su success: toast + invalidate
-  `["courses","list",orgId]`.
-- `CourseDuplicationBadge` (`components/`): badge "Duplicazione in
-  corso XX%" + bandiera lingua target + progress bar + bottone
-  Annulla inline. Renderizzato sotto il titolo della riga quando
-  `course.duplication_job != null`.
+  `["courses","list",orgId]` + re-invalidate ogni 2s per 16s totali
+  (per non aspettare il polling regolare prima di vedere comparire la
+  riga del target).
+
+- `CourseDuplicationBadge` (`components/`): badge **rich UX** a 4
+  righe renderizzato sotto il titolo della riga quando
+  `course.duplication_job != null`:
+  1. **Header**: icona globe + label DUPLICAZIONE + bandiera +
+     nome nativo lingua target (es. "Hrvatski") + step indicator
+     `5/7` (hover → tooltip pipeline) + bottone `✕` annulla.
+  2. **Phase label**: spinner `Loader2` animato + label localizzata
+     della fase corrente (mapping `progress_phase` →
+     `courses.duplicate.badge.phases.*`).
+  3. **Sub-progress + ETA**: `job.progress_detail` (es.
+     "23/48 lezioni completate") + ETA stimato (`~4 min rimanenti`)
+     calcolato lato FE da `started_at` + `progress`. Auto-refresh
+     ogni 5s via `setInterval` tra un polling list e l'altro.
+  4. **Progress bar**: shadcn `Progress` h-2 con classe
+     `progress-shimmer` (keyframe in `index.css`) attiva durante
+     processing. % prominente.
+
+  Hover sullo step indicator → tooltip con la pipeline completa delle
+  7 phase: ✓ completate, ⟳ corrente (bold), · future (grigio).
+
 - **Polling automatico**: `useQuery refetchInterval` condizionato a
   3000ms quando almeno una riga della pagina corrente ha un
   `duplication_job` in `pending`/`processing`. Quando tutti i job
   completano, polling disabilitato.
 
 Vedi [15 — Duplicazione corso in altra lingua](15-course-duplication.md)
-per il design completo (pipeline worker, traduzione, permessi).
+per il design completo (pipeline worker, multi-pass + fallback model,
+resume-from-progress, cleanup, badge UX dettagliato).
 
 ## `CourseEditorPage.tsx`
 

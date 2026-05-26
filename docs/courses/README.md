@@ -19,7 +19,7 @@ iterazioni a partire dalla foundation. Ogni file di codice rilevante è document
 - [12 — Lesson video (Fase 6)](12-lesson-video.md): generazione del video MP4 della lezione — TTS XTTS-v2 su RunPod GPU + rendering slide Playwright + encoding ffmpeg — §9.
 - [13 — Avatar video (Fase 6b)](13-avatar-video.md): scheda "Video con Avatar" — lip-sync MuseTalk (RunPod GPU + Cloudflare R2) sovrapposto al video MP4 della lezione — §9b.
 - [14 — Assessment lesson](14-assessment-lesson.md): lezione di **verifica delle competenze** — l'ultima lezione di ogni modulo quando la verifica finale è attiva.
-- [15 — Duplicazione corso in altra lingua](15-course-duplication.md): job background che clona un corso e ne traduce via OpenAI architecture/lessons/slides/speech/glossary/document summaries nella lingua target. Video e Video con Avatar non vengono copiati (l'utente li rigenera). Nuovo permesso `COURSE_DUPLICATE`.
+- [15 — Duplicazione corso in altra lingua](15-course-duplication.md): job background che clona un corso e ne traduce via OpenAI architecture/lessons/slides/speech/glossary/document summaries nella lingua target. **Multi-pass persistente** (6 pass con backoff progressivo + fallback automatico `gpt-4o` sui pass 5-6) per garantire convergenza anche con OpenAI/Cloudflare 520 transient. **Resume-from-progress** nei retry: le phase già committate non vengono rifatte. **Cleanup automatico** del target su fail terminale o timeout (90 min). Video e Video con Avatar non vengono copiati (l'utente li rigenera). Permesso `COURSE_DUPLICATE`. Badge UX rich con ETA stimato, tooltip pipeline, shimmer e sub-progress "X/N lezioni completate".
 
 ## Stato pipeline (5 fasi AI + video + verifica)
 
@@ -166,7 +166,10 @@ backend/app/
     ├── 0026_avatar_tts_latents_and_course_video_language.py  # course.video_language_code (+ cache latenti XTTS, poi rimossa)
     ├── 0027_drop_avatar_tts_latents.py      # rimuove la cache latenti XTTS (TTS migrato su RunPod GPU)
     ├── 0028_assessment_lesson.py            # flag is_assessment su course_lesson
-    └── 0029_avatar_video.py                 # Fase 6b — 8 colonne avatar_video_* + 3 colonne musetalk_* su avatars
+    ├── 0029_avatar_video.py                 # Fase 6b — 8 colonne avatar_video_* + 3 colonne musetalk_* su avatars
+    ├── 0030_course_video_avatar_status.py   # course-level status video_status / avatar_video_status (derivati dai per-lesson)
+    ├── 0031_course_duplication.py           # tabella course_duplication_job + indici + unique parziale (doc 15)
+    └── 0032_duplication_progress_detail.py  # colonna progress_detail su course_duplication_job (sub-progress UX)
 ```
 
 ### Frontend

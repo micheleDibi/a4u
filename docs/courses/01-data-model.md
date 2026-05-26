@@ -575,7 +575,7 @@ Il template `pdf_templates` (lezione testo + discorso, A4 portrait) resta separa
 
 Tabella di orchestrazione per il job background di **duplicazione corso
 in altra lingua** (vedi [15 — Duplicazione corso](15-course-duplication.md)).
-Creata dalla migration 0031.
+Creata dalla migration 0031 + estesa da 0032 con `progress_detail`.
 
 ### Colonne
 
@@ -590,15 +590,25 @@ Creata dalla migration 0031.
   `('pending','processing','ready','failed')`
 - `progress` SMALLINT NOT NULL `server_default='0'` — CHECK 0..100
 - `progress_phase` VARCHAR(50) nullable — fase corrente del worker
-  (`loading_source` / `cloning_structure` / `translating_*` /
-  `finalizing`)
+  (`loading_source` / `cloning_structure` / `translating_architecture` /
+  `translating_lesson_metadata` /
+  `translating_lesson_content_slides_speech` /
+  `translating_glossary_documents` / `finalizing`)
+- `progress_detail` VARCHAR(200) nullable — sub-progress UX granulare
+  (es. `"23/48 lezioni completate"`, popolato durante la combined
+  phase). Migration 0032.
 - `error` TEXT nullable — messaggio se `status='failed'`
 - `attempts` SMALLINT NOT NULL `server_default='0'` — counter retry
-  trasparente (cap 5)
+  trasparente (cap 5). Vedi anche resume-from-progress: al retry il
+  worker memorizza `job.progress` PRIMA del reset, per skippare le
+  phase già completate.
 - `tokens` JSONB nullable — aggregato cost / wall_clock_seconds
 - `requested_by_user_id` UUID FK `users(id)` ON DELETE SET NULL — chi
   ha avviato la duplicazione
-- `started_at`, `finished_at` TIMESTAMPTZ nullable
+- `started_at`, `finished_at` TIMESTAMPTZ nullable — `started_at` è
+  esposto anche nel `CourseDuplicationJobCompact` (oltre che nel full)
+  per permettere al FE di calcolare l'ETA stimato nel badge senza
+  chiamare l'endpoint dedicato
 - `created_at`, `updated_at` TIMESTAMPTZ NOT NULL `default now()`
 
 ### Indici e vincoli

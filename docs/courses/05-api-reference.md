@@ -118,8 +118,20 @@ diverso dalla lingua corrente del corso e corrispondere a una
 `Language` attiva in DB).
 
 Response: `CourseDuplicationJobOut` con `id`, `status="pending"`,
-`progress=0`, `target_course_id=null` (popolato dopo la phase
-`cloning_structure`).
+`progress=0`, `progress_phase=null`, `progress_detail=null`,
+`target_course_id=null` (popolato dopo la phase `cloning_structure`).
+
+Schema completo `CourseDuplicationJobOut`: `id`, `source_course_id`,
+`target_course_id`, `target_language_code`, `status`, `progress`,
+`progress_phase`, `progress_detail`, `error`, `attempts`, `tokens`,
+`requested_by_user_id`, `started_at`, `finished_at`, `created_at`,
+`updated_at`.
+
+Schema compatto embedded in `CourseListItemOut.duplication_job`:
+`id`, `source_course_id`, `target_course_id`, `target_language_code`,
+`status`, `progress`, `progress_phase`, `progress_detail`, `started_at`.
+`started_at` è esposto nel Compact (oltre che nel full) per
+permettere al FE di calcolare l'ETA stimato nel badge.
 
 Errori:
 - `409 duplicate_same_language` — lingua target uguale alla lingua del
@@ -142,7 +154,10 @@ quando ci sono job attivi nella pagina).
 `course:duplicate`. Cancel idempotente di un job
 `pending`/`processing` → `failed` con error "Annullata dall'utente".
 Il corso target eventualmente già creato resta in DB con i contenuti
-parzialmente tradotti.
+parzialmente tradotti (l'utente lo elimina manualmente o
+ri-richiede la duplicazione). **Nota**: su fail TERMINALE del job
+(5 retry esauriti o timeout 90 min) il target viene invece eliminato
+automaticamente con cascade — vedi [15 — Duplicazione corso](15-course-duplication.md#cleanup-automatico-target).
 
 ## Documenti
 
