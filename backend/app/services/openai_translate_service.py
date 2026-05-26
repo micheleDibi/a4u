@@ -115,6 +115,15 @@ async def translate_batch(
         ],
         "response_format": {"type": "json_object"},
         "temperature": 0.2,
+        # Penalty contro il "degenerate output mode": occasionalmente
+        # gpt-4o-mini entra in loop ripetendo lo stesso token (es.
+        # "dio dio dio dio...") fino a esaurire max_tokens, lasciando il
+        # JSON troncato. frequency_penalty disincentiva la ripetizione
+        # di token gia' usati, presence_penalty disincentiva i loop
+        # sugli stessi token. Valori moderati per non degradare la
+        # qualita' della traduzione (che e' deterministica).
+        "frequency_penalty": 0.3,
+        "presence_penalty": 0.1,
     }
     log.info(
         "openai_translate_request",
