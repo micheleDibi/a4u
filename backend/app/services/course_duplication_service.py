@@ -387,7 +387,7 @@ async def _translate_jsonb_inplace(
         )
         translated.update(chunk_translated)
         log.info(
-            "nova_duplication_chunk_translated",
+            "course_duplication_chunk_translated",
             chunk_start=chunk_start,
             chunk_size=len(chunk_items),
             received=len(chunk_translated),
@@ -952,15 +952,56 @@ async def _translate_document_summaries(
 # ---------------------------------------------------------------------------
 
 
+# Stati del corso fino a 'slides_approved' compreso. Il corso target
+# duplicato non oltrepassa mai questa soglia: il discorso tradotto
+# richiede riapprovazione manuale; video / avatar vengono rigenerati.
+_SLIDES_APPROVED_OR_BELOW: frozenset[str] = frozenset({
+    "draft",
+    "architecture_pending",
+    "architecture_ready",
+    "architecture_approved",
+    "lessons_structure_pending",
+    "lessons_structure_ready",
+    "lessons_structure_approved",
+    "content_pending",
+    "content_ready",
+    "content_approved",
+    "slides_pending",
+    "slides_ready",
+    "slides_approved",
+})
+
+
+def _cap_status_for_duplication(source_status: str) -> str:
+    """Cap dello status del corso target a `slides_approved`.
+
+    Se la sorgente è già nelle fasi `speech_*`, `video_*`,
+    `avatar_video_*`, `published` o `archived`, il target torna a
+    `slides_approved` (l'utente dovrà ri-generare/riapprovare lo
+    speech e i video nel corso target).
+    """
+    if source_status in _SLIDES_APPROVED_OR_BELOW:
+        return source_status
+    return "slides_approved"
+
+
 async def _finalize(
     db: AsyncSession,
     *,
     source: Course,
     target: Course,
 ) -> None:
-    """Allinea `target.status` a `source.status` usando
-    `advance_course_status` (rispetta la monotonia: video/avatar
-    restano `empty`)."""
-    advance_course_status(target, source.status)
-    # Modules: lo status delle fasi è già copiato in _clone_course_structure.
+    """Allinea `target.status` al source CAPPATO a `slides_approved`,
+    e downgrada lo `speech_status` di ogni lezione del target a
+    `ready` (forza riapprovazione del discorso tradotto)."""
+    target_status = _cap_status_for_duplication(source.status)
+    advance_course_status(target, target_status)
+    # Per-lesson: downgrade speech_status='approved' → 'ready'. La
+    # traduzione AI dello speech è quella più sensibile (testo lungo
+    # con vincoli TTS): meglio che l'utente riapprovi manualmente.
+    for module in target.modules:
+        for lesson in module.lessons:
+            if lesson.speech_status == "approved":
+                lesson.speech_status = "ready"
+                lesson.speech_approved_at = None
 

@@ -211,16 +211,40 @@ async def _process_one(job_id: uuid.UUID) -> None:
                     "Corso sorgente non trovato dopo il claim."
                 )
 
-            # --- Phase 2: clone structure -------------------------------
+            # --- Phase 2: clone structure (IDEMPOTENTE su retry) --------
+            # Se il job ha già un target_course_id da un retry precedente,
+            # NON ri-clonare: riusiamo il target esistente. Altrimenti
+            # ogni retry creerebbe un nuovo target stub nel DB.
             await _set_progress(job_id, pct=5, phase="cloning_structure")
             job = await db.get(CourseDuplicationJob, job_id)
             assert job is not None
-            target = await _svc._clone_course_structure(
-                db,
-                source=source,
-                target_language_code=target_lang_code,
-                job=job,
-            )
+            target: Course | None = None
+            if job.target_course_id is not None:
+                target = await db.get(Course, job.target_course_id)
+                if target is None:
+                    # Il target è stato eliminato manualmente fra un retry
+                    # e l'altro: nullifica il riferimento e ricloara.
+                    log.warning(
+                        "course_duplication_target_missing_reclone",
+                        job_id=str(job_id),
+                        previous_target_id=str(job.target_course_id),
+                    )
+                    job.target_course_id = None
+                    await db.commit()
+                else:
+                    log.info(
+                        "course_duplication_clone_skipped_idempotent",
+                        job_id=str(job_id),
+                        target_course_id=str(target.id),
+                        attempts=job.attempts,
+                    )
+            if target is None:
+                target = await _svc._clone_course_structure(
+                    db,
+                    source=source,
+                    target_language_code=target_lang_code,
+                    job=job,
+                )
             await _set_progress(job_id, pct=8, phase="cloning_structure")
 
         # --- Phase 3: translate architecture + metadata ------------------
@@ -255,31 +279,56 @@ async def _process_one(job_id: uuid.UUID) -> None:
             log.info("course_duplication_cancelled_post_arch", job_id=str(job_id))
             return
 
-        # --- Phase 4-6: lezioni in parallelo per fase --------------------
-        for phase, pct_start, pct_end, label in [
-            ("meta", 22, 28, "translating_lesson_metadata"),
-            ("content", 30, 50, "translating_content"),
-            ("slides", 55, 70, "translating_slides"),
-            ("speech", 75, 85, "translating_speech"),
-        ]:
-            await _set_progress(job_id, pct=pct_start, phase=label)
-            await _translate_lessons_phase(
-                target_id=target.id,
-                phase=phase,
-                source_lang_code=source_lang_code,
-                source_lang_name=source_lang_name,
-                target_lang_code=target_lang_code,
-                target_lang_name=target_lang_name,
-                lesson_cap=lesson_cap,
+        # --- Phase 4: lessons meta (campi diretti CourseLesson) ---------
+        # Wave veloce, separata dal combined per non saturare le sessioni
+        # DB con dati troppo grandi tutti in una volta.
+        await _set_progress(
+            job_id, pct=25, phase="translating_lesson_metadata"
+        )
+        await _translate_lessons_phase(
+            target_id=target.id,
+            phase="meta",
+            source_lang_code=source_lang_code,
+            source_lang_name=source_lang_name,
+            target_lang_code=target_lang_code,
+            target_lang_name=target_lang_name,
+            lesson_cap=lesson_cap,
+        )
+        await _set_progress(
+            job_id, pct=35, phase="translating_lesson_metadata"
+        )
+        if await _check_cancelled(job_id):
+            log.info(
+                "course_duplication_cancelled_post_meta",
+                job_id=str(job_id),
             )
-            await _set_progress(job_id, pct=pct_end, phase=label)
-            if await _check_cancelled(job_id):
-                log.info(
-                    "course_duplication_cancelled_mid_phase",
-                    job_id=str(job_id),
-                    phase=label,
-                )
-                return
+            return
+
+        # --- Phase 5: content + slides + speech per lezione (combinato)
+        # Per ogni lezione, le 3 phase si eseguono sequenzialmente dentro
+        # la sua task (3 chiamate OpenAI sequenziali). Il parallelismo
+        # globale è dato dal cap di concorrenza fra lezioni (default 6).
+        # Risultato: ~1/3 del tempo rispetto a 3 wave separate.
+        await _set_progress(
+            job_id, pct=40, phase="translating_lesson_content_slides_speech"
+        )
+        await _translate_lessons_combined_phase(
+            target_id=target.id,
+            source_lang_code=source_lang_code,
+            source_lang_name=source_lang_name,
+            target_lang_code=target_lang_code,
+            target_lang_name=target_lang_name,
+            lesson_cap=lesson_cap,
+        )
+        await _set_progress(
+            job_id, pct=85, phase="translating_lesson_content_slides_speech"
+        )
+        if await _check_cancelled(job_id):
+            log.info(
+                "course_duplication_cancelled_post_combined",
+                job_id=str(job_id),
+            )
+            return
 
         # --- Phase 7: glossary + documents --------------------------------
         async with async_session_factory() as db:
@@ -395,19 +444,40 @@ async def _process_one(job_id: uuid.UUID) -> None:
                 recoverable=True,
                 auto_retry_max=retry_max,
             )
-            if terminal and organization_id is not None:
-                await write_audit(
-                    db,
-                    action="course.duplicate.failed",
-                    actor_user_id=job.requested_by_user_id,
-                    organization_id=organization_id,
-                    target_type="course_duplication_job",
-                    target_id=str(job_id),
-                    metadata={
-                        "error": str(exc)[:500],
-                        "attempts": job.attempts,
-                    },
-                )
+            if terminal:
+                # Cleanup automatico del target_course su fail
+                # terminale: cascade su moduli + lezioni + documenti via
+                # ondelete=CASCADE. Niente stub a vuoto nel DB.
+                target_course_id_cleaned: uuid.UUID | None = None
+                if job.target_course_id is not None:
+                    target = await db.get(Course, job.target_course_id)
+                    if target is not None:
+                        target_course_id_cleaned = target.id
+                        await db.delete(target)
+                        log.info(
+                            "course_duplication_target_cleaned_up",
+                            job_id=str(job_id),
+                            target_course_id=str(target.id),
+                        )
+                    job.target_course_id = None
+                if organization_id is not None:
+                    await write_audit(
+                        db,
+                        action="course.duplicate.failed",
+                        actor_user_id=job.requested_by_user_id,
+                        organization_id=organization_id,
+                        target_type="course_duplication_job",
+                        target_id=str(job_id),
+                        metadata={
+                            "error": str(exc)[:500],
+                            "attempts": job.attempts,
+                            "target_course_id_cleaned": (
+                                str(target_course_id_cleaned)
+                                if target_course_id_cleaned
+                                else None
+                            ),
+                        },
+                    )
             await db.commit()
 
 
@@ -451,9 +521,121 @@ async def _translate_lessons_phase(
                 )
                 await ldb.commit()
 
-    if lesson_ids:
-        await asyncio.gather(
-            *[_do_one(lid) for lid in lesson_ids], return_exceptions=False
+    if not lesson_ids:
+        return
+
+    # Gather con resilienza per-lezione: una singola lezione fallita
+    # NON deve far esplodere tutto il job (= retry totale = re-clone).
+    # Se >50% fallisce alziamo eccezione per attivare il retry del JOB
+    # (segno che OpenAI è giù o c'è un problema sistemico).
+    results = await asyncio.gather(
+        *[_do_one(lid) for lid in lesson_ids],
+        return_exceptions=True,
+    )
+    failures = [
+        (lid, exc)
+        for lid, exc in zip(lesson_ids, results)
+        if isinstance(exc, BaseException)
+    ]
+    if failures:
+        log.warning(
+            "course_duplication_lesson_phase_failures",
+            phase=phase,
+            failed=len(failures),
+            total=len(lesson_ids),
+            sample=[
+                {"lesson_id": str(lid), "error": str(exc)[:200]}
+                for lid, exc in failures[:5]
+            ],
+        )
+    if failures and len(failures) > len(lesson_ids) * 0.5:
+        raise RuntimeError(
+            f"Phase '{phase}': {len(failures)}/{len(lesson_ids)} lezioni "
+            f"fallite (>50%). Attivo retry del job."
+        )
+
+
+async def _translate_lessons_combined_phase(
+    *,
+    target_id: uuid.UUID,
+    source_lang_code: str,
+    source_lang_name: str,
+    target_lang_code: str,
+    target_lang_name: str,
+    lesson_cap: int,
+) -> None:
+    """Traduce content + slides + speech di ogni lezione in sequenza
+    dentro la stessa task. Parallelismo dato dal cap `lesson_cap` fra
+    lezioni (default 6). Sostituisce le 3 wave separate (content,
+    slides, speech) per ridurre il tempo totale a ~1/3.
+
+    Resilienza: una lezione fallita non interrompe le altre. Soglia
+    50% di fail per attivare retry del job.
+    """
+    sem = asyncio.Semaphore(lesson_cap)
+    async with async_session_factory() as db:
+        res = await db.execute(
+            select(CourseLesson.id).where(CourseLesson.course_id == target_id)
+        )
+        lesson_ids: list[uuid.UUID] = [row[0] for row in res.all()]
+
+    async def _do_one(lesson_id: uuid.UUID) -> None:
+        async with sem:
+            async with async_session_factory() as ldb:
+                lesson = await ldb.get(CourseLesson, lesson_id)
+                if lesson is None:
+                    return
+                # 3 phase sequenziali dentro la stessa session/transazione.
+                # Un fallimento di una phase NON blocca le altre 2 (try
+                # per phase). Se almeno una passa, qualcosa di tradotto
+                # rimane.
+                for phase in ("content", "slides", "speech"):
+                    try:
+                        await _svc._translate_lesson(
+                            ldb,
+                            lesson=lesson,
+                            source_lang_code=source_lang_code,
+                            source_lang_name=source_lang_name,
+                            target_lang_code=target_lang_code,
+                            target_lang_name=target_lang_name,
+                            phase=phase,
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        log.warning(
+                            "course_duplication_lesson_phase_inner_error",
+                            lesson_id=str(lesson_id),
+                            phase=phase,
+                            error=str(exc)[:300],
+                        )
+                        # Continua con la phase successiva.
+                await ldb.commit()
+
+    if not lesson_ids:
+        return
+
+    results = await asyncio.gather(
+        *[_do_one(lid) for lid in lesson_ids],
+        return_exceptions=True,
+    )
+    failures = [
+        (lid, exc)
+        for lid, exc in zip(lesson_ids, results)
+        if isinstance(exc, BaseException)
+    ]
+    if failures:
+        log.warning(
+            "course_duplication_combined_phase_failures",
+            failed=len(failures),
+            total=len(lesson_ids),
+            sample=[
+                {"lesson_id": str(lid), "error": str(exc)[:200]}
+                for lid, exc in failures[:5]
+            ],
+        )
+    if failures and len(failures) > len(lesson_ids) * 0.5:
+        raise RuntimeError(
+            f"Combined phase: {len(failures)}/{len(lesson_ids)} lezioni "
+            f"fallite a livello task (>50%). Attivo retry del job."
         )
 
 
@@ -494,6 +676,19 @@ async def _bound_process(job_id: uuid.UUID) -> None:
                             f"Timeout totale del job ({_JOB_TOTAL_TIMEOUT_SECONDS // 60} min)."
                         )
                         job.finished_at = datetime.now(UTC)
+                        # Cleanup target su timeout — stesso comportamento
+                        # del fail terminale (vedi `except Exception`).
+                        if job.target_course_id is not None:
+                            target = await db.get(Course, job.target_course_id)
+                            if target is not None:
+                                log.info(
+                                    "course_duplication_target_cleaned_up",
+                                    job_id=str(job_id),
+                                    target_course_id=str(target.id),
+                                    reason="job_total_timeout",
+                                )
+                                await db.delete(target)
+                            job.target_course_id = None
                         await db.commit()
     except Exception as exc:  # pragma: no cover
         log.error(

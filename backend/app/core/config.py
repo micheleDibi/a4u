@@ -232,7 +232,11 @@ class Settings(BaseSettings):
     # parallelo cap=3 per fase (mirror del content worker).
     course_duplication_poll_interval_seconds: int = 4
     course_duplication_max_concurrent_jobs: int = 1
-    course_duplication_lesson_translate_concurrency: int = 3
+    # Cap di lezioni tradotte in parallelo (per phase). Alzato da 3 a 6:
+    # `gpt-4o-mini` gestisce bene 6 chiamate concorrenti senza rate-limit,
+    # e con la fase combinata (content+slides+speech per lezione in sequenza)
+    # questo dimezza il tempo totale di duplicazione.
+    course_duplication_lesson_translate_concurrency: int = 6
     course_duplication_auto_retry_max: int = 5
 
     # Nova — assistente AI contestuale floating widget. Stateless DB-side.
