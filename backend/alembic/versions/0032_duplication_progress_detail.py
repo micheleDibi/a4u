@@ -13,8 +13,8 @@ from alembic import op
 import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
-revision = "0032_duplication_progress_detail"
-down_revision = "0031_course_duplication"
+revision: str = "0032"
+down_revision: str | None = "0031"
 branch_labels = None
 depends_on = None
 
