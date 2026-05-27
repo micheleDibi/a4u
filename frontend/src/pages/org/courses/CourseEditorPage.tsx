@@ -87,6 +87,12 @@ import { P } from "@/lib/permissions";
 import { CourseArchitectureView } from "./components/CourseArchitectureView";
 import { CourseDocumentUploader } from "./components/CourseDocumentUploader";
 import { CoursePaperSearch } from "./components/CoursePaperSearch";
+import {
+  CoursePhaseStepper,
+  PHASES,
+  phaseOfTab,
+  type PhaseId,
+} from "./components/CoursePhaseStepper";
 import { CourseLessonStructureView } from "./components/CourseLessonStructureView";
 import { CourseLessonContentView } from "./components/CourseLessonContentView";
 import { CourseLessonSlidesView } from "./components/CourseLessonSlidesView";
@@ -381,6 +387,16 @@ export default function CourseEditorPage({ mode }: Props) {
       setActiveTab("objectives");
     }
   }, [mode, course, setupLocked, activeTab]);
+
+  // Fase corrente (deriva da activeTab). Lo stepper mostra le 4 macro-fasi;
+  // sotto, la TabsList renderizza solo le sub-tab della fase corrente.
+  const currentPhase: PhaseId = phaseOfTab(activeTab);
+  const onPhaseNavigate = (phaseId: PhaseId) => {
+    if (phaseId === currentPhase) return;
+    const phase = PHASES.find((p) => p.id === phaseId);
+    if (!phase) return;
+    setActiveTab(phase.tabs[0] as TabId);
+  };
 
   const defaultLang = i18n.resolvedLanguage?.split("-")[0] || "it";
   const [draft, setDraft] = useState<DraftState | null>(null);
@@ -740,122 +756,132 @@ export default function CourseEditorPage({ mode }: Props) {
         onValueChange={(v) => setActiveTab(v as TabId)}
         className="space-y-4"
       >
+        <CoursePhaseStepper
+          activePhase={currentPhase}
+          course={course ?? null}
+          setupLocked={setupLocked}
+          onNavigate={onPhaseNavigate}
+        />
         <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1">
-          <TabsTrigger value="base">{t("courses.tabs.base")}</TabsTrigger>
-          <TabsTrigger value="didactic">
-            {t("courses.tabs.didactic")}
-          </TabsTrigger>
-          <TabsTrigger value="objectives">
-            {t("courses.tabs.objectives")}
-          </TabsTrigger>
-          {mode === "edit" && setupLocked && (
-            <TabsTrigger value="documents">
-              {t("courses.tabs.documents")}
-            </TabsTrigger>
+          {currentPhase === "setup" && (
+            <>
+              <TabsTrigger value="base">
+                {t("courses.tabs.base")}
+              </TabsTrigger>
+              <TabsTrigger value="didactic">
+                {t("courses.tabs.didactic")}
+              </TabsTrigger>
+              <TabsTrigger value="objectives">
+                {t("courses.tabs.objectives")}
+              </TabsTrigger>
+              {mode === "edit" && setupLocked && (
+                <TabsTrigger value="documents">
+                  {t("courses.tabs.documents")}
+                </TabsTrigger>
+              )}
+            </>
           )}
-          {mode === "edit" && setupLocked && (
-            <TabsTrigger value="architecture">
-              {t("courses.tabs.architecture")}
-            </TabsTrigger>
+          {currentPhase === "architecture" && mode === "edit" && setupLocked && (
+            <>
+              <TabsTrigger value="architecture">
+                {t("courses.tabs.architecture")}
+              </TabsTrigger>
+              <TabsTrigger
+                value="lessons-structure"
+                disabled={
+                  !course ||
+                  (course.status !== "architecture_approved" &&
+                    course.status !== "lessons_structure_pending" &&
+                    course.status !== "lessons_structure_ready" &&
+                    course.status !== "lessons_structure_approved" &&
+                    !course.status.startsWith("content_") &&
+                    !["slides_pending", "slides_ready", "slides_approved", "speech_pending", "speech_ready", "speech_approved", "published"].includes(
+                      course.status
+                    ))
+                }
+              >
+                {t("courses.tabs.lessonsStructure")}
+              </TabsTrigger>
+            </>
           )}
-          {mode === "edit" && setupLocked && (
-            <TabsTrigger
-              value="lessons-structure"
-              disabled={
-                !course ||
-                (course.status !== "architecture_approved" &&
-                  course.status !== "lessons_structure_pending" &&
-                  course.status !== "lessons_structure_ready" &&
-                  course.status !== "lessons_structure_approved" &&
-                  !course.status.startsWith("content_") &&
-                  !["slides_pending", "slides_ready", "slides_approved", "speech_pending", "speech_ready", "speech_approved", "published"].includes(
-                    course.status
-                  ))
-              }
-            >
-              {t("courses.tabs.lessonsStructure")}
-            </TabsTrigger>
+          {currentPhase === "content" && mode === "edit" && setupLocked && (
+            <>
+              <TabsTrigger
+                value="lesson-content"
+                disabled={
+                  !course ||
+                  (course.status !== "lessons_structure_approved" &&
+                    !course.status.startsWith("content_") &&
+                    !["slides_pending", "slides_ready", "slides_approved", "speech_pending", "speech_ready", "speech_approved", "published"].includes(
+                      course.status
+                    ))
+                }
+              >
+                {t("courses.tabs.lessonContent")}
+              </TabsTrigger>
+              <TabsTrigger
+                value="lesson-slides"
+                disabled={
+                  !course ||
+                  (course.status !== "content_ready" &&
+                    course.status !== "content_approved" &&
+                    !["slides_pending", "slides_ready", "slides_approved", "speech_pending", "speech_ready", "speech_approved", "published"].includes(
+                      course.status
+                    ))
+                }
+              >
+                {t("courses.tabs.lessonSlides")}
+              </TabsTrigger>
+              <TabsTrigger
+                value="lesson-speech"
+                disabled={
+                  !course ||
+                  !course.modules?.some((m) =>
+                    m.lessons?.some(
+                      (l) =>
+                        l.slides_status === "ready" ||
+                        l.slides_status === "approved",
+                    ),
+                  )
+                }
+              >
+                {t("courses.tabs.lessonSpeech")}
+              </TabsTrigger>
+            </>
           )}
-          {mode === "edit" && setupLocked && (
-            <TabsTrigger
-              value="lesson-content"
-              disabled={
-                !course ||
-                (course.status !== "lessons_structure_approved" &&
-                  !course.status.startsWith("content_") &&
-                  !["slides_pending", "slides_ready", "slides_approved", "speech_pending", "speech_ready", "speech_approved", "published"].includes(
-                    course.status
-                  ))
-              }
-            >
-              {t("courses.tabs.lessonContent")}
-            </TabsTrigger>
-          )}
-          {mode === "edit" && setupLocked && (
-            <TabsTrigger
-              value="lesson-slides"
-              disabled={
-                !course ||
-                (course.status !== "content_ready" &&
-                  course.status !== "content_approved" &&
-                  !["slides_pending", "slides_ready", "slides_approved", "speech_pending", "speech_ready", "speech_approved", "published"].includes(
-                    course.status
-                  ))
-              }
-            >
-              {t("courses.tabs.lessonSlides")}
-            </TabsTrigger>
-          )}
-          {mode === "edit" && setupLocked && (
-            <TabsTrigger
-              value="lesson-speech"
-              disabled={
-                !course ||
-                !course.modules?.some((m) =>
-                  m.lessons?.some(
-                    (l) =>
-                      l.slides_status === "ready" ||
-                      l.slides_status === "approved",
-                  ),
-                )
-              }
-            >
-              {t("courses.tabs.lessonSpeech")}
-            </TabsTrigger>
-          )}
-          {mode === "edit" && setupLocked && (
-            <TabsTrigger
-              value="lesson-video"
-              disabled={
-                !course ||
-                !course.modules?.some((m) =>
-                  m.lessons?.some(
-                    (l) =>
-                      l.speech_status === "approved" &&
-                      l.slides_status === "approved",
-                  ),
-                )
-              }
-            >
-              {t("courses.tabs.lessonVideo")}
-            </TabsTrigger>
-          )}
-          {mode === "edit" && setupLocked && (
-            <TabsTrigger
-              value="lesson-avatar-video"
-              disabled={
-                !course ||
-                !course.modules?.some((m) =>
-                  m.lessons?.some(
-                    (l) =>
-                      l.speech_status === "approved" &&
-                      l.slides_status === "approved",
-                  ),
-                )
-              }
-            >
-              {t("courses.tabs.lessonAvatarVideo")}
-            </TabsTrigger>
+          {currentPhase === "media" && mode === "edit" && setupLocked && (
+            <>
+              <TabsTrigger
+                value="lesson-video"
+                disabled={
+                  !course ||
+                  !course.modules?.some((m) =>
+                    m.lessons?.some(
+                      (l) =>
+                        l.speech_status === "approved" &&
+                        l.slides_status === "approved",
+                    ),
+                  )
+                }
+              >
+                {t("courses.tabs.lessonVideo")}
+              </TabsTrigger>
+              <TabsTrigger
+                value="lesson-avatar-video"
+                disabled={
+                  !course ||
+                  !course.modules?.some((m) =>
+                    m.lessons?.some(
+                      (l) =>
+                        l.speech_status === "approved" &&
+                        l.slides_status === "approved",
+                    ),
+                  )
+                }
+              >
+                {t("courses.tabs.lessonAvatarVideo")}
+              </TabsTrigger>
+            </>
           )}
         </TabsList>
 

@@ -205,6 +205,18 @@
       "lessonVideo": "Video",
       "lessonAvatarVideo": "Video con avatar"
     },
+    "phases": {
+      "setup": "Setup",
+      "architecture": "Architettura",
+      "content": "Contenuti",
+      "media": "Media",
+      "lockedHint": {
+        "setup": "Sempre disponibile",
+        "architecture": "Conferma prima il setup didattico per sbloccare questa fase.",
+        "content": "Approva la struttura delle lezioni per sbloccare i contenuti.",
+        "media": "Approva slide e discorso di almeno una lezione per sbloccare i media."
+      }
+    },
     "sections": {
       "basics": "Informazioni di base",
       "didactic": "Inquadramento didattico",

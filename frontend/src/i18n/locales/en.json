@@ -205,6 +205,18 @@
       "lessonVideo": "Video",
       "lessonAvatarVideo": "Avatar video"
     },
+    "phases": {
+      "setup": "Setup",
+      "architecture": "Architecture",
+      "content": "Content",
+      "media": "Media",
+      "lockedHint": {
+        "setup": "Always available",
+        "architecture": "Confirm the didactic setup first to unlock this phase.",
+        "content": "Approve the lesson structure to unlock content.",
+        "media": "Approve slides and speech for at least one lesson to unlock media."
+      }
+    },
     "sections": {
       "basics": "Basic information",
       "didactic": "Didactic framing",
