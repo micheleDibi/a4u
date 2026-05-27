@@ -1199,7 +1199,39 @@ export default function CourseEditorPage({ mode }: Props) {
               </div>
             </CardContent>
           </Card>
-          <div className="flex justify-end">
+          <div className="flex flex-wrap justify-end gap-2">
+            {mode === "create" && canSaveDraft && (
+              <Button
+                size="lg"
+                variant="secondary"
+                onClick={saveDraft}
+                disabled={
+                  !draft.title.trim() ||
+                  createMut.isPending ||
+                  saveDraftMut.isPending
+                }
+              >
+                {saveDraftMut.isPending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Save className="size-4" />
+                )}
+                {saveDraftMut.isPending
+                  ? t("common.saving")
+                  : t("courses.saveAsDraft")}
+              </Button>
+            )}
+            {mode === "edit" && canSaveDraft && !setupLocked && (
+              <Button
+                size="lg"
+                variant="secondary"
+                onClick={saveDraft}
+                disabled={!draft.title.trim()}
+              >
+                <Save className="size-4" />
+                {t("courses.saveAsDraft")}
+              </Button>
+            )}
             <Button
               size="lg"
               variant="outline"
