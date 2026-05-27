@@ -220,6 +220,10 @@
     "objectivesAI": {
       "title": "Genera con AI da documento",
       "description": "Carica un PDF, DOCX o file di testo (es. sillabo o programma del corso) e l'AI proporra' obiettivi formativi e argomenti chiave coerenti con i parametri del corso (lingua, livello EQF, destinatari, profondita' contenuto). Potrai modificare la proposta prima di applicarla.",
+      "saveFirstBanner": {
+        "title": "Salva prima il corso come bozza",
+        "description": "Per usare la generazione AI da documento, devi prima salvare il corso con il pulsante 'Salva come bozza' (in fondo alla pagina). Una volta salvato, potrai caricare il file qui."
+      },
       "fileDropzoneCaption": "Trascina un file qui o clicca per selezionarlo",
       "formatsHint": "PDF, DOCX, TXT, MD, RTF · max {{max}} MB",
       "chooseFile": "Scegli file",
@@ -230,7 +234,7 @@
         "unsupportedFormat": "Formato non supportato: {{name}}. Carica un PDF, DOCX, TXT, MD o RTF.",
         "tooLarge": "File troppo grande: {{name}}. Max {{max}} MB.",
         "lockedSetup": "Setup didattico confermato: per modificare gli obiettivi, sbloccalo prima.",
-        "saveCourseFirst": "Salva prima il corso per usare la generazione AI."
+        "saveCourseFirst": "Salva prima il corso come bozza per usare la generazione AI da documento."
       },
       "preview": {
         "title": "Anteprima proposta AI",

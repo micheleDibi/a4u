@@ -2,7 +2,7 @@ import { useRef, useState, type DragEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { Sparkles, Upload, FileText, X } from "lucide-react";
+import { AlertCircle, Sparkles, Upload, FileText, X } from "lucide-react";
 
 import { coursesApi } from "@/api/courses";
 import { Button } from "@/components/ui/button";
@@ -80,6 +80,23 @@ export function CourseObjectivesAIGenerator({
 
   const handleFiles = (files: FileList | null) => {
     if (!files || files.length === 0) return;
+    // Intercetta tentativi pre-salvataggio per dare feedback esplicito
+    // (il bottone "Genera con AI" sarebbe disabled, ma drag-drop
+    // potrebbe far credere all'utente che il file sia stato accettato).
+    if (!courseId) {
+      toast.warning(
+        t("courses.objectivesAI.errors.saveCourseFirst") as string,
+        { duration: 6000 },
+      );
+      return;
+    }
+    if (disabled) {
+      toast.warning(
+        t("courses.objectivesAI.errors.lockedSetup") as string,
+        { duration: 6000 },
+      );
+      return;
+    }
     const file = files[0];
     // Validazioni client (replica del server, per feedback immediato).
     if (!ACCEPTED_MIME.includes(file.type) && file.type !== "") {
@@ -105,7 +122,8 @@ export function CourseObjectivesAIGenerator({
   const onDrop = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setDragOver(false);
-    if (disabled || !courseId) return;
+    // handleFiles gestisce internamente i casi disabled / !courseId
+    // mostrando il toast informativo.
     handleFiles(e.dataTransfer.files);
   };
 
@@ -146,6 +164,25 @@ export function CourseObjectivesAIGenerator({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
+        {/* Banner informativo prominente quando il corso non e' ancora
+            salvato. Aiuta l'utente a capire perche' la generazione AI
+            non e' utilizzabile e cosa fare. */}
+        {!courseId && (
+          <div
+            className="flex items-start gap-2 rounded-md border border-amber-300/60 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-900/20 dark:text-amber-200"
+            role="alert"
+          >
+            <AlertCircle className="mt-0.5 size-4 shrink-0" />
+            <div>
+              <div className="font-semibold">
+                {t("courses.objectivesAI.saveFirstBanner.title")}
+              </div>
+              <div className="text-xs">
+                {t("courses.objectivesAI.saveFirstBanner.description")}
+              </div>
+            </div>
+          </div>
+        )}
         <div
           onDrop={onDrop}
           onDragOver={onDragOver}
@@ -171,14 +208,31 @@ export function CourseObjectivesAIGenerator({
             className="hidden"
             accept={ACCEPTED_MIME.join(",")}
             onChange={(e) => handleFiles(e.target.files)}
-            disabled={disabled || !courseId}
           />
           <Button
             variant="outline"
             size="sm"
             className="mt-3"
-            onClick={() => inputRef.current?.click()}
-            disabled={disabled || !courseId || generateMut.isPending}
+            onClick={() => {
+              // In create mode, mostriamo un toast esplicito invece di
+              // aprire silenziosamente il file picker.
+              if (!courseId) {
+                toast.warning(
+                  t("courses.objectivesAI.errors.saveCourseFirst") as string,
+                  { duration: 6000 },
+                );
+                return;
+              }
+              if (disabled) {
+                toast.warning(
+                  t("courses.objectivesAI.errors.lockedSetup") as string,
+                  { duration: 6000 },
+                );
+                return;
+              }
+              inputRef.current?.click();
+            }}
+            disabled={generateMut.isPending}
           >
             {t("courses.objectivesAI.chooseFile")}
           </Button>

@@ -75,11 +75,12 @@ class Settings(BaseSettings):
     openai_summarize_max_tokens: int = 8000
     # Generazione AI di obiettivi corso + argomenti chiave da un
     # documento di riferimento caricato dall'utente (tab "Obiettivi e
-    # Argomenti chiave"). Stesso modello del summarize (sufficiente per
-    # un output strutturato breve). Max tokens basso: l'output e' una
-    # stringa breve + lista 5-15 elementi.
+    # Argomenti chiave"). Output target: obiettivi 2500-5000 caratteri
+    # (prosa articolata) + lista 8-15 argomenti chiave. Max tokens 8000
+    # per evitare troncamenti sul JSON (string escaping inflaziona il
+    # conteggio token rispetto ai caratteri visibili).
     openai_objectives_model: str = "gpt-4o-mini"
-    openai_objectives_max_tokens: int = 4000
+    openai_objectives_max_tokens: int = 8000
     openai_modules_lessons_model: str = "gpt-5.5"
     openai_architecture_max_tokens: int = 8000
     # Reasoning effort: vedi `.env.example` per spiegazione + valori validi.

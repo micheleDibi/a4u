@@ -220,6 +220,10 @@
     "objectivesAI": {
       "title": "Generate with AI from document",
       "description": "Upload a PDF, DOCX or text file (e.g. course syllabus or programme) and the AI will propose learning objectives and key topics consistent with the course parameters (language, EQF level, target audience, content depth). You can edit the proposal before applying it.",
+      "saveFirstBanner": {
+        "title": "Save the course as draft first",
+        "description": "To use AI generation from a document, you must first save the course using the 'Save as draft' button (at the bottom of the page). Once saved, you can upload the file here."
+      },
       "fileDropzoneCaption": "Drag a file here or click to select",
       "formatsHint": "PDF, DOCX, TXT, MD, RTF · max {{max}} MB",
       "chooseFile": "Choose file",
@@ -230,7 +234,7 @@
         "unsupportedFormat": "Unsupported format: {{name}}. Upload a PDF, DOCX, TXT, MD or RTF.",
         "tooLarge": "File too large: {{name}}. Max {{max}} MB.",
         "lockedSetup": "Didactic setup confirmed: to change objectives, unlock it first.",
-        "saveCourseFirst": "Save the course first to use AI generation."
+        "saveCourseFirst": "Save the course as draft first to use AI generation from a document."
       },
       "preview": {
         "title": "AI proposal preview",
