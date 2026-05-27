@@ -154,6 +154,7 @@
     "wizard": {
       "continueToDidactic": "Continue to Didactic setup",
       "confirmDidacticAndContinue": "Confirm and continue",
+      "backToDidactic": "Back to Didactic setup",
       "continueToDocuments": "Continue to Documents",
       "continueToArchitecture": "Continue to Architecture",
       "continueToLessonsStructure": "Continue to Lessons structure",
@@ -193,6 +194,7 @@
     "tabs": {
       "base": "Basic information",
       "didactic": "Didactic framing",
+      "objectives": "Objectives and Key Topics",
       "documents": "Documents",
       "architecture": "Architecture",
       "lessonsStructure": "Lesson structure",
@@ -208,7 +210,38 @@
       "keywords": "Key topics",
       "documents": "Reference documents",
       "sizing": "Sizing",
-      "architecture": "Course architecture"
+      "architecture": "Course architecture",
+      "objectivesAndTopics": {
+        "title": "Objectives and Key Topics",
+        "subtitle": "Define the course learning objectives and key topics covered. You can fill them in manually or have the AI generate them starting from a reference document (syllabus, handout, programme)."
+      }
+    },
+    "objectivesAI": {
+      "title": "Generate with AI from document",
+      "description": "Upload a PDF, DOCX or text file (e.g. course syllabus or programme) and the AI will propose learning objectives and key topics consistent with the course parameters (language, EQF level, target audience, content depth). You can edit the proposal before applying it.",
+      "fileDropzoneCaption": "Drag a file here or click to select",
+      "formatsHint": "PDF, DOCX, TXT, MD, RTF · max {{max}} MB",
+      "chooseFile": "Choose file",
+      "removeFile": "Remove file",
+      "generateButton": "Generate with AI",
+      "generating": "Generating…",
+      "errors": {
+        "unsupportedFormat": "Unsupported format: {{name}}. Upload a PDF, DOCX, TXT, MD or RTF.",
+        "tooLarge": "File too large: {{name}}. Max {{max}} MB.",
+        "lockedSetup": "Didactic setup confirmed: to change objectives, unlock it first.",
+        "saveCourseFirst": "Save the course first to use AI generation."
+      },
+      "preview": {
+        "title": "AI proposal preview",
+        "description": "Compare current values with the AI-generated proposal. You can edit the proposal before applying.",
+        "currentLabel": "Current",
+        "generatedLabel": "AI generated",
+        "objectivesLabel": "Course objectives",
+        "topicsLabel": "Key topics",
+        "noCurrentTopics": "No current topics.",
+        "apply": "Apply changes",
+        "cancel": "Cancel"
+      }
     },
     "fields": {
       "title": "Title",

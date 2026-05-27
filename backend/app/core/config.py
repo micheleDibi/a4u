@@ -73,6 +73,13 @@ class Settings(BaseSettings):
     openai_translate_batch_size: int = 40
     openai_summarize_model: str = "gpt-4o-mini"
     openai_summarize_max_tokens: int = 8000
+    # Generazione AI di obiettivi corso + argomenti chiave da un
+    # documento di riferimento caricato dall'utente (tab "Obiettivi e
+    # Argomenti chiave"). Stesso modello del summarize (sufficiente per
+    # un output strutturato breve). Max tokens basso: l'output e' una
+    # stringa breve + lista 5-15 elementi.
+    openai_objectives_model: str = "gpt-4o-mini"
+    openai_objectives_max_tokens: int = 4000
     openai_modules_lessons_model: str = "gpt-5.5"
     openai_architecture_max_tokens: int = 8000
     # Reasoning effort: vedi `.env.example` per spiegazione + valori validi.

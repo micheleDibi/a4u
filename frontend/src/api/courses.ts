@@ -922,6 +922,36 @@ export const coursesApi = {
       await apiClient.delete(`${base(orgId)}/${courseId}/documents/${docId}`);
     },
   },
+  objectives: {
+    /**
+     * Genera proposta di `objectives` + `argomenti_chiave` a partire da
+     * un documento di riferimento caricato dall'utente. Il file e'
+     * one-shot temporaneo: NON viene persistito come documento del
+     * corso. La risposta NON modifica il corso — l'utente conferma
+     * esplicitamente in un dialog di preview prima di applicare.
+     */
+    generateFromFile: async (
+      orgId: string,
+      courseId: string,
+      file: File,
+    ): Promise<{ objectives: string; argomenti_chiave: string[] }> => {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await apiClient.post<{
+        objectives: string;
+        argomenti_chiave: string[];
+      }>(
+        `${base(orgId)}/${courseId}/objectives/generate-from-file`,
+        form,
+        {
+          headers: { "Content-Type": "multipart/form-data" },
+          // L'AI puo' richiedere 10-30s per documenti grandi.
+          timeout: 180_000,
+        },
+      );
+      return res.data;
+    },
+  },
   architecture: {
     generate: async (
       orgId: string,

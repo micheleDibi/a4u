@@ -38,7 +38,13 @@ import { useAuth } from "@/auth/AuthContext";
 import { useHasPermission } from "@/auth/PermissionGate";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -83,6 +89,8 @@ import { CourseLessonSlidesView } from "./components/CourseLessonSlidesView";
 import { CourseLessonSpeechView } from "./components/CourseLessonSpeechView";
 import { CourseLessonVideoView } from "./components/CourseLessonVideoView";
 import { CourseLessonAvatarVideoView } from "./components/CourseLessonAvatarVideoView";
+import { CourseObjectivesAIGenerator } from "./components/CourseObjectivesAIGenerator";
+import { CourseObjectivesAIPreviewDialog } from "./components/CourseObjectivesAIPreviewDialog";
 import { CourseStatusBadge } from "./components/CourseStatusBadge";
 import { GenerateArchitectureDialog } from "./components/GenerateArchitectureDialog";
 import { KeywordTagsInput } from "./components/KeywordTagsInput";
@@ -302,6 +310,7 @@ export default function CourseEditorPage({ mode }: Props) {
   const TAB_ORDER = [
     "base",
     "didactic",
+    "objectives",
     "documents",
     "architecture",
     "lessons-structure",
@@ -347,6 +356,14 @@ export default function CourseEditorPage({ mode }: Props) {
 
   const defaultLang = i18n.resolvedLanguage?.split("-")[0] || "it";
   const [draft, setDraft] = useState<DraftState | null>(null);
+  // Dialog di preview per la generazione AI di obiettivi + argomenti
+  // chiave (tab "Obiettivi e Argomenti chiave"). Aperto quando l'utente
+  // ha generato una proposta dal documento caricato.
+  const [aiPreviewOpen, setAiPreviewOpen] = useState(false);
+  const [aiProposal, setAiProposal] = useState<{
+    objectives: string;
+    argomenti_chiave: string[];
+  } | null>(null);
   // Tracks the saved server-state used as baseline for diffing in auto-save.
   const baselineRef = useRef<DraftState | null>(null);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -697,6 +714,9 @@ export default function CourseEditorPage({ mode }: Props) {
           <TabsTrigger value="didactic">
             {t("courses.tabs.didactic")}
           </TabsTrigger>
+          <TabsTrigger value="objectives">
+            {t("courses.tabs.objectives")}
+          </TabsTrigger>
           {mode === "edit" && setupLocked && (
             <TabsTrigger value="documents">
               {t("courses.tabs.documents")}
@@ -849,32 +869,9 @@ export default function CourseEditorPage({ mode }: Props) {
                   maxLength={200}
                 />
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="course-objectives">
-                  {t("courses.fields.objectives")}
-                </Label>
-                <Textarea
-                  id="course-objectives"
-                  rows={4}
-                  value={draft.objectives}
-                  onChange={(e) =>
-                    setDraft({ ...draft, objectives: e.target.value })
-                  }
-                  disabled={readOnly}
-                  placeholder={t("courses.fields.objectivesPlaceholder")}
-                />
-              </div>
-              {/* Argomenti chiave — direttamente sotto Obiettivi */}
-              <div className="space-y-1.5">
-                <Label>{t("courses.sections.keywords")}</Label>
-                <KeywordTagsInput
-                  value={draft.argomenti_chiave}
-                  onChange={(v) =>
-                    setDraft({ ...draft, argomenti_chiave: v })
-                  }
-                  disabled={readOnly}
-                />
-              </div>
+              {/* Obiettivi e Argomenti chiave: spostati nella tab dedicata
+                  "Obiettivi e Argomenti chiave" (terza tab). Includono
+                  anche la generazione AI da documento. */}
               {/* Categoria — spostata dall'Inquadramento */}
               <div className="space-y-1.5">
                 <Label>{t("courses.taxonomies.categoria")}</Label>
@@ -1274,6 +1271,101 @@ export default function CourseEditorPage({ mode }: Props) {
                   )}
                 </Button>
               )}
+            </div>
+          )}
+        </TabsContent>
+
+        {/* Tab — Obiettivi e Argomenti chiave (sempre visibile, gestita
+            dal lock didattico server-side come per "base"/"didactic") */}
+        <TabsContent value="objectives" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>
+                {t("courses.sections.objectivesAndTopics.title")}
+              </CardTitle>
+              <CardDescription>
+                {t("courses.sections.objectivesAndTopics.subtitle")}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="course-objectives-tab">
+                  {t("courses.fields.objectives")}
+                </Label>
+                <Textarea
+                  id="course-objectives-tab"
+                  rows={6}
+                  value={draft.objectives}
+                  onChange={(e) =>
+                    setDraft({ ...draft, objectives: e.target.value })
+                  }
+                  disabled={readOnly}
+                  placeholder={t("courses.fields.objectivesPlaceholder")}
+                  maxLength={8000}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>{t("courses.sections.keywords")}</Label>
+                <KeywordTagsInput
+                  value={draft.argomenti_chiave}
+                  onChange={(v) =>
+                    setDraft({ ...draft, argomenti_chiave: v })
+                  }
+                  disabled={readOnly}
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          <CourseObjectivesAIGenerator
+            orgId={orgId}
+            courseId={course?.id ?? null}
+            disabled={readOnly}
+            onGenerated={(data) => {
+              setAiProposal(data);
+              setAiPreviewOpen(true);
+            }}
+          />
+
+          <CourseObjectivesAIPreviewDialog
+            open={aiPreviewOpen}
+            onOpenChange={setAiPreviewOpen}
+            current={{
+              objectives: draft.objectives,
+              argomenti_chiave: draft.argomenti_chiave,
+            }}
+            proposed={aiProposal}
+            onApply={(next) => {
+              setDraft({
+                ...draft,
+                objectives: next.objectives,
+                argomenti_chiave: next.argomenti_chiave,
+              });
+            }}
+          />
+
+          {mode === "create" && (
+            <div className="flex justify-end">
+              <Button
+                size="lg"
+                variant="outline"
+                onClick={() => setActiveTab("didactic")}
+              >
+                <ArrowLeft className="size-4" />
+                {t("courses.wizard.backToDidactic")}
+              </Button>
+            </div>
+          )}
+          {mode === "edit" && course && setupLocked && (
+            <div className="flex justify-end">
+              <Button
+                size="lg"
+                variant="outline"
+                onClick={() => setActiveTab("documents")}
+              >
+                {t("courses.wizard.continueToDocuments")}
+                <ArrowRight className="size-4" />
+              </Button>
             </div>
           )}
         </TabsContent>

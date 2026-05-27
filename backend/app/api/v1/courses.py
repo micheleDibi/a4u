@@ -634,6 +634,189 @@ async def delete_document(
 
 
 # ---------------------------------------------------------------------------
+# Generazione AI di obiettivi corso + argomenti chiave da un documento
+# di riferimento caricato dall'utente (one-shot, no persistenza file).
+# ---------------------------------------------------------------------------
+
+
+class CourseObjectivesGenerateOut(BaseModel):
+    objectives: str
+    argomenti_chiave: list[str]
+
+
+@router.post(
+    "/{course_id}/objectives/generate-from-file",
+    response_model=CourseObjectivesGenerateOut,
+)
+async def generate_objectives_from_file(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    file: Annotated[UploadFile, File(...)],
+    _=require(P.COURSE_EDIT),
+) -> CourseObjectivesGenerateOut:
+    """Genera obiettivi corso + argomenti chiave a partire da un
+    documento di riferimento caricato dall'utente.
+
+    Il file e' processato in modalita' ONE-SHOT: salvato in tmp,
+    estratto testo, eliminato in `finally`. NON viene persistito come
+    `CourseDocument`. NON modifica il corso: la risposta serve al FE
+    per popolare un dialog di preview, l'utente conferma esplicitamente.
+
+    Errori:
+    - 400 `setup_locked` se `didactic_setup_confirmed_at` valorizzato
+    - 413 `document_too_large` se file > `course_document_max_mb`
+    - 415 `invalid_document_mime` se MIME non supportato
+    - 422 `document_extraction_failed` se file corrotto/criptato
+    - 502 `openai_error` su errore del servizio AI
+    """
+    import tempfile
+    from pathlib import Path
+
+    from app.core.errors import ValidationAppError
+    from app.models.language import Language
+    from app.services import file_service as fs
+    from app.services.course_architecture_service import _term_label
+    from app.services.document_extraction_service import (
+        DocumentExtractionError,
+        extract_text,
+    )
+    from app.services.openai_course_objectives_service import (
+        OpenAICourseObjectivesError,
+        generate_objectives_and_topics,
+    )
+
+    await _ensure_org(db, org_id)
+    granted = await resolve_permissions(db, user=current, organization_id=org_id)
+    course = await course_service.get_course(
+        db,
+        organization_id=org_id,
+        course_id=course_id,
+        current_user=current,
+        granted_permissions=granted,
+    )
+
+    # Lock didattico: rifiuta se setup confermato (parita' con
+    # `update_course` linee 439-459).
+    if course.didactic_setup_confirmed_at is not None:
+        raise ConflictError(
+            "Setup didattico confermato: i parametri non sono piu' "
+            "modificabili. Sblocca il setup prima di generare nuovi "
+            "obiettivi.",
+            code="setup_locked",
+        )
+
+    # Validazione file: stesso whitelist di upload documenti.
+    mime = (file.content_type or "").lower()
+    if mime not in fs.ALLOWED_DOCUMENT_MIME_TYPES:
+        raise ValidationAppError(
+            f"Tipo documento non consentito: {mime or 'sconosciuto'}",
+            code="invalid_document_mime",
+        )
+    settings = get_settings()
+    raw = await file.read()
+    if len(raw) == 0:
+        raise ValidationAppError("File vuoto.", code="empty_file")
+    max_bytes = settings.course_document_max_mb * 1024 * 1024
+    if len(raw) > max_bytes:
+        raise ValidationAppError(
+            f"Documento troppo grande (max {settings.course_document_max_mb}MB).",
+            code="document_too_large",
+        )
+
+    # Salva tmp file (suffisso giusto per estrazione corretta).
+    suffix = fs.ALLOWED_DOCUMENT_MIME_TYPES[mime]
+    tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
+    tmp_path = Path(tmp.name)
+    try:
+        tmp.write(raw)
+        tmp.close()
+
+        # Estrazione testo (riusa pipeline `document_extraction_service`).
+        try:
+            text, _orig_chars = await extract_text(tmp_path, mime)
+        except DocumentExtractionError as exc:
+            raise ValidationAppError(
+                str(exc), code="document_extraction_failed"
+            ) from exc
+
+        # Costruisci course_context: titolo, lingua, tassonomie, CFU.
+        lang_row = await db.get(Language, course.language_code)
+        lang_label = (
+            f"{course.language_code} ({lang_row.name_native})"
+            if lang_row is not None
+            else course.language_code
+        )
+        context_lines = [
+            f"Titolo del corso: {course.title}",
+            f"Lingua del corso: {lang_label}",
+            f"CFU: {course.cfu}",
+            f"Numero moduli: {course.modules_count}",
+            f"Lezioni per modulo: {course.lessons_per_module}",
+            f"Durata lezione (min): {course.lesson_duration_minutes}",
+        ]
+        if course.assessment_lesson_enabled:
+            context_lines.append(
+                "Verifica delle competenze finale: SI (ultima lezione di "
+                "ogni modulo e' una lezione di assessment)."
+            )
+        # Tassonomie didattiche.
+        tax_pairs = [
+            ("Categoria", course.categoria),
+            ("Destinatari", course.destinatari),
+            ("Livello EQF", course.livello_eqf),
+            ("Livello di conoscenza", course.livello_conoscenza),
+            ("Dimensione pubblico", course.dimensione_pubblico),
+            ("Ruolo del docente", course.ruolo_docente),
+            ("Stile di insegnamento", course.stile_insegnamento),
+            ("Profondita' contenuto", course.profondita_contenuto),
+        ]
+        for label, term in tax_pairs:
+            if term is None:
+                continue
+            context_lines.append(
+                f"{label}: {_term_label(term, course.language_code)}"
+            )
+        course_context = "\n".join(context_lines)
+
+        try:
+            output, _usage = await generate_objectives_and_topics(
+                language_code=course.language_code,
+                course_context=course_context,
+                document_text=text,
+                source_filename=file.filename or "documento.pdf",
+            )
+        except OpenAINotConfiguredError as exc:
+            raise ConflictError(
+                "Servizio AI non configurato (OPENAI_API_KEY mancante).",
+                code="openai_not_configured",
+            ) from exc
+        except OpenAICourseObjectivesError as exc:
+            # Errore OpenAI / parsing / schema. Rilanciamo come 502.
+            from fastapi import HTTPException
+
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail={
+                    "code": "openai_error",
+                    "message": exc.message,
+                },
+            ) from exc
+
+        return CourseObjectivesGenerateOut(
+            objectives=output.objectives,
+            argomenti_chiave=output.argomenti_chiave,
+        )
+    finally:
+        # Cleanup tmp file (best-effort).
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+# ---------------------------------------------------------------------------
 # Architettura corso (Fase 1 della pipeline AI)
 # ---------------------------------------------------------------------------
 

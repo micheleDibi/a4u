@@ -154,6 +154,7 @@
     "wizard": {
       "continueToDidactic": "Continua a Inquadramento didattico",
       "confirmDidacticAndContinue": "Conferma e continua",
+      "backToDidactic": "Torna a Inquadramento didattico",
       "continueToDocuments": "Continua a Documenti",
       "continueToArchitecture": "Continua ad Architettura",
       "continueToLessonsStructure": "Continua a Struttura lezioni",
@@ -193,6 +194,7 @@
     "tabs": {
       "base": "Informazioni di base",
       "didactic": "Inquadramento didattico",
+      "objectives": "Obiettivi e Argomenti chiave",
       "documents": "Documenti",
       "architecture": "Architettura",
       "lessonsStructure": "Struttura lezioni",
@@ -208,7 +210,38 @@
       "keywords": "Argomenti chiave",
       "documents": "Documenti di riferimento",
       "sizing": "Dimensionamento",
-      "architecture": "Architettura del corso"
+      "architecture": "Architettura del corso",
+      "objectivesAndTopics": {
+        "title": "Obiettivi e Argomenti chiave",
+        "subtitle": "Definisci gli obiettivi formativi del corso e gli argomenti chiave trattati. Puoi compilarli manualmente o farli generare dall'AI partendo da un documento di riferimento (sillabo, dispensa, programma)."
+      }
+    },
+    "objectivesAI": {
+      "title": "Genera con AI da documento",
+      "description": "Carica un PDF, DOCX o file di testo (es. sillabo o programma del corso) e l'AI proporra' obiettivi formativi e argomenti chiave coerenti con i parametri del corso (lingua, livello EQF, destinatari, profondita' contenuto). Potrai modificare la proposta prima di applicarla.",
+      "fileDropzoneCaption": "Trascina un file qui o clicca per selezionarlo",
+      "formatsHint": "PDF, DOCX, TXT, MD, RTF · max {{max}} MB",
+      "chooseFile": "Scegli file",
+      "removeFile": "Rimuovi file",
+      "generateButton": "Genera con AI",
+      "generating": "Generazione in corso…",
+      "errors": {
+        "unsupportedFormat": "Formato non supportato: {{name}}. Carica un PDF, DOCX, TXT, MD o RTF.",
+        "tooLarge": "File troppo grande: {{name}}. Max {{max}} MB.",
+        "lockedSetup": "Setup didattico confermato: per modificare gli obiettivi, sbloccalo prima.",
+        "saveCourseFirst": "Salva prima il corso per usare la generazione AI."
+      },
+      "preview": {
+        "title": "Anteprima proposta AI",
+        "description": "Confronta i valori attuali con la proposta generata dall'AI. Puoi modificare la proposta prima di applicarla.",
+        "currentLabel": "Attuale",
+        "generatedLabel": "Generato dall'AI",
+        "objectivesLabel": "Obiettivi del corso",
+        "topicsLabel": "Argomenti chiave",
+        "noCurrentTopics": "Nessun argomento attuale.",
+        "apply": "Applica modifiche",
+        "cancel": "Annulla"
+      }
     },
     "fields": {
       "title": "Titolo",
