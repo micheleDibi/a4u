@@ -61,7 +61,10 @@ import { ApprovalBadge } from "@/components/shared/ApprovalBadge";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { useSetNovaContext } from "@/contexts/NovaContext";
 import { useLanguages } from "@/hooks/useLanguages";
-import { useTaxonomyTermsBulk } from "@/hooks/useTaxonomyTerms";
+import {
+  useTaxonomyTerms,
+  useTaxonomyTermsBulk,
+} from "@/hooks/useTaxonomyTerms";
 import type { TaxonomyType } from "@/api/courseTaxonomy";
 
 // Tutte le tassonomie che la pagina monta in `<TaxonomyTermSelect>`.
@@ -105,6 +108,9 @@ interface DraftState {
   language_code: string;
   cfu: number;
   argomenti_chiave: string[];
+  // Nome del corso di laurea (testo libero opzionale). Visibile in UI
+  // solo quando il livello EQF e' Laurea triennale o Laurea Magistrale.
+  corso_di_laurea: string;
   assignee_user_id: string;
   taxonomies: TaxonomyAssignmentsInput;
 }
@@ -116,6 +122,7 @@ function emptyDraft(currentUserId: string, defaultLang: string): DraftState {
     language_code: defaultLang,
     cfu: 6,
     argomenti_chiave: [],
+    corso_di_laurea: "",
     assignee_user_id: currentUserId,
     taxonomies: {
       categoria: null,
@@ -137,6 +144,7 @@ function fromCourse(course: CourseOut): DraftState {
     language_code: course.language_code,
     cfu: course.cfu,
     argomenti_chiave: [...course.argomenti_chiave],
+    corso_di_laurea: course.corso_di_laurea ?? "",
     assignee_user_id: course.assignee.id,
     taxonomies: {
       categoria: course.categoria?.id ?? null,
@@ -161,6 +169,7 @@ function buildUpdatePayload(
     language_code: draft.language_code,
     cfu: draft.cfu,
     argomenti_chiave: draft.argomenti_chiave,
+    corso_di_laurea: draft.corso_di_laurea,
     taxonomies: draft.taxonomies,
   };
   return {
@@ -292,6 +301,19 @@ export default function CourseEditorPage({ mode }: Props) {
   // input dei parametri sono read-only finché un creator/org_admin non
   // chiama `unlock`. Il lock viene applicato anche server-side.
   const setupLocked = !!course?.didactic_setup_confirmed_at;
+
+  // Termini EQF (gia' caricati eager via useTaxonomyTermsBulk: hit cache).
+  // Servono per identificare lo slug del termine selezionato e mostrare
+  // il campo opzionale "Corso di Laurea" solo per Laurea triennale o
+  // Laurea Magistrale.
+  const eqfTermsQuery = useTaxonomyTerms("eqf_level");
+  const eqfTermBySlug = useMemo(() => {
+    const map = new Map<string, string>(); // id -> slug
+    for (const term of eqfTermsQuery.data ?? []) {
+      map.set(term.id, term.slug);
+    }
+    return map;
+  }, [eqfTermsQuery.data]);
   // Solo creator / org_admin / platform_admin possono sbloccare il setup.
   const myRoleCode = me?.organizations.find(
     (o) => o.organization_id === orgId,
@@ -578,6 +600,7 @@ export default function CourseEditorPage({ mode }: Props) {
         language_code: draft.language_code,
         cfu: draft.cfu,
         argomenti_chiave: draft.argomenti_chiave,
+        corso_di_laurea: draft.corso_di_laurea.trim() || null,
         assignee_user_id: draft.assignee_user_id,
         taxonomies: draft.taxonomies,
       };
@@ -1125,6 +1148,43 @@ export default function CourseEditorPage({ mode }: Props) {
                   }
                   disabled={readOnly}
                 />
+                {/* Campo opzionale "Corso di Laurea": visibile solo se
+                    il livello EQF selezionato e' Laurea triennale o
+                    Laurea Magistrale. */}
+                {(() => {
+                  const slug = draft.taxonomies.livello_eqf
+                    ? eqfTermBySlug.get(draft.taxonomies.livello_eqf)
+                    : undefined;
+                  const isLaurea =
+                    slug === "eqf_6_bachelor" ||
+                    slug === "eqf_7_master_degree";
+                  if (!isLaurea) return null;
+                  return (
+                    <div className="space-y-1.5 pt-2">
+                      <Label htmlFor="course-corso-di-laurea">
+                        {t("courses.fields.corsoDiLaurea")}
+                        <span className="ms-1 text-xs font-normal text-muted-foreground">
+                          {t("courses.fields.optional")}
+                        </span>
+                      </Label>
+                      <Input
+                        id="course-corso-di-laurea"
+                        value={draft.corso_di_laurea}
+                        onChange={(e) =>
+                          setDraft({
+                            ...draft,
+                            corso_di_laurea: e.target.value,
+                          })
+                        }
+                        disabled={readOnly}
+                        placeholder={t(
+                          "courses.fields.corsoDiLaureaPlaceholder",
+                        )}
+                        maxLength={200}
+                      />
+                    </div>
+                  );
+                })()}
               </div>
               <div className="space-y-1.5">
                 <Label>{t("courses.taxonomies.livelloConoscenza")}</Label>

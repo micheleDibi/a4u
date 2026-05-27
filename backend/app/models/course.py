@@ -169,6 +169,14 @@ class Course(UUIDPKMixin, TimestampMixin, Base):
         JSONB, nullable=False, default=list, server_default="[]"
     )
 
+    # Nome del corso di laurea (es. "Informatica", "Ingegneria Gestionale").
+    # Campo libero opzionale, mostrato dal FE solo quando il livello EQF
+    # selezionato e' Laurea triennale (eqf_6_bachelor) o Laurea Magistrale
+    # (eqf_7_master_degree). Migration 0033.
+    corso_di_laurea: Mapped[str | None] = mapped_column(
+        String(200), nullable=True
+    )
+
     # Snapshot dei parametri organizzazione al momento della creazione.
     # Immutabili dopo la creazione: cambi a OrganizationCourseSettings non
     # si propagano retroattivamente ai corsi esistenti.

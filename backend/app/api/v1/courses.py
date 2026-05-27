@@ -756,6 +756,10 @@ async def generate_objectives_from_file(
             f"Lezioni per modulo: {course.lessons_per_module}",
             f"Durata lezione (min): {course.lesson_duration_minutes}",
         ]
+        if course.corso_di_laurea:
+            context_lines.append(
+                f"Corso di Laurea: {course.corso_di_laurea}"
+            )
         if course.assessment_lesson_enabled:
             context_lines.append(
                 "Verifica delle competenze finale: SI (ultima lezione di "

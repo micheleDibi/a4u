@@ -657,6 +657,9 @@ export interface CourseOut {
   // Override TTS per i video lezione (Fase 6 §9). Null = usa language_code.
   video_language_code: string | null;
   argomenti_chiave: string[];
+  /** Testo libero opzionale (es. "Informatica"). Popolato solo quando
+   * il livello EQF e' Laurea triennale o Laurea Magistrale. */
+  corso_di_laurea: string | null;
   cfu: number;
   modules_count: number;
   lessons_per_module: number;
@@ -705,6 +708,7 @@ export interface CourseCreateInput {
   language_code: string;
   cfu: number;
   argomenti_chiave?: string[];
+  corso_di_laurea?: string | null;
   assignee_user_id?: string | null;
   taxonomies?: TaxonomyAssignmentsInput;
 }
@@ -717,6 +721,8 @@ export interface CourseUpdateInput {
   video_language_code?: string | null;
   cfu?: number;
   argomenti_chiave?: string[];
+  /** Testo libero opzionale; "" o null azzera lato server. */
+  corso_di_laurea?: string | null;
   taxonomies?: TaxonomyAssignmentsInput;
   status?: CourseStatus;
 }

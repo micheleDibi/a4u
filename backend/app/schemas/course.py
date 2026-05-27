@@ -145,6 +145,11 @@ class CourseOut(ORMModel):
     # Quando valorizzato, deve essere in XTTS_SUPPORTED_LANGUAGES.
     video_language_code: str | None = None
     argomenti_chiave: list[str] = Field(default_factory=list)
+    # Testo libero opzionale per il nome del corso di laurea
+    # (es. "Informatica", "Ingegneria Gestionale"). Mostrato dal FE
+    # solo quando il livello EQF e' Laurea triennale (eqf_6_bachelor)
+    # o Laurea Magistrale (eqf_7_master_degree).
+    corso_di_laurea: str | None = None
     cfu: int
     modules_count: int
     lessons_per_module: int
@@ -195,6 +200,7 @@ class CourseCreateInput(BaseModel):
     language_code: str = Field(min_length=2, max_length=10)
     cfu: int = Field(ge=1, le=200)
     argomenti_chiave: list[str] = Field(default_factory=list, max_length=30)
+    corso_di_laurea: str | None = Field(default=None, max_length=200)
     assignee_user_id: uuid.UUID | None = None
     taxonomies: TaxonomyAssignments = Field(default_factory=TaxonomyAssignments)
 
@@ -209,6 +215,8 @@ class CourseUpdateInput(BaseModel):
     video_language_code: str | None = Field(default=None, max_length=10)
     cfu: int | None = Field(default=None, ge=1, le=200)
     argomenti_chiave: list[str] | None = Field(default=None, max_length=30)
+    # Stringa vuota "" -> azzera (lato service viene normalizzato a None).
+    corso_di_laurea: str | None = Field(default=None, max_length=200)
     taxonomies: TaxonomyAssignments | None = None
     status: CourseStatus | None = None
 

@@ -379,12 +379,18 @@ async def create_course(
         seen.add(kk)
         cleaned_keywords.append(kk)
 
+    cleaned_corso_di_laurea: str | None = None
+    if isinstance(payload.corso_di_laurea, str):
+        stripped = payload.corso_di_laurea.strip()
+        cleaned_corso_di_laurea = stripped or None
+
     course = Course(
         organization_id=organization_id,
         title=payload.title.strip(),
         objectives=(payload.objectives or "").strip(),
         language_code=payload.language_code,
         argomenti_chiave=cleaned_keywords,
+        corso_di_laurea=cleaned_corso_di_laurea,
         cfu=payload.cfu,
         modules_count=modules_count,
         lessons_per_module=settings.lessons_per_module,
@@ -437,6 +443,17 @@ async def update_course(
     # Lo `status` è gestito dal pipeline AI e non rientra nel lock.
     # Per `assignee_user_id` esiste l'endpoint dedicato `update_assignee`.
     if course.didactic_setup_confirmed_at is not None:
+        # `corso_di_laurea` e' considerato campo di setup (mostrato in
+        # tab "Inquadramento didattico" insieme alle tassonomie): viene
+        # bloccato dopo conferma.
+        new_corso_di_laurea_raw = (
+            payload.corso_di_laurea.strip()
+            if isinstance(payload.corso_di_laurea, str)
+            else None
+        )
+        new_corso_di_laurea = (
+            new_corso_di_laurea_raw or None
+        )
         locked_change = (
             (payload.title is not None and payload.title.strip() != course.title)
             or (
@@ -450,6 +467,10 @@ async def update_course(
             or (payload.cfu is not None and payload.cfu != course.cfu)
             or payload.argomenti_chiave is not None
             or payload.taxonomies is not None
+            or (
+                payload.corso_di_laurea is not None
+                and new_corso_di_laurea != course.corso_di_laurea
+            )
         )
         if locked_change:
             raise ConflictError(
@@ -537,6 +558,17 @@ async def update_course(
             diff["argomenti_chiave"] = True
             course.argomenti_chiave = cleaned
             flag_modified(course, "argomenti_chiave")
+
+    if payload.corso_di_laurea is not None:
+        # Trim + empty-as-null: "" o "   " viene normalizzato a None.
+        stripped = payload.corso_di_laurea.strip()
+        new_val = stripped if stripped else None
+        if new_val != course.corso_di_laurea:
+            diff["corso_di_laurea"] = {
+                "old": course.corso_di_laurea,
+                "new": new_val,
+            }
+            course.corso_di_laurea = new_val
 
     if payload.taxonomies is not None:
         await _validate_all_taxonomies(db, taxonomies=payload.taxonomies)
