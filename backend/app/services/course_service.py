@@ -743,6 +743,67 @@ async def add_document(
     return doc
 
 
+async def add_document_from_bytes(
+    db: AsyncSession,
+    *,
+    course: Course,
+    payload: bytes,
+    filename_original: str,
+    mime_type: str,
+    actor_id: uuid.UUID,
+) -> CourseDocument:
+    """Sibling di `add_document` che riceve bytes invece di un
+    `UploadFile`. Usato per importare paper scientifici scaricati da
+    URL esterno (PDF da OpenAlex) o per persistere file metadata `.md`
+    generati da paper non-OA. Stesso flusso: salva su disco -> crea
+    `CourseDocument` con `summary_status='pending'` -> il worker
+    `course_document_worker` prende in carico.
+    """
+    public_path, filename_stored, size_bytes = (
+        await file_service.save_document_from_bytes(
+            payload,
+            subdir=f"courses/{course.id}",
+            mime_type=mime_type,
+        )
+    )
+    doc = CourseDocument(
+        course_id=course.id,
+        filename_original=(filename_original or "documento")[:300],
+        filename_stored=filename_stored,
+        file_path=public_path,
+        mime_type=mime_type or "application/octet-stream",
+        size_bytes=size_bytes,
+        uploaded_by_user_id=actor_id,
+        summary_status="pending",
+    )
+    db.add(doc)
+    try:
+        await db.flush()
+    except IntegrityError as exc:
+        await db.rollback()
+        await file_service.delete_upload(public_path)
+        raise ConflictError(
+            "Conflitto nel salvataggio del documento.",
+            code="course_document_conflict",
+        ) from exc
+    await write_audit(
+        db,
+        action="course.document.add_from_bytes",
+        actor_user_id=actor_id,
+        organization_id=course.organization_id,
+        target_type="course_document",
+        target_id=str(doc.id),
+        metadata={
+            "course_id": str(course.id),
+            "filename_original": doc.filename_original,
+            "size_bytes": doc.size_bytes,
+            "mime_type": doc.mime_type,
+            "source": "external_import",
+        },
+    )
+    return doc
+
+
 async def reprocess_document(
     db: AsyncSession,
     *,

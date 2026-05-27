@@ -727,6 +727,81 @@ export interface CourseUpdateInput {
   status?: CourseStatus;
 }
 
+// ---------------------------------------------------------------------
+// Paper scientifici (ricerca multi-source via OpenAlex + Semantic
+// Scholar + Crossref). Vedi `coursesApi.papers.*`.
+// ---------------------------------------------------------------------
+
+export type PaperType = "article" | "preprint" | "review" | "other";
+
+export interface PaperSearchFilters {
+  year_from?: number | null;
+  year_to?: number | null;
+  is_oa?: boolean | null;
+  min_citations?: number | null;
+  author_name?: string | null;
+  venue_name?: string | null;
+  work_type?: PaperType | null;
+}
+
+export interface PaperSearchInput {
+  query?: string;
+  filters?: PaperSearchFilters;
+  cursor?: string | null;
+  per_page?: number;
+}
+
+export interface PaperOut {
+  /** OpenAlex Work ID (URL completo "https://openalex.org/W..."). */
+  id: string;
+  doi: string | null;
+  title: string;
+  abstract: string | null;
+  authors: string[];
+  year: number | null;
+  journal: string | null;
+  citations: number;
+  is_oa: boolean;
+  oa_pdf_url: string | null;
+  doi_url: string | null;
+  work_type: PaperType | null;
+  keywords: string[];
+  /** Relevance score normalizzato 0..1 (OpenAlex `relevance_score`
+   * compresso via x/(x+5)). Null se non calcolato. */
+  relevance_score: number | null;
+  /** Popolato on-demand da Semantic Scholar. */
+  tldr: string | null;
+  /** Popolato on-demand da Crossref. */
+  subjects: string[];
+  references_count: number | null;
+}
+
+export interface PaperSearchResultsOut {
+  results: PaperOut[];
+  next_cursor: string | null;
+  total_count: number;
+}
+
+export interface PaperAISummaryOut {
+  short_summary: string;
+  technical_summary: string;
+  keywords: string[];
+  study_limitations: string;
+}
+
+export interface PaperImportItemResultOut {
+  document_id: string;
+  filename: string;
+  mode: "pdf" | "metadata";
+  paper_id: string;
+}
+
+export interface PaperImportResultOut {
+  imported: PaperImportItemResultOut[];
+  pdf_count: number;
+  metadata_count: number;
+}
+
 export interface CourseListParams {
   page?: number;
   page_size?: number;
@@ -926,6 +1001,59 @@ export const coursesApi = {
       docId: string
     ): Promise<void> => {
       await apiClient.delete(`${base(orgId)}/${courseId}/documents/${docId}`);
+    },
+  },
+  papers: {
+    /**
+     * Cerca paper scientifici via OpenAlex (primary). Cursor-based
+     * pagination. NON include enrichment (chiamato solo on-demand
+     * dagli endpoint `aiSummary` e `import`).
+     */
+    search: async (
+      orgId: string,
+      courseId: string,
+      payload: PaperSearchInput,
+    ): Promise<PaperSearchResultsOut> => {
+      const res = await apiClient.post<PaperSearchResultsOut>(
+        `${base(orgId)}/${courseId}/papers/search`,
+        payload,
+        { timeout: 60_000 },
+      );
+      return res.data;
+    },
+    /**
+     * Riassunto AI sincrono di un paper (4 sezioni). Esegue
+     * enrichment server-side se il DOI e' presente (Semantic
+     * Scholar + Crossref in parallelo).
+     */
+    aiSummary: async (
+      orgId: string,
+      courseId: string,
+      paper: PaperOut,
+    ): Promise<PaperAISummaryOut> => {
+      const res = await apiClient.post<PaperAISummaryOut>(
+        `${base(orgId)}/${courseId}/papers/ai-summary`,
+        { paper },
+        { timeout: 180_000 },
+      );
+      return res.data;
+    },
+    /**
+     * Importa N paper come `CourseDocument`. PDF reale se OA,
+     * altrimenti `.md` con metadati. Il worker
+     * `course_document_worker` prendera' in carico l'analisi AI.
+     */
+    importMany: async (
+      orgId: string,
+      courseId: string,
+      papers: PaperOut[],
+    ): Promise<PaperImportResultOut> => {
+      const res = await apiClient.post<PaperImportResultOut>(
+        `${base(orgId)}/${courseId}/papers/import`,
+        { papers },
+        { timeout: 300_000 },
+      );
+      return res.data;
     },
   },
   objectives: {

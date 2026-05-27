@@ -70,6 +70,15 @@ from app.schemas.course_duplication import (
     CourseDuplicationJobCompact,
     CourseDuplicationJobOut,
 )
+from app.schemas.paper_ai_summary import PaperAISummaryOut
+from app.schemas.paper_search import (
+    PaperAISummaryInput,
+    PaperImportInput,
+    PaperImportItemResultOut,
+    PaperImportResultOut,
+    PaperSearchInput,
+    PaperSearchResultsOut,
+)
 from app.services import (
     course_architecture_crud,
     course_architecture_service,
@@ -631,6 +640,232 @@ async def delete_document(
         db, course=course, doc=doc, actor_id=current.id
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ---------------------------------------------------------------------------
+# Ricerca paper scientifici (multi-source: OpenAlex primary + enrichment
+# on-demand da Semantic Scholar / Crossref). Import paper come
+# `CourseDocument` (PDF se OA, altrimenti .md con metadata).
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{course_id}/papers/search",
+    response_model=PaperSearchResultsOut,
+)
+async def search_papers(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    payload: PaperSearchInput,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_EDIT),
+) -> PaperSearchResultsOut:
+    """Ricerca paper scientifici via OpenAlex.
+
+    Errori:
+    - 502 `openalex_error` su errore del provider.
+    """
+    from fastapi import HTTPException
+
+    from app.services.openalex_search_service import (
+        OpenAlexError,
+        search_papers as _search_papers,
+    )
+
+    await _ensure_org(db, org_id)
+    granted = await resolve_permissions(db, user=current, organization_id=org_id)
+    await course_service.get_course(
+        db,
+        organization_id=org_id,
+        course_id=course_id,
+        current_user=current,
+        granted_permissions=granted,
+    )
+    try:
+        results = await _search_papers(
+            query=payload.query,
+            filters=payload.filters,
+            cursor=payload.cursor,
+            per_page=payload.per_page,
+        )
+    except OpenAlexError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={"code": "openalex_error", "message": exc.message},
+        ) from exc
+    return results
+
+
+@router.post(
+    "/{course_id}/papers/ai-summary",
+    response_model=PaperAISummaryOut,
+)
+async def papers_ai_summary(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    payload: PaperAISummaryInput,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_EDIT),
+) -> PaperAISummaryOut:
+    """Genera il riassunto AI di un paper (4 sezioni: short, technical,
+    keywords, study limitations). Sincrono, no persistenza.
+
+    Se il paper ha DOI, esegue enrichment on-demand (Semantic Scholar
+    + Crossref in parallelo) per arricchire il contesto passato
+    all'AI."""
+    from fastapi import HTTPException
+
+    from app.services.openai_paper_summary_service import (
+        OpenAIPaperSummaryError,
+        generate_paper_summary,
+    )
+
+    await _ensure_org(db, org_id)
+    granted = await resolve_permissions(db, user=current, organization_id=org_id)
+    course = await course_service.get_course(
+        db,
+        organization_id=org_id,
+        course_id=course_id,
+        current_user=current,
+        granted_permissions=granted,
+    )
+
+    paper = payload.paper
+
+    # Enrichment on-demand se DOI presente.
+    enriched_abstract = paper.abstract
+    enriched_tldr = paper.tldr
+    enriched_subjects = list(paper.subjects)
+    if paper.doi:
+        from app.services.openalex_client import OpenAlexWork
+        from app.services.paper_enrichment_service import enrich_paper
+
+        # Costruisce un OpenAlexWork "minimale" dal PaperOut per riusare
+        # `enrich_paper`. Solo i campi necessari al merge.
+        synthetic_work = OpenAlexWork(
+            id=paper.id,
+            doi=paper.doi,
+            title=paper.title,
+            abstract=paper.abstract,
+            authors=list(paper.authors),
+            publication_year=paper.year,
+            journal=paper.journal,
+            cited_by_count=paper.citations,
+            is_oa=paper.is_oa,
+            oa_pdf_url=paper.oa_pdf_url,
+            work_type=paper.work_type,
+            keywords=list(paper.keywords),
+            relevance_score=paper.relevance_score,
+            raw={},
+        )
+        enriched = await enrich_paper(synthetic_work)
+        enriched_abstract = enriched.abstract or paper.abstract
+        enriched_tldr = enriched.tldr or paper.tldr
+        if enriched.subjects:
+            enriched_subjects = enriched.subjects
+
+    # Costruisce paper_context per il prompt.
+    paper_lines: list[str] = [f"Titolo: {paper.title}"]
+    if paper.authors:
+        paper_lines.append(f"Autori: {', '.join(paper.authors[:10])}")
+    if paper.year:
+        paper_lines.append(f"Anno: {paper.year}")
+    if paper.journal:
+        paper_lines.append(f"Journal / Venue: {paper.journal}")
+    if paper.work_type:
+        paper_lines.append(f"Tipo: {paper.work_type}")
+    if paper.doi:
+        paper_lines.append(f"DOI: {paper.doi}")
+    if enriched_tldr:
+        paper_lines.append(f"TL;DR (Semantic Scholar): {enriched_tldr}")
+    if enriched_subjects:
+        paper_lines.append(
+            f"Categorie tematiche: {', '.join(enriched_subjects[:10])}"
+        )
+    if enriched_abstract:
+        paper_lines.append("")
+        paper_lines.append("Abstract:")
+        paper_lines.append(enriched_abstract)
+    paper_context = "\n".join(paper_lines)
+
+    course_context = (
+        f"Titolo corso: {course.title}\n"
+        f"Lingua del corso: {course.language_code}"
+    )
+
+    try:
+        output, _usage = await generate_paper_summary(
+            language_code=course.language_code,
+            paper_context=paper_context,
+            course_context=course_context,
+        )
+    except OpenAINotConfiguredError as exc:
+        raise ConflictError(
+            "Servizio AI non configurato (OPENAI_API_KEY mancante).",
+            code="openai_not_configured",
+        ) from exc
+    except OpenAIPaperSummaryError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={"code": "openai_error", "message": exc.message},
+        ) from exc
+    return output
+
+
+@router.post(
+    "/{course_id}/papers/import",
+    response_model=PaperImportResultOut,
+)
+async def papers_import(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    payload: PaperImportInput,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_EDIT),
+) -> PaperImportResultOut:
+    """Importa N paper come `CourseDocument` (.pdf se OA, .md
+    altrimenti). Restituisce la lista dei documenti creati con la
+    modalita' di import (pdf / metadata)."""
+    from app.services.paper_import_service import import_paper
+
+    await _ensure_org(db, org_id)
+    granted = await resolve_permissions(db, user=current, organization_id=org_id)
+    course = await course_service.get_course(
+        db,
+        organization_id=org_id,
+        course_id=course_id,
+        current_user=current,
+        granted_permissions=granted,
+    )
+
+    items: list[PaperImportItemResultOut] = []
+    pdf_count = 0
+    metadata_count = 0
+    for paper in payload.papers:
+        result = await import_paper(
+            db, course=course, paper=paper, actor_id=current.id
+        )
+        if result.mode == "pdf":
+            pdf_count += 1
+        else:
+            metadata_count += 1
+        items.append(
+            PaperImportItemResultOut(
+                document_id=str(result.document.id),
+                filename=result.document.filename_original,
+                mode=result.mode,
+                paper_id=paper.id,
+            )
+        )
+    await db.commit()
+    return PaperImportResultOut(
+        imported=items,
+        pdf_count=pdf_count,
+        metadata_count=metadata_count,
+    )
 
 
 # ---------------------------------------------------------------------------

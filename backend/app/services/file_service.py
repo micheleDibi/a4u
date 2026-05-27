@@ -311,6 +311,55 @@ async def save_upload_document(
     return f"/uploads/{safe_subdir}/{filename}", filename, len(raw)
 
 
+async def save_document_from_bytes(
+    payload: bytes,
+    *,
+    subdir: str,
+    mime_type: str,
+    filename_stem: str | None = None,
+) -> tuple[str, str, int]:
+    """Sibling di `save_upload_document` che riceve bytes invece di un
+    `UploadFile`. Usato per importare paper scientifici scaricati da URL
+    esterno (PDF da OpenAlex) o per generare file metadata `.md` da
+    paper non-OA. Stessa validazione: MIME whitelist + size cap.
+
+    Ritorna `(public_path, stored_filename, size_bytes)`.
+    """
+    settings = get_settings()
+    safe_subdir = _validate_subdir(subdir)
+    mime = (mime_type or "").lower()
+    if mime not in ALLOWED_DOCUMENT_MIME_TYPES:
+        raise ValidationAppError(
+            f"Tipo documento non consentito: {mime or 'sconosciuto'}",
+            code="invalid_document_mime",
+        )
+    if not payload:
+        raise ValidationAppError("Contenuto vuoto.", code="empty_file")
+    max_bytes = settings.course_document_max_mb * 1024 * 1024
+    if len(payload) > max_bytes:
+        raise ValidationAppError(
+            f"Documento troppo grande (max {settings.course_document_max_mb}MB).",
+            code="document_too_large",
+        )
+
+    ext = ALLOWED_DOCUMENT_MIME_TYPES[mime]
+    target_dir = settings.upload_root / safe_subdir
+    target_dir.mkdir(parents=True, exist_ok=True)
+    stem = filename_stem or uuid.uuid4().hex
+    filename = f"{stem}{ext}"
+    target_path = target_dir / filename
+    _ensure_within(settings.upload_root, target_path)
+    target_path.write_bytes(payload)
+    log.info(
+        "file_saved_document_bytes",
+        subdir=safe_subdir,
+        filename=filename,
+        mime=mime,
+        size=len(payload),
+    )
+    return f"/uploads/{safe_subdir}/{filename}", filename, len(payload)
+
+
 async def delete_upload(path: str | None) -> None:
     if not path:
         return

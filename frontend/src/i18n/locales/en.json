@@ -389,6 +389,70 @@
         "message": "You are about to regenerate the summary for \"{{name}}\". New OpenAI tokens will be consumed."
       }
     },
+    "papers": {
+      "section": {
+        "title": "Scientific Papers",
+        "subtitle": "Search academic papers from OpenAlex, Semantic Scholar and Crossref. Import the ones relevant to your course: open-access papers will be downloaded as PDF, the others as metadata cards. In both cases the AI analysis starts automatically."
+      },
+      "filters": {
+        "query": "Keywords",
+        "queryPlaceholder": "E.g. machine learning, diabetic retinopathy, transformers…",
+        "toggle": "Show/Hide filters",
+        "yearFrom": "Year (from)",
+        "yearTo": "Year (to)",
+        "minCitations": "Min citations",
+        "author": "Author",
+        "venue": "Journal / Venue",
+        "type": "Type",
+        "typeAny": "Any",
+        "isOa": "Open Access only",
+        "search": "Search",
+        "resetFilters": "Reset filters"
+      },
+      "results": {
+        "emptyInitial": "Enter keywords or filters and press Search to find scientific papers.",
+        "empty": "No papers found. Try broadening the filters or changing keywords.",
+        "queryRequired": "Enter at least one keyword or filter before searching.",
+        "countWithTotal": "{{shown}} of {{total}} results shown",
+        "loadMore": "Load 20 more"
+      },
+      "card": {
+        "selectPaper": "Select paper",
+        "oaBadge": "Open Access",
+        "nonOaBadge": "Metadata only",
+        "relevance": "Relevance",
+        "relevanceTooltip": "Relevance score for the query: {{pct}}%",
+        "citations_one": "{{count}} citation",
+        "citations_other": "{{count}} citations",
+        "openDoi": "Open DOI",
+        "aiSummary": "AI Summary",
+        "abstractShowMore": "Show more",
+        "abstractShowLess": "Show less",
+        "plusMoreAuthors_one": "+ {{count}} more",
+        "plusMoreAuthors_other": "+ {{count}} more"
+      },
+      "types": {
+        "article": "Article",
+        "preprint": "Preprint",
+        "review": "Review",
+        "other": "Other"
+      },
+      "import": {
+        "button_one": "Import {{count}} selected",
+        "button_other": "Import {{count}} selected",
+        "importing": "Importing…",
+        "successDetail": "{{total}} papers imported ({{pdf}} with PDF, {{metadata}} metadata-only). AI analysis will start automatically in the background."
+      },
+      "aiSummaryDialog": {
+        "title": "Paper AI summary",
+        "generating": "Generating summary (10-30 s)…",
+        "shortSummary": "Short summary",
+        "technicalSummary": "Technical summary",
+        "keywords": "Keywords",
+        "limitations": "Study limitations",
+        "close": "Close"
+      }
+    },
     "generate": {
       "label": "Generate architecture",
       "disabledTooltip": "Available in a future version."

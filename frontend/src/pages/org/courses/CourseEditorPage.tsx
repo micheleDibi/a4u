@@ -86,6 +86,7 @@ import { formatDuration } from "@/lib/formatDuration";
 import { P } from "@/lib/permissions";
 import { CourseArchitectureView } from "./components/CourseArchitectureView";
 import { CourseDocumentUploader } from "./components/CourseDocumentUploader";
+import { CoursePaperSearch } from "./components/CoursePaperSearch";
 import { CourseLessonStructureView } from "./components/CourseLessonStructureView";
 import { CourseLessonContentView } from "./components/CourseLessonContentView";
 import { CourseLessonSlidesView } from "./components/CourseLessonSlidesView";
@@ -1471,6 +1472,11 @@ export default function CourseEditorPage({ mode }: Props) {
                 />
               </CardContent>
             </Card>
+            {/* Sezione ricerca paper scientifici: multi-source
+                (OpenAlex + Semantic Scholar + Crossref). I paper
+                selezionati vengono importati come CourseDocument e
+                analizzati dal pipeline esistente. */}
+            <CoursePaperSearch orgId={orgId} courseId={course.id} />
             <div className="flex justify-end">
               <Button
                 size="lg"

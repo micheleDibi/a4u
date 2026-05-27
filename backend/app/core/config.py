@@ -81,6 +81,21 @@ class Settings(BaseSettings):
     # conteggio token rispetto ai caratteri visibili).
     openai_objectives_model: str = "gpt-4o-mini"
     openai_objectives_max_tokens: int = 8000
+
+    # Ricerca paper scientifici nella tab "Documenti" (multi-source).
+    # OpenAlex e' la primary search, Semantic Scholar e Crossref sono
+    # usati on-demand per arricchire i metadata di singoli paper.
+    # `papers_polite_email` viene messa nel User-Agent come `mailto:` per
+    # entrare nel "polite pool" di tutti e 3 i provider (no rate-limit
+    # aggressivo). Vuota = User-Agent senza mailto.
+    openalex_base_url: str = "https://api.openalex.org"
+    semantic_scholar_base_url: str = "https://api.semanticscholar.org"
+    crossref_base_url: str = "https://api.crossref.org"
+    papers_polite_email: str = ""
+    # Riassunto AI di paper (sincrono, no persistenza). Output: riassunto
+    # breve + tecnico + parole chiave + limiti dello studio.
+    openai_paper_summary_model: str = "gpt-4o-mini"
+    openai_paper_summary_max_tokens: int = 3000
     openai_modules_lessons_model: str = "gpt-5.5"
     openai_architecture_max_tokens: int = 8000
     # Reasoning effort: vedi `.env.example` per spiegazione + valori validi.

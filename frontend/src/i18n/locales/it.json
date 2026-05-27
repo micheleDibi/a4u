@@ -389,6 +389,70 @@
         "message": "Stai per rigenerare il riassunto di \"{{name}}\". Verranno utilizzati nuovi token OpenAI."
       }
     },
+    "papers": {
+      "section": {
+        "title": "Paper Scientifici",
+        "subtitle": "Cerca paper accademici da OpenAlex, Semantic Scholar e Crossref. Importa quelli rilevanti per il corso: i paper open access verranno scaricati come PDF, gli altri come scheda metadati. In entrambi i casi l'analisi AI partirà automaticamente."
+      },
+      "filters": {
+        "query": "Parole chiave",
+        "queryPlaceholder": "Es. machine learning, retinopatia diabetica, transformers…",
+        "toggle": "Mostra/Nascondi filtri",
+        "yearFrom": "Anno (da)",
+        "yearTo": "Anno (a)",
+        "minCitations": "Citazioni minime",
+        "author": "Autore",
+        "venue": "Rivista / Venue",
+        "type": "Tipo",
+        "typeAny": "Qualsiasi",
+        "isOa": "Solo Open Access",
+        "search": "Cerca",
+        "resetFilters": "Reset filtri"
+      },
+      "results": {
+        "emptyInitial": "Inserisci parole chiave o filtri e premi Cerca per trovare paper scientifici.",
+        "empty": "Nessun paper trovato. Prova ad allargare i filtri o cambiare le parole chiave.",
+        "queryRequired": "Inserisci almeno una parola chiave o un filtro prima di cercare.",
+        "countWithTotal": "{{shown}} risultati visualizzati su {{total}} totali",
+        "loadMore": "Carica altri 20"
+      },
+      "card": {
+        "selectPaper": "Seleziona paper",
+        "oaBadge": "Open Access",
+        "nonOaBadge": "Solo metadati",
+        "relevance": "Rilevanza",
+        "relevanceTooltip": "Score di rilevanza per la query: {{pct}}%",
+        "citations_one": "{{count}} citazione",
+        "citations_other": "{{count}} citazioni",
+        "openDoi": "Apri DOI",
+        "aiSummary": "Riassunto AI",
+        "abstractShowMore": "Mostra di più",
+        "abstractShowLess": "Mostra di meno",
+        "plusMoreAuthors_one": "+ {{count}} altro",
+        "plusMoreAuthors_other": "+ {{count}} altri"
+      },
+      "types": {
+        "article": "Articolo",
+        "preprint": "Preprint",
+        "review": "Review",
+        "other": "Altro"
+      },
+      "import": {
+        "button_one": "Importa {{count}} selezionato",
+        "button_other": "Importa {{count}} selezionati",
+        "importing": "Importazione in corso…",
+        "successDetail": "{{total}} paper importati ({{pdf}} con PDF, {{metadata}} solo metadati). L'analisi AI partirà automaticamente in background."
+      },
+      "aiSummaryDialog": {
+        "title": "Riassunto AI del paper",
+        "generating": "Generazione del riassunto in corso (10-30 s)…",
+        "shortSummary": "Riassunto breve",
+        "technicalSummary": "Riassunto tecnico",
+        "keywords": "Parole chiave",
+        "limitations": "Limiti dello studio",
+        "close": "Chiudi"
+      }
+    },
     "generate": {
       "label": "Genera architettura",
       "disabledTooltip": "Disponibile in versione successiva."
