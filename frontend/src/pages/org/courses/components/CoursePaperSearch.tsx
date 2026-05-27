@@ -38,8 +38,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { extractApiError } from "@/lib/errors";
 
-import { PaperAISummaryDialog } from "./PaperAISummaryDialog";
-import { PaperResultCard } from "./PaperResultCard";
+import { PaperResultCard, type SummaryState } from "./PaperResultCard";
 
 interface Props {
   orgId: string;
@@ -82,8 +81,16 @@ export function CoursePaperSearch({ orgId, courseId }: Props) {
   // Multi-select
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  // Dialog riassunto AI
-  const [aiSummaryPaper, setAiSummaryPaper] = useState<PaperOut | null>(null);
+  // Riassunti AI cached per la sessione (non persistiti). La map
+  // sopravvive a "Carica altri" e al toggle expanded, cosi' rigenerare
+  // un riassunto gia' visto e' gratis. Si perde solo a unmount o a una
+  // nuova ricerca primaria.
+  const [summariesById, setSummariesById] = useState<
+    Record<string, SummaryState>
+  >({});
+  const [expandedSummaryIds, setExpandedSummaryIds] = useState<Set<string>>(
+    new Set(),
+  );
 
   const searchMut = useMutation({
     mutationFn: (payload: {
@@ -168,6 +175,47 @@ export function CoursePaperSearch({ orgId, courseId }: Props) {
     importMut.mutate(selectedPapers);
   };
 
+  const onToggleSummary = async (paper: PaperOut) => {
+    const existing = summariesById[paper.id];
+    // Gia' generato: toggla solo la visibilita' (niente nuova chiamata).
+    if (existing?.status === "success") {
+      setExpandedSummaryIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(paper.id)) next.delete(paper.id);
+        else next.add(paper.id);
+        return next;
+      });
+      return;
+    }
+    // Loading in corso: ignora (bottone gia' disabilitato lato card).
+    if (existing?.status === "loading") return;
+
+    // Idle o errore precedente: avvia (o ritenta) generazione.
+    setSummariesById((prev) => ({
+      ...prev,
+      [paper.id]: { status: "loading" },
+    }));
+    setExpandedSummaryIds((prev) => {
+      const next = new Set(prev);
+      next.add(paper.id);
+      return next;
+    });
+    try {
+      const data = await coursesApi.papers.aiSummary(orgId, courseId, paper);
+      setSummariesById((prev) => ({
+        ...prev,
+        [paper.id]: { status: "success", data },
+      }));
+    } catch (err) {
+      const message = extractApiError(err).message;
+      setSummariesById((prev) => ({
+        ...prev,
+        [paper.id]: { status: "error", error: message },
+      }));
+      toast.error(message);
+    }
+  };
+
   const selectedCount = selectedIds.size;
   const isInitialLoading =
     searchMut.isPending && results.length === 0;
@@ -175,8 +223,7 @@ export function CoursePaperSearch({ orgId, courseId }: Props) {
     searchMut.isPending && results.length > 0;
 
   return (
-    <>
-      <Card>
+    <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Microscope className="size-5 text-primary" />
@@ -431,8 +478,10 @@ export function CoursePaperSearch({ orgId, courseId }: Props) {
                     key={p.id}
                     paper={p}
                     selected={selectedIds.has(p.id)}
+                    summary={summariesById[p.id]}
+                    summaryExpanded={expandedSummaryIds.has(p.id)}
                     onToggleSelect={onToggleSelect}
-                    onOpenAISummary={(paper) => setAiSummaryPaper(paper)}
+                    onToggleSummary={onToggleSummary}
                   />
                 ))}
               </div>
@@ -454,19 +503,8 @@ export function CoursePaperSearch({ orgId, courseId }: Props) {
               )}
             </>
           )}
-        </CardContent>
-      </Card>
-
-      <PaperAISummaryDialog
-        open={aiSummaryPaper !== null}
-        onOpenChange={(o) => {
-          if (!o) setAiSummaryPaper(null);
-        }}
-        orgId={orgId}
-        courseId={courseId}
-        paper={aiSummaryPaper}
-      />
-    </>
+      </CardContent>
+    </Card>
   );
 }
 

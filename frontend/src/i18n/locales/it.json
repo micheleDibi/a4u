@@ -443,14 +443,15 @@
         "importing": "Importazione in corso…",
         "successDetail": "{{total}} paper importati ({{pdf}} con PDF, {{metadata}} solo metadati). L'analisi AI partirà automaticamente in background."
       },
-      "aiSummaryDialog": {
-        "title": "Riassunto AI del paper",
-        "generating": "Generazione del riassunto in corso (10-30 s)…",
+      "summary": {
+        "generating": "Generazione…",
+        "show": "Mostra riassunto",
+        "hide": "Nascondi riassunto",
+        "error": "Errore nella generazione",
         "shortSummary": "Riassunto breve",
         "technicalSummary": "Riassunto tecnico",
         "keywords": "Parole chiave",
-        "limitations": "Limiti dello studio",
-        "close": "Chiudi"
+        "limitations": "Limiti dello studio"
       }
     },
     "generate": {

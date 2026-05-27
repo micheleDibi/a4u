@@ -443,14 +443,15 @@
         "importing": "Importing…",
         "successDetail": "{{total}} papers imported ({{pdf}} with PDF, {{metadata}} metadata-only). AI analysis will start automatically in the background."
       },
-      "aiSummaryDialog": {
-        "title": "Paper AI summary",
-        "generating": "Generating summary (10-30 s)…",
+      "summary": {
+        "generating": "Generating…",
+        "show": "Show summary",
+        "hide": "Hide summary",
+        "error": "Generation error",
         "shortSummary": "Short summary",
         "technicalSummary": "Technical summary",
         "keywords": "Keywords",
-        "limitations": "Study limitations",
-        "close": "Close"
+        "limitations": "Study limitations"
       }
     },
     "generate": {

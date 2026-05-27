@@ -1,33 +1,49 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ExternalLink, Quote, Sparkles, Unlock, Lock } from "lucide-react";
+import {
+  AlertTriangle,
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
+  FileText,
+  Loader2,
+  Lock,
+  Microscope,
+  Quote,
+  Sparkles,
+  Tags,
+  Unlock,
+} from "lucide-react";
 
-import type { PaperOut } from "@/api/courses";
+import type { PaperAISummaryOut, PaperOut } from "@/api/courses";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 
+export type SummaryState =
+  | { status: "loading" }
+  | { status: "success"; data: PaperAISummaryOut }
+  | { status: "error"; error: string };
+
 interface Props {
   paper: PaperOut;
   selected: boolean;
+  summary: SummaryState | undefined;
+  summaryExpanded: boolean;
   onToggleSelect: (paperId: string) => void;
-  onOpenAISummary: (paper: PaperOut) => void;
+  onToggleSummary: (paper: PaperOut) => void;
 }
 
 const ABSTRACT_PREVIEW_CHARS = 320;
 
-/**
- * Card di un singolo paper risultato della ricerca. Layout ricco:
- * checkbox seleziona + badge OA / Solo metadata / Relevance / Citations /
- * Type, titolo cliccabile a DOI, autori, anno, journal, abstract
- * collapsible, keywords + subjects come chip, bottoni Riassunto AI + DOI.
- */
 export function PaperResultCard({
   paper,
   selected,
+  summary,
+  summaryExpanded,
   onToggleSelect,
-  onOpenAISummary,
+  onToggleSummary,
 }: Props) {
   const { t } = useTranslation();
   const [abstractExpanded, setAbstractExpanded] = useState(false);
@@ -56,6 +72,37 @@ export function PaperResultCard({
           : "bg-muted-foreground/50";
 
   const allKeywords = [...paper.keywords, ...paper.subjects].slice(0, 10);
+
+  // Stato pulsante riassunto: 4 modalita' (idle / loading / collapsed-success / expanded-success).
+  const summaryButtonContent = (() => {
+    if (summary?.status === "loading") {
+      return (
+        <>
+          <Loader2 className="size-4 animate-spin" />
+          {t("courses.papers.summary.generating")}
+        </>
+      );
+    }
+    if (summary?.status === "success") {
+      return summaryExpanded ? (
+        <>
+          <ChevronUp className="size-4" />
+          {t("courses.papers.summary.hide")}
+        </>
+      ) : (
+        <>
+          <ChevronDown className="size-4" />
+          {t("courses.papers.summary.show")}
+        </>
+      );
+    }
+    return (
+      <>
+        <Sparkles className="size-4" />
+        {t("courses.papers.card.aiSummary")}
+      </>
+    );
+  })();
 
   return (
     <div
@@ -202,11 +249,7 @@ export function PaperResultCard({
       {/* Footer: bottoni */}
       <div className="flex flex-wrap items-center justify-end gap-2">
         {paper.doi_url && (
-          <Button
-            asChild
-            variant="ghost"
-            size="sm"
-          >
+          <Button asChild variant="ghost" size="sm">
             <a
               href={paper.doi_url}
               target="_blank"
@@ -220,12 +263,83 @@ export function PaperResultCard({
         <Button
           variant="outline"
           size="sm"
-          onClick={() => onOpenAISummary(paper)}
+          onClick={() => onToggleSummary(paper)}
+          disabled={summary?.status === "loading"}
         >
-          <Sparkles className="size-4" />
-          {t("courses.papers.card.aiSummary")}
+          {summaryButtonContent}
         </Button>
       </div>
+
+      {/* Sezione riassunto AI inline (sotto i bottoni, espandibile) */}
+      {summary?.status === "error" && (
+        <div className="mt-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+          {t("courses.papers.summary.error")}: {summary.error}
+        </div>
+      )}
+      {summary?.status === "success" && summaryExpanded && (
+        <PaperSummaryBlock data={summary.data} />
+      )}
+    </div>
+  );
+}
+
+function PaperSummaryBlock({ data }: { data: PaperAISummaryOut }) {
+  const { t } = useTranslation();
+  return (
+    <div className="mt-3 space-y-4 rounded-md border border-primary/30 bg-primary/5 p-4">
+      <SummarySection
+        icon={<FileText className="size-4 text-primary" />}
+        title={t("courses.papers.summary.shortSummary")}
+        content={data.short_summary}
+      />
+      <SummarySection
+        icon={<Microscope className="size-4 text-primary" />}
+        title={t("courses.papers.summary.technicalSummary")}
+        content={data.technical_summary}
+      />
+      <div>
+        <h4 className="mb-2 flex items-center gap-2 text-sm font-semibold">
+          <Tags className="size-4 text-primary" />
+          {t("courses.papers.summary.keywords")}
+        </h4>
+        <div className="flex flex-wrap gap-1.5">
+          {data.keywords.map((k, i) => (
+            <span
+              key={`${i}-${k}`}
+              className="rounded-md bg-secondary px-2 py-1 text-xs"
+            >
+              {k}
+            </span>
+          ))}
+        </div>
+      </div>
+      <SummarySection
+        icon={<AlertTriangle className="size-4 text-amber-600" />}
+        title={t("courses.papers.summary.limitations")}
+        content={data.study_limitations}
+      />
+    </div>
+  );
+}
+
+function SummarySection({
+  icon,
+  title,
+  content,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  content: string;
+}) {
+  return (
+    <div>
+      <h4 className="mb-1.5 flex items-center gap-2 text-sm font-semibold">
+        {icon}
+        {title}
+      </h4>
+      <p className="whitespace-pre-wrap text-sm text-foreground/90">
+        {content}
+      </p>
     </div>
   );
 }
