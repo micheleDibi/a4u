@@ -90,6 +90,18 @@ services:
       OPENAI_LESSON_SPEECH_MODEL: ${OPENAI_LESSON_SPEECH_MODEL:-gpt-5.5}
       OPENAI_LESSON_SPEECH_MAX_TOKENS: ${OPENAI_LESSON_SPEECH_MAX_TOKENS:-16000}
       OPENAI_LESSON_SPEECH_REASONING_EFFORT: ${OPENAI_LESSON_SPEECH_REASONING_EFFORT:-medium}
+      # Riassunto AI dei paper scientifici (ricerca OpenAlex nella tab
+      # Documenti). Output strutturato breve, gpt-4o-mini basta.
+      OPENAI_PAPER_SUMMARY_MODEL: ${OPENAI_PAPER_SUMMARY_MODEL:-gpt-4o-mini}
+      OPENAI_PAPER_SUMMARY_MAX_TOKENS: ${OPENAI_PAPER_SUMMARY_MAX_TOKENS:-3000}
+      # Ricerca paper scientifici: OpenAlex (primario) + Semantic Scholar
+      # + Crossref (enrichment on-demand). I default funzionano subito;
+      # settare PAPERS_POLITE_EMAIL e' raccomandato per il "polite pool"
+      # (rate-limit migliore e priorita' sulle API pubbliche).
+      OPENALEX_BASE_URL: ${OPENALEX_BASE_URL:-https://api.openalex.org}
+      SEMANTIC_SCHOLAR_BASE_URL: ${SEMANTIC_SCHOLAR_BASE_URL:-https://api.semanticscholar.org}
+      CROSSREF_BASE_URL: ${CROSSREF_BASE_URL:-https://api.crossref.org}
+      PAPERS_POLITE_EMAIL: ${PAPERS_POLITE_EMAIL:-}
       # Parallelismo dei worker batch AI (per pipeline corso). Alza per
       # corsi grandi / API key OpenAI tier 2+ (più TPM disponibili).
       # Caveat: troppe richieste parallele possono triggerare 429 rate
