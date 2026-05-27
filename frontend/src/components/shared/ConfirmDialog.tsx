@@ -34,9 +34,12 @@ export function ConfirmDialog({
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription className="break-words [overflow-wrap:anywhere]">
+        <DialogHeader className="min-w-0">
+          <DialogTitle className="break-words">{title}</DialogTitle>
+          <DialogDescription
+            className="break-words"
+            style={{ overflowWrap: "anywhere", wordBreak: "break-word" }}
+          >
             {message}
           </DialogDescription>
         </DialogHeader>
