@@ -77,22 +77,28 @@ async def start_video_generation(
     *,
     image_url: str,
     prompt: str,
+    last_frame_image: str | None = None,
     duration: int | None = None,
 ) -> str:
     """Avvia un job MiniMax image-to-video dal `first_frame_image`.
 
-    Niente `last_frame_image`: MiniMax-Hailuo-2.3 non supporta la
-    modalità First-and-Last-Frame-Video. La loopabilità della clip è
-    guidata dal prompt ("seamless looping animation").
+    Se `last_frame_image` viene passato, attiva la modalità FLF
+    (First-and-Last-Frame) supportata da `MiniMax-Hailuo-02`: il modello
+    interpola un video da `first_frame_image` a `last_frame_image`. Per
+    ottenere una clip loopabile (ogni concatenazione fluida con se' stessa
+    o con altre clip dello stesso pool), il caller passa la stessa URL
+    avatar come both `first_frame_image` e `last_frame_image`.
     """
     settings = get_settings()
-    body = {
+    body: dict[str, Any] = {
         "model": settings.minimax_video_model,
         "prompt": prompt[:1990],
         "first_frame_image": image_url,
         "duration": duration if duration is not None else settings.minimax_clip_duration,
         "resolution": settings.minimax_clip_resolution,
     }
+    if last_frame_image:
+        body["last_frame_image"] = last_frame_image
     async with _client() as client:
         try:
             resp = await client.post("/v1/video_generation", json=body)

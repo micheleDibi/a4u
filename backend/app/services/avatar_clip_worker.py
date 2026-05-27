@@ -132,6 +132,7 @@ async def _start_pending(db: AsyncSession, clip: AvatarClip, avatar: Avatar) -> 
         task_id = await minimax_service.start_video_generation(
             image_url=image_url,
             prompt=clip.prompt_text,
+            last_frame_image=image_url,
         )
     except minimax_service.MinimaxNotConfiguredError:
         return
