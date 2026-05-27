@@ -1231,46 +1231,15 @@ export default function CourseEditorPage({ mode }: Props) {
             </div>
           )}
           {mode === "edit" && (
-            <div className="flex flex-wrap justify-end gap-2">
-              {canSaveDraft && !setupLocked && (
-                <Button
-                  size="lg"
-                  variant="secondary"
-                  onClick={saveDraft}
-                  disabled={!draft.title.trim()}
-                >
-                  <Save className="size-4" />
-                  {t("courses.saveAsDraft")}
-                </Button>
-              )}
-              {setupLocked ? (
-                <Button
-                  size="lg"
-                  variant="outline"
-                  onClick={() => setActiveTab("documents")}
-                >
-                  {t("courses.wizard.continueToDocuments")}
-                  <ArrowRight className="size-4" />
-                </Button>
-              ) : (
-                <Button
-                  size="lg"
-                  onClick={() => setConfirmDidacticDialogOpen(true)}
-                  disabled={confirmDidacticMut.isPending}
-                >
-                  {confirmDidacticMut.isPending ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <CheckCircle2 className="size-4" />
-                  )}
-                  {confirmDidacticMut.isPending
-                    ? t("common.saving")
-                    : t("courses.wizard.confirmDidacticAndContinue")}
-                  {!confirmDidacticMut.isPending && (
-                    <ArrowRight className="size-4" />
-                  )}
-                </Button>
-              )}
+            <div className="flex justify-end">
+              <Button
+                size="lg"
+                variant="outline"
+                onClick={() => setActiveTab("objectives")}
+              >
+                {t("courses.wizard.continueToObjectives")}
+                <ArrowRight className="size-4" />
+              </Button>
             </div>
           )}
         </TabsContent>
@@ -1344,28 +1313,47 @@ export default function CourseEditorPage({ mode }: Props) {
             }}
           />
 
-          {mode === "create" && (
-            <div className="flex justify-end">
-              <Button
-                size="lg"
-                variant="outline"
-                onClick={() => setActiveTab("didactic")}
-              >
-                <ArrowLeft className="size-4" />
-                {t("courses.wizard.backToDidactic")}
-              </Button>
-            </div>
-          )}
-          {mode === "edit" && course && setupLocked && (
-            <div className="flex justify-end">
-              <Button
-                size="lg"
-                variant="outline"
-                onClick={() => setActiveTab("documents")}
-              >
-                {t("courses.wizard.continueToDocuments")}
-                <ArrowRight className="size-4" />
-              </Button>
+          {mode === "edit" && (
+            <div className="flex flex-wrap justify-end gap-2">
+              {canSaveDraft && !setupLocked && (
+                <Button
+                  size="lg"
+                  variant="secondary"
+                  onClick={saveDraft}
+                  disabled={!draft.title.trim()}
+                >
+                  <Save className="size-4" />
+                  {t("courses.saveAsDraft")}
+                </Button>
+              )}
+              {setupLocked ? (
+                <Button
+                  size="lg"
+                  variant="outline"
+                  onClick={() => setActiveTab("documents")}
+                >
+                  {t("courses.wizard.continueToDocuments")}
+                  <ArrowRight className="size-4" />
+                </Button>
+              ) : (
+                <Button
+                  size="lg"
+                  onClick={() => setConfirmDidacticDialogOpen(true)}
+                  disabled={confirmDidacticMut.isPending}
+                >
+                  {confirmDidacticMut.isPending ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="size-4" />
+                  )}
+                  {confirmDidacticMut.isPending
+                    ? t("common.saving")
+                    : t("courses.wizard.confirmDidacticAndContinue")}
+                  {!confirmDidacticMut.isPending && (
+                    <ArrowRight className="size-4" />
+                  )}
+                </Button>
+              )}
             </div>
           )}
         </TabsContent>
