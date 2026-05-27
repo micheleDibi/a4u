@@ -342,15 +342,20 @@ export default function CourseEditorPage({ mode }: Props) {
       // ignore
     }
   }, [activeTab, mode, tabStorageKey]);
-  // Pre-confirm setup: solo "base" e "didactic" sono accessibili.
-  // Se localStorage aveva salvato un tab più avanti (es. corso ripreso
-  // dopo un unlock), rientriamo su didactic così l'utente vede dove
-  // serve agire prima di poter continuare.
+  // Pre-confirm setup: solo "base", "didactic" e "objectives" sono
+  // accessibili. Se localStorage aveva salvato un tab più avanti (es.
+  // corso ripreso dopo un unlock), rientriamo su "objectives" (l'ultima
+  // tab di setup, dove c'è il pulsante "Conferma e continua") così
+  // l'utente vede dove serve agire prima di poter continuare.
   useEffect(() => {
     if (mode !== "edit" || !course) return;
     if (setupLocked) return;
-    if (activeTab !== "base" && activeTab !== "didactic") {
-      setActiveTab("didactic");
+    if (
+      activeTab !== "base" &&
+      activeTab !== "didactic" &&
+      activeTab !== "objectives"
+    ) {
+      setActiveTab("objectives");
     }
   }, [mode, course, setupLocked, activeTab]);
 
@@ -426,10 +431,12 @@ export default function CourseEditorPage({ mode }: Props) {
       qc.setQueryData(["courses", "detail", orgId, fresh.id], fresh);
       toast.success(t("courses.created"));
       // Auto-advance al prossimo step del wizard una volta navigato in
-      // edit mode: pre-settiamo il tab su "didactic" sotto la chiave del
-      // nuovo corso, così quando il componente edit monta lo legge.
+      // edit mode: pre-settiamo il tab su "objectives" sotto la chiave
+      // del nuovo corso, così quando il componente edit monta lo legge
+      // e mostra il pulsante "Conferma e continua" (l'utente puo' anche
+      // usare la generazione AI prima di confermare).
       try {
-        localStorage.setItem(`course-editor-tab:${fresh.id}`, "didactic");
+        localStorage.setItem(`course-editor-tab:${fresh.id}`, "objectives");
       } catch {
         // ignore
       }
@@ -1192,56 +1199,16 @@ export default function CourseEditorPage({ mode }: Props) {
               </div>
             </CardContent>
           </Card>
-          {mode === "create" && (
-            <div className="flex flex-wrap justify-end gap-2">
-              {canSaveDraft && (
-                <Button
-                  size="lg"
-                  variant="secondary"
-                  onClick={saveDraft}
-                  disabled={
-                    !draft.title.trim() ||
-                    createMut.isPending ||
-                    saveDraftMut.isPending
-                  }
-                >
-                  {saveDraftMut.isPending ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <Save className="size-4" />
-                  )}
-                  {saveDraftMut.isPending
-                    ? t("common.saving")
-                    : t("courses.saveAsDraft")}
-                </Button>
-              )}
-              <Button
-                onClick={submit}
-                disabled={createMut.isPending || !draft.title.trim()}
-                size="lg"
-              >
-                {createMut.isPending ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : null}
-                {createMut.isPending
-                  ? t("common.saving")
-                  : t("courses.createAndContinue")}
-                {!createMut.isPending && <ArrowRight className="size-4" />}
-              </Button>
-            </div>
-          )}
-          {mode === "edit" && (
-            <div className="flex justify-end">
-              <Button
-                size="lg"
-                variant="outline"
-                onClick={() => setActiveTab("objectives")}
-              >
-                {t("courses.wizard.continueToObjectives")}
-                <ArrowRight className="size-4" />
-              </Button>
-            </div>
-          )}
+          <div className="flex justify-end">
+            <Button
+              size="lg"
+              variant="outline"
+              onClick={() => setActiveTab("objectives")}
+            >
+              {t("courses.wizard.continueToObjectives")}
+              <ArrowRight className="size-4" />
+            </Button>
+          </div>
         </TabsContent>
 
         {/* Tab — Obiettivi e Argomenti chiave (sempre visibile, gestita
@@ -1313,6 +1280,44 @@ export default function CourseEditorPage({ mode }: Props) {
             }}
           />
 
+          {mode === "create" && (
+            <div className="flex flex-wrap justify-end gap-2">
+              {canSaveDraft && (
+                <Button
+                  size="lg"
+                  variant="secondary"
+                  onClick={saveDraft}
+                  disabled={
+                    !draft.title.trim() ||
+                    createMut.isPending ||
+                    saveDraftMut.isPending
+                  }
+                >
+                  {saveDraftMut.isPending ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Save className="size-4" />
+                  )}
+                  {saveDraftMut.isPending
+                    ? t("common.saving")
+                    : t("courses.saveAsDraft")}
+                </Button>
+              )}
+              <Button
+                onClick={submit}
+                disabled={createMut.isPending || !draft.title.trim()}
+                size="lg"
+              >
+                {createMut.isPending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : null}
+                {createMut.isPending
+                  ? t("common.saving")
+                  : t("courses.createAndContinue")}
+                {!createMut.isPending && <ArrowRight className="size-4" />}
+              </Button>
+            </div>
+          )}
           {mode === "edit" && (
             <div className="flex flex-wrap justify-end gap-2">
               {canSaveDraft && !setupLocked && (
