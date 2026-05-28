@@ -44,12 +44,13 @@ log = get_logger("app.course_architecture.crud")
 
 # Stati in cui l'utente può modificare manualmente l'architettura.
 # Includiamo tutti gli stati "stabili" downstream (ready/approved delle
-# fasi successive) così l'utente può tornare indietro a correggere un
-# titolo modulo / aggiungere una lezione anche dopo aver generato Fase 2
-# o Fase 3. Lo stale-detection (cf. lib/staleness.ts) segnala quando
-# downstream è da rigenerare.
+# fasi successive, inclusi video e avatar_video) così l'utente può
+# tornare indietro a correggere un titolo modulo / aggiungere una
+# lezione anche a corso ormai quasi pronto. Lo stale-detection
+# (cf. lib/staleness.ts) segnala quando downstream è da rigenerare.
 #
 # Esclusi:
+# - `draft`: il corso non ha ancora un'architettura.
 # - `*_pending`: i worker AI stanno attivamente scrivendo, race condition.
 # - `published`/`archived`: il corso è in stato terminale, non si tocca.
 EDITABLE_STATUSES = {
@@ -60,7 +61,11 @@ EDITABLE_STATUSES = {
     "content_ready",
     "content_approved",
     "slides_ready",
+    "slides_approved",
     "speech_ready",
+    "speech_approved",
+    "video_ready",
+    "avatar_video_ready",
 }
 
 

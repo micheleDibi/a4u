@@ -4,6 +4,44 @@ import { Check, Lock } from "lucide-react";
 import type { CourseOut } from "@/api/courses";
 import { cn } from "@/lib/utils";
 
+// Mirror di `backend/app/core/course_phase_order.COURSE_STATUS_RANK`.
+// Tenere allineato col BE: nuovi stati vanno aggiunti in entrambi i lati.
+export const COURSE_STATUS_RANK: Record<string, number> = {
+  draft: 0,
+  architecture_pending: 1,
+  architecture_ready: 2,
+  architecture_approved: 3,
+  lessons_structure_pending: 4,
+  lessons_structure_ready: 5,
+  lessons_structure_approved: 6,
+  content_pending: 7,
+  content_ready: 8,
+  content_approved: 9,
+  slides_pending: 10,
+  slides_ready: 11,
+  slides_approved: 12,
+  speech_pending: 13,
+  speech_ready: 14,
+  speech_approved: 15,
+  video_pending: 16,
+  video_ready: 17,
+  avatar_video_pending: 18,
+  avatar_video_ready: 19,
+  published: 20,
+  archived: 21,
+};
+
+/**
+ * `true` se `status` ha raggiunto o superato `milestone` nella pipeline
+ * del corso. Usato per gate di accessibilita' delle sub-tab (es. una
+ * sub-tab della fase "Contenuti" e' attiva sse status >= lessons_structure_approved).
+ */
+export function isCourseAtLeast(status: string, milestone: string): boolean {
+  const a = COURSE_STATUS_RANK[status] ?? -1;
+  const b = COURSE_STATUS_RANK[milestone] ?? Infinity;
+  return a >= b;
+}
+
 export const PHASES = [
   {
     id: "setup",
@@ -52,27 +90,17 @@ export function computePhaseStatus(
 
   if (phaseId === "architecture") {
     if (!setupLocked) return "locked";
-    if (
-      s.startsWith("content_") ||
-      s.startsWith("slides_") ||
-      s.startsWith("speech_") ||
-      s === "published"
-    ) {
-      return "done";
-    }
-    if (s === "lessons_structure_approved") return "done";
+    // L'architettura e' "done" non appena il corso ha superato la fase
+    // della struttura lezioni — include automaticamente tutti gli stati
+    // successivi (content, slides, speech, video, avatar_video, published).
+    if (isCourseAtLeast(s, "lessons_structure_approved")) return "done";
     return "in_progress";
   }
 
   if (phaseId === "content") {
     if (!setupLocked) return "locked";
-    const reached =
-      s === "lessons_structure_approved" ||
-      s.startsWith("content_") ||
-      s.startsWith("slides_") ||
-      s.startsWith("speech_") ||
-      s === "published";
-    if (!reached) return "locked";
+    if (!isCourseAtLeast(s, "lessons_structure_approved")) return "locked";
+    // done quando tutte le lezioni hanno speech approved.
     const allLessons = (course.modules ?? []).flatMap((m) => m.lessons ?? []);
     if (
       allLessons.length > 0 &&
@@ -92,7 +120,7 @@ export function computePhaseStatus(
       ),
     );
     if (!anyReady) return "locked";
-    if (s === "published") return "done";
+    if (isCourseAtLeast(s, "published")) return "done";
     return "in_progress";
   }
 

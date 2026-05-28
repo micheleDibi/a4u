@@ -90,6 +90,7 @@ import { CoursePaperSearch } from "./components/CoursePaperSearch";
 import {
   CoursePhaseStepper,
   PHASES,
+  isCourseAtLeast,
   phaseOfTab,
   type PhaseId,
 } from "./components/CoursePhaseStepper";
@@ -790,14 +791,7 @@ export default function CourseEditorPage({ mode }: Props) {
                 value="lessons-structure"
                 disabled={
                   !course ||
-                  (course.status !== "architecture_approved" &&
-                    course.status !== "lessons_structure_pending" &&
-                    course.status !== "lessons_structure_ready" &&
-                    course.status !== "lessons_structure_approved" &&
-                    !course.status.startsWith("content_") &&
-                    !["slides_pending", "slides_ready", "slides_approved", "speech_pending", "speech_ready", "speech_approved", "published"].includes(
-                      course.status
-                    ))
+                  !isCourseAtLeast(course.status, "architecture_approved")
                 }
               >
                 {t("courses.tabs.lessonsStructure")}
@@ -810,11 +804,7 @@ export default function CourseEditorPage({ mode }: Props) {
                 value="lesson-content"
                 disabled={
                   !course ||
-                  (course.status !== "lessons_structure_approved" &&
-                    !course.status.startsWith("content_") &&
-                    !["slides_pending", "slides_ready", "slides_approved", "speech_pending", "speech_ready", "speech_approved", "published"].includes(
-                      course.status
-                    ))
+                  !isCourseAtLeast(course.status, "lessons_structure_approved")
                 }
               >
                 {t("courses.tabs.lessonContent")}
@@ -823,11 +813,7 @@ export default function CourseEditorPage({ mode }: Props) {
                 value="lesson-slides"
                 disabled={
                   !course ||
-                  (course.status !== "content_ready" &&
-                    course.status !== "content_approved" &&
-                    !["slides_pending", "slides_ready", "slides_approved", "speech_pending", "speech_ready", "speech_approved", "published"].includes(
-                      course.status
-                    ))
+                  !isCourseAtLeast(course.status, "content_ready")
                 }
               >
                 {t("courses.tabs.lessonSlides")}
