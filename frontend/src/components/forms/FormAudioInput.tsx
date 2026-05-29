@@ -1,6 +1,7 @@
 import { Mic, Square, Trash2, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -134,8 +135,23 @@ export function FormAudioInput({
       }, 250);
       setIsRecording(true);
     } catch (err) {
-      console.warn("recording_failed", err);
+      // Rilascia il microfono se lo stream era stato aperto prima dell'errore.
+      streamRef.current?.getTracks().forEach((tr) => tr.stop());
+      streamRef.current = null;
       setIsRecording(false);
+      // Errore visibile e azionabile (prima falliva in silenzio: su Chrome,
+      // con Permissions-Policy `microphone=()`, getUserMedia veniva rifiutato
+      // e l'utente non vedeva nulla).
+      const name = (err as DOMException | undefined)?.name;
+      if (name === "NotAllowedError" || name === "SecurityError") {
+        toast.error(t("myAvatar.recordPermissionDenied"));
+      } else if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+        toast.error(t("myAvatar.recordNoDevice"));
+      } else {
+        const msg = err instanceof Error ? err.message : String(err);
+        toast.error(t("myAvatar.recordError", { error: msg }));
+      }
+      console.warn("recording_failed", err);
     }
   };
 

@@ -14,7 +14,13 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
-        response.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+        # microphone/camera abilitati per la stessa origine (registrazione
+        # campione vocale + futura webcam nell'avatar personale). Chrome
+        # applica rigidamente questo header: con `microphone=()` getUserMedia
+        # risultava bloccato solo su Chrome.
+        response.headers.setdefault(
+            "Permissions-Policy", "geolocation=(), microphone=(self), camera=(self)"
+        )
         if settings.is_production:
             response.headers.setdefault(
                 "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
