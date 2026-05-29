@@ -67,7 +67,7 @@ forwardate con `${VAR:-default}` per ogni knob significativo).
 |---|---|---|
 | `MINIMAX_API_KEY` | _(vuoto)_ | API key MiniMax. Se vuoto, le clip avatar restano in stato `pending` finché non viene configurata. |
 | `MINIMAX_BASE_URL` | `https://api.minimax.io` | Base URL del provider. |
-| `MINIMAX_VIDEO_MODEL` | `MiniMax-Hailuo-2.3` | Modello video. |
+| `MINIMAX_VIDEO_MODEL` | `MiniMax-Hailuo-02` | Modello video. Supporta la modalità FLF (First-and-Last-Frame): inviando `first_frame_image` + `last_frame_image` interpola un video tra le due immagini. |
 | `MINIMAX_CLIP_DURATION` | `6` | Durata in secondi di ogni clip. |
 | `MINIMAX_CLIP_RESOLUTION` | `1080P` | Risoluzione richiesta al provider. |
 | `MINIMAX_POLL_INTERVAL_SECONDS` | `10` | Intervallo del worker che processa le clip pending/processing. |
@@ -165,6 +165,8 @@ fase ha il suo modello + cap di token configurabile a parte.
 | `OPENAI_TRANSLATE_BATCH_SIZE` | `40` | Numero di chiavi inviate per richiesta `/chat/completions`. |
 | `OPENAI_SUMMARIZE_MODEL` | `gpt-4o-mini` | Modello per il **summary documenti corso** (Appendice A). |
 | `OPENAI_SUMMARIZE_MAX_TOKENS` | `8000` | `max_completion_tokens` per il summarize service. |
+| `OPENAI_PAPER_SUMMARY_MODEL` | `gpt-4o-mini` | Modello per il **riassunto AI dei paper scientifici** (`openai_paper_summary_service`, sincrono, no persistenza). Vedi [Courses 16](courses/16-paper-search.md). |
+| `OPENAI_PAPER_SUMMARY_MAX_TOKENS` | `3000` | `max_completion_tokens` per il riassunto paper. |
 | `OPENAI_GLOSSARY_MODEL` | `gpt-5.5` | Modello per il **glossario corso** (§10.1). |
 | `OPENAI_GLOSSARY_MAX_TOKENS` | `4000` | `max_completion_tokens` per il glossario. |
 | `OPENAI_MODULES_LESSONS_MODEL` | `gpt-5.5` | Modello condiviso da **Fase 1 — architettura corso** e dalla generazione AI delle lezioni di un singolo modulo (manual editing). |
@@ -227,6 +229,36 @@ rate-limit OpenAI con tier free/1.
 Se vedi log `lesson_content_auto_retry` con errori `rate_limit_exceeded`,
 scendi di 2-3 unità. Il sistema retry-a in trasparenza ma rallenta il batch.
 
+### Ricerca paper scientifici (OpenAlex + enrichment)
+
+La tab "Documenti" di un corso può cercare e importare paper accademici
+da fonti aperte. **Nessuna API key necessaria** per i tre provider:
+- **OpenAlex** è la *primary search* (discovery + paginazione cursor-based
+  su ~250M paper, `backend/app/services/openalex_client.py:238`).
+- **Semantic Scholar** e **Crossref** sono usati solo come *enrichment
+  on-demand* (per singolo paper con DOI, mai durante la search di lista),
+  per recuperare TL;DR, abstract pulito, subjects e references count.
+
+`PAPERS_POLITE_EMAIL` viene aggiunta come `mailto:` nello `User-Agent`
+condiviso dai tre client: con email valorizzata l'IP entra nel **"polite
+pool"** dei provider (rate-limit più permissivo,
+`backend/app/services/openalex_client.py:72`); vuota → `User-Agent` senza
+`mailto:`.
+
+| Variabile | Default | Descrizione |
+|---|---|---|
+| `OPENALEX_BASE_URL` | `https://api.openalex.org` | Base URL OpenAlex (primary search). |
+| `SEMANTIC_SCHOLAR_BASE_URL` | `https://api.semanticscholar.org` | Base URL Semantic Scholar (enrichment on-demand: TL;DR + fallback PDF OA). |
+| `CROSSREF_BASE_URL` | `https://api.crossref.org` | Base URL Crossref (enrichment on-demand: abstract pulito, subjects, references count). |
+| `PAPERS_POLITE_EMAIL` | _(vuoto)_ | Email messa come `mailto:` nello `User-Agent` dei 3 provider per entrare nel "polite pool" (rate-limit migliore). Vuota → `User-Agent` senza `mailto:`. |
+
+> Il modello + cap di token del riassunto AI dei paper sono nella tabella
+> [OpenAI — modelli e budget token](#openai--modelli-e-budget-token)
+> (`OPENAI_PAPER_SUMMARY_MODEL` / `OPENAI_PAPER_SUMMARY_MAX_TOKENS`).
+
+Deep-dive completo (architettura multi-source, 3 endpoint, import,
+relevance score, riassunto AI): [Courses 16 — Paper search](courses/16-paper-search.md).
+
 ## Frontend (`frontend/.env`)
 
 | Variabile | Default | Descrizione |
@@ -271,14 +303,24 @@ inferiore (struttura/coerenza un filo meno raffinate, output ancora ottimi).
 ## MiniMax integration
 
 L'avatar utente genera 5 brevi clip video (loop) tramite il modello
-`MiniMax-Hailuo-2.3`. Il backend invia immagine + prompt al provider, fa
+`MiniMax-Hailuo-02`. Il backend invia immagine + prompt al provider, fa
 polling del task e scarica il `.mp4` finale. La logica vive in
 `app/services/minimax_service.py` + worker `avatar_clip_worker.py`.
+
+> **Clip loopabili (FLF)**: per ogni clip in loop il backend passa
+> `last_frame_image = first_frame_image` (la stessa URL avatar), attivando
+> la modalità FLF (First-and-Last-Frame) di `MiniMax-Hailuo-02`
+> (`app/services/minimax_service.py:80`, `:100`). Così ogni clip torna
+> alla posa iniziale → è loopabile su sé stessa e interscambiabile con le
+> altre clip del pool da cui MuseTalk pesca per la lip-sync (concatenazioni
+> fluide, niente stacchi alle giunzioni). Prima (`MiniMax-Hailuo-2.3`, I2V
+> puro senza FLF) la loopabilità era guidata solo dal prompt. L'API sceglie
+> FLF in base ai campi presenti nel body, quindi non serve un flag esplicito.
 
 ### Ottenere una API key
 
 1. Registrarsi su `https://api.minimax.io` (o il dominio di provider
-   equivalente abilitato per Hailuo-2.3).
+   equivalente abilitato per Hailuo-02).
 2. Generare una API key dalla dashboard.
 3. Valorizzare `MINIMAX_API_KEY` nel `.env`.
 
@@ -377,6 +419,12 @@ con un setting `model` + `max_tokens` separato per ognuna:
 | **Glossario corso** (§10.1) | `openai_glossary_service` | `/chat/completions` | sync inline (auto-trigger dal worker Fase 3) |
 | **Struttura lezioni** (Fase 2) | `openai_lesson_structure_service` | `/chat/completions` | worker async **parallelo** (`course_lesson_structure_worker`) |
 | **Contenuto lezione** (Fase 3) | `openai_lesson_content_service` | `/chat/completions` | worker async **parallelo** (`course_lesson_content_worker`) |
+
+> Oltre alle pipeline core sopra, il **riassunto AI dei paper scientifici**
+> (`openai_paper_summary_service`, sincrono e senza persistenza) usa lo
+> stesso `OPENAI_API_KEY` con setting dedicati
+> (`OPENAI_PAPER_SUMMARY_MODEL` / `OPENAI_PAPER_SUMMARY_MAX_TOKENS`). Vedi
+> [Courses 16 — Paper search](courses/16-paper-search.md).
 
 Tutte usano `response_format: json_schema` strict. La validazione output
 passa per Pydantic prima di scrivere in DB; un mismatch produce auto-retry

@@ -45,6 +45,23 @@ Verificate dal worker dopo il claim:
 - Credenziali MuseTalk/R2 configurate (vedi §8).
 - La lezione non deve essere `is_assessment`.
 
+> **Generazione clip avatar (FLF).** Le clip del pool non vengono
+> prodotte da questo worker, ma dal worker dedicato
+> `avatar_clip_worker` via MiniMax. Dal default `MINIMAX_VIDEO_MODEL =
+> **MiniMax-Hailuo-02**` (`backend/app/core/config.py:56`), la clip è
+> generata in modalità **FLF (First-and-Last-Frame)**: il worker passa
+> `last_frame_image = first_frame_image` (la **stessa URL avatar**) a
+> `start_video_generation` (`backend/app/services/avatar_clip_worker.py:130-136`,
+> `backend/app/services/minimax_service.py:80,100-101`), così il modello
+> interpola dal frame iniziale allo stesso frame finale → ogni clip
+> **torna alla posa di partenza** ed è quindi loopabile su sé stessa e
+> interscambiabile con qualsiasi altra clip del pool (giunzioni fluide
+> quando MuseTalk le concatena). Sostituisce l'approccio del precedente
+> `MiniMax-Hailuo-2.3`, che si affidava al solo prompt *"seamless looping
+> animation"* (I2V puro, niente FLF). Dettaglio in
+> [04 — Configuration](../04-configuration.md) e
+> [backend/07 — Services](../backend/07-services.md).
+
 A monte l'API rifiuta con `409` + `code` (`lesson_video_not_ready`,
 `avatar_clips_not_ready`, ...).
 
@@ -128,7 +145,8 @@ auto-retry, cancel-check). Cap di concorrenza 1 (un job GPU per volta).
 - **`_prepare_musetalk_clips`** — ridimensiona le clip dell'avatar a
   `avatar_video_clip_resolution`×`...` (default **640**) in
   `{upload_root}/avatars/{user_id}/clips_musetalk_{res}/`. Le clip
-  MiniMax sono 1080×1080: a quella risoluzione il lip-sync su RunPod
+  MiniMax sono 1080×1080 (generate da `MiniMax-Hailuo-02` in modalità
+  FLF, loopabili — vedi §2): a quella risoluzione il lip-sync su RunPod
   sfora il tetto di 60 min (blending + encode + RAM scalano con l'area
   del frame). Una clip è riconvertita **solo se cambia il sorgente** →
   mtime/dimensione stabili → l'hash del set di clip di MuseTalk resta

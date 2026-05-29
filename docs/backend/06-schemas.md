@@ -472,6 +472,110 @@ Snapshot batch a livello corso (`GET .../lessons-avatar-video/status`):
 
 ---
 
+## `app/schemas/paper_search.py`
+
+DTO della feature **Paper Scientifici** — ricerca, enrichment multi-source
+e import di paper accademici nella tab Documenti di un corso (deep-dive in
+[Courses 16](../courses/16-paper-search.md)). Endpoint:
+`POST .../papers/search` (`PaperSearchInput` → `PaperSearchResultsOut`) e
+`POST .../papers/import` (`PaperImportInput` → `PaperImportResultOut`),
+permission `course:edit` (vedi [Courses 05](../courses/05-api-reference.md)).
+I campi `tldr` / `subjects` / `references_count` di `PaperOut` sono
+popolati solo dall'enrichment on-demand (Semantic Scholar + Crossref),
+non durante la search di lista.
+
+### `PaperType = Literal["article", "preprint", "review", "other"]`
+
+Tipo di lavoro accademico. Usato in `PaperSearchFilters.work_type` e in
+`PaperOut.work_type`.
+
+### `class PaperSearchFilters(BaseModel)`
+
+Filtri della ricerca, tutti opzionali:
+- `year_from: int | None = Field(ge=1900, le=2100)`,
+- `year_to: int | None = Field(ge=1900, le=2100)`,
+- `is_oa: bool | None` — `None` = qualsiasi, `True` = solo open access,
+- `min_citations: int | None = Field(ge=0)`,
+- `author_name: str | None` (max 200), `venue_name: str | None` (max 200),
+- `work_type: PaperType | None`.
+
+### `class PaperSearchInput(BaseModel)`
+
+Body `POST .../papers/search`:
+- `query: str = Field(default="", max_length=500)`,
+- `filters: PaperSearchFilters = Field(default_factory=...)`,
+- `cursor: str | None` — cursore OpenAlex per la pagina successiva,
+- `per_page: int = Field(default=20, ge=1, le=50)`.
+
+### `class PaperOut(BaseModel)`
+
+Paper singolo, campi unificati dai 3 source:
+- `id: str` — OpenAlex Work ID (URL completo `https://openalex.org/W...`),
+- `doi: str | None`, `title: str`, `abstract: str | None`,
+- `authors: list[str]`, `year: int | None`, `journal: str | None`,
+- `citations: int`, `is_oa: bool`, `oa_pdf_url: str | None`,
+- `doi_url: str | None` — `https://doi.org/{doi}` se DOI presente,
+- `work_type: PaperType | None`, `keywords: list[str]`,
+- `relevance_score: float | None` — `[0,1]`, sigmoid `score/(score+5)`
+  (`openalex_search_service.py:55-65`),
+- `tldr: str | None = None` — solo Semantic Scholar (enrichment),
+- `subjects: list[str] = Field(default_factory=list)` — solo Crossref,
+- `references_count: int | None = None` — solo Crossref.
+
+### `class PaperSearchResultsOut(BaseModel)`
+
+Response paginata:
+- `results: list[PaperOut]`,
+- `next_cursor: str | None` — dal `meta.next_cursor` di OpenAlex,
+- `total_count: int`.
+
+### `class PaperAISummaryInput(BaseModel)`
+
+Body `POST .../papers/ai-summary`. Solo `paper: PaperOut` (i metadata
+gia' visti dalla card; il BE puo' eseguire enrichment se DOI presente).
+
+### `class PaperImportInput(BaseModel)`
+
+Body `POST .../papers/import`:
+- `papers: list[PaperOut] = Field(min_length=1, max_length=50)`.
+
+### `class PaperImportItemResultOut(BaseModel)`
+
+Risultato singolo dell'import:
+- `document_id: str`, `filename: str`, `paper_id: str`,
+- `mode: Literal["pdf", "metadata"]` — `pdf` = OA scaricato,
+  `metadata` = `.md` generato dai metadata.
+
+### `class PaperImportResultOut(BaseModel)`
+
+- `imported: list[PaperImportItemResultOut]`,
+- `pdf_count: int`, `metadata_count: int`.
+
+---
+
+## `app/schemas/paper_ai_summary.py`
+
+DTO della **risposta del riassunto AI** di un paper
+(`POST .../papers/ai-summary` → `PaperAISummaryOut`). Prodotto da
+`openai_paper_summary_service` con `response_format` JSON Schema strict;
+generato nella **lingua del corso**. **Non viene persistito in DB**:
+l'output e' consumato inline dal FE (cache per sessione, vedi
+[Courses 16](../courses/16-paper-search.md)).
+
+### `class PaperAISummaryOut(BaseModel)`
+
+4 campi richiesti:
+- `short_summary: str = Field(min_length=20, max_length=2000)`,
+- `technical_summary: str = Field(min_length=50, max_length=4000)`,
+- `keywords: list[str] = Field(min_length=1, max_length=20)`,
+- `study_limitations: str = Field(min_length=20, max_length=2000)`.
+
+`@field_validator("keywords")` `_clean_keywords` (`paper_ai_summary.py:25-45`):
+trim, troncamento a 80 char con `rstrip`, dedup case-insensitive,
+`ValueError("keywords: lista vuota dopo cleanup")` se la lista resta vuota.
+
+---
+
 ## `app/schemas/course_duplication.py`
 
 DTO della **duplicazione corso in altra lingua** (vedi

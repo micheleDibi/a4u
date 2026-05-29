@@ -276,6 +276,15 @@ Props:
 
 Usato per delete e azioni potenzialmente irreversibili (transfer creator).
 
+> **Overflow con testi lunghi**: `DialogTitle` e `DialogDescription`
+> usano `break-words`; sul `message` è aggiunto anche lo style inline
+> `{ overflowWrap: "anywhere", wordBreak: "break-word" }` e il
+> `DialogHeader` ha `min-w-0`
+> (`src/components/shared/ConfirmDialog.tsx:37-44`). Serve a mandare a
+> capo messaggi con filename lunghi senza parole spaziate, evitando che
+> il contenuto sfondi il dialog. Lo style inline ha la precedenza su
+> eventuali utility con specificità maggiore. Nessuna nuova prop.
+
 ---
 
 ## `src/components/templates/SlideTemplatePreview.tsx`
@@ -451,13 +460,29 @@ Parametri corsi (`P.COURSE_CONFIG_MANAGE`), Template slide
 
 ## `src/components/ui/badge.tsx`
 
-Componente `Badge` di shadcn. Variants supportate: `default`,
-`secondary`, `destructive`, `outline`, `warning` (nuova).
+Componente `Badge` di shadcn (`src/components/ui/badge.tsx:8-20`).
+Variants supportate: `default`, `secondary`, `destructive`, `outline`,
+`muted`, `brand`, `warning`, `success` (nuova).
 
-La variant `warning` rende un badge ambra (`bg-amber-100 text-amber-900`
-in light, `bg-amber-500/20 text-amber-300` in dark) ed è usata nelle
-pagine i18n (header e righe non tradotte) per segnalare visivamente le
-voci che richiedono attenzione.
+| Variant | Classi (light → dark) | Uso tipico |
+|---|---|---|
+| `default` | `bg-primary text-primary-foreground` | badge primario |
+| `secondary` | `bg-secondary text-secondary-foreground` | badge secondario |
+| `destructive` | `bg-destructive text-destructive-foreground` | errore/azione distruttiva |
+| `outline` | solo `text-foreground` (bordo) | neutro, low-emphasis |
+| `muted` | `bg-muted text-muted-foreground` | placeholder / valore assente |
+| `brand` | `bg-brand/15 text-brand` | accento di marca |
+| `warning` | `bg-amber-100 text-amber-900` → `bg-amber-500/20 text-amber-300` | voci che richiedono attenzione |
+| `success` | `bg-emerald-100 text-emerald-900` → `bg-emerald-500/20 text-emerald-300` | esito positivo / stato OK |
+
+La variant `warning` (ambra) è usata nelle pagine i18n (header e righe
+non tradotte) per segnalare visivamente le voci che richiedono
+attenzione.
+
+La variant `success` (verde emerald) è usata nella ricerca paper
+scientifici — es. badge "Open Access" e marcatura di paper già importato
+(endpoint riassunti in
+[Courses 05 — API reference](../courses/05-api-reference.md)).
 
 ---
 
@@ -613,7 +638,7 @@ Props:
 { orgId: string; course: CourseListItemOut; onClose: () => void }
 ```
 
-Vedi [Courses 15](../../courses/15-course-duplication.md).
+Vedi [Courses 15](../courses/15-course-duplication.md).
 
 ### `src/pages/org/courses/components/CourseDuplicationBadge.tsx`
 

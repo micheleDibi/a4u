@@ -573,6 +573,71 @@ shell del corso target e traduce via OpenAI tutti i contenuti
 Video MP4 e Video con Avatar resettati a `empty`. Vedi
 [Courses 15](../courses/15-course-duplication.md).
 
+### Ricerca paper scientifici
+
+Ricerca, riassunto AI e import di paper accademici dentro la tab
+Documenti di un corso. Multi-source: **OpenAlex** è la sorgente primaria
+(discovery + paginazione cursor-based); **Semantic Scholar** e
+**Crossref** sono usate solo per l'enrichment **on-demand** (mai durante
+la search di lista). Tutti gli endpoint richiedono `course:edit`, previo
+`_ensure_org` + `course_service.get_course`.
+
+| Metodo | Path | Permesso |
+|---|---|---|
+| POST | `/{course_id}/papers/search` | `course:edit` |
+| POST | `/{course_id}/papers/ai-summary` | `course:edit` |
+| POST | `/{course_id}/papers/import` | `course:edit` |
+
+#### `POST /{course_id}/papers/search`
+
+Request `PaperSearchInput`, response `PaperSearchResultsOut`. Ricerca
+**cursor-based** via OpenAlex (`backend/app/services/openalex_search_service.py`):
+`PaperSearchInput { query (max 500), filters: PaperSearchFilters,
+cursor: str|None, per_page (1..50, default 20) }`; la risposta riporta
+`results: list[PaperOut], next_cursor: str|None, total_count`. Errore:
+`502 BAD_GATEWAY` `{code: "openalex_error", message}` su `OpenAlexError`
+(`backend/app/api/v1/courses.py:692`).
+
+#### `POST /{course_id}/papers/ai-summary`
+
+Request `PaperAISummaryInput { paper: PaperOut }`, response
+`PaperAISummaryOut`. **Sincrono, no persistenza** (l'output è usato solo
+per il render FE). Se `paper.doi` è presente esegue **enrichment
+on-demand** costruendo un `OpenAlexWork` sintetico dal `PaperOut` e
+chiamando `paper_enrichment_service.enrich_paper` (Semantic Scholar +
+Crossref in parallelo via `asyncio.gather`, non bloccante;
+`backend/app/api/v1/courses.py:741`); arricchisce abstract / TL;DR /
+subjects nel `paper_context`, poi aggiunge il `course_context` (titolo +
+lingua del corso) per generare il riassunto **nella lingua del corso**.
+`PaperAISummaryOut { short_summary, technical_summary, keywords[],
+study_limitations }` (validator `_clean_keywords`: trim, troncamento a 80
+char, dedup case-insensitive). Errori: `409 openai_not_configured`
+(`OpenAINotConfiguredError` → `ConflictError`,
+`backend/app/api/v1/courses.py:804`); `502 BAD_GATEWAY`
+`{code: "openai_error", message}` su `OpenAIPaperSummaryError`
+(`backend/app/api/v1/courses.py:809`).
+
+#### `POST /{course_id}/papers/import`
+
+Request `PaperImportInput { papers: list[PaperOut] (1..50) }`, response
+`PaperImportResultOut`. Itera i paper e chiama
+`paper_import_service.import_paper`, che crea un `CourseDocument` per
+ciascuno: **.pdf** se il paper è OA (scarica il binario via
+`openalex_client.download_pdf`), **.md** con i metadata altrimenti (con
+fallback graceful a metadata se il download PDF fallisce). Il documento
+nasce con `summary_status="pending"`, così la pipeline esistente
+`course_document_worker` ne prende in carico extract_text + summarize AI.
+La risposta conta `pdf_count` / `metadata_count` e lista gli `imported`
+(`PaperImportItemResultOut { document_id, filename, mode (pdf|metadata),
+paper_id }`). `db.commit()` finale (`backend/app/api/v1/courses.py:863`).
+
+Schemi in `backend/app/schemas/paper_search.py`
+(`PaperSearchInput` / `PaperSearchResultsOut`, `PaperAISummaryInput`,
+`PaperImportInput` / `PaperImportResultOut`, `PaperOut`) e
+`backend/app/schemas/paper_ai_summary.py` (`PaperAISummaryOut`).
+Deep-dive in [Courses 16](../courses/16-paper-search.md); riepilogo
+endpoint anche in [Courses 05](../courses/05-api-reference.md).
+
 ---
 
 ## `app/api/v1/admin_metrics.py` — dashboard admin

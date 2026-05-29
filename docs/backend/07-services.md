@@ -80,6 +80,30 @@ In caso di immagine non valida: `UnidentifiedImageError → ValidationAppError(c
 
 Non c'è ri-encoding: il file audio è scritto raw.
 
+#### `save_document_from_bytes(payload: bytes, *, subdir, mime_type, filename_stem=None) -> tuple[str, str, int]`
+
+`async`. Sibling di `save_upload_document` che riceve **bytes** invece di
+un `UploadFile` (`file_service.py:314-360`). Usato dall'import paper
+scientifici per persistere il PDF scaricato da URL esterno (OpenAlex)
+oppure il `.md` di metadati generato per i paper non-OA. Stessa
+validazione di `save_upload_document`:
+
+1. `_validate_subdir(subdir)`.
+2. MIME ∈ whitelist `ALLOWED_DOCUMENT_MIME_TYPES` (PDF/DOC/DOCX/TXT/MD/RTF)
+   → altrimenti `code=invalid_document_mime`.
+3. `payload` non vuoto → `code=empty_file`.
+4. Dimensione ≤ `course_document_max_mb` → altrimenti
+   `code=document_too_large`.
+5. Estensione derivata dal MIME, salva sotto `upload_root / subdir /
+   {stem}{ext}` con `_ensure_within`.
+
+Ritorna `(public_path, stored_filename, size_bytes)` come
+`save_upload_document`. Nessuna trascodifica: bytes scritti raw.
+
+> La whitelist include `text/markdown → .md`, abilitante per l'import
+> dei metadati paper (vedi `course_service.add_document_from_bytes` e
+> [Courses 16](../courses/16-paper-search.md)).
+
 #### `delete_upload(path: str | None) -> None`
 
 `async`. Cancella un file su filesystem.
@@ -114,24 +138,47 @@ sincroni o `async` semplici e non aprono sessioni DB.
 
 ## `app/services/minimax_service.py`
 
-**Scopo**: client del provider MiniMax (modello `MiniMax-Hailuo-2.3`).
+**Scopo**: client del provider MiniMax (modello `MiniMax-Hailuo-02`).
 Wrapping di `httpx.AsyncClient` con header `Authorization: Bearer
 <MINIMAX_API_KEY>`. Le chiamate sono `async` e non toccano DB.
 
 ### Funzioni
 
-- `start_video_generation(*, image_url: str, prompt: str) -> str`:
-  POST `{MINIMAX_BASE_URL}/v1/video_generation` con body che include
-  modello, prompt, `first_frame_image=image_url`,
-  `last_frame_image=image_url` (per ottenere clip in **loop** chiuso),
-  `duration=MINIMAX_CLIP_DURATION`,
-  `resolution=MINIMAX_CLIP_RESOLUTION`. Ritorna `task_id`.
-- `query_task_status(task_id: str) -> dict`: GET sullo status del task.
-  Risposta normalizzata: `{status: "Queueing"|"Processing"|"Success"|
-  "Fail", file_id?, error?}`.
+- `start_video_generation(*, image_url: str, prompt: str, last_frame_image: str | None = None, duration: int | None = None) -> str`:
+  POST `{MINIMAX_BASE_URL}/v1/video_generation`
+  (`minimax_service.py:76-125`). Il body include sempre `model`
+  (`settings.minimax_video_model`), `prompt` (troncato a 1990 char),
+  `first_frame_image=image_url`, `duration` (param o
+  `MINIMAX_CLIP_DURATION`) e `resolution=MINIMAX_CLIP_RESOLUTION`.
+  `last_frame_image` è **opzionale**: viene aggiunto al body **solo se
+  valorizzato** (`if last_frame_image: body["last_frame_image"] = ...`,
+  `minimax_service.py:100-101`). Quando presente, attiva la modalità
+  **FLF** (First-and-Last-Frame) di `MiniMax-Hailuo-02`: il modello
+  interpola un video da `first_frame_image` a `last_frame_image`.
+  L'API decide FLF dalla presenza del campo nel body — niente flag
+  esplicito. Ritorna `task_id`.
+
+  > Il caller `avatar_clip_worker._start_pending`
+  > (`avatar_clip_worker.py:129-136`) passa **la stessa URL avatar**
+  > come `image_url` e `last_frame_image`, così ogni clip torna alla posa
+  > iniziale → diventa loopabile su sé stessa e interscambiabile con
+  > qualsiasi altra clip dello stesso pool (MuseTalk pesca a caso dal
+  > pool: con clip loopabili le giunzioni sono fluide). Vedi
+  > [Courses 13 — Avatar video](../courses/13-avatar-video.md).
+- `query_task_status(task_id: str) -> TaskStatus`: GET sullo status del
+  task (`minimax_service.py:128-158`). Ritorna il dataclass frozen
+  `TaskStatus(status, file_id, raw)` (`minimax_service.py:48-52`):
+  - `status`: valore **normalizzato** lowercase tra `preparing` |
+    `processing` | `success` | `failed` | `unknown`
+    (`minimax_service.py:144-155`). Mappa i valori RAW di MiniMax
+    (`Preparing`/`Queueing`/`Processing`/`Success`/`Fail`) su quelli
+    normalizzati.
+  - `file_id`: `str | None`, popolato quando `status == "success"`.
+  - `raw`: il `dict` JSON grezzo della risposta MiniMax.
 - `download_file(file_id: str) -> bytes`: chiama l'endpoint
-  `/v1/files/retrieve` per ottenere l'URL del `.mp4` e lo scarica via
-  `httpx.AsyncClient.stream`. Ritorna i bytes.
+  `/v1/files/retrieve` per ottenere il `download_url` del `.mp4`, poi lo
+  scarica con una GET semplice (`plain.get(download_url)`,
+  `minimax_service.py:189-200`) e ne ritorna i bytes.
 
 Errori HTTP/timeout sono propagati come eccezioni; il chiamante (worker)
 li intercetta e marca la clip `failed` con `error_message`.
@@ -162,8 +209,10 @@ while not stop_event.is_set():
 
 1. Se `MINIMAX_API_KEY` è vuoto → return (clip restano `pending`).
 2. Carica clip in `pending` senza `minimax_task_id`: per ognuna chiama
-   `start_video_generation`, salva `minimax_task_id`, marca
-   `status=processing`, `started_at=now`.
+   `start_video_generation(image_url=..., prompt=...,
+   last_frame_image=image_url)` — la stessa URL avatar come first e last
+   frame attiva la modalità FLF di Hailuo-02 (clip loopabili). Salva
+   `minimax_task_id`, marca `status=processing`, `started_at=now`.
 3. Carica clip in `processing` con `minimax_task_id`: chiama
    `query_task_status`. Se `Success`, scarica il file via
    `download_file`, lo scrive con `storage_service.save_bytes` sotto
@@ -1121,12 +1170,36 @@ sintetica:
 
 | Service | Documentato in | Scopo |
 |---|---|---|
-| `course_service.py` | [Courses 01](../courses/01-data-model.md), [Courses 03](../courses/03-architecture-generation.md) | CRUD corso, list, dettaglio eager-loaded, upload documenti |
+| `course_service.py` | [Courses 01](../courses/01-data-model.md), [Courses 03](../courses/03-architecture-generation.md) | CRUD corso, list, dettaglio eager-loaded, upload documenti. Espone anche `add_document_from_bytes` (sibling di `add_document` che crea un `CourseDocument` da bytes invece che da `UploadFile`, usato dall'import paper — `course_service.py:746-804`) |
 | `course_taxonomy_service.py` | [Courses 01](../courses/01-data-model.md) | CRUD term tassonomie + auto-create on demand |
 | `course_document_worker.py` | [Courses 02](../courses/02-document-preprocessing.md) | Worker async pre-processing documenti (lifespan) |
 | `document_extraction_service.py` | [Courses 02](../courses/02-document-preprocessing.md) | Estrazione testo da PDF/DOCX/DOC/RTF/TXT/MD via `asyncio.to_thread` |
 | `openai_summarize_service.py` | [Courses 02](../courses/02-document-preprocessing.md) | Wrapper OpenAI summarize (Appendice A) con `response_format: json_schema` |
 | `openai_client.py` | [Courses 02](../courses/02-document-preprocessing.md) | Modulo condiviso: `OpenAIError`, `OpenAINotConfiguredError`, `get_client()`, `apply_reasoning_effort()` |
+
+### Ricerca paper scientifici (doc 16)
+
+Ricerca, arricchimento, riassunto AI e import di paper accademici dentro
+la tab Documenti di un corso. 3 endpoint sotto
+`/orgs/{org_id}/courses/{course_id}/papers/` (`POST /search`,
+`POST /ai-summary`, `POST /import`), permission `course:edit`. Deep-dive
+completo in [Courses 16](../courses/16-paper-search.md); endpoint
+riassunti anche in [Courses 05](../courses/05-api-reference.md).
+
+| Service | Documentato in | Scopo |
+|---|---|---|
+| `openalex_client.py` | [Courses 16](../courses/16-paper-search.md) | Client OpenAlex (sorgente **primaria**): `search_works` con cursor pagination su `/works`, `download_pdf` del binario OA. `mailto:` nello User-Agent → polite pool |
+| `openalex_search_service.py` | [Courses 16](../courses/16-paper-search.md) | Orchestrazione search di lista + `_clamp_relevance` (relevance_score sigmoid-like in `[0,1]`). Nessun enrichment in lista (evita ~40 chiamate per ricerca) |
+| `semantic_scholar_client.py` | [Courses 16](../courses/16-paper-search.md) | Client S2 (secondario): `get_paper_by_doi` via `/graph/v1/paper/DOI:{doi}` → `tldr.text` + fallback `openAccessPdf.url`. Non bloccante (ritorna `None` su 404/error/timeout) |
+| `crossref_client.py` | [Courses 16](../courses/16-paper-search.md) | Client Crossref (secondario): `get_work_by_doi` via `/works/{doi}` → abstract ripulito dai tag JATS, `subjects[]`, `references_count`. Non bloccante |
+| `paper_enrichment_service.py` | [Courses 16](../courses/16-paper-search.md) | Merge **on-demand** OpenAlex + S2 + Crossref (`asyncio.gather(return_exceptions=True)` se DOI presente). Priorità abstract OpenAlex>Crossref>S2, oa_pdf_url OpenAlex>S2; tldr solo S2; subjects/references_count solo Crossref |
+| `openai_paper_summary_service.py` | [Courses 16](../courses/16-paper-search.md) | Wrapper OpenAI riassunto AI del paper (`gpt-4o-mini`, `temperature=0.3`, `json_schema` strict, 4 sezioni). Prompt nella lingua del **corso**. Ritorna `(output, usage)`; l'endpoint scarta `usage`, niente persistenza DB |
+| `paper_import_service.py` | [Courses 16](../courses/16-paper-search.md) | `import_paper`: se `oa_pdf_url` → `download_pdf` → `.pdf` (`application/pdf`, mode `pdf`); su errore download/validazione fallback graceful a `.md` di metadati (`text/markdown`, mode `metadata`). Entrambi via `course_service.add_document_from_bytes` → `summary_status='pending'` |
+
+> L'import non genera summary: salva il `CourseDocument` con
+> `summary_status='pending'` e la pipeline esistente
+> `course_document_worker` prende in carico extract_text + summarize AI
+> (vedi [Courses 02](../courses/02-document-preprocessing.md)).
 
 ### Fase 1 — Architettura
 

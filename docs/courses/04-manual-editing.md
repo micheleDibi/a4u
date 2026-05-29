@@ -5,13 +5,40 @@ AI delle lezioni quando l'utente aggiunge un nuovo modulo.
 
 ## Stati ammessi
 
-CRUD manuale è permesso SOLO quando `course.status ∈ {architecture_ready,
-architecture_approved}` — costante `EDITABLE_STATUSES` in
-`course_architecture_crud.py`. Oltre, le fasi successive della pipeline AI
-dipendono dall'architettura e modificarla creerebbe inconsistenze.
+CRUD manuale è permesso in **tutti gli stati stabili downstream** — non solo a
+livello di architettura, ma fino a corso ormai quasi pronto (video / avatar). La
+costante `EDITABLE_STATUSES` in `course_architecture_crud.py:56-69` elenca:
 
-`_ensure_editable(course)` solleva `ConflictError(code='architecture_not_editable')`
-se lo status non è valido.
+| Stato | Note |
+|---|---|
+| `architecture_ready` / `architecture_approved` | Fase 1 |
+| `lessons_structure_ready` / `lessons_structure_approved` | Fase 2 |
+| `content_ready` / `content_approved` | Fase 3 |
+| `slides_ready` / `slides_approved` | Fase 4 |
+| `speech_ready` / `speech_approved` | Fase 5 |
+| `video_ready` | Fase 6 |
+| `avatar_video_ready` | Fase 6b |
+
+L'architettura e le sub-tab restano quindi editabili anche a corso quasi pronto:
+l'utente può **tornare indietro** a correggere un titolo modulo, aggiungere una
+lezione o riordinare moduli senza essere bloccato. Lo **stale-detection**
+(`frontend/src/lib/staleness.ts`) segnala quando il downstream è da rigenerare —
+gli edit settano `architecture_modified_at` sul modulo (`_touch_module`,
+`course_architecture_crud.py:76-84`), che il frontend confronta con i timestamp
+di generazione delle fasi successive.
+
+Stati **esclusi** esplicitamente:
+
+| Stato | Perché escluso |
+|---|---|
+| `draft` | Il corso non ha ancora un'architettura. |
+| `*_pending` (es. `architecture_pending`, `content_pending`, …) | I worker AI stanno attivamente scrivendo: race condition. |
+| `published` / `archived` | Stato terminale, non si tocca. |
+
+`_ensure_editable(course)` (`course_architecture_crud.py:95-101`) solleva
+`ConflictError(code='architecture_not_editable')` se lo status non è in
+`EDITABLE_STATUSES` (vedi semantica `409` in
+[05 — API reference](05-api-reference.md)).
 
 > **Lo status non viene modificato** dagli edit manuali — sono ortogonali al
 > ciclo draft → pending → ready → approved.
@@ -63,7 +90,7 @@ Quando si fa reorder di moduli:
 async def regenerate_module_lessons(db, course, actor_id, module_id) -> Course
 ```
 
-1. `_ensure_editable(course)` — solo `architecture_ready`/`approved`
+1. `_ensure_editable(course)` — status in `EDITABLE_STATUSES` (vedi [Stati ammessi](#stati-ammessi))
 2. Costruisce user prompt con `_build_module_lessons_user_prompt`:
    - Parametri corso (titolo, obiettivi, argomenti chiave, overview, razionale)
    - **Altri moduli del corso** (codice + titolo + descrizione + outline lezioni)

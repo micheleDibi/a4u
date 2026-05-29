@@ -183,6 +183,152 @@ strutturato. Senza il flag, il summary è omesso (per non gonfiare la list respo
 
 `course:edit`. 204.
 
+## Ricerca paper scientifici
+
+Vive nella tab Documenti: ricerca, riassunto AI e import di paper
+accademici come `CourseDocument`. Multi-source — OpenAlex è la sorgente
+**primaria** (discovery + paginazione cursor), Semantic Scholar e
+Crossref sono secondarie e usate solo per l'**enrichment on-demand** (mai
+durante la search di lista). Vedi
+[16 — Paper search](16-paper-search.md) per il design completo
+(architettura, merge, relevance score, config var). I 3 endpoint sono in
+`courses.py` (`backend/app/api/v1/courses.py:652`), tutti `course:edit`,
+con `_ensure_org` + `course_service.get_course` come preflight.
+
+### `POST /orgs/{org_id}/courses/{course_id}/papers/search`
+
+`course:edit`. Body `PaperSearchInput`
+(`backend/app/schemas/paper_search.py:35`):
+
+```json
+{
+  "query": "string ≤ 500",
+  "filters": {
+    "year_from": 2018,
+    "year_to": 2024,
+    "is_oa": true,
+    "min_citations": 10,
+    "author_name": "string ≤ 200",
+    "venue_name": "string ≤ 200",
+    "work_type": "article"
+  },
+  "cursor": "string | null",
+  "per_page": 20
+}
+```
+
+- `query` default `""`. `filters` tutti opzionali (`is_oa`: `null` =
+  qualsiasi, `true` = solo OA; `min_citations` ≥ 0; `year_*` 1900..2100;
+  `work_type` ∈ `article | preprint | review | other`).
+- `cursor` per la paginazione cursor-based (`next_cursor` della pagina
+  precedente). `per_page` 1..50, default 20.
+
+200 → `PaperSearchResultsOut` (`paper_search.py:65`):
+
+```json
+{
+  "results": [{
+    "id": "https://openalex.org/W...",
+    "doi": "10.xxxx/...",
+    "title": "...",
+    "abstract": "...",
+    "authors": ["..."],
+    "year": 2023,
+    "journal": "...",
+    "citations": 42,
+    "is_oa": true,
+    "oa_pdf_url": "https://...",
+    "doi_url": "https://doi.org/10.xxxx/...",
+    "work_type": "article",
+    "keywords": ["..."],
+    "relevance_score": 0.81,
+    "tldr": null,
+    "subjects": [],
+    "references_count": null
+  }],
+  "next_cursor": "string | null",
+  "total_count": 12500
+}
+```
+
+I campi `tldr`, `subjects`, `references_count` sono popolati solo via
+enrichment on-demand (in lista restano `null`/`[]`).
+
+Errori:
+- `502 openalex_error` — errore del provider OpenAlex
+  (`courses.py:692`).
+
+### `POST /orgs/{org_id}/courses/{course_id}/papers/ai-summary`
+
+`course:edit`. Body `PaperAISummaryInput` (`paper_search.py:71`):
+
+```json
+{ "paper": { /* PaperOut */ } }
+```
+
+**Sincrono, nessuna persistenza** in DB: l'output serve solo alla card
+FE. Se `paper.doi` è presente, il backend esegue enrichment server-side
+(Semantic Scholar + Crossref **in parallelo**) costruendo un
+`OpenAlexWork` sintetico dal `PaperOut` per riusare `enrich_paper`
+(`courses.py:741`), poi compone `paper_context` + `course_context`
+(titolo + lingua del corso) per il prompt. Il riassunto è generato
+**nella lingua del corso** (`course.language_code`), non dell'abstract.
+
+200 → `PaperAISummaryOut`
+(`backend/app/schemas/paper_ai_summary.py:19`):
+
+```json
+{
+  "short_summary": "string (20..2000)",
+  "technical_summary": "string (50..4000)",
+  "keywords": ["string", "..."],
+  "study_limitations": "string (20..2000)"
+}
+```
+
+`keywords` 1..20, normalizzate dal validator `_clean_keywords` (trim,
+troncamento a 80 char, dedup case-insensitive).
+
+Errori:
+- `409 openai_not_configured` — `OPENAI_API_KEY` mancante
+  (`courses.py:804`).
+- `502 openai_error` — errore lato OpenAI nella generazione del
+  riassunto (`courses.py:809`).
+
+### `POST /orgs/{org_id}/courses/{course_id}/papers/import`
+
+`course:edit`. Body `PaperImportInput` (`paper_search.py:79`):
+
+```json
+{ "papers": [ { /* PaperOut */ } ] }
+```
+
+`papers` 1..50. Importa ciascun paper come `CourseDocument`: se il paper
+è OA e il PDF è scaricabile → file `.pdf` (`mode="pdf"`); altrimenti
+genera un `.md` con i metadati del paper (titolo, autori, anno, journal,
+DOI, link, citazioni, abstract, TL;DR, keywords, subjects)
+(`mode="metadata"`). Ogni documento è creato con
+`summary_status="pending"`: la pipeline esistente
+`course_document_worker` lo prende in carico (extract text + summary AI).
+Al termine `db.commit()` (`courses.py:863`).
+
+200 → `PaperImportResultOut` (`paper_search.py:95`):
+
+```json
+{
+  "imported": [
+    {
+      "document_id": "uuid",
+      "filename": "autore_2023_titolo_a1b2c3.pdf",
+      "mode": "pdf",
+      "paper_id": "https://openalex.org/W..."
+    }
+  ],
+  "pdf_count": 1,
+  "metadata_count": 0
+}
+```
+
 ## Architettura (Fase 1)
 
 ### `POST /orgs/{org_id}/courses/{course_id}/architecture/generate`
@@ -901,7 +1047,7 @@ Errori:
 | Code | HTTP | Quando |
 |---|---|---|
 | `course_not_found` | 404 | UUID inesistente o non visibile per il chiamante |
-| `architecture_not_editable` | 409 | CRUD manuale fuori da `architecture_ready/approved` |
+| `architecture_not_editable` | 409 | CRUD manuale fuori da `EDITABLE_STATUSES` (`backend/app/services/course_architecture_crud.py:56`): ammessi `architecture_ready/approved`, `lessons_structure_ready/approved`, `content_ready/approved`, `slides_ready/approved`, `speech_ready/approved`, `video_ready`, `avatar_video_ready`; esclusi `draft`, `*_pending`, `published`/`archived` |
 | `invalid_course_status` | 409 | Generate da status non ammesso |
 | `invalid_reorder` | 422 | `ids` non corrisponde all'insieme attuale |
 | `module_not_found` / `lesson_not_found` | 404 | |
@@ -977,3 +1123,5 @@ Errori:
 | `lesson_video_not_ready` | 409 | Generate video con avatar (Fase 6b) su lezione con `video_status` ≠ ready |
 | `avatar_clips_not_ready` | 409 | Generate video con avatar (Fase 6b) quando l'avatar dell'assegnatario non ha clip MiniMax pronte |
 | `avatar_not_found` | 404 | `PATCH /me/avatar/musetalk-params` quando l'utente corrente non ha un avatar |
+| `openalex_error` | 502 | `POST /papers/search`: errore del provider OpenAlex (vedi [16 — Paper search](16-paper-search.md)) |
+| `openai_error` | 502 | `POST /papers/ai-summary`: errore lato OpenAI nella generazione del riassunto AI del paper (vedi [16 — Paper search](16-paper-search.md)) |

@@ -164,6 +164,22 @@ strutturato (Appendice A).
 
 Path su disco: `{uploads_dir}/courses/{course_id}/{filename_stored}`.
 
+> **Documenti da import paper.** I paper scientifici importati dalla feature
+> "Paper Scientifici" (vedi [16 — Paper search](16-paper-search.md)) sono
+> `CourseDocument` **standard**: la tabella **non** ha colonne aggiuntive (nessun
+> campo `source` sul modello). Oltre ad `add_document` (upload manuale `UploadFile`),
+> esiste un secondo entry-point di creazione, `course_service.add_document_from_bytes`
+> (`backend/app/services/course_service.py:746`), che riceve `bytes` invece di un
+> `UploadFile`: `paper_import_service.import_paper`
+> (`backend/app/services/paper_import_service.py:145`) lo usa per salvare il PDF se
+> il paper è open-access (`application/pdf`) oppure, in fallback, un `.md` di
+> metadati (`text/markdown`). In entrambi i casi il documento nasce con
+> `summary_status="pending"` ed è preso in carico dalla pipeline standard
+> `course_document_worker` (vedi [02 — Document preprocessing](02-document-preprocessing.md)).
+> La provenienza `external_import` è tracciata **solo** nel metadata dell'audit log
+> (action `course.document.add_from_bytes`, `metadata.source="external_import"`,
+> `course_service.py:801`), **non** sul modello.
+
 ---
 
 ## `course_module` — `app/models/course_module.py`

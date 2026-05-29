@@ -10,7 +10,7 @@ permessi richiesti, dati caricati, comportamenti chiave.
 > [Courses 06 — Frontend](../courses/06-frontend.md), non duplicate qui.
 >
 > Il `CourseEditorPage` è un wizard a tab con `TAB_ORDER`:
-> `base`, `didactic`, `documents`, `architecture`, `lessons-structure`,
+> `base`, `didactic`, `objectives`, `documents`, `architecture`, `lessons-structure`,
 > `lesson-content`, `lesson-slides`, `lesson-speech`, **`lesson-video`**
 > ("Video"), **`lesson-avatar-video`** ("Video con avatar"). Le ultime
 > due schede sono visibili solo dopo il lock del setup didattico e
@@ -20,6 +20,17 @@ permessi richiesti, dati caricati, comportamenti chiave.
 > `CourseLessonAvatarVideoView` (Fase 6b), descritte in
 > [05 — Components](05-components.md) e nelle doc Courses 12/13. Il tab
 > attivo è persistito in `localStorage["course-editor-tab:{courseId}"]`.
+>
+> Gli `id` dei tab restano questi, ma l'editor ora antepone alla
+> `TabsList` un `CoursePhaseStepper` di 4 macro-fasi
+> (**setup** / **architecture** / **content** / **media**, mappate alle
+> sub-tab in `CoursePhaseStepper.PHASES`) e renderizza solo le sub-tab
+> della fase corrente (`currentPhase = phaseOfTab(activeTab)`). Il
+> dettaglio completo dello stepper e del gating per-fase/per-sub-tab
+> (stato fasi via `computePhaseStatus`, rank `COURSE_STATUS_RANK` +
+> helper `isCourseAtLeast`, mirror 1:1 di
+> `backend/app/core/course_phase_order.py`) è in
+> [Courses 06 — Frontend](../courses/06-frontend.md).
 
 ---
 

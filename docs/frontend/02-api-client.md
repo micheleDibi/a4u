@@ -361,6 +361,7 @@ coursesApi.{
   list, create, get, update, updateAssignee, delete: del,
   setup: { confirmDidactic, unlock },
   documents: { upload, list, get, reprocess, delete },
+  papers: { search, aiSummary, importMany },
   architecture: { generate, approve },
   modules: { create, update, delete, reorder, generateLessons },
   lessons: { create, update, delete, reorder },
@@ -376,7 +377,9 @@ OpenAI ~20-30s e il default `apiClient.timeout = 20_000` sarebbe
 troppo basso.
 
 **Helper di tipo**: `CourseOut`, `CourseDocumentOut`, `CourseModuleOut`,
-`CourseLessonOut`, `RecommendedBibliographyItem`, `DocumentSummaryOut`.
+`CourseLessonOut`, `RecommendedBibliographyItem`, `DocumentSummaryOut`,
+`PaperOut`, `PaperType`, `PaperSearchFilters`, `PaperSearchInput`,
+`PaperSearchResultsOut`, `PaperAISummaryOut`, `PaperImportResultOut`.
 
 ### `coursesApi.list` — params + tipo restituito
 
@@ -466,6 +469,60 @@ CourseDuplicationJobCompact | null` — valorizzato quando il corso è
 2. render del `CourseDuplicationBadge` sotto il titolo
 3. attivare `refetchInterval: 3000` finché ci sono job attivi nella
    pagina
+
+### `coursesApi.papers` — Ricerca paper scientifici
+
+Namespace che mappa i 3 endpoint di ricerca/import dei paper accademici
+nella tab Documenti del corso (deep-dive in
+[Courses 16 — Paper search](../courses/16-paper-search.md); riassunto in
+[Courses 05 — API reference](../courses/05-api-reference.md)). Tutti
+sotto `/{course}/papers/...`, permission `course:edit`. Sorgente primaria
+OpenAlex; Semantic Scholar + Crossref usati solo per l'enrichment
+on-demand (mai durante la `search`). 3 metodi:
+
+```ts
+coursesApi.papers.search(orgId, courseId, payload: PaperSearchInput)
+// POST /{course}/papers/search -> PaperSearchResultsOut
+// timeout 60s. Cursor-based pagination (per_page <= 50). Nessun
+// enrichment in lista. -> 502 { code: "openalex_error" } su OpenAlexError.
+
+coursesApi.papers.aiSummary(orgId, courseId, paper: PaperOut)
+// POST /{course}/papers/ai-summary -> PaperAISummaryOut
+// timeout 180s. Riassunto AI sincrono in 4 sezioni (short_summary,
+// technical_summary, keywords, study_limitations) nella lingua del corso.
+// Se paper.doi è presente fa enrichment server-side (Semantic Scholar +
+// Crossref in parallelo) prima di comporre il prompt. Nulla persistito in
+// DB. -> 409 openai_not_configured, 502 { code: "openai_error" }.
+
+coursesApi.papers.importMany(orgId, courseId, papers: PaperOut[])
+// POST /{course}/papers/import -> PaperImportResultOut
+// timeout 300s. Importa 1..50 paper come CourseDocument: PDF reale se OA
+// scaricabile, altrimenti `.md` con i metadati (fallback graceful). Il
+// worker `course_document_worker` prende poi in carico extract + summary
+// AI. Restituisce { imported[], pdf_count, metadata_count }.
+```
+
+Tipi associati:
+
+- `PaperType` = `article | preprint | review | other`.
+- `PaperSearchFilters` — `{ year_from?, year_to?, is_oa?, min_citations?,
+  author_name?, venue_name?, work_type? }` (tutti nullable).
+- `PaperSearchInput` — `{ query?, filters?, cursor?, per_page? }`
+  (`per_page` 1..50, default 20).
+- `PaperOut` — `{ id, doi, title, abstract, authors[], year, journal,
+  citations, is_oa, oa_pdf_url, doi_url, work_type, keywords[],
+  relevance_score, tldr, subjects[], references_count }`. `id` è l'OpenAlex
+  Work ID (URL completo); `relevance_score` è normalizzato `0..1`; `tldr`
+  (Semantic Scholar) + `subjects`/`references_count` (Crossref) sono
+  popolati solo dopo enrichment.
+- `PaperSearchResultsOut` — `{ results: PaperOut[], next_cursor,
+  total_count }`. `next_cursor` null = fine paginazione.
+- `PaperAISummaryOut` — `{ short_summary, technical_summary, keywords[],
+  study_limitations }`.
+- `PaperImportResultOut` — `{ imported: PaperImportItemResultOut[],
+  pdf_count, metadata_count }` con
+  `PaperImportItemResultOut` `{ document_id, filename, mode: "pdf" |
+  "metadata", paper_id }`.
 
 ### `coursesApi.lessonVideo` — Video MP4 della lezione (Fase 6)
 

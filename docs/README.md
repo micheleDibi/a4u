@@ -61,12 +61,17 @@ slide / discorso) + CRUD manuale completo per ogni payload AI:
 - [03 — Architecture generation (Fase 1)](courses/03-architecture-generation.md): worker AI con progress tracking + materializzazione moduli/lezioni.
 - [04 — Manual editing & AI lesson generation](courses/04-manual-editing.md): CRUD inline + auto-trigger AI sui moduli aggiunti manualmente.
 - [05 — API reference (corsi)](courses/05-api-reference.md): ~50 endpoint sotto `/orgs/{org_id}/courses` (Fasi 1-5 + 3 pipeline PDF).
-- [06 — Frontend](courses/06-frontend.md): pages con 8 tab (Base/Didattica/Documenti/Architettura/Struttura/Contenuti/Slide/Discorso), dialog, optimistic update, ETA display, KaTeX, TipTap, TTS-safety inline.
+- [06 — Frontend](courses/06-frontend.md): editor a **stepper di 4 macro-fasi** (Setup / Architettura / Contenuti / Media) con sub-tab della fase corrente — Setup (Base/Didattica/Obiettivi/Documenti), Architettura (Architettura/Struttura), Contenuti (Contenuti/Slide/Discorso), Media (Video/Video con avatar); gate di accessibilità via `COURSE_STATUS_RANK`, dialog, optimistic update, ETA display, KaTeX, TipTap, TTS-safety inline.
 - [07 — Lesson structure (Fase 2)](courses/07-lesson-structure.md): worker parallelo per generare struttura lezioni (obiettivi, temi, prerequisiti, scaletta).
 - [08 — Lesson content (Fase 3) + Glossario](courses/08-lesson-content.md): worker parallelo per testo lezione + asset visivi (Mermaid + LaTeX + tabelle), glossario corso, editor TipTap user-friendly.
 - [09 — PDF export](courses/09-pdf-export.md): tre pipeline PDF (testo §7 + slide Fase 4 + discorso Fase 5) via WeasyPrint + Playwright pre-render Mermaid + latex2mathml.
 - [10 — Lesson slides (Fase 4)](courses/10-lesson-slides.md): worker parallelo per generare slide della presentazione (riusa asset Fase 3 + nuovi asset, body field opzionale, 16 tipi slide).
 - [11 — Lesson speech (Fase 5)](courses/11-lesson-speech.md): worker parallelo per generare discorso temporizzato TTS-friendly (vincolo durata ±5%, 130 wpm IT / 150 wpm EN, 8 validazioni inclusa TTS-safety).
+- [12 — Lesson video (Fase 6)](courses/12-lesson-video.md): video MP4 della lezione — TTS XTTS-v2 su RunPod GPU + rendering slide Playwright + encoding ffmpeg.
+- [13 — Avatar video (Fase 6b)](courses/13-avatar-video.md): scheda "Video con Avatar" — lip-sync MuseTalk (RunPod GPU + Cloudflare R2) sovrapposto al video MP4; clip MiniMax (Hailuo-02 in modalità First-and-Last-Frame, loopabili) come pool sorgente.
+- [14 — Assessment lesson](courses/14-assessment-lesson.md): lezione di verifica delle competenze — ultima lezione di ogni modulo quando la verifica finale è attiva.
+- [15 — Duplicazione corso in altra lingua](courses/15-course-duplication.md): job background che clona un corso e ne traduce via OpenAI architettura/lezioni/slide/discorso/glossario/document summaries (multi-pass persistente con resume e cleanup automatico). Permesso `course:duplicate`.
+- [16 — Ricerca paper scientifici](courses/16-paper-search.md): ricerca multi-source nella tab Documenti — discovery OpenAlex + enrichment on-demand Semantic Scholar/Crossref, riassunto AI inline, import come `CourseDocument` (PDF OA o `.md` metadata). 3 endpoint `papers/search|ai-summary|import`, permission `course:edit`.
 
 ### Database & API
 

@@ -20,6 +20,7 @@ iterazioni a partire dalla foundation. Ogni file di codice rilevante è document
 - [13 — Avatar video (Fase 6b)](13-avatar-video.md): scheda "Video con Avatar" — lip-sync MuseTalk (RunPod GPU + Cloudflare R2) sovrapposto al video MP4 della lezione — §9b.
 - [14 — Assessment lesson](14-assessment-lesson.md): lezione di **verifica delle competenze** — l'ultima lezione di ogni modulo quando la verifica finale è attiva.
 - [15 — Duplicazione corso in altra lingua](15-course-duplication.md): job background che clona un corso e ne traduce via OpenAI architecture/lessons/slides/speech/glossary/document summaries nella lingua target. **Multi-pass persistente** (6 pass con backoff progressivo + fallback automatico `gpt-4o` sui pass 5-6) per garantire convergenza anche con OpenAI/Cloudflare 520 transient. **Resume-from-progress** nei retry: le phase già committate non vengono rifatte. **Cleanup automatico** del target su fail terminale o timeout (90 min). Video e Video con Avatar non vengono copiati (l'utente li rigenera). Permesso `COURSE_DUPLICATE`. Badge UX rich con ETA stimato, tooltip pipeline, shimmer e sub-progress "X/N lezioni completate".
+- [16 — Ricerca paper scientifici](16-paper-search.md): ricerca paper accademici via **OpenAlex** (discovery + paginazione cursor) con **enrichment on-demand** da Semantic Scholar (TL;DR + fallback PDF OA) e Crossref (abstract pulito da JATS + subjects + references_count); riassunto AI inline (`gpt-4o-mini`, 4 sezioni) e import del paper come `CourseDocument` (PDF OA se disponibile, altrimenti `.md` di metadata) nella tab Documenti. Permesso `COURSE_EDIT`.
 
 ## Stato pipeline (5 fasi AI + video + verifica)
 
@@ -88,6 +89,22 @@ Failure paths: ogni `*_pending` su errore → `failed` per la singola entità (o
 > (`video_status`, `avatar_video_status`) e non concorrono a
 > `course.status`.
 
+> **Editabilità a corso quasi pronto (`EDITABLE_STATUSES`)**: architettura e
+> sub-tab restano modificabili anche oltre `*_ready`/`*_approved` di Fase 3-5.
+> `EDITABLE_STATUSES` (`backend/app/services/course_architecture_crud.py:56`)
+> include tutti gli stati stabili downstream — `architecture_ready/approved`,
+> `lessons_structure_ready/approved`, `content_ready/approved`,
+> `slides_ready/approved`, `speech_ready/approved`, **`video_ready`** e
+> **`avatar_video_ready`** — così l'utente può tornare a correggere un titolo
+> modulo o aggiungere una lezione anche a corso ormai quasi pronto (lo
+> stale-detection segnala cosa rigenerare). Restano **esclusi**: `draft`
+> (nessuna architettura), `*_pending` (worker AI attivi → race condition),
+> `published`/`archived` (terminali). Oltre questi, `_ensure_editable` rigetta
+> con `409 architecture_not_editable` (vedi [04 — Manual editing](04-manual-editing.md) e [05 — API reference](05-api-reference.md)).
+> Lo stesso gating è replicato lato FE in `CoursePhaseStepper.tsx` via
+> `COURSE_STATUS_RANK` + `isCourseAtLeast` (mirror 1:1 di
+> `backend/app/core/course_phase_order.py`, da tenere allineati a mano).
+
 ## Stale-detection (cascata)
 
 Ogni operazione di CRUD manuale a monte (struttura, contenuto, slide, discorso) imposta un timestamp `*_modified_at` che il frontend confronta con il `*_generated_at` a valle per dedurre se qualcosa è disallineato. **Non blocca** — è un suggerimento. Vedi `frontend/src/lib/staleness.ts`:
@@ -154,11 +171,18 @@ backend/app/
 │   ├── lesson_slides_video_render_service.py # Fase 6 — render Playwright slide → PNG 1980×1400
 │   ├── lesson_video_compose_service.py      # Fase 6 — composizione MP4 via ffmpeg
 │   ├── course_lesson_avatar_video_service.py # Fase 6b — API pubblica video con avatar
-│   └── course_lesson_avatar_video_worker.py # Fase 6b — worker async (downscale clip + MuseTalk + overlay)
+│   ├── course_lesson_avatar_video_worker.py # Fase 6b — worker async (downscale clip + MuseTalk + overlay)
+│   ├── openalex_client.py                   # Paper (doc 16) — client OpenAlex: search_works (cursor) + download_pdf OA
+│   ├── openalex_search_service.py           # Paper — orchestrazione search lista + relevance_score sigmoid (no enrichment in lista)
+│   ├── semantic_scholar_client.py           # Paper — enrichment on-demand: TL;DR + fallback openAccessPdf (non bloccante)
+│   ├── crossref_client.py                   # Paper — enrichment on-demand: abstract de-JATS + subjects + references_count (non bloccante)
+│   ├── paper_enrichment_service.py          # Paper — merge multi-source (S2 + Crossref via asyncio.gather, solo se DOI)
+│   ├── openai_paper_summary_service.py      # Paper — riassunto AI 4 sezioni (gpt-4o-mini, json_schema strict; usage scartato)
+│   └── paper_import_service.py              # Paper — import come CourseDocument: PDF OA o .md metadata + filename slug
 ├── musetalk_client/                         # Fase 6b — client MuseTalk vendored (copia verbatim, NON modificare)
 │   └── scripts/client/{synth_random_lipsync,runpod_client,video_assembler,clip_manifest}.py
 ├── templates/                               # lesson_pdf / lesson_slides_pdf / lesson_speech_pdf .html.j2
-├── api/v1/courses.py                        # router REST corsi (~65 endpoint: Fasi 1-6/6b + 3 PDF + assessment)
+├── api/v1/courses.py                        # router REST corsi (~91 endpoint: Fasi 1-6/6b + 3 PDF + assessment + 3 /papers/*)
 ├── api/v1/me_avatar.py                      # avatar utente + PATCH /me/avatar/musetalk-params
 └── alembic/versions/
     ├── 0009 … 0024                          # foundation corsi + Fasi 1-5 + 3 PDF (vedi doc 10-alembic.md)
@@ -172,6 +196,15 @@ backend/app/
     └── 0032_duplication_progress_detail.py  # colonna progress_detail su course_duplication_job (sub-progress UX)
 ```
 
+> **Import paper da bytes**: `course_service.add_document_from_bytes`
+> (`backend/app/services/course_service.py:746`) e
+> `file_service.save_document_from_bytes`
+> (`backend/app/services/file_service.py:314`) sono i sibling
+> bytes-based di `add_document` / `save_upload_document`, usati da
+> `paper_import_service` per persistere il PDF OA scaricato o il `.md`
+> di metadata come `CourseDocument` con `summary_status="pending"`
+> (audit `metadata.source="external_import"`). Vedi [16 — Ricerca paper scientifici](16-paper-search.md).
+
 ### Frontend
 
 ```
@@ -183,11 +216,14 @@ frontend/src/
 │   └── useLessonAvatarVideo.ts                     # Fase 6b — query/mutation status video con avatar
 ├── lib/staleness.ts                                # helper di stale-detection cascata
 └── pages/org/courses/
-    ├── CourseEditorPage.tsx                        # editor con Tabs (10 voci: Base, Didattica, Documenti, Architettura, Struttura, Contenuti, Slide, Discorso, Video, Video con avatar)
+    ├── CourseEditorPage.tsx                        # editor a STEPPER di 4 macro-fasi (setup / architecture / content / media): lo stepper sostituisce la lista piatta di 11 tab; sotto, la TabsList mostra solo le sub-tab della fase corrente (currentPhase = phaseOfTab(activeTab))
     └── components/
+        ├── CoursePhaseStepper.tsx                  # stepper 4 fasi + COURSE_STATUS_RANK (mirror BE) + isCourseAtLeast / phaseOfTab / computePhaseStatus
         ├── CourseArchitectureView / CourseLessonStructureView / CourseLessonContentView / CourseLessonSlidesView / CourseLessonSpeechView.tsx
         ├── CourseLessonVideoView.tsx               # Fase 6 — scheda Video
         ├── CourseLessonAvatarVideoView.tsx         # Fase 6b — scheda Video con avatar
+        ├── CoursePaperSearch.tsx                   # Paper (doc 16) — ricerca paper nella tab Documenti (filtri + paginazione cursor + cache riassunti per-sessione)
+        ├── PaperResultCard.tsx                     # Paper — card risultato: badge OA, relevance %, import, riassunto AI inline
         ├── LessonAssessmentView.tsx                # vista verifica competenze (read-only)
         ├── LessonAssessmentEditDialog.tsx          # editor verifica competenze
         └── … (dialog generate/edit per ogni fase, vedi doc 06-frontend.md)

@@ -100,24 +100,98 @@ resume-from-progress, cleanup, badge UX dettagliato).
 
 ## `CourseEditorPage.tsx`
 
-Editor tab-based. Layout principale: **`<Tabs>`** con 10 voci (in modalità edit;
-in create solo le prime 2):
+Editor a **stepper di 4 macro-fasi**. Sopra la `TabsList` viene renderizzato
+un **`CoursePhaseStepper`** orizzontale (`setup → architecture → content →
+media`); sotto, la `TabsList` mostra **solo le sub-tab della fase corrente**.
+La fase corrente è derivata da `activeTab` via `phaseOfTab(activeTab)`
+(`currentPhase: PhaseId`); cliccare una fase non-locked nello stepper chiama
+`onPhaseNavigate`, che porta alla **prima sub-tab** della fase
+(`phase.tabs[0]`). Questo sostituisce la vecchia lista piatta di 11
+`TabsTrigger` che andava a capo su due righe.
 
-1. **Informazioni di base** — title, objectives, argomenti chiave, categoria,
-   lingua, assegnatario, **CFU + summary dimensionamento** (tutto consolidato in
-   un'unica Card)
-2. **Inquadramento didattico** — 7 tassonomie (categoria spostata in Base)
-3. **Documenti** — solo edit
-4. **Architettura** — solo edit, AI Generate/Approve + view CRUD
-5. **Struttura lezioni** — solo edit, gated su `course.status >= architecture_approved`. AI batch/per-modulo + edit manuale.
-6. **Contenuti lezioni** — solo edit, gated su `course.status >= lessons_structure_approved`. AI batch/per-lezione (Fase 3) + glossario + **export PDF testo** (§7).
-7. **Slide** — solo edit, gated su `course.status ∈ {content_ready, content_approved, slides_*, speech_*, published}`. AI batch/per-lezione (Fase 4) + edit manuale + **export PDF slide**.
-8. **Discorso** — solo edit, gated su `course.status ∈ {slides_ready, slides_approved, speech_*, published}`. AI batch/per-lezione (Fase 5) + edit manuale + **export PDF discorso**.
-9. **Video** (`lesson-video`) — solo edit + `setupLocked`, disabilitato finché nessuna lezione ha `speech_status='approved'` AND `slides_status='approved'`. Generazione video MP4 (Fase 6).
-10. **Video con avatar** (`lesson-avatar-video`) — solo edit + `setupLocked`, stesso gating del tab Video. Generazione del video con avatar parlante (Fase 6b).
+Le 10 sub-tab (in modalità edit; in create solo le prime 2-3 di `setup`)
+restano le stesse, raggruppate per fase:
 
-`TAB_ORDER` enumera le 10 voci; `TabId` ne è il tipo derivato. Tab
-persistente per courseId in localStorage (`course-editor-tab:{courseId}`). Tab disabled (con relativo gating su course.status) restano visibili ma greyed-out finché la pre-condizione a monte non è soddisfatta.
+- **Setup** (`base, didactic, objectives, documents`)
+  1. **Informazioni di base** — title, objectives, argomenti chiave, categoria,
+     lingua, assegnatario, **CFU + summary dimensionamento** (tutto consolidato
+     in un'unica Card)
+  2. **Inquadramento didattico** — 7 tassonomie (categoria spostata in Base)
+  3. **Obiettivi e Argomenti chiave** — textarea obiettivi + keyword + AI da documento
+  4. **Documenti** — solo edit + `setupLocked`; include il pannello
+     `CoursePaperSearch` (ricerca paper scientifici, vedi sotto)
+- **Architettura** (`architecture, lessons-structure`)
+  5. **Architettura** — solo edit, AI Generate/Approve + view CRUD
+  6. **Struttura lezioni** — `disabled` finché `isCourseAtLeast(course.status, "architecture_approved")`. AI batch/per-modulo + edit manuale.
+- **Contenuti** (`lesson-content, lesson-slides, lesson-speech`)
+  7. **Contenuti lezioni** — `disabled` finché `isCourseAtLeast(course.status, "lessons_structure_approved")`. AI batch/per-lezione (Fase 3) + glossario + **export PDF testo** (§7).
+  8. **Slide** — `disabled` finché `isCourseAtLeast(course.status, "content_ready")`. AI batch/per-lezione (Fase 4) + edit manuale + **export PDF slide**.
+  9. **Discorso** — `disabled` finché nessuna lezione ha `slides_status ∈ {ready, approved}`. AI batch/per-lezione (Fase 5) + edit manuale + **export PDF discorso**.
+- **Media** (`lesson-video, lesson-avatar-video`)
+  10. **Video** (`lesson-video`) — `disabled` finché nessuna lezione ha `speech_status='approved'` AND `slides_status='approved'`. Generazione video MP4 (Fase 6).
+  11. **Video con avatar** (`lesson-avatar-video`) — stesso gating del tab Video. Generazione del video con avatar parlante (Fase 6b).
+
+`PHASES` (da `CoursePhaseStepper.tsx`) enumera le 4 fasi e il loro mapping
+fase→tab; `TAB_ORDER` enumera le sub-tab e `TabId` ne è il tipo derivato. Il
+gating delle sub-tab "Struttura lezioni", "Contenuti" e "Slide" usa ora
+`isCourseAtLeast(course.status, milestone)` (basato su `COURSE_STATUS_RANK`)
+al posto delle lunghe whitelist inline di `course.status` precedenti. La sub-tab
+attiva è persistita per courseId in localStorage
+(`course-editor-tab:{courseId}`); al rientro lo stepper si posiziona sulla fase
+che contiene quella tab. Le sub-tab disabled restano visibili ma greyed-out
+finché la pre-condizione a monte non è soddisfatta.
+
+### `CoursePhaseStepper.tsx`
+
+Stepper orizzontale delle 4 macro-fasi (`CoursePhaseStepper`) + helper di
+gating condivisi con `CourseEditorPage`.
+
+- **`PHASES`** (`CoursePhaseStepper.tsx:45`): array readonly delle 4 fasi, ognuna
+  con `id`, `labelKey` (i18n `courses.phases.{id}`) e l'elenco delle `tabs`:
+
+  | Fase | `id` | sub-tab |
+  |---|---|---|
+  | Setup | `setup` | `base, didactic, objectives, documents` |
+  | Architettura | `architecture` | `architecture, lessons-structure` |
+  | Contenuti | `content` | `lesson-content, lesson-slides, lesson-speech` |
+  | Media | `media` | `lesson-video, lesson-avatar-video` |
+
+  `PhaseId` è il tipo derivato `(typeof PHASES)[number]["id"]`.
+
+- **`COURSE_STATUS_RANK`** (`CoursePhaseStepper.tsx:9`): mirror 1:1 di
+  `backend/app/core/course_phase_order.py:COURSE_STATUS_RANK` — mappa i **22**
+  stati del corso a un rank `0..21` (`draft=0` … `published=20`, `archived=21`).
+  **Invariante**: la tabella esiste in due posti (BE + FE) e va tenuta allineata
+  a mano; aggiungendo un nuovo stato va aggiunto in entrambi i lati.
+
+- **`isCourseAtLeast(status, milestone)`** (`:39`): `true` se `status` ha
+  raggiunto o superato `milestone` nella pipeline (`RANK[status] >= RANK[milestone]`;
+  status sconosciuto → `-1`, milestone sconosciuta → `Infinity`). È il primitivo
+  di gating riusato sia per i `disabled` dei `TabsTrigger` sia per gli stati di fase.
+
+- **`phaseOfTab(tabId)`** (`:71`): risale la fase che contiene una sub-tab;
+  fallback `setup`.
+
+- **`computePhaseStatus(phaseId, course, setupLocked)`** (`:80`): deriva lo stato
+  per-fase `PhaseStatus = "done" | "in_progress" | "locked" | "idle"`:
+  - **setup**: `done` se `setupLocked`, altrimenti `in_progress`.
+  - **architecture**: `locked` se non `setupLocked`; `done` sse
+    `isCourseAtLeast(s, "lessons_structure_approved")`; altrimenti `in_progress`.
+  - **content**: `locked` se non `setupLocked` o se non
+    `isCourseAtLeast(s, "lessons_structure_approved")`; `done` sse tutte le
+    lezioni hanno `speech_status === "approved"`; altrimenti `in_progress`.
+  - **media**: `locked` se non `setupLocked` o se nessuna lezione ha
+    `speech_status === "approved" && slides_status === "approved"`; `done` sse
+    `isCourseAtLeast(s, "published")`; altrimenti `in_progress`.
+
+- **Rendering** (`PhaseStep`, `:192`): ogni fase è un `<button>` con un pallino
+  (`size-7` rounded-full) il cui aspetto dipende dallo status — `done` =
+  cerchio emerald + `Check`, `locked` = muted + `Lock`, `in_progress` =
+  `bg-primary` + indice, `idle` = bordato + indice — più l'etichetta e
+  **connettori** (`h-px`) tra step (emerald se la fase precedente è `done`). La
+  fase attiva ha `bg-primary/10` e `aria-current="step"`. Il click è ignorato
+  quando `locked`; in tal caso il `title` mostra il **lockedHint** localizzato
+  via `courses.phases.lockedHint.{id}`.
 
 ### Lock setup didattico
 
@@ -170,6 +244,75 @@ const submit = () => {
   icona "Rielabora" (🔄), icona elimina
 - Click sulla riga (se ready) apre il summary dialog
 - ConfirmDialog per delete e reprocess (se status=ready)
+
+## `CoursePaperSearch.tsx` + `PaperResultCard.tsx`
+
+Pannello **ricerca paper scientifici** montato nella sub-tab **Documenti**
+(`CoursePaperSearch orgId courseId`, in `CourseEditorPage.tsx:1491`). Sorgente
+primaria OpenAlex + enrichment on-demand Semantic Scholar/Crossref. Il
+deep-dive della feature vive in `docs/courses/16-paper-search.md`; gli endpoint
+sono in [05 — API reference](05-api-reference.md).
+
+### `CoursePaperSearch.tsx`
+
+- **Pannello filtri** (`Card` collassabile via `showFilters`): input **query**
+  (Enter → ricerca) + **7 filtri** opzionali:
+  - `is_oa` (`Switch`, "Solo Open Access")
+  - `work_type` (`Select`: `any | article | preprint | review | other`)
+  - `year_from` / `year_to` (`number`, 1900–2100)
+  - `min_citations` (`number`, ≥0)
+  - `author_name`, `venue_name` (`Input` testo)
+
+  `onSearch` rifiuta con toast `results.queryRequired` se query e filtri sono
+  entrambi vuoti (`hasAnyFilter`). "Reset filtri" riporta `filters` a
+  `{ is_oa: null, work_type: null }`.
+
+- **Lista risultati + paginazione cursor**: `searchMut` chiama
+  `coursesApi.papers.search` con `per_page: 20` fisso. Prima pagina
+  (`cursor === null`) → **reset** di `results`/`selectedIds`/`lastQuery`;
+  **"Carica altri 20"** (`onLoadMore`, footer visibile solo se `nextCursor`)
+  → **append con dedup per `id`**. Header risultati sticky con counter
+  `results.countWithTotal` (`{{shown}}/{{total}}`).
+
+- **Multi-select + import**: `selectedIds: Set<string>` (`onToggleSelect`).
+  Quando `selectedCount > 0` compare il bottone **"Importa selezionati"**
+  (sticky, plurali via `import.button`) → `importMut`
+  (`coursesApi.papers.importMany`) → toast `import.successDetail`
+  (`{{total}}/{{pdf}}/{{metadata}}`), azzera la selezione e invalida
+  `["courses","detail",orgId,courseId]` per ricaricare la lista documenti.
+
+- **Riassunti AI cached per sessione**: due state separati —
+  `summariesById: Record<string, SummaryState>` (`:88`) e
+  `expandedSummaryIds: Set<string>` (`:91`). `onToggleSummary(paper)` (`:178`):
+  se il riassunto è già `success` toggla **solo la visibilità** (nessuna nuova
+  chiamata); se `loading` ignora; altrimenti genera/ritenta via
+  `coursesApi.papers.aiSummary` salvando il risultato in `summariesById`. La
+  cache **sopravvive** a "Carica altri" e all'expand/collapse; **si perde** solo
+  a unmount o a una nuova ricerca primaria.
+
+### `PaperResultCard.tsx`
+
+Card singolo risultato. Esporta il tipo `SummaryState = { status: "loading" }
+| { status: "success"; data: PaperAISummaryOut } | { status: "error"; error }`.
+
+- **Riga badge**: `Checkbox` di selezione + badge **OA** (`variant="success"`,
+  `Unlock`) / **non-OA** (`variant="warning"`, `Lock`) + (se presente) chip
+  **rilevanza** con barra colorata a soglie **70/40** (emerald/amber/muted) e
+  tooltip `card.relevanceTooltip` + badge **citazioni** (plurali) + badge tipo.
+- **Titolo** linkato a `doi_url` (se presente), riga autori (primi 5 +
+  `plusMoreAuthors`) + anno + journal.
+- **Abstract collapsible**: preview a `ABSTRACT_PREVIEW_CHARS = 320` con
+  toggle `abstractShowMore`/`abstractShowLess`; sotto, chip uniti
+  `keywords + subjects` (max 10) e box **TL;DR** se popolato on-demand.
+- **Footer**: bottone "Apri DOI" + bottone **Riassunto AI** a 4 modalità
+  (idle → loading → collapsed-success → expanded-success), disabilitato durante
+  `loading`. Il riassunto è **inline** (niente dialog): su `error` box
+  destructive, su `success` espanso il `PaperSummaryBlock` con 4 sezioni
+  (`shortSummary`, `technicalSummary`, `keywords` chip, `limitations`).
+
+**API** (`coursesApi.papers`, `frontend/src/api/courses.ts:1006`):
+`search`, `aiSummary`, `importMany` → `POST .../papers/{search,ai-summary,import}`
+(permission `course:edit`).
 
 ## `DocumentSummaryDialog.tsx`
 
@@ -386,6 +529,22 @@ Namespaces principali:
 
 ```
 courses.tabs.{base, didactic, documents, architecture, lessonsStructure}
+courses.phases.{setup, architecture, content, media,
+                lockedHint.{setup, architecture, content, media}}
+courses.papers.{section.{title, subtitle},
+                filters.{query, queryPlaceholder, toggle, yearFrom, yearTo,
+                         minCitations, author, venue, type, typeAny, isOa,
+                         search, resetFilters},
+                results.{emptyInitial, empty, queryRequired, countWithTotal,
+                         loadMore},
+                card.{selectPaper, oaBadge, nonOaBadge, relevance,
+                      relevanceTooltip, citations_one|other, openDoi, aiSummary,
+                      abstractShowMore, abstractShowLess,
+                      plusMoreAuthors_one|other},
+                types.{article, preprint, review, other},
+                import.{button_one|other, importing, successDetail},
+                summary.{generating, show, hide, error, shortSummary,
+                         technicalSummary, keywords, limitations}}
 courses.fields.{title, titlePlaceholder, objectives, ...}
 courses.taxonomies.{categoria, ..., none}
 courses.statuses.{draft, architecture_pending, ..., lessons_structure_approved, ...}

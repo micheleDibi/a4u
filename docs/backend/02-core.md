@@ -30,8 +30,12 @@ completa con descrizione.
 
 - `_empty_string_to_none(value)`: `cookie_domain` letta da env stringa vuota
   diventa `None`.
-- `_none_if_empty(value)`: stesso pattern per `sentry_dsn`,
-  `bootstrap_admin_email`, `bootstrap_admin_password`.
+- `_none_if_empty(value)`: stesso pattern (stringa vuota → `None`) applicato
+  a **tutte le credenziali/segreti opzionali** (`config.py:318-337`):
+  `sentry_dsn`, `bootstrap_admin_email`, `bootstrap_admin_password`,
+  `minimax_api_key`, `openai_api_key`, `runpod_api_key`,
+  `runpod_tts_endpoint_id`, `runpod_musetalk_endpoint_id`, `r2_endpoint`,
+  `r2_bucket`, `r2_access_key_id`, `r2_secret_access_key`.
 
 **Proprietà**:
 
@@ -47,6 +51,63 @@ completa con descrizione.
 
 Decorata con `@lru_cache(maxsize=1)`: restituisce lo stesso oggetto in tutto
 il processo. Va invocata in cima ai moduli che leggono config.
+
+---
+
+## `app/core/course_phase_order.py`
+
+**Scopo**: definire l'**ordine totale monotono** degli stati di
+`Course.status` e impedirne la regressione. La pipeline corsi avanza per
+fasi sequenziali (architecture → lessons structure → content → slides →
+speech → video → avatar_video → published/archived); dentro la stessa fase
+vale `pending < ready < approved` (video/avatar_video non hanno `approved`,
+vedi `app/schemas/course.py`).
+
+### Costanti
+
+#### `COURSE_STATUS_RANK: dict[str, int]`
+
+Mappa ogni stato al suo rank intero (`draft=0` … `archived=21`,
+`course_phase_order.py:27-50`). È la **fonte di verità** dell'ordinamento
+delle fasi:
+
+- usata da `advance_course_status` per il gating monotono lato backend;
+- **mirrorata 1:1 lato frontend** in
+  `frontend/src/pages/org/courses/components/CoursePhaseStepper.tsx`
+  (`COURSE_STATUS_RANK` + helper `isCourseAtLeast`), che la usa per il
+  gating delle 4 macro-fasi e delle sub-tab dell'editor (stepper a 4 fasi).
+
+> **Invariante di drift**: i due `COURSE_STATUS_RANK` (questo modulo +
+> `CoursePhaseStepper.tsx`) sono tenuti allineati a mano. Aggiungendo o
+> rinumerando uno stato, aggiornare **entrambi**.
+
+> **Nota**: il gating di editabilità lato backend **non** usa questo rank.
+> `course_architecture_crud.EDITABLE_STATUSES`
+> (`course_architecture_crud.py:56-69`) è una whitelist letterale hard-coded
+> e il modulo non importa `course_phase_order`. Il ragionamento per-rank
+> sull'editabilità (es. "fase ≥ X") vive **solo nel frontend**
+> (`CoursePhaseStepper.tsx` + i `disabled` dei `TabsTrigger` in
+> `CourseEditorPage.tsx`).
+
+### Funzioni
+
+#### `advance_course_status(course: Course, new_status: str) -> None`
+
+Assegna `course.status = new_status` **solo se non è una regressione di
+fase**, ossia se `COURSE_STATUS_RANK[new_status] >= COURSE_STATUS_RANK[current]`
+(`course_phase_order.py:53-68`). Stati ignoti hanno rank `0`.
+
+Chiamata dai 6 `_recompute_course_*_status` dei service di lezione
+(`course_lesson_{structure,content,slides,speech,video,avatar_video}_service.py`,
+es. `course_lesson_content_service.py:1083-1114`) e dal
+`course_duplication_service`. Ogni service ricalcola lo stato del corso in
+base allo stato delle proprie lezioni, ma non può riportarlo indietro:
+previene il bug "approvo le slide → poi modifico/approvo un contenuto → il
+corso torna a `content_approved` → non posso più generare il discorso".
+
+Vedi [courses/04 — Manual editing](../courses/04-manual-editing.md) per la
+whitelist `EDITABLE_STATUSES` (definita esplicitamente, non derivata da
+questo ordinamento).
 
 ---
 

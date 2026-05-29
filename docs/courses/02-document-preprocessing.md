@@ -10,11 +10,11 @@ che diventa la rappresentazione canonica del documento per le fasi AI successive
 [upload]                                                                   [riassunto pronto]
    │                                                                              │
    ▼                                                                              │
-course_document (status=pending)                                                  │
+course_document (summary_status=pending)                                          │
    │                                                                              │
    │  worker tick (poll ogni 4s)                                                  │
    ▼                                                                              │
-status=processing                                                                 │
+summary_status=processing                                                         │
    │                                                                              │
    │  document_extraction_service.extract_text                                    │
    ▼                                                                              │
@@ -26,18 +26,43 @@ JSON Pydantic-validato (DocumentSummaryOut)                                     
    │                                                                              │
    │  scrittura summary + summary_tokens + summary_generated_at                   │
    ▼                                                                              │
-status=ready ────────────────────────────────────────────────────────────────────►│
+summary_status=ready ──────────────────────────────────────────────────────────────►│
    │
    │  errore in qualunque fase
    ▼
-status=failed (summary_error popolato; nessun retry automatico)
+summary_status=failed (summary_error popolato; nessun retry automatico)
 ```
 
 ## Trigger
 
 - **Upload**: ogni `POST /documents` crea la riga `course_document` con
-  `status=pending`. Il worker la prende al prossimo tick.
+  `summary_status='pending'`. Il worker la prende al prossimo tick.
 - **Reprocess manuale**: `POST /documents/{id}/reprocess` resetta a `pending`.
+- **Import paper scientifico**: l'import di un paper dalla ricerca (vedi
+  [16 — Paper search](16-paper-search.md), endpoint `POST /papers/import`)
+  crea righe `course_document` con `summary_status='pending'` tramite
+  `course_service.add_document_from_bytes`
+  (`backend/app/services/course_service.py:746` — sibling di `add_document`,
+  riceve `bytes` invece di un `UploadFile`). La sorgente del documento dipende
+  dalla disponibilità del PDF (vedi `paper_import_service.import_paper`,
+  `backend/app/services/paper_import_service.py:145`):
+
+  | Caso | Documento creato | MIME | `mode` |
+  |---|---|---|---|
+  | Paper open-access con PDF scaricabile (`download_pdf` OK) | `.pdf` | `application/pdf` | `pdf` |
+  | Paper non-OA, oppure download/validazione PDF fallita | `.md` generato dai metadati | `text/markdown` | `metadata` |
+
+  Il `.md` di fallback (`_render_metadata_md`,
+  `backend/app/services/paper_import_service.py:83`) raccoglie titolo, autori,
+  anno, journal, type, DOI, link, citazioni, flag OA, abstract, TL;DR
+  (Semantic Scholar), keywords e subjects (Crossref). In **entrambi** i casi il
+  `course_document_worker` processa la riga con lo **stesso flusso** descritto
+  sopra (`extract_text` legge il `.md` come plain text UTF-8 + `summarize` AI).
+
+  > **Audit**: l'import usa `action='course.document.add_from_bytes'` con
+  > `metadata.source='external_import'`
+  > (`backend/app/services/course_service.py:789-803`), distinto dall'upload
+  > standard (`course.document.add`).
 
 ## Worker — `course_document_worker.py`
 
@@ -74,6 +99,12 @@ Dispatch su mime type:
 | `application/msword` (DOC legacy) | `docx2txt` | |
 | `application/rtf` / `text/rtf` | `striprtf` | |
 | `text/plain`, `text/markdown` | built-in | UTF-8 con `errors='replace'` |
+
+> `text/markdown` è già gestito dal branch built-in (lettura plain text UTF-8):
+> i `.md` generati dall'**import paper** (vedi [Trigger](#trigger)) ricadono qui
+> senza codice dedicato — `extract_text` ne legge i metadati come testo grezzo,
+> che `summarize_document` riassume nel JSON di Appendice A come per ogni altro
+> documento.
 
 Solleva `DocumentExtractionError` su corruzione, password protetta, formato non
 riconosciuto. Tronca a `settings.course_document_max_chars` (default 120000) e
@@ -161,8 +192,9 @@ class DocumentSummaryOut(BaseModel):
 
 ## Audit
 
-- `course.document.uploaded` (su upload)
-- `course.document.summary.ready` (success worker)
-- `course.document.summary.failed` (failure worker)
-- `course.document.reprocess` (reset manuale)
-- `course.document.deleted`
+- `course.document.add` (su upload — `course_service.py:731`)
+- `course.document.add_from_bytes` (import paper — `metadata.source='external_import'`, `course_service.py:791`)
+- `course.document.summary.ready` (success worker — `course_document_worker.py:158`)
+- `course.document.summary.failed` (failure worker — `course_document_worker.py:69,112,131`)
+- `course.document.reprocess` (reset manuale — `course_service.py:820`)
+- `course.document.delete` (eliminazione — `course_service.py:850`)
