@@ -94,6 +94,12 @@ services:
       # Documenti). Output strutturato breve, gpt-4o-mini basta.
       OPENAI_PAPER_SUMMARY_MODEL: ${OPENAI_PAPER_SUMMARY_MODEL:-gpt-4o-mini}
       OPENAI_PAPER_SUMMARY_MAX_TOKENS: ${OPENAI_PAPER_SUMMARY_MAX_TOKENS:-3000}
+      # Auto-fix asset fragili (LaTeX + Mermaid) a generazione AI: se un
+      # asset non e' valido, viene riparato con una chiamata AI mirata e
+      # ri-validato. gpt-4o-mini basta per il fix sintattico.
+      OPENAI_ASSET_FIX_MODEL: ${OPENAI_ASSET_FIX_MODEL:-gpt-4o-mini}
+      OPENAI_ASSET_FIX_MAX_TOKENS: ${OPENAI_ASSET_FIX_MAX_TOKENS:-4000}
+      ASSET_FIX_MAX_ATTEMPTS: ${ASSET_FIX_MAX_ATTEMPTS:-3}
       # Ricerca paper scientifici: OpenAlex (primario) + Semantic Scholar
       # + Crossref (enrichment on-demand). I default funzionano subito;
       # settare PAPERS_POLITE_EMAIL e' raccomandato per il "polite pool"

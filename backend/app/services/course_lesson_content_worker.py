@@ -44,6 +44,7 @@ from app.core.logging import get_logger
 from app.db.session import async_session_factory
 from app.models.course_lesson import CourseLesson
 from app.services import (
+    asset_validation_service,
     course_glossary_service,
     course_lesson_content_service,
     openai_lesson_content_service,
@@ -393,6 +394,55 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                 current_status=lesson.content_status,
             )
             return
+
+        # Validazione + auto-fix degli asset "fragili" (formule LaTeX +
+        # diagrammi Mermaid) PRIMA di materializzare: ripara con AI ogni
+        # asset invalido cosi' che nessuno raggiunga `ready` rotto. Solo
+        # per le lezioni di contenuto (l'assessment ha schema MC/open).
+        if not lesson.is_assessment:
+            lesson.content_progress = 88
+            lesson.content_progress_phase = "validating_assets"
+            await db.commit()
+            try:
+                content_output = (
+                    await asset_validation_service.validate_and_fix_content_assets(
+                        content_output, language_code=course_full.language_code
+                    )
+                )
+            # Cattura ampia (incl. AssetFixUnresolvedError): qualunque errore
+            # in validazione/fix e' recuperabile -> auto-retry rigenera la
+            # lezione. Cosi' un asset rotto non raggiunge mai `ready` e
+            # l'utente non vede errori intermedi.
+            except Exception as exc:  # noqa: BLE001
+                settings = get_settings()
+                terminal = not _apply_failure(
+                    lesson,
+                    error=f"Asset non validabili: {exc}",
+                    phase="asset_validation",
+                    recoverable=True,
+                    auto_retry_max=settings.course_lesson_content_auto_retry_max,
+                )
+                if terminal:
+                    course_lesson_content_service._recompute_course_content_status(
+                        course_full
+                    )
+                    await write_audit(
+                        db,
+                        action="course.lesson.content.failed",
+                        actor_user_id=None,
+                        organization_id=course_full.organization_id,
+                        target_type="course_lesson",
+                        target_id=str(lesson.id),
+                        metadata={
+                            "course_id": str(course_full.id),
+                            "lesson_code": lesson.lesson_code,
+                            "phase": "asset_validation",
+                            "error": str(exc)[:500],
+                            "attempts": lesson.content_attempts,
+                        },
+                    )
+                await db.commit()
+                return
 
         # Materializzazione + validazioni §6.4
         lesson.content_progress = 90

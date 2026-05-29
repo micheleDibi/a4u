@@ -174,6 +174,20 @@ class Settings(BaseSettings):
     openai_image_to_mermaid_reasoning_effort: str | None = None
     openai_image_to_mermaid_max_tokens: int = 4_000
 
+    # Auto-fix degli asset "fragili" (formule LaTeX + diagrammi Mermaid)
+    # a generazione AI (Fase 3 + Fase 4). Quando un asset generato non
+    # supera la validazione (latex2mathml + KaTeX per le formule, mermaid
+    # v10.9.4 per i diagrammi), viene riparato con una chiamata AI mirata
+    # e ri-validato, finché valido o esaurito `asset_fix_max_attempts`.
+    # gpt-4o-mini basta per il fix sintattico mirato; l'escalation (re-gen
+    # intera lezione con gpt-5.5) copre i casi residui via auto-retry.
+    openai_asset_fix_model: str = "gpt-4o-mini"
+    openai_asset_fix_reasoning_effort: str | None = None
+    openai_asset_fix_max_tokens: int = 4_000
+    # Tentativi di fix AI per singolo asset prima di alzare un errore
+    # recuperabile (che fa rigenerare l'intera lezione via auto-retry).
+    asset_fix_max_attempts: int = 3
+
     # §7 — Export PDF lezioni.
     # Cap=2: rendering Playwright è I/O+CPU intensive (Chromium istanza).
     course_lesson_pdf_poll_interval_seconds: int = 4
