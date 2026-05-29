@@ -58,6 +58,74 @@ class AssetCheck:
 
 
 # ---------------------------------------------------------------------------
+# Pre-pulizia: caratteri di controllo (garbage del modello)
+# ---------------------------------------------------------------------------
+
+# C0 (escluso \t \n \r), DEL e C1: mai validi in LaTeX/Mermaid/prosa. Il
+# modello a volte emette ESC (0x1B) o simili dentro le formule (es. KaTeX
+# "Unexpected character: ''"). Li rimuoviamo deterministicamente
+# dall'output AI PRIMA della validazione: spesso questo da solo rende
+# l'asset valido senza bisogno di una chiamata di fix.
+_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
+
+
+def _strip_control_chars(s: str) -> str:
+    if not s:
+        return s
+    return _CONTROL_CHARS_RE.sub("", s)
+
+
+# Combining diacritical marks (U+0300–U+036F): in una sorgente LaTeX sono
+# quasi sempre garbage del modello (in LaTeX si usano comandi tipo
+# `\underline{}`/`\hat{}`, non combining char grezzi) e fanno fallire KaTeX
+# ("Unexpected character"). Li rimuoviamo SOLO dalle sorgenti LaTeX (formule),
+# MAI dalla prosa o dalle label Mermaid, dove gli accenti sono legittimi.
+_COMBINING_RE = re.compile("[" + chr(0x0300) + "-" + chr(0x036F) + "]")
+
+
+def _clean_latex_source(s: str) -> str:
+    """Pulisce una sorgente LaTeX: caratteri di controllo + combining marks."""
+    return _COMBINING_RE.sub("", _strip_control_chars(s or ""))
+
+
+def _preclean_content_output(output: LessonContentOutput) -> None:
+    """Rimuove i caratteri di controllo dai campi testo + asset di Fase 3
+    (in-place). Idempotente e sempre sicuro."""
+    output.introduction = _strip_control_chars(output.introduction)
+    output.summary = _strip_control_chars(output.summary)
+    output.key_takeaways = [_strip_control_chars(k) for k in output.key_takeaways]
+    for sec in output.sections:
+        sec.title = _strip_control_chars(sec.title)
+        sec.content = _strip_control_chars(sec.content)
+    for ex in output.examples:
+        ex.title = _strip_control_chars(ex.title)
+        ex.content = _strip_control_chars(ex.content)
+    for eq in output.equations:
+        eq.latex = _strip_control_chars(eq.latex)
+        eq.label = _strip_control_chars(eq.label)
+        eq.explanation = _strip_control_chars(eq.explanation)
+    for asset in output.visual_assets:
+        asset.content = _strip_control_chars(asset.content)
+        asset.caption = _strip_control_chars(asset.caption)
+        asset.alt_text = _strip_control_chars(asset.alt_text)
+    for tab in output.tables:
+        tab.markdown = _strip_control_chars(tab.markdown)
+        tab.caption = _strip_control_chars(tab.caption)
+
+
+def _preclean_slides_output(output: LessonSlidesOutput) -> None:
+    """Rimuove i caratteri di controllo dalle slide + new_assets di Fase 4."""
+    for slide in output.slides:
+        slide.title = _strip_control_chars(slide.title)
+        slide.body = _strip_control_chars(slide.body)
+        slide.bullets = [_strip_control_chars(b) for b in slide.bullets]
+    for asset in output.new_assets:
+        asset.content = _strip_control_chars(asset.content)
+        asset.caption = _strip_control_chars(asset.caption)
+        asset.alt_text = _strip_control_chars(asset.alt_text)
+
+
+# ---------------------------------------------------------------------------
 # Validazione JS (Playwright): Mermaid v10.9.4 + KaTeX
 # ---------------------------------------------------------------------------
 
@@ -258,7 +326,7 @@ class _InlineField:
 def _sanitize(kind: str, value: str) -> str:
     """Ripulisce l'output del fix AI: niente code-fence/backtick; per il
     LaTeX rimuove eventuali delimitatori reintrodotti per errore."""
-    v = (value or "").strip()
+    v = _strip_control_chars(value or "").strip()
     if v.startswith("```"):
         v = re.sub(r"^```[a-zA-Z]*\n?", "", v)
         v = re.sub(r"\n?```$", "", v).strip()
@@ -300,7 +368,7 @@ def _collect_content_slots(
                 _Slot(
                     id=f"eq:{eq.equation_id}",
                     kind="latex",
-                    current=eq.latex,
+                    current=_clean_latex_source(eq.latex),
                     context=ctx,
                     commit=lambda v, _e=eq: setattr(_e, "latex", v),
                 )
@@ -319,8 +387,11 @@ def _collect_content_slots(
                 )
             )
 
-    # Math inline nei campi testo.
-    def _add_inline(getter_obj: Any, attr: str, ctx: str) -> None:
+    # Math inline nei campi testo. `key` deve essere UNIVOCO per campo:
+    # sezioni ed esempi usano tutti attr="content", quindi senza un prefisso
+    # distinto gli id collidono (es. `content#4` di due sezioni) e il
+    # fix-loop riparerebbe lo slot sbagliato.
+    def _add_inline(getter_obj: Any, attr: str, ctx: str, key: str) -> None:
         text = getattr(getter_obj, attr, "") or ""
         spans = _find_math_spans(text)
         if not spans:
@@ -334,9 +405,9 @@ def _collect_content_slots(
             delim = "$$" if sp.display else "$"
             slots.append(
                 _Slot(
-                    id=f"{attr}#{i}",
+                    id=f"{key}#{i}",
                     kind="latex",
-                    current=sp.inner,
+                    current=_clean_latex_source(sp.inner),
                     context=ctx,
                     commit=lambda v, _f=fld, _s=sp, _d=delim: _f.add_repl(
                         _s.start, _s.end, f"{_d}{v}{_d}"
@@ -344,12 +415,12 @@ def _collect_content_slots(
                 )
             )
 
-    _add_inline(output, "introduction", "introduzione")
-    _add_inline(output, "summary", "sintesi")
-    for sec in output.sections:
-        _add_inline(sec, "content", sec.title or "sezione")
-    for ex in output.examples:
-        _add_inline(ex, "content", ex.title or "esempio")
+    _add_inline(output, "introduction", "introduzione", "introduction")
+    _add_inline(output, "summary", "sintesi", "summary")
+    for si, sec in enumerate(output.sections):
+        _add_inline(sec, "content", sec.title or "sezione", f"sec{si}.content")
+    for ei, ex in enumerate(output.examples):
+        _add_inline(ex, "content", ex.title or "esempio", f"ex{ei}.content")
 
     return slots, inline_fields
 
@@ -388,7 +459,7 @@ def _collect_slides_slots(
                 _Slot(
                     id=f"{key}#{i}",
                     kind="latex",
-                    current=sp.inner,
+                    current=_clean_latex_source(sp.inner),
                     context=ctx,
                     commit=lambda v, _f=fld, _s=sp, _d=delim: _f.add_repl(
                         _s.start, _s.end, f"{_d}{v}{_d}"
@@ -539,6 +610,7 @@ async def validate_and_fix_content_assets(
     """Valida e auto-corregge gli asset fragili dell'output di Fase 3.
     Muta e ritorna lo stesso `output`. Solleva `AssetFixUnresolvedError`
     (recuperabile) se un asset resta invalido."""
+    _preclean_content_output(output)
     slots, inline_fields = _collect_content_slots(output)
     if not slots:
         return output
@@ -557,6 +629,7 @@ async def validate_and_fix_slides_assets(
 ) -> LessonSlidesOutput:
     """Valida e auto-corregge gli asset fragili dell'output di Fase 4
     (new_assets Mermaid + math inline nelle slide). Muta e ritorna `output`."""
+    _preclean_slides_output(output)
     slots, inline_fields = _collect_slides_slots(output)
     if not slots:
         return output
