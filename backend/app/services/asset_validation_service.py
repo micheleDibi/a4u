@@ -186,12 +186,25 @@ def _validate_js_batch_sync(
             pass
 
 
+# Timeout hard sulla validazione JS: se Playwright/Chromium si impianta, il
+# worker non deve MAI restare appeso in "validating_assets". Oltre la soglia
+# si degrada (None) e si prosegue (LaTeX resta validato da latex2mathml).
+_VALIDATION_TIMEOUT_S = 90.0
+
+
 async def _validate_js_batch(
     items: list[tuple[str, str]],
 ) -> list[tuple[bool, str]] | None:
     if not items:
         return []
-    return await asyncio.to_thread(_validate_js_batch_sync, items)
+    try:
+        return await asyncio.wait_for(
+            asyncio.to_thread(_validate_js_batch_sync, items),
+            timeout=_VALIDATION_TIMEOUT_S,
+        )
+    except Exception as exc:  # noqa: BLE001 — incl. TimeoutError -> degrada
+        log.warning("asset_validator_timeout", error=str(exc))
+        return None
 
 
 def validate_latex_mathml(latex: str) -> tuple[bool, str]:
