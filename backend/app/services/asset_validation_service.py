@@ -84,45 +84,10 @@ _COMBINING_RE = re.compile("[" + chr(0x0300) + "-" + chr(0x036F) + "]")
 
 
 def _clean_latex_source(s: str) -> str:
-    """Pulisce una sorgente LaTeX: caratteri di controllo + combining marks."""
+    """Pulisce una sorgente LaTeX: caratteri di controllo + combining marks.
+    Usato SOLO come primo tentativo di riparazione su un asset gia' risultato
+    invalido (mai sugli asset validi)."""
     return _COMBINING_RE.sub("", _strip_control_chars(s or ""))
-
-
-def _preclean_content_output(output: LessonContentOutput) -> None:
-    """Rimuove i caratteri di controllo dai campi testo + asset di Fase 3
-    (in-place). Idempotente e sempre sicuro."""
-    output.introduction = _strip_control_chars(output.introduction)
-    output.summary = _strip_control_chars(output.summary)
-    output.key_takeaways = [_strip_control_chars(k) for k in output.key_takeaways]
-    for sec in output.sections:
-        sec.title = _strip_control_chars(sec.title)
-        sec.content = _strip_control_chars(sec.content)
-    for ex in output.examples:
-        ex.title = _strip_control_chars(ex.title)
-        ex.content = _strip_control_chars(ex.content)
-    for eq in output.equations:
-        eq.latex = _strip_control_chars(eq.latex)
-        eq.label = _strip_control_chars(eq.label)
-        eq.explanation = _strip_control_chars(eq.explanation)
-    for asset in output.visual_assets:
-        asset.content = _strip_control_chars(asset.content)
-        asset.caption = _strip_control_chars(asset.caption)
-        asset.alt_text = _strip_control_chars(asset.alt_text)
-    for tab in output.tables:
-        tab.markdown = _strip_control_chars(tab.markdown)
-        tab.caption = _strip_control_chars(tab.caption)
-
-
-def _preclean_slides_output(output: LessonSlidesOutput) -> None:
-    """Rimuove i caratteri di controllo dalle slide + new_assets di Fase 4."""
-    for slide in output.slides:
-        slide.title = _strip_control_chars(slide.title)
-        slide.body = _strip_control_chars(slide.body)
-        slide.bullets = [_strip_control_chars(b) for b in slide.bullets]
-    for asset in output.new_assets:
-        asset.content = _strip_control_chars(asset.content)
-        asset.caption = _strip_control_chars(asset.caption)
-        asset.alt_text = _strip_control_chars(asset.alt_text)
 
 
 # ---------------------------------------------------------------------------
@@ -331,14 +296,13 @@ def _sanitize(kind: str, value: str) -> str:
         v = re.sub(r"^```[a-zA-Z]*\n?", "", v)
         v = re.sub(r"\n?```$", "", v).strip()
     if kind == "latex":
-        if v.startswith("$$") and v.endswith("$$"):
-            v = v[2:-2].strip()
-        elif v.startswith("$") and v.endswith("$"):
-            v = v[1:-1].strip()
-        if v.startswith("\\[") and v.endswith("\\]"):
-            v = v[2:-2].strip()
-        elif v.startswith("\\(") and v.endswith("\\)"):
-            v = v[2:-2].strip()
+        # Rimuove i delimitatori reintrodotti per errore dal fix, anche se
+        # presenti solo in testa o solo in coda (es. un `$$` spurio finale).
+        v = re.sub(r"^\\[\[(]", "", v)
+        v = re.sub(r"\\[\])]$", "", v)
+        v = re.sub(r"^\$+", "", v)
+        v = re.sub(r"(?<!\\)\$+$", "", v)  # non toccare un `\$` escapato
+        v = v.strip()
     return v
 
 
@@ -368,7 +332,7 @@ def _collect_content_slots(
                 _Slot(
                     id=f"eq:{eq.equation_id}",
                     kind="latex",
-                    current=_clean_latex_source(eq.latex),
+                    current=eq.latex,
                     context=ctx,
                     commit=lambda v, _e=eq: setattr(_e, "latex", v),
                 )
@@ -407,7 +371,7 @@ def _collect_content_slots(
                 _Slot(
                     id=f"{key}#{i}",
                     kind="latex",
-                    current=_clean_latex_source(sp.inner),
+                    current=sp.inner,
                     context=ctx,
                     commit=lambda v, _f=fld, _s=sp, _d=delim: _f.add_repl(
                         _s.start, _s.end, f"{_d}{v}{_d}"
@@ -459,7 +423,7 @@ def _collect_slides_slots(
                 _Slot(
                     id=f"{key}#{i}",
                     kind="latex",
-                    current=_clean_latex_source(sp.inner),
+                    current=sp.inner,
                     context=ctx,
                     commit=lambda v, _f=fld, _s=sp, _d=delim: _f.add_repl(
                         _s.start, _s.end, f"{_d}{v}{_d}"
@@ -549,25 +513,49 @@ async def _validate_and_fix(
     *,
     language_code: str,
 ) -> int:
-    """Valida+ripara tutti gli slot. Ritorna il numero di asset corretti.
-    Solleva `AssetFixUnresolvedError` se uno resta invalido dopo i tentativi.
-    Applica i fix all'output SOLO a fine processo (su successo)."""
+    """Valida gli slot e ripara SOLO quelli invalidi. Gli asset gia' validi
+    NON vengono toccati: nessun clean, nessun commit, restano byte-identici.
+    Ritorna il numero di asset effettivamente modificati. Solleva
+    `AssetFixUnresolvedError` (recuperabile) se uno resta invalido dopo i
+    tentativi."""
     if not slots:
         return 0
 
     settings = get_settings()
     max_attempts = max(0, int(settings.asset_fix_max_attempts))
-    fixed_count = 0
     by_id = {s.id: s for s in slots}
-    remaining = max_attempts
+    # Snapshot dei valori originali: a fine processo committiamo SOLO gli
+    # slot il cui valore e' davvero cambiato (cioe' quelli riparati).
+    originals = {s.id: s.current for s in slots}
 
-    while True:
-        checks = await _validate_slots(slots)
-        invalid = [c for c in checks if not c.ok]
-        if not invalid:
-            break
+    # Giro 0: valida gli originali. Se e' tutto valido, non tocchiamo NULLA.
+    checks = await _validate_slots(slots)
+    invalid = [c for c in checks if not c.ok]
+    if not invalid:
+        return 0
+
+    # Step deterministico (no AI): pulizia control-char/combining SOLO sugli
+    # asset invalidi. Spesso il garbage del modello (ESC, ecc.) si risolve
+    # qui senza spendere token.
+    for c in invalid:
+        slot = by_id[c.id]
+        cleaned = (
+            _clean_latex_source(slot.current)
+            if slot.kind == "latex"
+            else _strip_control_chars(slot.current)
+        )
+        if cleaned and cleaned != slot.current:
+            slot.current = cleaned
+    checks = await _validate_slots(slots)
+    invalid = [c for c in checks if not c.ok]
+
+    # Fix AI iterativo, SOLO sugli asset ancora invalidi.
+    remaining = max_attempts
+    while invalid:
         if remaining <= 0:
-            details = "; ".join(f"{c.id} [{c.kind}]: {c.error_message}" for c in invalid[:5])
+            details = "; ".join(
+                f"{c.id} [{c.kind}]: {c.error_message}" for c in invalid[:5]
+            )
             raise AssetFixUnresolvedError(details)
         remaining -= 1
         for c in invalid:
@@ -589,11 +577,17 @@ async def _validate_and_fix(
             if not candidate or _looks_corrupted(slot.kind, candidate):
                 continue
             slot.current = candidate
-            fixed_count += 1
+        checks = await _validate_slots(slots)
+        invalid = [c for c in checks if not c.ok]
 
-    # Tutti validi → applica i fix all'output.
+    # Commit CHIRURGICO: solo gli slot davvero cambiati (riparati). Gli asset
+    # gia' validi non vengono ne' committati ne' riscritti; i campi inline
+    # senza span cambiati restano byte-identici (write() e' no-op se 0 repl).
+    fixed_count = 0
     for slot in slots:
-        slot.commit(slot.current)
+        if slot.current != originals[slot.id]:
+            slot.commit(slot.current)
+            fixed_count += 1
     for fld in inline_fields:
         fld.write()
     return fixed_count
@@ -610,7 +604,6 @@ async def validate_and_fix_content_assets(
     """Valida e auto-corregge gli asset fragili dell'output di Fase 3.
     Muta e ritorna lo stesso `output`. Solleva `AssetFixUnresolvedError`
     (recuperabile) se un asset resta invalido."""
-    _preclean_content_output(output)
     slots, inline_fields = _collect_content_slots(output)
     if not slots:
         return output
@@ -629,7 +622,6 @@ async def validate_and_fix_slides_assets(
 ) -> LessonSlidesOutput:
     """Valida e auto-corregge gli asset fragili dell'output di Fase 4
     (new_assets Mermaid + math inline nelle slide). Muta e ritorna `output`."""
-    _preclean_slides_output(output)
     slots, inline_fields = _collect_slides_slots(output)
     if not slots:
         return output
