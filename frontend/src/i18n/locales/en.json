@@ -1847,9 +1847,6 @@
       "title": "Delete the avatar?",
       "message": "Image, audio, and all generated clips will be deleted."
     },
-    "audio": {
-      "tooShort": "Audio must be at least 6 seconds long."
-    },
     "musetalk": {
       "title": "Talking avatar — advanced parameters",
       "hint": "MuseTalk parameters for the lip-sync used in the lesson «Avatar videos». The defaults work for most avatars: change them only if the face crop is not accurate.",

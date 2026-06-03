@@ -1848,9 +1848,6 @@
       "title": "Eliminare l'avatar?",
       "message": "Verranno eliminati immagine, audio e tutti i clip generati."
     },
-    "audio": {
-      "tooShort": "L'audio deve durare almeno 6 secondi."
-    },
     "musetalk": {
       "title": "Avatar parlante — parametri avanzati",
       "hint": "Parametri MuseTalk per il lip-sync usato nei «Video con avatar» delle lezioni. I valori predefiniti funzionano per la maggior parte degli avatar: modificali solo se il ritaglio del volto non è preciso.",
