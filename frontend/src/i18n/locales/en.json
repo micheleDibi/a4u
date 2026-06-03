@@ -426,7 +426,10 @@
         "empty": "No papers found. Try broadening the filters or changing keywords.",
         "queryRequired": "Enter at least one keyword or filter before searching.",
         "countWithTotal": "{{shown}} of {{total}} results shown",
-        "loadMore": "Load 20 more"
+        "loadMore": "Load 20 more",
+        "collapse": "Collapse",
+        "expand": "Show results",
+        "collapsedHint": "Results collapsed. Click \"Show results\" to reopen them."
       },
       "card": {
         "selectPaper": "Select paper",

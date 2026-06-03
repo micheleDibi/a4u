@@ -426,7 +426,10 @@
         "empty": "Nessun paper trovato. Prova ad allargare i filtri o cambiare le parole chiave.",
         "queryRequired": "Inserisci almeno una parola chiave o un filtro prima di cercare.",
         "countWithTotal": "{{shown}} risultati visualizzati su {{total}} totali",
-        "loadMore": "Carica altri 20"
+        "loadMore": "Carica altri 20",
+        "collapse": "Comprimi",
+        "expand": "Mostra risultati",
+        "collapsedHint": "Risultati compressi. Clicca \"Mostra risultati\" per riaprirli."
       },
       "card": {
         "selectPaper": "Seleziona paper",

@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
+  ChevronsDownUp,
+  ChevronsUpDown,
   Download,
   FilterX,
   Loader2,
@@ -81,6 +83,15 @@ export function CoursePaperSearch({ orgId, courseId }: Props) {
   // Multi-select
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
+  // Collasso della lista risultati: dopo un import la lista (potenzialmente
+  // lunga) viene compressa cosi' non si deve risalire a mano in cima.
+  const [resultsCollapsed, setResultsCollapsed] = useState(false);
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  const scrollToTop = () => {
+    cardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   // Riassunti AI cached per la sessione (non persistiti). La map
   // sopravvive a "Carica altri" e al toggle expanded, cosi' rigenerare
   // un riassunto gia' visto e' gratis. Si perde solo a unmount o a una
@@ -110,6 +121,7 @@ export function CoursePaperSearch({ orgId, courseId }: Props) {
         setResults(data.results);
         setSelectedIds(new Set());
         setLastQuery(vars.query);
+        setResultsCollapsed(false);
       } else {
         // Carica altri: append, dedup per id
         setResults((prev) => {
@@ -135,6 +147,10 @@ export function CoursePaperSearch({ orgId, courseId }: Props) {
         }),
       );
       setSelectedIds(new Set());
+      // Comprime la lista (spesso lunga) e riporta la vista in cima alla
+      // sezione, cosi' non si deve scrollare a mano fino in testa.
+      setResultsCollapsed(true);
+      scrollToTop();
       // Invalidate course detail per ricaricare la lista documenti.
       qc.invalidateQueries({
         queryKey: ["courses", "detail", orgId, courseId],
@@ -223,7 +239,7 @@ export function CoursePaperSearch({ orgId, courseId }: Props) {
     searchMut.isPending && results.length > 0;
 
   return (
-    <Card>
+    <Card ref={cardRef} className="scroll-mt-4">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Microscope className="size-5 text-primary" />
@@ -443,13 +459,38 @@ export function CoursePaperSearch({ orgId, courseId }: Props) {
 
           {results.length > 0 && (
             <>
-              {/* Header risultati: counter + sticky import button */}
+              {/* Header risultati: counter + toggle comprimi + sticky import button */}
               <div className="sticky top-2 z-10 -mx-1 flex items-center justify-between gap-2 rounded-md border border-border bg-card/95 px-3 py-2 shadow-sm backdrop-blur">
-                <div className="text-sm text-muted-foreground">
-                  {t("courses.papers.results.countWithTotal", {
-                    shown: results.length,
-                    total: totalCount ?? results.length,
-                  })}
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-muted-foreground"
+                    onClick={() => {
+                      setResultsCollapsed((v) => !v);
+                      if (!resultsCollapsed) scrollToTop();
+                    }}
+                    title={
+                      (resultsCollapsed
+                        ? t("courses.papers.results.expand")
+                        : t("courses.papers.results.collapse")) as string
+                    }
+                  >
+                    {resultsCollapsed ? (
+                      <ChevronsUpDown className="size-4" />
+                    ) : (
+                      <ChevronsDownUp className="size-4" />
+                    )}
+                    {resultsCollapsed
+                      ? t("courses.papers.results.expand")
+                      : t("courses.papers.results.collapse")}
+                  </Button>
+                  <span className="text-sm text-muted-foreground">
+                    {t("courses.papers.results.countWithTotal", {
+                      shown: results.length,
+                      total: totalCount ?? results.length,
+                    })}
+                  </span>
                 </div>
                 {selectedCount > 0 && (
                   <Button
@@ -471,35 +512,43 @@ export function CoursePaperSearch({ orgId, courseId }: Props) {
                 )}
               </div>
 
-              {/* Lista card */}
-              <div className="space-y-3">
-                {results.map((p) => (
-                  <PaperResultCard
-                    key={p.id}
-                    paper={p}
-                    selected={selectedIds.has(p.id)}
-                    summary={summariesById[p.id]}
-                    summaryExpanded={expandedSummaryIds.has(p.id)}
-                    onToggleSelect={onToggleSelect}
-                    onToggleSummary={onToggleSummary}
-                  />
-                ))}
-              </div>
-
-              {/* Footer paginazione */}
-              {nextCursor && (
-                <div className="flex justify-center pt-2">
-                  <Button
-                    variant="outline"
-                    onClick={onLoadMore}
-                    disabled={isLoadingMore}
-                  >
-                    {isLoadingMore ? (
-                      <Loader2 className="size-4 animate-spin" />
-                    ) : null}
-                    {t("courses.papers.results.loadMore")}
-                  </Button>
+              {resultsCollapsed ? (
+                <div className="rounded-md border border-dashed border-border bg-muted/20 px-4 py-6 text-center text-sm text-muted-foreground">
+                  {t("courses.papers.results.collapsedHint")}
                 </div>
+              ) : (
+                <>
+                  {/* Lista card */}
+                  <div className="space-y-3">
+                    {results.map((p) => (
+                      <PaperResultCard
+                        key={p.id}
+                        paper={p}
+                        selected={selectedIds.has(p.id)}
+                        summary={summariesById[p.id]}
+                        summaryExpanded={expandedSummaryIds.has(p.id)}
+                        onToggleSelect={onToggleSelect}
+                        onToggleSummary={onToggleSummary}
+                      />
+                    ))}
+                  </div>
+
+                  {/* Footer paginazione */}
+                  {nextCursor && (
+                    <div className="flex justify-center pt-2">
+                      <Button
+                        variant="outline"
+                        onClick={onLoadMore}
+                        disabled={isLoadingMore}
+                      >
+                        {isLoadingMore ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : null}
+                        {t("courses.papers.results.loadMore")}
+                      </Button>
+                    </div>
+                  )}
+                </>
               )}
             </>
           )}
