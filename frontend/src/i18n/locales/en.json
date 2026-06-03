@@ -1122,11 +1122,11 @@
       },
       "module": {
         "downloadMerged": {
-          "label": "Single PDF",
+          "label": "Merge lessons (PDF)",
           "title": "Download a single PDF with the slides of all lessons of the module"
         },
         "exportZip": {
-          "label": "ZIP per lesson",
+          "label": "Download separately (ZIP)",
           "title": "Download a ZIP with one slides PDF per lesson of the module"
         }
       },
@@ -1279,11 +1279,11 @@
       },
       "module": {
         "downloadMerged": {
-          "label": "Single PDF",
+          "label": "Merge lessons (PDF)",
           "title": "Download a single PDF with the speech of all lessons of the module"
         },
         "exportZip": {
-          "label": "ZIP per lesson",
+          "label": "Download separately (ZIP)",
           "title": "Download a ZIP with one speech PDF per lesson of the module"
         }
       },
@@ -1354,11 +1354,11 @@
       },
       "module": {
         "downloadMerged": {
-          "label": "Single PDF",
+          "label": "Merge lessons (PDF)",
           "title": "Download a single PDF with all lessons of the module"
         },
         "exportZip": {
-          "label": "ZIP per lesson",
+          "label": "Download separately (ZIP)",
           "title": "Download a ZIP with one PDF per lesson of the module"
         }
       },

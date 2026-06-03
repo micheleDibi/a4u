@@ -1123,11 +1123,11 @@
       },
       "module": {
         "downloadMerged": {
-          "label": "PDF unico",
+          "label": "Unisci lezioni (PDF)",
           "title": "Scarica un unico PDF con le slide di tutte le lezioni del modulo"
         },
         "exportZip": {
-          "label": "ZIP per lezione",
+          "label": "Scarica separati (ZIP)",
           "title": "Scarica uno ZIP con un PDF slide per ogni lezione del modulo"
         }
       },
@@ -1280,11 +1280,11 @@
       },
       "module": {
         "downloadMerged": {
-          "label": "PDF unico",
+          "label": "Unisci lezioni (PDF)",
           "title": "Scarica un unico PDF con il discorso di tutte le lezioni del modulo"
         },
         "exportZip": {
-          "label": "ZIP per lezione",
+          "label": "Scarica separati (ZIP)",
           "title": "Scarica uno ZIP con un PDF discorso per ogni lezione del modulo"
         }
       },
@@ -1355,11 +1355,11 @@
       },
       "module": {
         "downloadMerged": {
-          "label": "PDF unico",
+          "label": "Unisci lezioni (PDF)",
           "title": "Scarica un unico PDF con tutte le lezioni del modulo"
         },
         "exportZip": {
-          "label": "ZIP per lezione",
+          "label": "Scarica separati (ZIP)",
           "title": "Scarica uno ZIP con un PDF per ogni lezione del modulo"
         }
       },
