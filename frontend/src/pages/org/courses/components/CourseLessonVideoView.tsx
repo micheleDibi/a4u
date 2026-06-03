@@ -24,6 +24,7 @@ import {
   type CourseOut,
   type LessonVideoStatusOut,
 } from "@/api/courses";
+import { useAuth } from "@/auth/AuthContext";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -70,7 +71,11 @@ export function CourseLessonVideoView({
   orgId,
 }: Props) {
   const { t } = useTranslation();
+  const { me } = useAuth();
   const qc = useQueryClient();
+  // Il campione vocale appartiene all'assegnatario: il link a «Mio avatar»
+  // ha senso solo se l'utente loggato è l'assegnatario stesso.
+  const isAssignee = !!me && course.assignee?.id === me.user.id;
   const statusQuery = useCourseVideoStatus(orgId, course.id);
   const generateLessonMut = useGenerateLessonVideo();
   const generateAllMut = useGenerateAllVideos();
@@ -329,11 +334,13 @@ export function CourseLessonVideoView({
             <span className="flex-1">
               {t("courses.video.errors.voice_sample_missing")}
             </span>
-            <Button asChild size="sm" variant="outline">
-              <Link to="/me/avatar">
-                {t("courses.video.actions.goToMyAvatar")}
-              </Link>
-            </Button>
+            {isAssignee && (
+              <Button asChild size="sm" variant="outline">
+                <Link to="/me/avatar">
+                  {t("courses.video.actions.goToMyAvatar")}
+                </Link>
+              </Button>
+            )}
           </CardContent>
         </Card>
       )}

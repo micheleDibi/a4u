@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 
 import type { CourseOut, LessonAvatarVideoStatusOut } from "@/api/courses";
+import { useAuth } from "@/auth/AuthContext";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -53,6 +54,10 @@ export function CourseLessonAvatarVideoView({
   orgId,
 }: Props) {
   const { t } = useTranslation();
+  const { me } = useAuth();
+  // Le clip avatar appartengono all'assegnatario: il link a «Mio avatar»
+  // ha senso solo se l'utente loggato è l'assegnatario stesso.
+  const isAssignee = !!me && course.assignee?.id === me.user.id;
   const statusQuery = useCourseAvatarVideoStatus(orgId, course.id);
   const generateLessonMut = useGenerateLessonAvatarVideo();
   const generateAllMut = useGenerateAllAvatarVideos();
@@ -202,11 +207,13 @@ export function CourseLessonAvatarVideoView({
             <span className="flex-1">
               {t("courses.avatarVideo.errors.avatar_clips_not_ready")}
             </span>
-            <Button asChild size="sm" variant="outline">
-              <Link to="/me/avatar">
-                {t("courses.avatarVideo.actions.goToMyAvatar")}
-              </Link>
-            </Button>
+            {isAssignee && (
+              <Button asChild size="sm" variant="outline">
+                <Link to="/me/avatar">
+                  {t("courses.avatarVideo.actions.goToMyAvatar")}
+                </Link>
+              </Button>
+            )}
           </CardContent>
         </Card>
       )}
