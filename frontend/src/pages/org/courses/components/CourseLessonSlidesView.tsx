@@ -761,6 +761,8 @@ export function CourseLessonSlidesView({
         <LessonSlidesEditDialog
           open={true}
           lessonLabel={lessonLabel(editDialog.lesson.lesson_code)}
+          orgId={orgId}
+          courseId={course.id}
           initial={editDialog.lesson.slides_raw}
           contentRaw={
             isAssessmentRaw(editDialog.lesson.content_raw)

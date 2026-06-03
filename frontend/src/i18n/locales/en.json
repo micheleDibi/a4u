@@ -983,7 +983,7 @@
     },
     "lessonsSlides": {
       "title": "Lesson slides",
-      "description": "For each lesson, the AI produces a sequence of slides sized for the lesson duration. Slides reuse Phase 3 assets (diagrams, formulas, tables) and create new ones only when needed.",
+      "description": "For each lesson, the AI produces a sequence of slides sized for the lesson duration. Slides reuse the lecture-notes assets (diagrams, formulas, tables) and create new ones only when needed.",
       "contentNotReady": "Generate the lesson contents first to produce the slides.",
       "generateAll": "Generate slides for all lessons",
       "regenerateAll": "Regenerate all slides",
@@ -1056,7 +1056,7 @@
         "referencesAssets": "Referenced assets",
         "addAssetRef": "Add asset",
         "sourceSection": "Source section",
-        "newAssets": "New assets (not in Phase 3)",
+        "newAssets": "New assets (not in the lecture notes)",
         "addNewAsset": "Add new asset",
         "removeNewAsset": "Remove",
         "addSlide": "Add slide",

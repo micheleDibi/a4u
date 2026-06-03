@@ -984,7 +984,7 @@
     },
     "lessonsSlides": {
       "title": "Slide delle lezioni",
-      "description": "Per ogni lezione, l'AI produce una sequenza di slide dimensionate sulla durata della lezione. Le slide riusano gli asset di Fase 3 (diagrammi, formule, tabelle) e ne possono creare di nuovi solo se necessario.",
+      "description": "Per ogni lezione, l'AI produce una sequenza di slide dimensionate sulla durata della lezione. Le slide riusano gli asset delle Dispense (diagrammi, formule, tabelle) e ne possono creare di nuovi solo se necessario.",
       "contentNotReady": "Genera prima i contenuti delle lezioni per produrre le slide.",
       "generateAll": "Genera slide per tutte le lezioni",
       "regenerateAll": "Rigenera tutte le slide",
@@ -1057,7 +1057,7 @@
         "referencesAssets": "Asset referenziati",
         "addAssetRef": "Aggiungi asset",
         "sourceSection": "Sezione di origine",
-        "newAssets": "Asset nuovi (non presenti in Fase 3)",
+        "newAssets": "Asset nuovi (non presenti nelle Dispense)",
         "addNewAsset": "Aggiungi asset nuovo",
         "removeNewAsset": "Rimuovi",
         "addSlide": "Aggiungi slide",

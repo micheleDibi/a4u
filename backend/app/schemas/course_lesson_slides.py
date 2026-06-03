@@ -76,20 +76,27 @@ class LessonSlideItem(BaseModel):
 
 
 class LessonSlideNewAsset(BaseModel):
-    """Asset creato dalla Fase 4 (NON presente in Fase 3).
+    """Asset creato dalla Fase 4 (NON presente nelle Dispense / Fase 3).
 
     Es. una slide di sintesi che richiede uno schema riepilogativo non
     già prodotto nel testo. asset_id deve avere prefisso che evita
-    collisioni con quelli di Fase 3 (suggerito: `*_new_*`).
+    collisioni con quelli delle Dispense (suggerito: `*_new_*`).
+
+    Allineato a `LessonContentVisualAsset`: stessi `format` (Mermaid +
+    immagine caricata + legacy read-only) e `extra="ignore"` per
+    tollerare il vecchio campo `asset_type` ancora prodotto dall'AI ma
+    non più usato in rendering.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
     asset_id: str = Field(min_length=1, max_length=50)
-    asset_type: Literal[
-        "diagram", "schema", "image", "illustration", "chart"
-    ]
     format: Literal[
-        "mermaid", "image_prompt", "image_search_query", "description"
+        "mermaid",
+        "image",
+        # — legacy, read-only —
+        "image_prompt",
+        "image_search_query",
+        "description",
     ]
     content: str = Field(min_length=1)
     caption: str = Field(default="", max_length=600)
