@@ -688,6 +688,27 @@ export default function CourseEditorPage({ mode }: Props) {
       ? t("courses.create")
       : course?.title || t("courses.edit");
 
+  // Banner di setup bloccato: mostrato in tutte le tab della fase "setup"
+  // i cui campi vengono congelati (Informazioni di base, Inquadramento
+  // didattico, Obiettivi e Argomenti chiave).
+  const lockedSetupBanner = setupLocked ? (
+    <div className="flex flex-wrap items-center gap-3 rounded-md border border-amber-300/40 bg-amber-50/40 p-3 text-sm dark:border-amber-500/30 dark:bg-amber-900/10">
+      <Lock className="size-4 shrink-0 text-amber-600 dark:text-amber-500" />
+      <span className="flex-1">{t("courses.setup.lockedBanner")}</span>
+      {canUnlockSetup && (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => unlockSetupMut.mutate()}
+          disabled={unlockSetupMut.isPending}
+        >
+          <LockOpen className="size-3.5" />
+          {t("courses.setup.unlock")}
+        </Button>
+      )}
+    </div>
+  ) : null;
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -873,25 +894,7 @@ export default function CourseEditorPage({ mode }: Props) {
 
         {/* Tab — Informazioni di base */}
         <TabsContent value="base" className="space-y-4">
-          {setupLocked && (
-            <div className="flex flex-wrap items-center gap-3 rounded-md border border-amber-300/40 bg-amber-50/40 p-3 text-sm dark:border-amber-500/30 dark:bg-amber-900/10">
-              <Lock className="size-4 shrink-0 text-amber-600 dark:text-amber-500" />
-              <span className="flex-1">
-                {t("courses.setup.lockedBanner")}
-              </span>
-              {canUnlockSetup && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => unlockSetupMut.mutate()}
-                  disabled={unlockSetupMut.isPending}
-                >
-                  <LockOpen className="size-3.5" />
-                  {t("courses.setup.unlock")}
-                </Button>
-              )}
-            </div>
-          )}
+          {lockedSetupBanner}
           <Card>
             <CardHeader>
               <CardTitle>{t("courses.sections.basics")}</CardTitle>
@@ -1128,6 +1131,7 @@ export default function CourseEditorPage({ mode }: Props) {
 
         {/* Tab — Inquadramento didattico (categoria spostata in Base) */}
         <TabsContent value="didactic" className="space-y-4">
+          {lockedSetupBanner}
           <Card>
             <CardHeader>
               <CardTitle>{t("courses.sections.didactic")}</CardTitle>
@@ -1319,6 +1323,7 @@ export default function CourseEditorPage({ mode }: Props) {
         {/* Tab — Obiettivi e Argomenti chiave (sempre visibile, gestita
             dal lock didattico server-side come per "base"/"didactic") */}
         <TabsContent value="objectives" className="space-y-4">
+          {lockedSetupBanner}
           <Card>
             <CardHeader>
               <CardTitle>
