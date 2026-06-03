@@ -36,6 +36,9 @@ export function LessonSlidesView({ slides, contentRaw }: Props) {
           slide={slide}
           contentRaw={contentRaw}
           newAssets={slides.new_assets}
+          newTables={slides.new_tables ?? []}
+          newEquations={slides.new_equations ?? []}
+          newExamples={slides.new_examples ?? []}
           t={t}
         />
       ))}
@@ -47,10 +50,21 @@ interface SlideCardProps {
   slide: LessonSlideItem;
   contentRaw: LessonContentRaw | null;
   newAssets: LessonSlidesRaw["new_assets"];
+  newTables: NonNullable<LessonSlidesRaw["new_tables"]>;
+  newEquations: NonNullable<LessonSlidesRaw["new_equations"]>;
+  newExamples: NonNullable<LessonSlidesRaw["new_examples"]>;
   t: ReturnType<typeof useTranslation>["t"];
 }
 
-function SlideCard({ slide, contentRaw, newAssets, t }: SlideCardProps) {
+function SlideCard({
+  slide,
+  contentRaw,
+  newAssets,
+  newTables,
+  newEquations,
+  newExamples,
+  t,
+}: SlideCardProps) {
   const typeLabel = t(
     `courses.lessonsSlides.render.types.${slide.type}`,
     { defaultValue: slide.type },
@@ -110,6 +124,9 @@ function SlideCard({ slide, contentRaw, newAssets, t }: SlideCardProps) {
                 assetId={aid}
                 contentRaw={contentRaw}
                 newAssets={newAssets}
+                newTables={newTables}
+                newEquations={newEquations}
+                newExamples={newExamples}
               />
             ))}
           </div>
@@ -124,14 +141,27 @@ interface SlideAssetRenderProps {
   assetId: string;
   contentRaw: LessonContentRaw | null;
   newAssets: LessonSlidesRaw["new_assets"];
+  newTables: NonNullable<LessonSlidesRaw["new_tables"]>;
+  newEquations: NonNullable<LessonSlidesRaw["new_equations"]>;
+  newExamples: NonNullable<LessonSlidesRaw["new_examples"]>;
 }
 
 function SlideAssetRender({
   assetId,
   contentRaw,
   newAssets,
+  newTables,
+  newEquations,
+  newExamples,
 }: SlideAssetRenderProps) {
-  const resolved = resolveAsset(assetId, contentRaw, newAssets);
+  const resolved = resolveAsset(
+    assetId,
+    contentRaw,
+    newAssets,
+    newTables,
+    newEquations,
+    newExamples,
+  );
   if (!resolved) {
     return (
       <div className="rounded border border-dashed border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive">

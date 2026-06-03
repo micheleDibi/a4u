@@ -72,6 +72,21 @@ def _validate_consistency(
         if payload.new_assets is not None
         else current_raw.get("new_assets", [])
     ) or []
+    new_tables = (
+        _dump_models(payload.new_tables)
+        if payload.new_tables is not None
+        else current_raw.get("new_tables", [])
+    ) or []
+    new_equations = (
+        _dump_models(payload.new_equations)
+        if payload.new_equations is not None
+        else current_raw.get("new_equations", [])
+    ) or []
+    new_examples = (
+        _dump_models(payload.new_examples)
+        if payload.new_examples is not None
+        else current_raw.get("new_examples", [])
+    ) or []
 
     # 1. slide_id univoci
     slide_ids = [
@@ -106,23 +121,35 @@ def _validate_consistency(
             code="lesson_slides_nonsequential",
         )
 
-    # 3. new_assets asset_id univoci
-    new_asset_ids = [
-        a.get("asset_id") for a in new_assets if isinstance(a, dict)
-    ]
-    if any(not aid or not str(aid).strip() for aid in new_asset_ids):
+    # 3. id dei nuovi asset (visivi + tabelle + equazioni + esempi) non
+    #    vuoti e univoci nello spazio-id piatto delle references_assets.
+    new_ids: list[str] = []
+    for a in new_assets:
+        if isinstance(a, dict):
+            new_ids.append(str(a.get("asset_id") or "").strip())
+    for tbl in new_tables:
+        if isinstance(tbl, dict):
+            new_ids.append(str(tbl.get("table_id") or "").strip())
+    for eq in new_equations:
+        if isinstance(eq, dict):
+            new_ids.append(str(eq.get("equation_id") or "").strip())
+    for ex in new_examples:
+        if isinstance(ex, dict):
+            new_ids.append(str(ex.get("example_id") or "").strip())
+    if any(not nid for nid in new_ids):
         raise ConflictError(
-            "Ogni nuovo asset deve avere un `asset_id` non vuoto.",
+            "Ogni nuovo asset deve avere un id non vuoto.",
             code="lesson_slides_new_asset_id_required",
         )
-    if len(set(new_asset_ids)) != len(new_asset_ids):
+    if len(set(new_ids)) != len(new_ids):
         raise ConflictError(
-            "Gli `asset_id` dei new_assets devono essere univoci.",
+            "Gli id dei nuovi asset (tabelle/equazioni/esempi inclusi) "
+            "devono essere univoci.",
             code="lesson_slides_duplicate_new_asset_id",
         )
 
-    # 4. references_assets risolvibili (in content_raw + new_assets)
-    valid_asset_ids: set[str] = set(new_asset_ids)
+    # 4. references_assets risolvibili (in content_raw + nuovi asset)
+    valid_asset_ids: set[str] = set(new_ids)
     if content_raw:
         for key in ("visual_assets", "tables", "equations", "examples"):
             for a in content_raw.get(key, []) or []:
@@ -144,7 +171,7 @@ def _validate_consistency(
             if aid not in valid_asset_ids:
                 raise ConflictError(
                     f"Slide {s.get('slide_id')}: references_assets contiene "
-                    f"`{aid}` non presente in Fase 3 né in new_assets.",
+                    f"`{aid}` non presente nelle Dispense né tra i nuovi asset.",
                     code="lesson_slides_unknown_asset_ref",
                 )
 
@@ -198,6 +225,19 @@ async def update_lesson_slides(
     if payload.new_assets is not None:
         current_raw["new_assets"] = [a.model_dump() for a in payload.new_assets]
         changed["new_assets"] = len(payload.new_assets)
+    if payload.new_tables is not None:
+        current_raw["new_tables"] = [tbl.model_dump() for tbl in payload.new_tables]
+        changed["new_tables"] = len(payload.new_tables)
+    if payload.new_equations is not None:
+        current_raw["new_equations"] = [
+            eq.model_dump() for eq in payload.new_equations
+        ]
+        changed["new_equations"] = len(payload.new_equations)
+    if payload.new_examples is not None:
+        current_raw["new_examples"] = [
+            ex.model_dump() for ex in payload.new_examples
+        ]
+        changed["new_examples"] = len(payload.new_examples)
 
     if not changed:
         return course

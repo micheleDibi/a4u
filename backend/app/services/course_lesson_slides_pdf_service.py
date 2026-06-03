@@ -213,8 +213,13 @@ def _resolve_asset_for_slide(
     asset_id: str,
     content_raw: dict[str, Any] | None,
     new_assets: list[dict[str, Any]],
+    *,
+    new_tables: list[dict[str, Any]] | None = None,
+    new_equations: list[dict[str, Any]] | None = None,
+    new_examples: list[dict[str, Any]] | None = None,
 ) -> tuple[str, dict[str, Any]] | None:
-    """Cerca asset_id in content_raw + new_assets. Ritorna (kind, payload)
+    """Cerca asset_id nelle Dispense (content_raw) + nei nuovi asset di
+    Fase 4 (visivi, tabelle, equazioni, esempi). Ritorna (kind, payload)
     o None.
 
     Mirror della logica frontend (`lib/slides.resolveAsset`).
@@ -235,6 +240,15 @@ def _resolve_asset_for_slide(
     for na in new_assets or []:
         if isinstance(na, dict) and na.get("asset_id") == asset_id:
             return "new_visual", na
+    for t in new_tables or []:
+        if isinstance(t, dict) and t.get("table_id") == asset_id:
+            return "table", t
+    for e in new_equations or []:
+        if isinstance(e, dict) and e.get("equation_id") == asset_id:
+            return "equation", e
+    for ex in new_examples or []:
+        if isinstance(ex, dict) and ex.get("example_id") == asset_id:
+            return "example", ex
     return None
 
 
@@ -381,6 +395,9 @@ def render_slides_html(
         )
     content_raw = lesson.content_raw or {}
     new_assets = slides_raw.get("new_assets") or []
+    new_tables = slides_raw.get("new_tables") or []
+    new_equations = slides_raw.get("new_equations") or []
+    new_examples = slides_raw.get("new_examples") or []
 
     language = (course.language_code or "it").lower()
 
@@ -414,7 +431,12 @@ def render_slides_html(
         assets_html: list[str] = []
         for aid in s.get("references_assets") or []:
             resolved = _resolve_asset_for_slide(
-                aid, content_raw, new_assets
+                aid,
+                content_raw,
+                new_assets,
+                new_tables=new_tables,
+                new_equations=new_equations,
+                new_examples=new_examples,
             )
             if resolved is None:
                 continue

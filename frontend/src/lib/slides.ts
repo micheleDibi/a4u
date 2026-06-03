@@ -33,6 +33,9 @@ export function resolveAsset(
   assetId: string,
   contentRaw: LessonContentRaw | null,
   newAssets: LessonSlideNewAsset[],
+  newTables: LessonContentTable[] = [],
+  newEquations: LessonContentEquation[] = [],
+  newExamples: LessonContentExample[] = [],
 ): ResolvedAsset | null {
   if (contentRaw) {
     const visual = contentRaw.visual_assets.find(
@@ -57,6 +60,16 @@ export function resolveAsset(
   const newAsset = newAssets.find((a) => a.asset_id === assetId);
   if (newAsset) return { kind: "new_visual", payload: newAsset };
 
+  // Nuovi asset non visivi creati in Fase 4 (parità con le Dispense).
+  const newTable = newTables.find((t) => t.table_id === assetId);
+  if (newTable) return { kind: "table", payload: newTable };
+
+  const newEquation = newEquations.find((e) => e.equation_id === assetId);
+  if (newEquation) return { kind: "equation", payload: newEquation };
+
+  const newExample = newExamples.find((e) => e.example_id === assetId);
+  if (newExample) return { kind: "example", payload: newExample };
+
   return null;
 }
 
@@ -74,6 +87,9 @@ export interface AssetOption {
 export function listAvailableAssets(
   contentRaw: LessonContentRaw | null,
   newAssets: LessonSlideNewAsset[],
+  newTables: LessonContentTable[] = [],
+  newEquations: LessonContentEquation[] = [],
+  newExamples: LessonContentExample[] = [],
 ): AssetOption[] {
   const out: AssetOption[] = [];
 
@@ -118,6 +134,30 @@ export function listAvailableAssets(
       kind: "new_visual",
       label: `${na.asset_id} (${na.format}, new)`,
       caption: na.caption,
+    });
+  }
+  for (const t of newTables) {
+    out.push({
+      id: t.table_id,
+      kind: "table",
+      label: `${t.table_id} (table, new)`,
+      caption: t.caption,
+    });
+  }
+  for (const e of newEquations) {
+    out.push({
+      id: e.equation_id,
+      kind: "equation",
+      label: `${e.equation_id} (equation, new)`,
+      caption: e.label,
+    });
+  }
+  for (const ex of newExamples) {
+    out.push({
+      id: ex.example_id,
+      kind: "example",
+      label: `${ex.example_id} (example, new)`,
+      caption: ex.title,
     });
   }
 

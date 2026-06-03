@@ -25,6 +25,11 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.common import ORMModel
+from app.schemas.course_lesson_content import (
+    LessonContentEquation,
+    LessonContentExample,
+    LessonContentTable,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -111,6 +116,11 @@ class LessonSlidesOutput(BaseModel):
     total_slides: int = Field(ge=1)
     slides: list[LessonSlideItem] = Field(min_length=1)
     new_assets: list[LessonSlideNewAsset] = Field(default_factory=list)
+    # Asset NUOVI non visivi creati in Fase 4 (parità con le Dispense):
+    # stessi modelli di LessonContent*. Default vuoti per retro-compat.
+    new_tables: list[LessonContentTable] = Field(default_factory=list)
+    new_equations: list[LessonContentEquation] = Field(default_factory=list)
+    new_examples: list[LessonContentExample] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -136,6 +146,9 @@ class LessonSlidesUpdateInput(BaseModel):
 
     slides: list[LessonSlideItem] | None = None
     new_assets: list[LessonSlideNewAsset] | None = None
+    new_tables: list[LessonContentTable] | None = None
+    new_equations: list[LessonContentEquation] | None = None
+    new_examples: list[LessonContentExample] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -152,6 +165,9 @@ class LessonSlidesOut(ORMModel):
     total_slides: int | None = None
     slides: list[dict[str, Any]] = Field(default_factory=list)
     new_assets: list[dict[str, Any]] = Field(default_factory=list)
+    new_tables: list[dict[str, Any]] = Field(default_factory=list)
+    new_equations: list[dict[str, Any]] = Field(default_factory=list)
+    new_examples: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class LessonSlidesMetaOut(ORMModel):

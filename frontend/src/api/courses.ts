@@ -367,6 +367,11 @@ export interface LessonSlidesRaw {
   total_slides: number;
   slides: LessonSlideItem[];
   new_assets: LessonSlideNewAsset[];
+  // Asset NUOVI non visivi creati in Fase 4 (parità con le Dispense).
+  // Opzionali per retro-compatibilità con slides_raw pre-feature.
+  new_tables?: LessonContentTable[];
+  new_equations?: LessonContentEquation[];
+  new_examples?: LessonContentExample[];
 }
 
 export interface LessonSlidesTokens {
@@ -379,6 +384,9 @@ export interface LessonSlidesTokens {
 export interface LessonSlidesUpdateInput {
   slides?: LessonSlideItem[];
   new_assets?: LessonSlideNewAsset[];
+  new_tables?: LessonContentTable[];
+  new_equations?: LessonContentEquation[];
+  new_examples?: LessonContentExample[];
 }
 
 // ---------------------------------------------------------------------------

@@ -15,7 +15,10 @@ import { toast } from "sonner";
 
 import {
   coursesApi,
+  type LessonContentEquation,
+  type LessonContentExample,
   type LessonContentRaw,
+  type LessonContentTable,
   type LessonSlideItem,
   type LessonSlideNewAsset,
   type LessonSlidesRaw,
@@ -49,7 +52,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { LatexEditor } from "@/components/shared/LatexEditor";
 import { MermaidEditor } from "@/components/shared/MermaidEditor";
+import { RichTextEditor } from "@/components/shared/RichTextEditor";
+import { TableEditor } from "@/components/shared/TableEditor";
 import { extractApiError } from "@/lib/errors";
 import { listAvailableAssets } from "@/lib/slides";
 
@@ -122,12 +128,28 @@ export function LessonSlidesEditDialog({
   const [newAssets, setNewAssets] = useState<LessonSlideNewAsset[]>(
     () => initial.new_assets,
   );
+  const [newTables, setNewTables] = useState<LessonContentTable[]>(
+    () => initial.new_tables ?? [],
+  );
+  const [newEquations, setNewEquations] = useState<LessonContentEquation[]>(
+    () => initial.new_equations ?? [],
+  );
+  const [newExamples, setNewExamples] = useState<LessonContentExample[]>(
+    () => initial.new_examples ?? [],
+  );
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   // Asset disponibili per le multi-select references_assets.
   const availableAssets = useMemo(
-    () => listAvailableAssets(contentRaw, newAssets),
-    [contentRaw, newAssets],
+    () =>
+      listAvailableAssets(
+        contentRaw,
+        newAssets,
+        newTables,
+        newEquations,
+        newExamples,
+      ),
+    [contentRaw, newAssets, newTables, newEquations, newExamples],
   );
 
   // Sezioni disponibili per source_section_id.
@@ -250,14 +272,109 @@ export function LessonSlidesEditDialog({
     setNewAssets((prev) => prev.filter((_, i) => i !== idx));
   };
 
+  // --- Tabelle nuove ---
+  const nextId = (existing: string[], prefix: string) => {
+    const set = new Set(existing);
+    let n = existing.length + 1;
+    while (set.has(`${prefix}${n}`)) n += 1;
+    return `${prefix}${n}`;
+  };
+
+  const addNewTable = () => {
+    setNewTables((prev) => [
+      ...prev,
+      {
+        table_id: nextId(
+          prev.map((x) => x.table_id),
+          "tab_new_",
+        ),
+        markdown: "| Colonna 1 | Colonna 2 |\n| --- | --- |\n|  |  |\n|  |  |",
+        caption: "",
+      },
+    ]);
+  };
+  const updateNewTable = (idx: number, patch: Partial<LessonContentTable>) => {
+    setNewTables((prev) =>
+      prev.map((x, i) => (i === idx ? { ...x, ...patch } : x)),
+    );
+  };
+  const removeNewTable = (idx: number) => {
+    setNewTables((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  // --- Equazioni nuove ---
+  const addNewEquation = () => {
+    setNewEquations((prev) => [
+      ...prev,
+      {
+        equation_id: nextId(
+          prev.map((x) => x.equation_id),
+          "eq_new_",
+        ),
+        latex: "",
+        label: "",
+        explanation: "",
+      },
+    ]);
+  };
+  const updateNewEquation = (
+    idx: number,
+    patch: Partial<LessonContentEquation>,
+  ) => {
+    setNewEquations((prev) =>
+      prev.map((x, i) => (i === idx ? { ...x, ...patch } : x)),
+    );
+  };
+  const removeNewEquation = (idx: number) => {
+    setNewEquations((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  // --- Esempi nuovi ---
+  const addNewExample = () => {
+    setNewExamples((prev) => [
+      ...prev,
+      {
+        example_id: nextId(
+          prev.map((x) => x.example_id),
+          "ex_new_",
+        ),
+        title: "",
+        content: "",
+      },
+    ]);
+  };
+  const updateNewExample = (
+    idx: number,
+    patch: Partial<LessonContentExample>,
+  ) => {
+    setNewExamples((prev) =>
+      prev.map((x, i) => (i === idx ? { ...x, ...patch } : x)),
+    );
+  };
+  const removeNewExample = (idx: number) => {
+    setNewExamples((prev) => prev.filter((_, i) => i !== idx));
+  };
+
   const handleSubmit = () => {
     // Scarta gli asset nuovi senza contenuto (card aggiunta ma lasciata
     // vuota): il BE richiede content non vuoto e li rifiuterebbe con un
     // 422. Mermaid vuoto o immagine non caricata = asset incompleto.
     const cleanedAssets = newAssets.filter((a) => a.content.trim().length > 0);
+    const cleanedTables = newTables.filter(
+      (t) => t.markdown.trim().length > 0,
+    );
+    const cleanedEquations = newEquations.filter(
+      (e) => e.latex.trim().length > 0,
+    );
+    const cleanedExamples = newExamples.filter(
+      (e) => e.title.trim().length > 0 && e.content.trim().length > 0,
+    );
     const payload: LessonSlidesUpdateInput = {
       slides,
       new_assets: cleanedAssets,
+      new_tables: cleanedTables,
+      new_equations: cleanedEquations,
+      new_examples: cleanedExamples,
     };
     onSubmit(payload);
   };
@@ -311,31 +428,231 @@ export function LessonSlidesEditDialog({
           </Button>
         </div>
 
-        {/* New assets */}
-        <div className="space-y-3 border-t pt-4">
+        {/* New assets (non presenti nelle Dispense) — parità con Contenuti:
+            visivi (Mermaid/immagine), tabelle, equazioni, esempi. */}
+        <div className="space-y-5 border-t pt-4">
           <h4 className="text-sm font-semibold">
             {t("courses.lessonsSlides.editor.newAssets")}
           </h4>
-          {newAssets.map((asset, idx) => (
-            <NewAssetEditCard
-              key={asset.asset_id + ":" + idx}
+
+          {/* Visivi */}
+          <div className="space-y-3">
+            <h5 className="text-xs font-medium text-muted-foreground">
+              {t("courses.lessonsContent.editor.visualAssets")}
+            </h5>
+            {newAssets.map((asset, idx) => (
+              <NewAssetEditCard
+                key={asset.asset_id + ":" + idx}
+                orgId={orgId}
+                courseId={courseId}
+                asset={asset}
+                onUpdate={(patch) => updateNewAsset(idx, patch)}
+                onRemove={() => removeNewAsset(idx)}
+                disabled={isPending}
+                t={t}
+              />
+            ))}
+            <AddNewAssetMenu
               orgId={orgId}
               courseId={courseId}
-              asset={asset}
-              onUpdate={(patch) => updateNewAsset(idx, patch)}
-              onRemove={() => removeNewAsset(idx)}
+              onAddMermaid={addMermaidAsset}
+              onAddImage={addImageAsset}
               disabled={isPending}
               t={t}
             />
-          ))}
-          <AddNewAssetMenu
-            orgId={orgId}
-            courseId={courseId}
-            onAddMermaid={addMermaidAsset}
-            onAddImage={addImageAsset}
-            disabled={isPending}
-            t={t}
-          />
+          </div>
+
+          {/* Tabelle */}
+          <div className="space-y-3">
+            <h5 className="text-xs font-medium text-muted-foreground">
+              {t("courses.lessonsContent.editor.tables")}
+            </h5>
+            {newTables.map((tbl, idx) => (
+              <div
+                key={tbl.table_id + ":" + idx}
+                className="space-y-2 rounded-md border bg-muted/20 p-3"
+              >
+                <div className="space-y-1.5">
+                  <Label>{t("courses.lessonsSlides.editor.assetIdLabel")}</Label>
+                  <Input
+                    value={tbl.table_id}
+                    onChange={(e) =>
+                      updateNewTable(idx, { table_id: e.target.value })
+                    }
+                    disabled={isPending}
+                  />
+                </div>
+                <Input
+                  value={tbl.caption}
+                  onChange={(e) =>
+                    updateNewTable(idx, { caption: e.target.value })
+                  }
+                  placeholder={t("courses.lessonsContent.editor.caption")}
+                  disabled={isPending}
+                />
+                <TableEditor
+                  value={tbl.markdown}
+                  onChange={(md) => updateNewTable(idx, { markdown: md })}
+                  disabled={isPending}
+                />
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive"
+                    onClick={() => removeNewTable(idx)}
+                    disabled={isPending}
+                  >
+                    <Trash2 className="size-3.5" />
+                    {t("common.delete")}
+                  </Button>
+                </div>
+              </div>
+            ))}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={addNewTable}
+              disabled={isPending}
+            >
+              <Plus className="size-4" />
+              {t("common.add")}
+            </Button>
+          </div>
+
+          {/* Equazioni */}
+          <div className="space-y-3">
+            <h5 className="text-xs font-medium text-muted-foreground">
+              {t("courses.lessonsContent.editor.equations")}
+            </h5>
+            {newEquations.map((eq, idx) => (
+              <div
+                key={eq.equation_id + ":" + idx}
+                className="space-y-2 rounded-md border bg-muted/20 p-3"
+              >
+                <div className="space-y-1.5">
+                  <Label>{t("courses.lessonsSlides.editor.assetIdLabel")}</Label>
+                  <Input
+                    value={eq.equation_id}
+                    onChange={(e) =>
+                      updateNewEquation(idx, { equation_id: e.target.value })
+                    }
+                    disabled={isPending}
+                  />
+                </div>
+                <Input
+                  value={eq.label}
+                  onChange={(e) =>
+                    updateNewEquation(idx, { label: e.target.value })
+                  }
+                  placeholder={t("courses.lessonsContent.editor.equationLabel")}
+                  disabled={isPending}
+                />
+                <LatexEditor
+                  value={eq.latex}
+                  onChange={(latex) => updateNewEquation(idx, { latex })}
+                  disabled={isPending}
+                />
+                <div className="space-y-1.5">
+                  <Label className="text-xs">
+                    {t("courses.lessonsContent.editor.equationExplanation")}
+                  </Label>
+                  <RichTextEditor
+                    value={eq.explanation}
+                    onChange={(md) => updateNewEquation(idx, { explanation: md })}
+                    disabled={isPending}
+                    size="sm"
+                  />
+                </div>
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive"
+                    onClick={() => removeNewEquation(idx)}
+                    disabled={isPending}
+                  >
+                    <Trash2 className="size-3.5" />
+                    {t("common.delete")}
+                  </Button>
+                </div>
+              </div>
+            ))}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={addNewEquation}
+              disabled={isPending}
+            >
+              <Plus className="size-4" />
+              {t("common.add")}
+            </Button>
+          </div>
+
+          {/* Esempi */}
+          <div className="space-y-3">
+            <h5 className="text-xs font-medium text-muted-foreground">
+              {t("courses.lessonsContent.editor.examples")}
+            </h5>
+            {newExamples.map((ex, idx) => (
+              <div
+                key={ex.example_id + ":" + idx}
+                className="space-y-2 rounded-md border bg-muted/20 p-3"
+              >
+                <div className="space-y-1.5">
+                  <Label>{t("courses.lessonsSlides.editor.assetIdLabel")}</Label>
+                  <Input
+                    value={ex.example_id}
+                    onChange={(e) =>
+                      updateNewExample(idx, { example_id: e.target.value })
+                    }
+                    disabled={isPending}
+                  />
+                </div>
+                <Input
+                  value={ex.title}
+                  onChange={(e) =>
+                    updateNewExample(idx, { title: e.target.value })
+                  }
+                  placeholder={t("courses.lessonsContent.editor.exampleTitle")}
+                  disabled={isPending}
+                />
+                <RichTextEditor
+                  value={ex.content}
+                  onChange={(md) => updateNewExample(idx, { content: md })}
+                  disabled={isPending}
+                  size="md"
+                />
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive"
+                    onClick={() => removeNewExample(idx)}
+                    disabled={isPending}
+                  >
+                    <Trash2 className="size-3.5" />
+                    {t("common.delete")}
+                  </Button>
+                </div>
+              </div>
+            ))}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={addNewExample}
+              disabled={isPending}
+            >
+              <Plus className="size-4" />
+              {t("common.add")}
+            </Button>
+          </div>
         </div>
 
         <DialogFooter>
