@@ -159,7 +159,7 @@
       "continueToDocuments": "Continue to Documents",
       "continueToArchitecture": "Continue to Architecture",
       "continueToLessonsStructure": "Continue to Lessons structure",
-      "continueToLessonContent": "Continue to Content",
+      "continueToLessonContent": "Continue to Lecture notes",
       "continueToLessonSlides": "Continue to Slides",
       "continueToLessonSpeech": "Continue to Speech"
     },
@@ -185,7 +185,7 @@
     "list": {
       "pipelineHeader": "Pipeline",
       "progressChip": {
-        "content": "Content generated: {{done}} of {{total}}",
+        "content": "Lecture notes generated: {{done}} of {{total}}",
         "slides": "Slides generated: {{done}} of {{total}}",
         "videos": "Videos created: {{done}} of {{total}}",
         "avatarVideos": "Avatar videos created: {{done}} of {{total}}",
@@ -199,7 +199,7 @@
       "documents": "Documents",
       "architecture": "Module structure",
       "lessonsStructure": "Lesson structure",
-      "lessonContent": "Content",
+      "lessonContent": "Lecture notes",
       "lessonSlides": "Slides",
       "lessonSpeech": "Speech",
       "lessonVideo": "Video",
@@ -208,7 +208,7 @@
     "phases": {
       "setup": "Setup",
       "architecture": "Architecture",
-      "content": "Content",
+      "content": "Lecture notes",
       "media": "Media",
       "lockedHint": {
         "setup": "Always available",
@@ -302,9 +302,9 @@
       "lessons_structure_pending": "Lesson structure — queued",
       "lessons_structure_ready": "Lesson structure — ready",
       "lessons_structure_approved": "Lesson structure — approved",
-      "content_pending": "Content — queued",
-      "content_ready": "Content — ready",
-      "content_approved": "Content — approved",
+      "content_pending": "Lecture notes — queued",
+      "content_ready": "Lecture notes — ready",
+      "content_approved": "Lecture notes — approved",
       "slides_pending": "Slides — queued",
       "slides_ready": "Slides — ready",
       "slides_approved": "Slides — approved",
@@ -562,7 +562,7 @@
         "deleteConfirmMessage": "You are about to delete \"{{label}}\". This is irreversible."
       },
       "errorTitle": "Generation failed",
-      "approvedBanner": "Architecture approved. You can now move on to the next phases (lesson structure, content, slides, speech).",
+      "approvedBanner": "Architecture approved. You can now move on to the next phases (lesson structure, lecture notes, slides, speech).",
       "readyBanner": "The architecture is ready for review. Approve it if it looks good, or regenerate with specific guidance.",
       "generateDialog": {
         "title": "Generate course architecture",
@@ -747,13 +747,13 @@
       }
     },
     "lessonsContent": {
-      "title": "Lesson content",
+      "title": "Lecture notes",
       "description": "For each lesson the AI writes the full markdown text with visual assets (Mermaid, LaTeX formulas, tables), examples, exercises and references.",
-      "lessonsStructureNotApproved": "Approve the lesson structure first to generate content.",
-      "generateAll": "Generate content for all lessons",
-      "regenerateAll": "Regenerate all content",
+      "lessonsStructureNotApproved": "Approve the lesson structure first to generate lecture notes.",
+      "generateAll": "Generate lecture notes for all lessons",
+      "regenerateAll": "Regenerate all lecture notes",
       "generateMissing": "Generate missing ({{count}})",
-      "approveAll": "Approve all content",
+      "approveAll": "Approve all lecture notes",
       "cancelAll": "Stop generation",
       "aggregate": {
         "label": "{{completed}}/{{total}} lessons completed",
@@ -880,19 +880,19 @@
       },
       "dialog": {
         "generateLesson": {
-          "title": "Generate content for {{lesson}}",
+          "title": "Generate lecture notes for {{lesson}}",
           "description": "The AI will write the full lesson text with visual assets, examples, exercises and references."
         },
         "regenerateLesson": {
-          "title": "Regenerate content of {{lesson}}",
+          "title": "Regenerate lecture notes of {{lesson}}",
           "description": "The current content will be replaced. You can provide specific instructions to guide the regeneration (optional)."
         },
         "generateAll": {
-          "title": "Generate content for all lessons",
+          "title": "Generate lecture notes for all lessons",
           "description": "The AI will process lessons in parallel (concurrency cap). The glossary will be auto-generated on the first task if missing."
         },
         "regenerateAll": {
-          "title": "Regenerate all content",
+          "title": "Regenerate all lecture notes",
           "description": "All content will be replaced. You can provide specific instructions to guide the regeneration (optional)."
         },
         "hintLabel": "Teacher's instructions (optional)",
@@ -904,7 +904,7 @@
         "generateAllCta": "Generate all",
         "regenerateAllCta": "Regenerate all",
         "edit": {
-          "title": "Edit content of {{lesson}}",
+          "title": "Edit lecture notes of {{lesson}}",
           "description": "Edit text, visual assets, tables, equations, examples and exercises of the lesson. Edits do not degrade the approval status.",
           "save": "Save",
           "saving": "Saving…",
@@ -921,9 +921,9 @@
       "toast": {
         "batchStarted": "Content generation started for all lessons.",
         "lessonStarted": "Content generation started.",
-        "lessonApproved": "Lesson content approved.",
-        "allApproved": "All lessons content approved.",
-        "lessonUpdated": "Lesson content updated.",
+        "lessonApproved": "Lecture notes approved.",
+        "allApproved": "All lessons lecture notes approved.",
+        "lessonUpdated": "Lecture notes updated.",
         "cancelled": "Generation cancelled.",
         "error": "Operation failed. Try again."
       },
@@ -984,7 +984,7 @@
     "lessonsSlides": {
       "title": "Lesson slides",
       "description": "For each lesson, the AI produces a sequence of slides sized for the lesson duration. Slides reuse the lecture-notes assets (diagrams, formulas, tables) and create new ones only when needed.",
-      "contentNotReady": "Generate the lesson contents first to produce the slides.",
+      "contentNotReady": "Generate the lecture notes first to produce the slides.",
       "generateAll": "Generate slides for all lessons",
       "regenerateAll": "Regenerate all slides",
       "generateMissing": "Generate missing ({{count}})",
@@ -1078,7 +1078,7 @@
         },
         "generateAll": {
           "title": "Generate slides for all lessons",
-          "description": "The AI will process lessons with ready content in parallel. Other lessons are skipped."
+          "description": "The AI will process lessons with ready lecture notes in parallel. Other lessons are skipped."
         },
         "regenerateAll": {
           "title": "Regenerate all slides",
@@ -1411,7 +1411,7 @@
         "approved": "Module approved"
       },
       "lessonContent": {
-        "approved": "Content approved"
+        "approved": "Lecture notes approved"
       },
       "lessonSlides": {
         "approved": "Slides approved"
@@ -2047,7 +2047,7 @@
       "pipelineLessons": {
         "title": "Lessons pipeline",
         "subtitle": "Status per phase across {{total}} total lessons",
-        "content": "Content",
+        "content": "Lecture notes",
         "slides": "Slides",
         "speech": "Speech",
         "video": "Video",
@@ -2064,7 +2064,7 @@
         "phaseLabel": {
           "architecture": "Architecture",
           "structure": "Lessons structure",
-          "content": "Content",
+          "content": "Lecture notes",
           "slides": "Slides",
           "speech": "Speech"
         }
@@ -2085,7 +2085,7 @@
         "draft": "Draft",
         "architecture": "Architecture",
         "structure": "Structure",
-        "content": "Content",
+        "content": "Lecture notes",
         "slides": "Slides",
         "speech": "Speech",
         "published": "Published",
@@ -2121,7 +2121,7 @@
       "pipelineLessons": {
         "title": "Lessons pipeline",
         "subtitle": "Status per phase across {{total}} total lessons",
-        "content": "Content",
+        "content": "Lecture notes",
         "slides": "Slides",
         "speech": "Speech",
         "video": "Video",

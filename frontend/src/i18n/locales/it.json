@@ -159,7 +159,7 @@
       "continueToDocuments": "Continua a Documenti",
       "continueToArchitecture": "Continua ad Architettura",
       "continueToLessonsStructure": "Continua a Struttura lezioni",
-      "continueToLessonContent": "Continua a Contenuti",
+      "continueToLessonContent": "Continua a Dispense",
       "continueToLessonSlides": "Continua a Slide",
       "continueToLessonSpeech": "Continua a Discorso"
     },
@@ -185,7 +185,7 @@
     "list": {
       "pipelineHeader": "Pipeline",
       "progressChip": {
-        "content": "Contenuti generati: {{done}} di {{total}}",
+        "content": "Dispense generate: {{done}} di {{total}}",
         "slides": "Slide generate: {{done}} di {{total}}",
         "videos": "Video creati: {{done}} di {{total}}",
         "avatarVideos": "Video con avatar creati: {{done}} di {{total}}",
@@ -199,7 +199,7 @@
       "documents": "Documenti",
       "architecture": "Struttura moduli",
       "lessonsStructure": "Struttura lezioni",
-      "lessonContent": "Contenuti",
+      "lessonContent": "Dispense",
       "lessonSlides": "Slide",
       "lessonSpeech": "Discorso",
       "lessonVideo": "Video",
@@ -208,12 +208,12 @@
     "phases": {
       "setup": "Setup",
       "architecture": "Architettura",
-      "content": "Contenuti",
+      "content": "Dispense",
       "media": "Media",
       "lockedHint": {
         "setup": "Sempre disponibile",
         "architecture": "Conferma prima il setup didattico per sbloccare questa fase.",
-        "content": "Approva la struttura delle lezioni per sbloccare i contenuti.",
+        "content": "Approva la struttura delle lezioni per sbloccare le Dispense.",
         "media": "Approva slide e discorso di almeno una lezione per sbloccare i media."
       }
     },
@@ -302,9 +302,9 @@
       "lessons_structure_pending": "Struttura lezioni — in coda",
       "lessons_structure_ready": "Struttura lezioni — pronta",
       "lessons_structure_approved": "Struttura lezioni — approvata",
-      "content_pending": "Contenuti — in coda",
-      "content_ready": "Contenuti — pronti",
-      "content_approved": "Contenuti — approvati",
+      "content_pending": "Dispense — in coda",
+      "content_ready": "Dispense — pronte",
+      "content_approved": "Dispense — approvate",
       "slides_pending": "Slide — in coda",
       "slides_ready": "Slide — pronte",
       "slides_approved": "Slide — approvate",
@@ -562,7 +562,7 @@
         "deleteConfirmMessage": "Stai per eliminare \"{{label}}\". L'operazione è irreversibile."
       },
       "errorTitle": "Generazione fallita",
-      "approvedBanner": "Architettura approvata. Ora puoi procedere alle fasi successive (struttura lezioni, contenuti, slide, discorso).",
+      "approvedBanner": "Architettura approvata. Ora puoi procedere alle fasi successive (struttura lezioni, dispense, slide, discorso).",
       "readyBanner": "L'architettura è pronta per la revisione. Approvala se ti soddisfa, oppure rigenera con indicazioni specifiche.",
       "generateDialog": {
         "title": "Genera architettura del corso",
@@ -640,10 +640,10 @@
       },
       "lesson": {
         "editTitle": "Modifica struttura della lezione",
-        "editDescription": "Modifica obiettivi, temi obbligatori, prerequisiti e scaletta delle sezioni della lezione. I cambiamenti possono invalidare la generazione di contenuti, slide e discorso.",
+        "editDescription": "Modifica obiettivi, temi obbligatori, prerequisiti e scaletta delle sezioni della lezione. I cambiamenti possono invalidare la generazione di dispense, slide e discorso.",
         "emptyHint": "Struttura non ancora generata.",
         "assessmentHint": "Verifica automatica",
-        "assessmentNote": "Questa è una lezione di verifica: non prevede una struttura didattica (obiettivi, temi, scaletta). Il quiz di valutazione viene generato automaticamente nella fase «Contenuti», a partire dagli argomenti delle lezioni del modulo.",
+        "assessmentNote": "Questa è una lezione di verifica: non prevede una struttura didattica (obiettivi, temi, scaletta). Il quiz di valutazione viene generato automaticamente nella fase «Dispense», a partire dagli argomenti delle lezioni del modulo.",
         "objective": {
           "add": "Aggiungi obiettivo",
           "empty": "Nessun obiettivo definito. Aggiungi almeno un obiettivo formativo.",
@@ -747,13 +747,13 @@
       }
     },
     "lessonsContent": {
-      "title": "Contenuti delle lezioni",
+      "title": "Dispense delle lezioni",
       "description": "Per ogni lezione, l'AI scrive il testo completo in markdown con asset visivi (Mermaid, formule LaTeX, tabelle), esempi, esercizi e references.",
-      "lessonsStructureNotApproved": "Approva prima la struttura delle lezioni per generare i contenuti.",
-      "generateAll": "Genera contenuti per tutte le lezioni",
-      "regenerateAll": "Rigenera tutti i contenuti",
+      "lessonsStructureNotApproved": "Approva prima la struttura delle lezioni per generare le dispense.",
+      "generateAll": "Genera dispense per tutte le lezioni",
+      "regenerateAll": "Rigenera tutte le dispense",
       "generateMissing": "Genera mancanti ({{count}})",
-      "approveAll": "Approva tutti i contenuti",
+      "approveAll": "Approva tutte le dispense",
       "cancelAll": "Ferma generazione",
       "aggregate": {
         "label": "{{completed}}/{{total}} lezioni completate",
@@ -773,7 +773,7 @@
       "phases": {
         "preparing_prompt": "Preparazione del prompt…",
         "calling_openai": "Generazione AI in corso…",
-        "materializing": "Salvataggio del contenuto…"
+        "materializing": "Salvataggio della dispensa…"
       },
       "lesson": {
         "generate": "Genera",
@@ -881,20 +881,20 @@
       },
       "dialog": {
         "generateLesson": {
-          "title": "Genera contenuto di {{lesson}}",
+          "title": "Genera dispensa di {{lesson}}",
           "description": "L'AI scriverà il testo completo della lezione con asset visivi, esempi, esercizi e references."
         },
         "regenerateLesson": {
-          "title": "Rigenera contenuto di {{lesson}}",
-          "description": "Il contenuto attuale verrà sostituito. Puoi fornire indicazioni specifiche per guidare la rigenerazione (opzionale)."
+          "title": "Rigenera dispensa di {{lesson}}",
+          "description": "La dispensa attuale verrà sostituita. Puoi fornire indicazioni specifiche per guidare la rigenerazione (opzionale)."
         },
         "generateAll": {
-          "title": "Genera contenuti per tutte le lezioni",
+          "title": "Genera dispense per tutte le lezioni",
           "description": "L'AI elaborerà in parallelo le lezioni (cap di concorrenza). Il glossario verrà generato automaticamente al primo task se assente."
         },
         "regenerateAll": {
-          "title": "Rigenera tutti i contenuti",
-          "description": "Tutti i contenuti verranno sostituiti. Puoi fornire indicazioni specifiche per guidare la rigenerazione (opzionale)."
+          "title": "Rigenera tutte le dispense",
+          "description": "Tutte le dispense verranno sostituite. Puoi fornire indicazioni specifiche per guidare la rigenerazione (opzionale)."
         },
         "hintLabel": "Indicazioni del docente (opzionale)",
         "hintPlaceholder": "Es. \"Aggiungi un esempio nel settore retail e rendi più semplice la sezione 3\".",
@@ -905,7 +905,7 @@
         "generateAllCta": "Genera tutto",
         "regenerateAllCta": "Rigenera tutto",
         "edit": {
-          "title": "Modifica contenuto di {{lesson}}",
+          "title": "Modifica dispensa di {{lesson}}",
           "description": "Modifica testo, asset visivi, tabelle, equazioni, esempi ed esercizi della lezione. Le modifiche non degradano lo stato di approvazione.",
           "save": "Salva",
           "saving": "Salvataggio…",
@@ -920,11 +920,11 @@
         }
       },
       "toast": {
-        "batchStarted": "Generazione contenuti avviata su tutte le lezioni.",
-        "lessonStarted": "Generazione contenuto avviata.",
-        "lessonApproved": "Contenuto della lezione approvato.",
-        "allApproved": "Contenuti di tutte le lezioni approvati.",
-        "lessonUpdated": "Contenuto della lezione aggiornato.",
+        "batchStarted": "Generazione dispense avviata su tutte le lezioni.",
+        "lessonStarted": "Generazione dispensa avviata.",
+        "lessonApproved": "Dispensa della lezione approvata.",
+        "allApproved": "Dispense di tutte le lezioni approvate.",
+        "lessonUpdated": "Dispensa della lezione aggiornata.",
         "cancelled": "Generazione annullata.",
         "error": "Operazione fallita. Riprova."
       },
@@ -985,7 +985,7 @@
     "lessonsSlides": {
       "title": "Slide delle lezioni",
       "description": "Per ogni lezione, l'AI produce una sequenza di slide dimensionate sulla durata della lezione. Le slide riusano gli asset delle Dispense (diagrammi, formule, tabelle) e ne possono creare di nuovi solo se necessario.",
-      "contentNotReady": "Genera prima i contenuti delle lezioni per produrre le slide.",
+      "contentNotReady": "Genera prima le dispense delle lezioni per produrre le slide.",
       "generateAll": "Genera slide per tutte le lezioni",
       "regenerateAll": "Rigenera tutte le slide",
       "generateMissing": "Genera mancanti ({{count}})",
@@ -1071,7 +1071,7 @@
       "dialog": {
         "generateLesson": {
           "title": "Genera slide di {{lesson}}",
-          "description": "L'AI produrrà la sequenza di slide della lezione, riusando gli asset visivi del contenuto."
+          "description": "L'AI produrrà la sequenza di slide della lezione, riusando gli asset visivi delle dispense."
         },
         "regenerateLesson": {
           "title": "Rigenera slide di {{lesson}}",
@@ -1079,7 +1079,7 @@
         },
         "generateAll": {
           "title": "Genera slide per tutte le lezioni",
-          "description": "L'AI elaborerà in parallelo le lezioni con contenuto pronto. Le altre lezioni verranno ignorate."
+          "description": "L'AI elaborerà in parallelo le lezioni con dispensa pronta. Le altre lezioni verranno ignorate."
         },
         "regenerateAll": {
           "title": "Rigenera tutte le slide",
@@ -1412,7 +1412,7 @@
         "approved": "Modulo approvato"
       },
       "lessonContent": {
-        "approved": "Contenuto approvato"
+        "approved": "Dispensa approvata"
       },
       "lessonSlides": {
         "approved": "Slide approvate"
@@ -1428,18 +1428,18 @@
       },
       "content": {
         "label": "Struttura modificata dopo l'ultima generazione",
-        "action": "Aggiorna contenuto"
+        "action": "Aggiorna dispense"
       },
       "pdf": {
         "label": "PDF non allineato al contenuto attuale",
         "action": "Rigenera PDF"
       },
       "slides": {
-        "label": "Contenuto modificato dopo l'ultima generazione",
+        "label": "Dispense modificate dopo l'ultima generazione",
         "action": "Aggiorna slide"
       },
       "speech": {
-        "label": "Slide o contenuto modificati dopo l'ultima generazione",
+        "label": "Slide o dispense modificate dopo l'ultima generazione",
         "action": "Aggiorna discorso"
       },
       "speechPdf": {
@@ -2048,7 +2048,7 @@
       "pipelineLessons": {
         "title": "Pipeline lezioni",
         "subtitle": "Stato per fase su {{total}} lezioni totali",
-        "content": "Contenuto",
+        "content": "Dispense",
         "slides": "Slide",
         "speech": "Discorso",
         "video": "Video",
@@ -2065,7 +2065,7 @@
         "phaseLabel": {
           "architecture": "Architettura",
           "structure": "Struttura lezioni",
-          "content": "Contenuti",
+          "content": "Dispense",
           "slides": "Slide",
           "speech": "Discorso"
         }
@@ -2086,7 +2086,7 @@
         "draft": "Bozze",
         "architecture": "Architettura",
         "structure": "Struttura",
-        "content": "Contenuti",
+        "content": "Dispense",
         "slides": "Slide",
         "speech": "Discorso",
         "published": "Pubblicato",
@@ -2122,7 +2122,7 @@
       "pipelineLessons": {
         "title": "Pipeline lezioni",
         "subtitle": "Stato per fase su {{total}} lezioni totali",
-        "content": "Contenuto",
+        "content": "Dispense",
         "slides": "Slide",
         "speech": "Discorso",
         "video": "Video",
