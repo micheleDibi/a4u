@@ -363,4 +363,26 @@ async def download_pdf(
                 f"limite {max_bytes}."
             ),
         )
+    # Molti URL "oa_pdf" puntano a landing page / paywall che rispondono
+    # 200 con HTML invece del PDF. Senza questo controllo l'HTML verrebbe
+    # salvato come .pdf e poi fallirebbe l'estrazione testo ("No /Root
+    # object! - Is this really a PDF?"). Verifichiamo l'header %PDF (la
+    # spec ne tollera la presenza entro i primi ~1024 byte) cosi' l'import
+    # puo' ripiegare sui metadati .md.
+    if b"%PDF-" not in payload[:1024]:
+        ctype = resp.headers.get("content-type", "?")
+        log.warning(
+            "openalex_pdf_not_a_pdf",
+            url=url,
+            content_type=ctype,
+            size=len(payload),
+            head=payload[:16].hex(),
+        )
+        raise OpenAlexError(
+            status=None,
+            message=(
+                f"Il contenuto scaricato non e' un PDF "
+                f"(content-type={ctype})."
+            ),
+        )
     return payload
