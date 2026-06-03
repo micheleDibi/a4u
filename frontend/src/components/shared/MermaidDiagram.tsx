@@ -1,5 +1,5 @@
 import { AlertTriangle } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -26,7 +26,7 @@ async function ensureMermaid() {
   return mermaid;
 }
 
-export function MermaidDiagram({ code, className }: MermaidDiagramProps) {
+function MermaidDiagramImpl({ code, className }: MermaidDiagramProps) {
   const [svg, setSvg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -146,5 +146,12 @@ export function MermaidDiagram({ code, className }: MermaidDiagramProps) {
     />
   );
 }
+
+// I prop sono solo stringhe (`code`, `className`): il confronto shallow
+// di default di `memo` basta a evitare il re-render del diagramma quando
+// il genitore si ri-renderizza (es. polling) ma il codice mermaid non
+// cambia. Quando `code` cambia (editor, rigenerazione) il diagramma si
+// aggiorna normalmente.
+export const MermaidDiagram = memo(MermaidDiagramImpl);
 
 export default MermaidDiagram;
