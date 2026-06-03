@@ -216,7 +216,9 @@ async def save_upload_audio(
     """
     settings = get_settings()
     safe_subdir = _validate_subdir(subdir)
-    mime = (upload.content_type or "").lower()
+    # MediaRecorder invia il MIME con i parametri del codec (es.
+    # "audio/webm; codecs=opus"): teniamo solo il media type.
+    mime = (upload.content_type or "").split(";", 1)[0].strip().lower()
     if mime not in ALLOWED_AUDIO_MIME_TYPES:
         raise ValidationAppError(
             f"Tipo audio non consentito: {mime or 'sconosciuto'}", code="invalid_audio_mime"
@@ -277,7 +279,9 @@ async def save_upload_document(
     """
     settings = get_settings()
     safe_subdir = _validate_subdir(subdir)
-    mime = (upload.content_type or "").lower()
+    # I browser inviano spesso il charset nel content-type (es.
+    # "text/plain; charset=utf-8"): teniamo solo il media type.
+    mime = (upload.content_type or "").split(";", 1)[0].strip().lower()
     if mime not in ALLOWED_DOCUMENT_MIME_TYPES:
         raise ValidationAppError(
             f"Tipo documento non consentito: {mime or 'sconosciuto'}",
@@ -327,7 +331,7 @@ async def save_document_from_bytes(
     """
     settings = get_settings()
     safe_subdir = _validate_subdir(subdir)
-    mime = (mime_type or "").lower()
+    mime = (mime_type or "").split(";", 1)[0].strip().lower()
     if mime not in ALLOWED_DOCUMENT_MIME_TYPES:
         raise ValidationAppError(
             f"Tipo documento non consentito: {mime or 'sconosciuto'}",
