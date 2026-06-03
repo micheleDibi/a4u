@@ -1475,7 +1475,8 @@
         "cancel": "Annulla",
         "cancelAll": "Annulla tutti",
         "download": "Scarica MP4",
-        "generateAll": "Genera tutti ({{count}})"
+        "generateAll": "Genera tutti ({{count}})",
+        "goToMyAvatar": "Configura in «Mio avatar»"
       },
       "errors": {
         "speech_not_approved": "Approva prima il discorso della lezione",
@@ -1523,7 +1524,8 @@
         "cancel": "Annulla",
         "cancelAll": "Annulla tutti",
         "download": "Scarica MP4",
-        "generateAll": "Genera tutti ({{count}})"
+        "generateAll": "Genera tutti ({{count}})",
+        "goToMyAvatar": "Configura in «Mio avatar»"
       },
       "errors": {
         "lesson_video_not_ready": "Genera prima il video della lezione (scheda «Video»)",

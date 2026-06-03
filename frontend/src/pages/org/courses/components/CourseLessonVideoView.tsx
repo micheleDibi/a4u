@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import {
   AlertCircle,
@@ -323,11 +324,16 @@ export function CourseLessonVideoView({
       {/* Banner pre-requisiti — voice sample mancante */}
       {!voiceAvailable && total > 0 && (
         <Card className="border-amber-300/60 bg-amber-50/40 dark:bg-amber-900/10">
-          <CardContent className="flex items-center gap-3 py-3 text-sm">
+          <CardContent className="flex flex-wrap items-center gap-3 py-3 text-sm">
             <AlertCircle className="size-4 shrink-0 text-amber-600" />
             <span className="flex-1">
               {t("courses.video.errors.voice_sample_missing")}
             </span>
+            <Button asChild size="sm" variant="outline">
+              <Link to="/me/avatar">
+                {t("courses.video.actions.goToMyAvatar")}
+              </Link>
+            </Button>
           </CardContent>
         </Card>
       )}

@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import {
   AlertCircle,
@@ -196,11 +197,16 @@ export function CourseLessonAvatarVideoView({
       {/* Banner pre-requisiti — avatar dell'assegnatario senza clip */}
       {!avatarClipsReady && total > 0 && (
         <Card className="border-amber-300/60 bg-amber-50/40 dark:bg-amber-900/10">
-          <CardContent className="flex items-center gap-3 py-3 text-sm">
+          <CardContent className="flex flex-wrap items-center gap-3 py-3 text-sm">
             <AlertCircle className="size-4 shrink-0 text-amber-600" />
             <span className="flex-1">
               {t("courses.avatarVideo.errors.avatar_clips_not_ready")}
             </span>
+            <Button asChild size="sm" variant="outline">
+              <Link to="/me/avatar">
+                {t("courses.avatarVideo.actions.goToMyAvatar")}
+              </Link>
+            </Button>
           </CardContent>
         </Card>
       )}
