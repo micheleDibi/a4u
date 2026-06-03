@@ -105,32 +105,35 @@ export function MarkdownRenderer({
     [examples],
   );
 
-  const components: Components = {
-    p({ children, ...rest }) {
-      // Se il paragrafo contiene solo un placeholder asset, renderizzalo
-      // come blocco custom invece di <p>.
-      const text =
-        typeof children === "string"
-          ? children.trim()
-          : Array.isArray(children) && children.length === 1 && typeof children[0] === "string"
-            ? (children[0] as string).trim()
-            : null;
-      if (text) {
-        const m = ASSET_PLACEHOLDER_RE.exec(text);
-        if (m) {
-          const kind = m[1] as AssetKind;
-          const id = m[2];
-          return renderAssetBlock(kind, id, {
-            visualMap,
-            tableMap,
-            equationMap,
-            exampleMap,
-          });
+  const components: Components = useMemo(
+    () => ({
+      p({ children, ...rest }) {
+        // Se il paragrafo contiene solo un placeholder asset, renderizzalo
+        // come blocco custom invece di <p>.
+        const text =
+          typeof children === "string"
+            ? children.trim()
+            : Array.isArray(children) && children.length === 1 && typeof children[0] === "string"
+              ? (children[0] as string).trim()
+              : null;
+        if (text) {
+          const m = ASSET_PLACEHOLDER_RE.exec(text);
+          if (m) {
+            const kind = m[1] as AssetKind;
+            const id = m[2];
+            return renderAssetBlock(kind, id, {
+              visualMap,
+              tableMap,
+              equationMap,
+              exampleMap,
+            });
+          }
         }
-      }
-      return <p {...rest}>{children}</p>;
-    },
-  };
+        return <p {...rest}>{children}</p>;
+      },
+    }),
+    [visualMap, tableMap, equationMap, exampleMap],
+  );
 
   return (
     <div className={cn("lesson-prose max-w-none", className)}>

@@ -1,3 +1,4 @@
+import { memo, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { LessonContentRaw } from "@/api/courses";
@@ -13,16 +14,27 @@ interface Props {
  * visibili. Le sezioni interne (introduzione, scaletta, sintesi,
  * key takeaways, references) sono concatenate con `## Titolo` come unico
  * marcatore strutturale.
+ *
+ * NB: il contenitore della lezione fa polling (refetchInterval) finché
+ * un'altra lezione/PDF è in elaborazione. A ogni tick react-query
+ * restituisce un nuovo oggetto `content` con identità diversa ma stesso
+ * contenuto: senza memoizzazione l'intero markdown (immagini comprese)
+ * verrebbe ri-renderizzato a ripetizione, con flicker visibile. Per
+ * questo il componente è `memo`-izzato con confronto sul contenuto reale.
  */
-export function LessonContentView({ content }: Props) {
+function LessonContentViewImpl({ content }: Props) {
   const { t } = useTranslation();
 
   // Concatena tutto in un solo documento markdown.
-  const fullMarkdown = buildFullMarkdown(content, {
-    summaryHeading: t("courses.lessonsContent.render.summary"),
-    keyTakeawaysHeading: t("courses.lessonsContent.render.keyTakeaways"),
-    referencesHeading: t("courses.lessonsContent.render.references"),
-  });
+  const fullMarkdown = useMemo(
+    () =>
+      buildFullMarkdown(content, {
+        summaryHeading: t("courses.lessonsContent.render.summary"),
+        keyTakeawaysHeading: t("courses.lessonsContent.render.keyTakeaways"),
+        referencesHeading: t("courses.lessonsContent.render.references"),
+      }),
+    [content, t],
+  );
 
   return (
     <article className="rounded-lg border bg-card px-6 py-8 shadow-sm sm:px-10 sm:py-12">
@@ -36,6 +48,15 @@ export function LessonContentView({ content }: Props) {
     </article>
   );
 }
+
+export const LessonContentView = memo(
+  LessonContentViewImpl,
+  // Salta il re-render quando il contenuto è strutturalmente invariato
+  // (stessa identità logica, nuovo oggetto dal polling). content_raw è
+  // JSON serializzabile, quindi la firma è deterministica ed economica.
+  (prev, next) =>
+    JSON.stringify(prev.content) === JSON.stringify(next.content),
+);
 
 interface BuildOpts {
   summaryHeading: string;
