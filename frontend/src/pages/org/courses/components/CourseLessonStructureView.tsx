@@ -667,10 +667,16 @@ function LessonStructureRow({
         <span className="flex-1 text-sm font-medium truncate">
           {lesson.title}
         </span>
-        {!hasContent && (
+        {lesson.is_assessment ? (
           <span className="text-xs text-muted-foreground italic">
-            {t("courses.lessonsStructure.lesson.emptyHint")}
+            {t("courses.lessonsStructure.lesson.assessmentHint")}
           </span>
+        ) : (
+          !hasContent && (
+            <span className="text-xs text-muted-foreground italic">
+              {t("courses.lessonsStructure.lesson.emptyHint")}
+            </span>
+          )
         )}
         {canEdit && (
           <Button
@@ -703,6 +709,17 @@ function LessonStructureRow({
             </Subsection>
           )}
 
+          {/* Lezione di verifica: niente struttura didattica, mostriamo
+              una nota chiara invece delle 4 subsection vuote. */}
+          {lesson.is_assessment ? (
+            <div className="flex items-start gap-2 rounded-md border border-border bg-muted/30 px-3 py-2.5 text-sm text-muted-foreground">
+              <ListChecks className="mt-0.5 size-4 shrink-0 text-primary" />
+              <span className="leading-relaxed">
+                {t("courses.lessonsStructure.lesson.assessmentNote")}
+              </span>
+            </div>
+          ) : (
+          <>
           {/* Obiettivi */}
           <Subsection
             icon={<Target className="size-3.5" />}
@@ -812,6 +829,8 @@ function LessonStructureRow({
               })}
             </ol>
           </Subsection>
+          </>
+          )}
         </div>
       )}
     </div>

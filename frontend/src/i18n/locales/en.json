@@ -642,6 +642,8 @@
         "editTitle": "Edit lesson structure",
         "editDescription": "Edit objectives, mandatory topics, prerequisites and section outline of the lesson. Changes may invalidate downstream generation of content, slides and speech.",
         "emptyHint": "Structure not yet generated.",
+        "assessmentHint": "Automatic assessment",
+        "assessmentNote": "This is an assessment lesson: it has no didactic structure (objectives, topics, outline). The assessment quiz is generated automatically in the «Content» phase, from the topics of the module's lessons.",
         "objective": {
           "add": "Add objective",
           "empty": "No objective defined. Add at least one learning objective.",

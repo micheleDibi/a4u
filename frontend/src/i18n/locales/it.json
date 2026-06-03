@@ -642,6 +642,8 @@
         "editTitle": "Modifica struttura della lezione",
         "editDescription": "Modifica obiettivi, temi obbligatori, prerequisiti e scaletta delle sezioni della lezione. I cambiamenti possono invalidare la generazione di contenuti, slide e discorso.",
         "emptyHint": "Struttura non ancora generata.",
+        "assessmentHint": "Verifica automatica",
+        "assessmentNote": "Questa è una lezione di verifica: non prevede una struttura didattica (obiettivi, temi, scaletta). Il quiz di valutazione viene generato automaticamente nella fase «Contenuti», a partire dagli argomenti delle lezioni del modulo.",
         "objective": {
           "add": "Aggiungi obiettivo",
           "empty": "Nessun obiettivo definito. Aggiungi almeno un obiettivo formativo.",
