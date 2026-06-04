@@ -609,6 +609,24 @@ async def _prerender_mermaid_to_svg_batch(
     return await asyncio.to_thread(_prerender_mermaid_to_svg_batch_sync, codes)
 
 
+# Righe spurie a volte emesse dall'AI nel codice Mermaid: fence markdown
+# residuo (```/```mermaid) o nodi-segnaposto isolati come `mermaid` /
+# `all` / `all:`. Passano mermaid.parse ma compaiono come box anomali.
+# Rimosse solo quando una riga è ESATTAMENTE uno di questi token (non
+# tocchiamo archi/nodi reali tipo `A --> all` o `all[Etichetta]`).
+# Mirror del sanitizer frontend in MermaidDiagram.tsx.
+_MERMAID_JUNK_LINE_RE = re.compile(r"^(?:```.*|mermaid|all)\s*:?\s*$", re.IGNORECASE)
+
+
+def _sanitize_mermaid_code(code: str) -> str:
+    if not code:
+        return code
+    lines = [
+        ln for ln in code.split("\n") if not _MERMAID_JUNK_LINE_RE.match(ln.strip())
+    ]
+    return "\n".join(lines).strip()
+
+
 async def _prerender_mermaid_for_lesson(
     content: dict[str, Any],
 ) -> dict[str, str]:
@@ -620,7 +638,7 @@ async def _prerender_mermaid_for_lesson(
         if asset.get("format") != "mermaid":
             continue
         asset_id = str(asset.get("asset_id", ""))
-        code = asset.get("content") or ""
+        code = _sanitize_mermaid_code(asset.get("content") or "")
         if asset_id and code.strip():
             pairs.append((asset_id, code))
 

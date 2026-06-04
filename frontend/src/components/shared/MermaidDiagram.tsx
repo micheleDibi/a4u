@@ -11,6 +11,23 @@ interface MermaidDiagramProps {
 let mermaidInitialized = false;
 let renderCounter = 0;
 
+// Righe spurie talvolta emesse dall'AI nel codice Mermaid: il fence
+// markdown residuo (```/```mermaid) o nodi-segnaposto isolati come
+// `mermaid` / `all` / `all:`. Sono sintatticamente "validi" (passano
+// mermaid.parse) ma compaiono come box anomali nel diagramma. Le
+// rimuoviamo solo quando una riga è ESATTAMENTE uno di questi token
+// (non tocchiamo archi/nodi reali tipo `A --> all` o `all[Etichetta]`).
+const MERMAID_JUNK_LINE_RE = /^(?:```.*|mermaid|all)\s*:?\s*$/i;
+
+export function sanitizeMermaidCode(raw: string): string {
+  if (!raw) return raw;
+  return raw
+    .split("\n")
+    .filter((line) => !MERMAID_JUNK_LINE_RE.test(line.trim()))
+    .join("\n")
+    .trim();
+}
+
 async function ensureMermaid() {
   const mod = await import("mermaid");
   const mermaid = mod.default;
@@ -31,6 +48,8 @@ function MermaidDiagramImpl({ code, className }: MermaidDiagramProps) {
   const [error, setError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
+  const cleanCode = sanitizeMermaidCode(code);
+
   useEffect(() => {
     let cancelled = false;
     setError(null);
@@ -47,7 +66,9 @@ function MermaidDiagramImpl({ code, className }: MermaidDiagramProps) {
         // appare visualmente sopra il resto della UI. Con
         // `suppressErrors: true`, parse ritorna `false` invece di
         // throw o renderare il bomb icon.
-        const parseOk = await mermaid.parse(code, { suppressErrors: true });
+        const parseOk = await mermaid.parse(cleanCode, {
+          suppressErrors: true,
+        });
         if (!parseOk) {
           if (!cancelled) {
             setError("Sintassi del diagramma non valida.");
@@ -57,7 +78,7 @@ function MermaidDiagramImpl({ code, className }: MermaidDiagramProps) {
 
         renderCounter += 1;
         const id = `mermaid-${renderCounter}-${Date.now()}`;
-        const { svg: rendered } = await mermaid.render(id, code);
+        const { svg: rendered } = await mermaid.render(id, cleanCode);
         if (!cancelled) {
           // Mermaid imposta `style="max-width: <natural_px>"` sull'SVG.
           // Questo impedisce al diagramma di crescere oltre la sua
@@ -85,7 +106,7 @@ function MermaidDiagramImpl({ code, className }: MermaidDiagramProps) {
     return () => {
       cancelled = true;
     };
-  }, [code]);
+  }, [cleanCode]);
 
   if (error) {
     return (
@@ -114,7 +135,7 @@ function MermaidDiagramImpl({ code, className }: MermaidDiagramProps) {
               {error}
             </div>
             <pre className="overflow-x-auto whitespace-pre-wrap rounded bg-amber-100/60 p-2 text-[0.7rem] text-amber-900 dark:bg-amber-950/60 dark:text-amber-100">
-              {code}
+              {cleanCode}
             </pre>
           </div>
         </details>
