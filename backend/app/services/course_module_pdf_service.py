@@ -228,3 +228,114 @@ def zip_module_pdfs(
             filename = _lesson_pdf_filename(kind, course.title, lesson)
             zf.write(str(abs_path), arcname=filename)
     return buf.getvalue()
+
+
+# === Aggregazione a livello CORSO (tutti i moduli) ==========================
+
+
+def _ordered_modules(course: Course) -> list[CourseModule]:
+    """Moduli del corso ordinati per `module_code` (M1, M2, ...)."""
+
+    def _key(m: CourseModule) -> tuple[int, object]:
+        mm = re.match(r"^M(\d+)$", m.module_code or "")
+        if mm:
+            return (0, int(mm.group(1)))
+        return (1, m.module_code or "")
+
+    return sorted(course.modules, key=_key)
+
+
+def _ensure_course_pdfs_ready(
+    kind: PdfKind, course: Course
+) -> list[tuple[CourseModule, list[CourseLesson]]]:
+    """Verifica che TUTTE le lezioni (non-verifica) di TUTTI i moduli
+    abbiano il PDF `kind` pronto + path + file su disco. Ritorna la lista
+    ordinata di (modulo, lezioni). Solleva ConflictError/NotFoundError con
+    codici diagnostici se la pre-condizione non è soddisfatta."""
+    groups: list[tuple[CourseModule, list[CourseLesson]]] = []
+    not_ready: list[CourseLesson] = []
+    total = 0
+    for module in _ordered_modules(course):
+        lessons = _ordered_lessons(module)
+        if not lessons:
+            continue
+        total += len(lessons)
+        not_ready.extend(
+            l
+            for l in lessons
+            if _lesson_pdf_status(kind, l) != "ready" or not _lesson_pdf_path(kind, l)
+        )
+        groups.append((module, lessons))
+
+    if total == 0:
+        raise ConflictError(
+            f"Nessuna lezione con PDF da scaricare ({_kind_label(kind)}).",
+            code="course_has_no_lessons",
+        )
+    if not_ready:
+        codes = ", ".join(l.lesson_code for l in not_ready)
+        raise ConflictError(
+            f"PDF {_kind_label(kind)} non ancora pronti per: {codes}. "
+            "Esporta prima i PDF mancanti.",
+            code="course_pdfs_not_ready",
+            meta={"missing_lessons": [str(l.id) for l in not_ready]},
+        )
+
+    # Verifica filesystem.
+    for _module, lessons in groups:
+        for lesson in lessons:
+            rel = _lesson_pdf_path(kind, lesson)
+            if not rel:
+                continue
+            if not _lesson_pdf_absolute_path(kind, rel).is_file():
+                raise NotFoundError(
+                    f"File PDF mancante sul filesystem per la lezione "
+                    f"{lesson.lesson_code} ({_kind_label(kind)}).",
+                    code="course_pdf_file_missing",
+                )
+
+    return groups
+
+
+def course_merged_filename(kind: PdfKind, course: Course) -> str:
+    return f"{_safe_segment(course.title)} — corso completo ({_kind_label(kind)}).pdf"
+
+
+def course_zip_filename(kind: PdfKind, course: Course) -> str:
+    return f"{_safe_segment(course.title)} — corso completo ({_kind_label(kind)}).zip"
+
+
+def merge_course_pdfs(*, kind: PdfKind, course: Course) -> bytes:
+    """Concatena in un unico PDF tutte le lezioni di tutti i moduli del
+    corso, in ordine modulo → lezione."""
+    groups = _ensure_course_pdfs_ready(kind, course)
+    writer = PdfWriter()
+    for module, lessons in groups:
+        for lesson in lessons:
+            rel = _lesson_pdf_path(kind, lesson)
+            assert rel is not None
+            abs_path = _lesson_pdf_absolute_path(kind, rel)
+            outline = f"{module.module_code} — {lesson.title or lesson.lesson_code}"
+            writer.append(str(abs_path), outline_item=outline)
+
+    buf = io.BytesIO()
+    writer.write(buf)
+    writer.close()
+    return buf.getvalue()
+
+
+def zip_course_pdfs(*, kind: PdfKind, course: Course) -> bytes:
+    """Crea uno ZIP di tutto il corso: una sottocartella per modulo, un
+    PDF per ogni lezione (stesso filename del download per-lezione)."""
+    groups = _ensure_course_pdfs_ready(kind, course)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for module, lessons in groups:
+            folder = f"{module.module_code} {_safe_segment(module.title)}"
+            for lesson in lessons:
+                rel = _lesson_pdf_path(kind, lesson)
+                assert rel is not None
+                abs_path = _lesson_pdf_absolute_path(kind, rel)
+                filename = _lesson_pdf_filename(kind, course.title, lesson)
+                zf.write(str(abs_path), arcname=f"{folder}/{filename}")
+    return buf.getvalue()

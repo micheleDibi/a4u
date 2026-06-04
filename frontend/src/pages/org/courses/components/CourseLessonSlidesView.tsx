@@ -475,6 +475,28 @@ export function CourseLessonSlidesView({
     }
   };
 
+  const downloadAllCourse = async (fmt: "merged" | "zip") => {
+    try {
+      const { blob, filename } =
+        fmt === "merged"
+          ? await coursesApi.lessonSlidesPdf.downloadAllMerged(orgId, course.id)
+          : await coursesApi.lessonSlidesPdf.downloadAllZip(orgId, course.id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename ?? `${course.title}.${fmt === "merged" ? "pdf" : "zip"}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5_000);
+    } catch (err) {
+      toast.error(
+        extractApiError(err).message ??
+          t("courses.lessonsSlidesPdf.toast.error"),
+      );
+    }
+  };
+
   // PDF aggregate
   const pdfAggregate = useMemo(() => {
     let pdfActive = 0;
@@ -502,6 +524,12 @@ export function CourseLessonSlidesView({
       (l.slides_status === "ready" || l.slides_status === "approved") &&
       (l.slides_pdf_status === "empty" || l.slides_pdf_status === "failed"),
   ).length;
+  // "Scarica tutto" (intero corso): solo quando ogni lezione non-verifica
+  // ha il PDF slide pronto.
+  const bundleLessons = allLessons.filter((l) => !l.is_assessment);
+  const allCoursePdfsReady =
+    bundleLessons.length > 0 &&
+    bundleLessons.every((l) => l.slides_pdf_status === "ready");
 
   // Empty state: nessuna lezione con content pronto → invita a Fase 3.
   if (eligibleForGen === 0) {
@@ -606,6 +634,26 @@ export function CourseLessonSlidesView({
                     count: exportablePdfCount,
                   })}
                 </Button>
+              )}
+              {allCoursePdfsReady && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline">
+                      <Download className="size-4" />
+                      {t("courses.lessonsSlidesPdf.downloadAll.label")}
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onSelect={() => downloadAllCourse("merged")}>
+                      <FileText className="size-3.5" />
+                      {t("courses.lessonsSlidesPdf.downloadAll.merged")}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => downloadAllCourse("zip")}>
+                      <FileArchive className="size-3.5" />
+                      {t("courses.lessonsSlidesPdf.downloadAll.zip")}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
               {canGenerate &&
                 missingPdfCount > 0 &&

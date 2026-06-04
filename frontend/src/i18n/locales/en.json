@@ -1130,6 +1130,11 @@
           "title": "Download a ZIP with one slides PDF per lesson of the module"
         }
       },
+      "downloadAll": {
+        "label": "Download all",
+        "merged": "All in one PDF",
+        "zip": "ZIP (per module)"
+      },
       "dialog": {
         "exportLesson": {
           "title": "Generate slides PDF — {{lesson}}",
@@ -1287,6 +1292,11 @@
           "title": "Download a ZIP with one speech PDF per lesson of the module"
         }
       },
+      "downloadAll": {
+        "label": "Download all",
+        "merged": "All in one PDF",
+        "zip": "ZIP (per module)"
+      },
       "dialog": {
         "exportLesson": {
           "title": "Generate speech PDF — {{lesson}}",
@@ -1361,6 +1371,11 @@
           "label": "Download separately (ZIP)",
           "title": "Download a ZIP with one PDF per lesson of the module"
         }
+      },
+      "downloadAll": {
+        "label": "Download all",
+        "merged": "All in one PDF",
+        "zip": "ZIP (per module)"
       },
       "phases": {
         "preparing": "Preparing...",

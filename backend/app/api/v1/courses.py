@@ -3025,6 +3025,120 @@ async def download_module_speech_pdf_zip(
     )
 
 
+# --- Corso intero (tutti i moduli): "Scarica tutto" ------------------------
+
+
+async def _load_course_full_or_404(
+    db: DbSession, *, org_id: uuid.UUID, course_id: uuid.UUID
+) -> Any:
+    course = await course_lesson_pdf_service.load_course_full(
+        db, course_id=course_id
+    )
+    if course is None or course.organization_id != org_id:
+        raise NotFoundError("Corso non trovato.", code="course_not_found")
+    return course
+
+
+def _course_merged_response(
+    kind: course_module_pdf_service.PdfKind, course: Any
+) -> Response:
+    content = course_module_pdf_service.merge_course_pdfs(kind=kind, course=course)
+    filename = course_module_pdf_service.course_merged_filename(kind, course)
+    return _module_pdf_response(
+        content=content, filename=filename, media_type="application/pdf"
+    )
+
+
+def _course_zip_response(
+    kind: course_module_pdf_service.PdfKind, course: Any
+) -> Response:
+    content = course_module_pdf_service.zip_course_pdfs(kind=kind, course=course)
+    filename = course_module_pdf_service.course_zip_filename(kind, course)
+    return _module_pdf_response(
+        content=content, filename=filename, media_type="application/zip"
+    )
+
+
+@router.get("/{course_id}/lessons-pdf/download-all-merged")
+async def download_course_pdf_merged(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_VIEW),
+) -> Response:
+    """PDF unico con tutte le lezioni (Contenuti) di tutti i moduli."""
+    await _ensure_org(db, org_id)
+    course = await _load_course_full_or_404(db, org_id=org_id, course_id=course_id)
+    return _course_merged_response("content", course)
+
+
+@router.get("/{course_id}/lessons-pdf/download-all-zip")
+async def download_course_pdf_zip(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_VIEW),
+) -> Response:
+    """ZIP (Contenuti) di tutto il corso, una cartella per modulo."""
+    await _ensure_org(db, org_id)
+    course = await _load_course_full_or_404(db, org_id=org_id, course_id=course_id)
+    return _course_zip_response("content", course)
+
+
+@router.get("/{course_id}/lessons-slides-pdf/download-all-merged")
+async def download_course_slides_pdf_merged(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_VIEW),
+) -> Response:
+    await _ensure_org(db, org_id)
+    course = await _load_course_full_or_404(db, org_id=org_id, course_id=course_id)
+    return _course_merged_response("slides", course)
+
+
+@router.get("/{course_id}/lessons-slides-pdf/download-all-zip")
+async def download_course_slides_pdf_zip(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_VIEW),
+) -> Response:
+    await _ensure_org(db, org_id)
+    course = await _load_course_full_or_404(db, org_id=org_id, course_id=course_id)
+    return _course_zip_response("slides", course)
+
+
+@router.get("/{course_id}/lessons-speech-pdf/download-all-merged")
+async def download_course_speech_pdf_merged(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_VIEW),
+) -> Response:
+    await _ensure_org(db, org_id)
+    course = await _load_course_full_or_404(db, org_id=org_id, course_id=course_id)
+    return _course_merged_response("speech", course)
+
+
+@router.get("/{course_id}/lessons-speech-pdf/download-all-zip")
+async def download_course_speech_pdf_zip(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_VIEW),
+) -> Response:
+    await _ensure_org(db, org_id)
+    course = await _load_course_full_or_404(db, org_id=org_id, course_id=course_id)
+    return _course_zip_response("speech", course)
+
+
 # ---------------------------------------------------------------------------
 # Fase 6 — Generazione video MP4 (§9)
 # ---------------------------------------------------------------------------

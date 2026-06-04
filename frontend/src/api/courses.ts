@@ -1631,6 +1631,34 @@ export const coursesApi = {
       const filename = m ? decodeURIComponent(m[1]) : null;
       return { blob: res.data, filename };
     },
+    /** "Scarica tutto": PDF unico di tutte le lezioni del corso. */
+    downloadAllMerged: async (
+      orgId: string,
+      courseId: string
+    ): Promise<{ blob: Blob; filename: string | null }> => {
+      const res = await apiClient.get<Blob>(
+        `${base(orgId)}/${courseId}/lessons-pdf/download-all-merged`,
+        { responseType: "blob" }
+      );
+      const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
+      const m = /filename\*?="?([^";]+)"?/i.exec(cd);
+      const filename = m ? decodeURIComponent(m[1]) : null;
+      return { blob: res.data, filename };
+    },
+    /** "Scarica tutto": ZIP di tutto il corso (una cartella per modulo). */
+    downloadAllZip: async (
+      orgId: string,
+      courseId: string
+    ): Promise<{ blob: Blob; filename: string | null }> => {
+      const res = await apiClient.get<Blob>(
+        `${base(orgId)}/${courseId}/lessons-pdf/download-all-zip`,
+        { responseType: "blob" }
+      );
+      const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
+      const m = /filename\*?="?([^";]+)"?/i.exec(cd);
+      const filename = m ? decodeURIComponent(m[1]) : null;
+      return { blob: res.data, filename };
+    },
   },
   lessonSlidesPdf: {
     exportLesson: async (
@@ -1708,6 +1736,34 @@ export const coursesApi = {
     ): Promise<{ blob: Blob; filename: string | null }> => {
       const res = await apiClient.get<Blob>(
         `${base(orgId)}/${courseId}/modules/${moduleId}/lessons-slides-pdf/download-zip`,
+        { responseType: "blob" }
+      );
+      const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
+      const m = /filename\*?="?([^";]+)"?/i.exec(cd);
+      const filename = m ? decodeURIComponent(m[1]) : null;
+      return { blob: res.data, filename };
+    },
+    /** "Scarica tutto": PDF unico slide di tutte le lezioni del corso. */
+    downloadAllMerged: async (
+      orgId: string,
+      courseId: string
+    ): Promise<{ blob: Blob; filename: string | null }> => {
+      const res = await apiClient.get<Blob>(
+        `${base(orgId)}/${courseId}/lessons-slides-pdf/download-all-merged`,
+        { responseType: "blob" }
+      );
+      const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
+      const m = /filename\*?="?([^";]+)"?/i.exec(cd);
+      const filename = m ? decodeURIComponent(m[1]) : null;
+      return { blob: res.data, filename };
+    },
+    /** "Scarica tutto": ZIP slide di tutto il corso (cartella per modulo). */
+    downloadAllZip: async (
+      orgId: string,
+      courseId: string
+    ): Promise<{ blob: Blob; filename: string | null }> => {
+      const res = await apiClient.get<Blob>(
+        `${base(orgId)}/${courseId}/lessons-slides-pdf/download-all-zip`,
         { responseType: "blob" }
       );
       const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
@@ -1798,6 +1854,34 @@ export const coursesApi = {
     ): Promise<{ blob: Blob; filename: string | null }> => {
       const res = await apiClient.get<Blob>(
         `${base(orgId)}/${courseId}/modules/${moduleId}/lessons-speech-pdf/download-zip`,
+        { responseType: "blob" }
+      );
+      const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
+      const m = /filename\*?="?([^";]+)"?/i.exec(cd);
+      const filename = m ? decodeURIComponent(m[1]) : null;
+      return { blob: res.data, filename };
+    },
+    /** "Scarica tutto": PDF unico discorso di tutte le lezioni del corso. */
+    downloadAllMerged: async (
+      orgId: string,
+      courseId: string
+    ): Promise<{ blob: Blob; filename: string | null }> => {
+      const res = await apiClient.get<Blob>(
+        `${base(orgId)}/${courseId}/lessons-speech-pdf/download-all-merged`,
+        { responseType: "blob" }
+      );
+      const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
+      const m = /filename\*?="?([^";]+)"?/i.exec(cd);
+      const filename = m ? decodeURIComponent(m[1]) : null;
+      return { blob: res.data, filename };
+    },
+    /** "Scarica tutto": ZIP discorso di tutto il corso (cartella per modulo). */
+    downloadAllZip: async (
+      orgId: string,
+      courseId: string
+    ): Promise<{ blob: Blob; filename: string | null }> => {
+      const res = await apiClient.get<Blob>(
+        `${base(orgId)}/${courseId}/lessons-speech-pdf/download-all-zip`,
         { responseType: "blob" }
       );
       const cd = (res.headers["content-disposition"] as string | undefined) ?? "";

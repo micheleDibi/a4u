@@ -1131,6 +1131,11 @@
           "title": "Scarica uno ZIP con un PDF slide per ogni lezione del modulo"
         }
       },
+      "downloadAll": {
+        "label": "Scarica tutto",
+        "merged": "Tutto in un PDF",
+        "zip": "ZIP (per modulo)"
+      },
       "dialog": {
         "exportLesson": {
           "title": "Genera PDF slide — {{lesson}}",
@@ -1288,6 +1293,11 @@
           "title": "Scarica uno ZIP con un PDF discorso per ogni lezione del modulo"
         }
       },
+      "downloadAll": {
+        "label": "Scarica tutto",
+        "merged": "Tutto in un PDF",
+        "zip": "ZIP (per modulo)"
+      },
       "dialog": {
         "exportLesson": {
           "title": "Genera PDF discorso — {{lesson}}",
@@ -1362,6 +1372,11 @@
           "label": "Scarica separati (ZIP)",
           "title": "Scarica uno ZIP con un PDF per ogni lezione del modulo"
         }
+      },
+      "downloadAll": {
+        "label": "Scarica tutto",
+        "merged": "Tutto in un PDF",
+        "zip": "ZIP (per modulo)"
       },
       "phases": {
         "preparing": "Preparazione...",

@@ -306,6 +306,12 @@ export function CourseLessonContentView({
       (l.content_status === "ready" || l.content_status === "approved") &&
       (l.pdf_status === "empty" || l.pdf_status === "failed"),
   ).length;
+  // "Scarica tutto" (intero corso): visibile solo quando OGNI lezione
+  // non-verifica ha il PDF pronto (il backend rifiuta altrimenti).
+  const bundleLessons = allLessons.filter((l) => !l.is_assessment);
+  const allCoursePdfsReady =
+    bundleLessons.length > 0 &&
+    bundleLessons.every((l) => l.pdf_status === "ready");
 
   // ---------- Mutations ----------
 
@@ -526,6 +532,27 @@ export function CourseLessonContentView({
     }
   };
 
+  const downloadAllCourse = async (fmt: "merged" | "zip") => {
+    try {
+      const { blob, filename } =
+        fmt === "merged"
+          ? await coursesApi.lessonPdf.downloadAllMerged(orgId, course.id)
+          : await coursesApi.lessonPdf.downloadAllZip(orgId, course.id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename ?? `${course.title}.${fmt === "merged" ? "pdf" : "zip"}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5_000);
+    } catch (err) {
+      toast.error(
+        extractApiError(err).message ?? t("courses.lessonsPdf.toast.error"),
+      );
+    }
+  };
+
   const updateLessonMut = useMutation({
     mutationFn: ({
       lessonId,
@@ -682,6 +709,26 @@ export function CourseLessonContentView({
                   <FileText className="size-4" />
                   {t("courses.lessonsPdf.exportAll", { count: exportableCount })}
                 </Button>
+              )}
+              {allCoursePdfsReady && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline">
+                      <Download className="size-4" />
+                      {t("courses.lessonsPdf.downloadAll.label")}
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onSelect={() => downloadAllCourse("merged")}>
+                      <FileText className="size-3.5" />
+                      {t("courses.lessonsPdf.downloadAll.merged")}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => downloadAllCourse("zip")}>
+                      <FileArchive className="size-3.5" />
+                      {t("courses.lessonsPdf.downloadAll.zip")}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
               {/* "Genera mancanti": solo quando almeno un PDF è già
                   pronto e altri ne mancano (altrimenti "Genera tutti"

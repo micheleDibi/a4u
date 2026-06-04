@@ -475,6 +475,28 @@ export function CourseLessonSpeechView({
     }
   };
 
+  const downloadAllCourse = async (fmt: "merged" | "zip") => {
+    try {
+      const { blob, filename } =
+        fmt === "merged"
+          ? await coursesApi.lessonSpeechPdf.downloadAllMerged(orgId, course.id)
+          : await coursesApi.lessonSpeechPdf.downloadAllZip(orgId, course.id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename ?? `${course.title}.${fmt === "merged" ? "pdf" : "zip"}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5_000);
+    } catch (err) {
+      toast.error(
+        extractApiError(err).message ??
+          t("courses.lessonsSpeechPdf.toast.error"),
+      );
+    }
+  };
+
   // PDF aggregate
   const pdfAggregate = useMemo(() => {
     let pdfActive = 0;
@@ -505,6 +527,12 @@ export function CourseLessonSpeechView({
         l.speech_pdf_status === "failed" ||
         l.speech_pdf_status === undefined),
   ).length;
+  // "Scarica tutto" (intero corso): solo quando ogni lezione non-verifica
+  // ha il PDF discorso pronto.
+  const bundleLessons = allLessons.filter((l) => !l.is_assessment);
+  const allCoursePdfsReady =
+    bundleLessons.length > 0 &&
+    bundleLessons.every((l) => l.speech_pdf_status === "ready");
 
   // Empty state: nessuna lezione con slide pronte → invita a Fase 4.
   if (eligibleForGen === 0) {
@@ -626,6 +654,26 @@ export function CourseLessonSpeechView({
                     count: exportablePdfCount,
                   })}
                 </Button>
+              )}
+              {allCoursePdfsReady && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline">
+                      <Download className="size-4" />
+                      {t("courses.lessonsSpeechPdf.downloadAll.label")}
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onSelect={() => downloadAllCourse("merged")}>
+                      <FileText className="size-3.5" />
+                      {t("courses.lessonsSpeechPdf.downloadAll.merged")}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => downloadAllCourse("zip")}>
+                      <FileArchive className="size-3.5" />
+                      {t("courses.lessonsSpeechPdf.downloadAll.zip")}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
             </div>
           </div>
