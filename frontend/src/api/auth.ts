@@ -12,4 +12,28 @@ export const authApi = {
     const res = await apiClient.get<MeOut>("/auth/me");
     return res.data;
   },
+  async updateMe(full_name: string): Promise<MeOut> {
+    const res = await apiClient.patch<MeOut>("/auth/me", { full_name });
+    return res.data;
+  },
+  async changeEmail(
+    current_password: string,
+    new_email: string,
+  ): Promise<MeOut> {
+    const res = await apiClient.post<MeOut>("/auth/me/change-email", {
+      current_password,
+      new_email,
+    });
+    return res.data;
+  },
+  async changePassword(
+    current_password: string,
+    new_password: string,
+  ): Promise<MeOut> {
+    const res = await apiClient.post<MeOut>("/auth/me/change-password", {
+      current_password,
+      new_password,
+    });
+    return res.data;
+  },
 };

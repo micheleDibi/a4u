@@ -15,6 +15,7 @@ import {
   ScrollText,
   Sliders,
   Smile,
+  UserCog,
   Users,
   UsersRound,
 } from "lucide-react";
@@ -57,6 +58,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   ];
 
   const personalNav: NavSpec[] = [
+    { to: "/me/profile", label: t("user.profile"), icon: UserCog },
     { to: "/me/avatar", label: t("user.myAvatar"), icon: Smile },
   ];
 

@@ -1,4 +1,4 @@
-import { LogOut } from "lucide-react";
+import { LogOut, UserCog } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/auth/AuthContext";
@@ -61,6 +61,11 @@ export function UserMenu({ collapsed = false }: { collapsed?: boolean }) {
             </span>
           </div>
         </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={() => navigate("/me/profile")}>
+          <UserCog className="size-4" />
+          <span>{t("user.profile")}</span>
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onSelect={async () => {

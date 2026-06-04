@@ -14,6 +14,7 @@ import I18nLanguageEditorPage from "../pages/admin/I18nLanguageEditorPage";
 import AvatarConfigPage from "../pages/admin/AvatarConfigPage";
 import CourseTaxonomyPage from "../pages/admin/CourseTaxonomyPage";
 import MyAvatarPage from "../pages/me/MyAvatarPage";
+import ProfilePage from "../pages/me/ProfilePage";
 import OrgDashboard from "../pages/org/OrgDashboard";
 import MembersListPage from "../pages/org/members/MembersListPage";
 import MemberPermissionsPage from "../pages/org/members/MemberPermissionsPage";
@@ -126,6 +127,7 @@ export const router = createBrowserRouter([
           </ProtectedRoute>
         ),
       },
+      { path: "me/profile", element: <ProfilePage /> },
       { path: "me/avatar", element: <MyAvatarPage /> },
       { path: "orgs/:orgId", element: <OrgDashboard /> },
       { path: "orgs/:orgId/members", element: <MembersListPage /> },

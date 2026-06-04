@@ -1722,6 +1722,59 @@
       "platformAdmin": "Platform admin",
       "submit": "Create",
       "submitting": "Creating…"
+    },
+    "actions": {
+      "menu": "Actions",
+      "edit": "Edit",
+      "resetPassword": "Reset password"
+    },
+    "editDialog": {
+      "title": "Edit user",
+      "name": "Full name",
+      "email": "Email",
+      "saved": "User updated"
+    },
+    "resetPasswordDialog": {
+      "title": "Reset password",
+      "password": "New password (≥10 chars, one uppercase, one digit)",
+      "confirm": "Confirm password",
+      "hint": "At least 10 characters, one uppercase letter and one digit.",
+      "mismatch": "Passwords do not match.",
+      "revokeWarning": "The user will be signed out of all sessions and must use the new password.",
+      "saved": "Password updated"
+    }
+  },
+  "profile": {
+    "title": "Profile",
+    "subtitle": "Manage your personal information and account security.",
+    "personal": {
+      "title": "Personal information",
+      "name": "Full name",
+      "nameSaved": "Name updated",
+      "emailSection": "Change email",
+      "currentEmail": "Current email",
+      "newEmail": "New email",
+      "currentPassword": "Current password",
+      "changeEmail": "Update email",
+      "emailSaved": "Email updated"
+    },
+    "security": {
+      "title": "Security",
+      "hint": "To change your password, enter your current one.",
+      "currentPassword": "Current password",
+      "newPassword": "New password (≥10 chars, one uppercase, one digit)",
+      "confirm": "Confirm new password",
+      "mismatch": "Passwords do not match.",
+      "changePassword": "Change password",
+      "saved": "Password updated"
+    },
+    "summary": {
+      "title": "Account summary",
+      "email": "Email",
+      "lastLogin": "Last login",
+      "createdAt": "Account created",
+      "organizations": "Organizations",
+      "noOrganizations": "No organizations associated."
     }
   },
   "globalPermissions": {

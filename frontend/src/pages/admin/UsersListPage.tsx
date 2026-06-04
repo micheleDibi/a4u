@@ -1,5 +1,5 @@
 import { type ColumnDef, type PaginationState } from "@tanstack/react-table";
-import { Plus } from "lucide-react";
+import { KeyRound, MoreHorizontal, Pencil, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -17,16 +17,28 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { extractApiError } from "@/lib/errors";
+import {
+  EditUserDialog,
+  SetPasswordDialog,
+} from "./components/UserActionsDialogs";
 
 export default function UsersListPage() {
   const { t } = useTranslation();
   const [q, setQ] = useState("");
   const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 25 });
   const [createOpen, setCreateOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<UserOut | null>(null);
+  const [pwTarget, setPwTarget] = useState<UserOut | null>(null);
   const qc = useQueryClient();
 
   const query = useQuery({
@@ -49,15 +61,47 @@ export default function UsersListPage() {
     onError: (err) => toast.error(extractApiError(err).message),
   });
 
+  // Le guardie lato server (last_active_admin, cannot_deactivate_self, …)
+  // possono rifiutare il toggle: in onError mostriamo il messaggio e
+  // invalidiamo la query così lo Switch torna allo stato reale del server.
   const toggleActive = useMutation({
     mutationFn: (row: UserOut) => usersApi.update(row.id, { is_active: !row.is_active }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["users"] }),
+    onError: (err) => {
+      toast.error(extractApiError(err).message);
+      qc.invalidateQueries({ queryKey: ["users"] });
+    },
   });
 
   const togglePlatformAdmin = useMutation({
     mutationFn: (row: UserOut) =>
       usersApi.update(row.id, { is_platform_admin: !row.is_platform_admin }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["users"] }),
+    onError: (err) => {
+      toast.error(extractApiError(err).message);
+      qc.invalidateQueries({ queryKey: ["users"] });
+    },
+  });
+
+  const editMut = useMutation({
+    mutationFn: (vars: { id: string; full_name: string; email: string }) =>
+      usersApi.update(vars.id, { full_name: vars.full_name, email: vars.email }),
+    onSuccess: () => {
+      toast.success(t("users.editDialog.saved"));
+      qc.invalidateQueries({ queryKey: ["users"] });
+      setEditTarget(null);
+    },
+    onError: (err) => toast.error(extractApiError(err).message),
+  });
+
+  const setPasswordMut = useMutation({
+    mutationFn: (vars: { id: string; password: string }) =>
+      usersApi.setPassword(vars.id, vars.password),
+    onSuccess: () => {
+      toast.success(t("users.resetPasswordDialog.saved"));
+      setPwTarget(null);
+    },
+    onError: (err) => toast.error(extractApiError(err).message),
   });
 
   const columns: ColumnDef<UserOut>[] = [
@@ -104,6 +148,37 @@ export default function UsersListPage() {
       ),
       size: 160,
     },
+    {
+      id: "actions",
+      header: "",
+      cell: ({ row }) => (
+        <div className="flex justify-end">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-8"
+                aria-label={t("users.actions.menu")}
+              >
+                <MoreHorizontal className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => setEditTarget(row.original)}>
+                <Pencil className="size-3.5" />
+                {t("users.actions.edit")}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setPwTarget(row.original)}>
+                <KeyRound className="size-3.5" />
+                {t("users.actions.resetPassword")}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      ),
+      size: 64,
+    },
   ];
 
   return (
@@ -144,6 +219,26 @@ export default function UsersListPage() {
         onSubmit={(data) => createMut.mutate(data)}
         loading={createMut.isPending}
         error={createMut.isError ? extractApiError(createMut.error).message : null}
+      />
+
+      <EditUserDialog
+        open={!!editTarget}
+        user={editTarget}
+        isPending={editMut.isPending}
+        onClose={() => setEditTarget(null)}
+        onSubmit={(data) =>
+          editTarget && editMut.mutate({ id: editTarget.id, ...data })
+        }
+      />
+
+      <SetPasswordDialog
+        open={!!pwTarget}
+        user={pwTarget}
+        isPending={setPasswordMut.isPending}
+        onClose={() => setPwTarget(null)}
+        onSubmit={(password) =>
+          pwTarget && setPasswordMut.mutate({ id: pwTarget.id, password })
+        }
       />
     </div>
   );

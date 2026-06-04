@@ -35,8 +35,23 @@ class UserCreateAdmin(BaseModel):
 
 class UserUpdateAdmin(BaseModel):
     full_name: str | None = Field(default=None, min_length=1, max_length=255)
+    email: EmailStr | None = None
     is_platform_admin: bool | None = None
     is_active: bool | None = None
+
+
+class UserAdminSetPassword(BaseModel):
+    """Reset password manuale lato admin (no SMTP): l'admin imposta una
+    nuova password robusta per l'utente target."""
+
+    password: str = Field(min_length=10, max_length=128)
+
+    @field_validator("password")
+    @classmethod
+    def _validate_password(cls, v: str) -> str:
+        if not is_password_strong(v):
+            raise ValueError("Password debole: minimo 10 caratteri, una maiuscola e un numero.")
+        return v
 
 
 class MeOrganizationOut(ORMModel):

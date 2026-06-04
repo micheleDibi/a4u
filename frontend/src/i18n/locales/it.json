@@ -1723,6 +1723,59 @@
       "platformAdmin": "Admin di piattaforma",
       "submit": "Crea",
       "submitting": "Creazione…"
+    },
+    "actions": {
+      "menu": "Azioni",
+      "edit": "Modifica",
+      "resetPassword": "Reimposta password"
+    },
+    "editDialog": {
+      "title": "Modifica utente",
+      "name": "Nome completo",
+      "email": "Email",
+      "saved": "Utente aggiornato"
+    },
+    "resetPasswordDialog": {
+      "title": "Reimposta password",
+      "password": "Nuova password (≥10 caratteri, una maiuscola, un numero)",
+      "confirm": "Conferma password",
+      "hint": "Minimo 10 caratteri, una maiuscola e un numero.",
+      "mismatch": "Le password non coincidono.",
+      "revokeWarning": "L'utente verrà disconnesso da tutte le sessioni e dovrà usare la nuova password.",
+      "saved": "Password aggiornata"
+    }
+  },
+  "profile": {
+    "title": "Profilo",
+    "subtitle": "Gestisci le tue informazioni personali e la sicurezza dell'account.",
+    "personal": {
+      "title": "Informazioni personali",
+      "name": "Nome completo",
+      "nameSaved": "Nome aggiornato",
+      "emailSection": "Cambia email",
+      "currentEmail": "Email attuale",
+      "newEmail": "Nuova email",
+      "currentPassword": "Password attuale",
+      "changeEmail": "Aggiorna email",
+      "emailSaved": "Email aggiornata"
+    },
+    "security": {
+      "title": "Sicurezza",
+      "hint": "Per cambiare la password inserisci quella attuale.",
+      "currentPassword": "Password attuale",
+      "newPassword": "Nuova password (≥10 caratteri, una maiuscola, un numero)",
+      "confirm": "Conferma nuova password",
+      "mismatch": "Le password non coincidono.",
+      "changePassword": "Cambia password",
+      "saved": "Password aggiornata"
+    },
+    "summary": {
+      "title": "Riepilogo account",
+      "email": "Email",
+      "lastLogin": "Ultimo accesso",
+      "createdAt": "Account creato il",
+      "organizations": "Organizzazioni",
+      "noOrganizations": "Nessuna organizzazione associata."
     }
   },
   "globalPermissions": {

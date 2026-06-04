@@ -3,18 +3,24 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 from sqlalchemy import func, select
 
+from app.core.audit import write_audit
 from app.core.deps import DbSession, PlatformAdmin
-from app.core.errors import ConflictError, NotFoundError
+from app.core.errors import ConflictError
 from app.core.security import hash_password
 from app.models.role import OrganizationRole
 from app.models.user import User
 from app.schemas.common import Page, PageMeta
 from app.schemas.membership import EnrollUserRequest, MembershipOut
-from app.schemas.user import UserCreateAdmin, UserOut, UserUpdateAdmin
-from app.services import membership_service
+from app.schemas.user import (
+    UserAdminSetPassword,
+    UserCreateAdmin,
+    UserOut,
+    UserUpdateAdmin,
+)
+from app.services import membership_service, user_admin_service
 
 router = APIRouter(prefix="/admin", tags=["admin-users"])
 
@@ -42,15 +48,16 @@ async def list_users(
 
 @router.post("/users", response_model=UserOut, status_code=201)
 async def create_user(
-    payload: UserCreateAdmin, db: DbSession, _: PlatformAdmin
+    payload: UserCreateAdmin, request: Request, db: DbSession, admin: PlatformAdmin
 ) -> UserOut:
+    email = payload.email.lower().strip()
     existing = (
-        await db.execute(select(User).where(User.email == payload.email))
+        await db.execute(select(User).where(func.lower(User.email) == email))
     ).scalar_one_or_none()
     if existing is not None:
         raise ConflictError("Email già in uso.", code="email_in_use")
     user = User(
-        email=payload.email,
+        email=email,
         password_hash=hash_password(payload.password),
         full_name=payload.full_name,
         is_platform_admin=payload.is_platform_admin,
@@ -58,23 +65,54 @@ async def create_user(
     )
     db.add(user)
     await db.flush()
+    await write_audit(
+        db,
+        action="user.create",
+        actor_user_id=admin.id,
+        target_type="user",
+        target_id=str(user.id),
+        metadata={"is_platform_admin": payload.is_platform_admin},
+        ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
     return UserOut.model_validate(user)
 
 
 @router.put("/users/{user_id}", response_model=UserOut)
 async def update_user(
-    user_id: uuid.UUID, payload: UserUpdateAdmin, db: DbSession, _: PlatformAdmin
+    user_id: uuid.UUID,
+    payload: UserUpdateAdmin,
+    request: Request,
+    db: DbSession,
+    admin: PlatformAdmin,
 ) -> UserOut:
-    user = await db.get(User, user_id)
-    if user is None:
-        raise NotFoundError("Utente non trovato.", code="user_not_found")
-    if payload.full_name is not None:
-        user.full_name = payload.full_name
-    if payload.is_platform_admin is not None:
-        user.is_platform_admin = payload.is_platform_admin
-    if payload.is_active is not None:
-        user.is_active = payload.is_active
-    await db.flush()
+    user = await user_admin_service.update_user_admin(
+        db,
+        user_id=user_id,
+        payload=payload,
+        actor=admin,
+        ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    return UserOut.model_validate(user)
+
+
+@router.post("/users/{user_id}/password", response_model=UserOut)
+async def set_user_password(
+    user_id: uuid.UUID,
+    payload: UserAdminSetPassword,
+    request: Request,
+    db: DbSession,
+    admin: PlatformAdmin,
+) -> UserOut:
+    user = await user_admin_service.set_user_password(
+        db,
+        user_id=user_id,
+        new_password=payload.password,
+        actor=admin,
+        ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
     return UserOut.model_validate(user)
 
 
