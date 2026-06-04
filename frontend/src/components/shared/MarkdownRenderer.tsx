@@ -261,7 +261,13 @@ function TableBlock({ table }: { table: LessonContentTable }) {
   return (
     <figure className="my-6 overflow-hidden rounded-lg border border-border bg-card">
       <div className="lesson-prose overflow-x-auto p-2">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+        {/* remarkMath + rehypeKatex: le celle possono contenere math
+            inline ($V$, $S\to aS$, …) che va renderizzato come nelle
+            prose e negli esempi, non lasciato come testo grezzo. */}
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm, remarkMath]}
+          rehypePlugins={[rehypeKatex]}
+        >
           {table.markdown}
         </ReactMarkdown>
       </div>
@@ -275,8 +281,18 @@ function TableBlock({ table }: { table: LessonContentTable }) {
 }
 
 function EquationBlock({ equation }: { equation: LessonContentEquation }) {
-  // Avvolgiamo in $$...$$ per il display mode KaTeX.
-  const display = `$$${equation.latex}$$`;
+  // L'AI a volte include già i delimitatori nel campo `latex`
+  // (`$$...$$`, `$...$`, `\[...\]`): riavvolgerli in `$$...$$`
+  // produrrebbe delimitatori annidati → KaTeX fallisce e mostra il
+  // sorgente in rosso. Li rimuoviamo prima di riavvolgere.
+  const inner = (equation.latex || "")
+    .trim()
+    .replace(/^\\\[/, "")
+    .replace(/\\\]$/, "")
+    .replace(/^\$+/, "")
+    .replace(/\$+$/, "")
+    .trim();
+  const display = `$$${inner}$$`;
   const captionParts = [equation.label, equation.explanation]
     .map((p) => (p || "").trim())
     .filter(Boolean);
