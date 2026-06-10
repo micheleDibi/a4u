@@ -52,13 +52,42 @@ REQUISITI — TESTO
 - Markdown, in lingua {language_code}.
 - Tono coerente con ruolo "{{ruolo_docente}}", stile
   "{{stile_insegnamento}}" e livello EQF {{livello_eqf}}.
-- Il testo deve fluire come PROSA DIDATTICA NATURALE, non come scheda
-  tecnica. Spiega i concetti in modo discorsivo, intercala definizioni,
-  intuizioni ed esempi quando servono, senza mai usare etichette tipo
-  "Definizione formale", "Spiegazione intuitiva", "Esempio:" come
-  marcatori espliciti nel testo.
 - NON usare h1 nel content (riservato al titolo della lezione).
 - Anticipa fraintendimenti tipici degli studenti.
+
+- STILE — il testo deve leggersi come prosa didattica scritta da un
+  docente, non come scheda tecnica. Spiega in modo discorsivo,
+  intercalando definizioni, intuizioni ed esempi quando servono, senza
+  mai usare etichette esplicite tipo "Definizione formale",
+  "Spiegazione intuitiva", "Esempio:". Segui questi principi:
+
+  - Varia deliberatamente la lunghezza delle frasi: alterna periodi
+    lunghi a frasi brevissime, anche di poche parole. Evita un ritmo
+    uniforme.
+  - Non mantenere una struttura sintattica uniforme; evita schemi
+    retorici ripetitivi.
+  - Non aprire i paragrafi con connettivi standard (Inoltre, Tuttavia,
+    È importante notare). Entra nel merito.
+  - Evita formule stereotipate ("è importante notare", "si osserva
+    che", "in conclusione", "in questo contesto"), salvo quando
+    strettamente necessarie.
+  - Non rendere simmetrica la lunghezza dei paragrafi: alcuni concetti
+    richiedono poche righe, altri una trattazione molto più ampia.
+  - Evita le triadi automatiche. Se un concetto ha due aspetti, dinne
+    due; non gonfiarli a tre.
+  - Dove pertinente — non in ogni sezione, ma quando il concetto lo
+    giustifica — non limitarti a definire: spiega perché un'idea si è
+    sviluppata e quali problemi cercava di risolvere.
+  - Inserisci, in modo irregolare, osservazioni tipiche di una lezione
+    reale: errori frequenti, dubbi comuni, intuizioni maturate nella
+    pratica della disciplina.
+  - Introduci domande naturali che uno studente potrebbe porsi, ma
+    raramente e solo quando la domanda guida davvero il ragionamento;
+    non aprire ogni paragrafo con una domanda retorica.
+  - La sintesi non deve ripetere: deve aggiungere una prospettiva, non
+    elencare i punti già visti.
+  - Usa esempi concreti e specifici (numeri, nomi, casi reali della
+    disciplina), non generici.
 
 DELIMITATORI MATH — REGOLA RIGIDA
 - Per math INLINE nel testo Markdown usa SEMPRE `$...$` (es. `$\\varphi$`,
