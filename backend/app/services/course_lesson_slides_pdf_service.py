@@ -36,6 +36,7 @@ from app.models.course import Course
 from app.models.course_lesson import CourseLesson
 from app.models.organization import Organization
 from app.models.slide_template import SlideTemplate
+from app.models.user import User
 from app.services import course_lesson_pdf_service as base_pdf
 from app.services import course_lesson_slides_service
 from app.services import remote_storage
@@ -377,6 +378,7 @@ def render_slides_html(
     public_base_url: str | None = None,
     mermaid_svg_map: dict[str, str] | None = None,
     enable_split: bool = True,
+    teacher_name: str | None = None,
 ) -> str:
     """Pure-function: HTML completo delle slide pronto per WeasyPrint.
 
@@ -488,28 +490,24 @@ def render_slides_html(
     for i, rs in enumerate(rendered_slides, start=1):
         rs["slide_number"] = i
 
-    # Etichetta "Lezione N" derivata dal lesson_code (es. M1.L4 → 4).
-    # Se il codice non rispetta il pattern atteso, fall-back a stringa
-    # vuota e il template mostra solo "LEZIONE".
-    lesson_word = "Lesson" if language.startswith("en") else "Lezione"
-    lesson_num = ""
-    if lesson.lesson_code:
-        last = lesson.lesson_code.split(".")[-1].strip()
-        if last and last[0].upper() == "L":
-            lesson_num = last[1:]
-        else:
-            lesson_num = last
-    lesson_label = (
-        f"{lesson_word} {lesson_num}".strip() if lesson_num else lesson_word
+    # Etichetta lezione "Modulo X - lezione Y" (localizzata), come le dispense.
+    base_labels = base_pdf._labels_for(language)
+    lesson_label = base_pdf._format_lesson_code_label(
+        lesson.lesson_code, base_labels
     )
 
     template = _jinja_env.get_template("lesson_slides_pdf.html.j2")
     html = template.render(
         language=language,
-        course={"title": course.title, "language": language},
+        course={
+            "title": course.title,
+            "language": language,
+            "cfu": course.cfu,
+            "teacher": teacher_name,
+        },
         lesson={"title": lesson.title, "lesson_code": lesson.lesson_code},
         lesson_label=lesson_label,
-        organization_name=(organization.name if organization else None),
+        cfu_label=base_labels["cfu"],
         tpl=tpl_dict,
         slides=rendered_slides,
         total_slides=total_slides,
@@ -532,6 +530,8 @@ async def materialize_lesson_slides_pdf(
     """Genera e salva su disco il PDF delle slide. Aggiorna i campi DB.
     Restituisce il path relativo persistito."""
     organization = await base_pdf._get_organization(db, course.organization_id)
+    teacher = await db.get(User, course.assignee_user_id)
+    teacher_name = teacher.full_name if teacher else None
 
     # Risolvi il template SLIDE (unificato con quello dell'avatar):
     # se la lezione ne ha uno scelto esplicitamente, usalo; altrimenti
@@ -562,6 +562,7 @@ async def materialize_lesson_slides_pdf(
         slide_template=slide_template,
         public_base_url=public_base_url,
         mermaid_svg_map=mermaid_svg_map,
+        teacher_name=teacher_name,
     )
 
     pdf_bytes = await base_pdf.generate_pdf_bytes(html=html)

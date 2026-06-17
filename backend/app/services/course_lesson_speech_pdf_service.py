@@ -40,6 +40,7 @@ from app.models.course import Course
 from app.models.course_lesson import CourseLesson
 from app.models.organization import Organization
 from app.models.pdf_template import PdfTemplate
+from app.models.user import User
 from app.services import course_lesson_pdf_service as base_pdf
 from app.services import course_lesson_speech_service
 from app.services import remote_storage
@@ -194,6 +195,7 @@ def render_speech_html(
     organization: Organization | None,
     pdf_template: PdfTemplate | None,
     public_base_url: str | None = None,
+    teacher_name: str | None = None,
 ) -> str:
     """Pure-function: HTML completo del discorso pronto per WeasyPrint."""
     speech_raw = lesson.speech_raw or {}
@@ -244,17 +246,10 @@ def render_speech_html(
         entry["slide_title"] = meta.get("title") or ""
         entry["slide_missing"] = entry["slide_id"] not in slide_meta_by_id
 
-    # Etichetta "Lezione N" derivata dal lesson_code (mirror del PDF slide).
-    lesson_word = labels["lesson"]
-    lesson_num = ""
-    if lesson.lesson_code:
-        last = lesson.lesson_code.split(".")[-1].strip()
-        if last and last[0].upper() == "L":
-            lesson_num = last[1:]
-        else:
-            lesson_num = last
-    lesson_label = (
-        f"{lesson_word} {lesson_num}".strip() if lesson_num else lesson_word
+    # Etichetta lezione "Modulo X - lezione Y" (localizzata), come le dispense.
+    base_labels = base_pdf._labels_for(language)
+    code_label = base_pdf._format_lesson_code_label(
+        lesson.lesson_code, base_labels
     )
 
     total_duration_seconds = int(
@@ -268,10 +263,19 @@ def render_speech_html(
     html = template.render(
         language=language,
         labels=labels,
-        course={"title": course.title, "language": language},
-        lesson={"title": lesson.title, "lesson_code": lesson.lesson_code},
-        lesson_label=lesson_label,
-        organization_name=(organization.name if organization else None),
+        course={
+            "title": course.title,
+            "language": language,
+            "cfu": course.cfu,
+            "teacher": teacher_name,
+        },
+        lesson={
+            "title": lesson.title,
+            "lesson_code": lesson.lesson_code,
+            "code_label": code_label,
+        },
+        teacher_label=base_labels["teacher"],
+        cfu_label=base_labels["cfu"],
         tpl=tpl_dict,
         margin_top_cm=margins_cm["margin_top_cm"],
         margin_side_cm=margins_cm["margin_side_cm"],
@@ -298,6 +302,8 @@ async def materialize_lesson_speech_pdf(
     """Genera e salva su disco il PDF del discorso. Aggiorna i campi DB.
     Restituisce il path relativo persistito."""
     organization = await base_pdf._get_organization(db, course.organization_id)
+    teacher = await db.get(User, course.assignee_user_id)
+    teacher_name = teacher.full_name if teacher else None
 
     pdf_template: PdfTemplate | None = None
     if lesson.speech_pdf_template_id is not None:
@@ -328,6 +334,7 @@ async def materialize_lesson_speech_pdf(
         organization=organization,
         pdf_template=pdf_template,
         public_base_url=public_base_url,
+        teacher_name=teacher_name,
     )
 
     pdf_bytes = await base_pdf.generate_pdf_bytes(html=html)
