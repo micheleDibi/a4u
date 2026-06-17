@@ -244,18 +244,14 @@
     <div class="speech-tag">{{ labels.speech }}</div>
     <div class="lesson-tag">{{ lesson.code_label }}</div>
     <h1 class="lesson-title">{{ lesson.title }}</h1>
-    <div class="course-title">{{ course.title }}</div>
+    <div class="course-title">
+      {{- course.title }}{% if course.cfu %} &middot; {{ course.cfu }} {{ cfu_label }}{% endif -%}
+    </div>
     <div class="meta-row">
       {% if course.teacher %}
       <div class="meta-item">
         <span class="meta-label">{{ teacher_label }}</span>
         <span class="meta-value">{{ course.teacher }}</span>
-      </div>
-      {% endif %}
-      {% if course.cfu %}
-      <div class="meta-item">
-        <span class="meta-label">{{ cfu_label }}</span>
-        <span class="meta-value">{{ course.cfu }}</span>
       </div>
       {% endif %}
       <div class="meta-item">
