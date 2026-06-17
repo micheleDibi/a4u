@@ -122,11 +122,12 @@ def _served_path(key: str) -> str:
 def media_url(key: str) -> str:
     """URL che il browser deve usare per il file.
 
-    - ``ovh_ftp`` → URL assoluto OVH (``{ovh_public_base_url}/{key}``).
-    - ``local``   → path relativo same-origin (``/uploads/...``), come oggi.
+    - backend remoto (``ovh_ftp``/``ovh_sftp``) → URL assoluto OVH
+      (``{ovh_public_base_url}/{key}``).
+    - ``local`` → path relativo same-origin (``/uploads/...``), come oggi.
     """
     settings = get_settings()
-    if settings.storage_backend == "ovh_ftp":
+    if settings.storage_backend in ("ovh_ftp", "ovh_sftp"):
         base = (settings.ovh_public_base_url or "").rstrip("/")
         return f"{base}/{_normalize_segments(key)}"
     return _served_path(key)
@@ -135,10 +136,10 @@ def media_url(key: str) -> str:
 def public_url(key: str) -> str:
     """URL assoluto raggiungibile da servizi esterni (MiniMax, RunPod).
 
-    In ``ovh_ftp`` coincide con :func:`media_url`. In ``local`` antepone
+    Con backend remoto coincide con :func:`media_url`. In ``local`` antepone
     ``public_base_url`` al path servito (comportamento storico)."""
     settings = get_settings()
-    if settings.storage_backend == "ovh_ftp":
+    if settings.storage_backend in ("ovh_ftp", "ovh_sftp"):
         return media_url(key)
     base = settings.public_base_url.rstrip("/")
     return f"{base}{_served_path(key)}"

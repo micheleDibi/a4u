@@ -69,9 +69,13 @@ def test_media_and_public_url_local(local_env):
     assert rs.public_url(key) == "http://localhost:8000/uploads/lesson_videos/c/l.mp4"
 
 
-def test_media_url_ovh(monkeypatch):
-    monkeypatch.setenv("STORAGE_BACKEND", "ovh_ftp")
+@pytest.mark.parametrize("backend", ["ovh_ftp", "ovh_sftp"])
+def test_media_url_ovh(monkeypatch, backend):
+    # Sia ovh_ftp sia ovh_sftp devono produrre l'URL pubblico OVH (non
+    # PUBLIC_BASE_URL): regressione sul bug che gestiva solo ovh_ftp.
+    monkeypatch.setenv("STORAGE_BACKEND", backend)
     monkeypatch.setenv("OVH_PUBLIC_BASE_URL", "https://progettiersaf.com/media")
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://a4u.ersaf.it")
     get_settings.cache_clear()
     try:
         key = rs.uploads_key("lesson_videos/c/l.mp4")
@@ -79,7 +83,7 @@ def test_media_url_ovh(monkeypatch):
             rs.media_url(key)
             == "https://progettiersaf.com/media/uploads/lesson_videos/c/l.mp4"
         )
-        # In ovh mode public_url coincide con media_url (assoluto OVH).
+        # In modalità remota public_url coincide con media_url (assoluto OVH).
         assert rs.public_url(key) == rs.media_url(key)
     finally:
         get_settings.cache_clear()
