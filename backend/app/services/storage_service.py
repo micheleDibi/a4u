@@ -1,19 +1,18 @@
-"""Wrapper minimo sull'I/O file su disco.
+"""Wrapper minimo sull'I/O file (org/avatar/template).
 
-Astrazione sottile sopra il filesystem locale: il DB salva un percorso logico
-opaco (`/uploads/...`) e il resto dell'app passa solo da queste funzioni per
-scrivere/leggere/cancellare.
+Astrazione sottile: il DB salva un percorso logico opaco (`/uploads/...`) e il
+resto dell'app passa solo da queste funzioni per scrivere/leggere/cancellare.
 
-Quando passeremo a S3, basterà sostituire l'implementazione di queste funzioni
-mantenendo la stessa firma; lo schema DB e i call site non cambiano.
+L'I/O effettivo è delegato a :mod:`app.services.remote_storage`, che instrada
+verso il backend attivo (filesystem locale o OVH via FTP) in base a
+``settings.storage_backend``. Qui restano solo la whitelist dei subdir e la
+validazione del filename.
 """
 from __future__ import annotations
 
-from pathlib import Path
-
-from app.core.config import get_settings
 from app.core.errors import ValidationAppError
 from app.core.logging import get_logger
+from app.services import remote_storage
 
 log = get_logger("app.storage")
 
@@ -30,95 +29,57 @@ def _validate_subdir(subdir: str) -> str:
     return "/".join(parts)
 
 
-def _ensure_within(root: Path, target: Path) -> None:
-    try:
-        target.resolve().relative_to(root.resolve())
-    except ValueError as exc:
-        raise ValidationAppError("Percorso file non valido.", code="invalid_path") from exc
-
-
 def save_bytes(*, subdir: str, filename: str, data: bytes) -> str:
-    """Scrive `data` in `{upload_root}/{subdir}/{filename}` e ritorna il path
-    pubblico relativo `/uploads/{subdir}/{filename}`."""
-    settings = get_settings()
+    """Scrive `data` su `{subdir}/{filename}` (storage attivo) e ritorna il
+    path pubblico relativo `/uploads/{subdir}/{filename}`."""
     safe_subdir = _validate_subdir(subdir)
     if "/" in filename or filename in {".", ".."} or not filename:
         raise ValidationAppError("Filename non consentito.", code="invalid_filename")
-    target_dir = settings.upload_root / safe_subdir
-    target_dir.mkdir(parents=True, exist_ok=True)
-    target_path = target_dir / filename
-    _ensure_within(settings.upload_root, target_path)
-    target_path.write_bytes(data)
+    public_path = f"/uploads/{safe_subdir}/{filename}"
+    remote_storage.get_storage().upload_bytes(
+        remote_storage.uploads_key(public_path), data
+    )
     log.info("storage_save", subdir=safe_subdir, filename=filename, size=len(data))
-    return f"/uploads/{safe_subdir}/{filename}"
+    return public_path
 
 
 def read_bytes(path: str) -> bytes:
-    settings = get_settings()
     if not path.startswith("/uploads/"):
         raise ValidationAppError("Path non consentito.", code="invalid_path")
-    rel = path.removeprefix("/uploads/")
-    target = settings.upload_root / rel
-    _ensure_within(settings.upload_root, target)
-    if not target.exists():
-        raise ValidationAppError("File non trovato.", code="file_not_found")
-    return target.read_bytes()
+    try:
+        return remote_storage.get_storage().download_bytes(
+            remote_storage.uploads_key(path)
+        )
+    except remote_storage.StorageFileNotFound as exc:
+        raise ValidationAppError("File non trovato.", code="file_not_found") from exc
 
 
 def delete(path: str | None) -> None:
-    if not path:
+    if not path or not path.startswith("/uploads/"):
         return
-    settings = get_settings()
-    if not path.startswith("/uploads/"):
-        return
-    rel = path.removeprefix("/uploads/")
-    target = settings.upload_root / rel
     try:
-        _ensure_within(settings.upload_root, target)
-    except ValidationAppError:
-        return
-    if target.exists():
-        try:
-            target.unlink()
-            log.info("storage_delete", path=str(target))
-        except OSError as exc:  # pragma: no cover
-            log.warning("storage_delete_failed", path=str(target), error=str(exc))
+        remote_storage.get_storage().delete(remote_storage.uploads_key(path))
+        log.info("storage_delete", path=path)
+    except remote_storage.StorageError as exc:  # pragma: no cover - best effort
+        log.warning("storage_delete_failed", path=path, error=str(exc))
 
 
 def delete_directory(subdir: str) -> None:
     """Cancella ricorsivamente una sottodirectory di upload (e tutto il suo
     contenuto). Idempotente."""
-    settings = get_settings()
     try:
         safe_subdir = _validate_subdir(subdir)
     except ValidationAppError:
         return
-    target = settings.upload_root / safe_subdir
     try:
-        _ensure_within(settings.upload_root, target)
-    except ValidationAppError:
-        return
-    if not target.exists() or not target.is_dir():
-        return
-    for child in sorted(target.rglob("*"), key=lambda p: -len(p.parts)):
-        try:
-            if child.is_file() or child.is_symlink():
-                child.unlink()
-            elif child.is_dir():
-                child.rmdir()
-        except OSError as exc:  # pragma: no cover
-            log.warning("storage_delete_child_failed", path=str(child), error=str(exc))
-    try:
-        target.rmdir()
-        log.info("storage_delete_dir", path=str(target))
-    except OSError:  # pragma: no cover
-        pass
+        remote_storage.get_storage().delete_prefix(
+            remote_storage.uploads_key(f"/uploads/{safe_subdir}")
+        )
+        log.info("storage_delete_dir", subdir=safe_subdir)
+    except remote_storage.StorageError as exc:  # pragma: no cover - best effort
+        log.warning("storage_delete_dir_failed", subdir=safe_subdir, error=str(exc))
 
 
 def public_url(path: str) -> str:
-    """Costruisce l'URL pubblico raggiungibile dall'esterno (per MiniMax)."""
-    settings = get_settings()
-    base = settings.public_base_url.rstrip("/")
-    if not path.startswith("/"):
-        path = f"/{path}"
-    return f"{base}{path}"
+    """URL pubblico raggiungibile dall'esterno (per MiniMax/RunPod)."""
+    return remote_storage.public_url(remote_storage.uploads_key(path))

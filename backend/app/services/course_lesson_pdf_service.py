@@ -65,6 +65,7 @@ from app.models.course_lesson import CourseLesson
 from app.models.course_module import CourseModule
 from app.models.organization import Organization
 from app.models.pdf_template import PdfTemplate
+from app.services import remote_storage
 
 log = get_logger("app.course_lesson_pdf.service")
 
@@ -746,49 +747,24 @@ def _resolve_template_asset_url(
     if re.match(r"^(https?://|file://|data:)", raw):
         return raw
 
-    # Path relativo: prova a leggere dal filesystem e embeddare come data URL.
-    settings = get_settings()
-    upload_root = settings.upload_root
-    rel = raw.lstrip("/")
-    if rel.startswith("uploads/"):
-        rel = rel[len("uploads/") :]
-    file_path = (upload_root / rel).resolve()
-
-    # Security: confina dentro `upload_root` (no path traversal).
+    # Path relativo: scarica i bytes dallo storage attivo (RETR su OVH, read
+    # locale altrimenti) e li embedda come data URL base64, così
+    # WeasyPrint/Playwright non devono fare fetch HTTP a runtime.
+    del public_base_url  # strategia #3 (fetch HTTP) deprecata: ora si embedda
     try:
-        file_path.relative_to(upload_root.resolve())
-    except ValueError:
-        log.warning("pdf_template_asset_outside_upload_root", path=raw)
-        return None
-
-    if file_path.is_file():
-        try:
-            data = file_path.read_bytes()
-        except OSError as exc:
-            log.warning(
-                "pdf_template_asset_read_failed",
-                path=raw,
-                abs_path=str(file_path),
-                error=str(exc),
-            )
-            return None
-        mime = _IMAGE_MIME_BY_EXT.get(
-            file_path.suffix.lower(), "application/octet-stream"
+        data = remote_storage.get_storage().download_bytes(
+            remote_storage.uploads_key(raw)
         )
-        encoded = base64.b64encode(data).decode("ascii")
-        return f"data:{mime};base64,{encoded}"
-
-    # File non trovato sul filesystem locale: ultimo tentativo via base URL.
-    log.warning(
-        "pdf_template_asset_missing_on_disk",
-        path=raw,
-        abs_path=str(file_path),
-    )
-    if public_base_url:
-        base = public_base_url.rstrip("/")
-        suffix = raw.lstrip("/")
-        return f"{base}/{suffix}"
-    return None
+    except remote_storage.StorageFileNotFound:
+        log.warning("pdf_template_asset_missing", path=raw)
+        return None
+    except remote_storage.StorageError as exc:
+        log.warning("pdf_template_asset_read_failed", path=raw, error=str(exc))
+        return None
+    suffix = Path(raw).suffix.lower()
+    mime = _IMAGE_MIME_BY_EXT.get(suffix, "application/octet-stream")
+    encoded = base64.b64encode(data).decode("ascii")
+    return f"data:{mime};base64,{encoded}"
 
 
 # ---------------------------------------------------------------------------
@@ -1070,7 +1046,8 @@ async def materialize_lesson_pdf(
     raw_content = lesson.content_raw or {}
     mermaid_svg_map = await _prerender_mermaid_for_lesson(raw_content)
 
-    html = render_lesson_html(
+    html = await asyncio.to_thread(
+        render_lesson_html,
         course=course,
         lesson=lesson,
         organization=organization,
@@ -1086,9 +1063,11 @@ async def materialize_lesson_pdf(
         course_id=course.id,
         lesson_id=lesson.id,
     )
-    abs_path = pdf_absolute_path(rel)
-    abs_path.parent.mkdir(parents=True, exist_ok=True)
-    abs_path.write_bytes(pdf_bytes)
+    await asyncio.to_thread(
+        remote_storage.get_storage().upload_bytes,
+        remote_storage.pdf_key(rel),
+        pdf_bytes,
+    )
 
     lesson.pdf_path = rel
     lesson.pdf_template_id = pdf_template.id if pdf_template else None

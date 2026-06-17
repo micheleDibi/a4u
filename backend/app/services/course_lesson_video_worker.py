@@ -42,6 +42,7 @@ from app.services import (
     lesson_audio_cache,
     lesson_slides_video_render_service,
     lesson_video_compose_service,
+    remote_storage,
     runpod_tts_client,
 )
 
@@ -147,6 +148,7 @@ async def _run_tts_phase(
     course_id: uuid.UUID,
     speech_raw: dict[str, Any],
     voice_sample_path: Path,
+    voice_sample_url: str,
     language_code: str,
 ) -> tuple[dict[str, np.ndarray], int, float]:
     """Ottiene l'audio dei segment: dalla cache su disco se disponibile,
@@ -194,7 +196,7 @@ async def _run_tts_phase(
     audio_per_segment, sample_rate = (
         await runpod_tts_client.synthesize_lesson_audio(
             speech_raw=speech_raw,
-            voice_sample_path=voice_sample_path,
+            voice_sample_url=voice_sample_url,
             language_code=language_code,
             on_segment_progress=_on_segment,
         )
@@ -455,15 +457,18 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
         )
         # Campione vocale dell'assegnatario — inviato a RunPod per il
         # voice cloning.
-        voice_sample_path = (
-            await course_lesson_video_service.resolve_voice_sample_path(
+        voice_sample_rel = (
+            await course_lesson_video_service.resolve_voice_sample_ref(
                 db, assignee_user_id=course.assignee_user_id
             )
         )
-        if voice_sample_path is None or not voice_sample_path.is_file():
+        if voice_sample_rel is None or not await asyncio.to_thread(
+            remote_storage.get_storage().exists,
+            remote_storage.uploads_key(voice_sample_rel),
+        ):
             _apply_failure(
                 lesson,
-                error="Campione vocale dell'assegnatario non trovato su disco.",
+                error="Campione vocale dell'assegnatario non trovato.",
                 phase="precheck",
                 recoverable=False,
                 auto_retry_max=settings.course_lesson_video_auto_retry_max,
@@ -482,6 +487,22 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
     output_path = course_lesson_video_service.video_absolute_path(output_rel)
     work_dir = output_path.parent / f".tmp_work_{lesson_id}"
     work_dir.mkdir(parents=True, exist_ok=True)
+    local_output = work_dir / f"{lesson_id}.mp4"
+
+    # Campione vocale: scaricato in locale per il calcolo della cache-key
+    # (hash dei bytes) e passato a RunPod come URL pubblico (lo scarica via
+    # HTTP). In locale è una copia; in OVH è RETR + URL OVH.
+    storage = remote_storage.get_storage()
+    voice_ext = Path(voice_sample_rel).suffix or ".wav"
+    voice_sample_path = work_dir / f"voice_sample{voice_ext}"
+    await asyncio.to_thread(
+        storage.download_to,
+        remote_storage.uploads_key(voice_sample_rel),
+        voice_sample_path,
+    )
+    voice_sample_url = remote_storage.public_url(
+        remote_storage.uploads_key(voice_sample_rel)
+    )
 
     try:
         # --- Phase 1: TTS (RunPod GPU) ---
@@ -490,6 +511,7 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
             course_id=course_id,
             speech_raw=speech_raw,
             voice_sample_path=voice_sample_path,
+            voice_sample_url=voice_sample_url,
             language_code=language_code,
         )
 
@@ -520,7 +542,7 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
             slide_id_order=slide_id_order,
             audio_per_segment=audio_per_segment,
             sample_rate=sample_rate,
-            output_path=output_path,
+            output_path=local_output,
         )
 
         if await _check_cancelled(lesson_id):
@@ -529,6 +551,13 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                 lesson_id=str(lesson_id),
             )
             return
+
+        # Carica l'MP4 sullo storage attivo (OVH in produzione).
+        await asyncio.to_thread(
+            storage.upload_file,
+            remote_storage.uploads_key(output_rel),
+            local_output,
+        )
 
         # --- Save metadata ---
         tokens = {

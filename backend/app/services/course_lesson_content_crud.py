@@ -19,11 +19,11 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
-from app.core.config import get_settings
 from app.core.errors import ConflictError
 from app.core.logging import get_logger
 from app.models.course import Course
 from app.models.course_lesson import CourseLesson
+from app.services import remote_storage
 from app.schemas.course_lesson_content import (
     LessonAssessmentUpdateInput,
     LessonContentUpdateInput,
@@ -176,8 +176,8 @@ def _cleanup_removed_image_assets(
     to_remove = old_paths - new_paths
     if not to_remove:
         return
-    settings = get_settings()
     expected_prefix = f"lesson_assets/{course_id}/"
+    storage = remote_storage.get_storage()
     for rel in to_remove:
         normalized = rel.removeprefix("/uploads/").lstrip("/")
         if not normalized.startswith(expected_prefix):
@@ -192,14 +192,10 @@ def _cleanup_removed_image_assets(
         if any(p in {"", ".", ".."} for p in normalized.split("/")):
             log.warning("lesson_asset_cleanup_skipped_invalid", path=rel)
             continue
-        target = settings.upload_root / normalized
-        if not target.is_file():
-            log.warning("lesson_asset_cleanup_file_missing", path=rel)
-            continue
         try:
-            target.unlink()
+            storage.delete(remote_storage.uploads_key(normalized))
             log.info("lesson_asset_cleanup_deleted", path=rel)
-        except OSError as exc:
+        except remote_storage.StorageError as exc:
             log.warning(
                 "lesson_asset_cleanup_unlink_failed",
                 path=rel,

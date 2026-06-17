@@ -38,6 +38,7 @@ from app.models.organization import Organization
 from app.models.slide_template import SlideTemplate
 from app.services import course_lesson_pdf_service as base_pdf
 from app.services import course_lesson_slides_service
+from app.services import remote_storage
 
 log = get_logger("app.course_lesson_slides_pdf.service")
 
@@ -553,7 +554,8 @@ async def materialize_lesson_slides_pdf(
         lesson.content_raw, new_assets
     )
 
-    html = render_slides_html(
+    html = await asyncio.to_thread(
+        render_slides_html,
         course=course,
         lesson=lesson,
         organization=organization,
@@ -569,9 +571,11 @@ async def materialize_lesson_slides_pdf(
         course_id=course.id,
         lesson_id=lesson.id,
     )
-    abs_path = base_pdf.pdf_absolute_path(rel)
-    abs_path.parent.mkdir(parents=True, exist_ok=True)
-    abs_path.write_bytes(pdf_bytes)
+    await asyncio.to_thread(
+        remote_storage.get_storage().upload_bytes,
+        remote_storage.pdf_key(rel),
+        pdf_bytes,
+    )
 
     lesson.slides_pdf_path = rel
     lesson.slides_pdf_template_id = slide_template.id if slide_template else None

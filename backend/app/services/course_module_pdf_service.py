@@ -20,7 +20,6 @@ from __future__ import annotations
 import io
 import re
 import zipfile
-from pathlib import Path
 from typing import Literal
 
 from pypdf import PdfWriter
@@ -33,8 +32,8 @@ from app.services import (
     course_lesson_pdf_service,
     course_lesson_slides_pdf_service,
     course_lesson_speech_pdf_service,
+    remote_storage,
 )
-from app.services.course_lesson_pdf_service import pdf_absolute_path
 
 
 PdfKind = Literal["content", "slides", "speech"]
@@ -71,12 +70,20 @@ def _lesson_pdf_path(kind: PdfKind, lesson: CourseLesson) -> str | None:
     return lesson.speech_pdf_path
 
 
-def _lesson_pdf_absolute_path(kind: PdfKind, rel: str) -> Path:
-    # Tutti e tre i kind condividono la stessa root: il `kind` viene già
-    # codificato nel suffisso del nome file (`{lesson_id}.pdf`,
-    # `_slides.pdf`, `_speech.pdf`). Quindi un solo resolver basta.
+def _read_lesson_pdf(kind: PdfKind, rel: str, lesson: CourseLesson) -> bytes:
+    """Scarica i bytes del PDF di una lezione dallo storage attivo (RETR su
+    OVH, read locale altrimenti). Tutti e tre i `kind` condividono la stessa
+    root: il `kind` è già nel suffisso del nome file."""
     del kind  # parametro mantenuto per coerenza API
-    return pdf_absolute_path(rel)
+    try:
+        return remote_storage.get_storage().download_bytes(
+            remote_storage.pdf_key(rel)
+        )
+    except remote_storage.StorageFileNotFound as exc:
+        raise NotFoundError(
+            f"File PDF mancante sullo storage per la lezione {lesson.lesson_code}.",
+            code="module_pdf_file_missing",
+        ) from exc
 
 
 def _lesson_pdf_filename(kind: PdfKind, course_title: str, lesson: CourseLesson) -> str:
@@ -144,19 +151,8 @@ def _ensure_all_pdfs_ready(
             meta={"missing_lessons": [str(l.id) for l in not_ready]},
         )
 
-    # Verifica filesystem (rilevante in caso di pulizia volume / restore).
-    for l in lessons:
-        rel = _lesson_pdf_path(kind, l)
-        if not rel:
-            continue
-        abs_path = _lesson_pdf_absolute_path(kind, rel)
-        if not abs_path.is_file():
-            raise NotFoundError(
-                f"File PDF mancante sul filesystem per la lezione "
-                f"{l.lesson_code} ({_kind_label(kind)}).",
-                code="module_pdf_file_missing",
-            )
-
+    # L'esistenza effettiva sullo storage è verificata al momento della
+    # lettura (RETR), che solleva NotFoundError per la lezione mancante.
     return lessons
 
 
@@ -204,8 +200,10 @@ def merge_module_pdfs(
         rel = _lesson_pdf_path(kind, lesson)
         # rel non può essere None qui (validato in _ensure_all_pdfs_ready)
         assert rel is not None
-        abs_path = _lesson_pdf_absolute_path(kind, rel)
-        writer.append(str(abs_path), outline_item=lesson.title or lesson.lesson_code)
+        data = _read_lesson_pdf(kind, rel, lesson)
+        writer.append(
+            io.BytesIO(data), outline_item=lesson.title or lesson.lesson_code
+        )
 
     buf = io.BytesIO()
     writer.write(buf)
@@ -224,9 +222,9 @@ def zip_module_pdfs(
         for lesson in lessons:
             rel = _lesson_pdf_path(kind, lesson)
             assert rel is not None
-            abs_path = _lesson_pdf_absolute_path(kind, rel)
+            data = _read_lesson_pdf(kind, rel, lesson)
             filename = _lesson_pdf_filename(kind, course.title, lesson)
-            zf.write(str(abs_path), arcname=filename)
+            zf.writestr(filename, data)
     return buf.getvalue()
 
 
@@ -281,19 +279,7 @@ def _ensure_course_pdfs_ready(
             meta={"missing_lessons": [str(l.id) for l in not_ready]},
         )
 
-    # Verifica filesystem.
-    for _module, lessons in groups:
-        for lesson in lessons:
-            rel = _lesson_pdf_path(kind, lesson)
-            if not rel:
-                continue
-            if not _lesson_pdf_absolute_path(kind, rel).is_file():
-                raise NotFoundError(
-                    f"File PDF mancante sul filesystem per la lezione "
-                    f"{lesson.lesson_code} ({_kind_label(kind)}).",
-                    code="course_pdf_file_missing",
-                )
-
+    # L'esistenza effettiva sullo storage è verificata in lettura (RETR).
     return groups
 
 
@@ -314,9 +300,9 @@ def merge_course_pdfs(*, kind: PdfKind, course: Course) -> bytes:
         for lesson in lessons:
             rel = _lesson_pdf_path(kind, lesson)
             assert rel is not None
-            abs_path = _lesson_pdf_absolute_path(kind, rel)
+            data = _read_lesson_pdf(kind, rel, lesson)
             outline = f"{module.module_code} — {lesson.title or lesson.lesson_code}"
-            writer.append(str(abs_path), outline_item=outline)
+            writer.append(io.BytesIO(data), outline_item=outline)
 
     buf = io.BytesIO()
     writer.write(buf)
@@ -335,7 +321,7 @@ def zip_course_pdfs(*, kind: PdfKind, course: Course) -> bytes:
             for lesson in lessons:
                 rel = _lesson_pdf_path(kind, lesson)
                 assert rel is not None
-                abs_path = _lesson_pdf_absolute_path(kind, rel)
+                data = _read_lesson_pdf(kind, rel, lesson)
                 filename = _lesson_pdf_filename(kind, course.title, lesson)
-                zf.write(str(abs_path), arcname=f"{folder}/{filename}")
+                zf.writestr(f"{folder}/{filename}", data)
     return buf.getvalue()

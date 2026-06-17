@@ -23,6 +23,7 @@ Riusa massivamente gli helper di `course_lesson_pdf_service` per:
 """
 from __future__ import annotations
 
+import asyncio
 import re
 import uuid
 from datetime import UTC, datetime
@@ -41,6 +42,7 @@ from app.models.organization import Organization
 from app.models.pdf_template import PdfTemplate
 from app.services import course_lesson_pdf_service as base_pdf
 from app.services import course_lesson_speech_service
+from app.services import remote_storage
 
 log = get_logger("app.course_lesson_speech_pdf.service")
 
@@ -319,7 +321,8 @@ async def materialize_lesson_speech_pdf(
             db, organization_id=course.organization_id
         )
 
-    html = render_speech_html(
+    html = await asyncio.to_thread(
+        render_speech_html,
         course=course,
         lesson=lesson,
         organization=organization,
@@ -334,9 +337,11 @@ async def materialize_lesson_speech_pdf(
         course_id=course.id,
         lesson_id=lesson.id,
     )
-    abs_path = base_pdf.pdf_absolute_path(rel)
-    abs_path.parent.mkdir(parents=True, exist_ok=True)
-    abs_path.write_bytes(pdf_bytes)
+    await asyncio.to_thread(
+        remote_storage.get_storage().upload_bytes,
+        remote_storage.pdf_key(rel),
+        pdf_bytes,
+    )
 
     lesson.speech_pdf_path = rel
     lesson.speech_pdf_template_id = (

@@ -29,6 +29,19 @@ services:
       # Limiti upload (default backend: 5 MB / 10 MB audio).
       UPLOAD_MAX_MB: ${UPLOAD_MAX_MB:-5}
       AVATAR_AUDIO_MAX_MB: ${AVATAR_AUDIO_MAX_MB:-10}
+      # Storage backend: `local` (volume) o `ovh_ftp` (server OVH). Vedi
+      # .env.example. Con ovh_ftp i nuovi file vanno su OVH e sono serviti
+      # via HTTP da OVH_PUBLIC_BASE_URL.
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
+      STORAGE_LOCAL_FALLBACK: ${STORAGE_LOCAL_FALLBACK:-true}
+      OVH_FTP_HOST: ${OVH_FTP_HOST:-}
+      OVH_FTP_PORT: ${OVH_FTP_PORT:-21}
+      OVH_FTP_USER: ${OVH_FTP_USER:-}
+      OVH_FTP_PASSWORD: ${OVH_FTP_PASSWORD:-}
+      OVH_FTP_BASE_PATH: ${OVH_FTP_BASE_PATH:-/}
+      OVH_FTP_USE_TLS: ${OVH_FTP_USE_TLS:-true}
+      OVH_FTP_TIMEOUT_SECONDS: ${OVH_FTP_TIMEOUT_SECONDS:-30}
+      OVH_PUBLIC_BASE_URL: ${OVH_PUBLIC_BASE_URL:-}
       # MiniMax (generazione clip video avatar). Vuoto = disabilita.
       MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
       MINIMAX_BASE_URL: ${MINIMAX_BASE_URL:-https://api.minimax.io}
@@ -163,8 +176,10 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        VITE_API_BASE_URL: /api/v1
-        VITE_UPLOADS_BASE_URL: /uploads
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api/v1}
+        # In produzione con storage OVH puntare al base URL pubblico, es.
+        # https://progettiersaf.com/media/uploads (vedi .env.example).
+        VITE_UPLOADS_BASE_URL: ${VITE_UPLOADS_BASE_URL:-/uploads}
     image: a4u-frontend:latest
     restart: unless-stopped
     depends_on:

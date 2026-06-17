@@ -18,6 +18,7 @@ import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
 import { extractApiError } from "@/lib/errors";
+import { mediaUrl } from "@/lib/media";
 
 import {
   coursesApi,
@@ -1083,7 +1084,7 @@ function VisualAssetEditor({
         <div className="space-y-2">
           <div className="overflow-hidden rounded-md border bg-background">
             <img
-              src={`/uploads/${asset.content}`}
+              src={mediaUrl(asset.content)}
               alt={asset.alt_text || ""}
               className="block max-h-80 w-full object-contain"
             />

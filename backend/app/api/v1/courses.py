@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import urllib.parse
 import uuid
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, File, Query, Response, UploadFile, status
-from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
@@ -100,6 +100,7 @@ from app.services import (
     course_module_pdf_service,
     course_service,
     file_service,
+    remote_storage,
 )
 from app.services.openai_client import OpenAINotConfiguredError
 from app.services.openai_image_to_mermaid_service import (
@@ -2317,7 +2318,7 @@ async def download_lesson_pdf(
     db: DbSession,
     current: CurrentUser,
     _=require(P.COURSE_VIEW),
-) -> FileResponse:
+) -> Response:
     """Scarica il PDF generato. 404 se non disponibile (`pdf_status` non
     `ready`)."""
     await _ensure_org(db, org_id)
@@ -2333,19 +2334,10 @@ async def download_lesson_pdf(
         raise NotFoundError(
             "PDF non disponibile per questa lezione.", code="pdf_not_ready"
         )
-    abs_path = course_lesson_pdf_service.pdf_absolute_path(lesson.pdf_path)
-    if not abs_path.is_file():
-        raise NotFoundError(
-            "File PDF mancante sul filesystem.", code="pdf_file_missing"
-        )
     filename = course_lesson_pdf_service.pdf_filename_for_download(
         course.title, lesson
     )
-    return FileResponse(
-        path=str(abs_path),
-        media_type="application/pdf",
-        filename=filename,
-    )
+    return await _stored_pdf_download(pdf_rel=lesson.pdf_path, filename=filename)
 
 
 # ---------------------------------------------------------------------------
@@ -2452,7 +2444,7 @@ async def download_lesson_slides_pdf(
     db: DbSession,
     current: CurrentUser,
     _=require(P.COURSE_VIEW),
-) -> FileResponse:
+) -> Response:
     """Scarica il PDF slide. 404 se non disponibile."""
     await _ensure_org(db, org_id)
     course = await course_lesson_slides_service.load_course_full(
@@ -2468,21 +2460,11 @@ async def download_lesson_slides_pdf(
             "PDF slide non disponibile per questa lezione.",
             code="slides_pdf_not_ready",
         )
-    abs_path = course_lesson_pdf_service.pdf_absolute_path(
-        lesson.slides_pdf_path
-    )
-    if not abs_path.is_file():
-        raise NotFoundError(
-            "File PDF slide mancante sul filesystem.",
-            code="slides_pdf_file_missing",
-        )
     filename = course_lesson_slides_pdf_service.slides_pdf_filename_for_download(
         course.title, lesson
     )
-    return FileResponse(
-        path=str(abs_path),
-        media_type="application/pdf",
-        filename=filename,
+    return await _stored_pdf_download(
+        pdf_rel=lesson.slides_pdf_path, filename=filename
     )
 
 
@@ -2590,7 +2572,7 @@ async def download_lesson_speech_pdf(
     db: DbSession,
     current: CurrentUser,
     _=require(P.COURSE_VIEW),
-) -> FileResponse:
+) -> Response:
     """Scarica il PDF discorso. 404 se non disponibile."""
     await _ensure_org(db, org_id)
     course = await course_lesson_speech_service.load_course_full(
@@ -2606,21 +2588,11 @@ async def download_lesson_speech_pdf(
             "PDF discorso non disponibile per questa lezione.",
             code="speech_pdf_not_ready",
         )
-    abs_path = course_lesson_pdf_service.pdf_absolute_path(
-        lesson.speech_pdf_path
-    )
-    if not abs_path.is_file():
-        raise NotFoundError(
-            "File PDF discorso mancante sul filesystem.",
-            code="speech_pdf_file_missing",
-        )
     filename = course_lesson_speech_pdf_service.speech_pdf_filename_for_download(
         course.title, lesson
     )
-    return FileResponse(
-        path=str(abs_path),
-        media_type="application/pdf",
-        filename=filename,
+    return await _stored_pdf_download(
+        pdf_rel=lesson.speech_pdf_path, filename=filename
     )
 
 
@@ -2747,16 +2719,9 @@ async def convert_lesson_asset_to_mermaid(
         granted_permissions=granted,
     )
     rel = _validate_lesson_asset_path(payload.path, course_id=course_id)
-    settings = get_settings()
-    target = settings.upload_root / rel
-    if not target.is_file():
-        raise NotFoundError(
-            "File asset mancante sul filesystem.",
-            code="lesson_asset_file_missing",
-        )
     # Inferenza MIME dall'estensione (i file passati dal nostro save_upload_image
     # sono già normalizzati a .png/.jpg/.webp).
-    ext = target.suffix.lower()
+    ext = ("." + rel.rsplit(".", 1)[-1].lower()) if "." in rel else ""
     mime_by_ext = {
         ".png": "image/png",
         ".jpg": "image/jpeg",
@@ -2769,7 +2734,16 @@ async def convert_lesson_asset_to_mermaid(
             f"Estensione immagine non supportata: {ext}",
             code="lesson_asset_unsupported_ext",
         )
-    image_bytes = target.read_bytes()
+    try:
+        image_bytes = await asyncio.to_thread(
+            remote_storage.get_storage().download_bytes,
+            remote_storage.uploads_key(rel),
+        )
+    except remote_storage.StorageFileNotFound as exc:
+        raise NotFoundError(
+            "File asset mancante sullo storage.",
+            code="lesson_asset_file_missing",
+        ) from exc
     try:
         mermaid_code, usage = await convert_image_to_mermaid(
             image_bytes=image_bytes,
@@ -2855,6 +2829,25 @@ def _module_pdf_response(
         headers={
             "Content-Disposition": _content_disposition_attachment(filename),
         },
+    )
+
+
+async def _stored_pdf_download(*, pdf_rel: str, filename: str) -> Response:
+    """Scarica un PDF di lezione dallo storage attivo (OVH in produzione) e
+    lo restituisce come allegato, preservando il nome file leggibile."""
+    try:
+        data = await asyncio.to_thread(
+            remote_storage.get_storage().download_bytes,
+            remote_storage.pdf_key(pdf_rel),
+        )
+    except remote_storage.StorageFileNotFound as exc:
+        raise NotFoundError(
+            "File PDF mancante sullo storage.", code="pdf_file_missing"
+        ) from exc
+    return Response(
+        content=data,
+        media_type="application/pdf",
+        headers={"Content-Disposition": _content_disposition_attachment(filename)},
     )
 
 
@@ -3146,15 +3139,18 @@ async def download_course_speech_pdf_zip(
 
 async def _video_assignee_context(db, course: object) -> dict[str, Any]:
     """Helper: risolve il campione vocale dell'assegnatario per costruire
-    i DTO video."""
-    voice_sample_path = (
-        await course_lesson_video_service.resolve_voice_sample_path(
-            db, assignee_user_id=course.assignee_user_id
-        )
+    i DTO video. La disponibilità è verificata sul layer di storage (OVH in
+    produzione), non sul filesystem locale."""
+    ref = await course_lesson_video_service.resolve_voice_sample_ref(
+        db, assignee_user_id=course.assignee_user_id
+    )
+    available = bool(ref) and await asyncio.to_thread(
+        remote_storage.get_storage().exists,
+        remote_storage.uploads_key(ref),
     )
     return {
-        "voice_sample_path": voice_sample_path,
-        "voice_sample_available": voice_sample_path is not None,
+        "voice_sample_ref": ref,
+        "voice_sample_available": available,
     }
 
 
@@ -3193,7 +3189,7 @@ async def generate_lesson_video(
         course=course,
         lesson=lesson,
         actor_id=current.id,
-        voice_sample_path=ctx["voice_sample_path"],
+        voice_sample_ref=ctx["voice_sample_ref"],
     )
     return course_lesson_video_service.build_status_out(
         lesson,
@@ -3225,7 +3221,7 @@ async def generate_all_lessons_video(
         db,
         course=course,
         actor_id=current.id,
-        voice_sample_path=ctx["voice_sample_path"],
+        voice_sample_ref=ctx["voice_sample_ref"],
     )
     course = await _load_course_for_edit(
         db, org_id=org_id, course_id=course_id, current=current

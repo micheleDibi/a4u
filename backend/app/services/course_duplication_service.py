@@ -20,7 +20,6 @@ Espone:
 from __future__ import annotations
 
 import asyncio
-import shutil
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -33,7 +32,6 @@ from app.db.session import async_session_factory
 from sqlalchemy.orm import selectinload
 
 from app.core.audit import write_audit
-from app.core.config import get_settings
 from app.core.course_phase_order import advance_course_status
 from app.core.errors import ConflictError, NotFoundError, PermissionDeniedError
 from app.core.logging import get_logger
@@ -47,6 +45,7 @@ from app.models.course_lesson import CourseLesson
 from app.models.course_module import CourseModule
 from app.models.language import Language
 from app.services import course_duplication_paths as _paths
+from app.services import remote_storage
 from app.services.openai_translate_service import (
     OpenAITranslateError,
     translate_batch,
@@ -547,10 +546,9 @@ async def _clone_course_structure(
     JSONB testuali vengono copiati AS-IS: il worker li tradurrà
     in-place nelle phase successive.
 
-    Video / Avatar / PDF resettati a `empty`. Documenti copiati
-    fisicamente su filesystem con nuovo `filename_stored` univoco.
+    Video / Avatar / PDF resettati a `empty`. Documenti copiati sullo
+    storage attivo con nuovo `filename_stored` univoco.
     """
-    settings = get_settings()
     target = Course(
         organization_id=source.organization_id,
         title=source.title,
@@ -598,25 +596,25 @@ async def _clone_course_structure(
     db.add(target)
     await db.flush()  # need target.id per documenti
 
-    # --- Documenti: copia file su disco + nuovo CourseDocument --------
-    upload_root: Path = settings.upload_root
-    target_doc_dir = upload_root / "courses" / str(target.id)
-    target_doc_dir.mkdir(parents=True, exist_ok=True)
+    # --- Documenti: copia sullo storage + nuovo CourseDocument --------
+    storage = remote_storage.get_storage()
     for src_doc in source.documents:
         new_stored = _new_filename_stored(src_doc.filename_stored)
-        src_path = upload_root / src_doc.file_path.lstrip("/")
-        # `file_path` può iniziare con "/" o "uploads/..."; normalizza.
-        if not src_path.exists():
-            # Path alternativo: src_doc.file_path è già relativo a upload_root
-            src_path = upload_root / src_doc.file_path
         new_rel = f"courses/{target.id}/{new_stored}"
-        new_abs = upload_root / new_rel
-        if src_path.is_file():
-            shutil.copy2(src_path, new_abs)
-        else:
+        try:
+            data = await asyncio.to_thread(
+                storage.download_bytes,
+                remote_storage.uploads_key(src_doc.file_path),
+            )
+            await asyncio.to_thread(
+                storage.upload_bytes,
+                remote_storage.uploads_key(new_rel),
+                data,
+            )
+        except remote_storage.StorageFileNotFound:
             log.warning(
                 "course_duplication_source_doc_missing",
-                source_path=str(src_path),
+                source_path=src_doc.file_path,
                 doc_id=str(src_doc.id),
             )
         new_doc = CourseDocument(

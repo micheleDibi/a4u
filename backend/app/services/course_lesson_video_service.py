@@ -36,6 +36,7 @@ from app.schemas.course_lesson_video import (
     LessonVideoBatchOut,
     LessonVideoStatusOut,
 )
+from app.services import remote_storage
 
 log = get_logger("app.course_lesson_video.service")
 
@@ -142,34 +143,19 @@ async def resolve_assignee_avatar(
     return res.scalar_one_or_none()
 
 
-async def resolve_voice_sample_path(
+async def resolve_voice_sample_ref(
     db: AsyncSession, *, assignee_user_id: uuid.UUID
-) -> Path | None:
-    """Risolve il path filesystem assoluto del campione vocale dell'utente
-    assegnatario al corso. Ritorna `None` se mancante.
-
-    `Avatar.audio_path` è un path pubblico (es. `/uploads/avatars/uuid.wav`)
-    sotto `settings.upload_root`. Strippiamo il prefisso `/uploads/` e
-    componiamo l'absolute path.
-    """
-    settings = get_settings()
+) -> str | None:
+    """Path logico (`/uploads/...`) del campione vocale dell'assegnatario,
+    o `None` se mancante. L'esistenza effettiva del file va verificata sul
+    layer di storage (`remote_storage`), dato che in produzione vive su OVH
+    e non sul filesystem locale."""
     avatar = await resolve_assignee_avatar(
         db, assignee_user_id=assignee_user_id
     )
     if avatar is None or not avatar.audio_path:
         return None
-    rel = avatar.audio_path
-    if rel.startswith("/uploads/"):
-        rel = rel.removeprefix("/uploads/")
-    target = (settings.upload_root / rel).resolve()
-    # Path traversal safety.
-    try:
-        target.relative_to(settings.upload_root.resolve())
-    except ValueError:  # pragma: no cover
-        return None
-    if not target.is_file():
-        return None
-    return target
+    return avatar.audio_path
 
 
 # ---------------------------------------------------------------------------
@@ -192,11 +178,11 @@ def video_absolute_path(rel: str) -> Path:
 
 
 def video_public_url(rel: str | None) -> str | None:
+    """URL del video per il player FE: assoluto OVH in produzione, relativo
+    `/uploads/...` in locale (vedi `remote_storage.media_url`)."""
     if not rel:
         return None
-    if rel.startswith("/uploads/"):
-        return rel
-    return f"/uploads/{rel.lstrip('/')}"
+    return remote_storage.media_url(remote_storage.uploads_key(rel))
 
 
 # ---------------------------------------------------------------------------
@@ -334,7 +320,7 @@ async def request_lesson_video(
     course: Course,
     lesson: CourseLesson,
     actor_id: uuid.UUID,
-    voice_sample_path: Path | None,
+    voice_sample_ref: str | None,
 ) -> CourseLesson:
     """Marca la lezione come `video_status='pending'`. Vincoli:
     - speech+slides `approved`
@@ -359,7 +345,7 @@ async def request_lesson_video(
             f"`approved` (attuale: {lesson.slides_status}).",
             code="slides_not_approved",
         )
-    if voice_sample_path is None:
+    if voice_sample_ref is None:
         raise ConflictError(
             "L'assegnatario del corso non ha un campione vocale "
             "configurato (Avatar.audio_path mancante).",
@@ -400,14 +386,14 @@ async def request_all_lessons_video(
     *,
     course: Course,
     actor_id: uuid.UUID,
-    voice_sample_path: Path | None,
+    voice_sample_ref: str | None,
 ) -> list[CourseLesson]:
     """Marca tutte le lezioni eleggibili come `video_status='pending'`.
 
     Eleggibile = `is_lesson_eligible()`. Lezioni già `pending`/`processing`
     vengono saltate silenziosamente.
     """
-    if voice_sample_path is None:
+    if voice_sample_ref is None:
         raise ConflictError(
             "L'assegnatario del corso non ha un campione vocale configurato.",
             code="voice_sample_missing",

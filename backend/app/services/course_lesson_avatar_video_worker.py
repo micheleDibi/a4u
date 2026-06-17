@@ -44,6 +44,7 @@ from app.core.logging import get_logger
 from app.db.session import async_session_factory
 from app.models.course_lesson import CourseLesson
 from app.services import course_lesson_avatar_video_service as svc
+from app.services import remote_storage
 
 log = get_logger("app.course_lesson_avatar_video.worker")
 
@@ -720,12 +721,11 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
             await db.commit()
             return
 
-        base_video_path = (settings.upload_root / lesson.video_path).resolve()
-        try:
-            base_video_path.relative_to(settings.upload_root.resolve())
-        except ValueError:
-            base_video_path = Path("/nonexistent")
-        if not base_video_path.is_file():
+        base_video_rel = lesson.video_path
+        if not await asyncio.to_thread(
+            remote_storage.get_storage().exists,
+            remote_storage.uploads_key(base_video_rel),
+        ):
             _apply_failure(
                 lesson,
                 error="Il file del video della lezione non è stato trovato.",
@@ -760,7 +760,15 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
         assert avatar is not None
 
         clips_dir = svc.avatar_clips_dir(avatar.user_id)
-        if not clips_dir.is_dir() or not any(clips_dir.glob("*.mp4")):
+        # Snapshot dei riferimenti alle clip pronte (id + path storage): le
+        # materializzeremo in locale (RETR da OVH) fuori dalla sessione DB.
+        # `avatar_is_ready` sopra garantisce ≥ 1 clip pronta.
+        ready_clip_refs = [
+            (str(c.id), c.video_path)
+            for c in avatar.clips
+            if c.status == "ready" and c.video_path
+        ]
+        if not ready_clip_refs:
             _apply_failure(
                 lesson,
                 error="Nessun file clip trovato per l'avatar dell'assegnatario.",
@@ -815,8 +823,30 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
     manifest_cache_dir = settings.upload_root / "musetalk_manifests"
     manifest_cache_dir.mkdir(parents=True, exist_ok=True)
 
+    local_output = work_dir / "avatar_video.mp4"
     started = time.monotonic()
     try:
+        # --- Materializzazione input remoti (storage → locale) -------
+        # MuseTalk e ffmpeg leggono da file locali: scarichiamo il video
+        # base nel work_dir e le clip nella cache locale dell'avatar. In
+        # modalità locale le clip già presenti sono saltate; in OVH è RETR.
+        storage = remote_storage.get_storage()
+        base_video_path = work_dir / "base_video.mp4"
+        await asyncio.to_thread(
+            storage.download_to,
+            remote_storage.uploads_key(base_video_rel),
+            base_video_path,
+        )
+        clips_dir.mkdir(parents=True, exist_ok=True)
+        for clip_id, clip_rel in ready_clip_refs:
+            local_clip = clips_dir / f"{clip_id}.mp4"
+            if not local_clip.is_file():
+                await asyncio.to_thread(
+                    storage.download_to,
+                    remote_storage.uploads_key(clip_rel),
+                    local_clip,
+                )
+
         # --- Phase 0: ridimensiona le clip dell'avatar per MuseTalk --
         if await _check_cancelled(lesson_id):
             log.info("avatar_video_cancelled_pre_clips", lesson_id=str(lesson_id))
@@ -890,7 +920,7 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
         await _overlay_avatar(
             base_video=base_video_path,
             avatar_video=lipsync_path,
-            output_path=output_path,
+            output_path=local_output,
         )
         overlay_ms = int((time.monotonic() - overlay_t0) * 1000)
         await _set_progress(lesson_id, pct=99, phase="overlay")
@@ -901,6 +931,13 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
             )
             return
 
+        # Carica il risultato sullo storage attivo (OVH in produzione).
+        await asyncio.to_thread(
+            storage.upload_file,
+            remote_storage.uploads_key(output_rel),
+            local_output,
+        )
+
         # --- Save metadata -------------------------------------------
         tokens: dict[str, Any] = {
             "audio_duration_s": audio_duration,
@@ -910,7 +947,7 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
             "runpod_job_id": parsed.get("runpod_job_id"),
             "num_ready_clips": num_ready_clips,
             "overlay_scale": settings.avatar_video_overlay_scale,
-            "file_size_bytes": output_path.stat().st_size,
+            "file_size_bytes": local_output.stat().st_size,
         }
 
         async with async_session_factory() as db:

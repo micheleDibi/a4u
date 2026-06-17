@@ -6,6 +6,8 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
 
+import { mediaUrl } from "@/lib/media";
+
 import type {
   LessonContentEquation,
   LessonContentExample,
@@ -223,7 +225,7 @@ function VisualAssetBlock({ asset }: { asset: LessonContentVisualAsset }) {
       <figure className="my-6 overflow-hidden rounded-lg border border-border bg-card">
         <div className="flex justify-center bg-muted/30 p-4">
           <img
-            src={`/uploads/${asset.content}`}
+            src={mediaUrl(asset.content)}
             alt={asset.alt_text || ""}
             className="max-h-[28rem] w-auto max-w-full rounded"
           />

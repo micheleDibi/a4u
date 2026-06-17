@@ -42,6 +42,7 @@ from app.schemas.course_lesson_avatar_video import (
     LessonAvatarVideoBatchOut,
     LessonAvatarVideoStatusOut,
 )
+from app.services import remote_storage
 from app.services.course_lesson_video_service import (
     get_lesson_or_404,
     load_course_full,
@@ -199,11 +200,11 @@ def avatar_video_absolute_path(rel: str) -> Path:
 
 
 def avatar_video_public_url(rel: str | None) -> str | None:
+    """URL del video-avatar per il player FE: assoluto OVH in produzione,
+    relativo `/uploads/...` in locale (vedi `remote_storage.media_url`)."""
     if not rel:
         return None
-    if rel.startswith("/uploads/"):
-        return rel
-    return f"/uploads/{rel.lstrip('/')}"
+    return remote_storage.media_url(remote_storage.uploads_key(rel))
 
 
 # ---------------------------------------------------------------------------

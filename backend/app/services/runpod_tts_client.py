@@ -17,7 +17,6 @@ import contextlib
 import io
 import time
 from collections.abc import Awaitable, Callable
-from pathlib import Path
 from typing import Any
 
 import httpx
@@ -80,31 +79,10 @@ def _decode_segment_audio(audio_b64: str) -> np.ndarray:
     return arr.reshape(-1)
 
 
-def _build_voice_sample_url(voice_sample_path: Path) -> str:
-    """URL pubblico del campione vocale, scaricabile dal worker RunPod.
-
-    Il file vive sotto `upload_root` ed e' servito da `/uploads/...`. Il
-    worker GPU lo scarica via HTTP invece di riceverlo inline base64 nel
-    payload del job: un audio di pochi MB come base64 sfora il limite di
-    payload di `/run` di RunPod (sintomo: `voice_sample_b64 mancante`).
-    """
-    settings = get_settings()
-    try:
-        rel = voice_sample_path.resolve().relative_to(
-            settings.upload_root.resolve()
-        )
-    except ValueError as exc:
-        raise RunpodTtsError(
-            f"Voice sample fuori da upload_root: {voice_sample_path}"
-        ) from exc
-    base = settings.public_base_url.rstrip("/")
-    return f"{base}/uploads/{rel.as_posix()}"
-
-
 async def synthesize_lesson_audio(
     *,
     speech_raw: dict[str, Any],
-    voice_sample_path: Path,
+    voice_sample_url: str,
     language_code: str,
     on_segment_progress: Callable[[int, int], Awaitable[None]] | None = None,
 ) -> tuple[dict[str, np.ndarray], int]:
@@ -112,7 +90,11 @@ async def synthesize_lesson_audio(
 
     Args:
         speech_raw: dict con `speech_segments` (lista di {segment_id, text, ...}).
-        voice_sample_path: file audio di riferimento dell'avatar assegnatario.
+        voice_sample_url: URL pubblico del campione vocale dell'assegnatario,
+            scaricabile via HTTP dal worker RunPod GPU (su OVH è l'URL del
+            file sullo storage; in locale `{public_base_url}/uploads/...`).
+            Viaggia come URL — non inline base64 — perché un audio di pochi
+            MB sforerebbe il limite di payload di `/run`.
         language_code: codice lingua (normalizzato internamente).
         on_segment_progress: callback(done, total) per il progress UI.
 
@@ -140,12 +122,9 @@ async def synthesize_lesson_audio(
     if not segments:
         return {}, SAMPLE_RATE
 
-    if not voice_sample_path.is_file():
-        raise RunpodTtsError(f"Voice sample non trovato: {voice_sample_path}")
-    if voice_sample_path.stat().st_size == 0:
-        raise RunpodTtsError(f"Voice sample vuoto: {voice_sample_path}")
+    if not voice_sample_url:
+        raise RunpodTtsError("Voice sample URL mancante.")
 
-    voice_sample_url = _build_voice_sample_url(voice_sample_path)
     language = normalize_language_code(language_code)
 
     # Il voice sample viaggia come URL: il worker RunPod lo scarica. Il

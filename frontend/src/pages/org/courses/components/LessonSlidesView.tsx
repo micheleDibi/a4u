@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { MarkdownRenderer } from "@/components/shared/MarkdownRenderer";
 import { MermaidDiagram } from "@/components/shared/MermaidDiagram";
+import { mediaUrl } from "@/lib/media";
 import { resolveAsset } from "@/lib/slides";
 
 interface Props {
@@ -188,7 +189,7 @@ function SlideAssetRender({
       return (
         <figure className="space-y-1">
           <img
-            src={`/uploads/${a.content}`}
+            src={mediaUrl(a.content)}
             alt={a.alt_text || ""}
             className="block max-h-[24rem] w-auto max-w-full rounded"
           />

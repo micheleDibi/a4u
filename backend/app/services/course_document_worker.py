@@ -14,6 +14,7 @@ schema Appendice A → JSONB salvato in `course_document.summary`.
 from __future__ import annotations
 
 import asyncio
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -25,7 +26,11 @@ from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.db.session import async_session_factory
 from app.models.course_document import CourseDocument
-from app.services import document_extraction_service, openai_summarize_service
+from app.services import (
+    document_extraction_service,
+    openai_summarize_service,
+    remote_storage,
+)
 from app.services.openai_client import OpenAINotConfiguredError
 
 log = get_logger("app.course_document.worker")
@@ -33,16 +38,6 @@ log = get_logger("app.course_document.worker")
 
 def _now() -> datetime:
     return datetime.now(tz=UTC)
-
-
-def _resolve_disk_path(public_path: str) -> Path:
-    """Mappa `/uploads/courses/<id>/<file>` → disk path assoluto."""
-    settings = get_settings()
-    if public_path.startswith("/uploads/"):
-        rel = public_path[len("/uploads/"):]
-    else:
-        rel = public_path.lstrip("/")
-    return (settings.upload_root / rel).resolve()
 
 
 async def _process_one(db: AsyncSession, doc: CourseDocument) -> None:
@@ -54,14 +49,24 @@ async def _process_one(db: AsyncSession, doc: CourseDocument) -> None:
     await db.commit()
     await db.refresh(doc)
 
-    disk_path = _resolve_disk_path(doc.file_path)
-
-    # 1) Estrazione testo
+    # 1) Scarica il documento dallo storage in un file temporaneo, poi estrai.
+    suffix = Path(doc.file_path).suffix
+    tmp_path: Path | None = None
     try:
-        text, original_chars = await document_extraction_service.extract_text(
-            disk_path, doc.mime_type
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp_path = Path(tmp.name)
+        await asyncio.to_thread(
+            remote_storage.get_storage().download_to,
+            remote_storage.uploads_key(doc.file_path),
+            tmp_path,
         )
-    except document_extraction_service.DocumentExtractionError as exc:
+        text, original_chars = await document_extraction_service.extract_text(
+            tmp_path, doc.mime_type
+        )
+    except (
+        document_extraction_service.DocumentExtractionError,
+        remote_storage.StorageFileNotFound,
+    ) as exc:
         doc.summary_status = "failed"
         doc.summary_error = str(exc)
         await write_audit(
@@ -84,6 +89,9 @@ async def _process_one(db: AsyncSession, doc: CourseDocument) -> None:
             error=str(exc),
         )
         return
+    finally:
+        if tmp_path is not None:
+            tmp_path.unlink(missing_ok=True)
 
     doc.text_extracted_at = _now()
     doc.text_chars_extracted = len(text)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import tempfile
 import uuid
 from io import BytesIO
 from pathlib import Path
@@ -11,6 +12,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from app.core.config import get_settings
 from app.core.errors import ValidationAppError
 from app.core.logging import get_logger
+from app.services import remote_storage
 
 log = get_logger("app.files")
 
@@ -156,15 +158,16 @@ async def save_upload_image(
             "Il file non è un'immagine valida.", code="invalid_image"
         ) from exc
 
-    target_dir = settings.upload_root / safe_subdir
-    target_dir.mkdir(parents=True, exist_ok=True)
     stem = filename_stem or uuid.uuid4().hex
     filename = f"{stem}{ext}"
-    target_path = target_dir / filename
-    _ensure_within(settings.upload_root, target_path)
-    target_path.write_bytes(payload)
+    public_path = f"/uploads/{safe_subdir}/{filename}"
+    await asyncio.to_thread(
+        remote_storage.get_storage().upload_bytes,
+        remote_storage.uploads_key(public_path),
+        payload,
+    )
     log.info("file_saved_image", subdir=safe_subdir, filename=filename, size=len(payload))
-    return f"/uploads/{safe_subdir}/{filename}"
+    return public_path
 
 
 # Durata minima di un campione vocale per essere usabile come reference
@@ -234,37 +237,44 @@ async def save_upload_audio(
         )
 
     ext = ALLOWED_AUDIO_EXT_BY_MIME[mime]
-    target_dir = settings.upload_root / safe_subdir
-    target_dir.mkdir(parents=True, exist_ok=True)
     stem = filename_stem or uuid.uuid4().hex
     filename = f"{stem}{ext}"
-    target_path = target_dir / filename
-    _ensure_within(settings.upload_root, target_path)
-    target_path.write_bytes(raw)
+    public_path = f"/uploads/{safe_subdir}/{filename}"
 
-    # Validazione durata: richiede file su disco (ffprobe non legge stdin
-    # affidabilmente per webm/m4a).
+    # Validazione durata: ffprobe richiede un file su disco (non legge stdin
+    # affidabilmente per webm/m4a). Scriviamo un file temporaneo, validiamo,
+    # e solo se valido carichiamo sullo storage.
     if min_duration_seconds is not None and min_duration_seconds > 0:
-        duration = await probe_audio_duration_seconds(target_path)
-        if duration is None:
-            log.warning(
-                "audio_duration_unknown",
-                path=str(target_path),
-                note="ffprobe failed — proceeding without enforcement",
-            )
-        elif duration < min_duration_seconds:
+        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+            tmp.write(raw)
+            tmp_path = Path(tmp.name)
+        try:
+            duration = await probe_audio_duration_seconds(tmp_path)
+            if duration is None:
+                log.warning(
+                    "audio_duration_unknown",
+                    path=str(tmp_path),
+                    note="ffprobe failed — proceeding without enforcement",
+                )
+            elif duration < min_duration_seconds:
+                raise ValidationAppError(
+                    f"L'audio deve durare almeno {min_duration_seconds:.0f} "
+                    f"secondi (rilevato: {duration:.1f}s).",
+                    code="audio_too_short",
+                )
+        finally:
             try:
-                target_path.unlink()
+                tmp_path.unlink()
             except OSError:  # pragma: no cover
                 pass
-            raise ValidationAppError(
-                f"L'audio deve durare almeno {min_duration_seconds:.0f} "
-                f"secondi (rilevato: {duration:.1f}s).",
-                code="audio_too_short",
-            )
 
+    await asyncio.to_thread(
+        remote_storage.get_storage().upload_bytes,
+        remote_storage.uploads_key(public_path),
+        raw,
+    )
     log.info("file_saved_audio", subdir=safe_subdir, filename=filename, size=len(raw))
-    return f"/uploads/{safe_subdir}/{filename}"
+    return public_path
 
 
 async def save_upload_document(
@@ -298,13 +308,14 @@ async def save_upload_document(
         )
 
     ext = ALLOWED_DOCUMENT_MIME_TYPES[mime]
-    target_dir = settings.upload_root / safe_subdir
-    target_dir.mkdir(parents=True, exist_ok=True)
     stem = filename_stem or uuid.uuid4().hex
     filename = f"{stem}{ext}"
-    target_path = target_dir / filename
-    _ensure_within(settings.upload_root, target_path)
-    target_path.write_bytes(raw)
+    public_path = f"/uploads/{safe_subdir}/{filename}"
+    await asyncio.to_thread(
+        remote_storage.get_storage().upload_bytes,
+        remote_storage.uploads_key(public_path),
+        raw,
+    )
     log.info(
         "file_saved_document",
         subdir=safe_subdir,
@@ -312,7 +323,7 @@ async def save_upload_document(
         mime=mime,
         size=len(raw),
     )
-    return f"/uploads/{safe_subdir}/{filename}", filename, len(raw)
+    return public_path, filename, len(raw)
 
 
 async def save_document_from_bytes(
@@ -347,13 +358,14 @@ async def save_document_from_bytes(
         )
 
     ext = ALLOWED_DOCUMENT_MIME_TYPES[mime]
-    target_dir = settings.upload_root / safe_subdir
-    target_dir.mkdir(parents=True, exist_ok=True)
     stem = filename_stem or uuid.uuid4().hex
     filename = f"{stem}{ext}"
-    target_path = target_dir / filename
-    _ensure_within(settings.upload_root, target_path)
-    target_path.write_bytes(payload)
+    public_path = f"/uploads/{safe_subdir}/{filename}"
+    await asyncio.to_thread(
+        remote_storage.get_storage().upload_bytes,
+        remote_storage.uploads_key(public_path),
+        payload,
+    )
     log.info(
         "file_saved_document_bytes",
         subdir=safe_subdir,
@@ -361,24 +373,18 @@ async def save_document_from_bytes(
         mime=mime,
         size=len(payload),
     )
-    return f"/uploads/{safe_subdir}/{filename}", filename, len(payload)
+    return public_path, filename, len(payload)
 
 
 async def delete_upload(path: str | None) -> None:
     if not path:
         return
-    settings = get_settings()
     if not path.startswith("/uploads/"):
         return
-    rel = path.removeprefix("/uploads/")
-    target = settings.upload_root / rel
     try:
-        _ensure_within(settings.upload_root, target)
-    except ValidationAppError:
-        return
-    if target.exists():
-        try:
-            target.unlink()
-            log.info("file_deleted", path=str(target))
-        except OSError as exc:  # pragma: no cover
-            log.warning("file_delete_failed", path=str(target), error=str(exc))
+        await asyncio.to_thread(
+            remote_storage.get_storage().delete,
+            remote_storage.uploads_key(path),
+        )
+    except remote_storage.StorageError as exc:  # pragma: no cover - best effort
+        log.warning("file_delete_failed", path=path, error=str(exc))

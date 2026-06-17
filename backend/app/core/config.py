@@ -51,6 +51,35 @@ class Settings(BaseSettings):
     course_document_max_mb: int = 25
     public_base_url: str = "http://localhost:8000"
 
+    # === Storage backend (persistenza file) ===
+    # `local`   → filesystem locale (default, dev): comportamento storico.
+    # `ovh_ftp` → server OVH via FTP/FTPS; i file sono serviti pubblicamente
+    #             via HTTP da `ovh_public_base_url`. Vedi
+    #             `app/services/remote_storage.py`.
+    storage_backend: Literal["local", "ovh_ftp"] = "local"
+    # Cutover: se un file non è (ancora) su OVH, prova a leggerlo/servirlo dal
+    # filesystem locale ancora montato (e logga un warning). Disattivare a
+    # regime (Fase 4) una volta completata la migrazione.
+    storage_local_fallback: bool = True
+    # Credenziali FTP OVH (valorizzare in `.env`, MAI in codice).
+    ovh_ftp_host: str | None = None
+    ovh_ftp_port: int = 21
+    ovh_ftp_user: str | None = None
+    ovh_ftp_password: str | None = None
+    # Path FTP della cartella radice in cui scrivere/leggere, mappato al
+    # docroot pubblico. Es. `/www/media` se `ovh_public_base_url` =
+    # `https://progettiersaf.com/media`. Le key (`uploads/...`,
+    # `generated_pdfs/...`) sono appese a questo path.
+    ovh_ftp_base_path: str = "/"
+    # FTPS esplicito (TLS) sul canale di controllo + dati. Disattivare
+    # (`false`) SOLO come escape di debug: invia le credenziali in chiaro.
+    ovh_ftp_use_tls: bool = True
+    ovh_ftp_timeout_seconds: int = 30
+    # Base URL pubblica da cui i file su OVH sono raggiungibili via HTTP:
+    # `public_url(key) = f"{ovh_public_base_url}/{key}"`. Es.
+    # `https://progettiersaf.com/media`.
+    ovh_public_base_url: str | None = None
+
     minimax_api_key: str | None = None
     minimax_base_url: str = "https://api.minimax.io"
     minimax_video_model: str = "MiniMax-Hailuo-02"

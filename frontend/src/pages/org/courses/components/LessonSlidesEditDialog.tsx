@@ -57,6 +57,7 @@ import { MermaidEditor } from "@/components/shared/MermaidEditor";
 import { RichTextEditor } from "@/components/shared/RichTextEditor";
 import { TableEditor } from "@/components/shared/TableEditor";
 import { extractApiError } from "@/lib/errors";
+import { mediaUrl } from "@/lib/media";
 import { listAvailableAssets } from "@/lib/slides";
 
 const SLIDE_TYPES: SlideType[] = [
@@ -972,7 +973,7 @@ function NewAssetEditCard({
         <div className="space-y-2">
           <div className="overflow-hidden rounded-md border bg-background">
             <img
-              src={`/uploads/${asset.content}`}
+              src={mediaUrl(asset.content)}
               alt={asset.alt_text || ""}
               className="block max-h-80 w-full object-contain"
             />
