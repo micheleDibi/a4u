@@ -69,7 +69,11 @@ def main() -> int:
         got = storage.download_bytes(key)
         assert got == payload, "download_bytes != payload"
 
-        url = remote_storage.public_url(key)
+        # URL OVH atteso, costruito direttamente da OVH_PUBLIC_BASE_URL: NON
+        # da public_url(), che dipende da STORAGE_BACKEND (durante lo spike
+        # l'app è ancora 'local' e restituirebbe PUBLIC_BASE_URL).
+        ovh_base = (settings.ovh_public_base_url or "").rstrip("/")
+        url = f"{ovh_base}/{key}"
         print(f"4) HTTP GET {url} ...")
         ok = False
         for attempt in range(5):
