@@ -2,7 +2,10 @@
 # Usare con: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 services:
   postgres:
-    ports: []  # non esposto pubblicamente in produzione
+    # Esposto SOLO su localhost per il downloader A4U (lettura DB).
+    # Non raggiungibile da Internet.
+    ports:
+      - "127.0.0.1:5433:5432"
 
   backend:
     build:
