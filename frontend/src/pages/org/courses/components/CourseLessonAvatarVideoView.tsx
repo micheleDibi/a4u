@@ -349,6 +349,8 @@ export function CourseLessonAvatarVideoView({
                             <a
                               href={item.video_url}
                               download={`${lesson.lesson_code}-avatar.mp4`}
+                              target="_blank"
+                              rel="noopener noreferrer"
                             >
                               <Download className="size-4" />
                               {t("courses.avatarVideo.actions.download")}

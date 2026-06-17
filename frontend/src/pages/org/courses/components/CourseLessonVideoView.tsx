@@ -483,6 +483,8 @@ export function CourseLessonVideoView({
                             <a
                               href={item.video_url}
                               download={`${lesson.lesson_code}.mp4`}
+                              target="_blank"
+                              rel="noopener noreferrer"
                             >
                               <Download className="size-4" />
                               {t("courses.video.actions.download")}
