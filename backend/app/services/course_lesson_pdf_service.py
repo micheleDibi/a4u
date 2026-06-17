@@ -65,6 +65,7 @@ from app.models.course_lesson import CourseLesson
 from app.models.course_module import CourseModule
 from app.models.organization import Organization
 from app.models.pdf_template import PdfTemplate
+from app.models.user import User
 from app.services import remote_storage
 
 log = get_logger("app.course_lesson_pdf.service")
@@ -890,12 +891,33 @@ def _labels_for(language: str) -> dict[str, str]:
             "summary": "Summary",
             "key_takeaways": "Key takeaways",
             "references": "References",
+            "module": "Module",
+            "lesson": "lesson",
+            "cfu": "ECTS",
+            "teacher": "Instructor",
         }
     return {
         "summary": "Sintesi",
         "key_takeaways": "Punti chiave",
         "references": "Riferimenti",
+        "module": "Modulo",
+        "lesson": "lezione",
+        "cfu": "CFU",
+        "teacher": "Docente",
     }
+
+
+def _format_lesson_code_label(lesson_code: str | None, labels: dict[str, str]) -> str:
+    """Trasforma il codice lezione `M1.L1` in `Modulo 1 - lezione 1`
+    (localizzato). Se il codice non matcha il pattern atteso, lo ritorna
+    invariato (es. lezioni di verifica o codici legacy)."""
+    m = re.match(r"^M(\d+)\.L(\d+)$", (lesson_code or "").strip())
+    if not m:
+        return lesson_code or ""
+    return (
+        f"{labels['module']} {int(m.group(1))} - "
+        f"{labels['lesson']} {int(m.group(2))}"
+    )
 
 
 def render_lesson_html(
@@ -906,6 +928,7 @@ def render_lesson_html(
     pdf_template: PdfTemplate | None,
     public_base_url: str | None = None,
     mermaid_svg_map: dict[str, str] | None = None,
+    teacher_name: str | None = None,
 ) -> str:
     """Pure-function: produce l'HTML completo della lezione, pronto per
     WeasyPrint.
@@ -950,12 +973,14 @@ def render_lesson_html(
         course={
             "title": course.title,
             "language": language,
+            "cfu": course.cfu,
+            "teacher": teacher_name,
         },
         lesson={
             "title": lesson.title,
             "lesson_code": lesson.lesson_code,
+            "code_label": _format_lesson_code_label(lesson.lesson_code, labels),
         },
-        organization_name=(organization.name if organization else None),
         tpl=tpl_dict,
         margin_top_cm=margins_cm["margin_top_cm"],
         margin_side_cm=margins_cm["margin_side_cm"],
@@ -1039,6 +1064,9 @@ async def materialize_lesson_pdf(
     pdf_template = await _resolve_pdf_template_for_lesson(
         db, organization_id=course.organization_id, lesson=lesson
     )
+    # Docente del corso (assegnatario) per la copertina.
+    teacher = await db.get(User, course.assignee_user_id)
+    teacher_name = teacher.full_name if teacher else None
 
     # Pre-render mermaid: una singola sessione Playwright produce gli SVG
     # di tutti i diagrammi della lezione in batch. Se la lezione non ha
@@ -1054,6 +1082,7 @@ async def materialize_lesson_pdf(
         pdf_template=pdf_template,
         public_base_url=public_base_url,
         mermaid_svg_map=mermaid_svg_map,
+        teacher_name=teacher_name,
     )
 
     pdf_bytes = await generate_pdf_bytes(html=html)

@@ -135,6 +135,10 @@
       font-size: 13pt; font-style: italic;
       color: {{ tpl.text_color }}; opacity: 0.7;
     }
+    .cover .cover-meta {
+      margin-top: 10mm; font-size: 11pt;
+      color: {{ tpl.text_color }}; opacity: 0.85;
+    }
 
     /* === Headings === */
     h1 { font-size: 22pt; font-weight: 700; margin: 0 0 6mm;
@@ -319,12 +323,16 @@
   {# === Cover === #}
   <section class="cover">
     <div class="accent-bar"></div>
-    {% if organization_name %}
-      <div class="org-name">{{ organization_name }}</div>
-    {% endif %}
-    <div class="lesson-code">{{ lesson.lesson_code }}</div>
+    <div class="lesson-code">{{ lesson.code_label }}</div>
     <h1 class="lesson-title">{{ lesson.title }}</h1>
     <div class="course-title">{{ course.title }}</div>
+    {% if course.teacher or course.cfu %}
+    <div class="cover-meta">
+      {%- if course.teacher %}{{ labels.teacher }}: {{ course.teacher }}{% endif -%}
+      {%- if course.teacher and course.cfu %} &middot; {% endif -%}
+      {%- if course.cfu %}{{ course.cfu }} {{ labels.cfu }}{% endif -%}
+    </div>
+    {% endif %}
   </section>
 
   {# === Body === #}
