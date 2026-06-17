@@ -52,11 +52,13 @@ class Settings(BaseSettings):
     public_base_url: str = "http://localhost:8000"
 
     # === Storage backend (persistenza file) ===
-    # `local`   → filesystem locale (default, dev): comportamento storico.
-    # `ovh_ftp` → server OVH via FTP/FTPS; i file sono serviti pubblicamente
-    #             via HTTP da `ovh_public_base_url`. Vedi
-    #             `app/services/remote_storage.py`.
-    storage_backend: Literal["local", "ovh_ftp"] = "local"
+    # `local`    → filesystem locale (default, dev): comportamento storico.
+    # `ovh_ftp`  → server OVH via FTP/FTPS (porta 21).
+    # `ovh_sftp` → server OVH via SFTP (porta 22, su SSH). Più robusto su
+    #              hosting condiviso. Riusa le stesse credenziali `ovh_ftp_*`.
+    # In ovh_* i file sono serviti pubblicamente via HTTP da
+    # `ovh_public_base_url`. Vedi `app/services/remote_storage.py`.
+    storage_backend: Literal["local", "ovh_ftp", "ovh_sftp"] = "local"
     # Cutover: se un file non è (ancora) su OVH, prova a leggerlo/servirlo dal
     # filesystem locale ancora montato (e logga un warning). Disattivare a
     # regime (Fase 4) una volta completata la migrazione.
@@ -73,8 +75,12 @@ class Settings(BaseSettings):
     ovh_ftp_base_path: str = "/"
     # FTPS esplicito (TLS) sul canale di controllo + dati. Disattivare
     # (`false`) SOLO come escape di debug: invia le credenziali in chiaro.
+    # Ignorato con `ovh_sftp` (SFTP è sempre cifrato).
     ovh_ftp_use_tls: bool = True
     ovh_ftp_timeout_seconds: int = 30
+    # Porta SFTP (usata solo con `storage_backend=ovh_sftp`). Stesse
+    # credenziali/host di `ovh_ftp_*`, ma su SSH.
+    ovh_sftp_port: int = 22
     # Base URL pubblica da cui i file su OVH sono raggiungibili via HTTP:
     # `public_url(key) = f"{ovh_public_base_url}/{key}"`. Es.
     # `https://progettiersaf.com/media`.

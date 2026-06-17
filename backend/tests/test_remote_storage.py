@@ -140,7 +140,7 @@ def test_local_storage_upload_file(local_env, tmp_path):
 
 @pytest.fixture
 def ftp_server(tmp_path):
-    pyftpdlib = pytest.importorskip("pyftpdlib")
+    pytest.importorskip("pyftpdlib")
     import threading
 
     from pyftpdlib.authorizers import DummyAuthorizer
@@ -204,3 +204,127 @@ def test_ovh_storage_delete_prefix(ftp_server):
         st.upload_bytes(rs.uploads_key(f"avatars/u1/clips/{i}.mp4"), b"x")
     st.delete_prefix(rs.uploads_key("avatars/u1"))
     assert not st.exists(rs.uploads_key("avatars/u1/clips/0.mp4"))
+
+
+# --- OvhSftpStorage contro un fake SFTP backed da tmp dir -------------------
+# Un server SSH/SFTP reale è oneroso da avviare in-process; usiamo un fake che
+# mima l'API di paramiko.SFTPClient su una cartella temporanea. Valida la
+# logica di OvhSftpStorage (mkdir ricorsivo, rename atomico, not-found,
+# delete ricorsivo) — paramiko stesso è validato dallo spike in produzione.
+
+
+class _FakeSftpAttr:
+    def __init__(self, filename, st_mode, st_size):
+        self.filename = filename
+        self.st_mode = st_mode
+        self.st_size = st_size
+
+
+class _FakeSftp:
+    def __init__(self, root):
+        self.root = root
+
+    def _p(self, path):
+        from pathlib import Path as _P
+
+        return self.root / _P(path.lstrip("/"))
+
+    def mkdir(self, path):
+        self._p(path).mkdir()  # FileExistsError se già presente
+
+    def putfo(self, fl, path):
+        self._p(path).write_bytes(fl.read())
+
+    def posix_rename(self, src, dst):
+        import os
+
+        os.replace(self._p(src), self._p(dst))  # overwrite atomico
+
+    def rename(self, src, dst):
+        import os
+
+        os.rename(self._p(src), self._p(dst))
+
+    def remove(self, path):
+        self._p(path).unlink()  # FileNotFoundError se assente
+
+    def open(self, path, mode="r"):
+        return open(self._p(path), mode)  # FileNotFoundError su 'rb' assente
+
+    def get(self, remote, local):
+        import shutil
+
+        shutil.copyfile(self._p(remote), local)
+
+    def stat(self, path):
+        return self._p(path).stat()  # st_size/st_mode; FileNotFoundError se assente
+
+    def listdir_attr(self, path):
+        p = self._p(path)
+        if not p.is_dir():
+            raise FileNotFoundError(path)
+        out = []
+        for child in p.iterdir():
+            s = child.stat()
+            out.append(_FakeSftpAttr(child.name, s.st_mode, s.st_size))
+        return out
+
+    def rmdir(self, path):
+        self._p(path).rmdir()
+
+
+@pytest.fixture
+def sftp_storage(tmp_path, monkeypatch):
+    pytest.importorskip("paramiko")
+    from contextlib import contextmanager
+
+    root = tmp_path / "sftproot"
+    root.mkdir()
+    st = rs.OvhSftpStorage(
+        host="h", port=22, user="u", password="p", base_path="/media", timeout=5
+    )
+    fake = _FakeSftp(root)
+
+    @contextmanager
+    def _fake_connect():
+        yield fake
+
+    monkeypatch.setattr(st, "_connect", _fake_connect)
+    return st
+
+
+def test_sftp_storage_roundtrip(sftp_storage):
+    st = sftp_storage
+    key = rs.pdf_key("org/course/lesson.pdf")
+    st.upload_bytes(key, b"%PDF data")  # crea ricorsivamente /media/generated_pdfs/...
+    assert st.exists(key)
+    assert st.size(key) == len(b"%PDF data")
+    assert st.download_bytes(key) == b"%PDF data"
+    st.upload_bytes(key, b"%PDF v2 longer")  # overwrite atomico
+    assert st.download_bytes(key) == b"%PDF v2 longer"
+    st.delete(key)
+    assert not st.exists(key)
+
+
+def test_sftp_storage_missing_raises(sftp_storage):
+    with pytest.raises(rs.StorageFileNotFound):
+        sftp_storage.download_bytes(rs.uploads_key("courses/x/none.pdf"))
+
+
+def test_sftp_storage_download_to(sftp_storage, tmp_path):
+    st = sftp_storage
+    key = rs.uploads_key("lesson_videos/c/l.mp4")
+    st.upload_bytes(key, b"video-bytes")
+    dest = tmp_path / "out" / "l.mp4"
+    st.download_to(key, dest)
+    assert dest.read_bytes() == b"video-bytes"
+
+
+def test_sftp_storage_delete_prefix(sftp_storage):
+    st = sftp_storage
+    for i in range(3):
+        st.upload_bytes(rs.uploads_key(f"avatars/u1/clips/{i}.mp4"), b"x")
+    st.upload_bytes(rs.uploads_key("avatars/u2/clips/0.mp4"), b"y")
+    st.delete_prefix(rs.uploads_key("avatars/u1"))
+    assert not st.exists(rs.uploads_key("avatars/u1/clips/0.mp4"))
+    assert st.exists(rs.uploads_key("avatars/u2/clips/0.mp4"))

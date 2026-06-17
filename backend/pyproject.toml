@@ -41,6 +41,8 @@ dependencies = [
     # Cloudflare R2 (S3-compatible) e requests per l'endpoint RunPod.
     "boto3>=1.35.0",
     "requests>=2.32.0",
+    # Storage remoto via SFTP (storage_backend=ovh_sftp). Client SSH/SFTP.
+    "paramiko>=3.4.0",
 ]
 
 [project.optional-dependencies]
@@ -50,6 +52,8 @@ dev = [
     "ruff>=0.8.0",
     "mypy>=1.13.0",
     "types-passlib",
+    # Server FTP in-process per i test di OvhFtpStorage (test_remote_storage).
+    "pyftpdlib>=1.5.0",
 ]
 
 [build-system]

@@ -79,17 +79,23 @@ def main() -> int:
         action="store_true",
         help="A fine corsa, verifica che le dimensioni remote combacino.",
     )
+    parser.add_argument(
+        "--protocol",
+        choices=("ftp", "sftp"),
+        default=None,
+        help="Protocollo OVH (default: dedotto da STORAGE_BACKEND).",
+    )
     args = parser.parse_args()
 
     settings = get_settings()
-    if settings.storage_backend != "ovh_ftp":
-        print(
-            "[!] STORAGE_BACKEND non è 'ovh_ftp' nel .env. La migrazione usa "
-            "comunque il backend OVH (forzato) per la destinazione.",
-            file=sys.stderr,
-        )
-    # Destinazione: backend OVH "puro" (niente fallback locale).
-    storage = remote_storage._build_ovh_storage()
+    # Destinazione: backend OVH "puro" (niente fallback locale), a
+    # prescindere da STORAGE_BACKEND (che durante la migrazione può essere
+    # ancora 'local').
+    try:
+        storage = remote_storage.build_remote_backend(args.protocol)
+    except remote_storage.StorageError as exc:
+        print(f"[!] {exc}", file=sys.stderr)
+        return 2
 
     roots = [
         (settings.upload_root, "uploads"),

@@ -15,6 +15,7 @@ Uso (dalla cartella `backend/`, con le OVH_FTP_* / OVH_PUBLIC_BASE_URL in `.env`
 """
 from __future__ import annotations
 
+import argparse
 import sys
 from uuid import uuid4
 
@@ -25,16 +26,29 @@ from app.services import remote_storage
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description="Spike di connettività storage OVH.")
+    parser.add_argument(
+        "--protocol",
+        choices=("ftp", "sftp"),
+        default=None,
+        help="Protocollo OVH (default: dedotto da STORAGE_BACKEND).",
+    )
+    args = parser.parse_args()
+
     settings = get_settings()
+    proto = args.protocol or (
+        "sftp" if settings.storage_backend == "ovh_sftp" else "ftp"
+    )
+    port = settings.ovh_sftp_port if proto == "sftp" else settings.ovh_ftp_port
     print("Config:")
-    print(f"  host       = {settings.ovh_ftp_host}:{settings.ovh_ftp_port}")
+    print(f"  protocollo = {proto}")
+    print(f"  host       = {settings.ovh_ftp_host}:{port}")
     print(f"  user       = {settings.ovh_ftp_user}")
     print(f"  base_path  = {settings.ovh_ftp_base_path}")
-    print(f"  use_tls    = {settings.ovh_ftp_use_tls}")
     print(f"  public_url = {settings.ovh_public_base_url}")
 
     try:
-        storage = remote_storage._build_ovh_storage()
+        storage = remote_storage.build_remote_backend(args.protocol)
     except remote_storage.StorageError as exc:
         print(f"[FAIL] config: {exc}", file=sys.stderr)
         return 2
@@ -81,7 +95,10 @@ def main() -> int:
         except remote_storage.StorageError as exc:
             print(f"   [warn] delete fallita: {exc}", file=sys.stderr)
 
-    print("\n[OK] Spike FTP completato: connect/STOR/RETR/SIZE/delete funzionano.")
+    print(
+        f"\n[OK] Spike {proto.upper()} completato: "
+        "connect/upload/download/size/delete funzionano."
+    )
     return 0
 
 

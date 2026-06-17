@@ -29,11 +29,17 @@ import io
 import shutil
 import socket
 import ssl
+import stat as stat_module
 import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Callable, Iterator, Protocol, TypeVar
 from uuid import uuid4
+
+try:  # opzionale: serve solo con storage_backend=ovh_sftp
+    import paramiko
+except ImportError:  # pragma: no cover
+    paramiko = None  # type: ignore[assignment]
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
@@ -504,6 +510,196 @@ class OvhFtpStorage:
 
 
 # ---------------------------------------------------------------------------
+# Backend OVH (SFTP / porta 22 su SSH)
+# ---------------------------------------------------------------------------
+
+
+class OvhSftpStorage:
+    """Storage su server OVH via SFTP (porta 22).
+
+    Stessa interfaccia/semantica di :class:`OvhFtpStorage` (connessione
+    per-operazione, MKD ricorsivo, upload atomico temp+rename, retry) ma su
+    canale SSH/SFTP — più robusto su hosting condiviso (cifrato di default,
+    niente porte passive). Richiede `paramiko`."""
+
+    def __init__(
+        self,
+        *,
+        host: str,
+        port: int,
+        user: str,
+        password: str,
+        base_path: str,
+        timeout: int,
+    ) -> None:
+        if paramiko is None:  # pragma: no cover
+            raise StorageError(
+                "storage_backend=ovh_sftp richiede paramiko (pip install paramiko)."
+            )
+        self.host = host
+        self.port = port
+        self.user = user
+        self.password = password
+        self.base_path = base_path.rstrip("/")
+        self.timeout = timeout
+        self._made_dirs: set[str] = set()
+
+    def _remote_path(self, key: str) -> str:
+        return f"{self.base_path}/{_normalize_segments(key)}"
+
+    @contextmanager
+    def _connect(self) -> "Iterator[paramiko.SFTPClient]":
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        client.connect(
+            self.host,
+            port=self.port,
+            username=self.user,
+            password=self.password,
+            timeout=self.timeout,
+            allow_agent=False,
+            look_for_keys=False,
+        )
+        try:
+            sftp = client.open_sftp()
+            sftp.get_channel().settimeout(self.timeout)
+            yield sftp
+        finally:
+            client.close()
+
+    def _run(self, op: Callable[["paramiko.SFTPClient"], T]) -> T:
+        retryable = (paramiko.SSHException, socket.timeout, ConnectionError, EOFError)
+        last: Exception | None = None
+        for attempt in range(len(_BACKOFF_SECONDS)):
+            try:
+                with self._connect() as sftp:
+                    return op(sftp)
+            except retryable as exc:
+                last = exc
+                log.warning("storage_sftp_retry", attempt=attempt + 1, error=str(exc))
+                time.sleep(_BACKOFF_SECONDS[attempt])
+        raise StorageError(
+            f"SFTP fallito dopo {len(_BACKOFF_SECONDS)} tentativi"
+        ) from last
+
+    def _ensure_dirs(self, sftp: "paramiko.SFTPClient", remote_file: str) -> None:
+        dir_path = remote_file.rsplit("/", 1)[0]
+        segments = [s for s in dir_path.split("/") if s]
+        cur = ""
+        for seg in segments:
+            cur = f"{cur}/{seg}"
+            if cur in self._made_dirs:
+                continue
+            try:
+                sftp.mkdir(cur)
+            except OSError:
+                pass  # già esistente (o creata da un'altra connessione)
+            self._made_dirs.add(cur)
+
+    def _stor(self, sftp: "paramiko.SFTPClient", key: str, fileobj: io.IOBase) -> None:
+        remote = self._remote_path(key)
+        self._ensure_dirs(sftp, remote)
+        tmp = f"{remote}.part-{uuid4().hex}"
+        sftp.putfo(fileobj, tmp)
+        try:
+            sftp.posix_rename(tmp, remote)
+        except (OSError, AttributeError):
+            # Server senza estensione posix-rename: cancella il dest e rinomina.
+            try:
+                sftp.remove(remote)
+            except OSError:
+                pass
+            sftp.rename(tmp, remote)
+
+    def upload_bytes(self, key: str, data: bytes) -> None:
+        self._run(lambda sftp: self._stor(sftp, key, io.BytesIO(data)))
+        log.info("storage_sftp_write", key=key, size=len(data))
+
+    def upload_file(self, key: str, local_path: Path) -> None:
+        def op(sftp: "paramiko.SFTPClient") -> None:
+            with open(local_path, "rb") as fh:
+                self._stor(sftp, key, fh)
+
+        self._run(op)
+        log.info("storage_sftp_write_file", key=key)
+
+    def download_bytes(self, key: str) -> bytes:
+        remote = self._remote_path(key)
+
+        def op(sftp: "paramiko.SFTPClient") -> bytes:
+            try:
+                with sftp.open(remote, "rb") as fh:
+                    return fh.read()
+            except FileNotFoundError as exc:
+                raise StorageFileNotFound(key) from exc
+
+        return self._run(op)
+
+    def download_to(self, key: str, dest_path: Path) -> None:
+        remote = self._remote_path(key)
+        dest = Path(dest_path)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+
+        def op(sftp: "paramiko.SFTPClient") -> None:
+            try:
+                sftp.get(remote, str(dest))
+            except FileNotFoundError as exc:
+                raise StorageFileNotFound(key) from exc
+
+        self._run(op)
+
+    def delete(self, key: str) -> None:
+        remote = self._remote_path(key)
+
+        def op(sftp: "paramiko.SFTPClient") -> None:
+            try:
+                sftp.remove(remote)
+            except FileNotFoundError:
+                pass
+
+        self._run(op)
+        log.info("storage_sftp_delete", key=key)
+
+    def delete_prefix(self, prefix: str) -> None:
+        remote = self._remote_path(prefix)
+        self._run(lambda sftp: self._rmtree(sftp, remote))
+        log.info("storage_sftp_delete_prefix", prefix=prefix)
+
+    def _rmtree(self, sftp: "paramiko.SFTPClient", remote_dir: str) -> None:
+        try:
+            entries = sftp.listdir_attr(remote_dir)
+        except FileNotFoundError:
+            return
+        for entry in entries:
+            full = f"{remote_dir}/{entry.filename}"
+            if stat_module.S_ISDIR(entry.st_mode or 0):
+                self._rmtree(sftp, full)
+            else:
+                try:
+                    sftp.remove(full)
+                except FileNotFoundError:
+                    pass
+        try:
+            sftp.rmdir(remote_dir)
+        except FileNotFoundError:
+            pass
+
+    def exists(self, key: str) -> bool:
+        return self.size(key) is not None
+
+    def size(self, key: str) -> int | None:
+        remote = self._remote_path(key)
+
+        def op(sftp: "paramiko.SFTPClient") -> int | None:
+            try:
+                return sftp.stat(remote).st_size
+            except FileNotFoundError:
+                return None
+
+        return self._run(op)
+
+
+# ---------------------------------------------------------------------------
 # Wrapper di fallback (cutover): legge dal locale se manca sul primario
 # ---------------------------------------------------------------------------
 
@@ -556,7 +752,7 @@ class FallbackStorage:
 # ---------------------------------------------------------------------------
 
 
-def _build_ovh_storage() -> OvhFtpStorage:
+def _require_ovh_settings() -> None:
     s = get_settings()
     missing = [
         name
@@ -570,9 +766,13 @@ def _build_ovh_storage() -> OvhFtpStorage:
     ]
     if missing:
         raise StorageError(
-            "storage_backend=ovh_ftp ma mancano le variabili: "
-            + ", ".join(missing)
+            "Backend OVH ma mancano le variabili: " + ", ".join(missing)
         )
+
+
+def _build_ovh_ftp() -> OvhFtpStorage:
+    _require_ovh_settings()
+    s = get_settings()
     return OvhFtpStorage(
         host=s.ovh_ftp_host,  # type: ignore[arg-type]
         port=s.ovh_ftp_port,
@@ -584,14 +784,55 @@ def _build_ovh_storage() -> OvhFtpStorage:
     )
 
 
+def _build_ovh_sftp() -> OvhSftpStorage:
+    if paramiko is None:
+        raise StorageError(
+            "storage_backend=ovh_sftp richiede paramiko (pip install paramiko)."
+        )
+    _require_ovh_settings()
+    s = get_settings()
+    return OvhSftpStorage(
+        host=s.ovh_ftp_host,  # type: ignore[arg-type]
+        port=s.ovh_sftp_port,
+        user=s.ovh_ftp_user,  # type: ignore[arg-type]
+        password=s.ovh_ftp_password,  # type: ignore[arg-type]
+        base_path=s.ovh_ftp_base_path,
+        timeout=s.ovh_ftp_timeout_seconds,
+    )
+
+
+def _build_remote(backend: str) -> Storage:
+    if backend == "ovh_sftp":
+        return _build_ovh_sftp()
+    if backend == "ovh_ftp":
+        return _build_ovh_ftp()
+    raise StorageError(f"Backend remoto non valido: {backend!r}")
+
+
+def build_remote_backend(protocol: str | None = None) -> Storage:
+    """Costruisce il backend remoto (ftp|sftp) **a prescindere** da
+    `storage_backend` — utile agli script di spike/migrazione che girano
+    mentre l'app è ancora `local`. Se `protocol` è None lo deduce da
+    `storage_backend` (se remoto), altrimenti solleva."""
+    if protocol is None:
+        sb = get_settings().storage_backend
+        if sb in ("ovh_ftp", "ovh_sftp"):
+            return _build_remote(sb)
+        raise StorageError(
+            "Specifica il protocollo (--protocol ftp|sftp) o imposta "
+            "STORAGE_BACKEND=ovh_ftp|ovh_sftp."
+        )
+    return _build_remote(f"ovh_{protocol}")
+
+
 def get_storage() -> Storage:
     """Ritorna il backend di storage attivo (in base a ``storage_backend``).
 
     Non cache-ato: le istanze sono leggere (nessuna connessione persistente)
     e così i test possono cambiare backend cambiando le env."""
     s = get_settings()
-    if s.storage_backend == "ovh_ftp":
-        primary = _build_ovh_storage()
+    if s.storage_backend in ("ovh_ftp", "ovh_sftp"):
+        primary = _build_remote(s.storage_backend)
         if s.storage_local_fallback:
             return FallbackStorage(primary, LocalStorage())
         return primary
