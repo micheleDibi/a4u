@@ -535,10 +535,38 @@ export default function CourseEditorPage({ mode }: Props) {
   const [confirmDidacticDialogOpen, setConfirmDidacticDialogOpen] =
     useState(false);
   const confirmDidacticMut = useMutation({
-    mutationFn: () => coursesApi.setup.confirmDidactic(orgId, courseId!),
+    mutationFn: async () => {
+      // Salva le modifiche pendenti del draft PRIMA di confermare: gli
+      // obiettivi/argomenti appena generati con l'AI (e ogni altra modifica
+      // di setup) vivono solo nel draft con auto-save in debounce, quindi
+      // senza questo flush andrebbero persi — e dopo la conferma il lock
+      // rifiuterebbe il salvataggio.
+      if (debounceTimer.current) {
+        clearTimeout(debounceTimer.current);
+        debounceTimer.current = null;
+      }
+      const baseline = baselineRef.current;
+      if (
+        draft &&
+        baseline &&
+        JSON.stringify(draft) !== JSON.stringify(baseline)
+      ) {
+        const { update, assigneeChange } = buildUpdatePayload(
+          draft,
+          baseline.assignee_user_id
+        );
+        if (assigneeChange && canAssign) {
+          await coursesApi.updateAssignee(orgId, courseId!, assigneeChange);
+        }
+        const saved = await coursesApi.update(orgId, courseId!, update);
+        baselineRef.current = fromCourse(saved);
+      }
+      return coursesApi.setup.confirmDidactic(orgId, courseId!);
+    },
     onSuccess: (fresh) => {
       qc.setQueryData(["courses", "detail", orgId, courseId], fresh);
       qc.invalidateQueries({ queryKey: ["courses", "list", orgId] });
+      baselineRef.current = fromCourse(fresh);
       toast.success(t("courses.setup.toast.confirmed"));
       setConfirmDidacticDialogOpen(false);
       setActiveTab("documents");
