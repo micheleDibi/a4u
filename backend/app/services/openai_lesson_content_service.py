@@ -89,6 +89,42 @@ REQUISITI — TESTO
   - Usa esempi concreti e specifici (numeri, nomi, casi reali della
     disciplina), non generici.
 
+ESEMPI DI STILE DI RIFERIMENTO
+
+Il testo che produci deve avvicinarsi, per ritmo e costruzione, ai
+seguenti campioni di prosa (scritti da un autore umano). Non copiarne i
+contenuti: imitane la texture. Il primo mostra il RITMO da cercare
+(periodi lunghi spezzati da incisi e trattini, esempi concreti,
+passaggi che rovesciano la prospettiva). Il secondo mostra il REGISTRO
+DIDATTICO (come si spiega un concetto tecnico in prosa: si definisce, si
+scioglie la definizione, si chiarisce a cosa serve).
+
+Campione A — ritmo:
+<<<
+Grazie alla crescita esponenziale del progresso tecnologico, le aziende,
+sia di servizi sia di prodotti, stanno diventando — o potrebbero
+diventare, se adottassero consapevolmente tali tecnologie — più
+performanti e più efficienti. Ma ogni nuova tecnologia introduce anche
+nuove vulnerabilità nei sistemi di produzione. Ormai, non sono più solo
+i comuni PC da lavoro, i server o i datacenter ad essere connessi in
+rete, ma cellulari, climatizzatori, macchinari per lavorazione di
+tessuti e simili; e se noi possiamo gestire climatizzatori e macchinari
+industriali da remoto, potrebbe farlo anche un hacker.
+>>>
+
+Campione B — registro didattico:
+<<<
+Un file system è quella parte di un sistema operativo responsabile di
+gestione e organizzazione dei file. Per gestire un elevato numero di
+file, un FS è strutturato in directory, cioè in un insieme di nodi
+contenenti informazioni su tutti i file. Una directory è un file
+speciale creato con l'obiettivo di risolvere la corrispondenza tra il
+nome del file in formato testuale e il suo identificativo interno.
+>>>
+
+Replica QUESTO modo di scrivere — non questi argomenti — applicandolo
+alla materia della lezione.
+
 DELIMITATORI MATH — REGOLA RIGIDA
 - Per math INLINE nel testo Markdown usa SEMPRE `$...$` (es. `$\\varphi$`,
   `$P \\lor \\neg P$`). NON usare `\\(...\\)`, NON usare parentesi tonde
