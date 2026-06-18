@@ -303,11 +303,17 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                         )
                     )
                 else:
+                    style = course_lesson_content_service.didactic_style_labels(
+                        course_full
+                    )
                     content_output, usage = (
                         await openai_lesson_content_service.generate_lesson_content(
                             user_prompt=user_prompt,
                             language_code=course_full.language_code,
                             is_regeneration=regen,
+                            ruolo_docente=style["ruolo_docente"],
+                            stile_insegnamento=style["stile_insegnamento"],
+                            livello_eqf=style["livello_eqf"],
                         )
                     )
             except OpenAINotConfiguredError:

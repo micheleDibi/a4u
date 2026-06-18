@@ -252,6 +252,18 @@ def _format_current_lesson_phase3(lesson: CourseLesson) -> str:
     return "\n\n".join(parts) if parts else "(Nessuna versione precedente.)"
 
 
+def didactic_style_labels(course: Course) -> dict[str, str]:
+    """Etichette risolte (lingua del corso) per ruolo docente, stile di
+    insegnamento e livello EQF. Servono a interpolare il system prompt di
+    generazione contenuti (altrimenti i segnaposto restano letterali)."""
+    lang = course.language_code
+    return {
+        "ruolo_docente": _term_label(course.ruolo_docente, lang),
+        "stile_insegnamento": _term_label(course.stile_insegnamento, lang),
+        "livello_eqf": _term_label(course.livello_eqf, lang),
+    }
+
+
 def build_user_prompt(course: Course, lesson: CourseLesson) -> str:
     """Costruisce il messaggio utente conforme al template §6.3.
 

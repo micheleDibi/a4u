@@ -40,7 +40,13 @@ class OpenAILessonContentError(OpenAIError):
 
 # System prompt — versione rivista per output naturale, senza codici
 # tecnici nel testo e senza struttura accademica rigida visibile.
-def _system_prompt(language_code: str) -> str:
+def _system_prompt(
+    language_code: str,
+    *,
+    ruolo_docente: str = "",
+    stile_insegnamento: str = "",
+    livello_eqf: str = "",
+) -> str:
     return f"""\
 Sei un autore di materiale didattico universitario di alto livello.
 Il tuo compito è scrivere il TESTO COMPLETO di una singola lezione,
@@ -50,8 +56,8 @@ struttura formativa già approvata.
 REQUISITI — TESTO
 
 - Markdown, in lingua {language_code}.
-- Tono coerente con ruolo "{{ruolo_docente}}", stile
-  "{{stile_insegnamento}}" e livello EQF {{livello_eqf}}.
+- Tono coerente con ruolo "{ruolo_docente}", stile
+  "{stile_insegnamento}" e livello EQF {livello_eqf}.
 - NON usare h1 nel content (riservato al titolo della lezione).
 - Anticipa fraintendimenti tipici degli studenti.
 
@@ -422,6 +428,9 @@ async def generate_lesson_content(
     user_prompt: str,
     language_code: str,
     is_regeneration: bool,
+    ruolo_docente: str = "",
+    stile_insegnamento: str = "",
+    livello_eqf: str = "",
 ) -> tuple[LessonContentOutput, dict[str, Any]]:
     """Chiama OpenAI per generare il testo completo di una lezione.
 
@@ -435,7 +444,12 @@ async def generate_lesson_content(
     `OPENAI_LESSON_CONTENT_MAX_TOKENS` deve partire alto (32000).
     """
     settings = get_settings()
-    system_prompt = _system_prompt(language_code)
+    system_prompt = _system_prompt(
+        language_code,
+        ruolo_docente=ruolo_docente,
+        stile_insegnamento=stile_insegnamento,
+        livello_eqf=livello_eqf,
+    )
     if is_regeneration:
         system_prompt = system_prompt + REGENERATION_SUFFIX
 
