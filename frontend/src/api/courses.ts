@@ -1594,7 +1594,9 @@ export const coursesApi = {
     ): Promise<{ blob: Blob; filename: string | null }> => {
       const res = await apiClient.get<Blob>(
         `${base(orgId)}/${courseId}/lessons/${lessonId}/pdf/download`,
-        { responseType: "blob" }
+        // Download da OVH via SFTP + (per i bundle) concatenazione lato
+        // server: con molte lezioni supera i 20s di default. 5 min di margine.
+        { responseType: "blob", timeout: 300_000 }
       );
       const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
       const m = /filename\*?="?([^";]+)"?/i.exec(cd);
@@ -1609,7 +1611,9 @@ export const coursesApi = {
     ): Promise<{ blob: Blob; filename: string | null }> => {
       const res = await apiClient.get<Blob>(
         `${base(orgId)}/${courseId}/modules/${moduleId}/lessons-pdf/download-merged`,
-        { responseType: "blob" }
+        // Download da OVH via SFTP + (per i bundle) concatenazione lato
+        // server: con molte lezioni supera i 20s di default. 5 min di margine.
+        { responseType: "blob", timeout: 300_000 }
       );
       const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
       const m = /filename\*?="?([^";]+)"?/i.exec(cd);
@@ -1624,7 +1628,9 @@ export const coursesApi = {
     ): Promise<{ blob: Blob; filename: string | null }> => {
       const res = await apiClient.get<Blob>(
         `${base(orgId)}/${courseId}/modules/${moduleId}/lessons-pdf/download-zip`,
-        { responseType: "blob" }
+        // Download da OVH via SFTP + (per i bundle) concatenazione lato
+        // server: con molte lezioni supera i 20s di default. 5 min di margine.
+        { responseType: "blob", timeout: 300_000 }
       );
       const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
       const m = /filename\*?="?([^";]+)"?/i.exec(cd);
@@ -1638,7 +1644,9 @@ export const coursesApi = {
     ): Promise<{ blob: Blob; filename: string | null }> => {
       const res = await apiClient.get<Blob>(
         `${base(orgId)}/${courseId}/lessons-pdf/download-all-merged`,
-        { responseType: "blob" }
+        // Download da OVH via SFTP + (per i bundle) concatenazione lato
+        // server: con molte lezioni supera i 20s di default. 5 min di margine.
+        { responseType: "blob", timeout: 300_000 }
       );
       const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
       const m = /filename\*?="?([^";]+)"?/i.exec(cd);
@@ -1652,7 +1660,9 @@ export const coursesApi = {
     ): Promise<{ blob: Blob; filename: string | null }> => {
       const res = await apiClient.get<Blob>(
         `${base(orgId)}/${courseId}/lessons-pdf/download-all-zip`,
-        { responseType: "blob" }
+        // Download da OVH via SFTP + (per i bundle) concatenazione lato
+        // server: con molte lezioni supera i 20s di default. 5 min di margine.
+        { responseType: "blob", timeout: 300_000 }
       );
       const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
       const m = /filename\*?="?([^";]+)"?/i.exec(cd);
@@ -1708,7 +1718,9 @@ export const coursesApi = {
     ): Promise<{ blob: Blob; filename: string | null }> => {
       const res = await apiClient.get<Blob>(
         `${base(orgId)}/${courseId}/lessons/${lessonId}/slides-pdf/download`,
-        { responseType: "blob" }
+        // Download da OVH via SFTP + (per i bundle) concatenazione lato
+        // server: con molte lezioni supera i 20s di default. 5 min di margine.
+        { responseType: "blob", timeout: 300_000 }
       );
       const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
       const m = /filename\*?="?([^";]+)"?/i.exec(cd);
@@ -1722,7 +1734,9 @@ export const coursesApi = {
     ): Promise<{ blob: Blob; filename: string | null }> => {
       const res = await apiClient.get<Blob>(
         `${base(orgId)}/${courseId}/modules/${moduleId}/lessons-slides-pdf/download-merged`,
-        { responseType: "blob" }
+        // Download da OVH via SFTP + (per i bundle) concatenazione lato
+        // server: con molte lezioni supera i 20s di default. 5 min di margine.
+        { responseType: "blob", timeout: 300_000 }
       );
       const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
       const m = /filename\*?="?([^";]+)"?/i.exec(cd);
@@ -1736,7 +1750,9 @@ export const coursesApi = {
     ): Promise<{ blob: Blob; filename: string | null }> => {
       const res = await apiClient.get<Blob>(
         `${base(orgId)}/${courseId}/modules/${moduleId}/lessons-slides-pdf/download-zip`,
-        { responseType: "blob" }
+        // Download da OVH via SFTP + (per i bundle) concatenazione lato
+        // server: con molte lezioni supera i 20s di default. 5 min di margine.
+        { responseType: "blob", timeout: 300_000 }
       );
       const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
       const m = /filename\*?="?([^";]+)"?/i.exec(cd);
@@ -1750,7 +1766,9 @@ export const coursesApi = {
     ): Promise<{ blob: Blob; filename: string | null }> => {
       const res = await apiClient.get<Blob>(
         `${base(orgId)}/${courseId}/lessons-slides-pdf/download-all-merged`,
-        { responseType: "blob" }
+        // Download da OVH via SFTP + (per i bundle) concatenazione lato
+        // server: con molte lezioni supera i 20s di default. 5 min di margine.
+        { responseType: "blob", timeout: 300_000 }
       );
       const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
       const m = /filename\*?="?([^";]+)"?/i.exec(cd);
@@ -1764,7 +1782,9 @@ export const coursesApi = {
     ): Promise<{ blob: Blob; filename: string | null }> => {
       const res = await apiClient.get<Blob>(
         `${base(orgId)}/${courseId}/lessons-slides-pdf/download-all-zip`,
-        { responseType: "blob" }
+        // Download da OVH via SFTP + (per i bundle) concatenazione lato
+        // server: con molte lezioni supera i 20s di default. 5 min di margine.
+        { responseType: "blob", timeout: 300_000 }
       );
       const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
       const m = /filename\*?="?([^";]+)"?/i.exec(cd);
@@ -1826,7 +1846,9 @@ export const coursesApi = {
     ): Promise<{ blob: Blob; filename: string | null }> => {
       const res = await apiClient.get<Blob>(
         `${base(orgId)}/${courseId}/lessons/${lessonId}/speech-pdf/download`,
-        { responseType: "blob" }
+        // Download da OVH via SFTP + (per i bundle) concatenazione lato
+        // server: con molte lezioni supera i 20s di default. 5 min di margine.
+        { responseType: "blob", timeout: 300_000 }
       );
       const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
       const m = /filename\*?="?([^";]+)"?/i.exec(cd);
@@ -1840,7 +1862,9 @@ export const coursesApi = {
     ): Promise<{ blob: Blob; filename: string | null }> => {
       const res = await apiClient.get<Blob>(
         `${base(orgId)}/${courseId}/modules/${moduleId}/lessons-speech-pdf/download-merged`,
-        { responseType: "blob" }
+        // Download da OVH via SFTP + (per i bundle) concatenazione lato
+        // server: con molte lezioni supera i 20s di default. 5 min di margine.
+        { responseType: "blob", timeout: 300_000 }
       );
       const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
       const m = /filename\*?="?([^";]+)"?/i.exec(cd);
@@ -1854,7 +1878,9 @@ export const coursesApi = {
     ): Promise<{ blob: Blob; filename: string | null }> => {
       const res = await apiClient.get<Blob>(
         `${base(orgId)}/${courseId}/modules/${moduleId}/lessons-speech-pdf/download-zip`,
-        { responseType: "blob" }
+        // Download da OVH via SFTP + (per i bundle) concatenazione lato
+        // server: con molte lezioni supera i 20s di default. 5 min di margine.
+        { responseType: "blob", timeout: 300_000 }
       );
       const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
       const m = /filename\*?="?([^";]+)"?/i.exec(cd);
@@ -1868,7 +1894,9 @@ export const coursesApi = {
     ): Promise<{ blob: Blob; filename: string | null }> => {
       const res = await apiClient.get<Blob>(
         `${base(orgId)}/${courseId}/lessons-speech-pdf/download-all-merged`,
-        { responseType: "blob" }
+        // Download da OVH via SFTP + (per i bundle) concatenazione lato
+        // server: con molte lezioni supera i 20s di default. 5 min di margine.
+        { responseType: "blob", timeout: 300_000 }
       );
       const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
       const m = /filename\*?="?([^";]+)"?/i.exec(cd);
@@ -1882,7 +1910,9 @@ export const coursesApi = {
     ): Promise<{ blob: Blob; filename: string | null }> => {
       const res = await apiClient.get<Blob>(
         `${base(orgId)}/${courseId}/lessons-speech-pdf/download-all-zip`,
-        { responseType: "blob" }
+        // Download da OVH via SFTP + (per i bundle) concatenazione lato
+        // server: con molte lezioni supera i 20s di default. 5 min di margine.
+        { responseType: "blob", timeout: 300_000 }
       );
       const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
       const m = /filename\*?="?([^";]+)"?/i.exec(cd);
