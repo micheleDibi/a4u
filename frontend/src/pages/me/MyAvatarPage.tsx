@@ -655,8 +655,8 @@ function ClipCard({ clip }: { clip: AvatarClipOut }) {
         </Badge>
       </div>
       <CardContent className="space-y-1 p-3">
-        <p className="line-clamp-2 text-xs text-muted-foreground" title={clip.prompt_text}>
-          {clip.prompt_text}
+        <p className="text-sm font-medium">
+          {t("myAvatar.clipLabel", { n: clip.position + 1 })}
         </p>
         {isFailed && clip.error_message && (
           <p className="text-xs text-destructive" title={clip.error_message}>
