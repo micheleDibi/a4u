@@ -1462,6 +1462,13 @@
         "action": "Rigenera PDF"
       }
     },
+    "media": {
+      "viewList": "Lista",
+      "viewGrid": "Griglia",
+      "readyCount": "{{ready}}/{{total}} pronti",
+      "play": "Riproduci",
+      "modalDownload": "Scarica MP4"
+    },
     "video": {
       "tabTitle": "Video lezioni",
       "noLessons": "Nessuna lezione disponibile per la generazione video.",

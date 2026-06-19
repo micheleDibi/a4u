@@ -11,7 +11,6 @@ import {
   Hourglass,
   Languages,
   Loader2,
-  PlayCircle,
   RotateCcw,
   Sparkles,
   StopCircle,
@@ -21,6 +20,7 @@ import {
   coursesApi,
   isXttsLanguage,
   XTTS_SUPPORTED_LANGUAGES,
+  type CourseLessonOut,
   type CourseOut,
   type LessonVideoStatusOut,
 } from "@/api/courses";
@@ -48,6 +48,8 @@ import {
 import { extractApiError } from "@/lib/errors";
 import { formatDuration } from "@/lib/formatDuration";
 import { flagFor } from "@/i18n/flags";
+import { LessonMediaView } from "./media/LessonMediaView";
+import type { MediaRenderers } from "./media/types";
 
 interface Props {
   course: CourseOut;
@@ -256,6 +258,119 @@ export function CourseLessonVideoView({
   const firstItem = items[0];
   const voiceAvailable = firstItem?.voice_sample_available ?? false;
 
+  // Adapter di rendering per la vista media condivisa (lista/griglia +
+  // modale). Le parti specifiche del tab Video (badge, avvisi, azioni,
+  // token, fase, nome file) restano qui.
+  const renderers: MediaRenderers<LessonVideoStatusOut> = {
+    statusBadge,
+    phaseLabel: (item) => phaseLabel(item.progress_phase),
+    downloadName: (lesson) => `${lesson.lesson_code}.mp4`,
+    warnings: (item) => (
+      <>
+        {!item.speech_approved && (
+          <div className="text-xs text-amber-600">
+            {t("courses.video.errors.speech_not_approved")}
+          </div>
+        )}
+        {!item.slides_approved && (
+          <div className="text-xs text-amber-600">
+            {t("courses.video.errors.slides_not_approved")}
+          </div>
+        )}
+        {item.is_stale && item.status === "ready" && (
+          <div className="text-xs text-amber-600">
+            {t("courses.video.staleAlert")}
+          </div>
+        )}
+        {item.error && item.status === "failed" && (
+          <div className="text-xs text-destructive">{item.error}</div>
+        )}
+      </>
+    ),
+    actions: (lesson: CourseLessonOut, item) => {
+      const inProgress =
+        item.status === "pending" || item.status === "processing";
+      const canGen =
+        canGenerate &&
+        item.speech_approved &&
+        item.slides_approved &&
+        voiceAvailable &&
+        !inProgress;
+      return (
+        <>
+          {item.status === "ready" && item.video_url && (
+            <Button size="sm" variant="outline" asChild>
+              <a
+                href={item.video_url}
+                download={`${lesson.lesson_code}.mp4`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <Download className="size-4" />
+                {t("courses.video.actions.download")}
+              </a>
+            </Button>
+          )}
+          {inProgress && canGenerate && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onCancelOne(lesson.id)}
+              disabled={cancelLessonMut.isPending}
+            >
+              <StopCircle className="size-4" />
+              {t("courses.video.actions.cancel")}
+            </Button>
+          )}
+          {canGen && (
+            <Button
+              size="sm"
+              onClick={() => onGenerateOne(lesson.id)}
+              disabled={generateLessonMut.isPending}
+            >
+              {item.status === "ready" ? (
+                <>
+                  <RotateCcw className="size-4" />
+                  {t("courses.video.actions.regenerate")}
+                </>
+              ) : (
+                <>
+                  <Sparkles className="size-4" />
+                  {t("courses.video.actions.generate")}
+                </>
+              )}
+            </Button>
+          )}
+        </>
+      );
+    },
+    tokens: (item) => {
+      if (item.status !== "ready" || !item.tokens) return null;
+      return (
+        <>
+          {item.tokens.audio_duration_s !== undefined && (
+            <span>
+              {t("courses.video.tokens.duration")}:{" "}
+              {formatDuration(item.tokens.audio_duration_s * 1000)}
+            </span>
+          )}
+          {item.tokens.device && (
+            <span>
+              {t("courses.video.tokens.device")}:{" "}
+              {item.tokens.device.toUpperCase()}
+            </span>
+          )}
+          {item.tokens.file_size_bytes !== undefined && (
+            <span>
+              {t("courses.video.tokens.size")}:{" "}
+              {(item.tokens.file_size_bytes / 1024 / 1024).toFixed(1)} MB
+            </span>
+          )}
+        </>
+      );
+    },
+  };
+
   return (
     <div className="space-y-4">
       {/* Selettore lingua TTS (Fase 6 §9 rifinitura). Sopra tutto, sempre
@@ -419,166 +534,14 @@ export function CourseLessonVideoView({
         </Card>
       )}
 
-      {/* Per-lesson cards (raggruppate per modulo, riusando l'ordine dei
-          moduli del corso). */}
-      {course.modules.map((module) => {
-        const lessonsWithItems = module.lessons
-          .map((l) => ({ lesson: l, item: itemByLessonId.get(l.id) }))
-          .filter((x) => x.item);
-        if (lessonsWithItems.length === 0) return null;
-        return (
-          <div key={module.id} className="space-y-2">
-            <h3 className="text-sm font-semibold text-muted-foreground">
-              {module.module_code} — {module.title}
-            </h3>
-            {lessonsWithItems.map(({ lesson, item }) => {
-              if (!item) return null;
-              const inProgress =
-                item.status === "pending" || item.status === "processing";
-              const canGen =
-                canGenerate &&
-                item.speech_approved &&
-                item.slides_approved &&
-                voiceAvailable &&
-                !inProgress;
-              return (
-                <Card key={lesson.id}>
-                  <CardContent className="space-y-3 py-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-semibold">
-                            {lesson.lesson_code} — {lesson.title}
-                          </span>
-                          {statusBadge(item)}
-                        </div>
-                        {!item.speech_approved && (
-                          <div className="text-xs text-amber-600">
-                            {t("courses.video.errors.speech_not_approved")}
-                          </div>
-                        )}
-                        {!item.slides_approved && (
-                          <div className="text-xs text-amber-600">
-                            {t("courses.video.errors.slides_not_approved")}
-                          </div>
-                        )}
-                        {item.is_stale && item.status === "ready" && (
-                          <div className="text-xs text-amber-600">
-                            {t("courses.video.staleAlert")}
-                          </div>
-                        )}
-                        {item.error && item.status === "failed" && (
-                          <div className="text-xs text-destructive">
-                            {item.error}
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex shrink-0 gap-2">
-                        {item.status === "ready" && item.video_url && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            asChild
-                          >
-                            <a
-                              href={item.video_url}
-                              download={`${lesson.lesson_code}.mp4`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                            >
-                              <Download className="size-4" />
-                              {t("courses.video.actions.download")}
-                            </a>
-                          </Button>
-                        )}
-                        {inProgress && canGenerate && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => onCancelOne(lesson.id)}
-                            disabled={cancelLessonMut.isPending}
-                          >
-                            <StopCircle className="size-4" />
-                            {t("courses.video.actions.cancel")}
-                          </Button>
-                        )}
-                        {canGen && (
-                          <Button
-                            size="sm"
-                            onClick={() => onGenerateOne(lesson.id)}
-                            disabled={generateLessonMut.isPending}
-                          >
-                            {item.status === "ready" ? (
-                              <>
-                                <RotateCcw className="size-4" />
-                                {t("courses.video.actions.regenerate")}
-                              </>
-                            ) : (
-                              <>
-                                <Sparkles className="size-4" />
-                                {t("courses.video.actions.generate")}
-                              </>
-                            )}
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-
-                    {inProgress && (
-                      <div className="space-y-1">
-                        <div className="flex items-center justify-between text-xs text-muted-foreground">
-                          <span>{phaseLabel(item.progress_phase)}</span>
-                          <span>{item.progress}%</span>
-                        </div>
-                        <Progress value={item.progress} />
-                      </div>
-                    )}
-
-                    {item.status === "ready" && item.video_url && (
-                      <div className="overflow-hidden rounded-md border">
-                        <video
-                          controls
-                          preload="metadata"
-                          className="aspect-[99/70] w-full bg-black"
-                          src={item.video_url}
-                        >
-                          <PlayCircle className="size-12" />
-                        </video>
-                      </div>
-                    )}
-
-                    {item.status === "ready" && item.tokens && (
-                      <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-                        {item.tokens.audio_duration_s !== undefined && (
-                          <span>
-                            {t("courses.video.tokens.duration")}:{" "}
-                            {formatDuration(item.tokens.audio_duration_s * 1000)}
-                          </span>
-                        )}
-                        {item.tokens.device && (
-                          <span>
-                            {t("courses.video.tokens.device")}:{" "}
-                            {item.tokens.device.toUpperCase()}
-                          </span>
-                        )}
-                        {item.tokens.file_size_bytes !== undefined && (
-                          <span>
-                            {t("courses.video.tokens.size")}:{" "}
-                            {(item.tokens.file_size_bytes / 1024 / 1024).toFixed(
-                              1,
-                            )}{" "}
-                            MB
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        );
-      })}
+      {/* Lezioni raggruppate per modulo: vista compatta (lista/griglia) con
+          player in modale. Etichette "Modulo N"/"Lezione N". */}
+      <LessonMediaView
+        course={course}
+        variant="video"
+        itemByLessonId={itemByLessonId}
+        renderers={renderers}
+      />
     </div>
   );
 }
