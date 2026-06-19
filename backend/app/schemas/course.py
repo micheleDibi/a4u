@@ -119,6 +119,9 @@ class CourseListItemOut(ORMModel):
     assignee: UserCompact
     modules_count: int
     cfu: int
+    # Nome del corso di laurea (testo libero opzionale, es. "Informatica").
+    # Mostrato come colonna nell'elenco corsi quando valorizzato.
+    corso_di_laurea: str | None = None
     updated_at: datetime
     created_at: datetime
     lessons_progress: CourseListLessonsProgress

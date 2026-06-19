@@ -647,6 +647,9 @@ export interface CourseListItemOut {
   assignee: UserCompact;
   modules_count: number;
   cfu: number;
+  /** Nome del corso di laurea (testo libero opzionale). Mostrato come
+   *  colonna nell'elenco corsi quando valorizzato. */
+  corso_di_laurea: string | null;
   updated_at: string;
   created_at: string;
   lessons_progress: CourseListLessonsProgress;

@@ -4,6 +4,7 @@ import {
   useReactTable,
   type ColumnDef,
   type PaginationState,
+  type VisibilityState,
 } from "@tanstack/react-table";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -25,6 +26,9 @@ export interface DataTableProps<TData> {
   rowCount?: number;
   pagination?: PaginationState;
   onPaginationChange?: (next: PaginationState) => void;
+  /** Visibilità colonne controllata (opzionale). Se assente, tutte visibili. */
+  columnVisibility?: VisibilityState;
+  onColumnVisibilityChange?: (next: VisibilityState) => void;
   emptyMessage?: string;
   rowKey?: (row: TData, idx: number) => string;
 }
@@ -36,6 +40,8 @@ export function DataTable<TData>({
   rowCount,
   pagination,
   onPaginationChange,
+  columnVisibility,
+  onColumnVisibilityChange,
   emptyMessage,
   rowKey,
 }: DataTableProps<TData>) {
@@ -48,7 +54,19 @@ export function DataTable<TData>({
     getCoreRowModel: getCoreRowModel(),
     manualPagination: isServerPag,
     rowCount: isServerPag ? rowCount : undefined,
-    state: { pagination: pagination ?? { pageIndex: 0, pageSize: data.length || 10 } },
+    state: {
+      pagination: pagination ?? { pageIndex: 0, pageSize: data.length || 10 },
+      columnVisibility: columnVisibility ?? {},
+    },
+    onColumnVisibilityChange: onColumnVisibilityChange
+      ? (updater) => {
+          const next =
+            typeof updater === "function"
+              ? updater(columnVisibility ?? {})
+              : updater;
+          onColumnVisibilityChange(next);
+        }
+      : undefined,
     onPaginationChange: isServerPag
       ? (updater) => {
           const next =
@@ -57,6 +75,10 @@ export function DataTable<TData>({
         }
       : undefined,
   });
+
+  // Numero di colonne effettivamente visibili (per skeleton ed empty-state),
+  // così restano allineate all'header quando alcune colonne sono nascoste.
+  const visibleColCount = table.getVisibleLeafColumns().length;
 
   const totalPages = isServerPag
     ? Math.max(1, Math.ceil((rowCount ?? 0) / pagination!.pageSize))
@@ -82,7 +104,7 @@ export function DataTable<TData>({
           {loading && data.length === 0
             ? Array.from({ length: 5 }).map((_, i) => (
                 <TableRow key={`s-${i}`}>
-                  {columns.map((_c, j) => (
+                  {Array.from({ length: visibleColCount }).map((_c, j) => (
                     <TableCell key={j}>
                       <Skeleton className="h-4 w-full" />
                     </TableCell>
@@ -92,7 +114,7 @@ export function DataTable<TData>({
             : table.getRowModel().rows.length === 0
             ? (
                 <TableRow>
-                  <TableCell colSpan={columns.length} className="h-24 text-center text-muted-foreground">
+                  <TableCell colSpan={visibleColCount} className="h-24 text-center text-muted-foreground">
                     {emptyMessage ?? t("common.noResults")}
                   </TableCell>
                 </TableRow>

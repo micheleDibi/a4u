@@ -184,6 +184,7 @@ async def list_courses(
             assignee=UserCompact.model_validate(c.assignee),
             modules_count=c.modules_count,
             cfu=c.cfu,
+            corso_di_laurea=c.corso_di_laurea,
             updated_at=c.updated_at,
             created_at=c.created_at,
             lessons_progress=progress,

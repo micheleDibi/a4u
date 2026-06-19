@@ -184,6 +184,7 @@
     },
     "list": {
       "pipelineHeader": "Pipeline",
+      "columnsButton": "Columns",
       "progressChip": {
         "content": "Lecture notes generated: {{done}} of {{total}}",
         "slides": "Slides generated: {{done}} of {{total}}",
@@ -1913,6 +1914,7 @@
     "regenerate": "Regenerate clips",
     "regenerated": "Clip generation restarted",
     "clipsTitle": "Generated clips",
+    "clipLabel": "Clip {{n}}",
     "clipsEmpty": "No clips configured. Define at least one prompt in admin Configuration → Avatar.",
     "clipPending": "Pending…",
     "clipProcessing": "Generating…",

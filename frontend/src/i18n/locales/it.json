@@ -184,6 +184,7 @@
     },
     "list": {
       "pipelineHeader": "Pipeline",
+      "columnsButton": "Colonne",
       "progressChip": {
         "content": "Dispense generate: {{done}} di {{total}}",
         "slides": "Slide generate: {{done}} di {{total}}",
@@ -1914,6 +1915,7 @@
     "regenerate": "Rigenera clip",
     "regenerated": "Generazione clip riavviata",
     "clipsTitle": "Clip generate",
+    "clipLabel": "Clip {{n}}",
     "clipsEmpty": "Nessun clip configurato. Definisci almeno un prompt nella sezione admin Configurazioni → Avatar.",
     "clipPending": "In attesa…",
     "clipProcessing": "Generazione…",

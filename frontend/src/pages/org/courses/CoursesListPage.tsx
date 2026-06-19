@@ -32,6 +32,7 @@ import { useHasPermission } from "@/auth/PermissionGate";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { DataTable } from "@/components/shared/DataTable";
+import { DataTableColumnToggle } from "@/components/shared/DataTableColumnToggle";
 import {
   DateRangeField,
   type DateRangeValue,
@@ -55,6 +56,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useSetNovaContext } from "@/contexts/NovaContext";
+import { useColumnVisibility } from "@/hooks/useColumnVisibility";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useLanguages } from "@/hooks/useLanguages";
 import { useOrgMembers } from "@/hooks/useOrgMembers";
@@ -65,6 +67,25 @@ import { CourseDuplicationBadge } from "./components/CourseDuplicationBadge";
 import { CoursePipelineRowChips } from "./components/CoursePipelineRowChips";
 import { CourseStatusBadge } from "./components/CourseStatusBadge";
 import { DuplicateCourseDialog } from "./components/DuplicateCourseDialog";
+
+// Visibilità colonne dell'elenco corsi. Le colonne opzionali
+// (moduli / date) partono nascoste: l'utente le attiva dal selettore
+// "Colonne". Persistita per-browser in localStorage (chiave globale: le
+// colonne sono identiche tra organizzazioni).
+const COURSES_COLUMNS_STORAGE_KEY = "courses-list-columns";
+const DEFAULT_COLUMN_VISIBILITY = {
+  title: true,
+  assignee: true,
+  status: true,
+  lang: true,
+  pipeline: true,
+  cfu: true,
+  corsoDiLaurea: true,
+  modules: false,
+  created: false,
+  updated: false,
+  actions: true,
+};
 
 // Tutti i 17 valori di `course.status` (mirror di backend
 // `CourseStatus`). Esposti raw nel filtro: il bucketing macro-fase è
@@ -370,10 +391,20 @@ export default function CoursesListPage() {
     [i18n.language],
   );
 
+  // Visibilità colonne personalizzabile dall'utente (persistita in
+  // localStorage). Inoltrata a `DataTable` e al selettore "Colonne".
+  const { columnVisibility, setColumnVisibility } = useColumnVisibility(
+    COURSES_COLUMNS_STORAGE_KEY,
+    DEFAULT_COLUMN_VISIBILITY,
+  );
+
   const columns: ColumnDef<CourseListItemOut>[] = [
     {
       id: "title",
       header: t("courses.fields.title"),
+      // Colonna primaria (link al corso): sempre visibile.
+      enableHiding: false,
+      meta: { label: t("courses.fields.title") },
       cell: ({ row }) => {
         const isDuplicating = !!row.original.duplication_job;
         return (
@@ -408,6 +439,7 @@ export default function CoursesListPage() {
     {
       id: "assignee",
       header: t("courses.fields.assignee"),
+      meta: { label: t("courses.fields.assignee") },
       cell: ({ row }) => (
         <span
           className="block max-w-[180px] truncate text-sm text-muted-foreground"
@@ -420,6 +452,7 @@ export default function CoursesListPage() {
     {
       id: "status",
       header: t("courses.fields.status"),
+      meta: { label: t("courses.fields.status") },
       cell: ({ row }) => (
         <span className="whitespace-nowrap">
           <CourseStatusBadge status={row.original.status} />
@@ -429,6 +462,7 @@ export default function CoursesListPage() {
     {
       id: "lang",
       header: t("courses.fields.language"),
+      meta: { label: t("courses.fields.language") },
       cell: ({ row }) => {
         const Flag = flagFor(row.original.language_code);
         return (
@@ -443,6 +477,7 @@ export default function CoursesListPage() {
     },
     {
       id: "pipeline",
+      meta: { label: t("courses.list.pipelineHeader") },
       header: () => (
         <span className="whitespace-nowrap">
           {t("courses.list.pipelineHeader")}
@@ -457,9 +492,83 @@ export default function CoursesListPage() {
       ),
     },
     {
+      id: "cfu",
+      header: () => (
+        <span className="whitespace-nowrap">{t("courses.fields.cfu")}</span>
+      ),
+      meta: { label: t("courses.fields.cfu") },
+      cell: ({ row }) => (
+        <span className="tabular-nums text-sm">{row.original.cfu}</span>
+      ),
+    },
+    {
+      id: "corsoDiLaurea",
+      header: () => (
+        <span className="whitespace-nowrap">
+          {t("courses.fields.corsoDiLaurea")}
+        </span>
+      ),
+      meta: { label: t("courses.fields.corsoDiLaurea") },
+      cell: ({ row }) => {
+        const v = row.original.corso_di_laurea;
+        return v ? (
+          <span
+            className="block max-w-[200px] truncate text-sm text-muted-foreground"
+            title={v}
+          >
+            {v}
+          </span>
+        ) : (
+          <span className="text-sm text-muted-foreground">—</span>
+        );
+      },
+    },
+    {
+      id: "modules",
+      header: () => (
+        <span className="whitespace-nowrap">
+          {t("courses.fields.modulesCount")}
+        </span>
+      ),
+      meta: { label: t("courses.fields.modulesCount") },
+      cell: ({ row }) => (
+        <span className="tabular-nums text-sm">{row.original.modules_count}</span>
+      ),
+    },
+    {
+      id: "created",
+      header: () => (
+        <span className="whitespace-nowrap">
+          {t("courses.fields.createdAt")}
+        </span>
+      ),
+      meta: { label: t("courses.fields.createdAt") },
+      cell: ({ row }) => (
+        <span className="whitespace-nowrap tabular-nums text-sm text-muted-foreground">
+          {dateFormatter.format(new Date(row.original.created_at))}
+        </span>
+      ),
+    },
+    {
+      id: "updated",
+      header: () => (
+        <span className="whitespace-nowrap">
+          {t("courses.fields.updatedAt")}
+        </span>
+      ),
+      meta: { label: t("courses.fields.updatedAt") },
+      cell: ({ row }) => (
+        <span className="whitespace-nowrap tabular-nums text-sm text-muted-foreground">
+          {dateFormatter.format(new Date(row.original.updated_at))}
+        </span>
+      ),
+    },
+    {
       id: "actions",
       header: "",
       size: 64,
+      // Sempre visibile (non disattivabile dal selettore colonne).
+      enableHiding: false,
       // Il dropdown ospita anche le info "Creato" / "Aggiornato"
       // (rimosse dalla tabella per evitare lo scroll orizzontale).
       // Ordinamento per data si fa con il Select "Ordina" nella toolbar.
@@ -699,6 +808,15 @@ export default function CoursesListPage() {
               {t("courses.filters.reset")}
             </Button>
           )}
+
+          {/* Selettore colonne — l'utente personalizza cosa vedere. */}
+          <div className="ms-auto shrink-0">
+            <DataTableColumnToggle
+              columns={columns}
+              value={columnVisibility}
+              onChange={setColumnVisibility}
+            />
+          </div>
         </CardContent>
       </Card>
 
@@ -723,6 +841,8 @@ export default function CoursesListPage() {
           rowCount={query.data?.meta.total}
           pagination={pagination}
           onPaginationChange={onPaginationChange}
+          columnVisibility={columnVisibility}
+          onColumnVisibilityChange={setColumnVisibility}
           rowKey={(r) => r.id}
           emptyMessage={t("courses.empty")}
         />
