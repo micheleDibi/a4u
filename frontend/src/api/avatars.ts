@@ -57,3 +57,17 @@ export const myAvatarApi = {
     return res.data;
   },
 };
+
+/**
+ * Avatar di un membro dell'organizzazione (sola lettura), per il pannello
+ * di anteprima accessibile a creator/org_admin/manager con il permesso
+ * `member:avatar:view`. Richiede che l'utente target sia membro dell'org.
+ */
+export const memberAvatarApi = {
+  async get(orgId: string, userId: string): Promise<AvatarOut | null> {
+    const res = await apiClient.get<AvatarOut | null>(
+      `/orgs/${orgId}/members/${userId}/avatar`,
+    );
+    return res.data;
+  },
+};

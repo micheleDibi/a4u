@@ -4,7 +4,6 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
   AlertTriangle,
-  CheckCircle2,
   ImageIcon,
   Info,
   Loader2,
@@ -13,12 +12,13 @@ import {
   Quote,
   RefreshCcw,
   Trash2,
-  XCircle,
 } from "lucide-react";
 import i18n from "@/i18n";
 import { myAvatarApi } from "@/api/avatars";
-import type { AvatarClipOut, AvatarOut } from "@/api/types";
+import type { AvatarOut } from "@/api/types";
 import { useLanguages } from "@/hooks/useLanguages";
+import { AvatarClipCard } from "@/components/avatar/AvatarClipCard";
+import { AvatarClipsBadge } from "@/components/avatar/AvatarClipsBadge";
 import { FormAvatarImageInput } from "@/components/forms/FormAvatarImageInput";
 import { FormAudioInput } from "@/components/forms/FormAudioInput";
 import { SlideTemplatePreview } from "@/components/templates/SlideTemplatePreview";
@@ -321,7 +321,7 @@ export default function MyAvatarPage() {
                 {t("myAvatar.clipsCount", { count: data.clips.length })}
               </p>
             </div>
-            <ClipsAggregateBadge status={data.clips_status} />
+            <AvatarClipsBadge status={data.clips_status} />
           </div>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {data.clips.length === 0 && (
@@ -330,7 +330,7 @@ export default function MyAvatarPage() {
               </div>
             )}
             {data.clips.map((clip) => (
-              <ClipCard key={clip.id} clip={clip} />
+              <AvatarClipCard key={clip.id} clip={clip} />
             ))}
           </div>
         </section>
@@ -434,7 +434,7 @@ function StatusBanner({
             <span className="text-sm font-semibold">
               {t("myAvatar.statusReady")}
             </span>
-            <ClipsAggregateBadge status={avatar.clips_status} />
+            <AvatarClipsBadge status={avatar.clips_status} />
           </div>
           <p className="mt-0.5 text-xs text-muted-foreground">
             {t("myAvatar.statusSummary", {
@@ -572,99 +572,6 @@ function ScriptToReadCard({
         </p>
       )}
     </div>
-  );
-}
-
-function ClipsAggregateBadge({ status }: { status: string }) {
-  const { t } = useTranslation();
-  if (status === "ready") {
-    return (
-      <Badge
-        variant="secondary"
-        className="bg-emerald-100 text-emerald-900 dark:bg-emerald-500/15 dark:text-emerald-300"
-      >
-        <CheckCircle2 className="size-3" /> {t("myAvatar.allReady")}
-      </Badge>
-    );
-  }
-  if (status === "failed") {
-    return (
-      <Badge variant="destructive">
-        <XCircle className="size-3" /> {t("myAvatar.allFailed")}
-      </Badge>
-    );
-  }
-  if (status === "partial") {
-    return (
-      <Badge
-        variant="secondary"
-        className="bg-amber-100 text-amber-900 dark:bg-amber-500/15 dark:text-amber-300"
-      >
-        {t("myAvatar.partial")}
-      </Badge>
-    );
-  }
-  return (
-    <Badge variant="secondary">
-      <Loader2 className="size-3 animate-spin" />
-      {status === "processing" ? t("myAvatar.processing") : t("myAvatar.pending")}
-    </Badge>
-  );
-}
-
-function ClipCard({ clip }: { clip: AvatarClipOut }) {
-  const { t } = useTranslation();
-  const isReady = clip.status === "ready" && clip.video_url;
-  const isFailed = clip.status === "failed";
-
-  return (
-    <Card className="overflow-hidden">
-      <div className="relative aspect-square bg-muted">
-        {isReady ? (
-          <video
-            controls
-            loop
-            playsInline
-            src={clip.video_url ?? undefined}
-            className="size-full object-contain"
-          />
-        ) : (
-          <div className="flex size-full flex-col items-center justify-center gap-2 text-muted-foreground">
-            {isFailed ? (
-              <>
-                <XCircle className="size-8 text-destructive" />
-                <span className="text-xs">{t("myAvatar.clipFailed")}</span>
-              </>
-            ) : (
-              <>
-                <Loader2 className="size-8 animate-spin" />
-                <span className="text-xs">
-                  {clip.status === "processing"
-                    ? t("myAvatar.clipProcessing")
-                    : t("myAvatar.clipPending")}
-                </span>
-              </>
-            )}
-          </div>
-        )}
-        <Badge
-          variant="secondary"
-          className="absolute start-2 top-2 bg-black/60 font-mono text-white backdrop-blur"
-        >
-          #{clip.position + 1}
-        </Badge>
-      </div>
-      <CardContent className="space-y-1 p-3">
-        <p className="text-sm font-medium">
-          {t("myAvatar.clipLabel", { n: clip.position + 1 })}
-        </p>
-        {isFailed && clip.error_message && (
-          <p className="text-xs text-destructive" title={clip.error_message}>
-            {clip.error_message}
-          </p>
-        )}
-      </CardContent>
-    </Card>
   );
 }
 

@@ -1692,7 +1692,23 @@
     "fields": {
       "name": "Name",
       "email": "Email",
-      "role": "Role"
+      "role": "Role",
+      "avatar": "Avatar"
+    },
+    "avatar": {
+      "view": "View avatar",
+      "complete": "Completed",
+      "progress": "In progress",
+      "none": "Not started"
+    },
+    "avatarDialog": {
+      "title": "{{name}}'s avatar",
+      "empty": "This user hasn't created their avatar yet.",
+      "image": "Image",
+      "audio": "Voice",
+      "noAudio": "No voice sample uploaded.",
+      "clips": "Video clips",
+      "noClips": "No clips available."
     },
     "inviteDialog": {
       "title": "Invite a member",
@@ -1988,6 +2004,7 @@
     "member:invite": "Invite users",
     "member:assign_role": "Assign roles",
     "member:remove": "Remove members",
+    "member:avatar:view": "View members' avatars",
     "template:slide:manage": "Manage slide templates",
     "template:pdf:manage": "Manage PDF templates",
     "permission:manage": "Manage permissions",
@@ -2009,6 +2026,7 @@
     "member:invite": "Create email invitations for new members choosing the initial role. Each invitation is a single-use link with 7-day expiry.",
     "member:assign_role": "Change the role of an existing member, but only up to your own rank: an Org Admin cannot promote to Creator nor edit a higher-ranked member.",
     "member:remove": "Remove a member from the organization. The Creator cannot be removed directly: transfer the role first.",
+    "member:avatar:view": "See each member's avatar completion status and view their clips and audio. Read-only: cannot edit or regenerate the avatar.",
     "template:slide:manage": "Create, edit, delete and choose as default the course slide templates (16:9 / 4:3 format, colors, font, logo, background image).",
     "template:pdf:manage": "Create, edit, delete and choose as default the PDF document templates (A4/Letter format, header/footer/margins in mm, colors, logo, background).",
     "permission:manage": "Edit organization permissions: per-role overrides (e.g. grant a non-default permission to all Managers) and per-member overrides (targeted grant/revoke).",

@@ -8,34 +8,47 @@ from sqlalchemy import select
 from app.core.deps import CurrentUser, DbSession
 from app.core.errors import NotFoundError
 from app.core.permissions import P, R, require
+from app.models.avatar import Avatar
 from app.models.membership import Membership
 from app.models.organization import Organization
 from app.models.role import OrganizationRole
 from app.models.user import User
+from app.schemas.avatar import AvatarOut
 from app.schemas.membership import (
     ChangeRoleRequest,
     MembershipOut,
     PermissionOverridesUpdate,
     TransferCreatorRequest,
 )
-from app.services import membership_service, permission_service
+from app.services import avatar_service, membership_service, permission_service
 
 router = APIRouter(prefix="/orgs/{org_id}", tags=["organizations"])
 
 
 @router.get("/members", response_model=list[MembershipOut])
 async def list_members(
-    org_id: uuid.UUID, db: DbSession, _=require(P.MEMBER_VIEW)
+    org_id: uuid.UUID, db: DbSession, granted=require(P.MEMBER_VIEW)
 ) -> list[MembershipOut]:
     org = await db.get(Organization, org_id)
     if org is None or org.deleted_at is not None:
         raise NotFoundError("Organizzazione non trovata.", code="organization_not_found")
 
+    # Lo stato avatar è incluso solo per chi può vederlo (no leak ai ruoli
+    # che hanno `member:view` ma non `member:avatar:view`).
+    include_avatar = P.MEMBER_AVATAR_VIEW in granted
+
     rows = (
         await db.execute(
-            select(Membership, User, OrganizationRole)
+            select(
+                Membership,
+                User,
+                OrganizationRole,
+                Avatar.clips_status,
+                Avatar.audio_path,
+            )
             .join(User, User.id == Membership.user_id)
             .join(OrganizationRole, OrganizationRole.id == Membership.role_id)
+            .outerjoin(Avatar, Avatar.user_id == Membership.user_id)
             .where(Membership.organization_id == org_id)
             .order_by(OrganizationRole.rank.asc(), User.full_name.asc())
         )
@@ -51,9 +64,30 @@ async def list_members(
             role_code=r.code,
             role_name_it=r.name_it,
             joined_at=m.joined_at,
+            avatar_status=clips_status if include_avatar else None,
+            avatar_audio=bool(include_avatar and audio_path),
         )
-        for m, u, r in rows
+        for m, u, r, clips_status, audio_path in rows
     ]
+
+
+@router.get("/members/{user_id}/avatar", response_model=AvatarOut | None)
+async def get_member_avatar(
+    org_id: uuid.UUID,
+    user_id: uuid.UUID,
+    db: DbSession,
+    _=require(P.MEMBER_AVATAR_VIEW),
+) -> AvatarOut | None:
+    """Avatar (clip + audio) di un membro dell'org, in sola lettura.
+
+    Verifica che l'utente target sia membro dell'organizzazione (404
+    altrimenti): l'avatar è legato all'utente, non all'org.
+    """
+    await _get_membership_or_404(db, org_id=org_id, user_id=user_id)
+    avatar = await avatar_service.get_my_avatar(db, user_id)
+    if avatar is None:
+        return None
+    return AvatarOut.model_validate(avatar)
 
 
 async def _get_membership_or_404(

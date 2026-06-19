@@ -52,6 +52,11 @@ PERMISSION_DESCRIPTIONS: dict[str, str] = {
         "Rimuovere un membro dall'organizzazione. Il Creator non è "
         "rimovibile direttamente: prima va trasferito ad un altro membro."
     ),
+    "member:avatar:view": (
+        "Vedere lo stato di completamento dell'avatar di ogni membro "
+        "(immagine, voce e clip video) e visualizzarne le clip e l'audio. "
+        "Sola lettura: non consente di modificare o rigenerare l'avatar."
+    ),
     "template:slide:manage": (
         "Creare, modificare, eliminare e scegliere come default i template "
         "per le slide dei corsi (formato 16:9 / 4:3, colori, font, logo, "

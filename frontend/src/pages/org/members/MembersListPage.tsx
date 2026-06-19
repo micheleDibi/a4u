@@ -18,10 +18,12 @@ import { membershipsApi } from "@/api/memberships";
 import type { MembershipOut } from "@/api/types";
 import { useAuth } from "@/auth/AuthContext";
 import { useHasPermission } from "@/auth/PermissionGate";
+import { AvatarStatusDot } from "@/components/avatar/AvatarStatusDot";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { DataTable } from "@/components/shared/DataTable";
 import { RolePermissionsBox } from "@/components/shared/RolePermissionsBox";
+import { MemberAvatarDialog } from "./MemberAvatarDialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -68,6 +70,7 @@ export default function MembersListPage() {
   const canRemove = useHasPermission(P.MEMBER_REMOVE);
   const canPermissions = useHasPermission(P.PERMISSION_MANAGE);
   const canTransfer = useHasPermission(P.ORG_TRANSFER_CREATOR);
+  const canViewAvatar = useHasPermission(P.MEMBER_AVATAR_VIEW);
 
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
@@ -75,6 +78,7 @@ export default function MembersListPage() {
   const [inviteToken, setInviteToken] = useState<string | null>(null);
   const [toRemove, setToRemove] = useState<MembershipOut | null>(null);
   const [toTransfer, setToTransfer] = useState<MembershipOut | null>(null);
+  const [avatarMember, setAvatarMember] = useState<MembershipOut | null>(null);
 
   // Quick action dalla command palette: `?invite=1` apre il dialog
   // d'invito (se l'utente ha il permesso). Il query param viene ripulito
@@ -256,6 +260,22 @@ export default function MembersListPage() {
     },
   ];
 
+  // Colonna "Avatar" (stato + anteprima) inserita prima delle azioni,
+  // visibile solo a chi ha il permesso `member:avatar:view`.
+  if (canViewAvatar) {
+    columns.splice(columns.length - 1, 0, {
+      id: "avatar",
+      header: t("members.fields.avatar"),
+      cell: ({ row }) => (
+        <AvatarStatusDot
+          status={row.original.avatar_status}
+          audio={row.original.avatar_audio}
+          onClick={() => setAvatarMember(row.original)}
+        />
+      ),
+    });
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -392,6 +412,12 @@ export default function MembersListPage() {
             setToTransfer(null);
           }
         }}
+      />
+
+      <MemberAvatarDialog
+        orgId={orgId}
+        member={avatarMember}
+        onClose={() => setAvatarMember(null)}
       />
     </div>
   );

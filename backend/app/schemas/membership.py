@@ -18,6 +18,12 @@ class MembershipOut(ORMModel):
     role_code: str
     role_name_it: str
     joined_at: datetime
+    # Stato avatar del membro, valorizzato solo per chi ha
+    # `member:avatar:view`. `avatar_status` = aggregato clip (clips_status)
+    # oppure None se il membro non ha ancora un avatar; `avatar_audio` =
+    # campione vocale caricato. Usati dalla lista membri per il pallino.
+    avatar_status: str | None = None
+    avatar_audio: bool = False
 
 
 class EnrollUserRequest(BaseModel):

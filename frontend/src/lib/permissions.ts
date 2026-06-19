@@ -5,6 +5,7 @@ export const P = {
   MEMBER_INVITE: "member:invite",
   MEMBER_ASSIGN_ROLE: "member:assign_role",
   MEMBER_REMOVE: "member:remove",
+  MEMBER_AVATAR_VIEW: "member:avatar:view",
   TEMPLATE_SLIDE_MANAGE: "template:slide:manage",
   TEMPLATE_PDF_MANAGE: "template:pdf:manage",
   PERMISSION_MANAGE: "permission:manage",
@@ -45,6 +46,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<RoleCode, readonly PermissionCode[
   creator: ALL_PERMISSIONS,
   org_admin: [
     P.MEMBER_VIEW, P.MEMBER_INVITE, P.MEMBER_ASSIGN_ROLE, P.MEMBER_REMOVE,
+    P.MEMBER_AVATAR_VIEW,
     P.TEMPLATE_SLIDE_MANAGE, P.TEMPLATE_PDF_MANAGE, P.ORG_UPDATE,
     P.COURSE_CONFIG_MANAGE,
     P.COURSE_VIEW, P.COURSE_VIEW_ALL, P.COURSE_CREATE, P.COURSE_ASSIGN,
@@ -52,7 +54,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<RoleCode, readonly PermissionCode[
     P.COURSE_DUPLICATE,
   ],
   manager: [
-    P.MEMBER_VIEW,
+    P.MEMBER_VIEW, P.MEMBER_AVATAR_VIEW,
     P.COURSE_VIEW, P.COURSE_VIEW_ALL, P.COURSE_CREATE, P.COURSE_ASSIGN,
     P.COURSE_EDIT, P.COURSE_GENERATE, P.COURSE_SAVE_DRAFT,
     P.COURSE_DUPLICATE,
@@ -69,6 +71,7 @@ export const PERMISSION_CATEGORIES: ReadonlyArray<{
     key: "members",
     permissions: [
       P.MEMBER_VIEW, P.MEMBER_INVITE, P.MEMBER_ASSIGN_ROLE, P.MEMBER_REMOVE,
+      P.MEMBER_AVATAR_VIEW,
     ],
   },
   {

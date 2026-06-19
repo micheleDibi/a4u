@@ -1693,7 +1693,23 @@
     "fields": {
       "name": "Nome",
       "email": "Email",
-      "role": "Ruolo"
+      "role": "Ruolo",
+      "avatar": "Avatar"
+    },
+    "avatar": {
+      "view": "Vedi avatar",
+      "complete": "Completato",
+      "progress": "In creazione",
+      "none": "Non avviato"
+    },
+    "avatarDialog": {
+      "title": "Avatar di {{name}}",
+      "empty": "Questo utente non ha ancora creato il suo avatar.",
+      "image": "Immagine",
+      "audio": "Voce",
+      "noAudio": "Nessun campione vocale caricato.",
+      "clips": "Clip video",
+      "noClips": "Nessuna clip disponibile."
     },
     "inviteDialog": {
       "title": "Invita un membro",
@@ -1989,6 +2005,7 @@
     "member:invite": "Invita utenti",
     "member:assign_role": "Assegna ruoli",
     "member:remove": "Rimuovi membri",
+    "member:avatar:view": "Vedi avatar dei membri",
     "template:slide:manage": "Gestisci template slide",
     "template:pdf:manage": "Gestisci template PDF",
     "permission:manage": "Gestisci permessi",
@@ -2010,6 +2027,7 @@
     "member:invite": "Creare inviti via email per nuovi membri scegliendo il ruolo iniziale. Ogni invito è un link monouso con scadenza a 7 giorni.",
     "member:assign_role": "Cambiare il ruolo di un membro esistente, ma solo fino al proprio livello di rank: un Org Admin non può promuovere a Creator né modificare un membro di rango superiore.",
     "member:remove": "Rimuovere un membro dall'organizzazione. Il Creator non è rimovibile direttamente: va prima trasferito ad un altro membro.",
+    "member:avatar:view": "Vedere lo stato di completamento dell'avatar di ogni membro e visualizzarne clip e audio. Sola lettura: non consente di modificare o rigenerare l'avatar.",
     "template:slide:manage": "Creare, modificare, eliminare e scegliere come default i template per le slide dei corsi (formato 16:9 / 4:3, colori, font, logo, immagine di sfondo).",
     "template:pdf:manage": "Creare, modificare, eliminare e scegliere come default i template per i documenti PDF (formato A4/Letter, header/footer/margini in mm, colori, logo, sfondo).",
     "permission:manage": "Modificare i permessi dell'organizzazione: override per ruolo (es. concedere a tutti i Manager un permesso non default) e override per singolo membro (concedi/revoca puntuale).",

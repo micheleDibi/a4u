@@ -63,6 +63,11 @@ export interface MembershipOut {
   role_code: string;
   role_name_it: string;
   joined_at: string;
+  // Stato avatar del membro — valorizzato solo per chi ha
+  // `member:avatar:view`. `null` = nessun avatar; altrimenti l'aggregato
+  // delle clip. `avatar_audio` = campione vocale caricato.
+  avatar_status: AvatarClipsAggregateStatus | null;
+  avatar_audio: boolean;
 }
 
 export interface InvitationCreateResponse {
