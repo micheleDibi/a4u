@@ -2,7 +2,9 @@
 
 Porting fedele dello script di riferimento `batch_generate.py`:
 - `temperature=0.65`, `enable_text_splitting=False`
-- chunking a 180 caratteri con rstrip della punteggiatura finale
+- chunking per-lingua (cap = limite XTTS della lingua, max 180 caratteri;
+  ja=71, zh-cn=82, ko=95) con split ASCII+CJK e rstrip della punteggiatura
+  finale, più un taglio "hard" a conteggio caratteri come rete di sicurezza
 - 250 ms di silenzio tra un chunk e l'altro
 - `get_conditioning_latents` con i parametri presi dal config del modello
 - output FLAC lossless @ 24000 Hz mono
@@ -66,9 +68,25 @@ XTTS_SUPPORTED_LANGUAGES = frozenset(
     }
 )
 
-_STRONG_SPLIT_RE = re.compile(r"(?<=[.!?:])\s+")
-_SOFT_SPLIT_RE = re.compile(r"(?<=,)\s+")
-_CHUNK_TRIM_CHARS = ".:;,"
+# Limite di caratteri per frase del tokenizer XTTS-v2, per lingua (valori
+# di `VoiceBpeTokenizer.check_input_length`). Oltre questo limite l'audio
+# viene troncato: lo usiamo come cap del chunking così ogni chunk resta
+# entro il limite della lingua. Cruciale per ja/zh/ko, molto più bassi.
+_XTTS_CHAR_LIMITS = {
+    "en": 250, "de": 253, "fr": 273, "es": 239, "it": 213, "pt": 203,
+    "pl": 224, "zh-cn": 82, "ar": 166, "cs": 186, "ru": 182, "nl": 251,
+    "tr": 226, "hu": 224, "ko": 95, "ja": 71,
+}
+
+# Lingue senza spazi tra le parole: i pezzi si ricongiungono senza spazio.
+_NO_SPACE_LANGS = frozenset({"ja", "zh-cn", "ko"})
+
+# Split di frase: terminatori ASCII (richiedono uno spazio dopo, così
+# "3.14" non viene spezzato) OPPURE terminatori CJK (`。．！？…`, senza
+# spazio dopo nel giapponese/cinese). Idem per le virgole (soft split).
+_STRONG_SPLIT_RE = re.compile(r"(?:(?<=[.!?:])\s+|(?<=[。．！？…])\s*)")
+_SOFT_SPLIT_RE = re.compile(r"(?:(?<=,)\s+|(?<=[、，])\s*)")
+_CHUNK_TRIM_CHARS = ".:;,。．、，；："
 
 
 def normalize_language_code(language_code: str) -> str:
@@ -84,40 +102,72 @@ def normalize_language_code(language_code: str) -> str:
     return code
 
 
-def split_into_chunks(text: str, max_chars: int = MAX_CHARS) -> list[str]:
-    """Divide il testo in chunk <= `max_chars` rispettando i terminatori
-    forti (.!?:); per chunk troppo lunghi, split ulteriore su `,`.
+def _max_chars_for(language: str) -> int:
+    """Cap dei chunk per la lingua: min(MAX_CHARS, limite XTTS della lingua).
+    Per ja/zh/ko il limite è molto più basso (71/82/95)."""
+    return min(MAX_CHARS, _XTTS_CHAR_LIMITS.get(language, MAX_CHARS))
 
-    Identico a `chunk_text()` di `batch_generate.py`. Rimuove la
-    punteggiatura finale di ogni chunk (anti-"punto" del normalizer XTTS).
+
+def _hard_slice(text: str, max_chars: int) -> list[str]:
+    """Taglio di sicurezza a conteggio caratteri: nessun pezzo resta più
+    lungo di `max_chars`. Ultima rete quando non ci sono separatori da cui
+    spezzare (tipico del giapponese senza punteggiatura)."""
+    return [text[i : i + max_chars] for i in range(0, len(text), max_chars)]
+
+
+def split_into_chunks(
+    text: str, max_chars: int = MAX_CHARS, *, join: str = " "
+) -> list[str]:
+    """Divide il testo in chunk <= `max_chars`, robusto a qualsiasi lingua.
+
+    1. split forte sui terminatori di frase (ASCII e CJK);
+    2. per le frasi ancora troppo lunghe, split debole sulle virgole
+       (ASCII/CJK) con packing greedy entro `max_chars`;
+    3. rete di sicurezza: qualunque chunk ancora oltre il limite (es.
+       giapponese senza punteggiatura) viene tagliato a conteggio caratteri.
+
+    `join` è il separatore usato nel packing dei pezzi: spazio per le lingue
+    europee, stringa vuota per ja/zh/ko (che non hanno spazi tra le parole).
+    Rimuove la punteggiatura finale di ogni chunk (anti-"punto" del
+    normalizer XTTS). Per testo solo-ASCII l'output è identico alla versione
+    precedente.
     """
     cleaned = (text or "").strip()
     if not cleaned:
         return []
 
-    parts = _STRONG_SPLIT_RE.split(cleaned)
     out: list[str] = []
-    for p in parts:
-        p = p.strip().rstrip(_CHUNK_TRIM_CHARS)
-        if not p:
+    for sentence in _STRONG_SPLIT_RE.split(cleaned):
+        sentence = sentence.strip().rstrip(_CHUNK_TRIM_CHARS)
+        if not sentence:
             continue
-        if len(p) <= max_chars:
-            out.append(p)
+        if len(sentence) <= max_chars:
+            out.append(sentence)
             continue
-        sub = _SOFT_SPLIT_RE.split(p)
+        # Frase troppo lunga: split debole sulle virgole + packing greedy.
         buf = ""
-        for s in sub:
-            s = s.strip().rstrip(_CHUNK_TRIM_CHARS)
-            if not s:
+        for piece in _SOFT_SPLIT_RE.split(sentence):
+            piece = piece.strip().rstrip(_CHUNK_TRIM_CHARS)
+            if not piece:
                 continue
-            if buf and len(buf) + 1 + len(s) > max_chars:
+            candidate = f"{buf}{join}{piece}" if buf else piece
+            if buf and len(candidate) > max_chars:
                 out.append(buf)
-                buf = s
+                buf = piece
             else:
-                buf = f"{buf} {s}".strip() if buf else s
+                buf = candidate
         if buf:
             out.append(buf)
-    return out
+
+    # Rete di sicurezza: nessun chunk può superare il limite della lingua
+    # (lo stream RunPod scarta i payload troppo grandi → "nessun audio").
+    final: list[str] = []
+    for chunk in out:
+        if len(chunk) <= max_chars:
+            final.append(chunk)
+        else:
+            final.extend(_hard_slice(chunk, max_chars))
+    return final
 
 
 # ---------------------------------------------------------------------------
@@ -184,7 +234,13 @@ def _synthesize_segment_chunks(text: str, language: str, gpt_cond_latent, speake
     Se il testo non produce alcun chunk, yield un singolo chunk di
     silenzio breve cosi' il segment resta comunque rappresentato.
     """
-    chunks = split_into_chunks(text, MAX_CHARS)
+    # Cap dei chunk e separatore in base alla lingua: per ja/zh/ko il
+    # limite XTTS è molto più basso (71/82/95) e non ci sono spazi tra le
+    # parole. Senza questo il giapponese non veniva mai spezzato → un unico
+    # chunk enorme scartato dallo stream RunPod → "nessun audio prodotto".
+    max_chars = _max_chars_for(language)
+    join = "" if language in _NO_SPACE_LANGS else " "
+    chunks = split_into_chunks(text, max_chars, join=join)
     if not chunks:
         yield {
             "index": 0,

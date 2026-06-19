@@ -6,8 +6,14 @@ il TTS che girava sulla CPU della VM (~64 min per un video da 14 min → ~2-4 mi
 su GPU).
 
 È un porting **fedele** dello script di riferimento `batch_generate.py`:
-stessi parametri (`temperature=0.65`, `enable_text_splitting=False`), stesso
-chunking (180 caratteri, silenzio 250 ms), nessuna modifica al modello.
+stessi parametri (`temperature=0.65`, `enable_text_splitting=False`), silenzio
+250 ms, nessuna modifica al modello. Il chunking è **per-lingua**: il cap è il
+limite di caratteri del tokenizer XTTS della lingua (max 180; ja=71, zh-cn=82,
+ko=95), con split su punteggiatura ASCII **e** CJK (`。、！？…`) e un taglio
+"hard" a conteggio caratteri come rete di sicurezza — così nessun chunk eccede
+il limite e i payload restano piccoli (le lingue senza spazi come il giapponese
+producevano un unico chunk gigante che lo stream RunPod scartava → "nessun
+audio").
 
 ## Contenuto
 
