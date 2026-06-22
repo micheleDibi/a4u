@@ -273,6 +273,37 @@ def _convert_math_to_mathml(latex: str, *, display: str) -> str:
     return mathml
 
 
+def _normalize_math_source(latex: str) -> str:
+    """Normalizza una sorgente LaTeX per il rendering: rimuove eventuali
+    delimitatori (`$$`, `$`, `\\[`, `\\]`) e RIBILANCIA gli ambienti
+    malformati emessi a volte dall'AI: `\\end{env}` senza `\\begin{env}`
+    (e viceversa), oppure allineamento (`&` / `\\\\`) fuori da un ambiente.
+    Così una formula `aligned` col `\\begin` mancante torna renderizzabile.
+
+    DEVE essere applicata in modo identico alla raccolta
+    (`_collect_math_from_content`, che genera la chiave della mappa SVG) e
+    al lookup (`_render_math`), altrimenti le chiavi non combaciano."""
+    s = (latex or "").strip()
+    if not s:
+        return ""
+    s = re.sub(r"^\\\[", "", s)
+    s = re.sub(r"\\\]$", "", s)
+    s = re.sub(r"^\$+", "", s)
+    s = re.sub(r"(?<!\\)\$+$", "", s)
+    s = s.strip()
+    begin_m = re.search(r"\\begin\{([a-zA-Z*]+)\}", s)
+    end_m = re.search(r"\\end\{([a-zA-Z*]+)\}", s)
+    if end_m and not begin_m:
+        s = f"\\begin{{{end_m.group(1)}}} {s}"
+    elif begin_m and not end_m:
+        s = f"{s} \\end{{{begin_m.group(1)}}}"
+    elif not begin_m and not end_m and (
+        re.search(r"\\\\", s) or re.search(r"(?<!\\)&", s)
+    ):
+        s = f"\\begin{{aligned}} {s} \\end{{aligned}}"
+    return s.strip()
+
+
 def _render_math(latex: str, *, display: str, svg_map: dict | None = None) -> str:
     """Rende una formula LaTeX per il PDF/slide.
 
@@ -281,8 +312,9 @@ def _render_math(latex: str, *, display: str, svg_map: dict | None = None) -> st
     correttamente, a differenza del MathML che NON supporta. In assenza
     di SVG (formula non raccolta, MathJax/CDN non disponibile) ricade su
     `_convert_math_to_mathml` (MathML → `<code>`): mai peggio di prima.
-    La chiave della mappa è `(latex.strip(), display)`."""
-    src = (latex or "").strip()
+    La sorgente è normalizzata (`_normalize_math_source`) e la chiave della
+    mappa è `(sorgente_normalizzata, display)`."""
+    src = _normalize_math_source(latex)
     if not src:
         return ""
     if svg_map:
@@ -452,17 +484,17 @@ def _render_equation_block(
     # Caso semplice (retro-compatibile): formula "nuda" senza enunciato né
     # dimostrazione → rendering attuale (formula + caption label/explanation).
     if not statement and not has_proof:
-        caption_parts = []
+        caption_inner = ""
         if label:
-            caption_parts.append(
-                f'<span class="label">{_html_escape_text(label)}</span>'
-            )
+            caption_inner += f'<span class="label">{_html_escape_text(label)}</span>'
         if explanation:
-            caption_parts.append(_html_escape_text(explanation))
+            # Reso come markdown → math inline `$..$` tipografato (SVG).
+            caption_inner += (
+                f'<div class="explanation">'
+                f"{render_markdown(explanation, math_svg_map)}</div>"
+            )
         caption_html = (
-            f'<figcaption>{" — ".join(caption_parts)}</figcaption>'
-            if caption_parts
-            else ""
+            f"<figcaption>{caption_inner}</figcaption>" if caption_inner else ""
         )
         return (
             f'<figure class="equation"><div class="figure-body">{formula_html}</div>'
@@ -505,7 +537,9 @@ def _render_equation_block(
         proof_parts.append('<div class="proof-qed">&#8718;</div>')
         parts.append(f'<div class="proof">{"".join(proof_parts)}</div>')
     if explanation:
-        parts.append(f'<figcaption>{_html_escape_text(explanation)}</figcaption>')
+        parts.append(
+            f"<figcaption>{render_markdown(explanation, math_svg_map)}</figcaption>"
+        )
     return (
         f'<figure class="equation theorem" data-kind="{_html_escape_text(kind)}">'
         f'{"".join(parts)}</figure>'
@@ -922,11 +956,13 @@ def _collect_math_from_content(
 
     for eq in content.get("equations") or []:
         if isinstance(eq, dict):
-            _add(eq.get("latex") or "", "block")
+            # Normalizzazione identica a `_render_math` (lookup): chiavi
+            # coerenti anche per formule `aligned` malformate.
+            _add(_normalize_math_source(eq.get("latex") or ""), "block")
             # Passaggi della dimostrazione (LaTeX block).
             for step in eq.get("proof") or []:
                 if isinstance(step, dict):
-                    _add(step.get("latex") or "", "block")
+                    _add(_normalize_math_source(step.get("latex") or ""), "block")
 
     texts: list[str] = [
         content.get("introduction") or "",
@@ -941,10 +977,11 @@ def _collect_math_from_content(
     for ex in content.get("examples") or []:
         if isinstance(ex, dict):
             texts.append(ex.get("content") or "")
-    # Enunciato e testo dei passaggi: math inline `$..$`.
+    # Enunciato, descrizione e testo dei passaggi: math inline `$..$`.
     for eq in content.get("equations") or []:
         if isinstance(eq, dict):
             texts.append(eq.get("statement") or "")
+            texts.append(eq.get("explanation") or "")
             for step in eq.get("proof") or []:
                 if isinstance(step, dict):
                     texts.append(step.get("text") or "")
@@ -955,7 +992,7 @@ def _collect_math_from_content(
         # Normalizza `\(..\)`/`\[..\]` → `$..$`/`$$..$$` come fa il renderer,
         # così le chiavi raccolte combaciano con i token dollarmath.
         for sp in _find_math_spans(_normalize_math_delimiters(text)):
-            _add(sp.inner, "block" if sp.display else "inline")
+            _add(_normalize_math_source(sp.inner), "block" if sp.display else "inline")
 
     return items
 

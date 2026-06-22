@@ -290,16 +290,32 @@ function TableBlock({ table }: { table: LessonContentTable }) {
   );
 }
 
-/** Normalizza il LaTeX rimuovendo delimitatori già presenti, per evitare
- *  l'annidamento `$$...$$` che fa fallire KaTeX. */
+/** Ribilancia gli ambienti LaTeX malformati emessi a volte dall'AI:
+ *  `\end{env}` senza `\begin{env}` (e viceversa), oppure allineamento
+ *  (`&` / `\\`) fuori da un ambiente. Rende renderizzabili formule
+ *  altrimenti rotte (es. `aligned` con il `\begin` mancante). */
+function balanceMathEnv(s: string): string {
+  const beginM = s.match(/\\begin\{([a-zA-Z*]+)\}/);
+  const endM = s.match(/\\end\{([a-zA-Z*]+)\}/);
+  if (endM && !beginM) return `\\begin{${endM[1]}} ${s}`;
+  if (beginM && !endM) return `${s} \\end{${beginM[1]}}`;
+  if (!beginM && !endM && (/\\\\/.test(s) || /(?<!\\)&/.test(s))) {
+    return `\\begin{aligned} ${s} \\end{aligned}`;
+  }
+  return s;
+}
+
+/** Normalizza il LaTeX: rimuove delimitatori già presenti (per evitare
+ *  l'annidamento `$$...$$` che fa fallire KaTeX) e ribilancia gli ambienti. */
 function normalizeLatex(latex: string): string {
-  return (latex || "")
+  const stripped = (latex || "")
     .trim()
     .replace(/^\\\[/, "")
     .replace(/\\\]$/, "")
     .replace(/^\$+/, "")
     .replace(/\$+$/, "")
     .trim();
+  return balanceMathEnv(stripped);
 }
 
 /** Formula in display mode (KaTeX); `null` se vuota. */
@@ -355,13 +371,12 @@ export function EquationBlock({ equation }: { equation: LessonContentEquation })
         {captionParts.length > 0 && (
           <figcaption className="border-t border-border bg-muted/30 px-4 py-2 text-xs text-muted-foreground">
             {equation.label && (
-              <span className="font-semibold not-italic">{equation.label}</span>
+              <div className="font-semibold not-italic">{equation.label}</div>
             )}
-            {equation.label && equation.explanation && (
-              <span className="px-1">—</span>
-            )}
-            {equation.explanation && (
-              <span className="italic">{equation.explanation}</span>
+            {(equation.explanation || "").trim() && (
+              <div className="italic [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
+                <ProseMarkdown source={equation.explanation} />
+              </div>
             )}
           </figcaption>
         )}
@@ -399,8 +414,8 @@ export function EquationBlock({ equation }: { equation: LessonContentEquation })
           </div>
         )}
         {(equation.explanation || "").trim() && (
-          <div className="border-t border-border pt-2 text-xs italic text-muted-foreground">
-            {equation.explanation}
+          <div className="border-t border-border pt-2 text-xs italic text-muted-foreground [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
+            <ProseMarkdown source={equation.explanation} />
           </div>
         )}
       </div>

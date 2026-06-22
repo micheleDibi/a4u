@@ -235,6 +235,13 @@ Per OGNI asset in `equations[]`:
 - NON inventare dimostrazioni: per `definition`, `formula` empiriche/
   postulate o `identity` elementari lascia `proof: []` (e, se non c'è un
   enunciato sensato, `statement: ""`).
+- REGOLA RIGIDA sui campi formula (`latex` dell'equazione e di ogni
+  passaggio): MAI delimitatori `$`/`$$`/`\\(`/`\\[`. Per il multilinea usa
+  SEMPRE un ambiente COMPLETO e BILANCIATO `\\begin{{aligned}} ... \\end{{aligned}}`
+  (oppure `cases`): MAI un `&` o un `\\\\` fuori da un ambiente, MAI un
+  `\\end{{...}}` senza il corrispondente `\\begin{{...}}`. In dubbio, preferisci
+  più passaggi `proof` brevi (una riga ciascuno) invece di un unico blocco
+  `aligned` lungo.
 
 ALLINEAMENTO
 
