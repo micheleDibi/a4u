@@ -14,3 +14,17 @@ transformers>=4.45.0,<5
 runpod>=1.6.0
 soundfile>=0.12.0
 numpy>=1.26.0,<2.0
+
+# Dipendenze G2P/tokenizer per le lingue CJK di XTTS. Sono "extra"
+# opzionali di coqui-tts (NON installate di default): senza, un job in
+# queste lingue fallisce a runtime con ModuleNotFoundError (es.
+# "No module named 'cutlet'" per il giapponese).
+# - Giapponese: cutlet (romanizzazione) + unidic-lite (dizionario MeCab
+#   usato da fugashi, dipendenza di cutlet).
+# - Cinese: jieba (segmentazione parole) + pypinyin.
+# - Coreano: hangul_romanize (usato dal tokenizer XTTS coreano).
+cutlet>=0.3.0
+unidic-lite>=1.0.8
+jieba>=0.42.1
+pypinyin>=0.51.0
+hangul_romanize>=0.1.0
