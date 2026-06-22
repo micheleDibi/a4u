@@ -216,6 +216,10 @@ async def render_slides_to_png(
     mermaid_svg_map = await slides_pdf._prerender_mermaid_for_slides(
         lesson.content_raw, new_assets
     )
+    # Pre-render LaTeX → SVG (MathJax), coerente col PDF slide.
+    math_svg_map = await slides_pdf._prerender_math_for_slides(
+        lesson.content_raw, slides_raw
+    )
 
     html_pdf = slides_pdf.render_slides_html(
         course=course,
@@ -224,6 +228,7 @@ async def render_slides_to_png(
         slide_template=slide_template,
         public_base_url=public_base_url,
         mermaid_svg_map=mermaid_svg_map,
+        math_svg_map=math_svg_map,
         enable_split=False,  # 1 slide JSON → 1 frame video
     )
 

@@ -293,11 +293,19 @@
     }
 
     /* === Math === */
-    /* WeasyPrint renderizza MathML nativamente; alziamo solo
-       leggermente il font-size per leggibilità in stampa. */
+    /* Le formule sono SVG pre-renderizzati (MathJax): WeasyPrint NON
+       supporta MathML. `math{}` resta solo come fallback di sicurezza
+       quando una formula ricade sul MathML (CDN MathJax non disponibile). */
     math { font-size: 1.05em; }
     .math-block { margin: 3mm 0; text-align: center; }
     .math-block math { display: block; margin: 0 auto; }
+    .math-block svg {
+      display: block; margin: 0 auto;
+      max-width: 100%; height: auto;
+    }
+    /* Inline: l'SVG MathJax porta il proprio `vertical-align` per
+       l'allineamento alla baseline del testo; limitiamo solo la larghezza. */
+    .math-inline svg { max-width: 100%; }
     .math-error {
       color: #cc0000; background: rgba(204, 0, 0, 0.08);
       padding: 0.5pt 3pt; border-radius: 2pt;

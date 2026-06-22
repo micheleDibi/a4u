@@ -158,6 +158,7 @@ def _build_slide_asset_html(
     *,
     kind: str,
     mermaid_svg_map: dict[str, str],
+    math_svg_map: dict | None = None,
 ) -> str:
     """Costruisce il blocco HTML per un asset referenziato da una slide.
 
@@ -203,11 +204,11 @@ def _build_slide_asset_html(
             asset, mermaid_svg_map=mermaid_svg_map
         )
     if kind == "table":
-        return base_pdf._render_table_block(asset)
+        return base_pdf._render_table_block(asset, math_svg_map=math_svg_map)
     if kind == "equation":
-        return base_pdf._render_equation_block(asset)
+        return base_pdf._render_equation_block(asset, math_svg_map=math_svg_map)
     if kind == "example":
-        return base_pdf._render_example_block(asset)
+        return base_pdf._render_example_block(asset, math_svg_map=math_svg_map)
     return ""
 
 
@@ -284,6 +285,25 @@ async def _prerender_mermaid_for_slides(
     return await base_pdf._prerender_mermaid_for_lesson(
         {"visual_assets": merged_visual_assets}
     )
+
+
+async def _prerender_math_for_slides(
+    content_raw: dict[str, Any] | None,
+    slides_raw: dict[str, Any] | None,
+) -> dict[tuple[str, str], str]:
+    """Pre-render LaTeX → SVG per le slide: equazioni/tabelle/esempi delle
+    Dispense (`content_raw`) + i nuovi asset di Fase 4 (`slides_raw.new_*`).
+    Riusa il collector + batch MathJax del PDF lezione (`base_pdf`)."""
+    cr = content_raw or {}
+    sr = slides_raw or {}
+    merged = {
+        "equations": list(cr.get("equations") or [])
+        + list(sr.get("new_equations") or []),
+        "tables": list(cr.get("tables") or []) + list(sr.get("new_tables") or []),
+        "examples": list(cr.get("examples") or [])
+        + list(sr.get("new_examples") or []),
+    }
+    return await base_pdf._prerender_math_for_lesson(merged)
 
 
 # ---------------------------------------------------------------------------
@@ -382,6 +402,7 @@ def render_slides_html(
     slide_template: SlideTemplate | None,
     public_base_url: str | None = None,
     mermaid_svg_map: dict[str, str] | None = None,
+    math_svg_map: dict | None = None,
     enable_split: bool = True,
     teacher_name: str | None = None,
 ) -> str:
@@ -450,7 +471,7 @@ def render_slides_html(
                 continue
             kind, payload = resolved
             html = _build_slide_asset_html(
-                payload, kind=kind, mermaid_svg_map=mmap
+                payload, kind=kind, mermaid_svg_map=mmap, math_svg_map=math_svg_map
             )
             if html:
                 assets_html.append(html)
@@ -558,6 +579,8 @@ async def materialize_lesson_slides_pdf(
     mermaid_svg_map = await _prerender_mermaid_for_slides(
         lesson.content_raw, new_assets
     )
+    # Pre-render LaTeX → SVG (MathJax): WeasyPrint non rende il MathML.
+    math_svg_map = await _prerender_math_for_slides(lesson.content_raw, slides_raw)
 
     html = await asyncio.to_thread(
         render_slides_html,
@@ -567,6 +590,7 @@ async def materialize_lesson_slides_pdf(
         slide_template=slide_template,
         public_base_url=public_base_url,
         mermaid_svg_map=mermaid_svg_map,
+        math_svg_map=math_svg_map,
         teacher_name=teacher_name,
     )
 

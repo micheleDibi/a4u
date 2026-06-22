@@ -273,6 +273,25 @@ def _convert_math_to_mathml(latex: str, *, display: str) -> str:
     return mathml
 
 
+def _render_math(latex: str, *, display: str, svg_map: dict | None = None) -> str:
+    """Rende una formula LaTeX per il PDF/slide.
+
+    Se `svg_map` contiene l'SVG pre-renderizzato (MathJax via Playwright,
+    `_prerender_math_for_lesson`) lo usa: WeasyPrint rende l'SVG
+    correttamente, a differenza del MathML che NON supporta. In assenza
+    di SVG (formula non raccolta, MathJax/CDN non disponibile) ricade su
+    `_convert_math_to_mathml` (MathML → `<code>`): mai peggio di prima.
+    La chiave della mappa è `(latex.strip(), display)`."""
+    src = (latex or "").strip()
+    if not src:
+        return ""
+    if svg_map:
+        svg = svg_map.get((src, display))
+        if svg:
+            return svg
+    return _convert_math_to_mathml(src, display=display)
+
+
 def _build_markdown_renderer() -> MarkdownIt:
     """Crea un'istanza markdown-it configurata per le lezioni:
     GFM (tabelle), HTML inline/block, dollarmath per i blocchi math.
@@ -286,13 +305,17 @@ def _build_markdown_renderer() -> MarkdownIt:
         .use(dollarmath_plugin, allow_labels=False, double_inline=True)
     )
 
-    def _render_math_inline(_self, tokens, idx, _options, _env):
-        mathml = _convert_math_to_mathml(tokens[idx].content, display="inline")
-        return f'<span class="math-inline">{mathml}</span>'
+    # I rule leggono la mappa SVG pre-renderizzata dall'`env` di
+    # markdown-it (passato da `render_markdown`); il 5° parametro È l'env.
+    def _render_math_inline(_self, tokens, idx, _options, env):
+        svg_map = (env or {}).get("math_svg")
+        inner = _render_math(tokens[idx].content, display="inline", svg_map=svg_map)
+        return f'<span class="math-inline">{inner}</span>'
 
-    def _render_math_block(_self, tokens, idx, _options, _env):
-        mathml = _convert_math_to_mathml(tokens[idx].content, display="block")
-        return f'<div class="math-block">{mathml}</div>'
+    def _render_math_block(_self, tokens, idx, _options, env):
+        svg_map = (env or {}).get("math_svg")
+        inner = _render_math(tokens[idx].content, display="block", svg_map=svg_map)
+        return f'<div class="math-block">{inner}</div>'
 
     md.add_render_rule("math_inline", _render_math_inline)
     md.add_render_rule("math_block", _render_math_block)
@@ -302,11 +325,17 @@ def _build_markdown_renderer() -> MarkdownIt:
 _md_renderer = _build_markdown_renderer()
 
 
-def render_markdown(source: str) -> str:
-    """Pipeline markdown → HTML (con normalizzazione math)."""
+def render_markdown(source: str, math_svg_map: dict | None = None) -> str:
+    """Pipeline markdown → HTML (con normalizzazione math).
+
+    `math_svg_map` (opzionale): mappa `{(latex, display) → svg}` pre-
+    renderizzata da MathJax; passata ai rule math via l'`env` di
+    markdown-it. Se omessa, le formule ricadono su MathML."""
     if not source:
         return ""
-    return _md_renderer.render(_normalize_math_delimiters(source))
+    return _md_renderer.render(
+        _normalize_math_delimiters(source), {"math_svg": math_svg_map}
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -380,17 +409,21 @@ def _render_visual_asset_block(
     return f'<figure class="visual"><div class="figure-body">{body}</div>{caption_html}</figure>'
 
 
-def _render_table_block(table: dict[str, Any]) -> str:
+def _render_table_block(
+    table: dict[str, Any], *, math_svg_map: dict | None = None
+) -> str:
     md = (table.get("markdown") or "").strip()
     caption = table.get("caption") or ""
-    table_html = render_markdown(md) if md else ""
+    table_html = render_markdown(md, math_svg_map) if md else ""
     caption_html = (
         f'<figcaption>{_html_escape_text(caption)}</figcaption>' if caption else ""
     )
     return f'<figure class="table"><div class="figure-body">{table_html}</div>{caption_html}</figure>'
 
 
-def _render_equation_block(eq: dict[str, Any]) -> str:
+def _render_equation_block(
+    eq: dict[str, Any], *, math_svg_map: dict | None = None
+) -> str:
     latex = (eq.get("latex") or "").strip()
     label = (eq.get("label") or "").strip()
     explanation = (eq.get("explanation") or "").strip()
@@ -404,15 +437,17 @@ def _render_equation_block(eq: dict[str, Any]) -> str:
         if caption_parts
         else ""
     )
-    mathml = _convert_math_to_mathml(latex, display="block")
-    body = f'<div class="math-block">{mathml}</div>'
+    inner = _render_math(latex, display="block", svg_map=math_svg_map)
+    body = f'<div class="math-block">{inner}</div>'
     return f'<figure class="equation"><div class="figure-body">{body}</div>{caption_html}</figure>'
 
 
-def _render_example_block(example: dict[str, Any]) -> str:
+def _render_example_block(
+    example: dict[str, Any], *, math_svg_map: dict | None = None
+) -> str:
     title = (example.get("title") or "").strip()
     content = (example.get("content") or "").strip()
-    inner_html = render_markdown(content) if content else ""
+    inner_html = render_markdown(content, math_svg_map) if content else ""
     title_html = (
         f'<div class="example-title">{_html_escape_text(title)}</div>'
         if title
@@ -425,6 +460,7 @@ def _build_asset_html_map(
     content: dict[str, Any],
     *,
     mermaid_svg_map: dict[str, str] | None = None,
+    math_svg_map: dict | None = None,
 ) -> dict[tuple[str, str], str]:
     """Pre-renderizza ogni asset una sola volta. Chiavi: (KIND, id).
 
@@ -442,11 +478,17 @@ def _build_asset_html_map(
             _render_visual_asset_block(asset, mermaid_svg_map=mermaid_svg_map)
         )
     for table in content.get("tables") or []:
-        out[("TAB", str(table.get("table_id", "")).lower())] = _render_table_block(table)
+        out[("TAB", str(table.get("table_id", "")).lower())] = _render_table_block(
+            table, math_svg_map=math_svg_map
+        )
     for eq in content.get("equations") or []:
-        out[("EQ", str(eq.get("equation_id", "")).lower())] = _render_equation_block(eq)
+        out[("EQ", str(eq.get("equation_id", "")).lower())] = _render_equation_block(
+            eq, math_svg_map=math_svg_map
+        )
     for ex in content.get("examples") or []:
-        out[("EX", str(ex.get("example_id", "")).lower())] = _render_example_block(ex)
+        out[("EX", str(ex.get("example_id", "")).lower())] = _render_example_block(
+            ex, math_svg_map=math_svg_map
+        )
     return out
 
 
@@ -657,6 +699,198 @@ async def _prerender_mermaid_for_lesson(
     for (asset_id, _), svg in zip(pairs, svgs, strict=True):
         if svg:
             out[asset_id] = svg
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Pre-render LaTeX → SVG (MathJax via Playwright)
+#
+# WeasyPrint NON renderizza MathML (stampa solo il contenuto testuale,
+# perdendo pedici/apici/frazioni). Pre-renderizziamo quindi ogni formula in
+# SVG autonomo via MathJax in Playwright — stesso pattern dei diagrammi
+# Mermaid — ed embeddiamo l'SVG, che WeasyPrint rende correttamente.
+# ---------------------------------------------------------------------------
+
+_MATHJAX_RENDERER_HTML = """<!doctype html>
+<html><head><meta charset="utf-8"><style>body{margin:0;padding:0;}</style></head>
+<body>
+<script>
+// Config PRIMA del load. fontCache:'none' → ogni SVG è autonomo (glyph
+// come path inline, niente <defs>/<use> con id condivisi che collidono
+// incollando molte formule nello stesso documento). typeset:false → niente
+// auto-render: usiamo MathJax.tex2svg() in modo programmatico.
+window.MathJax = {
+  svg: { fontCache: 'none' },
+  startup: {
+    typeset: false,
+    ready: () => {
+      window.MathJax.startup.defaultReady();
+      window.__mathReady = true;
+    }
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg.js"></script>
+<script>
+window.__renderMath = (latex, display) => {
+  try {
+    const node = window.MathJax.tex2svg(latex, { display: !!display });
+    // Su errore di parsing MathJax emette un nodo merror: trattiamo come
+    // fallimento → il chiamante ricade su MathML.
+    if (node.querySelector('[data-mjx-error], [data-mml-node="merror"]')) {
+      return null;
+    }
+    const svg = node.querySelector('svg');
+    return svg ? svg.outerHTML : null;
+  } catch (e) { return null; }
+};
+</script>
+</body></html>
+"""
+
+
+async def _prerender_math_to_svg_batch_async(
+    items: list[tuple[str, str]],
+) -> list[str | None]:
+    """Renderizza una lista di `(latex, display)` a SVG con UNA sessione
+    Playwright headless (MathJax tex-svg). Ritorna lista parallela: SVG o
+    `None` se il rendering fallisce. Stesso pattern di
+    `_prerender_mermaid_to_svg_batch_async` (va wrappata via il `_sync`/
+    `_batch` per il ProactorEventLoop su Windows)."""
+    if not items:
+        return []
+
+    from playwright.async_api import async_playwright
+
+    results: list[str | None] = []
+    async with async_playwright() as pw:
+        browser = await pw.chromium.launch(args=["--no-sandbox"])
+        try:
+            page = await browser.new_page()
+            await page.set_content(
+                _MATHJAX_RENDERER_HTML, wait_until="domcontentloaded"
+            )
+            try:
+                # MathJax tex-svg.js è ~1MB: timeout più ampio del Mermaid.
+                await page.wait_for_function(
+                    "window.__mathReady === true", timeout=20_000
+                )
+            except Exception as exc:  # noqa: BLE001 — CDN irraggiungibile
+                log.warning("mathjax_renderer_setup_failed", error=str(exc))
+                return [None] * len(items)
+
+            for latex, display in items:
+                if not (latex or "").strip():
+                    results.append(None)
+                    continue
+                try:
+                    svg = await page.evaluate(
+                        "([code, disp]) => window.__renderMath(code, disp)",
+                        [latex, display == "block"],
+                    )
+                    results.append(
+                        svg if (isinstance(svg, str) and svg.strip()) else None
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    log.warning(
+                        "math_render_failed", error=str(exc), preview=latex[:80]
+                    )
+                    results.append(None)
+        finally:
+            await browser.close()
+    return results
+
+
+def _prerender_math_to_svg_batch_sync(
+    items: list[tuple[str, str]],
+) -> list[str | None]:
+    """Sync wrapper con loop dedicato (ProactorEventLoop su Windows, unico
+    a supportare `subprocess_exec` di Playwright). Da `asyncio.to_thread`."""
+    if sys.platform == "win32":
+        loop = asyncio.ProactorEventLoop()
+    else:
+        loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(_prerender_math_to_svg_batch_async(items))
+    finally:
+        try:
+            loop.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+async def _prerender_math_to_svg_batch(
+    items: list[tuple[str, str]],
+) -> list[str | None]:
+    """Esegue il pre-render Playwright in un thread pool (loop dedicato)."""
+    if not items:
+        return []
+    return await asyncio.to_thread(_prerender_math_to_svg_batch_sync, items)
+
+
+def _collect_math_from_content(
+    content: dict[str, Any],
+) -> list[tuple[str, str]]:
+    """Raccoglie tutte le formule `(latex, display)` di una lezione: le
+    equazioni dedicate (`equations[].latex`, block) e il math inline/block
+    `$..$`/`$$..$$` nei campi testo (intro, sezioni, summary, celle tabella,
+    esempi). Riusa `_find_math_spans` (estrazione condivisa con la
+    validazione asset). Dedup per `(latex.strip(), display)`."""
+    # Import lazy: evita di tirare openai_asset_fix_service all'import.
+    from app.services.asset_validation_service import _find_math_spans
+
+    seen: set[tuple[str, str]] = set()
+    items: list[tuple[str, str]] = []
+
+    def _add(latex: str, display: str) -> None:
+        key = ((latex or "").strip(), display)
+        if key[0] and key not in seen:
+            seen.add(key)
+            items.append(key)
+
+    for eq in content.get("equations") or []:
+        if isinstance(eq, dict):
+            _add(eq.get("latex") or "", "block")
+
+    texts: list[str] = [
+        content.get("introduction") or "",
+        content.get("summary") or "",
+    ]
+    for s in content.get("sections") or []:
+        if isinstance(s, dict):
+            texts.append(s.get("content") or "")
+    for t in content.get("tables") or []:
+        if isinstance(t, dict):
+            texts.append(t.get("markdown") or "")
+    for ex in content.get("examples") or []:
+        if isinstance(ex, dict):
+            texts.append(ex.get("content") or "")
+
+    for text in texts:
+        if not text:
+            continue
+        # Normalizza `\(..\)`/`\[..\]` → `$..$`/`$$..$$` come fa il renderer,
+        # così le chiavi raccolte combaciano con i token dollarmath.
+        for sp in _find_math_spans(_normalize_math_delimiters(text)):
+            _add(sp.inner, "block" if sp.display else "inline")
+
+    return items
+
+
+async def _prerender_math_for_lesson(
+    content: dict[str, Any],
+) -> dict[tuple[str, str], str]:
+    """Estrae tutte le formule e le pre-renderizza in batch. Ritorna
+    `{(latex, display) → svg}`; le chiavi assenti ricadono su MathML."""
+    items = _collect_math_from_content(content)
+    if not items:
+        return {}
+    svgs = await _prerender_math_to_svg_batch(items)
+    out: dict[tuple[str, str], str] = {}
+    for (latex, display), svg in zip(items, svgs, strict=True):
+        if svg:
+            out[(latex, display)] = svg
     return out
 
 
@@ -935,6 +1169,7 @@ def render_lesson_html(
     pdf_template: PdfTemplate | None,
     public_base_url: str | None = None,
     mermaid_svg_map: dict[str, str] | None = None,
+    math_svg_map: dict | None = None,
     teacher_name: str | None = None,
 ) -> str:
     """Pure-function: produce l'HTML completo della lezione, pronto per
@@ -957,11 +1192,13 @@ def render_lesson_html(
     language = (course.language_code or "it").lower()
     labels = _labels_for(language)
 
-    asset_map = _build_asset_html_map(raw, mermaid_svg_map=mermaid_svg_map)
+    asset_map = _build_asset_html_map(
+        raw, mermaid_svg_map=mermaid_svg_map, math_svg_map=math_svg_map
+    )
     body_md = _build_lesson_body_markdown(raw)
     body_md = _replace_summary_heading(body_md, labels["summary"])
     body_md = _substitute_asset_refs(body_md, asset_map)
-    body_html = render_markdown(body_md)
+    body_html = render_markdown(body_md, math_svg_map)
 
     tpl_dict: dict[str, Any]
     if pdf_template is not None:
@@ -1080,6 +1317,8 @@ async def materialize_lesson_pdf(
     # mermaid, non viene avviata nessuna istanza di Playwright.
     raw_content = lesson.content_raw or {}
     mermaid_svg_map = await _prerender_mermaid_for_lesson(raw_content)
+    # Pre-render LaTeX → SVG (MathJax): WeasyPrint non rende il MathML.
+    math_svg_map = await _prerender_math_for_lesson(raw_content)
 
     html = await asyncio.to_thread(
         render_lesson_html,
@@ -1089,6 +1328,7 @@ async def materialize_lesson_pdf(
         pdf_template=pdf_template,
         public_base_url=public_base_url,
         mermaid_svg_map=mermaid_svg_map,
+        math_svg_map=math_svg_map,
         teacher_name=teacher_name,
     )
 

@@ -283,6 +283,14 @@
     }
 
     math { font-size: 11pt; }
+    /* Formule come SVG pre-renderizzato (MathJax); WeasyPrint non rende
+       il MathML. Le equazioni-blocco sono già vincolate da `.slide-asset
+       svg`; qui garantiamo che il math INLINE (celle tabella, esempi)
+       resti in linea e non venga forzato a blocco centrato. */
+    .math-block svg { display: block; margin: 0 auto; max-width: 100%; height: auto; }
+    .slide-asset .math-inline svg, .math-inline svg {
+      display: inline; margin: 0; max-height: none; max-width: 100%;
+    }
   </style>
 </head>
 <body>
