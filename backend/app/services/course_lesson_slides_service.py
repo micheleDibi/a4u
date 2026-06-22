@@ -330,15 +330,18 @@ async def materialize_lesson_slides(
                 # Asset_id può essere asset_id, table_id, equation_id, example_id.
                 for id_key in ("asset_id", "table_id", "equation_id", "example_id"):
                     if id_key in a and a[id_key]:
-                        aid = str(a[id_key])
+                        # Id normalizzati a minuscolo: i riferimenti delle
+                        # slide e gli id dichiarati sono generati dall'AI con
+                        # case non sempre coerente (es. `TAB_x` vs `tab_x`).
+                        aid = str(a[id_key]).lower()
                         valid_asset_ids.add(aid)
                         if key in ("visual_assets", "tables"):
                             visual_or_table_ids.add(aid)
     for na in output.new_assets:
-        valid_asset_ids.add(na.asset_id)
+        valid_asset_ids.add(na.asset_id.lower())
         # I new_assets di Fase 4 sono sempre visivi (diagram/schema/
         # image/illustration/chart) → contano come asset visivo.
-        visual_or_table_ids.add(na.asset_id)
+        visual_or_table_ids.add(na.asset_id.lower())
 
     # asset_id in new_assets devono essere univoci
     new_asset_ids = [na.asset_id for na in output.new_assets]
@@ -350,7 +353,7 @@ async def materialize_lesson_slides(
 
     for s in output.slides:
         for aid in s.references_assets:
-            if aid not in valid_asset_ids:
+            if aid.lower() not in valid_asset_ids:
                 raise ConflictError(
                     f"Slide {s.slide_id}: references_assets contiene "
                     f"`{aid}` non presente in Fase 3 né in new_assets.",
@@ -362,7 +365,7 @@ async def materialize_lesson_slides(
     # Equazioni ed esempi non rientrano nel limite.
     for s in output.slides:
         visual_refs = [
-            aid for aid in s.references_assets if aid in visual_or_table_ids
+            aid for aid in s.references_assets if aid.lower() in visual_or_table_ids
         ]
         if len(visual_refs) > 1:
             raise ConflictError(

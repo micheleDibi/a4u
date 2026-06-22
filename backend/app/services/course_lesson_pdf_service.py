@@ -428,20 +428,25 @@ def _build_asset_html_map(
 ) -> dict[tuple[str, str], str]:
     """Pre-renderizza ogni asset una sola volta. Chiavi: (KIND, id).
 
+    L'id nella chiave è normalizzato a minuscolo: i riferimenti `[KIND:id]`
+    nel testo e l'id dichiarato dell'asset sono generati dall'AI con case
+    non sempre coerente (es. asset `TAB_x` referenziato come `[TAB:tab_x]`).
+    Il lookup in `_substitute_asset_refs` normalizza nello stesso modo.
+
     `mermaid_svg_map` è il dict {asset_id → svg_string} prodotto da
     `_prerender_mermaid_for_lesson`. Se omesso, gli asset mermaid
     vanno in fallback testuale."""
     out: dict[tuple[str, str], str] = {}
     for asset in content.get("visual_assets") or []:
-        out[("FIG", str(asset.get("asset_id", "")))] = _render_visual_asset_block(
-            asset, mermaid_svg_map=mermaid_svg_map
+        out[("FIG", str(asset.get("asset_id", "")).lower())] = (
+            _render_visual_asset_block(asset, mermaid_svg_map=mermaid_svg_map)
         )
     for table in content.get("tables") or []:
-        out[("TAB", str(table.get("table_id", "")))] = _render_table_block(table)
+        out[("TAB", str(table.get("table_id", "")).lower())] = _render_table_block(table)
     for eq in content.get("equations") or []:
-        out[("EQ", str(eq.get("equation_id", "")))] = _render_equation_block(eq)
+        out[("EQ", str(eq.get("equation_id", "")).lower())] = _render_equation_block(eq)
     for ex in content.get("examples") or []:
-        out[("EX", str(ex.get("example_id", "")))] = _render_example_block(ex)
+        out[("EX", str(ex.get("example_id", "")).lower())] = _render_example_block(ex)
     return out
 
 
@@ -665,7 +670,9 @@ def _substitute_asset_refs(
     def _sub(m: re.Match[str]) -> str:
         kind = m.group(1)
         ref_id = m.group(2).strip()
-        html = asset_html_map.get((kind, ref_id))
+        # Lookup case-insensitive sull'id: le chiavi della mappa sono
+        # normalizzate a minuscolo (vedi `_build_asset_html_map`).
+        html = asset_html_map.get((kind, ref_id.lower()))
         if html is None:
             return (
                 f'\n\n<div class="missing-asset">'

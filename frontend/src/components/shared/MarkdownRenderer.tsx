@@ -90,20 +90,24 @@ export function MarkdownRenderer({
     [source],
   );
 
+  // Chiavi normalizzate a minuscolo: i ref `[KIND:id]` nel testo e l'id
+  // dichiarato dell'asset sono generati dall'AI con case non sempre
+  // coerente (es. asset `TAB_x` referenziato come `[TAB:tab_x]`). Il
+  // lookup in `renderAssetBlock` normalizza nello stesso modo.
   const visualMap = useMemo(
-    () => new Map(visualAssets.map((a) => [a.asset_id, a])),
+    () => new Map(visualAssets.map((a) => [a.asset_id.toLowerCase(), a])),
     [visualAssets],
   );
   const tableMap = useMemo(
-    () => new Map(tables.map((t) => [t.table_id, t])),
+    () => new Map(tables.map((t) => [t.table_id.toLowerCase(), t])),
     [tables],
   );
   const equationMap = useMemo(
-    () => new Map(equations.map((e) => [e.equation_id, e])),
+    () => new Map(equations.map((e) => [e.equation_id.toLowerCase(), e])),
     [equations],
   );
   const exampleMap = useMemo(
-    () => new Map(examples.map((ex) => [ex.example_id, ex])),
+    () => new Map(examples.map((ex) => [ex.example_id.toLowerCase(), ex])),
     [examples],
   );
 
@@ -162,30 +166,33 @@ function renderAssetBlock(
   id: string,
   maps: AssetMaps,
 ): ReactNode {
+  // Match case-insensitive (le mappe hanno chiavi minuscole); l'id
+  // originale resta per il messaggio "Asset non trovato".
+  const key = id.toLowerCase();
   switch (kind) {
     case "FIG": {
-      const asset = maps.visualMap.get(id);
+      const asset = maps.visualMap.get(key);
       if (!asset) {
         return <MissingAssetBlock kind={kind} id={id} />;
       }
       return <VisualAssetBlock asset={asset} />;
     }
     case "TAB": {
-      const table = maps.tableMap.get(id);
+      const table = maps.tableMap.get(key);
       if (!table) {
         return <MissingAssetBlock kind={kind} id={id} />;
       }
       return <TableBlock table={table} />;
     }
     case "EQ": {
-      const eq = maps.equationMap.get(id);
+      const eq = maps.equationMap.get(key);
       if (!eq) {
         return <MissingAssetBlock kind={kind} id={id} />;
       }
       return <EquationBlock equation={eq} />;
     }
     case "EX": {
-      const ex = maps.exampleMap.get(id);
+      const ex = maps.exampleMap.get(key);
       if (!ex) {
         return <MissingAssetBlock kind={kind} id={id} />;
       }

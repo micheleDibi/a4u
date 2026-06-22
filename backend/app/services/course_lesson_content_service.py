@@ -878,16 +878,24 @@ async def materialize_lesson_content(
         + "\n"
         + (output.summary or "")
     )
+    # Confronto case-insensitive: i ref nel testo e gli id dichiarati sono
+    # generati dall'AI con case non sempre coerente; senza normalizzare, i
+    # warning di asset inutilizzati / ref pendenti sarebbero falsi positivi.
     refs = _collect_asset_refs(text_corpus)
-    fig_refs = {aid for kind, aid in refs if kind == "FIG"}
-    tab_refs = {aid for kind, aid in refs if kind == "TAB"}
-    eq_refs = {aid for kind, aid in refs if kind == "EQ"}
-    ex_refs = {aid for kind, aid in refs if kind == "EX"}
+    fig_refs = {aid.lower() for kind, aid in refs if kind == "FIG"}
+    tab_refs = {aid.lower() for kind, aid in refs if kind == "TAB"}
+    eq_refs = {aid.lower() for kind, aid in refs if kind == "EQ"}
+    ex_refs = {aid.lower() for kind, aid in refs if kind == "EX"}
 
-    unused_visuals = set(visual_ids) - fig_refs
-    unused_tables = set(table_ids) - tab_refs
-    unused_eqs = set(eq_ids) - eq_refs
-    unused_examples = set(ex_ids) - ex_refs
+    visual_ids_norm = {v.lower() for v in visual_ids}
+    table_ids_norm = {t.lower() for t in table_ids}
+    eq_ids_norm = {e.lower() for e in eq_ids}
+    ex_ids_norm = {e.lower() for e in ex_ids}
+
+    unused_visuals = visual_ids_norm - fig_refs
+    unused_tables = table_ids_norm - tab_refs
+    unused_eqs = eq_ids_norm - eq_refs
+    unused_examples = ex_ids_norm - ex_refs
 
     if unused_visuals or unused_tables or unused_eqs or unused_examples:
         log.warning(
@@ -899,10 +907,10 @@ async def materialize_lesson_content(
             unused_examples=sorted(unused_examples),
         )
 
-    unknown_fig = fig_refs - set(visual_ids)
-    unknown_tab = tab_refs - set(table_ids)
-    unknown_eq = eq_refs - set(eq_ids)
-    unknown_ex = ex_refs - set(ex_ids)
+    unknown_fig = fig_refs - visual_ids_norm
+    unknown_tab = tab_refs - table_ids_norm
+    unknown_eq = eq_refs - eq_ids_norm
+    unknown_ex = ex_refs - ex_ids_norm
     if unknown_fig or unknown_tab or unknown_eq or unknown_ex:
         log.warning(
             "lesson_content_dangling_asset_refs",

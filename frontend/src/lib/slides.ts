@@ -37,37 +37,47 @@ export function resolveAsset(
   newEquations: LessonContentEquation[] = [],
   newExamples: LessonContentExample[] = [],
 ): ResolvedAsset | null {
+  // Match case-insensitive: il riferimento della slide e l'id dichiarato
+  // dell'asset sono generati dall'AI con case non sempre coerente (es.
+  // asset `TAB_x` referenziato come `tab_x`).
+  const target = (assetId || "").toLowerCase();
   if (contentRaw) {
     const visual = contentRaw.visual_assets.find(
-      (a) => a.asset_id === assetId,
+      (a) => a.asset_id.toLowerCase() === target,
     );
     if (visual) return { kind: "visual", payload: visual };
 
-    const table = contentRaw.tables.find((t) => t.table_id === assetId);
+    const table = contentRaw.tables.find(
+      (t) => t.table_id.toLowerCase() === target,
+    );
     if (table) return { kind: "table", payload: table };
 
     const equation = contentRaw.equations.find(
-      (e) => e.equation_id === assetId,
+      (e) => e.equation_id.toLowerCase() === target,
     );
     if (equation) return { kind: "equation", payload: equation };
 
     const example = contentRaw.examples.find(
-      (e) => e.example_id === assetId,
+      (e) => e.example_id.toLowerCase() === target,
     );
     if (example) return { kind: "example", payload: example };
   }
 
-  const newAsset = newAssets.find((a) => a.asset_id === assetId);
+  const newAsset = newAssets.find((a) => a.asset_id.toLowerCase() === target);
   if (newAsset) return { kind: "new_visual", payload: newAsset };
 
   // Nuovi asset non visivi creati in Fase 4 (parità con le Dispense).
-  const newTable = newTables.find((t) => t.table_id === assetId);
+  const newTable = newTables.find((t) => t.table_id.toLowerCase() === target);
   if (newTable) return { kind: "table", payload: newTable };
 
-  const newEquation = newEquations.find((e) => e.equation_id === assetId);
+  const newEquation = newEquations.find(
+    (e) => e.equation_id.toLowerCase() === target,
+  );
   if (newEquation) return { kind: "equation", payload: newEquation };
 
-  const newExample = newExamples.find((e) => e.example_id === assetId);
+  const newExample = newExamples.find(
+    (e) => e.example_id.toLowerCase() === target,
+  );
   if (newExample) return { kind: "example", payload: newExample };
 
   return null;

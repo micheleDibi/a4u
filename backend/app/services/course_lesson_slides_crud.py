@@ -148,8 +148,11 @@ def _validate_consistency(
             code="lesson_slides_duplicate_new_asset_id",
         )
 
-    # 4. references_assets risolvibili (in content_raw + nuovi asset)
-    valid_asset_ids: set[str] = set(new_ids)
+    # 4. references_assets risolvibili (in content_raw + nuovi asset).
+    #    Match case-insensitive: il riferimento della slide e l'id
+    #    dichiarato dell'asset sono generati dall'AI con case non sempre
+    #    coerente (es. asset `TAB_x` referenziato come `tab_x`).
+    valid_asset_ids: set[str] = {nid.lower() for nid in new_ids}
     if content_raw:
         for key in ("visual_assets", "tables", "equations", "examples"):
             for a in content_raw.get(key, []) or []:
@@ -161,14 +164,14 @@ def _validate_consistency(
                         "example_id",
                     ):
                         if id_key in a and a[id_key]:
-                            valid_asset_ids.add(str(a[id_key]))
+                            valid_asset_ids.add(str(a[id_key]).lower())
 
     for s in slides:
         if not isinstance(s, dict):
             continue
         refs = s.get("references_assets") or []
         for aid in refs:
-            if aid not in valid_asset_ids:
+            if str(aid).strip().lower() not in valid_asset_ids:
                 raise ConflictError(
                     f"Slide {s.get('slide_id')}: references_assets contiene "
                     f"`{aid}` non presente nelle Dispense né tra i nuovi asset.",

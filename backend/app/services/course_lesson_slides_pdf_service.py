@@ -225,31 +225,36 @@ def _resolve_asset_for_slide(
     o None.
 
     Mirror della logica frontend (`lib/slides.resolveAsset`).
+
+    Match case-insensitive sull'id: il riferimento della slide e l'id
+    dichiarato dell'asset sono generati dall'AI con case non sempre
+    coerente (es. asset `TAB_x` referenziato come `tab_x`).
     """
+    aid = str(asset_id or "").lower()
     if content_raw:
         for a in content_raw.get("visual_assets") or []:
-            if isinstance(a, dict) and a.get("asset_id") == asset_id:
+            if isinstance(a, dict) and str(a.get("asset_id", "")).lower() == aid:
                 return "visual", a
         for t in content_raw.get("tables") or []:
-            if isinstance(t, dict) and t.get("table_id") == asset_id:
+            if isinstance(t, dict) and str(t.get("table_id", "")).lower() == aid:
                 return "table", t
         for e in content_raw.get("equations") or []:
-            if isinstance(e, dict) and e.get("equation_id") == asset_id:
+            if isinstance(e, dict) and str(e.get("equation_id", "")).lower() == aid:
                 return "equation", e
         for ex in content_raw.get("examples") or []:
-            if isinstance(ex, dict) and ex.get("example_id") == asset_id:
+            if isinstance(ex, dict) and str(ex.get("example_id", "")).lower() == aid:
                 return "example", ex
     for na in new_assets or []:
-        if isinstance(na, dict) and na.get("asset_id") == asset_id:
+        if isinstance(na, dict) and str(na.get("asset_id", "")).lower() == aid:
             return "new_visual", na
     for t in new_tables or []:
-        if isinstance(t, dict) and t.get("table_id") == asset_id:
+        if isinstance(t, dict) and str(t.get("table_id", "")).lower() == aid:
             return "table", t
     for e in new_equations or []:
-        if isinstance(e, dict) and e.get("equation_id") == asset_id:
+        if isinstance(e, dict) and str(e.get("equation_id", "")).lower() == aid:
             return "equation", e
     for ex in new_examples or []:
-        if isinstance(ex, dict) and ex.get("example_id") == asset_id:
+        if isinstance(ex, dict) and str(ex.get("example_id", "")).lower() == aid:
             return "example", ex
     return None
 
