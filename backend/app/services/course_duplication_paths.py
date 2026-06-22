@@ -121,7 +121,10 @@ CONTENT_RAW_TRANSLATE_PATHS: tuple[str, ...] = (
     # tables[].markdown NON tradotto: rovinerebbe la struttura.
     "equations[].label",
     "equations[].explanation",
-    # equations[].latex NON tradotto: codice LaTeX.
+    "equations[].statement",
+    "equations[].proof[].text",
+    # equations[].latex, .kind, .proof[].latex NON tradotti: codice LaTeX /
+    # identificatore di tipo → preservati AS-IS.
     "examples[].title",
     "examples[].content",
     "references[].citation",
@@ -153,6 +156,11 @@ SLIDES_RAW_TRANSLATE_PATHS: tuple[str, ...] = (
     "new_assets[].caption",
     "new_assets[].alt_text",
     # new_assets[].content NON tradotto: Mermaid/path.
+    "new_equations[].label",
+    "new_equations[].explanation",
+    "new_equations[].statement",
+    "new_equations[].proof[].text",
+    # new_equations[].latex / .kind / .proof[].latex NON tradotti.
 )
 
 

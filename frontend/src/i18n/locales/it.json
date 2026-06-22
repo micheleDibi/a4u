@@ -856,6 +856,11 @@
         "caption": "Didascalia (descrizione breve)",
         "equationLabel": "Nome dell'equazione",
         "equationExplanation": "Spiegazione",
+        "equationKind": "Tipo",
+        "equationStatement": "Enunciato",
+        "equationProof": "Dimostrazione (passaggi)",
+        "proofStep": "Passaggio {{n}}",
+        "addProofStep": "Aggiungi passaggio",
         "exampleTitle": "Titolo dell'esempio",
         "assetContent": "Contenuto / descrizione",
         "altText": "Testo alternativo (descrizione per accessibilità)",
@@ -1461,6 +1466,18 @@
       "speechPdf": {
         "label": "PDF non allineato al discorso attuale",
         "action": "Rigenera PDF"
+      }
+    },
+    "theorem": {
+      "proof": "Dimostrazione",
+      "kind": {
+        "definition": "Definizione",
+        "formula": "Formula",
+        "identity": "Identità",
+        "theorem": "Teorema",
+        "proposition": "Proposizione",
+        "lemma": "Lemma",
+        "corollary": "Corollario"
       }
     },
     "media": {

@@ -213,6 +213,29 @@ FORMATI ACCETTATI:
 - formula → format = "latex" (senza delimitatori $...$)
 - table → format = "markdown"
 
+EQUAZIONI — ENUNCIATO E DIMOSTRAZIONE (`equations[]`)
+Per OGNI asset in `equations[]`:
+- `latex`: la formula/relazione principale, LaTeX puro SENZA delimitatori.
+- `kind`: classifica il tipo →
+  `definition` | `formula` | `identity` | `theorem` | `proposition` |
+  `lemma` | `corollary`.
+- `statement`: l'ENUNCIATO formale (markdown; math inline SOLO con `$..$`).
+  Obbligatorio per `theorem`/`proposition`/`lemma`/`corollary` (ipotesi +
+  tesi) e per `definition` (la definizione precisa). Per `formula`/
+  `identity` "nude" può restare vuoto ("").
+- `proof`: la DIMOSTRAZIONE come lista ORDINATA di passaggi, SOLO quando il
+  risultato è realmente dimostrabile (`theorem`/`proposition`/`lemma`/
+  `corollary`). Ogni passaggio:
+    · `latex`: il contenuto matematico del passo, LaTeX puro SENZA
+      delimitatori (puoi usare ambienti `aligned`, `cases`, `align*` per il
+      multilinea). Vuoto ("") se il passo è puramente discorsivo.
+    · `text`: la spiegazione del passo (markdown; math inline con `$..$`).
+  I passaggi devono essere CORRETTI, COMPLETI e in ordine logico,
+  giustificando ogni deduzione fino alla tesi.
+- NON inventare dimostrazioni: per `definition`, `formula` empiriche/
+  postulate o `identity` elementari lascia `proof: []` (e, se non c'è un
+  enunciato sensato, `statement: ""`).
+
 ALLINEAMENTO
 
 - Ogni obiettivo formativo in almeno una sezione
@@ -337,12 +360,40 @@ LESSON_CONTENT_JSON_SCHEMA: dict[str, Any] = {
                         "latex": {"type": "string"},
                         "label": {"type": "string"},
                         "explanation": {"type": "string"},
+                        "kind": {
+                            "type": "string",
+                            "enum": [
+                                "definition",
+                                "formula",
+                                "identity",
+                                "theorem",
+                                "proposition",
+                                "lemma",
+                                "corollary",
+                            ],
+                        },
+                        "statement": {"type": "string"},
+                        "proof": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "latex": {"type": "string"},
+                                    "text": {"type": "string"},
+                                },
+                                "required": ["latex", "text"],
+                                "additionalProperties": False,
+                            },
+                        },
                     },
                     "required": [
                         "equation_id",
                         "latex",
                         "label",
                         "explanation",
+                        "kind",
+                        "statement",
+                        "proof",
                     ],
                     "additionalProperties": False,
                 },

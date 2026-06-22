@@ -231,6 +231,29 @@
     .equation .math-block { margin: 0; }
     .equation figcaption .label { font-style: normal; font-weight: 600; }
 
+    /* === Teoremi / enunciati + dimostrazioni === */
+    /* Il blocco teorema usa testo allineato a sinistra; solo le formule
+       (`.math-block`) restano centrate. */
+    figure.theorem { text-align: left; padding: 3mm; }
+    figure.theorem .theorem-head {
+      font-weight: 700; margin-bottom: 1.5mm;
+      color: {{ tpl.primary_color }};
+    }
+    figure.theorem .theorem-statement { margin-bottom: 2mm; }
+    figure.theorem .theorem-statement p:first-child { margin-top: 0; }
+    figure.theorem .math-block { margin: 2mm 0; text-align: center; }
+    figure.theorem .proof {
+      margin-top: 2.5mm; padding-left: 3mm;
+      border-left: 1.5pt solid rgba(0, 0, 0, 0.15);
+    }
+    figure.theorem .proof-head {
+      font-style: italic; font-weight: 600; margin-bottom: 1mm;
+    }
+    figure.theorem .proof-step { page-break-inside: avoid; margin: 1.5mm 0; }
+    figure.theorem .proof-step-text p:first-child { margin-top: 0; }
+    figure.theorem .proof-step-text p:last-child { margin-bottom: 0; }
+    figure.theorem .proof-qed { text-align: right; font-size: 11pt; }
+
     .example {
       margin: 4mm 0;
       border-left: 3pt solid {{ tpl.primary_color }};

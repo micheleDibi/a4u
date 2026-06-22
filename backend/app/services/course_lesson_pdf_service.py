@@ -422,24 +422,94 @@ def _render_table_block(
 
 
 def _render_equation_block(
-    eq: dict[str, Any], *, math_svg_map: dict | None = None
+    eq: dict[str, Any],
+    *,
+    math_svg_map: dict | None = None,
+    language: str = "it",
 ) -> str:
     latex = (eq.get("latex") or "").strip()
     label = (eq.get("label") or "").strip()
     explanation = (eq.get("explanation") or "").strip()
-    caption_parts = []
-    if label:
-        caption_parts.append(f'<span class="label">{_html_escape_text(label)}</span>')
-    if explanation:
-        caption_parts.append(_html_escape_text(explanation))
-    caption_html = (
-        f'<figcaption>{" — ".join(caption_parts)}</figcaption>'
-        if caption_parts
+    kind = (eq.get("kind") or "formula").strip().lower()
+    statement = (eq.get("statement") or "").strip()
+    proof = eq.get("proof") or []
+
+    formula_html = (
+        f'<div class="math-block">'
+        f'{_render_math(latex, display="block", svg_map=math_svg_map)}</div>'
+        if latex
         else ""
     )
-    inner = _render_math(latex, display="block", svg_map=math_svg_map)
-    body = f'<div class="math-block">{inner}</div>'
-    return f'<figure class="equation"><div class="figure-body">{body}</div>{caption_html}</figure>'
+
+    proof_steps = [
+        s
+        for s in proof
+        if isinstance(s, dict)
+        and ((s.get("latex") or "").strip() or (s.get("text") or "").strip())
+    ]
+    has_proof = bool(proof_steps)
+
+    # Caso semplice (retro-compatibile): formula "nuda" senza enunciato né
+    # dimostrazione → rendering attuale (formula + caption label/explanation).
+    if not statement and not has_proof:
+        caption_parts = []
+        if label:
+            caption_parts.append(
+                f'<span class="label">{_html_escape_text(label)}</span>'
+            )
+        if explanation:
+            caption_parts.append(_html_escape_text(explanation))
+        caption_html = (
+            f'<figcaption>{" — ".join(caption_parts)}</figcaption>'
+            if caption_parts
+            else ""
+        )
+        return (
+            f'<figure class="equation"><div class="figure-body">{formula_html}</div>'
+            f"{caption_html}</figure>"
+        )
+
+    # Blocco teorema/proposizione/definizione: intestazione + enunciato +
+    # formula + (eventuale) dimostrazione a passaggi.
+    labels = _labels_for(language)
+    kind_label = labels.get(f"kind_{kind}", labels.get("kind_theorem", "Teorema"))
+    head = kind_label + (f" {_html_escape_text(label)}" if label else "")
+    parts = [f'<div class="theorem-head">{head}</div>']
+    if statement:
+        parts.append(
+            f'<div class="theorem-statement">'
+            f"{render_markdown(statement, math_svg_map)}</div>"
+        )
+    if formula_html:
+        parts.append(formula_html)
+    if has_proof:
+        proof_parts = [
+            f'<div class="proof-head">{_html_escape_text(labels.get("proof", "Dimostrazione"))}.</div>'
+        ]
+        for step in proof_steps:
+            slatex = (step.get("latex") or "").strip()
+            stext = (step.get("text") or "").strip()
+            step_html = '<div class="proof-step">'
+            if stext:
+                step_html += (
+                    f'<div class="proof-step-text">'
+                    f"{render_markdown(stext, math_svg_map)}</div>"
+                )
+            if slatex:
+                step_html += (
+                    f'<div class="math-block">'
+                    f'{_render_math(slatex, display="block", svg_map=math_svg_map)}</div>'
+                )
+            step_html += "</div>"
+            proof_parts.append(step_html)
+        proof_parts.append('<div class="proof-qed">&#8718;</div>')
+        parts.append(f'<div class="proof">{"".join(proof_parts)}</div>')
+    if explanation:
+        parts.append(f'<figcaption>{_html_escape_text(explanation)}</figcaption>')
+    return (
+        f'<figure class="equation theorem" data-kind="{_html_escape_text(kind)}">'
+        f'{"".join(parts)}</figure>'
+    )
 
 
 def _render_example_block(
@@ -461,6 +531,7 @@ def _build_asset_html_map(
     *,
     mermaid_svg_map: dict[str, str] | None = None,
     math_svg_map: dict | None = None,
+    language: str = "it",
 ) -> dict[tuple[str, str], str]:
     """Pre-renderizza ogni asset una sola volta. Chiavi: (KIND, id).
 
@@ -483,7 +554,7 @@ def _build_asset_html_map(
         )
     for eq in content.get("equations") or []:
         out[("EQ", str(eq.get("equation_id", "")).lower())] = _render_equation_block(
-            eq, math_svg_map=math_svg_map
+            eq, math_svg_map=math_svg_map, language=language
         )
     for ex in content.get("examples") or []:
         out[("EX", str(ex.get("example_id", "")).lower())] = _render_example_block(
@@ -852,6 +923,10 @@ def _collect_math_from_content(
     for eq in content.get("equations") or []:
         if isinstance(eq, dict):
             _add(eq.get("latex") or "", "block")
+            # Passaggi della dimostrazione (LaTeX block).
+            for step in eq.get("proof") or []:
+                if isinstance(step, dict):
+                    _add(step.get("latex") or "", "block")
 
     texts: list[str] = [
         content.get("introduction") or "",
@@ -866,6 +941,13 @@ def _collect_math_from_content(
     for ex in content.get("examples") or []:
         if isinstance(ex, dict):
             texts.append(ex.get("content") or "")
+    # Enunciato e testo dei passaggi: math inline `$..$`.
+    for eq in content.get("equations") or []:
+        if isinstance(eq, dict):
+            texts.append(eq.get("statement") or "")
+            for step in eq.get("proof") or []:
+                if isinstance(step, dict):
+                    texts.append(step.get("text") or "")
 
     for text in texts:
         if not text:
@@ -1136,6 +1218,14 @@ def _labels_for(language: str) -> dict[str, str]:
             "lesson": "lesson",
             "cfu": "ECTS",
             "teacher": "Instructor",
+            "proof": "Proof",
+            "kind_definition": "Definition",
+            "kind_formula": "Formula",
+            "kind_identity": "Identity",
+            "kind_theorem": "Theorem",
+            "kind_proposition": "Proposition",
+            "kind_lemma": "Lemma",
+            "kind_corollary": "Corollary",
         }
     return {
         "summary": "Sintesi",
@@ -1145,6 +1235,14 @@ def _labels_for(language: str) -> dict[str, str]:
         "lesson": "lezione",
         "cfu": "CFU",
         "teacher": "Docente",
+        "proof": "Dimostrazione",
+        "kind_definition": "Definizione",
+        "kind_formula": "Formula",
+        "kind_identity": "Identità",
+        "kind_theorem": "Teorema",
+        "kind_proposition": "Proposizione",
+        "kind_lemma": "Lemma",
+        "kind_corollary": "Corollario",
     }
 
 
@@ -1193,7 +1291,10 @@ def render_lesson_html(
     labels = _labels_for(language)
 
     asset_map = _build_asset_html_map(
-        raw, mermaid_svg_map=mermaid_svg_map, math_svg_map=math_svg_map
+        raw,
+        mermaid_svg_map=mermaid_svg_map,
+        math_svg_map=math_svg_map,
+        language=language,
     )
     body_md = _build_lesson_body_markdown(raw)
     body_md = _replace_summary_heading(body_md, labels["summary"])

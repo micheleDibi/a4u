@@ -77,12 +77,32 @@ class LessonContentTable(BaseModel):
     caption: str = Field(default="", max_length=400)
 
 
+class ProofStep(BaseModel):
+    """Un passaggio della dimostrazione di un teorema/proposizione."""
+
+    model_config = ConfigDict(extra="forbid")
+    # LaTeX del passaggio (SENZA delimitatori $...$); può essere vuoto se il
+    # passo è solo testuale.
+    latex: str = Field(default="", max_length=2000)
+    # Spiegazione del passaggio (markdown; può contenere math inline $..$).
+    text: str = Field(default="", max_length=1500)
+
+
 class LessonContentEquation(BaseModel):
     model_config = ConfigDict(extra="forbid")
     equation_id: str = Field(min_length=1, max_length=50)
     latex: str = Field(min_length=1)
     label: str = Field(default="", max_length=200)
     explanation: str = Field(default="", max_length=1200)
+    # Tipo dell'asset: l'AI classifica per decidere se generare la
+    # dimostrazione. definition/formula/identity → di norma `proof` vuota;
+    # theorem/proposition/lemma/corollary → enunciato + dimostrazione.
+    kind: str = Field(default="formula", max_length=20)
+    # Enunciato formale (markdown + math inline $..$). Vuoto per le formule
+    # "nude" senza enunciato dedicato.
+    statement: str = Field(default="", max_length=3000)
+    # Dimostrazione a passaggi; vuota quando non applicabile.
+    proof: list[ProofStep] = Field(default_factory=list)
 
 
 class LessonContentExample(BaseModel):

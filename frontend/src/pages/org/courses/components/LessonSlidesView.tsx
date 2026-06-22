@@ -7,7 +7,10 @@ import type {
 } from "@/api/courses";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { MarkdownRenderer } from "@/components/shared/MarkdownRenderer";
+import {
+  EquationBlock,
+  MarkdownRenderer,
+} from "@/components/shared/MarkdownRenderer";
 import { MermaidDiagram } from "@/components/shared/MermaidDiagram";
 import { mediaUrl } from "@/lib/media";
 import { resolveAsset } from "@/lib/slides";
@@ -231,19 +234,9 @@ function SlideAssetRender({
   }
 
   if (resolved.kind === "equation") {
-    const e = resolved.payload;
-    // Renderizza il LaTeX in display mode via MarkdownRenderer ($$...$$).
-    const md = `$$${e.latex}$$`;
-    return (
-      <figure className="space-y-1">
-        <MarkdownRenderer source={md} />
-        {e.label && (
-          <figcaption className="text-xs italic text-muted-foreground">
-            {e.label}
-          </figcaption>
-        )}
-      </figure>
-    );
+    // Renderer unificato: formula nuda o blocco teorema (enunciato +
+    // dimostrazione a passaggi), identico alle Dispense.
+    return <EquationBlock equation={resolved.payload} />;
   }
 
   if (resolved.kind === "example") {

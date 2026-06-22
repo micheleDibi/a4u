@@ -159,6 +159,7 @@ def _build_slide_asset_html(
     kind: str,
     mermaid_svg_map: dict[str, str],
     math_svg_map: dict | None = None,
+    language: str = "it",
 ) -> str:
     """Costruisce il blocco HTML per un asset referenziato da una slide.
 
@@ -206,7 +207,9 @@ def _build_slide_asset_html(
     if kind == "table":
         return base_pdf._render_table_block(asset, math_svg_map=math_svg_map)
     if kind == "equation":
-        return base_pdf._render_equation_block(asset, math_svg_map=math_svg_map)
+        return base_pdf._render_equation_block(
+            asset, math_svg_map=math_svg_map, language=language
+        )
     if kind == "example":
         return base_pdf._render_example_block(asset, math_svg_map=math_svg_map)
     return ""
@@ -471,7 +474,11 @@ def render_slides_html(
                 continue
             kind, payload = resolved
             html = _build_slide_asset_html(
-                payload, kind=kind, mermaid_svg_map=mmap, math_svg_map=math_svg_map
+                payload,
+                kind=kind,
+                mermaid_svg_map=mmap,
+                math_svg_map=math_svg_map,
+                language=language,
             )
             if html:
                 assets_html.append(html)

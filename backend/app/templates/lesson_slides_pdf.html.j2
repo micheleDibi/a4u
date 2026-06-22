@@ -291,6 +291,24 @@
     .slide-asset .math-inline svg, .math-inline svg {
       display: inline; margin: 0; max-height: none; max-width: 100%;
     }
+    /* Blocco teorema in slide: testo a sinistra, formule centrate,
+       dimostrazione compatta (le slide hanno spazio verticale limitato). */
+    .slide-asset figure.theorem { text-align: left; }
+    .slide-asset figure.theorem .theorem-head {
+      font-weight: 700; color: {{ tpl.primary_color }}; margin-bottom: 1mm;
+    }
+    .slide-asset figure.theorem .math-block svg {
+      max-height: 40mm; /* più basso del cap asset generico per i passaggi */
+    }
+    .slide-asset figure.theorem .proof {
+      margin-top: 1.5mm; padding-left: 2.5mm;
+      border-left: 1.5pt solid rgba(0, 0, 0, 0.15);
+    }
+    .slide-asset figure.theorem .proof-head {
+      font-style: italic; font-weight: 600;
+    }
+    .slide-asset figure.theorem .proof-step { margin: 1mm 0; }
+    .slide-asset figure.theorem .proof-qed { text-align: right; }
   </style>
 </head>
 <body>

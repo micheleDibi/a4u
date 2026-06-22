@@ -203,11 +203,34 @@ export interface LessonContentTable {
   caption: string;
 }
 
+/** Un passaggio della dimostrazione di un teorema/proposizione. */
+export interface ProofStep {
+  /** LaTeX del passaggio (senza delimitatori $...$); può essere vuoto. */
+  latex: string;
+  /** Spiegazione del passaggio (markdown; può contenere math inline $..$). */
+  text: string;
+}
+
+export type EquationKind =
+  | "definition"
+  | "formula"
+  | "identity"
+  | "theorem"
+  | "proposition"
+  | "lemma"
+  | "corollary";
+
 export interface LessonContentEquation {
   equation_id: string;
   latex: string;
   label: string;
   explanation: string;
+  /** Tipo dell'asset (opzionale per retro-compatibilità coi dati esistenti). */
+  kind?: EquationKind | string;
+  /** Enunciato formale (markdown + $..$). Vuoto per le formule "nude". */
+  statement?: string;
+  /** Dimostrazione a passaggi; vuota/assente se non applicabile. */
+  proof?: ProofStep[];
 }
 
 export interface LessonContentExample {

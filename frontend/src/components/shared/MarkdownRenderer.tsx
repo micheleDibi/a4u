@@ -1,4 +1,5 @@
 import { lazy, Suspense, useMemo, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -289,45 +290,120 @@ function TableBlock({ table }: { table: LessonContentTable }) {
   );
 }
 
-function EquationBlock({ equation }: { equation: LessonContentEquation }) {
-  // L'AI a volte include già i delimitatori nel campo `latex`
-  // (`$$...$$`, `$...$`, `\[...\]`): riavvolgerli in `$$...$$`
-  // produrrebbe delimitatori annidati → KaTeX fallisce e mostra il
-  // sorgente in rosso. Li rimuoviamo prima di riavvolgere.
-  const inner = (equation.latex || "")
+/** Normalizza il LaTeX rimuovendo delimitatori già presenti, per evitare
+ *  l'annidamento `$$...$$` che fa fallire KaTeX. */
+function normalizeLatex(latex: string): string {
+  return (latex || "")
     .trim()
     .replace(/^\\\[/, "")
     .replace(/\\\]$/, "")
     .replace(/^\$+/, "")
     .replace(/\$+$/, "")
     .trim();
-  const display = `$$${inner}$$`;
-  const captionParts = [equation.label, equation.explanation]
-    .map((p) => (p || "").trim())
-    .filter(Boolean);
+}
+
+/** Formula in display mode (KaTeX); `null` se vuota. */
+function KatexDisplay({ latex }: { latex: string }) {
+  const inner = normalizeLatex(latex);
+  if (!inner) return null;
+  return (
+    <div className="lesson-prose flex justify-center py-1">
+      <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+        {`$$${inner}$$`}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
+/** Testo markdown (statement / passo dimostrazione) con math inline. */
+function ProseMarkdown({ source }: { source: string }) {
+  return (
+    <div className="lesson-prose">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[rehypeKatex]}
+      >
+        {source}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
+/**
+ * Renderer unificato di un asset equazione: formula "nuda" (come prima)
+ * oppure blocco teorema/proposizione con enunciato + dimostrazione a
+ * passaggi. Esportato per riuso nelle slide (`LessonSlidesView`).
+ */
+export function EquationBlock({ equation }: { equation: LessonContentEquation }) {
+  const { t } = useTranslation();
+  const statement = (equation.statement || "").trim();
+  const steps = (equation.proof || []).filter(
+    (s) => (s?.latex || "").trim() || (s?.text || "").trim(),
+  );
+  const hasProof = steps.length > 0;
+
+  // Caso semplice (retro-compatibile): formula nuda → figure + caption.
+  if (!statement && !hasProof) {
+    const captionParts = [equation.label, equation.explanation]
+      .map((p) => (p || "").trim())
+      .filter(Boolean);
+    return (
+      <figure className="my-6 overflow-hidden rounded-lg border border-border bg-card">
+        <div className="bg-muted/20 p-4">
+          <KatexDisplay latex={equation.latex} />
+        </div>
+        {captionParts.length > 0 && (
+          <figcaption className="border-t border-border bg-muted/30 px-4 py-2 text-xs text-muted-foreground">
+            {equation.label && (
+              <span className="font-semibold not-italic">{equation.label}</span>
+            )}
+            {equation.label && equation.explanation && (
+              <span className="px-1">—</span>
+            )}
+            {equation.explanation && (
+              <span className="italic">{equation.explanation}</span>
+            )}
+          </figcaption>
+        )}
+      </figure>
+    );
+  }
+
+  const kind = (equation.kind || "theorem").toLowerCase();
+  const kindLabel = t(`courses.theorem.kind.${kind}`, {
+    defaultValue: t("courses.theorem.kind.theorem"),
+  });
   return (
     <figure className="my-6 overflow-hidden rounded-lg border border-border bg-card">
-      <div className="lesson-prose flex justify-center bg-muted/20 p-4">
-        <ReactMarkdown
-          remarkPlugins={[remarkMath]}
-          rehypePlugins={[rehypeKatex]}
-        >
-          {display}
-        </ReactMarkdown>
+      <div className="border-b border-border bg-muted/30 px-4 py-2 text-sm font-semibold text-primary">
+        {kindLabel}
+        {equation.label ? ` ${equation.label}` : ""}
       </div>
-      {captionParts.length > 0 && (
-        <figcaption className="border-t border-border bg-muted/30 px-4 py-2 text-xs text-muted-foreground">
-          {equation.label && (
-            <span className="font-semibold not-italic">{equation.label}</span>
-          )}
-          {equation.label && equation.explanation && (
-            <span className="px-1">—</span>
-          )}
-          {equation.explanation && (
-            <span className="italic">{equation.explanation}</span>
-          )}
-        </figcaption>
-      )}
+      <div className="space-y-2 p-4">
+        {statement && <ProseMarkdown source={statement} />}
+        <KatexDisplay latex={equation.latex} />
+        {hasProof && (
+          <div className="mt-2 border-l-2 border-primary/30 pl-3">
+            <div className="text-sm font-semibold italic text-muted-foreground">
+              {t("courses.theorem.proof")}.
+            </div>
+            <div className="space-y-2">
+              {steps.map((s, i) => (
+                <div key={i} className="space-y-1">
+                  {(s.text || "").trim() && <ProseMarkdown source={s.text} />}
+                  <KatexDisplay latex={s.latex || ""} />
+                </div>
+              ))}
+            </div>
+            <div className="pt-1 text-right text-base leading-none">&#8718;</div>
+          </div>
+        )}
+        {(equation.explanation || "").trim() && (
+          <div className="border-t border-border pt-2 text-xs italic text-muted-foreground">
+            {equation.explanation}
+          </div>
+        )}
+      </div>
     </figure>
   );
 }

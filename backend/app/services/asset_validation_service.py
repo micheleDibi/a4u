@@ -337,10 +337,11 @@ def _collect_content_slots(
     slots: list[_Slot] = []
     inline_fields: list[_InlineField] = []
 
-    # Equazioni dedicate (LaTeX senza delimitatori).
+    # Equazioni dedicate (LaTeX senza delimitatori): formula principale +
+    # ogni passaggio LaTeX della dimostrazione (`proof[].latex`).
     for eq in output.equations:
+        ctx = eq.label or eq.explanation or eq.statement or ""
         if (eq.latex or "").strip():
-            ctx = eq.label or eq.explanation or ""
             slots.append(
                 _Slot(
                     id=f"eq:{eq.equation_id}",
@@ -350,6 +351,17 @@ def _collect_content_slots(
                     commit=lambda v, _e=eq: setattr(_e, "latex", v),
                 )
             )
+        for j, step in enumerate(eq.proof):
+            if (step.latex or "").strip():
+                slots.append(
+                    _Slot(
+                        id=f"eq:{eq.equation_id}.proof{j}",
+                        kind="latex",
+                        current=step.latex,
+                        context=ctx,
+                        commit=lambda v, _s=step: setattr(_s, "latex", v),
+                    )
+                )
 
     # Diagrammi Mermaid (solo format=="mermaid"; ignora image/legacy).
     for asset in output.visual_assets:
@@ -398,6 +410,12 @@ def _collect_content_slots(
         _add_inline(sec, "content", sec.title or "sezione", f"sec{si}.content")
     for ei, ex in enumerate(output.examples):
         _add_inline(ex, "content", ex.title or "esempio", f"ex{ei}.content")
+    # Enunciato e testo dei passaggi: math inline `$..$` validato/riparato.
+    for ei, eq in enumerate(output.equations):
+        _ctx = eq.label or eq.equation_id
+        _add_inline(eq, "statement", _ctx, f"eq{ei}.statement")
+        for j, step in enumerate(eq.proof):
+            _add_inline(step, "text", _ctx, f"eq{ei}.proof{j}.text")
 
     return slots, inline_fields
 
@@ -443,6 +461,34 @@ def _collect_slides_slots(
                     ),
                 )
             )
+
+    # new_equations di Fase 4: formula + passaggi LaTeX + enunciato/testo.
+    for ei, eq in enumerate(output.new_equations):
+        ctx = eq.label or eq.equation_id
+        if (eq.latex or "").strip():
+            slots.append(
+                _Slot(
+                    id=f"new_eq:{eq.equation_id}",
+                    kind="latex",
+                    current=eq.latex,
+                    context=ctx,
+                    commit=lambda v, _e=eq: setattr(_e, "latex", v),
+                )
+            )
+        for j, step in enumerate(eq.proof):
+            if (step.latex or "").strip():
+                slots.append(
+                    _Slot(
+                        id=f"new_eq:{eq.equation_id}.proof{j}",
+                        kind="latex",
+                        current=step.latex,
+                        context=ctx,
+                        commit=lambda v, _s=step: setattr(_s, "latex", v),
+                    )
+                )
+        _add_inline_field(eq, "statement", ctx, f"new_eq{ei}.statement")
+        for j, step in enumerate(eq.proof):
+            _add_inline_field(step, "text", ctx, f"new_eq{ei}.proof{j}.text")
 
     for s_idx, slide in enumerate(output.slides):
         _add_inline_field(slide, "body", slide.title or "slide", f"s{s_idx}.body")

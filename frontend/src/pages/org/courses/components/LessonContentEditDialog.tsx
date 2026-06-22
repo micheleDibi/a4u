@@ -1,6 +1,8 @@
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  ArrowDown,
+  ArrowUp,
   Check,
   ChevronDown,
   ChevronRight,
@@ -60,6 +62,18 @@ import { LatexEditor } from "@/components/shared/LatexEditor";
 import { MermaidEditor } from "@/components/shared/MermaidEditor";
 import { RichTextEditor } from "@/components/shared/RichTextEditor";
 import { TableEditor } from "@/components/shared/TableEditor";
+
+// Tipi di asset equazione (mirror dello schema BE). Etichette localizzate
+// in `courses.theorem.kind.*`.
+const EQUATION_KINDS = [
+  "definition",
+  "formula",
+  "identity",
+  "theorem",
+  "proposition",
+  "lemma",
+  "corollary",
+] as const;
 
 interface Props {
   open: boolean;
@@ -659,6 +673,31 @@ export function LessonContentEditDialog({
                   placeholder={t("courses.lessonsContent.editor.equationLabel")}
                   disabled={isPending}
                 />
+                <div className="space-y-1.5">
+                  <Label className="text-xs">
+                    {t("courses.lessonsContent.editor.equationKind")}
+                  </Label>
+                  <Select
+                    value={eq.kind || "formula"}
+                    onValueChange={(v) => {
+                      const next = [...equations];
+                      next[idx] = { ...eq, kind: v };
+                      setEquations(next);
+                    }}
+                    disabled={isPending}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {EQUATION_KINDS.map((k) => (
+                        <SelectItem key={k} value={k}>
+                          {t(`courses.theorem.kind.${k}`)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
                 <LatexEditor
                   value={eq.latex}
                   onChange={(latex) => {
@@ -668,6 +707,132 @@ export function LessonContentEditDialog({
                   }}
                   disabled={isPending}
                 />
+                {/* Enunciato */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs">
+                    {t("courses.lessonsContent.editor.equationStatement")}
+                  </Label>
+                  <RichTextEditor
+                    value={eq.statement || ""}
+                    onChange={(md) => {
+                      const next = [...equations];
+                      next[idx] = { ...eq, statement: md };
+                      setEquations(next);
+                    }}
+                    disabled={isPending}
+                    size="sm"
+                  />
+                </div>
+                {/* Dimostrazione: passaggi */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs">
+                    {t("courses.lessonsContent.editor.equationProof")}
+                  </Label>
+                  {(eq.proof || []).map((step, j) => {
+                    const proof = eq.proof || [];
+                    const setProof = (p: typeof proof) => {
+                      const next = [...equations];
+                      next[idx] = { ...eq, proof: p };
+                      setEquations(next);
+                    };
+                    return (
+                      <div
+                        key={j}
+                        className="space-y-1.5 rounded border bg-background p-2"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-medium text-muted-foreground">
+                            {t("courses.lessonsContent.editor.proofStep", {
+                              n: j + 1,
+                            })}
+                          </span>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="size-6"
+                              disabled={isPending || j === 0}
+                              onClick={() => {
+                                const p = [...proof];
+                                const tmp = p[j - 1];
+                                p[j - 1] = p[j];
+                                p[j] = tmp;
+                                setProof(p);
+                              }}
+                            >
+                              <ArrowUp className="size-3.5" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="size-6"
+                              disabled={isPending || j === proof.length - 1}
+                              onClick={() => {
+                                const p = [...proof];
+                                const tmp = p[j + 1];
+                                p[j + 1] = p[j];
+                                p[j] = tmp;
+                                setProof(p);
+                              }}
+                            >
+                              <ArrowDown className="size-3.5" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="size-6 text-destructive"
+                              disabled={isPending}
+                              onClick={() =>
+                                setProof(proof.filter((_, i) => i !== j))
+                              }
+                            >
+                              <Trash2 className="size-3.5" />
+                            </Button>
+                          </div>
+                        </div>
+                        <RichTextEditor
+                          value={step.text || ""}
+                          onChange={(md) => {
+                            const p = [...proof];
+                            p[j] = { ...p[j], text: md };
+                            setProof(p);
+                          }}
+                          disabled={isPending}
+                          size="sm"
+                        />
+                        <LatexEditor
+                          value={step.latex || ""}
+                          onChange={(latex) => {
+                            const p = [...proof];
+                            p[j] = { ...p[j], latex };
+                            setProof(p);
+                          }}
+                          disabled={isPending}
+                        />
+                      </div>
+                    );
+                  })}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isPending}
+                    onClick={() => {
+                      const next = [...equations];
+                      next[idx] = {
+                        ...eq,
+                        proof: [...(eq.proof || []), { latex: "", text: "" }],
+                      };
+                      setEquations(next);
+                    }}
+                  >
+                    <Plus className="size-3.5" />
+                    {t("courses.lessonsContent.editor.addProofStep")}
+                  </Button>
+                </div>
                 <div
                   ref={setFieldRef(`equation-${idx}-explanation`)}
                   className={cn(
@@ -715,6 +880,9 @@ export function LessonContentEditDialog({
                     latex: "",
                     label: "",
                     explanation: "",
+                    kind: "formula",
+                    statement: "",
+                    proof: [],
                   },
                 ])
               }

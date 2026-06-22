@@ -855,6 +855,11 @@
         "caption": "Caption (short description)",
         "equationLabel": "Equation name",
         "equationExplanation": "Explanation",
+        "equationKind": "Type",
+        "equationStatement": "Statement",
+        "equationProof": "Proof (steps)",
+        "proofStep": "Step {{n}}",
+        "addProofStep": "Add step",
         "exampleTitle": "Example title",
         "assetContent": "Content / description",
         "altText": "Alternative text (accessibility description)",
@@ -1460,6 +1465,18 @@
       "speechPdf": {
         "label": "PDF out of sync with current speech",
         "action": "Regenerate PDF"
+      }
+    },
+    "theorem": {
+      "proof": "Proof",
+      "kind": {
+        "definition": "Definition",
+        "formula": "Formula",
+        "identity": "Identity",
+        "theorem": "Theorem",
+        "proposition": "Proposition",
+        "lemma": "Lemma",
+        "corollary": "Corollary"
       }
     },
     "media": {

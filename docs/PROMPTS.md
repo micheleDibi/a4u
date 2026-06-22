@@ -739,8 +739,38 @@ In rigenerazione: `## Versione attuale della lezione (DA RIVEDERE)` + `## Indica
                         "latex": {"type": "string"},
                         "label": {"type": "string"},
                         "explanation": {"type": "string"},
+                        "kind": {
+                            "type": "string",
+                            "enum": [
+                                "definition", "formula", "identity",
+                                "theorem", "proposition", "lemma", "corollary",
+                            ],
+                        },
+                        "statement": {"type": "string"},
+                        "proof": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "latex": {"type": "string"},
+                                    "text": {"type": "string"},
+                                },
+                                "required": ["latex", "text"],
+                                "additionalProperties": False,
+                            },
+                        },
                     },
-                    "required": ["equation_id", "latex", "label", "explanation"],
+                    # `kind`: classifica il tipo. `statement`: enunciato
+                    # formale (markdown + $..$); obbligatorio per teoremi/
+                    # proposizioni/lemmi/corollari e definizioni, "" altrove.
+                    # `proof`: passaggi {latex (senza delimitatori), text
+                    # (markdown)}; SOLO per risultati dimostrabili, [] per
+                    # definizioni/formule empiriche (niente dimostrazioni
+                    # inventate).
+                    "required": [
+                        "equation_id", "latex", "label", "explanation",
+                        "kind", "statement", "proof",
+                    ],
                     "additionalProperties": False,
                 },
             },
