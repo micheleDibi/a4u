@@ -61,6 +61,30 @@ forwardate con `${VAR:-default}` per ogni knob significativo).
 | `LOGIN_LOCKOUT_MINUTES` | `15` | Durata del blocco dopo lockout. |
 | `SENTRY_DSN` | _(vuoto)_ | Se valorizzato, attiva Sentry su backend. |
 
+### Storage backend (persistenza file)
+
+Tutto l'I/O persistente dei file dell'app (upload utente/media, PDF generati)
+passa da `app/services/remote_storage.py`, che instrada verso il backend
+selezionato da `STORAGE_BACKEND`. Con un backend remoto i file sono poi serviti
+pubblicamente via HTTP da `OVH_PUBLIC_BASE_URL`. Le credenziali `OVH_FTP_*`
+(host/user/password/base path) sono condivise dai due backend remoti; il SFTP
+aggiunge solo la propria porta. Runbook completo di cutover in
+[Storage file: migrazione su server OVH (FTP/SFTP)](storage-ovh-migration.md).
+
+| Variabile | Default | Descrizione |
+|---|---|---|
+| `STORAGE_BACKEND` | `local` | `local \| ovh_ftp \| ovh_sftp`. `local` = filesystem locale (dev, comportamento storico); `ovh_ftp` = server OVH via FTP/FTPS (porta 21); `ovh_sftp` = server OVH via SFTP (Paramiko/SSH, porta 22, più robusto su hosting condiviso). I backend `ovh_*` servono i file via HTTP da `OVH_PUBLIC_BASE_URL`. |
+| `STORAGE_LOCAL_FALLBACK` | `true` | Cutover: con un backend `ovh_*`, se un file non è (ancora) su OVH ne tenta la lettura dal filesystem locale ancora montato (logga `storage_fallback_read`). Mettere `false` a migrazione completata. |
+| `OVH_FTP_HOST` | _(vuoto)_ | Host del server OVH. Obbligatorio con un backend `ovh_*`. Condiviso da FTP e SFTP. |
+| `OVH_FTP_PORT` | `21` | Porta FTP/FTPS (usata solo con `ovh_ftp`). |
+| `OVH_FTP_USER` | _(vuoto)_ | Utente. Obbligatorio con un backend `ovh_*`. Condiviso da FTP e SFTP. |
+| `OVH_FTP_PASSWORD` | _(vuoto)_ | Password. Obbligatoria con un backend `ovh_*`. Mai committare. Condivisa da FTP e SFTP. |
+| `OVH_FTP_BASE_PATH` | `/` | Cartella radice remota in cui scrivere/leggere, mappata al docroot pubblico (es. `/www/media`). Le key (`uploads/...`, `generated_pdfs/...`) sono appese a questo path. Condivisa da FTP e SFTP. |
+| `OVH_FTP_USE_TLS` | `true` | FTPS esplicito (TLS su canale di controllo + dati). `false` solo per debug (credenziali in chiaro). Ignorato da `ovh_sftp` (SFTP è sempre cifrato). |
+| `OVH_FTP_TIMEOUT_SECONDS` | `30` | Timeout di connessione/operazione del backend remoto. Condiviso da FTP e SFTP. |
+| `OVH_SFTP_PORT` | `22` | Porta SFTP (usata solo con `ovh_sftp`). Stessi host/credenziali di `OVH_FTP_*`, ma su SSH. |
+| `OVH_PUBLIC_BASE_URL` | _(vuoto)_ | Base URL pubblica da cui i file su OVH sono raggiungibili via HTTP (`public_url(key) = f"{OVH_PUBLIC_BASE_URL}/{key}"`, es. `https://progettiersaf.com/media`). Obbligatoria con un backend `ovh_*`; deve puntare alla **stessa** cartella di `OVH_FTP_BASE_PATH`. |
+
 ### MiniMax (avatar clip generation)
 
 | Variabile | Default | Descrizione |

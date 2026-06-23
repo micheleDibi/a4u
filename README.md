@@ -32,7 +32,7 @@ Monorepo con backend **FastAPI** (SQLAlchemy 2 async) e frontend **React 18 + Vi
 
 ## Funzionalità principali
 
-- 🧠 **Generazione AI a 5 fasi** — architettura del corso → struttura lezioni → contenuti (testo + Mermaid + LaTeX + tabelle + bibliografia + glossario) → slide → discorso temporizzato. Ogni fase è batch-parallela e rigenerabile (per entità o intera) con `regeneration_hint` testuale.
+- 🧠 **Generazione AI a 5 fasi** — architettura del corso → struttura lezioni → dispense (testo + Mermaid + LaTeX + tabelle + bibliografia + glossario) → slide → discorso temporizzato. Ogni fase è batch-parallela e rigenerabile (per entità o intera) con `regeneration_hint` testuale.
 - ✏️ **Editing manuale a ogni livello** — editor specializzati: TipTap WYSIWYG (testo), KaTeX live preview (formule), preview Mermaid (diagrammi), table editor visuale, editor segmenti discorso con auto-durata e validazione TTS-safety inline.
 - 📄 **Tre pipeline di export PDF** — lezione testo, slide (16:9) e discorso, via WeasyPrint (CSS Paged Media completo) + bundle a livello modulo.
 - 🎬 **Video della lezione (Fase 6)** — TTS XTTS-v2 su GPU RunPod + rendering slide Playwright + montaggio ffmpeg.
@@ -66,7 +66,7 @@ Monorepo con backend **FastAPI** (SQLAlchemy 2 async) e frontend **React 18 + Vi
    └──────┬───────┘
           ▼
    ┌──────────────┐  Fase 3  Per lezione (parallelo): testo + Mermaid
-   │ Contenuti    │          + LaTeX + tabelle + esempi + glossario
+   │ Dispense     │          + LaTeX + tabelle + esempi + glossario
    └──────┬───────┘          (+ verifica competenze a fine modulo)
           ▼
    ┌──────────────┐  Fase 4  Slide della presentazione (16:9),
@@ -95,7 +95,7 @@ Tutte le fasi sono **implementate e in produzione interna**. Lo `course.status` 
 | Pre-processing documenti | `course_document_worker` | 1 |
 | Fase 1 — Architettura | `course_architecture_worker` | 1 |
 | Fase 2 — Struttura lezioni | `course_lesson_structure_worker` | 5 |
-| Fase 3 — Contenuti + Glossario | `course_lesson_content_worker` | 3 |
+| Fase 3 — Dispense + Glossario | `course_lesson_content_worker` | 3 |
 | Fase 4 — Slide | `course_lesson_slides_worker` | 3 |
 | Fase 5 — Discorso temporizzato | `course_lesson_speech_worker` | 3 |
 | Export PDF lezione testo | `course_lesson_pdf_worker` | 2 |
@@ -118,8 +118,9 @@ In totale **13 worker async** girano nel lifespan dell'app. I cap di concorrenza
 | Migrations | Alembic (33 revisions) |
 | Generazione AI | OpenAI `gpt-5.5` (reasoning) per le fasi di generazione · `gpt-4o-mini` per summary/paper · JSON schema strict · auto-retry trasparente · Semaphore per fase + claim atomico anti-double-dispatch |
 | Voce & video | RunPod Serverless GPU — XTTS-v2 (TTS) + MuseTalk (lip-sync) · MiniMax-Hailuo-02 (clip avatar, modalità first-and-last-frame) · ffmpeg (montaggio) · Cloudflare R2 (storage di transito) |
-| Export PDF | WeasyPrint (CSS Paged Media completo) · `latex2mathml` · Playwright headless per pre-render Mermaid → SVG e rendering frame slide |
+| Export PDF | WeasyPrint (CSS Paged Media completo) · `MathJax` (formule LaTeX → SVG; `latex2mathml` solo come fallback offline) · Playwright headless per pre-render Mermaid → SVG, formule LaTeX → SVG e rendering frame slide |
 | Document extract | `pdfplumber` · `python-docx` · `docx2txt` · `striprtf` |
+| Storage file | Backend pluggable via `settings.storage_backend`: `local` (filesystem) · `ovh_ftp` (FTP/FTPS) · `ovh_sftp` (SFTP, Paramiko) |
 | Ricerca paper | OpenAlex (primary) · Semantic Scholar + Crossref (enrichment on-demand) |
 | Frontend | React 18 · Vite · TypeScript · Tailwind 4 · Radix UI (shadcn pattern) · TanStack Query · React Hook Form + Zod · i18next (24 locali) · TipTap · KaTeX · Mermaid |
 | Database | PostgreSQL 16 |
@@ -252,6 +253,8 @@ Tutta la documentazione vive in [`docs/`](docs/) ed è organizzata per area. Ind
 | [`06-permissions.md`](docs/06-permissions.md) | Ruoli, permessi, override per-membership |
 | [`07-deployment.md`](docs/07-deployment.md) | Docker compose prod, healthcheck, backup |
 | [`api-reference.md`](docs/api-reference.md) | Endpoint platform-level + rimando ai domini |
+| [`PROMPTS.md`](docs/PROMPTS.md) | Elenco completo dei prompt AI (system + user) + mappatura modello/reasoning/token per fase |
+| [`storage-ovh-migration.md`](docs/storage-ovh-migration.md) | Runbook storage file pluggable (local / OVH FTP-FTPS / OVH SFTP) via `remote_storage.py` |
 
 ### Dominio corsi (`docs/courses/`)
 
@@ -265,7 +268,7 @@ Tutta la documentazione vive in [`docs/`](docs/) ed è organizzata per area. Ind
 | [`05-api-reference.md`](docs/courses/05-api-reference.md) | ~91 endpoint sotto `/orgs/{org_id}/courses` |
 | [`06-frontend.md`](docs/courses/06-frontend.md) | Editor a stepper 4 fasi, componenti, dialog, polling |
 | [`07-lesson-structure.md`](docs/courses/07-lesson-structure.md) | Fase 2 — struttura lezioni |
-| [`08-lesson-content.md`](docs/courses/08-lesson-content.md) | Fase 3 — contenuti + glossario |
+| [`08-lesson-content.md`](docs/courses/08-lesson-content.md) | Fase 3 — Dispense + glossario |
 | [`09-pdf-export.md`](docs/courses/09-pdf-export.md) | Tre pipeline PDF (testo/slide/discorso) |
 | [`10-lesson-slides.md`](docs/courses/10-lesson-slides.md) | Fase 4 — slide della lezione |
 | [`11-lesson-speech.md`](docs/courses/11-lesson-speech.md) | Fase 5 — discorso temporizzato + TTS-safety |
@@ -339,6 +342,8 @@ Quando l'utente rigenera content/slide/discorso, lo status PDF a valle (`pdf_sta
 - **Security headers** (`Content-Security-Policy`, `Strict-Transport-Security`, `X-Frame-Options`, ...) + middleware CSRF check su mutating endpoints.
 - **Path-traversal protection** sugli asset upload (`Path.relative_to(upload_root)`).
 - **TTS-safety validation** server-side per Fase 5: il testo dei segmenti del discorso non può contenere markdown (`*`, `_`, `` ` ``, `#`, `\`, `$`), abbreviazioni note (`es.`, `etc.`, ...) o comandi LaTeX (`\frac`, `\sum`, ...). Hard fail in `materialize_lesson_speech`.
+- **Prompt-injection hardening** — `core/prompt_safety.py` (`sanitize_user_input` + `contains_injection_attempt`) sanifica e filtra l'input utente prima delle chiamate AI conversazionali (assistente Nova).
+- **Gestione utenti admin + profilo self-service** — endpoint admin `/users` (CRUD utenti + reset password) e self-service (`PATCH /auth/me`, `/auth/me/change-email`, `/auth/me/change-password`), tutti permission-gated e auditati.
 
 Vedi [`docs/05-security.md`](docs/05-security.md) per il dettaglio completo.
 

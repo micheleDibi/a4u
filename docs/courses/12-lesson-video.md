@@ -121,6 +121,57 @@ Dettagli del contratto:
 Errori: `RunpodNotConfiguredError`, `RunpodJobFailedError`,
 `RunpodTimeoutError`, `RunpodTtsError` (base, recuperabile).
 
+### 4.6 Chunking CJK-aware (worker XTTS GPU)
+
+Il backend **non** spezza il testo: invia ogni segment come
+`{segment_id, text}` (vedi sopra). È il **worker GPU XTTS**
+(`XTTS/handler.py`) a suddividere ogni segment in chunk sintetizzabili,
+con regole dipendenti dalla lingua. Il punto d'ingresso è
+`split_into_chunks(text, max_chars, *, join)`, invocato per ogni segment
+da `_synthesize_segment_chunks`.
+
+Perché serve: il tokenizer XTTS-v2 ha un **limite di caratteri per
+frase per lingua** (`VoiceBpeTokenizer.check_input_length`); oltre il
+limite l'audio viene troncato. Per le lingue CJK il limite è molto più
+basso che per le europee — `ja=71`, `zh-cn=82`, `ko=95` contro `it=213`,
+`en=250` (tabella `_XTTS_CHAR_LIMITS` in `handler.py`). Il cap effettivo
+di ogni chunk è `min(MAX_CHARS=180, limite_lingua)`.
+
+Lo split procede a tre stadi:
+
+1. **Split forte sui terminatori di frase**, sia ASCII (`. ! ? :`
+   seguiti da spazio, così `3.14` non viene spezzato) sia **CJK**
+   (`。．！？…`, anche senza spazio dopo) — regex `_STRONG_SPLIT_RE`.
+2. Frasi ancora troppo lunghe: **split debole sulle virgole** ASCII e
+   CJK (`、，`, `_SOFT_SPLIT_RE`) con **packing greedy** entro `max_chars`,
+   accumulando i pezzi finché ci stanno.
+3. **Rete di sicurezza** (`_hard_slice`): qualunque chunk ancora oltre il
+   limite (tipico del giapponese privo di punteggiatura) viene tagliato a
+   conteggio caratteri. Senza questo, un chunk troppo grande verrebbe
+   scartato dallo stream RunPod → "nessun audio prodotto" per quel
+   segment.
+
+Il separatore di packing `join` è uno spazio per le lingue europee e la
+**stringa vuota per ja/zh/ko** (`_NO_SPACE_LANGS`), che non separano le
+parole con spazi. Ogni chunk subisce inoltre `rstrip` della punteggiatura
+finale (`_CHUNK_TRIM_CHARS`) per evitare il "punto" pronunciato dal
+normalizer XTTS. Per testo solo-ASCII l'output è identico alla versione
+pre-CJK.
+
+Le lingue CJK richiedono **dipendenze G2P/tokenizer dedicate**, extra
+opzionali di `coqui-tts` non installate di default (`XTTS/requirements.txt`):
+giapponese → `cutlet` (romanizzazione) + `unidic-lite` (dizionario MeCab
+per fugashi); cinese → `jieba` (segmentazione) + `pypinyin`; coreano →
+`hangul_romanize`. Senza, un job in quelle lingue fallisce a runtime con
+`ModuleNotFoundError`.
+
+Lato backend `tts_languages.py` (`normalize_language_code`) fa **solo
+normalizzazione del language code** — lowercase, drop del country code,
+`zh*` → `zh-cn`, fallback `it` — e validazione contro
+`XTTS_SUPPORTED_LANGUAGES` (le 16 lingue); non tocca mai il testo dei
+segment. Lo stesso `normalize_language_code` è duplicato in `handler.py`
+lato GPU.
+
 ## 5. Cache dell'audio TTS su disco
 
 `backend/app/services/lesson_audio_cache.py` — evita di richiamare

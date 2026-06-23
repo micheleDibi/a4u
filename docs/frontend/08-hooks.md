@@ -11,6 +11,8 @@ li espongono.
 - `useTaskEta(key, isActive, progress)` → `src/hooks/useTaskEta.ts` (ETA per task singolo).
 - `useLessonVideo*` → `src/hooks/useLessonVideo.ts` (query/mutation del video MP4 della lezione, Fase 6).
 - `useLessonAvatarVideo*` → `src/hooks/useLessonAvatarVideo.ts` (query/mutation del «Video con Avatar», Fase 6b).
+- `useColumnVisibility(storageKey, defaults)` → `src/hooks/useColumnVisibility.ts` (visibilità colonne DataTable persistita in localStorage).
+- `useMediaView(courseId, variant)` → co-locato in `src/pages/org/courses/components/media/useMediaView.ts` (stile vista + moduli collassati dei tab media, persistiti in localStorage).
 
 Helper correlati:
 - `formatDuration(ms)` → `src/lib/formatDuration.ts` (formattatore "1m 30s" da ms).
@@ -323,6 +325,94 @@ function useDebouncedValue<T>(value: T, delayMs?: number = 300): T;
 Implementazione semplice (`setTimeout` + `clearTimeout` in `useEffect`),
 zero dipendenze. Usato da `CoursesListPage` per il debounce della
 search testuale nei filtri (300 ms, sync verso `useSearchParams`).
+
+---
+
+## `useColumnVisibility(storageKey, defaults)` — `src/hooks/useColumnVisibility.ts`
+
+**Scopo**: gestire la visibilità delle colonne di una `DataTable`
+persistendola in `localStorage` per-browser. Modellato sul pattern di
+`useMediaView` (lazy init + `try/catch` tollerante agli errori di
+storage).
+
+### Firma
+
+```ts
+import type { VisibilityState } from "@tanstack/react-table";
+
+function useColumnVisibility(
+  storageKey: string,
+  defaults: VisibilityState,
+): {
+  columnVisibility: VisibilityState;
+  setColumnVisibility: (next: VisibilityState) => void;
+};
+```
+
+### Implementazione
+
+1. Lazy init dello stato: legge `localStorage[storageKey]`; se presente
+   fa il merge `{ ...defaults, ...parsed }` — così se in futuro si
+   aggiunge una colonna questa eredita il suo default finché l'utente
+   non la tocca, senza rompere la preferenza già salvata. Su errore di
+   parse / storage, cade su `defaults`.
+2. `setColumnVisibility(next)` aggiorna lo stato **e** scrive l'intero
+   oggetto in `localStorage` (`JSON.stringify`), in `try/catch`.
+
+### Esempio
+
+```tsx
+const { columnVisibility, setColumnVisibility } = useColumnVisibility(
+  "courses-list-columns",
+  DEFAULT_COLUMN_VISIBILITY,
+);
+```
+
+Usato da `CoursesListPage` (chiave `"courses-list-columns"`) e
+inoltrato sia a `DataTable` (`columnVisibility` /
+`onColumnVisibilityChange`) sia al `DataTableColumnToggle` (vedi
+[05 — Components](05-components.md) e [06 — Pages](06-pages.md)).
+
+---
+
+## `useMediaView(courseId, variant)` — `src/pages/org/courses/components/media/useMediaView.ts`
+
+**Scopo**: stato di presentazione condiviso dei tab media (Video / Video
+con Avatar): stile di vista (lista compatta vs griglia) e set di moduli
+collassati. Entrambi persistiti in `localStorage`, separati **per corso**
+e **per variante** (così la scelta su "Video" non si trascina su "Video
+con Avatar"). Co-locato con i componenti media, non in `src/hooks/`.
+
+### Firma
+
+```ts
+type MediaViewMode = "list" | "grid";
+
+function useMediaView(
+  courseId: string,
+  variant: string,   // "video" | "avatar"
+): {
+  viewMode: MediaViewMode;
+  setViewMode: (next: MediaViewMode) => void;
+  collapsed: Set<string>;            // id moduli chiusi
+  toggleModule: (moduleId: string) => void;
+};
+```
+
+### Implementazione
+
+1. Due chiavi localStorage derivate da `courseId` + `variant`:
+   `lesson-media-view:{courseId}:{variant}` e
+   `lesson-media-collapsed:{courseId}:{variant}`.
+2. `viewMode`: lazy init dal valore salvato (`"list"`/`"grid"`), default
+   `"grid"`. `setViewMode` aggiorna stato + storage.
+3. `collapsed`: `Set<string>` lazy init dall'array serializzato; un
+   `useEffect` lo ri-serializza (`JSON.stringify([...collapsed])`) ad
+   ogni cambio. `toggleModule(moduleId)` aggiunge/rimuove l'id dal set.
+4. Tutte le scritture in `try/catch` (storage tollerante agli errori).
+
+Usato da `LessonMediaView` (vedi [05 — Components](05-components.md)),
+condiviso da `CourseLessonVideoView` e `CourseLessonAvatarVideoView`.
 
 ---
 

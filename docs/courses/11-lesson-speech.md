@@ -289,6 +289,25 @@ pipeline TTS+video. Quando aggiungeremo l'audio:
   ground truth per il timing del video
 - considerare fade ~0.3s tra slide brevi per fluidità visiva
 
+## Chunking CJK-aware (worker XTTS GPU)
+
+La pipeline TTS+video (Fase 6) consuma direttamente gli `speech_segments`
+prodotti qui: il backend invia al worker GPU **un `{segment_id, text}`
+per segment** (`runpod_tts_client.synthesize_lesson_audio`), senza
+spezzare il testo. È il worker XTTS su RunPod GPU — non il backend — a
+suddividere ogni segment in chunk sintetizzabili.
+
+Implicazione lato Fase 5: il `text` di ogni segment può essere prosa
+lunga senza preoccuparsi dei limiti per-frase del tokenizer XTTS-v2; il
+chunking a valle è trasparente. Vale comunque la TTS-safety (punto 8
+delle validazioni §8.5): niente LaTeX/markdown/abbreviazioni, perché il
+testo va al modello vocale così com'è.
+
+Lato backend `tts_languages.py` fa **solo normalizzazione del
+language code** (lowercase, drop country code, `zh*` → `zh-cn`, fallback
+`it`), non interviene sul testo. Il dettaglio dello split per lingua è
+in [12 — Lesson video](12-lesson-video.md#46-chunking-cjk-aware-worker-xtts-gpu).
+
 ## Errori comuni
 
 Vedi tabella completa in [05 — API reference](05-api-reference.md). Più

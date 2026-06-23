@@ -103,6 +103,33 @@ Se l'utente è platform admin, `organizations` è vuoto (l'admin opera
 trasversalmente, non ha membership). Per ogni membership viene chiamato
 `resolve_permissions` per produrre il set risolto.
 
+### Self-service profilo personale
+
+Tre rotte che operano sull'utente corrente (`CurrentUser`, solo
+autenticazione). Tutte ritornano `MeOut` ricostruito da `_build_me` (helper
+condiviso con `GET /auth/me`) e scrivono audit.
+
+#### `PATCH /auth/me`
+
+Body `ProfileUpdate { full_name }`. Modifica del proprio nome, **nessuna
+re-auth** (azione a basso rischio). Audit `user.profile.update`.
+
+#### `POST /auth/me/change-email`
+
+Body `ChangeEmailRequest { current_password, new_email }`. Verifica la
+password attuale (`401 invalid_current_password`); `422 email_unchanged` se
+coincide con quella attuale; `409 email_in_use` se già usata da un altro
+utente. Le sessioni **restano valide** (l'email è un identificatore, non una
+credenziale). Audit `user.email.change` con `metadata {old, new}`.
+
+#### `POST /auth/me/change-password`
+
+Rate-limit `5/minute`. Body `ChangePasswordRequest { current_password,
+new_password }` (la nuova è validata da `is_password_strong`). Verifica la
+password attuale (`401 invalid_current_password`); `422 password_unchanged` se
+identica all'attuale. **Non** revoca le proprie sessioni (UX amichevole,
+asimmetria voluta rispetto al reset lato admin). Audit `user.password.change`.
+
 ---
 
 ## `app/api/v1/admin_organizations.py`
@@ -160,12 +187,32 @@ Restituisce `Page[UserOut]`.
 
 ### `POST /admin/users`
 
-Body `UserCreateAdmin`. Verifica email non in uso (else 409
-`email_in_use`). Hash password e salva. **201** restituisce `UserOut`.
+Body `UserCreateAdmin { email, full_name, password, is_platform_admin? }`.
+Verifica email non in uso (else 409 `email_in_use`). Hash password e salva
+con `is_active=True`. Audit `user.create`. **201** restituisce `UserOut`.
 
 ### `PUT /admin/users/{user_id}`
 
-Body `UserUpdateAdmin` con campi opzionali.
+Body `UserUpdateAdmin` (campi opzionali: `full_name`, `email`,
+`is_platform_admin`, `is_active`). Delega a
+`user_admin_service.update_user_admin`, che applica le invarianti di
+sicurezza: `404 user_not_found`; **self-guard** (`409
+cannot_deactivate_self`, `409 cannot_demote_self`); **last-active-admin**
+(`409 last_active_admin` se è l'unico platform admin attivo);
+`409 email_in_use` su collisione email. Audit `user.update` con i campi
+modificati. Restituisce `UserOut`.
+
+> La rimozione di un account = disattivazione (`is_active=False`),
+> reversibile. **Nessuna** delete fisica.
+
+### `POST /admin/users/{user_id}/password`
+
+Body `UserAdminSetPassword { password }` (validata da `is_password_strong`).
+Reset password manuale lato admin (no SMTP). Delega a
+`user_admin_service.set_user_password`: hash della nuova password e
+**revoca di tutti i refresh token vivi** dell'utente target (forza il
+re-login; gli access JWT restano validi fino a scadenza TTL). `404
+user_not_found`. Audit `user.password_reset`. Restituisce `UserOut`.
 
 ### `POST /admin/organizations/{org_id}/memberships` → 201
 

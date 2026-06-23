@@ -410,10 +410,13 @@ In rigenerazione: `## Versione attuale del modulo (DA RIVEDERE)` + `## Indicazio
 
 # PROMPT 3 — Contenuto della lezione / "Dispense" (Fase 3)
 
+**Versione: "v4" — due fasi interne (bozza → riscrittura stile) in un solo call, output solo Fase 2.** Il system prompt impone al modello un processo di scrittura in due fasi interne, eseguite in un'**unica** chiamata OpenAI: Fase 1 = prima stesura concentrata su correttezza e copertura (stile ignorato); Fase 2 = riscrittura integrale applicando le regole di STILE e avvicinandosi ai campioni di prosa di riferimento. Nell'output JSON il modello inserisce **solo il risultato della Fase 2** (la prima stesura non compare mai); contenuti, formule, tabelle e tag asset restano invariati tra le due fasi. Non è un doppio call: è un'istruzione di processo dentro lo stesso prompt.
+
 **SCOPO**
-- File: `backend/app/services/openai_lesson_content_service.py` — `_system_prompt(language_code)`, chiamata da `generate_lesson_content()`.
+- File: `backend/app/services/openai_lesson_content_service.py` — `_system_prompt(language_code, *, ruolo_docente, stile_insegnamento, livello_eqf)`, chiamata da `generate_lesson_content()`.
 - Modello: `settings.openai_lesson_content_model` (default `gpt-5.5`, reasoning `high`, max 32000 token — il task più complesso della pipeline).
-- Ruolo: scrive il testo completo Markdown della lezione (sezioni, asset Mermaid, formule LaTeX, tabelle, esempi, riferimenti, coverage_check).
+- Ruolo: scrive il testo completo Markdown della lezione (sezioni, asset Mermaid, formule LaTeX, tabelle, equazioni con enunciato/dimostrazione, esempi, riferimenti, coverage_check).
+- Interpolazione: `ruolo_docente`, `stile_insegnamento` e `livello_eqf` entrano nel tono del testo; il prompt fornisce due campioni di prosa umana (un campione "RITMO" + un campione "REGISTRO DIDATTICO") da imitare per texture, non per contenuto.
 
 **PROMPT** (system)
 
@@ -582,6 +585,36 @@ FORMATI ACCETTATI:
   reali a mano dall'editor.
 - formula → format = "latex" (senza delimitatori $...$)
 - table → format = "markdown"
+
+EQUAZIONI — ENUNCIATO E DIMOSTRAZIONE (`equations[]`)
+Per OGNI asset in `equations[]`:
+- `latex`: la formula/relazione principale, LaTeX puro SENZA delimitatori.
+- `kind`: classifica il tipo →
+  `definition` | `formula` | `identity` | `theorem` | `proposition` |
+  `lemma` | `corollary`.
+- `statement`: l'ENUNCIATO formale (markdown; math inline SOLO con `$..$`).
+  Obbligatorio per `theorem`/`proposition`/`lemma`/`corollary` (ipotesi +
+  tesi) e per `definition` (la definizione precisa). Per `formula`/
+  `identity` "nude" può restare vuoto ("").
+- `proof`: la DIMOSTRAZIONE come lista ORDINATA di passaggi, SOLO quando il
+  risultato è realmente dimostrabile (`theorem`/`proposition`/`lemma`/
+  `corollary`). Ogni passaggio:
+    · `latex`: il contenuto matematico del passo, LaTeX puro SENZA
+      delimitatori (puoi usare ambienti `aligned`, `cases`, `align*` per il
+      multilinea). Vuoto ("") se il passo è puramente discorsivo.
+    · `text`: la spiegazione del passo (markdown; math inline con `$..$`).
+  I passaggi devono essere CORRETTI, COMPLETI e in ordine logico,
+  giustificando ogni deduzione fino alla tesi.
+- NON inventare dimostrazioni: per `definition`, `formula` empiriche/
+  postulate o `identity` elementari lascia `proof: []` (e, se non c'è un
+  enunciato sensato, `statement: ""`).
+- REGOLA RIGIDA sui campi formula (`latex` dell'equazione e di ogni
+  passaggio): MAI delimitatori `$`/`$$`/`\(`/`\[`. Per il multilinea usa
+  SEMPRE un ambiente COMPLETO e BILANCIATO `\begin{aligned} ... \end{aligned}`
+  (oppure `cases`): MAI un `&` o un `\\` fuori da un ambiente, MAI un
+  `\end{...}` senza il corrispondente `\begin{...}`. In dubbio, preferisci
+  più passaggi `proof` brevi (una riga ciascuno) invece di un unico blocco
+  `aligned` lungo.
 
 ALLINEAMENTO
 
@@ -2037,6 +2070,8 @@ ASSET DA CORREGGERE:
 ```
 
 **Varianti/note**: altre 3 varianti — `_SYSTEM_MERMAID_EN` (`:70-88`), `_SYSTEM_LATEX_IT` (`:90-104`), `_SYSTEM_LATEX_EN` (`:106-120`). I prompt LaTeX impongono di restituire SOLO il corpo della formula senza delimitatori, compatibile con KaTeX (`strict:"ignore"`) + latex2mathml.
+
+**Flusso lato chiamante** (`asset_validation_service`): questa funzione è invocata solo sugli asset "fragili" risultati invalidi alla validazione (formule LaTeX validate con `latex2mathml` + KaTeX; diagrammi Mermaid validati con v10.9.4). Coinvolge `equations[].latex`, ogni `proof[].latex`, il math inline `$..$`/`$$..$$` nei campi testo (introduction, summary, sezioni, esempi, `statement` e `proof[].text` delle equazioni) e i `visual_assets`/`new_assets` Mermaid. Prima del fix AI c'è uno step deterministico (rimozione caratteri di controllo/combining marks) che spesso risolve senza spendere token. L'output del fix viene sanitizzato (niente code-fence/delimitatori reintrodotti) e scartato se reintroduce un placeholder asset (`[EQ:..]` ecc.). Solo gli asset davvero riparati vengono ri-committati; quelli già validi restano byte-identici. Se un asset resta invalido dopo `asset_fix_max_attempts` → `AssetFixUnresolvedError` (recuperabile): il worker di Fase 3/4 rigenera l'intera lezione via auto-retry, così nessun asset rotto raggiunge `ready`. Dettagli in [08 — Lesson content § Validazione asset](courses/08-lesson-content.md).
 
 ---
 

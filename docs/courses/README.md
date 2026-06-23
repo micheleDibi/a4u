@@ -13,7 +13,7 @@ iterazioni a partire dalla foundation. Ogni file di codice rilevante è document
 - [06 — Frontend](06-frontend.md): pagine, componenti, dialog, polling.
 - [07 — Lesson structure (Fase 2)](07-lesson-structure.md): generazione AI parallela della struttura delle lezioni (obiettivi, temi, prerequisiti, scaletta) — §5 di `prompt_generazione_corsi.md`.
 - [08 — Lesson content (Fase 3) + Glossario](08-lesson-content.md): generazione AI parallela del testo completo delle lezioni con asset visivi (Mermaid + LaTeX + tabelle), glossario corso, **editor user-friendly** (TipTap + custom Table/Latex/Mermaid editors) — §6 + §10.1 di `prompt_generazione_corsi.md`.
-- [09 — PDF export](09-pdf-export.md): export PDF di lezione testo, slide e discorso tramite WeasyPrint (CSS Paged Media completo) + Jinja2 + markdown-it-py + Playwright (pre-render Mermaid → SVG, solo per PDF testo/slide) + latex2mathml — §7 di `prompt_generazione_corsi.md`. Tre pipeline distinte: `pdf_*` (testo), `slides_pdf_*` (slide), `speech_pdf_*` (discorso).
+- [09 — PDF export](09-pdf-export.md): export PDF di lezione testo, slide e discorso tramite WeasyPrint (CSS Paged Media completo) + Jinja2 + markdown-it-py + Playwright (pre-render Mermaid → SVG e formule LaTeX → SVG con MathJax, solo per PDF testo/slide; `latex2mathml` resta solo come fallback offline) + copertina (frontespizio) — §7 di `prompt_generazione_corsi.md`. Tre pipeline distinte: `pdf_*` (testo), `slides_pdf_*` (slide), `speech_pdf_*` (discorso).
 - [10 — Lesson slides (Fase 4)](10-lesson-slides.md): generazione AI delle slide della presentazione, riusando gli asset di Fase 3 + nuovi asset opzionali — §7 (sezione "slides") di `prompt_generazione_corsi.md`.
 - [11 — Lesson speech (Fase 5)](11-lesson-speech.md): generazione AI del discorso temporizzato (parlato TTS-friendly suddiviso in segmenti sincronizzati alle slide) con vincolo `sum(durata) ≈ minuti_per_lezione × 60` ±5% e regole 130 wpm IT / 150 wpm EN — §8 + §9.5 di `prompt_generazione_corsi.md`.
 - [12 — Lesson video (Fase 6)](12-lesson-video.md): generazione del video MP4 della lezione — TTS XTTS-v2 su RunPod GPU + rendering slide Playwright + encoding ffmpeg — §9.
@@ -144,7 +144,7 @@ Tutti sotto namespace `course:*`. Vedi [06 — Permissions](../06-permissions.md
 ```
 backend/app/
 ├── models/
-│   ├── course.py                            # tabella course (status, snapshot CFU, architettura meta + glossary_* + video_language_code)
+│   ├── course.py                            # tabella course (status, snapshot CFU + corso_di_laurea, architettura meta + glossary_* + video_language_code)
 │   ├── course_document.py                   # documenti caricati + summary JSONB
 │   ├── course_module.py                     # M1, M2, ... + meta Fase 2 (lessons_structure_*)
 │   ├── course_lesson.py                     # M1.L1, ... + is_assessment + Fase 2 + content_* + pdf_* + slides_*/slides_pdf_* + speech_*/speech_pdf_* + video_* (Fase 6) + avatar_video_* (Fase 6b)
@@ -193,7 +193,8 @@ backend/app/
     ├── 0029_avatar_video.py                 # Fase 6b — 8 colonne avatar_video_* + 3 colonne musetalk_* su avatars
     ├── 0030_course_video_avatar_status.py   # course-level status video_status / avatar_video_status (derivati dai per-lesson)
     ├── 0031_course_duplication.py           # tabella course_duplication_job + indici + unique parziale (doc 15)
-    └── 0032_duplication_progress_detail.py  # colonna progress_detail su course_duplication_job (sub-progress UX)
+    ├── 0032_duplication_progress_detail.py  # colonna progress_detail su course_duplication_job (sub-progress UX)
+    └── 0033_course_corso_di_laurea.py       # colonna corso_di_laurea (VARCHAR 200 nullable) su course — livello EQF 6/7
 ```
 
 > **Import paper da bytes**: `course_service.add_document_from_bytes`

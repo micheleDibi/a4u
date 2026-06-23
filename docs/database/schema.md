@@ -24,7 +24,11 @@ users ─┬─< memberships >─ organizations >─ slide_templates
        └─< audit_logs (actor_user_id)
 
 languages ─┬─< avatar_voice_scripts
-           └─< course (FK language_code)
+           ├─< course (FK language_code)
+           └─< course_duplication_job (FK target_language_code)
+
+course ─┬─< course_duplication_job (FK source_course_id, CASCADE)
+        └─── course_duplication_job (FK target_course_id, SET NULL)
 ```
 
 > `avatar_voice_scripts` è seedata con i testi che gli utenti devono
@@ -38,7 +42,7 @@ languages ─┬─< avatar_voice_scripts
 > riassunto qui in apertura del diagramma; il dettaglio per-colonna è
 > centralizzato nel doc dedicato per evitare duplicazioni.
 >
-> **Colonne aggiunte dalle migration `0025`-`0029`** (dettaglio
+> **Colonne aggiunte dalle migration `0025`-`0033`** (dettaglio
 > per-colonna in [Courses 01 — Data model](../courses/01-data-model.md)):
 > - `0025_lesson_video` — `course_lesson`: 8 colonne `video_*`
 >   (`video_status` CHECK ∈ `empty|pending|processing|ready|failed|cancelled`,
@@ -60,6 +64,16 @@ languages ─┬─< avatar_voice_scripts
 >   `ix_course_lesson_course_avatar_video_status` su
 >   `(course_id, avatar_video_status)`. La stessa migration aggiunge i
 >   tre `musetalk_*` su `avatars` (vedi tabella `avatars` sotto).
+> - `0030_course_video_avatar_status` — estende il CHECK constraint
+>   `ck_course_status_valid` su `course.status` con 4 nuovi valori per
+>   le Fasi 6 / 6b: `video_pending`, `video_ready`,
+>   `avatar_video_pending`, `avatar_video_ready` (il CHECK passa da 18 a
+>   22 valori; nessuna nuova colonna).
+> - `0033_course_corso_di_laurea` — `course`: `corso_di_laurea`
+>   VARCHAR(200) nullable, testo libero opzionale mostrato dal FE solo
+>   quando `livello_eqf_term_id` è Laurea triennale (`eqf_6_bachelor`) o
+>   Laurea Magistrale (`eqf_7_master_degree`). Campo di setup didattico,
+>   protetto dal lock `didactic_setup_confirmed_at` lato service.
 >
 > Tutte le colonne `course_lesson` aggiunte da queste migration hanno
 > `server_default` (`empty` / `0` / `false`): zero impatto sulle righe
@@ -434,6 +448,50 @@ attivo al momento della creazione). Stato gestito dal worker.
 **Indici**: `ix_avatar_clips_avatar_id`,
 `ix_avatar_clips_avatar_id_position (avatar_id, position)`,
 `ix_avatar_clips_minimax_task_id`.
+
+---
+
+## `course_duplication_job`
+
+Orchestrazione del job background di duplicazione di un corso in un'altra
+lingua (creata dalla migrazione `0031`). Letta dal worker
+`course_duplication_worker`: clona la shell del corso target
+(video/avatar/pdf resettati) e traduce i contenuti via OpenAI. Vedi
+[Courses 15 — Duplicazione corso](../courses/15-course-duplication.md).
+
+| Colonna | Tipo | Default / Vincoli |
+|---|---|---|
+| `id` | UUID | PK, server_default `gen_random_uuid()` |
+| `source_course_id` | UUID | FK `course.id` ON DELETE CASCADE, NOT NULL — corso sorgente |
+| `target_course_id` | UUID | FK `course.id` ON DELETE SET NULL, nullable — popolata dopo la phase `cloning_structure` |
+| `target_language_code` | varchar(10) | FK `languages.code` ON DELETE RESTRICT, NOT NULL |
+| `status` | varchar(40) NOT NULL | `pending`, CHECK ∈ `pending|processing|ready|failed` |
+| `progress` | smallint NOT NULL | `0`, CHECK 0..100 |
+| `progress_phase` | varchar(50) | nullable (`loading_source` \| `cloning_structure` \| `translating_*` \| `finalizing`) |
+| `progress_detail` | varchar(200) | nullable — sotto-progresso UX (es. `"23/48 lezioni completate"`), aggiunto in `0032` |
+| `error` | text | nullable |
+| `attempts` | smallint NOT NULL | `0` |
+| `tokens` | JSONB | nullable — aggregato cost/token |
+| `requested_by_user_id` | UUID | FK `users.id` ON DELETE SET NULL, nullable |
+| `started_at`, `finished_at` | timestamptz | nullable |
+| `created_at`, `updated_at` | timestamptz | NOT NULL DEFAULT now() |
+
+**Vincoli**: `ck_course_duplication_job_status`,
+`ck_course_duplication_job_progress`.
+
+**Indici**:
+- `ix_course_duplication_job_source` su `source_course_id`,
+- `ix_course_duplication_job_target` su `target_course_id`,
+- `ix_course_duplication_job_status` su `status`,
+- `uq_course_duplication_active` UNIQUE PARZIALE su
+  `(source_course_id, target_language_code) WHERE status IN
+  ('pending','processing')` — impedisce a livello DB job concorrenti per
+  la stessa coppia (source, lingua target). Postgres-only.
+
+> La FK `target_course_id` referenzia `course` una seconda volta (oltre
+> a `source_course_id`): nel modello SQLAlchemy le relationship
+> `source_course` / `target_course` esplicitano `foreign_keys=` per
+> disambiguare.
 
 ---
 

@@ -66,7 +66,8 @@ Niente derivazione su `course.status`: la pipeline è indipendente.
 | Layer | Lib | Note |
 |---|---|---|
 | Markdown → HTML | `markdown-it-py` + `mdit_py_plugins.dollarmath` | GFM tables, strikethrough, math |
-| Math LaTeX → MathML | `latex2mathml` | Pre-rendering server-side, no JS in PDF |
+| Math LaTeX → SVG | `MathJax` 3.2.2 (tex-svg) via `Playwright` | Pre-rendering server-side a SVG: WeasyPrint **non** renderizza MathML, ma rende l'SVG correttamente |
+| Math LaTeX → MathML (fallback) | `latex2mathml` | Gate offline / fallback quando la CDN MathJax è irraggiungibile |
 | Diagrammi Mermaid → SVG | `Playwright` (Chromium headless) | Solo pre-render in batch, una sessione per lezione |
 | Template HTML | `Jinja2` | `backend/app/templates/lesson_pdf.html.j2` |
 | HTML → PDF | `WeasyPrint` 68+ | CSS Paged Media completo (background edge-to-edge, running header, page counter) |
@@ -89,12 +90,17 @@ su ogni pagina, `counter(page)` numera. Single-pass, niente clipping.
 Pattern verificato sul progetto gemello `avatar4universityAPI`.
 
 **KaTeX e Mermaid in-page non sono più usati.** Le formule LaTeX
-vengono convertite a MathML server-side con `latex2mathml`
-(WeasyPrint renderizza MathML nativamente). I diagrammi Mermaid
-vengono pre-renderizzati a SVG con una **sola** sessione Playwright
-headless per lezione (carica `mermaid@10.9.x` con `htmlLabels: false`
-così le label diventano SVG `<text>` e non `<foreignObject>` —
-WeasyPrint non supporta foreignObject).
+vengono **pre-renderizzate a SVG** server-side con **MathJax**
+(`tex-svg`, caricato da CDN in una sessione `Playwright` headless,
+stesso pattern dei diagrammi Mermaid). Scelta deliberata: WeasyPrint
+**non** renderizza il MathML (ne stampa solo il contenuto testuale,
+perdendo pedici/apici/frazioni), mentre rende l'SVG correttamente. Se
+la CDN MathJax è irraggiungibile, ogni formula ricade su `latex2mathml`
+(MathML → `<code>`): degrada con grazia, mai peggio di prima. I
+diagrammi Mermaid vengono pre-renderizzati a SVG con una **sola**
+sessione Playwright headless per lezione (carica `mermaid@10.9.x` con
+`htmlLabels: false` così le label diventano SVG `<text>` e non
+`<foreignObject>` — WeasyPrint non supporta foreignObject).
 
 ## Architettura backend
 
@@ -105,28 +111,44 @@ Pure-functions + orchestrazione DB. Diviso in sezioni logiche:
 **Markdown → HTML pipeline**
 
 ```python
-md = MarkdownIt("commonmark", {"html": True, "linkify": True})
+md = MarkdownIt("commonmark", {"html": True, "linkify": True, "breaks": False})
    .enable(["table", "strikethrough"])
    .use(dollarmath_plugin, allow_labels=False, double_inline=True)
 
-# Custom renderers per dollarmath: emettono MathML direttamente via
-# latex2mathml — WeasyPrint renderizza <math> nativamente.
-md.add_render_rule("math_inline", _render_math_inline)  # → <span class="math-inline"><math>...</math></span>
-md.add_render_rule("math_block",  _render_math_block)   # → <div class="math-block"><math display="block">...</math></div>
+# Custom renderers per dollarmath: cercano l'SVG MathJax pre-renderizzato
+# nella mappa `env["math_svg"]` (chiave `(latex_normalizzato, display)`);
+# in assenza ricadono su MathML via latex2mathml.
+md.add_render_rule("math_inline", _render_math_inline)  # → <span class="math-inline">{svg|mathml}</span>
+md.add_render_rule("math_block",  _render_math_block)   # → <div class="math-block">{svg|mathml}</div>
 ```
 
 > **Firma renderer markdown-it-py**: `add_render_rule` lega la funzione
 > come metodo del `RendererHTML` → la firma corretta è
 > `(self, tokens, idx, options, env)`, non `(tokens, idx, options, env)`.
+> Il **5° parametro è l'`env`**: i renderer leggono da lì la mappa SVG
+> pre-renderizzata (`env["math_svg"]`), passata da `render_markdown`.
 
 `_normalize_math_delimiters` converte `\(..\)` / `\[..\]` (output AI
 "puro" LaTeX) in `$..$` / `$$..$$` riconosciuti da `dollarmath`. Esclude
 i pattern asset-ref `\[FIG:..\]` / `\[TAB:..\]` ecc.
 
+`_normalize_math_source(latex)` rimuove i delimitatori residui (`$$`,
+`$`, `\[`, `\]`) e **ribilancia** gli ambienti malformati emessi a volte
+dall'AI (`\end{env}` senza `\begin{env}` e viceversa, oppure
+allineamento `&`/`\\` fuori da un ambiente → wrappa in `aligned`). Va
+applicata in modo IDENTICO sia in raccolta (`_collect_math_from_content`,
+che genera la chiave della mappa SVG) sia in lookup (`_render_math`),
+altrimenti le chiavi non combaciano.
+
+`_render_math(latex, *, display, svg_map=None)` è il punto unico di
+rendering di una formula: se `svg_map` contiene l'SVG MathJax
+pre-renderizzato per la chiave `(sorgente_normalizzata, display)` lo
+restituisce; altrimenti ricade su `_convert_math_to_mathml`.
+
 `_convert_math_to_mathml(latex, *, display)` wrappa `latex2mathml.
-converter.convert`. In caso di parse error emette un fallback `<code
-class="math-error">` col LaTeX grezzo, così la lezione resta leggibile
-anche con sintassi malformata.
+converter.convert` ed è solo il **fallback offline**. In caso di parse
+error emette un fallback `<code class="math-error">` col LaTeX grezzo,
+così la lezione resta leggibile anche con sintassi malformata.
 
 **Asset substitution**
 
@@ -140,7 +162,7 @@ pre-renderizzato in un blocco HTML e iniettato sulla riga propria
 | `FIG` (visual_assets) con `format="image"` | `<figure class="visual"><img class="uploaded-image" src="data:{mime};base64,..." /></figure>` — file su filesystem letto via `_resolve_template_asset_url` e embeddato come data URL (no fetch HTTP da Playwright/WeasyPrint) |
 | `FIG` legacy (`image_prompt|image_search_query|description`) | `<div class="placeholder-image">{content}</div>` — testo italico, senza grafica |
 | `TAB` (tables) | `<figure class="table">` con tabella renderizzata da markdown-it |
-| `EQ` (equations) | `<figure class="equation"><div class="math-block"><math>...</math></div></figure>` (MathML pre-renderizzato) |
+| `EQ` (equations) | `<figure class="equation"><div class="math-block">{svg_mathjax}</div></figure>` (SVG MathJax pre-renderizzato; fallback MathML). Se l'asset ha `kind` ∈ teorema/proposizione/definizione/lemma/corollario e/o `statement`/`proof`, diventa `<figure class="equation theorem">` con intestazione localizzata + enunciato + formula + dimostrazione a passaggi (`&#8718;` QED) |
 | `EX` (examples) | `<aside class="example">...</aside>` con titolo + corpo markdown |
 
 Asset orfano (riferimento senza definizione): `<div class="missing-asset">`.
@@ -212,6 +234,42 @@ che il CSS sposta nel margin-box `@top-left` di **ogni** pagina (cover
 inclusa) via `position: running(pageHeader)`. La copertina non duplica
 i loghi inline.
 
+**Copertina ricca + footer running**
+
+La copertina (`.cover`, prima pagina, `page-break-after: always`) è
+costruita da `render_lesson_html`, che passa al template i metadati di
+corso/lezione e il `teacher_name` risolto da `materialize_lesson_pdf`.
+Elementi, dall'alto:
+- **accent-bar** colorata (`primary_color` del template);
+- **codice lezione localizzato** `lesson.code_label` — prodotto da
+  `_format_lesson_code_label(lesson_code, labels)`: il codice `M1.L1`
+  diventa **"Modulo 1 - lezione 1"** (it) / **"Module 1 - lesson 1"**
+  (en); se il codice non matcha `^M\d+\.L\d+$` (lezioni di verifica /
+  codici legacy) viene ritornato invariato;
+- **titolo lezione** (`lesson.title`);
+- **course-title**: titolo del corso in corsivo, con i **CFU** in coda
+  se valorizzati (`course.cfu` + label `CFU`/`ECTS`);
+- **cover-meta**: `Docente: {teacher_name}` (label `Docente`/`Instructor`)
+  se il corso ha un assegnatario.
+
+I **CFU** vengono da `course.cfu`; il **docente** è
+`User.full_name` dell'assegnatario `course.assignee_user_id` (risolto via
+`db.get(User, ...)` in `materialize_lesson_pdf`); le label sono
+localizzate da `_labels_for(language)` in base a `course.language_code`.
+
+> **Nome organizzazione**: il riferimento all'org in pagina è dato dai
+> **loghi running** del template (nessuna riga di testo col nome org in
+> copertina). Il CSS prevede una classe `.org-name` ma il template
+> attuale non la renderizza.
+
+Il **footer** è anch'esso *running* (`position: running(pageFooter)` →
+margin-box `@bottom-left` a piena larghezza) e quindi ripetuto su **ogni**
+pagina. Riga sinistra (`.pf-meta`): `course.title · code_label ·
+lesson.title` + (se presenti) `· {cfu} CFU` + `· Docente: {teacher}`.
+Riga destra (`.pf-right`): `{counter(page)} / {counter(pages)} · Generated
+by Avatar4University` (il credito prodotto resta su ogni pagina, non
+rimovibile).
+
 **Mermaid pre-rendering**
 
 `_prerender_mermaid_for_lesson(content)` estrae tutti gli asset
@@ -227,6 +285,38 @@ e da lì a `_build_asset_html_map`, che lo iniezta nei blocchi
 `<figure class="visual"><div class="mermaid-svg">{svg}</div></figure>`.
 Se il rendering fallisce (rete, sintassi mermaid), il template emette
 `<pre class="mermaid-fallback">` col codice originale.
+
+**LaTeX pre-rendering (MathJax → SVG)**
+
+Lo stesso pattern Playwright è usato per le formule: `_MATHJAX_RENDERER_HTML`
+è un mini-documento che carica `mathjax@3.2.2/es5/tex-svg.js` da CDN
+(jsdelivr) ed espone `window.__renderMath(latex, display)`. Config
+chiave:
+- `svg: { fontCache: 'none' }` — ogni SVG è autonomo (glyph come path
+  inline, niente `<defs>/<use>` con id condivisi che collidono incollando
+  molte formule nello stesso documento);
+- `startup: { typeset: false }` — niente auto-render: si usa
+  `MathJax.tex2svg(latex, { display })` in modo programmatico;
+- su parse error MathJax emette un nodo `merror` → `__renderMath`
+  ritorna `null` e il chiamante ricade su MathML.
+
+`_prerender_math_to_svg_batch_async(items)` renderizza una lista di
+`(latex, display)` con UNA sola sessione headless (attende
+`window.__mathReady`, timeout 20s — `tex-svg.js` è ~1MB, più ampio del
+Mermaid). Come per il Mermaid è wrappata da `_..._sync` /
+`_..._batch` che girano in un thread con loop dedicato
+(`ProactorEventLoop` su Windows, unico a supportare il `subprocess_exec`
+di Playwright).
+
+`_collect_math_from_content` raccoglie le formule e
+`_prerender_math_for_lesson` restituisce la mappa `{(latex, display):
+svg}`, passata a `render_lesson_html(math_svg_map=...)`. Le chiavi
+assenti (formula non raccolta, o CDN MathJax giù) ricadono su MathML in
+`_render_math`/`_convert_math_to_mathml`. Lato template
+(`lesson_pdf.html.j2`): `.math-block svg` è centrato con `max-width:100%`,
+`.math-inline svg` conserva il `vertical-align` MathJax per allinearsi
+alla baseline del testo; la regola `math { font-size: 1.05em }` resta
+solo come fallback per il MathML.
 
 **Immagini caricate (`format="image"`)**
 
@@ -261,8 +351,10 @@ async def generate_pdf_bytes(*, html, base_url=None) -> bytes:
 
 Niente JavaScript: WeasyPrint non lo esegue. Tutta la logica
 JS-dependent è già stata espansa server-side prima di arrivare qui
-(MathML inline, Mermaid SVG inline). Niente `window.__renderingDone`,
-niente CDN da attendere.
+(formule come SVG MathJax inline — fallback MathML —, Mermaid SVG
+inline). Niente `window.__renderingDone`, niente CDN da attendere in
+fase di rendering finale (le CDN MathJax/Mermaid sono usate solo nello
+step di pre-render Playwright a monte).
 
 > **Windows local-dev**: WeasyPrint richiede GTK3 runtime. Installalo
 > una volta sola con `winget install tschoonj.GTKForWindows`. Su Linux
@@ -281,14 +373,26 @@ root configurata. Il prossimo export sovrascrive lo stesso file (no
 versioning).
 
 **`materialize_lesson_pdf`** è il punto di ingresso del worker:
-1. risolve il template (lesson.pdf_template_id → org default);
+1. risolve il template (lesson.pdf_template_id → org default) e carica
+   l'`Organization` + il docente (`course.assignee_user_id` →
+   `User.full_name`) per la copertina/footer;
 2. `_prerender_mermaid_for_lesson(content_raw)` → `{asset_id: svg}` (una
    sessione Playwright per lezione, solo se ci sono mermaid);
-3. `render_lesson_html(... mermaid_svg_map=...)` → HTML completo con
-   MathML + SVG inline + CSS @page con sfondo edge-to-edge;
-4. `generate_pdf_bytes(html=html)` → bytes via WeasyPrint;
-5. scrive il file su disco;
-6. aggiorna `pdf_path`, `pdf_template_id`, `pdf_generated_at`.
+3. `_prerender_math_for_lesson(content_raw)` → `{(latex, display): svg}`
+   (una sessione Playwright MathJax `tex-svg`, solo se la lezione
+   contiene formule);
+4. `render_lesson_html(... mermaid_svg_map=..., math_svg_map=...,
+   teacher_name=...)` → HTML completo con SVG MathJax (fallback MathML) +
+   SVG mermaid inline + CSS @page con sfondo edge-to-edge;
+5. `generate_pdf_bytes(html=html)` → bytes via WeasyPrint;
+6. salva il PDF (`remote_storage.upload_bytes(pdf_key(rel), ...)`);
+7. aggiorna `pdf_path`, `pdf_template_id`, `pdf_generated_at`.
+
+Le formule sono raccolte da `_collect_math_from_content`: equazioni
+dedicate (`equations[].latex` + passaggi `proof[].latex`) e il math
+inline/block `$..$`/`$$..$$` nei campi testo (introduction, sections,
+summary, celle tabella, esempi, `statement`/`explanation`/`proof[].text`).
+Dedup per chiave `(latex_normalizzato, display)`.
 
 ### `course_lesson_pdf_worker.py`
 
@@ -358,10 +462,12 @@ root: il `kind` è già codificato nel suffisso del nome file
 
 Pre-condition (helper `_ensure_all_pdfs_ready`):
 - modulo non vuoto → altrimenti `409 module_has_no_lessons`
-- tutte le lezioni in stato `ready` con `*_pdf_path` valorizzato →
-  altrimenti `409 module_pdfs_not_ready` con
-  `meta.missing_lessons = [lesson_id, ...]`
-- file presente sul filesystem per ognuna → altrimenti
+- tutte le lezioni (escluse le verifiche, `is_assessment`) in stato
+  `ready` con `*_pdf_path` valorizzato → altrimenti
+  `409 module_pdfs_not_ready` con `meta.missing_lessons = [lesson_id, ...]`
+- file presente sullo storage attivo per ognuna: la presenza è
+  verificata al momento della lettura (`remote_storage.download_bytes` /
+  RETR su OVH, read locale altrimenti); una lezione mancante solleva
   `404 module_pdf_file_missing`
 
 Due funzioni pubbliche, entrambe sincrone in-memory:
@@ -378,11 +484,19 @@ Due funzioni pubbliche, entrambe sincrone in-memory:
   identico al download per-lezione singola.
 
 Helper filename: `module_merged_filename(...)` e
-`module_zip_filename(...)`, entrambi con suffisso `(Contenuti)` /
-`(Slide)` / `(Discorso)` derivato da `_kind_label(kind)`.
+`module_zip_filename(...)`, nel formato `{course.title} —
+{module.module_code} {module.title} ({label}).pdf|.zip`, con suffisso
+`(Contenuti)` / `(Slide)` / `(Discorso)` derivato da `_kind_label(kind)`.
 
 Dipendenza: `pypdf>=4.0` (aggiunto a `pyproject.toml`). La libreria
 stdlib `zipfile` non aggiunge dipendenze.
+
+> **Aggregazione a livello CORSO**: oltre al per-modulo, il service
+> espone anche `merge_course_pdfs` / `zip_course_pdfs` (con
+> `course_merged_filename` / `course_zip_filename`, suffisso "corso
+> completo") che concatenano/zippano tutte le lezioni di tutti i
+> moduli (ZIP: una sottocartella per modulo). Vedi il punto sotto in
+> "out of scope" — questa parte è ormai implementata.
 
 ## API endpoints (4 + 2 nuovi)
 
@@ -560,9 +674,9 @@ winget install tschoonj.GTKForWindows
 [project]
 dependencies = [
   # ...
-  "playwright>=1.49.0",       # solo pre-render mermaid → SVG
+  "playwright>=1.49.0",       # pre-render mermaid + MathJax (LaTeX) → SVG
   "weasyprint>=63.0",         # HTML → PDF
-  "latex2mathml>=3.77",       # LaTeX equations → MathML
+  "latex2mathml>=3.77",       # fallback offline: LaTeX → MathML
   "jinja2>=3.1.4",
   "markdown-it-py[plugins]>=3.0.0",
 ]
@@ -570,19 +684,25 @@ dependencies = [
 
 ## Cosa NON fa questa iterazione (out of scope)
 
-1. **PDF aggregato del corso** (zip o single-PDF concatenato) — solo
-   per-lezione.
+1. ~~**PDF aggregato del corso**~~ — ora **implementato**: bundle
+   per-modulo (`merge_module_pdfs`/`zip_module_pdfs`) e per-corso
+   (`merge_course_pdfs`/`zip_course_pdfs`) in `course_module_pdf_service.py`.
+   Resta per-lezione il rendering vero e proprio (i bundle sono
+   pura concatenazione post-export).
 2. **Object storage** (S3/MinIO) — il filesystem locale è la persistence
    layer; per scalare oltre il single-host serve uno step esplicito.
 3. **Versioning storico**: il file viene **sovrascritto** ad ogni nuovo
    export. `pdf_template_id` snapshotta solo il template dell'ultima
    generazione.
-4. **Rendering offline**: il pre-render Mermaid carica `mermaid@10.9.4`
-   da CDN (jsdelivr). Se la macchina del worker non ha internet, i
-   diagrammi falliscono (fallback testuale `<pre>`); il resto del PDF
-   viene comunque generato. WeasyPrint stesso è completamente offline
-   (no CDN per fonts, math o styling). Soluzione future: bundle locale
-   di mermaid.esm o pre-rendering via mermaid-cli + node.
+4. **Rendering offline parziale**: il pre-render carica `mermaid@10.9.4`
+   e `mathjax@3.2.2` da CDN (jsdelivr) in Playwright. Se la macchina del
+   worker non ha internet: i diagrammi Mermaid falliscono (fallback
+   testuale `<pre>`); le formule ricadono su `latex2mathml` → MathML,
+   che però WeasyPrint stampa solo come testo (pedici/apici/frazioni
+   degradati ma leggibili). Il resto del PDF viene comunque generato. Il
+   rendering finale WeasyPrint è completamente offline (no CDN per
+   fonts, math o styling). Soluzione future: bundle locale di
+   mermaid.esm / MathJax o pre-rendering via CLI + node.
 5. **Streaming SSE** del progresso al client: la UI fa polling.
 6. **Diff-detection** automatico tra `content_raw` modificato e PDF già
    generato: il badge resta `ready` finché l'utente non clicca "Rigenera
@@ -599,10 +719,19 @@ Pipeline parallela e indipendente dal PDF testo. Stato per-lezione su
 ### Stack
 
 Stesso del PDF testo — **WeasyPrint** + **Jinja2** + **Playwright** per
-pre-render mermaid. Differenze principali:
+pre-render mermaid **e** LaTeX → SVG (MathJax). Differenze principali:
 - Layout: A4 **portrait single-column block-flow** (mantenuto dal feedback utente: niente layout 16:9 landscape — il PDF deve essere comodo da stampare e leggere)
 - Template: `slide_templates` (16:9 originariamente per avatar video, ora unificato anche per il PDF slide via migration 0022 con campi aggiunti `margin_mm` + `background_opacity_pct`)
 - Asset rendering: stesso pattern di Fase 3 (visual/table/equation/example) + supporto a `new_assets` di Fase 4
+- Math: riusa il pre-render MathJax di `course_lesson_pdf_service` via
+  `_prerender_math_for_slides`, che fonde le equazioni/tabelle/esempi
+  delle Dispense (`content_raw`) con i nuovi asset di Fase 4
+  (`slides_raw.new_equations|new_tables|new_examples`) e delega a
+  `base_pdf._prerender_math_for_lesson`. Fallback MathML identico.
+- Copertina: `lesson_label` = `base_pdf._format_lesson_code_label(...)`
+  ("Modulo X - lezione Y" localizzato), badge `cfu_label`
+  (`CFU`/`ECTS`), `course.cfu`, `teacher` (`User.full_name`
+  dell'assegnatario).
 
 ### Slide split (bullet+asset → 2 pagine)
 
@@ -700,9 +829,16 @@ Confermato dall'utente come scelta di design: il PDF discorso è
   - delivery notes in italic muted (se non vuote)
 - Separatore tra slide
 
-Cover con badge "DISCORSO" + "Lezione N" + titolo + corso + meta-row con durata totale e word count.
+Cover con badge "DISCORSO" + `code_label` (`_format_lesson_code_label`
+→ "Modulo X - lezione Y" localizzato) + titolo lezione + corso (con
+`cfu_label`/`course.cfu` e `teacher_label`/`teacher` =
+`User.full_name` dell'assegnatario) + meta-row con durata totale e word
+count.
 
 Footer pagina: `{course.title} · {lesson.title} · pageNum/total`.
+
+> Niente pre-render MathJax/Mermaid in questa pipeline: il discorso è
+> prosa pura, senza formule LaTeX né asset visivi.
 
 ### `format_timeline` helper
 

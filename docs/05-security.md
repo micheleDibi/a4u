@@ -105,6 +105,75 @@ React fa escape automatico del testo. Non sono usati `dangerouslySetInnerHTML`
 nel codebase. Le immagini caricate sono PNG/JPEG/WEBP riencodate, non SVG.
 La CSP `script-src 'self'` blocca script inline.
 
+## Prompt injection / sanitizzazione input LLM
+
+L'input utente non-fidato che finisce in una conversazione con un LLM (oggi
+la chat assistente **Nova**) passa per `app/core/prompt_safety.py`, che è
+la **difesa di primo livello** contro i tentativi di prompt injection. Il
+modello a tre livelli è:
+
+1. `prompt_safety.sanitize_user_input(text, max_length=2000)`: rimuove i
+   pattern noti di injection (sostituendoli con `[rimosso]`) e tronca a 2000
+   caratteri. I pattern sono compilati una volta sola, case-insensitive, e
+   coprono varianti IT/EN/tecniche: "ignora le istruzioni precedenti" /
+   "ignore previous instructions", "sei ora …" / "you are now", "act as a …"
+   / "agisci come", "system prompt", "dimentica tutto" / "forget everything",
+   `jailbreak`, `DAN mode`, "developer mode" / "modalità sviluppatore",
+   "reveal/rivela il prompt", ecc.
+2. **System prompt** dell'LLM con regole di rifiuto esplicite (out-of-scope,
+   manipolazione).
+3. Filtro lato **modello** stesso.
+
+`prompt_safety.contains_injection_attempt(text)` è usata in parallelo per
+l'audit: in `nova_service`, se l'input contiene un pattern noto, viene
+loggato `nova_injection_attempt` (con `user_id`, `page`, lunghezza — **mai**
+il contenuto) e l'utente riceve una risposta standard **senza** alcuna
+chiamata a OpenAI. È una mitigazione, non una garanzia: riduce la superficie
+di attacco più ovvia, non sostituisce le altre due linee di difesa. Vedi
+[Backend 02 — Core](backend/02-core.md) (`app/core/prompt_safety.py`).
+
+## Gestione utenti (platform admin) e self-service
+
+### Lato platform admin
+
+Il router `admin_users` (`/admin/users`, gate `PlatformAdmin`) gestisce il
+ciclo di vita degli account. **Nessuna eliminazione definitiva**: rimuovere
+un account significa disattivarlo (`is_active=False`), operazione reversibile.
+Le invarianti di sicurezza vivono in `user_admin_service`:
+
+- **Self-guard**: un admin **non** può disattivare il proprio account
+  (`409 cannot_deactivate_self`) né rimuoversi il ruolo di platform admin
+  (`409 cannot_demote_self`) — evita un lockout immediato.
+- **Last-active-admin**: la piattaforma deve sempre avere almeno un platform
+  admin **attivo**. La demozione/disattivazione dell'unico rimasto è bloccata
+  (`409 last_active_admin`).
+- **Set password (reset manuale, no SMTP)**: l'admin imposta una password
+  robusta per l'utente target (`POST /admin/users/{user_id}/password`).
+  L'operazione **revoca tutti i refresh token vivi** dell'utente (forza il
+  re-login); gli access token JWT già emessi restano validi fino alla
+  scadenza del TTL (~15 min), coerente con l'architettura stateless degli
+  access token.
+- **Audit**: ogni azione scrive `user.create`, `user.update`,
+  `user.password_reset` con attore, target e campi modificati.
+
+### Self-service profilo personale
+
+Il router `auth` (`/auth/me*`, solo autenticazione) consente all'utente di
+gestire il proprio account:
+
+- **Nome** (`PATCH /auth/me`): nessuna re-auth (azione a basso rischio).
+- **Cambio email** (`POST /auth/me/change-email`): richiede la password
+  attuale (`401 invalid_current_password`). Le sessioni **restano valide**
+  (l'email è un identificatore, non una credenziale).
+- **Cambio password** (`POST /auth/me/change-password`, rate-limit `5/min`):
+  richiede la password attuale, valida la nuova con `is_password_strong` e
+  rifiuta password identica all'attuale (`422 password_unchanged`). **Non**
+  revoca le proprie sessioni: l'utente resta loggato sul device corrente
+  (asimmetria voluta rispetto al reset lato admin, che invece forza il
+  re-login perché implica un possibile compromesso dell'account).
+- **Audit**: `user.profile.update`, `user.email.change`,
+  `user.password.change`.
+
 ## Audit log
 
 Tabella `audit_logs` (append-only via convenzione applicativa):
@@ -123,6 +192,10 @@ Tabella `audit_logs` (append-only via convenzione applicativa):
 - Architettura corso generate/approve + esiti del worker
   (`course.architecture.{generated,failed}`).
 - CRUD manuale moduli/lezioni + reorder + AI generate-lessons.
+- Gestione utenti platform-admin: `user.create`, `user.update`,
+  `user.password_reset`.
+- Self-service profilo: `user.profile.update`, `user.email.change`,
+  `user.password.change`.
 
 Ogni riga include `request_id`, `actor_user_id`, `organization_id` (se rilevante),
 `metadata` JSONB con dettagli, `ip`, `user_agent`.
@@ -159,6 +232,8 @@ prima migrazione e usa un secret manager.
 | XSS | React + CSP + no SVG upload |
 | Refresh replay | Reuse-detection con chain-revoke |
 | Privilege escalation | Server-side checks (`creator` non perde permessi critici) |
+| Admin self-lockout | Self-guard + last-active-admin in `user_admin_service` |
+| Prompt injection (LLM) | `prompt_safety` (sanitize + detect) + system prompt + filtro modello |
 | Information leak in errori | Exception handlers retornano `{code,message}` senza stack |
 | Slow query DOS | `pool_pre_ping`, `statement_timeout=30s` |
 | Mass-targeting login | Rate-limit + lockout + audit |

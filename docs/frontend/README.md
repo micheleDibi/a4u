@@ -1,8 +1,8 @@
 # Frontend overview
 
-React 18 + Vite + TypeScript + Material UI v6 + TanStack Query + React
-Hook Form + Zod + axios + notistack. Localizzazione italiana via
-`@mui/material/locale` `itIT`.
+React 18 + Vite + TypeScript + Tailwind v4 + Radix UI (pattern shadcn/ui) +
+TanStack Query + React Hook Form + Zod + axios + i18next (24 lingue UE) +
+TipTap + KaTeX + Mermaid.
 
 Avviabile con `npm run start` (alias di `vite`).
 
@@ -24,22 +24,19 @@ frontend/
 └── src/
     ├── main.tsx                   # ReactDOM.createRoot
     ├── App.tsx                    # provider tree
-    ├── styles.css                 # baseline globale
-    ├── theme.ts                   # MUI theme + locale
+    ├── index.css                  # baseline globale + Tailwind v4
     ├── vite-env.d.ts              # types per import.meta.env
-    ├── api/                       # axios client + 9 moduli endpoint
+    ├── api/                       # axios client + moduli endpoint
     ├── auth/                      # AuthContext, ProtectedRoute, PermissionGate
-    ├── components/
-    │   ├── layout/                # AppLayout, OrgSwitcher, UserMenu
-    │   ├── forms/                 # FormImageUpload
-    │   ├── feedback/              # ErrorBoundary
-    │   ├── shared/                # ConfirmDialog
-    │   └── templates/             # SlideTemplatePreview, PdfTemplatePreview
-    ├── hooks/                     # (riservato; oggi vuota)
-    ├── lib/                       # permissions, errors, format, logger
+    ├── components/                # ui (shadcn/Radix), layout, forms, feedback, shared, templates, media
+    ├── contexts/                  # React context (es. tema)
+    ├── providers/                 # ThemeProvider
+    ├── hooks/                     # useBatchEta, useTaskEta, useLessonVideo, useLessonAvatarVideo, ...
+    ├── lib/                       # permissions, errors, format, logger, staleness, utils/cn
     ├── pages/                     # auth, admin, org, RootRedirect
     ├── routes/                    # router.tsx
-    └── i18n/                      # placeholder per i18next futuro
+    ├── types/                     # tipi condivisi
+    └── i18n/                      # i18next (IT/EN canonici, altre 22 lingue auto-tradotte in-app)
 ```
 
 ## Documentazione per file
@@ -53,16 +50,16 @@ frontend/
 - [06 — `pages/` (auth, admin, org)](06-pages.md)
 - [07 — `lib/`](07-lib.md)
 - [08 — `hooks/`](08-hooks.md)
+- [09 — i18n (24 lingue UE)](09-i18n.md)
 
 ## Convenzioni interne
 
-- **Material UI v6** in modalità Grid2 (importato come
-  `Grid2 as Grid`).
+- **Tailwind v4 + Radix UI** (pattern shadcn/ui) per UI e layout.
 - **TanStack Query** per data fetching:
   - `staleTime: 30s`, `retry: 1`, `refetchOnWindowFocus: false`.
   - Mutations con `onSuccess` che invalidano le query rilevanti.
 - **React Hook Form + Zod** per i form (resolvers `@hookform/resolvers`).
-- **notistack**: toast con `enqueueSnackbar` da `useSnackbar`.
+- **i18next + react-i18next** per la localizzazione (24 lingue UE).
 - **axios**: interceptor 401 che tenta `/auth/refresh` una volta e ritenta;
   se anche il refresh fallisce, il chiamante riceve l'errore originale.
 - **TypeScript strict**: `noUnusedLocals`, `noUnusedParameters`,
@@ -77,4 +74,4 @@ frontend/
    `useHasPermission(code)` per le permission gate.
 2. `useQuery` carica dati dal backend via uno dei moduli `api/*`.
 3. Le mutation chiamano `api/*.<verb>` poi `qc.invalidateQueries(...)`.
-4. Errori UI: `extractApiError(err)` → `enqueueSnackbar` o `<Alert>`.
+4. Errori UI: `extractApiError(err)` → toast `sonner` o `<Alert>`.

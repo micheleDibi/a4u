@@ -271,6 +271,47 @@ Valida che `len >= 10`, almeno una maiuscola, almeno una cifra. Boolean.
 
 ---
 
+## `app/core/prompt_safety.py`
+
+**Scopo**: sanitizzare l'input utente non-fidato prima di passarlo a un
+LLM, mitigando (non eliminando) i tentativi di **prompt injection**. È la
+**difesa di primo livello**: la seconda sono le regole di rifiuto esplicite
+nel system prompt dell'LLM, la terza il filtro lato modello stesso. Riusabile
+da qualsiasi servizio con conversazione LLM su input non-fidato; attualmente
+consumato da `nova_service`. Vedi [05 — Security](../05-security.md).
+
+### Costanti
+
+- `_INJECTION_PATTERNS: tuple[re.Pattern[str], ...]`: pattern noti di
+  prompt injection compilati una volta al module-load (case-insensitive,
+  `re.IGNORECASE`). Coprono varianti IT/EN/tecniche: "ignora le istruzioni
+  precedenti" / "ignore previous instructions", "sei ora …" / "you are now",
+  "fai finta di essere" / "pretend to be", "act as a …" / "agisci come",
+  "system prompt", "nuove/new instructions", "dimentica tutto" / "forget
+  everything", "override your …", `jailbreak`, `DAN mode`, "developer mode" /
+  "modalità sviluppatore", "reveal/rivela il prompt/istruzioni", "role-play
+  as", "ruolo: …".
+
+### Funzioni
+
+#### `sanitize_user_input(text: str, max_length: int = 2000) -> str`
+
+Sanifica `text`: sostituisce ogni match dei pattern con `[rimosso]`, tronca a
+`max_length` caratteri e fa `strip()`. Restituisce stringa vuota se l'input
+non è una stringa. NON è una difesa completa: riduce solo la superficie di
+attacco più ovvia.
+
+#### `contains_injection_attempt(text: str) -> bool`
+
+`True` se `text` contiene almeno un pattern di injection. Usata per
+audit/logging (visibilità su chi tenta il bypass): non blocca la chiamata,
+perché `sanitize_user_input` neutralizza comunque l'input. Restituisce
+`False` se l'input non è una stringa. In `nova_service` un esito positivo fa
+loggare `nova_injection_attempt` e restituire la risposta standard senza
+chiamare OpenAI.
+
+---
+
 ## `app/core/rate_limit.py`
 
 **Scopo**: rate-limiting con `slowapi`. Bucket per IP.

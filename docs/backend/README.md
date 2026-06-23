@@ -13,7 +13,7 @@ backend/
 ├── alembic/
 │   ├── env.py                  # bootstrap async migrations
 │   ├── script.py.mako          # template revision
-│   └── versions/0001_initial.py … 0006_pdf_bg_opacity.py
+│   └── versions/0001_initial.py … 0033_course_corso_di_laurea.py  # 33 revisions
 ├── uploads/                    # filesystem upload (gitignored, montato come StaticFiles)
 ├── tests/
 │   ├── conftest.py             # fixture httpx async + DB transaction
@@ -26,9 +26,9 @@ backend/
     ├── core/                   # config, security, deps, errors, audit, permissions
     ├── middleware/             # request_id, access_log, security_headers, csrf
     ├── db/                     # base (DeclarativeBase), session, seed
-    ├── models/                 # 13 modelli SQLAlchemy 2
+    ├── models/                 # 24 modelli SQLAlchemy 2
     ├── schemas/                # Pydantic v2 DTOs
-    ├── services/               # logica di business
+    ├── services/               # logica di business (82 moduli: corsi, AI/OpenAI, PDF, video, paper, storage, ...)
     ├── api/v1/                 # router REST
     └── utils/
 ```

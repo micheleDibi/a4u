@@ -115,24 +115,106 @@ Ritorna `(public_path, stored_filename, size_bytes)` come
 
 ## `app/services/storage_service.py`
 
-**Scopo**: wrapper sottile sopra il filesystem per dare un'astrazione di
-storage swappable (oggi local, domani S3-compatibile). Tutti i metodi sono
-sincroni o `async` semplici e non aprono sessioni DB.
+**Scopo**: wrapper sottile sull'I/O file (org/avatar/template). Resta
+l'**autorità** sulle convenzioni di path/subdir e sulla validazione del
+filename, ma l'I/O effettivo è delegato a `remote_storage` (vedi sotto), che
+instrada verso il backend attivo (`local` / `ovh_ftp` / `ovh_sftp`). Tutti i
+metodi sono sincroni e non aprono sessioni DB.
+
+### Costanti
+
+- `_ALLOWED_ROOTS = {"organizations", "avatars", "templates"}` — whitelist
+  del primo segmento di `subdir`.
 
 ### Funzioni
 
-- `save_bytes(path: str, data: bytes) -> None`: scrive dati raw a
-  `<UPLOAD_DIR>/<path>` creando le cartelle padre. Validato da
-  `_ensure_within`.
-- `read_bytes(path: str) -> bytes`: legge il file a `<UPLOAD_DIR>/<path>`.
-- `delete(path: str) -> None`: cancella un singolo file (no-op se
-  inesistente).
-- `delete_directory(path: str) -> None`: rimuove ricorsivamente una
-  sotto-cartella di `UPLOAD_DIR` (usato dal delete avatar per pulire
-  `avatars/<user_id>/`).
-- `public_url(path: str) -> str`: ritorna `f"{settings.PUBLIC_BASE_URL}{path}"`
-  (path già normalizzato a `/uploads/...`). Usato per produrre l'URL
-  pubblico passato a MiniMax.
+- `save_bytes(*, subdir: str, filename: str, data: bytes) -> str`: valida
+  `subdir` (`_validate_subdir`) e `filename` (no `/`, no `.`/`..`), poi scrive
+  via `remote_storage.get_storage().upload_bytes(uploads_key(...), data)`.
+  Ritorna il path pubblico relativo `/uploads/{subdir}/{filename}`.
+- `read_bytes(path: str) -> bytes`: richiede un path `/uploads/...`; legge i
+  bytes via `remote_storage` (`StorageFileNotFound` → `ValidationAppError(
+  code="file_not_found")`).
+- `delete(path: str | None) -> None`: cancella un singolo file (no-op se
+  `path` è `None` o non inizia con `/uploads/`; errori loggati ma non
+  rilanciati).
+- `delete_directory(subdir: str) -> None`: rimuove ricorsivamente una
+  sotto-cartella di upload via `remote_storage.delete_prefix` (usato dal
+  delete avatar per pulire `avatars/<user_id>/`). Idempotente.
+- `public_url(path: str) -> str`: delega a `remote_storage.public_url(
+  uploads_key(path))` → URL pubblico raggiungibile dall'esterno
+  (MiniMax/RunPod): assoluto OVH con un backend remoto, `PUBLIC_BASE_URL` +
+  path in `local`.
+
+---
+
+## `app/services/remote_storage.py`
+
+**Scopo**: astrazione dello storage file. Tutto l'I/O persistente dei file
+dell'app (upload utente/media, PDF generati) passa da qui: il DB salva un
+*path logico opaco*, questo modulo lo mappa a una **key** namespaced
+(`uploads/<rel>` o `generated_pdfs/<rel>`) e la risolve sul backend attivo,
+selezionato da `settings.storage_backend`:
+
+- `local` → filesystem locale (`LocalStorage`, dev/fallback, comportamento
+  storico byte-per-byte).
+- `ovh_ftp` → server OVH via FTP/FTPS (`OvhFtpStorage`; `ftplib.FTP_TLS` con
+  riuso della sessione TLS sul canale dati, connessione per-operazione, MKD
+  ricorsivo, upload atomico `STOR` su temp + `RNTO`, retry/backoff sugli errori
+  transitori).
+- `ovh_sftp` → server OVH via SFTP (`OvhSftpStorage`; Paramiko/SSH su porta
+  `ovh_sftp_port`, stessa semantica di `OvhFtpStorage` ma su canale cifrato,
+  rename atomico via `posix_rename` con fallback delete+rename). Richiede
+  `paramiko`.
+
+Le scritture/cancellazioni vanno sul backend primario; le letture lato server
+usano il canale del backend (FTP `RETR` / SFTP), le letture browser/servizi
+esterni l'URL pubblico.
+
+### Protocollo + eccezioni
+
+- `Storage` (`typing.Protocol`): `upload_bytes`, `upload_file`,
+  `download_bytes`, `download_to`, `delete`, `delete_prefix`, `exists`,
+  `size`. Implementato da `LocalStorage`, `OvhFtpStorage`, `OvhSftpStorage` e
+  `FallbackStorage`.
+- `StorageError` (base) e `StorageFileNotFound`.
+
+### Key helpers
+
+- `uploads_key(db_path: str) -> str`: key per un file di upload, tollerante a
+  prefissi incoerenti (`/uploads/courses/...` con prefisso vs
+  `lesson_videos/...` senza) → `uploads/<rel>`.
+- `pdf_key(rel: str) -> str`: key per un PDF generato → `generated_pdfs/<rel>`.
+
+### URL pubblici
+
+- `media_url(key: str) -> str`: URL che il browser deve usare. Backend remoto
+  (`ovh_ftp`/`ovh_sftp`) → URL assoluto `{ovh_public_base_url}/{key}`;
+  `local` → path relativo same-origin (`/uploads/...`).
+- `public_url(key: str) -> str`: URL assoluto per servizi esterni
+  (MiniMax/RunPod). Con backend remoto coincide con `media_url`; in `local`
+  antepone `public_base_url` al path servito.
+
+### Fallback (cutover)
+
+- `FallbackStorage(primary, fallback)`: scrive/cancella solo sul primario; in
+  lettura ripiega sul fallback se il file non è (ancora) presente sul primario
+  (logga `storage_fallback_read`). Usato durante il cutover quando
+  `storage_local_fallback=true`.
+
+### Factory
+
+- `get_storage() -> Storage`: ritorna il backend attivo in base a
+  `storage_backend`. Con un backend remoto e `storage_local_fallback=true`
+  avvolge il primario in un `FallbackStorage(primary, LocalStorage())`.
+  **Non cache-ato**: le istanze sono leggere (nessuna connessione persistente)
+  e i test possono cambiare backend cambiando le env.
+- `build_remote_backend(protocol: str | None = None) -> Storage`: costruisce il
+  backend remoto (`ftp`|`sftp`) a prescindere da `storage_backend` — usato
+  dagli script di spike/migrazione mentre l'app è ancora `local`.
+
+Runbook di migrazione: [Storage file: migrazione su server OVH (FTP/SFTP)](../storage-ovh-migration.md).
+Variabili di configurazione: [04 — Configuration](../04-configuration.md).
 
 ---
 
@@ -1317,7 +1399,7 @@ accettabile e risparmia decine di query a ogni refresh del browser.
 
 - **Users**: COUNT totali / `is_active=true` / `last_login_at >= now()-30d`.
 - **Orgs**: COUNT `WHERE deleted_at IS NULL`.
-- **Courses**: COUNT + GROUP BY `status` (17 valori, restituiti raw — il
+- **Courses**: COUNT + GROUP BY `status` (22 valori, restituiti raw — il
   frontend li raggruppa nel widget `CoursePipelineDetail`).
 - **Lessons**: COUNT + GROUP BY su ciascuno dei 5 `*_status`
   (content / slides / speech / video / avatar_video).

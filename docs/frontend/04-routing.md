@@ -21,6 +21,10 @@
    ├── /admin/users                                          → UsersListPage             (admin)
    ├── /admin/permissions                                    → PermissionsManagerPage    (admin)
    ├── /admin/configurazioni/avatar                          → AvatarConfigPage          (admin)
+   ├── /admin/configurazioni/tassonomie                      → CourseTaxonomyPage        (admin)
+   ├── /admin/i18n                                           → I18nManagerPage           (admin)
+   ├── /admin/i18n/:code                                     → I18nLanguageEditorPage    (admin)
+   ├── /me/profile                                           → ProfilePage
    ├── /me/avatar                                            → MyAvatarPage
    ├── /orgs/:orgId                                          → OrgDashboard
    ├── /orgs/:orgId/members                                  → MembersListPage
@@ -28,7 +32,11 @@
    ├── /orgs/:orgId/templates/slide                          → SlideTemplatesListPage
    ├── /orgs/:orgId/templates/slide/:id                      → SlideTemplateEditorPage
    ├── /orgs/:orgId/templates/pdf                            → PdfTemplatesListPage
-   └── /orgs/:orgId/templates/pdf/:id                        → PdfTemplateEditorPage
+   ├── /orgs/:orgId/templates/pdf/:id                        → PdfTemplateEditorPage
+   ├── /orgs/:orgId/configurazioni/corsi                     → CourseSettingsPage
+   ├── /orgs/:orgId/corsi                                    → CoursesListPage
+   ├── /orgs/:orgId/corsi/nuovo                              → CourseEditorPage create
+   └── /orgs/:orgId/corsi/:courseId                          → CourseEditorPage edit
 *                                                             → <Navigate to="/">
 ```
 
@@ -39,6 +47,11 @@
 - Le rotte org-scoped non hanno guard di permesso a livello router: le
   pagine internamente usano `<PermissionGate>` o
   `useHasPermission` per render condizionale o redirect.
+- Le rotte personali `/me/profile` (`ProfilePage`) e `/me/avatar`
+  (`MyAvatarPage`) richiedono solo l'autenticazione (sono dentro
+  `<ProtectedRoute>` senza `requirePlatformAdmin` né permesso RBAC):
+  operano sull'utente corrente, cross-org. La `ProfilePage` è
+  documentata in [06 — Pages](06-pages.md).
 
 ---
 

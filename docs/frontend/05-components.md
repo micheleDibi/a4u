@@ -287,6 +287,106 @@ Usato per delete e azioni potenzialmente irreversibili (transfer creator).
 
 ---
 
+## `src/components/shared/DataTableColumnToggle.tsx`
+
+Selettore "Colonne" riusabile: dropdown di checkbox per mostrare /
+nascondere le colonne di una `DataTable` (TanStack Table). Itera le
+colonne con `enableHiding !== false` e usa `column.meta.label` come
+etichetta (fallback all'id colonna).
+
+### Props
+
+```ts
+{
+  columns: ColumnDef<TData, unknown>[];
+  value: VisibilityState;
+  onChange: (next: VisibilityState) => void;
+  label?: string;   // etichetta pulsante; default t("courses.list.columnsButton")
+}
+```
+
+### Comportamento
+
+- Trigger: `Button` outline con icona `SlidersHorizontal` + label.
+- Per ogni colonna nascondibile un `DropdownMenuCheckboxItem` con
+  `checked={value[id] !== false}` (colonna visibile di default).
+- `onSelect={(e) => e.preventDefault()}` evita la chiusura del menu ad
+  ogni toggle (multi-selezione fluida).
+- `onCheckedChange` propaga `{ ...value, [id]: next }` al chiamante.
+
+Lo stato di visibilità è tipicamente gestito da
+[`useColumnVisibility`](08-hooks.md) (persistenza localStorage). Usato in
+`CoursesListPage` accoppiato a `DataTable` (vedi
+[06 — Pages](06-pages.md)).
+
+---
+
+## `src/components/avatar/AvatarStatusDot.tsx`
+
+Pallino tri-stato con etichetta per lo stato avatar di un membro, reso
+nella colonna "Avatar" della `MembersListPage`. Opzionalmente cliccabile
+per aprire l'anteprima (`MemberAvatarDialog`).
+
+### Props
+
+```ts
+{
+  status: AvatarClipsAggregateStatus | null;
+  audio: boolean;
+  onClick?: () => void;   // se presente, l'indicatore diventa un bottone
+}
+```
+
+### Stati
+
+L'helper interno `avatarDotState(status, audio)` deriva uno di 3 stati:
+
+| Stato | Colore | Condizione |
+|---|---|---|
+| `complete` | emerald | `status === "ready"` **e** `audio` |
+| `progress` | amber | avatar avviato ma non completo (clip in corso / parziali / fallite, oppure clip pronte senza voce) |
+| `none` | grigio | `status === null` (nessun avatar) |
+
+Label da `members.avatar.{complete|progress|none}`. Quando `onClick` è
+passato, rende un `<button>` con `title={t("members.avatar.view")}`;
+altrimenti uno `<span>` non interattivo.
+
+---
+
+## `src/pages/org/members/MemberAvatarDialog.tsx`
+
+Anteprima in sola lettura dell'avatar di un membro (immagine, campione
+vocale e clip video). Riservata a chi ha `member:avatar:view`; i dati
+arrivano da `memberAvatarApi.get(orgId, userId)` →
+`GET /orgs/{orgId}/members/{userId}/avatar` (vedi
+[02 — API client](02-api-client.md)).
+
+### Props
+
+```ts
+{
+  orgId: string;
+  member: MembershipOut | null;   // null = dialog chiuso
+  onClose: () => void;
+}
+```
+
+### Comportamento
+
+- `open = !!member`; `useQuery` con key
+  `["org", orgId, "member-avatar", userId]`, `enabled` solo a dialog
+  aperto e `userId` valorizzato.
+- Header: titolo `members.avatarDialog.title` (interpolato con il nome) +
+  `AvatarClipsBadge` con lo stato aggregato delle clip.
+- Stati: skeleton in loading; placeholder `members.avatarDialog.empty`
+  se l'avatar è `null`; altrimenti immagine (`size-32`), player
+  `<audio controls>` (o `members.avatarDialog.noAudio`) e griglia di
+  `AvatarClipCard` (o `members.avatarDialog.noClips`).
+- Testi sotto `members.avatarDialog.*`. Aperto da `AvatarStatusDot`
+  nella `MembersListPage`.
+
+---
+
 ## `src/components/templates/SlideTemplatePreview.tsx`
 
 Preview HTML live di un template slide. Riscritto in modo significativo
@@ -695,6 +795,168 @@ scheda Contenuti sulle righe `is_assessment`.
 - Contenuto in `<ScrollArea>` (max 65vh). Footer con Annulla + Salva
   (label `common.saving` mentre `isPending`).
 - Testi sotto `courses.lessonsContent.assessment.editor.*`.
+
+---
+
+## Componenti media condivisi — `src/pages/org/courses/components/media/`
+
+Set di componenti riusabili che alimentano **entrambe** le schede media
+del `CourseEditorPage` — "Video" (Fase 6) e "Video con avatar" (Fase 6b)
+— evitando di duplicare la presentazione. Le parti specifiche per
+variante (badge di stato, avvisi, pulsanti azione, chip token, label di
+fase, nome file di download) restano nelle view che le possiedono
+(`CourseLessonVideoView` / `CourseLessonAvatarVideoView`) e vengono
+iniettate via un oggetto `renderers`. Le pagine mantengono
+header / banner / dati propri; qui vive solo il render di lista/griglia
+con player in modale.
+
+### Pattern variant `video | avatar` + renderers
+
+Il punto di ingresso è `LessonMediaView<TItem>` che riceve la `variant`
+(`"video"` o `"avatar"`, usata per discriminare le chiavi localStorage e
+il nome file di download) e due adattatori:
+
+```ts
+// media/types.ts
+interface MediaStatusItem {
+  lesson_id: string;
+  status: "empty" | "pending" | "processing" | "ready" | "failed" | "cancelled";
+  progress: number;
+  progress_phase: string | null;
+  video_url: string | null;
+  error: string | null;
+  is_stale: boolean;
+}
+
+interface MediaRenderers<TItem extends MediaStatusItem> {
+  statusBadge: (item: TItem) => ReactNode;
+  warnings: (item: TItem) => ReactNode;
+  actions: (lesson: CourseLessonOut, item: TItem) => ReactNode;
+  tokens: (item: TItem) => ReactNode;
+  phaseLabel: (item: TItem) => string;
+  downloadName: (lesson: CourseLessonOut, item: TItem) => string;
+}
+```
+
+`MediaStatusItem` è il sottoinsieme comune di `LessonVideoStatusOut` e
+`LessonAvatarVideoStatusOut` (entrambi strutturalmente assegnabili).
+Testi condivisi sotto `courses.media.*`.
+
+### `LessonMediaView.tsx`
+
+Orchestratore della scheda media.
+
+#### Props
+
+```ts
+{
+  course: CourseOut;
+  variant: "video" | "avatar";
+  itemByLessonId: Map<string, TItem>;
+  renderers: MediaRenderers<TItem>;
+}
+```
+
+#### Comportamento
+
+- Usa `useMediaView(course.id, variant)` (vedi
+  [08 — Hooks](08-hooks.md)) per `viewMode` (lista/griglia) e i moduli
+  collassati, persistiti per corso + variante.
+- Calcola `modulesWithItems`: solo i moduli con almeno una lezione che
+  ha un item di stato (preservando l'ordine dei moduli del corso); se
+  vuoto ritorna `null`.
+- Per ogni modulo un `MediaModuleSection` con contatore
+  `readyCount/totalCount` (item in `status === "ready"`); il contenuto è
+  una lista di `LessonMediaRow` (`viewMode === "list"`) o una griglia di
+  `LessonMediaCard` (responsive `sm:2 / xl:3`).
+- Etichette sempre via `useCourseLabels()` ("Modulo N" / "Lezione N",
+  mai i codici tecnici).
+- Stato locale `playing` (lezione + modulo + item correnti); il click su
+  ▶ apre il `VideoPlayerModal`.
+
+### `MediaViewToggle.tsx`
+
+Segmented control Lista ↔ Griglia (costruito su `button` nativi, non
+esiste una primitive ToggleGroup nel design system).
+
+```ts
+{ value: MediaViewMode; onChange: (next: MediaViewMode) => void }
+```
+
+Due opzioni con icone `List` / `LayoutGrid` e label
+`courses.media.viewList` / `courses.media.viewGrid`; `aria-pressed`
+sull'opzione attiva.
+
+### `MediaModuleSection.tsx`
+
+Sezione modulo collassabile. Header cliccabile (etichetta "Modulo N ·
+Titolo", `aria-expanded`) con chevron e `Badge` contatore
+`courses.media.readyCount` (`{ready, total}`); variante `default` quando
+tutte le lezioni sono pronte, `secondary` altrimenti. Il contenuto è
+nascosto quando `collapsed`.
+
+```ts
+{
+  title: string;
+  readyCount: number;
+  totalCount: number;
+  collapsed: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}
+```
+
+### `LessonMediaRow.tsx` e `LessonMediaCard.tsx`
+
+Render per-lezione nelle due viste. Props identiche:
+
+```ts
+{
+  lesson: CourseLessonOut;
+  item: TItem;
+  lessonLabelText: string;
+  renderers: MediaRenderers<TItem>;
+  onPlay: () => void;
+}
+```
+
+- `LessonMediaRow` (stile "Lista"): riga compatta con ▶ + "Lezione N ·
+  Titolo" + `renderers.statusBadge`, avvisi, azioni; progress inline
+  (`renderers.phaseLabel` + `item.progress`%) quando
+  `status ∈ {pending, processing}`.
+- `LessonMediaCard` (stile "Griglia"): tile cliccabile `aspect-[99/70]`
+  con ▶ su sfondo neutro (niente poster reale), "Lezione N", titolo
+  (`line-clamp-2`), badge stato, avvisi, progress, azioni.
+- Entrambi: il ▶ è abilitato solo se `status === "ready"` **e**
+  `item.video_url`; `aria-label`/`title` da `courses.media.play`. Niente
+  player incorporato — il click chiama `onPlay()`.
+
+### `VideoPlayerModal.tsx`
+
+Player video in **modale** (sostituisce i `<video>` incorporati che
+allungavano a dismisura le pagine). Si apre al click su riga/card di una
+lezione pronta.
+
+```ts
+{
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  title: string;
+  videoUrl: string | null;
+  downloadName: string;
+  meta?: ReactNode;   // chip token opzionali sotto il player
+}
+```
+
+`Dialog` `max-w-3xl` con `<video controls autoPlay preload="metadata">`
+(`aspect-[99/70]`), riga `meta` opzionale e footer con download dell'MP4
+(`<a download target="_blank">`, label `courses.media.modalDownload`).
+
+### `useMediaView.ts`
+
+Hook co-locato che gestisce `viewMode` + moduli collassati con
+persistenza localStorage per corso + variante. Documentato in
+[08 — Hooks](08-hooks.md).
 
 ---
 

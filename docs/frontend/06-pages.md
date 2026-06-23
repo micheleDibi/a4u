@@ -179,19 +179,48 @@ UI:
 
 **Path**: `/admin/users`.
 
-State: `q`, `page`, `pageSize`, `createOpen`.
+State: `q`, `pagination` (`PaginationState`), `createOpen`,
+`editTarget: UserOut | null`, `pwTarget: UserOut | null`.
 
 Hooks:
-- `useQuery` per la lista utenti paginata.
+- `useQuery(["users", pageIndex, pageSize, q])` per la lista paginata.
 - `useMutation` per:
   - `usersApi.create(...)`.
   - `usersApi.update(id, { is_active })` toggle.
   - `usersApi.update(id, { is_platform_admin })` toggle.
+  - `usersApi.update(id, { full_name, email })` (da `EditUserDialog`).
+  - `usersApi.setPassword(id, password)` (da `SetPasswordDialog`).
+
+> I toggle `is_active` / `is_platform_admin` possono essere rifiutati
+> dalle guardie server (`last_active_admin`, `cannot_deactivate_self`,
+> …): in `onError` mostrano il messaggio **e** invalidano `["users"]`
+> così lo `Switch` torna allo stato reale del server.
 
 UI:
-- DataGrid con colonne: nome, email, switch attivo, switch admin.
+- `DataTable<UserOut>` con colonne: nome, email, switch attivo, switch
+  admin, e una colonna **azioni** (`DropdownMenu` `⋮`) con due voci:
+  - "Modifica" (icona `Pencil`) → `setEditTarget(row)`;
+  - "Reset password" (icona `KeyRound`) → `setPwTarget(row)`.
 - Bottone "Nuovo utente" apre `<CreateUserDialog>` (componente locale al
   file).
+
+#### `EditUserDialog` / `SetPasswordDialog` — `src/pages/admin/components/UserActionsDialogs.tsx`
+
+Due dialog estratti in un modulo dedicato, controllati da `UsersListPage`
+via `editTarget` / `pwTarget`.
+
+- **`EditUserDialog`** — modifica nome + email di un utente. Props
+  `{ open, user: UserOut | null, isPending, onClose, onSubmit({full_name,
+  email}) }`. `useEffect` riallinea i campi all'apertura / al cambio
+  utente. Validazione client: nome non vuoto + email (`EMAIL_RE`);
+  bottone Salva abilitato solo se `valid && dirty`. Scorciatoia
+  `⌘/Ctrl+Enter` per il submit. Testi `users.editDialog.*`.
+- **`SetPasswordDialog`** — reset password manuale lato admin. Props
+  `{ open, user, isPending, onClose, onSubmit(password) }`. Campi
+  password + conferma; validazione `isPasswordStrong(password)` +
+  match. Banner ambra `users.resetPasswordDialog.revokeWarning`
+  (il reset revoca le sessioni attive). Testi
+  `users.resetPasswordDialog.*`.
 
 ### `src/pages/admin/PermissionsManagerPage.tsx`
 
@@ -332,7 +361,7 @@ Sezioni (in ordine):
 **Path**: `/orgs/:orgId/members`. Permesso: `member:view`.
 
 State: `inviteOpen`, `inviteEmail`, `inviteRole`, `inviteToken`,
-`toRemove`, `toTransfer`.
+`toRemove`, `toTransfer`, `avatarMember`.
 
 > **Quick action dalla command palette**: se l'URL contiene
 > `?invite=1` (es. arrivando dal comando "Invita membro" della
@@ -350,9 +379,15 @@ Hooks:
   - `membershipsApi.transferCreator(...)`.
 
 DataGrid:
-- Colonne: nome, email, ruolo, azioni.
+- Colonne: nome, email, ruolo, **avatar** (condizionale), azioni.
 - Colonna ruolo: se `canAssignRole` e non è creator né "self", `<TextField select>`
   con i 3 ruoli non-creator. Altrimenti testo.
+- Colonna **avatar**: inserita prima delle azioni **solo se**
+  `canViewAvatar = useHasPermission(P.MEMBER_AVATAR_VIEW)`. Rende un
+  `<AvatarStatusDot>` (pallino tri-stato `complete`/`progress`/`none` da
+  `avatar_status` + `avatar_audio` della riga) cliccabile che apre
+  `MemberAvatarDialog` via `setAvatarMember(row)` (vedi
+  [05 — Components](05-components.md)).
 - Azioni:
   - "Permessi membro" → `/orgs/:orgId/members/:userId/permissions`
     (visibile se `canPermissions` e non creator).
@@ -366,7 +401,8 @@ Dialogo invito:
 - Stato 2: dopo create, mostra `accept_url` in TextField readonly per
   copia/share.
 
-`<ConfirmDialog>` per remove e transfer.
+`<ConfirmDialog>` per remove e transfer; `<MemberAvatarDialog>` per
+l'anteprima avatar (state `avatarMember`).
 
 ### `src/pages/org/members/MemberPermissionsPage.tsx`
 
@@ -495,6 +531,80 @@ Componenti locali:
 
 Save bar sticky in fondo (visibile solo quando
 `form.formState.isDirty`).
+
+### `src/pages/org/courses/CoursesListPage.tsx` — colonne e selettore
+
+> Pagina documentata in dettaglio in
+> [Courses 06 — Frontend](../courses/06-frontend.md). Qui si annotano
+> solo le colonne aggiunte e il selettore colonne, di interesse
+> trasversale (riusano i componenti/hook condivisi).
+
+La `DataTable<CourseListItemOut>` espone due colonne anagrafiche:
+
+- **CFU** (`id: "cfu"`): `row.original.cfu` reso `tabular-nums`.
+- **Corso di Laurea** (`id: "corsoDiLaurea"`):
+  `row.original.corso_di_laurea` (troncato con `title`), placeholder se
+  `null`.
+
+Entrambe hanno `meta.label` localizzato (`courses.fields.cfu` /
+`courses.fields.corsoDiLaurea`) così appaiono nel selettore colonne.
+
+**Selettore colonne**: la pagina rende un
+[`DataTableColumnToggle`](05-components.md) (allineato a destra nella
+barra filtri) e gestisce la visibilità con
+[`useColumnVisibility`](08-hooks.md) (chiave localStorage
+`"courses-list-columns"`). Default in `DEFAULT_COLUMN_VISIBILITY`:
+`title` / `assignee` / `status` / `lang` / `pipeline` / `cfu` /
+`corsoDiLaurea` / `actions` visibili; `modules` / `created` / `updated`
+nascoste di default. Le colonne `title` (link al corso) e `actions`
+hanno `enableHiding: false`: sempre visibili, non compaiono nel
+selettore. Lo stato è inoltrato a `DataTable` via `columnVisibility` /
+`onColumnVisibilityChange`.
+
+---
+
+## Profilo utente
+
+### `src/pages/me/ProfilePage.tsx`
+
+**Path**: `/me/profile`. Solo autenticazione (no permesso RBAC). L'utente
+gestisce i propri dati account (cross-org).
+
+State locale (campi controllati): `fullName`; cambio email
+(`emailCurrentPw`, `newEmail`); cambio password (`pwCurrent`, `pwNew`,
+`pwConfirm`).
+
+Hooks:
+- `useAuth()` per `me` + `refresh`.
+- `useMutation` per:
+  - `authApi.updateMe(name)` → on success `refresh()` + toast
+    `profile.personal.nameSaved`.
+  - `authApi.changeEmail(current_password, new_email)` → on success
+    `refresh()`, reset campi, toast `profile.personal.emailSaved`.
+  - `authApi.changePassword(current_password, new_password)` → on success
+    reset campi, toast `profile.security.saved`.
+
+UI (3 `Card`):
+
+1. **Informazioni personali**:
+   - **Nome**: `Input` (max 255) + bottone Salva abilitato solo se
+     `nameDirty` (trim non vuoto e diverso da `me.user.full_name`).
+   - **Cambio email**: mostra l'email corrente; campi nuova email +
+     password corrente. `emailValid` richiede password non vuota, email
+     valida (`EMAIL_RE`) e diversa (case-insensitive) dall'attuale.
+2. **Sicurezza** — cambio password: password corrente + nuova + conferma.
+   `pwValid` richiede password corrente non vuota,
+   `isPasswordStrong(pwNew)`, match conferma e `pwNew !== pwCurrent`;
+   errore inline `profile.security.mismatch` quando la conferma non
+   combacia.
+3. **Riepilogo account** (read-only): email, ultimo login
+   (`me.user.last_login_at`), data creazione (`me.user.created_at`,
+   formattati con `toLocaleString`), e badge per ogni organizzazione
+   (`organization_name` — `role_name_it`).
+
+Componente locale `SummaryRow({ label, value })`. Testi sotto
+`profile.*`. Vedi [02 — API client](02-api-client.md) per i 3 endpoint
+self-service di `authApi`.
 
 ---
 

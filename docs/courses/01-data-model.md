@@ -26,7 +26,7 @@ Tabella principale del corso. Snapshot dei parametri della org al momento della 
 | `open_questions_count` | smallint | NOT NULL, CHECK `>= 0` | snapshot |
 | `assignee_user_id` | UUID | FK `users.id` RESTRICT | docente assegnato |
 | `created_by_user_id` | UUID | FK `users.id` SET NULL, nullable | |
-| `status` | str(40) | NOT NULL, default `draft`, CHECK ∈ 17 valori | state machine pipeline AI |
+| `status` | str(40) | NOT NULL, default `draft`, CHECK ∈ 22 valori | state machine pipeline AI |
 | 8 × `*_term_id` | UUID | FK `course_taxonomy_term.id` SET NULL, nullable | tassonomie |
 | `course_overview` | text | nullable | output Fase 1 (overview generale) |
 | `pedagogical_rationale` | text | nullable | output Fase 1 |
@@ -54,19 +54,23 @@ lessons_structure_pending, lessons_structure_ready, lessons_structure_approved,
 content_pending, content_ready, content_approved,
 slides_pending, slides_ready, slides_approved,
 speech_pending, speech_ready, speech_approved,
+video_pending, video_ready,
+avatar_video_pending, avatar_video_ready,
 published, archived
 ```
 
-(17 valori; `slides_approved` aggiunto dalla migration 0019, `speech_approved` aggiunto dalla migration 0023).
+(22 valori; `slides_approved` migration 0019, `speech_approved` migration 0023, i 4 stati `video_*` / `avatar_video_*` aggiunti al CHECK `ck_course_status_valid` dalla migration 0030 — video e avatar_video **non hanno** `approved`). Il rank totale monotòno è in `core/course_phase_order.COURSE_STATUS_RANK`.
 
-I valori per le Fasi 2-5 (`lessons_structure_*`, `content_*`, `slides_*`, `speech_*`) sono **derivati** dagli stati per-modulo (Fase 2) o per-lezione (Fasi 3-5). Le transizioni sono gestite dai service:
+I valori per le Fasi 2-6b (`lessons_structure_*`, `content_*`, `slides_*`, `speech_*`, `video_*`, `avatar_video_*`) sono **derivati** dagli stati per-modulo (Fase 2) o per-lezione (Fasi 3-6b). Le transizioni sono gestite dai service:
 
 - Fase 2 → `course_lesson_structure_service._recompute_course_lessons_structure_status`
 - Fase 3 → `course_lesson_content_service._recompute_course_content_status`
 - Fase 4 → `course_lesson_slides_service._recompute_course_slides_status`
 - Fase 5 → `course_lesson_speech_service._recompute_course_speech_status`
+- Fase 6 → `course_lesson_video_service._recompute_course_video_status`
+- Fase 6b → `course_lesson_avatar_video_service._recompute_course_avatar_video_status`
 
-Regola comune: almeno 1 in `pending|processing|failed` → `*_pending`; tutte in `ready|approved` (almeno 1 `ready`) → `*_ready`; tutte in `approved` → `*_approved`.
+Regola comune (Fasi 2-5): almeno 1 in `pending|processing|failed` → `*_pending`; tutte in `ready|approved` (almeno 1 `ready`) → `*_ready`; tutte in `approved` → `*_approved`. Video/avatar (Fasi 6/6b) considerano solo le lezioni non-assessment, non hanno `approved` e non regrediscono (no-op) se tutte le lezioni sono `cancelled`/`empty`.
 
 ### Indici
 

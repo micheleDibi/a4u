@@ -22,7 +22,8 @@ aprirlo.
 - Search testuale su titolo/obiettivi (debounce 300ms via
   `useDebouncedValue`).
 - Select **Assegnatario** (popolato da `useOrgMembers(orgId)`).
-- Select **Stato** con tutti i 17 valori di `course.status` + "Tutti".
+- Select **Stato** con tutti i 22 valori di `course.status`
+  (`STATUS_FILTERS`, da `draft` ad `archived`) + "Tutti".
 - Select **Lingua** (da `useLanguages()`, con bandiera + nome nativo).
 - Due **`DateRangeField`** (Popover + 2 input date nativi): "Creato" e
   "Aggiornato".
@@ -34,14 +35,44 @@ aprirlo.
 Refresh-safe + condivisibile. Default `updated_at desc` omesso
 dall'URL per pulizia.
 
-**Ordinamento**: header cliccabili sulle colonne **"Creato"** e
-**"Aggiornato"**: click cambia `sort_by/sort_dir`, freccia su/giù
-indica l'ordine attivo. Default `updated_at desc`.
+**Ordinamento**: `Select` "Ordina" nella toolbar (sostituisce i vecchi
+header cliccabili sulle colonne data). Encoding `"${sort_by}:${sort_dir}"`
+come singolo value; 4 opzioni (`updated_at`/`created_at` × `desc`/`asc`)
+con icona `ArrowDown`/`ArrowUp`. `setSort` pulisce dall'URL il default
+`updated_at desc`.
 
-**Colonne** (in ordine): Titolo, Assegnatario, Stato (`CourseStatusBadge`),
-Lingua (bandiera + ISO), **Pipeline** (4 chip via
+**Colonne** (in ordine `id`): `title`, `assignee`, `status`
+(`CourseStatusBadge`), `lang` (bandiera + ISO), `pipeline` (4 chip via
 `CoursePipelineRowChips`, vedi [frontend/05](../frontend/05-components.md)),
-Creato (sortable), Aggiornato (sortable), Azioni (menu).
+**`cfu`** (intero `tabular-nums`), **`corsoDiLaurea`** (`corso_di_laurea`
+troncata a 200px con `title`, `—` se NULL), `modules` (`modules_count`),
+`created`, `updated`, `actions` (menu `⋮`).
+
+**Visibilità colonne personalizzabile** (`DataTableColumnToggle` +
+`useColumnVisibility`):
+
+- Il selettore **"Colonne"** (`DataTableColumnToggle`, in
+  [05 — Components](../frontend/05-components.md)) è un dropdown di
+  checkbox in fondo alla toolbar filtri (`ms-auto`); itera le colonne con
+  `enableHiding !== false` e usa `column.meta.label` come etichetta.
+  `title` e `actions` hanno `enableHiding: false` (sempre visibili).
+- La visibilità è persistita per-browser in localStorage via
+  `useColumnVisibility(COURSES_COLUMNS_STORAGE_KEY, DEFAULT_COLUMN_VISIBILITY)`
+  (chiave `"courses-list-columns"`, globale: identica tra organizzazioni). Lo
+  stato salvato è unito sopra ai default (`{...defaults, ...saved}`) così
+  una colonna nuova eredita il suo default finché non viene toccata.
+- `DEFAULT_COLUMN_VISIBILITY`: `cfu` e `corsoDiLaurea` partono **visibili**;
+  `modules`, `created` e `updated` partono **nascoste** (l'utente le attiva
+  dal selettore). `title`/`assignee`/`status`/`lang`/`pipeline`/`actions`
+  visibili.
+- `columnVisibility`/`setColumnVisibility` sono inoltrati sia a
+  `DataTable` (props `columnVisibility`/`onColumnVisibilityChange`) sia al
+  selettore.
+
+Le colonne data (`created`/`updated`) **non hanno più header sortable**:
+l'ordinamento è ora un `Select` "Ordina" nella toolbar (encoding
+`sort_by:sort_dir` come singolo value); le date dettagliate restano leggibili
+nel pannello info del menu azioni `⋮` di ogni riga.
 
 **Search input**: state locale `qInput` reattivo + `debouncedQ` con 300ms
 che scrive in URL solo dopo il debounce. Sync bidirezionale: se l'URL
@@ -845,12 +876,15 @@ Layout:
 - **Aggregate card**: progress aggregato + CTA "Genera tutti" /
   "Annulla tutti", contatori `ready/total`, badge lezioni `failed`,
   **ETA** (via `useBatchEta`) durante un batch attivo.
-- **Card per lezione** (raggruppate per modulo): status badge, alert
-  pre-requisiti mancanti (speech/slides non approvati), alert "stale",
-  errore; CTA Genera/Rigenera/Annulla/Scarica; progress bar live con
-  label fase durante la generazione; **player HTML5** `<video>`
-  (`aspect-[99/70]`) quando `ready`; riga di metadata dai `tokens`
-  (durata, device, dimensione file).
+- **Lista lezioni** (raggruppate per modulo): delegata alla vista media
+  condivisa `<LessonMediaView variant="video">` (vedi
+  [§ Vista media condivisa](#vista-media-condivisa-componentsmedia)). Le
+  parti specifiche del tab Video — status badge, avvisi (speech/slides non
+  approvati, stale, errore), CTA Genera/Rigenera/Annulla/Scarica, label
+  fase (`tts`/`rendering_slides`/`encoding`/`preparing`), chip `tokens`
+  (durata, device, dimensione file) e nome file `${lesson_code}.mp4` —
+  arrivano via l'adapter `MediaRenderers<LessonVideoStatusOut>` definito
+  nella view.
 
 Hook: `useLessonVideo.ts` — `useCourseVideoStatus`, `useLessonVideoStatus`
 (per-lezione) + 4 mutation hook (`useGenerateLessonVideo`,
@@ -871,10 +905,14 @@ Layout:
   non ha clip MiniMax pronte (`avatar_clips_ready === false`).
 - **Aggregate card**: descrizione + progress aggregato + CTA "Genera
   tutti" / "Annulla tutti", contatori, badge `failed`, **ETA**.
-- **Card per lezione**: status badge, alert "video della lezione non
-  pronto" / "stale" / errore; CTA Genera/Rigenera/Annulla/Scarica;
-  progress bar con fasi `preparing / lipsync / overlay`; player HTML5;
-  metadata dai `tokens` (durata, n. clip, dimensione file).
+- **Lista lezioni**: come per il tab Video, delegata a
+  `<LessonMediaView variant="avatar">`
+  ([§ Vista media condivisa](#vista-media-condivisa-componentsmedia)).
+  L'adapter `MediaRenderers<LessonAvatarVideoStatusOut>` fornisce status
+  badge, avvisi ("video della lezione non pronto" / stale / errore), CTA
+  Genera/Rigenera/Annulla/Scarica, label fase (`preparing`/`lipsync`/
+  `overlay`), chip `tokens` (durata, n. clip, dimensione file) e nome file
+  `${lesson_code}-avatar.mp4`.
 
 Nessun selettore lingua (l'audio è ereditato dal video della lezione).
 
@@ -887,6 +925,99 @@ I tre parametri MuseTalk per-avatar (`musetalk_extra_margin`,
 `musetalk_left_cheek_width`, `musetalk_right_cheek_width`) si
 configurano da `MyAvatarPage.tsx` (sezione avanzata) via
 `PATCH /me/avatar/musetalk-params`, non da questa scheda.
+
+## Vista media condivisa (`components/media/`)
+
+I tab **Video** (Fase 6) e **Video con avatar** (Fase 6b) condividono la
+stessa presentazione delle lezioni tramite i componenti in
+`components/media/`. Sostituisce le vecchie "card per lezione" con player
+`<video>` incorporato (che allungavano a dismisura la pagina) con una
+**vista compatta** lista/griglia, moduli collassabili e **player in
+modale**. Ogni view (`CourseLessonVideoView`/`CourseLessonAvatarVideoView`)
+mantiene header, banner e fetch propri e passa le parti specifiche per
+variante via un `MediaRenderers`.
+
+### `LessonMediaView.tsx`
+
+**File**: `components/media/LessonMediaView.tsx`.
+**Scopo**: render condiviso della lista lezioni dei tab media.
+**Esporta**: `LessonMediaView<TItem extends MediaStatusItem>`.
+
+- **Props**: `course: CourseOut`, `variant: "video" | "avatar"`,
+  `itemByLessonId: Map<string, TItem>`, `renderers: MediaRenderers<TItem>`.
+- **Comportamento**: filtra `course.modules` ai soli moduli con almeno una
+  lezione presente in `itemByLessonId` (preservando l'ordine); se nessuno,
+  rende `null`. Mostra un `MediaViewToggle` (Lista/Griglia) e una
+  `MediaModuleSection` per modulo con contatore `ready/total`. In modalità
+  `list` rende una `LessonMediaRow` per lezione, in `grid` una
+  `LessonMediaCard` (grid `1 / sm:2 / xl:3` colonne). Le etichette sono
+  sempre **"Modulo N"/"Lezione N"** (via `useCourseLabels` →
+  `moduleLabel`/`lessonLabel`), mai i codici tecnici `M1`/`M1.L2`. Lo stato
+  di view + moduli collassati arriva da `useMediaView(course.id, variant)`.
+- **Player in modale**: tiene lo stato `playing` (lezione + modulo + item) e
+  monta un singolo `VideoPlayerModal`; click su riga/card pronta lo apre con
+  titolo `"Modulo N · Lezione N — Titolo"`, `videoUrl`, nome file di download
+  (`renderers.downloadName`) e metadata (`renderers.tokens`).
+
+### `useMediaView.ts`
+
+**File**: `components/media/useMediaView.ts`.
+**Esporta**: `useMediaView(courseId, variant)` + tipo `MediaViewMode = "list" | "grid"`.
+
+- **Restituisce**: `{ viewMode, setViewMode, collapsed: Set<string>, toggleModule }`.
+- **Comportamento**: persiste in localStorage, separato **per corso e per
+  variante** (chiavi `lesson-media-view:{courseId}:{variant}` e
+  `lesson-media-collapsed:{courseId}:{variant}`), così la scelta su "Video"
+  non si trascina su "Video con avatar". Default `viewMode = "grid"`. Lazy
+  init + `try/catch` tollerante agli errori di storage (stesso pattern di
+  `useColumnVisibility`).
+
+### `types.ts`
+
+**File**: `components/media/types.ts`.
+**Esporta**: interfacce `MediaStatusItem` e `MediaRenderers<TItem>`.
+
+- `MediaStatusItem`: sottoinsieme comune di `LessonVideoStatusOut` e
+  `LessonAvatarVideoStatusOut` (`lesson_id`, `status`, `progress`,
+  `progress_phase`, `video_url`, `error`, `is_stale`); entrambi i tipi BE
+  vi sono strutturalmente assegnabili.
+- `MediaRenderers<TItem>`: adapter forniti da ciascuna view —
+  `statusBadge`, `warnings`, `actions(lesson, item)`, `tokens`,
+  `phaseLabel`, `downloadName(lesson, item)`. È il punto in cui le parti
+  per-variante restano nella pagina che le possiede.
+
+### `MediaViewToggle.tsx`
+
+Segmented control **Lista ↔ Griglia** (`button` nativi, icone `List`/
+`LayoutGrid`; non esiste una primitive `ToggleGroup` nel design system).
+i18n `courses.media.{viewList, viewGrid}`.
+
+### `MediaModuleSection.tsx`
+
+Sezione modulo **collassabile**: header cliccabile con "Modulo N · Titolo",
+contatore `Badge` `courses.media.readyCount` (`{{ready}}/{{total}} pronti`,
+`variant="default"` quando tutte pronte) e chevron; il contenuto è nascosto
+quando `collapsed`.
+
+### `LessonMediaRow.tsx` / `LessonMediaCard.tsx`
+
+Riga (Lista) e card (Griglia) di una lezione. Pulsante ▶ abilitato solo
+quando `status === "ready" && video_url` (altrimenti icona `FilmIcon`
+disabilitata); click → `onPlay()`. Entrambi rendono
+`renderers.statusBadge`, `renderers.warnings`, `renderers.actions` e una
+`Progress` inline con `phaseLabel` + percentuale durante
+`pending`/`processing`. La card usa un tile `aspect-[99/70]` su sfondo
+neutro (niente poster reale).
+
+### `VideoPlayerModal.tsx`
+
+Player in **modale** (`Dialog`, `max-w-3xl`): `<video controls autoPlay>`
+`aspect-[99/70]`, metadata opzionali sotto e bottone "Scarica MP4"
+(`courses.media.modalDownload`, apre in nuova scheda). Sostituisce i player
+incorporati.
+
+i18n della vista media: `courses.media.{viewList, viewGrid, readyCount,
+play, modalDownload}`.
 
 ## Helper riusabili
 

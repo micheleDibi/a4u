@@ -41,7 +41,9 @@ Verificate dal worker dopo il claim:
 - `lesson.video_status == 'ready'` e `video_path` valorizzato — il video
   MP4 della lezione (Fase 6) **deve esistere**: l'avatar ci si sovrappone.
 - L'avatar dell'assegnatario del corso deve avere **≥ 1 clip MiniMax
-  pronta** (`AvatarClip.status == 'ready'`).
+  pronta** (`AvatarClip.status == 'ready'`). Attenzione: cambiare
+  l'immagine dell'avatar **resetta tutte le clip a `pending`** e quindi
+  ri-blocca questa pre-condizione finché non vengono rigenerate (vedi §9b).
 - Credenziali MuseTalk/R2 configurate (vedi §8).
 - La lezione non deve essere `is_assessment`.
 
@@ -242,8 +244,53 @@ Se mancano, il worker fallisce con un errore di pre-condizione esplicito.
   + 4 mutation hook.
 - `frontend/src/pages/org/courses/components/CourseLessonAvatarVideoView.tsx`
   — scheda **"Video con avatar"** del `CourseEditorPage`.
-- `frontend/src/pages/me/MyAvatarPage.tsx` — sezione avanzata per i tre
+- `frontend/src/pages/me/MyAvatarPage.tsx` — pagina "Mio Avatar": form
+  immagine/audio, griglia delle clip, sezione avanzata per i tre
   parametri MuseTalk per-avatar.
+- `frontend/src/components/avatar/AvatarClipCard.tsx` — card della singola
+  clip nel pool (player video se pronta, spinner/errore altrimenti).
+
+## 9b. Clip avatar — label e reset al cambio immagine
+
+### Label "Clip N" (non il prompt)
+
+Ogni clip del pool è generata da un prompt admin (`AvatarClipPrompt`,
+salvato in `AvatarClip.prompt_text`), ma la UI **non mostra mai il
+prompt**: la card `AvatarClipCard` etichetta la clip come **"Clip N"**
+(chiave i18n `myAvatar.clipLabel` = `"Clip {{n}}"`, con
+`n = position + 1`) e ripete l'indice come badge `#{position+1}` sul
+player. Il `prompt_text` resta interno (serve solo al worker MiniMax come
+testo di generazione) e non è esposto all'utente: le clip sono
+intercambiabili (vedi §2, FLF), quindi per l'utente contano come pool
+numerato, non come prompt distinti.
+
+### Reset di TUTTE le clip al cambio dell'immagine avatar
+
+Quando l'utente salva l'avatar con una **nuova immagine** (o alla prima
+creazione), `avatar_service.upsert_my_avatar` rigenera l'intero pool da
+zero (`backend/app/services/avatar_service.py:124-130`):
+
+1. `_reset_clips` — cancella **tutte** le `AvatarClip` esistenti, sia i
+   record DB sia i file video locali sotto `/uploads/avatars/{user_id}/clips/`.
+2. `_create_pending_clips` — ricrea una clip `status='pending'` per ogni
+   prompt admin attivo.
+3. `avatar.clips_status = 'pending'`.
+
+Le clip vanno quindi **rigenerate da capo** dal worker MiniMax
+(`avatar_clip_worker`): solo cambiare l'immagine, non l'audio, fa
+scattare il reset (`image_changed`; un nuovo audio da solo lascia il pool
+intatto). La UI avvisa in anticipo: la barra di salvataggio di
+`MyAvatarPage` mostra `myAvatar.saveWarn` ("Modificare l'immagine
+rigenererà tutti i clip.") quando `imageWillChange` è vero.
+
+**Effetto sul «Video con Avatar».** Finché le clip non tornano pronte la
+generazione avatar_video è **bloccata**: la pre-condizione `≥ 1 clip
+ready` (`avatar_is_ready` / `count_ready_clips`, vedi §2 e §6) non è più
+soddisfatta subito dopo il reset, e l'API risponde `409
+avatar_clips_not_ready` finché il worker MiniMax non ha rigenerato almeno
+una clip del nuovo pool. In pratica: cambiare l'immagine dell'avatar
+invalida ogni «Video con Avatar» rigenerabile finché le clip non sono di
+nuovo `ready`.
 
 ## 10. Configurazione
 

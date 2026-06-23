@@ -23,7 +23,7 @@ Query params (tutti opzionali):
 | `page` | int ≥ 1 | 1 | paginazione 1-based |
 | `page_size` | int 1..200 | 20 | |
 | `q` | str ≤ 200 | — | ricerca ILIKE su `title` + `objectives` |
-| `status` | `CourseStatus` | — | uno dei 17 valori (vedi `01-data-model`) |
+| `status` | `CourseStatus` | — | uno dei 22 valori (vedi `01-data-model`) |
 | `assignee_user_id` | UUID | — | filtra per docente assegnato |
 | `language_code` | str ≤ 10 | — | filtra per lingua corso |
 | `created_after` | ISO datetime | — | inclusivo `created_at ≥` |

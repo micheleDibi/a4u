@@ -289,8 +289,9 @@ dei campi):
 - `uq_course_lesson_code` UNIQUE su `(course_id, lesson_code)` — globale
   nel corso, NON per modulo. Vedi nota su renumber in
   [Manual editing](../courses/04-manual-editing.md).
-- `course.status` CHECK constraint con **17 valori** dopo le migrations
-  0019/0023 (aggiunti `slides_approved` e `speech_approved`).
+- `course.status` CHECK constraint con **22 valori** dopo le migrations
+  0019/0023/0030 (aggiunti `slides_approved`, `speech_approved` e i 4 stati
+  `video_*` / `avatar_video_*`).
 - ON DELETE CASCADE su tutte le FK `course → modules → lessons` e su
   `course → documents`.
 - ON DELETE SET NULL su tutte le FK template (`pdf_template_id`,
@@ -534,6 +535,60 @@ di duplicazione corso in altra lingua. Vedi
 
 `DROP INDEX uq_course_duplication_active` + drop dei 3 index normali +
 `DROP TABLE course_duplication_job`.
+
+---
+
+## `alembic/versions/0032_duplication_progress_detail.py`
+
+**Sotto-progresso a granularità fine per la duplicazione corso**:
+aggiunge la colonna `progress_detail` a `course_duplication_job` per
+dare all'utente un feedback più informativo del solo `progress_phase`.
+Vedi [Courses 15 — Duplicazione corso](../courses/15-course-duplication.md).
+
+### Sequenza `upgrade()`
+
+```python
+op.add_column(
+    "course_duplication_job",
+    sa.Column("progress_detail", sa.String(length=200), nullable=True),
+)
+```
+
+`progress_detail` `VARCHAR(200)` nullable: il worker la popola durante
+la combined phase con messaggi come `"23/48 lezioni completate"`. NULL
+per le fasi brevi (`loading_source`, `finalizing`, ...). Il FE la mostra
+come riga aggiuntiva sotto la phase label nel `CourseDuplicationBadge`.
+
+### Sequenza `downgrade()`
+
+`op.drop_column("course_duplication_job", "progress_detail")`.
+
+---
+
+## `alembic/versions/0033_course_corso_di_laurea.py`
+
+**Campo `corso_di_laurea` opzionale per livello EQF 6/7**: aggiunge la
+colonna `corso_di_laurea` a `course`, testo libero opzionale che il FE
+mostra solo quando il termine `livello_eqf_term_id` selezionato è Laurea
+triennale (slug `eqf_6_bachelor`) o Laurea Magistrale (slug
+`eqf_7_master_degree`). È un campo di setup didattico, quindi protetto
+dal lock `didactic_setup_confirmed_at` lato service.
+
+### Sequenza `upgrade()`
+
+```python
+op.add_column(
+    "course",
+    sa.Column("corso_di_laurea", sa.String(length=200), nullable=True),
+)
+```
+
+`corso_di_laurea` `VARCHAR(200)` nullable: zero impatto sulle righe
+esistenti (nullable senza server_default).
+
+### Sequenza `downgrade()`
+
+`op.drop_column("course", "corso_di_laurea")`.
 
 ---
 

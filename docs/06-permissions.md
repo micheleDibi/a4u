@@ -14,6 +14,7 @@ in questa iterazione (i codici platform-only sono enforced via `is_platform_admi
 | `member:invite` | Creare un invito via email/token |
 | `member:assign_role` | Cambiare ruolo a un membro (con vincoli di rank) |
 | `member:remove` | Rimuovere un membro dall'org |
+| `member:avatar:view` | Vedere gli avatar degli altri membri dell'org (default per `creator`/`org_admin`/`manager`, NON per `member`) |
 | `template:slide:manage` | CRUD template slide |
 | `template:pdf:manage` | CRUD template PDF |
 | `permission:manage` | Modificare gli override permessi (ruolo+org, membership) |
@@ -46,8 +47,8 @@ Definiti in `R` (codice) e seedati in `organization_roles`. Ogni ruolo ha un
 | Code | rank | Default permissions |
 |---|---|---|
 | `creator` | 10 | **TUTTI** i codici di `ALL_PERMISSION_CODES` |
-| `org_admin` | 20 | `member:view`, `member:invite`, `member:assign_role`, `member:remove`, `template:slide:manage`, `template:pdf:manage`, `org:update`, `course_config:manage`, `course:view`, `course:view_all`, `course:create`, `course:edit`, `course:save_draft`, `course:delete`, `course:assign`, `course:generate`, `course:duplicate` |
-| `manager` | 30 | `member:view`, `course:view`, `course:view_all`, `course:create`, `course:edit`, `course:save_draft`, `course:assign`, `course:generate`, `course:duplicate` |
+| `org_admin` | 20 | `member:view`, `member:invite`, `member:assign_role`, `member:remove`, `member:avatar:view`, `template:slide:manage`, `template:pdf:manage`, `org:update`, `course_config:manage`, `course:view`, `course:view_all`, `course:create`, `course:edit`, `course:save_draft`, `course:delete`, `course:assign`, `course:generate`, `course:duplicate` |
+| `manager` | 30 | `member:view`, `member:avatar:view`, `course:view`, `course:view_all`, `course:create`, `course:edit`, `course:save_draft`, `course:assign`, `course:generate`, `course:duplicate` |
 | `member` | 40 | `course:view` (filtrato server-side: solo corsi assegnati) |
 
 I default sono caricati in `role_permissions` da `seed.ensure_seed` la prima

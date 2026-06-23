@@ -53,7 +53,17 @@ Validatore `_validate_password`: chiama `is_password_strong(v)`. Se fallisce,
 
 ### `class UserUpdateAdmin(BaseModel)`
 
-Tutti opzionali: `full_name`, `is_platform_admin`, `is_active`.
+Tutti opzionali: `full_name` (1..255), `email: EmailStr | None`,
+`is_platform_admin`, `is_active`.
+
+### `class UserAdminSetPassword(BaseModel)`
+
+Reset password manuale lato admin piattaforma (no SMTP): l'admin imposta
+una nuova password robusta per l'utente target.
+- `password: str` (10..128).
+
+Validatore `_validate_password`: chiama `is_password_strong(v)`. Se
+fallisce, `ValueError("Password debole...")`.
 
 ### `class MeOrganizationOut(ORMModel)`
 
@@ -83,6 +93,26 @@ Per nuovi utenti che accettano l'invito serve nome+password; per utenti
 esistenti basta accettare. Quindi entrambi opzionali:
 - `full_name: str | None` (1..255)
 - `password: str | None` (10..128)
+
+### `class ProfileUpdate(BaseModel)`
+
+Body `PATCH /auth/me` — modifica del proprio nome (nessuna re-auth):
+- `full_name: str` (1..255).
+
+### `class ChangeEmailRequest(BaseModel)`
+
+Body `POST /auth/me/change-email` — richiede la password attuale:
+- `current_password: str` (1..200),
+- `new_email: EmailStr`.
+
+### `class ChangePasswordRequest(BaseModel)`
+
+Body `POST /auth/me/change-password` — richiede la password attuale:
+- `current_password: str` (1..200),
+- `new_password: str` (10..128).
+
+Validatore `_validate_new_password`: chiama `is_password_strong(v)`. Se
+fallisce, `ValueError("Password debole...")`.
 
 ---
 
@@ -337,12 +367,42 @@ video (Fasi 6 / 6b) — che hanno endpoint backend di riferimento.
 
 ---
 
-## `app/schemas/course_lesson_content.py` — classi assessment
+## `app/schemas/course_lesson_content.py` — equazioni e classi assessment
 
 Oltre agli schemi della Fase 3 (contenuto didattico, `LessonContent*`),
-questo file definisce gli schemi della **verifica delle competenze**: il
+questo file definisce gli asset matematici (equazioni / teoremi con
+dimostrazione) e gli schemi della **verifica delle competenze**: il
 payload polimorfico che vive in `course_lesson.content_raw` quando
 `lesson.is_assessment`.
+
+### `class ProofStep(BaseModel)`
+
+Un passaggio della dimostrazione di un teorema/proposizione.
+`extra="forbid"`.
+- `latex: str = Field(default="", max_length=2000)` — LaTeX del
+  passaggio **senza** delimitatori `$...$`; può essere vuoto se il passo
+  è solo testuale,
+- `text: str = Field(default="", max_length=1500)` — spiegazione del
+  passaggio (markdown, può contenere math inline `$..$`).
+
+### `class LessonContentEquation(BaseModel)`
+
+Asset equazione/teorema della Fase 3. `extra="forbid"`.
+- `equation_id: str` (1..50) — referenziato nel testo come `[EQ:..]`,
+- `latex: str` (min 1) — LaTeX dell'asset,
+- `label: str = Field(default="", max_length=200)`,
+- `explanation: str = Field(default="", max_length=1200)`,
+- `kind: str = Field(default="formula", max_length=20)` — tipo
+  dell'asset, classificato dall'AI per decidere se generare la
+  dimostrazione. Valori convenzionali: `definition` / `formula` /
+  `identity` (di norma `proof` vuota) e `theorem` / `proposition` /
+  `lemma` / `corollary` (enunciato + dimostrazione). È una stringa
+  libera, non un `Literal`,
+- `statement: str = Field(default="", max_length=3000)` — enunciato
+  formale (markdown + math inline `$..$`); vuoto per le formule "nude"
+  senza enunciato dedicato,
+- `proof: list[ProofStep] = Field(default_factory=list)` — dimostrazione
+  a passaggi; vuota quando non applicabile.
 
 ### `class AssessmentMCOption(BaseModel)`
 
@@ -632,7 +692,7 @@ Conteggio per uno status. Riutilizzato in vari blocchi:
 ### `class CoursesMetrics(BaseModel)`
 
 - `total: int`,
-- `by_status: list[StatusCount]` — 17 valori possibili
+- `by_status: list[StatusCount]` — 18 valori possibili
   (vedi [Courses 01](../courses/01-data-model.md)). Il frontend li
   raggruppa per fase in `CoursePipelineDetail`.
 

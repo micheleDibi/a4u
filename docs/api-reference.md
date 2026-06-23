@@ -99,6 +99,37 @@ Risposta `200`:
 
 `401 not_authenticated` se manca/scaduto access token.
 
+### `PATCH /auth/me`
+
+Self-service. Modifica del proprio nome. Body:
+```json
+{ "full_name": "Mario Rossi" }
+```
+Risposta `200`: `MeOut`. Nessuna re-auth.
+
+### `POST /auth/me/change-email`
+
+Self-service. Richiede la password attuale. Body:
+```json
+{ "current_password": "Password123!", "new_email": "nuova@example.com" }
+```
+Risposta `200`: `MeOut` (le sessioni restano valide). Errori:
+- `401 invalid_current_password`.
+- `422 email_unchanged` se coincide con l'attuale.
+- `409 email_in_use`.
+
+### `POST /auth/me/change-password`
+
+Self-service. Richiede la password attuale; la nuova è validata
+(≥10, una maiuscola, una cifra). Rate-limit `5/minute`. Body:
+```json
+{ "current_password": "Password123!", "new_password": "NuovaPass456!" }
+```
+Risposta `200`: `MeOut`. **Non** revoca le proprie sessioni (l'utente resta
+loggato sul device corrente). Errori:
+- `401 invalid_current_password`.
+- `422 password_unchanged` se identica all'attuale.
+
 ---
 
 ## Admin: organizations
@@ -151,13 +182,33 @@ Risposta `200`: `Page<UserOut>`.
 
 ### `POST /admin/users` → `201`
 
-Body `UserCreateAdmin { email, full_name, password, is_platform_admin? }`.
-`409 email_in_use`.
+Body `UserCreateAdmin { email, full_name, password, is_platform_admin? }`
+(password validata: ≥10, una maiuscola, una cifra). `409 email_in_use`.
 
 ### `PUT /admin/users/{user_id}`
 
-Body `UserUpdateAdmin { full_name?, is_platform_admin?, is_active? }`.
-`404 user_not_found`.
+Body `UserUpdateAdmin { full_name?, email?, is_platform_admin?, is_active? }`
+(tutti opzionali). Disattivare un account (`is_active=false`) è il modo per
+"rimuoverlo": è reversibile, nessuna delete fisica.
+
+Errori:
+- `404 user_not_found`.
+- `409 cannot_deactivate_self` se l'admin disattiva il proprio account.
+- `409 cannot_demote_self` se l'admin rimuove il proprio ruolo admin.
+- `409 last_active_admin` se è l'unico platform admin attivo rimasto.
+- `409 email_in_use` se la nuova email è già in uso.
+
+Risposta `200`: `UserOut`.
+
+### `POST /admin/users/{user_id}/password`
+
+Reset password manuale lato admin (no SMTP). Body
+`UserAdminSetPassword { password }` (validata: ≥10, una maiuscola, una cifra).
+Imposta la nuova password e **revoca tutti i refresh token** dell'utente
+target (forza il re-login; gli access JWT restano validi fino a scadenza
+TTL). `404 user_not_found`.
+
+Risposta `200`: `UserOut`.
 
 ### `POST /admin/organizations/{org_id}/memberships` → `201`
 
@@ -618,6 +669,12 @@ fa upsert dei risultati. Audit `i18n.translations.auto_translate` con
 |---|---|
 | `OrganizationOut` | id, name, email, phone, website, vat_number, fiscal_code, country, address, city, province, postal_code, logo_path, created_at, updated_at |
 | `UserOut` | id, email, full_name, is_platform_admin, is_active, last_login_at, created_at |
+| `UserCreateAdmin` | email, full_name, password (≥10, 1 maiuscola, 1 cifra), is_platform_admin (default false) |
+| `UserUpdateAdmin` | full_name?, email?, is_platform_admin?, is_active? (tutti opzionali) |
+| `UserAdminSetPassword` | password (≥10, 1 maiuscola, 1 cifra) |
+| `ProfileUpdate` | full_name (1..255) |
+| `ChangeEmailRequest` | current_password, new_email |
+| `ChangePasswordRequest` | current_password, new_password (≥10, 1 maiuscola, 1 cifra) |
 | `MembershipOut` | id, user_id, user_email, user_full_name, organization_id, role_id, role_code, role_name_it, joined_at |
 | `MeOut` | user, organizations[{organization_id, organization_name, role_code, role_name_it, permissions[]}], is_platform_admin |
 | `SlideTemplateOut` | id, organization_id, name, background_image_path, logo_left_path, logo_right_path, text_color, primary_color, secondary_color, font_family, slide_size, created_at, updated_at |
@@ -646,6 +703,13 @@ fa upsert dei risultati. Audit `i18n.translations.auto_translate` con
 | `token_reused` | 401 | Refresh già revocato → chain-revoke |
 | `account_locked` | 429 | Lockout login |
 | `invalid_credentials` | 401 | Password sbagliata |
+| `invalid_current_password` | 401 | Cambio email/password self-service: password attuale errata |
+| `email_unchanged` | 422 | Cambio email: la nuova coincide con l'attuale |
+| `password_unchanged` | 422 | Cambio password: la nuova coincide con l'attuale |
+| `cannot_deactivate_self` | 409 | Admin disattiva il proprio account |
+| `cannot_demote_self` | 409 | Admin rimuove il proprio ruolo admin |
+| `last_active_admin` | 409 | Unico platform admin attivo rimasto |
+| `email_in_use` | 409 | Email già usata (create/update utente, cambio email) |
 | `csrf_origin_invalid` | 403 | Origin/Referer mismatch |
 | `permission_denied` | 403 | Permesso mancante (`meta.missing`) |
 | `platform_admin_required` | 403 | Non admin di piattaforma |

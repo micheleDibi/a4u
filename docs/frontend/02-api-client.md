@@ -53,7 +53,10 @@ DTO TypeScript che rispecchiano gli output Pydantic.
 - `UserOut`, `MeOrganization`, `MeOut`.
 - `OrganizationOut`.
 - `Page<T>`, `PageMeta`.
-- `MembershipOut`.
+- `MembershipOut` — include i campi avatar del membro
+  `avatar_status: AvatarClipsAggregateStatus | null` e
+  `avatar_audio: boolean` (valorizzati solo per chi ha
+  `member:avatar:view`; alimentano `AvatarStatusDot` nella lista membri).
 - `InvitationCreateResponse`, `InvitationPreview`.
 - `SlideTemplateOut`, `PdfTemplateOut`.
 - `AvatarOut` (senza più `audio_text`), `AvatarClipOut`,
@@ -82,6 +85,18 @@ DTO TypeScript che rispecchiano gli output Pydantic.
 - `authApi.login(email, password) -> Promise<void>`: `POST /auth/login`.
 - `authApi.logout() -> Promise<void>`: `POST /auth/logout`.
 - `authApi.me() -> Promise<MeOut>`: `GET /auth/me`.
+- `authApi.updateMe(full_name) -> Promise<MeOut>`: `PATCH /auth/me`.
+  Aggiorna il nome completo dell'utente corrente.
+- `authApi.changeEmail(current_password, new_email) -> Promise<MeOut>`:
+  `POST /auth/me/change-email`. Cambia l'email previa verifica della
+  password corrente.
+- `authApi.changePassword(current_password, new_password) -> Promise<MeOut>`:
+  `POST /auth/me/change-password`. Cambia la password verificando quella
+  corrente.
+
+> I 3 metodi self-service sopra (`updateMe`, `changeEmail`,
+> `changePassword`) alimentano la `ProfilePage` (`/me/profile`, vedi
+> [06 — Pages](06-pages.md)).
 
 ---
 
@@ -120,7 +135,13 @@ Aggiunge tutti i campi non-vuoti a un `FormData`.
 
 - `list(params) -> Promise<Page<UserOut>>`.
 - `create(data) -> Promise<UserOut>`.
-- `update(id, partial) -> Promise<UserOut>`.
+- `update(id, partial) -> Promise<UserOut>`: `PUT /admin/users/:id`. Il
+  `partial` accetta `full_name`, `email`, `is_active`,
+  `is_platform_admin` (tutti opzionali).
+- `setPassword(id, password) -> Promise<UserOut>`:
+  `POST /admin/users/:id/password`. Reset password manuale lato admin
+  (usato da `SetPasswordDialog` in `UsersListPage` — vedi
+  [06 — Pages](06-pages.md)).
 
 ---
 
@@ -231,6 +252,20 @@ myAvatarApi.getVoiceScript(lang?: string): Promise<AvatarVoiceScriptOut | null>
 // Risolve il testo da leggere durante la registrazione, con fallback
 // lato server (lingua richiesta -> default piattaforma -> qualsiasi
 // script disponibile -> null).
+```
+
+### `memberAvatarApi` — avatar di un membro (sola lettura)
+
+Esportato dallo stesso modulo `src/api/avatars.ts`. Espone l'avatar di
+un membro dell'organizzazione a chi ha il permesso `member:avatar:view`
+(creator / org_admin / manager), consumato da `MemberAvatarDialog` nella
+`MembersListPage` (vedi [05 — Components](05-components.md)).
+
+```ts
+memberAvatarApi.get(orgId: string, userId: string): Promise<AvatarOut | null>
+// GET /orgs/:orgId/members/:userId/avatar
+// Richiede che l'utente target sia membro dell'org. `null` = nessun
+// avatar creato.
 ```
 
 ---
@@ -402,6 +437,7 @@ interface CourseListParams {
 
 interface CourseListItemOut {
   id, title, status, language_code, assignee, modules_count, cfu,
+  corso_di_laurea,  // string | null — nome del corso di laurea (opzionale)
   updated_at, created_at,
   lessons_progress: CourseListLessonsProgress;
 }
@@ -416,9 +452,11 @@ interface CourseListLessonsProgress {
 }
 ```
 
-Usato da `CoursesListPage` per filtri/ordinamento e dalla colonna
-**Pipeline** (componente `CoursePipelineRowChips` — vedi
-[05 — Components](05-components.md)).
+Usato da `CoursesListPage` per filtri/ordinamento, dalla colonna
+**Pipeline** (componente `CoursePipelineRowChips`) e dalle colonne
+**CFU** / **Corso di Laurea** (`cfu` / `corso_di_laurea`), queste ultime
+attivabili dal selettore colonne (vedi
+[05 — Components](05-components.md) e [06 — Pages](06-pages.md)).
 
 ### Verifica delle competenze — tipi e namespace
 

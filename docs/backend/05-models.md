@@ -17,7 +17,7 @@ AvatarVoiceScript, Course, CourseDocument, CourseDuplicationJob, CourseLesson, C
 CourseTaxonomyTerm, Invitation, Language, LoginAttempt, Membership,
 MembershipPermissionOverride, Organization, OrganizationCourseSettings,
 OrganizationRole, OrganizationRolePermission, PdfTemplate, Permission,
-RefreshToken, RolePermission, SlideTemplate, User`.
+RefreshToken, RolePermission, SlideTemplate, Translation, User`.
 
 ---
 
@@ -351,7 +351,7 @@ a MiniMax. Seedata con 5 voci da `db.seed._seed_avatar_clip_prompts`.
 | `id` | UUID | PK |
 | `position` | smallint | UNIQUE NOT NULL |
 | `prompt` | text | NOT NULL (in inglese) |
-| `label_it` | str(120) | NOT NULL (etichetta UI italiana) |
+| `label_it` | str(120) | nullable (etichetta UI italiana) |
 | `is_active` | bool | NOT NULL default `true` |
 | timestamps | | |
 
@@ -404,6 +404,29 @@ Indici: `(organization_id, created_at)`, `(actor_user_id, created_at)`,
 
 ---
 
+## `Translation` — `app/models/translation.py`
+
+Tabella: `translations`. Store i18n chiave-valore: una riga per ogni
+coppia `(language_code, key)`, gestita dal `i18n_service`
+([Services](07-services.md)) ed esposta dagli schemi i18n
+([Schemas](06-schemas.md)).
+
+| Campo | Tipo | Vincoli | Note |
+|---|---|---|---|
+| `id` | UUID | PK | da `UUIDPKMixin` |
+| `language_code` | str(10) | FK `languages.code` ON DELETE CASCADE, NOT NULL, INDEX | |
+| `key` | str(255) | NOT NULL, INDEX | |
+| `value` | Text | NOT NULL | |
+| `created_at`, `updated_at` | datetime tz | NOT NULL, server_default | da `TimestampMixin` |
+
+UNIQUE `uq_translations_language_key` su `(language_code, key)`: una sola
+traduzione per chiave e lingua. Indici extra su `language_code` e `key`.
+`untranslated_count` di una lingua (vedi `LanguageOut`) è calcolato come
+numero di chiavi mancanti o con `value` vuoto rispetto alla lingua di
+default.
+
+---
+
 ## Modelli del dominio Corsi
 
 I modelli `Course`, `CourseDocument`, `CourseModule`, `CourseLesson`,
@@ -414,7 +437,7 @@ per replicarlo qui.
 
 In sintesi:
 
-- `Course` ha uno state machine a 17 valori che copre l'intera pipeline AI a 5 fasi: `draft → architecture_* → lessons_structure_* → content_* → slides_* → speech_* → published / archived`. Ogni `*_pending/_ready/_approved` è derivato dagli stati per-modulo (Fase 2) o per-lezione (Fasi 3-5). Ha inoltre `video_language_code` (VARCHAR(10) nullable, FK `languages.code` ON DELETE SET NULL, migration `0026`): override opzionale della lingua della voce TTS nei video MP4 (Fase 6); NULL → fallback su `language_code`. La relationship `video_language` richiede `foreign_keys=` esplicito perché due FK puntano a `languages.code`.
+- `Course` ha uno state machine a 22 valori che copre l'intera pipeline: `draft → architecture_* → lessons_structure_* → content_* → slides_* → speech_* → video_* → avatar_video_* → published / archived` (rank monotòno in `core/course_phase_order.COURSE_STATUS_RANK`). Nota: la tupla `COURSE_STATUSES` in `models/course.py` con il CHECK inline elenca i **18** stati base; i 4 stati video/avatar (`video_pending/ready`, `avatar_video_pending/ready`) sono stati aggiunti al CHECK `ck_course_status_valid` dalla migration `0030` (video/avatar non hanno `approved`). Ogni `*_pending/_ready/_approved` è derivato dagli stati per-modulo (Fase 2) o per-lezione (Fasi 3-6b). Ha inoltre `video_language_code` (VARCHAR(10) nullable, FK `languages.code` ON DELETE SET NULL, migration `0026`): override opzionale della lingua della voce TTS nei video MP4 (Fase 6); NULL → fallback su `language_code`. La relationship `video_language` richiede `foreign_keys=` esplicito perché due FK puntano a `languages.code`. Il campo `corso_di_laurea` (VARCHAR(200) nullable, migration `0033`) è il nome libero del corso di laurea (es. "Informatica", "Ingegneria Gestionale"), mostrato dal FE solo quando il livello EQF selezionato è Laurea triennale (`eqf_6_bachelor`) o Laurea Magistrale (`eqf_7_master_degree`).
 - `CourseDocument` ha il proprio state machine `pending → processing → ready/failed` per il pre-processing AI (Appendice A).
 - `CourseModule` ha 10 colonne `lessons_structure_*` per Fase 2 + `architecture_modified_at` per stale-detection.
 - `CourseLesson` è la tabella più ampia: oltre ai campi base e Fase 2 (`learning_objectives`, `mandatory_topics`, `prerequisites`, `section_outline`), ha questi blocchi di colonne per le pipeline AI/PDF/video:

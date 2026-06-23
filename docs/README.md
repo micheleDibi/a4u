@@ -25,7 +25,7 @@ backend, frontend, database e API.
 - [02 — core/](backend/02-core.md) (config, logging, security, deps, errors, audit, rate_limit, permissions)
 - [03 — middleware/](backend/03-middleware.md) (request_id, access_log, security_headers, csrf)
 - [04 — db/](backend/04-db.md) (base, session, seed)
-- [05 — models/](backend/05-models.md) (13 modelli SQLAlchemy 2)
+- [05 — models/](backend/05-models.md) (24 modelli SQLAlchemy 2)
 - [06 — schemas/](backend/06-schemas.md) (Pydantic v2 DTO)
 - [07 — services/](backend/07-services.md) (logica di dominio)
 - [08 — api/v1/](backend/08-api.md) (router REST)
@@ -53,7 +53,9 @@ Stack: **React 18 + Vite + Tailwind v4 + shadcn/ui + i18next** (24 lingue UE).
 Documentazione dedicata della feature **Corsi** — pipeline AI a 5 fasi
 **tutte implementate** (Pre-processing + Fase 1 + Fase 2 + Fase 3 +
 Fase 4 slide + Fase 5 discorso + glossario + tre pipeline PDF: testo /
-slide / discorso) + CRUD manuale completo per ogni payload AI:
+slide / discorso) + generazione video (Fase 6 MP4 + Fase 6b video con
+avatar) + CRUD manuale completo per ogni payload AI, gestione tramite
+**stepper a 4 macro-fasi** (Setup / Architettura / Contenuti / Media):
 
 - [Courses overview](courses/README.md)
 - [01 — Data model](courses/01-data-model.md): course, course_document, course_module, course_lesson (con campi tutte le fasi), course_taxonomy_term, slide_template, language.
@@ -64,7 +66,7 @@ slide / discorso) + CRUD manuale completo per ogni payload AI:
 - [06 — Frontend](courses/06-frontend.md): editor a **stepper di 4 macro-fasi** (Setup / Architettura / Contenuti / Media) con sub-tab della fase corrente — Setup (Base/Didattica/Obiettivi/Documenti), Architettura (Architettura/Struttura), Contenuti (Contenuti/Slide/Discorso), Media (Video/Video con avatar); gate di accessibilità via `COURSE_STATUS_RANK`, dialog, optimistic update, ETA display, KaTeX, TipTap, TTS-safety inline.
 - [07 — Lesson structure (Fase 2)](courses/07-lesson-structure.md): worker parallelo per generare struttura lezioni (obiettivi, temi, prerequisiti, scaletta).
 - [08 — Lesson content (Fase 3) + Glossario](courses/08-lesson-content.md): worker parallelo per testo lezione + asset visivi (Mermaid + LaTeX + tabelle), glossario corso, editor TipTap user-friendly.
-- [09 — PDF export](courses/09-pdf-export.md): tre pipeline PDF (testo §7 + slide Fase 4 + discorso Fase 5) via WeasyPrint + Playwright pre-render Mermaid + latex2mathml.
+- [09 — PDF export](courses/09-pdf-export.md): tre pipeline PDF (testo §7 + slide Fase 4 + discorso Fase 5) via WeasyPrint + Playwright pre-render Mermaid → SVG e formule LaTeX → SVG con MathJax (`latex2mathml` resta solo come fallback offline) + copertina (frontespizio).
 - [10 — Lesson slides (Fase 4)](courses/10-lesson-slides.md): worker parallelo per generare slide della presentazione (riusa asset Fase 3 + nuovi asset, body field opzionale, 16 tipi slide).
 - [11 — Lesson speech (Fase 5)](courses/11-lesson-speech.md): worker parallelo per generare discorso temporizzato TTS-friendly (vincolo durata ±5%, 130 wpm IT / 150 wpm EN, 8 validazioni inclusa TTS-safety).
 - [12 — Lesson video (Fase 6)](courses/12-lesson-video.md): video MP4 della lezione — TTS XTTS-v2 su RunPod GPU + rendering slide Playwright + encoding ffmpeg.
@@ -77,6 +79,25 @@ slide / discorso) + CRUD manuale completo per ogni payload AI:
 
 - [Database schema](database/schema.md): tabelle, colonne, vincoli, indici.
 - [API reference](api-reference.md): tutti gli endpoint con request/response (vedi anche [Courses API](courses/05-api-reference.md) dedicata).
+
+### Documenti trasversali
+
+- [PROMPTS.md](PROMPTS.md): elenco completo dei prompt AI (system + user) con la mappatura modello/reasoning/token per ogni fase.
+- [storage-ovh-migration.md](storage-ovh-migration.md): runbook dello storage file pluggable (local / OVH FTP/FTPS / OVH SFTP) via `remote_storage.py` + `settings.storage_backend`.
+
+## Novità recenti
+
+Funzionalità integrate nell'ultima iterazione (documentate nei file linkati sopra):
+
+- **Storage file pluggable** — backend selezionabile via `settings.storage_backend`: `local` (default), `ovh_ftp` (FTP/FTPS) e `ovh_sftp` (SFTP via Paramiko). Vedi [storage-ovh-migration.md](storage-ovh-migration.md).
+- **Permesso `member:avatar:view`** — visibilità degli avatar degli altri membri (default per `creator`/`org_admin`/`manager`, non per `member`). Vedi [06 — Permissions](06-permissions.md).
+- **Hardening prompt injection** — `core/prompt_safety.py` (`sanitize_user_input` + `contains_injection_attempt`) usato dall'assistente conversazionale Nova. Vedi [05 — Security](05-security.md).
+- **PDF con MathJax (SVG)** — le formule LaTeX sono pre-renderizzate a SVG con MathJax invece di MathML; `latex2mathml` resta solo come fallback offline; copertina (frontespizio) sui tre PDF. Vedi [09 — PDF export](courses/09-pdf-export.md).
+- **Prompt lezioni v4** — Fase 1 in due fasi interne in un solo call; enunciato + dimostrazione (passaggi LaTeX) per asset formula/teorema. Vedi [08 — Lesson content](courses/08-lesson-content.md) e [PROMPTS.md](PROMPTS.md).
+- **TTS CJK-aware** — chunking del discorso compatibile con cinese/giapponese/coreano nel worker XTTS GPU. Vedi [11 — Lesson speech](courses/11-lesson-speech.md).
+- **Redesign Media** — vista media condivisa per le schede Video e Video con avatar. Vedi [06 — Frontend](courses/06-frontend.md) e [13 — Avatar video](courses/13-avatar-video.md).
+- **Colonne CFU / Corso di Laurea** — campo `corso_di_laurea` (opzionale, livello EQF 6/7) accanto a `cfu` sul corso. Vedi [01 — Data model](courses/01-data-model.md).
+- **Gestione utenti admin + profilo self-service** — endpoint admin `/users` (CRUD + reset password) e self-service `PATCH /auth/me`, `/auth/me/change-email`, `/auth/me/change-password`. Vedi [08 — api/v1/](backend/08-api.md).
 
 ## Convenzioni
 
