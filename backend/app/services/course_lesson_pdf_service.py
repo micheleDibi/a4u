@@ -624,7 +624,7 @@ def _strip_mermaid_max_width(svg: str) -> str:
 
 
 _MERMAID_RENDERER_HTML = """<!doctype html>
-<html><head><meta charset="utf-8"><style>body{margin:0;padding:0;}</style></head>
+<html><head><meta charset="utf-8"><style>body{margin:0;padding:0;font-family:"Noto Sans CJK JP","Noto Sans","DejaVu Sans",sans-serif;}</style></head>
 <body>
 <script type="module">
 // Mermaid 10.9.x rispetta `htmlLabels: false` ed emette SVG <text> puro
@@ -635,6 +635,9 @@ import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10.9.4/dist/mermaid.es
 mermaid.initialize({
   startOnLoad: false,
   theme: 'default',
+  // Font con copertura CJK per le label dei nodi (htmlLabels:false → <text>
+  // SVG): senza, il giapponese diventa "tofu" nonostante i font installati.
+  themeVariables: { fontFamily: '"Noto Sans CJK JP","Noto Sans","DejaVu Sans",sans-serif' },
   securityLevel: 'loose',
   flowchart: { htmlLabels: false, useMaxWidth: true },
   sequence: { useMaxWidth: true },
@@ -817,7 +820,7 @@ async def _prerender_mermaid_for_lesson(
 # ---------------------------------------------------------------------------
 
 _MATHJAX_RENDERER_HTML = """<!doctype html>
-<html><head><meta charset="utf-8"><style>body{margin:0;padding:0;}</style></head>
+<html><head><meta charset="utf-8"><style>body{margin:0;padding:0;font-family:"Noto Sans CJK JP","Noto Sans","DejaVu Sans",sans-serif;}</style></head>
 <body>
 <script>
 // Config PRIMA del load. fontCache:'none' → ogni SVG è autonomo (glyph

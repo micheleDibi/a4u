@@ -30,7 +30,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         # WeasyPrint
         libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b \
         libgdk-pixbuf-2.0-0 libffi8 \
-        fonts-dejavu-core fonts-liberation \
+        # Font: latini (DejaVu/Liberation) + Noto per ampia copertura Unicode.
+        # fonts-noto-cjk → giapponese/cinese/coreano; fonts-noto-core →
+        # cirillico, greco, arabo, ebraico, devanagari, thai, ecc. Necessari sia
+        # per WeasyPrint (PDF) sia per il Chromium di Playwright (frame
+        # slide→video e label Mermaid) dei corsi in lingue non-latine, altrimenti
+        # il testo viene reso come quadratini ("tofu").
+        fonts-dejavu-core fonts-liberation fonts-noto-core fonts-noto-cjk \
         # Playwright Chromium
         libnss3 libnspr4 libgbm1 libasound2 \
         libxshmfence1 libxrandr2 libxkbcommon0 \

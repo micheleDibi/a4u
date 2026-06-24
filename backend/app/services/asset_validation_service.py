@@ -35,10 +35,11 @@ from typing import Any, Callable
 from latex2mathml.converter import convert as _latex_to_mathml
 
 from app.core.config import get_settings
+from app.core.i18n_scripts import has_target_script_chars, primary_script
 from app.core.logging import get_logger
 from app.schemas.course_lesson_content import LessonContentOutput
 from app.schemas.course_lesson_slides import LessonSlidesOutput
-from app.services import openai_asset_fix_service
+from app.services import openai_asset_fix_service, openai_asset_localize_service
 
 log = get_logger("app.asset_validation")
 
@@ -653,6 +654,173 @@ async def _validate_and_fix(
 
 
 # ---------------------------------------------------------------------------
+# Rete di sicurezza i18n: localizza i campi asset rimasti in lingua sbagliata
+# ---------------------------------------------------------------------------
+
+# Stripping di math/sintassi: SOLO per il gate (decidere se un campo va
+# localizzato). Il valore inviato al traduttore resta quello integrale.
+_GATE_MATH_RE = re.compile(r"\$\$.*?\$\$|\$[^$]*\$", re.DOTALL)
+_GATE_LATEX_CMD_RE = re.compile(r"\\[A-Za-z]+")
+_GATE_TAG_RE = re.compile(r"\[[A-Za-z]+:[^\]]+\]")
+
+
+def _gate_prose(text: str) -> str:
+    """Rimuove math/LaTeX/placeholder per isolare la prosa leggibile."""
+    s = _GATE_MATH_RE.sub(" ", text)
+    s = _GATE_LATEX_CMD_RE.sub(" ", s)
+    s = _GATE_TAG_RE.sub(" ", s)
+    return s
+
+
+def _needs_localization(text: str, language_code: str) -> bool:
+    """True se `text` contiene prosa NON nello script della lingua target.
+
+    Affidabile per lingue a script non-latino (giapponese, cirillico, ...): se
+    il testo contiene già almeno un carattere dello script atteso lo consideriamo
+    a posto (caso dominante: campo interamente nella lingua sbagliata). Per
+    lingue latine il gate è gestito a monte (sempre spento).
+    """
+    if not text or not text.strip():
+        return False
+    if has_target_script_chars(text, language_code):
+        return False
+    return any(ch.isalpha() for ch in _gate_prose(text))
+
+
+@dataclass
+class _LocField:
+    """Un campo testuale di un asset candidato alla localizzazione."""
+
+    key: str
+    text: str
+    kind: str  # "text" | "mermaid" | "table"
+    apply: Callable[[str], None]
+
+
+def _collect_content_loc_fields(output: LessonContentOutput) -> list[_LocField]:
+    """Campi testuali localizzabili dell'output di Fase 3."""
+    fields: list[_LocField] = []
+
+    def add(key: str, text: str, kind: str, setter: Callable[[str], None]) -> None:
+        if text and text.strip():
+            fields.append(_LocField(key, text, kind, setter))
+
+    for i, a in enumerate(output.visual_assets):
+        add(f"va.{i}.caption", a.caption, "text",
+            lambda v, a=a: setattr(a, "caption", v))
+        add(f"va.{i}.alt_text", a.alt_text, "text",
+            lambda v, a=a: setattr(a, "alt_text", v))
+        if a.format == "mermaid":
+            add(f"va.{i}.content", a.content, "mermaid",
+                lambda v, a=a: setattr(a, "content", v))
+    for i, t in enumerate(output.tables):
+        add(f"tb.{i}.caption", t.caption, "text",
+            lambda v, t=t: setattr(t, "caption", v))
+        add(f"tb.{i}.markdown", t.markdown, "table",
+            lambda v, t=t: setattr(t, "markdown", v))
+    for i, e in enumerate(output.equations):
+        add(f"eq.{i}.label", e.label, "text",
+            lambda v, e=e: setattr(e, "label", v))
+        add(f"eq.{i}.explanation", e.explanation, "text",
+            lambda v, e=e: setattr(e, "explanation", v))
+        add(f"eq.{i}.statement", e.statement, "text",
+            lambda v, e=e: setattr(e, "statement", v))
+        for j, p in enumerate(e.proof):
+            add(f"eq.{i}.proof.{j}.text", p.text, "text",
+                lambda v, p=p: setattr(p, "text", v))
+    for i, ex in enumerate(output.examples):
+        add(f"ex.{i}.title", ex.title, "text",
+            lambda v, ex=ex: setattr(ex, "title", v))
+        add(f"ex.{i}.content", ex.content, "text",
+            lambda v, ex=ex: setattr(ex, "content", v))
+    return fields
+
+
+def _collect_slides_loc_fields(output: LessonSlidesOutput) -> list[_LocField]:
+    """Campi testuali localizzabili degli asset NUOVI di Fase 4. La prosa delle
+    slide (`title`/`body`/`bullets`) è coperta dal prompt hardening."""
+    fields: list[_LocField] = []
+
+    def add(key: str, text: str, kind: str, setter: Callable[[str], None]) -> None:
+        if text and text.strip():
+            fields.append(_LocField(key, text, kind, setter))
+
+    for i, a in enumerate(output.new_assets):
+        add(f"na.{i}.caption", a.caption, "text",
+            lambda v, a=a: setattr(a, "caption", v))
+        add(f"na.{i}.alt_text", a.alt_text, "text",
+            lambda v, a=a: setattr(a, "alt_text", v))
+        if a.format == "mermaid":
+            add(f"na.{i}.content", a.content, "mermaid",
+                lambda v, a=a: setattr(a, "content", v))
+    for i, t in enumerate(output.new_tables):
+        add(f"nt.{i}.caption", t.caption, "text",
+            lambda v, t=t: setattr(t, "caption", v))
+        add(f"nt.{i}.markdown", t.markdown, "table",
+            lambda v, t=t: setattr(t, "markdown", v))
+    for i, e in enumerate(output.new_equations):
+        add(f"ne.{i}.label", e.label, "text",
+            lambda v, e=e: setattr(e, "label", v))
+        add(f"ne.{i}.explanation", e.explanation, "text",
+            lambda v, e=e: setattr(e, "explanation", v))
+        add(f"ne.{i}.statement", e.statement, "text",
+            lambda v, e=e: setattr(e, "statement", v))
+        for j, p in enumerate(e.proof):
+            add(f"ne.{i}.proof.{j}.text", p.text, "text",
+                lambda v, p=p: setattr(p, "text", v))
+    for i, ex in enumerate(output.new_examples):
+        add(f"nx.{i}.title", ex.title, "text",
+            lambda v, ex=ex: setattr(ex, "title", v))
+        add(f"nx.{i}.content", ex.content, "text",
+            lambda v, ex=ex: setattr(ex, "content", v))
+    return fields
+
+
+async def _localize_fields(
+    fields: list[_LocField], *, language_code: str
+) -> bool:
+    """Localizza i campi rimasti in lingua sbagliata. Best-effort: ogni errore
+    diventa un warning e non blocca la generazione. Ritorna True se è cambiato
+    un asset STRUTTURALE (mermaid/tabella) → il chiamante ri-valida la sintassi.
+    """
+    settings = get_settings()
+    if not settings.asset_localize_enabled:
+        return False
+    # Gate spento per lingue a script latino: nessun rilevamento affidabile e
+    # nessuna spesa di token (la difesa lì è il prompt hardening).
+    if primary_script(language_code) is None:
+        return False
+    suspect = [f for f in fields if _needs_localization(f.text, language_code)]
+    if not suspect:
+        return False
+    items = {f.key: f.text for f in suspect}
+    try:
+        localized, _usage = await openai_asset_localize_service.localize_texts(
+            items=items, language_code=language_code
+        )
+    except Exception as exc:  # noqa: BLE001 — mai fatale per la generazione
+        log.warning("asset_localize_call_failed", error=str(exc), fields=len(items))
+        return False
+
+    structural_changed = False
+    changed = 0
+    for f in suspect:
+        v = localized.get(f.key)
+        if v and v != f.text:
+            f.apply(v)
+            changed += 1
+            if f.kind in ("mermaid", "table"):
+                structural_changed = True
+    log.info(
+        "asset_localize_applied",
+        target=language_code,
+        suspect=len(suspect),
+        changed=changed,
+    )
+    return structural_changed
+
+
+# ---------------------------------------------------------------------------
 # API pubblica
 # ---------------------------------------------------------------------------
 
@@ -660,19 +828,34 @@ async def _validate_and_fix(
 async def validate_and_fix_content_assets(
     output: LessonContentOutput, *, language_code: str
 ) -> LessonContentOutput:
-    """Valida e auto-corregge gli asset fragili dell'output di Fase 3.
-    Muta e ritorna lo stesso `output`. Solleva `AssetFixUnresolvedError`
-    (recuperabile) se un asset resta invalido."""
+    """Valida e auto-corregge gli asset fragili dell'output di Fase 3, poi
+    localizza (rete di sicurezza i18n) i campi testuali rimasti in lingua
+    sbagliata. Muta e ritorna lo stesso `output`. Solleva
+    `AssetFixUnresolvedError` (recuperabile) se un asset resta invalido."""
     slots, inline_fields = _collect_content_slots(output)
-    if not slots:
-        return output
-    fixed = await _validate_and_fix(slots, inline_fields, language_code=language_code)
-    log.info(
-        "content_assets_validated",
-        total=len(slots),
-        fixed=fixed,
-        mermaid=sum(1 for s in slots if s.kind == "mermaid"),
+    if slots:
+        fixed = await _validate_and_fix(
+            slots, inline_fields, language_code=language_code
+        )
+        log.info(
+            "content_assets_validated",
+            total=len(slots),
+            fixed=fixed,
+            mermaid=sum(1 for s in slots if s.kind == "mermaid"),
+        )
+    structural_changed = await _localize_fields(
+        _collect_content_loc_fields(output), language_code=language_code
     )
+    if structural_changed:
+        # La traduzione può aver toccato label Mermaid / celle tabella: ri-valida
+        # la sintassi. Non-fatale: un asset strutturale che resta invalido
+        # degrada (diagramma assente), non fa fallire la lezione.
+        slots2, inline2 = _collect_content_slots(output)
+        if slots2:
+            try:
+                await _validate_and_fix(slots2, inline2, language_code=language_code)
+            except AssetFixUnresolvedError as exc:
+                log.warning("asset_localize_revalidate_failed", error=str(exc))
     return output
 
 
@@ -680,17 +863,30 @@ async def validate_and_fix_slides_assets(
     output: LessonSlidesOutput, *, language_code: str
 ) -> LessonSlidesOutput:
     """Valida e auto-corregge gli asset fragili dell'output di Fase 4
-    (new_assets Mermaid + math inline nelle slide). Muta e ritorna `output`."""
+    (new_assets Mermaid + math inline nelle slide), poi localizza (rete di
+    sicurezza i18n) i campi testuali dei nuovi asset rimasti in lingua
+    sbagliata. Muta e ritorna `output`."""
     slots, inline_fields = _collect_slides_slots(output)
-    if not slots:
-        return output
-    fixed = await _validate_and_fix(slots, inline_fields, language_code=language_code)
-    log.info(
-        "slides_assets_validated",
-        total=len(slots),
-        fixed=fixed,
-        mermaid=sum(1 for s in slots if s.kind == "mermaid"),
+    if slots:
+        fixed = await _validate_and_fix(
+            slots, inline_fields, language_code=language_code
+        )
+        log.info(
+            "slides_assets_validated",
+            total=len(slots),
+            fixed=fixed,
+            mermaid=sum(1 for s in slots if s.kind == "mermaid"),
+        )
+    structural_changed = await _localize_fields(
+        _collect_slides_loc_fields(output), language_code=language_code
     )
+    if structural_changed:
+        slots2, inline2 = _collect_slides_slots(output)
+        if slots2:
+            try:
+                await _validate_and_fix(slots2, inline2, language_code=language_code)
+            except AssetFixUnresolvedError as exc:
+                log.warning("asset_localize_revalidate_failed", error=str(exc))
     return output
 
 

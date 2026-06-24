@@ -170,7 +170,19 @@ VINCOLI DI VALIDAZIONE (rispetta sempre)
 - ogni sezione del testo dovrebbe essere referenziata da almeno una
   slide (best effort)
 
-Lingua: {language_code}.
+LINGUA — REGOLA TASSATIVA
+TUTTO il testo leggibile dall'utente DEVE essere scritto in {language_code}: `title`,
+`body` e `bullets` di OGNI slide, e OGNI campo testuale degli asset, inclusi i NUOVI
+asset di Fase 4. In particolare:
+- `caption` e `alt_text` di `new_assets`, e le ETICHETTE/testo dei nodi DENTRO il loro
+  codice Mermaid (le label, NON la sintassi);
+- `caption`, intestazioni e celle (`markdown`) di `new_tables`;
+- `label`, `statement`, `explanation` e il `text` di ogni passo di `proof` in `new_equations`;
+- `title` e `content` di `new_examples`.
+Restano invariati SOLO: la notazione matematica LaTeX (campi `latex`), la struttura
+sintattica di Mermaid (tipo di diagramma, frecce, ID dei nodi), gli ID e gli `slide_id`.
+NON lasciare in nessun campo testo in un'altra lingua (es. italiano): traduci tutto in
+{language_code}.
 Output: SOLO JSON valido conforme allo schema."""
 
 

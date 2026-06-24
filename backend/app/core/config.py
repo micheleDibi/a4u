@@ -223,6 +223,17 @@ class Settings(BaseSettings):
     # recuperabile (che fa rigenerare l'intera lezione via auto-retry).
     asset_fix_max_attempts: int = 3
 
+    # Localizzazione asset (rete di sicurezza i18n, Fase 3 + Fase 4). Quando il
+    # modello lascia un campo testuale di un asset (caption, alt_text, enunciato/
+    # dimostrazione equazioni, esempi, label Mermaid, celle tabelle) in una lingua
+    # diversa da quella del corso, viene ritradotto. Il rilevamento (via
+    # `app/core/i18n_scripts`) si attiva SOLO per lingue con script non-latino
+    # (cjk, cirillico, arabo, ecc.): per le lingue latine il gate è spento e non
+    # si spende alcun token. Vedi `asset_validation_service`.
+    openai_asset_localize_model: str = "gpt-4o-mini"
+    openai_asset_localize_max_tokens: int = 8_000
+    asset_localize_enabled: bool = True
+
     # §7 — Export PDF lezioni.
     # Cap=2: rendering Playwright è I/O+CPU intensive (Chromium istanza).
     course_lesson_pdf_poll_interval_seconds: int = 4

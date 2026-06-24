@@ -1,6 +1,41 @@
 import { apiClient } from "./client";
 import type { TaxonomyTermOut, TaxonomyType } from "./courseTaxonomy";
 
+/**
+ * Estrae il filename dall'header `Content-Disposition`.
+ * Preferisce la forma RFC 5987 `filename*=UTF-8''<percent-encoded>` (necessaria
+ * per nomi non-ASCII: giapponese, cirillico, arabo, ecc.), con fallback alla
+ * forma ASCII `filename="..."`. Il backend (`_content_disposition_attachment`)
+ * emette SEMPRE entrambe: il vecchio parser pescava la `filename=` ASCII di
+ * fallback (caratteri non-ASCII → `?`), producendo nomi file corrotti.
+ */
+function filenameFromContentDisposition(cd: string): string | null {
+  if (!cd) return null;
+  // RFC 5987: filename*=charset'lang'percent-encoded (preferito).
+  const star = /filename\*\s*=\s*([^;]+)/i.exec(cd);
+  if (star) {
+    let v = star[1].trim().replace(/^"(.*)"$/, "$1");
+    const m = /^[^']*'[^']*'(.*)$/.exec(v); // rimuove il prefisso "UTF-8''"
+    v = m ? m[1] : v;
+    try {
+      return decodeURIComponent(v);
+    } catch {
+      return v;
+    }
+  }
+  // Fallback: filename="..." (solo-ASCII).
+  const plain = /filename\s*=\s*"?([^";]+)"?/i.exec(cd);
+  if (plain) {
+    const v = plain[1].trim();
+    try {
+      return decodeURIComponent(v);
+    } catch {
+      return v;
+    }
+  }
+  return null;
+}
+
 export type CourseStatus =
   | "draft"
   | "architecture_pending"
@@ -1625,8 +1660,7 @@ export const coursesApi = {
         { responseType: "blob", timeout: 300_000 }
       );
       const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
-      const m = /filename\*?="?([^";]+)"?/i.exec(cd);
-      const filename = m ? decodeURIComponent(m[1]) : null;
+      const filename = filenameFromContentDisposition(cd);
       return { blob: res.data, filename };
     },
     /** Scarica un singolo PDF concatenato di tutte le lezioni del modulo. */
@@ -1642,8 +1676,7 @@ export const coursesApi = {
         { responseType: "blob", timeout: 300_000 }
       );
       const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
-      const m = /filename\*?="?([^";]+)"?/i.exec(cd);
-      const filename = m ? decodeURIComponent(m[1]) : null;
+      const filename = filenameFromContentDisposition(cd);
       return { blob: res.data, filename };
     },
     /** Scarica uno ZIP con un PDF per ogni lezione del modulo. */
@@ -1659,8 +1692,7 @@ export const coursesApi = {
         { responseType: "blob", timeout: 300_000 }
       );
       const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
-      const m = /filename\*?="?([^";]+)"?/i.exec(cd);
-      const filename = m ? decodeURIComponent(m[1]) : null;
+      const filename = filenameFromContentDisposition(cd);
       return { blob: res.data, filename };
     },
     /** "Scarica tutto": PDF unico di tutte le lezioni del corso. */
@@ -1675,8 +1707,7 @@ export const coursesApi = {
         { responseType: "blob", timeout: 300_000 }
       );
       const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
-      const m = /filename\*?="?([^";]+)"?/i.exec(cd);
-      const filename = m ? decodeURIComponent(m[1]) : null;
+      const filename = filenameFromContentDisposition(cd);
       return { blob: res.data, filename };
     },
     /** "Scarica tutto": ZIP di tutto il corso (una cartella per modulo). */
@@ -1691,8 +1722,7 @@ export const coursesApi = {
         { responseType: "blob", timeout: 300_000 }
       );
       const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
-      const m = /filename\*?="?([^";]+)"?/i.exec(cd);
-      const filename = m ? decodeURIComponent(m[1]) : null;
+      const filename = filenameFromContentDisposition(cd);
       return { blob: res.data, filename };
     },
   },
@@ -1749,8 +1779,7 @@ export const coursesApi = {
         { responseType: "blob", timeout: 300_000 }
       );
       const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
-      const m = /filename\*?="?([^";]+)"?/i.exec(cd);
-      const filename = m ? decodeURIComponent(m[1]) : null;
+      const filename = filenameFromContentDisposition(cd);
       return { blob: res.data, filename };
     },
     downloadModuleMerged: async (
@@ -1765,8 +1794,7 @@ export const coursesApi = {
         { responseType: "blob", timeout: 300_000 }
       );
       const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
-      const m = /filename\*?="?([^";]+)"?/i.exec(cd);
-      const filename = m ? decodeURIComponent(m[1]) : null;
+      const filename = filenameFromContentDisposition(cd);
       return { blob: res.data, filename };
     },
     downloadModuleZip: async (
@@ -1781,8 +1809,7 @@ export const coursesApi = {
         { responseType: "blob", timeout: 300_000 }
       );
       const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
-      const m = /filename\*?="?([^";]+)"?/i.exec(cd);
-      const filename = m ? decodeURIComponent(m[1]) : null;
+      const filename = filenameFromContentDisposition(cd);
       return { blob: res.data, filename };
     },
     /** "Scarica tutto": PDF unico slide di tutte le lezioni del corso. */
@@ -1797,8 +1824,7 @@ export const coursesApi = {
         { responseType: "blob", timeout: 300_000 }
       );
       const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
-      const m = /filename\*?="?([^";]+)"?/i.exec(cd);
-      const filename = m ? decodeURIComponent(m[1]) : null;
+      const filename = filenameFromContentDisposition(cd);
       return { blob: res.data, filename };
     },
     /** "Scarica tutto": ZIP slide di tutto il corso (cartella per modulo). */
@@ -1813,8 +1839,7 @@ export const coursesApi = {
         { responseType: "blob", timeout: 300_000 }
       );
       const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
-      const m = /filename\*?="?([^";]+)"?/i.exec(cd);
-      const filename = m ? decodeURIComponent(m[1]) : null;
+      const filename = filenameFromContentDisposition(cd);
       return { blob: res.data, filename };
     },
   },
@@ -1877,8 +1902,7 @@ export const coursesApi = {
         { responseType: "blob", timeout: 300_000 }
       );
       const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
-      const m = /filename\*?="?([^";]+)"?/i.exec(cd);
-      const filename = m ? decodeURIComponent(m[1]) : null;
+      const filename = filenameFromContentDisposition(cd);
       return { blob: res.data, filename };
     },
     downloadModuleMerged: async (
@@ -1893,8 +1917,7 @@ export const coursesApi = {
         { responseType: "blob", timeout: 300_000 }
       );
       const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
-      const m = /filename\*?="?([^";]+)"?/i.exec(cd);
-      const filename = m ? decodeURIComponent(m[1]) : null;
+      const filename = filenameFromContentDisposition(cd);
       return { blob: res.data, filename };
     },
     downloadModuleZip: async (
@@ -1909,8 +1932,7 @@ export const coursesApi = {
         { responseType: "blob", timeout: 300_000 }
       );
       const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
-      const m = /filename\*?="?([^";]+)"?/i.exec(cd);
-      const filename = m ? decodeURIComponent(m[1]) : null;
+      const filename = filenameFromContentDisposition(cd);
       return { blob: res.data, filename };
     },
     /** "Scarica tutto": PDF unico discorso di tutte le lezioni del corso. */
@@ -1925,8 +1947,7 @@ export const coursesApi = {
         { responseType: "blob", timeout: 300_000 }
       );
       const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
-      const m = /filename\*?="?([^";]+)"?/i.exec(cd);
-      const filename = m ? decodeURIComponent(m[1]) : null;
+      const filename = filenameFromContentDisposition(cd);
       return { blob: res.data, filename };
     },
     /** "Scarica tutto": ZIP discorso di tutto il corso (cartella per modulo). */
@@ -1941,8 +1962,7 @@ export const coursesApi = {
         { responseType: "blob", timeout: 300_000 }
       );
       const cd = (res.headers["content-disposition"] as string | undefined) ?? "";
-      const m = /filename\*?="?([^";]+)"?/i.exec(cd);
-      const filename = m ? decodeURIComponent(m[1]) : null;
+      const filename = filenameFromContentDisposition(cd);
       return { blob: res.data, filename };
     },
   },

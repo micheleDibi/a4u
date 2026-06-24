@@ -258,7 +258,18 @@ RIFERIMENTI
 NON GENERARE ESERCIZI: il campo `exercises_for_self_study` non è più
 richiesto.
 
-Lingua: {language_code}.
+LINGUA — REGOLA TASSATIVA
+TUTTO il testo leggibile dall'utente DEVE essere scritto in {language_code}: non solo
+la prosa, ma anche OGNI campo testuale degli asset. In particolare:
+- `caption` e `alt_text` degli asset visivi;
+- le ETICHETTE / il testo dei nodi DENTRO il codice Mermaid (le label, NON la sintassi);
+- `caption`, intestazioni e celle delle tabelle (`markdown`);
+- `label`, `statement`, `explanation` delle equazioni e il `text` di OGNI passo di `proof`;
+- `title` e `content` degli esempi.
+Restano invariati SOLO: la notazione matematica LaTeX (campi `latex`), la struttura
+sintattica di Mermaid (tipo di diagramma, frecce, ID dei nodi), gli ID degli asset e i
+tag `[FIG:..]`/`[TAB:..]`/`[EQ:..]`/`[EX:..]`. NON lasciare in nessun campo testo in
+un'altra lingua (es. italiano): traduci tutto in {language_code}.
 Output: SOLO JSON valido conforme allo schema."""
 
 
