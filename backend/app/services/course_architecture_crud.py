@@ -42,31 +42,24 @@ from app.services.openai_client import OpenAINotConfiguredError
 
 log = get_logger("app.course_architecture.crud")
 
-# Stati in cui l'utente può modificare manualmente l'architettura.
-# Includiamo tutti gli stati "stabili" downstream (ready/approved delle
-# fasi successive, inclusi video e avatar_video) così l'utente può
-# tornare indietro a correggere un titolo modulo / aggiungere una
-# lezione anche a corso ormai quasi pronto. Lo stale-detection
-# (cf. lib/staleness.ts) segnala quando downstream è da rigenerare.
-#
-# Esclusi:
-# - `draft`: il corso non ha ancora un'architettura.
-# - `*_pending`: i worker AI stanno attivamente scrivendo, race condition.
-# - `published`/`archived`: il corso è in stato terminale, non si tocca.
-EDITABLE_STATUSES = {
-    "architecture_ready",
-    "architecture_approved",
-    "lessons_structure_ready",
-    "lessons_structure_approved",
-    "content_ready",
-    "content_approved",
-    "slides_ready",
-    "slides_approved",
-    "speech_ready",
-    "speech_approved",
-    "video_ready",
-    "avatar_video_ready",
+# L'architettura è modificabile a mano in ogni fase "stabile" del corso,
+# così l'utente può correggere un titolo modulo / aggiungere una lezione
+# anche a corso quasi pronto (lo stale-detection, cf. lib/staleness.ts,
+# segnala quando downstream è da rigenerare). L'intento del vecchio
+# allow-set di stati era "non editare mentre i worker AI scrivono": col
+# gating per-unità gli stati `<fase>_pending` sono di soggiorno (una
+# fase può restare aperta per settimane), quindi il check è data-based:
+# blocca solo con generazioni davvero in volo, oltre a draft/pending di
+# Fase 1 (l'architettura non esiste o si sta scrivendo) e agli stati
+# terminali published/archived.
+_NON_EDITABLE_COURSE_STATUSES = {
+    "draft",
+    "architecture_pending",
+    "published",
+    "archived",
 }
+
+_IN_FLIGHT = ("pending", "processing")
 
 
 def _now() -> datetime:
@@ -93,12 +86,40 @@ async def _touch_module_by_id(
 
 
 def _ensure_editable(course: Course) -> None:
-    if course.status not in EDITABLE_STATUSES:
+    if course.status in _NON_EDITABLE_COURSE_STATUSES:
         raise ConflictError(
-            f"L'architettura è modificabile solo negli stati "
-            f"{sorted(EDITABLE_STATUSES)}, attuale: {course.status}.",
+            f"L'architettura non è modificabile con corso in stato "
+            f"{course.status}.",
             code="architecture_not_editable",
         )
+    for module in course.modules:
+        if module.lessons_structure_status in _IN_FLIGHT:
+            raise ConflictError(
+                f"L'architettura non è modificabile: la struttura del "
+                f"modulo {module.module_code} è in generazione.",
+                code="architecture_not_editable",
+            )
+        for lesson in module.lessons:
+            in_flight = next(
+                (
+                    phase_label
+                    for phase_label, status_value in (
+                        ("dispensa", lesson.content_status),
+                        ("slide", lesson.slides_status),
+                        ("discorso", lesson.speech_status),
+                        ("video", lesson.video_status),
+                        ("video avatar", lesson.avatar_video_status),
+                    )
+                    if status_value in _IN_FLIGHT
+                ),
+                None,
+            )
+            if in_flight is not None:
+                raise ConflictError(
+                    f"L'architettura non è modificabile: {in_flight} "
+                    f"della lezione {lesson.lesson_code} in generazione.",
+                    code="architecture_not_editable",
+                )
 
 
 async def _refresh_full(db: AsyncSession, course: Course) -> Course:
@@ -671,6 +692,13 @@ async def regenerate_module_lessons(
         )
     await db.flush()
     _touch_module(module)
+    # Le lezioni sono state ricreate SENZA i 4 campi JSONB di Fase 2:
+    # un'eventuale approvazione precedente della struttura non descrive
+    # più nulla. Reset a `empty` così il gate per-unità della Fase 3
+    # (struttura approvata + presente) richiede di rigenerare/riapprovare
+    # la struttura del modulo prima delle dispense.
+    module.lessons_structure_status = "empty"
+    module.lessons_structure_approved_at = None
 
     await write_audit(
         db,

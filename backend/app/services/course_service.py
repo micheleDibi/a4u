@@ -22,6 +22,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.audit import write_audit
+from app.core.course_phase_order import normalize_course_status_from_data
 from app.core.errors import (
     ConflictError,
     NotFoundError,
@@ -582,8 +583,31 @@ async def update_course(
                 setattr(course, attr, new_val)
 
     if payload.status is not None and payload.status != course.status:
-        diff["status"] = {"old": course.status, "new": payload.status}
-        course.status = payload.status
+        # Col gating per-unità `course.status` è un indicatore gestito
+        # dai ricalcoli: il PATCH accetta solo publish/archive, più la
+        # riattivazione da uno stato terminale (dove lo status torna
+        # alla milestone derivata dai dati, non al valore richiesto —
+        # un set manuale arbitrario riaprirebbe i gate di Fase 1/2 su
+        # corsi pieni di contenuti approvati).
+        new_status: str
+        if payload.status in ("published", "archived"):
+            new_status = payload.status
+        elif course.status in ("published", "archived"):
+            new_status = normalize_course_status_from_data(course)
+        else:
+            raise ConflictError(
+                "Lo stato del corso è gestito dalla pipeline: via API si "
+                "può solo pubblicare, archiviare o riattivare un corso "
+                "pubblicato/archiviato.",
+                code="invalid_status_transition",
+            )
+        if new_status != course.status:
+            diff["status"] = {
+                "old": course.status,
+                "new": new_status,
+                "requested": payload.status,
+            }
+            course.status = new_status
 
     if not diff:
         return await _refresh_full(db, course.id)

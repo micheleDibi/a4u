@@ -26,7 +26,12 @@ from sqlalchemy.orm import selectinload
 
 from app.core.audit import write_audit
 from app.core.config import get_settings
-from app.core.course_phase_order import advance_course_status
+from app.core.course_phase_order import (
+    advance_course_status,
+    ensure_course_not_terminal,
+    ensure_lesson_structure_ready,
+    lesson_structure_is_ready,
+)
 from app.core.errors import ConflictError, NotFoundError
 from app.core.logging import get_logger
 from app.models.course import Course
@@ -58,13 +63,11 @@ VALID_LESSON_GENERATE_FROM_STATUSES = {
     "failed",
 }
 
-# Stati a livello corso da cui è ammesso triggerare la Fase 3.
-VALID_COURSE_GENERATE_FROM_STATUSES = {
-    "lessons_structure_approved",
-    "content_pending",
-    "content_ready",
-    "content_approved",
-}
+# Gating per-unità: la Fase 3 non ha più un allow-set su course.status.
+# Le precondizioni sono per-lezione (struttura del modulo approvata +
+# struttura della lezione presente) più la guardia sugli stati terminali:
+# vedi ensure_lesson_structure_ready / ensure_course_not_terminal in
+# core/course_phase_order.py.
 
 
 # ---------------------------------------------------------------------------
@@ -517,12 +520,11 @@ async def request_lesson_generation(
     regeneration_hint: str | None,
 ) -> Course:
     """Sposta lo status della lezione a `pending` e annota l'eventuale hint.
-    Il worker prenderà la riga al prossimo tick e la elabora in parallelo."""
-    if course.status not in VALID_COURSE_GENERATE_FROM_STATUSES:
-        raise ConflictError(
-            f"Stato corso non valido per Fase 3: {course.status}",
-            code="invalid_course_status",
-        )
+    Il worker prenderà la riga al prossimo tick e la elabora in parallelo.
+    Pre-condizione per-unità: struttura del modulo della lezione approvata
+    e struttura della lezione presente."""
+    ensure_course_not_terminal(course)
+    ensure_lesson_structure_ready(course, lesson)
     if lesson.content_status not in VALID_LESSON_GENERATE_FROM_STATUSES:
         raise ConflictError(
             f"Lezione {lesson.lesson_code} non in stato valido: "
@@ -569,13 +571,11 @@ async def request_all_lessons_generation(
     actor_id: uuid.UUID,
     regeneration_hint: str | None,
 ) -> Course:
-    """Marca TUTTE le lezioni del corso come `pending`. Il worker le
+    """Marca come `pending` tutte le lezioni con prerequisito Fase 2
+    soddisfatto (modulo approvato + struttura presente); le altre vengono
+    saltate in silenzio, come nei generate-all di Fase 4/5. Il worker le
     elabora in parallelo (cap configurabile, default 3)."""
-    if course.status not in VALID_COURSE_GENERATE_FROM_STATUSES:
-        raise ConflictError(
-            f"Stato corso non valido per Fase 3: {course.status}",
-            code="invalid_course_status",
-        )
+    ensure_course_not_terminal(course)
 
     all_lessons: list[CourseLesson] = [
         lesson for m in course.modules for lesson in m.lessons
@@ -585,9 +585,20 @@ async def request_all_lessons_generation(
             "Il corso non ha lezioni — completa prima Fase 1 e Fase 2.",
             code="no_lessons_to_generate",
         )
+    eligible_lessons = [
+        lesson
+        for lesson in all_lessons
+        if lesson_structure_is_ready(course, lesson)
+    ]
+    if not eligible_lessons:
+        raise ConflictError(
+            "Nessuna lezione pronta per la Fase 3: approva prima la "
+            "struttura dei moduli.",
+            code="no_lessons_to_generate",
+        )
 
     hint_clean = regeneration_hint.strip() if regeneration_hint else None
-    for lesson in all_lessons:
+    for lesson in eligible_lessons:
         lesson.content_status = "pending"
         lesson.content_error = None
         lesson.content_progress = 0
@@ -607,7 +618,8 @@ async def request_all_lessons_generation(
         target_type="course",
         target_id=str(course.id),
         metadata={
-            "lessons_count": len(all_lessons),
+            "lessons_count": len(eligible_lessons),
+            "skipped_count": len(all_lessons) - len(eligible_lessons),
             "hint": hint_clean[:200] if hint_clean else None,
         },
     )
@@ -629,17 +641,14 @@ async def request_missing_lessons_generation(
     pronte. Niente regeneration_hint: il pattern di "completamento" è
     fire-and-forget standard.
     """
-    if course.status not in VALID_COURSE_GENERATE_FROM_STATUSES:
-        raise ConflictError(
-            f"Stato corso non valido per Fase 3: {course.status}",
-            code="invalid_course_status",
-        )
+    ensure_course_not_terminal(course)
 
     missing_lessons: list[CourseLesson] = [
         lesson
         for m in course.modules
         for lesson in m.lessons
         if lesson.content_status == "empty"
+        and lesson_structure_is_ready(course, lesson)
     ]
     if not missing_lessons:
         raise ConflictError(
@@ -1053,14 +1062,17 @@ async def approve_all_lessons_content(
     course: Course,
     actor_id: uuid.UUID,
 ) -> Course:
-    """Approva tutte le lezioni `ready` del corso. Richiede che TUTTE
-    siano `ready` o già `approved`."""
+    """Approva tutte le dispense `ready` del corso. Tollerante come
+    l'approve-all di slide/discorso: le lezioni `empty` (non ancora
+    generate — normali nel flusso per-unità) vengono ignorate; blocca
+    solo con lezioni in lavorazione o fallite. Idempotente: se sono già
+    tutte `approved` ritorna success senza errore."""
     all_lessons: list[CourseLesson] = [
         lesson for m in course.modules for lesson in m.lessons
     ]
     not_ready = [
         l for l in all_lessons
-        if l.content_status not in ("ready", "approved")
+        if l.content_status not in ("ready", "approved", "empty")
     ]
     if not_ready:
         raise ConflictError(
@@ -1069,13 +1081,28 @@ async def approve_all_lessons_content(
             code="not_all_lessons_ready",
         )
 
+    with_content = [
+        l for l in all_lessons
+        if l.content_status in ("ready", "approved")
+    ]
+    if not with_content:
+        raise ConflictError(
+            "Nessuna lezione ha una dispensa generata. Genera prima le "
+            "dispense.",
+            code="no_content_to_approve",
+        )
+
+    eligible = [l for l in all_lessons if l.content_status == "ready"]
+    # Idempotente: se sono già tutte approved, no-op success.
+    if not eligible:
+        return await _refresh_full(db, course)
+
     now = _now()
     approved_count = 0
-    for lesson in all_lessons:
-        if lesson.content_status == "ready":
-            lesson.content_status = "approved"
-            lesson.content_approved_at = now
-            approved_count += 1
+    for lesson in eligible:
+        lesson.content_status = "approved"
+        lesson.content_approved_at = now
+        approved_count += 1
 
     _recompute_course_content_status(course)
 

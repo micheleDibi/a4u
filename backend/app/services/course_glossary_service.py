@@ -21,6 +21,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.audit import write_audit
 from app.core.config import get_settings
+from app.core.course_phase_order import COURSE_STATUS_RANK
 from app.core.errors import ConflictError
 from app.core.logging import get_logger
 from app.models.course import Course
@@ -48,21 +49,18 @@ VALID_GENERATE_FROM_STATUSES = {"empty", "ready", "approved", "failed"}
 
 
 # Fase del corso minima per generare il glossario: serve avere almeno
-# l'architettura approvata (titoli moduli/lezioni di Fase 1).
-_VALID_COURSE_STATUSES_FOR_GLOSSARY = {
-    "architecture_approved",
-    "lessons_structure_pending",
-    "lessons_structure_ready",
-    "lessons_structure_approved",
-    "content_pending",
-    "content_ready",
-    "content_approved",
-    "slides_pending",
-    "slides_ready",
-    "speech_pending",
-    "speech_ready",
-    "published",
-}
+# l'architettura approvata (titoli moduli/lezioni di Fase 1). Rank-based:
+# la vecchia allow-set enumerata aveva buchi (mancavano slides_approved,
+# speech_approved, video_*, avatar_video_*). `archived` resta escluso;
+# `published` resta ammesso come prima.
+
+
+def _course_ready_for_glossary(course: Course) -> bool:
+    return (
+        COURSE_STATUS_RANK.get(course.status, 0)
+        >= COURSE_STATUS_RANK["architecture_approved"]
+        and course.status != "archived"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -286,7 +284,7 @@ async def regenerate_glossary(
     Pre-condizione: il corso ha l'architettura approvata. Lancia la
     generazione sync (~10-20s). Audit `course.glossary.regenerate.requested`.
     """
-    if course.status not in _VALID_COURSE_STATUSES_FOR_GLOSSARY:
+    if not _course_ready_for_glossary(course):
         raise ConflictError(
             f"Stato corso non valido per generazione glossario: {course.status}",
             code="invalid_course_status",

@@ -30,7 +30,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.audit import write_audit
-from app.core.course_phase_order import advance_course_status
+from app.core.course_phase_order import (
+    advance_course_status,
+    ensure_course_not_terminal,
+)
 from app.core.errors import ConflictError, NotFoundError
 from app.core.logging import get_logger
 from app.models.course import Course
@@ -58,14 +61,9 @@ VALID_LESSON_SPEECH_GENERATE_FROM_STATUSES = {
     "failed",
 }
 
-# Stati a livello corso da cui è ammesso triggerare la Fase 5.
-VALID_COURSE_SPEECH_GENERATE_FROM_STATUSES = {
-    "slides_ready",
-    "slides_approved",
-    "speech_pending",
-    "speech_ready",
-    "speech_approved",
-}
+# Gating per-unità: la Fase 5 non ha più un allow-set su course.status.
+# Precondizione per-lezione: slide della STESSA lezione `approved`
+# (invariante N-1 approvato), più la guardia sugli stati terminali.
 
 
 # ---------------------------------------------------------------------------
@@ -681,7 +679,7 @@ async def request_lesson_speech_generation(
 ) -> Course:
     """Sposta lo status della lezione a `pending` e annota l'eventuale
     hint. Il worker prenderà la riga al prossimo tick e la elabora in
-    parallelo. Pre-condizione: `lesson.slides_status ∈ (ready, approved)`.
+    parallelo. Pre-condizione per-unità: `lesson.slides_status == approved`.
     """
     if lesson.is_assessment:
         raise ConflictError(
@@ -689,17 +687,12 @@ async def request_lesson_speech_generation(
             f"competenze: non genera discorso.",
             code="lesson_is_assessment_not_eligible",
         )
-    if course.status not in VALID_COURSE_SPEECH_GENERATE_FROM_STATUSES:
+    ensure_course_not_terminal(course)
+    if lesson.slides_status != "approved":
         raise ConflictError(
-            f"Stato corso non valido per Fase 5: {course.status}. "
-            f"Servono slide `ready` o `approved` prima di generare il discorso.",
-            code="invalid_course_status_for_speech",
-        )
-    if lesson.slides_status not in ("ready", "approved"):
-        raise ConflictError(
-            f"Lezione {lesson.lesson_code}: le slide devono essere "
-            f"`ready` o `approved` per generare il discorso (attuale: "
-            f"{lesson.slides_status}).",
+            f"Lezione {lesson.lesson_code}: le slide di questa lezione "
+            f"devono essere approvate prima di generare il discorso "
+            f"(attuale: {lesson.slides_status}).",
             code="lesson_slides_not_ready_for_speech",
         )
     if lesson.speech_status not in VALID_LESSON_SPEECH_GENERATE_FROM_STATUSES:
@@ -752,25 +745,22 @@ async def request_all_lessons_speech_generation(
     actor_id: uuid.UUID,
     regeneration_hint: str | None,
 ) -> Course:
-    """Marca tutte le lezioni con `slides_status ∈ (ready, approved)`
-    come `speech_status='pending'`. Il worker le elabora in parallelo
+    """Marca tutte le lezioni con `slides_status='approved'` come
+    `speech_status='pending'`. Il worker le elabora in parallelo
     (cap configurabile, default 3)."""
-    if course.status not in VALID_COURSE_SPEECH_GENERATE_FROM_STATUSES:
-        raise ConflictError(
-            f"Stato corso non valido per Fase 5: {course.status}",
-            code="invalid_course_status_for_speech",
-        )
+    ensure_course_not_terminal(course)
 
     eligible: list[CourseLesson] = [
         lesson
         for m in course.modules
         for lesson in m.lessons
-        if lesson.slides_status in ("ready", "approved")
+        if lesson.slides_status == "approved"
         and not lesson.is_assessment
     ]
     if not eligible:
         raise ConflictError(
-            "Nessuna lezione con slide pronte. Genera prima la Fase 4.",
+            "Nessuna lezione con slide approvate. Approva prima le slide "
+            "della Fase 4.",
             code="no_lessons_with_slides",
         )
 
@@ -811,25 +801,21 @@ async def request_missing_lessons_speech_generation(
     actor_id: uuid.UUID,
 ) -> Course:
     """Marca SOLO le lezioni con `speech_status='empty'` AND
-    `slides_status ∈ (ready, approved)` come `speech_status='pending'`."""
-    if course.status not in VALID_COURSE_SPEECH_GENERATE_FROM_STATUSES:
-        raise ConflictError(
-            f"Stato corso non valido per Fase 5: {course.status}",
-            code="invalid_course_status_for_speech",
-        )
+    `slides_status='approved'` come `speech_status='pending'`."""
+    ensure_course_not_terminal(course)
 
     missing: list[CourseLesson] = [
         lesson
         for m in course.modules
         for lesson in m.lessons
         if lesson.speech_status == "empty"
-        and lesson.slides_status in ("ready", "approved")
+        and lesson.slides_status == "approved"
         and not lesson.is_assessment
     ]
     if not missing:
         raise ConflictError(
             "Nessuna lezione mancante: tutte hanno già discorso o non hanno "
-            "slide pronte.",
+            "slide approvate.",
             code="no_missing_speech_lessons",
         )
 

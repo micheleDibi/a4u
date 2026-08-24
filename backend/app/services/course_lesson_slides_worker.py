@@ -212,6 +212,10 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
         # Pre-check: content_raw deve essere presente. Se la lezione non
         # ha content (status != ready/approved), failure immediata
         # (non recuperabile — l'utente ha triggerato fuori contesto).
+        # NB transitorio: l'API richiede ormai content `approved`; qui si
+        # accetta ancora `ready` per non far fallire i task accodati
+        # prima del cambio. Stringere a `approved` a code svuotate
+        # (follow-up pianificato).
         if lesson.content_status not in ("ready", "approved") or not lesson.content_raw:
             settings = get_settings()
             _apply_failure(

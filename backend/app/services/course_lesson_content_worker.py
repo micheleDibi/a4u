@@ -40,6 +40,7 @@ from sqlalchemy import select
 
 from app.core.audit import write_audit
 from app.core.config import get_settings
+from app.core.course_phase_order import lesson_structure_is_ready
 from app.core.logging import get_logger
 from app.db.session import async_session_factory
 from app.models.course_lesson import CourseLesson
@@ -213,6 +214,46 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                 db, course=course_full, lesson_id=lesson_id
             )
         except Exception:
+            return
+
+        # Pre-check per-unità (difesa in profondità del gate API): il
+        # modulo della lezione deve avere struttura approvata e la
+        # lezione i dati di Fase 2. Failure immediata non recuperabile
+        # (il task è stato accodato fuori contesto, es. race con una
+        # rigenerazione della struttura).
+        if not lesson_structure_is_ready(course_full, lesson):
+            settings = get_settings()
+            _apply_failure(
+                lesson,
+                error=(
+                    "Impossibile generare la dispensa: la struttura del "
+                    "modulo della lezione deve essere approvata (e la "
+                    "lezione deve avere obiettivi/sezioni di Fase 2). "
+                    "Genera e approva prima la struttura."
+                ),
+                phase="precheck_structure",
+                recoverable=False,
+                auto_retry_max=settings.course_lesson_content_auto_retry_max,
+            )
+            course_lesson_content_service._recompute_course_content_status(
+                course_full
+            )
+            await write_audit(
+                db,
+                action="course.lesson.content.failed",
+                actor_user_id=None,
+                organization_id=course_full.organization_id,
+                target_type="course_lesson",
+                target_id=str(lesson.id),
+                metadata={
+                    "course_id": str(course_full.id),
+                    "lesson_code": lesson.lesson_code,
+                    "phase": "precheck_structure",
+                    "error": "lesson_structure_not_ready",
+                    "attempts": lesson.content_attempts,
+                },
+            )
+            await db.commit()
             return
 
         # Transizione → processing

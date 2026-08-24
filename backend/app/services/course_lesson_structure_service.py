@@ -25,7 +25,11 @@ from sqlalchemy.orm import selectinload
 
 from app.core.audit import write_audit
 from app.core.config import get_settings
-from app.core.course_phase_order import advance_course_status
+from app.core.course_phase_order import (
+    COURSE_STATUS_RANK,
+    advance_course_status,
+    ensure_course_not_terminal,
+)
 from app.core.errors import ConflictError, NotFoundError
 from app.core.logging import get_logger
 from app.models.course import Course
@@ -55,15 +59,44 @@ VALID_MODULE_GENERATE_FROM_STATUSES = {
     "failed",
 }
 
-# Stati a livello corso da cui è ammesso triggerare la Fase 2.
-# Richiede che l'architettura sia almeno `approved` (oppure che il
-# corso sia già in fase Fase 2).
-VALID_COURSE_GENERATE_FROM_STATUSES = {
-    "architecture_approved",
-    "lessons_structure_pending",
-    "lessons_structure_ready",
-    "lessons_structure_approved",
-}
+# Gating per-unità (per-modulo): la Fase 2 richiede solo che
+# l'architettura sia stata approvata (rank monotono: una volta superata,
+# course.status non scende mai sotto `architecture_approved`) e che il
+# corso non sia terminale. Il lock "niente rigenerazione struttura dopo
+# l'inizio della Fase 3" è tradotto per-modulo: vedi
+# `_ensure_module_without_content`.
+
+
+def _ensure_course_ready_for_structure(course: Course) -> None:
+    ensure_course_not_terminal(course)
+    if (
+        COURSE_STATUS_RANK.get(course.status, 0)
+        < COURSE_STATUS_RANK["architecture_approved"]
+    ):
+        raise ConflictError(
+            f"Stato corso non valido per Fase 2: {course.status}. "
+            f"Approva prima l'architettura.",
+            code="invalid_course_status",
+        )
+
+
+def _module_has_content(module: CourseModule) -> bool:
+    return any(
+        lesson.content_status != "empty" for lesson in module.lessons
+    )
+
+
+def _ensure_module_without_content(module: CourseModule) -> None:
+    """La struttura di un modulo è (ri)generabile solo finché le sue
+    lezioni non hanno dispense: dopo, rigenerarla sovrascriverebbe i
+    JSONB di Fase 2 sotto contenuti già prodotti (traduzione per-modulo
+    del vecchio lock globale su course.status)."""
+    if _module_has_content(module):
+        raise ConflictError(
+            f"Le lezioni del modulo {module.module_code} hanno già "
+            f"dispense: la struttura non è più rigenerabile.",
+            code="module_has_content",
+        )
 
 
 # Prefix obiettivi formativi per lingua (§5.1 — soft validation in service).
@@ -313,12 +346,11 @@ async def request_module_generation(
 ) -> Course:
     """Sposta lo status del modulo a `pending` e annota l'eventuale hint.
     Il worker prenderà la riga al prossimo tick e la elabora in parallelo
-    con gli altri moduli pending."""
-    if course.status not in VALID_COURSE_GENERATE_FROM_STATUSES:
-        raise ConflictError(
-            f"Stato corso non valido per Fase 2: {course.status}",
-            code="invalid_course_status",
-        )
+    con gli altri moduli pending. Per-modulo: possibile anche a corso
+    avanzato (es. modulo aggiunto tardi via CRUD architettura), purché le
+    lezioni del modulo non abbiano ancora dispense."""
+    _ensure_course_ready_for_structure(course)
+    _ensure_module_without_content(module)
     if module.lessons_structure_status not in VALID_MODULE_GENERATE_FROM_STATUSES:
         raise ConflictError(
             f"Modulo {module.module_code} non in stato valido: "
@@ -371,21 +403,27 @@ async def request_all_modules_generation(
     actor_id: uuid.UUID,
     regeneration_hint: str | None,
 ) -> Course:
-    """Marca TUTTI i moduli del corso come `pending`. Il worker li
-    elabora in parallelo (cap configurabile)."""
-    if course.status not in VALID_COURSE_GENERATE_FROM_STATUSES:
-        raise ConflictError(
-            f"Stato corso non valido per Fase 2: {course.status}",
-            code="invalid_course_status",
-        )
+    """Marca come `pending` i moduli le cui lezioni non hanno ancora
+    dispense (gli altri vengono saltati in silenzio: la loro struttura
+    non è più rigenerabile). Il worker li elabora in parallelo (cap
+    configurabile)."""
+    _ensure_course_ready_for_structure(course)
     if not course.modules:
         raise ConflictError(
             "Il corso non ha moduli — completa prima la Fase 1 (Architettura).",
             code="no_modules_to_generate",
         )
+    eligible_modules = [
+        m for m in course.modules if not _module_has_content(m)
+    ]
+    if not eligible_modules:
+        raise ConflictError(
+            "Nessun modulo rigenerabile: le lezioni hanno già dispense.",
+            code="no_eligible_modules_for_structure",
+        )
 
     hint_clean = regeneration_hint.strip() if regeneration_hint else None
-    for m in course.modules:
+    for m in eligible_modules:
         m.lessons_structure_status = "pending"
         m.lessons_structure_error = None
         m.lessons_structure_progress = 0
@@ -405,7 +443,8 @@ async def request_all_modules_generation(
         target_type="course",
         target_id=str(course.id),
         metadata={
-            "modules_count": len(course.modules),
+            "modules_count": len(eligible_modules),
+            "skipped_count": len(course.modules) - len(eligible_modules),
             "hint": hint_clean[:200] if hint_clean else None,
         },
     )
@@ -591,11 +630,13 @@ async def approve_all_modules_structure(
     course: Course,
     actor_id: uuid.UUID,
 ) -> Course:
-    """Approva tutti i moduli `ready` del corso. Richiede che TUTTI i
-    moduli siano `ready` o già `approved`."""
+    """Approva tutti i moduli `ready` del corso. Tollerante: i moduli
+    `empty` (es. aggiunti tardi via CRUD architettura, senza struttura)
+    vengono ignorati; blocca solo con moduli in lavorazione o falliti.
+    Idempotente se sono già tutti `approved`."""
     not_ready = [
         m for m in course.modules
-        if m.lessons_structure_status not in ("ready", "approved")
+        if m.lessons_structure_status not in ("ready", "approved", "empty")
     ]
     if not_ready:
         raise ConflictError(
@@ -604,13 +645,30 @@ async def approve_all_modules_structure(
             code="not_all_modules_ready",
         )
 
+    with_structure = [
+        m for m in course.modules
+        if m.lessons_structure_status in ("ready", "approved")
+    ]
+    if not with_structure:
+        raise ConflictError(
+            "Nessun modulo ha una struttura generata. Genera prima la "
+            "struttura delle lezioni.",
+            code="no_structure_to_approve",
+        )
+
+    eligible = [
+        m for m in course.modules if m.lessons_structure_status == "ready"
+    ]
+    # Idempotente: se sono già tutti approved, no-op success.
+    if not eligible:
+        return await _refresh_full(db, course)
+
     now = _now()
     approved_count = 0
-    for m in course.modules:
-        if m.lessons_structure_status == "ready":
-            m.lessons_structure_status = "approved"
-            m.lessons_structure_approved_at = now
-            approved_count += 1
+    for m in eligible:
+        m.lessons_structure_status = "approved"
+        m.lessons_structure_approved_at = now
+        approved_count += 1
 
     _recompute_course_lessons_structure_status(course)
 

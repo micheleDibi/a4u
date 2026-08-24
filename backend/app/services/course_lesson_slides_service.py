@@ -23,7 +23,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.audit import write_audit
-from app.core.course_phase_order import advance_course_status
+from app.core.course_phase_order import (
+    advance_course_status,
+    ensure_course_not_terminal,
+)
 from app.core.errors import ConflictError, NotFoundError
 from app.core.logging import get_logger
 from app.models.course import Course
@@ -50,14 +53,9 @@ VALID_LESSON_SLIDES_GENERATE_FROM_STATUSES = {
     "failed",
 }
 
-# Stati a livello corso da cui è ammesso triggerare la Fase 4.
-VALID_COURSE_SLIDES_GENERATE_FROM_STATUSES = {
-    "content_ready",
-    "content_approved",
-    "slides_pending",
-    "slides_ready",
-    "slides_approved",
-}
+# Gating per-unità: la Fase 4 non ha più un allow-set su course.status.
+# Precondizione per-lezione: dispensa della STESSA lezione `approved`
+# (invariante N-1 approvato), più la guardia sugli stati terminali.
 
 
 # ---------------------------------------------------------------------------
@@ -499,23 +497,18 @@ async def request_lesson_slides_generation(
 ) -> Course:
     """Sposta lo status della lezione a `pending` e annota l'eventuale
     hint. Il worker prenderà la riga al prossimo tick e la elabora in
-    parallelo. Pre-condizione: `lesson.content_status ∈ (ready, approved)`."""
+    parallelo. Pre-condizione per-unità: `lesson.content_status == approved`."""
     if lesson.is_assessment:
         raise ConflictError(
             f"La lezione {lesson.lesson_code} è una verifica delle "
             f"competenze: non genera slide.",
             code="lesson_is_assessment_not_eligible",
         )
-    if course.status not in VALID_COURSE_SLIDES_GENERATE_FROM_STATUSES:
+    ensure_course_not_terminal(course)
+    if lesson.content_status != "approved":
         raise ConflictError(
-            f"Stato corso non valido per Fase 4: {course.status}. "
-            f"Servono contenuti `ready` o `approved` prima di generare slide.",
-            code="invalid_course_status_for_slides",
-        )
-    if lesson.content_status not in ("ready", "approved"):
-        raise ConflictError(
-            f"Lezione {lesson.lesson_code}: il contenuto deve essere "
-            f"`ready` o `approved` per generare slide (attuale: "
+            f"Lezione {lesson.lesson_code}: la dispensa di questa lezione "
+            f"deve essere approvata prima di generare le slide (attuale: "
             f"{lesson.content_status}).",
             code="lesson_content_not_ready_for_slides",
         )
@@ -574,25 +567,22 @@ async def request_all_lessons_slides_generation(
     actor_id: uuid.UUID,
     regeneration_hint: str | None,
 ) -> Course:
-    """Marca tutte le lezioni con `content_status ∈ (ready, approved)`
-    come `slides_status='pending'`. Il worker le elabora in parallelo
+    """Marca tutte le lezioni con `content_status='approved'` come
+    `slides_status='pending'`. Il worker le elabora in parallelo
     (cap configurabile, default 3)."""
-    if course.status not in VALID_COURSE_SLIDES_GENERATE_FROM_STATUSES:
-        raise ConflictError(
-            f"Stato corso non valido per Fase 4: {course.status}",
-            code="invalid_course_status_for_slides",
-        )
+    ensure_course_not_terminal(course)
 
     eligible: list[CourseLesson] = [
         lesson
         for m in course.modules
         for lesson in m.lessons
-        if lesson.content_status in ("ready", "approved")
+        if lesson.content_status == "approved"
         and not lesson.is_assessment
     ]
     if not eligible:
         raise ConflictError(
-            "Nessuna lezione con contenuto pronto. Genera prima la Fase 3.",
+            "Nessuna lezione con dispensa approvata. Approva prima le "
+            "dispense della Fase 3.",
             code="no_lessons_with_content",
         )
 
@@ -638,25 +628,21 @@ async def request_missing_lessons_slides_generation(
     actor_id: uuid.UUID,
 ) -> Course:
     """Marca SOLO le lezioni con `slides_status='empty'` AND
-    `content_status ∈ (ready, approved)` come `slides_status='pending'`."""
-    if course.status not in VALID_COURSE_SLIDES_GENERATE_FROM_STATUSES:
-        raise ConflictError(
-            f"Stato corso non valido per Fase 4: {course.status}",
-            code="invalid_course_status_for_slides",
-        )
+    `content_status='approved'` come `slides_status='pending'`."""
+    ensure_course_not_terminal(course)
 
     missing: list[CourseLesson] = [
         lesson
         for m in course.modules
         for lesson in m.lessons
         if lesson.slides_status == "empty"
-        and lesson.content_status in ("ready", "approved")
+        and lesson.content_status == "approved"
         and not lesson.is_assessment
     ]
     if not missing:
         raise ConflictError(
             "Nessuna lezione mancante: tutte hanno già slide o non hanno "
-            "contenuto pronto.",
+            "una dispensa approvata.",
             code="no_missing_slides_lessons",
         )
 
