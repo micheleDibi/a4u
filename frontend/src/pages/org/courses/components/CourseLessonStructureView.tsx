@@ -139,16 +139,17 @@ export function CourseLessonStructureView({
       completedAt: m.lessons_structure_generated_at,
     })),
   );
-  const allReadyOrApproved =
-    course.modules.length > 0 &&
+  // "Approva tutti" tollerante (mirror BE): ignora i moduli `empty`
+  // (es. aggiunti tardi via CRUD architettura), blocca solo con moduli
+  // in lavorazione o falliti; visibile finché c'è almeno un `ready`.
+  const canApproveAll =
+    course.modules.some((m) => m.lessons_structure_status === "ready") &&
     course.modules.every(
       (m) =>
-        m.lessons_structure_status === "ready" ||
-        m.lessons_structure_status === "approved"
+        !["pending", "processing", "failed"].includes(
+          m.lessons_structure_status,
+        ),
     );
-  const allApproved =
-    course.modules.length > 0 &&
-    course.modules.every((m) => m.lessons_structure_status === "approved");
   const someEverGenerated = course.modules.some((m) =>
     ["ready", "approved", "failed"].includes(m.lessons_structure_status)
   );
@@ -296,7 +297,7 @@ export function CourseLessonStructureView({
                     : t("courses.lessonsStructure.generateAll")}
                 </Button>
               )}
-              {canGenerate && allReadyOrApproved && !allApproved && (
+              {canGenerate && canApproveAll && (
                 <Button
                   variant="default"
                   onClick={() => approveAllMut.mutate()}

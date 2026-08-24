@@ -990,7 +990,7 @@
     "lessonsSlides": {
       "title": "Lesson slides",
       "description": "For each lesson, the AI produces a sequence of slides sized for the lesson duration. Slides reuse the lecture-notes assets (diagrams, formulas, tables) and create new ones only when needed.",
-      "contentNotReady": "Generate the lecture notes first to produce the slides.",
+      "contentNotReady": "Approve the lecture notes first to produce the slides.",
       "generateAll": "Generate slides for all lessons",
       "regenerateAll": "Regenerate all slides",
       "generateMissing": "Generate missing ({{count}})",
@@ -1172,7 +1172,7 @@
     "lessonsSpeech": {
       "title": "Lesson timed speech",
       "description": "For each lesson, the AI produces the spoken script the instructor will read (and a future TTS will speak in the video), split into segments synchronized to the slides. The estimated total duration matches the lesson duration (±5%).",
-      "slidesNotReady": "Generate the lesson slides first to produce the speech.",
+      "slidesNotReady": "Approve the lesson slides first to produce the speech.",
       "generateAll": "Generate speech for all lessons",
       "regenerateAll": "Regenerate all speeches",
       "generateMissing": "Generate missing ({{count}})",

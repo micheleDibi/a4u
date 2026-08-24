@@ -6,6 +6,9 @@ import { cn } from "@/lib/utils";
 
 // Mirror di `backend/app/core/course_phase_order.COURSE_STATUS_RANK`.
 // Tenere allineato col BE: nuovi stati vanno aggiunti in entrambi i lati.
+// NB semantica: col gating per-unità `course.status` è un INDICATORE di
+// avanzamento (milestone monotona), NON un lock — l'abilitazione di tab
+// e azioni si calcola dagli stati per-lezione/per-modulo.
 export const COURSE_STATUS_RANK: Record<string, number> = {
   draft: 0,
   architecture_pending: 1,
@@ -77,6 +80,14 @@ export function phaseOfTab(tabId: string): PhaseId {
   return "setup";
 }
 
+/** `true` se almeno un modulo ha la struttura Fase 2 approvata: da lì
+ * in poi le sue lezioni possono entrare in Fase 3 (gating per-unità). */
+export function anyModuleStructureApproved(course: CourseOut | null): boolean {
+  return (course?.modules ?? []).some(
+    (m) => m.lessons_structure_status === "approved",
+  );
+}
+
 export function computePhaseStatus(
   phaseId: PhaseId,
   course: CourseOut | null,
@@ -87,21 +98,33 @@ export function computePhaseStatus(
   }
   if (!course) return "locked";
   const s = course.status;
+  const modules = course.modules ?? [];
 
   if (phaseId === "architecture") {
     if (!setupLocked) return "locked";
-    // L'architettura e' "done" non appena il corso ha superato la fase
-    // della struttura lezioni — include automaticamente tutti gli stati
-    // successivi (content, slides, speech, video, avatar_video, published).
-    if (isCourseAtLeast(s, "lessons_structure_approved")) return "done";
+    // Data-based: "done" quando TUTTI i moduli hanno struttura approvata
+    // (equivale a `lessons_structure_approved` nei corsi sani, ma resta
+    // onesto in quelli con moduli aggiunti tardi o strutture rigenerate).
+    if (
+      modules.length > 0 &&
+      modules.every((m) => m.lessons_structure_status === "approved")
+    ) {
+      return "done";
+    }
     return "in_progress";
   }
 
   if (phaseId === "content") {
     if (!setupLocked) return "locked";
-    if (!isCourseAtLeast(s, "lessons_structure_approved")) return "locked";
-    // done quando tutte le lezioni hanno speech approved.
-    const allLessons = (course.modules ?? []).flatMap((m) => m.lessons ?? []);
+    // Per-unità: basta UN modulo con struttura approvata perché le sue
+    // lezioni entrino in Fase 3 — la fase non è più bloccata dal corso.
+    if (!anyModuleStructureApproved(course)) return "locked";
+    // done quando tutte le lezioni NON-verifica hanno speech approved
+    // (le assessment restano `empty` per sempre: includerle rendeva la
+    // fase mai completabile nei corsi con lezione di verifica).
+    const allLessons = modules
+      .flatMap((m) => m.lessons ?? [])
+      .filter((l) => !l.is_assessment);
     if (
       allLessons.length > 0 &&
       allLessons.every((l) => l.speech_status === "approved")
@@ -113,7 +136,7 @@ export function computePhaseStatus(
 
   if (phaseId === "media") {
     if (!setupLocked) return "locked";
-    const anyReady = (course.modules ?? []).some((m) =>
+    const anyReady = modules.some((m) =>
       (m.lessons ?? []).some(
         (l) =>
           l.speech_status === "approved" && l.slides_status === "approved",

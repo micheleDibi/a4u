@@ -204,15 +204,15 @@ export function CourseLessonSlidesView({
   );
   const missingCount = allLessons.filter(
     (l) =>
-      l.slides_status === "empty" &&
-      (l.content_status === "ready" || l.content_status === "approved"),
+      l.slides_status === "empty" && l.content_status === "approved",
   ).length;
   const showGenerateMissing =
     missingCount > 0 && missingCount < allLessons.length && someEverGenerated;
 
-  // Pre-condizione: serve content ready/approved su almeno una lezione.
+  // Pre-condizione per-unità: serve la dispensa APPROVATA su almeno una
+  // lezione (invariante N-1 approvato, mirror del gate BE).
   const eligibleForGen = allLessons.filter(
-    (l) => l.content_status === "ready" || l.content_status === "approved",
+    (l) => l.content_status === "approved",
   ).length;
 
   // ---------- Mutations ----------
@@ -1038,10 +1038,10 @@ function LessonSlidesRow({
       pdfStatus === "failed");
   const pdfStale = isSlidesPdfStale(lesson);
 
-  // Pre-condizione: per generare slide servono contenuti ready/approved.
+  // Pre-condizione per-unità: per generare le slide serve la dispensa
+  // APPROVATA di questa lezione (mirror del gate BE).
   const canStartGeneration =
-    canGenerate &&
-    (lesson.content_status === "ready" || lesson.content_status === "approved");
+    canGenerate && lesson.content_status === "approved";
 
   const stale = isSlidesStale(lesson, parentModule);
 

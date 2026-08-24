@@ -256,14 +256,15 @@ export function CourseLessonContentView({
       completedAt: l.content_generated_at,
     })),
   );
-  const allReadyOrApproved =
-    allLessons.length > 0 &&
+  // "Approva tutti" tollerante (mirror BE): ignora le lezioni `empty`
+  // (normali nel flusso per-unità), blocca solo con lezioni in
+  // lavorazione o fallite; visibile finché c'è almeno una `ready`.
+  const canApproveAll =
+    allLessons.some((l) => l.content_status === "ready") &&
     allLessons.every(
-      (l) => l.content_status === "ready" || l.content_status === "approved",
+      (l) =>
+        !["pending", "processing", "failed"].includes(l.content_status),
     );
-  const allApproved =
-    allLessons.length > 0 &&
-    allLessons.every((l) => l.content_status === "approved");
   const someEverGenerated = allLessons.some((l) =>
     ["ready", "approved", "failed"].includes(l.content_status),
   );
@@ -597,29 +598,21 @@ export function CourseLessonContentView({
       ),
   });
 
-  // Stato Fase 2 non approvato → empty state
-  if (course.status === "lessons_structure_pending"
-    || course.status === "lessons_structure_ready"
-    || course.status.startsWith("architecture_")
-    || course.status === "draft") {
-    if (
-      course.status !== "lessons_structure_approved" &&
-      !course.status.startsWith("content_") &&
-      !["slides_pending", "slides_ready", "slides_approved", "speech_pending", "speech_ready", "speech_approved", "published", "archived"].includes(
-        course.status,
-      )
-    ) {
-      return (
-        <Card>
-          <CardContent className="py-10 text-center">
-            <Hourglass className="mx-auto size-8 text-muted-foreground" />
-            <p className="mt-4 text-sm text-muted-foreground">
-              {t("courses.lessonsContent.lessonsStructureNotApproved")}
-            </p>
-          </CardContent>
-        </Card>
-      );
-    }
+  // Per-unità: la vista si apre appena UN modulo ha la struttura Fase 2
+  // approvata (le righe dei moduli non approvati mostrano il vincolo).
+  if (
+    !course.modules?.some((m) => m.lessons_structure_status === "approved")
+  ) {
+    return (
+      <Card>
+        <CardContent className="py-10 text-center">
+          <Hourglass className="mx-auto size-8 text-muted-foreground" />
+          <p className="mt-4 text-sm text-muted-foreground">
+            {t("courses.lessonsContent.lessonsStructureNotApproved")}
+          </p>
+        </CardContent>
+      </Card>
+    );
   }
 
   return (
@@ -678,7 +671,7 @@ export function CourseLessonContentView({
                   })}
                 </Button>
               )}
-              {canGenerate && allReadyOrApproved && !allApproved && (
+              {canGenerate && canApproveAll && (
                 <Button
                   variant="default"
                   onClick={() => approveAllMut.mutate()}
@@ -1138,11 +1131,16 @@ function LessonContentRow({
       pdfStatus === "ready" ||
       pdfStatus === "failed");
 
+  // Pre-condizione per-unità: la dispensa si genera solo se il modulo
+  // della lezione ha la struttura Fase 2 approvata (mirror del gate BE).
+  const structureApproved =
+    parentModule.lessons_structure_status === "approved";
+
   // CTA primaria contenuto — l'azione "next-step" più ovvia per lo stato
   // corrente. Quando assente il bottone non viene reso (lo stato è
   // visibile dal badge o dalla progress bar).
   const primaryContentCta = (() => {
-    if (!canGenerate) return null;
+    if (!canGenerate || !structureApproved) return null;
     if (status === "empty") {
       return (
         <Button size="sm" onClick={() => onGenerate("generate-lesson")}>
@@ -1225,7 +1223,9 @@ function LessonContentRow({
   // il trigger SOLO se almeno una voce è applicabile, così su lezioni
   // empty/processing la riga resta minimale.
   const canRegenerateContent =
-    canGenerate && (status === "ready" || status === "approved");
+    canGenerate &&
+    structureApproved &&
+    (status === "ready" || status === "approved");
   const canRegeneratePdf =
     canGenerate &&
     pdfStatus === "ready" &&

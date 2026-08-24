@@ -991,7 +991,7 @@
     "lessonsSlides": {
       "title": "Slide delle lezioni",
       "description": "Per ogni lezione, l'AI produce una sequenza di slide dimensionate sulla durata della lezione. Le slide riusano gli asset delle Dispense (diagrammi, formule, tabelle) e ne possono creare di nuovi solo se necessario.",
-      "contentNotReady": "Genera prima le dispense delle lezioni per produrre le slide.",
+      "contentNotReady": "Approva prima le dispense delle lezioni per produrre le slide.",
       "generateAll": "Genera slide per tutte le lezioni",
       "regenerateAll": "Rigenera tutte le slide",
       "generateMissing": "Genera mancanti ({{count}})",
@@ -1173,7 +1173,7 @@
     "lessonsSpeech": {
       "title": "Discorso temporizzato delle lezioni",
       "description": "Per ogni lezione, l'AI produce il parlato che il docente leggerà (e che un futuro TTS pronuncerà nel video), suddiviso in segmenti sincronizzati alle slide. La somma delle durate stimate corrisponde alla durata della lezione (±5%).",
-      "slidesNotReady": "Genera prima le slide delle lezioni per produrre il discorso.",
+      "slidesNotReady": "Approva prima le slide delle lezioni per produrre il discorso.",
       "generateAll": "Genera discorso per tutte le lezioni",
       "regenerateAll": "Rigenera tutti i discorsi",
       "generateMissing": "Genera mancanti ({{count}})",

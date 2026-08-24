@@ -204,15 +204,15 @@ export function CourseLessonSpeechView({
   );
   const missingCount = allLessons.filter(
     (l) =>
-      l.speech_status === "empty" &&
-      (l.slides_status === "ready" || l.slides_status === "approved"),
+      l.speech_status === "empty" && l.slides_status === "approved",
   ).length;
   const showGenerateMissing =
     missingCount > 0 && missingCount < allLessons.length && someEverGenerated;
 
-  // Pre-condizione: serve slides ready/approved su almeno una lezione.
+  // Pre-condizione per-unità: servono slide APPROVATE su almeno una
+  // lezione (invariante N-1 approvato, mirror del gate BE).
   const eligibleForGen = allLessons.filter(
-    (l) => l.slides_status === "ready" || l.slides_status === "approved",
+    (l) => l.slides_status === "approved",
   ).length;
 
   // ---------- Mutations ----------
@@ -1038,10 +1038,10 @@ function LessonSpeechRow({
       pdfStatus === undefined);
   const pdfStale = isSpeechPdfStale(lesson);
 
-  // Pre-condizione: per generare il discorso servono slide ready/approved.
+  // Pre-condizione per-unità: per generare il discorso servono le slide
+  // APPROVATE di questa lezione (mirror del gate BE).
   const canStartGeneration =
-    canGenerate &&
-    (lesson.slides_status === "ready" || lesson.slides_status === "approved");
+    canGenerate && lesson.slides_status === "approved";
 
   const stale = isSpeechStale(lesson, parentModule);
 

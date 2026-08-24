@@ -90,6 +90,7 @@ import { CoursePaperSearch } from "./components/CoursePaperSearch";
 import {
   CoursePhaseStepper,
   PHASES,
+  anyModuleStructureApproved,
   isCourseAtLeast,
   phaseOfTab,
   type PhaseId,
@@ -849,12 +850,11 @@ export default function CourseEditorPage({ mode }: Props) {
           )}
           {currentPhase === "content" && mode === "edit" && setupLocked && (
             <>
+              {/* Gating per-unità: le tab si abilitano dai dati
+                  per-lezione/per-modulo, non dal rank di course.status. */}
               <TabsTrigger
                 value="lesson-content"
-                disabled={
-                  !course ||
-                  !isCourseAtLeast(course.status, "lessons_structure_approved")
-                }
+                disabled={!course || !anyModuleStructureApproved(course)}
               >
                 {t("courses.tabs.lessonContent")}
               </TabsTrigger>
@@ -862,7 +862,9 @@ export default function CourseEditorPage({ mode }: Props) {
                 value="lesson-slides"
                 disabled={
                   !course ||
-                  !isCourseAtLeast(course.status, "content_ready")
+                  !course.modules?.some((m) =>
+                    m.lessons?.some((l) => l.content_status === "approved"),
+                  )
                 }
               >
                 {t("courses.tabs.lessonSlides")}
@@ -872,11 +874,7 @@ export default function CourseEditorPage({ mode }: Props) {
                 disabled={
                   !course ||
                   !course.modules?.some((m) =>
-                    m.lessons?.some(
-                      (l) =>
-                        l.slides_status === "ready" ||
-                        l.slides_status === "approved",
-                    ),
+                    m.lessons?.some((l) => l.slides_status === "approved"),
                   )
                 }
               >
@@ -1562,18 +1560,7 @@ export default function CourseEditorPage({ mode }: Props) {
                 />
               </CardContent>
             </Card>
-            {(course.status === "architecture_approved" ||
-              course.status === "lessons_structure_pending" ||
-              course.status === "lessons_structure_ready" ||
-              course.status === "lessons_structure_approved" ||
-              course.status.startsWith("content_") ||
-              [
-                "slides_pending",
-                "slides_ready",
-                "speech_pending",
-                "speech_ready",
-                "published",
-              ].includes(course.status)) && (
+            {isCourseAtLeast(course.status, "architecture_approved") && (
               <div className="flex justify-end">
                 <Button
                   size="lg"
@@ -1597,15 +1584,7 @@ export default function CourseEditorPage({ mode }: Props) {
               canEdit={canEdit}
               canGenerate={canGenerate}
             />
-            {(course.status === "lessons_structure_approved" ||
-              course.status.startsWith("content_") ||
-              [
-                "slides_pending",
-                "slides_ready",
-                "speech_pending",
-                "speech_ready",
-                "published",
-              ].includes(course.status)) && (
+            {anyModuleStructureApproved(course) && (
               <div className="flex justify-end">
                 <Button
                   size="lg"
@@ -1629,10 +1608,9 @@ export default function CourseEditorPage({ mode }: Props) {
               canEdit={canEdit}
               canGenerate={canGenerate}
             />
-            {(course.status === "content_approved" ||
-              course.status.startsWith("slides_") ||
-              course.status.startsWith("speech_") ||
-              course.status === "published") && (
+            {course.modules?.some((m) =>
+              m.lessons?.some((l) => l.content_status === "approved"),
+            ) && (
               <div className="flex justify-end">
                 <Button
                   size="lg"
@@ -1657,10 +1635,7 @@ export default function CourseEditorPage({ mode }: Props) {
               canGenerate={canGenerate}
             />
             {course.modules?.some((m) =>
-              m.lessons?.some(
-                (l) =>
-                  l.slides_status === "ready" || l.slides_status === "approved",
-              ),
+              m.lessons?.some((l) => l.slides_status === "approved"),
             ) && (
               <div className="flex justify-end">
                 <Button
@@ -1857,19 +1832,30 @@ function ArchitectureSection({
     );
   }
 
-  // Editing manuale dell'architettura è sempre permesso, allineato al
-  // pattern di lezioni-struttura/contenuti/slide/discorso: il worker AI
-  // di architettura scrive solo quando lo status è `architecture_pending`
-  // (caso gestito sopra con il branch `isPending`); negli altri stati il
-  // backend accetta i PATCH e lo stale-detection a cascata propaga le
-  // invalidazioni downstream. Restano fuori solo `published`/`archived`
-  // (corso terminato) e `draft` (nessuna architettura ancora generata).
+  // Editing manuale dell'architettura: permesso negli stati stabili
+  // (mirror del gate BE `course_architecture_crud._ensure_editable`).
+  // Restano fuori `published`/`archived` (corso terminato), `draft` e
+  // `architecture_pending` (nessuna architettura o worker P1 attivo) e
+  // le generazioni in volo: il BE risponderebbe 409. Video/avatar non
+  // sono in CourseLessonOut (vivono nei batch DTO): quel caso residuo
+  // resta coperto dal solo 409 del BE.
+  const anyGenerationInFlight = (course.modules ?? []).some(
+    (m) =>
+      m.lessons_structure_status === "pending" ||
+      m.lessons_structure_status === "processing" ||
+      (m.lessons ?? []).some((l) =>
+        [l.content_status, l.slides_status, l.speech_status].some(
+          (s) => s === "pending" || s === "processing",
+        ),
+      ),
+  );
   const editable =
     canEdit &&
     course.status !== "draft" &&
     course.status !== "architecture_pending" &&
     course.status !== "published" &&
-    course.status !== "archived";
+    course.status !== "archived" &&
+    !anyGenerationInFlight;
 
   return (
     <div className="space-y-3">
