@@ -104,7 +104,7 @@ async def test_change_email_wrong_current_rejected(client, _engine, random_email
         "/api/v1/auth/me/change-email",
         json={
             "current_password": "WrongPass123",
-            "new_email": f"new-{uuid.uuid4().hex[:8]}@a4u.local",
+            "new_email": f"new-{uuid.uuid4().hex[:8]}@a4u-tests.it",
         },
         headers=_bearer(uid),
     )
@@ -114,7 +114,7 @@ async def test_change_email_wrong_current_rejected(client, _engine, random_email
 
 async def test_change_email_uniqueness(client, _engine, random_email):
     uid = await _make_user(_engine, email=random_email)
-    other = f"other-{uuid.uuid4().hex[:8]}@a4u.local"
+    other = f"other-{uuid.uuid4().hex[:8]}@a4u-tests.it"
     await _make_user(_engine, email=other)
     res = await client.post(
         "/api/v1/auth/me/change-email",
@@ -127,7 +127,7 @@ async def test_change_email_uniqueness(client, _engine, random_email):
 
 async def test_change_email_success(client, _engine, random_email):
     uid = await _make_user(_engine, email=random_email)
-    new_email = f"new-{uuid.uuid4().hex[:8]}@a4u.local"
+    new_email = f"new-{uuid.uuid4().hex[:8]}@a4u-tests.it"
     res = await client.post(
         "/api/v1/auth/me/change-email",
         json={"current_password": "Password123!", "new_email": new_email},

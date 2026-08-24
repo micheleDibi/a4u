@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import os
 import uuid
 from collections.abc import AsyncIterator
@@ -26,18 +25,11 @@ os.environ.setdefault(
 )
 
 
-@pytest.fixture(scope="session")
-def event_loop():
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
-
-
 @pytest_asyncio.fixture(scope="session")
 async def _engine():
     from app.core.config import get_settings
     from app.db.base import Base
-    from app.models import *  # noqa: F401,F403  registra metadata
+    import app.models  # noqa: F401  registra i metadata di tutti i modelli
 
     settings = get_settings()
     engine = create_async_engine(settings.database_url, future=True)
@@ -110,4 +102,4 @@ async def client(_engine) -> AsyncIterator[AsyncClient]:
 
 @pytest.fixture
 def random_email() -> str:
-    return f"user-{uuid.uuid4().hex[:8]}@a4u.local"
+    return f"user-{uuid.uuid4().hex[:8]}@a4u-tests.it"

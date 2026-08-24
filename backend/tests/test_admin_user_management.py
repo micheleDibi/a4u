@@ -46,7 +46,7 @@ async def test_admin_set_password_revokes_refresh_and_changes_hash(
     client, _engine, random_email
 ):
     admin_id = await _make_user(
-        _engine, email=f"admin-{uuid.uuid4().hex[:8]}@a4u.local", is_platform_admin=True
+        _engine, email=f"admin-{uuid.uuid4().hex[:8]}@a4u-tests.it", is_platform_admin=True
     )
     target_id = await _make_user(_engine, email=random_email)
 
@@ -84,7 +84,7 @@ async def test_admin_set_password_revokes_refresh_and_changes_hash(
 
 async def test_admin_set_password_weak_rejected(client, _engine, random_email):
     admin_id = await _make_user(
-        _engine, email=f"admin-{uuid.uuid4().hex[:8]}@a4u.local", is_platform_admin=True
+        _engine, email=f"admin-{uuid.uuid4().hex[:8]}@a4u-tests.it", is_platform_admin=True
     )
     target_id = await _make_user(_engine, email=random_email)
     res = await client.post(
@@ -97,10 +97,10 @@ async def test_admin_set_password_weak_rejected(client, _engine, random_email):
 
 async def test_update_user_email_uniqueness(client, _engine):
     admin_id = await _make_user(
-        _engine, email=f"admin-{uuid.uuid4().hex[:8]}@a4u.local", is_platform_admin=True
+        _engine, email=f"admin-{uuid.uuid4().hex[:8]}@a4u-tests.it", is_platform_admin=True
     )
-    a_id = await _make_user(_engine, email=f"a-{uuid.uuid4().hex[:8]}@a4u.local")
-    b_email = f"b-{uuid.uuid4().hex[:8]}@a4u.local"
+    a_id = await _make_user(_engine, email=f"a-{uuid.uuid4().hex[:8]}@a4u-tests.it")
+    b_email = f"b-{uuid.uuid4().hex[:8]}@a4u-tests.it"
     await _make_user(_engine, email=b_email)
 
     res = await client.put(
@@ -114,10 +114,10 @@ async def test_update_user_email_uniqueness(client, _engine):
 
 async def test_update_user_email_change_succeeds(client, _engine):
     admin_id = await _make_user(
-        _engine, email=f"admin-{uuid.uuid4().hex[:8]}@a4u.local", is_platform_admin=True
+        _engine, email=f"admin-{uuid.uuid4().hex[:8]}@a4u-tests.it", is_platform_admin=True
     )
-    a_id = await _make_user(_engine, email=f"a-{uuid.uuid4().hex[:8]}@a4u.local")
-    new_email = f"new-{uuid.uuid4().hex[:8]}@a4u.local"
+    a_id = await _make_user(_engine, email=f"a-{uuid.uuid4().hex[:8]}@a4u-tests.it")
+    new_email = f"new-{uuid.uuid4().hex[:8]}@a4u-tests.it"
 
     res = await client.put(
         f"/api/v1/admin/users/{a_id}",
@@ -130,7 +130,7 @@ async def test_update_user_email_change_succeeds(client, _engine):
 
 async def test_cannot_deactivate_self(client, _engine):
     admin_id = await _make_user(
-        _engine, email=f"admin-{uuid.uuid4().hex[:8]}@a4u.local", is_platform_admin=True
+        _engine, email=f"admin-{uuid.uuid4().hex[:8]}@a4u-tests.it", is_platform_admin=True
     )
     res = await client.put(
         f"/api/v1/admin/users/{admin_id}",
@@ -143,7 +143,7 @@ async def test_cannot_deactivate_self(client, _engine):
 
 async def test_cannot_demote_self(client, _engine):
     admin_id = await _make_user(
-        _engine, email=f"admin-{uuid.uuid4().hex[:8]}@a4u.local", is_platform_admin=True
+        _engine, email=f"admin-{uuid.uuid4().hex[:8]}@a4u-tests.it", is_platform_admin=True
     )
     res = await client.put(
         f"/api/v1/admin/users/{admin_id}",
@@ -156,14 +156,14 @@ async def test_cannot_demote_self(client, _engine):
 
 async def test_count_other_active_platform_admins(db):
     a = User(
-        email=f"a-{uuid.uuid4().hex[:8]}@a4u.local",
+        email=f"a-{uuid.uuid4().hex[:8]}@a4u-tests.it",
         password_hash=hash_password("Password123!"),
         full_name="A",
         is_platform_admin=True,
         is_active=True,
     )
     b = User(
-        email=f"b-{uuid.uuid4().hex[:8]}@a4u.local",
+        email=f"b-{uuid.uuid4().hex[:8]}@a4u-tests.it",
         password_hash=hash_password("Password123!"),
         full_name="B",
         is_platform_admin=True,
