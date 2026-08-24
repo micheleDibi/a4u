@@ -29,9 +29,11 @@ if TYPE_CHECKING:
     from app.models.user import User
 
 
-# Tutti i valori di status. Foundation usa solo `draft` e `archived`,
-# gli altri sono già definiti per accomodare la pipeline AI a 5 fasi
-# senza dover toccare il CHECK constraint nelle iterazioni successive.
+# Tutti i valori di status della pipeline (P1 architettura → P6b avatar
+# video). Deve restare allineato 1:1 con COURSE_STATUS_RANK in
+# core/course_phase_order.py e con il CHECK reale in DB (esteso a 22
+# valori dalla migrazione 0030): rigenerare il constraint da un set
+# più piccolo farebbe perdere gli stati video/avatar.
 COURSE_STATUSES: tuple[str, ...] = (
     "draft",
     "architecture_pending",
@@ -49,6 +51,10 @@ COURSE_STATUSES: tuple[str, ...] = (
     "speech_pending",
     "speech_ready",
     "speech_approved",
+    "video_pending",
+    "video_ready",
+    "avatar_video_pending",
+    "avatar_video_ready",
     "published",
     "archived",
 )
@@ -93,6 +99,8 @@ class Course(UUIDPKMixin, TimestampMixin, Base):
             "'content_pending','content_ready','content_approved',"
             "'slides_pending','slides_ready','slides_approved',"
             "'speech_pending','speech_ready','speech_approved',"
+            "'video_pending','video_ready',"
+            "'avatar_video_pending','avatar_video_ready',"
             "'published','archived')",
             name="ck_course_status_valid",
         ),

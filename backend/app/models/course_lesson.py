@@ -99,6 +99,18 @@ class CourseLesson(UUIDPKMixin, TimestampMixin, Base):
         ),
         Index("ix_course_lesson_module_id", "module_id"),
         Index("ix_course_lesson_course_id", "course_id"),
+        # Già in DB via migrazioni 0025/0029: dichiarati anche qui perché
+        # gli ambienti create_all (test) abbiano lo stesso schema.
+        Index(
+            "ix_course_lesson_course_video_status",
+            "course_id",
+            "video_status",
+        ),
+        Index(
+            "ix_course_lesson_course_avatar_video_status",
+            "course_id",
+            "avatar_video_status",
+        ),
         CheckConstraint(
             "content_status IN "
             "('empty','pending','processing','ready','approved','failed')",
