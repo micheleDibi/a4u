@@ -96,6 +96,8 @@ export interface DocumentSummaryTokens {
   completion: number;
   total: number;
   model: string;
+  /** Numero di chiamate LLM aggregate (solo pipeline chunked). */
+  calls?: number;
 }
 
 export interface DocumentSummaryKeyConcept {
@@ -144,8 +146,21 @@ export interface CourseDocumentOut {
   summary_attempts: number;
   summary_tokens: DocumentSummaryTokens | null;
   text_chars_extracted: number | null;
+  /** Copertura dell'analisi: 'full' | 'partial' | null (null = riassunto
+   *  legacy precedente alla pipeline a copertura totale). */
+  summary_coverage: "full" | "partial" | null;
+  /** Progresso della pipeline chunked ("blocco X di Y" durante il
+   *  processing); null fuori da un run chunked. */
+  summary_chunks_total: number | null;
+  summary_chunks_done: number | null;
+  /** Politica di citazione (visibilità delle fonti): il contenuto viene
+   *  sempre usato per generare; con "content_only" l'origine non viene
+   *  mai citata; con "excluded" il riassunto non entra nei prompt. */
+  citation_policy: CitationPolicy;
   created_at: string;
 }
+
+export type CitationPolicy = "citable" | "content_only" | "excluded";
 
 export interface CourseDocumentDetailOut extends CourseDocumentOut {
   summary: DocumentSummaryOut | null;
@@ -1039,10 +1054,12 @@ export const coursesApi = {
     upload: async (
       orgId: string,
       courseId: string,
-      file: File
+      file: File,
+      citationPolicy: CitationPolicy = "citable"
     ): Promise<CourseDocumentOut> => {
       const form = new FormData();
       form.append("file", file);
+      form.append("citation_policy", citationPolicy);
       const res = await apiClient.post<CourseDocumentOut>(
         `${base(orgId)}/${courseId}/documents`,
         form,
@@ -1051,6 +1068,18 @@ export const coursesApi = {
           // L'upload può richiedere tempo per file fino a 25MB.
           timeout: 120_000,
         }
+      );
+      return res.data;
+    },
+    updatePolicy: async (
+      orgId: string,
+      courseId: string,
+      docId: string,
+      citationPolicy: CitationPolicy
+    ): Promise<CourseDocumentOut> => {
+      const res = await apiClient.patch<CourseDocumentOut>(
+        `${base(orgId)}/${courseId}/documents/${docId}`,
+        { citation_policy: citationPolicy }
       );
       return res.data;
     },
@@ -1116,10 +1145,11 @@ export const coursesApi = {
       orgId: string,
       courseId: string,
       papers: PaperOut[],
+      citationPolicy: CitationPolicy = "citable",
     ): Promise<PaperImportResultOut> => {
       const res = await apiClient.post<PaperImportResultOut>(
         `${base(orgId)}/${courseId}/papers/import`,
-        { papers },
+        { papers, citation_policy: citationPolicy },
         { timeout: 300_000 },
       );
       return res.data;

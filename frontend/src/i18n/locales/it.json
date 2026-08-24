@@ -357,11 +357,25 @@
       "choose": "Scegli file",
       "uploading": "Caricamento…",
       "empty": "Nessun documento caricato.",
+      "citationPolicy": {
+        "label": "Politica di citazione",
+        "citable": "Citabile come fonte",
+        "contentOnly": "Fonte riservata",
+        "excluded": "Escluso dalla generazione",
+        "help": "Il contenuto viene usato per generare i materiali del corso, ma il documento non comparirà mai come fonte: niente bibliografia, citazioni o nomi di file.",
+        "updated": "Politica di citazione aggiornata.",
+        "confirmTitle": "Cambiare la politica di citazione?",
+        "confirmContentOnly": "\"{{name}}\" diventerà una fonte riservata: il contenuto resterà in uso ma l'origine non verrà più citata. Il riassunto verrà ripulito e rielaborato automaticamente. I contenuti già generati non cambiano: rigenera per applicare la nuova impostazione.",
+        "confirmGeneric": "La nuova impostazione per \"{{name}}\" vale solo per le generazioni future. I contenuti già generati non cambiano: rigenera per applicare."
+      },
       "summary": {
         "pending": "Da elaborare",
         "processing": "Elaborazione…",
         "ready": "Pronto",
         "failed": "Errore",
+        "chunkProgress": "Analisi blocco {{done}} di {{total}}",
+        "coverageFull": "Analisi completa dell'intero documento.",
+        "coveragePartial": "Documento molto lungo: analizzata la prima parte (limite di sicurezza).",
         "dialog": {
           "title": "Riassunto strutturato — {{filename}}",
           "loading": "Caricamento del riassunto…",

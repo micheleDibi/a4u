@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import (
     BigInteger,
@@ -31,6 +31,14 @@ class CourseDocument(UUIDPKMixin, TimestampMixin, Base):
             "summary_status IN ('pending','processing','ready','failed')",
             name="ck_course_document_summary_status_valid",
         ),
+        CheckConstraint(
+            "summary_coverage IN ('full','partial')",
+            name="ck_course_document_summary_coverage_valid",
+        ),
+        CheckConstraint(
+            "citation_policy IN ('citable','content_only','excluded')",
+            name="ck_course_document_citation_policy_valid",
+        ),
     )
 
     course_id: Mapped[uuid.UUID] = mapped_column(
@@ -50,6 +58,22 @@ class CourseDocument(UUIDPKMixin, TimestampMixin, Base):
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
+    )
+
+    # Politica di citazione (Blocco 2 "visibilità delle fonti"):
+    # - 'citable'      = comportamento storico: il documento può comparire
+    #                    come fonte (bibliografia, references, filename);
+    # - 'content_only' = "Fonte riservata": il contenuto viene usato per
+    #                    generare, l'origine non viene MAI citata (niente
+    #                    filename/titolo/autori nei prompt, filtri
+    #                    post-generazione sulla bibliografia);
+    # - 'excluded'     = il riassunto non entra in alcun prompt (il worker
+    #                    lo analizza comunque: riattivazione istantanea).
+    citation_policy: Mapped[str] = mapped_column(
+        String(40),
+        nullable=False,
+        default="citable",
+        server_default="citable",
     )
 
     # Output dell'Appendice A (riassunto strutturato).
@@ -72,4 +96,27 @@ class CourseDocument(UUIDPKMixin, TimestampMixin, Base):
         SmallInteger, nullable=False, default=0, server_default="0"
     )
 
-    course: Mapped["Course"] = relationship("Course", back_populates="documents")
+    # Copertura dell'analisi (migrazione 0035): 'full' = intero testo
+    # analizzato (single-shot sotto soglia o pipeline chunked); 'partial'
+    # = superato l'hard cap di sicurezza (analizzato il prefisso, MAI in
+    # silenzio: visibile in FE e audit); NULL = riassunto legacy
+    # precedente alla feature (nessun backfill).
+    summary_coverage: Mapped[str | None] = mapped_column(
+        String(20), nullable=True
+    )
+    # Progresso denormalizzato della pipeline chunked per la UI
+    # (il polling della detail corso li fa arrivare al FE gratis).
+    summary_chunks_total: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
+    summary_chunks_done: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
+    # Fingerprint del run chunked: sha256(bytes file ‖ parametri chunking
+    # ‖ modello ‖ PROMPT_VERSION). Se cambia, i chunk persistiti vengono
+    # scartati (mai risultati misti tra run con parametri diversi).
+    summary_fingerprint: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+
+    course: Mapped[Course] = relationship("Course", back_populates="documents")

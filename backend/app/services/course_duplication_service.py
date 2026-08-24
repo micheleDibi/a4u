@@ -634,6 +634,16 @@ async def _clone_course_structure(
             summary_attempts=0,
             text_extracted_at=src_doc.text_extracted_at,
             text_chars_extracted=src_doc.text_chars_extracted,
+            # Il summary è clonato AS-IS: la copertura resta quella del
+            # run originale. Fingerprint/contatori sono working-data del
+            # run chunked e NON si clonano (le righe chunk nemmeno).
+            summary_coverage=src_doc.summary_coverage,
+            summary_fingerprint=None,
+            summary_chunks_total=None,
+            summary_chunks_done=None,
+            # La riservatezza è una proprietà del MATERIALE, non del
+            # corso: il flag si clona (dimenticarlo = leak silenzioso).
+            citation_policy=src_doc.citation_policy,
         )
         db.add(new_doc)
 

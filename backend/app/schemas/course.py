@@ -80,6 +80,14 @@ class CourseDocumentOut(ORMModel):
     summary_attempts: int = 0
     summary_tokens: dict[str, object] | None = None
     text_chars_extracted: int | None = None
+    # Copertura dell'analisi (Blocco 1): 'full' | 'partial' | None
+    # (None = riassunto legacy pre-feature). Contatori valorizzati solo
+    # durante/dopo un run chunked (progresso "blocco X di Y" nel FE).
+    summary_coverage: str | None = None
+    summary_chunks_total: int | None = None
+    summary_chunks_done: int | None = None
+    # Politica di citazione (Blocco 2): citable | content_only | excluded.
+    citation_policy: str = "citable"
     created_at: datetime
 
 
@@ -88,6 +96,16 @@ class CourseDocumentDetailOut(CourseDocumentOut):
     `GET /documents/{id}` quando l'utente apre il dialog del riassunto."""
 
     summary: DocumentSummaryOut | None = None
+
+
+CitationPolicy = Literal["citable", "content_only", "excluded"]
+
+
+class CourseDocumentPolicyUpdate(BaseModel):
+    """Body PATCH `/documents/{id}`: unico campo mutabile del documento
+    (file e metadati restano immutabili post-create)."""
+
+    citation_policy: CitationPolicy
 
 
 class CourseListLessonsProgress(BaseModel):

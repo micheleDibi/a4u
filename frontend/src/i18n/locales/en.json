@@ -357,11 +357,25 @@
       "choose": "Choose file",
       "uploading": "Uploading…",
       "empty": "No documents uploaded.",
+      "citationPolicy": {
+        "label": "Citation policy",
+        "citable": "Citable source",
+        "contentOnly": "Confidential source",
+        "excluded": "Excluded from generation",
+        "help": "The content is used to generate the course materials, but the document will never appear as a source: no bibliography, citations or file names.",
+        "updated": "Citation policy updated.",
+        "confirmTitle": "Change the citation policy?",
+        "confirmContentOnly": "\"{{name}}\" will become a confidential source: its content stays in use but the origin will no longer be cited. The summary will be scrubbed and re-analyzed automatically. Already generated content does not change: regenerate to apply.",
+        "confirmGeneric": "The new setting for \"{{name}}\" only applies to future generations. Already generated content does not change: regenerate to apply."
+      },
       "summary": {
         "pending": "To process",
         "processing": "Processing…",
         "ready": "Ready",
         "failed": "Error",
+        "chunkProgress": "Analyzing block {{done}} of {{total}}",
+        "coverageFull": "Full analysis of the entire document.",
+        "coveragePartial": "Very long document: the first part was analyzed (safety limit).",
         "dialog": {
           "title": "Structured summary — {{filename}}",
           "loading": "Loading summary…",

@@ -11,7 +11,11 @@ import {
   TriangleAlert,
   Upload,
 } from "lucide-react";
-import { coursesApi, type CourseDocumentOut } from "@/api/courses";
+import {
+  coursesApi,
+  type CitationPolicy,
+  type CourseDocumentOut,
+} from "@/api/courses";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -20,6 +24,13 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { extractApiError } from "@/lib/errors";
 import { cn } from "@/lib/utils";
@@ -65,6 +76,12 @@ export function CourseDocumentUploader({
   const [toDelete, setToDelete] = useState<CourseDocumentOut | null>(null);
   const [toReprocess, setToReprocess] = useState<CourseDocumentOut | null>(null);
   const [openSummary, setOpenSummary] = useState<CourseDocumentOut | null>(null);
+  // Politica di citazione applicata ai file del prossimo upload (batch).
+  const [uploadPolicy, setUploadPolicy] = useState<CitationPolicy>("citable");
+  const [policyChange, setPolicyChange] = useState<{
+    doc: CourseDocumentOut;
+    next: CitationPolicy;
+  } | null>(null);
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["courses", "detail", orgId, courseId] });
@@ -72,7 +89,8 @@ export function CourseDocumentUploader({
   };
 
   const uploadMut = useMutation({
-    mutationFn: (file: File) => coursesApi.documents.upload(orgId, courseId, file),
+    mutationFn: (file: File) =>
+      coursesApi.documents.upload(orgId, courseId, file, uploadPolicy),
     onSuccess: () => {
       toast.success(t("courses.docs.uploaded"));
       invalidate();
@@ -85,6 +103,16 @@ export function CourseDocumentUploader({
       coursesApi.documents.remove(orgId, courseId, docId),
     onSuccess: () => {
       toast.success(t("courses.docs.deleted"));
+      invalidate();
+    },
+    onError: (err) => toast.error(extractApiError(err).message),
+  });
+
+  const policyMut = useMutation({
+    mutationFn: ({ doc, next }: { doc: CourseDocumentOut; next: CitationPolicy }) =>
+      coursesApi.documents.updatePolicy(orgId, courseId, doc.id, next),
+    onSuccess: () => {
+      toast.success(t("courses.docs.citationPolicy.updated"));
       invalidate();
     },
     onError: (err) => toast.error(extractApiError(err).message),
@@ -188,6 +216,36 @@ export function CourseDocumentUploader({
             if (inputRef.current) inputRef.current.value = "";
           }}
         />
+        <div className="mx-auto mt-3 flex max-w-md items-center justify-center gap-2">
+          <span className="text-xs text-muted-foreground">
+            {t("courses.docs.citationPolicy.label")}
+          </span>
+          <Select
+            value={uploadPolicy}
+            onValueChange={(v) => setUploadPolicy(v as CitationPolicy)}
+            disabled={disabled}
+          >
+            <SelectTrigger className="h-8 w-56 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="citable">
+                {t("courses.docs.citationPolicy.citable")}
+              </SelectItem>
+              <SelectItem value="content_only">
+                {t("courses.docs.citationPolicy.contentOnly")}
+              </SelectItem>
+              <SelectItem value="excluded">
+                {t("courses.docs.citationPolicy.excluded")}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        {uploadPolicy !== "citable" && (
+          <p className="mx-auto mt-1 max-w-md text-xs text-muted-foreground">
+            {t("courses.docs.citationPolicy.help")}
+          </p>
+        )}
       </div>
 
       {documents.length > 0 ? (
@@ -214,6 +272,45 @@ export function CourseDocumentUploader({
                     {formatBytes(d.size_bytes)} · {d.mime_type}
                   </div>
                 </div>
+                {disabled ? (
+                  d.citation_policy !== "citable" && (
+                    <Badge variant="outline" className="shrink-0">
+                      {t(
+                        d.citation_policy === "content_only"
+                          ? "courses.docs.citationPolicy.contentOnly"
+                          : "courses.docs.citationPolicy.excluded",
+                      )}
+                    </Badge>
+                  )
+                ) : (
+                  <Select
+                    value={d.citation_policy}
+                    onValueChange={(v) =>
+                      setPolicyChange({
+                        doc: d,
+                        next: v as CitationPolicy,
+                      })
+                    }
+                  >
+                    <SelectTrigger
+                      className="h-7 w-44 shrink-0 text-xs"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="citable">
+                        {t("courses.docs.citationPolicy.citable")}
+                      </SelectItem>
+                      <SelectItem value="content_only">
+                        {t("courses.docs.citationPolicy.contentOnly")}
+                      </SelectItem>
+                      <SelectItem value="excluded">
+                        {t("courses.docs.citationPolicy.excluded")}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -234,13 +331,28 @@ export function CourseDocumentUploader({
                           }
                           className="shrink-0"
                         >
-                          {t(`courses.docs.summary.${d.summary_status}`)}
+                          {d.summary_status === "processing" &&
+                          (d.summary_chunks_total ?? 0) > 1
+                            ? t("courses.docs.summary.chunkProgress", {
+                                done: d.summary_chunks_done ?? 0,
+                                total: d.summary_chunks_total,
+                              })
+                            : t(`courses.docs.summary.${d.summary_status}`)}
                         </Badge>
                       </span>
                     </TooltipTrigger>
                     {isFailed && d.summary_error && (
                       <TooltipContent className="max-w-md">
                         {d.summary_error}
+                      </TooltipContent>
+                    )}
+                    {isReady && d.summary_coverage && (
+                      <TooltipContent className="max-w-md">
+                        {t(
+                          d.summary_coverage === "full"
+                            ? "courses.docs.summary.coverageFull"
+                            : "courses.docs.summary.coveragePartial",
+                        )}
                       </TooltipContent>
                     )}
                   </Tooltip>
@@ -328,6 +440,25 @@ export function CourseDocumentUploader({
           if (toReprocess) {
             reprocessMut.mutate(toReprocess.id);
             setToReprocess(null);
+          }
+        }}
+      />
+
+      <ConfirmDialog
+        open={!!policyChange}
+        title={t("courses.docs.citationPolicy.confirmTitle")}
+        message={t(
+          policyChange?.next === "content_only"
+            ? "courses.docs.citationPolicy.confirmContentOnly"
+            : "courses.docs.citationPolicy.confirmGeneric",
+          { name: policyChange?.doc.filename_original ?? "" },
+        )}
+        confirmLabel={t("common.confirm")}
+        onClose={() => setPolicyChange(null)}
+        onConfirm={() => {
+          if (policyChange) {
+            policyMut.mutate(policyChange);
+            setPolicyChange(null);
           }
         }}
       />
