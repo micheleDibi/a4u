@@ -28,7 +28,11 @@ from app.models.course_document import CourseDocument
 from app.models.course_lesson import CourseLesson
 from app.models.course_module import CourseModule
 from app.models.course_taxonomy import CourseTaxonomyTerm
-from app.schemas.course_architecture import ArchitectureOutput
+from app.schemas.course_architecture import (
+    ArchitectureOutput,
+    RecommendedBibliographyItem,
+)
+from app.services import document_citation_guard
 
 log = get_logger("app.course_architecture")
 
@@ -104,16 +108,49 @@ def _term_label(term: CourseTaxonomyTerm | None, language_code: str) -> str:
 
 
 def _format_document_summary_for_prompt(
-    doc: CourseDocument, max_chars: int
+    doc: CourseDocument,
+    max_chars: int,
+    *,
+    anonymous_index: int | None = None,
 ) -> str | None:
     """Formatta il riassunto strutturato di un documento per inclusione
-    nel prompt. Salta documenti senza summary `ready`."""
+    nel prompt. Salta documenti senza summary `ready`.
+
+    Visibilità delle fonti: con `anonymous_index` valorizzato (documento
+    `content_only`, "Fonte riservata") l'header è anonimo e NESSUN
+    identificativo (filename, titolo, autori) entra nel prompt — il
+    modello non può citare ciò che non vede. Per i documenti citabili la
+    riga "Fonte:" espone titolo+autori dai campi dedicati del summary
+    (l'hardening del prompt di riassunto li tiene fuori dalla prosa:
+    senza questa riga i doc citabili con filename muto perderebbero la
+    base per la bibliografia)."""
     if doc.summary_status != "ready" or not doc.summary:
         return None
     s = doc.summary
-    parts: list[str] = [
-        f"## Documento: {doc.filename_original}",
-        f"Lingua rilevata: {s.get('detected_language', '?')}",
+    if anonymous_index is not None:
+        parts: list[str] = [
+            f"## Materiale di contesto {anonymous_index}",
+            f"Lingua rilevata: {s.get('detected_language', '?')}",
+        ]
+    else:
+        parts = [
+            f"## Documento: {doc.filename_original}",
+            f"Lingua rilevata: {s.get('detected_language', '?')}",
+        ]
+        source_title = str(s.get("source_title") or "").strip()
+        authors = [
+            str(a.get("value") or "").strip()
+            for a in (s.get("authors_and_references") or [])
+            if isinstance(a, dict)
+            and a.get("type") == "author"
+            and str(a.get("value") or "").strip()
+        ]
+        if source_title or authors:
+            fonte = f"Fonte: {source_title or '?'}"
+            if authors:
+                fonte += " — " + ", ".join(authors[:6])
+            parts.append(fonte)
+    parts += [
         "",
         "### Abstract",
         str(s.get("abstract") or "").strip(),
@@ -148,22 +185,56 @@ def _format_document_summary_for_prompt(
     return text
 
 
+_NON_CITABLE_FRAMING = (
+    "### Materiale di contesto aggiuntivo (non citabile)\n"
+    "Il materiale seguente è fornito SOLO come contesto per i contenuti: "
+    "NON è una fonte e non deve MAI comparire in bibliografia, citazioni "
+    "o riferimenti."
+)
+
+
 def _build_documents_context(
     docs: list[CourseDocument], total_max_chars: int
 ) -> str:
     """Concatena i riassunti dei documenti `ready` con un budget totale di
     caratteri. Se la somma dei riassunti supera il budget, riduce
-    proporzionalmente per documento."""
-    ready_docs = [d for d in docs if d.summary_status == "ready" and d.summary]
+    proporzionalmente per documento.
+
+    Visibilità delle fonti: gli `excluded` non entrano; i `content_only`
+    ("Fonte riservata") entrano in coda come materiale ANONIMO con un
+    framing esplicito che ne vieta la citazione."""
+    ready_docs = [
+        d
+        for d in docs
+        if d.summary_status == "ready"
+        and d.summary
+        and getattr(d, "citation_policy", "citable") != "excluded"
+    ]
     if not ready_docs:
         return "(Nessun documento di riferimento elaborato.)"
 
+    citable = [
+        d for d in ready_docs
+        if getattr(d, "citation_policy", "citable") != "content_only"
+    ]
+    reserved = [d for d in ready_docs if d not in citable]
+
     per_doc_budget = max(2000, total_max_chars // max(1, len(ready_docs)))
     chunks: list[str] = []
-    for d in ready_docs:
+    for d in citable:
         formatted = _format_document_summary_for_prompt(d, per_doc_budget)
         if formatted:
             chunks.append(formatted)
+    if reserved:
+        chunks.append(_NON_CITABLE_FRAMING)
+        for i, d in enumerate(reserved, start=1):
+            formatted = _format_document_summary_for_prompt(
+                d, per_doc_budget, anonymous_index=i
+            )
+            if formatted:
+                chunks.append(formatted)
+    if not chunks:
+        return "(Nessun documento di riferimento elaborato.)"
     text = "\n\n---\n\n".join(chunks)
     if len(text) > total_max_chars:
         text = text[:total_max_chars] + "\n... (troncato)"
@@ -236,12 +307,26 @@ def build_user_prompt(course: Course) -> str:
     ]
 
     if course.architecture_regeneration_hint:
+        current_block = _format_current_architecture_for_prompt(course)
+        # Scan SOFT (mai mutazione): la versione attuale può contenere in
+        # prosa il titolo di un documento reso "Fonte riservata" DOPO la
+        # generazione precedente — segnala il canale di reiniezione.
+        leaks = document_citation_guard.scan_text_for_leaks(
+            current_block,
+            document_citation_guard.build_identity_index(course.documents),
+        )
+        if leaks:
+            log.warning(
+                "architecture_regen_reserved_leak",
+                course_id=str(course.id),
+                documents=leaks,
+            )
         blocks.extend(
             [
                 "",
                 "## Versione attuale dell'architettura (DA RIVEDERE)",
                 "",
-                _format_current_architecture_for_prompt(course),
+                current_block,
                 "",
                 "## Indicazioni del docente per la rigenerazione",
                 "",
@@ -360,6 +445,51 @@ async def request_generation(
     return course
 
 
+def filter_reserved_bibliography(
+    course: Course, architecture: ArchitectureOutput
+) -> list[dict]:
+    """Rimuove dalla `recommended_bibliography` generata le voci che
+    matchano i documenti a fonte riservata (incluse le
+    `general_knowledge_suggestion` coincidenti). Muta `architecture` in
+    place e ritorna le voci scartate (per l'audit del chiamante).
+
+    Da invocare nel worker P1 tra la generazione e la materializzazione,
+    PRIMA di `architecture.model_dump()`: così anche `architecture_raw`
+    persiste già filtrato. Se il filtro svuota la bibliografia
+    obbligatoria di M1.L1 solleva `ConflictError` con codice dedicato
+    (caso raro: il modello non vede i non-citabili)."""
+    reserved_index = document_citation_guard.build_identity_index(
+        course.documents
+    )
+    if not reserved_index:
+        return []
+    dropped_all: list[dict] = []
+    for module in architecture.modules:
+        for lesson in module.lessons:
+            if not lesson.recommended_bibliography:
+                continue
+            items = [
+                entry.model_dump()
+                for entry in lesson.recommended_bibliography
+            ]
+            kept, dropped = document_citation_guard.filter_bibliography_items(
+                items, reserved_index
+            )
+            if dropped:
+                lesson.recommended_bibliography = [
+                    RecommendedBibliographyItem(**item) for item in kept
+                ]
+                dropped_all.extend(dropped)
+                if lesson.is_introductory and not kept:
+                    raise ConflictError(
+                        "La bibliografia proposta attingeva solo a "
+                        "materiale a fonte riservata: aggiungi fonti "
+                        "citabili o rigenera l'architettura.",
+                        code="architecture_bibliography_all_non_citable",
+                    )
+    return dropped_all
+
+
 async def materialize_architecture(
     db: AsyncSession,
     *,
@@ -380,6 +510,9 @@ async def materialize_architecture(
             f"atteso ({course.modules_count}).",
             code="architecture_modules_count_mismatch",
         )
+    reserved_index = document_citation_guard.build_identity_index(
+        course.documents
+    )
     arch_lessons = _architecture_lessons_per_module(course)
     for m_idx, m in enumerate(architecture.modules, start=1):
         if len(m.lessons) != arch_lessons:
@@ -424,6 +557,19 @@ async def materialize_architecture(
                         "confidence=`to_verify`.",
                         code="architecture_bibliography_confidence_invalid",
                     )
+            # Cintura difensiva (il filtro vero è nel worker PRIMA della
+            # materializzazione): nessuna voce deve matchare i documenti
+            # a fonte riservata.
+            if reserved_index:
+                for entry in lesson.recommended_bibliography:
+                    if document_citation_guard.match_reserved(
+                        f"{entry.title} {entry.authors}", reserved_index
+                    ):
+                        raise ConflictError(
+                            f"La bibliografia cita un documento a fonte "
+                            f"riservata: '{entry.title}'.",
+                            code="architecture_bibliography_non_citable_leak",
+                        )
 
     # Drop pre-existing materialized rows (cascade su course_lesson via FK).
     if course.modules:

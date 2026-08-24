@@ -171,6 +171,65 @@ async def _process_one(db, course: Course) -> None:
     await db.refresh(course)
     await _set_progress(db, course, pct=90, phase="materializing")
 
+    # Visibilità delle fonti: filtro della bibliografia generata contro i
+    # documenti a fonte riservata, PRIMA di model_dump() così anche
+    # architecture_raw persiste filtrato. Try/except dedicato (fuori dai
+    # blocchi openai/materialize): l'esito deve essere lo stesso di un
+    # errore di materializzazione (status draft + errore visibile).
+    try:
+        dropped = course_architecture_service.filter_reserved_bibliography(
+            course, architecture
+        )
+    except Exception as exc:
+        course.architecture_error = str(exc)[:500]
+        course.status = "draft"
+        course.architecture_progress = 0
+        course.architecture_progress_phase = None
+        await write_audit(
+            db,
+            action="course.architecture.generation.failed",
+            actor_user_id=None,
+            organization_id=course.organization_id,
+            target_type="course",
+            target_id=str(course.id),
+            metadata={
+                "phase": "bibliography_filter",
+                "error": str(exc)[:500],
+                "attempts": course.architecture_attempts,
+            },
+        )
+        await db.commit()
+        log.warning(
+            "course_architecture_bibliography_filter_failed",
+            course_id=str(course.id),
+            error=str(exc),
+        )
+        return
+    if dropped:
+        await write_audit(
+            db,
+            action="course.architecture.bibliography_filtered",
+            actor_user_id=None,
+            organization_id=course.organization_id,
+            target_type="course",
+            target_id=str(course.id),
+            metadata={
+                "dropped": [
+                    {
+                        "title": item.get("title"),
+                        "authors": item.get("authors"),
+                        "source": item.get("source"),
+                    }
+                    for item in dropped
+                ],
+            },
+        )
+        log.info(
+            "course_architecture_bibliography_filtered",
+            course_id=str(course.id),
+            dropped=len(dropped),
+        )
+
     try:
         await course_architecture_service.materialize_architecture(
             db,

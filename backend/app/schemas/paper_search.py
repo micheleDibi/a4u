@@ -80,6 +80,11 @@ class PaperImportInput(BaseModel):
     """Body POST `/papers/import`. Lista di paper selezionati dal FE."""
 
     papers: list[PaperOut] = Field(min_length=1, max_length=50)
+    # Politica di citazione applicata all'intero batch (default: i paper
+    # nascono per essere citati).
+    citation_policy: Literal["citable", "content_only", "excluded"] = (
+        "citable"
+    )
 
 
 class PaperImportItemResultOut(BaseModel):

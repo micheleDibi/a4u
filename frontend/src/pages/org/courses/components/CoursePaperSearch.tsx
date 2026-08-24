@@ -19,6 +19,7 @@ import {
   type PaperSearchFilters,
   type PaperSearchResultsOut,
   type PaperType,
+  type CitationPolicy,
 } from "@/api/courses";
 import { Button } from "@/components/ui/button";
 import {
@@ -137,7 +138,7 @@ export function CoursePaperSearch({ orgId, courseId }: Props) {
 
   const importMut = useMutation({
     mutationFn: (papers: PaperOut[]) =>
-      coursesApi.papers.importMany(orgId, courseId, papers),
+      coursesApi.papers.importMany(orgId, courseId, papers, importPolicy),
     onSuccess: (data) => {
       toast.success(
         t("courses.papers.import.successDetail", {
@@ -233,6 +234,9 @@ export function CoursePaperSearch({ orgId, courseId }: Props) {
   };
 
   const selectedCount = selectedIds.size;
+  // Politica di citazione applicata all'intero batch di import (i paper
+  // nascono per essere citati: default "citable").
+  const [importPolicy, setImportPolicy] = useState<CitationPolicy>("citable");
   const isInitialLoading =
     searchMut.isPending && results.length === 0;
   const isLoadingMore =
@@ -492,6 +496,29 @@ export function CoursePaperSearch({ orgId, courseId }: Props) {
                     })}
                   </span>
                 </div>
+                {selectedCount > 0 && (
+                  <Select
+                    value={importPolicy}
+                    onValueChange={(v) =>
+                      setImportPolicy(v as CitationPolicy)
+                    }
+                  >
+                    <SelectTrigger className="h-8 w-44 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="citable">
+                        {t("courses.docs.citationPolicy.citable")}
+                      </SelectItem>
+                      <SelectItem value="content_only">
+                        {t("courses.docs.citationPolicy.contentOnly")}
+                      </SelectItem>
+                      <SelectItem value="excluded">
+                        {t("courses.docs.citationPolicy.excluded")}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
                 {selectedCount > 0 && (
                   <Button
                     onClick={onImportSelected}

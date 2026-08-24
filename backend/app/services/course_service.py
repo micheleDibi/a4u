@@ -721,6 +721,7 @@ async def add_document(
     course: Course,
     upload: UploadFile,
     actor_id: uuid.UUID,
+    citation_policy: str = "citable",
 ) -> CourseDocument:
     # Salva il file su disco; ritorna path relativo, filename stored, dimensione.
     public_path, filename_stored, size_bytes = (
@@ -738,6 +739,7 @@ async def add_document(
         size_bytes=size_bytes,
         uploaded_by_user_id=actor_id,
         summary_status="pending",
+        citation_policy=citation_policy,
     )
     db.add(doc)
     try:
@@ -762,6 +764,7 @@ async def add_document(
             "filename_original": doc.filename_original,
             "size_bytes": doc.size_bytes,
             "mime_type": doc.mime_type,
+            "citation_policy": doc.citation_policy,
         },
     )
     return doc
@@ -775,6 +778,7 @@ async def add_document_from_bytes(
     filename_original: str,
     mime_type: str,
     actor_id: uuid.UUID,
+    citation_policy: str = "citable",
 ) -> CourseDocument:
     """Sibling di `add_document` che riceve bytes invece di un
     `UploadFile`. Usato per importare paper scientifici scaricati da
@@ -799,6 +803,7 @@ async def add_document_from_bytes(
         size_bytes=size_bytes,
         uploaded_by_user_id=actor_id,
         summary_status="pending",
+        citation_policy=citation_policy,
     )
     db.add(doc)
     try:
@@ -823,8 +828,69 @@ async def add_document_from_bytes(
             "size_bytes": doc.size_bytes,
             "mime_type": doc.mime_type,
             "source": "external_import",
+            "citation_policy": doc.citation_policy,
         },
     )
+    return doc
+
+
+async def update_document_citation_policy(
+    db: AsyncSession,
+    *,
+    course: Course,
+    doc: CourseDocument,
+    citation_policy: str,
+    actor_id: uuid.UUID,
+) -> CourseDocument:
+    """Aggiorna la politica di citazione del documento (unico campo
+    mutabile post-create oltre ai `summary_*` scritti dal worker).
+
+    Sempre permesso, anche a contenuti già generati: la nuova policy
+    vale per le generazioni successive (i filtri in lettura sulla
+    bibliografia persistita coprono le rigenerazioni parziali).
+
+    Al passaggio a `content_only` scattano SCRUB + RI-ANALISI: i campi
+    identitari del summary vengono svuotati subito (i riassunti storici
+    possono nominare titolo/autori nella prosa) e il riassunto viene
+    ri-accodato al worker, che lo rigenera col prompt hardened
+    (identità solo nei campi dedicati). Il vecchio summary resta
+    visibile finché non viene sovrascritto (semantica del reprocess).
+    """
+    old_policy = doc.citation_policy
+    if citation_policy == old_policy:
+        return doc
+
+    doc.citation_policy = citation_policy
+    scrubbed = False
+    if citation_policy == "content_only":
+        if doc.summary:
+            doc.summary = {
+                **doc.summary,
+                "source_title": "",
+                "authors_and_references": [],
+            }
+            scrubbed = True
+        if doc.summary_status in ("ready", "failed"):
+            doc.summary_status = "pending"
+            doc.summary_error = None
+
+    await write_audit(
+        db,
+        action="course.document.citation_policy.update",
+        actor_user_id=actor_id,
+        organization_id=course.organization_id,
+        target_type="course_document",
+        target_id=str(doc.id),
+        metadata={
+            "course_id": str(course.id),
+            "filename_original": doc.filename_original,
+            "old": old_policy,
+            "new": citation_policy,
+            "summary_scrubbed": scrubbed,
+        },
+    )
+    await db.commit()
+    await db.refresh(doc)
     return doc
 
 

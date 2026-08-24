@@ -252,6 +252,10 @@ ALLINEAMENTO
 RIFERIMENTI
 
 - Cita i documenti di riferimento DOVE LI USI
+- `source = "documento_caricato"` SOLO per i documenti NOMINATI nella
+  sezione "Documenti di riferimento". L'eventuale "Materiale di
+  contesto aggiuntivo (non citabile)" non va MAI citato né menzionato
+  come fonte: usane i contenuti senza riferirne l'origine.
 - NON inventare bibliografia. Eventuali letture aggiuntive devono
   essere etichettate `source = "suggerimento_generale"`.
 

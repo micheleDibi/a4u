@@ -34,6 +34,7 @@ from app.core.course_phase_order import (
     advance_course_status,
     ensure_course_not_terminal,
 )
+from app.services import document_citation_guard
 from app.core.errors import ConflictError, NotFoundError
 from app.core.logging import get_logger
 from app.models.course import Course
@@ -191,12 +192,17 @@ async def _refresh_full(db: AsyncSession, course: Course) -> Course:
 # ---------------------------------------------------------------------------
 
 
-def _format_recommended_bibliography(lesson: CourseLesson) -> str:
+def _format_recommended_bibliography(
+    course: Course, lesson: CourseLesson
+) -> str:
     """Bibliografia consigliata della lezione introduttiva (§7.2 — il
-    discorso introduttivo legge i titoli per esteso)."""
+    discorso introduttivo legge i titoli per esteso). Le voci che
+    matchano documenti a fonte riservata sono filtrate in lettura."""
     if not lesson.is_introductory or not lesson.recommended_bibliography:
         return "(non applicabile)"
-    items = lesson.recommended_bibliography or []
+    items = document_citation_guard.reserved_filtered_bibliography(
+        course, lesson
+    )
     lines: list[str] = []
     for b in items:
         if not isinstance(b, dict):
@@ -278,7 +284,7 @@ def build_user_prompt(course: Course, lesson: CourseLesson) -> str:
         "",
         "## Bibliografia consigliata (se introduttiva)",
         "",
-        _format_recommended_bibliography(lesson),
+        _format_recommended_bibliography(course, lesson),
         "",
         "## Compito",
         "",

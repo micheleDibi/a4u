@@ -48,6 +48,7 @@ from app.services import (
     asset_validation_service,
     course_glossary_service,
     course_lesson_content_service,
+    document_citation_guard,
     openai_lesson_content_service,
 )
 from app.services.openai_client import OpenAINotConfiguredError
@@ -490,6 +491,70 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                     )
                 await db.commit()
                 return
+
+        # Visibilità delle fonti: filtro hard delle references che
+        # matchano documenti a fonte riservata (PRIMA di model_dump()
+        # così content_raw persiste filtrato) + scan SOFT della prosa
+        # (mai mutazione: solo warning + audit).
+        if not lesson.is_assessment:
+            reserved_index = document_citation_guard.build_identity_index(
+                list(course_full.documents)
+            )
+            if reserved_index:
+                kept_refs, dropped_refs = (
+                    document_citation_guard.filter_reference_items(
+                        [r.model_dump() for r in content_output.references],
+                        reserved_index,
+                    )
+                )
+                if dropped_refs:
+                    content_output.references = [
+                        type(content_output.references[0])(**r)
+                        for r in kept_refs
+                    ] if kept_refs else []
+                    await write_audit(
+                        db,
+                        action="course.lesson.content.references_filtered",
+                        actor_user_id=None,
+                        organization_id=course_full.organization_id,
+                        target_type="course_lesson",
+                        target_id=str(lesson.id),
+                        metadata={
+                            "course_id": str(course_full.id),
+                            "lesson_code": lesson.lesson_code,
+                            "dropped": [
+                                r.get("citation") for r in dropped_refs
+                            ],
+                        },
+                    )
+                prose = "\n".join(
+                    [content_output.introduction or ""]
+                    + [s.content or "" for s in content_output.sections]
+                    + [content_output.summary or ""]
+                )
+                leaks = document_citation_guard.scan_text_for_leaks(
+                    prose, reserved_index
+                )
+                if leaks:
+                    log.warning(
+                        "lesson_content_reserved_leak_in_prose",
+                        lesson_id=str(lesson.id),
+                        lesson_code=lesson.lesson_code,
+                        documents=leaks,
+                    )
+                    await write_audit(
+                        db,
+                        action="course.lesson.content.reserved_leak",
+                        actor_user_id=None,
+                        organization_id=course_full.organization_id,
+                        target_type="course_lesson",
+                        target_id=str(lesson.id),
+                        metadata={
+                            "course_id": str(course_full.id),
+                            "lesson_code": lesson.lesson_code,
+                            "documents": leaks,
+                        },
+                    )
 
         # Materializzazione + validazioni §6.4
         lesson.content_progress = 90

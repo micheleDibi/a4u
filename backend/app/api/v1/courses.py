@@ -6,7 +6,15 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, File, Query, Response, UploadFile, status
+from fastapi import (
+    APIRouter,
+    File,
+    Form,
+    Query,
+    Response,
+    UploadFile,
+    status,
+)
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
@@ -23,6 +31,7 @@ from app.schemas.course import (
     CourseCreateInput,
     CourseDocumentDetailOut,
     CourseDocumentOut,
+    CourseDocumentPolicyUpdate,
     CourseListItemOut,
     CourseListLessonsProgress,
     CourseOut,
@@ -535,6 +544,9 @@ async def upload_document(
     current: CurrentUser,
     file: Annotated[UploadFile, File(...)],
     _=require(P.COURSE_EDIT),
+    citation_policy: Annotated[
+        Literal["citable", "content_only", "excluded"], Form()
+    ] = "citable",
 ) -> CourseDocumentOut:
     await _ensure_org(db, org_id)
     granted = await resolve_permissions(db, user=current, organization_id=org_id)
@@ -546,7 +558,11 @@ async def upload_document(
         granted_permissions=granted,
     )
     doc = await course_service.add_document(
-        db, course=course, upload=file, actor_id=current.id
+        db,
+        course=course,
+        upload=file,
+        actor_id=current.id,
+        citation_policy=citation_policy,
     )
     return CourseDocumentOut.model_validate(doc)
 
@@ -610,6 +626,45 @@ async def reprocess_document(
     )
     doc = await course_service.reprocess_document(
         db, course=course, doc=doc, actor_id=current.id
+    )
+    return CourseDocumentOut.model_validate(doc)
+
+
+@router.patch(
+    "/{course_id}/documents/{doc_id}",
+    response_model=CourseDocumentOut,
+)
+async def update_document_policy(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    doc_id: uuid.UUID,
+    payload: CourseDocumentPolicyUpdate,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_EDIT),
+) -> CourseDocumentOut:
+    """Aggiorna la politica di citazione del documento (visibilità delle
+    fonti). Sempre permesso: la nuova policy vale per le generazioni
+    successive; al passaggio a `content_only` il riassunto viene
+    ripulito dei campi identitari e ri-accodato al worker."""
+    await _ensure_org(db, org_id)
+    granted = await resolve_permissions(db, user=current, organization_id=org_id)
+    course = await course_service.get_course(
+        db,
+        organization_id=org_id,
+        course_id=course_id,
+        current_user=current,
+        granted_permissions=granted,
+    )
+    doc = await course_service.get_document(
+        db, course_id=course_id, doc_id=doc_id
+    )
+    doc = await course_service.update_document_citation_policy(
+        db,
+        course=course,
+        doc=doc,
+        citation_policy=payload.citation_policy,
+        actor_id=current.id,
     )
     return CourseDocumentOut.model_validate(doc)
 
@@ -848,7 +903,11 @@ async def papers_import(
     metadata_count = 0
     for paper in payload.papers:
         result = await import_paper(
-            db, course=course, paper=paper, actor_id=current.id
+            db,
+            course=course,
+            paper=paper,
+            actor_id=current.id,
+            citation_policy=payload.citation_policy,
         )
         if result.mode == "pdf":
             pdf_count += 1

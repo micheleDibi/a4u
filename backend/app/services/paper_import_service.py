@@ -148,6 +148,7 @@ async def import_paper(
     course: Course,
     paper: PaperOut,
     actor_id: uuid.UUID,
+    citation_policy: str = "citable",
 ) -> PaperImportResult:
     """Importa un singolo paper come `CourseDocument`.
 
@@ -192,6 +193,7 @@ async def import_paper(
                 filename_original=f"{stem}.pdf",
                 mime_type="application/pdf",
                 actor_id=actor_id,
+                citation_policy=citation_policy,
             )
             return PaperImportResult(document=doc, mode="pdf")
         except ValidationAppError as exc:
@@ -213,5 +215,6 @@ async def import_paper(
         filename_original=f"{stem}.md",
         mime_type="text/markdown",
         actor_id=actor_id,
+        citation_policy=citation_policy,
     )
     return PaperImportResult(document=doc, mode="metadata")

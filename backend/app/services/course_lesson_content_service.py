@@ -45,6 +45,7 @@ from app.services.course_architecture_service import (
     _build_documents_context,
     _term_label,
 )
+from app.services import document_citation_guard
 from app.services.course_glossary_service import format_glossary_for_prompt
 
 log = get_logger("app.course_lesson_content")
@@ -137,11 +138,17 @@ def _format_next_lesson_summary(
     return "(Nessuna lezione successiva.)"
 
 
-def _format_recommended_bibliography(lesson: CourseLesson) -> str:
-    """Formatta `recommended_bibliography` (lista di dict) per il prompt."""
+def _format_recommended_bibliography(
+    course: Course, lesson: CourseLesson
+) -> str:
+    """Formatta `recommended_bibliography` (lista di dict) per il prompt.
+    Le voci che matchano documenti a fonte riservata sono filtrate in
+    lettura (il dato persistito resta intatto)."""
     if not lesson.is_introductory or not lesson.recommended_bibliography:
         return "(non applicabile)"
-    items = lesson.recommended_bibliography or []
+    items = document_citation_guard.reserved_filtered_bibliography(
+        course, lesson
+    )
     if not items:
         return "(non applicabile)"
     lines: list[str] = []
@@ -323,7 +330,7 @@ def build_user_prompt(course: Course, lesson: CourseLesson) -> str:
         f"È introduttiva: {str(lesson.is_introductory).lower()}",
         "",
         "Bibliografia consigliata (solo se introduttiva):",
-        _format_recommended_bibliography(lesson),
+        _format_recommended_bibliography(course, lesson),
         "",
         "Obiettivi formativi:",
         _format_learning_objectives(lesson),

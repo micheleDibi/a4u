@@ -67,12 +67,16 @@ Principi di progettazione:
 
 5. BIBLIOGRAFIA — REGOLA CRITICA: NON inventare titoli di libri,
    autori, editori o anni di pubblicazione. Usa SOLO testi:
-   (a) presenti nei documenti di riferimento forniti, oppure
+   (a) presenti nella sezione "Documenti di riferimento" (i documenti
+       NOMINATI, con riga "Fonte:"), oppure
    (b) testi di riferimento ampiamente noti del campo, di cui sei
        altamente certo. In questo secondo caso marca esplicitamente la
        voce con `confidence: "to_verify"` perché il docente possa
        confermare. Se non ne hai abbastanza per arrivare a 4 voci sicure,
        lascia meno voci ma TUTTE accurate.
+   L'eventuale "Materiale di contesto aggiuntivo (non citabile)" NON è
+   MAI una fonte bibliografica: usane i contenuti, ma non citarlo né
+   fare riferimento alla sua esistenza.
 
 6. GRANULARITÀ: ogni lezione copre 1-3 concetti principali. Distribuisci
    in modo che nessuna sia sovraccarica e nessuna troppo leggera.
