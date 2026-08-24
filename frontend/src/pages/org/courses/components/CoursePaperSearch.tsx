@@ -21,6 +21,7 @@ import {
   type PaperType,
   type CitationPolicy,
 } from "@/api/courses";
+import { CitationPolicyChip } from "./CitationPolicyPicker";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -497,27 +498,11 @@ export function CoursePaperSearch({ orgId, courseId }: Props) {
                   </span>
                 </div>
                 {selectedCount > 0 && (
-                  <Select
+                  <CitationPolicyChip
                     value={importPolicy}
-                    onValueChange={(v) =>
-                      setImportPolicy(v as CitationPolicy)
-                    }
-                  >
-                    <SelectTrigger className="h-8 w-44 text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="citable">
-                        {t("courses.docs.citationPolicy.citable")}
-                      </SelectItem>
-                      <SelectItem value="content_only">
-                        {t("courses.docs.citationPolicy.contentOnly")}
-                      </SelectItem>
-                      <SelectItem value="excluded">
-                        {t("courses.docs.citationPolicy.excluded")}
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
+                    onChange={setImportPolicy}
+                    prefix={t("courses.docs.citationPolicy.prefix")}
+                  />
                 )}
                 {selectedCount > 0 && (
                   <Button

@@ -24,16 +24,13 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { extractApiError } from "@/lib/errors";
 import { cn } from "@/lib/utils";
+import {
+  CitationPolicyCards,
+  CitationPolicyChip,
+} from "./CitationPolicyPicker";
 import { DocumentSummaryDialog } from "./DocumentSummaryDialog";
 
 interface Props {
@@ -78,10 +75,6 @@ export function CourseDocumentUploader({
   const [openSummary, setOpenSummary] = useState<CourseDocumentOut | null>(null);
   // Politica di citazione applicata ai file del prossimo upload (batch).
   const [uploadPolicy, setUploadPolicy] = useState<CitationPolicy>("citable");
-  const [policyChange, setPolicyChange] = useState<{
-    doc: CourseDocumentOut;
-    next: CitationPolicy;
-  } | null>(null);
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["courses", "detail", orgId, courseId] });
@@ -216,37 +209,13 @@ export function CourseDocumentUploader({
             if (inputRef.current) inputRef.current.value = "";
           }}
         />
-        <div className="mx-auto mt-3 flex max-w-md items-center justify-center gap-2">
-          <span className="text-xs text-muted-foreground">
-            {t("courses.docs.citationPolicy.label")}
-          </span>
-          <Select
-            value={uploadPolicy}
-            onValueChange={(v) => setUploadPolicy(v as CitationPolicy)}
-            disabled={disabled}
-          >
-            <SelectTrigger className="h-8 w-56 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="citable">
-                {t("courses.docs.citationPolicy.citable")}
-              </SelectItem>
-              <SelectItem value="content_only">
-                {t("courses.docs.citationPolicy.contentOnly")}
-              </SelectItem>
-              <SelectItem value="excluded">
-                {t("courses.docs.citationPolicy.excluded")}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        {uploadPolicy !== "citable" && (
-          <p className="mx-auto mt-1 max-w-md text-xs text-muted-foreground">
-            {t("courses.docs.citationPolicy.help")}
-          </p>
-        )}
       </div>
+
+      <CitationPolicyCards
+        value={uploadPolicy}
+        onChange={setUploadPolicy}
+        disabled={disabled}
+      />
 
       {documents.length > 0 ? (
         <ul className="divide-y divide-border rounded-lg border border-border">
@@ -272,44 +241,18 @@ export function CourseDocumentUploader({
                     {formatBytes(d.size_bytes)} · {d.mime_type}
                   </div>
                 </div>
-                {disabled ? (
-                  d.citation_policy !== "citable" && (
-                    <Badge variant="outline" className="shrink-0">
-                      {t(
-                        d.citation_policy === "content_only"
-                          ? "courses.docs.citationPolicy.contentOnly"
-                          : "courses.docs.citationPolicy.excluded",
-                      )}
-                    </Badge>
-                  )
-                ) : (
-                  <Select
+                {(!disabled || d.citation_policy !== "citable") && (
+                  <CitationPolicyChip
                     value={d.citation_policy}
-                    onValueChange={(v) =>
-                      setPolicyChange({
-                        doc: d,
-                        next: v as CitationPolicy,
-                      })
+                    readOnly={disabled}
+                    confirm
+                    docName={d.filename_original}
+                    pending={
+                      policyMut.isPending &&
+                      policyMut.variables?.doc.id === d.id
                     }
-                  >
-                    <SelectTrigger
-                      className="h-7 w-44 shrink-0 text-xs"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="citable">
-                        {t("courses.docs.citationPolicy.citable")}
-                      </SelectItem>
-                      <SelectItem value="content_only">
-                        {t("courses.docs.citationPolicy.contentOnly")}
-                      </SelectItem>
-                      <SelectItem value="excluded">
-                        {t("courses.docs.citationPolicy.excluded")}
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
+                    onChange={(next) => policyMut.mutate({ doc: d, next })}
+                  />
                 )}
                 <TooltipProvider>
                   <Tooltip>
@@ -440,25 +383,6 @@ export function CourseDocumentUploader({
           if (toReprocess) {
             reprocessMut.mutate(toReprocess.id);
             setToReprocess(null);
-          }
-        }}
-      />
-
-      <ConfirmDialog
-        open={!!policyChange}
-        title={t("courses.docs.citationPolicy.confirmTitle")}
-        message={t(
-          policyChange?.next === "content_only"
-            ? "courses.docs.citationPolicy.confirmContentOnly"
-            : "courses.docs.citationPolicy.confirmGeneric",
-          { name: policyChange?.doc.filename_original ?? "" },
-        )}
-        confirmLabel={t("common.confirm")}
-        onClose={() => setPolicyChange(null)}
-        onConfirm={() => {
-          if (policyChange) {
-            policyMut.mutate(policyChange);
-            setPolicyChange(null);
           }
         }}
       />
