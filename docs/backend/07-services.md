@@ -1252,7 +1252,7 @@ sintetica:
 
 | Service | Documentato in | Scopo |
 |---|---|---|
-| `course_service.py` | [Courses 01](../courses/01-data-model.md), [Courses 03](../courses/03-architecture-generation.md) | CRUD corso, list, dettaglio eager-loaded, upload documenti. Espone anche `add_document_from_bytes` (sibling di `add_document` che crea un `CourseDocument` da bytes invece che da `UploadFile`, usato dall'import paper — `course_service.py:746-804`) |
+| `course_service.py` | [Courses 01](../courses/01-data-model.md), [Courses 03](../courses/03-architecture-generation.md) | CRUD corso, list, dettaglio eager-loaded, upload documenti. In `update_course` il `payload.status` accetta solo `published`/`archived`; da terminale, un valore non terminale = riattivazione via `normalize_course_status_from_data` (valore richiesto ignorato, in audit come `requested`); altrimenti `409 invalid_status_transition`. Espone anche `add_document_from_bytes` (sibling di `add_document` che crea un `CourseDocument` da bytes invece che da `UploadFile`, usato dall'import paper — `course_service.py:746-804`) |
 | `course_taxonomy_service.py` | [Courses 01](../courses/01-data-model.md) | CRUD term tassonomie + auto-create on demand |
 | `course_document_worker.py` | [Courses 02](../courses/02-document-preprocessing.md) | Worker async pre-processing documenti (lifespan) |
 | `document_extraction_service.py` | [Courses 02](../courses/02-document-preprocessing.md) | Estrazione testo da PDF/DOCX/DOC/RTF/TXT/MD via `asyncio.to_thread` |
@@ -1288,7 +1288,7 @@ riassunti anche in [Courses 05](../courses/05-api-reference.md).
 | Service | Documentato in | Scopo |
 |---|---|---|
 | `course_architecture_service.py` | [Courses 03](../courses/03-architecture-generation.md) | Trigger generazione architettura, approve, rigenerazione |
-| `course_architecture_crud.py` | [Courses 04](../courses/04-manual-editing.md) | CRUD manuale moduli/lezioni con renumber + AI generate-lessons |
+| `course_architecture_crud.py` | [Courses 04](../courses/04-manual-editing.md) | CRUD manuale moduli/lezioni con renumber + AI generate-lessons. `_ensure_editable` **data-based** (niente `EDITABLE_STATUSES`): 409 su `{draft, architecture_pending, published, archived}` o generazioni in volo per-modulo/per-lezione. `regenerate_module_lessons` resetta `lessons_structure_status='empty'` + `approved_at=None` |
 | `course_architecture_worker.py` | [Courses 03](../courses/03-architecture-generation.md) | Worker async Fase 1 architettura (lifespan + ticker progress) |
 | `openai_architecture_service.py` | [Courses 03](../courses/03-architecture-generation.md) | Wrapper OpenAI architettura (Fase 1) — gpt-5.5 |
 | `openai_module_lessons_service.py` | [Courses 04](../courses/04-manual-editing.md) | Wrapper OpenAI lezioni di un modulo singolo (sync, ~20-30s) |
@@ -1297,7 +1297,7 @@ riassunti anche in [Courses 05](../courses/05-api-reference.md).
 
 | Service | Documentato in | Scopo |
 |---|---|---|
-| `course_lesson_structure_service.py` | [Courses 07](../courses/07-lesson-structure.md) | Orchestrazione + materializzazione + approve |
+| `course_lesson_structure_service.py` | [Courses 07](../courses/07-lesson-structure.md) | Orchestrazione + materializzazione + approve. Gate **per-modulo**: corso non terminale + rank ≥ `architecture_approved` + nessuna lezione del modulo con dispense (`module_has_content`); generate-all filtra gli eleggibili; approve-all tollerante (ignora gli `empty`) |
 | `course_lesson_structure_crud.py` | [Courses 07](../courses/07-lesson-structure.md) | Edit manuale dei 4 campi Fase 2 |
 | `course_lesson_structure_worker.py` | [Courses 07](../courses/07-lesson-structure.md) | Worker parallelo (cap=5 default) per modulo |
 | `openai_lesson_structure_service.py` | [Courses 07](../courses/07-lesson-structure.md) | Wrapper OpenAI Fase 2 con JSON schema strict |
@@ -1306,10 +1306,10 @@ riassunti anche in [Courses 05](../courses/05-api-reference.md).
 
 | Service | Documentato in | Scopo |
 |---|---|---|
-| `course_lesson_content_service.py` | [Courses 08](../courses/08-lesson-content.md) | Orchestrazione + 10 validazioni §6.4 + materializzazione + approve. Branch su `is_assessment`: `build_assessment_user_prompt`, `materialize_lesson_assessment` per le lezioni di verifica |
+| `course_lesson_content_service.py` | [Courses 08](../courses/08-lesson-content.md) | Orchestrazione + 10 validazioni §6.4 + materializzazione + approve. Gate **per-unità** (niente allow-set su `course.status`): corso non terminale + `ensure_lesson_structure_ready` (modulo `approved` + `section_outline` presente, assessment esenti); generate-all/missing filtrano in silenzio; approve-all tollerante (ignora le `empty`). Branch su `is_assessment`: `build_assessment_user_prompt`, `materialize_lesson_assessment` per le lezioni di verifica |
 | `course_lesson_content_crud.py` | [Courses 08](../courses/08-lesson-content.md) | Edit manuale `content_raw` + sync ref per asset rinominati + `update_lesson_assessment` (verifica delle competenze) |
-| `course_lesson_content_worker.py` | [Courses 08](../courses/08-lesson-content.md) | Worker parallelo (cap=3 default) per lezione + auto-trigger glossario. Genera anche le lezioni-verifica `is_assessment` |
-| `course_glossary_service.py` | [Courses 08](../courses/08-lesson-content.md) | Glossario corso (§10.1) — sync + ensure_glossary_ready |
+| `course_lesson_content_worker.py` | [Courses 08](../courses/08-lesson-content.md) | Worker parallelo (cap=3 default) per lezione + auto-trigger glossario + pre-check struttura (`phase="precheck_structure"`, failed non recuperabile). Genera anche le lezioni-verifica `is_assessment` |
+| `course_glossary_service.py` | [Courses 08](../courses/08-lesson-content.md) | Glossario corso (§10.1) — sync + ensure_glossary_ready. Gate: rank ≥ `architecture_approved` AND status ≠ `archived` (`published` ammesso) |
 | `openai_lesson_content_service.py` | [Courses 08](../courses/08-lesson-content.md) | Wrapper OpenAI Fase 3 + addendum §9.3 in rigenerazione + `generate_lesson_assessment` (verifica) |
 | `openai_glossary_service.py` | [Courses 08](../courses/08-lesson-content.md) | Wrapper OpenAI glossario (10-30 termini) |
 
@@ -1329,9 +1329,9 @@ riassunti anche in [Courses 05](../courses/05-api-reference.md).
 
 | Service | Documentato in | Scopo |
 |---|---|---|
-| `course_lesson_slides_service.py` | [Courses 10](../courses/10-lesson-slides.md) | Orchestrazione + 8 validazioni §7.4 + materializzazione + approve + reset PDF su rigenerazione |
+| `course_lesson_slides_service.py` | [Courses 10](../courses/10-lesson-slides.md) | Orchestrazione + 8 validazioni §7.4 + materializzazione + approve + reset PDF su rigenerazione. Gate **per-lezione**: corso non terminale + `content_status='approved'` (bulk eligible/missing su `approved`) |
 | `course_lesson_slides_crud.py` | [Courses 10](../courses/10-lesson-slides.md) | Edit manuale `slides_raw` + validazione allentata |
-| `course_lesson_slides_worker.py` | [Courses 10](../courses/10-lesson-slides.md) | Worker parallelo (cap=3 default) + auto-retry trasparente + atomic claim |
+| `course_lesson_slides_worker.py` | [Courses 10](../courses/10-lesson-slides.md) | Worker parallelo (cap=3 default) + auto-retry trasparente + atomic claim. Accetta ancora content `ready\|approved` (transitorio, stretta a `approved` a code svuotate) |
 | `openai_lesson_slides_service.py` | [Courses 10](../courses/10-lesson-slides.md) | Wrapper OpenAI Fase 4 con JSON schema + REGENERATION_SUFFIX §9.4 |
 | `course_lesson_slides_pdf_service.py` | [Courses 09](../courses/09-pdf-export.md) | Render PDF slide A4 portrait + slide split + Mermaid base64 + slide_template |
 | `course_lesson_slides_pdf_worker.py` | [Courses 09](../courses/09-pdf-export.md) | Worker parallelo (cap=2, riusa env `course_lesson_pdf_*`) |
@@ -1340,9 +1340,9 @@ riassunti anche in [Courses 05](../courses/05-api-reference.md).
 
 | Service | Documentato in | Scopo |
 |---|---|---|
-| `course_lesson_speech_service.py` | [Courses 11](../courses/11-lesson-speech.md) | Orchestrazione + 8 validazioni §8.5 (incl. TTS-safety) + materializzazione + approve |
+| `course_lesson_speech_service.py` | [Courses 11](../courses/11-lesson-speech.md) | Orchestrazione + 8 validazioni §8.5 (incl. TTS-safety) + materializzazione + approve. Gate **per-lezione** (speculare a Fase 4): corso non terminale + `slides_status='approved'` (bulk eligible/missing su `approved`) |
 | `course_lesson_speech_crud.py` | [Courses 11](../courses/11-lesson-speech.md) | Edit manuale `speech_raw` + auto-ricalcolo durata + TTS-safety |
-| `course_lesson_speech_worker.py` | [Courses 11](../courses/11-lesson-speech.md) | Worker parallelo (cap=3 default) + pre-check slides ready |
+| `course_lesson_speech_worker.py` | [Courses 11](../courses/11-lesson-speech.md) | Worker parallelo (cap=3 default) + pre-check slides `ready\|approved` (transitorio, stretta a `approved` a code svuotate) |
 | `openai_lesson_speech_service.py` | [Courses 11](../courses/11-lesson-speech.md) | Wrapper OpenAI Fase 5 + JSON schema + REGENERATION_SUFFIX §9.5 + `WORDS_PER_MINUTE` (130 IT / 150 EN) |
 | `course_lesson_speech_pdf_service.py` | [Courses 09](../courses/09-pdf-export.md) | Render PDF discorso A4 portrait per-slide grouping + format_timeline cumulativa |
 | `course_lesson_speech_pdf_worker.py` | [Courses 09](../courses/09-pdf-export.md) | Worker parallelo (cap=2, riusa env `course_lesson_pdf_*`) |

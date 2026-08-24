@@ -5,40 +5,36 @@ AI delle lezioni quando l'utente aggiunge un nuovo modulo.
 
 ## Stati ammessi
 
-CRUD manuale è permesso in **tutti gli stati stabili downstream** — non solo a
-livello di architettura, ma fino a corso ormai quasi pronto (video / avatar). La
-costante `EDITABLE_STATUSES` in `course_architecture_crud.py:56-69` elenca:
-
-| Stato | Note |
-|---|---|
-| `architecture_ready` / `architecture_approved` | Fase 1 |
-| `lessons_structure_ready` / `lessons_structure_approved` | Fase 2 |
-| `content_ready` / `content_approved` | Fase 3 |
-| `slides_ready` / `slides_approved` | Fase 4 |
-| `speech_ready` / `speech_approved` | Fase 5 |
-| `video_ready` | Fase 6 |
-| `avatar_video_ready` | Fase 6b |
+CRUD manuale è permesso in **tutti gli stati stabili** — non solo a livello di
+architettura, ma fino a corso ormai quasi pronto (video / avatar). Il check è
+**data-based**: la vecchia allow-set `EDITABLE_STATUSES` è stata rimossa (con il
+gating per-unità gli stati `<fase>_pending` di `course.status` sono "di
+soggiorno" — una fase può restare aperta a lungo — e non implicano worker in
+volo).
 
 L'architettura e le sub-tab restano quindi editabili anche a corso quasi pronto:
 l'utente può **tornare indietro** a correggere un titolo modulo, aggiungere una
 lezione o riordinare moduli senza essere bloccato. Lo **stale-detection**
 (`frontend/src/lib/staleness.ts`) segnala quando il downstream è da rigenerare —
 gli edit settano `architecture_modified_at` sul modulo (`_touch_module`,
-`course_architecture_crud.py:76-84`), che il frontend confronta con i timestamp
+`course_architecture_crud.py`), che il frontend confronta con i timestamp
 di generazione delle fasi successive.
 
-Stati **esclusi** esplicitamente:
+Casi **esclusi** esplicitamente:
 
-| Stato | Perché escluso |
+| Condizione | Perché esclusa |
 |---|---|
-| `draft` | Il corso non ha ancora un'architettura. |
-| `*_pending` (es. `architecture_pending`, `content_pending`, …) | I worker AI stanno attivamente scrivendo: race condition. |
-| `published` / `archived` | Stato terminale, non si tocca. |
+| `status ∈ {draft, architecture_pending}` | Il corso non ha ancora un'architettura / il worker Fase 1 la sta scrivendo. |
+| `status ∈ {published, archived}` | Stato terminale, non si tocca. |
+| Un modulo con `lessons_structure_status ∈ {pending, processing}` | Il worker Fase 2 sta scrivendo: race condition. |
+| Una lezione con content/slides/speech/video/avatar_video `∈ {pending, processing}` | Worker Fase 3-6b in volo sulla lezione. |
 
-`_ensure_editable(course)` (`course_architecture_crud.py:95-101`) solleva
-`ConflictError(code='architecture_not_editable')` se lo status non è in
-`EDITABLE_STATUSES` (vedi semantica `409` in
-[05 — API reference](05-api-reference.md)).
+`_ensure_editable(course)` (`course_architecture_crud.py`) solleva
+`ConflictError(code='architecture_not_editable')` in tutti questi casi (vedi
+semantica `409` in [05 — API reference](05-api-reference.md)). Il mirror FE è
+`ArchitectureSection.editable` (`CourseEditorPage.tsx`), che esclude anch'esso
+le generazioni in volo (content/slides/speech; video/avatar non sono in
+`CourseLessonOut`, quel caso residuo è coperto dal solo 409 del BE).
 
 > **Lo status non viene modificato** dagli edit manuali — sono ortogonali al
 > ciclo draft → pending → ready → approved.
@@ -90,7 +86,7 @@ Quando si fa reorder di moduli:
 async def regenerate_module_lessons(db, course, actor_id, module_id) -> Course
 ```
 
-1. `_ensure_editable(course)` — status in `EDITABLE_STATUSES` (vedi [Stati ammessi](#stati-ammessi))
+1. `_ensure_editable(course)` — check data-based (vedi [Stati ammessi](#stati-ammessi))
 2. Costruisce user prompt con `_build_module_lessons_user_prompt`:
    - Parametri corso (titolo, obiettivi, argomenti chiave, overview, razionale)
    - **Altri moduli del corso** (codice + titolo + descrizione + outline lezioni)
@@ -100,7 +96,11 @@ async def regenerate_module_lessons(db, course, actor_id, module_id) -> Course
 4. Su `OpenAINotConfiguredError` → `ValidationAppError` (admin error)
 5. Su `OpenAIModuleLessonsError` → `ValidationAppError` (`module_lessons_generation_failed`)
 6. **Sostituisce** le lezioni esistenti del modulo (delete cascata, ricrea con position 1..N)
-7. Audit `course.module.lessons.generated` con metadata (count, tokens, model)
+7. **Resetta la struttura Fase 2 del modulo**: `lessons_structure_status='empty'`
+   + `lessons_structure_approved_at=None` — le lezioni ricreate nascono senza i
+   4 JSONB di Fase 2, quindi il gate per-unità della Fase 3 richiede di
+   rigenerare/riapprovare la struttura del modulo prima delle dispense
+8. Audit `course.module.lessons.generated` con metadata (count, tokens, model)
 
 ## OpenAI module lessons — `openai_module_lessons_service.py`
 

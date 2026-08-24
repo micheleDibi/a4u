@@ -35,7 +35,13 @@ user prompt di Fase 3, e in futuro Fasi 5 e 6). Generato **automaticamente
 dal worker della Fase 3** al primo passaggio se `glossary_status='empty'`,
 oppure manualmente via `POST /glossary/regenerate`.
 
-State machine: `empty → processing → ready (+failed)`.
+State machine: `empty → processing → ready (+failed)`. Il valore
+`approved` del CHECK di `glossary_status` è **morto**: nessun codice lo
+setta (il gate del worker lo tollera solo per legacy).
+
+Gate di `regenerate_glossary`: rank di `course.status` ≥
+`architecture_approved` AND status ≠ `archived` (`published` ammesso) —
+sostituisce la vecchia allow-set enumerata, che ometteva stati validi.
 
 ## Schema dati (migration 0015)
 
@@ -241,7 +247,18 @@ per lezione del ~40%, qualità leggermente inferiore. Vedi
   - `format_glossary_for_prompt` (serializza in formato bullet per i
     prompt downstream)
 - `course_lesson_content_service.py` — orchestrazione Fase 3:
-  - `request_lesson_generation` / `request_all_lessons_generation`
+  - `request_lesson_generation` — gate **per-unità** (la vecchia allow-set
+    `VALID_COURSE_GENERATE_FROM_STATUSES` su `course.status` è stata
+    eliminata): corso non terminale (`ensure_course_not_terminal` →
+    `409 course_terminal_status`) + struttura del SOLO modulo della lezione
+    `approved` + struttura della lezione presente (`section_outline`;
+    le lezioni `is_assessment` sono esenti dal check di esistenza) —
+    `ensure_lesson_structure_ready` → `409 lessons_structure_not_approved` |
+    `409 lesson_structure_missing`.
+  - `request_all_lessons_generation` / `request_missing_lessons_generation` —
+    filtrano **in silenzio** le lezioni non eleggibili
+    (`lesson_structure_is_ready`); regressione esplicita
+    `course.status='content_pending'`.
   - `materialize_lesson_content` — applica le **10 validazioni §6.4**:
     1. `lesson_id` ↔ `lesson_code` match
     2. `section_id` univoci
@@ -253,7 +270,13 @@ per lezione del ~40%, qualità leggermente inferiore. Vedi
     8. `coverage_check.topics_covered` coerente con sections
     9. Asset orfani (referenziati ma non definiti) → warning soft
     10. Asset non referenziati nel testo → warning soft
-  - `approve_lesson_content` / `approve_all_lessons_content`
+  - `approve_lesson_content` / `approve_all_lessons_content` —
+    l'approve-all è **tollerante** (come quelli di slide/discorso): ignora
+    le lezioni `empty` (non ancora generate — normali nel flusso
+    per-unità), `409 not_all_lessons_ready` solo con lezioni
+    `pending/processing/failed`, `409 no_content_to_approve` se nessuna
+    lezione ha una dispensa generata, no-op idempotente se già tutte
+    `approved`.
   - `_recompute_course_content_status`
 - `course_lesson_content_crud.py` — edit manuale di `content_raw`
   (richiede status `ready`/`approved`). Validazioni allentate (solo
@@ -268,6 +291,11 @@ scoped a livello LEZIONE:
 - `_semaphore = asyncio.Semaphore(course_lesson_content_max_concurrency)`
   (default `3`, output 5x più grande di Fase 2)
 - Polling: `course_lesson_content_poll_interval_seconds` (default `4`)
+- **Pre-check struttura** (difesa in profondità del gate API): prima di
+  passare a `processing`, se `lesson_structure_is_ready` è falso (race con
+  una rigenerazione della struttura: task accodato fuori contesto) →
+  failure immediata **non recuperabile** con
+  `phase="precheck_structure"` + audit `course.lesson.content.failed`.
 - Glossary auto-trigger: al primo task del corso, se
   `glossary_status not in ('ready','approved')`, chiama sync
   `course_glossary_service.ensure_glossary_ready` (~10-20s).
@@ -288,9 +316,9 @@ scoped a livello LEZIONE:
 | Metodo | Path | Permesso | Effetto |
 |---|---|---|---|
 | `POST` | `/lessons/{lid}/content/generate` | `course:generate` | Set lezione `pending`. 202. |
-| `POST` | `/lessons-content/generate-all` | `course:generate` | Set tutte le lezioni `pending`. 202. |
+| `POST` | `/lessons-content/generate-all` | `course:generate` | Set le lezioni eleggibili `pending` (le altre saltate in silenzio). 202. |
 | `POST` | `/lessons/{lid}/content/approve` | `course:generate` | Approve lezione singola (richiede `ready`). |
-| `POST` | `/lessons-content/approve-all` | `course:generate` | Approve batch (richiede tutte `ready`). |
+| `POST` | `/lessons-content/approve-all` | `course:generate` | Approve batch tollerante (approva le `ready`, ignora le `empty`). |
 | `PATCH` | `/lessons/{lid}/content` | `course:edit` | CRUD manuale. |
 | `POST` | `/glossary/regenerate` | `course:generate` | Rigenera glossario sync. |
 
@@ -360,6 +388,10 @@ backend, schema e renderer di vista invariati.
 
 `CourseLessonContentView.tsx` (Tab 6 dell'editor):
 - Header con aggregate progress (0..100%) + pulsanti Generate/Approve all
+  ("Approva tutti" tollerante, mirror BE: visibile con ≥1 lezione `ready`
+  e nessuna `pending/processing/failed`)
+- Gating per-unità: empty-state **per-modulo** e CTA per-riga abilitate
+  solo se il modulo della lezione ha la struttura `approved`
 - **ETA + tempo medio per lezione** durante un batch attivo: `useBatchEta`
   (vedi [Frontend 08 — Hooks](../frontend/08-hooks.md)) deriva la velocità
   dai timestamp `content_generated_at` delle lezioni completate nella

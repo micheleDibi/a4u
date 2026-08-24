@@ -57,18 +57,25 @@ il processo. Va invocata in cima ai moduli che leggono config.
 ## `app/core/course_phase_order.py`
 
 **Scopo**: definire l'**ordine totale monotono** degli stati di
-`Course.status` e impedirne la regressione. La pipeline corsi avanza per
+`Course.status` e impedirne la regressione, più gli **helper del gating
+per-unità** delle Fasi 2-5. La pipeline corsi avanza per
 fasi sequenziali (architecture → lessons structure → content → slides →
 speech → video → avatar_video → published/archived); dentro la stessa fase
 vale `pending < ready < approved` (video/avatar_video non hanno `approved`,
 vedi `app/schemas/course.py`).
 
+> **Semantica**: col gating per-unità `Course.status` è un **indicatore**
+> di avanzamento (milestone monotona "fase massima raggiunta"), non un
+> lock — i gate di generazione P2-P6b leggono gli stati
+> per-lezione/per-modulo. Restano le regressioni esplicite dei bulk
+> generate (`course.status='<fase>_pending'`) come segnale.
+
 ### Costanti
 
 #### `COURSE_STATUS_RANK: dict[str, int]`
 
-Mappa ogni stato al suo rank intero (`draft=0` … `archived=21`,
-`course_phase_order.py:27-50`). È la **fonte di verità** dell'ordinamento
+Mappa ogni stato al suo rank intero (`draft=0` … `archived=21`).
+È la **fonte di verità** dell'ordinamento
 delle fasi:
 
 - usata da `advance_course_status` per il gating monotono lato backend;
@@ -81,33 +88,69 @@ delle fasi:
 > `CoursePhaseStepper.tsx`) sono tenuti allineati a mano. Aggiungendo o
 > rinumerando uno stato, aggiornare **entrambi**.
 
-> **Nota**: il gating di editabilità lato backend **non** usa questo rank.
-> `course_architecture_crud.EDITABLE_STATUSES`
-> (`course_architecture_crud.py:56-69`) è una whitelist letterale hard-coded
-> e il modulo non importa `course_phase_order`. Il ragionamento per-rank
-> sull'editabilità (es. "fase ≥ X") vive **solo nel frontend**
-> (`CoursePhaseStepper.tsx` + i `disabled` dei `TabsTrigger` in
-> `CourseEditorPage.tsx`).
+> **Nota**: il gating di editabilità lato backend
+> (`course_architecture_crud._ensure_editable`) **non** usa questo rank:
+> la vecchia whitelist `EDITABLE_STATUSES` è stata rimossa e il check è
+> **data-based** (status ∉ `{draft, architecture_pending, published,
+> archived}` + nessuna generazione per-modulo/per-lezione in volo). Lato
+> frontend il rank resta usato solo dove il dato per-unità non basta
+> (sub-tab "Struttura lezioni", `done` della fase media).
 
 ### Funzioni
 
 #### `advance_course_status(course: Course, new_status: str) -> None`
 
 Assegna `course.status = new_status` **solo se non è una regressione di
-fase**, ossia se `COURSE_STATUS_RANK[new_status] >= COURSE_STATUS_RANK[current]`
-(`course_phase_order.py:53-68`). Stati ignoti hanno rank `0`.
+fase**, ossia se `COURSE_STATUS_RANK[new_status] >= COURSE_STATUS_RANK[current]`.
+Stati ignoti hanno rank `0`.
 
 Chiamata dai 6 `_recompute_course_*_status` dei service di lezione
-(`course_lesson_{structure,content,slides,speech,video,avatar_video}_service.py`,
-es. `course_lesson_content_service.py:1083-1114`) e dal
-`course_duplication_service`. Ogni service ricalcola lo stato del corso in
+(`course_lesson_{structure,content,slides,speech,video,avatar_video}_service.py`)
+e dal `course_duplication_service`. Ogni service ricalcola lo stato del corso in
 base allo stato delle proprie lezioni, ma non può riportarlo indietro:
 previene il bug "approvo le slide → poi modifico/approvo un contenuto → il
 corso torna a `content_approved` → non posso più generare il discorso".
 
-Vedi [courses/04 — Manual editing](../courses/04-manual-editing.md) per la
-whitelist `EDITABLE_STATUSES` (definita esplicitamente, non derivata da
-questo ordinamento).
+#### `ensure_course_not_terminal(course: Course) -> None`
+
+`409 ConflictError(code='course_terminal_status')` se il corso è
+`published`/`archived`. Preserva l'esclusione che prima era implicita
+negli allow-set su `course.status` delle Fasi 2-5. **Non** applicato
+alle Fasi 6/6b (status quo: i media si possono completare anche a corso
+pubblicato).
+
+#### `module_of_lesson(course, lesson) -> CourseModule | None`
+
+Trova il modulo della lezione fra i moduli eager-loaded del corso
+(niente lazy-load: in sessione async esploderebbe).
+
+#### `lesson_structure_is_ready(course, lesson) -> bool`
+
+`True` se la lezione può entrare in Fase 3: il SUO modulo ha la
+struttura `approved` e la lezione ha i dati di Fase 2
+(`section_outline` presente; le lezioni `is_assessment` sono esenti dal
+check di esistenza). Usata dai filtri dei bulk generate P3 e dal
+pre-check del worker content.
+
+#### `ensure_lesson_structure_ready(course, lesson) -> None`
+
+Variante raising di `lesson_structure_is_ready`: `409
+lessons_structure_not_approved` (modulo non approvato) oppure `409
+lesson_structure_missing` (lezione senza `section_outline`).
+
+#### `normalize_course_status_from_data(course: Course) -> str`
+
+Deriva la **milestone massima** dagli stati per-modulo/per-lezione
+(replica le regole dei 6 `_recompute_course_*_status`: assessment
+incluse per content, escluse per slides/speech/video/avatar; prese in
+ordine di rank decrescente, la prima soddisfatta vince). Ritorna solo
+milestone stabili (mai `*_pending`, mai `published`/`archived`). Usata
+dalla riattivazione da `published`/`archived` in
+`course_service.update_course` e come riferimento di equivalenza logica
+della migrazione 0034.
+
+Vedi [courses/04 — Manual editing](../courses/04-manual-editing.md) per il
+check di editabilità data-based di `course_architecture_crud._ensure_editable`.
 
 ---
 

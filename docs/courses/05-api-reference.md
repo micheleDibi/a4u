@@ -93,6 +93,12 @@ taxonomies, architettura meta + progress).
 
 `course:edit`. Body parziale come `CourseUpdateInput`. Auto-save 1.5s debounce dal frontend.
 
+`payload.status` accetta **solo** `published`/`archived`. Da un corso
+`published`/`archived`, un valore non terminale = **riattivazione**: lo status
+viene ricalcolato con `normalize_course_status_from_data` (il valore richiesto
+è ignorato; nell'audit diff compare come `requested`). Ogni altro caso →
+`409 invalid_status_transition` (lo status è gestito dalla pipeline).
+
 ### `PATCH /orgs/{org_id}/courses/{course_id}/assignee`
 
 `course:assign`. Body `{assignee_user_id: uuid}`.
@@ -348,18 +354,29 @@ Granularità modulo. Vedi [07 — Lesson structure](07-lesson-structure.md).
 
 `course:generate`. Body `{regeneration_hint: string | null}` (max 2000 char).
 202 → `CourseOut`. Set `module.lessons_structure_status='pending'`. Worker
-parallelo dispatcha al prossimo tick.
+parallelo dispatcha al prossimo tick. Gate **per-modulo**: possibile anche a
+corso avanzato (es. modulo aggiunto tardi via CRUD architettura), purché le
+lezioni del modulo non abbiano ancora dispense.
 
 Errori:
-- `409 invalid_course_status` se `course.status` non è in
-  `architecture_approved | lessons_structure_*`.
+- `409 course_terminal_status` se il corso è `published`/`archived`.
+- `409 invalid_course_status` se `course.status` è sotto rank
+  `architecture_approved` (architettura non ancora approvata).
+- `409 module_has_content` se almeno una lezione del modulo ha già una
+  dispensa (`content_status != 'empty'`): la struttura non è più rigenerabile.
 - `404 module_not_found` se il modulo non appartiene al corso.
 
 ### `POST /orgs/{org_id}/courses/{course_id}/lessons-structure/generate-all`
 
 `course:generate`. Body `{regeneration_hint: string | null}`.
-202 → `CourseOut`. Set TUTTI i moduli a `pending`. Il worker parallelo
+202 → `CourseOut`. Set a `pending` i soli moduli **eleggibili** (senza lezioni
+con dispense; gli altri sono saltati in silenzio). Il worker parallelo
 elabora con cap di concorrenza.
+
+Errori:
+- `409 course_terminal_status` / `409 invalid_course_status` come sopra.
+- `409 no_modules_to_generate` se il corso non ha moduli.
+- `409 no_eligible_modules_for_structure` se nessun modulo è eleggibile.
 
 ### `POST /orgs/{org_id}/courses/{course_id}/modules/{module_id}/lessons-structure/approve`
 
@@ -368,15 +385,19 @@ elabora con cap di concorrenza.
 `lessons_structure_approved` se tutti gli altri moduli sono già `approved`).
 
 Errori:
-- `409 module_not_ready_for_approve` se lo stato non è `ready`.
+- `409 module_lessons_structure_not_ready` se lo stato non è `ready`.
 
 ### `POST /orgs/{org_id}/courses/{course_id}/lessons-structure/approve-all`
 
-`course:generate`. Solo se TUTTI i moduli sono in `ready`.
-200 → `CourseOut` con `status='lessons_structure_approved'`.
+`course:generate`. **Tollerante**: approva tutti i moduli `ready` ignorando gli
+`empty` (es. aggiunti tardi via CRUD architettura); no-op idempotente se sono
+già tutti `approved`. 200 → `CourseOut`.
 
 Errori:
-- `409 not_all_modules_ready` se almeno un modulo non è `ready`.
+- `409 not_all_modules_ready` se almeno un modulo è in
+  `pending/processing/failed`.
+- `409 no_structure_to_approve` se nessun modulo ha una struttura generata
+  (`ready/approved`).
 
 ### `PATCH /orgs/{org_id}/courses/{course_id}/lessons/{lesson_id}/structure`
 
@@ -460,18 +481,27 @@ Granularità lezione. Vedi [08 — Lesson content](08-lesson-content.md).
 
 `course:generate`. Body `{regeneration_hint: string | null}` (max 2000 char).
 202 → `CourseOut`. Set `lesson.content_status='pending'`. Worker parallelo
-(cap default 3) dispatcha al prossimo tick.
+(cap default 3) dispatcha al prossimo tick. Gate **per-unità**: nessun
+allow-set su `course.status`.
 
 Errori:
-- `409 invalid_lesson_status_for_content_generation` se la lezione non è
-  in stato compatibile (richiede modulo `lessons_structure_approved`).
+- `409 course_terminal_status` se il corso è `published`/`archived`.
+- `409 lessons_structure_not_approved` se la struttura del modulo della
+  lezione non è `approved`.
+- `409 lesson_structure_missing` se la lezione non ha `section_outline`
+  (es. creata a mano o ricreata da `regenerate_module_lessons`; le lezioni
+  `is_assessment` sono esenti da questo check).
+- `409 invalid_lesson_content_status` se `content_status` non è in un
+  valore rigenerabile.
 - `404 lesson_not_found`.
 
 ### `POST /orgs/{org_id}/courses/{course_id}/lessons-content/generate-all`
 
 `course:generate`. Body `{regeneration_hint: string | null}`. 202 →
-`CourseOut`. Set TUTTE le lezioni eligibili a `pending`. Il worker
-parallelo elabora con cap di concorrenza.
+`CourseOut`. Set a `pending` le sole lezioni **eleggibili** (modulo
+`approved` + struttura presente); le altre sono saltate in silenzio. Il
+worker parallelo elabora con cap di concorrenza. `409 no_lessons_to_generate`
+se il corso non ha lezioni o nessuna è eleggibile.
 
 ### `POST /orgs/{org_id}/courses/{course_id}/lessons/{lesson_id}/content/approve`
 
@@ -480,8 +510,15 @@ parallelo elabora con cap di concorrenza.
 
 ### `POST /orgs/{org_id}/courses/{course_id}/lessons-content/approve-all`
 
-`course:generate`. Solo se TUTTE le lezioni esportabili sono in `ready`.
-200 → `CourseOut` con `status='content_approved'`.
+`course:generate`. **Tollerante**: approva tutte le lezioni `ready` ignorando
+le `empty` (non ancora generate — normali nel flusso per-unità); no-op
+idempotente se sono già tutte `approved`. 200 → `CourseOut`.
+
+Errori:
+- `409 not_all_lessons_ready` se almeno una lezione è in
+  `pending/processing/failed`.
+- `409 no_content_to_approve` se nessuna lezione ha una dispensa generata
+  (`ready/approved`).
 
 ### `PATCH /orgs/{org_id}/courses/{course_id}/lessons/{lesson_id}/content`
 
@@ -536,6 +573,8 @@ Errori:
 
 `course:generate`. **Sync** (~10-20s, attende OpenAI). Restituisce
 `CourseOut` con `glossary_status='ready'` e `glossary_raw` popolato.
+Gate: rank di `course.status` ≥ `architecture_approved` AND status ≠
+`archived` (`published` ammesso), altrimenti `409 invalid_course_status`.
 
 Auto-trigger: il worker Fase 3 chiama internamente
 `ensure_glossary_ready` al primo task del corso se
@@ -551,26 +590,27 @@ Granularità lezione. Vedi [10 — Lesson slides](10-lesson-slides.md).
 202 → `CourseOut`. Set `lesson.slides_status='pending'`. Worker parallelo
 (cap default 3) dispatcha al prossimo tick.
 
-Pre-condizione: `lesson.content_status ∈ {ready, approved}` (servono le slide
-hanno bisogno di `content_raw` come input).
+Pre-condizione per-unità: `lesson.content_status = 'approved'` (dispensa della
+STESSA lezione approvata — prima bastava `ready`; nessun allow-set su
+`course.status`).
 
 **Side-effect**: se la lezione aveva un `slides_pdf_status` in `ready/failed`,
 viene resettato a `empty` (il PDF slide diventa obsoleto).
 
 Errori:
-- `409 invalid_course_status_for_slides` se `course.status` non ammette Fase 4.
-- `409 lesson_content_not_ready_for_slides` se la lezione non ha contenuto pronto.
+- `409 course_terminal_status` se il corso è `published`/`archived`.
+- `409 lesson_content_not_ready_for_slides` se la dispensa della lezione non è `approved`.
 
 ### `POST /orgs/{org_id}/courses/{course_id}/lessons-slides/generate-all`
 
 `course:generate`. Body `{regeneration_hint: string | null}`. 202 → `CourseOut`.
-Marca tutte le lezioni con `content_status ∈ {ready, approved}` come `pending`.
+Marca tutte le lezioni con `content_status = 'approved'` come `pending`.
 Reset `slides_pdf_status='empty'` per tutte.
 
 ### `POST /orgs/{org_id}/courses/{course_id}/lessons-slides/generate-missing`
 
 `course:generate`. 202 → `CourseOut`. Marca SOLO le lezioni con
-`slides_status='empty'` AND `content_status ∈ {ready, approved}`. Utile dopo
+`slides_status='empty'` AND `content_status = 'approved'`. Utile dopo
 aggiunta di una nuova lezione manuale.
 
 ### `POST /orgs/{org_id}/courses/{course_id}/lessons-slides/cancel-all`
@@ -613,24 +653,25 @@ Granularità lezione. Vedi [11 — Lesson speech](11-lesson-speech.md).
 202 → `CourseOut`. Set `lesson.speech_status='pending'`. Worker parallelo
 (cap default 3) dispatcha al prossimo tick.
 
-Pre-condizione: `lesson.slides_status ∈ {ready, approved}` (servono le slide
-come input alla generazione del discorso).
+Pre-condizione per-unità: `lesson.slides_status = 'approved'` (slide della
+STESSA lezione approvate — prima bastava `ready`; nessun allow-set su
+`course.status`).
 
 **Side-effect**: reset `speech_pdf_status='empty'` (PDF obsoleto).
 
 Errori:
-- `409 invalid_course_status_for_speech` se `course.status` non ammette Fase 5.
-- `409 lesson_slides_not_ready_for_speech` se la lezione non ha slide pronte.
+- `409 course_terminal_status` se il corso è `published`/`archived`.
+- `409 lesson_slides_not_ready_for_speech` se le slide della lezione non sono `approved`.
 
 ### `POST /orgs/{org_id}/courses/{course_id}/lessons-speech/generate-all`
 
 `course:generate`. Body `{regeneration_hint: string | null}`. 202 → `CourseOut`.
-Marca tutte le lezioni con `slides_status ∈ {ready, approved}` come `pending`.
+Marca tutte le lezioni con `slides_status = 'approved'` come `pending`.
 
 ### `POST /orgs/{org_id}/courses/{course_id}/lessons-speech/generate-missing`
 
 `course:generate`. 202 → `CourseOut`. Marca SOLO le lezioni con
-`speech_status='empty'` AND `slides_status ∈ {ready, approved}`.
+`speech_status='empty'` AND `slides_status = 'approved'`.
 
 ### `POST /orgs/{org_id}/courses/{course_id}/lessons-speech/cancel-all`
 
@@ -1047,18 +1088,30 @@ Errori:
 | Code | HTTP | Quando |
 |---|---|---|
 | `course_not_found` | 404 | UUID inesistente o non visibile per il chiamante |
-| `architecture_not_editable` | 409 | CRUD manuale fuori da `EDITABLE_STATUSES` (`backend/app/services/course_architecture_crud.py:56`): ammessi `architecture_ready/approved`, `lessons_structure_ready/approved`, `content_ready/approved`, `slides_ready/approved`, `speech_ready/approved`, `video_ready`, `avatar_video_ready`; esclusi `draft`, `*_pending`, `published`/`archived` |
-| `invalid_course_status` | 409 | Generate da status non ammesso |
+| `architecture_not_editable` | 409 | CRUD manuale con check data-based (`_ensure_editable`, `backend/app/services/course_architecture_crud.py`): status in `{draft, architecture_pending, published, archived}` OPPURE un modulo con struttura `pending/processing` OPPURE una lezione con content/slides/speech/video/avatar_video `pending/processing` |
+| `invalid_course_status` | 409 | Generate architettura (Fase 1) da status non ammesso; Fase 2 con rank < `architecture_approved`; glossario con rank < `architecture_approved` o corso `archived` |
+| `course_terminal_status` | 409 | Generate Fase 2-5 su corso `published`/`archived` (non applicato a Fase 6/6b) |
+| `invalid_status_transition` | 409 | PATCH corso con `payload.status` non terminale a corso non terminale (via API si può solo pubblicare, archiviare o riattivare) |
 | `invalid_reorder` | 422 | `ids` non corrisponde all'insieme attuale |
 | `module_not_found` / `lesson_not_found` | 404 | |
 | `module_lessons_generation_failed` | 422 | Errore OpenAI lato generazione lezioni |
 | `lessons_structure_not_editable` | 409 | PATCH lezione fuori da modulo `ready/approved` |
-| `module_not_ready_for_approve` | 409 | Approve modulo che non è in `ready` |
-| `not_all_modules_ready` | 409 | Approve-all con almeno un modulo non in `ready` |
+| `module_lessons_structure_not_ready` | 409 | Approve modulo che non è in `ready` |
+| `module_has_content` | 409 | Generate struttura di un modulo con lezioni che hanno già dispense (`content_status != 'empty'`) |
+| `no_modules_to_generate` | 409 | Generate-all struttura su corso senza moduli |
+| `no_eligible_modules_for_structure` | 409 | Generate-all struttura senza moduli eleggibili (tutte le lezioni hanno già dispense) |
+| `not_all_modules_ready` | 409 | Approve-all con almeno un modulo in `pending/processing/failed` (gli `empty` sono ignorati) |
+| `no_structure_to_approve` | 409 | Approve-all struttura senza alcun modulo `ready/approved` |
 | `lessons_structure_generation_failed` | 422 | Errore OpenAI lato struttura lezioni (raro: i fail sincroni sono rari, di solito ricadono in `failed` lato modulo) |
 | `openai_not_configured` | 422 | `OPENAI_API_KEY` non impostata |
 | `lesson_content_not_editable` | 409 | PATCH content fuori da `ready/approved` |
-| `invalid_lesson_status_for_content_generation` | 409 | Generate content da modulo non `lessons_structure_approved` |
+| `lessons_structure_not_approved` | 409 | Generate content con struttura del modulo della lezione non `approved` |
+| `lesson_structure_missing` | 409 | Generate content su lezione senza `section_outline` (le `is_assessment` sono esenti) |
+| `invalid_lesson_content_status` | 409 | Generate content da `content_status` non rigenerabile |
+| `no_lessons_to_generate` | 409 | Generate-all content: corso senza lezioni o nessuna eleggibile |
+| `no_missing_lessons` | 409 | Generate-missing content senza lezioni `empty` eleggibili |
+| `not_all_lessons_ready` | 409 | Approve-all content con almeno una lezione in `pending/processing/failed` (le `empty` sono ignorate) |
+| `no_content_to_approve` | 409 | Approve-all content senza alcuna lezione `ready/approved` |
 | `lesson_content_generation_failed` | 422 | Errore OpenAI lato content (sync) |
 | `glossary_generation_failed` | 422 | Errore OpenAI lato glossario |
 | `invalid_lesson_content_status_for_pdf` | 409 | Export PDF da `content_status` ≠ ready/approved |
@@ -1068,8 +1121,7 @@ Errori:
 | `pdf_file_missing` | 404 | File PDF mancante sul filesystem (DB ha `pdf_path` ma il file è stato rimosso) |
 | `pdf_template_not_found` | 404 | `pdf_template_id` query param non appartiene all'org del corso |
 | `slide_template_not_found` | 404 | `pdf_template_id` query param (per slide PDF) non appartiene all'org come `slide_template` |
-| `invalid_course_status_for_slides` | 409 | Generate slide da course.status non ammesso (Fase 4) |
-| `lesson_content_not_ready_for_slides` | 409 | Generate slide su lezione senza content ready/approved |
+| `lesson_content_not_ready_for_slides` | 409 | Generate slide su lezione con dispensa non `approved` |
 | `lesson_slides_not_editable` | 409 | PATCH slide fuori da `ready/approved` |
 | `lesson_slides_not_ready` | 409 | Approve slide su lezione non in `ready` |
 | `lesson_slides_id_mismatch` | 422 | Output AI ha `lesson_id` diverso dal `lesson_code` atteso |
@@ -1085,8 +1137,7 @@ Errori:
 | `no_eligible_lessons_for_slides_pdf` | 409 | Export-all PDF slide senza lezioni esportabili |
 | `slides_pdf_not_ready` | 404 | Download PDF slide su `slides_pdf_status` ≠ ready |
 | `slides_pdf_file_missing` | 404 | File PDF slide mancante |
-| `invalid_course_status_for_speech` | 409 | Generate discorso da course.status non ammesso (Fase 5) |
-| `lesson_slides_not_ready_for_speech` | 409 | Generate discorso su lezione senza slide ready/approved |
+| `lesson_slides_not_ready_for_speech` | 409 | Generate discorso su lezione con slide non `approved` |
 | `lesson_speech_not_editable` | 409 | PATCH discorso fuori da `ready/approved` |
 | `lesson_speech_not_ready` | 409 | Approve discorso su lezione non in `ready` |
 | `lesson_speech_id_mismatch` | 422 | Output AI con `lesson_id` errato |

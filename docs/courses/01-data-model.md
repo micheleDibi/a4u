@@ -26,7 +26,7 @@ Tabella principale del corso. Snapshot dei parametri della org al momento della 
 | `open_questions_count` | smallint | NOT NULL, CHECK `>= 0` | snapshot |
 | `assignee_user_id` | UUID | FK `users.id` RESTRICT | docente assegnato |
 | `created_by_user_id` | UUID | FK `users.id` SET NULL, nullable | |
-| `status` | str(40) | NOT NULL, default `draft`, CHECK ∈ 22 valori | state machine pipeline AI |
+| `status` | str(40) | NOT NULL, default `draft`, CHECK ∈ 22 valori | indicatore di avanzamento pipeline AI (milestone monotona, non un lock) |
 | 8 × `*_term_id` | UUID | FK `course_taxonomy_term.id` SET NULL, nullable | tassonomie |
 | `course_overview` | text | nullable | output Fase 1 (overview generale) |
 | `pedagogical_rationale` | text | nullable | output Fase 1 |
@@ -59,7 +59,7 @@ avatar_video_pending, avatar_video_ready,
 published, archived
 ```
 
-(22 valori; `slides_approved` migration 0019, `speech_approved` migration 0023, i 4 stati `video_*` / `avatar_video_*` aggiunti al CHECK `ck_course_status_valid` dalla migration 0030 — video e avatar_video **non hanno** `approved`). Il rank totale monotòno è in `core/course_phase_order.COURSE_STATUS_RANK`.
+(22 valori; `slides_approved` migration 0019, `speech_approved` migration 0023, i 4 stati `video_*` / `avatar_video_*` aggiunti al CHECK `ck_course_status_valid` dalla migration 0030 — video e avatar_video **non hanno** `approved`). Il rank totale monotòno è in `core/course_phase_order.COURSE_STATUS_RANK`. `COURSE_STATUSES` e il `CheckConstraint ck_course_status_valid` dichiarati in `models/course.py` elencano ora tutti i 22 valori (drift sanato: il modello ne dichiarava 18, senza `video_pending/ready` e `avatar_video_pending/ready` che in DB c'erano già dalla 0030).
 
 I valori per le Fasi 2-6b (`lessons_structure_*`, `content_*`, `slides_*`, `speech_*`, `video_*`, `avatar_video_*`) sono **derivati** dagli stati per-modulo (Fase 2) o per-lezione (Fasi 3-6b). Le transizioni sono gestite dai service:
 
@@ -71,6 +71,14 @@ I valori per le Fasi 2-6b (`lessons_structure_*`, `content_*`, `slides_*`, `spee
 - Fase 6b → `course_lesson_avatar_video_service._recompute_course_avatar_video_status`
 
 Regola comune (Fasi 2-5): almeno 1 in `pending|processing|failed` → `*_pending`; tutte in `ready|approved` (almeno 1 `ready`) → `*_ready`; tutte in `approved` → `*_approved`. Video/avatar (Fasi 6/6b) considerano solo le lezioni non-assessment, non hanno `approved` e non regrediscono (no-op) se tutte le lezioni sono `cancelled`/`empty`.
+
+> **Semantica**: con il gating per-unità `course.status` è un **indicatore**
+> ("fase massima raggiunta", avanzato via `advance_course_status`), non un
+> lock — i gate di generazione P2-P6b leggono gli stati per-modulo/per-lezione.
+> `normalize_course_status_from_data` (`core/course_phase_order.py`) deriva la
+> milestone massima dai dati: usata dalla riattivazione da `published`/`archived`
+> e come riferimento della migration 0034, che ha normalizzato una tantum i
+> corsi con status rimasto indietro rispetto ai dati.
 
 ### Indici
 

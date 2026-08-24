@@ -154,19 +154,22 @@ restano le stesse, raggruppate per fase:
 - **Architettura** (`architecture, lessons-structure`)
   5. **Architettura** — solo edit, AI Generate/Approve + view CRUD
   6. **Struttura lezioni** — `disabled` finché `isCourseAtLeast(course.status, "architecture_approved")`. AI batch/per-modulo + edit manuale.
-- **Contenuti** (`lesson-content, lesson-slides, lesson-speech`)
-  7. **Contenuti lezioni** — `disabled` finché `isCourseAtLeast(course.status, "lessons_structure_approved")`. AI batch/per-lezione (Fase 3) + glossario + **export PDF testo** (§7).
-  8. **Slide** — `disabled` finché `isCourseAtLeast(course.status, "content_ready")`. AI batch/per-lezione (Fase 4) + edit manuale + **export PDF slide**.
-  9. **Discorso** — `disabled` finché nessuna lezione ha `slides_status ∈ {ready, approved}`. AI batch/per-lezione (Fase 5) + edit manuale + **export PDF discorso**.
+- **Contenuti** (`lesson-content, lesson-slides, lesson-speech`) — gating **per-unità** (data-based):
+  7. **Contenuti lezioni** — `disabled` finché nessun modulo ha `lessons_structure_status='approved'` (`anyModuleStructureApproved`). AI batch/per-lezione (Fase 3) + glossario + **export PDF testo** (§7).
+  8. **Slide** — `disabled` finché nessuna lezione ha `content_status='approved'`. AI batch/per-lezione (Fase 4) + edit manuale + **export PDF slide**.
+  9. **Discorso** — `disabled` finché nessuna lezione ha `slides_status='approved'`. AI batch/per-lezione (Fase 5) + edit manuale + **export PDF discorso**.
 - **Media** (`lesson-video, lesson-avatar-video`)
   10. **Video** (`lesson-video`) — `disabled` finché nessuna lezione ha `speech_status='approved'` AND `slides_status='approved'`. Generazione video MP4 (Fase 6).
   11. **Video con avatar** (`lesson-avatar-video`) — stesso gating del tab Video. Generazione del video con avatar parlante (Fase 6b).
 
 `PHASES` (da `CoursePhaseStepper.tsx`) enumera le 4 fasi e il loro mapping
 fase→tab; `TAB_ORDER` enumera le sub-tab e `TabId` ne è il tipo derivato. Il
-gating delle sub-tab "Struttura lezioni", "Contenuti" e "Slide" usa ora
-`isCourseAtLeast(course.status, milestone)` (basato su `COURSE_STATUS_RANK`)
-al posto delle lunghe whitelist inline di `course.status` precedenti. La sub-tab
+gating delle sub-tab della fase Contenuti è **data-based** sugli stati
+per-modulo/per-lezione (col gating per-unità `course.status` è un indicatore,
+non un lock — le vecchie whitelist inline omettevano tra l'altro
+`slides_approved`/`speech_approved`/`video_*`/`avatar_*`); solo "Struttura
+lezioni" usa ancora `isCourseAtLeast(course.status, "architecture_approved")`
+(basato su `COURSE_STATUS_RANK`). La sub-tab
 attiva è persistita per courseId in localStorage
 (`course-editor-tab:{courseId}`); al rientro lo stepper si posiziona sulla fase
 che contiene quella tab. Le sub-tab disabled restano visibili ma greyed-out
@@ -177,7 +180,7 @@ finché la pre-condizione a monte non è soddisfatta.
 Stepper orizzontale delle 4 macro-fasi (`CoursePhaseStepper`) + helper di
 gating condivisi con `CourseEditorPage`.
 
-- **`PHASES`** (`CoursePhaseStepper.tsx:45`): array readonly delle 4 fasi, ognuna
+- **`PHASES`** (`CoursePhaseStepper.tsx`): array readonly delle 4 fasi, ognuna
   con `id`, `labelKey` (i18n `courses.phases.{id}`) e l'elenco delle `tabs`:
 
   | Fase | `id` | sub-tab |
@@ -189,28 +192,38 @@ gating condivisi con `CourseEditorPage`.
 
   `PhaseId` è il tipo derivato `(typeof PHASES)[number]["id"]`.
 
-- **`COURSE_STATUS_RANK`** (`CoursePhaseStepper.tsx:9`): mirror 1:1 di
+- **`COURSE_STATUS_RANK`** (`CoursePhaseStepper.tsx`): mirror 1:1 di
   `backend/app/core/course_phase_order.py:COURSE_STATUS_RANK` — mappa i **22**
   stati del corso a un rank `0..21` (`draft=0` … `published=20`, `archived=21`).
   **Invariante**: la tabella esiste in due posti (BE + FE) e va tenuta allineata
   a mano; aggiungendo un nuovo stato va aggiunto in entrambi i lati.
 
-- **`isCourseAtLeast(status, milestone)`** (`:39`): `true` se `status` ha
+- **`isCourseAtLeast(status, milestone)`**: `true` se `status` ha
   raggiunto o superato `milestone` nella pipeline (`RANK[status] >= RANK[milestone]`;
-  status sconosciuto → `-1`, milestone sconosciuta → `Infinity`). È il primitivo
-  di gating riusato sia per i `disabled` dei `TabsTrigger` sia per gli stati di fase.
+  status sconosciuto → `-1`, milestone sconosciuta → `Infinity`). Usato per il
+  gate della sub-tab "Struttura lezioni" e per il `done` della fase media.
 
-- **`phaseOfTab(tabId)`** (`:71`): risale la fase che contiene una sub-tab;
+- **`anyModuleStructureApproved(course)`**: `true` se almeno un modulo ha
+  `lessons_structure_status === "approved"` — da lì in poi le sue lezioni
+  possono entrare in Fase 3 (gating per-unità). Export riusato da
+  `CourseEditorPage` per la sub-tab Dispense e il bottone wizard.
+
+- **`phaseOfTab(tabId)`**: risale la fase che contiene una sub-tab;
   fallback `setup`.
 
-- **`computePhaseStatus(phaseId, course, setupLocked)`** (`:80`): deriva lo stato
-  per-fase `PhaseStatus = "done" | "in_progress" | "locked" | "idle"`:
+- **`computePhaseStatus(phaseId, course, setupLocked)`**: deriva lo stato
+  per-fase `PhaseStatus = "done" | "in_progress" | "locked" | "idle"`
+  in modo **data-based**:
   - **setup**: `done` se `setupLocked`, altrimenti `in_progress`.
-  - **architecture**: `locked` se non `setupLocked`; `done` sse
-    `isCourseAtLeast(s, "lessons_structure_approved")`; altrimenti `in_progress`.
-  - **content**: `locked` se non `setupLocked` o se non
-    `isCourseAtLeast(s, "lessons_structure_approved")`; `done` sse tutte le
-    lezioni hanno `speech_status === "approved"`; altrimenti `in_progress`.
+  - **architecture**: `locked` se non `setupLocked`; `done` sse TUTTI i
+    moduli hanno `lessons_structure_status === "approved"` (equivale a
+    `lessons_structure_approved` nei corsi sani, ma resta onesto con
+    moduli aggiunti tardi o strutture rigenerate); altrimenti `in_progress`.
+  - **content**: `locked` se non `setupLocked` o se nessun modulo è
+    `approved` (`anyModuleStructureApproved`); `done` sse tutte le lezioni
+    **non-assessment** hanno `speech_status === "approved"` (bugfix: le
+    assessment restano `empty` per sempre e rendevano la fase mai
+    completabile); altrimenti `in_progress`.
   - **media**: `locked` se non `setupLocked` o se nessuna lezione ha
     `speech_status === "approved" && slides_status === "approved"`; `done` sse
     `isCourseAtLeast(s, "published")`; altrimenti `in_progress`.
@@ -386,7 +399,11 @@ Dipendenze: `katex` + `@types/katex`. CSS importato da `katex/dist/katex.min.css
 ## `CourseArchitectureView.tsx`
 
 Vista + CRUD inline dell'architettura. Presa in carico da `ArchitectureSection`
-in `CourseEditorPage` (gated su `editable = canEdit && status ∈ {ready, approved}`).
+in `CourseEditorPage` (gated su `editable` **data-based**, mirror di
+`_ensure_editable` BE: `canEdit` + status fuori da
+`{draft, architecture_pending, published, archived}` + **nessuna generazione
+in volo** — struttura modulo o content/slides/speech di una lezione in
+`pending/processing`).
 
 Stati di rendering:
 
@@ -486,7 +503,8 @@ Layout:
 
 - **Header card**: titolo, descrizione, pulsante "Genera/Rigenera struttura per
   tutti i moduli" (gated `canGenerate`, disabled durante batch attivo) +
-  "Approva tutto" (visibile quando tutti i moduli sono `ready`).
+  "Approva tutto" **tollerante** (mirror BE: visibile con almeno un modulo
+  `ready` e nessuno in `pending/processing/failed`; gli `empty` sono ignorati).
 - **Aggregate progress bar** (sempre visibile durante batch o quando esistono
   moduli in lavorazione):
   - Etichetta `{n_completed}/{n_total} moduli completati ({percent}%)`
@@ -623,6 +641,9 @@ Layout:
   - Badge `LessonContentStatusBadge` + `LessonPdfStatusBadge` (entrambi
     funzioni interne a `CourseLessonContentView.tsx`, non file separati)
   - Bottoni contestuali content (Generate / Regenerate / Retry / Approve / Edit)
+    — le CTA di generazione per-riga richiedono il modulo della lezione con
+    struttura `approved` (gating per-unità); i moduli non approvati mostrano
+    un empty-state per-modulo
   - Bottoni contestuali PDF (Esporta PDF | Scarica PDF | Rigenera PDF)
   - Progress bar live durante content generation o PDF rendering
 - **Header del modulo** — quando TUTTE le lezioni del modulo hanno
@@ -784,7 +805,8 @@ Tab "Discorso" del wizard. Mirror strutturale di `CourseLessonSlidesView` ma
 scoped sui campi `speech_*` e `speech_pdf_*`.
 
 Pre-condizione: empty state se `eligibleForGen === 0` (nessuna lezione con
-`slides_status ∈ ready/approved`) — invita a tornare alla Fase 4.
+`slides_status = 'approved'` — `approved` secco, mirror del gate BE) — invita
+ad approvare prima le slide (i18n `courses.lessonsSpeech.slidesNotReady`).
 
 Header e per-lezione row come Fase 4. CTA: Genera/Rigenera/Approva/Edit + Esporta PDF/Scarica PDF.
 

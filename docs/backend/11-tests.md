@@ -33,16 +33,20 @@ In CI (GitHub Actions) `DATABASE_URL` viene sovrascritta dal workflow.
 
 ### Fixture
 
-#### `event_loop` (session-scope)
-
-Crea un event loop dedicato per la sessione di test (richiesta da
-`pytest-asyncio` in modo `auto`).
+> **Nota (pytest-asyncio ≥ 1.0)**: la vecchia fixture override
+> `event_loop` non esiste più — è stata rimossa. Il loop condiviso di
+> sessione (necessario all'engine session-scope) si dichiara in
+> `pyproject.toml`: `asyncio_default_fixture_loop_scope = "session"` +
+> `asyncio_default_test_loop_scope = "session"`.
 
 #### `_engine` (session-scope, async)
 
 Crea un engine SQLAlchemy async, abilita `citext`, droppa+ricrea tutto lo
 schema all'inizio della sessione, droppa al teardown. **Riutilizzato** da
-tutti i test.
+tutti i test. Importa `app.models` come modulo (`import app.models`) per
+registrare i metadata di tutti i modelli — il vecchio
+`from app.models import *` era illegale a livello di funzione
+(`SyntaxError`).
 
 #### `db` (function-scope, async)
 
@@ -69,7 +73,9 @@ Crea un `AsyncClient` collegato all'app.
 #### `random_email`
 
 Stringa email randomica per ciascun test che ne ha bisogno
-(`f"user-{uuid.uuid4().hex[:8]}@a4u.local"`).
+(`f"user-{uuid.uuid4().hex[:8]}@a4u-tests.it"`). Il dominio è
+`@a4u-tests.it` (non più `.local`): `email-validator` 2.3 rifiuta i TLD
+speciali come `.local`.
 
 ---
 
@@ -124,6 +130,60 @@ Test end-to-end via HTTP.
   5. `GET /auth/me` → 401 (cookie cancellato/refresh revocato).
 - `test_login_invalid_credentials(client, random_email)`:
   - `POST /auth/login` con utente inesistente e password sbagliata → 401.
+
+---
+
+## `tests/course_builders.py`
+
+Builder condiviso per i test del dominio corsi: `build_course(db, ...)`
+crea org + corso + moduli + lezioni in un colpo solo, con stati
+configurabili per fase (`status`, `module_status`, `content_status`,
+`slides_status`, `speech_status`, `with_structure`, `with_assessment`,
+…) + helper `find_lesson`.
+
+---
+
+## `tests/test_course_status_model.py`
+
+Coerenza del modello status: la tuple `COURSE_STATUSES` di
+`models/course.py` è 1:1 con `COURSE_STATUS_RANK` e il CHECK
+`ck_course_status_valid` accetta tutti i **22** valori (regressione del
+drift 18→22 sanato).
+
+---
+
+## `tests/test_course_pipeline_gates.py`
+
+Gate **per-unità** delle Fasi 2-5 (P3: rigenerazione oltre la fase,
+corso terminale, gate sul SOLO modulo della lezione, struttura mancante,
+generate-all che filtra; P2: modulo vergine generabile a corso avanzato,
+`module_has_content`, reset di `regenerate_module_lessons`; P4/P5: gate
+`approved` secco, filtri bulk, assessment escluse; monotonia dei
+recompute).
+
+---
+
+## `tests/test_course_collateral_gates.py`
+
+Gate collaterali: glossario (rank ≥ `architecture_approved`, `archived`
+bloccato), `_ensure_editable` data-based del CRUD architettura
+(editabile a `content_pending`, bloccato con generazioni in volo o
+`published`), approve-all tolleranti (content e moduli),
+`update_course` status (publish/archive, valori arbitrari → 409
+`invalid_status_transition`, riattivazione ricalcolata) e
+`normalize_course_status_from_data`.
+
+---
+
+## `tests/test_migration_0034_normalization.py`
+
+**Equivalenza logica della migrazione 0034**: carica il modulo della
+migrazione via `importlib` ed esegue i suoi UPDATE su corsi costruiti
+con `course_builders`, verificando che il risultato coincida con
+`normalize_course_status_from_data` (corso regredito → milestone
+derivata; corso di sole assessment non promosso vacuamente; parziali
+fermi; target di duplicazione skippati; `published`/`archived` intatti;
+idempotenza).
 
 ---
 

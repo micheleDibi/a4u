@@ -592,6 +592,47 @@ esistenti (nullable senza server_default).
 
 ---
 
+## `alembic/versions/0034_normalize_course_status_indicator.py`
+
+**Normalizzazione one-shot dello status-indicatore** (data-only, nessun
+cambio schema): col gating per-unità `course.status` è un indicatore di
+avanzamento, non un lock; questa migrazione riallinea i corsi il cui
+status è rimasto "indietro" rispetto ai dati per-modulo/per-lezione (es.
+dopo una regressione esplicita da bulk-regenerate mai risalita — i
+ricalcoli scattano solo alla successiva azione della fase giusta).
+
+### Sequenza `upgrade()`
+
+Una serie di `UPDATE course` in **ordine di rank crescente**
+(`lessons_structure_approved` → `content_ready/approved` →
+`slides_ready/approved` → `speech_ready/approved` → `video_ready` →
+`avatar_video_ready`), ognuno applicabile solo da stati di rank
+inferiore → mai regressioni, l'ultimo soddisfatto vince. Regole (replicano
+i 6 `_recompute_course_*_status`; il riferimento di equivalenza logica è
+`normalize_course_status_from_data` in `core/course_phase_order.py`,
+testato dalla suite `test_migration_0034_normalization.py`):
+
+- ogni statement richiede **esplicitamente ≥1 riga rilevante** (un
+  `NOT EXISTS` naive è vacuamente vero sugli insiemi vuoti: un corso di
+  sole lezioni-verifica salterebbe a `speech_approved`);
+- content conta TUTTE le lezioni (assessment incluse);
+  slides/speech/video/avatar escludono le assessment (asimmetria dei
+  recompute);
+- `published`/`archived` mai toccati; `architecture_pending` escluso dal
+  from-set (worker P1 in volo);
+- **skip dei target di duplicazione** con job non `ready`
+  (pending/processing: sarà `_finalize` ad allinearli; failed: cloni
+  parziali da non normalizzare).
+
+Idempotente e rieseguibile senza danni.
+
+### Sequenza `downgrade()`
+
+No-op documentato: la normalizzazione è irreversibile (lo status
+precedente non è ricostruibile).
+
+---
+
 ## Workflow per nuove migrazioni
 
 ```bash

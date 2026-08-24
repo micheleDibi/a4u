@@ -8,7 +8,7 @@ default) con auto-retry trasparente. Riferimento spec: §8 + §9.5 di
 
 ## Cosa fa
 
-Per ogni lezione con `slides_status ∈ {ready, approved}`, una chiamata
+Per ogni lezione con `slides_status = 'approved'`, una chiamata
 OpenAI produce il parlato suddiviso in segmenti, ciascuno ancorato a un
 `slide_id` e con `estimated_duration_seconds`. Vincoli forti:
 
@@ -36,8 +36,15 @@ durata fuori range, TTS-safety violazione (l'AI mette occasionalmente
 
 ## Pre-condizione
 
-`lesson.slides_status ∈ {ready, approved}` AND `lesson.slides_raw`
-valorizzato. Se la pre-condizione manca, il worker fa fail terminale
+Gate API **per-unità** (speculare alla Fase 4; nessun allow-set su
+`course.status`): corso non terminale (`ensure_course_not_terminal`) +
+`lesson.slides_status = 'approved'` (slide della STESSA lezione approvate —
+prima bastava `ready`; stesso code `lesson_slides_not_ready_for_speech`).
+
+Il worker accetta ancora `slides_status ∈ {ready, approved}` AND
+`slides_raw` valorizzato (**transitorio**: per non far fallire i task
+accodati prima del cambio; stretta a `approved` pianificata a code
+svuotate). Se la pre-condizione manca, il worker fa fail terminale
 **non recuperabile** con messaggio "Genera prima le slide".
 
 A monte servono anche `content_raw` (Fase 3, sempre presente se Fase 4
@@ -67,8 +74,8 @@ Riusato sia nel system prompt sia nella validazione (`materialize_lesson_speech`
 ```
 [utente] POST /lessons/{id}/speech/generate (con hint opzionale)
   └─► course_lesson_speech_service.request_lesson_speech_generation
-       ├─► validate course.status ∈ {slides_ready, slides_approved, speech_*}
-       ├─► validate lesson.slides_status ∈ {ready, approved}
+       ├─► ensure_course_not_terminal(course)
+       ├─► validate lesson.slides_status == 'approved'
        ├─► lesson.speech_status = "pending"
        ├─► lesson.speech_regeneration_hint = hint
        ├─► reset speech_pdf_status='empty' (PDF discorso obsoleto)
@@ -81,7 +88,7 @@ Riusato sia nel system prompt sia nella validazione (`materialize_lesson_speech`
 
 [worker task] _process_one
   ├─► reload lesson + course (eager load completo)
-  ├─► pre-check slides_status (terminal fail se non ready/approved)
+  ├─► pre-check slides_status (terminal fail se non ready/approved — transitorio, vedi Pre-condizione)
   ├─► lesson.speech_status = "processing", attempts++
   ├─► build_user_prompt(course, lesson) = §8.3 + §9.5 se rigenerazione
   │    (include content_raw + slides_raw + bibliografia + hint)
@@ -213,13 +220,16 @@ stale-detection del PDF discorso downstream.
 
 ## Frontend — `CourseLessonSpeechView.tsx`
 
-Tab "Discorso" (ottavo tab del wizard). Visibile in `mode === "edit"` da
-`course.status` ∈ `{slides_ready, slides_approved, speech_pending,
-speech_ready, speech_approved, ...}`.
+Tab "Discorso" (ottavo tab del wizard). Abilitata in `mode === "edit"` con
+gating **data-based**: ∃ almeno una lezione con `slides_status = 'approved'`
+(niente liste di `course.status`).
 
 Componenti:
 - **Header**: aggregate progress + ETA, CTA batch (Genera tutto /
-  Rigenera / Genera mancanti / Approva tutto / Annulla, + Esporta PDF)
+  Rigenera / Genera mancanti / Approva tutto / Annulla, + Esporta PDF).
+  `canStartGeneration` / lezioni mancanti / eleggibili / empty-state sono
+  calcolati su `slides_status = 'approved'` secco (i18n
+  `courses.lessonsSpeech.slidesNotReady`: "Approva prima le slide…")
 - **Module card** per ciascun modulo
 - **Lesson row** espandibile con primary CTA + kebab + stale alert
 - **Expanded**: `<LessonSpeechView speech={speech_raw} slides={slides_raw} />`
@@ -316,5 +326,5 @@ frequenti:
 - `lesson_speech_duration_out_of_range` — durata totale fuori ±5%. Con `regeneration_hint` chiedere all'AI di adattare.
 - `lesson_speech_tts_unsafe` — l'AI ha messo `\frac` o `*` nel testo. Auto-retry risolve di solito.
 - `lesson_speech_uncovered_slides` — qualche slide non ha segmenti. Edit manuale per aggiungerli, o rigenerare.
-- `lesson_slides_not_ready_for_speech` — Fase 4 non completa, tornare alle slide.
+- `lesson_slides_not_ready_for_speech` — le slide della lezione non sono `approved`; tornare alla Fase 4 e approvarle.
 - `OpenAILessonSpeechError` con finish_reason=length — output troncato per lezioni lunghe (90 min ≈ 11700 parole IT). Alzare `OPENAI_LESSON_SPEECH_MAX_TOKENS`.

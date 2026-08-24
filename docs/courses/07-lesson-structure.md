@@ -10,6 +10,14 @@ modulo**: ogni modulo ha un proprio stato indipendente
 (`empty → pending → processing → ready → approved`, oppure `failed`) e il batch dispatcha
 in **parallelo** tutti i moduli con un cap di concorrenza.
 
+Anche il **gating è per-modulo** (nessun allow-set su `course.status`): serve
+corso non terminale (`ensure_course_not_terminal`), rank ≥
+`architecture_approved` e che **nessuna lezione del modulo abbia già una
+dispensa** (`content_status != 'empty'` → `409 module_has_content` — la
+traduzione per-modulo del vecchio lock "niente rigenerazione struttura dopo
+l'inizio della Fase 3"). Un modulo aggiunto tardi via CRUD architettura può
+quindi generare/approvare la propria struttura anche a corso avanzato.
+
 ## Flusso
 
 ### Per modulo (singolo)
@@ -51,8 +59,9 @@ status='approved'
 POST /lessons-structure/generate-all { regeneration_hint? }
    │
    ▼
-Per OGNI modulo: lessons_structure_status='pending'
-course.status = 'lessons_structure_pending'
+Per ogni modulo ELEGGIBILE (senza lezioni con dispense):
+   lessons_structure_status='pending'   (gli altri saltati in silenzio)
+course.status = 'lessons_structure_pending'   (regressione esplicita)
    │
    │  worker tick → SELECT module_id WHERE lessons_structure_status='pending'
    ▼
@@ -178,9 +187,11 @@ async def request_module_generation(
 ) -> Course
 ```
 
-- Verifica `course.status ∈ {architecture_approved, lessons_structure_*}`
+- Verifica corso non terminale + rank ≥ `architecture_approved`
+  (`_ensure_course_ready_for_structure`) e modulo senza dispense
+  (`_ensure_module_without_content` → `409 module_has_content`)
 - Imposta `module.lessons_structure_status = 'pending'`, clear error, salva hint
-- Aggiorna `course.status` a `lessons_structure_pending` se non già in lessons_structure_*
+- Aggiorna `course.status` via `_recompute_course_lessons_structure_status`
 - Audit `course.module.lessons_structure.generate.requested`
 
 ### `request_all_modules_generation`
@@ -191,9 +202,13 @@ async def request_all_modules_generation(
 ) -> Course
 ```
 
-- Imposta TUTTI i moduli del corso a `pending`, salva hint su ognuno
-- `course.status = 'lessons_structure_pending'`
-- Audit `course.lessons_structure.generate.requested` con `meta.modules_count = N`
+- Filtra i moduli **eleggibili** (senza lezioni con dispense) e li imposta a
+  `pending`, salva hint su ognuno; gli altri sono saltati in silenzio.
+  `409 no_modules_to_generate` se il corso non ha moduli,
+  `409 no_eligible_modules_for_structure` se nessuno è eleggibile
+- `course.status = 'lessons_structure_pending'` (regressione esplicita)
+- Audit `course.lessons_structure.generate.requested` con
+  `meta.modules_count` (eleggibili) + `meta.skipped_count`
 
 ### `materialize_module_structure`
 
@@ -229,10 +244,15 @@ Su validazione OK:
 
 ### `approve_module_structure` / `approve_all_modules_structure`
 
-- `approve_module_structure`: solo se `module.lessons_structure_status = 'ready'`.
-  Set a `'approved'` + `approved_at = now()`.
-- `approve_all_modules_structure`: solo se TUTTI i moduli sono in `ready`.
-  Batch update + `course.status = 'lessons_structure_approved'`.
+- `approve_module_structure`: solo se `module.lessons_structure_status = 'ready'`
+  (`409 module_lessons_structure_not_ready`). Set a `'approved'` +
+  `approved_at = now()`.
+- `approve_all_modules_structure`: **tollerante** — approva tutti i moduli
+  `ready` ignorando gli `empty` (es. aggiunti tardi via CRUD architettura,
+  senza struttura); `409 not_all_modules_ready` solo con moduli
+  `pending/processing/failed`; `409 no_structure_to_approve` se nessun modulo
+  ha una struttura generata; no-op idempotente se già tutti `approved`.
+  Batch update + `_recompute_course_lessons_structure_status`.
 
 ### `_recompute_course_lessons_structure_status` (privato)
 
@@ -294,15 +314,18 @@ rolled-back l'approvazione di Fase 1 — fuori scope qui).
 | Metodo | Path | Permission | Effetto |
 |---|---|---|---|
 | `POST` | `/modules/{mid}/lessons-structure/generate` | `course:generate` | Body `LessonStructureGenerateInput`. 202. Set modulo `pending`. |
-| `POST` | `/lessons-structure/generate-all` | `course:generate` | Body `LessonStructureGenerateInput`. 202. Set tutti i moduli `pending`. |
+| `POST` | `/lessons-structure/generate-all` | `course:generate` | Body `LessonStructureGenerateInput`. 202. Set i moduli eleggibili `pending`. |
 | `POST` | `/modules/{mid}/lessons-structure/approve` | `course:generate` | 200. Approve modulo singolo (richiede `ready`). |
-| `POST` | `/lessons-structure/approve-all` | `course:generate` | 200. Approve batch (richiede tutti `ready`). |
+| `POST` | `/lessons-structure/approve-all` | `course:generate` | 200. Approve batch tollerante (approva i `ready`, ignora gli `empty`). |
 | `PATCH` | `/lessons/{lid}/structure` | `course:edit` | Body `LessonStructureUpdateInput`. 200. CRUD manuale. |
 
 Tutti restituiscono `CourseOut` aggiornato. Codici errore principali:
-`lessons_structure_not_editable`, `module_not_ready_for_approve`,
-`not_all_modules_ready`, `module_not_found`, `lesson_not_found`,
-`openai_not_configured`, `lessons_structure_generation_failed`.
+`course_terminal_status`, `invalid_course_status`, `module_has_content`,
+`no_modules_to_generate`, `no_eligible_modules_for_structure`,
+`lessons_structure_not_editable`, `module_lessons_structure_not_ready`,
+`not_all_modules_ready`, `no_structure_to_approve`, `module_not_found`,
+`lesson_not_found`, `openai_not_configured`,
+`lessons_structure_generation_failed`.
 
 ## Schema dati
 
@@ -346,7 +369,9 @@ ha `refetchInterval=5000` quando almeno un modulo è in `pending|processing`.
 Layout principale del tab:
 
 - **Header card**: titolo, descrizione, pulsante "Genera/Rigenera struttura per
-  tutti i moduli", "Approva tutto" (visibile quando tutti i moduli sono `ready`).
+  tutti i moduli", "Approva tutto" **tollerante** (mirror BE: visibile con
+  almeno un modulo `ready` e nessuno in `pending/processing/failed`; gli
+  `empty` sono ignorati).
 - **Aggregate progress bar** (sempre visibile durante batch):
   - Etichetta `{n_completed}/{n_total} moduli completati ({percent}%)`
   - `percent = avg(progress per modulo)` (i moduli `ready/approved` contano 100%)

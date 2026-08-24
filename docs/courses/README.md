@@ -55,6 +55,15 @@ Tutte le fasi 2-5 supportano edit manuale (`*_modified_at` per stale-detection c
 
 ## State machine `course.status`
 
+> **Semantica (gating per-unità)**: `course.status` è un **indicatore di
+> avanzamento** (milestone monotona "fase massima raggiunta", via
+> `advance_course_status`), **non un lock**. I gate di generazione delle
+> Fasi 2-6b leggono gli stati **per-lezione/per-modulo** (vedi gli helper
+> in `backend/app/core/course_phase_order.py`: `ensure_course_not_terminal`,
+> `ensure_lesson_structure_ready`, …). Le regressioni esplicite dei bulk
+> generate (`course.status = '<fase>_pending'`) restano come segnale di
+> lavorazione in corso.
+
 ```
 draft
   │  POST /architecture/generate
@@ -84,26 +93,31 @@ Lo `course.status` per Fasi 2-5 è **derivato** dagli stati per-lezione (o per-m
 
 Failure paths: ogni `*_pending` su errore → `failed` per la singola entità (o `draft` per l'architettura), con `*_error` populato. **Auto-retry trasparente** prima del fail terminale: se l'errore è recuperabile (rate-limit OpenAI, validazione, materializzazione) e `attempts < auto_retry_max` (default 5), il worker riporta lo status a `pending` e ritenta al tick successivo; la UI mostra solo "in elaborazione" finché passa.
 
-> **Fase 6 / 6b non sono fasi di `course.status`**: il video MP4 e il video
-> con avatar sono per-lezione, hanno il proprio ciclo di stato
-> (`video_status`, `avatar_video_status`) e non concorrono a
-> `course.status`.
+> **Fase 6 / 6b**: il video MP4 e il video con avatar sono per-lezione,
+> con il proprio ciclo di stato (`video_status`, `avatar_video_status`,
+> incl. `cancelled`; niente `approved`). Dalla migration 0030 concorrono
+> anche loro all'indicatore `course.status` (`video_pending/ready`,
+> `avatar_video_pending/ready`, derivati dai per-lesson). A differenza
+> delle Fasi 2-5, i loro gate **non** applicano
+> `ensure_course_not_terminal`: i media si possono completare anche a
+> corso pubblicato.
 
-> **Editabilità a corso quasi pronto (`EDITABLE_STATUSES`)**: architettura e
+> **Editabilità a corso quasi pronto (check data-based)**: architettura e
 > sub-tab restano modificabili anche oltre `*_ready`/`*_approved` di Fase 3-5.
-> `EDITABLE_STATUSES` (`backend/app/services/course_architecture_crud.py:56`)
-> include tutti gli stati stabili downstream — `architecture_ready/approved`,
-> `lessons_structure_ready/approved`, `content_ready/approved`,
-> `slides_ready/approved`, `speech_ready/approved`, **`video_ready`** e
-> **`avatar_video_ready`** — così l'utente può tornare a correggere un titolo
-> modulo o aggiungere una lezione anche a corso ormai quasi pronto (lo
-> stale-detection segnala cosa rigenerare). Restano **esclusi**: `draft`
-> (nessuna architettura), `*_pending` (worker AI attivi → race condition),
-> `published`/`archived` (terminali). Oltre questi, `_ensure_editable` rigetta
-> con `409 architecture_not_editable` (vedi [04 — Manual editing](04-manual-editing.md) e [05 — API reference](05-api-reference.md)).
-> Lo stesso gating è replicato lato FE in `CoursePhaseStepper.tsx` via
-> `COURSE_STATUS_RANK` + `isCourseAtLeast` (mirror 1:1 di
-> `backend/app/core/course_phase_order.py`, da tenere allineati a mano).
+> `_ensure_editable` (`backend/app/services/course_architecture_crud.py`) non
+> usa più un allow-set su `course.status` (`EDITABLE_STATUSES` è stata
+> rimossa): rigetta con `409 architecture_not_editable` solo se lo status è
+> in `{draft, architecture_pending, published, archived}` **oppure** se una
+> generazione è davvero in volo — un modulo con struttura `pending|processing`
+> o una lezione con content/slides/speech/video/avatar_video
+> `pending|processing`. Con il gating per-unità gli stati `<fase>_pending` di
+> `course.status` sono "di soggiorno" (una fase può restare aperta a lungo) e
+> non bloccano da soli l'editing (vedi [04 — Manual editing](04-manual-editing.md) e [05 — API reference](05-api-reference.md)).
+> Lato FE `CoursePhaseStepper.tsx` mantiene `COURSE_STATUS_RANK` +
+> `isCourseAtLeast` (mirror 1:1 di `backend/app/core/course_phase_order.py`,
+> da tenere allineati a mano) ma l'abilitazione di tab e azioni è ormai
+> **data-based** sugli stati per-modulo/per-lezione (`computePhaseStatus`,
+> `anyModuleStructureApproved`).
 
 ## Stale-detection (cascata)
 

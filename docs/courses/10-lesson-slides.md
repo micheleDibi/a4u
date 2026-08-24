@@ -7,7 +7,7 @@ spec: §7 (sezione "slides") di `prompt_generazione_corsi.md`.
 
 ## Cosa fa
 
-Per ogni lezione con `content_status ∈ {ready, approved}`, una chiamata
+Per ogni lezione con `content_status = 'approved'`, una chiamata
 OpenAI produce la sequenza di slide dimensionata sui
 `minuti_per_lezione` del corso. Le slide:
 
@@ -37,19 +37,25 @@ La UI vede solo "in elaborazione" finché passa.
 
 ## Pre-condizione
 
-`lesson.content_status ∈ {ready, approved}` AND `lesson.content_raw` valorizzato.
+Gate API **per-unità** (nessun allow-set su `course.status`): corso non
+terminale (`ensure_course_not_terminal`) + `lesson.content_status = 'approved'`
+(dispensa della STESSA lezione approvata — prima bastava `ready`; stesso
+code `lesson_content_not_ready_for_slides`).
 
-Se la pre-condizione non è soddisfatta al momento del dispatch, il
-worker fa un fail terminale **non recuperabile** con messaggio
-"Genera prima il contenuto" — non viene ritentato.
+Il worker accetta ancora `content_status ∈ {ready, approved}` AND
+`content_raw` valorizzato (**transitorio**: per non far fallire i task
+accodati prima del cambio; stretta a `approved` pianificata a code
+svuotate). Se la pre-condizione non è soddisfatta al momento del
+dispatch, il worker fa un fail terminale **non recuperabile** con
+messaggio "Genera prima il contenuto" — non viene ritentato.
 
 ## Flusso di generazione
 
 ```
 [utente] POST /lessons/{id}/slides/generate (con hint opzionale)
   └─► course_lesson_slides_service.request_lesson_slides_generation
-       ├─► validate course.status ∈ {content_ready, content_approved, slides_*}
-       ├─► validate lesson.content_status ∈ {ready, approved}
+       ├─► ensure_course_not_terminal(course)
+       ├─► validate lesson.content_status == 'approved'
        ├─► lesson.slides_status = "pending"
        ├─► lesson.slides_regeneration_hint = hint
        ├─► reset slides_pdf_status='empty' se era ready/failed (PDF obsoleto)
@@ -63,7 +69,7 @@ worker fa un fail terminale **non recuperabile** con messaggio
 
 [worker task] _bound_process → semaphore.acquire → _process_one
   ├─► reload lesson + course (eager load completo)
-  ├─► pre-check content_status (terminal fail se non ready/approved)
+  ├─► pre-check content_status (terminal fail se non ready/approved — transitorio, vedi Pre-condizione)
   ├─► lesson.slides_status = "processing", attempts++
   ├─► build_user_prompt(course, lesson) = §7.2 + §9.4 se rigenerazione
   │    (include content_raw + bibliografia + hint utente)
@@ -193,14 +199,17 @@ stale-detection downstream (PDF slide e Fase 5 si segnaleranno stale).
 
 ## Frontend — `CourseLessonSlidesView.tsx`
 
-Tab "Slide" (settimo tab del wizard). Visibile in `mode === "edit"` da
-`course.status` ∈ `{content_ready, content_approved, slides_pending,
-slides_ready, slides_approved, ...}`.
+Tab "Slide" (settimo tab del wizard). Abilitata in `mode === "edit"` con
+gating **data-based**: ∃ almeno una lezione con `content_status = 'approved'`
+(niente liste di `course.status`).
 
 Componenti:
 - **Header**: aggregate progress + ETA via `useBatchEta`, CTA batch
   (Genera tutto / Rigenera / Genera mancanti / Approva tutto / Annulla,
-  + Esporta PDF tutto)
+  + Esporta PDF tutto). `canStartGeneration` / lezioni mancanti /
+  eleggibili / empty-state sono calcolati su `content_status = 'approved'`
+  secco (i18n `courses.lessonsSlides.contentNotReady`: "Approva prima le
+  dispense…")
 - **Module card** per ciascun modulo, con lista lezioni
 - **Lesson row** espandibile:
   - status badge + primary CTA (Genera → Approva → Modifica)
@@ -237,5 +246,5 @@ frequenti:
 
 - `lesson_slides_count_out_of_range` — il modello AI ha generato troppe/troppo poche slide. Risolvere con `regeneration_hint` esplicito sul numero.
 - `lesson_slides_unknown_asset_ref` — `references_assets[i]` punta a un asset non risolvibile. Quasi sempre causato da edit manuale post-AI che ha rimosso un asset. Aggiungere il `new_assets[]` o rimuovere il riferimento.
-- `lesson_content_not_ready_for_slides` — la lezione non ha contenuto generato/approvato; tornare a Fase 3.
+- `lesson_content_not_ready_for_slides` — la dispensa della lezione non è `approved`; tornare a Fase 3 e approvarla.
 - `OpenAILessonSlidesError` con finish_reason=length — output troncato, alzare `OPENAI_LESSON_SLIDES_MAX_TOKENS`.

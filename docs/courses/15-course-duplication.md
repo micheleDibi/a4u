@@ -29,6 +29,13 @@ vengono downgradate a `"ready"` per forzare la riapprovazione manuale
 del discorso tradotto (la qualità della traduzione AI sul discorso è
 la più delicata da rivedere). Video e avatar restano `empty`.
 
+> **Nota (gating per-unità)**: `course.status` è un indicatore, non un
+> lock, quindi il cap può **sottostimare** l'indicatore rispetto ai dati
+> del target (es. discorsi `ready` con status `slides_approved`) —
+> comportamento voluto: i gate leggono i dati per-lezione e il primo
+> ricalcolo/approvazione riallinea la milestone. La migrazione 0034
+> salta esplicitamente i target di duplicazione con job non `ready`.
+
 ## Permesso
 
 Nuovo permesso `COURSE_DUPLICATE = "course:duplicate"`. Default per
