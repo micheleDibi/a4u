@@ -34,25 +34,7 @@ TEXT_MIMES = {"text/plain", "text/markdown"}
 
 
 def _extract_pdf(path: Path) -> str:
-    import pdfplumber
-
-    parts: list[str] = []
-    try:
-        with pdfplumber.open(str(path)) as pdf:
-            for page in pdf.pages:
-                text = page.extract_text() or ""
-                if text:
-                    parts.append(text)
-    except Exception as exc:
-        msg = str(exc).lower()
-        if "password" in msg or "encrypt" in msg:
-            raise DocumentExtractionError(
-                "Il PDF è protetto da password e non può essere letto."
-            ) from exc
-        raise DocumentExtractionError(
-            f"Impossibile leggere il PDF: {exc}"
-        ) from exc
-    return "\n\n".join(parts)
+    return "\n\n".join(_extract_pdf_pages(path))
 
 
 def _extract_docx(path: Path) -> str:
@@ -110,6 +92,30 @@ def _extract_text_file(path: Path) -> str:
         ) from exc
 
 
+def _extract_pdf_pages(path: Path) -> list[str]:
+    """Come `_extract_pdf` ma restituisce le pagine NON vuote separate
+    (stesso contenuto: `_extract_pdf` è il join `\\n\\n` di questa lista)."""
+    import pdfplumber
+
+    parts: list[str] = []
+    try:
+        with pdfplumber.open(str(path)) as pdf:
+            for page in pdf.pages:
+                text = page.extract_text() or ""
+                if text:
+                    parts.append(text)
+    except Exception as exc:
+        msg = str(exc).lower()
+        if "password" in msg or "encrypt" in msg:
+            raise DocumentExtractionError(
+                "Il PDF è protetto da password e non può essere letto."
+            ) from exc
+        raise DocumentExtractionError(
+            f"Impossibile leggere il PDF: {exc}"
+        ) from exc
+    return parts
+
+
 def _dispatch(path: Path, mime_type: str) -> str:
     mime = (mime_type or "").lower()
     suffix = path.suffix.lower()
@@ -128,33 +134,99 @@ def _dispatch(path: Path, mime_type: str) -> str:
     )
 
 
-async def extract_text(file_path: Path, mime_type: str) -> tuple[str, int]:
-    """Estrae il testo da `file_path`. Ritorna `(text_truncated, original_chars)`.
+def _dispatch_parts(path: Path, mime_type: str) -> tuple[list[str], bool]:
+    """Come `_dispatch` ma a parti: (lista parti, is_pdf).
 
-    Il testo viene troncato a `settings.course_document_max_chars` per
-    contenere il consumo di token. `original_chars` contiene la lunghezza
-    pre-troncamento (utile per logging).
+    Per i PDF una parte = una pagina non vuota (join `\\n\\n` ≡
+    `_extract_pdf`); per gli altri formati una parte unica (identica a
+    `_dispatch`). Regola di equivalenza: `sep.join(parts)` deve essere
+    BYTE-IDENTICO all'output di `_dispatch` — è ciò che garantisce che
+    `extract_text` (wrapper) non cambi mai comportamento.
+    """
+    mime = (mime_type or "").lower()
+    suffix = path.suffix.lower()
+    if mime in PDF_MIMES or suffix == ".pdf":
+        return _extract_pdf_pages(path), True
+    return [_dispatch(path, mime_type)], False
+
+
+# Span di pagina sul testo normalizzato: (char_start, char_end, pagina).
+# `pagina` è 1-based e conta le sole pagine NON vuote (le uniche che
+# contribuiscono al testo); None per i formati non paginati.
+PageSpan = tuple[int, int, int | None]
+
+
+async def extract_segments(
+    file_path: Path, mime_type: str, *, hard_cap_chars: int
+) -> tuple[str, list[PageSpan], int, bool]:
+    """Estrae il testo con le coordinate di pagina per il chunking.
+
+    Ritorna `(text, page_spans, original_chars, hard_capped)` dove:
+    - `text` = join per-formato delle parti (PDF: `\\n\\n` tra pagine non
+      vuote) con strip GLOBALE (mai per-segmento), troncato a
+      `hard_cap_chars`;
+    - `page_spans` = span (start, end, pagina|None) sul testo normalizzato
+      e troncato;
+    - `original_chars` = lunghezza post-strip PRE-troncamento (stessa
+      semantica di `extract_text`);
+    - `hard_capped` = True se il testo eccedeva `hard_cap_chars`.
     """
     if not file_path.exists():
         raise DocumentExtractionError(f"File non trovato: {file_path}")
 
-    settings = get_settings()
-    raw = await asyncio.to_thread(_dispatch, file_path, mime_type)
-    raw = (raw or "").strip()
-    original = len(raw)
-    if not raw:
+    parts, is_pdf = await asyncio.to_thread(
+        _dispatch_parts, file_path, mime_type
+    )
+    sep = "\n\n" if is_pdf else ""
+    joined = sep.join(parts)
+    stripped = (joined or "").strip()
+    original = len(stripped)
+    if not stripped:
         raise DocumentExtractionError(
             "Documento privo di testo estraibile (forse è una scansione? "
             "OCR non supportato in questa versione)."
         )
 
-    max_chars = max(1000, int(settings.course_document_max_chars))
-    if original > max_chars:
+    hard_cap = max(1000, int(hard_cap_chars))
+    hard_capped = original > hard_cap
+    if hard_capped:
         log.warning(
             "course_document_text_truncated",
             path=str(file_path),
             original=original,
-            kept=max_chars,
+            kept=hard_cap,
         )
-        raw = raw[:max_chars]
-    return raw, original
+    text = stripped[:hard_cap] if hard_capped else stripped
+
+    # Offset delle parti sul testo joined, poi shiftati dello strip
+    # iniziale e clampati sul testo troncato.
+    leading = len(joined) - len(joined.lstrip())
+    spans: list[PageSpan] = []
+    cursor = 0
+    for i, part in enumerate(parts):
+        start = cursor - leading
+        end = cursor + len(part) - leading
+        cursor += len(part) + len(sep)
+        start = max(0, min(start, len(text)))
+        end = max(0, min(end, len(text)))
+        if end > start:
+            spans.append((start, end, (i + 1) if is_pdf else None))
+    return text, spans, original, hard_capped
+
+
+async def extract_text(file_path: Path, mime_type: str) -> tuple[str, int]:
+    """Estrae il testo da `file_path`. Ritorna `(text_truncated, original_chars)`.
+
+    Il testo viene troncato a `settings.course_document_max_chars` per
+    contenere il consumo di token. `original_chars` contiene la lunghezza
+    pre-troncamento (utile per logging). Wrapper di `extract_segments`
+    con semantica INVARIATA (usato anche dal flusso sincrono
+    obiettivi-da-file: non cambiare).
+    """
+    settings = get_settings()
+    text, _spans, original, _capped = await extract_segments(
+        file_path,
+        mime_type,
+        hard_cap_chars=max(1000, int(settings.course_document_max_chars)),
+    )
+    return text, original

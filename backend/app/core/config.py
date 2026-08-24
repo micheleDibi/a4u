@@ -108,6 +108,12 @@ class Settings(BaseSettings):
     openai_translate_batch_size: int = 40
     openai_summarize_model: str = "gpt-4o-mini"
     openai_summarize_max_tokens: int = 8000
+    # Pipeline di analisi a copertura totale (map → merge → reduce) per i
+    # documenti sopra soglia. Output map contenuto (fatti di UN chunk);
+    # reduce a 12000 (gpt-4o-mini regge 16k out) per non troncare il JSON
+    # finale con molte definizioni — il single-shot resta a 8000.
+    openai_summarize_map_max_tokens: int = 4000
+    openai_summarize_reduce_max_tokens: int = 12000
     # Generazione AI di obiettivi corso + argomenti chiave da un
     # documento di riferimento caricato dall'utente (tab "Obiettivi e
     # Argomenti chiave"). Output target: obiettivi 2500-5000 caratteri
@@ -144,6 +150,31 @@ class Settings(BaseSettings):
     openai_lesson_structure_reasoning_effort: str = "medium"
     course_document_max_chars: int = 120_000
     course_document_poll_interval_seconds: int = 4
+    # --- Copertura totale dell'analisi documenti (Blocco 1) ---
+    # Kill-switch: False = comportamento storico (single-shot troncato a
+    # course_document_max_chars) senza rollback DB.
+    course_document_full_coverage_enabled: bool = True
+    # Sotto questa soglia il flusso resta il single-shot attuale.
+    course_document_singleshot_max_chars: int = 100_000
+    # Dimensionamento chunk (~7k token a ~3,5 char/token) e overlap
+    # (mezza pagina: cattura definizioni a cavallo del taglio).
+    course_document_chunk_chars: int = 24_000
+    course_document_chunk_overlap_chars: int = 1_500
+    # Hard cap di sicurezza per la memoria (~800-1000 pagine): oltre,
+    # analisi del prefisso con summary_coverage='partial' (mai silenzioso).
+    course_document_max_chars_hard: int = 2_000_000
+    # Semaforo delle chiamate map DENTRO un documento (il worker resta
+    # sequenziale TRA documenti).
+    course_document_chunk_concurrency: int = 3
+    # Tentativi per chiamata sui soli errori transient (rete, 429, 5xx).
+    course_document_llm_retry_max: int = 4
+    # Budget input del reduce: oltre, i mini-abstract passano da un
+    # livello di digest (gruppi da reduce_group_size).
+    course_document_reduce_input_max_chars: int = 80_000
+    course_document_reduce_group_size: int = 20
+    # Guardia anti-loop: oltre N tentativi (righe rimaste `processing`
+    # per crash/eccezioni inattese, ritentate a ogni tick) → failed.
+    course_document_summary_attempts_max: int = 10
     course_architecture_poll_interval_seconds: int = 4
     course_architecture_documents_context_max_chars: int = 60_000
     course_lesson_structure_poll_interval_seconds: int = 4

@@ -61,3 +61,22 @@ class DocumentSummaryOut(BaseModel):
     formulas_or_rules: list[FormulaOrRule] = Field(default_factory=list)
     authors_and_references: list[AuthorOrReference] = Field(default_factory=list)
     didactic_relevance_tags: list[str] = Field(default_factory=list)
+
+
+class ChunkFactsOut(BaseModel):
+    """Output validato della fase MAP (un chunk della pipeline a
+    copertura totale): fatti già nei sotto-schemi dell'Appendice A +
+    mini-abstract del chunk. Persistito in
+    `course_document_chunk.result` (JSONB)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    chunk_abstract: str
+    detected_language: str
+    outline_items: list[str] = Field(default_factory=list)
+    key_concepts: list[KeyConcept] = Field(default_factory=list)
+    definitions: list[Definition] = Field(default_factory=list)
+    examples_or_cases: list[ExampleOrCase] = Field(default_factory=list)
+    formulas_or_rules: list[FormulaOrRule] = Field(default_factory=list)
+    authors_and_references: list[AuthorOrReference] = Field(default_factory=list)
+    candidate_tags: list[str] = Field(default_factory=list)
