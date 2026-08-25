@@ -26,6 +26,10 @@ from app.services.openai_client import (
     get_client,
 )
 from app.services.openai_pricing import build_usage_dict
+from app.services.prompt_register import (
+    REGENERATION_REGISTER_NOTE,
+    academic_register_block,
+)
 
 log = get_logger("app.openai_lesson_slides")
 
@@ -39,13 +43,15 @@ def _system_prompt(
     *,
     minuti_per_lezione: int | None = None,
     livello_eqf: str = "",
+    ruolo_docente: str = "",
+    stile_insegnamento: str = "",
 ) -> str:
     """System prompt §7.1 — slide design didattico per una lezione.
 
-    `minuti_per_lezione` e `livello_eqf` vengono interpolati davvero
-    (prima erano segnaposto letterali `{minuti_per_lezione}` /
-    `{livello_eqf}` nel testo inviato al modello); con i default vuoti
-    il prompt rimanda ai valori presenti nel messaggio utente.
+    Durata, livello EQF, ruolo e stile vengono interpolati davvero (prima
+    restavano segnaposto letterali nel testo inviato al modello); con i
+    default vuoti il prompt rimanda ai valori del messaggio utente. Il
+    blocco REGISTRO (variante ridotta) è condiviso con Fase 3/5.
     """
     durata = (
         f"di {minuti_per_lezione} minuti"
@@ -58,11 +64,20 @@ def _system_prompt(
         else "Per la durata della lezione"
     )
     eqf = livello_eqf or "indicato nel messaggio"
+    ruolo = ruolo_docente or "indicato nel messaggio"
+    stile = stile_insegnamento or "indicato nel messaggio"
+    register_block = academic_register_block("slides", language_code)
     return f"""\
 Sei un esperto di didattica e di slide design universitario. Hai
 ricevuto il testo completo di una lezione (con asset visivi già
 prodotti) e devi trasformarlo in una sequenza di SLIDE per una
 lezione {durata}.
+
+Le slide sono materiale didattico universitario: titoli, body e bullet
+seguono il registro definito sotto, con tono coerente con ruolo
+"{ruolo}" e stile "{stile}".
+
+{register_block}
 
 PRINCIPI
 
@@ -133,11 +148,13 @@ PRINCIPI
      consigliata)
 
 6. CONTENUTO PER SLIDE
-   - title: max 8 parole, evocativo ma chiaro
+   - title: max 8 parole, descrittivo: nomina il concetto, il risultato
+     o la relazione trattata (vedi REGISTRO).
    - body: opzionale, 1-3 frasi di prosa breve (max ~50 parole, ~400
      caratteri) per accompagnare/contestualizzare i bullet o
      sostituirli quando il contenuto è meglio espresso in forma
-     discorsiva. È IMPORTANTE alternare slide bullet-only e slide
+     discorsiva. Il body segue REGOLA 1 e REGOLA 2 del REGISTRO. È
+     IMPORTANTE alternare slide bullet-only e slide
      con body+bullet o body-only: una sequenza di sole bullet è
      visivamente piatta e pesante da leggere. Tipicamente:
        * title slide → body 1 frase (sottotitolo)
@@ -146,7 +163,8 @@ PRINCIPI
          introducono l'asset, 0 bullet
        * agenda/takeaways → body vuoto, 3-6 bullet
        * summary → body 1-2 frasi conclusive
-   - bullets: 0-6 punti, max ~14 parole per punto. Linguaggio adatto
+   - bullets: 0-6 punti, max ~14 parole per punto, ciascuno un
+     enunciato compiuto o un sintagma tecnico. Linguaggio adatto
      al livello EQF {eqf}. Le slide dedicate a un asset
      visivo/tabella hanno 0 bullet (o pochissimi).
    - references_assets: SOLO sulle slide dedicate, con UN SOLO ID di
@@ -219,7 +237,8 @@ Considera la versione precedente e il feedback del docente.
   il feedback.
 - Se possibile, mantieni lo stesso slide_id per slide che corrispondono
   semanticamente alla versione precedente (utile per riusare il
-  discorso esistente nella futura Fase 5)."""
+  discorso esistente nella futura Fase 5).
+""" + REGENERATION_REGISTER_NOTE
 
 
 # JSON Schema verbatim §7.3 — passato a OpenAI come response_format.json_schema.
@@ -348,6 +367,8 @@ async def generate_lesson_slides(
     is_regeneration: bool,
     minuti_per_lezione: int | None = None,
     livello_eqf: str = "",
+    ruolo_docente: str = "",
+    stile_insegnamento: str = "",
 ) -> tuple[LessonSlidesOutput, dict[str, Any]]:
     """Chiama OpenAI per generare le slide di una lezione.
 
@@ -366,6 +387,8 @@ async def generate_lesson_slides(
         language_code,
         minuti_per_lezione=minuti_per_lezione,
         livello_eqf=livello_eqf,
+        ruolo_docente=ruolo_docente,
+        stile_insegnamento=stile_insegnamento,
     )
     if is_regeneration:
         system_prompt = system_prompt + REGENERATION_SUFFIX

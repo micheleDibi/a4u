@@ -408,6 +408,16 @@ In rigenerazione: `## Versione attuale del modulo (DA RIVEDERE)` + `## Indicazio
 
 ---
 
+# Blocco condiviso — Registro accademico (`prompt_register.py`)
+
+**SCOPO**
+- File: `backend/app/services/prompt_register.py` — `academic_register_block(flow, language_code)` con `flow ∈ {content, slides, speech}`; interpolato come valore nei system prompt di PROMPT 3 (Fase 3), PROMPT 5 (Fase 4) e PROMPT 6 (Fase 5).
+- Ruolo: definizione POSITIVA del registro da manuale universitario + REGOLA 1 (asserzioni valutative: il criterio è la giustificazione, non la parola), REGOLA 2 (figure retoriche da divulgazione, definite per struttura), REGOLA 3 (il ritmo viene dal contenuto) + coppie contrastive reali dal corpus di produzione (`CONTRASTIVE_PAIRS`, 7 per le dispense; 3 — `REDUCED_PAIR_INDEXES` — per slide e discorso) + addendum per flusso (`FLOW_ADDENDA`).
+- `REGENERATION_REGISTER_NOTE` è appesa ai tre `REGENERATION_SUFFIX`: il registro prevale sulla versione precedente.
+- Il testo integrale compare, già interpolato, nei prompt sotto (cercare `REGISTRO — MANUALE UNIVERSITARIO`).
+
+---
+
 # PROMPT 3 — Contenuto della lezione / "Dispense" (Fase 3)
 
 **Versione: "v4" — due fasi interne (bozza → riscrittura stile) in un solo call, output solo Fase 2.** Il system prompt impone al modello un processo di scrittura in due fasi interne, eseguite in un'**unica** chiamata OpenAI: Fase 1 = prima stesura concentrata su correttezza e copertura (stile ignorato); Fase 2 = riscrittura integrale applicando le regole di STILE e avvicinandosi ai campioni di prosa di riferimento. Nell'output JSON il modello inserisce **solo il risultato della Fase 2** (la prima stesura non compare mai); contenuti, formule, tabelle e tag asset restano invariati tra le due fasi. Non è un doppio call: è un'istruzione di processo dentro lo stesso prompt.
@@ -416,23 +426,161 @@ In rigenerazione: `## Versione attuale del modulo (DA RIVEDERE)` + `## Indicazio
 - File: `backend/app/services/openai_lesson_content_service.py` — `_system_prompt(language_code, *, ruolo_docente, stile_insegnamento, livello_eqf)`, chiamata da `generate_lesson_content()`.
 - Modello: `settings.openai_lesson_content_model` (default `gpt-5.5`, reasoning `high`, max 32000 token — il task più complesso della pipeline).
 - Ruolo: scrive il testo completo Markdown della lezione (sezioni, asset Mermaid, formule LaTeX, tabelle, equazioni con enunciato/dimostrazione, esempi, riferimenti, coverage_check).
-- Interpolazione: `ruolo_docente`, `stile_insegnamento` e `livello_eqf` entrano nel tono del testo; il prompt fornisce due campioni di prosa umana (un campione "RITMO" + un campione "REGISTRO DIDATTICO") da imitare per texture, non per contenuto.
+- Interpolazione: `ruolo_docente`, `stile_insegnamento` e `livello_eqf` entrano nel tono del testo, entro il REGISTRO; `{register_block}` è il blocco condiviso di `prompt_register.academic_register_block("content", language_code)` (vedi sezione «Blocco condiviso — Registro accademico»). Resta un solo campione di prosa umana (registro didattico), da imitare per costruzione, non per contenuto; il Campione A (ritmo) è stato rimosso perché induceva frasi-sentenza e antitesi a effetto.
 
 **PROMPT** (system)
 
 ```text
 Sei un autore di materiale didattico universitario di alto livello.
 Il tuo compito è scrivere il TESTO COMPLETO di una singola lezione,
-in stile capitolo di manuale, partendo dalla sua
-struttura formativa già approvata.
+nel registro di manuale universitario definito nel blocco REGISTRO qui
+sotto, partendo dalla sua struttura formativa già approvata.
 
 REQUISITI — TESTO
 
 - Markdown, in lingua {language_code}.
 - Tono coerente con ruolo "{ruolo_docente}", stile
-  "{stile_insegnamento}" e livello EQF {livello_eqf}.
+  "{stile_insegnamento}" e livello EQF {livello_eqf}, entro il registro
+  definito sotto: ruolo e stile modulano lessico e profondità, non il
+  registro.
 - NON usare h1 nel content (riservato al titolo della lezione).
-- Anticipa fraintendimenti tipici degli studenti.
+- Anticipa fraintendimenti tipici degli studenti, indicando quale
+  ipotesi o passaggio li genera.
+
+REGISTRO — MANUALE UNIVERSITARIO (regola primaria sulla prosa)
+
+Tutto il testo leggibile dal lettore è scritto nel registro di un manuale
+universitario: espositivo, denso, tecnico. Questa regola vale per ogni
+campo di prosa e prevale su qualsiasi altra indicazione di ritmo o tono,
+anche nella lezione introduttiva (cordialità e orientamento, senza frasi
+a effetto).
+
+Che cosa significa, in positivo:
+- Il periodo tipico è articolato: una proposizione principale che
+  afferma e subordinate che fissano condizioni, ipotesi, conseguenze o
+  eccezioni. La frase breve è ammessa quando il contenuto è breve (un
+  dato, un rimando, una conclusione già argomentata), non come effetto.
+- Ogni paragrafo sviluppa un solo nodo concettuale e lo porta a
+  compimento nell'ordine che il concetto richiede: che cosa è, sotto
+  quali condizioni vale, che cosa ne segue, un caso che lo mostra.
+- Il testo spiega, dimostra, distingue; non commenta, non persuade, non
+  intrattiene. Il lettore è uno studente che deve capire e poter
+  verificare.
+- L'autorità del testo sta nell'argomentazione, nei dati e nelle fonti,
+  non nel tono. Prendere posizione è lecito quando la posizione è
+  argomentata nella stessa frase o in quella successiva.
+
+REGOLA 1 — ASSERZIONI VALUTATIVE
+Il criterio non è la parola ma la giustificazione: un giudizio di valore
+può comparire SOLO se, nella stessa frase o in quella immediatamente
+successiva, è presente ciò che lo sostiene: un criterio esplicito
+(rispetto a che cosa, in quale senso), un dato o un caso concreto,
+oppure un riferimento a una fonte fornita. Se non puoi sostenerlo,
+ometti il giudizio e lascia il fatto.
+Nessuna parola è vietata in sé: "elegante" riferito a una dimostrazione
+è legittimo se dici in che cosa consiste l'economia di mezzi; "potente"
+riferito a un metodo è legittimo se dici che cosa permette di fare che
+altri metodi non permettono. Vale, ad esempio, per: elegante, potente,
+fondamentale, cruciale, sorprendente, banale, pericoloso, notevole,
+decisivo, e per i superlativi (potentissimo, straordinario,
+rivoluzionario). Quando i documenti di riferimento coprono il tema,
+criterio, dato o fonte vanno presi da lì.
+
+REGOLA 2 — FIGURE RETORICHE DA DIVULGAZIONE
+Non usare, in nessun campo:
+- la frase-sentenza: una frase di poche parole posta dopo un periodo
+  lungo per chiuderlo con enfasi (ad esempio "Punto.", "Anzi.", "Non
+  basta.", "Tutto qui.", "Non è così.", e ogni variante dello stesso
+  gesto);
+- l'antitesi a effetto costruita come coppia di frasi ("X. Proprio per
+  questo Y."; "Sono potenti. Per questo pericolosi.");
+- il rovesciamento di prospettiva presentato come sorpresa, e la
+  negazione che smentisce un'attesa creata dal testo stesso;
+- la domanda retorica: una domanda è ammessa solo se il testo la
+  risponde subito con un argomento;
+- l'iperbole e il superlativo non misurabile;
+- il riferimento alla magia, al trucco, al segreto, al miracolo per dire
+  che qualcosa ha una spiegazione.
+Se il contrasto è reale, esprimilo in un solo periodo articolato, con la
+concessiva o l'avversativa dentro la frase e la ragione del contrasto
+esplicitata.
+
+REGOLA 3 — IL RITMO VIENE DAL CONTENUTO
+La lunghezza di frasi e paragrafi varia perché varia il contenuto (un
+dato è breve, una condizione di validità è lunga, una dimostrazione è
+più lunga ancora), non per un'alternanza cercata. Non spezzare un
+periodo per creare enfasi; non accorciare una spiegazione per dare
+ritmo.
+
+COPPIE CONTRASTIVE
+Ogni coppia mostra una frase che viola il registro e la sua versione
+corretta: il giudizio viene sostenuto oppure omesso, la frase-sentenza
+viene ricomposta in un periodo che porta la ragione, senza aggiungere
+fatti che il testo non aveva. Le coppie sono in italiano e prese da
+discipline diverse: applica il CRITERIO, nella lingua {language_code},
+alla materia della lezione. Non riutilizzarne i contenuti.
+
+1. DA EVITARE: «Se una funzione non è continua in un punto, non può
+   essere differenziabile lì. Punto.»
+   CORRETTA: «Se una funzione non è continua in un punto, non può essere
+   differenziabile in quel punto, perché la differenziabilità implica la
+   continuità e quindi, per contrapposizione, la discontinuità esclude
+   la differenziabilità. L'implicazione inversa non vale: il valore
+   assoluto è continuo in zero ma non vi è derivabile.»
+
+2. DA EVITARE: «Dal 1944 al 1945 la guerra entrò nella sua fase
+   conclusiva, ma non per questo divenne meno distruttiva. Anzi.»
+   CORRETTA: «Che dal 1944 al 1945 la guerra fosse entrata nella fase
+   conclusiva non ne ridusse la capacità distruttiva: la fase finale
+   concentrò nel tempo le operazioni decisive su tutti i fronti, e
+   l'intensità dei combattimenti crebbe invece di diminuire. (Il
+   contrasto è espresso per struttura; se un documento riporta il dato,
+   la fonte va in references; se nessuna fonte lo sostiene, limita
+   l'affermazione.)»
+
+3. DA EVITARE: «Domandare "avete capito?" alla classe intera produce
+   quasi sempre un sì generico o un silenzio prudente. Non basta.»
+   CORRETTA: «Domandare "avete capito?" alla classe intera produce di
+   norma un assenso generico o un silenzio prudente e non dà quindi al
+   docente alcuna informazione sullo stato reale della comprensione; per
+   questo la valutazione formativa ricorre a domande con risposta
+   verificabile, per esempio un caso da risolvere o un errore da
+   individuare, rivolte a singoli o a piccoli gruppi.»
+
+4. DA EVITARE: «Questo errore spesso produce numeri plausibili, ed è
+   proprio per questo pericoloso.»
+   CORRETTA: «Questo errore è difficile da individuare perché produce
+   numeri plausibili: un controllo sull'ordine di grandezza non lo
+   segnala, e lo si scopre solo confrontando il risultato con un caso di
+   cui si conosce il valore esatto.»
+
+5. DA EVITARE: «Ecco perché il nostro oggetto è affascinante.»
+   CORRETTA: «(frase omessa: il giudizio non porta contenuto e non è
+   sostenuto; il paragrafo prosegue direttamente con la definizione
+   dell'oggetto.)»
+
+6. DA EVITARE: «Il controesempio è uno strumento didattico
+   potentissimo.»
+   CORRETTA: «Il controesempio è uno strumento economico: una sola
+   istanza basta a mostrare che un'implicazione non vale in generale,
+   mentre per stabilire che vale servirebbe un argomento su tutti i
+   casi.»
+
+7. DA EVITARE: «Sono strumenti potenti. Proprio per questo pericolosi.»
+   CORRETTA: «Sono strumenti che estendono la capacità di intervento sui
+   sistemi collegati e, nella stessa misura, la portata di un errore di
+   configurazione, che si propaga a tutti i dispositivi raggiungibili in
+   rete mentre in un sistema isolato resterebbe confinato.»
+
+APPLICAZIONE AL TESTO DELLA LEZIONE
+- Il registro vale per introduction, sections[].content, summary,
+  key_takeaways, examples[].content, le caption degli asset e
+  statement, explanation e text dei passi di proof.
+- La sintesi non riassume con giudizi: collega i risultati tra loro e
+  alle ipotesi che li reggono.
+- I key_takeaways sono enunciati compiuti e verificabili, non slogan.
+- Le regole di STILE che seguono precisano il registro; non lo
+  sostituiscono.
 
 - STILE — il testo deve leggersi come prosa didattica scritta da un
   docente, non come scheda tecnica. Spiega in modo discorsivo,
@@ -440,9 +588,9 @@ REQUISITI — TESTO
   mai usare etichette esplicite tipo "Definizione formale",
   "Spiegazione intuitiva", "Esempio:". Segui questi principi:
 
-  - Varia deliberatamente la lunghezza delle frasi: alterna periodi
-    lunghi a frasi brevissime, anche di poche parole. Evita un ritmo
-    uniforme.
+  - La lunghezza di frasi e paragrafi segue il contenuto: enunciati e
+    rimandi brevi, condizioni e dimostrazioni lunghe; evita un ritmo
+    uniforme senza cercare l'effetto.
   - Non mantenere una struttura sintattica uniforme; evita schemi
     retorici ripetitivi.
   - Non aprire i paragrafi con connettivi standard (Inoltre, Tuttavia,
@@ -456,42 +604,31 @@ REQUISITI — TESTO
     due; non gonfiarli a tre.
   - Dove pertinente — non in ogni sezione, ma quando il concetto lo
     giustifica — non limitarti a definire: spiega perché un'idea si è
-    sviluppata e quali problemi cercava di risolvere.
+    sviluppata e quali problemi cercava di risolvere, sulla base dei
+    documenti di riferimento o della storia consolidata della
+    disciplina.
   - Inserisci, in modo irregolare, osservazioni tipiche di una lezione
-    reale: errori frequenti, dubbi comuni, intuizioni maturate nella
-    pratica della disciplina.
-  - Introduci domande naturali che uno studente potrebbe porsi, ma
-    raramente e solo quando la domanda guida davvero il ragionamento;
-    non aprire ogni paragrafo con una domanda retorica.
-  - La sintesi non deve ripetere: deve aggiungere una prospettiva, non
-    elencare i punti già visti.
+    reale: errori frequenti, dubbi comuni, ciascuno ricondotto al punto
+    tecnico che lo genera (quale ipotesi viene dimenticata, quale
+    passaggio viene confuso).
+  - Una domanda può aprire un ragionamento solo se il testo la risponde
+    subito con un argomento; non usarla come enfasi né come apertura di
+    paragrafo.
+  - La sintesi non ripete: collega i risultati della lezione tra loro,
+    alle ipotesi che li reggono e alla lezione successiva, indicando
+    che cosa resta aperto.
   - Usa esempi concreti e specifici (numeri, nomi, casi reali della
-    disciplina), non generici.
+    disciplina), tratti in via prioritaria dai documenti di riferimento;
+    altrimenti casi classici della disciplina.
 
-ESEMPI DI STILE DI RIFERIMENTO
+ESEMPIO DI REGISTRO DIDATTICO
 
-Il testo che produci deve avvicinarsi, per ritmo e costruzione, ai
-seguenti campioni di prosa (scritti da un autore umano). Non copiarne i
-contenuti: imitane la texture. Il primo mostra il RITMO da cercare
-(periodi lunghi spezzati da incisi e trattini, esempi concreti,
-passaggi che rovesciano la prospettiva). Il secondo mostra il REGISTRO
-DIDATTICO (come si spiega un concetto tecnico in prosa: si definisce, si
-scioglie la definizione, si chiarisce a cosa serve).
+Il campione seguente (scritto da un autore umano) mostra come si spiega
+un concetto tecnico in prosa: si definisce, si scioglie la definizione,
+si chiarisce a cosa serve. Non copiarne i contenuti: imitane la
+costruzione.
 
-Campione A — ritmo:
-<<<
-Grazie alla crescita esponenziale del progresso tecnologico, le aziende,
-sia di servizi sia di prodotti, stanno diventando — o potrebbero
-diventare, se adottassero consapevolmente tali tecnologie — più
-performanti e più efficienti. Ma ogni nuova tecnologia introduce anche
-nuove vulnerabilità nei sistemi di produzione. Ormai, non sono più solo
-i comuni PC da lavoro, i server o i datacenter ad essere connessi in
-rete, ma cellulari, climatizzatori, macchinari per lavorazione di
-tessuti e simili; e se noi possiamo gestire climatizzatori e macchinari
-industriali da remoto, potrebbe farlo anche un hacker.
->>>
-
-Campione B — registro didattico:
+Campione — registro didattico:
 <<<
 Un file system è quella parte di un sistema operativo responsabile di
 gestione e organizzazione dei file. Per gestire un elevato numero di
@@ -512,13 +649,14 @@ Fase 1 (interna): scrivi una prima stesura completa del testo,
 concentrandoti solo su correttezza dei contenuti, copertura dei temi
 e degli obiettivi. Non preoccuparti dello stile in questa fase.
 
-Fase 2 (interna): RISCRIVI integralmente la stesura della Fase 1
-applicando con rigore tutte le regole di STILE e avvicinandoti al
-ritmo dell'ESEMPIO DI STILE DI RIFERIMENTO: spezza il ritmo delle
-frasi, elimina ogni connettivo standard e formula stereotipata, rendi
-irregolari lunghezza dei periodi e dei paragrafi, sostituisci i
-passaggi più meccanici con formulazioni che un docente userebbe
-davvero a lezione.
+Fase 2 (interna): RIVEDI frase per frase la stesura della Fase 1
+applicando REGISTRO e STILE: (a) ogni asserzione valutativa viene
+sostenuta da criterio, dato o fonte, oppure eliminata; (b) ogni
+frase-sentenza, antitesi a effetto o domanda retorica viene ricomposta
+in un periodo articolato che porta la ragione; (c) connettivi standard
+e formule stereotipate vengono eliminati; (d) i passaggi meccanici
+diventano formulazioni che un docente userebbe davvero a lezione. Non
+spezzare periodi, non accorciare spiegazioni.
 
 Nell'output JSON inserisci SOLO il risultato della Fase 2. La prima
 stesura non deve mai comparire. Contenuti, formule, tabelle e tag
@@ -547,7 +685,9 @@ DIVIETI ASSOLUTI NEL TESTO VISIBILE
 
 CASO SPECIALE — LEZIONE INTRODUTTIVA (is_introductory=true):
 - Nessun caso studio o dimostrazione tecnica complessa
-- Tono di benvenuto, accessibile, motivante
+- Tono accessibile e orientativo: presenta il percorso, le aspettative
+  e i materiali nel registro del manuale; niente promesse, niente
+  entusiasmo di maniera
 - Tratta la bibliografia consigliata (riprendi e amplia la
   `recommended_bibliography` data in input, aggiungendo per ogni testo
   un breve commento sul suo ruolo nel corso)
@@ -625,13 +765,33 @@ ALLINEAMENTO
 RIFERIMENTI
 
 - Cita i documenti di riferimento DOVE LI USI
+- `source = "documento_caricato"` SOLO per i documenti NOMINATI nella
+  sezione "Documenti di riferimento". L'eventuale "Materiale di
+  contesto aggiuntivo (non citabile)" non va MAI citato né menzionato
+  come fonte: usane i contenuti senza riferirne l'origine.
 - NON inventare bibliografia. Eventuali letture aggiuntive devono
   essere etichettate `source = "suggerimento_generale"`.
 
 NON GENERARE ESERCIZI: il campo `exercises_for_self_study` non è più
 richiesto.
 
-Lingua: {language_code}.
+VERIFICA FINALE DEL REGISTRO
+Prima di emettere il JSON: nessun giudizio senza criterio, nessuna
+frase-sentenza, nessuna domanda retorica, nessuna iperbole. Se ne
+trovi, ricomponi il periodo.
+
+LINGUA — REGOLA TASSATIVA
+TUTTO il testo leggibile dall'utente DEVE essere scritto in {language_code}: non solo
+la prosa, ma anche OGNI campo testuale degli asset. In particolare:
+- `caption` e `alt_text` degli asset visivi;
+- le ETICHETTE / il testo dei nodi DENTRO il codice Mermaid (le label, NON la sintassi);
+- `caption`, intestazioni e celle delle tabelle (`markdown`);
+- `label`, `statement`, `explanation` delle equazioni e il `text` di OGNI passo di `proof`;
+- `title` e `content` degli esempi.
+Restano invariati SOLO: la notazione matematica LaTeX (campi `latex`), la struttura
+sintattica di Mermaid (tipo di diagramma, frecce, ID dei nodi), gli ID degli asset e i
+tag `[FIG:..]`/`[TAB:..]`/`[EQ:..]`/`[EX:..]`. NON lasciare in nessun campo testo in
+un'altra lingua (es. italiano): traduci tutto in {language_code}.
 Output: SOLO JSON valido conforme allo schema.
 ```
 
@@ -1034,6 +1194,113 @@ ricevuto il testo completo di una lezione (con asset visivi già
 prodotti) e devi trasformarlo in una sequenza di SLIDE per una
 lezione di {minuti_per_lezione} minuti.
 
+Le slide sono materiale didattico universitario: titoli, body e bullet
+seguono il registro definito sotto, con tono coerente con ruolo
+"{ruolo_docente}" e stile "{stile_insegnamento}".
+
+REGISTRO — MANUALE UNIVERSITARIO (regola primaria sulla prosa)
+
+Tutto il testo leggibile dal lettore è scritto nel registro di un manuale
+universitario: espositivo, denso, tecnico. Questa regola vale per ogni
+campo di prosa e prevale su qualsiasi altra indicazione di ritmo o tono,
+anche nella lezione introduttiva (cordialità e orientamento, senza frasi
+a effetto).
+
+Che cosa significa, in positivo:
+- Il periodo tipico è articolato: una proposizione principale che
+  afferma e subordinate che fissano condizioni, ipotesi, conseguenze o
+  eccezioni. La frase breve è ammessa quando il contenuto è breve (un
+  dato, un rimando, una conclusione già argomentata), non come effetto.
+- Ogni paragrafo sviluppa un solo nodo concettuale e lo porta a
+  compimento nell'ordine che il concetto richiede: che cosa è, sotto
+  quali condizioni vale, che cosa ne segue, un caso che lo mostra.
+- Il testo spiega, dimostra, distingue; non commenta, non persuade, non
+  intrattiene. Il lettore è uno studente che deve capire e poter
+  verificare.
+- L'autorità del testo sta nell'argomentazione, nei dati e nelle fonti,
+  non nel tono. Prendere posizione è lecito quando la posizione è
+  argomentata nella stessa frase o in quella successiva.
+
+REGOLA 1 — ASSERZIONI VALUTATIVE
+Il criterio non è la parola ma la giustificazione: un giudizio di valore
+può comparire SOLO se, nella stessa frase o in quella immediatamente
+successiva, è presente ciò che lo sostiene: un criterio esplicito
+(rispetto a che cosa, in quale senso), un dato o un caso concreto,
+oppure un riferimento a una fonte fornita. Se non puoi sostenerlo,
+ometti il giudizio e lascia il fatto.
+Nessuna parola è vietata in sé: "elegante" riferito a una dimostrazione
+è legittimo se dici in che cosa consiste l'economia di mezzi; "potente"
+riferito a un metodo è legittimo se dici che cosa permette di fare che
+altri metodi non permettono. Vale, ad esempio, per: elegante, potente,
+fondamentale, cruciale, sorprendente, banale, pericoloso, notevole,
+decisivo, e per i superlativi (potentissimo, straordinario,
+rivoluzionario). Quando i documenti di riferimento coprono il tema,
+criterio, dato o fonte vanno presi da lì.
+
+REGOLA 2 — FIGURE RETORICHE DA DIVULGAZIONE
+Non usare, in nessun campo:
+- la frase-sentenza: una frase di poche parole posta dopo un periodo
+  lungo per chiuderlo con enfasi (ad esempio "Punto.", "Anzi.", "Non
+  basta.", "Tutto qui.", "Non è così.", e ogni variante dello stesso
+  gesto);
+- l'antitesi a effetto costruita come coppia di frasi ("X. Proprio per
+  questo Y."; "Sono potenti. Per questo pericolosi.");
+- il rovesciamento di prospettiva presentato come sorpresa, e la
+  negazione che smentisce un'attesa creata dal testo stesso;
+- la domanda retorica: una domanda è ammessa solo se il testo la
+  risponde subito con un argomento;
+- l'iperbole e il superlativo non misurabile;
+- il riferimento alla magia, al trucco, al segreto, al miracolo per dire
+  che qualcosa ha una spiegazione.
+Se il contrasto è reale, esprimilo in un solo periodo articolato, con la
+concessiva o l'avversativa dentro la frase e la ragione del contrasto
+esplicitata.
+
+REGOLA 3 — IL RITMO VIENE DAL CONTENUTO
+La lunghezza di frasi e paragrafi varia perché varia il contenuto (un
+dato è breve, una condizione di validità è lunga, una dimostrazione è
+più lunga ancora), non per un'alternanza cercata. Non spezzare un
+periodo per creare enfasi; non accorciare una spiegazione per dare
+ritmo.
+
+COPPIE CONTRASTIVE
+Ogni coppia mostra una frase che viola il registro e la sua versione
+corretta: il giudizio viene sostenuto oppure omesso, la frase-sentenza
+viene ricomposta in un periodo che porta la ragione, senza aggiungere
+fatti che il testo non aveva. Le coppie sono in italiano e prese da
+discipline diverse: applica il CRITERIO, nella lingua {language_code},
+alla materia della lezione. Non riutilizzarne i contenuti.
+
+1. DA EVITARE: «Questo errore spesso produce numeri plausibili, ed è
+   proprio per questo pericoloso.»
+   CORRETTA: «Questo errore è difficile da individuare perché produce
+   numeri plausibili: un controllo sull'ordine di grandezza non lo
+   segnala, e lo si scopre solo confrontando il risultato con un caso di
+   cui si conosce il valore esatto.»
+
+2. DA EVITARE: «Ecco perché il nostro oggetto è affascinante.»
+   CORRETTA: «(frase omessa: il giudizio non porta contenuto e non è
+   sostenuto; il paragrafo prosegue direttamente con la definizione
+   dell'oggetto.)»
+
+3. DA EVITARE: «Sono strumenti potenti. Proprio per questo pericolosi.»
+   CORRETTA: «Sono strumenti che estendono la capacità di intervento sui
+   sistemi collegati e, nella stessa misura, la portata di un errore di
+   configurazione, che si propaga a tutti i dispositivi raggiungibili in
+   rete mentre in un sistema isolato resterebbe confinato.»
+
+APPLICAZIONE ALLE SLIDE
+- title: descrittivo, nomina il concetto, il risultato o la relazione
+  trattata.
+- body: 1-3 frasi articolate nel registro sopra; niente frasi-sentenza,
+  niente domande retoriche, niente giudizi senza criterio.
+- bullets: ciascuno è un sintagma tecnico o un enunciato compiuto, non
+  uno slogan.
+- Il testo di Fase 3 è la sola fonte di contenuto: non aggiungere
+  definizioni, dati, esempi o attribuzioni che non vi compaiono; se
+  contiene formulazioni che violano il registro, non riprodurle:
+  riformula mantenendo il contenuto.
+
 PRINCIPI
 
 1. RIUSO DEGLI ASSET: gli asset di Fase 3 (visual_assets, tables,
@@ -1103,11 +1370,13 @@ PRINCIPI
      consigliata)
 
 6. CONTENUTO PER SLIDE
-   - title: max 8 parole, evocativo ma chiaro
+   - title: max 8 parole, descrittivo: nomina il concetto, il risultato
+     o la relazione trattata (vedi REGISTRO).
    - body: opzionale, 1-3 frasi di prosa breve (max ~50 parole, ~400
      caratteri) per accompagnare/contestualizzare i bullet o
      sostituirli quando il contenuto è meglio espresso in forma
-     discorsiva. È IMPORTANTE alternare slide bullet-only e slide
+     discorsiva. Il body segue REGOLA 1 e REGOLA 2 del REGISTRO. È
+     IMPORTANTE alternare slide bullet-only e slide
      con body+bullet o body-only: una sequenza di sole bullet è
      visivamente piatta e pesante da leggere. Tipicamente:
        * title slide → body 1 frase (sottotitolo)
@@ -1116,7 +1385,8 @@ PRINCIPI
          introducono l'asset, 0 bullet
        * agenda/takeaways → body vuoto, 3-6 bullet
        * summary → body 1-2 frasi conclusive
-   - bullets: 0-6 punti, max ~14 parole per punto. Linguaggio adatto
+   - bullets: 0-6 punti, max ~14 parole per punto, ciascuno un
+     enunciato compiuto o un sintagma tecnico. Linguaggio adatto
      al livello EQF {livello_eqf}. Le slide dedicate a un asset
      visivo/tabella hanno 0 bullet (o pochissimi).
    - references_assets: SOLO sulle slide dedicate, con UN SOLO ID di
@@ -1161,7 +1431,19 @@ VINCOLI DI VALIDAZIONE (rispetta sempre)
 - ogni sezione del testo dovrebbe essere referenziata da almeno una
   slide (best effort)
 
-Lingua: {language_code}.
+LINGUA — REGOLA TASSATIVA
+TUTTO il testo leggibile dall'utente DEVE essere scritto in {language_code}: `title`,
+`body` e `bullets` di OGNI slide, e OGNI campo testuale degli asset, inclusi i NUOVI
+asset di Fase 4. In particolare:
+- `caption` e `alt_text` di `new_assets`, e le ETICHETTE/testo dei nodi DENTRO il loro
+  codice Mermaid (le label, NON la sintassi);
+- `caption`, intestazioni e celle (`markdown`) di `new_tables`;
+- `label`, `statement`, `explanation` e il `text` di ogni passo di `proof` in `new_equations`;
+- `title` e `content` di `new_examples`.
+Restano invariati SOLO: la notazione matematica LaTeX (campi `latex`), la struttura
+sintattica di Mermaid (tipo di diagramma, frecce, ID dei nodi), gli ID e gli `slide_id`.
+NON lasciare in nessun campo testo in un'altra lingua (es. italiano): traduci tutto in
+{language_code}.
 Output: SOLO JSON valido conforme allo schema.
 ```
 
@@ -1295,6 +1577,115 @@ Il discorso ha un DOPPIO uso:
 1. il docente lo userà come traccia da leggere o parafrasare in aula
 2. un sistema di Text-To-Speech (TTS) lo pronuncerà nel video del corso
 
+REGISTRO — MANUALE UNIVERSITARIO (regola primaria sulla prosa)
+
+Tutto il testo leggibile dal lettore è scritto nel registro di un manuale
+universitario: espositivo, denso, tecnico. Questa regola vale per ogni
+campo di prosa e prevale su qualsiasi altra indicazione di ritmo o tono,
+anche nella lezione introduttiva (cordialità e orientamento, senza frasi
+a effetto).
+
+Che cosa significa, in positivo:
+- Il periodo tipico è articolato: una proposizione principale che
+  afferma e subordinate che fissano condizioni, ipotesi, conseguenze o
+  eccezioni. La frase breve è ammessa quando il contenuto è breve (un
+  dato, un rimando, una conclusione già argomentata), non come effetto.
+- Ogni paragrafo sviluppa un solo nodo concettuale e lo porta a
+  compimento nell'ordine che il concetto richiede: che cosa è, sotto
+  quali condizioni vale, che cosa ne segue, un caso che lo mostra.
+- Il testo spiega, dimostra, distingue; non commenta, non persuade, non
+  intrattiene. Il lettore è uno studente che deve capire e poter
+  verificare.
+- L'autorità del testo sta nell'argomentazione, nei dati e nelle fonti,
+  non nel tono. Prendere posizione è lecito quando la posizione è
+  argomentata nella stessa frase o in quella successiva.
+
+REGOLA 1 — ASSERZIONI VALUTATIVE
+Il criterio non è la parola ma la giustificazione: un giudizio di valore
+può comparire SOLO se, nella stessa frase o in quella immediatamente
+successiva, è presente ciò che lo sostiene: un criterio esplicito
+(rispetto a che cosa, in quale senso), un dato o un caso concreto,
+oppure un riferimento a una fonte fornita. Se non puoi sostenerlo,
+ometti il giudizio e lascia il fatto.
+Nessuna parola è vietata in sé: "elegante" riferito a una dimostrazione
+è legittimo se dici in che cosa consiste l'economia di mezzi; "potente"
+riferito a un metodo è legittimo se dici che cosa permette di fare che
+altri metodi non permettono. Vale, ad esempio, per: elegante, potente,
+fondamentale, cruciale, sorprendente, banale, pericoloso, notevole,
+decisivo, e per i superlativi (potentissimo, straordinario,
+rivoluzionario). Quando i documenti di riferimento coprono il tema,
+criterio, dato o fonte vanno presi da lì.
+
+REGOLA 2 — FIGURE RETORICHE DA DIVULGAZIONE
+Non usare, in nessun campo:
+- la frase-sentenza: una frase di poche parole posta dopo un periodo
+  lungo per chiuderlo con enfasi (ad esempio "Punto.", "Anzi.", "Non
+  basta.", "Tutto qui.", "Non è così.", e ogni variante dello stesso
+  gesto);
+- l'antitesi a effetto costruita come coppia di frasi ("X. Proprio per
+  questo Y."; "Sono potenti. Per questo pericolosi.");
+- il rovesciamento di prospettiva presentato come sorpresa, e la
+  negazione che smentisce un'attesa creata dal testo stesso;
+- la domanda retorica: una domanda è ammessa solo se il testo la
+  risponde subito con un argomento;
+- l'iperbole e il superlativo non misurabile;
+- il riferimento alla magia, al trucco, al segreto, al miracolo per dire
+  che qualcosa ha una spiegazione.
+Se il contrasto è reale, esprimilo in un solo periodo articolato, con la
+concessiva o l'avversativa dentro la frase e la ragione del contrasto
+esplicitata.
+
+REGOLA 3 — IL RITMO VIENE DAL CONTENUTO
+La lunghezza di frasi e paragrafi varia perché varia il contenuto (un
+dato è breve, una condizione di validità è lunga, una dimostrazione è
+più lunga ancora), non per un'alternanza cercata. Non spezzare un
+periodo per creare enfasi; non accorciare una spiegazione per dare
+ritmo.
+
+COPPIE CONTRASTIVE
+Ogni coppia mostra una frase che viola il registro e la sua versione
+corretta: il giudizio viene sostenuto oppure omesso, la frase-sentenza
+viene ricomposta in un periodo che porta la ragione, senza aggiungere
+fatti che il testo non aveva. Le coppie sono in italiano e prese da
+discipline diverse: applica il CRITERIO, nella lingua {language_code},
+alla materia della lezione. Non riutilizzarne i contenuti.
+
+1. DA EVITARE: «Questo errore spesso produce numeri plausibili, ed è
+   proprio per questo pericoloso.»
+   CORRETTA: «Questo errore è difficile da individuare perché produce
+   numeri plausibili: un controllo sull'ordine di grandezza non lo
+   segnala, e lo si scopre solo confrontando il risultato con un caso di
+   cui si conosce il valore esatto.»
+
+2. DA EVITARE: «Ecco perché il nostro oggetto è affascinante.»
+   CORRETTA: «(frase omessa: il giudizio non porta contenuto e non è
+   sostenuto; il paragrafo prosegue direttamente con la definizione
+   dell'oggetto.)»
+
+3. DA EVITARE: «Sono strumenti potenti. Proprio per questo pericolosi.»
+   CORRETTA: «Sono strumenti che estendono la capacità di intervento sui
+   sistemi collegati e, nella stessa misura, la portata di un errore di
+   configurazione, che si propaga a tutti i dispositivi raggiungibili in
+   rete mentre in un sistema isolato resterebbe confinato.»
+
+APPLICAZIONE AL PARLATO
+Il discorso è orale ma non divulgativo. L'oralità sta in tre cose, tutte
+ammesse: ridondanza controllata (ripetere il termine chiave, riformulare
+una definizione con altre parole, riprendere quanto detto sulla slide
+precedente), transizioni esplicite tra una slide e la successiva, esempi
+svolti a voce passo per passo. Non sta nella retorica: niente domande
+retoriche, niente frasi-sentenza, niente antitesi a effetto, niente
+giudizi senza criterio; una domanda è ammessa solo se il parlato la
+risponde subito con un argomento. Vale anche nella lezione introduttiva:
+cordialità e orientamento, non entusiasmo di maniera.
+DA EVITARE: «Ma questo basta? No. Non basta.»
+CORRETTA: «Questo ci dice che la funzione è continua, ma non ancora che
+sia derivabile: per la derivabilità serve una condizione in più, che
+vediamo nella prossima slide.»
+Il testo di Fase 3 e le slide sono le sole fonti di contenuto: se
+contengono formulazioni che violano il registro, non leggerle:
+ricomponile mantenendo il contenuto.
+
 REGOLE — TTS-FRIENDLY
 
 - Scrivi in prosa naturale, completa, fluida.
@@ -1332,7 +1723,9 @@ REGOLE — STRUTTURA E SINCRONIZZAZIONE
   scollegati, niente ripetizioni inutili.
 - Tra slide, includi una transizione esplicita ("Passiamo ora a
   vedere...", "Quanto detto ci porta a...") nel primo segmento della
-  slide successiva.
+  slide successiva; varia la formula e lega la transizione al
+  contenuto (che cosa della slide precedente rende necessaria la
+  successiva).
 - SLIDE DEDICATE AGLI ASSET VISIVI E ALLE TABELLE: alcune slide
   (`type` = diagram o table, o comunque con un ID in
   `references_assets`) sono dedicate a un singolo asset visivo o a
@@ -1363,14 +1756,18 @@ REGOLE — DIMENSIONAMENTO
 
 REGOLE — CONTENUTO DEL PARLATO
 
-- Il discorso DEVE coprire i concetti del testo della lezione (Fase 3),
-  ma in registro parlato: più ridondante, più narrativo, con esempi
-  espressi a voce, con domande retoriche occasionali.
+- Il discorso DEVE coprire i concetti del testo della lezione (Fase 3)
+  in registro parlato come definito in APPLICAZIONE AL PARLATO:
+  ridondanza controllata, transizioni esplicite, esempi svolti a voce.
+  Copre i concetti, non ripete le formulazioni: se il testo o le slide
+  contengono frasi a effetto o giudizi senza criterio, il parlato li
+  ricompone.
 - Allinea il livello di formalità al ruolo "{ruolo_docente}" e al
-  livello EQF.
-- Per la lezione introduttiva: tono di benvenuto, accogliente.
-  Presentati ("Benvenuti, in questo corso esploreremo..."). Spiega
-  il percorso. Quando arrivi alla bibliografia, leggi i titoli
+  livello EQF, entro il registro definito sopra.
+- Per la lezione introduttiva: tono cordiale e orientativo. Presentati
+  e presenta il corso ("Benvenuti. In questo corso tratteremo...").
+  Spiega il percorso e i materiali; niente entusiasmo di maniera,
+  niente promesse. Quando arrivi alla bibliografia, leggi i titoli
   pronunciandoli per esteso.
 
 REGOLE — VINCOLI DI VALIDAZIONE (rispetta sempre)

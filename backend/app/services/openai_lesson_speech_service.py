@@ -30,6 +30,10 @@ from app.services.openai_client import (
     get_client,
 )
 from app.services.openai_pricing import build_usage_dict
+from app.services.prompt_register import (
+    REGENERATION_REGISTER_NOTE,
+    academic_register_block,
+)
 
 log = get_logger("app.openai_lesson_speech")
 
@@ -76,6 +80,7 @@ def _system_prompt(
     else:
         target = "la durata target indicata nel messaggio (minuti * 60 secondi)"
     ruolo = ruolo_docente or "indicato nel messaggio"
+    register_block = academic_register_block("speech", language_code)
     return f"""\
 Sei uno scrittore esperto di parlato espositivo per la formazione
 universitaria. Devi scrivere il DISCORSO completo che accompagna le
@@ -84,6 +89,8 @@ slide di una lezione, sincronizzato slide per slide.
 Il discorso ha un DOPPIO uso:
 1. il docente lo userà come traccia da leggere o parafrasare in aula
 2. un sistema di Text-To-Speech (TTS) lo pronuncerà nel video del corso
+
+{register_block}
 
 REGOLE — TTS-FRIENDLY
 
@@ -122,7 +129,9 @@ REGOLE — STRUTTURA E SINCRONIZZAZIONE
   scollegati, niente ripetizioni inutili.
 - Tra slide, includi una transizione esplicita ("Passiamo ora a
   vedere...", "Quanto detto ci porta a...") nel primo segmento della
-  slide successiva.
+  slide successiva; varia la formula e lega la transizione al
+  contenuto (che cosa della slide precedente rende necessaria la
+  successiva).
 - SLIDE DEDICATE AGLI ASSET VISIVI E ALLE TABELLE: alcune slide
   (`type` = diagram o table, o comunque con un ID in
   `references_assets`) sono dedicate a un singolo asset visivo o a
@@ -153,14 +162,18 @@ REGOLE — DIMENSIONAMENTO
 
 REGOLE — CONTENUTO DEL PARLATO
 
-- Il discorso DEVE coprire i concetti del testo della lezione (Fase 3),
-  ma in registro parlato: più ridondante, più narrativo, con esempi
-  espressi a voce, con domande retoriche occasionali.
+- Il discorso DEVE coprire i concetti del testo della lezione (Fase 3)
+  in registro parlato come definito in APPLICAZIONE AL PARLATO:
+  ridondanza controllata, transizioni esplicite, esempi svolti a voce.
+  Copre i concetti, non ripete le formulazioni: se il testo o le slide
+  contengono frasi a effetto o giudizi senza criterio, il parlato li
+  ricompone.
 - Allinea il livello di formalità al ruolo "{ruolo}" e al
-  livello EQF.
-- Per la lezione introduttiva: tono di benvenuto, accogliente.
-  Presentati ("Benvenuti, in questo corso esploreremo..."). Spiega
-  il percorso. Quando arrivi alla bibliografia, leggi i titoli
+  livello EQF, entro il registro definito sopra.
+- Per la lezione introduttiva: tono cordiale e orientativo. Presentati
+  e presenta il corso ("Benvenuti. In questo corso tratteremo...").
+  Spiega il percorso e i materiali; niente entusiasmo di maniera,
+  niente promesse. Quando arrivi alla bibliografia, leggi i titoli
   pronunciandoli per esteso.
 
 REGOLE — VINCOLI DI VALIDAZIONE (rispetta sempre)
@@ -193,7 +206,8 @@ la versione precedente e il feedback del docente.
   durata target indicata nel messaggio (minuti * 60 secondi).
 - Se il feedback chiede una nuova durata, ridistribuisci di
   conseguenza, mantenendo proporzioni sensate tra slide.
-- Mantieni tutte le regole TTS-friendly."""
+- Mantieni tutte le regole TTS-friendly.
+""" + REGENERATION_REGISTER_NOTE
 
 
 # JSON Schema verbatim §8.4 — passato a OpenAI come response_format.json_schema.

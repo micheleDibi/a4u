@@ -286,6 +286,8 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                         is_regeneration=regen,
                         minuti_per_lezione=course_full.lesson_duration_minutes,
                         livello_eqf=style["livello_eqf"],
+                        ruolo_docente=style["ruolo_docente"],
+                        stile_insegnamento=style["stile_insegnamento"],
                     )
                 )
             except OpenAINotConfiguredError:
