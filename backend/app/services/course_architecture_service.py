@@ -120,6 +120,45 @@ def didactic_style_labels(course: Course) -> dict[str, str]:
     }
 
 
+def _document_header_lines(
+    doc: CourseDocument, *, anonymous_index: int | None = None
+) -> list[str]:
+    """Righe di intestazione di un documento nei prompt: è l'UNICA sede
+    della regola "nessun identificativo per i documenti riservati".
+
+    - citabile: `## Documento: <filename>`, lingua, riga `Fonte:` da
+      `source_title`/autori del riassunto (se presenti);
+    - riservato (`anonymous_index`): `## Materiale di contesto N` e
+      lingua, nient'altro.
+    Riusata da `_format_document_summary_for_prompt` (P2/P2b/glossario/
+    P3 storico) e da `lesson_document_selection` (P3 selezionato).
+    """
+    s = doc.summary or {}
+    if anonymous_index is not None:
+        return [
+            f"## Materiale di contesto {anonymous_index}",
+            f"Lingua rilevata: {s.get('detected_language', '?')}",
+        ]
+    parts = [
+        f"## Documento: {doc.filename_original}",
+        f"Lingua rilevata: {s.get('detected_language', '?')}",
+    ]
+    source_title = str(s.get("source_title") or "").strip()
+    authors = [
+        str(a.get("value") or "").strip()
+        for a in (s.get("authors_and_references") or [])
+        if isinstance(a, dict)
+        and a.get("type") == "author"
+        and str(a.get("value") or "").strip()
+    ]
+    if source_title or authors:
+        fonte = f"Fonte: {source_title or '?'}"
+        if authors:
+            fonte += " — " + ", ".join(authors[:6])
+        parts.append(fonte)
+    return parts
+
+
 def _format_document_summary_for_prompt(
     doc: CourseDocument,
     max_chars: int,
@@ -140,29 +179,7 @@ def _format_document_summary_for_prompt(
     if doc.summary_status != "ready" or not doc.summary:
         return None
     s = doc.summary
-    if anonymous_index is not None:
-        parts: list[str] = [
-            f"## Materiale di contesto {anonymous_index}",
-            f"Lingua rilevata: {s.get('detected_language', '?')}",
-        ]
-    else:
-        parts = [
-            f"## Documento: {doc.filename_original}",
-            f"Lingua rilevata: {s.get('detected_language', '?')}",
-        ]
-        source_title = str(s.get("source_title") or "").strip()
-        authors = [
-            str(a.get("value") or "").strip()
-            for a in (s.get("authors_and_references") or [])
-            if isinstance(a, dict)
-            and a.get("type") == "author"
-            and str(a.get("value") or "").strip()
-        ]
-        if source_title or authors:
-            fonte = f"Fonte: {source_title or '?'}"
-            if authors:
-                fonte += " — " + ", ".join(authors[:6])
-            parts.append(fonte)
+    parts = _document_header_lines(doc, anonymous_index=anonymous_index)
     parts += [
         "",
         "### Abstract",

@@ -76,6 +76,14 @@ Uso (dalla cartella `backend/`)
     python -m scripts.measure_register --format csv --export-jsonl before.jsonl > before.csv
     python -m scripts.measure_register --from-jsonl before.jsonl --top 5
     python -m scripts.measure_register --compare before.jsonl after.jsonl
+    python -m scripts.measure_register --course "Analisi" --grounding --by-lesson
+
+`--grounding` (solo con --db): per ogni dispensa riesegue la selezione
+degli estratti documentali con la stessa funzione di produzione
+(`lesson_document_selection.select_documents_context_for_lesson`) e
+riporta `ground_cov` (quota di voci selezionate presenti nel testo:
+almeno due stem significativi per voce) e le `references` per source
+(`refs_doc` = documento_caricato, `refs_gen` = suggerimento_generale).
 
 Sul server (`dc` = alias docker compose di produzione):
 
@@ -486,6 +494,9 @@ class LessonRow:
     cached_tokens: int | None
     estimated_word_count: int | None
     metrics: TextMetrics
+    # Solo con --grounding e solo per la dispensa: copertura degli estratti
+    # documentali selezionati e conteggio delle references per source.
+    grounding: dict[str, Any] | None = None
 
     def to_json(self) -> dict[str, Any]:
         data: dict[str, Any] = {"script_version": SCRIPT_VERSION}
@@ -524,6 +535,7 @@ class LessonRow:
             cached_tokens=data.get("cached_tokens"),
             estimated_word_count=data.get("estimated_word_count"),
             metrics=metrics,
+            grounding=_as_dict(data.get("grounding")) or None,
         )
 
 
@@ -611,6 +623,12 @@ def build_statement(args: argparse.Namespace, since: datetime | None) -> Any:
             CourseLesson.title.label("lesson_title"),
             CourseLesson.is_introductory,
             CourseLesson.is_assessment,
+            # Campi di Fase 2 usati da --grounding (profilo lessicale della
+            # lezione per la selezione degli estratti).
+            CourseLesson.summary.label("lesson_summary"),
+            CourseLesson.learning_objectives,
+            CourseLesson.mandatory_topics,
+            CourseLesson.section_outline,
             CourseLesson.content_raw,
             CourseLesson.slides_raw,
             CourseLesson.speech_raw,
@@ -652,9 +670,27 @@ async def load_rows_from_db(
 
     since = _parse_since(args.since)
     stmt = build_statement(args, since)
+    docs_by_course: dict[str, list[Any]] = {}
     try:
         async with async_session_factory() as session:
             records = (await session.execute(stmt)).mappings().all()
+            if getattr(args, "grounding", False) and records:
+                from sqlalchemy import select
+
+                from app.models.course_document import CourseDocument
+
+                course_ids = {rec["course_id"] for rec in records}
+                docs = (
+                    (
+                        await session.execute(
+                            select(CourseDocument).where(CourseDocument.course_id.in_(course_ids))
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+                for d in docs:
+                    docs_by_course.setdefault(str(d.course_id), []).append(d)
     finally:
         await engine.dispose()
 
@@ -691,8 +727,14 @@ async def load_rows_from_db(
                 punch_max_words=args.punch_max_words,
                 long_min_words=args.long_min_words,
             )
+            grounding = None
+            if getattr(args, "grounding", False) and kind == "dispensa":
+                grounding = grounding_for_lesson(
+                    rec, docs_by_course.get(str(rec["course_id"]), []), text
+                )
             rows.append(
                 LessonRow(
+                    grounding=grounding,
                     course_id=str(rec["course_id"]),
                     course=rec["course_title"],
                     lesson_code=rec["lesson_code"],
@@ -709,6 +751,77 @@ async def load_rows_from_db(
             )
     rows.sort(key=row_sort_key)
     return rows
+
+
+def grounding_coverage(selected_terms: Sequence[str], text: str) -> float | None:
+    """Quota delle voci selezionate dal riassunto che compaiono nel testo.
+
+    Una voce "compare" se almeno due dei suoi stem significativi (o l'unico,
+    se ne ha uno solo) sono presenti tra gli stem della dispensa. Usa la
+    stessa normalizzazione della selezione (`lesson_document_selection`),
+    così la misura riflette esattamente ciò che è stato passato al modello.
+    """
+    if not selected_terms:
+        return None
+    from app.services.lesson_document_selection import tokenize
+
+    text_stems = set(tokenize(text))
+    hits = 0
+    for term in selected_terms:
+        stems = set(tokenize(term))
+        if not stems:
+            continue
+        needed = 1 if len(stems) == 1 else 2
+        if len(stems & text_stems) >= needed:
+            hits += 1
+    return round(hits / len(selected_terms), 4)
+
+
+def references_by_source(content_raw: Any) -> dict[str, int]:
+    """Conteggio delle `references[]` della dispensa per `source`."""
+    out = {"documento_caricato": 0, "suggerimento_generale": 0}
+    for ref in _as_list(_as_dict(content_raw).get("references")):
+        source = str(_as_dict(ref).get("source") or "")
+        if source in out:
+            out[source] += 1
+    return out
+
+
+def grounding_for_lesson(rec: Any, docs: list[Any], text: str) -> dict[str, Any]:
+    """Riesegue la selezione degli estratti per la lezione (stessa funzione
+    di produzione) e misura la copertura nel testo generato."""
+    from app.core.config import get_settings
+    from app.models.course_lesson import CourseLesson
+    from app.services.lesson_document_selection import (
+        select_documents_context_for_lesson,
+    )
+
+    settings = get_settings()
+    lesson = CourseLesson(
+        lesson_code=rec["lesson_code"],
+        title=rec["lesson_title"],
+        summary=rec["lesson_summary"],
+        is_introductory=bool(rec["is_introductory"]),
+        learning_objectives=rec["learning_objectives"] or [],
+        mandatory_topics=rec["mandatory_topics"] or [],
+        section_outline=rec["section_outline"] or [],
+    )
+    ctx = select_documents_context_for_lesson(
+        docs,
+        lesson,
+        total_max_chars=settings.course_lesson_content_documents_context_max_chars,
+        per_doc_max_chars=settings.course_lesson_content_documents_per_doc_max_chars,
+        course_language=rec["language_code"],
+    )
+    refs = references_by_source(rec["content_raw"])
+    return {
+        "docs_ready": ctx.stats.get("docs_ready", 0),
+        "docs_relevant": ctx.stats.get("docs_relevant", 0),
+        "entries_selected": len(ctx.selected_terms),
+        "coverage": grounding_coverage(ctx.selected_terms, text),
+        "refs_documento": refs["documento_caricato"],
+        "refs_generale": refs["suggerimento_generale"],
+    }
 
 
 def filter_rows(rows: list[LessonRow], args: argparse.Namespace) -> list[LessonRow]:
@@ -805,6 +918,16 @@ def _aggregate_group(
     out.update(triple("evalB_nj", "evaluative_unjustified_b"))
     out["domande_100"] = per_100(tot("questions_count"), sentences)
     out["antitesi_100"] = per_100(tot("antithesis_count"), sentences)
+    grounded = [r.grounding for r in rows if r.grounding]
+    if grounded:
+        coverages = [g["coverage"] for g in grounded if g.get("coverage") is not None]
+        out["ground_cov"] = round(statistics.fmean(coverages), 3) if coverages else None
+        out["refs_doc_lez"] = round(
+            statistics.fmean(int(g.get("refs_documento") or 0) for g in grounded), 3
+        )
+        out["refs_gen_lez"] = round(
+            statistics.fmean(int(g.get("refs_generale") or 0) for g in grounded), 3
+        )
     return out
 
 
@@ -863,6 +986,11 @@ def by_lesson_rows(rows: Sequence[LessonRow]) -> list[dict[str, Any]]:
             "generated_at": r.generated_at,
             "cost_usd": r.cost_usd,
         }
+        if r.grounding:
+            row["ground_cov"] = r.grounding.get("coverage")
+            row["docs_rilev"] = r.grounding.get("docs_relevant")
+            row["refs_doc"] = r.grounding.get("refs_documento")
+            row["refs_gen"] = r.grounding.get("refs_generale")
         out.append(row)
     return out
 
@@ -1054,6 +1182,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--punch-max-words", type=int, default=PUNCH_MAX_WORDS)
     parser.add_argument("--long-min-words", type=int, default=LONG_MIN_WORDS)
+    parser.add_argument(
+        "--grounding",
+        action="store_true",
+        help=(
+            "Solo con --db: per ogni dispensa riesegue la selezione degli estratti "
+            "documentali (stessa funzione di produzione) e riporta la quota di voci "
+            "presenti nel testo (ground_cov) e le references per source."
+        ),
+    )
     return parser
 
 

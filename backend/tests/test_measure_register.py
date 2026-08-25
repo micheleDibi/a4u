@@ -317,3 +317,38 @@ def test_lesson_row_json_roundtrip_and_aggregate():
     assert agg[0]["gruppo"] == "intro"
     assert agg[0]["formule_tot"] == 1
     assert agg[0]["formule_1k"] == round(1000 / row.metrics.words, 3)
+
+
+# ---------------------------------------------------------------------------
+# --grounding (PR-2): copertura degli estratti selezionati e references
+# ---------------------------------------------------------------------------
+
+
+def test_grounding_coverage_counts_entries_with_two_stems_in_text():
+    from scripts.measure_register import grounding_coverage, references_by_source
+
+    selected = [
+        "Teorema di Weierstrass Una funzione continua su un compatto ha massimo",
+        "Coefficienti di Fourier Integrali sulle armoniche",
+        "Derivata",
+    ]
+    text = (
+        "Il teorema di Weierstrass garantisce il massimo di una funzione continua. "
+        "La derivata misura la pendenza."
+    )
+    # 1ª voce: weier+funzi+conti+massi presenti; 2ª: nessuno; 3ª: unico stem presente.
+    assert grounding_coverage(selected, text) == round(2 / 3, 4)
+    assert grounding_coverage([], text) is None
+
+    refs = references_by_source(
+        {
+            "references": [
+                {"citation": "A", "source": "documento_caricato"},
+                {"citation": "B", "source": "suggerimento_generale"},
+                {"citation": "C", "source": "documento_caricato"},
+                {"citation": "D", "source": "altro"},
+            ]
+        }
+    )
+    assert refs == {"documento_caricato": 2, "suggerimento_generale": 1}
+    assert references_by_source(None) == {"documento_caricato": 0, "suggerimento_generale": 0}

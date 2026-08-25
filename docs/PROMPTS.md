@@ -427,6 +427,7 @@ In rigenerazione: `## Versione attuale del modulo (DA RIVEDERE)` + `## Indicazio
 - Modello: `settings.openai_lesson_content_model` (default `gpt-5.5`, reasoning `high`, max 32000 token — il task più complesso della pipeline).
 - Ruolo: scrive il testo completo Markdown della lezione (sezioni, asset Mermaid, formule LaTeX, tabelle, equazioni con enunciato/dimostrazione, esempi, riferimenti, coverage_check).
 - Interpolazione: `ruolo_docente`, `stile_insegnamento` e `livello_eqf` entrano nel tono del testo, entro il REGISTRO; `{register_block}` è il blocco condiviso di `prompt_register.academic_register_block("content", language_code)` (vedi sezione «Blocco condiviso — Registro accademico»). Resta un solo campione di prosa umana (registro didattico), da imitare per costruzione, non per contenuto; il Campione A (ritmo) è stato rimosso perché induceva frasi-sentenza e antitesi a effetto.
+- Grounding sui documenti (`_system_prompt(..., grounding_enabled=True)`, da `Settings.course_lesson_content_documents_selection_enabled`): il blocco `FONTI E ANCORAGGIO — REGOLA FORTE` (subito dopo il ruolo) sostituisce il vecchio `RIFERIMENTI`; nel messaggio user il blocco documenti è selezionato PER LEZIONE da `lesson_document_selection` (definizioni, formule, concetti, esempi e struttura dei riassunti, scelti per sovrapposizione lessicale con titolo/temi/scaletta/obiettivi; budget `COURSE_LESSON_CONTENT_DOCUMENTS_CONTEXT_MAX_CHARS`, default 40k) e sta dopo `## Lezione da generare`, prima di `## Compito`. Con il kill-switch a `false` torna il comportamento storico (blocco `RIFERIMENTI`, `_build_documents_context`, vecchio ordine).
 
 **PROMPT** (system)
 
@@ -435,6 +436,40 @@ Sei un autore di materiale didattico universitario di alto livello.
 Il tuo compito è scrivere il TESTO COMPLETO di una singola lezione,
 nel registro di manuale universitario definito nel blocco REGISTRO qui
 sotto, partendo dalla sua struttura formativa già approvata.
+
+FONTI E ANCORAGGIO — REGOLA FORTE
+
+Nel messaggio utente trovi "Documenti di riferimento": estratti
+(definizioni, formule, concetti, esempi) selezionati dai materiali
+caricati dal docente per QUESTA lezione. Hanno priorità su qualunque
+altra fonte, inclusa la tua conoscenza generale.
+
+- Quando i documenti coprono un tema, ogni affermazione sostanziale
+  (definizioni, enunciati, formule, dati, casi, attribuzioni) deve essere
+  riconducibile a un estratto: riprendine impostazione, terminologia,
+  notazione ed esempi. Se il documento e la tua conoscenza divergono,
+  segui il documento.
+- Quando i documenti NON coprono un tema obbligatorio, trattalo comunque
+  con la conoscenza consolidata della disciplina (manuali standard,
+  risultati classici), mai con giudizi non argomentati o esempi
+  inventati ad hoc. La copertura di obiettivi e temi obbligatori prevale
+  sempre: un tema assente dai documenti non va saltato.
+- I giudizi di valore seguono la REGOLA 1 del REGISTRO.
+- Non indicare nel testo da dove proviene un'affermazione (niente "come
+  dice il documento", niente marcatori): la provenienza va SOLO in
+  `references`.
+
+REFERENCES (schema esistente: `citation` + `source`)
+- Una voce `source = "documento_caricato"` per OGNI documento nominato
+  nella sezione "Documenti di riferimento" di cui hai usato gli estratti:
+  `citation` = il nome o la Fonte come compaiono nell'header, seguito da
+  " — " e dai titoli delle sezioni della lezione in cui lo hai usato.
+- Una voce `source = "suggerimento_generale"` per OGNI tema obbligatorio
+  trattato senza copertura documentale: `citation` = opera di riferimento
+  standard della disciplina seguita da " — " e dal tema coperto.
+- Il "Materiale di contesto aggiuntivo (non citabile)" non va MAI citato
+  né menzionato come fonte: usane i contenuti senza riferirne l'origine.
+- NON inventare bibliografia.
 
 REQUISITI — TESTO
 
@@ -762,16 +797,6 @@ ALLINEAMENTO
 - Ogni tema obbligatorio in almeno una sezione
 - Compila `coverage_check` mappando obiettivi e temi alle sezioni
 
-RIFERIMENTI
-
-- Cita i documenti di riferimento DOVE LI USI
-- `source = "documento_caricato"` SOLO per i documenti NOMINATI nella
-  sezione "Documenti di riferimento". L'eventuale "Materiale di
-  contesto aggiuntivo (non citabile)" non va MAI citato né menzionato
-  come fonte: usane i contenuti senza riferirne l'origine.
-- NON inventare bibliografia. Eventuali letture aggiuntive devono
-  essere etichettate `source = "suggerimento_generale"`.
-
 NON GENERARE ESERCIZI: il campo `exercises_for_self_study` non è più
 richiesto.
 
@@ -823,6 +848,10 @@ Lezioni precedenti (per richiami):
 Lezione successiva (per agganci):
 {riassunto della lezione successiva}
 
+## Glossario del corso
+
+{glossario del corso formattato}
+
 ## Lezione da generare
 
 ID: {lesson.lesson_code}
@@ -844,19 +873,18 @@ Prerequisiti:
 Section outline (segui questa scaletta in ordine):
 {section outline}
 
-## Documenti di riferimento (estratti rilevanti)
+## Documenti di riferimento (estratti selezionati per questa lezione)
 
-{riassunti strutturati dei documenti `ready` (NON il testo grezzo): Abstract + Struttura + Concetti chiave + Definizioni + Tag, con budget per-documento e cap totale = course_lesson_content_documents_context_max_chars}
-
-## Glossario del corso
-
-{glossario del corso formattato}
+{per ogni documento `ready` non escluso, ordinato per pertinenza: header (`## Documento: <filename>` + lingua + `Fonte:`; anonimo `## Materiale di contesto N` per i riservati, dopo il framing non citabile) + Abstract; per i documenti pertinenti anche le voci selezionate del riassunto raggruppate in `### Definizioni`, `### Formule e regole`, `### Concetti chiave`, `### Esempi e casi`, `### Struttura`; budget totale COURSE_LESSON_CONTENT_DOCUMENTS_CONTEXT_MAX_CHARS (40k) e per documento (12k). Se nessuna voce è pertinente o la lezione è introduttiva: modalità overview (abstract + primi concetti + tag). Con il kill-switch spento: blocco storico `## Documenti di riferimento (estratti rilevanti)` di `_build_documents_context`, posto prima del glossario.}
 
 ## Compito
 
 Genera il testo completo della lezione secondo lo schema JSON.
 Verifica internamente che ogni obiettivo, ogni tema obbligatorio
 e ogni asset siano correttamente trattati e referenziati.
+Ancora ogni affermazione sostanziale agli estratti qui sopra quando
+li coprono; per i temi non coperti usa conoscenza consolidata della
+disciplina e registralo in `references` come `suggerimento_generale`.
 ```
 
 In rigenerazione: `## Versione attuale della lezione (DA RIVEDERE)` (solo se esiste già `content_raw`; gli asset sono elencati come `- asset_id: caption`) + `## Indicazioni del docente per la rigenerazione` (se c'è un hint; entra anche su lezioni mai generate, senza `REGENERATION_SUFFIX`).

@@ -6,7 +6,6 @@ import pytest
 from sqlalchemy import select
 
 from app.models.course import Course
-from app.models.course_document import CourseDocument
 from app.schemas.course_architecture import (
     ArchitectureLesson,
     ArchitectureModule,
@@ -23,51 +22,18 @@ from app.services.course_lesson_content_service import (
     _format_recommended_bibliography,
     load_course_full,
 )
-from tests.course_builders import build_course, find_lesson
+from tests.course_builders import (
+    build_course,
+    build_course_document,
+    build_document_summary,
+    find_lesson,
+)
 
 pytestmark = pytest.mark.asyncio
 
-
-def _summary(
-    *,
-    title: str = "",
-    authors: list[str] | None = None,
-    abstract: str = "Un abstract sul tema.",
-) -> dict:
-    return {
-        "source_title": title,
-        "detected_language": "it",
-        "abstract": abstract,
-        "structure_outline": ["Capitolo 1"],
-        "key_concepts": [{"name": "Concetto", "explanation": "Spiegazione."}],
-        "definitions": [{"term": "Termine", "definition": "Definizione."}],
-        "examples_or_cases": [],
-        "formulas_or_rules": [],
-        "authors_and_references": [
-            {"type": "author", "value": a} for a in (authors or [])
-        ],
-        "didactic_relevance_tags": ["tag1"],
-    }
-
-
-def _doc(
-    course_id,
-    *,
-    filename: str,
-    policy: str = "citable",
-    summary: dict | None = None,
-) -> CourseDocument:
-    return CourseDocument(
-        course_id=course_id,
-        filename_original=filename,
-        filename_stored=f"{uuid.uuid4().hex}.pdf",
-        file_path=f"/uploads/courses/{course_id}/x.pdf",
-        mime_type="application/pdf",
-        size_bytes=1,
-        summary_status="ready",
-        summary=summary if summary is not None else _summary(),
-        citation_policy=policy,
-    )
+# Helper condivisi con tests/test_lesson_document_selection.py.
+_summary = build_document_summary
+_doc = build_course_document
 
 
 # ---------------------------------------------------------------------------

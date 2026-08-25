@@ -46,7 +46,7 @@ from app.services.course_architecture_service import (
     _term_label,
     didactic_style_labels,  # noqa: F401  (ri-esposta per il worker Fase 3)
 )
-from app.services import document_citation_guard
+from app.services import document_citation_guard, lesson_document_selection
 from app.services.course_glossary_service import format_glossary_for_prompt
 
 log = get_logger("app.course_lesson_content")
@@ -273,11 +273,28 @@ def build_user_prompt(course: Course, lesson: CourseLesson) -> str:
     """
     settings = get_settings()
     lang = course.language_code
+    grounding = settings.course_lesson_content_documents_selection_enabled
 
-    documents_context = _build_documents_context(
-        list(course.documents),
-        settings.course_lesson_content_documents_context_max_chars,
-    )
+    if grounding:
+        selection = lesson_document_selection.select_documents_context_for_lesson(
+            list(course.documents),
+            lesson,
+            total_max_chars=settings.course_lesson_content_documents_context_max_chars,
+            per_doc_max_chars=settings.course_lesson_content_documents_per_doc_max_chars,
+            course_language=lang,
+        )
+        documents_context = selection.text
+        log.info(
+            "lesson_documents_context_selected",
+            course_id=str(course.id),
+            lesson_code=lesson.lesson_code,
+            **selection.stats,
+        )
+    else:
+        documents_context = _build_documents_context(
+            list(course.documents),
+            settings.course_lesson_content_documents_context_max_chars,
+        )
 
     glossary_text = format_glossary_for_prompt(course)
 
@@ -288,7 +305,7 @@ def build_user_prompt(course: Course, lesson: CourseLesson) -> str:
         (current_module.description if current_module else "") or "(non specificata)"
     )
 
-    blocks = [
+    context_block = [
         "## Contesto del corso",
         "",
         f"- Titolo: {course.title}",
@@ -314,6 +331,8 @@ def build_user_prompt(course: Course, lesson: CourseLesson) -> str:
         "Lezione successiva (per agganci):",
         _format_next_lesson_summary(course, lesson),
         "",
+    ]
+    lesson_block = [
         "## Lezione da generare",
         "",
         f"ID: {lesson.lesson_code}",
@@ -335,20 +354,41 @@ def build_user_prompt(course: Course, lesson: CourseLesson) -> str:
         "Section outline (segui questa scaletta in ordine):",
         _format_section_outline(lesson),
         "",
-        "## Documenti di riferimento (estratti rilevanti)",
+    ]
+    documents_block = [
+        (
+            "## Documenti di riferimento (estratti selezionati per questa lezione)"
+            if grounding
+            else "## Documenti di riferimento (estratti rilevanti)"
+        ),
         "",
         documents_context,
         "",
+    ]
+    glossary_block = [
         "## Glossario del corso",
         "",
         glossary_text,
         "",
+    ]
+    task_block = [
         "## Compito",
         "",
         "Genera il testo completo della lezione secondo lo schema JSON.",
         "Verifica internamente che ogni obiettivo, ogni tema obbligatorio",
         "e ogni asset siano correttamente trattati e referenziati.",
     ]
+    if grounding:
+        task_block += [
+            "Ancora ogni affermazione sostanziale agli estratti qui sopra quando",
+            "li coprono; per i temi non coperti usa conoscenza consolidata della",
+            "disciplina e registralo in `references` come `suggerimento_generale`.",
+        ]
+        # Documenti adiacenti al compito (recency): la scaletta viene letta
+        # prima, gli estratti sono ciò a cui "applicarla".
+        blocks = context_block + glossary_block + lesson_block + documents_block + task_block
+    else:
+        blocks = context_block + lesson_block + documents_block + glossary_block + task_block
 
     # La versione precedente entra solo se esiste davvero; l'hint del
     # docente entra anche su una lezione mai generata (generate-all con

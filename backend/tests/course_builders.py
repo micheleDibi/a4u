@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password
 from app.models.course import Course
+from app.models.course_document import CourseDocument
 from app.models.course_lesson import CourseLesson
 from app.models.course_module import CourseModule
 from app.models.organization import Organization
@@ -127,3 +129,55 @@ def find_lesson(course: Course, lesson_code: str) -> CourseLesson:
             if lesson.lesson_code == lesson_code:
                 return lesson
     raise AssertionError(f"Lezione {lesson_code} non trovata nel corso di test")
+
+
+def build_document_summary(
+    *,
+    title: str = "",
+    authors: list[str] | None = None,
+    abstract: str = "Un abstract sul tema.",
+    **overrides: Any,
+) -> dict[str, Any]:
+    """Riassunto Appendice A minimo e valido; `overrides` sostituisce i
+    campi (es. `key_concepts=[...]`, `examples_or_cases=[...]`)."""
+    summary: dict[str, Any] = {
+        "source_title": title,
+        "detected_language": "it",
+        "abstract": abstract,
+        "structure_outline": ["Capitolo 1"],
+        "key_concepts": [{"name": "Concetto", "explanation": "Spiegazione."}],
+        "definitions": [{"term": "Termine", "definition": "Definizione."}],
+        "examples_or_cases": [],
+        "formulas_or_rules": [],
+        "authors_and_references": [
+            {"type": "author", "value": a} for a in (authors or [])
+        ],
+        "didactic_relevance_tags": ["tag1"],
+    }
+    summary.update(overrides)
+    return summary
+
+
+def build_course_document(
+    course_id: uuid.UUID,
+    *,
+    filename: str,
+    policy: str = "citable",
+    summary: dict[str, Any] | None = None,
+    created_at: datetime | None = None,
+) -> CourseDocument:
+    """`CourseDocument` in memoria (non persistito) con riassunto `ready`."""
+    doc = CourseDocument(
+        course_id=course_id,
+        filename_original=filename,
+        filename_stored=f"{uuid.uuid4().hex}.pdf",
+        file_path=f"/uploads/courses/{course_id}/x.pdf",
+        mime_type="application/pdf",
+        size_bytes=1,
+        summary_status="ready",
+        summary=summary if summary is not None else build_document_summary(),
+        citation_policy=policy,
+    )
+    if created_at is not None:
+        doc.created_at = created_at
+    return doc

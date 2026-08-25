@@ -632,3 +632,23 @@ o per 100 frasi):
 Ogni output riporta `SCRIPT_VERSION`: si confrontano solo run con la
 stessa versione (le euristiche possono cambiare tra versioni). Test puri
 in `backend/tests/test_measure_register.py`.
+
+### `--grounding` e selezione degli estratti documentali
+
+Dalla PR di grounding il prompt di Fase 3 non riceve più lo stesso blocco
+documenti per ogni lezione: `app/services/lesson_document_selection.py`
+seleziona per lezione le voci dei riassunti (definizioni, formule e regole,
+concetti chiave, esempi e casi, struttura) per sovrapposizione lessicale con
+titolo, temi obbligatori, scaletta, obiettivi e sinossi della lezione, con
+smorzamento di frequenza (gli stem ubiqui del corso non pesano) e budget
+`COURSE_LESSON_CONTENT_DOCUMENTS_CONTEXT_MAX_CHARS` (default 40.000) /
+`COURSE_LESSON_CONTENT_DOCUMENTS_PER_DOC_MAX_CHARS` (12.000). Il kill-switch
+`COURSE_LESSON_CONTENT_DOCUMENTS_SELECTION_ENABLED=false` ripristina il
+comportamento storico (utile per la campagna before/after del registro). Ogni
+selezione lascia un log `lesson_documents_context_selected` con
+`docs_ready`, `docs_relevant`, `entries_selected`, `chars`, `fallback_overview`.
+
+`python -m scripts.measure_register --db --grounding --by-lesson` riesegue la
+stessa selezione per ogni dispensa e riporta `ground_cov` (quota delle voci
+selezionate che compaiono nel testo generato) e `refs_doc`/`refs_gen`
+(references per `source`).

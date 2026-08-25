@@ -44,20 +44,77 @@ class OpenAILessonContentError(OpenAIError):
 
 # System prompt — versione rivista per output naturale, senza codici
 # tecnici nel testo e senza struttura accademica rigida visibile.
+# Blocco storico sulle fonti (solo etichettatura delle citazioni). Resta
+# in uso con il kill-switch del grounding disattivato.
+_RIFERIMENTI_BLOCK = """\
+RIFERIMENTI
+
+- Cita i documenti di riferimento DOVE LI USI
+- `source = "documento_caricato"` SOLO per i documenti NOMINATI nella
+  sezione "Documenti di riferimento". L'eventuale "Materiale di
+  contesto aggiuntivo (non citabile)" non va MAI citato né menzionato
+  come fonte: usane i contenuti senza riferirne l'origine.
+- NON inventare bibliografia. Eventuali letture aggiuntive devono
+  essere etichettate `source = "suggerimento_generale"`.
+"""
+
+# Grounding sui documenti dell'utente (regola forte del docente): i
+# documenti caricati pesano più della conoscenza generale del modello.
+# Rimanda alla REGOLA 1 del REGISTRO senza riformularla.
+_FONTI_BLOCK = """\
+FONTI E ANCORAGGIO — REGOLA FORTE
+
+Nel messaggio utente trovi "Documenti di riferimento": estratti
+(definizioni, formule, concetti, esempi) selezionati dai materiali
+caricati dal docente per QUESTA lezione. Hanno priorità su qualunque
+altra fonte, inclusa la tua conoscenza generale.
+
+- Quando i documenti coprono un tema, ogni affermazione sostanziale
+  (definizioni, enunciati, formule, dati, casi, attribuzioni) deve essere
+  riconducibile a un estratto: riprendine impostazione, terminologia,
+  notazione ed esempi. Se il documento e la tua conoscenza divergono,
+  segui il documento.
+- Quando i documenti NON coprono un tema obbligatorio, trattalo comunque
+  con la conoscenza consolidata della disciplina (manuali standard,
+  risultati classici), mai con giudizi non argomentati o esempi
+  inventati ad hoc. La copertura di obiettivi e temi obbligatori prevale
+  sempre: un tema assente dai documenti non va saltato.
+- I giudizi di valore seguono la REGOLA 1 del REGISTRO.
+- Non indicare nel testo da dove proviene un'affermazione (niente "come
+  dice il documento", niente marcatori): la provenienza va SOLO in
+  `references`.
+
+REFERENCES (schema esistente: `citation` + `source`)
+- Una voce `source = "documento_caricato"` per OGNI documento nominato
+  nella sezione "Documenti di riferimento" di cui hai usato gli estratti:
+  `citation` = il nome o la Fonte come compaiono nell'header, seguito da
+  " — " e dai titoli delle sezioni della lezione in cui lo hai usato.
+- Una voce `source = "suggerimento_generale"` per OGNI tema obbligatorio
+  trattato senza copertura documentale: `citation` = opera di riferimento
+  standard della disciplina seguita da " — " e dal tema coperto.
+- Il "Materiale di contesto aggiuntivo (non citabile)" non va MAI citato
+  né menzionato come fonte: usane i contenuti senza riferirne l'origine.
+- NON inventare bibliografia.
+"""
+
+
 def _system_prompt(
     language_code: str,
     *,
     ruolo_docente: str = "",
     stile_insegnamento: str = "",
     livello_eqf: str = "",
+    grounding_enabled: bool = True,
 ) -> str:
     register_block = academic_register_block("content", language_code)
+    fonti_block = f"\n{_FONTI_BLOCK}" if grounding_enabled else ""
+    riferimenti_block = "" if grounding_enabled else f"{_RIFERIMENTI_BLOCK}\n"
     return f"""\
 Sei un autore di materiale didattico universitario di alto livello.
 Il tuo compito è scrivere il TESTO COMPLETO di una singola lezione,
 nel registro di manuale universitario definito nel blocco REGISTRO qui
 sotto, partendo dalla sua struttura formativa già approvata.
-
+{fonti_block}
 REQUISITI — TESTO
 
 - Markdown, in lingua {language_code}.
@@ -251,17 +308,7 @@ ALLINEAMENTO
 - Ogni tema obbligatorio in almeno una sezione
 - Compila `coverage_check` mappando obiettivi e temi alle sezioni
 
-RIFERIMENTI
-
-- Cita i documenti di riferimento DOVE LI USI
-- `source = "documento_caricato"` SOLO per i documenti NOMINATI nella
-  sezione "Documenti di riferimento". L'eventuale "Materiale di
-  contesto aggiuntivo (non citabile)" non va MAI citato né menzionato
-  come fonte: usane i contenuti senza riferirne l'origine.
-- NON inventare bibliografia. Eventuali letture aggiuntive devono
-  essere etichettate `source = "suggerimento_generale"`.
-
-NON GENERARE ESERCIZI: il campo `exercises_for_self_study` non è più
+{riferimenti_block}NON GENERARE ESERCIZI: il campo `exercises_for_self_study` non è più
 richiesto.
 
 VERIFICA FINALE DEL REGISTRO
@@ -550,6 +597,7 @@ async def generate_lesson_content(
         ruolo_docente=ruolo_docente,
         stile_insegnamento=stile_insegnamento,
         livello_eqf=livello_eqf,
+        grounding_enabled=settings.course_lesson_content_documents_selection_enabled,
     )
     if is_regeneration:
         system_prompt = system_prompt + REGENERATION_SUFFIX

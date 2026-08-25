@@ -201,7 +201,18 @@ class Settings(BaseSettings):
     course_lesson_content_poll_interval_seconds: int = 4
     # Cap=3: output 5x più grande di Fase 2, evita rate-limit OpenAI.
     course_lesson_content_max_concurrency: int = 3
-    course_lesson_content_documents_context_max_chars: int = 20_000
+    # Contesto documenti P3: budget totale (char) del blocco selezionato per
+    # lezione. 40k ≈ 11,5k token: 3-4 documenti rilevanti con estratti interi
+    # (con 20k, cinque documenti erano tagliati a 4k l'uno).
+    course_lesson_content_documents_context_max_chars: int = 40_000
+    # Tetto per singolo documento rilevante; con un solo documento
+    # rilevante vale l'intero budget residuo.
+    course_lesson_content_documents_per_doc_max_chars: int = 12_000
+    # Kill-switch del grounding P3: False = comportamento storico
+    # (_build_documents_context senza selezione per lezione, esempi e
+    # formule non serializzati, blocco RIFERIMENTI invece di FONTI E
+    # ANCORAGGIO, vecchio ordine dei blocchi nello user prompt).
+    course_lesson_content_documents_selection_enabled: bool = True
     # Auto-retry trasparente per l'utente. Vedi
     # `course_lesson_structure_auto_retry_max`.
     course_lesson_content_auto_retry_max: int = 5
