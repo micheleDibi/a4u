@@ -586,3 +586,49 @@ schema strict). Per accelerare drasticamente un corso grande, abbassare a
 >   (editing) — editor user-friendly" sopra;
 > - upload immagini come asset visivo + conversione vision → Mermaid
 >   (commit `92d5f37`).
+
+## Misura del registro (strumento diagnostico)
+
+`backend/scripts/measure_register.py` misura, nei testi già generati
+(dispense, slide, bullet delle slide, discorso), la presenza di "frasi ad
+effetto" e di "asserzioni valutative non sostenute". Serve a confrontare
+il registro prima/dopo una modifica dei prompt. **Non è un gate**: non
+esistono soglie, non blocca nulla, i numeri sono euristiche lessicali da
+leggere in aggregato. Sola lettura sul DB.
+
+```bash
+# dalla cartella backend/
+python -m scripts.measure_register                          # markdown, una riga per corso x tipo
+python -m scripts.measure_register --course "Analisi" --by-lesson --top 10
+python -m scripts.measure_register --format csv --export-jsonl before.jsonl > before.csv
+python -m scripts.measure_register --from-jsonl before.jsonl --top 5
+python -m scripts.measure_register --compare before.jsonl after.jsonl
+
+# sul server (dc = alias docker compose di produzione)
+dc exec -T backend python -m scripts.measure_register --format csv \
+    --export-jsonl before.jsonl > before.csv
+```
+
+Filtri: `--course` (titolo ILIKE o UUID), `--lesson M1.L1`, `--since
+YYYY-MM-DD` (sul `*_generated_at` del tipo), `--include-assessment`,
+`--language it|en|auto`; `--group-introductory` separa le lezioni
+introduttive; `--formulas-file`, `--punch-max-words`, `--long-min-words`
+regolano le euristiche.
+
+Indicatori per lezione x tipo (grezzi e normalizzati per 1.000 parole
+o per 100 frasi):
+
+- `punchline_after_long`: frase di <= 5 parole dopo una frase di >= 25;
+- `formula_hits`: "Non è così.", "Punto.", "Anzi.", "proprio per questo",
+  "Ecco perché", ... (lista per lingua);
+- `evaluative_unjustified_a/b`: aggettivi valutativi (tier A: elegante,
+  potente, brillante, ...; tier B: fondamentale, cruciale, ...) senza
+  marcatore di giustificazione nella stessa frase o nella successiva
+  (`:`, perché, infatti, ad esempio, una cifra, una formula, un
+  riferimento bibliografico, ...);
+- `short_ratio`, `rhetorical_questions`, `antithesis_openers` ("Ma ",
+  "Eppure", "Anzi", ...), `sent_len_mean`/`sent_len_std`.
+
+Ogni output riporta `SCRIPT_VERSION`: si confrontano solo run con la
+stessa versione (le euristiche possono cambiare tra versioni). Test puri
+in `backend/tests/test_measure_register.py`.
