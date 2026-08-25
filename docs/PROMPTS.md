@@ -699,7 +699,7 @@ Verifica internamente che ogni obiettivo, ogni tema obbligatorio
 e ogni asset siano correttamente trattati e referenziati.
 ```
 
-In rigenerazione: `## Versione attuale della lezione (DA RIVEDERE)` + `## Indicazioni del docente per la rigenerazione`.
+In rigenerazione: `## Versione attuale della lezione (DA RIVEDERE)` (solo se esiste già `content_raw`; gli asset sono elencati come `- asset_id: caption`) + `## Indicazioni del docente per la rigenerazione` (se c'è un hint; entra anche su lezioni mai generate, senza `REGENERATION_SUFFIX`).
 
 **JSON schema** (`LESSON_CONTENT_JSON_SCHEMA`):
 
@@ -877,7 +877,7 @@ In rigenerazione: `## Versione attuale della lezione (DA RIVEDERE)` + `## Indica
 }
 ```
 
-**Varianti/note**: suffisso di rigenerazione `REGENERATION_SUFFIX` (`openai_lesson_content_service.py:146-156`).
+**Varianti/note**: suffisso di rigenerazione `REGENERATION_SUFFIX` (`openai_lesson_content_service.py`), appeso solo se la lezione ha già un `content_raw` (`course_lesson_content_service.is_regeneration_for_lesson`); l'hint da solo non lo attiva.
 
 ---
 
@@ -1022,7 +1022,7 @@ In rigenerazione: blocco con la verifica attuale (`content_raw`) + indicazioni d
 # PROMPT 5 — Slide della lezione (Fase 4)
 
 **SCOPO**
-- File: `backend/app/services/openai_lesson_slides_service.py` — `_system_prompt(language_code)`, chiamata da `generate_lesson_slides()`.
+- File: `backend/app/services/openai_lesson_slides_service.py` — `_system_prompt(language_code, *, minuti_per_lezione, livello_eqf)`, chiamata da `generate_lesson_slides()`. Durata e livello EQF sono interpolati davvero (prima restavano segnaposto letterali); i valori arrivano dal worker (`course.lesson_duration_minutes`, `didactic_style_labels`).
 - Modello: `settings.openai_lesson_slides_model` (default `gpt-5.5`, reasoning `medium`, max 16000 token).
 - Ruolo: trasforma il testo della lezione in una sequenza di slide dimensionata sui minuti per lezione, riusando gli asset di Fase 3 (una slide dedicata per ogni asset visivo/tabella).
 
@@ -1075,9 +1075,8 @@ PRINCIPI
 4. NUMERO DI SLIDE: stima ~2-3 minuti per slide di contenuto, meno
    per slide di apertura/transizione/agenda. Anche le lezioni brevi
    richiedono un overhead strutturale fisso (~6 slide: titolo, agenda,
-   prerequisiti, sintesi, takeaways, riferimenti). Per
-   {minuti_per_lezione} minuti, target indicativo delle slide di
-   contenuto + struttura:
+   prerequisiti, sintesi, takeaways, riferimenti). Per {minuti_per_lezione} minuti,
+   target indicativo delle slide di contenuto + struttura:
    - 15 min →  6-10 slide   (overhead strutturale + 1-3 di contenuto)
    - 20 min →  8-12 slide
    - 30 min → 12-15 slide
@@ -1177,6 +1176,8 @@ Titolo: {lesson.title}
 Durata della lezione: {lesson_duration_minutes} minuti
 Lingua: {language_code}
 Livello EQF: {eqf_label}
+Ruolo del docente: {ruolo_docente}
+Stile di insegnamento: {stile_insegnamento}
 
 ## Testo completo della lezione (output di Fase 3)
 
@@ -1193,7 +1194,7 @@ asset di Fase 3 dove possibile. Aggiungi `new_assets` solo se
 strettamente necessario.
 ```
 
-In rigenerazione: `## Versione attuale delle slide (DA RIVEDERE)` + `## Indicazioni del docente per la rigenerazione`.
+In rigenerazione: `## Versione attuale delle slide (DA RIVEDERE)` (solo se esiste già `slides_raw`) + `## Indicazioni del docente per la rigenerazione` (se c'è un hint; entra anche su lezioni mai slidificate, senza `REGENERATION_SUFFIX`).
 
 **JSON schema** (`LESSON_SLIDES_JSON_SCHEMA`):
 
@@ -1272,14 +1273,14 @@ In rigenerazione: `## Versione attuale delle slide (DA RIVEDERE)` + `## Indicazi
 }
 ```
 
-**Varianti/note**: suffisso di rigenerazione `REGENERATION_SUFFIX` (`openai_lesson_slides_service.py:179-189`).
+**Varianti/note**: suffisso di rigenerazione `REGENERATION_SUFFIX` (`openai_lesson_slides_service.py`), appeso solo se la lezione ha già uno `slides_raw` (`course_lesson_slides_service.is_regeneration_for_lesson`).
 
 ---
 
 # PROMPT 6 — Discorso temporizzato (Fase 5)
 
 **SCOPO**
-- File: `backend/app/services/openai_lesson_speech_service.py` — `_system_prompt(language_code)`, chiamata da `generate_lesson_speech()`.
+- File: `backend/app/services/openai_lesson_speech_service.py` — `_system_prompt(language_code, *, minuti_per_lezione, ruolo_docente)`, chiamata da `generate_lesson_speech()`. Durata target e ruolo docente sono interpolati davvero (prima restavano segnaposto letterali); i valori arrivano dal worker.
 - Modello: `settings.openai_lesson_speech_model` (default `gpt-5.5`, reasoning `medium`, max 16000 token).
 - Ruolo: genera il parlato TTS-friendly suddiviso in segmenti sincronizzati alle slide; la somma delle durate stimate ≈ `minuti × 60` (±5%). Velocità di riferimento `WORDS_PER_MINUTE` = it 130, en 150, default 130 (`openai_lesson_speech_service.py:40-44`).
 
@@ -1355,7 +1356,7 @@ REGOLE — DIMENSIONAMENTO
   italiano: 1 secondo ≈ 2.17 parole; 1 minuto ≈ 130 parole
   inglese: 1 secondo ≈ 2.5 parole; 1 minuto ≈ 150 parole
 - La SOMMA delle estimated_duration_seconds deve essere pari a
-  {minuti_per_lezione} * 60 secondi, con tolleranza ±5%.
+  {minuti_per_lezione} * 60 = {secondi} secondi, con tolleranza ±5%.
 - Distribuisci il tempo in modo proporzionato alla densità della
   slide. Slide titolo/agenda: 15-30 secondi. Slide concept densa:
   120-180 secondi. Slide example sviluppato: 90-150 secondi.
@@ -1365,7 +1366,7 @@ REGOLE — CONTENUTO DEL PARLATO
 - Il discorso DEVE coprire i concetti del testo della lezione (Fase 3),
   ma in registro parlato: più ridondante, più narrativo, con esempi
   espressi a voce, con domande retoriche occasionali.
-- Allinea il livello di formalità al ruolo "{{ruolo_docente}}" e al
+- Allinea il livello di formalità al ruolo "{ruolo_docente}" e al
   livello EQF.
 - Per la lezione introduttiva: tono di benvenuto, accogliente.
   Presentati ("Benvenuti, in questo corso esploreremo..."). Spiega
@@ -1379,7 +1380,7 @@ REGOLE — VINCOLI DI VALIDAZIONE (rispetta sempre)
 - ogni slide di Fase 4 ha almeno un segmento di parlato
 - `segment_id` univoci a livello di lezione (es. "SEG001", "SEG002", ...)
 - somma di `estimated_duration_seconds` ∈ [target × 0.95, target × 1.05]
-  con target = {{minuti_per_lezione}} × 60
+  con target = {minuti_per_lezione} * 60 = {secondi} secondi
 - `slide_to_segments_map` coerente con `speech_segments`:
   ogni `segment_id` listato esiste in `speech_segments`,
   nessun segmento è orfano,
@@ -1390,7 +1391,7 @@ Lingua: {language_code}.
 Output: SOLO JSON valido conforme allo schema.
 ```
 
-> Nota placeholder: i token `{{ruolo_docente}}` e `{{minuti_per_lezione}}` (doppie graffe) e `{minuti_per_lezione}` (singole) sono riprodotti come compaiono nel prompt risolto; restano segnaposto testuali, contestualizzati dal messaggio user.
+> Nota: `{minuti_per_lezione}`, `{secondi}` e `{ruolo_docente}` sono interpolati con i valori reali del corso (es. `45 * 60 = 2700 secondi`, `"Professore ordinario"`); se assenti il prompt rimanda al messaggio user («la durata target indicata nel messaggio», «indicato nel messaggio»). Il suffisso di rigenerazione rimanda alla durata target del messaggio.
 
 **Messaggio user** — costruito da `course_lesson_speech_service.build_user_prompt(course, lesson)`. Template verbatim:
 
@@ -1429,7 +1430,7 @@ Vincoli da rispettare:
 - testo TTS-friendly come da regole
 ```
 
-In rigenerazione: `## Versione attuale del discorso (DA RIVEDERE)` + `## Indicazioni del docente per la rigenerazione`.
+In rigenerazione: `## Versione attuale del discorso (DA RIVEDERE)` (solo se esiste già `speech_raw`) + `## Indicazioni del docente per la rigenerazione` (se c'è un hint; entra anche su lezioni mai generate, senza `REGENERATION_SUFFIX`).
 
 **JSON schema** (`LESSON_SPEECH_JSON_SCHEMA`):
 
@@ -1500,7 +1501,7 @@ In rigenerazione: `## Versione attuale del discorso (DA RIVEDERE)` + `## Indicaz
 }
 ```
 
-**Varianti/note**: suffisso di rigenerazione `REGENERATION_SUFFIX` (`openai_lesson_speech_service.py:169-179`).
+**Varianti/note**: suffisso di rigenerazione `REGENERATION_SUFFIX` (`openai_lesson_speech_service.py`), appeso solo se la lezione ha già uno `speech_raw` (`course_lesson_speech_service.is_regeneration_for_lesson`).
 
 ---
 

@@ -41,6 +41,7 @@ from app.models.course import Course
 from app.models.course_lesson import CourseLesson
 from app.models.course_module import CourseModule
 from app.schemas.course_lesson_speech import LessonSpeechOutput
+from app.services.course_architecture_service import _term_label
 from app.services.openai_lesson_speech_service import words_per_minute
 
 log = get_logger("app.course_lesson_speech")
@@ -239,17 +240,11 @@ def build_user_prompt(course: Course, lesson: CourseLesson) -> str:
     """
     minuti = course.lesson_duration_minutes
     lang = course.language_code
-    eqf_label = (
-        getattr(course.livello_eqf, "name", "") if course.livello_eqf else ""
-    )
-    ruolo_docente = (
-        getattr(course.ruolo_docente, "name", "") if course.ruolo_docente else ""
-    )
-    stile_insegnamento = (
-        getattr(course.stile_insegnamento, "name", "")
-        if course.stile_insegnamento
-        else ""
-    )
+    # Etichette tassonomia nella lingua del corso (i termini hanno
+    # `labels`/`slug`, non `name`: il vecchio getattr restituiva sempre "").
+    eqf_label = _term_label(course.livello_eqf, lang)
+    ruolo_docente = _term_label(course.ruolo_docente, lang)
+    stile_insegnamento = _term_label(course.stile_insegnamento, lang)
 
     content_raw_json = (
         json.dumps(lesson.content_raw, ensure_ascii=False, indent=2)
@@ -297,7 +292,7 @@ def build_user_prompt(course: Course, lesson: CourseLesson) -> str:
         "- testo TTS-friendly come da regole",
     ]
 
-    if lesson.speech_regeneration_hint or lesson.speech_raw:
+    if lesson.speech_raw:
         blocks.extend(
             [
                 "",
@@ -306,22 +301,24 @@ def build_user_prompt(course: Course, lesson: CourseLesson) -> str:
                 _format_current_speech_phase5(lesson),
             ]
         )
-        if lesson.speech_regeneration_hint:
-            blocks.extend(
-                [
-                    "",
-                    "## Indicazioni del docente per la rigenerazione",
-                    "",
-                    lesson.speech_regeneration_hint,
-                ]
-            )
+    if lesson.speech_regeneration_hint:
+        blocks.extend(
+            [
+                "",
+                "## Indicazioni del docente per la rigenerazione",
+                "",
+                lesson.speech_regeneration_hint,
+            ]
+        )
 
     return "\n".join(blocks)
 
 
 def is_regeneration_for_lesson(lesson: CourseLesson) -> bool:
-    """True se è una rigenerazione (§9.5): esiste già un speech_raw o un hint."""
-    return bool(lesson.speech_raw) or bool(lesson.speech_regeneration_hint)
+    """True se è una rigenerazione (§9.5): esiste già uno `speech_raw`.
+    L'hint da solo non basta (generate-all lo scrive anche su lezioni
+    mai discorsificate)."""
+    return bool(lesson.speech_raw)
 
 
 # ---------------------------------------------------------------------------

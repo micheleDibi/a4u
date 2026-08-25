@@ -40,6 +40,7 @@ from app.services import (
     course_lesson_speech_service,
     openai_lesson_speech_service,
 )
+from app.services.course_architecture_service import didactic_style_labels
 from app.services.openai_client import OpenAINotConfiguredError
 
 log = get_logger("app.course_lesson_speech.worker")
@@ -280,11 +281,14 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
 
         try:
             try:
+                style = didactic_style_labels(course_full)
                 speech_output, usage = (
                     await openai_lesson_speech_service.generate_lesson_speech(
                         user_prompt=user_prompt,
                         language_code=course_full.language_code,
                         is_regeneration=regen,
+                        minuti_per_lezione=course_full.lesson_duration_minutes,
+                        ruolo_docente=style["ruolo_docente"],
                     )
                 )
             except OpenAINotConfiguredError:

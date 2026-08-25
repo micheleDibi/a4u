@@ -34,13 +34,35 @@ class OpenAILessonSlidesError(OpenAIError):
     """Errore specifico delle chiamate di generazione slide lezione (§7)."""
 
 
-def _system_prompt(language_code: str) -> str:
-    """System prompt §7.1 — slide design didattico per una lezione."""
+def _system_prompt(
+    language_code: str,
+    *,
+    minuti_per_lezione: int | None = None,
+    livello_eqf: str = "",
+) -> str:
+    """System prompt §7.1 — slide design didattico per una lezione.
+
+    `minuti_per_lezione` e `livello_eqf` vengono interpolati davvero
+    (prima erano segnaposto letterali `{minuti_per_lezione}` /
+    `{livello_eqf}` nel testo inviato al modello); con i default vuoti
+    il prompt rimanda ai valori presenti nel messaggio utente.
+    """
+    durata = (
+        f"di {minuti_per_lezione} minuti"
+        if minuti_per_lezione
+        else "della durata indicata nel messaggio"
+    )
+    per_durata = (
+        f"Per {minuti_per_lezione} minuti"
+        if minuti_per_lezione
+        else "Per la durata della lezione"
+    )
+    eqf = livello_eqf or "indicato nel messaggio"
     return f"""\
 Sei un esperto di didattica e di slide design universitario. Hai
 ricevuto il testo completo di una lezione (con asset visivi già
 prodotti) e devi trasformarlo in una sequenza di SLIDE per una
-lezione di {{minuti_per_lezione}} minuti.
+lezione {durata}.
 
 PRINCIPI
 
@@ -83,9 +105,8 @@ PRINCIPI
 4. NUMERO DI SLIDE: stima ~2-3 minuti per slide di contenuto, meno
    per slide di apertura/transizione/agenda. Anche le lezioni brevi
    richiedono un overhead strutturale fisso (~6 slide: titolo, agenda,
-   prerequisiti, sintesi, takeaways, riferimenti). Per
-   {{minuti_per_lezione}} minuti, target indicativo delle slide di
-   contenuto + struttura:
+   prerequisiti, sintesi, takeaways, riferimenti). {per_durata},
+   target indicativo delle slide di contenuto + struttura:
    - 15 min →  6-10 slide   (overhead strutturale + 1-3 di contenuto)
    - 20 min →  8-12 slide
    - 30 min → 12-15 slide
@@ -126,7 +147,7 @@ PRINCIPI
        * agenda/takeaways → body vuoto, 3-6 bullet
        * summary → body 1-2 frasi conclusive
    - bullets: 0-6 punti, max ~14 parole per punto. Linguaggio adatto
-     al livello EQF {{livello_eqf}}. Le slide dedicate a un asset
+     al livello EQF {eqf}. Le slide dedicate a un asset
      visivo/tabella hanno 0 bullet (o pochissimi).
    - references_assets: SOLO sulle slide dedicate, con UN SOLO ID di
      asset visivo o tabella. Le slide di contenuto la lasciano vuota
@@ -325,6 +346,8 @@ async def generate_lesson_slides(
     user_prompt: str,
     language_code: str,
     is_regeneration: bool,
+    minuti_per_lezione: int | None = None,
+    livello_eqf: str = "",
 ) -> tuple[LessonSlidesOutput, dict[str, Any]]:
     """Chiama OpenAI per generare le slide di una lezione.
 
@@ -339,7 +362,11 @@ async def generate_lesson_slides(
     troncare.
     """
     settings = get_settings()
-    system_prompt = _system_prompt(language_code)
+    system_prompt = _system_prompt(
+        language_code,
+        minuti_per_lezione=minuti_per_lezione,
+        livello_eqf=livello_eqf,
+    )
     if is_regeneration:
         system_prompt = system_prompt + REGENERATION_SUFFIX
 

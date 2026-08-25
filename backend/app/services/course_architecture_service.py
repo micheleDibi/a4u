@@ -107,6 +107,19 @@ def _term_label(term: CourseTaxonomyTerm | None, language_code: str) -> str:
     )
 
 
+def didactic_style_labels(course: Course) -> dict[str, str]:
+    """Etichette risolte (lingua del corso) per ruolo docente, stile di
+    insegnamento e livello EQF. Servono a interpolare i system prompt di
+    Fase 3/4/5 (altrimenti i segnaposto restano letterali). Vive qui,
+    accanto a `_term_label`, perché è condivisa da più fasi."""
+    lang = course.language_code
+    return {
+        "ruolo_docente": _term_label(course.ruolo_docente, lang),
+        "stile_insegnamento": _term_label(course.stile_insegnamento, lang),
+        "livello_eqf": _term_label(course.livello_eqf, lang),
+    }
+
+
 def _format_document_summary_for_prompt(
     doc: CourseDocument,
     max_chars: int,

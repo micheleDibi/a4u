@@ -44,6 +44,7 @@ from app.schemas.course_lesson_content import (
 from app.services.course_architecture_service import (
     _build_documents_context,
     _term_label,
+    didactic_style_labels,  # noqa: F401  (ri-esposta per il worker Fase 3)
 )
 from app.services import document_citation_guard
 from app.services.course_glossary_service import format_glossary_for_prompt
@@ -251,27 +252,17 @@ def _format_current_lesson_phase3(lesson: CourseLesson) -> str:
         )
     assets = raw.get("visual_assets") or []
     if assets:
+        # Solo id e caption: `asset_type` non esiste più nello schema
+        # (stampava un "(?)" sistematico nel prompt di rigenerazione).
         parts.append(
             "### Asset visivi (asset_id)\n"
             + "\n".join(
-                f"- {a.get('asset_id', '?')} ({a.get('asset_type', '?')})"
+                f"- {a.get('asset_id', '?')}: {(a.get('caption') or '').strip()}"
                 for a in assets
                 if isinstance(a, dict)
             )
         )
     return "\n\n".join(parts) if parts else "(Nessuna versione precedente.)"
-
-
-def didactic_style_labels(course: Course) -> dict[str, str]:
-    """Etichette risolte (lingua del corso) per ruolo docente, stile di
-    insegnamento e livello EQF. Servono a interpolare il system prompt di
-    generazione contenuti (altrimenti i segnaposto restano letterali)."""
-    lang = course.language_code
-    return {
-        "ruolo_docente": _term_label(course.ruolo_docente, lang),
-        "stile_insegnamento": _term_label(course.stile_insegnamento, lang),
-        "livello_eqf": _term_label(course.livello_eqf, lang),
-    }
 
 
 def build_user_prompt(course: Course, lesson: CourseLesson) -> str:
@@ -359,7 +350,10 @@ def build_user_prompt(course: Course, lesson: CourseLesson) -> str:
         "e ogni asset siano correttamente trattati e referenziati.",
     ]
 
-    if lesson.content_regeneration_hint or lesson.content_raw:
+    # La versione precedente entra solo se esiste davvero; l'hint del
+    # docente entra anche su una lezione mai generata (generate-all con
+    # hint) senza fingere una rigenerazione.
+    if lesson.content_raw:
         blocks.extend(
             [
                 "",
@@ -368,22 +362,26 @@ def build_user_prompt(course: Course, lesson: CourseLesson) -> str:
                 _format_current_lesson_phase3(lesson),
             ]
         )
-        if lesson.content_regeneration_hint:
-            blocks.extend(
-                [
-                    "",
-                    "## Indicazioni del docente per la rigenerazione",
-                    "",
-                    lesson.content_regeneration_hint,
-                ]
-            )
+    if lesson.content_regeneration_hint:
+        blocks.extend(
+            [
+                "",
+                "## Indicazioni del docente per la rigenerazione",
+                "",
+                lesson.content_regeneration_hint,
+            ]
+        )
 
     return "\n".join(blocks)
 
 
 def is_regeneration_for_lesson(lesson: CourseLesson) -> bool:
-    """True se è una rigenerazione (§9.3): esiste già un content_raw o un hint."""
-    return bool(lesson.content_raw or lesson.content_regeneration_hint)
+    """True se è una rigenerazione (§9.3): esiste già un `content_raw`.
+
+    L'hint da solo NON basta: generate-all lo scrive su tutte le lezioni
+    eleggibili, comprese quelle mai generate, e il REGENERATION_SUFFIX
+    ("stai RIGENERANDO una lezione già scritta") sarebbe falso."""
+    return bool(lesson.content_raw)
 
 
 # ---------------------------------------------------------------------------

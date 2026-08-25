@@ -57,8 +57,25 @@ class OpenAILessonSpeechError(OpenAIError):
     """Errore specifico delle chiamate di generazione discorso lezione (§8)."""
 
 
-def _system_prompt(language_code: str) -> str:
-    """System prompt §8.2 — discorso TTS-friendly per una lezione."""
+def _system_prompt(
+    language_code: str,
+    *,
+    minuti_per_lezione: int | None = None,
+    ruolo_docente: str = "",
+) -> str:
+    """System prompt §8.2 — discorso TTS-friendly per una lezione.
+
+    `minuti_per_lezione` e `ruolo_docente` vengono interpolati davvero
+    (prima erano segnaposto letterali nel testo inviato al modello); con
+    i default vuoti il prompt rimanda ai valori del messaggio utente.
+    """
+    if minuti_per_lezione:
+        target = (
+            f"{minuti_per_lezione} * 60 = {minuti_per_lezione * 60} secondi"
+        )
+    else:
+        target = "la durata target indicata nel messaggio (minuti * 60 secondi)"
+    ruolo = ruolo_docente or "indicato nel messaggio"
     return f"""\
 Sei uno scrittore esperto di parlato espositivo per la formazione
 universitaria. Devi scrivere il DISCORSO completo che accompagna le
@@ -129,7 +146,7 @@ REGOLE — DIMENSIONAMENTO
   italiano: 1 secondo ≈ 2.17 parole; 1 minuto ≈ 130 parole
   inglese: 1 secondo ≈ 2.5 parole; 1 minuto ≈ 150 parole
 - La SOMMA delle estimated_duration_seconds deve essere pari a
-  {{minuti_per_lezione}} * 60 secondi, con tolleranza ±5%.
+  {target}, con tolleranza ±5%.
 - Distribuisci il tempo in modo proporzionato alla densità della
   slide. Slide titolo/agenda: 15-30 secondi. Slide concept densa:
   120-180 secondi. Slide example sviluppato: 90-150 secondi.
@@ -139,7 +156,7 @@ REGOLE — CONTENUTO DEL PARLATO
 - Il discorso DEVE coprire i concetti del testo della lezione (Fase 3),
   ma in registro parlato: più ridondante, più narrativo, con esempi
   espressi a voce, con domande retoriche occasionali.
-- Allinea il livello di formalità al ruolo "{{{{ruolo_docente}}}}" e al
+- Allinea il livello di formalità al ruolo "{ruolo}" e al
   livello EQF.
 - Per la lezione introduttiva: tono di benvenuto, accogliente.
   Presentati ("Benvenuti, in questo corso esploreremo..."). Spiega
@@ -153,7 +170,7 @@ REGOLE — VINCOLI DI VALIDAZIONE (rispetta sempre)
 - ogni slide di Fase 4 ha almeno un segmento di parlato
 - `segment_id` univoci a livello di lezione (es. "SEG001", "SEG002", ...)
 - somma di `estimated_duration_seconds` ∈ [target × 0.95, target × 1.05]
-  con target = {{{{minuti_per_lezione}}}} × 60
+  con target = {target}
 - `slide_to_segments_map` coerente con `speech_segments`:
   ogni `segment_id` listato esiste in `speech_segments`,
   nessun segmento è orfano,
@@ -172,8 +189,8 @@ ATTENZIONE: stai RIGENERANDO il discorso di una lezione. Considera
 la versione precedente e il feedback del docente.
 - Le slide (Fase 4) sono invariate. Mantieni gli stessi slide_id
   nei segmenti.
-- Se il feedback NON tocca la durata totale, mantienila uguale a
-  {{minuti_per_lezione}} * 60 secondi.
+- Se il feedback NON tocca la durata totale, mantienila uguale alla
+  durata target indicata nel messaggio (minuti * 60 secondi).
 - Se il feedback chiede una nuova durata, ridistribuisci di
   conseguenza, mantenendo proporzioni sensate tra slide.
 - Mantieni tutte le regole TTS-friendly."""
@@ -278,6 +295,8 @@ async def generate_lesson_speech(
     user_prompt: str,
     language_code: str,
     is_regeneration: bool,
+    minuti_per_lezione: int | None = None,
+    ruolo_docente: str = "",
 ) -> tuple[LessonSpeechOutput, dict[str, Any]]:
     """Chiama OpenAI per generare il discorso temporizzato di una lezione.
 
@@ -291,7 +310,11 @@ async def generate_lesson_speech(
     deve partire da ~16000 per non troncare lezioni lunghe.
     """
     settings = get_settings()
-    system_prompt = _system_prompt(language_code)
+    system_prompt = _system_prompt(
+        language_code,
+        minuti_per_lezione=minuti_per_lezione,
+        ruolo_docente=ruolo_docente,
+    )
     if is_regeneration:
         system_prompt = system_prompt + REGENERATION_SUFFIX
 

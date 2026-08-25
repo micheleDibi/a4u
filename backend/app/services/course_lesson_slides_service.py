@@ -34,6 +34,7 @@ from app.models.course import Course
 from app.models.course_lesson import CourseLesson
 from app.models.course_module import CourseModule
 from app.schemas.course_lesson_slides import LessonSlidesOutput
+from app.services.course_architecture_service import _term_label
 
 log = get_logger("app.course_lesson_slides")
 
@@ -145,14 +146,11 @@ def build_user_prompt(course: Course, lesson: CourseLesson) -> str:
     """
     minuti = course.lesson_duration_minutes
     lang = course.language_code
-    eqf_level = (
-        lesson.module is not None
-        and getattr(lesson.module, "course", None) is not None
-    )  # noqa
-    # Per evitare lazy-load: leggiamo `livello_eqf` da course
-    eqf_label = (
-        getattr(course.livello_eqf, "name", "") if course.livello_eqf else ""
-    )
+    # Etichette tassonomia nella lingua del corso (i termini hanno
+    # `labels`/`slug`, non `name`: il vecchio getattr restituiva sempre "").
+    eqf_label = _term_label(course.livello_eqf, lang)
+    ruolo_docente = _term_label(course.ruolo_docente, lang)
+    stile_insegnamento = _term_label(course.stile_insegnamento, lang)
 
     content_raw_json = (
         json.dumps(lesson.content_raw, ensure_ascii=False, indent=2)
@@ -169,6 +167,8 @@ def build_user_prompt(course: Course, lesson: CourseLesson) -> str:
         f"Durata della lezione: {minuti} minuti",
         f"Lingua: {lang}",
         f"Livello EQF: {eqf_label}",
+        f"Ruolo del docente: {ruolo_docente}",
+        f"Stile di insegnamento: {stile_insegnamento}",
         "",
         "## Testo completo della lezione (output di Fase 3)",
         "",
@@ -185,7 +185,7 @@ def build_user_prompt(course: Course, lesson: CourseLesson) -> str:
         "strettamente necessario.",
     ]
 
-    if lesson.slides_regeneration_hint or lesson.slides_raw:
+    if lesson.slides_raw:
         blocks.extend(
             [
                 "",
@@ -194,22 +194,24 @@ def build_user_prompt(course: Course, lesson: CourseLesson) -> str:
                 _format_current_slides_phase4(lesson),
             ]
         )
-        if lesson.slides_regeneration_hint:
-            blocks.extend(
-                [
-                    "",
-                    "## Indicazioni del docente per la rigenerazione",
-                    "",
-                    lesson.slides_regeneration_hint,
-                ]
-            )
+    if lesson.slides_regeneration_hint:
+        blocks.extend(
+            [
+                "",
+                "## Indicazioni del docente per la rigenerazione",
+                "",
+                lesson.slides_regeneration_hint,
+            ]
+        )
 
     return "\n".join(blocks)
 
 
 def is_regeneration_for_lesson(lesson: CourseLesson) -> bool:
-    """True se è una rigenerazione (§9.4): esiste già un slides_raw o un hint."""
-    return bool(lesson.slides_raw) or bool(lesson.slides_regeneration_hint)
+    """True se è una rigenerazione (§9.4): esiste già uno `slides_raw`.
+    L'hint da solo non basta (generate-all lo scrive anche su lezioni
+    mai slidificate)."""
+    return bool(lesson.slides_raw)
 
 
 # ---------------------------------------------------------------------------
