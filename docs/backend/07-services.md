@@ -1306,11 +1306,12 @@ riassunti anche in [Courses 05](../courses/05-api-reference.md).
 
 | Service | Documentato in | Scopo |
 |---|---|---|
-| `course_lesson_content_service.py` | [Courses 08](../courses/08-lesson-content.md) | Orchestrazione + 10 validazioni §6.4 + materializzazione + approve. Gate **per-unità** (niente allow-set su `course.status`): corso non terminale + `ensure_lesson_structure_ready` (modulo `approved` + `section_outline` presente, assessment esenti); generate-all/missing filtrano in silenzio; approve-all tollerante (ignora le `empty`). Branch su `is_assessment`: `build_assessment_user_prompt`, `materialize_lesson_assessment` per le lezioni di verifica |
+| `course_lesson_content_service.py` | [Courses 08](../courses/08-lesson-content.md) | Orchestrazione + 10 validazioni §6.4 (riferimenti a obiettivi/temi riconciliati, `coverage_check` derivato, hard fail solo sulla copertura) + materializzazione + approve. Gate **per-unità** (niente allow-set su `course.status`): corso non terminale + `ensure_lesson_structure_ready` (modulo `approved` + `section_outline` presente, assessment esenti); generate-all/missing filtrano in silenzio; approve-all tollerante (ignora le `empty`). Branch su `is_assessment`: `build_assessment_user_prompt`, `materialize_lesson_assessment` per le lezioni di verifica |
 | `course_lesson_content_crud.py` | [Courses 08](../courses/08-lesson-content.md) | Edit manuale `content_raw` + sync ref per asset rinominati + `update_lesson_assessment` (verifica delle competenze) |
 | `course_lesson_content_worker.py` | [Courses 08](../courses/08-lesson-content.md) | Worker parallelo (cap=3 default) per lezione + auto-trigger glossario + pre-check struttura (`phase="precheck_structure"`, failed non recuperabile). Genera anche le lezioni-verifica `is_assessment` |
 | `course_glossary_service.py` | [Courses 08](../courses/08-lesson-content.md) | Glossario corso (§10.1) — sync + ensure_glossary_ready. Gate: rank ≥ `architecture_approved` AND status ≠ `archived` (`published` ammesso) |
-| `openai_lesson_content_service.py` | [Courses 08](../courses/08-lesson-content.md) | Wrapper OpenAI Fase 3 + addendum §9.3 in rigenerazione + `generate_lesson_assessment` (verifica) |
+| `openai_lesson_content_service.py` | [Courses 08](../courses/08-lesson-content.md) | Wrapper OpenAI Fase 3 + addendum §9.3 in rigenerazione + `generate_lesson_assessment` (verifica) + `build_lesson_content_json_schema` (enum dei codici obiettivo per chiamata) |
+| `lesson_coverage_resolver.py` | [Courses 08](../courses/08-lesson-content.md) | Modulo puro: risolve i riferimenti di contabilità di Fase 3 (`O1`/testo/varianti tipografiche → obiettivo canonico, `topic_id` case-insensitive). Cascata deterministica, nessun fuzzy |
 | `openai_glossary_service.py` | [Courses 08](../courses/08-lesson-content.md) | Wrapper OpenAI glossario (10-30 termini) |
 
 > Verifica delle competenze (`is_assessment`): vedi

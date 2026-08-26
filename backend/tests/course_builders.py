@@ -13,6 +13,7 @@ from app.models.course_lesson import CourseLesson
 from app.models.course_module import CourseModule
 from app.models.organization import Organization
 from app.models.user import User
+from app.schemas.course_lesson_content import LessonContentOutput
 
 
 def _now() -> datetime:
@@ -181,3 +182,77 @@ def build_course_document(
     if created_at is not None:
         doc.created_at = created_at
     return doc
+
+
+def build_lesson_content_output(
+    *,
+    lesson_code: str = "M1.L1",
+    sections: list[tuple[str, list[str], list[str]]] | None = None,
+    coverage_objectives: list[str] | None = None,
+    coverage_topics: list[str] | None = None,
+    **overrides: Any,
+) -> LessonContentOutput:
+    """Output di Fase 3 minimo e valido (§6.3).
+
+    `sections` è una lista di `(section_id, objectives_addressed,
+    topics_addressed)`; il `coverage_check` rispecchia le sezioni se non
+    si passano `coverage_objectives`/`coverage_topics` (che servono a
+    simulare un modello che dichiara una copertura incoerente).
+    """
+    rows = sections or [("S1", ["Comprendere l'argomento"], ["T1"])]
+    objectives = (
+        coverage_objectives
+        if coverage_objectives is not None
+        else list(dict.fromkeys(o for _sid, objs, _t in rows for o in objs))
+    )
+    topics = (
+        coverage_topics
+        if coverage_topics is not None
+        else list(dict.fromkeys(t for _sid, _o, tids in rows for t in tids))
+    )
+    payload: dict[str, Any] = {
+        "lesson_id": lesson_code,
+        "lesson_title": "Lezione di prova",
+        "is_introductory": False,
+        "estimated_word_count": 900,
+        "introduction": "Introduzione della lezione.",
+        "sections": [
+            {
+                "section_id": sid,
+                "title": f"Sezione {sid}",
+                "content": "Testo della sezione.",
+                "objectives_addressed": list(objs),
+                "topics_addressed": list(tids),
+            }
+            for sid, objs, tids in rows
+        ],
+        "summary": "Sintesi della lezione.",
+        "key_takeaways": ["Primo punto", "Secondo punto", "Terzo punto"],
+        "visual_assets": [],
+        "tables": [],
+        "equations": [],
+        "examples": [],
+        "references": [],
+        "coverage_check": {
+            "objectives_covered": [
+                {
+                    "objective": objective,
+                    "covered_in_section_ids": [
+                        sid for sid, objs, _t in rows if objective in objs
+                    ],
+                }
+                for objective in objectives
+            ],
+            "topics_covered": [
+                {
+                    "topic_id": topic_id,
+                    "covered_in_section_ids": [
+                        sid for sid, _o, tids in rows if topic_id in tids
+                    ],
+                }
+                for topic_id in topics
+            ],
+        },
+    }
+    payload.update(overrides)
+    return LessonContentOutput.model_validate(payload)

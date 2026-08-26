@@ -24,8 +24,9 @@ Per ogni lezione approvata in Fase 2 (con `learning_objectives`,
 > originale è stato rimosso (vedi prompt §6 — "NON GENERARE ESERCIZI").
 > Lo schema `content_raw` espone `examples` ma non `exercises`.
 
-L'output è validato (10 validazioni di §6.4) e materializzato come
-JSONB `content_raw` su `course_lesson`. La UI rende live Mermaid +
+L'output è validato (10 validazioni di §6.4, di cui 5 tolleranti o
+derivate — vedi sotto) e materializzato come JSONB `content_raw` su
+`course_lesson`. La UI rende live Mermaid +
 KaTeX + tabelle.
 
 ## Glossario corso (§10.1)
@@ -52,7 +53,7 @@ sostituisce la vecchia allow-set enumerata, che ometteva stati validi.
 | `content_status` | VARCHAR(40) | CHECK ∈ (empty, pending, processing, ready, approved, failed) |
 | `content_raw` | JSONB | output AI completo (verbatim §6.3) |
 | `content_tokens` | JSONB | `{prompt, completion, total, model}` |
-| `content_attempts` | SMALLINT | counter retry |
+| `content_attempts` | SMALLINT | counter retry, azzerato a ogni richiesta dell'utente su lezione `failed`/`empty` |
 | `content_error` | TEXT | messaggio errore |
 | `content_generated_at` | TIMESTAMPTZ | |
 | `content_approved_at` | TIMESTAMPTZ | |
@@ -139,12 +140,55 @@ falsi positivi.
 
 - **Backend** (`course_lesson_content_service`): `_ASSET_REF_RE =
   r"\[(FIG|TAB|EQ|EX):([^\]]+)\]"`, `_collect_asset_refs` fa
-  `kind.upper()` + `aid.strip()`; le validazioni soft (9/10 di §6.4)
-  confrontano i set di ref e di id entrambi `.lower()`.
+  `kind.upper()` + `aid.strip()`; le validazioni soft sugli asset (9 e 10
+  di §6.4) confrontano i set di ref e di id entrambi `.lower()`.
 - **Frontend** (`MarkdownRenderer.tsx`): le `Map` degli asset hanno
   chiavi `asset_id.toLowerCase()` e `renderAssetBlock` cerca con
   `id.toLowerCase()`. Solo se il lookup fallisce mostra
   "Asset non trovato: `[KIND:id]`" (con l'id originale).
+
+## Riferimenti agli obiettivi: codici nel prompt + risoluzione tollerante
+
+`sections[].objectives_addressed` e `coverage_check.objectives_covered[]`
+erano l'unico punto della pipeline in cui l'AI doveva riferirsi a un dato
+di Fase 2 tramite il suo TESTO invece che tramite un ID (i temi hanno
+`topic_id`, le slide `slide_id`, le sezioni `section_id`). Il confronto
+era esatto a meno di minuscole e spazi: un apostrofo tipografico o un
+accento composto diversamente bastavano a far scartare l'intera dispensa
+con `lesson_content_unknown_objective`, e la regola di LINGUA — che
+ordina di scrivere ogni campo nella lingua del corso — spingeva
+attivamente il modello a tradurre proprio la stringa che doveva copiare.
+
+Doppia rete:
+
+1. **Codici nel prompt + `enum` nello schema.** Gli obiettivi sono
+   numerati `[O1] … [On]` nel blocco `## Lezione da generare`
+   (`_format_learning_objectives`, simmetrico a `[T1]` dei temi) e
+   `build_lesson_content_json_schema` inietta quei codici come `enum` sui
+   due campi nello schema strict della singola chiamata. Il modello non
+   PUÒ più emettere un valore inesistente. Solo gli obiettivi entrano
+   nell'enum: i `topic_id` sono stringhe libere di Fase 2 e renderebbero
+   lo schema diverso quasi a ogni lezione (la latenza di preprocessing
+   dello schema si paga una volta per variante). Lista vuota ⇒ nessun
+   `enum`: `"enum": []` non è uno schema valido.
+2. **Risoluzione tollerante in materializzazione**
+   (`lesson_coverage_resolver`), cascata deterministica, primo esito
+   vince: codice (`O3`, `[O3]`, `o3`; indice fuori range ⇒ irrisolto) →
+   uguaglianza storica (minuscole + spazi) → uguaglianza normalizzata
+   (NFKD, accenti, apostrofi, punteggiatura) → contenimento (≥ 30
+   caratteri e candidato **unico**). Niente `difflib`: fra due obiettivi
+   fratelli «segnale periodico» / «segnale non periodico», la parafrasi
+   «segnale aperiodico» ha ratio 0.947 sul primo e 0.783 sul secondo,
+   quindi qualunque soglia sceglierebbe l'opposto semantico. Un falso
+   negativo costa un warning; un falso positivo corrompe la contabilità
+   in silenzio.
+
+**In `content_raw` si persiste sempre il testo canonico di Fase 2**, mai
+il codice: `O1` è una maniglia posizionale valida per una sola chiamata
+(il docente può riordinare gli obiettivi dalla PATCH di Fase 2) e
+`coverage_check.objectives_covered[].objective` viene tradotto sulla
+duplicazione, dove un `"O1"` verrebbe translitterato o scartato. Forma di
+`content_raw` invariata: nessuna migrazione, nessuna rigenerazione.
 
 ## Validazione asset (LaTeX/Mermaid) + auto-fix AI a generazione
 
@@ -260,14 +304,19 @@ per lezione del ~40%, qualità leggermente inferiore. Vedi
     (`lesson_structure_is_ready`); regressione esplicita
     `course.status='content_pending'`.
   - `materialize_lesson_content` — applica le **10 validazioni §6.4**:
-    1. `lesson_id` ↔ `lesson_code` match
-    2. `section_id` univoci
-    3. `asset_id` univoci per tipo (visual_assets, tables, equations, examples)
-    4. Cross-field: ogni `objectives_addressed` esiste in Fase 2
-    5. Cross-field: ogni `topics_addressed` esiste nei `mandatory_topics`
-    6. Coverage completa: unione su sections copre TUTTI obiettivi/topic
-    7. `coverage_check.objectives_covered` coerente con sections
-    8. `coverage_check.topics_covered` coerente con sections
+    1. `lesson_id` ↔ `lesson_code` match (hard)
+    2. `section_id` univoci (hard)
+    3. `asset_id` univoci per tipo (visual_assets, tables, equations, examples) (hard)
+    4. Cross-field: ogni `objectives_addressed` è **riconciliato** sul testo
+       canonico di Fase 2 (`lesson_coverage_resolver`); ciò che resta
+       irrisolto viene scartato → warning + audit
+       `course.lesson.content.coverage_refs_dropped`
+    5. Cross-field: idem per `topics_addressed` sul `topic_id` canonico
+    6. Coverage completa: unione su sections copre TUTTI obiettivi/topic —
+       **unica validazione di contabilità rimasta bloccante**, con gli
+       elementi scoperti nel messaggio
+    7. `coverage_check.objectives_covered` **derivato** dalle sections
+    8. `coverage_check.topics_covered` **derivato** dalle sections
     9. Asset orfani (referenziati ma non definiti) → warning soft
     10. Asset non referenziati nel testo → warning soft
   - `approve_lesson_content` / `approve_all_lessons_content` —
@@ -310,6 +359,13 @@ scoped a livello LEZIONE:
   dopo `auto_retry_max` esauriti `→ failed`. Errori non recuperabili
   (`OpenAINotConfiguredError` — config issue, non si risolverà
   ritentando) vanno a `failed` subito.
+  Il budget è **per-richiesta**: `request_lesson_generation`,
+  `request_all_lessons_generation` e `request_missing_lessons_generation`
+  azzerano `content_attempts` sulle lezioni `failed`/`empty` (valore
+  precedente nei metadata dell'audit). Il vincolo sullo stato serve
+  perché generate-all riporta a `pending` anche lezioni `processing`:
+  senza, due clic di fila azzererebbero il contatore all'infinito e il
+  tetto dei retry non morderebbe mai. `cancel-all` non azzera nulla.
 
 ### API endpoints (6 nuovi)
 

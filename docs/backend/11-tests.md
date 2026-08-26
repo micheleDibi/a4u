@@ -139,7 +139,40 @@ Builder condiviso per i test del dominio corsi: `build_course(db, ...)`
 crea org + corso + moduli + lezioni in un colpo solo, con stati
 configurabili per fase (`status`, `module_status`, `content_status`,
 `slides_status`, `speech_status`, `with_structure`, `with_assessment`,
-…) + helper `find_lesson`.
+…) + helper `find_lesson`. Più i builder di payload AI:
+`build_document_summary` / `build_course_document` (Appendice A) e
+`build_lesson_content_output` (output §6.3 minimo valido, con sezioni e
+`coverage_check` parametrizzabili).
+
+---
+
+## `tests/test_lesson_coverage_resolver.py`
+
+**Risoluzione dei riferimenti di contabilità §6.4** (puro, senza DB):
+codici `O1`/`[O2]`/`o3` → testo canonico e indice fuori range irrisolto;
+testo verbatim (retro-compatibilità); varianti tipografiche del guasto di
+produzione (accento sciolto, apostrofo, NBSP, punto finale); troncamento
+via contenimento e frammento troppo corto irrisolto; **anti-falso
+positivo**: parafrasi di un fratello («segnale aperiodico» fra
+«periodico» e «non periodico») e frammento contenuto in due obiettivi →
+irrisolti; temi case/parentesi-insensitive e per titolo; dedup e ordine
+delle liste; `normalize` allineata alla copia di `document_citation_guard`.
+
+---
+
+## `tests/test_lesson_content_objective_ids.py`
+
+**Codici obiettivo end-to-end** (`seeded_db`): prompt utente con
+`- [O1] …`; system prompt che ordina il codice, lo esenta dalla regola di
+LINGUA e lo vieta nella prosa; `build_lesson_content_json_schema` che
+inietta l'`enum` senza mutare la costante e non produce mai `enum` vuoto;
+il **guasto di produzione riprodotto** che ora materializza `ready`;
+codici risolti e mai persistiti; riferimento inventato scartato con audit
+`course.lesson.content.coverage_refs_dropped`; `coverage_check` derivato
+invece che confrontato; hard fail solo su obiettivo/tema realmente
+scoperto (con il nome nel messaggio); lezione senza obiettivi che non va
+più in loop; output perfetto persistito byte-identico; reset di
+`content_attempts` su `failed`/`empty` e non su `processing`/cancel.
 
 ---
 

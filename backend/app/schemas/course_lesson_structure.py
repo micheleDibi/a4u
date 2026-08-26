@@ -63,7 +63,10 @@ class LessonStructureLessonOutput(BaseModel):
     @field_validator("learning_objectives")
     @classmethod
     def _strip_objectives(cls, v: list[str]) -> list[str]:
-        return [s.strip() for s in v if s and s.strip()]
+        # Spazi INTERNI collassati, non solo i bordi: un obiettivo con un
+        # a-capo verrebbe reso nel prompt di Fase 3 come due voci
+        # dell'elenco puntato e il modello non potrebbe più riferirvisi.
+        return [" ".join(s.split()) for s in v if s and s.strip()]
 
     @field_validator("prerequisites")
     @classmethod
@@ -116,7 +119,9 @@ class LessonStructureUpdateInput(BaseModel):
     def _validate_objectives(cls, v: list[str] | None) -> list[str] | None:
         if v is None:
             return None
-        cleaned = [s.strip() for s in v if s and s.strip()]
+        # Vedi `_strip_objectives`: gli a-capo vanno tolti anche quando
+        # l'obiettivo arriva dall'editor manuale del docente.
+        cleaned = [" ".join(s.split()) for s in v if s and s.strip()]
         if not cleaned:
             raise ValueError("Almeno un obiettivo formativo è richiesto")
         return cleaned

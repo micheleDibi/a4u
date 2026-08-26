@@ -709,7 +709,7 @@ DELIMITATORI MATH — REGOLA RIGIDA
 
 DIVIETI ASSOLUTI NEL TESTO VISIBILE
 - NON citare mai nel testo codici tecnici interni come `M1.L1`,
-  `M2.L5`, `T1`, `S2`, `asset_id`, `VIS-...`, `FIG-...`. Questi sono
+  `M2.L5`, `T1`, `O1`, `S2`, `asset_id`, `VIS-...`, `FIG-...`. Questi sono
   identificatori di sistema e non devono apparire al lettore.
 - Quando vuoi richiamare un'altra lezione del corso, usa il suo
   TITOLO (es. "Nella lezione sulla Trasformata di Fourier abbiamo
@@ -796,6 +796,10 @@ ALLINEAMENTO
 - Ogni obiettivo formativo in almeno una sezione
 - Ogni tema obbligatorio in almeno una sezione
 - Compila `coverage_check` mappando obiettivi e temi alle sezioni
+- In `objectives_addressed` e in `coverage_check.objectives_covered[].objective`
+  scrivi SOLO il codice fra parentesi quadre dell'obiettivo (`O1`, `O2`, ...),
+  mai il suo testo. In `topics_addressed` e `topics_covered[].topic_id` SOLO il
+  `topic_id`.
 
 NON GENERARE ESERCIZI: il campo `exercises_for_self_study` non è più
 richiesto.
@@ -814,9 +818,10 @@ la prosa, ma anche OGNI campo testuale degli asset. In particolare:
 - `label`, `statement`, `explanation` delle equazioni e il `text` di OGNI passo di `proof`;
 - `title` e `content` degli esempi.
 Restano invariati SOLO: la notazione matematica LaTeX (campi `latex`), la struttura
-sintattica di Mermaid (tipo di diagramma, frecce, ID dei nodi), gli ID degli asset e i
-tag `[FIG:..]`/`[TAB:..]`/`[EQ:..]`/`[EX:..]`. NON lasciare in nessun campo testo in
-un'altra lingua (es. italiano): traduci tutto in {language_code}.
+sintattica di Mermaid (tipo di diagramma, frecce, ID dei nodi), gli ID degli asset, i
+tag `[FIG:..]`/`[TAB:..]`/`[EQ:..]`/`[EX:..]` e i codici di obiettivi (`O1`) e temi
+(`T1`). NON lasciare in nessun campo testo in un'altra lingua (es. italiano): traduci
+tutto in {language_code}.
 Output: SOLO JSON valido conforme allo schema.
 ```
 
@@ -861,8 +866,8 @@ Titolo: {lesson.title}
 Bibliografia consigliata (solo se introduttiva):
 {bibliografia consigliata}
 
-Obiettivi formativi:
-{obiettivi formativi}
+Obiettivi formativi (con ID):
+{obiettivi formativi, uno per riga, come `- [O1] <testo>`}
 
 Temi obbligatori (con ID):
 {temi obbligatori con topic_id e rationale}
@@ -889,7 +894,12 @@ disciplina e registralo in `references` come `suggerimento_generale`.
 
 In rigenerazione: `## Versione attuale della lezione (DA RIVEDERE)` (solo se esiste già `content_raw`; gli asset sono elencati come `- asset_id: caption`) + `## Indicazioni del docente per la rigenerazione` (se c'è un hint; entra anche su lezioni mai generate, senza `REGENERATION_SUFFIX`).
 
-**JSON schema** (`LESSON_CONTENT_JSON_SCHEMA`):
+**JSON schema** (`LESSON_CONTENT_JSON_SCHEMA`) — la costante è la base;
+`build_lesson_content_json_schema(objective_ids=[...])` ne fa un `deepcopy`
+e inietta l'`enum` dei codici obiettivo su `sections[].objectives_addressed`
+e su `coverage_check.objectives_covered[].objective`, così il modello non
+può riferirsi a un obiettivo inesistente. Con zero obiettivi non inietta
+nulla (`"enum": []` non è uno schema strict valido):
 
 ```python
 {
@@ -911,6 +921,8 @@ In rigenerazione: `## Versione attuale della lezione (DA RIVEDERE)` (solo se esi
                         "section_id": {"type": "string"},
                         "title": {"type": "string"},
                         "content": {"type": "string"},
+                        # `items.enum` = ["O1", ..., "On"] iniettato per chiamata
+                        # da `build_lesson_content_json_schema` (vedi nota sotto)
                         "objectives_addressed": {"type": "array", "items": {"type": "string"}},
                         "topics_addressed": {"type": "array", "items": {"type": "string"}},
                     },

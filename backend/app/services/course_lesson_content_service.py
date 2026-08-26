@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -39,14 +40,21 @@ from app.models.course_lesson import CourseLesson
 from app.models.course_module import CourseModule
 from app.schemas.course_lesson_content import (
     LessonAssessmentOutput,
+    LessonContentCoverageCheck,
+    LessonContentObjectiveCovered,
     LessonContentOutput,
+    LessonContentTopicCovered,
 )
 from app.services.course_architecture_service import (
     _build_documents_context,
     _term_label,
     didactic_style_labels,  # noqa: F401  (ri-esposta per il worker Fase 3)
 )
-from app.services import document_citation_guard, lesson_document_selection
+from app.services import (
+    document_citation_guard,
+    lesson_coverage_resolver,
+    lesson_document_selection,
+)
 from app.services.course_glossary_service import format_glossary_for_prompt
 
 log = get_logger("app.course_lesson_content")
@@ -169,11 +177,36 @@ def _format_recommended_bibliography(
     return "\n".join(lines) if lines else "(non applicabile)"
 
 
+def objective_ids_for_lesson(lesson: CourseLesson) -> list[str]:
+    """Codici `O1..On` mostrati al modello e usati come `enum` nello
+    schema JSON della chiamata (§6.3).
+
+    Unica sede della convenzione: prompt, schema e validazione leggono da
+    qui. Sono maniglie posizionali valide per una sola chiamata — non
+    vengono mai persistite in `content_raw`.
+    """
+    index = lesson_coverage_resolver.build_objective_index(
+        lesson.learning_objectives or []
+    )
+    return list(index.ids)
+
+
 def _format_learning_objectives(lesson: CourseLesson) -> str:
-    objs = lesson.learning_objectives or []
-    if not objs:
+    """Elenco degli obiettivi con il loro codice, come per i temi.
+
+    Senza codice il modello doveva ricopiare alla lettera una frase di
+    100+ caratteri per dichiararne la copertura, e un apostrofo diverso
+    bastava a far scartare l'intera dispensa.
+    """
+    index = lesson_coverage_resolver.build_objective_index(
+        lesson.learning_objectives or []
+    )
+    if not index.objectives:
         return "(nessuno)"
-    return "\n".join(f"- {o}" for o in objs)
+    return "\n".join(
+        f"- [{oid}] {text}"
+        for oid, text in zip(index.ids, index.objectives, strict=True)
+    )
 
 
 def _format_mandatory_topics(lesson: CourseLesson) -> str:
@@ -342,7 +375,7 @@ def build_user_prompt(course: Course, lesson: CourseLesson) -> str:
         "Bibliografia consigliata (solo se introduttiva):",
         _format_recommended_bibliography(course, lesson),
         "",
-        "Obiettivi formativi:",
+        "Obiettivi formativi (con ID):",
         _format_learning_objectives(lesson),
         "",
         "Temi obbligatori (con ID):",
@@ -556,6 +589,27 @@ def build_assessment_user_prompt(course: Course, lesson: CourseLesson) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _reset_attempts_for_request(lesson: CourseLesson) -> int | None:
+    """Azzera il budget di auto-retry quando la richiesta arriva
+    dall'utente su una lezione ferma (`failed`/`empty`).
+
+    `content_attempts` non veniva azzerato da nessun percorso: dopo i 5
+    retry automatici ogni "Riprova" valeva UN solo tentativo e ricadeva
+    subito in `Fallito`. Il vincolo sullo stato serve perché generate-all
+    non filtra e riporta a `pending` anche lezioni `processing`: senza,
+    due clic di fila azzererebbero il contatore all'infinito e il tetto
+    dei retry (ogni tentativo è una chiamata completa al modello) non
+    morderebbe mai.
+
+    Ritorna il valore precedente quando l'azzeramento avviene (audit).
+    """
+    if lesson.content_status not in ("failed", "empty"):
+        return None
+    previous = lesson.content_attempts or 0
+    lesson.content_attempts = 0
+    return previous
+
+
 async def request_lesson_generation(
     db: AsyncSession,
     *,
@@ -577,6 +631,7 @@ async def request_lesson_generation(
             code="invalid_lesson_content_status",
         )
 
+    attempts_reset_from = _reset_attempts_for_request(lesson)
     lesson.content_status = "pending"
     lesson.content_error = None
     lesson.content_progress = 0
@@ -598,6 +653,7 @@ async def request_lesson_generation(
             "course_id": str(course.id),
             "lesson_code": lesson.lesson_code,
             "is_regeneration": is_regeneration_for_lesson(lesson),
+            "attempts_reset_from": attempts_reset_from,
             "hint": (
                 lesson.content_regeneration_hint[:200]
                 if lesson.content_regeneration_hint
@@ -643,7 +699,10 @@ async def request_all_lessons_generation(
         )
 
     hint_clean = regeneration_hint.strip() if regeneration_hint else None
+    attempts_reset = 0
     for lesson in eligible_lessons:
+        if _reset_attempts_for_request(lesson) is not None:
+            attempts_reset += 1
         lesson.content_status = "pending"
         lesson.content_error = None
         lesson.content_progress = 0
@@ -665,6 +724,7 @@ async def request_all_lessons_generation(
         metadata={
             "lessons_count": len(eligible_lessons),
             "skipped_count": len(all_lessons) - len(eligible_lessons),
+            "attempts_reset": attempts_reset,
             "hint": hint_clean[:200] if hint_clean else None,
         },
     )
@@ -701,7 +761,10 @@ async def request_missing_lessons_generation(
             code="no_missing_lessons",
         )
 
+    attempts_reset = 0
     for lesson in missing_lessons:
+        if _reset_attempts_for_request(lesson) is not None:
+            attempts_reset += 1
         lesson.content_status = "pending"
         lesson.content_error = None
         lesson.content_progress = 0
@@ -719,7 +782,10 @@ async def request_missing_lessons_generation(
         organization_id=course.organization_id,
         target_type="course",
         target_id=str(course.id),
-        metadata={"lessons_count": len(missing_lessons)},
+        metadata={
+            "lessons_count": len(missing_lessons),
+            "attempts_reset": attempts_reset,
+        },
     )
     await db.commit()
     return await _refresh_full(db, course)
@@ -789,9 +855,111 @@ def _collect_asset_refs(text: str) -> set[tuple[str, str]]:
     }
 
 
-def _normalize_objective(s: str) -> str:
-    """Normalizza un obiettivo per matching cross-field (case+spazi)."""
-    return " ".join((s or "").lower().split())
+@dataclass
+class _CoverageReport:
+    """Esito della riconciliazione dei riferimenti di contabilità §6.4."""
+
+    changed: bool
+    objectives: list[str]
+    topics: list[str]
+    objective_cover: dict[str, list[str]]
+    topic_cover: dict[str, list[str]]
+    dropped_objectives: list[str]
+    dropped_topics: list[str]
+
+
+def _canonicalize_coverage(
+    *, lesson: CourseLesson, output: LessonContentOutput
+) -> _CoverageReport:
+    """Riscrive i riferimenti delle sezioni con i valori canonici di
+    Fase 2 e DERIVA `coverage_check` dalle sezioni.
+
+    Il modello riceve i codici `O1..On` e i `topic_id`, ma qui si accetta
+    anche il testo (comportamento storico) e le sue varianti tipografiche:
+    `lesson_coverage_resolver` risolve tutto sul valore canonico. Ciò che
+    resta irrisolto viene SCARTATO — è contabilità inventata, non prosa —
+    e segnalato al chiamante, che ne fa warning + audit.
+
+    `coverage_check` non viene più confrontato per uguaglianza di insiemi
+    (era una richiesta tautologica che scartava dispense valide): viene
+    ricalcolato da ciò che le sezioni dichiarano davvero.
+    """
+    obj_index = lesson_coverage_resolver.build_objective_index(
+        lesson.learning_objectives or []
+    )
+    topic_index = lesson_coverage_resolver.build_topic_index(
+        lesson.mandatory_topics or []
+    )
+    changed = False
+    objective_cover: dict[str, list[str]] = {}
+    topic_cover: dict[str, list[str]] = {}
+    dropped_objectives: list[str] = []
+    dropped_topics: list[str] = []
+
+    for section in output.sections:
+        objectives, unresolved = lesson_coverage_resolver.resolve_objectives(
+            section.objectives_addressed, obj_index
+        )
+        dropped_objectives.extend(unresolved)
+        if objectives != list(section.objectives_addressed):
+            section.objectives_addressed = objectives
+            changed = True
+        for objective in objectives:
+            objective_cover.setdefault(objective, []).append(section.section_id)
+
+        topics, unresolved = lesson_coverage_resolver.resolve_topics(
+            section.topics_addressed, topic_index
+        )
+        dropped_topics.extend(unresolved)
+        if topics != list(section.topics_addressed):
+            section.topics_addressed = topics
+            changed = True
+        for topic_id in topics:
+            topic_cover.setdefault(topic_id, []).append(section.section_id)
+
+    # Obiettivi identici (copia/incolla nell'editor di Fase 2) collassano
+    # in una sola voce: altrimenti il duplicato sarebbe scoperto per
+    # sempre, senza modo per il modello di distinguerli.
+    objectives = list(dict.fromkeys(obj_index.objectives))
+    topics = list(dict.fromkeys(topic_index.topic_ids))
+
+    derived = LessonContentCoverageCheck(
+        objectives_covered=[
+            LessonContentObjectiveCovered(
+                objective=objective,
+                covered_in_section_ids=objective_cover.get(objective, []),
+            )
+            for objective in objectives
+        ],
+        topics_covered=[
+            LessonContentTopicCovered(
+                topic_id=topic_id,
+                covered_in_section_ids=topic_cover.get(topic_id, []),
+            )
+            for topic_id in topics
+        ],
+    )
+    if derived != output.coverage_check:
+        output.coverage_check = derived
+        changed = True
+
+    return _CoverageReport(
+        changed=changed,
+        objectives=objectives,
+        topics=topics,
+        objective_cover=objective_cover,
+        topic_cover=topic_cover,
+        dropped_objectives=dropped_objectives,
+        dropped_topics=dropped_topics,
+    )
+
+
+def _uncovered_message(prefix: str, items: list[str]) -> str:
+    """Messaggio breve: `content_error` è troncato a 500 caratteri dal
+    worker, un elenco lungo verrebbe tagliato a metà parola."""
+    shown = ", ".join(f"#{i + 1} {item[:60]}" for i, item in enumerate(items[:3]))
+    suffix = f" (+{len(items) - 3})" if len(items) > 3 else ""
+    return f"{prefix}: {shown}{suffix}"
 
 
 async def materialize_lesson_content(
@@ -851,77 +1019,63 @@ async def materialize_lesson_content(
             code="lesson_content_duplicate_example_id",
         )
 
-    # 4. Cross-field references: ogni objective/topic_id riferito in
-    #    sections deve esistere nei dati Fase 2.
-    fase2_objectives_norm = {
-        _normalize_objective(o) for o in (lesson.learning_objectives or [])
-    }
-    fase2_topic_ids = {
-        t.get("topic_id")
-        for t in (lesson.mandatory_topics or [])
-        if isinstance(t, dict) and t.get("topic_id")
-    }
+    # 4-5. Riferimenti di contabilità: si RICONCILIANO, non si rifiutano.
+    #    Il modello riceve i codici `O1..On` e i `topic_id`; qui si accetta
+    #    anche il testo e le sue varianti tipografiche. Ciò che resta
+    #    irrisolto è una voce inventata e viene scartato: non giustifica
+    #    buttare via una dispensa già scritta (§6.4 rivista).
+    report = _canonicalize_coverage(lesson=lesson, output=output)
+    if report.dropped_objectives or report.dropped_topics:
+        log.warning(
+            "lesson_content_unresolved_coverage_refs",
+            lesson_code=lesson.lesson_code,
+            objectives=[o[:80] for o in report.dropped_objectives[:5]],
+            topics=report.dropped_topics[:5],
+        )
+        await write_audit(
+            db,
+            action="course.lesson.content.coverage_refs_dropped",
+            actor_user_id=None,
+            organization_id=course.organization_id,
+            target_type="course_lesson",
+            target_id=str(lesson.id),
+            metadata={
+                "course_id": str(course.id),
+                "lesson_code": lesson.lesson_code,
+                "objectives": [o[:200] for o in report.dropped_objectives],
+                "topics": report.dropped_topics,
+            },
+        )
 
-    for s in output.sections:
-        for obj in s.objectives_addressed:
-            if _normalize_objective(obj) not in fase2_objectives_norm:
-                raise ConflictError(
-                    f"Sezione {s.section_id}: obiettivo `{obj[:80]}...` "
-                    f"non corrisponde ad alcun obiettivo di Fase 2.",
-                    code="lesson_content_unknown_objective",
-                )
-        for tid in s.topics_addressed:
-            if tid not in fase2_topic_ids:
-                raise ConflictError(
-                    f"Sezione {s.section_id}: topic_id `{tid}` non esiste "
-                    f"nei mandatory_topics di Fase 2.",
-                    code="lesson_content_unknown_topic_id",
-                )
-
-    # 5. Coverage completa: l'unione su sections deve coprire TUTTI gli
-    #    obiettivi e topics di Fase 2.
-    covered_objectives_norm: set[str] = set()
-    covered_topic_ids: set[str] = set()
-    for s in output.sections:
-        for obj in s.objectives_addressed:
-            covered_objectives_norm.add(_normalize_objective(obj))
-        for tid in s.topics_addressed:
-            covered_topic_ids.add(tid)
-
-    uncovered_objs = fase2_objectives_norm - covered_objectives_norm
+    # 6. Coverage completa: l'unione su sections deve coprire TUTTI gli
+    #    obiettivi e i temi di Fase 2. È l'unico controllo di contabilità
+    #    che resta bloccante — qui il problema è didattico, non formale.
+    uncovered_objs = [o for o in report.objectives if not report.objective_cover.get(o)]
     if uncovered_objs:
+        log.warning(
+            "lesson_content_objectives_uncovered",
+            lesson_code=lesson.lesson_code,
+            objectives=uncovered_objs,
+        )
         raise ConflictError(
-            f"Lezione {lesson.lesson_code}: obiettivi non coperti da alcuna "
-            f"sezione ({len(uncovered_objs)}).",
+            _uncovered_message(
+                f"Lezione {lesson.lesson_code}: obiettivi non coperti da "
+                f"alcuna sezione",
+                uncovered_objs,
+            ),
             code="lesson_content_objectives_uncovered",
         )
-    uncovered_topics = fase2_topic_ids - covered_topic_ids
+    uncovered_topics = [t for t in report.topics if not report.topic_cover.get(t)]
     if uncovered_topics:
+        log.warning(
+            "lesson_content_topics_uncovered",
+            lesson_code=lesson.lesson_code,
+            topics=uncovered_topics,
+        )
         raise ConflictError(
             f"Lezione {lesson.lesson_code}: topic non coperti da alcuna "
-            f"sezione: {sorted(uncovered_topics)}.",
+            f"sezione: {uncovered_topics}.",
             code="lesson_content_topics_uncovered",
-        )
-
-    # 6. coverage_check coerente con il calcolo effettivo dalle sections.
-    declared_objs = {
-        _normalize_objective(o.objective)
-        for o in output.coverage_check.objectives_covered
-    }
-    if declared_objs != fase2_objectives_norm:
-        raise ConflictError(
-            f"coverage_check.objectives_covered non corrisponde agli "
-            f"obiettivi della lezione {lesson.lesson_code}.",
-            code="lesson_content_coverage_check_objectives_mismatch",
-        )
-    declared_topics = {
-        t.topic_id for t in output.coverage_check.topics_covered
-    }
-    if declared_topics != fase2_topic_ids:
-        raise ConflictError(
-            f"coverage_check.topics_covered non corrisponde ai topic "
-            f"della lezione {lesson.lesson_code}.",
-            code="lesson_content_coverage_check_topics_mismatch",
         )
 
     # 7. Asset referenziati nel testo: warning soft (non blocca).
@@ -976,6 +1130,13 @@ async def materialize_lesson_content(
         )
 
     # 8. Apply — scrive content_raw + meta
+    if report.changed:
+        # `raw` è stato serializzato dal chiamante PRIMA della
+        # riconciliazione: va rigenerato, altrimenti si persisterebbero i
+        # riferimenti non canonici (stesso pattern del riscalo delle
+        # durate in `course_lesson_speech_service`). Condizionale: con un
+        # output già perfetto i byte persistiti restano identici.
+        raw = output.model_dump()
     lesson.content_raw = raw
     lesson.content_tokens = usage
     lesson.content_status = "ready"

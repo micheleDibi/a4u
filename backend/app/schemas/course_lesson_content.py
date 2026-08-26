@@ -9,9 +9,14 @@ Validazione (§6.4) è in `course_lesson_content_service.materialize_lesson_cont
 - `section_id` univoci all'interno della lezione
 - asset_id (visual_assets, tables, equations, examples) univoci per tipo
 - ogni asset_id deve essere referenziato nel testo come [FIG:..]/[TAB:..]/[EQ:..]/[EX:..]
-- objectives_addressed e topics_addressed riferiscono ID validi di Fase 2
-- coverage completa (unione su sections copre tutti gli obiettivi/temi)
-- coverage_check coerente con il calcolo effettivo
+- objectives_addressed e topics_addressed vengono RICONCILIATI sui valori
+  canonici di Fase 2 (`lesson_coverage_resolver`): il modello riceve i
+  codici `O1..On` e i `topic_id`, ma sono accettati anche il testo e le
+  sue varianti tipografiche; ciò che resta irrisolto viene scartato con
+  warning + audit, non fa fallire la generazione
+- coverage completa (unione su sections copre tutti gli obiettivi/temi):
+  è l'unico controllo di contabilità rimasto bloccante
+- coverage_check è DERIVATO dalle sections, non più confrontato
 """
 from __future__ import annotations
 

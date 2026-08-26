@@ -24,7 +24,10 @@ from app.services import prompt_register as reg
 # Guardie di lunghezza (caratteri) derivate dal testo finale + ~10%.
 MAX_BLOCK_CONTENT = 7_800
 MAX_BLOCK_REDUCED = 6_400
-MAX_SYSTEM_P3 = 20_000
+# P3 misura 19.850 caratteri dopo la regola sui codici obiettivo
+# (ALLINEAMENTO + LINGUA): la guardia sale per non trasformare ogni
+# ritocco del prompt in un fallimento di CI.
+MAX_SYSTEM_P3 = 20_500
 MAX_SYSTEM_P4 = 14_500
 MAX_SYSTEM_P5 = 12_500
 

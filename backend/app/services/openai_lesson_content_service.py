@@ -11,8 +11,10 @@ Errori → `OpenAILessonContentError` (sottoclasse di `OpenAIError`).
 """
 from __future__ import annotations
 
+import copy
 import json
 import time
+from collections.abc import Sequence
 from typing import Any
 
 import httpx
@@ -220,7 +222,7 @@ DELIMITATORI MATH — REGOLA RIGIDA
 
 DIVIETI ASSOLUTI NEL TESTO VISIBILE
 - NON citare mai nel testo codici tecnici interni come `M1.L1`,
-  `M2.L5`, `T1`, `S2`, `asset_id`, `VIS-...`, `FIG-...`. Questi sono
+  `M2.L5`, `T1`, `O1`, `S2`, `asset_id`, `VIS-...`, `FIG-...`. Questi sono
   identificatori di sistema e non devono apparire al lettore.
 - Quando vuoi richiamare un'altra lezione del corso, usa il suo
   TITOLO (es. "Nella lezione sulla Trasformata di Fourier abbiamo
@@ -307,6 +309,10 @@ ALLINEAMENTO
 - Ogni obiettivo formativo in almeno una sezione
 - Ogni tema obbligatorio in almeno una sezione
 - Compila `coverage_check` mappando obiettivi e temi alle sezioni
+- In `objectives_addressed` e in `coverage_check.objectives_covered[].objective`
+  scrivi SOLO il codice fra parentesi quadre dell'obiettivo (`O1`, `O2`, ...),
+  mai il suo testo. In `topics_addressed` e `topics_covered[].topic_id` SOLO il
+  `topic_id`.
 
 {riferimenti_block}NON GENERARE ESERCIZI: il campo `exercises_for_self_study` non è più
 richiesto.
@@ -325,9 +331,10 @@ la prosa, ma anche OGNI campo testuale degli asset. In particolare:
 - `label`, `statement`, `explanation` delle equazioni e il `text` di OGNI passo di `proof`;
 - `title` e `content` degli esempi.
 Restano invariati SOLO: la notazione matematica LaTeX (campi `latex`), la struttura
-sintattica di Mermaid (tipo di diagramma, frecce, ID dei nodi), gli ID degli asset e i
-tag `[FIG:..]`/`[TAB:..]`/`[EQ:..]`/`[EX:..]`. NON lasciare in nessun campo testo in
-un'altra lingua (es. italiano): traduci tutto in {language_code}.
+sintattica di Mermaid (tipo di diagramma, frecce, ID dei nodi), gli ID degli asset, i
+tag `[FIG:..]`/`[TAB:..]`/`[EQ:..]`/`[EX:..]` e i codici di obiettivi (`O1`) e temi
+(`T1`). NON lasciare in nessun campo testo in un'altra lingua (es. italiano): traduci
+tutto in {language_code}.
 Output: SOLO JSON valido conforme allo schema."""
 
 
@@ -571,6 +578,37 @@ LESSON_CONTENT_JSON_SCHEMA: dict[str, Any] = {
 }
 
 
+def build_lesson_content_json_schema(
+    *, objective_ids: Sequence[str] = ()
+) -> dict[str, Any]:
+    """Schema della singola chiamata: la costante base + l'`enum` dei
+    codici obiettivo sui due campi di contabilità.
+
+    Con l'`enum` il modello non PUÒ emettere un obiettivo che non esiste
+    (era la causa di `lesson_content_unknown_objective`).
+
+    `deepcopy` obbligatorio: fino a `COURSE_LESSON_CONTENT_MAX_CONCURRENCY`
+    lezioni sono in volo insieme e una mutazione in place farebbe colare
+    l'enum di una lezione nella richiesta di un'altra.
+
+    Lista vuota (lezione senza obiettivi di Fase 2) → nessun `enum`:
+    `"enum": []` non è uno schema strict valido e OpenAI risponderebbe
+    400 a ogni tentativo.
+    """
+    if not objective_ids:
+        return LESSON_CONTENT_JSON_SCHEMA
+    schema = copy.deepcopy(LESSON_CONTENT_JSON_SCHEMA)
+    props = schema["schema"]["properties"]
+    ids = list(objective_ids)
+    props["sections"]["items"]["properties"]["objectives_addressed"]["items"][
+        "enum"
+    ] = ids
+    props["coverage_check"]["properties"]["objectives_covered"]["items"][
+        "properties"
+    ]["objective"]["enum"] = ids
+    return schema
+
+
 async def generate_lesson_content(
     *,
     user_prompt: str,
@@ -579,6 +617,7 @@ async def generate_lesson_content(
     ruolo_docente: str = "",
     stile_insegnamento: str = "",
     livello_eqf: str = "",
+    objective_ids: Sequence[str] = (),
 ) -> tuple[LessonContentOutput, dict[str, Any]]:
     """Chiama OpenAI per generare il testo completo di una lezione.
 
@@ -610,7 +649,9 @@ async def generate_lesson_content(
         ],
         "response_format": {
             "type": "json_schema",
-            "json_schema": LESSON_CONTENT_JSON_SCHEMA,
+            "json_schema": build_lesson_content_json_schema(
+                objective_ids=objective_ids
+            ),
         },
         "max_completion_tokens": settings.openai_lesson_content_max_tokens,
     }
@@ -623,6 +664,7 @@ async def generate_lesson_content(
         "openai_lesson_content_request",
         chars=len(user_prompt),
         regeneration=is_regeneration,
+        objective_ids=len(objective_ids),
         model=settings.openai_lesson_content_model,
         reasoning_effort=body.get("reasoning_effort"),
     )

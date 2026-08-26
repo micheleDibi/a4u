@@ -372,6 +372,14 @@ Costanti:
 (Literal mermaid/image/…), `latex`, `markdown`, `mermaid` code,
 `detected_language` (codice ISO), numeri, booleani.
 
+> `coverage_check.objectives_covered[].objective` resta **lingua
+> naturale per scelta**: in Fase 3 il modello risponde con i codici
+> `O1..On`, ma la materializzazione li risolve sul testo canonico
+> dell'obiettivo prima di persistere. Se lì finisse il codice, il
+> traduttore riceverebbe la stringa `"O1"` — che per le lingue non latine
+> è obbligato a translitterare o a far scartare — e l'ID si
+> corromperebbe. Vedi [Courses 08](08-lesson-content.md).
+
 ## Client OpenAI condiviso
 
 **Critical**: `backend/app/services/openai_client.py` espone un

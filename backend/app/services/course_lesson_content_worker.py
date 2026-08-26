@@ -356,6 +356,11 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                             ruolo_docente=style["ruolo_docente"],
                             stile_insegnamento=style["stile_insegnamento"],
                             livello_eqf=style["livello_eqf"],
+                            # Vincolo strutturale sui riferimenti agli
+                            # obiettivi: stessi codici mostrati nel prompt.
+                            objective_ids=course_lesson_content_service.objective_ids_for_lesson(
+                                lesson
+                            ),
                         )
                     )
             except OpenAINotConfiguredError:
