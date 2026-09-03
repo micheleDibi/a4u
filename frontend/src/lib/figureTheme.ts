@@ -12,7 +12,7 @@ import type { MermaidConfig } from "mermaid";
  * default) e FigureFrame.
  */
 
-export const THEME_VERSION = "2026.09.1";
+export const THEME_VERSION = "2026.09.2";
 
 export const FONT_FAMILY_PRIMARY = "Noto Sans";
 export const FONT_STACK = '"Noto Sans", "DejaVu Sans", sans-serif';
@@ -40,7 +40,21 @@ export const COLOR_SURFACE = "#F4F6F8";
 const TINT_BLUE = "#E8F1F8";
 const TINT_ORANGE = "#FBEFD9";
 const TINT_GREEN = "#E5F4EF";
+const TINT_PURPLE = "#FAF3F7";
 const TINT_NOTE = "#FBF7E4";
+export const COLOR_WHITE = "#ffffff";
+// Colore del testo sopra ogni colore pieno della palette (bianco solo dove
+// il contrasto WCAG con l'inchiostro è inferiore: blu, nero).
+export const PALETTE_LABEL = [
+  COLOR_WHITE,
+  COLOR_INK,
+  COLOR_INK,
+  COLOR_INK,
+  COLOR_INK,
+  COLOR_INK,
+  COLOR_INK,
+  COLOR_WHITE,
+] as const;
 
 // I 15 tipi di D8 più gli alias storici `graph` e `stateDiagram` (v1).
 export const MERMAID_ALLOWED_TYPES = [
@@ -83,7 +97,12 @@ export interface MermaidConfigOptions {
  * Configurazione per `mermaid.initialize`. `htmlLabels: false` al livello
  * TOP porta Mermaid 11 a emettere `<text>` puro (0 `<foreignObject>`) per
  * i tipi D8; `theme: "neutral"` con `themeVariables` ricondotti alla
- * palette (ogni tema Mermaid applica gli override, non solo `base`).
+ * palette. Il tema neutral non deriva da `primaryColor` i riempimenti e i
+ * bordi principali (`mainBkg`, `nodeBorder`, `actorBkg`, `signalColor`,
+ * `cScale0..11`, gantt, stato): ogni variabile derivata letta dai 15 tipi
+ * D8 è fissata qui, con gli stessi valori di `figure_theme.mermaid_config`.
+ * Limite noto: i nodi di `sankey-beta` usano `schemeTableau10` di d3,
+ * hard-coded nel renderer; i link seguono il nodo sorgente (nessun gradiente).
  */
 export function mermaidConfig({
   useMaxWidth,
@@ -93,7 +112,8 @@ export function mermaidConfig({
   const themeVariables: Record<string, unknown> = {
     fontFamily: MERMAID_FONT_FAMILY,
     fontSize: "14px",
-    background: "#ffffff",
+    background: COLOR_WHITE,
+    // Colori base (letti dai temi come punto di partenza).
     primaryColor: TINT_BLUE,
     primaryTextColor: COLOR_INK,
     primaryBorderColor: PALETTE[0],
@@ -105,13 +125,136 @@ export function mermaidConfig({
     tertiaryBorderColor: PALETTE[2],
     lineColor: COLOR_AXIS,
     textColor: COLOR_INK,
+    text: COLOR_INK,
+    contrast: COLOR_AXIS,
+    mainBkg: TINT_BLUE,
+    secondBkg: COLOR_SURFACE,
+    border1: PALETTE[0],
+    border2: COLOR_AXIS,
+    arrowheadColor: COLOR_AXIS,
+    titleColor: COLOR_INK,
+    errorBkgColor: TINT_ORANGE,
+    errorTextColor: PALETTE[1],
+    // Niente gradienti né ombre (D3).
+    useGradient: false,
+    dropShadow: "none",
+    // Flowchart, block, class, er, state: nodi, cluster, archi.
+    nodeBkg: TINT_BLUE,
+    nodeBorder: PALETTE[0],
+    nodeTextColor: COLOR_INK,
+    clusterBkg: COLOR_SURFACE,
+    clusterBorder: COLOR_AXIS,
+    defaultLinkColor: COLOR_AXIS,
+    edgeLabelBackground: COLOR_WHITE,
+    classText: COLOR_INK,
+    attributeBackgroundColorOdd: COLOR_WHITE,
+    attributeBackgroundColorEven: COLOR_SURFACE,
+    // Sequence: attori, segnali, riquadri loop/alt, attivazioni, note.
+    actorBkg: TINT_BLUE,
+    actorBorder: PALETTE[0],
+    actorTextColor: COLOR_INK,
+    actorLineColor: COLOR_AXIS,
+    signalColor: COLOR_AXIS,
+    signalTextColor: COLOR_INK,
+    labelBoxBkgColor: TINT_BLUE,
+    labelBoxBorderColor: PALETTE[0],
+    labelTextColor: COLOR_INK,
+    loopTextColor: COLOR_INK,
+    activationBkgColor: COLOR_SURFACE,
+    activationBorderColor: COLOR_AXIS,
+    sequenceNumberColor: COLOR_WHITE,
     noteBkgColor: TINT_NOTE,
     noteBorderColor: PALETTE[3],
     noteTextColor: COLOR_INK,
-    xyChart: { plotColorPalette: PALETTE.join(", ") },
+    // State (v2): transizioni, stati, compositi, stati speciali.
+    transitionColor: COLOR_AXIS,
+    transitionLabelColor: COLOR_INK,
+    stateLabelColor: COLOR_INK,
+    stateBkg: TINT_BLUE,
+    stateBorder: PALETTE[0],
+    labelBackgroundColor: COLOR_WHITE,
+    compositeBackground: COLOR_WHITE,
+    compositeTitleBackground: TINT_BLUE,
+    altBackground: COLOR_SURFACE,
+    innerEndBackground: PALETTE[0],
+    specialStateColor: COLOR_INK,
+    // Gantt: sezioni, attività, griglia, attività critiche e completate.
+    sectionBkgColor: TINT_BLUE,
+    sectionBkgColor2: TINT_BLUE,
+    altSectionBkgColor: COLOR_WHITE,
+    taskBkgColor: PALETTE[0],
+    taskBorderColor: PALETTE[0],
+    taskTextColor: COLOR_WHITE,
+    taskTextLightColor: COLOR_WHITE,
+    taskTextDarkColor: COLOR_INK,
+    taskTextOutsideColor: COLOR_INK,
+    taskTextClickableColor: PALETTE[0],
+    activeTaskBkgColor: TINT_BLUE,
+    activeTaskBorderColor: PALETTE[0],
+    doneTaskBkgColor: COLOR_GRID,
+    doneTaskBorderColor: COLOR_AXIS,
+    critical: PALETTE[1],
+    critBkgColor: PALETTE[1],
+    critBorderColor: PALETTE[1],
+    todayLineColor: PALETTE[1],
+    vertLineColor: PALETTE[1],
+    done: COLOR_GRID,
+    gridColor: COLOR_GRID,
+    excludeBkgColor: COLOR_SURFACE,
+    // Quadrant: quattro tinte della palette, testo e punti.
+    quadrant1Fill: TINT_BLUE,
+    quadrant2Fill: TINT_ORANGE,
+    quadrant3Fill: TINT_GREEN,
+    quadrant4Fill: TINT_PURPLE,
+    quadrant1TextFill: COLOR_INK,
+    quadrant2TextFill: COLOR_INK,
+    quadrant3TextFill: COLOR_INK,
+    quadrant4TextFill: COLOR_INK,
+    quadrantPointFill: PALETTE[0],
+    quadrantPointTextFill: COLOR_INK,
+    quadrantXAxisTextFill: COLOR_INK,
+    quadrantYAxisTextFill: COLOR_INK,
+    quadrantTitleFill: COLOR_INK,
+    quadrantInternalBorderStrokeFill: COLOR_AXIS,
+    quadrantExternalBorderStrokeFill: COLOR_AXIS,
+    // Pie: testi (le fette usano pie1..12 sotto).
+    pieTitleTextColor: COLOR_INK,
+    pieSectionTextColor: COLOR_INK,
+    pieLegendTextColor: COLOR_INK,
+    pieStrokeColor: COLOR_WHITE,
+    pieOuterStrokeColor: COLOR_WHITE,
+    // xychart: palette delle serie, assi e titolo.
+    xyChart: {
+      backgroundColor: COLOR_WHITE,
+      titleColor: COLOR_INK,
+      xAxisTitleColor: COLOR_INK,
+      xAxisLabelColor: COLOR_INK,
+      xAxisTickColor: COLOR_AXIS,
+      xAxisLineColor: COLOR_AXIS,
+      yAxisTitleColor: COLOR_INK,
+      yAxisLabelColor: COLOR_INK,
+      yAxisTickColor: COLOR_AXIS,
+      yAxisLineColor: COLOR_AXIS,
+      plotColorPalette: PALETTE.join(", "),
+    },
+    // Radar: assi e graticola neutri; le curve usano cScale0..n.
+    radar: { axisColor: COLOR_AXIS, graticuleColor: COLOR_GRID },
   };
+  // Scala categoriale cScale0..11 (mindmap, timeline, radar, treemap):
+  // palette ciclica; `cScaleLabel` è il testo sopra il colore pieno,
+  // `cScaleInv` (sottolineature) resta neutro.
+  for (let i = 0; i < 12; i += 1) {
+    themeVariables[`cScale${i}`] = PALETTE[i % PALETTE.length];
+    themeVariables[`cScaleLabel${i}`] = PALETTE_LABEL[i % PALETTE.length];
+    themeVariables[`cScaleInv${i}`] = COLOR_AXIS;
+  }
+  // Fette pie1..12 e radice di mindmap/timeline (git0, gitBranchLabel0).
+  for (let i = 0; i < 12; i += 1) {
+    themeVariables[`pie${i + 1}`] = PALETTE[i % PALETTE.length];
+  }
   PALETTE.forEach((color, i) => {
-    themeVariables[`pie${i + 1}`] = color;
+    themeVariables[`git${i}`] = color;
+    themeVariables[`gitBranchLabel${i}`] = PALETTE_LABEL[i];
   });
   return {
     startOnLoad: false,
@@ -131,7 +274,7 @@ export function mermaidConfig({
     timeline: { ...perType },
     xyChart: { ...perType },
     quadrantChart: { ...perType },
-    sankey: { ...perType },
+    sankey: { linkColor: "source", ...perType },
     block: { ...perType },
     radar: { ...perType },
   };

@@ -26,7 +26,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, TypeGuard
 
 # ---------------------------------------------------------------------------
 # Versione, font, palette
@@ -34,7 +34,7 @@ from typing import Any
 
 # Entra nella chiave di cache `(fmt, sha256(content), THEME_VERSION, language)`
 # di `figure_render_service`: un tema diverso invalida gli SVG in cache.
-THEME_VERSION = "2026.09.1"
+THEME_VERSION = "2026.09.2"
 
 FONT_FAMILY_PRIMARY = "Noto Sans"
 # Gli stessi font installati nel Dockerfile (fonts-noto-core, fonts-dejavu-core).
@@ -71,7 +71,21 @@ COLOR_SURFACE = "#F4F6F8"
 _TINT_BLUE = "#E8F1F8"
 _TINT_ORANGE = "#FBEFD9"
 _TINT_GREEN = "#E5F4EF"
+_TINT_PURPLE = "#FAF3F7"
 _TINT_NOTE = "#FBF7E4"
+COLOR_WHITE = "#ffffff"
+# Colore del testo sopra ogni colore pieno della palette (bianco solo dove il
+# contrasto WCAG con l'inchiostro è inferiore: blu 3.2 vs 5.2, nero).
+PALETTE_LABEL: tuple[str, ...] = (
+    COLOR_WHITE,
+    COLOR_INK,
+    COLOR_INK,
+    COLOR_INK,
+    COLOR_INK,
+    COLOR_INK,
+    COLOR_INK,
+    COLOR_WHITE,
+)
 
 # ---------------------------------------------------------------------------
 # Mermaid 11 — tipi ammessi (D8) e configurazione
@@ -236,9 +250,23 @@ def mermaid_config(*, use_max_width: bool, security_level: str = "loose") -> dic
     `htmlLabels: false` al livello TOP è la condizione che porta Mermaid 11 a
     emettere `<text>` puro (0 `<foreignObject>`) per tutti i tipi D8; le voci
     per-tipo di flowchart e class restano per compatibilità (`state` non la
-    espone più in Mermaid 11). `theme: "neutral"` con
-    `themeVariables` ricondotti alla palette: ogni tema Mermaid applica gli
-    override (`Theme.calculate(overrides)`), non solo `base`.
+    espone più in Mermaid 11).
+
+    `theme: "neutral"` con `themeVariables` ricondotti alla palette. Il tema
+    neutral NON deriva da `primaryColor` i riempimenti e i bordi principali:
+    in `Theme.updateColors` `nodeBkg = mainBkg` («#eee»), `nodeBorder =
+    border1` («#999»), `clusterBkg/Border` da `contrast`, `actorBkg =
+    mainBkg`, `signalColor = text`, `cScale0..11` grigi fissi, gantt da
+    `contrast`, stato da `transitionColor = "#000"`. Ogni variabile derivata
+    che i 15 tipi D8 leggono nei loro `getStyles` viene quindi fissata qui in
+    modo esplicito (l'override vince perché `calculate` ricopia gli override
+    dopo `updateColors`). Verificato sull'output reale di Mermaid 11.17.2 dal
+    test `test_mermaid_theme_palette` (Playwright, salta senza CDN).
+
+    Limite noto: `sankey-beta` colora i nodi con `schemeTableau10` di d3,
+    hard-coded nel renderer e non esposto come variabile di tema; i link
+    seguono il colore del nodo sorgente (`linkColor: "source"`, nessun
+    gradiente come richiede D3).
 
     `use_max_width=True` per il pre-render destinato al PDF (l'SVG riempie il
     contenitore; il `max-width` naturale viene poi rimosso da
@@ -250,7 +278,8 @@ def mermaid_config(*, use_max_width: bool, security_level: str = "loose") -> dic
     theme_variables: dict[str, Any] = {
         "fontFamily": MERMAID_FONT_FAMILY,
         "fontSize": "14px",
-        "background": "#ffffff",
+        "background": COLOR_WHITE,
+        # Colori base (letti dai temi come punto di partenza).
         "primaryColor": _TINT_BLUE,
         "primaryTextColor": COLOR_INK,
         "primaryBorderColor": PALETTE[0],
@@ -262,14 +291,135 @@ def mermaid_config(*, use_max_width: bool, security_level: str = "loose") -> dic
         "tertiaryBorderColor": PALETTE[2],
         "lineColor": COLOR_AXIS,
         "textColor": COLOR_INK,
+        "text": COLOR_INK,
+        "contrast": COLOR_AXIS,
+        "mainBkg": _TINT_BLUE,
+        "secondBkg": COLOR_SURFACE,
+        "border1": PALETTE[0],
+        "border2": COLOR_AXIS,
+        "arrowheadColor": COLOR_AXIS,
+        "titleColor": COLOR_INK,
+        "errorBkgColor": _TINT_ORANGE,
+        "errorTextColor": PALETTE[1],
+        # Niente gradienti né ombre (D3): il tema neutral li accende per il
+        # look «neo» e inserisce comunque un `<linearGradient>` nei defs.
+        "useGradient": False,
+        "dropShadow": "none",
+        # Flowchart, block, class, er, state: nodi, cluster, archi.
+        "nodeBkg": _TINT_BLUE,
+        "nodeBorder": PALETTE[0],
+        "nodeTextColor": COLOR_INK,
+        "clusterBkg": COLOR_SURFACE,
+        "clusterBorder": COLOR_AXIS,
+        "defaultLinkColor": COLOR_AXIS,
+        "edgeLabelBackground": COLOR_WHITE,
+        "classText": COLOR_INK,
+        "attributeBackgroundColorOdd": COLOR_WHITE,
+        "attributeBackgroundColorEven": COLOR_SURFACE,
+        # Sequence: attori, segnali, riquadri loop/alt, attivazioni, note.
+        "actorBkg": _TINT_BLUE,
+        "actorBorder": PALETTE[0],
+        "actorTextColor": COLOR_INK,
+        "actorLineColor": COLOR_AXIS,
+        "signalColor": COLOR_AXIS,
+        "signalTextColor": COLOR_INK,
+        "labelBoxBkgColor": _TINT_BLUE,
+        "labelBoxBorderColor": PALETTE[0],
+        "labelTextColor": COLOR_INK,
+        "loopTextColor": COLOR_INK,
+        "activationBkgColor": COLOR_SURFACE,
+        "activationBorderColor": COLOR_AXIS,
+        "sequenceNumberColor": COLOR_WHITE,
         "noteBkgColor": _TINT_NOTE,
         "noteBorderColor": PALETTE[3],
         "noteTextColor": COLOR_INK,
-        # Tema xychart: palette delle serie.
-        "xyChart": {"plotColorPalette": ", ".join(PALETTE)},
+        # State (v2): transizioni, stati, compositi, stati speciali.
+        "transitionColor": COLOR_AXIS,
+        "transitionLabelColor": COLOR_INK,
+        "stateLabelColor": COLOR_INK,
+        "stateBkg": _TINT_BLUE,
+        "stateBorder": PALETTE[0],
+        "labelBackgroundColor": COLOR_WHITE,
+        "compositeBackground": COLOR_WHITE,
+        "compositeTitleBackground": _TINT_BLUE,
+        "altBackground": COLOR_SURFACE,
+        "innerEndBackground": PALETTE[0],
+        "specialStateColor": COLOR_INK,
+        # Gantt: sezioni, attività, griglia, attività critiche e completate.
+        "sectionBkgColor": _TINT_BLUE,
+        "sectionBkgColor2": _TINT_BLUE,
+        "altSectionBkgColor": COLOR_WHITE,
+        "taskBkgColor": PALETTE[0],
+        "taskBorderColor": PALETTE[0],
+        "taskTextColor": COLOR_WHITE,
+        "taskTextLightColor": COLOR_WHITE,
+        "taskTextDarkColor": COLOR_INK,
+        "taskTextOutsideColor": COLOR_INK,
+        "taskTextClickableColor": PALETTE[0],
+        "activeTaskBkgColor": _TINT_BLUE,
+        "activeTaskBorderColor": PALETTE[0],
+        "doneTaskBkgColor": COLOR_GRID,
+        "doneTaskBorderColor": COLOR_AXIS,
+        "critical": PALETTE[1],
+        "critBkgColor": PALETTE[1],
+        "critBorderColor": PALETTE[1],
+        "todayLineColor": PALETTE[1],
+        "vertLineColor": PALETTE[1],
+        "done": COLOR_GRID,
+        "gridColor": COLOR_GRID,
+        "excludeBkgColor": COLOR_SURFACE,
+        # Quadrant: quattro tinte della palette, testo e punti.
+        "quadrant1Fill": _TINT_BLUE,
+        "quadrant2Fill": _TINT_ORANGE,
+        "quadrant3Fill": _TINT_GREEN,
+        "quadrant4Fill": _TINT_PURPLE,
+        "quadrant1TextFill": COLOR_INK,
+        "quadrant2TextFill": COLOR_INK,
+        "quadrant3TextFill": COLOR_INK,
+        "quadrant4TextFill": COLOR_INK,
+        "quadrantPointFill": PALETTE[0],
+        "quadrantPointTextFill": COLOR_INK,
+        "quadrantXAxisTextFill": COLOR_INK,
+        "quadrantYAxisTextFill": COLOR_INK,
+        "quadrantTitleFill": COLOR_INK,
+        "quadrantInternalBorderStrokeFill": COLOR_AXIS,
+        "quadrantExternalBorderStrokeFill": COLOR_AXIS,
+        # Pie: testi (le fette usano pie1..12 sotto).
+        "pieTitleTextColor": COLOR_INK,
+        "pieSectionTextColor": COLOR_INK,
+        "pieLegendTextColor": COLOR_INK,
+        "pieStrokeColor": COLOR_WHITE,
+        "pieOuterStrokeColor": COLOR_WHITE,
+        # xychart: palette delle serie, assi e titolo.
+        "xyChart": {
+            "backgroundColor": COLOR_WHITE,
+            "titleColor": COLOR_INK,
+            "xAxisTitleColor": COLOR_INK,
+            "xAxisLabelColor": COLOR_INK,
+            "xAxisTickColor": COLOR_AXIS,
+            "xAxisLineColor": COLOR_AXIS,
+            "yAxisTitleColor": COLOR_INK,
+            "yAxisLabelColor": COLOR_INK,
+            "yAxisTickColor": COLOR_AXIS,
+            "yAxisLineColor": COLOR_AXIS,
+            "plotColorPalette": ", ".join(PALETTE),
+        },
+        # Radar: assi e graticola neutri; le curve usano cScale0..n.
+        "radar": {"axisColor": COLOR_AXIS, "graticuleColor": COLOR_GRID},
     }
-    for i, color in enumerate(PALETTE, start=1):
-        theme_variables[f"pie{i}"] = color
+    # Scala categoriale cScale0..11 (mindmap, timeline, radar, treemap):
+    # palette ciclica; `cScaleLabel` è il testo sopra il colore pieno,
+    # `cScaleInv` (sottolineature) resta neutro.
+    for i in range(12):
+        theme_variables[f"cScale{i}"] = PALETTE[i % len(PALETTE)]
+        theme_variables[f"cScaleLabel{i}"] = PALETTE_LABEL[i % len(PALETTE)]
+        theme_variables[f"cScaleInv{i}"] = COLOR_AXIS
+    # Fette pie1..12 e radice di mindmap/timeline (git0, gitBranchLabel0).
+    for i in range(12):
+        theme_variables[f"pie{i + 1}"] = PALETTE[i % len(PALETTE)]
+    for i, color in enumerate(PALETTE):
+        theme_variables[f"git{i}"] = color
+        theme_variables[f"gitBranchLabel{i}"] = PALETTE_LABEL[i]
     return {
         "startOnLoad": False,
         "theme": "neutral",
@@ -288,7 +438,7 @@ def mermaid_config(*, use_max_width: bool, security_level: str = "loose") -> dic
         "timeline": dict(per_type),
         "xyChart": dict(per_type),
         "quadrantChart": dict(per_type),
-        "sankey": dict(per_type),
+        "sankey": {"linkColor": "source", **per_type},
         "block": dict(per_type),
         "radar": dict(per_type),
     }
@@ -510,50 +660,224 @@ def _interpolate(template: str, values: Mapping[str, Any]) -> str:
 # Didascalia calcolata del formato `function` (D9)
 # ---------------------------------------------------------------------------
 
-# Conversione minima LaTeX → testo Unicode per le forme esatte prodotte da
-# `sympy.latex` su valori `nsimplify`-ati (radicali, frazioni, π, e, ln).
-_LATEX_SQRT_RE = re.compile(r"\\sqrt\{([^{}]*)\}")
-_LATEX_FRAC_RE = re.compile(r"\\(?:d|t)?frac\{([^{}]*)\}\{([^{}]*)\}")
-_LATEX_BRACES_RE = re.compile(r"[{}]")
-_LATEX_SIMPLE: tuple[tuple[str, str], ...] = (
-    (r"\left(", "("),
-    (r"\right)", ")"),
-    (r"\left|", "|"),
-    (r"\right|", "|"),
-    (r"\lvert", "|"),
-    (r"\rvert", "|"),
-    (r"\cdot", "·"),
-    (r"\times", "×"),
-    (r"\infty", "∞"),
-    (r"\pi", "π"),
-    (r"\ln", "ln"),
-    (r"\log", "log"),
-    (r"\sin", "sin"),
-    (r"\cos", "cos"),
-    (r"\tan", "tan"),
-    (r"\exp", "exp"),
-    (r"\displaystyle", ""),
-    (r"\,", " "),
-    (r"\;", " "),
-    (r"\ ", " "),
-    ("-", "−"),
+# Conversione LaTeX → testo Unicode per le forme esatte che `sympy.latex(...,
+# ln_notation=True, fold_short_frac=False)` produce sui valori `nsimplify`-ati:
+# frazioni anche annidate, radicali (anche n-esimi), potenze, funzioni con
+# `\left( \right)`, π, e, ∞. Parser a graffe bilanciate: ogni gruppo viene
+# convertito dall'interno verso l'esterno, così `\frac{\ln{\left(3 \right)}}{2}`
+# diventa «ln(3)/2» e `\frac{1}{x - 2}` diventa «1/(x − 2)».
+_LATEX_CMD_RE = re.compile(r"\\([a-zA-Z]+|.)", re.DOTALL)
+_LATEX_SYMBOLS: dict[str, str] = {
+    "cdot": "·",
+    "times": "×",
+    "infty": "∞",
+    "pi": "π",
+    "pm": "±",
+    "mp": "∓",
+    "le": "≤",
+    "leq": "≤",
+    "ge": "≥",
+    "geq": "≥",
+    "ne": "≠",
+    "neq": "≠",
+    "to": "→",
+    "lvert": "|",
+    "rvert": "|",
+    "vert": "|",
+    "lbrace": "{",
+    "rbrace": "}",
+    "quad": " ",
+    "qquad": " ",
+    ",": " ",
+    ";": " ",
+    ":": " ",
+    " ": " ",
+    "!": "",
+    "displaystyle": "",
+    "textstyle": "",
+    "big": "",
+    "Big": "",
+    "bigl": "",
+    "bigr": "",
+    "Bigl": "",
+    "Bigr": "",
+}
+# Comandi il cui unico argomento è testo da conservare (`\mathrm{e}` → «e»).
+_LATEX_WRAPPERS = frozenset(
+    {"mathrm", "mathit", "mathbf", "mathsf", "mathtt", "text", "textrm", "operatorname"}
+)
+_SUPERSCRIPT_MAP = str.maketrans("0123456789+−-()", "⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁻⁽⁾")
+_ROOT_PREFIX = {"2": "√", "3": "∛", "4": "∜"}
+# Token che non richiedono parentesi come argomento di √ o esponente.
+_LATEX_ATOM_RE = re.compile(r"^(?:[0-9]+(?:\.[0-9]+)?|[a-zA-Zπ∞])$")
+_LATEX_INT_RE = re.compile(r"^−?[0-9]+$")
+# Denominatori leggibili senza parentesi: numero, simbolo, potenza (`e²`),
+# radicale (`√2`, `∛(x)`), chiamata di funzione (`ln(3)`). Un prodotto
+# («2π») va tra parentesi: «1/(2π)», non «1/2π».
+_LATEX_DEN_ATOM_RE = re.compile(
+    r"^(?:[0-9]+(?:\.[0-9]+)?|[a-zA-Zπ∞]|[a-zA-Zπ0-9][⁰¹²³⁴⁵⁶⁷⁸⁹⁻⁺]+"
+    r"|[⁰¹²³⁴⁵⁶⁷⁸⁹]*[√∛∜](?:[0-9a-zA-Zπ]+|\(.*\))|[a-zA-Z]+\(.*\))$"
 )
 
 
+def _latex_group(s: str, i: int) -> tuple[str, int]:
+    """Con `s[i] == "{"` ritorna il contenuto del gruppo bilanciato e
+    l'indice successivo alla graffa di chiusura (gruppo non chiuso → resto
+    della stringa)."""
+    depth = 0
+    j = i
+    while j < len(s):
+        c = s[j]
+        if c == "\\":
+            j += 2
+            continue
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return s[i + 1 : j], j + 1
+        j += 1
+    return s[i + 1 :], len(s)
+
+
+def _latex_arg(s: str, i: int) -> tuple[str, int]:
+    """Argomento grezzo di un comando: gruppo `{…}`, comando `\\x` oppure
+    singolo carattere (spazi iniziali ignorati)."""
+    while i < len(s) and s[i] == " ":
+        i += 1
+    if i >= len(s):
+        return "", i
+    if s[i] == "{":
+        return _latex_group(s, i)
+    m = _LATEX_CMD_RE.match(s, i)
+    if m:
+        return m.group(0), m.end()
+    return s[i], i + 1
+
+
+def _latex_optional(s: str, i: int) -> tuple[str | None, int]:
+    """Argomento opzionale `[…]` (indice di `\\sqrt`)."""
+    if i < len(s) and s[i] == "[":
+        j = s.find("]", i)
+        if j != -1:
+            return s[i + 1 : j], j + 1
+    return None, i
+
+
+def _latex_tidy(t: str) -> str:
+    t = re.sub(r"\s+", " ", t).strip()
+    t = re.sub(r"([(\[])\s+", r"\1", t)
+    t = re.sub(r"\s+([)\]])", r"\1", t)
+    # Meno unario: «− √2» → «−√2», «(− 1 + √5)» → «(−1 + √5)».
+    t = re.sub(r"(^|[(\[/=,^])\s*−\s+", r"\1−", t)
+    # Coefficienti: «2 √3» → «2√3», «3 π» → «3π», «2 x» → «2x»; «2 ln(3)» resta.
+    t = re.sub(r"(?<=[0-9])\s+(?=[√∛∜π∞]|[a-zA-Z](?![a-zA-Z]))", "", t)
+    return t
+
+
+def _latex_is_atomic(t: str, *, allow_sign: bool) -> bool:
+    """Vero se `t` non contiene operatori o spazi al livello esterno delle
+    parentesi (quindi non richiede parentesi in una frazione)."""
+    depth = 0
+    for k, ch in enumerate(t):
+        if ch in "([":
+            depth += 1
+        elif ch in ")]":
+            depth -= 1
+        elif depth == 0 and ch in " +−·×/^=":
+            if ch == "−" and k == 0 and allow_sign:
+                continue
+            return False
+    return True
+
+
+def _latex_fraction(num: str, den: str) -> str:
+    num, den = _latex_tidy(num), _latex_tidy(den)
+    n = num if _latex_is_atomic(num, allow_sign=True) else f"({num})"
+    den_atomic = _latex_is_atomic(den, allow_sign=False) and bool(_LATEX_DEN_ATOM_RE.match(den))
+    d = den if den_atomic else f"({den})"
+    return f"{n}/{d}"
+
+
+def _latex_root(arg: str, index: str | None) -> str:
+    arg = _latex_tidy(arg)
+    body = arg if _LATEX_ATOM_RE.match(arg) else f"({arg})"
+    idx = _latex_tidy(_latex_convert(index)) if index else "2"
+    prefix = _ROOT_PREFIX.get(idx)
+    if prefix is not None:
+        return prefix + body
+    if idx.isdigit():
+        return idx.translate(_SUPERSCRIPT_MAP) + "√" + body
+    return f"{body}^(1/{idx})"
+
+
+def _latex_superscript(exp: str) -> str:
+    exp = _latex_tidy(exp)
+    if _LATEX_INT_RE.match(exp):
+        return exp.translate(_SUPERSCRIPT_MAP)
+    return "^" + (exp if _LATEX_ATOM_RE.match(exp) else f"({exp})")
+
+
+def _latex_convert(s: str) -> str:
+    out: list[str] = []
+    i, n = 0, len(s)
+    while i < n:
+        c = s[i]
+        if c == "\\":
+            m = _LATEX_CMD_RE.match(s, i)
+            if m is None:
+                i += 1
+                continue
+            cmd = m.group(1)
+            i = m.end()
+            if cmd in ("frac", "dfrac", "tfrac"):
+                num, i = _latex_arg(s, i)
+                den, i = _latex_arg(s, i)
+                out.append(_latex_fraction(_latex_convert(num), _latex_convert(den)))
+            elif cmd == "sqrt":
+                index, i = _latex_optional(s, i)
+                arg, i = _latex_arg(s, i)
+                out.append(_latex_root(_latex_convert(arg), index))
+            elif cmd in _LATEX_WRAPPERS:
+                arg, i = _latex_arg(s, i)
+                out.append(_latex_convert(arg))
+            elif cmd in ("left", "right"):
+                delim, i = _latex_arg(s, i)
+                out.append("" if delim == "." else _latex_convert(delim))
+            else:
+                # Funzioni (`\ln`, `\sin`, …) e comandi ignoti: il nome.
+                out.append(_LATEX_SYMBOLS.get(cmd, cmd))
+        elif c == "{":
+            inner, i = _latex_group(s, i)
+            out.append(_latex_convert(inner))
+        elif c == "}":
+            i += 1
+        elif c == "^":
+            arg, i = _latex_arg(s, i + 1)
+            out.append(_latex_superscript(_latex_convert(arg)))
+        elif c == "_":
+            arg, i = _latex_arg(s, i + 1)
+            sub = _latex_tidy(_latex_convert(arg))
+            out.append("_" + sub if _LATEX_ATOM_RE.match(sub) else f"_({sub})")
+        elif c == "-":
+            out.append("−")
+            i += 1
+        elif c == "$":
+            i += 1
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out)
+
+
 def latex_to_unicode(latex: str) -> str:
-    """Testo Unicode leggibile per una forma esatta LaTeX semplice
-    (`2 - \\sqrt{3}` → «2 − √3», `\\frac{1}{3}` → «1/3»). Le forme non
-    riconosciute conservano il testo privato di backslash e graffe."""
-    s = latex.strip()
-    s = _LATEX_SQRT_RE.sub(
-        lambda m: "√" + (m.group(1) if len(m.group(1)) <= 2 else f"({m.group(1)})"), s
-    )
-    s = _LATEX_FRAC_RE.sub(lambda m: f"{m.group(1)}/{m.group(2)}", s)
-    for src, dst in _LATEX_SIMPLE:
-        s = s.replace(src, dst)
-    s = _LATEX_BRACES_RE.sub("", s)
-    s = s.replace("\\", "")
-    return re.sub(r"\s+", " ", s).strip()
+    """Testo Unicode leggibile per una forma esatta LaTeX (`2 - \\sqrt{3}` →
+    «2 − √3», `\\frac{-1 + \\sqrt{5}}{2}` → «(−1 + √5)/2», `\\sqrt[3]{2}` →
+    «∛2», `e^{2}` → «e²»). Numeratore e denominatore vengono parentesizzati
+    quando contengono operatori; i comandi non riconosciuti conservano il
+    nome privato del backslash."""
+    return _latex_tidy(_latex_convert(latex.strip()))
 
 
 def format_number(value: float, *, digits: int = 3) -> str:
@@ -568,12 +892,17 @@ def format_number(value: float, *, digits: int = 3) -> str:
     return text.replace("-", "−")
 
 
+def _is_number(value: object) -> TypeGuard[float]:
+    """Numero reale del calcolo (int o float); i booleani sono esclusi."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
 def _exact_or_approx(entry: Mapping[str, Any], *, value_key: str, exact_key: str) -> str:
     exact = entry.get(exact_key)
     if isinstance(exact, str) and exact.strip():
         return latex_to_unicode(exact)
     value = entry.get(value_key)
-    if isinstance(value, (int, float)):
+    if _is_number(value):
         return format_number(float(value))
     return "n.d."
 
@@ -592,7 +921,7 @@ def function_caption(computed: Mapping[str, Any] | None, language: str | None) -
     LaTeX) sono rese in Unicode con √ e π; in loro assenza il valore numerico
     è arrotondato a 3 decimali. Mai persistita: si rigenera a ogni render.
     """
-    if not computed:
+    if not isinstance(computed, Mapping) or not computed:
         return ""
     labels = figure_labels(language)
     sentences: list[str] = []
@@ -635,17 +964,19 @@ def function_caption(computed: Mapping[str, Any] | None, language: str | None) -
     if isinstance(integral, Mapping):
         between = integral.get("between")
         if isinstance(between, (list, tuple)) and len(between) == 2:
-            phrase(
-                "integral",
-                a=format_number(float(between[0])),
-                b=format_number(float(between[1])),
-                value=_exact_or_approx(integral, value_key="value", exact_key="exact"),
-            )
+            lo, hi = between
+            if _is_number(lo) and _is_number(hi):
+                phrase(
+                    "integral",
+                    a=format_number(float(lo)),
+                    b=format_number(float(hi)),
+                    value=_exact_or_approx(integral, value_key="value", exact_key="exact"),
+                )
 
     tangents = computed.get("tangents")
     if isinstance(tangents, list):
         for t in tangents:
-            if isinstance(t, Mapping) and isinstance(t.get("at"), (int, float)):
+            if isinstance(t, Mapping) and _is_number(t.get("at")):
                 phrase(
                     "tangent",
                     at=format_number(float(t["at"])),
@@ -654,10 +985,7 @@ def function_caption(computed: Mapping[str, Any] | None, language: str | None) -
 
     levels = computed.get("levels")
     if isinstance(levels, list) and levels:
-        phrase(
-            "levels",
-            values=_join([format_number(float(v)) for v in levels if isinstance(v, (int, float))]),
-        )
+        phrase("levels", values=_join([format_number(float(v)) for v in levels if _is_number(v)]))
 
     analysis_keys = ("zeros", "critical_points", "inflection_points", "asymptotes")
     analysis_ran = any(isinstance(computed.get(k), list) for k in analysis_keys)

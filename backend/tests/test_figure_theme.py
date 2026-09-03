@@ -7,6 +7,8 @@ deve restare importabile senza config, SQLAlchemy o librerie pesanti.
 from __future__ import annotations
 
 import json
+import re
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -233,3 +235,175 @@ def test_visual_asset_format_rejects_unknown():
         LessonContentVisualAsset(asset_id="A1", format="tikz", content="x")
     with pytest.raises(ValidationError):
         LessonSlideNewAsset(asset_id="A1", format="tikz", content="x")
+
+
+# ---------------------------------------------------------------------------
+# Tema Mermaid: le variabili derivate del tema neutral sono fissate (D3)
+# ---------------------------------------------------------------------------
+
+_TINTS = {"#E8F1F8", "#FBEFD9", "#E5F4EF", "#FAF3F7", "#FBF7E4"}
+_NEUTRALS = {
+    theme.COLOR_INK,
+    theme.COLOR_AXIS,
+    theme.COLOR_GRID,
+    theme.COLOR_SURFACE,
+    theme.COLOR_WHITE,
+}
+# Variabili che i `getStyles` dei tipi D8 leggono e che il tema neutral NON
+# ricava da `primaryColor` (verificato su Mermaid 11.14 e 11.17).
+_DERIVED_KEYS = {
+    "mainBkg": "#E8F1F8",
+    "nodeBorder": theme.PALETTE[0],
+    "border1": theme.PALETTE[0],
+    "clusterBkg": theme.COLOR_SURFACE,
+    "clusterBorder": theme.COLOR_AXIS,
+    "edgeLabelBackground": theme.COLOR_WHITE,
+    "actorBkg": "#E8F1F8",
+    "actorBorder": theme.PALETTE[0],
+    "signalColor": theme.COLOR_AXIS,
+    "labelBoxBkgColor": "#E8F1F8",
+    "labelBoxBorderColor": theme.PALETTE[0],
+    "classText": theme.COLOR_INK,
+    "transitionColor": theme.COLOR_AXIS,
+    "stateBkg": "#E8F1F8",
+    "stateBorder": theme.PALETTE[0],
+    "sectionBkgColor": "#E8F1F8",
+    "taskBkgColor": theme.PALETTE[0],
+    "taskBorderColor": theme.PALETTE[0],
+    "vertLineColor": theme.PALETTE[1],
+    "git0": theme.PALETTE[0],
+    "gitBranchLabel0": theme.COLOR_WHITE,
+}
+
+
+def test_mermaid_theme_variables_follow_palette():
+    cfg = theme.mermaid_config(use_max_width=True)
+    tv = cfg["themeVariables"]
+    for key, value in _DERIVED_KEYS.items():
+        assert tv.get(key) == value, key
+    for i in range(12):
+        assert tv[f"cScale{i}"] == theme.PALETTE[i % 8]
+        assert tv[f"cScaleLabel{i}"] == theme.PALETTE_LABEL[i % 8]
+        assert tv[f"pie{i + 1}"] == theme.PALETTE[i % 8]
+    assert tv["useGradient"] is False and tv["dropShadow"] == "none"
+    assert tv["xyChart"]["plotColorPalette"] == ", ".join(theme.PALETTE)
+    assert tv["radar"] == {"axisColor": theme.COLOR_AXIS, "graticuleColor": theme.COLOR_GRID}
+    # Ogni colore del tema appartiene alla palette, alle sue tinte o ai neutri.
+    allowed = set(theme.PALETTE) | _TINTS | _NEUTRALS
+    for key, value in tv.items():
+        values = value.values() if isinstance(value, dict) else [value]
+        for v in values:
+            if isinstance(v, str) and v.startswith("#"):
+                for color in v.split(", "):  # `plotColorPalette` è una lista CSV
+                    assert color in allowed, (key, v)
+    # Sankey: i link seguono il nodo sorgente (nessun gradiente, D3).
+    assert cfg["sankey"] == {"linkColor": "source", "useMaxWidth": True}
+    assert theme.THEME_VERSION == "2026.09.2"
+
+
+def test_figure_theme_ts_mirror_is_aligned():
+    """Guardia contro la deriva della copia frontend: stessa versione, stessa
+    palette, ogni chiave di `themeVariables` presente in figureTheme.ts."""
+    ts_path = Path(__file__).resolve().parents[2] / "frontend" / "src" / "lib" / "figureTheme.ts"
+    if not ts_path.is_file():
+        pytest.skip("frontend/src/lib/figureTheme.ts non presente")
+    ts = ts_path.read_text(encoding="utf-8")
+    assert f'THEME_VERSION = "{theme.THEME_VERSION}"' in ts
+    assert re.search(r"MANTENERE ALLINEATO", ts)
+    palette_in_ts = re.findall(r'"(#[0-9A-Fa-f]{6})",\s*//', ts.split("as const", 1)[0])
+    assert palette_in_ts == list(theme.PALETTE)
+    tv = theme.mermaid_config(use_max_width=True)["themeVariables"]
+    generated = re.compile(r"^(?:cScale(?:Label|Inv)?|pie|git(?:BranchLabel)?)\d+$")
+    for key, value in tv.items():
+        if generated.match(key):
+            continue
+        assert re.search(rf"^\s*{re.escape(key)}:", ts, re.M), key
+        if isinstance(value, dict):
+            for sub in value:
+                assert re.search(rf"\b{re.escape(sub)}:", ts), (key, sub)
+    for needle in ("`cScale${i}`", "`cScaleLabel${i}`", "`pie${i + 1}`", "`git${i}`"):
+        assert needle in ts, needle
+    assert 'sankey: { linkColor: "source"' in ts
+    assert "useGradient: false" in ts
+
+
+# ---------------------------------------------------------------------------
+# `latex_to_unicode`: forme reali di `sympy.latex` (frazioni annidate, radici)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("latex", "expected"),
+    [
+        (r"\frac{\ln{\left(3 \right)}}{2}", "ln(3)/2"),
+        (r"\sqrt[3]{2}", "∛2"),
+        (r"\sqrt[4]{5}", "∜5"),
+        (r"\sqrt[5]{2}", "⁵√2"),
+        (r"\frac{1}{x - 2}", "1/(x − 2)"),
+        (r"\ln{\left(2 \right)}", "ln(2)"),
+        (r"- \sqrt{2}", "−√2"),
+        (r"- \frac{1}{2} + \frac{\sqrt{5}}{2}", "−1/2 + √5/2"),
+        (r"\frac{-1 + \sqrt{5}}{2}", "(−1 + √5)/2"),
+        (r"\frac{x^{2} - 1}{x - 2}", "(x² − 1)/(x − 2)"),
+        (r"\frac{1}{2 \pi}", "1/(2π)"),
+        (r"\frac{3 \pi}{2}", "3π/2"),
+        (r"\frac{\sqrt{2}}{2}", "√2/2"),
+        (r"\frac{1}{\sqrt{2}}", "1/√2"),
+        (r"\frac{1}{e^{2}}", "1/e²"),
+        (r"\frac{\ln{\left(x \right)}}{\ln{\left(2 \right)}}", "ln(x)/ln(2)"),
+        (r"\frac{\frac{1}{2}}{\frac{3}{4}}", "(1/2)/(3/4)"),
+        (r"\frac{2}{3} + \ln{\left(2 \right)}", "2/3 + ln(2)"),
+        (r"2 \sqrt{3}", "2√3"),
+        (r"\sqrt{x + 1}", "√(x + 1)"),
+        (r"\sqrt{\sqrt{2}}", "√(√2)"),
+        (r"e^{2}", "e²"),
+        (r"e^{-2}", "e⁻²"),
+        (r"e^{2 x}", "e^(2x)"),
+        (r"2^{x}", "2^x"),
+        (r"\operatorname{atan}{\left(x \right)}", "atan(x)"),
+        (r"\left|{x - 1}\right|", "|x − 1|"),
+        (r"y = 2 x - 1", "y = 2x − 1"),
+        (r"\infty", "∞"),
+        (r"-\infty", "−∞"),
+        (r"a \cdot b \times c \pm d", "a · b × c ± d"),
+        # Input malformati: mai un'eccezione, testo comunque leggibile.
+        (r"\frac{1}{x - 2", "1/(x − 2)"),
+        (r"\foo{bar}", "foobar"),
+        ("", ""),
+    ],
+)
+def test_latex_to_unicode_nested_forms(latex: str, expected: str):
+    assert theme.latex_to_unicode(latex) == expected
+
+
+def test_latex_to_unicode_matches_real_sympy_output():
+    sp = pytest.importorskip("sympy")
+    x = sp.Symbol("x", real=True)
+    cases = {
+        sp.log(3) / 2: "ln(3)/2",
+        sp.cbrt(2): "∛2",
+        1 / (x - 2): "1/(x − 2)",
+        -sp.sqrt(2): "−√2",
+        (-1 + sp.sqrt(5)) / 2: "−1/2 + √5/2",
+        sp.pi / 4: "π/4",
+        sp.E**2: "e²",
+        sp.Rational(-1, 3): "−1/3",
+        sp.Eq(sp.Symbol("y"), x + 2): "y = x + 2",
+    }
+    for value, expected in cases.items():
+        latex = sp.latex(value, ln_notation=True, fold_short_frac=False)
+        assert theme.latex_to_unicode(latex) == expected, latex
+
+
+def test_function_caption_ignores_malformed_entries():
+    # Valori non numerici, booleani o liste al posto di mappe: nessuna
+    # eccezione e nessun numero inventato.
+    assert theme.function_caption({"integral": {"between": ["a", "b"], "value": 1}}, "it") == ""
+    assert theme.function_caption({"integral": {"between": [0, None], "value": 1}}, "it") == ""
+    assert theme.function_caption({"zeros": "x", "asymptotes": {"kind": "v"}}, "it") == ""
+    assert theme.function_caption({"zeros": [{"x": True}]}, "it") == "Zeri in x = n.d.."
+    assert theme.function_caption({"tangents": [{"at": "3", "slope": 1}]}, "it") == ""
+    assert theme.function_caption({"levels": [float("nan"), "z", 2]}, "it") == (
+        "Curve di livello per z = n.d., 2."
+    )
+    assert theme.function_caption([1, 2, 3], "it") == ""  # type: ignore[arg-type]
