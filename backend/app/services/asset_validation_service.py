@@ -7,9 +7,11 @@ nell'output (PDF / frame video / preview FE):
   E con KaTeX (motore del preview FE) → una formula e' valida solo se passa
   ENTRAMBI.
 - **Diagrammi Mermaid**: `visual_assets[].format=="mermaid"` (Fase 3) e
-  `new_assets[].format=="mermaid"` (Fase 4). Validati con **mermaid v10.9.4**
-  (la stessa versione del pre-render PDF/video; il FE usa v11 → un diagramma
-  "verde" nell'editor puo' rompersi nell'output).
+  `new_assets[].format=="mermaid"` (Fase 4). Validati con **Mermaid 11.x**,
+  pin unico `settings.mermaid_cdn_version` (lo stesso del pre-render
+  PDF/video in `mermaid_prerender` e del lock npm del frontend) e stessa
+  inizializzazione `figure_theme.mermaid_initialize_js` (`htmlLabels: false`
+  top-level): un diagramma "verde" nell'editor lo e' anche nell'output.
 
 Flusso: a generazione, prima di materializzare, ogni asset fragile viene
 validato; quelli invalidi vengono riparati con una chiamata AI mirata
@@ -40,6 +42,7 @@ from app.core.logging import get_logger
 from app.schemas.course_lesson_content import LessonContentOutput
 from app.schemas.course_lesson_slides import LessonSlidesOutput
 from app.services import openai_asset_fix_service, openai_asset_localize_service
+from app.services.figure_theme import mermaid_initialize_js
 
 log = get_logger("app.asset_validation")
 
@@ -92,23 +95,23 @@ def _clean_latex_source(s: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Validazione JS (Playwright): Mermaid v10.9.4 + KaTeX
+# Validazione JS (Playwright): Mermaid 11 + KaTeX
 # ---------------------------------------------------------------------------
 
 # Pagina headless di SOLA validazione (parse-only, niente render-to-SVG):
 # separata dalla `_MERMAID_RENDERER_HTML` dell'export per non interferire.
-# Mermaid pinnato a 10.9.4 (la versione dell'output PDF/video). KaTeX con gli
-# stessi flag del preview FE (`throwOnError:true`, `strict:"ignore"`).
-_VALIDATOR_HTML = """<!doctype html>
+# Mermaid con lo stesso pin del pre-render PDF/video e del frontend
+# (`settings.mermaid_cdn_version`) e la stessa inizializzazione di
+# `figure_theme` (`htmlLabels: false` top-level; `useMaxWidth` e' irrilevante
+# per il solo parse). KaTeX con gli stessi flag del preview FE
+# (`throwOnError:true`, `strict:"ignore"`). Segnaposto sostituiti sotto (le
+# graffe del JS impediscono `str.format`).
+_VALIDATOR_HTML_TEMPLATE = """<!doctype html>
 <html><head><meta charset="utf-8"></head><body>
 <script type="module">
-import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10.9.4/dist/mermaid.esm.min.mjs';
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@__MERMAID_VERSION__/dist/mermaid.esm.min.mjs';
 import katex from 'https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.mjs';
-mermaid.initialize({
-  startOnLoad: false, theme: 'default', securityLevel: 'loose',
-  flowchart: { htmlLabels: false }, class: { htmlLabels: false },
-  state: { htmlLabels: false },
-});
+__MERMAID_INITIALIZE__
 window.__validate = async (kind, code) => {
   try {
     if (kind === 'mermaid') { await mermaid.parse(code); return { ok: true, error: '' }; }
@@ -120,6 +123,21 @@ window.__validatorReady = true;
 </script>
 </body></html>
 """
+
+
+def _validator_html() -> str:
+    """Pagina del validatore con il pin corrente (letto a ogni chiamata: il
+    modulo resta importabile senza ambiente configurato)."""
+    return _VALIDATOR_HTML_TEMPLATE.replace(
+        "__MERMAID_VERSION__", get_settings().mermaid_cdn_version
+    ).replace("__MERMAID_INITIALIZE__", mermaid_initialize_js(use_max_width=False))
+
+
+def __getattr__(name: str) -> str:
+    """`_VALIDATOR_HTML` costruita alla prima lettura (PEP 562)."""
+    if name == "_VALIDATOR_HTML":
+        return _validator_html()
+    raise AttributeError(name)
 
 
 async def _validate_js_batch_async(
@@ -142,9 +160,7 @@ async def _validate_js_batch_async(
             browser = await pw.chromium.launch(args=["--no-sandbox"])
             try:
                 page = await browser.new_page()
-                await page.set_content(
-                    _VALIDATOR_HTML, wait_until="domcontentloaded"
-                )
+                await page.set_content(_validator_html(), wait_until="domcontentloaded")
                 try:
                     await page.wait_for_function(
                         "window.__validatorReady === true", timeout=15_000
@@ -536,9 +552,9 @@ def _set_bullet(slide: Any, index: int, value: str) -> None:
 
 async def _validate_slots(slots: list[_Slot]) -> list[AssetCheck]:
     """Valida ogni slot: LaTeX con latex2mathml (Python) E KaTeX (JS);
-    Mermaid con v10.9.4 (JS). Se la validazione JS non e' disponibile (CDN
-    down), il LaTeX resta gated da latex2mathml e Mermaid/KaTeX degradano a
-    pass-through."""
+    Mermaid con la 11.x del pin `settings.mermaid_cdn_version` (JS). Se la
+    validazione JS non e' disponibile (CDN down), il LaTeX resta gated da
+    latex2mathml e Mermaid/KaTeX degradano a pass-through."""
     js_items = [(s.kind, s.current) for s in slots]
     js_results = await _validate_js_batch(js_items)
 

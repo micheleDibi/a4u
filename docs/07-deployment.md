@@ -281,8 +281,10 @@ BACKEND_PORT=9001
     (`musetalk_manifests/`).
   - `generated_pdfs:/app/generated_pdfs` — PDF lezioni renderizzati (sovrascritti ad ogni rigenerazione).
 - Chromium di Playwright in `/ms-playwright` (path condiviso, env
-  `PLAYWRIGHT_BROWSERS_PATH`). Usato per pre-render Mermaid → SVG (il PDF
-  finale è prodotto da WeasyPrint, vedi
+  `PLAYWRIGHT_BROWSERS_PATH`). Usato per la validazione e il pre-render
+  Mermaid → SVG (Mermaid 11.x caricato da jsdelivr con il pin
+  `MERMAID_CDN_VERSION`, default `11.17.2`: il worker deve raggiungere la
+  CDN; il PDF finale è prodotto da WeasyPrint, vedi
   [09 — PDF export](courses/09-pdf-export.md)) e per il rendering delle
   slide a PNG nella generazione video (Fase 6).
 - `ffmpeg` per l'encoding del video MP4 della lezione e l'overlay

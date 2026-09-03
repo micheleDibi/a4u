@@ -253,9 +253,10 @@ class Settings(BaseSettings):
 
     # Auto-fix degli asset "fragili" (formule LaTeX + diagrammi Mermaid)
     # a generazione AI (Fase 3 + Fase 4). Quando un asset generato non
-    # supera la validazione (latex2mathml + KaTeX per le formule, mermaid
-    # v10.9.4 per i diagrammi), viene riparato con una chiamata AI mirata
-    # e ri-validato, finché valido o esaurito `asset_fix_max_attempts`.
+    # supera la validazione (latex2mathml + KaTeX per le formule, Mermaid
+    # 11.x — pin `mermaid_cdn_version` — per i diagrammi), viene riparato
+    # con una chiamata AI mirata e ri-validato, finché valido o esaurito
+    # `asset_fix_max_attempts`.
     # gpt-4o-mini basta per il fix sintattico mirato; l'escalation (re-gen
     # intera lezione con gpt-5.5) copre i casi residui via auto-retry.
     openai_asset_fix_model: str = "gpt-4o-mini"

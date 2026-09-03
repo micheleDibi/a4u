@@ -66,9 +66,30 @@ from app.models.course_module import CourseModule
 from app.models.organization import Organization
 from app.models.pdf_template import PdfTemplate
 from app.models.user import User
+
+# Re-export dei nomi storici del pre-render Mermaid (vedi la sezione
+# «Mermaid pre-rendering» più avanti): slides_pdf, video e test li importano
+# da qui. `_MERMAID_RENDERER_HTML` è pigra (dipende dal setting del pin) ed è
+# servita dal `__getattr__` di modulo in coda al file.
+from app.services import mermaid_prerender as _mermaid_prerender
 from app.services import remote_storage
+from app.services.mermaid_prerender import (  # noqa: F401
+    _MERMAID_JUNK_LINE_RE,
+    _MERMAID_MAX_WIDTH_RE,
+    _prerender_mermaid_to_svg_batch,
+    _prerender_mermaid_to_svg_batch_async,
+    _prerender_mermaid_to_svg_batch_sync,
+    _sanitize_mermaid_code,
+    _strip_mermaid_max_width,
+)
 
 log = get_logger("app.course_lesson_pdf.service")
+
+
+def __getattr__(name: str) -> Any:
+    if name == "_MERMAID_RENDERER_HTML":
+        return _mermaid_prerender._MERMAID_RENDERER_HTML
+    raise AttributeError(name)
 
 
 # ---------------------------------------------------------------------------
@@ -601,187 +622,12 @@ def _build_asset_html_map(
 # Mermaid pre-rendering (Playwright headless → SVG)
 # ---------------------------------------------------------------------------
 
-
-# HTML mini-doc che carica mermaid.esm da CDN ed espone una funzione
-# globale `__renderMermaid(id, code)` che ritorna SVG (o null se errore).
-#
-# `htmlLabels: false` su tutti i diagrammi: Mermaid di default usa
-# `<foreignObject>` con HTML per le label dei nodi, ma WeasyPrint non
-# supporta foreignObject. Forzando le label come SVG `<text>` puro,
-# il diagramma si renderizza correttamente nel PDF.
-# Mermaid imposta `style="max-width: <natural_px>;"` sull'SVG generato
-# (con `useMaxWidth: true`). Questo IMPEDISCE all'SVG di crescere
-# oltre la sua dimensione naturale (tipicamente ~300-400px), anche
-# se il container del PDF è molto più largo (un foglio A4 ha ~170mm
-# di content area = ~640px). Risultato: il diagramma rimane piccolo
-# e le label illeggibili. Strippiamo quel `max-width:Xpx` lasciando
-# tutto il resto dello stile così l'SVG riempie il container.
-_MERMAID_MAX_WIDTH_RE = re.compile(r"max-width\s*:\s*[\d.]+px\s*;?", re.IGNORECASE)
-
-
-def _strip_mermaid_max_width(svg: str) -> str:
-    return _MERMAID_MAX_WIDTH_RE.sub("", svg)
-
-
-_MERMAID_RENDERER_HTML = """<!doctype html>
-<html><head><meta charset="utf-8"><style>body{margin:0;padding:0;font-family:"Noto Sans CJK JP","Noto Sans","DejaVu Sans",sans-serif;}</style></head>
-<body>
-<script type="module">
-// Mermaid 10.9.x rispetta `htmlLabels: false` ed emette SVG <text> puro
-// per le label dei nodi. Mermaid 11.x usa il "neo look" che ignora
-// l'opzione e produce sempre <foreignObject>+HTML — non renderizzabile
-// da WeasyPrint. Pinniamo deliberatamente alla 10.9.x.
-import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10.9.4/dist/mermaid.esm.min.mjs';
-mermaid.initialize({
-  startOnLoad: false,
-  theme: 'default',
-  // Font con copertura CJK per le label dei nodi (htmlLabels:false → <text>
-  // SVG): senza, il giapponese diventa "tofu" nonostante i font installati.
-  themeVariables: { fontFamily: '"Noto Sans CJK JP","Noto Sans","DejaVu Sans",sans-serif' },
-  securityLevel: 'loose',
-  flowchart: { htmlLabels: false, useMaxWidth: true },
-  sequence: { useMaxWidth: true },
-  class: { htmlLabels: false },
-  state: { htmlLabels: false },
-  er: { useMaxWidth: true },
-});
-window.__renderMermaid = async (id, code) => {
-  try {
-    // Pre-validate: se la parse fallisce, NON chiamiamo render(),
-    // altrimenti mermaid emette nel DOM un'icona "bomba" + scritta
-    // "Syntax error in text" che finirebbe nell'SVG ritornato.
-    // Con `suppressErrors: true`, parse ritorna `false` invece di
-    // throware e senza side-effects nel DOM.
-    const ok = await mermaid.parse(code, { suppressErrors: true });
-    if (!ok) return null;
-    const { svg } = await mermaid.render(id, code);
-    return svg;
-  } catch (e) {
-    return null;
-  }
-};
-window.__mermaidReady = true;
-</script>
-</body></html>
-"""
-
-
-async def _prerender_mermaid_to_svg_batch_async(
-    codes: list[str],
-) -> list[str | None]:
-    """Implementazione async del pre-render. NON va chiamata direttamente
-    dal worker uvicorn — Playwright richiede `subprocess_exec`, che su
-    Windows è supportato SOLO da `ProactorEventLoop` (non dal
-    SelectorEventLoop che uvicorn può aver impostato). Wrappare via
-    `_prerender_mermaid_to_svg_batch` che gira in un thread con loop
-    dedicato.
-
-    Renderizza una lista di sorgenti mermaid a SVG con UNA sola
-    sessione Playwright headless (~1s startup + ~50-200ms per
-    diagramma). Ritorna lista parallela; ogni elemento è la stringa
-    SVG o `None` se il rendering ha fallito.
-    """
-    if not codes:
-        return []
-
-    from playwright.async_api import async_playwright
-
-    results: list[str | None] = []
-    async with async_playwright() as pw:
-        browser = await pw.chromium.launch(args=["--no-sandbox"])
-        try:
-            page = await browser.new_page()
-            await page.set_content(
-                _MERMAID_RENDERER_HTML, wait_until="domcontentloaded"
-            )
-            try:
-                await page.wait_for_function(
-                    "window.__mermaidReady === true", timeout=15_000
-                )
-            except Exception as exc:  # noqa: BLE001
-                log.warning("mermaid_renderer_setup_failed", error=str(exc))
-                # Non possiamo renderizzare nulla → tutti None.
-                return [None] * len(codes)
-
-            for i, code in enumerate(codes):
-                if not (code or "").strip():
-                    results.append(None)
-                    continue
-                try:
-                    svg = await page.evaluate(
-                        "([id, code]) => window.__renderMermaid(id, code)",
-                        [f"mmd-{i}", code],
-                    )
-                    if isinstance(svg, str) and svg.strip():
-                        results.append(_strip_mermaid_max_width(svg))
-                    else:
-                        log.warning(
-                            "mermaid_render_returned_empty",
-                            preview=code[:80],
-                        )
-                        results.append(None)
-                except Exception as exc:  # noqa: BLE001
-                    log.warning(
-                        "mermaid_render_failed",
-                        error=str(exc),
-                        preview=code[:80],
-                    )
-                    results.append(None)
-        finally:
-            await browser.close()
-    return results
-
-
-def _prerender_mermaid_to_svg_batch_sync(
-    codes: list[str],
-) -> list[str | None]:
-    """Sync wrapper: crea un loop asyncio NUOVO e dedicato (su Windows
-    forza `ProactorEventLoop`, l'unico che supporta `subprocess_exec`
-    necessario al transport di Playwright). Va chiamato da un thread
-    diverso dal main (via `asyncio.to_thread`) per non interferire col
-    loop di uvicorn."""
-    if sys.platform == "win32":
-        loop = asyncio.ProactorEventLoop()
-    else:
-        loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        return loop.run_until_complete(_prerender_mermaid_to_svg_batch_async(codes))
-    finally:
-        try:
-            loop.close()
-        except Exception:  # noqa: BLE001
-            pass
-
-
-async def _prerender_mermaid_to_svg_batch(
-    codes: list[str],
-) -> list[str | None]:
-    """Wrapper async: esegue il pre-render Playwright in un thread pool.
-    Il thread crea il proprio loop (ProactorEventLoop su Windows) così
-    indipendente dal loop scelto da uvicorn. Stessa firma della vecchia
-    versione async — caller non cambia."""
-    if not codes:
-        return []
-    return await asyncio.to_thread(_prerender_mermaid_to_svg_batch_sync, codes)
-
-
-# Righe spurie a volte emesse dall'AI nel codice Mermaid: fence markdown
-# residuo (```/```mermaid) o nodi-segnaposto isolati come `mermaid` /
-# `all` / `all:`. Passano mermaid.parse ma compaiono come box anomali.
-# Rimosse solo quando una riga è ESATTAMENTE uno di questi token (non
-# tocchiamo archi/nodi reali tipo `A --> all` o `all[Etichetta]`).
-# Mirror del sanitizer frontend in MermaidDiagram.tsx.
-_MERMAID_JUNK_LINE_RE = re.compile(r"^(?:```.*|mermaid|all)\s*:?\s*$", re.IGNORECASE)
-
-
-def _sanitize_mermaid_code(code: str) -> str:
-    if not code:
-        return code
-    lines = [
-        ln for ln in code.split("\n") if not _MERMAID_JUNK_LINE_RE.match(ln.strip())
-    ]
-    return "\n".join(lines).strip()
+# La pagina di rendering (pin `settings.mermaid_cdn_version`, tema di
+# `figure_theme` con `htmlLabels: false` top-level), il batch Playwright, il
+# post-processing `_strip_mermaid_max_width` e il sanitizer del sorgente
+# vivono in `mermaid_prerender` e sono re-esportati in testa a questo modulo
+# con i vecchi nomi: i chiamanti (`course_lesson_slides_pdf_service`, video,
+# test) non cambiano.
 
 
 async def _prerender_mermaid_for_lesson(

@@ -2423,16 +2423,18 @@ PAPER DA ANALIZZARE:
 **PROMPT** (system) — `lang_hint` = "italiano" se lingua inizia per `it`, altrimenti "inglese"
 
 ```text
-Sei un assistente che converte immagini di schemi, diagrammi e grafici in codice Mermaid valido.
+Sei un assistente che converte immagini di schemi, diagrammi e grafici in codice Mermaid valido (Mermaid 11.x).
 
 REGOLE:
 1. Analizza l'immagine: identifica nodi, relazioni, gerarchie, frecce, gruppi.
-2. Scegli il tipo di diagramma Mermaid più adatto (flowchart/sequenceDiagram/classDiagram/stateDiagram/erDiagram/mindmap/timeline/ecc.).
+2. Scegli il tipo di diagramma più adatto SOLO tra questi: flowchart, sequenceDiagram, classDiagram, stateDiagram-v2, erDiagram, mindmap, timeline, pie, xychart-beta, quadrantChart, sankey-beta, block-beta, gantt, radar-beta, treemap-beta. Mai journey, gitGraph, kanban, packet-beta, architecture-beta.
 3. Produci codice Mermaid SINTATTICAMENTE VALIDO.
-4. Usa label leggibili in {lang_hint}.
+4. Usa label leggibili in {lang_hint}, in testo semplice: niente HTML né markdown dentro le label, niente direttive `%%{init: ...}%%` né frontmatter di configurazione; se una label contiene caratteri speciali (parentesi, due punti, virgolette) racchiudila tra virgolette doppie come da sintassi Mermaid.
 5. Output: SOLO il codice Mermaid grezzo. Niente backtick, niente prefissi tipo `mermaid`, niente prosa esplicativa.
 6. Se l'immagine NON contiene uno schema/diagramma riconoscibile (es. è una fotografia generica, un paesaggio, un volto, un documento di testo), rispondi con esattamente: UNRECOGNIZED
 ```
+
+Gli elenchi dei tipi ammessi (i 15 di D8) ed esclusi sono derivati a import da `figure_theme.MERMAID_ALLOWED_TYPES` / `MERMAID_EXCLUDED_TYPES` (D10): il testo sopra è il risultato con i valori correnti.
 
 **Messaggio user** (multimodale): testo fisso + immagine in base64 (`image_url` data URL). Testo verbatim:
 
@@ -2440,7 +2442,7 @@ REGOLE:
 Converti questa immagine in codice Mermaid. Ricorda: solo codice, niente backtick, niente spiegazioni.
 ```
 
-**JSON schema**: nessuno — risposta in testo grezzo (codice Mermaid). Validazione lato service: ripulitura fence (`_extract_mermaid_code`) + check keyword Mermaid noti (`_is_valid_mermaid_keyword`); il token speciale `UNRECOGNIZED` segnala immagine non riconosciuta.
+**JSON schema**: nessuno — risposta in testo grezzo (codice Mermaid). Validazione lato service: ripulitura fence (`_extract_mermaid_code`) + check del tipo dichiarato tra `figure_theme.MERMAID_ALLOWED_TYPES` (`_is_valid_mermaid_keyword`: i 15 tipi D8 più gli alias `graph`/`stateDiagram`; `journey`, `gitGraph`, `requirementDiagram`, `C4Context` non passano più); il token speciale `UNRECOGNIZED` segnala immagine non riconosciuta.
 
 ---
 
@@ -2460,22 +2462,26 @@ valido e renderizzabile, PRESERVANDO il significato e i contenuti originali
 (stesso tipo di diagramma, stessi nodi, etichette e relazioni).
 
 VINCOLI RIGIDI:
-- Compatibilita' con Mermaid v10.9.x. NON usare sintassi "neo look"/v11.
+- Compatibilita' con Mermaid 11.x. Tipi ammessi: flowchart, sequenceDiagram, classDiagram, stateDiagram-v2, erDiagram, mindmap, timeline, pie, xychart-beta, quadrantChart, sankey-beta, block-beta, gantt, radar-beta, treemap-beta.
+  Tipi vietati (non renderizzabili nel PDF): journey, gitGraph, kanban, packet-beta, architecture-beta.
 - Restituisci SOLO il codice Mermaid grezzo: NIENTE backtick, NIENTE code
   fence ```, niente testo prima o dopo.
-- Mantieni il tipo di diagramma dichiarato (flowchart, sequenceDiagram,
-  classDiagram, stateDiagram, erDiagram, ...) se corretto; se la prima riga
-  e' errata o assente, scegli il tipo piu' adatto al contenuto.
-- Etichette compatibili con `htmlLabels:false`: testo semplice, niente HTML
-  ne' markdown dentro le label; se servono caratteri speciali (`(`, `)`, `:`,
-  `"`) racchiudi l'etichetta tra virgolette doppie come da sintassi Mermaid.
+- Mantieni il tipo di diagramma dichiarato se ammesso e corretto; se la prima
+  riga e' errata o assente, scegli il tipo ammesso piu' adatto al contenuto.
+- Etichette in testo semplice (le label sono rese come `<text>` SVG): niente
+  HTML ne' markdown dentro le label, niente direttive `%%{init: ...}%%` ne'
+  frontmatter di configurazione; se servono caratteri speciali (`(`, `)`,
+  `:`, `"`) racchiudi l'etichetta tra virgolette doppie come da sintassi
+  Mermaid.
 - NON aggiungere ne' rimuovere contenuti rispetto all'originale: correggi
   solo la sintassi.
 
 Output: SOLO JSON valido conforme allo schema.
 ```
 
-**Messaggio user** — assemblato in `fix_asset()` (`openai_asset_fix_service.py:170-182`). Template verbatim:
+Gli elenchi dei tipi ammessi ed esclusi sono interpolati a import da `figure_theme.MERMAID_ALLOWED_TYPES` (senza gli alias `graph`/`stateDiagram`) e `MERMAID_EXCLUDED_TYPES`: il testo sopra è il risultato con i valori correnti.
+
+**Messaggio user** — assemblato in `fix_asset()` (`openai_asset_fix_service.py:184-196`). Template verbatim:
 
 ```text
 TIPO ASSET: {kind}
@@ -2507,9 +2513,9 @@ ASSET DA CORREGGERE:
 }
 ```
 
-**Varianti/note**: altre 3 varianti — `_SYSTEM_MERMAID_EN` (`:70-88`), `_SYSTEM_LATEX_IT` (`:90-104`), `_SYSTEM_LATEX_EN` (`:106-120`). I prompt LaTeX impongono di restituire SOLO il corpo della formula senza delimitatori, compatibile con KaTeX (`strict:"ignore"`) + latex2mathml.
+**Varianti/note**: altre 3 varianti — `_SYSTEM_MERMAID_EN` (`:83-102`), `_SYSTEM_LATEX_IT` (`:104-118`), `_SYSTEM_LATEX_EN` (`:120-134`). I prompt LaTeX impongono di restituire SOLO il corpo della formula senza delimitatori, compatibile con KaTeX (`strict:"ignore"`) + latex2mathml.
 
-**Flusso lato chiamante** (`asset_validation_service`): questa funzione è invocata solo sugli asset "fragili" risultati invalidi alla validazione (formule LaTeX validate con `latex2mathml` + KaTeX; diagrammi Mermaid validati con v10.9.4). Coinvolge `equations[].latex`, ogni `proof[].latex`, il math inline `$..$`/`$$..$$` nei campi testo (introduction, summary, sezioni, esempi, `statement` e `proof[].text` delle equazioni) e i `visual_assets`/`new_assets` Mermaid. Prima del fix AI c'è uno step deterministico (rimozione caratteri di controllo/combining marks) che spesso risolve senza spendere token. L'output del fix viene sanitizzato (niente code-fence/delimitatori reintrodotti) e scartato se reintroduce un placeholder asset (`[EQ:..]` ecc.). Solo gli asset davvero riparati vengono ri-committati; quelli già validi restano byte-identici. Se un asset resta invalido dopo `asset_fix_max_attempts` → `AssetFixUnresolvedError` (recuperabile): il worker di Fase 3/4 rigenera l'intera lezione via auto-retry, così nessun asset rotto raggiunge `ready`. Dettagli in [08 — Lesson content § Validazione asset](courses/08-lesson-content.md).
+**Flusso lato chiamante** (`asset_validation_service`): questa funzione è invocata solo sugli asset "fragili" risultati invalidi alla validazione (formule LaTeX validate con `latex2mathml` + KaTeX; diagrammi Mermaid validati con la 11.x del pin `settings.mermaid_cdn_version`, la stessa del pre-render e del frontend). Coinvolge `equations[].latex`, ogni `proof[].latex`, il math inline `$..$`/`$$..$$` nei campi testo (introduction, summary, sezioni, esempi, `statement` e `proof[].text` delle equazioni) e i `visual_assets`/`new_assets` Mermaid. Prima del fix AI c'è uno step deterministico (rimozione caratteri di controllo/combining marks) che spesso risolve senza spendere token. L'output del fix viene sanitizzato (niente code-fence/delimitatori reintrodotti) e scartato se reintroduce un placeholder asset (`[EQ:..]` ecc.). Solo gli asset davvero riparati vengono ri-committati; quelli già validi restano byte-identici. Se un asset resta invalido dopo `asset_fix_max_attempts` → `AssetFixUnresolvedError` (recuperabile): il worker di Fase 3/4 rigenera l'intera lezione via auto-retry, così nessun asset rotto raggiunge `ready`. Dettagli in [08 — Lesson content § Validazione asset](courses/08-lesson-content.md).
 
 ---
 

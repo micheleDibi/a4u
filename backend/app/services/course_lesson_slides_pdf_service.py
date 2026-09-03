@@ -167,7 +167,7 @@ def _build_slide_asset_html(
     base64 anziché inseriti come SVG inline: nel contesto slide PDF
     questo è l'unico modo affidabile per far rispettare a WeasyPrint
     `max-height`. Un SVG inline con attributi `width="X" height="Y"`
-    espliciti emessi da Mermaid 10.9.x ignora il vincolo CSS, e il
+    espliciti emessi da Mermaid (10.9.x come 11.x) ignora il vincolo CSS, e il
     diagramma sborda dal body venendo tagliato. Un `<img>` invece è
     un replaced element con aspect ratio intrinseca: max-width e
     max-height combinati gli applicano scaling proporzionale.

@@ -205,9 +205,15 @@ video / preview FE):
   offline — gate duro) **E** con **KaTeX** (motore del preview FE): una
   formula è valida solo se passa entrambi.
 - **Diagrammi Mermaid** — `visual_assets[].format=="mermaid"`. Validati
-  con **Mermaid v10.9.4** (la versione del pre-render PDF/video; il FE
-  usa v11, quindi un diagramma "verde" nell'editor può comunque rompersi
-  nell'output).
+  con **Mermaid 11.x**: pin unico `settings.mermaid_cdn_version` (default
+  `11.17.2`), lo stesso del pre-render PDF/video (`mermaid_prerender`) e
+  del lock npm del frontend, con la stessa inizializzazione
+  `figure_theme.mermaid_initialize_js` (`htmlLabels: false` al livello
+  top, tema D3): un diagramma "verde" nell'editor lo è anche nell'output.
+  I tipi ammessi sono i 15 di D8 (`figure_theme.MERMAID_ALLOWED_TYPES`);
+  `journey`, `gitGraph`, `kanban`, `packet-beta` e `architecture-beta`
+  sono esclusi (`journey` emette `<foreignObject>`, non renderizzabile da
+  WeasyPrint).
 
 La validazione JS (KaTeX + Mermaid) gira in una pagina Playwright
 headless con un loop dedicato. Flusso (`_validate_and_fix`):
@@ -223,7 +229,8 @@ headless con un loop dedicato. Flusso (`_validate_and_fix`):
    default `gpt-4o-mini`, 4 varianti di system prompt LaTeX/Mermaid ×
    IT/EN) chiede al modello di correggere **solo la sintassi**
    preservando il significato (LaTeX
-   senza delimitatori / Mermaid grezzo, compatibile v10.9.x). L'output
+   senza delimitatori / Mermaid grezzo per la 11.x: solo i tipi ammessi
+   di D8, label in testo semplice, niente `%%{init}%%`). L'output
    viene sanitizzato (niente code-fence/delimitatori reintrodotti) e
    scartato se reintroduce un placeholder asset (`[EQ:..]` ecc.).
 

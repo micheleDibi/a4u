@@ -20,6 +20,7 @@ import httpx
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
+from app.services.figure_theme import MERMAID_ALLOWED_TYPES, MERMAID_EXCLUDED_TYPES
 from app.services.openai_client import (
     OpenAIError,
     OpenAINotConfiguredError,
@@ -31,24 +32,14 @@ from app.services.openai_pricing import build_usage_dict
 log = get_logger("app.openai.image_to_mermaid")
 
 
-_MERMAID_KEYWORDS = (
-    "flowchart",
-    "graph",
-    "sequenceDiagram",
-    "classDiagram",
-    "stateDiagram",
-    "stateDiagram-v2",
-    "erDiagram",
-    "gantt",
-    "pie",
-    "journey",
-    "mindmap",
-    "timeline",
-    "gitGraph",
-    "quadrantChart",
-    "requirementDiagram",
-    "C4Context",
-)
+# Tipi accettati in uscita dal modello: i 15 di D8 più gli alias storici
+# (`graph`, `stateDiagram` v1), unica sorgente in `figure_theme` (D10). I tipi
+# esclusi (`journey`, `gitGraph`, ...) non passano più: non sono
+# renderizzabili nel PDF o non hanno uso didattico.
+_MERMAID_KEYWORDS: tuple[str, ...] = MERMAID_ALLOWED_TYPES
+_MERMAID_LEGACY_ALIASES = ("graph", "stateDiagram")
+_MERMAID_D8_TYPES = ", ".join(t for t in MERMAID_ALLOWED_TYPES if t not in _MERMAID_LEGACY_ALIASES)
+_MERMAID_EXCLUDED = ", ".join(MERMAID_EXCLUDED_TYPES)
 
 _UNRECOGNIZED_TOKEN = "UNRECOGNIZED"
 
@@ -63,15 +54,21 @@ def _system_prompt(language_code: str) -> str:
     )
     return (
         "Sei un assistente che converte immagini di schemi, diagrammi e "
-        "grafici in codice Mermaid valido.\n\n"
+        "grafici in codice Mermaid valido (Mermaid 11.x).\n\n"
         "REGOLE:\n"
         "1. Analizza l'immagine: identifica nodi, relazioni, gerarchie, "
         "frecce, gruppi.\n"
-        "2. Scegli il tipo di diagramma Mermaid più adatto "
-        "(flowchart/sequenceDiagram/classDiagram/stateDiagram/erDiagram/"
-        "mindmap/timeline/ecc.).\n"
+        "2. Scegli il tipo di diagramma più adatto SOLO tra questi: "
+        + _MERMAID_D8_TYPES
+        + ". Mai "
+        + _MERMAID_EXCLUDED
+        + ".\n"
         "3. Produci codice Mermaid SINTATTICAMENTE VALIDO.\n"
-        "4. Usa label leggibili in " + lang_hint + ".\n"
+        "4. Usa label leggibili in " + lang_hint + ", in testo semplice: "
+        "niente HTML né markdown dentro le label, niente direttive "
+        "`%%{init: ...}%%` né frontmatter di configurazione; se una label "
+        "contiene caratteri speciali (parentesi, due punti, virgolette) "
+        "racchiudila tra virgolette doppie come da sintassi Mermaid.\n"
         "5. Output: SOLO il codice Mermaid grezzo. Niente backtick, "
         "niente prefissi tipo `mermaid`, niente prosa esplicativa.\n"
         "6. Se l'immagine NON contiene uno schema/diagramma riconoscibile "

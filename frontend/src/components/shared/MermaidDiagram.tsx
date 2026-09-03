@@ -1,6 +1,7 @@
 import { AlertTriangle } from "lucide-react";
 import { memo, useEffect, useRef, useState } from "react";
 
+import { mermaidConfig } from "@/lib/figureTheme";
 import { cn } from "@/lib/utils";
 
 interface MermaidDiagramProps {
@@ -32,12 +33,14 @@ async function ensureMermaid() {
   const mod = await import("mermaid");
   const mermaid = mod.default;
   if (!mermaidInitialized) {
-    mermaid.initialize({
-      startOnLoad: false,
-      theme: "default",
-      securityLevel: "strict",
-      fontFamily: "inherit",
-    });
+    // Stessa configurazione del validatore e del pre-render backend
+    // (`figure_theme.mermaid_initialize_js`, mirror in figureTheme.ts):
+    // `htmlLabels: false` al livello top e tema D3, così l'anteprima
+    // coincide con PDF, slide e video. `securityLevel: "strict"` (default
+    // di figureTheme) nel browser dell'utente. `useMaxWidth: true` come da
+    // default Mermaid: il `max-width` naturale è poi rimosso sotto perché
+    // l'SVG riempia il contenitore.
+    mermaid.initialize(mermaidConfig({ useMaxWidth: true }));
     mermaidInitialized = true;
   }
   return mermaid;

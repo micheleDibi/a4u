@@ -98,9 +98,11 @@ perdendo pedici/apici/frazioni), mentre rende l'SVG correttamente. Se
 la CDN MathJax è irraggiungibile, ogni formula ricade su `latex2mathml`
 (MathML → `<code>`): degrada con grazia, mai peggio di prima. I
 diagrammi Mermaid vengono pre-renderizzati a SVG con una **sola**
-sessione Playwright headless per lezione (carica `mermaid@10.9.x` con
-`htmlLabels: false` così le label diventano SVG `<text>` e non
-`<foreignObject>` — WeasyPrint non supporta foreignObject).
+sessione Playwright headless per lezione (carica
+`mermaid@{settings.mermaid_cdn_version}`, default `11.17.2`, con
+`htmlLabels: false` al livello top così le label diventano SVG `<text>` e
+non `<foreignObject>` — WeasyPrint non supporta foreignObject; verificato
+sui 15 tipi D8 da `tests/test_mermaid_no_foreignobject.py`).
 
 ## Architettura backend
 
@@ -274,10 +276,15 @@ rimovibile).
 
 `_prerender_mermaid_for_lesson(content)` estrae tutti gli asset
 `format=mermaid` dal `content_raw` e li renderizza in batch con UNA
-singola sessione Playwright headless: carica `mermaid@10.9.4`
-(versione che rispetta `htmlLabels: false`), espone una funzione
-`window.__renderMermaid(id, code)` e itera sui sorgenti restituendo
-gli SVG. Costo tipico: ~1s di startup browser + ~50-200ms per
+singola sessione Playwright headless (`mermaid_prerender`, i cui nomi
+storici sono re-esportati da `course_lesson_pdf_service`): carica
+`mermaid@{settings.mermaid_cdn_version}` (default `11.17.2`) con
+l'inizializzazione di `figure_theme` (`htmlLabels: false` al livello top,
+tema D3), espone una funzione `window.__renderMermaid(id, code)` e itera
+sui sorgenti restituendo gli SVG. Mermaid 11.17.2 emette ancora
+`style="max-width: <px>px;"` sull'SVG: `_strip_mermaid_max_width` resta
+in vigore (fixture `tests/fixtures/mermaid11_flowchart.svg`). Costo
+tipico: ~1s di startup browser + ~50-200ms per
 diagramma. Se la lezione non ha mermaid, niente browser viene avviato.
 
 Il dict `{asset_id → svg_string}` è poi passato a `render_lesson_html`
@@ -694,8 +701,9 @@ dependencies = [
 3. **Versioning storico**: il file viene **sovrascritto** ad ogni nuovo
    export. `pdf_template_id` snapshotta solo il template dell'ultima
    generazione.
-4. **Rendering offline parziale**: il pre-render carica `mermaid@10.9.4`
-   e `mathjax@3.2.2` da CDN (jsdelivr) in Playwright. Se la macchina del
+4. **Rendering offline parziale**: il pre-render carica
+   `mermaid@{settings.mermaid_cdn_version}` (default `11.17.2`) e
+   `mathjax@3.2.2` da CDN (jsdelivr) in Playwright. Se la macchina del
    worker non ha internet: i diagrammi Mermaid falliscono (fallback
    testuale `<pre>`); le formule ricadono su `latex2mathml` → MathML,
    che però WeasyPrint stampa solo come testo (pedici/apici/frazioni
@@ -752,7 +760,7 @@ single-page.
 
 ### Mermaid rendering
 
-I diagrammi Mermaid vengono incapsulati in `<img>` con **data-URI base64** anziché inseriti come SVG inline. Motivo: nel contesto slide PDF, un SVG inline con attributi `width="X" height="Y"` espliciti emessi da Mermaid 10.9.x ignora il vincolo CSS `max-height` e sborda dal body. Un `<img>` invece è un replaced element con aspect ratio intrinseca, e `max-width + max-height` gli applicano scaling proporzionale corretto.
+I diagrammi Mermaid vengono incapsulati in `<img>` con **data-URI base64** anziché inseriti come SVG inline. Motivo: nel contesto slide PDF, un SVG inline con attributi `width="X" height="Y"` espliciti emessi da Mermaid (10.9.x come 11.x) ignora il vincolo CSS `max-height` e sborda dal body. Un `<img>` invece è un replaced element con aspect ratio intrinseca, e `max-width + max-height` gli applicano scaling proporzionale corretto.
 
 ```python
 def _svg_to_data_uri(svg: str) -> str:
