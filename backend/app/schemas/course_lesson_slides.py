@@ -17,6 +17,7 @@ Validazione (§7.4) è in `course_lesson_slides_service.materialize_lesson_slide
 - ogni `section.section_id` di Fase 3 è referenziato da almeno una slide
   (soft warning, non bloccante)
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -29,8 +30,8 @@ from app.schemas.course_lesson_content import (
     LessonContentEquation,
     LessonContentExample,
     LessonContentTable,
+    VisualAssetFormat,
 )
-
 
 # ---------------------------------------------------------------------------
 # Enum dei tipi slide (§7.1 punto 6)
@@ -87,22 +88,18 @@ class LessonSlideNewAsset(BaseModel):
     già prodotto nel testo. asset_id deve avere prefisso che evita
     collisioni con quelli delle Dispense (suggerito: `*_new_*`).
 
-    Allineato a `LessonContentVisualAsset`: stessi `format` (Mermaid +
-    immagine caricata + legacy read-only) e `extra="ignore"` per
-    tollerare il vecchio campo `asset_type` ancora prodotto dall'AI ma
-    non più usato in rendering.
+    Allineato a `LessonContentVisualAsset`: stesso alias `VisualAssetFormat`
+    (Mermaid, Vega-Lite, DOT, `function`, immagine caricata + legacy
+    read-only) e `extra="ignore"` per tollerare il vecchio campo
+    `asset_type` presente nei record antecedenti. Lo schema strict di
+    Fase 4 offre al modello solo `mermaid|vegalite|dot` (A1): `function`
+    resta accettato qui perché il docente può aggiungerlo a mano e il
+    renderer lo serve.
     """
 
     model_config = ConfigDict(extra="ignore")
     asset_id: str = Field(min_length=1, max_length=50)
-    format: Literal[
-        "mermaid",
-        "image",
-        # — legacy, read-only —
-        "image_prompt",
-        "image_search_query",
-        "description",
-    ]
+    format: VisualAssetFormat
     content: str = Field(min_length=1)
     caption: str = Field(default="", max_length=600)
     alt_text: str = Field(default="", max_length=400)

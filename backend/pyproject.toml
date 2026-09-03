@@ -43,6 +43,18 @@ dependencies = [
     "requests>=2.32.0",
     # Storage remoto via SFTP (storage_backend=ovh_sftp). Client SSH/SFTP.
     "paramiko>=3.4.0",
+    # Figure accademiche (Fase 3/4, `figure_render_service`):
+    # - vl-convert renderizza le spec Vega-Lite in SVG senza browser;
+    # - altair porta lo schema JSON di Vega-Lite (validazione offline con
+    #   jsonschema, nessun download a runtime);
+    # - sympy + matplotlib calcolano e disegnano le figure `function`.
+    # Graphviz DOT usa il binario `dot` di sistema (apt `graphviz`), nessun
+    # pacchetto pip.
+    "vl-convert-python>=1.9",
+    "altair>=6,<7",
+    "jsonschema>=4.18",
+    "sympy>=1.13",
+    "matplotlib>=3.9",
 ]
 
 [project.optional-dependencies]
@@ -70,6 +82,9 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "N", "C4", "SIM", "RUF"]
 ignore = ["B008"]  # FastAPI usa Depends() come default arg
+# Segni tipografici usati di proposito nei testi generati (didascalie delle
+# figure: segno meno, moltiplicazione, trattino lungo): non sono refusi.
+allowed-confusables = ["−", "×", "–"]
 
 [tool.ruff.lint.per-file-ignores]
 "alembic/versions/*.py" = ["E501"]
@@ -86,6 +101,12 @@ exclude = ["alembic/versions/"]
 
 [[tool.mypy.overrides]]
 module = ["passlib.*", "slowapi.*", "jose.*"]
+ignore_missing_imports = true
+
+# sympy, mpmath e jsonschema non distribuiscono `py.typed`
+# (vl_convert e altair sono tipizzati).
+[[tool.mypy.overrides]]
+module = ["sympy.*", "mpmath.*", "jsonschema.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
