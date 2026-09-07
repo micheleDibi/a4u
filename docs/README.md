@@ -74,6 +74,7 @@ avatar) + CRUD manuale completo per ogni payload AI, gestione tramite
 - [14 — Assessment lesson](courses/14-assessment-lesson.md): lezione di verifica delle competenze — ultima lezione di ogni modulo quando la verifica finale è attiva.
 - [15 — Duplicazione corso in altra lingua](courses/15-course-duplication.md): job background che clona un corso e ne traduce via OpenAI architettura/lezioni/slide/discorso/glossario/document summaries (multi-pass persistente con resume e cleanup automatico). Permesso `course:duplicate`.
 - [16 — Ricerca paper scientifici](courses/16-paper-search.md): ricerca multi-source nella tab Documenti — discovery OpenAlex + enrichment on-demand Semantic Scholar/Crossref, riassunto AI inline, import come `CourseDocument` (PDF OA o `.md` metadata). 3 endpoint `papers/search|ai-summary|import`, permission `course:edit`.
+- [17 — Figure accademiche](courses/17-visual-figures.md): sintesi di progettazione delle quattro famiglie di asset visivi (Mermaid 11, Vega-Lite, Graphviz DOT, figure matematiche `function`) — registro di renderer unico, tema accademico unico BE/FE, numerazione «Figura N.» su tutte le superfici, normalizzazione SVG, validazione e fix AI per formato, assunzioni, decisioni e rischi residui.
 
 ### Database & API
 
@@ -89,6 +90,7 @@ avatar) + CRUD manuale completo per ogni payload AI, gestione tramite
 
 Funzionalità integrate nell'ultima iterazione (documentate nei file linkati sopra):
 
+- **Figure accademiche in quattro famiglie** — Mermaid 11 (pin unico `mermaid_cdn_version`, `htmlLabels:false` top-level, tema condiviso BE/FE), Vega-Lite, Graphviz DOT e figure matematiche `function`, con registro di renderer unico, tema accademico unico e didascalie «Figura N.» identiche in editor, PDF, slide e video. Documento di progettazione: [17 — Figure accademiche](courses/17-visual-figures.md).
 - **Storage file pluggable** — backend selezionabile via `settings.storage_backend`: `local` (default), `ovh_ftp` (FTP/FTPS) e `ovh_sftp` (SFTP via Paramiko). Vedi [storage-ovh-migration.md](storage-ovh-migration.md).
 - **Permesso `member:avatar:view`** — visibilità degli avatar degli altri membri (default per `creator`/`org_admin`/`manager`, non per `member`). Vedi [06 — Permissions](06-permissions.md).
 - **Hardening prompt injection** — `core/prompt_safety.py` (`sanitize_user_input` + `contains_injection_attempt`) usato dall'assistente conversazionale Nova. Vedi [05 — Security](05-security.md).

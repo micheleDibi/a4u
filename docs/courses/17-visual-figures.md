@@ -1,0 +1,1195 @@
+# 17 — Figure accademiche: Mermaid 11, Vega-Lite, DOT e figure calcolate
+
+Sintesi di progettazione (Fase B) delle **quattro famiglie di asset
+visivi** generati o modificati in Fase 3 (dispense) e Fase 4 (slide):
+diagrammi **Mermaid 11**, grafici **Vega-Lite** (vl-convert), grafi
+**Graphviz DOT** e figure matematiche **calcolate** (`function`: sympy +
+matplotlib). Le quattro famiglie passano da un **registro di renderer
+unico**, condividono un **tema accademico unico** e ricevono didascalie
+«Figura N.» identiche in editor, vista lezione, slide, PDF dispensa, PDF
+slide e frame video.
+
+Questo documento è la versione **v1**, scritta prima del codice del
+registro come richiede §5 del brief: fissa le firme, gli algoritmi e le
+decisioni che i work package (WP) successivi implementano. Le sezioni
+«Verifiche e consegna» contengono segnaposto espliciti che il WP6
+completa. Lo stato di avanzamento è nella sezione 1.
+
+Documenti correlati: [08 — Lesson content (Fase 3)](08-lesson-content.md)
+(generazione, validazione asset, editor), [09 — PDF export](09-pdf-export.md)
+(pre-render Mermaid e pipeline WeasyPrint), [10 — Lesson slides (Fase
+4)](10-lesson-slides.md), [12 — Lesson video (Fase 6)](12-lesson-video.md)
+(frame Playwright dello stesso HTML delle slide), [15 — Duplicazione
+corso](15-course-duplication.md) (localizzazione degli asset), [05 — API
+reference](05-api-reference.md), [06 — Frontend](06-frontend.md), [01 — Data
+model](01-data-model.md), [04 — Configuration](../04-configuration.md),
+[07 — Deployment](../07-deployment.md), [PROMPTS.md](../PROMPTS.md),
+[backend/06 — Schemas](../backend/06-schemas.md), [backend/07 —
+Services](../backend/07-services.md), [backend/11 — Tests](../backend/11-tests.md),
+[frontend/05 — Components](../frontend/05-components.md).
+
+I riferimenti a file e righe sono al commit `8ce8160` del branch
+`feat/academic-figures` (HEAD al momento della v1); dove un modulo non
+esiste ancora, la sezione descrive il contratto che il WP indicato deve
+rispettare.
+
+## 1. Perimetro e stato di avanzamento
+
+| Famiglia | `format` | Renderer server-side | Renderer browser | Validazione |
+|---|---|---|---|---|
+| Mermaid 11 | `mermaid` | Playwright + Chromium, pin `mermaid_cdn_version` (11.17.2) | `mermaid` 11.17.2 (lock npm) | gate statico D8 + parse JS in batch |
+| Vega-Lite | `vegalite` | `vl_convert.vegalite_to_svg` in processo figlio | `vega-embed` (import dinamico) | schema JSON v6 + regole D5 + criterio 10 |
+| Graphviz DOT | `dot` | binario `dot` in `subprocess` | `@viz-js/viz` (WASM, import dinamico) | limiti + regex di rifiuto + prova di render |
+| Figura calcolata | `function` | numpy + matplotlib in thread, sympy in processo figlio | `<img>` dell'SVG prodotto dall'endpoint `render-function` | Pydantic + AST |
+
+Gli altri formati dell'alias `VisualAssetFormat` (`image`, `image_prompt`,
+`image_search_query`, `description`) restano invariati: `image` è
+l'immagine caricata dal docente, gli altri tre sono legacy della Fase 4 e
+non entrano nel registro.
+
+Stato dei work package al momento della v1 (dettaglio in
+`docs/courses/README.md` e nel report di consegna):
+
+| WP | Contenuto | Stato |
+|---|---|---|
+| WP2a | alias `VisualAssetFormat`, `figure_theme.py` + `figureTheme.ts`, setting `figure_*`, `.env.example`, compose, pyproject, Dockerfile, CI | committato (`bb17b49`, `b97ff74`) |
+| WP1 | Mermaid 11: `mermaid_prerender.py` estratto, pin unico, `htmlLabels:false` top-level BE+FE, prompt fix/digitalizzazione, script `revalidate_mermaid_assets.py`, test D8 | committato (`8ce8160`) |
+| WP2b-0 | questo documento (v1) | questo commit |
+| WP2b | `figure_render_service.py`, `svg_normalize.py`, `figure_compute/`, dispatch del validatore, fix AI, localizzazione, PATCH 422, builder degli schemi OpenAI, filtro log | in corso (cinque moduli «leaf» presenti nel working tree, da correggere e completare) |
+| WP7 | formato `function` (schema, parsing, calcolo, disegno, endpoint) | da fare |
+| WP4 | numerazione, partial `figure.html.j2`, PDF dispensa/slide, frame video | da fare |
+| WP3 | prompt P3/P4/P5, guardie di lunghezza, `PROMPTS.md` | da fare |
+| WP5 | frontend: `FigureFrame`, renderer ed editor per formato, dialog, i18n | da fare |
+| WP6 | documentazione, misure, consegna | da fare |
+
+## 2. Architettura del registro (Q1)
+
+Il registro vive in `backend/app/services/figure_render_service.py`
+(WP2b). I renderer sono oggetti **sincroni e puri**: il chiamante decide
+se eseguirli in thread o in processo. Tutto ciò che è CPU-bound o non
+interrompibile (vl-convert, sympy) gira in un processo figlio `spawn`
+tramite `figure_compute.isolated.run_isolated` (A13).
+
+### 2.1 Protocollo `FigureRenderer`
+
+```python
+class FigureRenderer(Protocol):
+    fmt: str
+    def available(self) -> bool: ...
+    def sanitize(self, content: str) -> str: ...
+    def validate(self, content: str, *, deep: bool = False) -> tuple[bool, str]: ...
+    def render_svg(self, content: str, *, asset_id: str = "") -> str | None: ...
+    def render_svg_batch(self, contents: list[str], *, asset_ids: list[str]) -> list[str | None]: ...
+    def extract_translatable(self, content: str) -> dict[str, str]: ...
+    def apply_translations(self, content: str, tr: Mapping[str, str]) -> str: ...
+
+REGISTRY: dict[str, FigureRenderer]
+RENDERABLE_FORMATS = ("mermaid", "vegalite", "dot", "function")
+
+@lru_cache(maxsize=1)
+def available_formats() -> tuple[str, ...]: ...
+
+async def render_svg_map(assets: list[dict], *, language: str) -> dict[str, str]: ...
+async def validate_visual_assets_or_raise(assets, *, previous, loc_root, code) -> None: ...
+```
+
+- `available()`: la dipendenza è presente (binario `dot`, moduli
+  `vl_convert`/`jsonschema`, `sympy`+`matplotlib`); Mermaid è sempre
+  disponibile.
+- `sanitize()`: strip di fence e caratteri di controllo, mai un round-trip
+  che alteri i byte del contenuto (Vega-Lite resta la stringa del docente).
+- `validate(deep=False)`: gate offline (PATCH manuale, endpoint);
+  `validate(deep=True)`: anche la prova di render, il cui SVG entra nella
+  cache così che la validazione del worker renda gratis l'export.
+- `render_svg()` / `render_svg_batch()`: ritornano `None` per la figura
+  che fallisce, mai un'eccezione; il batch esiste perché Mermaid apre un
+  solo Chromium per lezione. Il metodo per-asset di Mermaid non è nel
+  percorso di produzione.
+- `extract_translatable()` / `apply_translations()`: campi testuali per la
+  localizzazione D7 (sezione 8.3).
+
+`available_formats()` = kill-switch booleano del setting **e** dipendenza
+presente: `("mermaid",) + {vegalite se figure_vegalite_enabled ∧
+available} + {dot …} + {function …}`. Con cache di modulo (`lru_cache`),
+loggata una volta all'avvio dei worker; `dot` assente produce
+`log.error("graphviz_dot_missing")` una sola volta. Lo schema strict
+offerto al modello e il dispatch del validatore leggono da qui (A19: il
+testo dei prompt resta statico, solo l'`enum` dello schema si restringe).
+
+### 2.2 `render_svg_map`: l'unico punto asincrono
+
+`render_svg_map(assets, *, language)` è chiamata dai tre materializzatori
+(PDF dispensa, PDF slide, frame video) al posto dell'attuale
+`_prerender_mermaid_for_lesson` (`course_lesson_pdf_service.py:633-656`)
+e `_prerender_mermaid_for_slides` (`course_lesson_slides_pdf_service.py:271-290`).
+È l'**unico** punto in cui compaiono `asyncio.to_thread`,
+`asyncio.wait_for(settings.figure_render_timeout_seconds)` e
+`asyncio.Semaphore(settings.figure_render_max_workers)`; il semaforo è
+tenuto dal chiamante async e rilasciato anche su timeout, mai acquisito
+dentro il thread.
+
+Algoritmo:
+
+1. filtra gli asset con `format in RENDERABLE_FORMATS` e contenuto non
+   vuoto; per ognuno calcola la chiave di cache
+   `(fmt, sha256(sanitized), THEME_VERSION, language)`;
+2. serve dalla cache LRU (`OrderedDict` + `threading.Lock`, dimensione
+   `figure_svg_cache_size`) le chiavi presenti; le chiavi nella **cache
+   negativa** (render fallito negli ultimi 60 s) vengono saltate senza
+   ritentare — evita di ripetere un render fallito a ogni giro del fix
+   loop;
+3. raggruppa i restanti per formato e chiama **una** `render_svg_batch`
+   per formato in `to_thread` sotto semaforo e `wait_for`: per Mermaid è
+   `_prerender_mermaid_to_svg_batch_sync` con `_sanitize_mermaid_code`
+   prima e `_strip_mermaid_max_width` dopo (un Chromium per lezione, come
+   oggi); per gli altri formati la normalizzazione SVG (sezione 7);
+4. ritorna `{asset_id: svg}`; le chiavi assenti attivano il fallback del
+   partial (`<pre class="figure-fallback">`).
+
+`render_svg_map` **non solleva mai**: timeout, eccezioni del renderer e
+SVG rifiutati producono `log.warning("figure_render_failed", …)` con
+formato, `asset_id` e motivo, e la chiave resta assente. I worker
+(`materialize_*`) non vedono eccezioni nuove: un'eccezione lì farebbe
+ripartire l'intero export via auto-retry.
+
+### 2.3 `validate_visual_assets_or_raise` e il payload 422
+
+Chiamata nei due CRUD manuali (`course_lesson_content_crud.update_lesson_content`
+dopo `_validate_consistency`, r.221, con `loc_root="visual_assets"` e
+`code="lesson_content_invalid_visual_asset"`;
+`course_lesson_slides_crud.update_lesson_slides` con `new_assets` e
+`code="lesson_slides_invalid_new_asset"`), **prima** di `if not changed:
+return course`, e solo quando `payload.visual_assets is not None`. Valida
+**solo** gli asset del payload con `(format, content)` diversi da
+`previous` (confronto per `asset_id`, A15): un edit del testo non
+rivalida diagrammi legacy già in DB. Usa `validate(deep=False)` in
+`to_thread`; un formato assente da `available_formats()` è un errore
+`figure_format_unavailable`, non un pass-through.
+
+Il payload segue la forma `loc/msg/type` del handler Pydantic
+(`core/errors.py:97`), estesa con `asset_id` e `format`:
+
+```json
+{
+  "code": "lesson_content_invalid_visual_asset",
+  "message": "Uno o più asset visivi non sono validi.",
+  "meta": {
+    "errors": [
+      {
+        "loc": ["visual_assets", 2, "content"],
+        "asset_id": "A3",
+        "format": "vegalite",
+        "msg": "encoding.x quantitativo richiede scale.domain [min, max]",
+        "type": "figure_invalid"
+      }
+    ]
+  }
+}
+```
+
+`type` ∈ `figure_invalid | figure_format_unavailable |
+mermaid_type_not_allowed | vegalite_use_function_format |
+function_spec_invalid`; `msg` è troncato a 600 caratteri; per `function`
+`loc` prosegue dentro la spec (`["visual_assets", i, "content",
+"expressions", 0, "expr"]`). Il frontend legge `meta.errors` da
+`extractApiError` e li mostra per asset nel dialog di modifica (WP5).
+
+Questo chiude un buco reale: oggi Pydantic accetta otto formati mentre lo
+schema strict di Fase 3 ne offre uno, quindi un PATCH manuale può già
+persistere `format="vegalite"` senza validazione né renderer.
+
+### 2.4 Moduli
+
+```
+backend/app/services/
+├── figure_theme.py                 # tema D3, i18n it/en, function_caption (WP2a, committato)
+├── mermaid_prerender.py            # pre-render Mermaid estratto dal PDF service (WP1, committato)
+├── svg_normalize.py                # Q3: normalize_svg, svg_to_data_uri, SvgRejectedError (WP2b)
+├── figure_compute/                 # «leaf»: importabili dal figlio spawn senza config/SQLAlchemy
+│   ├── isolated.py                 # run_isolated, FigureTimeoutError, FigureComputeError
+│   ├── vegalite_rules.py           # regole D5 + euristica del criterio 10
+│   ├── vegalite_render.py          # bersaglio del figlio per vl_convert
+│   ├── function_parse.py           # WP7: AST a due passi
+│   ├── function_numeric.py         # WP7: campionamento e punti notevoli (numpy)
+│   ├── function_symbolic.py        # WP7: sympy nel figlio
+│   └── function_plot.py            # WP7: matplotlib, TextPath
+├── figure_render_service.py        # registro D2 + orchestratore async (WP2b)
+├── figure_numbering.py             # Q2: numerazione «Figura N.» (WP4)
+└── figure_markup.py                # Environment Jinja dedicato + render_figure_html (WP4)
+backend/app/templates/partials/figure.html.j2   # partial D4 (WP4)
+backend/app/schemas/figure_function.py          # FunctionFigureSpec (WP7)
+frontend/src/lib/{figureTheme,figureNumbering,figureFormats}.ts
+frontend/src/components/shared/{FigureFrame,VegaLiteDiagram,DotDiagram,FunctionFigure,
+  VegaLiteEditor,DotEditor,FunctionEditor,VisualAssetEditor,AddVisualAssetMenu}.tsx   # WP5
+```
+
+`figure_theme.py`, `svg_normalize.py` e ogni modulo di `figure_compute/`
+non importano `app.core.config` né SQLAlchemy: sono importabili dal
+processo figlio `spawn` e dai test puri.
+
+## 3. I renderer
+
+### 3.1 `MermaidRenderer`: gate statico D8
+
+`validate(deep=False)` è un gate **statico e duro**, senza Chromium:
+salta le righe di commento `%%` e il frontmatter YAML `---…---`; la prima
+riga utile deve iniziare con un tipo di `MERMAID_ALLOWED_TYPES`
+(`figure_theme.py:97-115`: i 15 tipi D8 più gli alias `graph` e
+`stateDiagram` v1, accettati in lettura per i contenuti già in DB);
+rifiuta i tipi di `MERMAID_EXCLUDED_TYPES` (`journey`, `gitGraph`,
+`kanban`, `packet-beta`, `architecture-beta`) con
+`mermaid_type_not_allowed`, la direttiva `%%{init` e il carattere `<`
+nelle label (con `htmlLabels:false` l'HTML nelle label non è
+renderizzato). Il parse JS resta nel batch di `_validate_slots`
+(sezione 8.1): al salvataggio manuale il gate statico basta (A15), il
+parse vive già nell'editor con la stessa major 11.
+
+`render_svg_batch` delega a `mermaid_prerender._prerender_mermaid_to_svg_batch_sync`
+(Playwright, pin `settings.mermaid_cdn_version`, `mermaid_initialize_js(use_max_width=True)`);
+l'SVG Mermaid **non** passa dalla normalizzazione di sezione 7: la catena
+resta byte-identica rispetto a oggi (A11, livello L3).
+
+`journey` è escluso perché emette due `<foreignObject>` anche in 10.9.4
+(WeasyPrint non li rende); gli altri esclusi non hanno uso didattico o
+dipendono da risorse esterne (icone).
+
+### 3.2 `VegaLiteRenderer`
+
+`sanitize`: strip di fence e caratteri di controllo, **nessun round-trip
+JSON** (i byte del contenuto restano quelli del docente).
+
+`validate(deep=False)`, nell'ordine:
+
+1. lunghezza ≤ 4.000 caratteri;
+2. `json.loads(object_pairs_hook=…)` che **rifiuta le chiavi duplicate**
+   (un `"mark"` ripetuto vincerebbe silenziosamente l'ultimo);
+3. validazione contro lo **schema JSON di Vega-Lite v6** con
+   `jsonschema.Draft7Validator`, costruito una volta (`lru_cache`) dal file
+   `Path(find_spec("altair").submodule_search_locations[0]) /
+   "vegalite/v6/schema/vega-lite-schema.json"` (1,9 MB; altair 6.2.2 porta
+   la v6.4.1) **senza `import altair`**; l'errore è
+   `best_match(iter_errors)` reso come `"path: msg"[:1600]`. Costo
+   misurato il 7 settembre: init 0 ms, 1 ms per spec — nessun caching
+   aggressivo necessario;
+4. `figure_compute.vegalite_rules.check_vegalite_rules(spec) -> list[str]`
+   (sezione 3.2.1); la prima violazione con prefisso
+   `vegalite_use_function_format:` classifica l'errore come criterio 10.
+
+`validate(deep=True)` aggiunge `render_svg`. `render_svg`: copia della
+spec con **`$schema` imposto** (`https://vega.github.io/schema/vega-lite/v6.json`),
+poi `vl_convert.vegalite_to_svg(json.dumps(spec), config=VEGALITE_THEME_CONFIG,
+allowed_base_urls=[])` eseguita in `run_isolated` sul bersaglio
+`figure_compute.vegalite_render:render_svg` (validazione: solleva con il
+messaggio di vl-convert) o `:render_svg_batch` (export: `None` per la spec
+che fallisce, senza motivo — accettato per il batch), quindi
+`normalize_svg`. Il tema e lo `$schema` li impone il **registro**, non il
+bersaglio del figlio: `vegalite_render.py` riceve `config` nel payload.
+vl-convert paga 361 ms alla prima chiamata di ogni processo; spawn + import
+misurati in 0,29-0,47 s.
+
+#### 3.2.1 Regole D5 (`vegalite_rules.py`)
+
+Applicate dopo lo schema (che garantisce la forma) con ricorsione ≤ 4
+livelli su `layer | hconcat | vconcat | concat | spec` (`facet` e `repeat`
+sono raggiunti attraverso `spec`, che è dove Vega-Lite mette la vista
+figlia):
+
+- vietati `data.url`, `data.name` senza `datasets` alla radice,
+  `mark: "image"`, `selection | params | interactive | config | usermeta |
+  tooltip` (in ogni vista, anche dentro `mark` ed `encoding`),
+  `encoding.href`: niente interattività, niente rete, niente tema scritto
+  dal modello (il `config` lo inietta il renderer);
+- `values` ≤ 200 righe (liste o CSV/TSV inline, anche in `datasets`);
+  `sequence` con `start/stop/step` numerici, `step > 0`, ≤ 5.000 passi;
+- obbligatorio `clip: true` sui mark `line | area | point | trail` (anche
+  quando il mark è una stringa: `"line"` è rifiutato con il suggerimento
+  `{"type": "line", "clip": true}`) e `scale.domain` `[min, max]` numerico
+  con `min < max` sui canali `x`/`y` quantitativi: la figura non sborda mai
+  dal riquadro e il modello dichiara l'intervallo che disegna;
+- `axis.format` ⊆ `^[ ,.0-9a-z%$~+-]{0,12}$`; una sola `title`, stringa
+  ≤ 120 caratteri, solo alla radice.
+
+Il messaggio riporta la profondità della vista (`(profondità 2) mark line
+richiede clip:true`) così il fix AI sa dove intervenire.
+
+#### 3.2.2 Euristica del criterio 10 (H1-H3, con ereditarietà)
+
+Le figure matematiche sono **vietate** in Vega-Lite: esiste `function`.
+Non si può riconoscere «una funzione» in generale, ma il modo in cui
+Vega-Lite la traccia è uno solo: `data.sequence` più un
+`transform[].calculate` sul campo della sequenza. Con almeno un campo
+`sequence` in vista, ogni espressione `calculate` che referenzia
+`datum.<campo>` (o `datum["campo"]`) e contiene
+
+- **H1** una funzione trascendente o non lineare (`sin cos tan asin acos
+  atan sinh cosh tanh exp log sqrt pow abs`), oppure
+- **H2** una divisione con `datum` a denominatore (`/ datum.x`, `/ (2*datum.x
+  + 1)`: funzione razionale), oppure
+- **H3** una potenza (`**` o `^`)
+
+viene rifiutata con `vegalite_use_function_format: transform[i].calculate
+traccia una <motivo>: usa format="function"`. Il rifiuto è messo in testa
+alla lista così il chiamante lo classifica.
+
+**Ereditarietà dei campi `sequence`** (difetto trovato nella revisione del
+7 settembre, correzione obbligatoria in WP2b): la prima stesura applicava
+H1-H3 solo ai `transform` della stessa vista che dichiara `data.sequence`,
+quindi `data.sequence` alla radice e `calculate: "sin(datum.x)"` dentro
+`layer`, `vconcat`, `concat` o `spec` **passava**. In Vega-Lite i dati
+della vista padre sono ereditati dalle viste figlie, perciò `_walk`
+riceve l'insieme dei campi `sequence` ereditati, vi aggiunge quelli della
+vista corrente e lo propaga a tutti i figli, applicando H1-H3 a ogni
+`transform.calculate` della sottovista. Test dedicati per `layer`,
+`vconcat` e `spec` (`test_vegalite_rules.py`).
+
+**Falso negativo accettato**: rette e polinomi scritti con `*`
+(`2*datum.x + 1`, `datum.x*datum.x`) restano ammessi. Una retta di
+regressione illustrativa su dati inline è legittima in Vega-Lite e non è
+distinguibile sintatticamente da `y = 2x + 1`; il prompt P3 chiede
+esplicitamente `function` per ogni funzione da studiare (WP3). Nessun
+riconoscimento «fuzzy» (nomi di campo, titoli): produrrebbe falsi
+positivi su grafici legittimi.
+
+### 3.3 `DotRenderer`
+
+- `available()` = `shutil.which(settings.graphviz_dot_path or "dot")`.
+- `sanitize` = strip di fence e caratteri di controllo; **mai**
+  `_sanitize_mermaid_code`, che cancella le righe `all` (nodo DOT
+  legittimo).
+- `validate(deep=False)`: lunghezza ≤ `figure_dot_max_chars` (12.000);
+  prima parola `strict | graph | digraph`; regex di rifiuto degli
+  attributi che fanno leggere file locali o risorse esterne a `dot`:
+  `\b(image|shapefile|imagepath|fontpath|stylesheet|URL|href|target)\s*=`;
+  ≤ 600 archi.
+- Tema: `dot_defaults_prelude(skip=…)` inserisce i blocchi `graph [...]`,
+  `node [...]`, `edge [...]` di `DOT_DEFAULTS` subito dopo la `{` di
+  apertura, saltando quelli che il sorgente definisce già (il modello
+  resta libero di sovrascrivere il tema in modo esplicito).
+- Render: **un solo** `subprocess.run([dot, "-Tsvg", "-Gcharset=utf8"],
+  input=source, capture_output=True, timeout=T, check=False,
+  cwd=<tmpdir vuoto>, env={"PATH": …, "LANG": "C.UTF-8"})`, senza shell:
+  `returncode ≠ 0` → `(False, stderr[:1600])`, `TimeoutExpired` → `(False,
+  "dot_timeout")`; l'SVG normalizzato entra in cache (il render successivo
+  è un hit). La validazione profonda e il render sono la stessa chiamata.
+- `dot` assente: `(False, "dot_unavailable")` con `AssetCheck.fixable=False`
+  (il fix AI non può installare un binario), mai pass-through.
+
+Nessun pacchetto pip `graphviz` (A3): il wrapper non espone un timeout.
+
+### 3.4 `FunctionRenderer`
+
+`validate` = Pydantic (`FunctionFigureSpec`) + AST, sincrono e senza sympy;
+`render` = calcolo numerico e disegno matplotlib in thread, calcolo
+simbolico in `run_isolated`. Dettaglio nella sezione 4.
+
+### 3.5 `run_isolated` (`figure_compute/isolated.py`)
+
+`run_isolated(fn_path, payload, *, timeout)` avvia un `Process` con
+contesto `spawn` (nessuna copia dello stato del worker uvicorn: loop,
+connessioni, thread), `Pipe`, `parent_conn.poll(timeout)` **prima** di
+`recv` (evita lo stallo con risultati più grandi del buffer della pipe:
+il figlio resterebbe bloccato in `send`), `kill()` allo scadere. Il
+figlio importa il bersaglio dal disco (`"pacchetto.modulo:funzione"`):
+un monkeypatch nel padre non lo raggiunge, perciò il test del timeout usa
+un bersaglio reale (`tests/helpers/slow_target.py`). Eccezioni:
+`FigureTimeoutError` (scadenza, figlio ucciso e raccolto) e
+`FigureComputeError` (il figlio ha sollevato o è morto senza risposta),
+con i nomi di A18. `daemon=True` impedisce processi nipoti: accettabile,
+i bersagli non ne creano.
+
+Correzione dovuta in WP2b: dopo un `poll()` andato a buon fine, `recv()`
+non ha scadenza e i tre `join(5)` possono sommare fino a 5 s oltre
+`timeout`; si introduce una deadline monotona (`poll(remaining)` +
+`join(min(1, remaining))`).
+
+## 4. Il formato `function` (Q4)
+
+### 4.1 `FunctionFigureSpec` (`schemas/figure_function.py`)
+
+Tutti i modelli hanno `extra="forbid"`. `Var = Annotated[str,
+StringConstraints(pattern=r"^[a-zA-Z]$")]`.
+
+- `ExpressionSpec(expr: str (1..200), label: str = "")` (label ≤ 24; vuota
+  → `f, g, h, k` assegnate al render).
+- Annotazioni con discriminatore `kind`: `TangentAnnotation(kind="tangent",
+  at: float, expr_index: int = 0 (0..3), label: str = "")`,
+  `AreaAnnotation(kind="area", between: tuple[float, float], expr_index,
+  against: int | None, label)`, `PointAnnotation(kind="point", at,
+  expr_index, label ≤ 40)`.
+- `ParameterSpec(name: Var, values: list[float] (1..6))`;
+  `SamplingSpec(points: int = 800 (100..2000))`.
+- `ShowItem = Literal["zeros", "critical_points", "inflection_points",
+  "asymptotes", "discontinuities", "formula"]`.
+- `FunctionFigureSpec(kind: Literal["function_study", "tangent", "area",
+  "family", "level_curves"], expressions (1..4), variable: Var = "x",
+  variables: tuple[Var, Var] | None (level_curves), domain, range | None,
+  show (≤ 6), annotations (≤ 6), parameter | None, sampling, levels: int |
+  list[float] | None (2..12))`.
+
+`model_validator(mode="after")`: dominio e range finiti con `lo < hi` e
+ampiezza in `[1e-3, 1e4]`; `parameter.name != variable`; `expr_index <
+len(expressions)`; `tangent` richiede almeno una `TangentAnnotation` con
+`at` nel dominio; `area` almeno una `AreaAnnotation` con `between ⊂
+domain`; `family` richiede `parameter` e una sola espressione;
+`level_curves` richiede `variables` distinte, `levels`, una espressione e
+nessuna annotazione; label non vuote univoche; ogni `expr` passa
+`check_expression` con simboli liberi ⊆ `{variable(s), parameter.name}`.
+`content` dell'asset è la stringa JSON di questo oggetto; nel prompt P3
+va lo schema compatto a una riga (~330 caratteri) più l'esempio di D9
+(~480), con un test che verifica la presenza dei nomi dei campi e degli
+enum nel prompt (WP3).
+
+### 4.2 Parsing a due passi (`function_parse.py`)
+
+Passo 1, senza sympy, nel processo padre: `check_expression(src, *,
+free_symbols) -> ParsedExpr` che solleva `ExprError(loc_suffix, msg,
+type)`. `ast.parse(src, mode="eval")`; `SyntaxError` «invalid decimal
+literal» → «moltiplicazione implicita non ammessa: scrivi 2*x»; `BitXor`
+→ «usa ** per la potenza»; nodi ammessi `{Expression, BinOp, UnaryOp,
+Call, Name, Constant, Load, Add, Sub, Mult, Div, Pow, USub, UAdd}`;
+`Constant` solo `int`/`float`; `Call.func` è un `Name` in `{sin, cos, tan,
+exp, log, sqrt, abs, asin, acos, atan, sinh, cosh, tanh, floor}` con un
+argomento (`log` anche due), nessuna keyword; `Name.id` ∈ funzioni ∪
+`{pi, E}` ∪ `free_symbols`, altrimenti «simbolo non dichiarato: y»; `Pow`
+con esponente costante `|v| ≤ 12` (`2**1000000` passa l'AST ma non questo
+limite); ≤ 80 nodi, profondità ≤ 12.
+
+Passo 2, **solo nel figlio sympy**: `parse_expr(src,
+transformations=standard_transformations, global_dict={"Integer", "Float",
+"Rational", "Symbol", "pi", "E", <funzioni sympy>, "abs": Abs},
+local_dict={v: Symbol(v, real=True)}, evaluate=True)` sulla **stessa**
+stringa già filtrata; controllo finale `expr.free_symbols ⊆ dichiarati`.
+`parse_expr` usa `eval(code, global_dict, local_dict)`: il `global_dict`
+ristretto e il passo 1 sono le due difese, una nel padre e una nel
+figlio. Il comportamento di `parse_expr` con `global_dict` ristretto su
+sympy 1.14 è da verificare con un test `importorskip("sympy")` in
+`test_function_figure_service.py` (voce 6 del «Delta», prima di WP7).
+
+### 4.3 Numerico prima, simbolico nel figlio
+
+`function_numeric.py` (numpy, in thread): `compile_numpy(parsed)` è un
+valutatore ricorsivo dell'AST (`sin → np.sin`, …, `Pow → np.power` in
+`errstate(all="ignore")`), niente `eval` né `lambdify`; `sample`,
+`split_branches` (taglia dove `y` non è finito o `|Δy| > 8·mediana` con
+`|y|` crescente verso il bordo: NaN inseriti, matplotlib spezza la linea),
+`find_zeros` (cambi di segno + bisezione), `find_critical` /
+`find_inflection` (derivate centrali), `vertical_asymptotes`,
+`oblique_or_horizontal` (regressione sulle code). **La figura non dipende
+da sympy.**
+
+`function_symbolic.py` (importa sympy solo nel figlio): `solve(f)`,
+`solve(diff(f))`, `solve(diff(f, 2))`, `singularities`, `limit(f, x, ±oo)`,
+`limit(f − (m·x + q))`, `integrate`, `diff(f).subs`; `nsimplify(val, [pi,
+E], rational=True, tolerance=1e-9)` + `latex(..., ln_notation=True,
+fold_short_frac=False)` solo se `|val − float(exact)| < 1e-9`. Eseguito con
+`run_isolated("app.services.figure_compute.function_symbolic:analyze_symbolic",
+spec_dict, timeout=settings.figure_function_timeout_seconds)` dentro
+`asyncio.to_thread`. Riconciliazione: ogni punto numerico è sostituito
+dall'esatto entro `1e-6·ampiezza`; esatti senza riscontro numerico sono
+ignorati (mai numeri «plausibili»). Su timeout o eccezione:
+`approximate=True`, `warnings=["symbolic_timeout"]`, coda della didascalia
+con `courses.figures.approxValues`; l'SVG viene comunque prodotto.
+
+### 4.4 Render matplotlib con `TextPath` (A14)
+
+API a oggetti, deterministica: `with rc_context(MATPLOTLIB_RC |
+{"svg.hashsalt": f"a4u:{content_hash}"}): fig = Figure(figsize=(5.2, 3.6),
+dpi=200); FigureCanvasAgg(fig); ax = fig.add_subplot(111)`; spine
+`left`/`bottom` in `set_position("zero")` con frecce, `top`/`right`
+nascoste; rami `ax.plot(xs, ys, color=PALETTE[i], gid=f"branch-{i}-{j}")`;
+asintoti `axvline`/`axline(ls="--", color="#888")`; punti notevoli `"o"`
+`ms=4` con coordinate esatte; formula in alto a destra (`gid="formula"`);
+nessun titolo; griglia solo in `level_curves` (`contour` + `clabel`);
+`family` con `legend(frameon=False)` solo con più serie; `area` con
+`fill_between(alpha=.25)`; `tangent` come retta `y = f(a) + f'(a)(x − a)`;
+`fig.savefig(buf, format="svg", metadata={"Date": None, "Creator": None})`
+→ `normalize_svg`. I `gid` diventano `id=` nell'SVG: sono i ganci dei test.
+
+Mathtext: con `svg.fonttype: none` matplotlib emette `\sqrt` con
+`font-family: STIXSizeOneSym`, `\left(\right)` con `STIXSizeTwoSym`,
+`\int`/`\sum` con `DejaVu Sans Display`, famiglie **non installate** nel
+container né nel browser. Le stringhe mathtext (formula, coordinate esatte,
+tick esatti) sono quindi disegnate come geometria: `TextPath` +
+`PathPatch`; il resto del testo resta `<text>` con Noto Sans / DejaVu Sans.
+`function_plot.to_mathtext` rimuove `\left`/`\right`, `\tfrac → \frac`,
+`\lvert`/`\rvert → |`, `\displaystyle`; formule con `\begin{…}` o `\over`
+sono omesse; prova preventiva `MathTextParser("path").parse("$" + s + "$")`
+in `try/except` → testo tondo con warning. Guardia: test `set(font-family)
+⊆ {Noto Sans, DejaVu Sans}` sull'SVG. `function_plot` non produce mai
+raster (`<image>`): `contour` e `fill_between` sono path, `imshow` non è
+usato; un test lo asserisce perché `normalize_svg` rifiuta `<image>`
+mentre `MATPLOTLIB_RC` tiene `svg.image_inline: True`.
+
+### 4.5 `computed` e didascalia calcolata (mai persistita)
+
+`computed = {approximate, latex: [str], zeros: [{x, exact}],
+critical_points: [{x, y, exact_x, exact_y, type}], inflection_points,
+asymptotes: [{kind, expr, latex}], discontinuities, integral: {between,
+value, exact} | None, tangents: [{at, slope, exact_slope}], levels,
+warnings}`. `figure_theme.function_caption(computed, language)`
+(`figure_theme.py:914`) compone la coda dalle frasi
+`courses.figures.function.*` (testo Unicode con √ e π via
+`latex_to_unicode`, 3 cifre se approssimato). La coda **non è mai
+persistita**: viene rigenerata a render e passata come `extra_caption` al
+partial; il frontend la riceve come `computed_caption` e la passa a
+`FigureFrame.extraCaption`. Guardia anti-doppia coda: `if
+caption.rstrip().endswith(tail): tail = ""`.
+
+### 4.6 Endpoint `render-function`
+
+`POST /orgs/{org_id}/courses/{course_id}/lesson-assets/render-function`
+(in `courses.py` accanto a `convert_lesson_asset_to_mermaid`),
+`response_model=_FunctionRenderOut(svg, computed: dict, latex: list[str],
+warnings: list[str], computed_caption: str, content_hash: str)`,
+`@limiter.limit("30/minute")`, permesso `course:edit` (`_ensure_org` →
+`resolve_permissions` → `get_course` con 404 silenzioso), poi
+`figure_render_service.render_function(payload, language=course.language_code)`
+con cache LRU per `sha256(model_dump_json canonico) + language +
+THEME_VERSION`. Errori: body Pydantic → 422 standard (`loc` con `body` in
+testa); semantici → `ValidationAppError("Specifica della funzione non
+valida.", code="function_spec_invalid", meta={"errors": [...]})`; timeout
+simbolico → 200 con `warnings` e `approximate`; render numerico o
+matplotlib fallito, o timeout complessivo → 422 `function_render_failed`
+/ `function_render_timeout` (il 409 nel repo esprime conflitti di stato,
+non errori di input); 403 da `require`. Il client chiama con `timeout:
+30_000` (il default di `apiClient` è 20 s).
+
+Frontend (WP5): `FunctionEditor` con stato `FunctionFigureSpec` tipizzato
+(il docente non vede JSON), anteprima con `useDebouncedValue(spec, 700)` +
+`useQuery` (`retry: false`, `staleTime` 5 min, `placeholderData:
+keepPreviousData`), errori `meta.errors` mappati sui campi; `FunctionFigure`
+con `useQuery` per `(orgId, courseId, assetId, content)` e `staleTime:
+Infinity` (react-query hasha la chiave: è la cache per asset e hash).
+
+## 5. Tema accademico unico (D3)
+
+`backend/app/services/figure_theme.py` è la sorgente di verità;
+`frontend/src/lib/figureTheme.ts` è la copia da **mantenere allineata**
+(stesse costanti, stesso ordine della palette, stessa configurazione
+Mermaid, stesso `THEME_VERSION`), pinnata dal test di parità
+`test_figure_theme.py` (`:304-327`). Ogni nuova chiave di `themeVariables`
+va replicata nel `.ts` nello stesso commit.
+
+- `THEME_VERSION = "2026.09.2"`: entra nella chiave di cache degli SVG; ogni
+  modifica visibile del tema lo incrementa.
+- Font: `FONT_FAMILY_PRIMARY = "Noto Sans"`, `FONT_STACK = '"Noto Sans",
+  "DejaVu Sans", sans-serif'`, `FONT_ALLOWED = {Noto Sans, DejaVu Sans}`
+  (guardia dei test), `MERMAID_FONT_FAMILY` con `Noto Sans CJK JP` per le
+  label ideografiche.
+- Palette di **Okabe e Ito** (`PALETTE`, 8 colori: blu `#0072B2`, vermiglio
+  `#D55E00`, verde bluastro `#009E73`, arancio `#E69F00`, porpora `#CC79A7`,
+  celeste `#56B4E9`, giallo `#F0E442`, nero `#000000`), distinguibile in
+  scala di grigi e con deficit cromatici, ordinata per contrasto sul bianco;
+  `PALETTE_LABEL` dà il colore del testo sopra ogni colore pieno (bianco
+  solo su blu e nero). Neutri: `COLOR_INK #1F1F1F`, `COLOR_AXIS #4D4D4D`,
+  `COLOR_GRID #D9D9D9`, `COLOR_MUTED #888888`, `COLOR_SURFACE #F4F6F8`.
+  Niente gradienti, niente ombre.
+- Mermaid: `mermaid_config(*, use_max_width, security_level="loose")` e
+  `mermaid_initialize_js(...)` con `htmlLabels: false` **top-level**
+  (condizione per 0 `<foreignObject>` sui tipi D8) e `theme: "neutral"`. Il
+  tema neutral non deriva riempimenti e bordi da `primaryColor` (`nodeBkg =
+  mainBkg`, `nodeBorder = border1`, `actorBkg`, `signalColor`, `cScale0..11`,
+  gantt, stato): ogni variabile derivata letta dai 15 tipi D8 è **fissata
+  esplicitamente** nei `themeVariables` (verificato sull'output reale di
+  11.17.2 da `test_mermaid_theme_palette`). Limite noto: `sankey-beta`
+  colora i nodi con `schemeTableau10` di d3, hard-coded nel renderer.
+  `security_level`: `loose` nei Chromium headless del backend, `strict` nel
+  browser dell'utente (default di `mermaidConfig` nel `.ts`).
+- Vega-Lite: `VEGALITE_THEME_CONFIG` (`figure_theme.py:458`): `font`,
+  `background: "transparent"` (lo schema non ammette `null`), `view`
+  360×220 senza bordo, `axis`/`legend`/`header`/`title`/`text` con font,
+  dimensioni e colori del tema, `range.category = PALETTE`, `mark.color =
+  PALETTE[0]`, `line.strokeWidth 2`, `point` pieno, `area` 0,35 con linea.
+  È iniettato dal renderer: il modello non scrive mai `config` (D5).
+- DOT: `DOT_DEFAULTS` (`graph`, `node`, `edge` con `fontname="Noto Sans"`,
+  `bgcolor="transparent"`, nodi `box` arrotondati, colori dei neutri) e
+  `dot_defaults_prelude(skip=…)`.
+- matplotlib: `MATPLOTLIB_RC` (31 chiavi, solo valori serializzabili: il
+  modulo non importa matplotlib): `svg.fonttype: none`, famiglie Noto Sans /
+  DejaVu Sans, `mathtext.fontset: dejavusans`, sfondi trasparenti, ciclo
+  colori = `PALETTE`, spessori e colori degli assi; `svg.hashsalt` è
+  aggiunto per asset dal renderer.
+- i18n: `FIGURE_I18N` (`:590-639`, sezione 6.4).
+
+## 6. Convenzione editoriale e numerazione (D4, Q2)
+
+### 6.1 `figure_numbering.py` (puro)
+
+- `FIG_REF_RE = re.compile(r"\[FIG:([^\]\n]+)\]")`: **case-sensitive su
+  `FIG`** come `_ASSET_REF_RE` (`course_lesson_pdf_service.py:399`) e
+  `ASSET_REF_RE` del frontend (un `[fig:x]` non è sostituito da nessun
+  renderer: numerarlo produrrebbe un numero fantasma); id confrontati con
+  `.strip().lower()`.
+- `append_uncited_figure_refs(markdown, asset_ids) -> str`: aggiunge
+  `"\n\n[FIG:{id}]"` per gli asset mai citati, in ordine di array (A12).
+- `compute_figure_numbers(markdown, asset_ids) -> dict[str, int]`
+  (`{id_lower: N}`): prima occorrenza → N crescente; citazioni ripetute →
+  stesso N (il numero è legato all'id, non all'occorrenza); id senza asset
+  → nessun numero consumato (il blocco `missing-asset` non «ruba» numeri).
+  Applicata al markdown **dopo** l'append, così la coda è numerata dopo le
+  citate.
+- `strip_figure_prefix(caption)`: `^\s*(?:figura|figure|fig\.?|abb\.?)\s*
+  \d+[a-z]?\s*[.:\-–—)]?\s*` IGNORECASE, **cifra obbligatoria** («Figurativo»
+  e «Fig. X» intatti); applicato **solo a render**, mai persistito; nel
+  frontend `stripFigurePrefix`. I prompt P3/P4 vietano al modello di
+  iniziare la caption con «Figura N» (WP3).
+
+Il testo di numerazione è il corpo della dispensa (`introduction →
+sections → summary`, il corpus «referenziato» di
+`course_lesson_content_service.py:1082-1088`): **non** `key_takeaways` e
+`references`, che il template rende senza sostituzione dei tag. Includerli
+farebbe divergere frontend e PDF.
+
+### 6.2 Dove si calcola
+
+Backend, in `render_lesson_html` (`course_lesson_pdf_service.py:1148`):
+`body_md = _build_lesson_body_markdown(raw)` → `append_uncited_figure_refs`
+→ `numbers = compute_figure_numbers(body_md, ids)` →
+`_replace_summary_heading` e `_substitute_asset_refs` invariati →
+`_build_asset_html_map(raw, …, figure_numbers=numbers,
+labels=figure_labels(language))` → `_render_visual_asset_block(asset, …,
+number=numbers.get(id.lower()), labels=…)`. Oggi l'ordine è invertito
+(`_build_asset_html_map` a 1179-1184 precede `_build_lesson_body_markdown`
+a 1185-1188): WP4 riordina. Slide e video: `number=None`,
+`variant="slide"`.
+
+Frontend (`lib/figureNumbering.ts`, «mantenere allineato con
+`figure_numbering.py`»): `LessonContentView.buildFullMarkdown` si spezza in
+corpo (intro/sezioni/sintesi + tag orfani) e coda (`key_takeaways`,
+`references`); `figureNumbers` è calcolato lì e passato a `MarkdownRenderer`
+come prop opzionale (i montaggi su frammenti in `LessonSlidesView` non la
+passano). Coincidenza BE/FE: fixture
+`backend/tests/fixtures/figure_numbering_cases.json` (duplicati, id
+mancante, case diverso, `[fig:x]` ignorato, non citati in coda, nessuna
+figura) usata da `test_figure_numbering.py`; lato FE smoke locale.
+
+### 6.3 Markup unico: `figure_markup.py` e `partials/figure.html.j2`
+
+Quarto `Environment` Jinja, dedicato: `Environment(loader=FileSystemLoader(
+TEMPLATES_DIR / "partials"), autoescape=True, trim_blocks=True,
+lstrip_blocks=True)` (gli ambienti esistenti hanno autoescape solo sul PDF
+dispensa; slide e discorso no). `render_figure_html(*, body_html: Markup |
+None, caption, alt_text, asset_id, fmt, number: int | None, labels,
+variant: Literal["lesson", "slide"], fallback_source: str | None = None,
+extra_caption: str = "") -> str`.
+
+```html
+<figure class="visual figure figure--{{ variant }} figure--{{ fmt }}"
+        data-asset-id="…" role="figure" aria-label="{{ alt_text or caption }}">
+  <div class="figure-body">{{ body_html }} | <pre class="figure-fallback">{{ fallback_source }}</pre></div>
+  <figcaption class="figure-caption">
+    <span class="figure-label">{{ label }}</span> {{ caption }} {{ extra_caption }}
+  </figcaption>
+</figure>
+```
+
+`label` = `labels["courses.figures.label"]` interpolato con `n`
+(«Figura 3.») oppure `labelUnnumbered` («Figura.») nelle slide (A2);
+`body_html` entra come `Markup` (prodotto da noi), tutto il resto è
+escapato. Usato per **tutti** i formati: per Mermaid il body `<div
+class="mermaid-svg">{svg}</div>` è byte-identico a oggi e cambia solo il
+wrapper (A11-L3); `image` e legacy passano dallo stesso partial. Il
+wrapper interno `.mermaid-svg` va conservato perché la regola
+`figure.visual:has(.mermaid-svg) .figure-body { padding: 1mm }`
+(`lesson_pdf.html.j2:315-317`) continui ad applicarsi.
+
+CSS: in `lesson_pdf.html.j2` le regole card generiche `figure {}`
+(217-230) si restringono a `figure.table, figure.equation`;
+`figure.visual` senza bordo né raggio, `margin: 5mm 0`, centrata,
+`page-break-inside: avoid`; `.figure-caption` 9pt tondo centrato senza
+bordo; `.figure-label` in grassetto; `.figure-svg { max-width: 100%;
+height: auto; max-height: {{ max_figure_height_cm }}cm; display: block;
+margin: 0 auto }`; `.mermaid-fallback, .figure-fallback` condividono la
+regola. In `lesson_slides_pdf.html.j2` si modifica la regola esistente
+`.slide-asset .caption, .slide-asset figcaption` (202-209) a 8pt tondo; si
+aggiunge `.slide-asset .figure-svg, .slide-asset .mermaid-svg, .slide-asset
+.uploaded-image { max-height: 80mm; width: auto; height: auto; object-fit:
+contain }` che riconcilia il cap di 80 mm (180-189) con `.uploaded-image {
+max-height: 100% }` (221-227); `.figure-fallback` e `.missing-asset`
+ricevono CSS in entrambi i template. `TableBlock`/`EquationBlock` nel
+frontend e `figure.table`/`figure.equation` nel PDF **restano a card**:
+sono elementi tipografici diversi da una figura.
+
+Frontend `FigureFrame.tsx`: props `{ assetId, format, caption, altText,
+number?, variant?: "lesson" | "slide", extraCaption?, className?,
+children }` → `<figure role="figure" aria-label=…>` senza card, con
+`<figcaption>` che usa `t("courses.figures.label", { n })` e
+`stripFigurePrefix(caption)`; sostituisce le tre `<figure>` di
+`VisualAssetBlock` e le tre di `SlideAssetRender`; il fallback `Suspense`
+sta dentro `FigureFrame`. `.lesson-prose .figure img { border-radius: 0;
+margin: 0 }` in `index.css`.
+
+### 6.4 Localizzazione it/en con fallback it (A4)
+
+`figure_theme.FIGURE_I18N = {"it": {...}, "en": {...}}` con le **stesse
+chiavi pienamente qualificate** di `it.json`/`en.json`:
+`courses.figures.label` («Figura {{n}}.»), `courses.figures.labelUnnumbered`
+(«Figura.»), `illustrativeData`, `approxValues`, `renderError`, `loading`,
+`missing`, `formats.{mermaid,vegalite,dot,function,image}`,
+`function.{zeros,critical_points,inflection_points,asymptote_vertical,
+asymptote_horizontal,asymptote_oblique,integral,tangent,levels,none}` (22
+chiavi per lingua). `figure_labels(language)` (`:644-649`) ritorna una
+copia con fallback `it` (`de`, `None`, `ja` → it; `en-GB` → en), coerente
+con `_labels_for` del PDF (`course_lesson_pdf_service.py:1097-1132`) e
+con `fallbackLng: "it"` del frontend. `_interpolate` gestisce `{{n}}` e
+`{{ n }}`. Le altre 22 lingue ricevono le etichette in italiano nel PDF
+(come «Sintesi» oggi) e nel frontend finché l'amministratore non lancia
+l'auto-translate. Niente lookup nel DB delle traduzioni: il seed ha 226
+chiavi e nessuna `courses.*` (in produzione sarebbe sempre vuoto). Test di
+specchio `test_figure_i18n_mirrors_frontend` (flatten del JSON annidato;
+skip esplicito finché `courses.figures` manca da `it.json`, arriva in WP5).
+
+## 7. Normalizzazione degli SVG (Q3)
+
+`svg_normalize.normalize_svg(svg, *, max_bytes) -> NormalizedSvg(svg,
+width_px, height_px)`, modulo puro (regex sul solo tag radice + scansione),
+per gli SVG di vl-convert, `dot` e matplotlib. **Mermaid non passa da qui.**
+
+1. oltre `max_bytes` (`figure_svg_max_bytes`, 1,5 MB) → `SvgRejectedError`;
+2. strip del prologo: BOM, `<?xml …?>`, `<!DOCTYPE …>`, commenti iniziali
+   («Created with matplotlib», «Generated by graphviz»: determinismo fra
+   versioni e date);
+3. scansione che **rifiuta** (i renderer sono nostri: un'anomalia è un
+   fallback, non una sanificazione parziale) — globale sul documento per
+   `<script`, `<foreignObject`, `<iframe`, `<image`; limitata al contenuto
+   dei tag `<…>` per `<use` con `href` non-frammento, gestori `on[a-z]+=`,
+   `href` esterni, `javascript:`, `data:text/html`, `@import`, `url()`
+   non-frammento. I `<use xlink:href="#m…">` e i `<clipPath>` interni di
+   matplotlib passano. La limitazione al contenuto dei tag è una correzione
+   dovuta in WP2b: la prima stesura scandiva l'intero documento e una label
+   di nodo o un tick contenente `href=`, `url(` o `javascript:` faceva
+   rifiutare la figura (fallback silenzioso), con test «vedi url(x)»;
+4. tag radice: `viewBox` letto o costruito, `width`/`height` convertiti in
+   **px** (`pt × 96/72`, `mm × 96/25.4`, `in × 96`) e riscritti come
+   dimensione intrinseca dell'`<img>` (`max-width: 100%` riduce ma non
+   ingrandisce: un DOT a tre nodi resta piccolo; un SVG matplotlib a 374,4
+   pt esce a 499,2 px, da verificare contro `max_figure_height_cm` in WP4),
+   `preserveAspectRatio="xMidYMid meet"`, `max-width` rimosso dallo
+   `style`, `xmlns` garantito. Nessun namespacing degli id: ogni `<img>` è
+   un documento isolato.
+
+Inline contro `<img>`: nella dispensa Mermaid resta **inline** (invariato);
+Vega-Lite, DOT e `function` vanno in `<img class="figure-svg"
+src="data:image/svg+xml;base64,…">` (elemento sostituito: `max-height`
+rispettato, motivazione già in `course_lesson_slides_pdf_service.py:166-173`;
+font risolti per nome di famiglia da Pango). Slide e video usano `<img>`
+per tutti (A8). Limite dichiarato: il testo delle figure `<img>` non è
+selezionabile nel PDF. `svg_to_data_uri` è unica: WP4 sostituisce
+`_svg_to_data_uri` di `course_lesson_slides_pdf_service.py:146-153` con un
+re-export, non ne aggiunge una terza.
+
+Filtro dei log `_WEASYPRINT_SVG_NOISE_RE` (`core/logging.py:21-23`): la
+alternanza attuale **non** copre `font-*` (fatto del piano risultato
+falso): WP2b aggiunge `font-` e l'estensione prudenziale `clip-rule |
+vector-effect | clip-path | image-rendering`, con un test che istanzia
+`_WeasyPrintSvgNoiseFilter` direttamente (il filtro è agganciato solo in
+`configure_logging`).
+
+## 8. Validazione, fix AI e localizzazione (D6, D7)
+
+### 8.1 Dispatch in `_validate_slots`
+
+Oggi (`asset_validation_service.py:553-583`) tutti gli slot vanno nel
+batch JS e i risultati sono letti per posizione; ogni kind diverso da
+`latex` è trattato come Mermaid e il ramo `else` scrive il letterale
+`"mermaid"`. La rimappatura esplicita:
+
+```python
+js_pos: dict[int, int] = {}
+js_items: list[tuple[str, str]] = []
+for i, s in enumerate(slots):
+    if s.kind in ("latex", "mermaid"):
+        js_pos[i] = len(js_items)
+        js_items.append((s.kind, s.current))
+js_results = await _validate_js_batch(js_items)
+for i, slot in enumerate(slots):
+    if slot.kind == "latex":
+        ...  # latex2mathml + js_results[js_pos[i]] come oggi
+    elif slot.kind == "mermaid":
+        ok_s, err_s = REGISTRY["mermaid"].validate(slot.current)   # gate statico duro
+        if not ok_s:
+            checks.append(AssetCheck(slot.id, "mermaid", False, err_s)); continue
+        ...  # pass-through se js_results is None, altrimenti js_results[js_pos[i]]
+    else:                                                          # vegalite | dot | function
+        r = REGISTRY.get(slot.kind)
+        if r is None or not r.available():
+            checks.append(AssetCheck(slot.id, slot.kind, False,
+                                     f"{slot.kind}_unavailable", fixable=False)); continue
+        ok, err = await asyncio.to_thread(r.validate, slot.current, deep=True)   # mai pass-through
+        checks.append(AssetCheck(slot.id, slot.kind, ok, err))
+```
+
+`AssetCheck` (frozen, `:56-61`) acquisisce `fixable: bool = True` in coda
+(compatibile con le costruzioni posizionali); `_validate_and_fix` non
+manda al fix AI i non-fixable e alza subito `AssetFixUnresolvedError`.
+`_collect_content_slots` / `_collect_slides_slots` filtrano
+`asset.format in RENDERABLE_FORMATS` con `kind=asset.format`; `_sanitize`
+accetta fence con tag `[a-zA-Z0-9_-]*` (oggi `[a-zA-Z]*` corrompe
+```` ```vega-lite ````); i contatori di log a 860/894 diventano un
+breakdown per kind. Il validatore Mermaid resta a pass-through con CDN
+assente (come oggi); i tre formati nuovi sono offline e non degradano
+mai.
+
+### 8.2 Fix AI per kind
+
+`openai_asset_fix_service`: `AssetKind = Literal["latex", "mermaid",
+"vegalite", "dot", "function"]`; `_system_prompt` diventa un dict `{kind:
+(IT, EN)}` con tre coppie nuove — Vega-Lite: solo la spec JSON, niente
+`config`/`$schema`/`data.url`/`selection`/`tooltip`, aggiungere `clip:true`
+e `scale.domain`, conservare i dati; DOT: solo il sorgente, label nella
+lingua, niente `image=`; `function`: solo JSON conforme a
+`FunctionFigureSpec`, `**` non `^`, `2*x` non `2x`, whitelist delle
+funzioni, nessun numero calcolato. Kind ignoto → `ValueError` (errore di
+programmazione, A20), non più prompt LaTeX. `_ERROR_CAP = 1600` (era 800:
+gli errori dello schema JSON sono più lunghi), contesto della lezione
+resta `[:600]`, `openai_asset_fix_max_tokens` resta 4.000 (A16: una spec
+≤ 4.000 caratteri ≈ 1.500 token). Le varianti Mermaid dicono già «11.x,
+tipi D8, label testo semplice, niente `%%{init}%%`» (WP1).
+
+### 8.3 Localizzazione (D7)
+
+`_LocField.kind` accoglie `vegalite | dot | function` con
+`extract_translatable` / `apply_translations` del renderer: Vega-Lite
+`title`, `axis.title`, `legend.title`, `header.title` e i `text` letterali;
+DOT i valori di `label | xlabel | headlabel | taillabel`; `function`
+`expressions[i].label` e `annotations[i].label`. La tupla «structural»
+(`:828`, oggi `("mermaid", "table")`) diventa «tutti i kind non-text»: un
+asset localizzato viene rivalidato offline. Il prompt di
+`openai_asset_localize_service._system_prompt` (38-74) dichiara gli
+invarianti JSON (chiavi, `field`, `type`, espressioni `datum.*`) e DOT (id
+dei nodi, `->`/`--`, attributi diversi da `label`).
+
+### 8.4 Schemi OpenAI
+
+`build_lesson_content_json_schema(*, objective_ids=(), visual_formats=())`:
+con entrambi vuoti ritorna la costante **per identità** (test esistente);
+altrimenti deepcopy con l'`enum` ristretto; la costante base
+(`openai_lesson_content_service.py:409`, oggi `["mermaid"]`) elenca i
+quattro formati; il chiamante passa `available_formats()`. Fase 4: nuovo
+`build_lesson_slides_json_schema(*, visual_formats)` (deepcopy, rimozione
+di `asset_type` e dei tre legacy dallo schema strict) con `visual_formats
+= available_formats() − {"function"}` (A1).
+
+### 8.5 Pre-render e fallback all'export (WP4)
+
+`_prerender_mermaid_for_lesson` → `_prerender_visual_assets_for_lesson(content)
+= await render_svg_map(...)` con alias del vecchio nome;
+`render_lesson_html` e `render_slides_html` accettano `visual_svg_map=None`
+e fondono `{**(mermaid_svg_map or {}), **(visual_svg_map or {})}`
+(`mermaid_svg_map` mantenuto per i chiamanti esistenti; il video passa a
+`render_slides_html` a 216-233). `_render_visual_asset_block`
+(`course_lesson_pdf_service.py:412-462`) e `_build_slide_asset_html`
+(`course_lesson_slides_pdf_service.py:156-215`) estendono la firma con
+`number`, `labels`, `variant`, `language`: ramo `mermaid` testualmente
+identico, `elif fmt in ("vegalite", "dot", "function")` → `<img
+class="figure-svg" src="{svg_to_data_uri(svg)}" alt="…">` oppure body
+`None` → `<pre class="figure-fallback">`; tutto passa da
+`render_figure_html`. Quando il partial riceve `body_html=None` per un
+formato renderizzabile, `log.error("figure_render_fallback", …)` con
+`lesson_code`, `asset_id`, formato e motivo (A23): un fallback all'export
+è un errore visibile nei log, non un caso silenzioso.
+
+## 9. Siti `== "mermaid"` e decisione per ciascuno (D2)
+
+Undici confronti letterali con il formato esistono a HEAD; il test
+`test_asset_validation_dispatch.py` contiene un grep che **vieta nuovi
+siti** fuori da quelli dichiarati qui.
+
+| # | File:riga (HEAD `8ce8160`) | Contesto | Decisione |
+|---|---|---|---|
+| 1 | `asset_validation_service.py:385` | `_collect_content_slots`, filtro degli asset da validare | registro: `asset.format in RENDERABLE_FORMATS`, `kind=asset.format` |
+| 2 | `asset_validation_service.py:447` | `_collect_slides_slots`, stesso filtro per le slide | come 1 |
+| 3 | `asset_validation_service.py:729` | campi localizzabili degli asset di contenuto (`_LocField`) | registro: `extract_translatable`/`apply_translations` del renderer del formato |
+| 4 | `asset_validation_service.py:769` | campi localizzabili dei `new_assets` delle slide | come 3 |
+| 5 | `asset_validation_service.py:828` | tupla «structural» `("mermaid", "table")` dopo la localizzazione | tutti i kind non-text: rivalidazione offline dopo la traduzione |
+| 6 | `asset_validation_service.py:860` | contatore `mermaid=` nel log della validazione dei contenuti | breakdown per kind |
+| 7 | `asset_validation_service.py:894` | contatore `mermaid=` nel log della validazione delle slide | breakdown per kind |
+| 8 | `course_lesson_pdf_service.py:424` | ramo di render `_render_visual_asset_block` | **resta letterale**: il body `<div class="mermaid-svg">` deve restare byte-identico (A11-L3); eccezione dichiarata a D2 |
+| 9 | `course_lesson_pdf_service.py:641` | `_prerender_mermaid_for_lesson`, filtro `!= "mermaid"` | sostituito da `render_svg_map` (`_prerender_visual_assets_for_lesson`) |
+| 10 | `course_lesson_slides_pdf_service.py:181` | ramo di render `_build_slide_asset_html` | **resta letterale**, come 8 |
+| 11 | `openai_asset_fix_service.py:143` | `_system_prompt`, `if kind == "mermaid"` | dict per kind (sezione 8.2) |
+
+Le proiezioni duplicate «15 tipi senza alias» di
+`openai_asset_fix_service.py:45-47` e `openai_image_to_mermaid_service.py:40-42`
+sono centralizzate in `figure_theme.MERMAID_D8_TYPES` (WP2b).
+
+## 10. Configurazione
+
+Blocco «Figure accademiche (Fase 3/4)» di `backend/app/core/config.py:280-315`,
+replicato in `.env.example` e `docker-compose.prod.yml` (WP2a). Vedi anche
+[04 — Configuration](../04-configuration.md).
+
+| Setting | ENV | Default | Significato |
+|---|---|---|---|
+| `figure_vegalite_enabled` | `FIGURE_VEGALITE_ENABLED` | `True` | kill-switch: `False` toglie `vegalite` dallo schema strict e dal validatore; i contenuti già in DB ricadono sul fallback `<pre>` a render |
+| `figure_dot_enabled` | `FIGURE_DOT_ENABLED` | `True` | idem per `dot` |
+| `figure_function_enabled` | `FIGURE_FUNCTION_ENABLED` | `True` | idem per `function` (Mermaid non è disattivabile) |
+| `mermaid_cdn_version` | `MERMAID_CDN_VERSION` | `"11.17.2"` | unico pin per validatore Playwright e pre-render PDF/video; il frontend segue con il lock npm |
+| `figure_render_timeout_seconds` | `FIGURE_RENDER_TIMEOUT_SECONDS` | `20` | tetto per il batch di figure di una lezione (`asyncio.wait_for`): oltre, le figure mancanti degradano a fallback e l'export prosegue |
+| `figure_function_timeout_seconds` | `FIGURE_FUNCTION_TIMEOUT_SECONDS` | `10` | tetto del calcolo simbolico nel processo figlio, ucciso allo scadere; resta il risultato numerico con «Valori approssimati.» |
+| `figure_render_max_workers` | `FIGURE_RENDER_MAX_WORKERS` | `2` | render CPU-bound concorrenti (worker + anteprime `render-function`); 2 per la VM a 2 core |
+| `figure_svg_cache_size` | `FIGURE_SVG_CACHE_SIZE` | `256` | cache LRU in memoria degli SVG (chiave: formato, hash, `THEME_VERSION`, lingua) |
+| `figure_svg_max_bytes` | `FIGURE_SVG_MAX_BYTES` | `1_500_000` | oltre, l'SVG prodotto è rifiutato (fallback) |
+| `figure_dot_max_chars` | `FIGURE_DOT_MAX_CHARS` | `12_000` | limite del sorgente DOT accettato dal validatore |
+| `graphviz_dot_path` | `GRAPHVIZ_DOT_PATH` | `None` | percorso del binario `dot`; `None` = ricerca nel `PATH` |
+
+Un formato è offerto al modello solo se abilitato **e** la dipendenza è
+presente (`available_formats()`); le guardie di lunghezza dei prompt sono
+deterministiche e indipendenti dall'ambiente (A19). Dipendenze: pip
+`vl-convert-python>=1.9`, `altair>=6,<7` (solo per il file dello schema),
+`jsonschema>=4.18`, `sympy>=1.13`, `matplotlib>=3.9`; apt `graphviz`;
+`MPLCONFIGDIR=/tmp/cache/matplotlib` e `MPLBACKEND=Agg` nel Dockerfile;
+override mypy per `sympy.*`, `mpmath.*`, `jsonschema.*` (senza `py.typed`).
+
+## 11. Assunzioni dichiarate (A1-A24)
+
+Decisioni prese in Fase B (A1-A16) e nella ripresa del 7 settembre
+(A17-A24), approvate dal docente; in forma discorsiva.
+
+- **A1 — `function` in Fase 4.** L'alias Pydantic accetta `function`
+  ovunque (il docente può aggiungerlo a mano anche nelle slide, il
+  renderer lo serve), ma lo schema strict di Fase 4 offre al modello solo
+  `mermaid | vegalite | dot`: P4 non ha budget per lo schema di `function`
+  e D9 parla del prompt di Fase 3. `asset_type` e i tre legacy escono dallo
+  schema strict di Fase 4.
+- **A2 — Slide senza numero.** «Senza numerazione progressiva del testo ma
+  con la stessa etichetta» è letto alla lettera: «Figura.» senza numero
+  nelle slide e nei frame video, uniforme fra asset di Fase 3 e
+  `new_assets`, nessuna seconda numerazione che contraddica la dispensa.
+- **A3 — Niente pacchetto pip `graphviz`.** `dot` via `subprocess.run` senza
+  shell, con timeout, `cwd` vuoto ed env minimale; dipendenza apt.
+- **A4 — Localizzazione backend it/en, fallback it**, coerente con
+  `_labels_for` e `fallbackLng`. Niente dizionario a 24 lingue, niente
+  lookup DB. Le frasi della didascalia calcolata seguono la stessa regola.
+- **A5 — Guardie dei prompt.** Le regole nuove in P3 pesano circa 2.400
+  caratteri lordi contro i 948 del blocco sostituito: `MAX_SYSTEM_P3` sale
+  a 22.500 dopo la misura reale; P4 resta sotto 14.500 (regola 3 riscritta
+  rinviando alle regole di Fase 3); P5 entro il margine.
+- **A6 — Baseline di qualità.** «Nessun WP si chiude con test rossi o
+  warning nuovi» vale sui file toccati e sul non aumento dei conteggi; la
+  baseline rossa preesistente (ruff, mypy, eslint) non viene sanata.
+- **A7 — Ambiente locale.** Le installazioni previste (sympy, vl-convert,
+  jsonschema, altair, graphviz, Postgres, `npm install`) sono già state
+  fatte: superata.
+- **A8 — Vettoriale ovunque.** Vega-Lite, DOT e `function` producono SVG
+  anche per slide e video (Chromium rasterizza a 1980×1400: nitido; un PNG
+  a 200 dpi sarebbe più morbido e 5-10 volte più pesante). Il «200 dpi» di
+  D9 resta come `dpi` della `Figure` (geometria di tick e corpi).
+- **A9 — Livello 2 di `function`** solo se il livello 1 chiude verde entro
+  WP7; altrimenti lavoro successivo, con lo schema strict che continua a
+  rifiutarlo.
+- **A10 — Mermaid 11.17.2** come unico pin (`settings.mermaid_cdn_version`)
+  e lock npm alla stessa versione.
+- **A11 — «Byte-a-byte» sugli SVG Mermaid** è impossibile fra 10.9.4 e 11.
+  Regressione zero dimostrata a cinque livelli: L1 input al pre-render
+  identico (fixture di `content_raw`), L2 `_strip_mermaid_max_width`
+  byte-identico su fixture 10.9.4, L3 blocco `<div class="mermaid-svg">`
+  byte-identico a parità di SVG (cambia solo il wrapper D4), L4
+  determinismo v11, L5 `revalidate_mermaid_assets.py` sul DB.
+- **A12 — Figure non citate rese in coda.** «Vanno in coda» è letto come
+  collocazione: gli asset senza `[FIG:id]` compaiono dopo la sintesi, prima
+  dei punti chiave, e ricevono gli ultimi numeri, nel PDF e nella vista.
+  Oggi sono invisibili: cambiamento dichiarato per i contenuti con asset
+  orfani (lo script L5 ne conta le lezioni).
+- **A13 — Isolamento del CPU-bound.** sympy e vl-convert (Deno in-process,
+  non interrompibile) girano in un processo figlio `spawn` ucciso allo
+  scadere; matplotlib e numpy in thread, bounded dai limiti della spec.
+  Rispetta la lettera di D9 («in `asyncio.to_thread`»: il thread attende il
+  figlio). Un processo caldo dedicato è un'ottimizzazione futura.
+- **A14 — Testo matematico come geometria** (`TextPath`), sezione 4.4. Il
+  ripiego (symlink dei TTF di matplotlib + `fc-cache` nel Dockerfile) non è
+  disponibile così com'è: il Dockerfile non ha fontconfig e il browser
+  resterebbe scoperto.
+- **A15 — Mermaid al salvataggio manuale**: solo gate statico D8, nessun
+  Chromium nella richiesta HTTP. Il PATCH valida solo gli asset con
+  `(format, content)` cambiati: un edit del testo non blocca lezioni con
+  diagrammi legacy già in DB.
+- **A16 — `openai_asset_fix_max_tokens` resta 4.000**; il cap sull'errore
+  passa da 800 a 1.600.
+- **A17 — Allowlist ruff dichiarata.** `allowed-confusables = ["−", "×",
+  "–"]` in `pyproject.toml` resta: le didascalie usano i segni tipografici
+  per scelta editoriale. La baseline A6 vale a parità di configurazione
+  (394 violazioni con allowlist, circa 468 senza, a HEAD): il «calo»
+  raccontato nei commit di WP2a è un rilassamento di configurazione, non un
+  miglioramento, e la consegna lo dichiara.
+- **A18 — Eccezioni con suffisso `Error`**: `SvgRejectedError`,
+  `FigureTimeoutError` (regola N818); `FigureComputeError` invariato.
+- **A19 — Testo dei prompt statico, schema dinamico.** P3/P4 descrivono
+  sempre i quattro formati; solo l'`enum` dello schema strict è ristretto
+  da `available_formats()`. Le guardie di lunghezza restano deterministiche.
+- **A20 — Kind ignoto nel fix AI → `ValueError`**, non prompt LaTeX:
+  `AssetKind` è un `Literal` chiuso.
+- **A21 — `courseRef` via React context** (`CourseRefContext` fornito dai
+  due container) invece di cinque livelli di prop-drilling per lato;
+  `LessonContentView` resta memoizzato sul solo `content`.
+- **A22 — `MermaidEditor.TEMPLATES` non riusa `MERMAID_D8_SAMPLES`**: i 7
+  template restano (8 tipi senza chiave i18n e 6 id da rinominare non
+  valgono il costo).
+- **A23 — Figura non renderizzabile all'export = errore visibile** nei log
+  (`figure_render_fallback`), sezione 8.5 e rischi residui.
+- **A24 — Esito dello script di rivalidazione.** Nessun DB locale ha asset
+  Mermaid reali (`a4u` 0 tabelle, `a4u_e2e` 2 lezioni senza asset,
+  `a4u_test` vuoto). In consegna lo script gira su un dump fornito dal
+  docente (ripristinato in `a4u_e2e`), altrimenti si dichiara la run
+  sintetica. Richiesta al docente: un dump o un accesso in sola lettura.
+
+## 12. Decisioni prese e alternative scartate
+
+- **`<img data:svg>` contro SVG inline** per Vega-Lite, DOT e `function`
+  nella dispensa. Scelto `<img>`: elemento sostituito, `max-height`
+  rispettato da WeasyPrint, nessuna collisione di id fra figure, font
+  risolti per famiglia da Pango; Mermaid resta inline per non toccare la
+  catena byte-identica. Scartato l'inline per i formati nuovi: avrebbe
+  richiesto il namespacing degli id (`clipPath`, marker) e la gestione del
+  `width:100% !important` oggi applicato agli SVG Mermaid. Costo accettato:
+  testo non selezionabile nelle figure `<img>`.
+- **Slide senza numero** (A2). Alternativa scartata: numerazione locale al
+  deck, che avrebbe prodotto due numerazioni diverse per lo stesso asset
+  (dispensa e slide) e una numerazione mista fra asset di Fase 3 e
+  `new_assets`.
+- **Figure orfane in coda** (A12). Alternativa scartata: lasciarle
+  invisibili come oggi; contraddice D4 e spreca asset già generati.
+- **Niente pip `graphviz`** (A3): il wrapper non espone `timeout`; con il
+  binario diretto un solo `subprocess.run` copre validazione e render.
+- **sympy e vl-convert in sottoprocesso `spawn`** (A13). Scartati:
+  `ProcessPoolExecutor` caldo cancellabile (`terminate_workers` non esiste
+  in Python 3.12 e `Pool.terminate()` abbatte tutti i job), thread con
+  `wait_for` (lascerebbe un thread orfano che gira per sempre sulla VM a 2
+  core), `fork` (copia lo stato del worker uvicorn: loop, connessioni,
+  thread).
+- **`TextPath` per il mathtext** (A14). Scartato il ripiego dei font
+  installati: il Dockerfile non ha fontconfig e il browser resterebbe
+  comunque senza STIX/DejaVu Sans Display.
+- **it/en con fallback it** (A4). Scartati: dizionario statico a 24 lingue
+  della sola parola «Figura» (24 stringhe da controllare a mano; il resto
+  del PDF resterebbe in italiano) e lookup nel DB delle traduzioni (seed
+  senza chiavi `courses.*`: sempre vuoto in produzione).
+- **Euristica del criterio 10** (sezione 3.2.2) con il falso negativo
+  accettato su rette e polinomi con `*`. Scartato il riconoscimento
+  «fuzzy» su nomi di campo o titoli: falsi positivi su grafici legittimi.
+  Scartato il divieto totale di `data.sequence`: serve per assi e griglie
+  illustrative.
+- **Testo dei prompt statico, schema dinamico** (A19). Scartata la
+  generazione condizionale del testo in base a `available_formats()`: le
+  guardie di lunghezza dei test diventerebbero dipendenti dall'ambiente.
+- **`courseRef` via context** (A21) invece del prop-drilling; scartato
+  anche il passaggio di `orgId/courseId` dentro `content` (violerebbe il
+  comparatore `memo` di `LessonContentView`).
+- **`TEMPLATES` Mermaid non riusano i campioni D8** (A22): i campioni sono
+  minimi per il test di `foreignObject`, i template dell'editor sono
+  didattici; il riuso avrebbe costretto 8 chiavi i18n e 6 rinomine.
+- **Gate statico duro per Mermaid al PATCH** (A15) invece del parse JS:
+  un Chromium per richiesta HTTP non è accettabile; il parse vive già
+  nell'editor con la stessa major.
+- **`Draft7Validator` dal file di altair senza `import altair`**: importare
+  altair costerebbe tempo e memoria per un solo file JSON.
+- **Cache negativa a 60 s** nel registro: senza, il fix loop ripeterebbe
+  lo stesso render fallito a ogni tentativo.
+- **`TableBlock`/`EquationBlock` restano a card**: tabelle ed equazioni non
+  sono figure e hanno già uno stile coerente nel PDF (`figure.table`,
+  `figure.equation`).
+- **Vega-Lite e viz-js montano l'SVG nel DOM tramite ref** (nessun
+  `dangerouslySetInnerHTML`, nessuna nuova direttiva `react/no-danger`);
+  `FunctionFigure` usa `<img data:svg>`.
+
+## 13. Rischi residui
+
+- Mermaid resta su CDN a runtime (validatore e pre-render): offline degrada
+  come oggi (pass-through nel validatore, fallback nel PDF); i tre formati
+  nuovi sono offline e non degradano. Bundle locale di Mermaid: lavoro
+  futuro.
+- Diagrammi v10 già in DB che non parsano in v11, o di tipo escluso,
+  finiscono nell'elenco «da correggere» dello script L5; il gate statico
+  li blocca solo alla rigenerazione o alla modifica di quel singolo asset,
+  mai all'edit del testo (A15).
+- Cambiamenti visibili sui contenuti esistenti: card rimossa e «Figura N.»
+  (D4), figure orfane rese in coda (A12), caption già prefissate ripulite
+  a render, cap di 80 mm anche per le immagini caricate nelle slide (oggi
+  tagliate da `overflow: hidden` oltre 80 mm).
+- L'endpoint `render-function` e i worker condividono il semaforo a 2 su
+  una VM a 2 core: un picco di anteprime rallenta gli export; il rate limit
+  di 30/min per IP può essere stretto dietro NAT (regolabile).
+- Le 22 lingue non it/en ricevono etichette e frasi in italiano nel PDF
+  (come il resto del documento) e nel frontend finché l'amministratore non
+  lancia l'auto-translate.
+- La CI non ha Chromium: il test D8 e il pre-render sono verifiche locali o
+  in Docker prima del merge; in CI saltano con motivo esplicito.
+- **Figura non renderizzabile all'export** (A23): un SVG rifiutato, un
+  timeout del batch o `dot` assente producono il fallback `<pre
+  class="figure-fallback">` nel PDF e nei frame video, con
+  `log.error("figure_render_fallback", …)`. Il documento viene comunque
+  prodotto: l'errore è visibile nei log, non al docente, finché non apre il
+  PDF. Mitigazione: la validazione profonda nel worker rende l'SVG e lo
+  mette in cache prima dell'export; la cache negativa evita tentativi
+  ripetuti; lo script di rivalidazione elenca gli asset problematici.
+- Metriche dei font di vl-convert nel container: se le larghezze delle
+  label divergono da Noto Sans, `register_font_directory("/usr/share/fonts")`
+  (verifica residua, voce 24 del «Delta»).
+- `spawn` sotto uvicorn su Linux: prova manuale in Docker documentata qui
+  in WP2b (voce 6 del «Delta»).
+- Localizzazione degli asset nella duplicazione in altra lingua (doc 15):
+  i campi testuali di Vega-Lite/DOT/`function` seguono `extract_translatable`,
+  ma il TODO tracciato in `15-course-duplication.md` resta.
+- Il testo delle figure `<img>` non è selezionabile nel PDF (Q3).
+- `[FIG:]` dentro esempi e tabelle (`ExampleBlock` usa `ReactMarkdown`
+  direttamente) non è risolvibile né numerabile: limite dichiarato.
+
+## 14. Verifiche e consegna
+
+### 14.1 Test previsti per WP
+
+| WP | Modulo di test | Cosa verifica |
+|---|---|---|
+| WP2a | `test_figure_theme.py` (committato) | chiavi i18n qualificate, fallback, `format_number`, alias `VisualAssetFormat`, parità con `figureTheme.ts`, 34 casi LaTeX → Unicode |
+| WP1 | `test_mermaid_prerender.py`, `test_mermaid_theme_palette.py`, `test_mermaid_no_foreignobject.py`, `test_revalidate_mermaid_assets.py` (committati) | strip `max-width` byte-identico (L2), palette nei riempimenti, 0 `foreignObject` sui 15 campioni D8 (Playwright, skip senza Chromium o CDN), script L5 |
+| WP2b | `test_figure_render_service.py` | Vega-Lite valida / `data.url` anche in layer annidato / oltre 4.000 char / `mark image` rifiutate; SVG senza `foreignObject`; **iniezione del tema** (`font-family` ⊇ «Noto Sans» e almeno un esadecimale della `PALETTE` negli SVG Vega-Lite e DOT); DOT valido / invalido (`image=` rifiutato); `dot` mancante (`monkeypatch` di `shutil.which` → `None`) → `(False, "dot_unavailable")`, `fixable=False`, mai pass-through; `skipif` solo per i casi che eseguono il binario; `run_isolated` con `tests/helpers/slow_target.py` e `timeout=1` → `FigureTimeoutError` |
+| WP2b | `test_asset_validation_dispatch.py` | rimappatura `js_pos`, kind non-JS mai pass-through, `fixable`, grep che vieta nuovi `== "mermaid"` |
+| WP2b | `test_svg_normalize.py`, `test_vegalite_rules.py` | prologo, rifiuti, px intrinseci, label «vedi url(x)» accettata; criterio 10 ereditato in `layer`/`vconcat`/`spec` |
+| WP2b | test del filtro `_WeasyPrintSvgNoiseFilter` | record filtrato / non filtrato |
+| WP7 | `test_function_figure_service.py` | `parse_expr` con `global_dict` ristretto (`importorskip("sympy")`), nessun `<image>`, font ⊆ `{Noto Sans, DejaVu Sans}`, timeout simbolico → `approximate`, HTTP 200/422/403 |
+| WP4 | `test_figure_numbering.py`, `test_lesson_pdf_figures.py`, `test_figure_i18n_mirrors_frontend` | fixture condivisa BE/FE; figcaption in ordine di citazione, orfano in coda, `en`/`de`, strip del prefisso, escape della caption, fallback `<pre>`, golden byte-identico del blocco Mermaid/image/legacy nel wrapper; «Figura.» nelle slide; WeasyPrint 69 rende le label degli SVG v11 e degli `<img data:svg>` (`importorskip("weasyprint")`) |
+| WP3 | `test_prompt_register.py`, `test_prompt_composition_bugs.py` | misure reali, ordine dei marcatori, `_format_current_lesson_phase3` con `[format]` |
+
+Comandi: `cd backend && DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib
+python3 -m pytest -q` con Postgres attivo (`docker compose up -d
+postgres`); i test che richiedono binari o rete saltano con motivo
+esplicito, mai falliscono. Vedi [backend/11 — Tests](../backend/11-tests.md).
+
+### 14.2 Checklist di smoke visuale del frontend
+
+(da completare in WP6 con gli esiti; procedura fissata in WP5)
+
+1. backend avviato con `JWT_SECRET` (≥ 32 caratteri) e `DATABASE_URL` su
+   `a4u_e2e`; `npm run dev` nel frontend;
+2. una lezione con un asset per formato (`mermaid`, `vegalite`, `dot`,
+   `function`, `image`) creata via PATCH;
+3. screenshot Playwright Python (`page.screenshot(full_page=True)`) di
+   `LessonContentView` con i quattro formati e del dialog di modifica,
+   salvati in `scratchpad/consegna/`;
+4. verifica a occhio: «Figura N.» in ordine di citazione, orfana in coda,
+   nessuna card, palette e font del tema, box di errore controllato con
+   `courses.figures.renderError` per un asset invalido;
+5. esito: (da completare in WP6).
+
+### 14.3 Misure e prove residue
+
+- Dimensione dell'immagine Docker prima/dopo (`docker build -f
+  backend/Dockerfile backend` su `main` e su HEAD, `docker image inspect
+  --format '{{.Size}}'`); stima a priori: wheel ≈ 57 MB compressi più apt
+  `graphviz`. Esito: (da completare in WP6).
+- Dimensione del bundle frontend prima (build pulito su HEAD prima di WP5)
+  e dopo, con i kB dei chunk `vega`/`vega-lite`/`vega-embed`/`@viz-js/viz`
+  (import dinamici). Esito: (da completare in WP6).
+- Esito di `backend/scripts/revalidate_mermaid_assets.py` sul dump del
+  docente o run sintetica dichiarata (A24). Esito: (da completare in WP6).
+- Prova manuale di `spawn` sotto uvicorn su Linux (Docker). Esito: (da
+  completare in WP2b/WP6).
+- Metriche dei font di vl-convert nel container. Esito: (da completare in
+  WP6).
+- Screenshot: frame video di WP4 (`scratchpad/wp4_frame.png`),
+  `LessonContentView` con i quattro formati (WP5). (da completare in WP6)
+- Esiti della revisione avversariale di Fase D (correttezza del dispatch,
+  regressione ai cinque livelli di A11, sicurezza di spec e `dot`, i18n,
+  tipografia). (da completare in WP6)
+- Verifica meccanica di `docs/PROMPTS.md` contro i `_system_prompt(...)`
+  reali (`backend/scripts/check_prompts_md.py`). (da completare in WP6)

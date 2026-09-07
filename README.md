@@ -277,6 +277,7 @@ Tutta la documentazione vive in [`docs/`](docs/) ed è organizzata per area. Ind
 | [`14-assessment-lesson.md`](docs/courses/14-assessment-lesson.md) | Verifica delle competenze |
 | [`15-course-duplication.md`](docs/courses/15-course-duplication.md) | Duplicazione corso in altra lingua |
 | [`16-paper-search.md`](docs/courses/16-paper-search.md) | Ricerca paper scientifici (OpenAlex + enrichment) |
+| [`17-visual-figures.md`](docs/courses/17-visual-figures.md) | Figure accademiche: Mermaid 11, Vega-Lite, DOT e figure calcolate (registro renderer, tema unico, «Figura N.») |
 
 ### Backend & Frontend deep-dive
 
