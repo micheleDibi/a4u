@@ -90,9 +90,10 @@ PRINCIPI
 
 2. UNA SLIDE DEDICATA PER OGNI ASSET VISIVO E PER OGNI TABELLA
    (regola tassativa, vale identica per slide e video):
-   - Ogni asset visivo (`visual_assets`: diagrammi Mermaid e
-     immagini) e ogni tabella (`tables`) va su una SLIDE TUTTA SUA,
-     separata. NON va MAI inserito in una slide di contenuto.
+   - Ogni asset visivo (`visual_assets`: figure Mermaid, Vega-Lite,
+     DOT o `function` e immagini) e ogni tabella (`tables`) va su una
+     SLIDE TUTTA SUA, separata. NON va MAI inserito in una slide di
+     contenuto.
    - Una slide dedicata referenzia ESATTAMENTE UN asset visivo o
      UNA tabella: `references_assets` contiene quell'unico ID. È
      VIETATO referenziare due o più asset visivi/tabelle nella
@@ -113,11 +114,16 @@ PRINCIPI
 3. NUOVI ASSET solo se necessario: puoi proporre nuovi asset in
    `new_assets` solo se il contenuto del testo richiede una
    visualizzazione che NON è già stata prodotta in Fase 3 (es. uno
-   schema di sintesi, un'icona di sezione, un grafico di confronto
-   non presente). Usa lo stesso formato di Fase 3 (mermaid/latex/
-   markdown/image_prompt). Per evitare collisioni di ID, prefissa con
-   `*_new_*` (es. `fig_new_1`, `tab_new_2`). Anche i `new_assets`
-   seguono il punto 2: una slide dedicata ciascuno.
+   schema di sintesi o un grafico di confronto non presente). Valgono
+   gli STESSI formati, regole e limiti di Fase 3: `mermaid` (versione
+   11, solo i tipi ammessi, label in testo semplice, nessuna
+   direttiva), `vegalite` (spec JSON entro 4000 caratteri, dati
+   inline, `clip` e `scale.domain`, niente `config` né interattività)
+   e `dot` (sorgente Graphviz senza attributi di stile né file
+   esterni); niente prompt per immagini né descrizioni testuali. Per
+   evitare collisioni di ID, prefissa con `*_new_*` (es. `fig_new_1`,
+   `tab_new_2`). Anche i `new_assets` seguono il punto 2: una slide
+   dedicata ciascuno.
 
 4. NUMERO DI SLIDE: stima ~2-3 minuti per slide di contenuto, meno
    per slide di apertura/transizione/agenda. Anche le lezioni brevi
@@ -216,12 +222,15 @@ TUTTO il testo leggibile dall'utente DEVE essere scritto in {language_code}: `ti
 `body` e `bullets` di OGNI slide, e OGNI campo testuale degli asset, inclusi i NUOVI
 asset di Fase 4. In particolare:
 - `caption` e `alt_text` di `new_assets`, e le ETICHETTE/testo dei nodi DENTRO il loro
-  codice Mermaid (le label, NON la sintassi);
+  codice Mermaid (le label, NON la sintassi), `title`, `axis.title` e `legend.title`
+  delle spec Vega-Lite, le `label` dei sorgenti DOT;
 - `caption`, intestazioni e celle (`markdown`) di `new_tables`;
 - `label`, `statement`, `explanation` e il `text` di ogni passo di `proof` in `new_equations`;
 - `title` e `content` di `new_examples`.
 Restano invariati SOLO: la notazione matematica LaTeX (campi `latex`), la struttura
-sintattica di Mermaid (tipo di diagramma, frecce, ID dei nodi), gli ID e gli `slide_id`.
+sintattica di Mermaid (tipo di diagramma, frecce, ID dei nodi), di Vega-Lite (chiavi JSON,
+`field`, `type`) e di DOT (ID dei nodi, `->`/`--`, attributi diversi da `label`), gli ID e
+gli `slide_id`.
 NON lasciare in nessun campo testo in un'altra lingua (es. italiano): traduci tutto in
 {language_code}.
 Output: SOLO JSON valido conforme allo schema."""

@@ -24,10 +24,17 @@ from app.services import prompt_register as reg
 # Guardie di lunghezza (caratteri) derivate dal testo finale + ~10%.
 MAX_BLOCK_CONTENT = 7_800
 MAX_BLOCK_REDUCED = 6_400
-# P3 misura 19.850 caratteri dopo la regola sui codici obiettivo
-# (ALLINEAMENTO + LINGUA): la guardia sale per non trasformare ogni
-# ritocco del prompt in un fallimento di CI.
-MAX_SYSTEM_P3 = 20_500
+# Misure dopo il blocco «FORMATI DELLE FIGURE» (WP3: tabella D8, regole
+# D5, stile D3, esempi Vega-Lite/DOT, schema compatto ed esempio di
+# `function`): P3 con grounding 24.155, senza grounding 22.736; P4 13.747
+# con tutti gli argomenti e 13.817 con i default; P5 11.074 e 11.169 con
+# i default. Il testo dei prompt è statico e indipendente dall'ambiente
+# (A19: i quattro formati sono sempre descritti, solo l'`enum` dello
+# schema strict segue `available_formats()`), quindi le guardie sono
+# deterministiche. Il tetto di 22.500 previsto dal piano (A5) assumeva
+# ≈ 2.400 caratteri lordi per il blocco: il blocco reale ne pesa ≈ 4.200
+# e la guardia P3 è fissata alla misura reale + ~5%, dichiarato nel WP3.
+MAX_SYSTEM_P3 = 25_400
 MAX_SYSTEM_P4 = 14_500
 MAX_SYSTEM_P5 = 12_500
 
@@ -173,6 +180,14 @@ def test_p3_interpolates_labels_and_no_residual_placeholders():
     assert _p3() == _p3()
 
 
+def test_p3_length_guard_holds_with_and_without_grounding():
+    """Le due varianti del kill-switch del grounding restano sotto la
+    guardia (quella con grounding è la più lunga)."""
+    with_grounding = content._system_prompt("it", grounding_enabled=True)
+    without_grounding = content._system_prompt("it", grounding_enabled=False)
+    assert len(without_grounding) < len(with_grounding) <= MAX_SYSTEM_P3
+
+
 def test_p3_regeneration_suffix_carries_register_note():
     suffix = content.REGENERATION_SUFFIX
     assert reg.REGENERATION_REGISTER_NOTE in suffix
@@ -213,6 +228,9 @@ def test_p4_defaults_are_valid_strings():
     prompt = slides._system_prompt("it")
     assert 'ruolo\n"indicato nel messaggio"' in prompt
     assert "None" not in prompt
+    # La variante con i default è la più lunga (i rinvii al messaggio
+    # pesano più dei valori): è lei a dover stare sotto la guardia.
+    assert len(prompt) <= MAX_SYSTEM_P4
 
 
 # ---------------------------------------------------------------------------
@@ -241,6 +259,13 @@ def test_p5_block_once_before_tts_rules_and_oral_register():
         assert kept in prompt, kept
     assert len(prompt) <= MAX_SYSTEM_P5
     assert reg.REGENERATION_REGISTER_NOTE in speech.REGENERATION_SUFFIX
+
+
+def test_p5_defaults_stay_under_guard():
+    """Con i default (durata e ruolo rimandati al messaggio) il prompt è
+    più lungo della variante con gli argomenti: guardia anche qui."""
+    prompt = speech._system_prompt("it")
+    assert len(prompt) <= MAX_SYSTEM_P5
 
 
 # ---------------------------------------------------------------------------

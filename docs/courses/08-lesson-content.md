@@ -204,16 +204,33 @@ video / preview FE):
   Validate con **`latex2mathml`** (motore dell'export PDF/video, sync e
   offline — gate duro) **E** con **KaTeX** (motore del preview FE): una
   formula è valida solo se passa entrambi.
-- **Diagrammi Mermaid** — `visual_assets[].format=="mermaid"`. Validati
-  con **Mermaid 11.x**: pin unico `settings.mermaid_cdn_version` (default
-  `11.17.2`), lo stesso del pre-render PDF/video (`mermaid_prerender`) e
-  del lock npm del frontend, con la stessa inizializzazione
-  `figure_theme.mermaid_initialize_js` (`htmlLabels: false` al livello
-  top, tema D3): un diagramma "verde" nell'editor lo è anche nell'output.
-  I tipi ammessi sono i 15 di D8 (`figure_theme.MERMAID_ALLOWED_TYPES`);
-  `journey`, `gitGraph`, `kanban`, `packet-beta` e `architecture-beta`
-  sono esclusi (`journey` emette `<foreignObject>`, non renderizzabile da
-  WeasyPrint).
+- **Figure** — `visual_assets[].format` in `figure_render_service.
+  RENDERABLE_FORMATS` (`mermaid`, `vegalite`, `dot`, `function`), ciascuna
+  validata dal renderer del registro (vedi
+  [17 — Figure accademiche](17-visual-figures.md)):
+  - `mermaid`: gate statico D8 + parse con **Mermaid 11.x**, pin unico
+    `settings.mermaid_cdn_version` (default `11.17.2`), lo stesso del
+    pre-render PDF/video (`mermaid_prerender`) e del lock npm del frontend,
+    con la stessa inizializzazione `figure_theme.mermaid_initialize_js`
+    (`htmlLabels: false` al livello top, tema D3): un diagramma "verde"
+    nell'editor lo è anche nell'output. I tipi ammessi sono i 15 di D8
+    (`figure_theme.MERMAID_ALLOWED_TYPES`); `journey`, `gitGraph`,
+    `kanban`, `packet-beta` e `architecture-beta` sono esclusi (`journey`
+    emette `<foreignObject>`, non renderizzabile da WeasyPrint);
+  - `vegalite`: schema JSON di Vega-Lite v6, regole D5 (dati inline,
+    niente `data.url`/interattività/`config`, `clip` e `scale.domain`) ed
+    euristica del criterio 10 (funzioni matematiche → `function`), poi
+    render offline con vl-convert;
+  - `dot`: gate statico (header, attributi che leggono file, numero di
+    archi) e render con il binario `dot`;
+  - `function`: `FunctionFigureSpec` (struttura Pydantic + controlli
+    semantici) e render con sympy/matplotlib.
+
+  Il prompt di Fase 3 (PROMPT 3 in `docs/PROMPTS.md`, blocco «FORMATI
+  DELLE FIGURE») descrive sempre i quattro formati; lo schema strict
+  offre al modello solo quelli abilitati e disponibili sul server
+  (`available_formats()`). Un formato non disponibile produce un check
+  non riparabile: nessun fix AI, rigenerazione immediata.
 
 La validazione JS (KaTeX + Mermaid) gira in una pagina Playwright
 headless con un loop dedicato. Flusso (`_validate_and_fix`):
@@ -226,11 +243,12 @@ headless con un loop dedicato. Flusso (`_validate_and_fix`):
 3. **fix AI iterativo** sui soli asset ancora invalidi, fino a
    `settings.asset_fix_max_attempts` (default `3`):
    `openai_asset_fix_service.fix_asset` (`openai_asset_fix_model`,
-   default `gpt-4o-mini`, 4 varianti di system prompt LaTeX/Mermaid ×
-   IT/EN) chiede al modello di correggere **solo la sintassi**
-   preservando il significato (LaTeX
-   senza delimitatori / Mermaid grezzo per la 11.x: solo i tipi ammessi
-   di D8, label in testo semplice, niente `%%{init}%%`). L'output
+   default `gpt-4o-mini`, 10 varianti di system prompt LaTeX/Mermaid/
+   Vega-Lite/DOT/function × IT/EN) chiede al modello di correggere
+   **solo la sintassi** preservando il significato (LaTeX senza
+   delimitatori / Mermaid grezzo per la 11.x: solo i tipi ammessi di D8,
+   label in testo semplice, niente `%%{init}%%` / spec JSON o sorgente
+   DOT conformi alle regole del renderer). L'output
    viene sanitizzato (niente code-fence/delimitatori reintrodotti) e
    scartato se reintroduce un placeholder asset (`[EQ:..]` ecc.).
 

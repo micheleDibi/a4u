@@ -4,8 +4,13 @@ Una chiamata API per lezione: prende in input la struttura formativa
 approvata (Fase 2 — `learning_objectives`, `mandatory_topics`,
 `prerequisites`, `section_outline`), il glossario corso e i documenti
 di riferimento; produce il testo Markdown della lezione + asset visivi
-(Mermaid, formule LaTeX, tabelle, esempi), esercizi auto-studio,
-references e coverage_check.
+(figure Mermaid, Vega-Lite, DOT e `function`, formule LaTeX, tabelle,
+esempi), references e coverage_check.
+
+Il testo del system prompt è statico e descrive sempre le quattro
+famiglie di figure (A19); solo l'`enum` di `visual_assets[].format`
+nello schema strict è ristretto a `figure_render_service.available_formats()`
+(kill-switch e dipendenze del server).
 
 Errori → `OpenAILessonContentError` (sottoclasse di `OpenAIError`).
 """
@@ -26,7 +31,9 @@ from app.schemas.course_lesson_content import (
     LessonAssessmentOutput,
     LessonContentOutput,
 )
+from app.services.figure_compute.function_parse import FUNCTIONS
 from app.services.figure_render_service import available_formats
+from app.services.figure_theme import MERMAID_D8_TYPES, MERMAID_EXCLUDED_TYPES
 from app.services.openai_client import (
     OpenAIError,
     OpenAINotConfiguredError,
@@ -100,6 +107,56 @@ REFERENCES (schema esistente: `citation` + `source`)
   né menzionato come fonte: usane i contenuti senza riferirne l'origine.
 - NON inventare bibliografia.
 """
+
+# Blocco «FORMATI DELLE FIGURE» (D5, D8, D9): gli elenchi dei tipi Mermaid
+# e delle funzioni ammesse sono derivati dalle stesse costanti del
+# validatore, così prompt e gate non possono divergere. Gli esempi sono
+# costanti separate (non f-string: le graffe sono JSON letterale) e
+# vengono verificati dai validatori del registro in
+# `tests/test_prompt_figures.py`.
+_MERMAID_TYPES_TEXT = ", ".join(MERMAID_D8_TYPES)
+_MERMAID_EXCLUDED_TEXT = ", ".join(MERMAID_EXCLUDED_TYPES)
+_FUNCTION_FUNCTIONS_TEXT = ", ".join(sorted(FUNCTIONS))
+
+# Esempio Vega-Lite minimo (≤ 300 caratteri): barre con dati inline,
+# `clip`, `scale.domain` e unità di misura sull'asse quantitativo; senza
+# `title` (opzionale) per restare nel budget di A5.
+_VEGALITE_EXAMPLE = (
+    '{"data":{"values":[{"mese":"gen","mm":80},{"mese":"feb","mm":65}]},"mark":{"type":"bar",'
+    '"clip":true},"encoding":{"x":{"field":"mese","type":"nominal","axis":{"title":"Mese"}},'
+    '"y":{"field":"mm","type":"quantitative","scale":{"domain":[0,100]},"axis":{"title":'
+    '"Precipitazioni (mm)"}}}}'
+)
+
+# Esempio DOT minimo (≤ 150 caratteri): label brevi, nessuno stile.
+_DOT_EXAMPLE = (
+    'digraph G { rankdir=LR; A [label="Ingresso"]; B [label="Elaborazione"]; '
+    'C [label="Uscita"]; A -> B -> C; }'
+)
+
+# Schema compatto di `FunctionFigureSpec` (schemas/figure_function.py) a
+# una riga: campi, enum e limiti; il test di WP3 verifica che ogni campo
+# e ogni valore degli enum compaiano nel prompt.
+_FUNCTION_SPEC_COMPACT = (
+    '{"kind":"function_study|tangent|area|family|level_curves",'
+    '"expressions":[{"expr":str,"label":str}] (1-4),'
+    '"variable":"x","variables":["x","y"] (solo level_curves),'
+    '"domain":[min,max],"range":[min,max]|null,'
+    '"show":["zeros"|"critical_points"|"inflection_points"|"asymptotes"|'
+    '"discontinuities"|"formula"],'
+    '"annotations":[{"kind":"tangent"|"point","at":n,"expr_index":0,"label":str}|'
+    '{"kind":"area","between":[a,b],"expr_index":0,"against":int|null,"label":str}] (≤ 6),'
+    '"parameter":{"name":"k","values":[n,...]} (solo family),'
+    '"sampling":{"points":800},"levels":int|[n,...] (solo level_curves)}'
+)
+
+# Esempio D9 completo (studio di funzione): nessun numero calcolato.
+_FUNCTION_EXAMPLE = (
+    '{"kind":"function_study","expressions":[{"expr":"(x**2-1)/(x-2)","label":"f"}],'
+    '"variable":"x","domain":[-4,6],"range":[-12,12],"show":["zeros","critical_points",'
+    '"asymptotes","formula"],"annotations":[{"kind":"point","at":0,"expr_index":0,'
+    '"label":"intercetta"}]}'
+)
 
 
 def _system_prompt(
@@ -231,7 +288,8 @@ DIVIETI ASSOLUTI NEL TESTO VISIBILE
   visto..."), MAI il codice.
 - Le caption di figure, tabelle, formule devono essere brevi
   descrizioni semantiche; NON includere codici come "[A1]" o
-  "Figura M1.L2.01".
+  "Figura M1.L2.01", né iniziare con "Figura 1"/"Fig. 1": il numero
+  lo mette il renderer.
 
 CASO SPECIALE — LEZIONE INTRODUTTIVA (is_introductory=true):
 - Nessun caso studio o dimostrazione tecnica complessa
@@ -256,8 +314,8 @@ Linea guida (non vincolante):
 
 REQUISITI — ASSET VISIVI
 
-- 1-3 diagrammi/schemi per lezione (NON per la lezione introduttiva,
-  dove sono opzionali e tipicamente 0-1)
+- 1-3 figure per lezione (NON per la lezione introduttiva, dove sono
+  opzionali e tipicamente 0-1)
 - formule LaTeX TUTTE le volte che la disciplina lo richiede
 - tabelle quando devi confrontare alternative o riassumere
   classificazioni
@@ -268,13 +326,58 @@ una volta nel testo tramite `[FIG:asset_id]`, `[TAB:asset_id]`,
 l'asset rendering — non devono apparire al lettore finale, ma servono
 al parser). La `caption` è una breve descrizione semantica leggibile.
 
-FORMATI ACCETTATI:
-- visual_assets → SOLO `format = "mermaid"`, content = codice Mermaid
-  valido. NON generare prompt per immagini, query di ricerca o
-  descrizioni testuali: l'utente caricherà eventualmente immagini
-  reali a mano dall'editor.
-- formula → format = "latex" (senza delimitatori $...$)
-- table → format = "markdown"
+FORMATI DELLE FIGURE (`visual_assets[].format`; `content` è sempre una
+stringa: codice, sorgente o spec JSON serializzata). Dal contenuto al
+formato e al tipo di diagramma:
+- processo, flusso, gerarchia, relazioni fra entità, scambio di
+  messaggi, stati, linea del tempo, ripartizione → `mermaid` (tipo di
+  diagramma corrispondente: flowchart, sequenceDiagram, classDiagram,
+  stateDiagram-v2, erDiagram, mindmap, timeline, pie);
+- dati, misure, distribuzioni, confronti quantitativi, serie
+  temporali → `vegalite` (barre, linee, punti, aree);
+- grafi con archi etichettati, alberi, automi, reti → `dot`;
+- funzione matematica da studiare (grafico, tangente, area, famiglia
+  con parametro, curve di livello) → `function`.
+Niente prompt per immagini né descrizioni testuali: le immagini reali
+le carica il docente dall'editor.
+
+MERMAID 11. Tipi ammessi: {_MERMAID_TYPES_TEXT}.
+Esclusi: {_MERMAID_EXCLUDED_TEXT}.
+Label in testo semplice (niente HTML né markdown), tra virgolette
+doppie se contengono caratteri speciali; nessuna direttiva
+`%%{{init}}%%` né frontmatter: il tema lo impone il renderer.
+
+VEGA-LITE (spec JSON v6, ≤ 4000 caratteri) SOLO per: (a) rette o
+polinomi ausiliari sui dati con `data.sequence` + `transform.calculate`;
+(b) dati dei documenti del corso, con la fonte nella caption; (c) dati
+illustrativi, con la caption che termina con «Dati illustrativi, non
+sperimentali». Dati inline in `data.values` (≤ 200 righe); vietati
+`data.url`, `data.name`, `mark: "image"`, `config`, `$schema`, `params`,
+`selection`, `tooltip`, `usermeta`, `encoding.href`: il tema lo inietta
+il renderer e il grafico è statico. Obbligatori `"clip": true` sui mark
+`line`/`area`/`point`/`trail` e `scale.domain` [min, max] sui canali
+`x`/`y` quantitativi; al massimo una `title` (radice, ≤ 120 caratteri);
+`axis.title` con l'unità di misura sugli assi quantitativi; legenda solo
+con più serie. Le FUNZIONI MATEMATICHE (seno, esponenziale, potenze,
+razionali su una `sequence`) NON si tracciano in Vega-Lite: usa
+`function`. Esempio:
+{_VEGALITE_EXAMPLE}
+
+DOT (Graphviz): inizia con `graph`, `digraph` o `strict`; label brevi
+tra virgolette doppie; nessun colore, font o stile (li impone il
+renderer); mai `image`, `URL`, `href` o attributi che leggono file.
+Esempio: {_DOT_EXAMPLE}
+
+FUNCTION (figura calcolata da sympy e matplotlib): `content` è la
+stringa JSON di questo oggetto:
+{_FUNCTION_SPEC_COMPACT}
+Espressioni in sintassi Python: `**` (mai `^`), `2*x` (mai `2x`), solo
+la variabile dichiarata e l'eventuale `parameter.name`, costanti `pi`
+ed `E`, funzioni ammesse: {_FUNCTION_FUNCTIONS_TEXT}.
+NON scrivere numeri calcolati (zeri, massimi, integrali, asintoti) né
+nella spec né nella caption: li calcola il renderer e li aggiunge alla
+didascalia. Esempio:
+{_FUNCTION_EXAMPLE}
 
 EQUAZIONI — ENUNCIATO E DIMOSTRAZIONE (`equations[]`)
 Per OGNI asset in `equations[]`:
@@ -329,12 +432,17 @@ TUTTO il testo leggibile dall'utente DEVE essere scritto in {language_code}: non
 la prosa, ma anche OGNI campo testuale degli asset. In particolare:
 - `caption` e `alt_text` degli asset visivi;
 - le ETICHETTE / il testo dei nodi DENTRO il codice Mermaid (le label, NON la sintassi);
+- `title`, `axis.title`, `legend.title` e `header.title` delle spec Vega-Lite; le
+  `label` dei sorgenti DOT; `expressions[].label` e `annotations[].label` delle spec
+  `function`;
 - `caption`, intestazioni e celle delle tabelle (`markdown`);
 - `label`, `statement`, `explanation` delle equazioni e il `text` di OGNI passo di `proof`;
 - `title` e `content` degli esempi.
 Restano invariati SOLO: la notazione matematica LaTeX (campi `latex`), la struttura
-sintattica di Mermaid (tipo di diagramma, frecce, ID dei nodi), gli ID degli asset, i
-tag `[FIG:..]`/`[TAB:..]`/`[EQ:..]`/`[EX:..]` e i codici di obiettivi (`O1`) e temi
+sintattica di Mermaid (tipo di diagramma, frecce, ID dei nodi), di Vega-Lite (chiavi
+JSON, `field`, `type`, espressioni `datum.*`), di DOT (ID dei nodi, `->`/`--`, attributi
+diversi da `label`) e di `function` (chiavi JSON, `expr`, `kind`, `show`), gli ID degli
+asset, i tag `[FIG:..]`/`[TAB:..]`/`[EQ:..]`/`[EX:..]` e i codici di obiettivi (`O1`) e temi
 (`T1`). NON lasciare in nessun campo testo in un'altra lingua (es. italiano): traduci
 tutto in {language_code}.
 Output: SOLO JSON valido conforme allo schema."""

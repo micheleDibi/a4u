@@ -143,8 +143,8 @@ REGOLE — STRUTTURA E SINCRONIZZAZIONE
   - DESCRIVERE e COMMENTARE a voce ciò che l'asset mostra: risolvi
     l'ID in `references_assets` consultando gli asset di Fase 3
     (visual_assets, tables) e spiega il diagramma o la tabella
-    passo per passo, in prosa — MAI leggere codice Mermaid o
-    sintassi markdown;
+    passo per passo, in prosa — MAI leggere codice Mermaid, spec JSON
+    Vega-Lite/function, sorgente DOT o sintassi markdown;
   - chiudere riconducendo l'asset al discorso generale prima di
     passare alla slide successiva.
 
