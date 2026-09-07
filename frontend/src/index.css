@@ -405,11 +405,14 @@ body {
 
 /* Figure (`FigureFrame`, D4): niente card né arrotondamento; l'SVG
    delle figure `function` e le immagini caricate stanno nella cornice
-   senza margini propri (la spaziatura è della `<figure>`). Vince sulla
-   regola precedente per specificità. */
+   senza margini verticali propri (la spaziatura è della `<figure>`) e
+   centrate come nel partial del PDF (`.figure-svg { margin: 0 auto }`).
+   La regola vince per specificità (0,2,1) sia sulla precedente sia su
+   `mx-auto` (0,1,0): per questo i margini orizzontali sono `auto` qui,
+   non delegati alla classe utility. */
 .lesson-prose .figure img {
   border-radius: 0;
-  margin: 0;
+  margin: 0 auto;
 }
 
 /* Dark mode — gli HSL token già coprono il contrasto, ma le tabelle

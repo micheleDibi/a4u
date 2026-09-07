@@ -24,8 +24,12 @@ export const FIG_REF_RE = /\[FIG:([^\]\n]+)\]/g;
 // Il separatore è obbligatorio: senza, «Figure 2 shows …» è una frase.
 // `\p{Nd}` con il flag `u` equivale al `\d` Unicode di Python (cifre
 // arabo-indiane, a larghezza piena, …): stesso esito su entrambi i lati.
+// La lettera dopo il numero: `[a-z]` con IGNORECASE in Python accetta anche
+// «ı» (U+0131) e «İ» (U+0130) per il case-mapping di `i`; il flag `iu` di
+// JavaScript usa il simple case folding e non li piega, quindi sono
+// elencati esplicitamente (fixture «Figura 2ı:», «Figura 2İ.»).
 const FIGURE_PREFIX_RE =
-  /^\s*(?:figura|figure|fig\.?|abb\.?)\s*\p{Nd}+(?:\.\p{Nd}+)*[a-z]?\s*(?:[.:\-–—)](?!\p{Nd})\s*|$)/iu;
+  /^\s*(?:figura|figure|fig\.?|abb\.?)\s*\p{Nd}+(?:\.\p{Nd}+)*[a-zıİ]?\s*(?:[.:\-–—)](?!\p{Nd})\s*|$)/iu;
 
 function norm(assetId: unknown): string {
   return String(assetId ?? "")

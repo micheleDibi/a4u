@@ -1,5 +1,6 @@
 import { memo, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { Loader } from "vega";
 import type { EmbedOptions, VisualizationSpec } from "vega-embed";
 
 import {
@@ -28,9 +29,26 @@ import { FigureErrorBox, FigureLoading } from "./FigureFrame";
  * `renderer: "svg"` produce lo stesso vettoriale di vl-convert. Un errore
  * del parser o del renderer diventa il box controllato di
  * `FigureErrorBox` (dettaglio localizzato via `describeFigureParseError`),
- * mai un'eccezione nella pagina.
+ * mai un'eccezione nella pagina. Il `loader` è inerte: `data.url`, `mark
+ * image` e `href` sono rifiutati dal gate del PATCH, ma l'anteprima
+ * dell'editor rende la spec prima del salvataggio e il loader di default
+ * di vega-embed eseguirebbe davvero il fetch dal browser del docente.
  */
 const VEGALITE_SCHEMA = "https://vega.github.io/schema/vega-lite/v6.json";
+
+function refuseUri(): Promise<never> {
+  return Promise.reject(new Error("vega_loader_disabled"));
+}
+
+/** Loader che non carica nulla (D5: solo `data.values` e `datasets`);
+ *  vega gestisce il rifiuto di `sanitize` per href e immagini senza errori
+ *  in pagina. */
+const INERT_LOADER: Loader = {
+  load: refuseUri,
+  sanitize: refuseUri,
+  http: refuseUri,
+  file: refuseUri,
+};
 
 interface VegaLiteDiagramProps {
   spec: string;
@@ -73,6 +91,7 @@ function VegaLiteDiagramImpl({ spec, className }: VegaLiteDiagramProps) {
           renderer: "svg",
           hover: false,
           defaultStyle: false,
+          loader: INERT_LOADER,
           config: VEGALITE_THEME_CONFIG as EmbedOptions["config"],
         };
         const result = await embed(container, vlSpec, options);

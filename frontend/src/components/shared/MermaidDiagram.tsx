@@ -1,6 +1,7 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 
+import { fullWidthSvgMaxHeightPx, svgIntrinsicSize } from "@/lib/figureFormats";
 import { mermaidConfig } from "@/lib/figureTheme";
 import { cn } from "@/lib/utils";
 
@@ -50,9 +51,16 @@ async function ensureMermaid() {
 
 type MermaidFailure = { kind: "syntax" } | { kind: "render"; detail: string };
 
+interface RenderedSvg {
+  html: string;
+  /** Tetto d'altezza dell'SVG a larghezza piena (`fullWidthSvgMaxHeightPx`):
+   *  solo per i diagrammi orizzontali, `null` per quelli verticali. */
+  maxHeightPx: number | null;
+}
+
 function MermaidDiagramImpl({ code, className }: MermaidDiagramProps) {
   const { t } = useTranslation();
-  const [svg, setSvg] = useState<string | null>(null);
+  const [svg, setSvg] = useState<RenderedSvg | null>(null);
   const [failure, setFailure] = useState<MermaidFailure | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -96,7 +104,12 @@ function MermaidDiagramImpl({ code, className }: MermaidDiagramProps) {
             /max-width\s*:\s*[\d.]+px\s*;?/gi,
             "",
           );
-          setSvg(cleaned);
+          // Il tetto d'altezza dipende dall'orientamento letto dal viewBox
+          // (vedi le classi del contenitore sotto).
+          setSvg({
+            html: cleaned,
+            maxHeightPx: fullWidthSvgMaxHeightPx(svgIntrinsicSize(cleaned)),
+          });
         }
       } catch (exc) {
         if (!cancelled) {
@@ -133,23 +146,32 @@ function MermaidDiagramImpl({ code, className }: MermaidDiagramProps) {
     return <FigureLoading />;
   }
 
+  const style =
+    svg.maxHeightPx != null
+      ? ({ "--mermaid-max-h": `${svg.maxHeightPx}px` } as CSSProperties)
+      : undefined;
+
   return (
     <div
       ref={containerRef}
+      style={style}
       className={cn(
         // Diagramma a tutta larghezza: l'SVG riempie il container così
         // i nodi e le label restano leggibili anche su flowchart densi.
         // overflow-x-auto come fallback se qualche diagramma ha una
         // larghezza minima > container (mai dovrebbe accadere ora che
         // il max-width inline è strippato, ma resta come safety net).
-        // Altezza limitata a 28rem (≈ `max_figure_height_cm` del PDF e
-        // `max-h-[28rem]` delle immagini): un diagramma compatto (torta,
-        // stato) dentro la FigureFrame non si dilata a tutta colonna; il
-        // viewBox lo centra in scala.
-        "overflow-x-auto rounded bg-background p-2 [&_svg]:!w-full [&_svg]:!max-w-none [&_svg]:h-auto [&_svg]:max-h-[28rem]",
+        "overflow-x-auto rounded bg-background p-2 [&_svg]:!w-full [&_svg]:!max-w-none [&_svg]:h-auto",
+        // Tetto d'altezza SOLO per i diagrammi orizzontali (torta, flowchart
+        // LR): max(28rem, altezza naturale), così un diagramma compatto non
+        // si dilata a tutta colonna e uno grande non è mai rimpicciolito.
+        // Un tetto unito a `width: 100%` farebbe scalare in `meet` i
+        // diagrammi verticali (sequence, flowchart TD, class) fino a testo
+        // illeggibile: per quelli nessun tetto, geometria a larghezza piena.
+        svg.maxHeightPx != null && "[&_svg]:max-h-[var(--mermaid-max-h)]",
         className,
       )}
-      dangerouslySetInnerHTML={{ __html: svg }}
+      dangerouslySetInnerHTML={{ __html: svg.html }}
     />
   );
 }

@@ -1437,9 +1437,39 @@ Decisioni prese in Fase B (A1-A16) e nella ripresa del 7 settembre
 - **Vega-Lite e viz-js montano l'SVG nel DOM tramite ref** (nessun
   `dangerouslySetInnerHTML`, nessuna nuova direttiva `react/no-danger`);
   `FunctionFigure` usa `<img data:svg>`. L'SVG dell'anteprima passa da
-  `sanitizeSvgElement` (`lib/figureFormats.ts`: elementi attivi rimossi,
-  `<a>` sostituiti dai figli, `on*` e `href` esterni eliminati), difesa in
-  profondità rispetto al gate del PATCH che resta autoritativo.
+  `sanitizeSvgElement` (`lib/figureFormats.ts`: elementi attivi e
+  `<style>` rimossi, `<a>` sostituiti dai figli, `on*`, `href` esterni e
+  attributi con `url(…)` non interno eliminati; `url(#id)` dei gradienti
+  vega resta), difesa in profondità rispetto al gate del PATCH che resta
+  autoritativo. `VegaLiteDiagram` passa a vega-embed un `loader` inerte
+  (`load/sanitize/http/file` rifiutano): il loader di default eseguirebbe
+  davvero il fetch di un `data.url` dal browser del docente durante
+  l'anteprima dell'editor, prima che il gate del PATCH lo rifiuti.
+- **Tetto d'altezza dei Mermaid solo per i diagrammi orizzontali**
+  (`MermaidDiagram` + `fullWidthSvgMaxHeightPx` in `lib/figureFormats.ts`).
+  L'SVG Mermaid è reso a larghezza piena (`width: 100% !important`, come su
+  `main`); un `max-height` incondizionato unito a `width: 100%` fa scalare
+  in `meet` i diagrammi verticali (sequence, flowchart TD, class, state)
+  fino a testo di 7 px. Il tetto vale quindi solo quando il `viewBox` ha
+  larghezza ≥ altezza ed è `max(28rem, altezza naturale)`: una torta
+  524×450 non si dilata a tutta colonna (scala 1, testo 17 px), un ER
+  orizzontale 647×365 resta a 448 px (scala 1,23), un sequence 650×907 tiene
+  la geometria di `main` (scala 1,23 in una colonna di 802 px, testo 19,7
+  px). Scartato il tetto incondizionato a 28rem (regressione sui verticali,
+  giro 2 della verifica) e scartata la riduzione globale della scala
+  (`max-width = k × larghezza naturale`): cambierebbe la resa di tutti i
+  Mermaid già in DB. Prova in `tests/test_frontend_figure_layout.py`.
+- **`.lesson-prose .figure img { margin: 0 auto }`** invece del `margin: 0`
+  scritto in Q2: la regola ha specificità (0,2,1) e annulla `mx-auto`
+  (0,1,0) sull'`<img>` di `FunctionFigure` e del ramo `image`; con
+  `margin: 0` le figure più strette della colonna finivano a sinistra sotto
+  una didascalia centrata. `auto` orizzontale coincide con il partial del
+  PDF (`.figure-svg { margin: 0 auto }`).
+- **Lettera dopo il numero nel prefisso «Figura 2a.»**: `[a-z]` con
+  IGNORECASE in Python accetta anche «ı» (U+0131) e «İ» (U+0130) per il
+  case-mapping di `i`; il flag `iu` di JavaScript usa il simple case
+  folding e non le piega. La copia frontend usa `[a-zıİ]` e la fixture
+  condivisa fissa i due casi (parità eseguita con Node).
 - **Placeholder dei formati legacy uguale su tutte le superfici**: nella
   vista lezione, nelle slide e nel PDF il corpo della figura legacy
   (`image_prompt`, `image_search_query`, `description`) mostra `content`
@@ -1543,29 +1573,36 @@ esplicito, mai falliscono. Vedi [backend/11 — Tests](../backend/11-tests.md).
 4. verifica a occhio: «Figura N.» in ordine di citazione, orfana in coda,
    nessuna card, palette e font del tema, box di errore controllato con
    `courses.figures.renderError` per un asset invalido;
-5. esito WP5 (macOS, 7 settembre): eseguito con backend su `:8001`
-   (`FRONTEND_ORIGIN=http://localhost:5174`, perché `8000`/`5173` erano
-   occupate da un altro progetto) e vite su `:5174` con un `vite.smoke.config.ts`
-   temporaneo; seed di `a4u_e2e` (`scratchpad/consegna/smoke_seed.py`: org,
-   docente `manager`, corso con una lezione `ready`) e Playwright Python
-   (`scratchpad/consegna/smoke_playwright.py`): login dal form; PATCH con
-   una spec Vega-Lite senza `clip`/`scale.domain` → 422
+5. esito WP5 (macOS, 7 settembre, rieseguito dopo le correzioni del giro
+   2): backend su `:8001` (`FRONTEND_ORIGIN=http://localhost:5174`, perché
+   `8000`/`5173` erano occupate da un altro progetto) e vite su `:5174` con
+   un `vite.smoke.config.ts` temporaneo; seed di `a4u_e2e`
+   (`scratchpad/consegna/smoke_seed.py`: org, docente `manager`, corso con
+   una lezione `ready` che cita F1, F2, F3, F1, F6, F7, F3, F4) e Playwright
+   Python (`scratchpad/consegna/smoke_playwright.py`): login dal form;
+   `POST /lesson-assets/upload` di un PNG 480×300 → 201 (ri-encodato in
+   `.jpg`); PATCH con una spec Vega-Lite senza `clip`/`scale.domain` → 422
    `lesson_content_invalid_visual_asset` con `meta.errors[0].loc =
-   ["visual_assets", 1, "content"]`; PATCH con `mermaid`, `vegalite`,
-   `dot`, `function` e un secondo `mermaid` non citato → 200; nella vista
-   i quattro renderer pronti (`figure--mermaid svg`, `figure--vegalite
-   svg`, `figure--dot svg`, `figure--function img`) e didascalie «Figura
-   1.» … «Figura 5.» in ordine di citazione (F1 e F3 citate due volte con lo
-   stesso numero, la coda calcolata di `function` «Zeri in x = −1, 1. …
-   Asintoto obliquo y = x + 2.», l'orfana in coda alla sintesi prima dei
-   punti chiave), nessuna card; nel dialog i quattro editor con anteprima
-   e badge di formato, e con una spec non parsabile il box controllato
-   «Impossibile visualizzare la figura.» al posto dell'anteprima. Immagini:
+   ["visual_assets", 1, "content"]`; PATCH con sette asset (`mermaid`
+   flowchart LR, `vegalite`, `dot`, `function`, `mermaid` torta non citata,
+   `mermaid` sequenceDiagram verticale, `image`) → 200; nella vista i
+   cinque corpi pronti (`figure--mermaid svg`, `figure--vegalite svg`,
+   `figure--dot svg`, `figure--function img`, `figure--image img`) e
+   didascalie «Figura 1.» … «Figura 7.» in ordine di citazione (F1 e F3
+   citate due volte con lo stesso numero, la coda calcolata di `function`
+   «Zeri in x = −1, 1. … Asintoto obliquo y = x + 2.», l'orfana in coda
+   alla sintesi prima dei punti chiave), nessuna card. Misure nella pagina
+   (colonna di 898 px, `getScreenCTM`): sequence 650×907 senza tetto, scala
+   1,38, testo 22,1 px; torta 524×450 con tetto 450 px, scala 1, testo 17
+   px; flowchart LR 484×158 con tetto 448 px, scala 1,86, testo 26 px;
+   `image` 480 px e `function` 499 px centrate (margini 217/217 e 207/207).
+   Nel dialog i quattro editor con anteprima e badge di formato, e con una
+   spec non parsabile il box controllato «Impossibile visualizzare la
+   figura.» al posto dell'anteprima. Immagini:
    `scratchpad/consegna/lesson_content_view.png`,
+   `lesson_content_view_sequence.png`, `lesson_content_view_image.png`,
    `lesson_content_edit.png`, `lesson_content_edit_assets.png`,
    `lesson_content_edit_function.png`, `lesson_content_edit_invalid.png`.
-   L'asset `image` non è stato incluso (richiede un file caricato sullo
-   storage).
 
 ### 14.3 Misure e prove residue
 
@@ -1575,15 +1612,18 @@ esplicito, mai falliscono. Vedi [backend/11 — Tests](../backend/11-tests.md).
   `graphviz`. Esito: (da completare in WP6).
 - Dimensione del bundle frontend prima (build pulito su HEAD prima di WP5)
   e dopo, con i kB dei chunk `vega`/`vega-lite`/`vega-embed`/`@viz-js/viz`
-  (import dinamici). Esito WP5 (`vite build`, kB minificati, gzip fra
-  parentesi): totale JS+CSS 6.333 (1.772) → 8.431 (2.548), 61 → 71 chunk;
-  `index.js` 3.057 (853) → 3.092 (863); `mermaid.core.js` 678 (167) → 647
-  (158); chunk nuovi caricati solo a richiesta: `viz.js` 1.262 (485, il
-  WebAssembly di Graphviz è inlinato in base64), `embed.js` 792 (276:
-  vega + vega-lite + vega-embed), `step.js` 32, `time.js` 18,
-  `figureTheme.js` 4, `VegaLiteDiagram.js`/`MermaidDiagram.js`/
-  `DotDiagram.js` ≈ 1-2 ciascuno. Il bundle iniziale cresce di 35 kB
-  (editor e cornice, senza librerie di render).
+  (import dinamici). Base unica di misura: tabella di `vite build`, file
+  `.js` e `.css` di `dist/assets` (senza `index.html` né sourcemap), kB
+  minificati e gzip fra parentesi. Esito: prima di WP5 61 file, 6.333
+  (1.772); WP5 (`e753c1e`/`87a30e0`) 72 file, 8.436 (2.550); dopo le
+  correzioni del giro 2 72 file, 8.438 (2.551). `index.js` 3.057 (853) →
+  3.095 (864); `mermaid.core.js` 678 (167) → 647 (158); chunk nuovi
+  caricati solo a richiesta: `viz.js` 1.262 (485, il WebAssembly di
+  Graphviz è inlinato in base64), `embed.js` 792 (276: vega + vega-lite +
+  vega-embed), `step.js` 32, `time.js` 18, `figureTheme.js` 4,
+  `VegaLiteDiagram.js`/`MermaidDiagram.js`/`DotDiagram.js` ≈ 1-2 ciascuno.
+  Il bundle iniziale cresce di 38 kB (editor e cornice, senza librerie di
+  render). WP6 ripete la misura sulla stessa base alla chiusura.
 - Esito di `backend/scripts/revalidate_mermaid_assets.py` sul dump del
   docente o run sintetica dichiarata (A24). Esito: (da completare in WP6).
 - Prova manuale di `spawn` sotto uvicorn. Esito WP2b (macOS, 7 settembre):

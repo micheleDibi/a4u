@@ -1,5 +1,5 @@
 {
-  "_comment": "Casi condivisi fra backend (figure_numbering.py, test_figure_numbering.py) e frontend (lib/figureNumbering.ts). `asset_ids` è l'ordine dell'array visual_assets; `appended` è il markdown dopo append_uncited_figure_refs; `numbers` la mappa {id_lower: N} calcolata sul markdown appeso. `strip_prefix` elenca coppie input → output di strip_figure_prefix: parola (figura|figure|fig.|abb.), numero con eventuali sottonumeri e lettera, poi UN separatore `. : - – — )` non seguito da cifra oppure fine del testo; senza separatore («Figure 2 shows …») la didascalia resta intatta. Le cifre sono Unicode (`\\d` di Python, `\\p{Nd}` con flag `u` in JavaScript): «Figura ١٢.» e «Figura ５.» sono prefissi su entrambi i lati.",
+  "_comment": "Casi condivisi fra backend (figure_numbering.py, test_figure_numbering.py) e frontend (lib/figureNumbering.ts). `asset_ids` è l'ordine dell'array visual_assets; `appended` è il markdown dopo append_uncited_figure_refs; `numbers` la mappa {id_lower: N} calcolata sul markdown appeso. `strip_prefix` elenca coppie input → output di strip_figure_prefix: parola (figura|figure|fig.|abb.), numero con eventuali sottonumeri e lettera, poi UN separatore `. : - – — )` non seguito da cifra oppure fine del testo; senza separatore («Figure 2 shows …») la didascalia resta intatta. Le cifre sono Unicode (`\\d` di Python, `\\p{Nd}` con flag `u` in JavaScript): «Figura ١٢.» e «Figura ５.» sono prefissi su entrambi i lati. La lettera dopo il numero comprende «ı» (U+0131) e «İ» (U+0130): Python le piega a `i` con IGNORECASE, JavaScript no con `iu`, quindi la copia frontend le elenca esplicitamente.",
   "cases": [
     {
       "name": "ordine di prima citazione, non dell'array",
@@ -93,6 +93,8 @@
     {"input": "Schema del flusso", "output": "Schema del flusso"},
     {"input": "Figura ١٢. Cifre arabo-indiane", "output": "Cifre arabo-indiane"},
     {"input": "Figura ５. Cifre a larghezza piena", "output": "Cifre a larghezza piena"},
+    {"input": "Figura 2ı: i senza punto", "output": "i senza punto"},
+    {"input": "Figura 2İ. I con punto", "output": "I con punto"},
     {"input": "", "output": ""}
   ]
 }

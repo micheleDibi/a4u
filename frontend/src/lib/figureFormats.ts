@@ -180,8 +180,11 @@ export function parseJsonObject(raw: string): ParsedJsonObject {
 // Elementi che `svg_normalize.normalize_svg` rifiuta nel backend: nel DOM
 // dell'anteprima vengono rimossi (il sorgente persistito passa comunque dal
 // gate server-side; qui è difesa in profondità per l'auto-anteprima).
+// `<style>` è compreso: un foglio interno può contenere `@import url(…)`
+// e riferimenti `url(http…)`, che i renderer client non producono mai.
 const SVG_FORBIDDEN_SELECTOR = [
   "script",
+  "style",
   "foreignObject",
   "iframe",
   "image",
@@ -192,11 +195,23 @@ const SVG_FORBIDDEN_SELECTOR = [
   "handler",
 ].join(",");
 
+// `url(` che non punta a un frammento interno (`url(#gradiente)` resta:
+// vega lo usa per i gradienti): stessa classe di `svg_normalize`. I
+// riferimenti interni sono tolti prima del test, così non serve un
+// lookahead negativo (che il backtracking su `\s*` renderebbe eludibile).
+const INTERNAL_URL_RE = /url\(\s*['"]?\s*#/gi;
+const ANY_URL_RE = /url\(/i;
+
+function hasExternalUrl(value: string): boolean {
+  return ANY_URL_RE.test(value.replace(INTERNAL_URL_RE, ""));
+}
+
 /**
  * Rende inerte un SVG prodotto dal renderer client prima di appenderlo al
- * DOM (viz-js, vega-embed): elementi attivi rimossi, `<a>` sostituiti dai
- * loro figli, gestori `on*` e `href`/`xlink:href` non interni eliminati.
- * Muta l'elemento in loco.
+ * DOM (viz-js, vega-embed): elementi attivi e fogli di stile interni
+ * rimossi, `<a>` sostituiti dai loro figli, gestori `on*`, `href`/`xlink:href`
+ * non interni e attributi con `url(…)` esterni eliminati. Muta l'elemento
+ * in loco.
  */
 export function sanitizeSvgElement(root: Element): void {
   for (const el of Array.from(root.querySelectorAll(SVG_FORBIDDEN_SELECTOR))) {
@@ -209,11 +224,68 @@ export function sanitizeSvgElement(root: Element): void {
     for (const attr of Array.from(el.attributes)) {
       const name = attr.name.toLowerCase();
       const isHref = name === "href" || name === "xlink:href";
-      if (name.startsWith("on") || (isHref && !attr.value.trim().startsWith("#"))) {
+      if (
+        name.startsWith("on") ||
+        (isHref && !attr.value.trim().startsWith("#")) ||
+        hasExternalUrl(attr.value)
+      ) {
         el.removeAttribute(attr.name);
       }
     }
   }
+}
+
+export interface SvgSize {
+  width: number;
+  height: number;
+}
+
+const SVG_ROOT_RE = /<svg\b[^>]*>/i;
+const NUM = String.raw`[-+]?(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?`;
+const VIEWBOX_RE = new RegExp(
+  String.raw`\bviewBox\s*=\s*["']\s*${NUM}[\s,]+${NUM}[\s,]+(${NUM})[\s,]+(${NUM})\s*["']`,
+  "i",
+);
+const WIDTH_RE = new RegExp(String.raw`\bwidth\s*=\s*["']\s*(${NUM})(?:px)?\s*["']`, "i");
+const HEIGHT_RE = new RegExp(String.raw`\bheight\s*=\s*["']\s*(${NUM})(?:px)?\s*["']`, "i");
+
+/**
+ * Dimensioni intrinseche di un SVG (testo) dal `viewBox` del tag radice,
+ * in subordine da `width`/`height` numerici (non percentuali); `null` se
+ * non determinabili o non positive. Mermaid emette sempre il `viewBox`.
+ */
+export function svgIntrinsicSize(svg: string): SvgSize | null {
+  const root = SVG_ROOT_RE.exec(svg || "")?.[0];
+  if (!root) return null;
+  const vb = VIEWBOX_RE.exec(root);
+  let width = vb ? Number(vb[1]) : Number.NaN;
+  let height = vb ? Number(vb[2]) : Number.NaN;
+  if (!(width > 0 && height > 0)) {
+    width = Number(WIDTH_RE.exec(root)?.[1]);
+    height = Number(HEIGHT_RE.exec(root)?.[1]);
+  }
+  return width > 0 && height > 0 ? { width, height } : null;
+}
+
+/** 28rem a 16px: `max_figure_height_cm` del PDF e `max-h-[28rem]` delle
+ *  immagini caricate. */
+export const FULL_WIDTH_SVG_CAP_PX = 448;
+
+/**
+ * Tetto d'altezza (px) di un SVG reso a larghezza piena (`MermaidDiagram`):
+ * un diagramma orizzontale (larghezza ≥ altezza) non si dilata oltre
+ * `capPx` di altezza, ma non scende mai sotto la propria altezza naturale;
+ * un diagramma verticale (sequence, flowchart TD, class) non ha tetto e
+ * conserva la geometria a larghezza piena, perché un `max-height` unito a
+ * `width: 100%` lo farebbe scalare in `meet` fino a renderlo illeggibile.
+ * `null` = nessun tetto.
+ */
+export function fullWidthSvgMaxHeightPx(
+  size: SvgSize | null,
+  capPx: number = FULL_WIDTH_SVG_CAP_PX,
+): number | null {
+  if (!size || size.width < size.height) return null;
+  return Math.max(capPx, Math.ceil(size.height));
 }
 
 /** `data:image/svg+xml;base64,...` di un SVG (testo UTF-8), come
