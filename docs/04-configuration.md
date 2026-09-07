@@ -208,6 +208,41 @@ fase ha il suo modello + cap di token configurabile a parte.
 | `OPENAI_LESSON_SPEECH_MODEL` | `gpt-5.5` | Modello per **Fase 5 — discorso temporizzato**. |
 | `OPENAI_LESSON_SPEECH_MAX_TOKENS` | `16000` | Cap per ciascuna lezione elaborata in Fase 5 (output prosa pura ~6-12k token + reasoning; alza per lezioni 90 min ≈ 11.7k parole IT). |
 | `OPENAI_LESSON_SPEECH_REASONING_EFFORT` | `medium` | Reasoning effort per Fase 5. |
+| `OPENAI_IMAGE_TO_MERMAID_MODEL` | `gpt-4o` | Modello Vision per **«Digitalizza in Mermaid»** (`openai_image_to_mermaid_service`, on-demand dall'editor lezione; PROMPT 11). |
+| `OPENAI_IMAGE_TO_MERMAID_REASONING_EFFORT` | _(vuoto)_ | Reasoning effort della conversione immagine → Mermaid (non inviato se vuoto). |
+| `OPENAI_IMAGE_TO_MERMAID_MAX_TOKENS` | `4000` | `max_completion_tokens` della conversione. |
+| `OPENAI_ASSET_FIX_MODEL` | `gpt-4o-mini` | Modello del **fix automatico degli asset** (`openai_asset_fix_service`: formule LaTeX, Mermaid, Vega-Lite, DOT, `function` non validi a generazione; PROMPT 12). |
+| `OPENAI_ASSET_FIX_REASONING_EFFORT` | _(vuoto)_ | Reasoning effort del fix (non inviato se vuoto). |
+| `OPENAI_ASSET_FIX_MAX_TOKENS` | `4000` | `max_completion_tokens` del fix (una spec ≤ 4.000 caratteri ≈ 1.500 token, A16). |
+| `ASSET_FIX_MAX_ATTEMPTS` | `3` | Tentativi di fix AI per asset prima di `AssetFixUnresolvedError` (auto-retry dell'intera lezione). |
+| `OPENAI_ASSET_LOCALIZE_MODEL` | `gpt-4o-mini` | Modello della **localizzazione degli asset** (`openai_asset_localize_service`: campi testuali rimasti in un'altra lingua, rete di sicurezza per script non latini). |
+| `OPENAI_ASSET_LOCALIZE_MAX_TOKENS` | `8000` | `max_completion_tokens` della localizzazione. |
+| `ASSET_LOCALIZE_ENABLED` | `true` | Kill-switch della localizzazione degli asset. |
+
+### Figure accademiche (Fase 3/4)
+
+Quattro famiglie di figure renderizzate dal backend (documento
+[Courses 17](courses/17-visual-figures.md)): Mermaid (sempre attivo),
+Vega-Lite (vl-convert, senza browser), Graphviz DOT (binario `dot`) e
+`function` (sympy + matplotlib). Un kill-switch a `false` toglie il
+formato dallo schema strict offerto al modello e dal validatore
+(`figure_render_service.available_formats()`); i contenuti già in DB con
+quel formato degradano al fallback testuale nel PDF. Il testo dei prompt
+descrive sempre i quattro formati (A19).
+
+| Variabile | Default | Descrizione |
+|---|---|---|
+| `FIGURE_VEGALITE_ENABLED` | `true` | Kill-switch del formato `vegalite`. |
+| `FIGURE_DOT_ENABLED` | `true` | Kill-switch del formato `dot`. |
+| `FIGURE_FUNCTION_ENABLED` | `true` | Kill-switch del formato `function` (Mermaid non è disattivabile). |
+| `MERMAID_CDN_VERSION` | `11.17.2` | Pin unico di Mermaid: validatore Playwright a generazione e pre-render PDF/video caricano `mermaid@{versione}` da jsdelivr; il frontend segue con il lock npm. |
+| `FIGURE_RENDER_TIMEOUT_SECONDS` | `20` | Tetto (`asyncio.wait_for`) del batch di figure di una lezione per formato; oltre, le figure mancanti degradano a fallback e l'export prosegue. Il batch Mermaid ha un tetto proprio di almeno 60 s (costo fisso Chromium + CDN). |
+| `FIGURE_FUNCTION_TIMEOUT_SECONDS` | `10` | Tetto del calcolo simbolico (sympy) nel processo figlio, ucciso allo scadere: resta il risultato numerico con «Valori approssimati.». |
+| `FIGURE_RENDER_MAX_WORKERS` | `2` | Render CPU-bound concorrenti (worker PDF/video + anteprime `render-function` dell'editor); 2 per la VM a 2 core. |
+| `FIGURE_SVG_CACHE_SIZE` | `256` | Cache LRU in memoria degli SVG (chiave: formato, hash del sorgente, `THEME_VERSION`) e dei risultati `function`. |
+| `FIGURE_SVG_MAX_BYTES` | `1500000` | Oltre, l'SVG prodotto è rifiutato (fallback). |
+| `FIGURE_DOT_MAX_CHARS` | `12000` | Limite del sorgente DOT accettato dal validatore. |
+| `GRAPHVIZ_DOT_PATH` | _(vuoto)_ | Percorso del binario `dot`; vuoto = ricerca nel `PATH`. Senza `dot` il formato è assente da `available_formats()` e `log.error("graphviz_dot_missing")` compare una volta all'avvio dei worker. |
 
 ### OpenAI — parallelismo + auto-retry worker corso
 
@@ -432,8 +467,9 @@ secret); valorizzare `R2_ENDPOINT`, `R2_BUCKET`, `R2_ACCESS_KEY_ID`,
 
 ## OpenAI integration — overview pipeline corsi
 
-Il dominio Corsi usa lo stesso `OPENAI_API_KEY` per **sei** pipeline AI,
-con un setting `model` + `max_tokens` separato per ognuna:
+Il dominio Corsi usa lo stesso `OPENAI_API_KEY` per **sei** pipeline AI
+principali, con un setting `model` + `max_tokens` separato per ognuna, più
+tre servizi ausiliari degli asset visivi (tabella successiva):
 
 | Pipeline | Servizio | Endpoint | Sync/Async |
 |---|---|---|---|
@@ -443,6 +479,15 @@ con un setting `model` + `max_tokens` separato per ognuna:
 | **Glossario corso** (§10.1) | `openai_glossary_service` | `/chat/completions` | sync inline (auto-trigger dal worker Fase 3) |
 | **Struttura lezioni** (Fase 2) | `openai_lesson_structure_service` | `/chat/completions` | worker async **parallelo** (`course_lesson_structure_worker`) |
 | **Contenuto lezione** (Fase 3) | `openai_lesson_content_service` | `/chat/completions` | worker async **parallelo** (`course_lesson_content_worker`) |
+
+| Servizio ausiliario (asset visivi) | Servizio | Quando |
+|---|---|---|
+| **Fix degli asset** (`OPENAI_ASSET_FIX_*`) | `openai_asset_fix_service` | a generazione, dentro `asset_validation_service`, solo sugli asset invalidi (LaTeX, Mermaid, Vega-Lite, DOT, `function`), fino a `ASSET_FIX_MAX_ATTEMPTS` |
+| **Localizzazione degli asset** (`OPENAI_ASSET_LOCALIZE_*`) | `openai_asset_localize_service` | a generazione, per lingue a script non latino, sui campi testuali rimasti in un'altra lingua (kill-switch `ASSET_LOCALIZE_ENABLED`) |
+| **Immagine → Mermaid** (`OPENAI_IMAGE_TO_MERMAID_*`) | `openai_image_to_mermaid_service` | on-demand dall'editor lezione («Digitalizza in Mermaid»), sincrono |
+
+Le figure Vega-Lite, DOT e `function` non usano OpenAI a render: sono
+calcolate offline dal backend (`FIGURE_*`, tabella «Figure accademiche»).
 
 > Oltre alle pipeline core sopra, il **riassunto AI dei paper scientifici**
 > (`openai_paper_summary_service`, sincrono e senza persistenza) usa lo

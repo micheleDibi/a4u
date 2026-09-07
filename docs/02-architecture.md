@@ -278,7 +278,7 @@ Worker che processano N task in parallelo con cap di concorrenza
 
 - **5** — Fase 2 (struttura)
 - **3** — Fase 3 (content), Fase 4 (slide), Fase 5 (discorso)
-- **2** — i tre worker PDF (testo / slide / discorso) — condividono `COURSE_LESSON_PDF_MAX_CONCURRENCY` perché tutti CPU-bound su WeasyPrint
+- **2** — i tre worker PDF (testo / slide / discorso) — condividono `COURSE_LESSON_PDF_MAX_CONCURRENCY` perché tutti CPU-bound su WeasyPrint; il pre-render delle figure (Mermaid via Chromium, Vega-Lite e sympy in un processo figlio `spawn`, `dot` in subprocess, matplotlib in thread) passa dal semaforo separato `FIGURE_RENDER_MAX_WORKERS` (2) di `figure_render_service.render_svg_map`, condiviso con le anteprime `render-function` dell'editor (vedi [Courses 17](courses/17-visual-figures.md))
 - **1** — i due worker video (Fase 6 e Fase 6b): un solo job GPU per volta (vedi "Worker video" sotto)
 
 Tutti hanno **auto-retry trasparente** prima del fail terminale: la UI

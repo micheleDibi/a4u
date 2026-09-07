@@ -18,7 +18,17 @@ fa proxy verso il backend).
   `COURSE_LESSON_PDF_MAX_CONCURRENCY=2` di default servono ~800 MB extra in
   picco; WeasyPrint stesso è leggero ~50 MB/render).
 - Almeno **5 GB disco** per immagini Docker, browser Chromium di
-  Playwright (~300 MB), generated PDFs e uploads. **I video MP4 generati**
+  Playwright (~300 MB), generated PDFs e uploads. L'immagine del backend
+  contiene anche **Graphviz** (`dot`, apt) e le librerie delle figure
+  accademiche (vl-convert, matplotlib, sympy, altair, jsonschema):
+  misurata il 7 settembre 2026 con `docker image inspect --format
+  '{{.Size}}'` sul build arm64 di `backend/Dockerfile`, l'immagine passa
+  da 817,0 MB (`main`) a 906,9 MB (branch delle figure), **+89,9 MB**
+  (`docker images` riporta 3,12 GB → 3,51 GB come dimensione espansa;
+  la stima a priori era ≈57 MB di wheel compressi più apt `graphviz`).
+  I render CPU-bound delle figure (vl-convert e sympy in un processo
+  figlio, matplotlib in thread, `dot` in subprocess) sono limitati da
+  `FIGURE_RENDER_MAX_WORKERS=2`. **I video MP4 generati**
   (Fasi 6/6b) vivono nel volume `uploads` e pesano ~25 MB ogni 10 min di
   lezione: per corsi con molte lezioni video preventivare spazio extra
   (un corso da 30 lezioni × ~15 min ≈ 1-1,5 GB di soli video, ×2 se si
@@ -118,7 +128,7 @@ variabili `R2_*` (`R2_ENDPOINT` ha forma
 | Servizio | Immagine base | Runtime extra |
 |---|---|---|
 | `postgres` | `postgres:16-alpine` | – |
-| `backend` | `python:3.12-slim` | Pango/Cairo (WeasyPrint), Chromium di Playwright (mermaid pre-render), `ffmpeg` (encoding video Fase 6/6b) — già nel `Dockerfile` |
+| `backend` | `python:3.12-slim` | Pango/Cairo (WeasyPrint), Chromium di Playwright (pre-render Mermaid 11 e frame video), **Graphviz `dot`** (figure DOT), font Noto/DejaVu (usati anche da vl-convert e matplotlib per le figure Vega-Lite e `function`; `MPLCONFIGDIR=/tmp/cache/matplotlib`, `MPLBACKEND=Agg`), `ffmpeg` (encoding video Fase 6/6b) — già nel `Dockerfile` |
 | `frontend` | `node:20` (build) → `nginx:alpine` (runtime) | – |
 
 > **Importante** — il `backend/Dockerfile` installa Pango/Cairo +
@@ -287,6 +297,15 @@ BACKEND_PORT=9001
   CDN; il PDF finale è prodotto da WeasyPrint, vedi
   [09 — PDF export](courses/09-pdf-export.md)) e per il rendering delle
   slide a PNG nella generazione video (Fase 6).
+- Le altre figure sono renderizzate **offline** dentro il container
+  (nessuna CDN): Vega-Lite con `vl-convert-python` e sympy in un processo
+  figlio `spawn` (verificato sotto uvicorn su Linux, doc
+  [courses/17 § 14.3](courses/17-visual-figures.md)), DOT con il binario
+  `/usr/bin/dot` (`GRAPHVIZ_DOT_PATH` vuoto = ricerca nel `PATH`),
+  `function` con matplotlib. I font sono risolti da fontconfig
+  (`fc-match "Noto Sans"` → `NotoSans-Regular.ttf` da `fonts-noto-core`):
+  vl-convert misura le label con Noto Sans senza
+  `register_font_directory`.
 - `ffmpeg` per l'encoding del video MP4 della lezione e l'overlay
   dell'avatar (Fasi 6/6b).
 - Tutti gli env knob significativi (MiniMax, RunPod TTS + MuseTalk, R2,
@@ -589,6 +608,82 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml exec backend \
 
 Se il browser binary manca, il `Dockerfile` non ha eseguito
 `playwright install chromium` durante il build. Verifica e ricostruisci.
+
+### `dot` non trovato (figure DOT nel fallback `<pre>`, log `graphviz_dot_missing`)
+
+Il registro dei renderer cerca `dot` con `shutil.which(GRAPHVIZ_DOT_PATH
+or "dot")`: se manca, il formato `dot` sparisce da `available_formats()`
+(non offerto al modello, `422 figure_format_unavailable` al PATCH), gli
+asset DOT già in DB finiscono nel PDF come `<pre class="figure-fallback">`
+e all'avvio dei worker compare `log.error("graphviz_dot_missing")` una
+volta. Verifica:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml exec backend dot -V
+# atteso: dot - graphviz version 2.42.x
+```
+
+Se manca, il `Dockerfile` non ha installato `graphviz` (apt): ricostruisci
+l'immagine. Se il binario è in un percorso non standard imposta
+`GRAPHVIZ_DOT_PATH=/percorso/dot` e riavvia il backend
+(`available_formats()` è calcolato una volta per processo).
+
+### Vega-Lite non renderizzato (fallback `<pre>` nel PDF, `figure_render_failed` nei log)
+
+Il render Vega-Lite gira in un processo figlio `spawn` con
+`vl-convert-python`; le cause tipiche sono nel log
+`figure_render_failed` (`reason=`):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml exec backend \
+    python -c "import vl_convert as vlc; print(vlc.__version__)"
+docker compose -f docker-compose.yml -f docker-compose.prod.yml logs backend --tail=200 | grep figure_render
+```
+
+- `reason="timeout dopo 20 s"`: il batch ha superato
+  `FIGURE_RENDER_TIMEOUT_SECONDS`; su una VM lenta alzalo, oppure riduci
+  le figure per lezione.
+- `reason` con il messaggio di `SvgRejectedError`: l'SVG prodotto
+  contiene elementi vietati o supera `FIGURE_SVG_MAX_BYTES`; la spec va
+  corretta (di norma `data.values` troppo grande).
+- `reason="format_unavailable"`: `FIGURE_VEGALITE_ENABLED=false` (formato
+  spento per scelta) o `vl_convert` non importabile; gli asset già in DB
+  restano in fallback finché il formato non torna disponibile.
+- `reason="negative_cache"`: un render fallito negli ultimi 60 s non viene
+  ritentato; l'export successivo ritenta.
+- `ImportError` di `vl_convert`: l'immagine non è stata ricostruita dopo
+  l'aggiornamento di `pyproject.toml`.
+
+Le figure in fallback sono elencate a export con
+`log.error("figure_render_fallback", lesson_code, asset_id, format,
+reason)`; lo script `python -m scripts.revalidate_mermaid_assets`
+(dry-run) elenca gli asset Mermaid da correggere.
+
+### Figura `function` senza formula (o con «Valori approssimati.»)
+
+La formula in alto a destra e le forme esatte (√, π, frazioni) arrivano
+dal calcolo simbolico di sympy nel processo figlio; se il figlio supera
+`FIGURE_FUNCTION_TIMEOUT_SECONDS` (10 s) o fallisce, la figura viene
+comunque prodotta con i soli valori numerici (`approximate=true`,
+avvertenza `symbolic_timeout` / `symbolic_failed`, didascalia con «Valori
+approssimati.») e la formula è scritta dall'AST dell'espressione. Se
+manca del tutto:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml logs backend --tail=200 | grep function_render
+docker compose -f docker-compose.yml -f docker-compose.prod.yml exec backend \
+    python -c "import sympy, matplotlib, numpy; print(sympy.__version__, matplotlib.__version__)"
+```
+
+- `formula_too_wide`: l'espressione non entra nella larghezza degli assi
+  nemmeno al corpo minimo; resta il solo nome `f(x)` (accorciare
+  l'espressione o allargare il dominio non aiuta: è la lunghezza della
+  formula).
+- `symbolic_latex_too_long`: LaTeX oltre 160 caratteri omesso.
+- `MPLCONFIGDIR` non scrivibile: matplotlib deve poter scrivere la cache
+  dei font in `/tmp/cache/matplotlib` (creata dal `Dockerfile` con
+  `chown app`); se il container gira con un utente diverso o `/tmp` è in
+  sola lettura, il primo render fallisce con `function_render_failed`.
 
 ### Errore `connection refused` da frontend → backend
 

@@ -525,13 +525,35 @@ Errori:
 `course:edit`. Body `LessonContentUpdateInput` (campi opzionali del
 `content_raw`: introduction, sections, summary, key_takeaways,
 visual_assets, tables, equations, examples, references, coverage_check).
-Validazioni allentate (solo unicità ID, no coverage hard).
+Validazioni allentate (solo unicità ID, no coverage hard), più il gate
+delle figure (`figure_render_service.validate_visual_assets_or_raise`,
+A15): quando `visual_assets` è presente, SOLO gli asset con `(format,
+content)` diversi da quelli già in DB sono validati dal renderer del
+formato (`validate(deep=False)`: gate statico D8 per Mermaid, schema +
+regole D5 per Vega-Lite, gate statico per DOT, Pydantic + AST per
+`function`); un edit del testo non rivalida diagrammi legacy già salvati.
 
 200 → `CourseOut`.
 
 Errori:
 - `409 lesson_content_not_editable` se status non in `ready/approved`.
 - `422` su validazione (asset_id duplicati, etc.).
+- `422 lesson_content_invalid_visual_asset` — uno o più asset visivi non
+  validi; `meta.errors[]` ha la forma del handler Pydantic estesa con
+  `asset_id` e `format`:
+
+  ```json
+  {"code": "lesson_content_invalid_visual_asset",
+   "message": "Uno o più asset visivi non sono validi.",
+   "meta": {"errors": [{"loc": ["visual_assets", 2, "content"], "asset_id": "A3",
+                        "format": "vegalite", "type": "figure_invalid",
+                        "msg": "encoding.x quantitativo richiede scale.domain [min, max]"}]}}
+  ```
+
+  `type` ∈ `figure_invalid | figure_format_unavailable |
+  mermaid_type_not_allowed | vegalite_use_function_format |
+  function_spec_invalid`; `msg` ≤ 600 caratteri; per `function` la `loc`
+  prosegue dentro la spec (`["visual_assets", i, "content", "expressions", 0, "expr"]`).
 
 ### `PATCH /orgs/{org_id}/courses/{course_id}/lessons/{lesson_id}/assessment`
 
@@ -639,9 +661,17 @@ aggiunta di una nuova lezione manuale.
 
 200 → `CourseOut`. Set `lesson.slides_modified_at = now()`.
 
+`new_assets[].format` accetta l'alias `VisualAssetFormat` (`mermaid`,
+`vegalite`, `dot`, `function`, `image` e i tre legacy); i `new_assets` con
+`(format, content)` cambiati passano dallo stesso gate del PATCH dei
+contenuti (A15).
+
 Errori:
 - `409 lesson_slides_not_editable` se status non in `ready/approved`.
 - `422` su validazione (slide_id duplicati, slide_number non sequenziali, references_assets verso ID inesistenti).
+- `422 lesson_slides_invalid_new_asset` — un `new_asset` non valido;
+  stesso payload `meta.errors[]` del PATCH dei contenuti con `loc` che
+  inizia per `new_assets`.
 
 ## Discorso temporizzato (Fase 5)
 
@@ -729,13 +759,16 @@ Errori:
 - `422 lesson_speech_uncovered_slides` se almeno una slide non ha segmenti.
 - `422 lesson_speech_map_*` su inconsistenze nel `slide_to_segments_map`.
 
-## Lesson assets (upload immagini + image→Mermaid)
+## Lesson assets (upload immagini + image→Mermaid + anteprima `function`)
 
 Endpoint complementari all'editor contenuti (Fase 3) per gestire gli
-asset visivi del nuovo flusso (commit `92d5f37`): l'utente carica
-un'immagine come asset, decide se mantenerla così com'è (`format=image`)
-o digitalizzarla in codice Mermaid via OpenAI Vision (`format=mermaid`).
-Vedi anche [08 — Lesson content](08-lesson-content.md#asset-visivi-mermaid--immagini-caricate).
+asset visivi (commit `92d5f37`, esteso dal branch `feat/academic-figures`):
+l'utente carica un'immagine come asset, decide se mantenerla così com'è
+(`format=image`) o digitalizzarla in codice Mermaid via OpenAI Vision
+(`format=mermaid`), oppure chiede l'anteprima di una figura calcolata
+(`format=function`). Vedi anche
+[08 — Lesson content](08-lesson-content.md#asset-visivi-figure-mermaid-vega-lite-dot-function--immagini-caricate)
+e [17 — Figure accademiche](17-visual-figures.md).
 
 ### `POST /orgs/{org_id}/courses/{course_id}/lesson-assets/upload`
 
@@ -767,10 +800,15 @@ Errori:
   base64 e chiama OpenAI Vision via
   `openai_image_to_mermaid_service.convert_image_to_mermaid`.
 - Modello: `settings.openai_image_to_mermaid_model` (default `gpt-4o`).
-- Validazione Mermaid superficiale: il codice deve iniziare con una
-  keyword nota (`flowchart|graph|sequenceDiagram|classDiagram|stateDiagram|erDiagram|gantt|pie|journey|mindmap|timeline|...`).
+- Validazione Mermaid superficiale: il codice deve iniziare con un tipo
+  di `figure_theme.MERMAID_ALLOWED_TYPES` (i 15 tipi D8 più gli alias
+  `graph`/`stateDiagram`); `journey`, `gitGraph`, `kanban`, `packet-beta`
+  e `architecture-beta` sono rifiutati (`journey` emette `<foreignObject>`,
+  non renderizzabile nel PDF — vedi
+  [08 — Lesson content § Validazione asset](08-lesson-content.md#validazione-asset-latexmermaid--auto-fix-ai-a-generazione)).
   La validazione semantica vera avviene sul frontend tramite la live
-  preview dell'editor Mermaid.
+  preview dell'editor Mermaid e, al salvataggio, con il gate statico del
+  registro dei renderer.
 - L'`usage` ritornato (token + costo USD via
   `openai_pricing.build_usage_dict`) è solo informativo: il backend NON
   lo persiste (la conversione è on-demand, non parte di una pipeline batch).
@@ -789,6 +827,44 @@ Errori:
   (immagine senza schema riconoscibile), output non-Mermaid, errore HTTP
   da OpenAI, o response in formato inatteso. `meta.message` contiene un
   testo localizzato per la UI.
+
+### `POST /orgs/{org_id}/courses/{course_id}/lesson-assets/render-function`
+
+`course:edit`, rate limit `30/minute` per IP (`slowapi`). Body: la spec
+`FunctionFigureSpec` (D9, `backend/app/schemas/figure_function.py`,
+`extra="forbid"`):
+
+```json
+{"kind": "function_study",
+ "expressions": [{"expr": "(x**2 - 1)/(x - 2)", "label": "f"}],
+ "variable": "x", "domain": [-4, 6], "range": [-8, 12],
+ "show": ["zeros", "critical_points", "asymptotes", "formula"]}
+```
+
+200 → `{ "svg", "computed", "latex", "warnings", "computed_caption", "content_hash" }`:
+SVG normalizzato (`<img src="data:image/svg+xml;base64,…">` nel
+frontend), `computed` (zeri, punti critici, flessi, asintoti,
+discontinuità, integrali, tangenti, `approximate`, `truncated`), LaTeX di
+ogni espressione, avvertenze (`symbolic_timeout`, `formula_too_wide`, …),
+didascalia calcolata nella lingua del corso (mai persistita) e hash
+canonico della spec. È l'anteprima di `FunctionEditor` e il render di
+`FunctionFigure` nella vista lezione: il backend ha una cache LRU di SVG
+e risultati per `(hash canonico, THEME_VERSION)`; il calcolo simbolico
+(sympy) gira in un processo figlio con timeout
+`FIGURE_FUNCTION_TIMEOUT_SECONDS` — allo scadere la risposta è comunque
+200 con `approximate=true`. Il client chiama con timeout 30 s.
+
+Errori:
+- `422` Pydantic standard (`loc` con `body` in testa) se la struttura è
+  invalida (`kind` ignoto, campi in più, ampiezze fuori intervallo).
+- `422 function_spec_invalid` — controlli semantici (`check_function_spec`):
+  `meta.errors[{loc, msg, type}]` per campo (es. `["expressions", 0,
+  "expr"]`, «simbolo non dichiarato: y», `type=expr_symbol`).
+- `422 function_render_failed` — calcolo numerico o disegno matplotlib
+  non riusciti (dettaglio nel log `function_render_failed`).
+- `422 function_render_timeout` — timeout complessivo
+  (`FIGURE_RENDER_TIMEOUT_SECONDS`).
+- `403` senza `course:edit`; `404 course_not_found`.
 
 ## Export PDF lezione testo (§7)
 
@@ -1176,3 +1252,8 @@ Errori:
 | `avatar_not_found` | 404 | `PATCH /me/avatar/musetalk-params` quando l'utente corrente non ha un avatar |
 | `openalex_error` | 502 | `POST /papers/search`: errore del provider OpenAlex (vedi [16 — Paper search](16-paper-search.md)) |
 | `openai_error` | 502 | `POST /papers/ai-summary`: errore lato OpenAI nella generazione del riassunto AI del paper (vedi [16 — Paper search](16-paper-search.md)) |
+| `lesson_content_invalid_visual_asset` | 422 | `PATCH /lessons/{id}/content`: uno o più `visual_assets` con `(format, content)` cambiati non superano il validatore del formato; `meta.errors[{loc, asset_id, format, msg, type}]` con `type` ∈ `figure_invalid | figure_format_unavailable | mermaid_type_not_allowed | vegalite_use_function_format | function_spec_invalid` (vedi [17 — Figure accademiche](17-visual-figures.md)) |
+| `lesson_slides_invalid_new_asset` | 422 | `PATCH /lessons/{id}/slides`: stesso gate sui `new_assets` cambiati, `loc` a partire da `new_assets` |
+| `function_spec_invalid` | 422 | `POST /lesson-assets/render-function`: spec strutturalmente valida ma incoerente (`check_function_spec`): `meta.errors[{loc, msg, type}]` per campo (`spec_invalid`, `expr_syntax`, `expr_forbidden`, `expr_symbol`, `expr_limit`) |
+| `function_render_failed` | 422 | `render-function`: calcolo numerico o disegno matplotlib non riusciti |
+| `function_render_timeout` | 422 | `render-function`: superato `FIGURE_RENDER_TIMEOUT_SECONDS` (il solo timeout simbolico non è un errore: 200 con `approximate=true`) |

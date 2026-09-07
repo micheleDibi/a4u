@@ -13,8 +13,9 @@ sono indipendenti:
 Tutte usano lo stesso stack di base (Jinja2 + WeasyPrint) ma differiscono
 per layout (A4 portrait / 16:9 / per-slide grouping), input dati
 (`content_raw` / `slides_raw` + `content_raw` / `speech_raw` +
-`slides_raw`) e necessità di pre-render Mermaid (sì per testo+slide, no
-per discorso che è prosa pura).
+`slides_raw`) e necessità di pre-render delle figure — Mermaid, Vega-Lite,
+DOT, `function` via `figure_render_service.render_svg_map` (sì per
+testo+slide, no per discorso che è prosa pura).
 
 **Reset PDF su rigenerazione AI a monte**: quando l'utente rigenera il
 content / le slide / il discorso, lo status del PDF a valle viene
@@ -68,7 +69,11 @@ Niente derivazione su `course.status`: la pipeline è indipendente.
 | Markdown → HTML | `markdown-it-py` + `mdit_py_plugins.dollarmath` | GFM tables, strikethrough, math |
 | Math LaTeX → SVG | `MathJax` 3.2.2 (tex-svg) via `Playwright` | Pre-rendering server-side a SVG: WeasyPrint **non** renderizza MathML, ma rende l'SVG correttamente |
 | Math LaTeX → MathML (fallback) | `latex2mathml` | Gate offline / fallback quando la CDN MathJax è irraggiungibile |
-| Diagrammi Mermaid → SVG | `Playwright` (Chromium headless) | Solo pre-render in batch, una sessione per lezione |
+| Diagrammi Mermaid → SVG | `Playwright` (Chromium headless), pin `MERMAID_CDN_VERSION` = 11.17.2 | Solo pre-render in batch, una sessione per lezione (`mermaid_prerender`); SVG inline nella dispensa |
+| Grafici Vega-Lite → SVG | `vl-convert-python` in processo figlio `spawn` | Registro `figure_render_service` (doc 17): validazione contro lo schema v6 + regole D5, tema `VEGALITE_THEME_CONFIG`, `normalize_svg` → `<img data:svg>` |
+| Grafi DOT → SVG | binario `dot` (apt `graphviz`) in `subprocess` con timeout | Tema `DOT_DEFAULTS` iniettato, `normalize_svg` → `<img data:svg>` |
+| Figure `function` → SVG | numpy + matplotlib in thread, sympy in processo figlio | `figure_function_service`: rami, punti notevoli, forme esatte, didascalia calcolata; `<img data:svg>` |
+| Cornice e numerazione «Figura N.» | `figure_numbering` + `figure_markup` (partial `partials/figure.html.j2`) | Numero dalla prima citazione `[FIG:id]`, orfane in coda (A12); «Figura.» senza numero nelle slide (A2) |
 | Template HTML | `Jinja2` | `backend/app/templates/lesson_pdf.html.j2` |
 | HTML → PDF | `WeasyPrint` 68+ | CSS Paged Media completo (background edge-to-edge, running header, page counter) |
 
@@ -102,7 +107,16 @@ sessione Playwright headless per lezione (carica
 `mermaid@{settings.mermaid_cdn_version}`, default `11.17.2`, con
 `htmlLabels: false` al livello top così le label diventano SVG `<text>` e
 non `<foreignObject>` — WeasyPrint non supporta foreignObject; verificato
-sui 15 tipi D8 da `tests/test_mermaid_no_foreignobject.py`).
+sui 15 tipi D8 da `tests/test_mermaid_no_foreignobject.py`). Le altre
+tre famiglie di figure (Vega-Lite, DOT, `function`) sono renderizzate
+**offline** dal registro `figure_render_service` (vl-convert e sympy in
+un processo figlio, `dot` in subprocess, matplotlib in thread), passano
+da `svg_normalize.normalize_svg` ed entrano nel PDF come
+`<img class="figure-svg" src="data:image/svg+xml;base64,…">` (elemento
+sostituito: `max-height` rispettato, nessuna collisione di id fra
+figure). Tutte le figure — Mermaid e immagini caricate comprese — sono
+avvolte dal partial unico `partials/figure.html.j2` con la didascalia
+«Figura N.» (D4). Dettagli in [17 — Figure accademiche](17-visual-figures.md).
 
 ## Architettura backend
 
@@ -160,9 +174,11 @@ pre-renderizzato in un blocco HTML e iniettato sulla riga propria
 
 | Tipo | Output |
 |---|---|
-| `FIG` (visual_assets) con `format="mermaid"` | `<figure class="visual"><div class="mermaid-svg">{svg_pre_renderizzato}</div></figure>` (SVG inline) |
-| `FIG` (visual_assets) con `format="image"` | `<figure class="visual"><img class="uploaded-image" src="data:{mime};base64,..." /></figure>` — file su filesystem letto via `_resolve_template_asset_url` e embeddato come data URL (no fetch HTTP da Playwright/WeasyPrint) |
-| `FIG` legacy (`image_prompt|image_search_query|description`) | `<div class="placeholder-image">{content}</div>` — testo italico, senza grafica |
+| `FIG` (visual_assets) con `format="mermaid"` | `<figure class="visual figure figure--lesson figure--mermaid" data-asset-id="…"><div class="figure-body"><div class="mermaid-svg">{svg_pre_renderizzato}</div></div><figcaption class="figure-caption"><span class="figure-label">Figura N.</span> {caption}</figcaption></figure>` (SVG inline; il body `<div class="mermaid-svg">` è byte-identico a prima del branch, cambia solo il wrapper — A11-L3) |
+| `FIG` con `format="vegalite"` / `"dot"` / `"function"` | stesso partial (`figure--vegalite` …) con body `<img class="figure-svg" src="data:image/svg+xml;base64,…" alt="{alt_text}">` (SVG normalizzato da `svg_normalize`); per `function` la didascalia riceve la coda calcolata («Zeri in x = −1, 1. …») |
+| `FIG` (visual_assets) con `format="image"` | stesso partial con body `<img class="uploaded-image" src="data:{mime};base64,..." />` — file su filesystem letto via `_resolve_template_asset_url` e embeddato come data URL (no fetch HTTP da Playwright/WeasyPrint) |
+| `FIG` legacy (`image_prompt|image_search_query|description`) | stesso partial con body `<div class="placeholder-image">{content}</div>` — testo italico, senza grafica |
+| `FIG` renderizzabile senza SVG (render fallito, timeout, `dot` assente) | stesso partial con `<pre class="figure-fallback">{sorgente}</pre>` e `log.error("figure_render_fallback", lesson_code, asset_id, format, reason)` (A23) |
 | `TAB` (tables) | `<figure class="table">` con tabella renderizzata da markdown-it |
 | `EQ` (equations) | `<figure class="equation"><div class="math-block">{svg_mathjax}</div></figure>` (SVG MathJax pre-renderizzato; fallback MathML). Se l'asset ha `kind` ∈ teorema/proposizione/definizione/lemma/corollario e/o `statement`/`proof`, diventa `<figure class="equation theorem">` con intestazione localizzata + enunciato + formula + dimostrazione a passaggi (`&#8718;` QED) |
 | `EX` (examples) | `<aside class="example">...</aside>` con titolo + corpo markdown |
@@ -272,26 +288,50 @@ Riga destra (`.pf-right`): `{counter(page)} / {counter(pages)} · Generated
 by Avatar4University` (il credito prodotto resta su ogni pagina, non
 rimovibile).
 
-**Mermaid pre-rendering**
+**Pre-render delle figure**
 
-`_prerender_mermaid_for_lesson(content)` estrae tutti gli asset
-`format=mermaid` dal `content_raw` e li renderizza in batch con UNA
-singola sessione Playwright headless (`mermaid_prerender`, i cui nomi
-storici sono re-esportati da `course_lesson_pdf_service`): carica
-`mermaid@{settings.mermaid_cdn_version}` (default `11.17.2`) con
-l'inizializzazione di `figure_theme` (`htmlLabels: false` al livello top,
-tema D3), espone una funzione `window.__renderMermaid(id, code)` e itera
-sui sorgenti restituendo gli SVG. Mermaid 11.17.2 emette ancora
-`style="max-width: <px>px;"` sull'SVG: `_strip_mermaid_max_width` resta
-in vigore (fixture `tests/fixtures/mermaid11_flowchart.svg`). Costo
-tipico: ~1s di startup browser + ~50-200ms per
-diagramma. Se la lezione non ha mermaid, niente browser viene avviato.
+`_prerender_visual_assets_for_lesson(content, *, language)` (alias
+storico `_prerender_mermaid_for_lesson`) delega a
+`figure_render_service.render_svg_map(assets, language=…)`: raggruppa gli
+asset con `format` in `RENDERABLE_FORMATS` per formato e chiama **una**
+`render_svg_batch` per formato, sotto semaforo
+(`FIGURE_RENDER_MAX_WORKERS`) e `asyncio.wait_for`
+(`FIGURE_RENDER_TIMEOUT_SECONDS`; il batch Mermaid ha un tetto proprio di
+almeno 60 s per il costo fisso di Chromium + CDN), con cache LRU degli SVG
+(`FIGURE_SVG_CACHE_SIZE`, chiave formato + hash + `THEME_VERSION`) e cache
+negativa di 60 s per i render falliti. Non solleva mai: le chiavi assenti
+attivano il fallback del partial.
+
+- Mermaid: `mermaid_prerender._prerender_mermaid_to_svg_batch_sync`
+  (nomi storici re-esportati da `course_lesson_pdf_service`) apre UNA
+  sessione Playwright headless per lezione, carica
+  `mermaid@{settings.mermaid_cdn_version}` (default `11.17.2`) con
+  l'inizializzazione di `figure_theme` (`htmlLabels: false` al livello
+  top, tema D3), espone `window.__renderMermaid(id, code)` e itera sui
+  sorgenti. Mermaid 11.17.2 emette ancora `style="max-width: <px>px;"`
+  sull'SVG: `_strip_mermaid_max_width` resta in vigore (fixture
+  `tests/fixtures/mermaid11_flowchart.svg`). Costo tipico: ~1 s di
+  startup browser + ~50-200 ms per diagramma. Se la lezione non ha
+  Mermaid, niente browser viene avviato.
+- Vega-Lite: `vl_convert.vegalite_to_svg` nel processo figlio
+  (`figure_compute.isolated.run_isolated`, ~0,3-0,5 s di spawn + import
+  alla prima chiamata), `$schema` v6 e `VEGALITE_THEME_CONFIG` imposti dal
+  registro; DOT: `dot -Tsvg` in `subprocess.run` senza shell con `cwd`
+  vuoto e ambiente minimo (~50 ms); `function`: `figure_function_service`
+  (numpy + matplotlib in thread, sympy nel figlio con timeout
+  `FIGURE_FUNCTION_TIMEOUT_SECONDS`). I tre passano da
+  `svg_normalize.normalize_svg` (prologo rimosso, scansione che rifiuta
+  `<script>`/`<foreignObject>`/`<image>`/href esterni, radice riscritta
+  in px).
 
 Il dict `{asset_id → svg_string}` è poi passato a `render_lesson_html`
-e da lì a `_build_asset_html_map`, che lo iniezta nei blocchi
-`<figure class="visual"><div class="mermaid-svg">{svg}</div></figure>`.
-Se il rendering fallisce (rete, sintassi mermaid), il template emette
-`<pre class="mermaid-fallback">` col codice originale.
+(`visual_svg_map`; `mermaid_svg_map` resta accettato e fuso) e da lì a
+`_build_asset_html_map` → `_render_visual_asset_block` →
+`figure_markup.render_figure_html`, che produce il blocco `<figure
+class="visual figure …">` con il body del formato e la didascalia
+«Figura N.». Se il rendering fallisce (rete, sintassi, timeout, `dot`
+assente), il partial emette `<pre class="figure-fallback">` con il
+sorgente e `log.error("figure_render_fallback", …)` (A23).
 
 **LaTeX pre-rendering (MathJax → SVG)**
 
@@ -383,14 +423,17 @@ versioning).
 1. risolve il template (lesson.pdf_template_id → org default) e carica
    l'`Organization` + il docente (`course.assignee_user_id` →
    `User.full_name`) per la copertina/footer;
-2. `_prerender_mermaid_for_lesson(content_raw)` → `{asset_id: svg}` (una
-   sessione Playwright per lezione, solo se ci sono mermaid);
+2. `_prerender_visual_assets_for_lesson(content_raw, language=…)` →
+   `{asset_id: svg}` via `render_svg_map` (una sessione Playwright per
+   lezione solo se ci sono Mermaid; Vega-Lite, DOT e `function` offline);
 3. `_prerender_math_for_lesson(content_raw)` → `{(latex, display): svg}`
    (una sessione Playwright MathJax `tex-svg`, solo se la lezione
    contiene formule);
-4. `render_lesson_html(... mermaid_svg_map=..., math_svg_map=...,
+4. `render_lesson_html(... visual_svg_map=..., math_svg_map=...,
    teacher_name=...)` → HTML completo con SVG MathJax (fallback MathML) +
-   SVG mermaid inline + CSS @page con sfondo edge-to-edge;
+   figure nel partial unico (numerazione «Figura N.» calcolata sul corpo
+   markdown prima della sostituzione degli asset, orfane accodate dopo la
+   sintesi) + CSS @page con sfondo edge-to-edge;
 5. `generate_pdf_bytes(html=html)` → bytes via WeasyPrint;
 6. salva il PDF (`remote_storage.upload_bytes(pdf_key(rel), ...)`);
 7. aggiorna `pdf_path`, `pdf_template_id`, `pdf_generated_at`.
@@ -662,7 +705,10 @@ PUBLIC_BASE_URL=http://localhost:8000    # antepone questo prefisso ai
 `COURSE_LESSON_PDF_MAX_CONCURRENCY=2` è prudente: WeasyPrint è
 CPU-bound ma leggero (~50MB RAM per render). Il pre-render mermaid
 apre un'istanza Chromium per ogni lezione che ha diagrammi
-(~150-200MB RAM per ~2-5s totali). Aumentare solo dopo test di carico.
+(~150-200MB RAM per ~2-5s totali). I render CPU-bound delle altre figure
+(vl-convert, sympy, matplotlib, `dot`) condividono il semaforo
+`FIGURE_RENDER_MAX_WORKERS=2` con le anteprime `render-function`
+dell'editor. Aumentare solo dopo test di carico.
 
 ### Setup iniziale
 
@@ -673,6 +719,11 @@ apre un'istanza Chromium per ogni lezione che ha diagrammi
 # 2. WeasyPrint runtime (Windows local-dev)
 winget install tschoonj.GTKForWindows
 # Su Linux/Docker: gestito dal Dockerfile (libpango/libharfbuzz/...)
+
+# 3. Graphviz (figure DOT): binario `dot` nel PATH o in GRAPHVIZ_DOT_PATH
+brew install graphviz        # macOS;  apt-get install graphviz su Debian/Ubuntu
+# Su Linux/Docker: già nel Dockerfile. vl-convert, sympy e matplotlib
+# arrivano da pyproject (pip install .).
 ```
 
 ### Dipendenze pyproject
@@ -686,6 +737,12 @@ dependencies = [
   "latex2mathml>=3.77",       # fallback offline: LaTeX → MathML
   "jinja2>=3.1.4",
   "markdown-it-py[plugins]>=3.0.0",
+  # Figure accademiche (doc 17)
+  "vl-convert-python>=1.9",   # Vega-Lite → SVG senza browser
+  "altair>=6,<7",             # solo per il file JSON dello schema Vega-Lite v6
+  "jsonschema>=4.18",         # validazione delle spec contro lo schema
+  "sympy>=1.13",              # forme esatte delle figure `function`
+  "matplotlib>=3.9",          # disegno delle figure `function`
 ]
 ```
 
@@ -705,12 +762,14 @@ dependencies = [
    `mermaid@{settings.mermaid_cdn_version}` (default `11.17.2`) e
    `mathjax@3.2.2` da CDN (jsdelivr) in Playwright. Se la macchina del
    worker non ha internet: i diagrammi Mermaid falliscono (fallback
-   testuale `<pre>`); le formule ricadono su `latex2mathml` → MathML,
-   che però WeasyPrint stampa solo come testo (pedici/apici/frazioni
-   degradati ma leggibili). Il resto del PDF viene comunque generato. Il
-   rendering finale WeasyPrint è completamente offline (no CDN per
-   fonts, math o styling). Soluzione future: bundle locale di
-   mermaid.esm / MathJax o pre-rendering via CLI + node.
+   testuale `<pre class="figure-fallback">` con `log.error`); le formule
+   ricadono su `latex2mathml` → MathML, che però WeasyPrint stampa solo
+   come testo (pedici/apici/frazioni degradati ma leggibili). Le figure
+   Vega-Lite, DOT e `function` sono renderizzate offline e non degradano.
+   Il resto del PDF viene comunque generato. Il rendering finale
+   WeasyPrint è completamente offline (no CDN per fonts, math o
+   styling). Soluzione future: bundle locale di mermaid.esm / MathJax o
+   pre-rendering via CLI + node.
 5. **Streaming SSE** del progresso al client: la UI fa polling.
 6. **Diff-detection** automatico tra `content_raw` modificato e PDF già
    generato: il badge resta `ready` finché l'utente non clicca "Rigenera
@@ -727,7 +786,11 @@ Pipeline parallela e indipendente dal PDF testo. Stato per-lezione su
 ### Stack
 
 Stesso del PDF testo — **WeasyPrint** + **Jinja2** + **Playwright** per
-pre-render mermaid **e** LaTeX → SVG (MathJax). Differenze principali:
+pre-render mermaid **e** LaTeX → SVG (MathJax), più il registro
+`figure_render_service` per Vega-Lite, DOT e `function`
+(`_prerender_mermaid_for_slides`, nome storico, oggi tutti i formati:
+fonde gli asset di Fase 3 e i `new_assets` di Fase 4 e delega a
+`render_svg_map`). Differenze principali:
 - Layout: A4 **portrait single-column block-flow** (mantenuto dal feedback utente: niente layout 16:9 landscape — il PDF deve essere comodo da stampare e leggere)
 - Template: `slide_templates` (16:9 originariamente per avatar video, ora unificato anche per il PDF slide via migration 0022 con campi aggiunti `margin_mm` + `background_opacity_pct`)
 - Asset rendering: stesso pattern di Fase 3 (visual/table/equation/example) + supporto a `new_assets` di Fase 4
@@ -758,17 +821,18 @@ sulla sequenza espansa.
 Le slide pure-bullet (no asset) o pure-asset (no bullet) restano
 single-page.
 
-### Mermaid rendering
+### Rendering delle figure nelle slide
 
-I diagrammi Mermaid vengono incapsulati in `<img>` con **data-URI base64** anziché inseriti come SVG inline. Motivo: nel contesto slide PDF, un SVG inline con attributi `width="X" height="Y"` espliciti emessi da Mermaid (10.9.x come 11.x) ignora il vincolo CSS `max-height` e sborda dal body. Un `<img>` invece è un replaced element con aspect ratio intrinseca, e `max-width + max-height` gli applicano scaling proporzionale corretto.
+Tutte le figure (Mermaid, Vega-Lite, DOT, `function`) vengono incapsulate in `<img>` con **data-URI base64** anziché inserite come SVG inline (A8). Motivo: nel contesto slide PDF, un SVG inline con attributi `width="X" height="Y"` espliciti emessi da Mermaid (10.9.x come 11.x) ignora il vincolo CSS `max-height` e sborda dal body. Un `<img>` invece è un replaced element con aspect ratio intrinseca, e `max-width + max-height` gli applicano scaling proporzionale corretto. La regola unica `.slide-asset .figure-svg, .slide-asset .mermaid-svg, .slide-asset .uploaded-image { max-height: 80mm; … }` vale anche per le immagini caricate (prima tagliate da `overflow: hidden` oltre 80 mm). Ogni figura passa dal partial `partials/figure.html.j2` con `variant="slide"`: etichetta «Figura.» **senza numero** (A2), didascalia a 8pt, fallback `<pre class="figure-fallback">` con CSS dedicato.
 
 ```python
-def _svg_to_data_uri(svg: str) -> str:
+# svg_normalize.svg_to_data_uri — re-esportata da course_lesson_slides_pdf_service
+def svg_to_data_uri(svg: str) -> str:
     payload = base64.b64encode(svg.encode("utf-8")).decode("ascii")
     return f"data:image/svg+xml;base64,{payload}"
 ```
 
-Encoding base64 (non URL-encoding) perché l'SVG di Mermaid contiene molti `"` (attributi viewBox, xmlns, ...) che romperebbero un `src="..."` HTML.
+Encoding base64 (non URL-encoding) perché l'SVG contiene molti `"` (attributi viewBox, xmlns, ...) che romperebbero un `src="..."` HTML. La stessa funzione è usata dal PDF della dispensa per le figure Vega-Lite/DOT/`function` (Mermaid resta inline lì).
 
 ### Asset resolver
 
@@ -800,7 +864,10 @@ Tab "Slide" (`CourseLessonSlidesView.tsx`) ha bottoni primary "Esporta PDF" / "S
 ### File rilevanti
 
 ```
-backend/app/services/course_lesson_slides_pdf_service.py   # render + materialize + slide split + mermaid pre-render
+backend/app/services/course_lesson_slides_pdf_service.py   # render + materialize + slide split + pre-render delle figure (render_svg_map)
+backend/app/services/figure_render_service.py              # registro dei renderer (doc 17): Mermaid, Vega-Lite, DOT, function
+backend/app/services/figure_markup.py                      # partial unico delle figure + didascalia «Figura N.» / «Figura.»
+backend/app/templates/partials/figure.html.j2              # partial D4 condiviso da dispensa, slide e frame video
 backend/app/services/course_lesson_slides_pdf_worker.py    # worker (cap=2, riusa course_lesson_pdf_*)
 backend/app/templates/lesson_slides_pdf.html.j2            # template Jinja A4 portrait
 backend/alembic/versions/0020_lesson_slides_pdf.py         # 8 colonne slides_pdf_*
@@ -818,7 +885,7 @@ suffisso `_speech.pdf`.
 
 ### Stack
 
-Solo **WeasyPrint** + **Jinja2** — niente Mermaid pre-render (il
+Solo **WeasyPrint** + **Jinja2** — niente pre-render di figure (il
 discorso è prosa pura, niente asset visivi). Template `pdf_templates`
 (stesso del PDF lezione testo, perché il discorso è anch'esso testo
 single-column block-flow A4 portrait).
@@ -905,3 +972,51 @@ COURSE_LESSON_PDF_MAX_CONCURRENCY=2
 COURSE_LESSON_PDF_AUTO_RETRY_MAX=5
 GENERATED_PDFS_DIR=generated_pdfs
 ```
+
+### Figure (doc 17)
+
+Il pre-render delle figure di dispensa e slide legge il blocco «Figure
+accademiche» di `config.py` (replicato in `.env.example` e
+`docker-compose.prod.yml`; tabella completa in
+[04 — Configuration](../04-configuration.md)):
+
+```env
+FIGURE_VEGALITE_ENABLED=true          # kill-switch per formato (Mermaid non disattivabile)
+FIGURE_DOT_ENABLED=true
+FIGURE_FUNCTION_ENABLED=true
+MERMAID_CDN_VERSION=11.17.2           # pin unico: validatore Playwright + pre-render PDF/video
+FIGURE_RENDER_TIMEOUT_SECONDS=20      # tetto del batch di figure di una lezione (Mermaid: almeno 60 s)
+FIGURE_FUNCTION_TIMEOUT_SECONDS=10    # calcolo simbolico nel processo figlio (oltre: valori approssimati)
+FIGURE_RENDER_MAX_WORKERS=2           # render CPU-bound concorrenti (worker + anteprime render-function)
+FIGURE_SVG_CACHE_SIZE=256             # cache LRU degli SVG in memoria
+FIGURE_SVG_MAX_BYTES=1500000          # oltre, l'SVG è rifiutato (fallback)
+FIGURE_DOT_MAX_CHARS=12000            # limite del sorgente DOT
+GRAPHVIZ_DOT_PATH=                    # vuoto = `dot` cercato nel PATH
+```
+
+**Rivalidazione degli asset Mermaid già in DB** (livello L5 della
+regressione zero di A11): `backend/scripts/revalidate_mermaid_assets.py`
+è un dry-run in sola lettura che, per ogni asset `format="mermaid"` in
+`content_raw.visual_assets` e `slides_raw.new_assets`, applica la pulizia
+del pre-render, il gate statico D8 (tipo ammesso, niente `%%{init`,
+niente HTML nelle label) e il render con Mermaid 11 (conteggio dei
+`<foreignObject>`), e riporta totale / ok / da correggere più il numero
+di lezioni con asset non citati nel corpo (che con la numerazione
+«Figura N.» compaiono in coda, A12):
+
+```bash
+# dalla cartella backend/, Postgres raggiungibile (JWT_SECRET in ambiente se manca .env)
+python -m scripts.revalidate_mermaid_assets                    # tabella markdown
+python -m scripts.revalidate_mermaid_assets --skip-render      # solo gate statico, senza Chromium né rete
+python -m scripts.revalidate_mermaid_assets --course "Analisi" --show-ok
+python -m scripts.revalidate_mermaid_assets --format csv > mermaid.csv
+# sul server (dc = alias docker compose di produzione)
+dc exec -T backend python -m scripts.revalidate_mermaid_assets --format csv > mermaid.csv
+```
+
+Gli asset «da correggere» (`mermaid_type_not_allowed`,
+`mermaid_init_directive`, `mermaid_html_in_label`, `render_failed`,
+`foreignobject`) finiscono nel PDF come fallback `<pre>`: il gate statico
+li blocca solo alla rigenerazione o alla modifica di quel singolo asset,
+mai all'edit del testo (A15). Esito della run di consegna in
+[17 — Figure accademiche § Verifiche e consegna](17-visual-figures.md#14-verifiche-e-consegna).

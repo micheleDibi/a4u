@@ -1100,3 +1100,181 @@ Helper di palette unificato:
   sky, blue, cyan, teal, emerald).
 - `sortByLifecycleOrder(items)` — ordine canonico
   approved → ready → processing → pending → failed → ecc.
+
+---
+
+## Figure accademiche — `src/components/shared/` (doc [Courses 17](../courses/17-visual-figures.md))
+
+Componenti del branch `feat/academic-figures`: una cornice unica per le
+figure e, per ciascuna delle quattro famiglie (`mermaid`, `vegalite`,
+`dot`, `function`), un renderer per la vista e un editor per i dialog di
+Fase 3 e Fase 4. Convenzioni comuni: `useTranslation()` interno
+(nessuna stringa hard-coded, guardia `tests/test_frontend_figure_i18n.py`),
+import dinamico delle librerie di render (`lazy` + `Suspense` dentro la
+cornice), SVG montato nel DOM tramite ref dopo `sanitizeSvgElement`
+(nessun `dangerouslySetInnerHTML`), errori in un box controllato e mai
+un'eccezione che rompa la pagina.
+
+### `FigureFrame.tsx`
+
+- **Props**: `{ assetId, format, caption, altText, number?, variant?:
+  "lesson" | "slide", extraCaption?, className?, children }`.
+- **Comportamento**: `<figure role="figure" aria-label=… className="figure
+  figure--{variant} figure--{format}">` + `<figcaption>` con
+  `t("courses.figures.label", { n })` («Figura N.») oppure
+  `courses.figures.labelUnnumbered` («Figura.») quando `number` è assente
+  (slide e frame video, A2); `stripFigurePrefix(caption)` toglie un
+  prefisso «Figura 3.» già scritto (solo a video, mai nel dato);
+  `extraCaption` (coda calcolata di `function`) omessa se la didascalia
+  termina già con lo stesso testo. Stesso markup del partial backend
+  `partials/figure.html.j2`. Niente card: la figura è un elemento
+  tipografico del testo. Esporta anche `FigureLoading` (segnaposto
+  `courses.figures.loading`) e `FigureErrorBox` (titolo del formato,
+  `courses.figures.renderError`, dettagli collassabili con sorgente ed
+  errore tecnico).
+
+### `MermaidDiagram.tsx`
+
+- **Props**: `{ code, className? }`.
+- Import dinamico di `mermaid` (11.17.2), `initialize` con
+  `mermaidConfig` di `lib/figureTheme.ts` (tema D3, `htmlLabels: false`
+  top-level, `securityLevel: "strict"`), `mermaid.parse` con
+  `suppressErrors` prima del render (errore → `FigureErrorBox`),
+  `sanitizeMermaidCode` (fence, righe `mermaid`/`all`), `max-width`
+  inline rimosso, `width: 100%`; tetto d'altezza
+  (`fullWidthSvgMaxHeightPx`) solo per i diagrammi orizzontali, mai
+  sotto l'altezza naturale (`tests/test_frontend_figure_layout.py`).
+
+### `VegaLiteDiagram.tsx`
+
+- **Props**: `{ spec, className? }` (spec JSON come stringa).
+- `parseJsonObject` (chiavi duplicate e JSON non valido → `FigureParseError`
+  tradotto), import dinamico di `vega-embed` con `actions: false`,
+  `renderer: "svg"`, `config: VEGALITE_THEME_CONFIG` e un `loader`
+  inerte (`load`/`sanitize`/`http`/`file` rifiutano: un `data.url` non
+  viene mai scaricato dal browser del docente, difesa in profondità
+  rispetto al gate 422 del PATCH). Montaggio via ref, `memo` sul
+  `content`.
+
+### `DotDiagram.tsx`
+
+- **Props**: `{ source, className? }`.
+- Import dinamico di `@viz-js/viz` (Graphviz in WebAssembly, chunk
+  `viz.js`), `dotDefaultsPrelude` del tema iniettato dopo la `{` di
+  apertura (saltando i blocchi `graph/node/edge [` già presenti),
+  render SVG via ref, errori del parser → `FigureErrorBox`.
+
+### `FunctionFigure.tsx`
+
+- **Props**: `{ assetId, content, caption, altText?, number?, variant?, className? }`.
+- La spec `function` è resa dal backend: `useQuery` su
+  `coursesApi.lessonAssets.renderFunction(orgId, courseId, spec)`
+  (`queryKey` con `assetId` e `content`, `staleTime: Infinity`, `retry: 1`)
+  con `orgId`/`courseId` da `useCourseRef()` (`contexts/CourseRefContext.tsx`,
+  fornito dai container `CourseLessonContentView` e `CourseLessonSlidesView`,
+  A21); senza provider mostra `courses.figures.missing`. Rende `<img>` con
+  `svgDataUri(svg)` dentro `FigureFrame` con `extraCaption =
+  computed_caption`; errori API (`describeApiError`) e di parse nel box.
+
+### `FigureSourceEditor.tsx`
+
+- **Props**: `{ value, onChange, disabled?, className?, rows?,
+  serverError?, i18nPrefix, templates: SourceTemplate[], placeholder,
+  renderPreview: (source) => ReactNode, debounceMs? }` con
+  `SourceTemplate { id, labelKey, code }`.
+- Base condivisa di `VegaLiteEditor` e `DotEditor`: textarea monospace
+  del sorgente, `useDebouncedValue` per l'anteprima, `Select` dei template
+  (chiavi i18n sotto `i18nPrefix`, es.
+  `courses.lessonsContent.editorUI.vegalite`), slot per l'anteprima
+  (`Suspense` + `FigureLoading`, reso da `renderPreview`) e per l'errore
+  del parser sotto l'anteprima; l'errore 422 per-asset arriva dal dialog
+  (`serverError`) ed è mostrato in testa.
+
+### `VegaLiteEditor.tsx` / `DotEditor.tsx`
+
+- **Props**: `{ value, onChange, disabled?, className?, rows?, error? }`.
+- Template accademici conformi alle regole del validatore backend
+  (Vega-Lite: istogramma, barre con errore, scatter, boxplot, serie
+  temporale — `data.values` ≤ 200 righe, `clip: true`, `scale.domain`,
+  una sola `title`, niente `tooltip`/`selection`/`config`; DOT: albero,
+  grafo diretto, automa, cluster — nessun attributo `image`/`URL`/`href`,
+  nessun blocco `graph/node/edge [` così il tema è iniettato per intero).
+  I template sono contenuto didattico (etichette in italiano nei template
+  literal), non interfaccia (A22).
+
+### `FunctionEditor.tsx`
+
+- **Props**: `{ value, onChange, disabled?, className?, orgId, courseId,
+  error? }` (l'editor riceve `orgId`/`courseId` dal dialog, che li ha;
+  il context serve solo alla vista).
+- Modulo a campi sulla spec `FunctionFigureSpec` (`lib/functionSpec.ts`:
+  `parseFunctionContent`, spec di partenza, normalizzazione,
+  `isLocallyComplete`): `Select` del `kind`, espressioni (≤ 4) con label,
+  variabile (+ due variabili per `level_curves`), dominio e intervallo y
+  (con toggle automatico), `show`, annotazioni (tangente / area / punto
+  con campi condizionali), parametro (nome + valori), `sampling.points` in
+  «Avanzate». Il docente non vede JSON: ogni modifica riserializza con
+  `JSON.stringify`. Anteprima con `useDebouncedValue(spec, 700)` +
+  `useQuery({ retry: false, staleTime: 5 min, placeholderData:
+  keepPreviousData })` su `renderFunction` (timeout client 30 s); gli
+  errori `meta.errors` del 422 sono mappati sul campo (`loc` unita con
+  `.`, eventuale `body` iniziale scartato) con `aria-invalid`, i non
+  mappabili in un box in testa; KaTeX per `latex[i]` accanto a ogni
+  espressione; SVG in `<img>` dentro `FigureFrame` con la didascalia
+  calcolata come coda.
+
+### `VisualAssetEditor.tsx`
+
+- **Props**: `{ orgId, courseId, asset, onChange: (patch) => void,
+  onDelete, disabled, idSlot: ReactNode, headerActions?, labels:
+  VisualAssetEditorLabels { caption, altText, remove }, error? }`.
+- Card di un asset visivo condivisa dai due dialog (Fase 3
+  `LessonContentEditDialog`, Fase 4 `LessonSlidesEditDialog`): badge del
+  formato (`formatLabel` di `lib/figureFormats.ts`), campi caption / alt
+  text, editor per formato (`MermaidEditor`, `VegaLiteEditor`,
+  `DotEditor`, `FunctionEditor`, anteprima `<img>` + «Digitalizza in
+  Mermaid» per `image`, banner readonly per i legacy), errore 422
+  per-asset in testa, pulsante di rimozione. Sostituisce ~220 righe
+  duplicate nei due dialog.
+
+### `AddVisualAssetMenu.tsx`
+
+- **Props**: `{ orgId, courseId, disabled, makeAssetId: () => string,
+  onAdd: (asset) => void, formats?, triggerLabel }`.
+- Dropdown «+ Aggiungi asset visivo» con cinque voci: carica immagine
+  (`coursesApi.lessonAssets.upload`), scrivi Mermaid, grafico Vega-Lite,
+  grafo DOT, figura calcolata (chiavi
+  `courses.lessonsContent.editor.assetActions.write{Mermaid,Vegalite,Dot,Function}`);
+  il dialog delle slide passa `formats` senza `function` (A1). Gli id
+  nuovi sono generati dal `makeAssetId` del dialog (loop anti-collisione
+  sugli id esistenti).
+
+### Librerie di supporto (`src/lib/`)
+
+- `figureTheme.ts` — copia del tema D3 (`THEME_VERSION`, palette,
+  `mermaidConfig`, `VEGALITE_THEME_CONFIG`, `DOT_DEFAULTS`,
+  `dotDefaultsPrelude`), da mantenere allineata a `figure_theme.py`
+  (test di parità nel backend);
+- `figureNumbering.ts` — `FIG_REF_RE`, `citedFigureIds`,
+  `appendUncitedFigureRefs`, `computeFigureNumbers`, `stripFigurePrefix`
+  (copia di `figure_numbering.py`, fixture condivisa);
+- `figureFormats.ts` — `VISUAL_FORMATS` / `RENDERABLE_FORMATS` /
+  `LEGACY_FORMATS`, `formatLabel(format, t)`, `stripFenceAndControl`,
+  `parseJsonObject`, `FigureParseError` (codici tradotti dal componente),
+  `sanitizeSvgElement`, `svgDataUri`, `svgIntrinsicSize`,
+  `fullWidthSvgMaxHeightPx`;
+- `functionSpec.ts` — costanti e helper della spec `function` condivisi da
+  vista ed editor;
+- `errors.ts` — `extractApiError` con `meta.errors[]` tipizzati
+  (`loc`, `msg`, `type`, `asset_id`, `format`) e `describeApiError`.
+
+### Integrazione nelle viste
+
+`MarkdownRenderer` riceve `figureNumbers` (calcolati in
+`LessonContentView.buildFullMarkdown` sul corpo intro → sezioni → sintesi
+con i tag orfani accodati) e rende ogni `[FIG:id]` con `VisualAssetBody`
+dentro `FigureFrame`; `LessonSlidesView` usa `FigureFrame` con
+`variant="slide"` (nessun numero) e `MermaidDiagram` lazy; entrambi
+leggono `CourseRefContext` per `FunctionFigure`. `[FIG:]` dentro esempi
+e tabelle (`ExampleBlock` usa `ReactMarkdown` direttamente) non è
+risolvibile né numerabile: limite dichiarato.

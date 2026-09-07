@@ -122,7 +122,7 @@ In totale **13 worker async** girano nel lifespan dell'app. I cap di concorrenza
 | Document extract | `pdfplumber` · `python-docx` · `docx2txt` · `striprtf` |
 | Storage file | Backend pluggable via `settings.storage_backend`: `local` (filesystem) · `ovh_ftp` (FTP/FTPS) · `ovh_sftp` (SFTP, Paramiko) |
 | Ricerca paper | OpenAlex (primary) · Semantic Scholar + Crossref (enrichment on-demand) |
-| Frontend | React 18 · Vite · TypeScript · Tailwind 4 · Radix UI (shadcn pattern) · TanStack Query · React Hook Form + Zod · i18next (24 locali) · TipTap · KaTeX · Mermaid |
+| Frontend | React 18 · Vite · TypeScript · Tailwind 4 · Radix UI (shadcn pattern) · TanStack Query · React Hook Form + Zod · i18next (24 locali) · TipTap · KaTeX · Mermaid 11 · Vega-Lite (vega-embed) · Graphviz (`@viz-js/viz`) |
 | Database | PostgreSQL 16 |
 | Deploy | Docker (multi-stage) · Nginx |
 
@@ -147,6 +147,14 @@ In totale **13 worker async** girano nel lifespan dell'app. I cap di concorrenza
   ```
 
 - **ffmpeg** (montaggio video Fase 6/6b): nel `PATH` in local-dev, già incluso nel Dockerfile per la produzione.
+- **Graphviz** (figure DOT delle dispense e delle slide, vedi [docs/courses/17](docs/courses/17-visual-figures.md)): binario `dot` nel `PATH` (o `GRAPHVIZ_DOT_PATH`); già incluso nel Dockerfile per la produzione.
+
+  ```bash
+  brew install graphviz            # macOS
+  sudo apt-get install -y graphviz  # Debian/Ubuntu (anche in CI)
+  ```
+
+  Le altre dipendenze delle figure (vl-convert per Vega-Lite, sympy e matplotlib per le figure `function`, jsonschema e altair per lo schema Vega-Lite) sono pacchetti pip dichiarati in `backend/pyproject.toml`. Senza `dot` il formato DOT è semplicemente assente dai formati offerti al modello e le figure DOT già salvate degradano al fallback testuale.
 
 > **Servizi esterni opzionali**: la generazione AI richiede una `OPENAI_API_KEY`. Video (Fase 6/6b) e ricerca paper sono **disattivati se le rispettive chiavi non sono configurate** — RunPod + MiniMax + Cloudflare R2 per i video, mentre OpenAlex/Semantic Scholar/Crossref funzionano senza API key. Vedi [`docs/04-configuration.md`](docs/04-configuration.md).
 
@@ -199,7 +207,7 @@ I modelli e i parametri di reasoning hanno default sensati per ciascuna fase (`O
 a4u/
 ├── backend/
 │   ├── app/
-│   │   ├── api/v1/         # FastAPI routers (21 file, ~175 endpoint; ~91 sul dominio corsi)
+│   │   ├── api/v1/         # FastAPI routers (20 router, 188 endpoint; 99 nel router corsi)
 │   │   ├── core/           # config, logging, errors, audit, security, course_phase_order
 │   │   ├── db/             # AsyncEngine, base, session, seed
 │   │   ├── models/         # SQLAlchemy models
@@ -265,7 +273,7 @@ Tutta la documentazione vive in [`docs/`](docs/) ed è organizzata per area. Ind
 | [`02-document-preprocessing.md`](docs/courses/02-document-preprocessing.md) | Pipeline estrazione + summary AI |
 | [`03-architecture-generation.md`](docs/courses/03-architecture-generation.md) | Fase 1 — architettura del corso |
 | [`04-manual-editing.md`](docs/courses/04-manual-editing.md) | CRUD manuale moduli/lezioni + AI per modulo |
-| [`05-api-reference.md`](docs/courses/05-api-reference.md) | ~91 endpoint sotto `/orgs/{org_id}/courses` |
+| [`05-api-reference.md`](docs/courses/05-api-reference.md) | 99 endpoint del router corsi (98 sotto `/orgs/{org_id}/courses`) |
 | [`06-frontend.md`](docs/courses/06-frontend.md) | Editor a stepper 4 fasi, componenti, dialog, polling |
 | [`07-lesson-structure.md`](docs/courses/07-lesson-structure.md) | Fase 2 — struttura lezioni |
 | [`08-lesson-content.md`](docs/courses/08-lesson-content.md) | Fase 3 — Dispense + glossario |
@@ -290,12 +298,21 @@ Tutta la documentazione vive in [`docs/`](docs/) ed è organizzata per area. Ind
 ## Test
 
 ```bash
-# Backend
-cd backend && source .venv/Scripts/activate && pytest
+# Backend (Postgres attivo: docker compose up -d postgres; il DB a4u_test è ricreato dalla suite)
+cd backend && python3 -m pytest -q
+# su macOS WeasyPrint richiede le librerie Homebrew:
+cd backend && DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib python3 -m pytest -q
+# i test che richiedono Chromium, rete (CDN Mermaid), `dot`, vl-convert, sympy o
+# matplotlib saltano con motivo esplicito quando la dipendenza manca
+
+# Verifica meccanica di docs/PROMPTS.md contro i prompt reali
+cd backend && JWT_SECRET=$(printf 'x%.0s' $(seq 1 40)) python3 -m scripts.check_prompts_md
 
 # Frontend
-cd frontend && npm run lint && npm run type-check
+cd frontend && npm run lint && npm run type-check && npm run build
 ```
+
+Dettagli e inventario dei test in [`docs/backend/11-tests.md`](docs/backend/11-tests.md).
 
 ---
 

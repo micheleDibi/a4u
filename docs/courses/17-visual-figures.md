@@ -9,11 +9,15 @@ unico**, condividono un **tema accademico unico** e ricevono didascalie
 «Figura N.» identiche in editor, vista lezione, slide, PDF dispensa, PDF
 slide e frame video.
 
-Questo documento è la versione **v1**, scritta prima del codice del
-registro come richiede §5 del brief: fissa le firme, gli algoritmi e le
-decisioni che i work package (WP) successivi implementano. Le sezioni
-«Verifiche e consegna» contengono segnaposto espliciti che il WP6
-completa. Lo stato di avanzamento è nella sezione 1.
+Questo documento è nato come **v1** prima del codice del registro, come
+richiede §5 del brief (fissa le firme, gli algoritmi e le decisioni che i
+work package implementano), ed è stato completato in **v2** alla chiusura
+del branch (WP6): stato dei WP, correzioni emerse nelle verifiche
+indipendenti, esiti reali delle misure (Docker, bundle, rivalidazione,
+prove nel container), checklist di smoke del frontend, decisioni prese e
+alternative scartate, limiti e lavori futuri. Gli esiti della revisione
+avversariale di Fase D (workflow separato, successivo a WP6) sono
+l'unico segnaposto rimasto (sezione 14.3).
 
 Documenti correlati: [08 — Lesson content (Fase 3)](08-lesson-content.md)
 (generazione, validazione asset, editor), [09 — PDF export](09-pdf-export.md)
@@ -28,10 +32,12 @@ model](01-data-model.md), [04 — Configuration](../04-configuration.md),
 Services](../backend/07-services.md), [backend/11 — Tests](../backend/11-tests.md),
 [frontend/05 — Components](../frontend/05-components.md).
 
-I riferimenti a file e righe sono al commit `8ce8160` del branch
-`feat/academic-figures` (HEAD al momento della v1); dove un modulo non
-esiste ancora, la sezione descrive il contratto che il WP indicato deve
-rispettare.
+I riferimenti a file e righe delle sezioni 2-9 sono al commit `8ce8160`
+del branch `feat/academic-figures` (HEAD al momento della v1) e non sono
+stati riallineati riga per riga: i moduli citati esistono tutti e i
+nomi dei simboli sono quelli del codice; per la posizione esatta fa fede
+il codice (`git grep`). Le sezioni 1, 12, 13, 14 e 15 sono aggiornate
+alla chiusura del branch (7 settembre 2026).
 
 ## 1. Perimetro e stato di avanzamento
 
@@ -47,20 +53,22 @@ Gli altri formati dell'alias `VisualAssetFormat` (`image`, `image_prompt`,
 l'immagine caricata dal docente, gli altri tre sono legacy della Fase 4 e
 non entrano nel registro.
 
-Stato dei work package al momento della v1 (dettaglio in
-`docs/courses/README.md` e nel report di consegna):
+Stato dei work package alla chiusura del branch (ogni WP ha avuto una
+verifica indipendente e, dove indicato, un commit di correzione; il
+report di consegna è il corpo della PR):
 
 | WP | Contenuto | Stato |
 |---|---|---|
-| WP2a | alias `VisualAssetFormat`, `figure_theme.py` + `figureTheme.ts`, setting `figure_*`, `.env.example`, compose, pyproject, Dockerfile, CI | committato (`bb17b49`, `b97ff74`) |
-| WP1 | Mermaid 11: `mermaid_prerender.py` estratto, pin unico, `htmlLabels:false` top-level BE+FE, prompt fix/digitalizzazione, script `revalidate_mermaid_assets.py`, test D8 | committato (`8ce8160`) |
-| WP2b-0 | questo documento (v1) | questo commit |
-| WP2b | `figure_render_service.py`, `svg_normalize.py`, `figure_compute/`, dispatch del validatore, fix AI, localizzazione, PATCH 422, builder degli schemi OpenAI, filtro log | committato (`61689b6`; correzioni `5cac685` e giro 2: gate Mermaid `initialize`/frontmatter, nomi DOT quotati, JSON annidato) |
-| WP7 | formato `function` (schema, parsing, calcolo, disegno, endpoint) | committato (livello 1: `function_study`, `tangent`, `area`, `family`, `level_curves`; il livello 2 — parametriche, polari, coniche, successioni — resta lavoro successivo, A9) |
-| WP4 | numerazione, partial `figure.html.j2`, PDF dispensa/slide, frame video | da fare |
-| WP3 | prompt P3/P4/P5, guardie di lunghezza, `PROMPTS.md` | da fare |
-| WP5 | frontend: `FigureFrame`, renderer ed editor per formato, dialog, i18n | da fare |
-| WP6 | documentazione, misure, consegna | da fare |
+| WP2a | alias `VisualAssetFormat`, `figure_theme.py` + `figureTheme.ts`, setting `figure_*`, `.env.example`, compose, pyproject, Dockerfile, CI | `bb17b49` + correzione `b97ff74` (palette nei riempimenti Mermaid, `latex_to_unicode` annidato): due commit, nessuno squash |
+| WP1 | Mermaid 11: `mermaid_prerender.py` estratto, pin unico, `htmlLabels:false` top-level BE+FE, prompt fix/digitalizzazione, script `revalidate_mermaid_assets.py`, test D8 | `8ce8160` |
+| WP2b-0 | questo documento (v1) | `ae3b28f` |
+| WP2b | `figure_render_service.py`, `svg_normalize.py`, `figure_compute/`, dispatch del validatore, fix AI, localizzazione, PATCH 422, builder degli schemi OpenAI, filtro log | `61689b6` + correzioni `5cac685` (data.url annidato, alias del criterio 10, gate Mermaid generico, attributi DOT composti, scansione SVG con virgolette) e `6838a24` (gate Mermaid `initialize`/frontmatter, nomi DOT quotati, JSON annidato) |
+| WP7 | formato `function` (schema, parsing, calcolo, disegno, endpoint) | `d38496f` + correzioni `9e13a3f` (tetto ai punti notevoli, plateau, tolleranze locali, lock del disegno, timeout del worker) e `6c1bf00` (formula e numeri bounded, poli al bordo, variabile nelle didascalie, avvio del figlio); livello 1 (`function_study`, `tangent`, `area`, `family`, `level_curves`), livello 2 lavoro successivo (A9) |
+| WP4 | numerazione, partial `figure.html.j2`, PDF dispensa/slide, frame video | `3f55fb5` + correzione `ebf3b30` (coda `function` dopo l'eviction, guardia anti-doppia coda, prefisso non lossy, id normalizzati) |
+| WP3 | prompt P3/P4/P5, guardie di lunghezza, `PROMPTS.md` | `98d4912` |
+| WP5 | frontend: `FigureFrame`, renderer ed editor per formato, dialog, i18n | `e753c1e` + correzioni `87a30e0` (errori del parser localizzati, cifre Unicode nel prefisso, SVG dell'anteprima inerte) e `2f1c58c` (tetto Mermaid solo per i diagrammi orizzontali, figure centrate, loader vega inerte) |
+| WP6 | documentazione, misure, consegna (questo documento v2, `scripts/check_prompts_md.py`, aggiornamento di 25 documenti, corpo della PR) | commit `docs(figures): WP6 — documentazione, misure e consegna` |
+| Fase D | revisione avversariale (correttezza, regressione, sicurezza, i18n, tipografia) | da eseguire dopo WP6; esiti da registrare in 14.3 |
 
 ## 2. Architettura del registro (Q1)
 
@@ -1274,7 +1282,7 @@ replicato in `.env.example` e `docker-compose.prod.yml` (WP2a). Vedi anche
 | `figure_render_timeout_seconds` | `FIGURE_RENDER_TIMEOUT_SECONDS` | `20` | tetto per il batch di figure di una lezione (`asyncio.wait_for`): oltre, le figure mancanti degradano a fallback e l'export prosegue |
 | `figure_function_timeout_seconds` | `FIGURE_FUNCTION_TIMEOUT_SECONDS` | `10` | tetto del calcolo simbolico nel processo figlio, ucciso allo scadere; resta il risultato numerico con «Valori approssimati.» |
 | `figure_render_max_workers` | `FIGURE_RENDER_MAX_WORKERS` | `2` | render CPU-bound concorrenti (worker + anteprime `render-function`); 2 per la VM a 2 core |
-| `figure_svg_cache_size` | `FIGURE_SVG_CACHE_SIZE` | `256` | cache LRU in memoria degli SVG (chiave: formato, hash, `THEME_VERSION`, lingua) |
+| `figure_svg_cache_size` | `FIGURE_SVG_CACHE_SIZE` | `256` | cache LRU in memoria degli SVG (chiave: formato, hash del sorgente sanificato, `THEME_VERSION`; la lingua non entra nella chiave, sezione 2.2) e, con la stessa dimensione, dei risultati del motore `function` |
 | `figure_svg_max_bytes` | `FIGURE_SVG_MAX_BYTES` | `1_500_000` | oltre, l'SVG prodotto è rifiutato (fallback) |
 | `figure_dot_max_chars` | `FIGURE_DOT_MAX_CHARS` | `12_000` | limite del sorgente DOT accettato dal validatore |
 | `graphviz_dot_path` | `GRAPHVIZ_DOT_PATH` | `None` | percorso del binario `dot`; `None` = ricerca nel `PATH` |
@@ -1485,6 +1493,48 @@ Decisioni prese in Fase B (A1-A16) e nella ripresa del 7 settembre
   renderer resta come dettaglio tecnico; nessuna frase hard-coded nei
   componenti nuovi (`tests/test_frontend_figure_i18n.py` lo verifica con
   un lessico, escludendo i template didattici in backtick).
+- **Allowlist ruff dichiarata, non «miglioramento»** (A17): `pyproject.toml`
+  tiene `allowed-confusables = ["−", "×", "–"]` perché le didascalie e le
+  frasi calcolate usano i segni tipografici per scelta editoriale (minus,
+  per, lineetta). I conteggi di `ruff check .` del repo vanno letti a
+  parità di configurazione: alla chiusura del branch 373 violazioni con
+  l'allowlist e 511 con `--config 'lint.allowed-confusables=[]'` (a
+  `main` 432, allo stesso HEAD 8ce8160 394 / ≈468). Il numero senza
+  allowlist cresce con i moduli nuovi che usano quei segni; quello con
+  l'allowlist scende per le correzioni fatte nei file toccati. Nessuno dei
+  due è raccontato come miglioramento della baseline (A6: la baseline
+  rossa preesistente non è stata sanata, e i file toccati o nuovi sono
+  puliti).
+- **WP2a resta in due commit** (`bb17b49` + `b97ff74`): la correzione
+  della verifica indipendente (palette nei riempimenti Mermaid,
+  `latex_to_unicode` annidato) è un commit distinto e non è stata
+  squashata, per lasciare bisecabile il difetto e la sua correzione;
+  lo stesso vale per i commit `fix(figures): WPx — …` di WP2b, WP7, WP4 e
+  WP5. Nessuno squash senza autorizzazione esplicita del docente.
+- **Verifica meccanica di `PROMPTS.md`** invece del solo confronto a mano:
+  `backend/scripts/check_prompts_md.py` rende i `_system_prompt(...)` con i
+  segnaposto documentati e confronta i blocchi verbatim (PROMPT 3, 4, 5, 6,
+  11, 12 con le varianti IT); scartata l'alternativa di un test pytest con
+  skip se manca `docs/` — il confronto va eseguito quando i prompt
+  cambiano, non a ogni run della suite, e uno script con exit code e diff
+  è più leggibile in revisione. Due interpolazioni (durata in secondi del
+  PROMPT 6, `lang_hint` del PROMPT 11) sono normalizzate esplicitamente
+  nello script, con la regola scritta nella docstring.
+- **Misura dell'immagine Docker sul build reale**, non sulla stima: due
+  build di `backend/Dockerfile` (HEAD e un worktree temporaneo di `main`)
+  con `docker image inspect --format '{{.Size}}'`; la stima a priori
+  (≈57 MB di wheel compressi più apt `graphviz`) resta nel documento come
+  termine di confronto, non come esito.
+- **Run sintetica dello script di rivalidazione** (A24): nessun dump con
+  contenuti reali è stato fornito; la run di consegna usa un corso di
+  prova costruito con `course_builders` su `a4u_test` con i casi del gate
+  statico e del render (sezione 14.3). Non si dichiara alcun esito sui
+  contenuti di produzione: la richiesta di un dump o di un accesso in
+  sola lettura resta aperta.
+- **Prove residue eseguite nel container** con la stessa immagine
+  misurata (probe montata in `/tmp`), invece che dedotte dai wheel: metriche
+  dei font di vl-convert, `spawn` sotto uvicorn su Linux, fontconfig per
+  WeasyPrint (sezione 14.3).
 
 ## 13. Rischi residui
 
@@ -1522,8 +1572,10 @@ Decisioni prese in Fase B (A1-A16) e nella ripresa del 7 settembre
 - Metriche dei font di vl-convert nel container: se le larghezze delle
   label divergono da Noto Sans, `register_font_directory("/usr/share/fonts")`
   (verifica residua, voce 24 del «Delta»).
-- `spawn` sotto uvicorn su Linux: prova manuale in Docker documentata qui
-  in WP2b (voce 6 del «Delta»).
+- `spawn` sotto uvicorn su Linux: verificato nel container in WP6
+  (sezione 14.3); resta la dipendenza dal costo fisso dello spawn
+  (~0,2 s per chiamata nel container) che il debounce dell'editor e la
+  cache per hash attenuano.
 - Localizzazione degli asset nella duplicazione in altra lingua (doc 15):
   i campi testuali di Vega-Lite/DOT/`function` seguono `extract_translatable`,
   ma il TODO tracciato in `15-course-duplication.md` resta.
@@ -1552,16 +1604,28 @@ Decisioni prese in Fase B (A1-A16) e nella ripresa del 7 settembre
 | WP2b | test del filtro `_WeasyPrintSvgNoiseFilter` | record filtrato / non filtrato |
 | WP7 | `test_function_figure_service.py` | `parse_expr` con `global_dict` ristretto (`importorskip("sympy")`), nessun `<image>`, font ⊆ `{Noto Sans, DejaVu Sans}`, timeout simbolico → `approximate`, HTTP 200/422/403 |
 | WP4 | `test_figure_numbering.py`, `test_lesson_pdf_figures.py`, `test_figure_i18n_mirrors_frontend` | fixture condivisa BE/FE; figcaption in ordine di citazione, orfano in coda, `en`/`de`, strip del prefisso, escape della caption, fallback `<pre>`, golden byte-identico del blocco Mermaid/image/legacy nel wrapper; «Figura.» nelle slide; WeasyPrint 69 rende le label degli SVG v11 e degli `<img data:svg>` (`importorskip("weasyprint")`) |
-| WP3 | `test_prompt_register.py`, `test_prompt_composition_bugs.py` | misure reali, ordine dei marcatori, `_format_current_lesson_phase3` con `[format]` |
+| WP3 | `test_prompt_register.py`, `test_prompt_composition_bugs.py`, `test_prompt_figures.py` | misure reali, ordine dei marcatori, `_format_current_lesson_phase3` con `[format]`; blocco «FORMATI DELLE FIGURE» con tipi D8, regole D5, schema compatto D9 ed esempi minimi che superano i validatori reali |
+| WP5 | `test_frontend_figure_i18n.py`, `test_frontend_figure_layout.py` | nessuna stringa hard-coded nei componenti nuovi, chiavi `t("…")` risolte in it/en; geometria misurata in Chromium (`margin: 0 auto`, tetto dei Mermaid solo orizzontali) e parità con Node delle copie TypeScript |
+| WP6 | `scripts/check_prompts_md.py` (fuori dalla suite) | i blocchi verbatim di `docs/PROMPTS.md` identici ai `_system_prompt(...)` reali (9/9) |
 
-Comandi: `cd backend && DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib
-python3 -m pytest -q` con Postgres attivo (`docker compose up -d
-postgres`); i test che richiedono binari o rete saltano con motivo
-esplicito, mai falliscono. Vedi [backend/11 — Tests](../backend/11-tests.md).
+Esito alla chiusura del branch (7 settembre 2026, macOS con Chromium, CDN,
+`dot`, vl-convert, sympy, matplotlib, WeasyPrint e `../frontend`
+disponibili): **877 test raccolti in 37 moduli, 877 passati, 0 falliti, 0
+saltati** (`pytest -q -W ignore`, exit 0; i 20 test D8 e i 37 della palette
+Mermaid eseguiti davvero). Comandi: `cd backend &&
+DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib python3 -m pytest -q` con
+Postgres attivo (`docker compose up -d postgres`); i test che richiedono
+binari o rete saltano con motivo esplicito, mai falliscono. Vedi
+[backend/11 — Tests](../backend/11-tests.md).
 
 ### 14.2 Checklist di smoke visuale del frontend
 
-(da completare in WP6 con gli esiti; procedura fissata in WP5)
+Procedura fissata in WP5 ed eseguita il 7 settembre 2026 (punto 5); gli
+script e le immagini sono archiviati in `scratchpad/consegna/`
+(`smoke_seed.py`, `smoke_playwright.py`, `smoke_run.log`, sette PNG) e
+allegati alla consegna. Da ripetere a ogni modifica dei componenti delle
+figure o dei dialog: è la verifica che i test di sorgente e di geometria
+non coprono (resa reale delle quattro librerie nel browser).
 
 1. backend avviato con `JWT_SECRET` (≥ 32 caratteri) e `DATABASE_URL` su
    `a4u_e2e`; `npm run dev` nel frontend;
@@ -1609,7 +1673,21 @@ esplicito, mai falliscono. Vedi [backend/11 — Tests](../backend/11-tests.md).
 - Dimensione dell'immagine Docker prima/dopo (`docker build -f
   backend/Dockerfile backend` su `main` e su HEAD, `docker image inspect
   --format '{{.Size}}'`); stima a priori: wheel ≈ 57 MB compressi più apt
-  `graphviz`. Esito: (da completare in WP6).
+  `graphviz`. Esito WP6 (7 settembre 2026, Docker Desktop 29.1.3, arm64,
+  due build completi senza cache condivisa fra i due alberi: HEAD `2f1c58c`
+  in 255 s, worktree temporaneo di `main` `40daf2f` in 232 s):
+  `a4u-backend-main` **817.008.847 byte (817,0 MB)**,
+  `a4u-backend-figures` **906.935.894 byte (906,9 MB)**, differenza
+  **+89,9 MB** (+11 %). `docker images` riporta per le stesse immagini
+  3,12 GB → 3,51 GB (dimensione espansa dei layer nello store containerd,
+  +0,39 GB): i due numeri misurano cose diverse e vanno letti insieme al
+  comando che li produce. Composizione misurata nel container
+  (`du -sm` in `site-packages`, 502 MB → 723 MB): `vl_convert` 78 MB,
+  `sympy` 74, `matplotlib` 37, `altair` 10, `mpmath` 5, `kiwisolver` 5,
+  `contourpy` 2, `jsonschema` 2 (numpy e fontTools erano già in `main`);
+  apt `graphviz` + `libgvc6` + `libcgraph6` + `libgd3` e le altre
+  librerie trascinate ≈ 9 MB installati. La stima a priori (≈57 MB
+  compressi + graphviz) era per difetto di circa 30 MB.
 - Dimensione del bundle frontend prima (build pulito su HEAD prima di WP5)
   e dopo, con i kB dei chunk `vega`/`vega-lite`/`vega-embed`/`@viz-js/viz`
   (import dinamici). Base unica di misura: tabella di `vite build`, file
@@ -1623,25 +1701,70 @@ esplicito, mai falliscono. Vedi [backend/11 — Tests](../backend/11-tests.md).
   vega-embed), `step.js` 32, `time.js` 18, `figureTheme.js` 4,
   `VegaLiteDiagram.js`/`MermaidDiagram.js`/`DotDiagram.js` ≈ 1-2 ciascuno.
   Il bundle iniziale cresce di 38 kB (editor e cornice, senza librerie di
-  render). WP6 ripete la misura sulla stessa base alla chiusura.
+  render). Misura ripetuta in WP6 alla chiusura del branch (`npm run
+  build` su `2f1c58c`, stessa base: file `.js` e `.css` di `dist/assets`,
+  kB minificati e gzip): **72 file, 8.438 kB (2.551 kB gzip)**, `index.js`
+  3.095 (864), `viz.js` 1.262 (485), `embed.js` 792 (276), `mermaid.core.js`
+  647 (158) — identica alla misura del giro 2 di WP5 (WP6 non tocca il
+  frontend). Rispetto al build pulito su HEAD prima di WP5 (61 file, 6.333
+  kB / 1.772 gzip): +11 file, +2.105 kB (+779 gzip), di cui 2.054 kB nei
+  due chunk caricati solo a richiesta.
 - Esito di `backend/scripts/revalidate_mermaid_assets.py` sul dump del
-  docente o run sintetica dichiarata (A24). Esito: (da completare in WP6).
+  docente o run sintetica dichiarata (A24). Esito WP6 (7 settembre 2026):
+  **run sintetica** — nessun dump con contenuti reali in
+  `scratchpad/dump/`, quindi nessun esito sui contenuti di produzione
+  (richiesta al docente ancora aperta). Script `scratchpad/consegna/
+  revalidate_synthetic.py` su `a4u_test` (tabelle create, seed, corso di
+  prova con `course_builders`, poi rimosse): 2 lezioni, 9 asset Mermaid (7
+  in `content_raw`, 2 `new_assets` di slide; un `image` e un `vegalite`
+  correttamente ignorati). `--skip-render --show-ok` in 0,5 s: 5 ok, 4 da
+  correggere (`mermaid_init_directive` ×2 — frontmatter `config:` e
+  direttiva `%%{initialize`, `mermaid_type_not_allowed:journey`,
+  `mermaid_html_in_label`), 1 lezione con 1 asset non citato (la torta
+  citata solo nei `key_takeaways`, che non contano come corpo). Con il
+  render Mermaid 11 (Chromium + CDN, 4,4 s): 4 ok con SVG da 3,6 a 22,7
+  kB e **0 `<foreignObject>`** (flowchart in fence sanificato, torta,
+  alias legacy `graph`, `sequenceDiagram` delle slide), 5 da correggere
+  (i 4 precedenti più `render_failed` per il flowchart con sintassi
+  rotta); `--format csv` produce le sole righe da correggere. Output
+  completo in `scratchpad/consegna/revalidate.txt`.
 - Prova manuale di `spawn` sotto uvicorn. Esito WP2b (macOS, 7 settembre):
   app FastAPI minima servita da `uvicorn`, handler che chiama
   `asyncio.to_thread(run_isolated, …)` sui bersagli di
   `tests/helpers/slow_target.py` → `echo` ok, risultato da 2 MB ok,
   `sleep_forever` con `timeout=1` → `FigureTimeoutError`; 1,09 s per le tre
   chiamate. Sotto pytest (loop di sessione) i test di
-  `test_figure_render_service.py` eseguono gli stessi bersagli. Su Linux
-  (Docker) la prova resta da eseguire in WP6.
+  `test_figure_render_service.py` eseguono gli stessi bersagli. Esito WP6
+  su Linux (immagine `a4u-backend-figures`, kernel 6.12 linuxkit aarch64,
+  Python 3.12.14, `scratchpad/consegna/container_probe.py` montata in
+  `/tmp` ed eseguita come utente `app`): app FastAPI minima servita da
+  `uvicorn` in un thread, handler con `asyncio.to_thread(run_isolated,
+  …)` → `echo` ok in 0,21 s, risultato da 2 MB ok in 0,21 s,
+  `sleep_forever` con `timeout=1` → `FigureTimeoutError` in 1,02 s
+  (macOS, stessa probe: 0,08 / 0,06 / 1,01 s). Il costo fisso dello
+  `spawn` nel container è circa 0,2 s per chiamata.
 - `parse_expr` con `global_dict` ristretto su sympy 1.14.0. Esito WP2b
   (7 settembre, prova manuale): registrato in sezione 4.2 — `__import__`
   e `open` → `NameError` (`Function` assente dal `global_dict`), `lambda`
   e accesso ad attributi eseguiti (fermati solo dal passo 1 sull'AST),
   simbolo non dichiarato colto da `free_symbols`, `2**1000000` →
   `ValueError` (4300 cifre). Il test `importorskip("sympy")` è di WP7.
-- Metriche dei font di vl-convert nel container. Esito: (da completare in
-  WP6).
+- Metriche dei font di vl-convert nel container. Esito WP6 (stessa probe
+  nel container e in locale, spec Vega-Lite con titolo lungo e titoli
+  degli assi, `VEGALITE_THEME_CONFIG`): in entrambi l'SVG dichiara
+  `font-family="Noto Sans"` su tutti i 18 `<text>` e le label lunghe
+  («Andamento del valore osservato nel periodo 2018-2024», «Valore medio
+  (unità)») sono rese intere. Nel container fontconfig risolve `Noto
+  Sans` → `NotoSans-Regular.ttf` (`fonts-noto-core`), `DejaVu Sans` →
+  `DejaVuSans.ttf`, `Noto Sans CJK JP` → `NotoSansCJK-Regular.ttc`, e
+  vl-convert misura il testo con Noto Sans: larghezza 408 px, colonna
+  delle etichette dell'asse y a 39 px. In locale (macOS senza Noto Sans
+  installato: `fc-match "Noto Sans"` → Verdana) le stesse label sono
+  misurate con il font di ripiego: 420 px e 51 px, cioè 12 px più larghe
+  a parità di `font-family` nell'SVG. **Nessun
+  `register_font_directory("/usr/share/fonts")` necessario** nel
+  container; la differenza è di sola metrica sul portatile di sviluppo e
+  non tocca il PDF prodotto in produzione.
 - Screenshot: frame video di WP4 (`scratchpad/wp4_frame.png`),
   `LessonContentView` con i quattro formati (WP5). Esito WP4 (macOS, 7
   settembre): lezione di prova con un asset per formato (Mermaid via
@@ -1663,10 +1786,117 @@ esplicito, mai falliscono. Vedi [backend/11 — Tests](../backend/11-tests.md).
   rumore SVG; «Figura 1.» … «Figura 4.» in ordine di citazione nel PDF
   della dispensa di prova (4 pagine). Test riproducibili in
   `tests/test_lesson_pdf_figures.py` (`weasyprint`/`pypdf`/`matplotlib`
-  con skip esplicito, `dot` con `skipif`). Nel container Linux la prova va
-  ripetuta per i font (WP6).
+  con skip esplicito, `dot` con `skipif`). Nel container Linux (WP6, stessa
+  probe): matplotlib 3.11.1 emette `font-family: 'Noto Sans', 'DejaVu
+  Sans', sans-serif` (guardia A14 rispettata, nessuna famiglia STIX),
+  `dot` 2.42.4 (`/usr/bin/dot`, contro 15.1.1 in locale) produce lo stesso
+  `font-family="Noto Sans"` e la validazione profonda passa; fontconfig
+  risolve le tre famiglie del tema (punto precedente), quindi WeasyPrint
+  trova gli stessi font che vl-convert e matplotlib dichiarano. La
+  didascalia calcolata di `function` nel container è identica a quella
+  locale («Zeri in x = −1, 1. Punti critici in x = 2 − √3, √3 + 2.
+  Asintoto verticale x = 2. Asintoto obliquo y = x + 2.»). Le versioni di
+  `dot` divergono (2.42 nel Debian dell'immagine, 15.1 in Homebrew): i
+  test DOT asseriscono proprietà (font, colori, assenza di `<image>`),
+  non byte.
+- Verifica meccanica di `docs/PROMPTS.md` contro i `_system_prompt(...)`
+  reali (`backend/scripts/check_prompts_md.py`, voce 21 del «Delta»).
+  Esito WP6: **9/9 blocchi identici al codice** — PROMPT 3 dispense con
+  grounding (24.222 caratteri), 4 verifica (1.710), 5 slide (13.837), 6
+  discorso (11.156), 11 immagine → Mermaid (1.157), 12 fix Mermaid IT
+  (1.361), Vega-Lite IT (1.387), DOT IT (1.029), `function` IT (1.144);
+  nessuna correzione a `PROMPTS.md` necessaria (WP3 lo aveva già
+  allineato). Prova negativa: su una copia del documento con una riga del
+  PROMPT 11 alterata lo script esce con 1 e stampa il diff della riga
+  (`scratchpad/consegna/check_prompts_md_negativo.txt`). Procedura in
+  [backend/11 — Tests](../backend/11-tests.md).
+- Gate di qualità alla chiusura del branch (7 settembre 2026): ruff pulito
+  e formattato sui file toccati/nuovi; `ruff check .` del repo 373 con
+  l'allowlist e 511 a parità di regole (A17; `main` 432, HEAD `8ce8160`
+  394 / ≈468: la baseline preesistente non è stata sanata); `mypy app`
+  205 errori (baseline 208 a `8ce8160`); pytest 877/877; `npm run lint` 4
+  errori di baseline (`LatexEditor.tsx:283`, `i18n/scripts.ts` 64/66/68) e
+  23 warning, nessuno nei file toccati; `npm run type-check` e `npm run
+  build` verdi.
 - Esiti della revisione avversariale di Fase D (correttezza del dispatch,
   regressione ai cinque livelli di A11, sicurezza di spec e `dot`, i18n,
-  tipografia). (da completare in WP6)
-- Verifica meccanica di `docs/PROMPTS.md` contro i `_system_prompt(...)`
-  reali (`backend/scripts/check_prompts_md.py`). (da completare in WP6)
+  tipografia): **non ancora eseguita** — è un workflow separato,
+  successivo a WP6 (cinque revisori, un confutatore per finding, un
+  correttore con commit `fix(figures): revisione — …`); gli esiti vanno
+  registrati qui e nel corpo della PR prima del push.
+
+## 15. Limiti dichiarati e lavori futuri
+
+Limiti noti alla chiusura del branch, con la ragione per cui restano e
+la direzione del lavoro successivo. Nessuno è nascosto dal codice: ogni
+caso produce un fallback visibile, un log o un errore esplicito.
+
+- **Localizzazione del `content` delle figure nella duplicazione in altra
+  lingua** (doc 15). La duplicazione traduce `caption` e `alt_text`
+  (`CONTENT_RAW_TRANSLATE_PATHS`, `SLIDES_RAW_TRANSLATE_PATHS`) ma non i
+  testi interni alle sorgenti: label dei nodi Mermaid e DOT, `title` /
+  `axis.title` / `text` di Vega-Lite, `label` di espressioni e annotazioni
+  di `function`. A generazione la rete di sicurezza i18n usa già
+  `extract_translatable`/`apply_translations` dei renderer (D7): il lavoro
+  futuro è instradare la duplicazione sugli stessi metodi, con la
+  rivalidazione offline dopo la traduzione. La didascalia calcolata di
+  `function` non è persistita e segue sempre la lingua del corso a render.
+- **Mermaid via CDN a runtime** (validatore e pre-render caricano
+  `mermaid@11.17.2` da jsdelivr in Chromium). Offline degrada come prima
+  del branch: pass-through nel validatore, fallback `<pre>` nel PDF con
+  `figure_render_fallback` nei log; i tre formati nuovi sono offline. Il
+  batch Mermaid ha un tetto proprio di almeno 60 s (sezione 2.2). Lavoro
+  futuro: bundle locale di `mermaid.esm` servito dalla pagina di
+  pre-render (o pre-render via CLI + Node), che toglierebbe anche l'unica
+  dipendenza di rete della CI per i test D8.
+- **Livello 2 del formato `function`** (A9): curve parametriche, polari,
+  coniche implicite, successioni e ricorrenze non sono nel `kind` della
+  spec. Lo schema strict e `FunctionFigureSpec` li rifiutano (422
+  Pydantic su `kind` ignoto), il prompt P3 non li propone. Il livello 1
+  (`function_study`, `tangent`, `area`, `family`, `level_curves`) è
+  verde con 117 test. Aggiungere un `kind` richiede: parser (nuove
+  variabili libere), numerico (campionamento del parametro), simbolico
+  (forme esatte dei punti notevoli), disegno, frasi i18n it/en, template
+  dell'editor.
+- **Testo non selezionabile nelle figure `<img>`** (Q3): Vega-Lite, DOT e
+  `function` entrano nel PDF della dispensa come `<img
+  src="data:image/svg+xml;base64,…">` (e così tutte le figure nelle slide
+  e nei frame video). Il testo è estraibile (pypdf lo legge, verificato
+  in `test_lesson_pdf_figures.py`) ma non selezionabile come testo
+  scorrevole nel visualizzatore. Scelta deliberata (sezione 12: elemento
+  sostituito, `max-height` rispettato, nessuna collisione di id); passare
+  all'SVG inline richiederebbe il namespacing degli id e una gestione
+  separata del `width: 100% !important` oggi applicato ai Mermaid inline.
+- **Figure orfane in coda** (A12): gli asset non citati con `[FIG:id]` nel
+  corpo (introduzione → sezioni → sintesi) compaiono dopo la sintesi e
+  prima dei punti chiave, con gli ultimi numeri, nel PDF e nella vista.
+  Prima del branch erano invisibili: per i contenuti già in DB con asset
+  orfani è un cambiamento visibile, che lo script di rivalidazione
+  quantifica (colonna «lezioni con asset non citati»). Una citazione
+  solo nei `key_takeaways` o nelle `references` non conta come corpo
+  (quei campi non passano dalla sostituzione dei tag). Lavoro futuro:
+  un avviso nell'editor per gli asset non citati.
+- **Figura non renderizzabile all'export = errore nei log, non al docente**
+  (A23). Un SVG rifiutato, un timeout del batch, `dot` assente o una spec
+  che il figlio non rende producono il fallback `<pre
+  class="figure-fallback">` con il sorgente nel PDF e nei frame video, e
+  `log.error("figure_render_fallback", lesson_code, asset_id, format,
+  reason)`. Il documento viene comunque prodotto; il docente lo scopre
+  aprendo il PDF. Mitigazioni in essere: `validate(deep=True)` nel worker
+  rende e mette in cache prima dell'export, cache negativa di 60 s, script
+  di rivalidazione. Lavoro futuro: esporre gli asset in fallback
+  nell'esito dell'export (campo `pdf_error`/badge nella vista) invece che
+  nel solo log.
+- **`[FIG:]` dentro esempi e tabelle** non è risolvibile né numerabile
+  (`ExampleBlock` usa `ReactMarkdown` direttamente; il PDF non sostituisce
+  i tag dentro `examples[].content`): limite del modello dei tag, non
+  delle figure.
+- **Le 22 lingue non it/en** ricevono etichette e frasi calcolate in
+  italiano nel PDF e nel frontend finché l'amministratore non lancia
+  l'auto-translate delle chiavi `courses.figures.*` (A4).
+- **Baseline rossa preesistente** di ruff/mypy/eslint (A6, A17) non sanata:
+  fuori perimetro; i file toccati o nuovi sono puliti e i conteggi sono
+  riportati a parità di configurazione (sezione 14.3).
+- **Fase D** (revisione avversariale) e **campione reale** per lo script di
+  rivalidazione (A24): aperti alla chiusura di WP6, da chiudere prima del
+  push e dell'apertura della PR.
