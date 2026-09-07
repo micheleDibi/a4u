@@ -114,6 +114,33 @@ def _font_families(svg: str) -> set[str]:
     return {f.strip() for f in re.findall(r"font-family:\s*'?([^;'\"]+)'?", svg)}
 
 
+_NUMBER_RE = re.compile(r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?")
+
+
+def _group(svg: str, gid: str) -> str:
+    match = re.search(rf'<g id="{re.escape(gid)}">(.*?)</g>', svg, re.S)
+    assert match is not None, gid
+    return match.group(1)
+
+
+def _path_x_range(svg: str, gid: str) -> tuple[float, float]:
+    """Estremi x delle coordinate dei path del gruppo `gid` (coordinate
+    assolute nelle unità del viewBox: matplotlib scrive i `PathPatch`
+    senza `transform`)."""
+    xs: list[float] = []
+    for d in re.findall(r'\sd="([^"]+)"', _group(svg, gid)):
+        numbers = [float(t) for t in _NUMBER_RE.findall(d)]
+        xs.extend(numbers[0::2])
+    assert xs, gid
+    return (min(xs), max(xs))
+
+
+def _view_box_width(svg: str) -> float:
+    match = re.search(r'viewBox="0 0 ([\d.]+) [\d.]+"', svg)
+    assert match is not None
+    return float(match.group(1))
+
+
 @pytest.fixture(autouse=True)
 def _clean_caches():
     ffs.clear_result_cache()
@@ -757,6 +784,112 @@ def test_removable_discontinuity_keeps_the_exact_oblique_asymptote():
     assert result.computed_caption == "Zeri in x = −1. Asintoto obliquo y = x + 1."
 
 
+def _scalar(src: str) -> Any:
+    fn = fnum.compile_numpy(fparse.check_expression(src, free_symbols=["x"]))
+    return fnum.scalar_function(fn, variable="x", env={})
+
+
+@needs_deps
+def test_edge_poles_are_found_without_sympy():
+    """`tan(x)` su [−π/2, π/2] e `1/x` su [0, 1]: il polo coincide con un
+    estremo del dominio. Nel percorso approssimato (figlio sympy fallito)
+    le regioni al bordo erano ignorate in blocco e l'asintoto verticale
+    spariva; `exp(x)` in overflow al bordo resta senza polo, `log(x)` in 0
+    cresce troppo lentamente per la soglia numerica (con sympy arriva
+    dal figlio)."""
+    half_pi = math.pi / 2
+    boom = "tests.helpers.slow_target:boom"
+    tan = ffs.render_function_sync(
+        _spec(
+            {
+                "kind": "function_study",
+                "expressions": [{"expr": "tan(x)"}],
+                "domain": [-half_pi, half_pi],
+                "show": ["zeros", "asymptotes"],
+            }
+        ),
+        language="it",
+        symbolic_target=boom,
+    )
+    assert tan.approximate is True
+    assert [(a["kind"], round(a["x"], 6)) for a in tan.computed["asymptotes"]] == [
+        ("vertical", -1.570796),
+        ("vertical", 1.570796),
+    ]
+    assert tan.computed_caption == (
+        "Zeri in x = 0. Asintoto verticale x = −1.571. Asintoto verticale x = 1.571. "
+        "Valori approssimati."
+    )
+    assert {"asymptote-0", "asymptote-1"} <= _ids(tan.svg)
+
+    inverse = ffs.render_function_sync(
+        _spec(
+            {
+                "kind": "function_study",
+                "expressions": [{"expr": "1/x"}],
+                "domain": [0, 1],
+                "show": ["zeros", "asymptotes"],
+            }
+        ),
+        language="it",
+        symbolic_target=boom,
+    )
+    assert [(a["kind"], a["expr"]) for a in inverse.computed["asymptotes"]] == [
+        ("vertical", "x = 0"),
+        ("horizontal", "y = 0"),
+    ]
+
+    assert fnum.edge_pole(_scalar("tan(x)"), half_pi, -1.0, scale=1.0, width=math.pi)
+    assert fnum.edge_pole(_scalar("1/x"), 0.0, 1.0, scale=2.0, width=1.0)
+    assert fnum.edge_pole(_scalar("1/(x-1)**2"), 1.0, -1.0, scale=1.0, width=1.0)
+    assert not fnum.edge_pole(_scalar("exp(x)"), 1000.0, -1.0, scale=1.0, width=1000.0)
+    assert not fnum.edge_pole(_scalar("exp(x)"), 709.5, -1.0, scale=1.0, width=1000.0)
+    assert not fnum.edge_pole(_scalar("log(x)"), 0.0, 1.0, scale=1.0, width=1.0)
+    assert not fnum.edge_pole(_scalar("x**10"), 100.0, -1.0, scale=1.0, width=200.0)
+    assert not fnum.edge_pole(_scalar("sin(x)/x"), 0.0, 1.0, scale=1.0, width=10.0)
+
+
+@needs_deps
+def test_caption_and_asymptotes_follow_the_spec_variable():
+    """`variable: "t"`: la didascalia, gli asintoti e l'asse usano `t`, non
+    una «x» cablata che contraddiceva formula e asse."""
+
+    def study(var: str) -> dict[str, Any]:
+        return {
+            "kind": "tangent",
+            "expressions": [{"expr": f"({var}**2 - 1)/({var} - 2)"}],
+            "variable": var,
+            "domain": [-6, 8],
+            "annotations": [{"kind": "tangent", "at": 3}],
+            "show": ["zeros", "critical_points", "asymptotes", "formula"],
+        }
+
+    in_x = ffs.render_function_sync(_spec(study("x")), language="it")
+    in_t = ffs.render_function_sync(_spec(study("t")), language="it")
+    assert in_t.computed["variable"] == "t" and in_x.computed["variable"] == "x"
+    assert in_x.computed_caption.startswith("Zeri in x = −1, 1. Punti critici in x = 2 − √3, ")
+    assert "Asintoto verticale x = 2. Asintoto obliquo y = x + 2. Tangente in x = 3" in (
+        in_x.computed_caption
+    )
+    assert in_t.computed_caption == in_x.computed_caption.replace("x =", "t =").replace(
+        "y = x + 2", "y = t + 2"
+    )
+    assert [a["expr"] for a in in_t.computed["asymptotes"]] == ["t = 2", "y = t + 2"]
+    assert in_t.latex == [r"\frac{t^{2} - 1}{t - 2}"]
+    approx = ffs.render_function_sync(
+        _spec(study("t")), language="en", symbolic_target="tests.helpers.slow_target:boom"
+    )
+    assert approx.warnings == in_t.warnings and not approx.approximate  # cache: stesso hash
+    ffs.clear_result_cache()
+    approx = ffs.render_function_sync(
+        _spec(study("t")), language="en", symbolic_target="tests.helpers.slow_target:boom"
+    )
+    assert approx.computed_caption.startswith("Zeros at t = −1, 1. Critical points at t = ")
+    assert "Vertical asymptote t = 2. Oblique asymptote y = t + 2. Tangent at t = 3" in (
+        approx.computed_caption
+    )
+
+
 @needs_deps
 def test_concurrent_draws_match_serial_and_leave_rcparams_clean():
     """`rc_context` tocca `matplotlib.rcParams` (globale): senza il lock di
@@ -1072,6 +1205,154 @@ def test_render_survives_symbolic_timeout_and_failure():
         spec, language="it", symbolic_target="tests.helpers.slow_target:boom"
     )
     assert failed.approximate is True and "symbolic_failed" in failed.warnings
+
+
+def test_run_isolated_start_failure_is_a_compute_error(monkeypatch):
+    """Un errore di `Process.start()` (descrittori esauriti, bootstrap del
+    processo principale non concluso) era un'`OSError`/`RuntimeError` nuda
+    che risaliva intatta dal motore fino all'endpoint (500) e dal renderer
+    nel worker: ora è `FigureComputeError` come ogni altro fallimento del
+    figlio."""
+    from app.services.figure_compute import isolated
+
+    real_ctx = isolated.multiprocessing.get_context("spawn")
+
+    class _Broken:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
+        def start(self) -> None:
+            raise OSError(24, "Too many open files")
+
+    class _Ctx:
+        Pipe = staticmethod(real_ctx.Pipe)
+        Process = _Broken
+
+    monkeypatch.setattr(isolated.multiprocessing, "get_context", lambda _name: _Ctx())
+    with pytest.raises(isolated.FigureComputeError, match="avvio del processo figlio fallito"):
+        isolated.run_isolated("tests.helpers.slow_target:echo", {"a": 1}, timeout=1)
+
+
+@needs_deps
+def test_engine_degrades_to_symbolic_failed_on_any_child_error(monkeypatch):
+    spec = _spec(
+        {"kind": "function_study", "expressions": [{"expr": "x**2 - 2"}], "domain": [-3, 3]}
+    )
+
+    def broken_start(*_args: Any, **_kwargs: Any) -> Any:
+        raise RuntimeError("bootstrapping phase")
+
+    monkeypatch.setattr(ffs, "run_isolated", broken_start)
+    result = ffs.render_function_sync(spec, language="it")
+    assert result.approximate is True and "symbolic_failed" in result.warnings
+    assert "zero-0" in _ids(result.svg)
+
+
+@needs_deps
+def test_formula_and_large_numbers_stay_inside_the_figure():
+    """Casi del verificatore (giro 2). `((10**12)**12)**12*x`: LaTeX di
+    1.731 cifre dal figlio sympy, SVG di 1,4 MB con la formula da
+    x = −9.573 pt; `(10**12)**12*x`: didascalia e tick con 145 cifre; un
+    polinomio di grado 11 con coefficienti decimali usciva dal viewBox a
+    sinistra (x = −64,6 pt su 374,4). Ora ogni testo è bounded: LaTeX
+    oltre 160 caratteri omesso (formula dall'AST), notazione scientifica da
+    1e6 in modulo, formula misurata e ridotta di corpo, altrimenti `f(x)`
+    con `formula_too_wide`."""
+    huge = ffs.render_function_sync(
+        _spec(
+            {
+                "kind": "function_study",
+                "expressions": [{"expr": "((10**12)**12)**12*x"}],
+                "domain": [-1, 1],
+            }
+        ),
+        language="it",
+    )
+    width = _view_box_width(huge.svg)
+    lo, hi = _path_x_range(huge.svg, "formula")
+    assert 0.0 <= lo < hi <= width, (lo, hi, width)
+    assert len(huge.svg) < 60_000
+    assert huge.latex == [""] and "symbolic_latex_too_long" in huge.warnings
+    assert fplot.FORMULA_TOO_WIDE not in huge.warnings  # `((10^{12})^{12})^{12}\,x` entra
+
+    big = ffs.render_function_sync(
+        _spec(
+            {
+                "kind": "function_study",
+                "expressions": [{"expr": "(10**12)**12*x"}],
+                "domain": [-1, 1],
+            }
+        ),
+        language="it",
+    )
+    assert big.computed_caption == (
+        "Zeri in x = 0. Asintoto obliquo y = 1×10¹⁴⁴ x. Valori approssimati."
+    )
+    assert all(len(a["expr"]) < 40 and not a["latex"] for a in big.computed["asymptotes"])
+    assert not re.search(r"\d{20}", big.svg)  # né tick né etichette con decine di cifre
+    assert "×10" in big.svg  # tick dell'asse y in notazione scientifica
+    lo, hi = _path_x_range(big.svg, "formula")
+    assert 0.0 <= lo < hi <= width and len(big.svg) < 60_000
+
+    poly = ffs.render_function_sync(
+        _spec(
+            {
+                "kind": "function_study",
+                "expressions": [
+                    {
+                        "expr": (
+                            "123456.789*x**11 + 98765.4321*x**10 - 55555.5555*x**9"
+                            " + 4444.4444*x**8 - 333.333*x**7 + 22.22*x**6"
+                        )
+                    }
+                ],
+                "domain": [-1, 1],
+            }
+        ),
+        language="it",
+    )
+    lo, hi = _path_x_range(poly.svg, "formula")
+    assert 0.0 <= lo < hi <= width, (lo, hi)
+    assert fplot.FORMULA_TOO_WIDE not in poly.warnings  # ridotta di corpo, non omessa
+
+    # Nove funzioni distinte (sympy non le compatta; ≤ 80 nodi e ≤ 12
+    # livelli del parser): ~480 pt al corpo di 9 pt, oltre il minimo anche
+    # ridotta (6,1 pt < 6,5).
+    too_long = " + ".join(
+        f"{fn}({m})"
+        for m, fns in (
+            ("x", ("asin", "acos", "atan", "sinh", "cosh", "tanh")),
+            ("2*x", ("asin", "acos", "atan")),
+        )
+        for fn in fns
+    )
+    assert len(too_long) <= 200
+    wide = ffs.render_function_sync(
+        _spec(
+            {
+                "kind": "function_study",
+                "expressions": [{"expr": too_long}],
+                "domain": [-1, 1],
+                "show": ["formula"],
+            }
+        ),
+        language="it",
+    )
+    assert fplot.FORMULA_TOO_WIDE in wide.warnings
+    formula = _group(wide.svg, "formula")
+    assert "f(x)" in formula and "<path" not in formula  # solo il nome, come `<text>`
+
+    # Le costanti dell'AST fuori da [1e-3, 1e6) sono scritte in notazione scientifica.
+    assert fplot.expr_to_mathtext("2e-05*x + 3000000*x**2") == (
+        r"2 \cdot 10^{-5}\,x + 3 \cdot 10^{6}\,x^{2}"
+    )
+    text = r"f(x) = $x^{2} + 2\,x + 1$"
+    natural = fplot.text_width_pt(text, size=fplot.MATH_SIZE_PT)
+    assert fplot.fit_size(text, available_pt=natural) == fplot.MATH_SIZE_PT
+    assert fplot.fit_size(text, available_pt=0.5 * natural) is None
+    reduced = fplot.fit_size(text, available_pt=0.85 * natural)
+    assert reduced is not None and fplot.MIN_MATH_SIZE_PT <= reduced < fplot.MATH_SIZE_PT
+    assert fplot.text_width_pt(text, size=reduced) <= 0.85 * natural + 1e-6
 
 
 def test_to_mathtext_rewrites_and_rejects():

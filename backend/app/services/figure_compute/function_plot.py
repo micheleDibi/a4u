@@ -15,6 +15,14 @@ Il numero di punti notevoli disegnati è limitato per categoria a
 `function_numeric.MAX_NOTABLE_POINTS` (il calcolo li ha già troncati; qui
 è una difesa in profondità): il costo del disegno — un `TextPath` e un
 parse mathtext per etichetta — resta bounded dai limiti della spec (A13).
+Anche la formula è bounded: il testo (LaTeX del figlio ≤ 160 caratteri,
+altrimenti l'AST dell'espressione ≤ 200) viene misurato con `TextPath`
+contro la larghezza degli assi; se eccede, il corpo scende fino a
+`MIN_MATH_SIZE_PT` e, se ancora non entra, si prova il candidato
+successivo (LaTeX sympy → mathtext dall'AST → testo tondo); quando nessuno
+entra resta il solo nome `f(x)` con l'avvertenza `formula_too_wide`. I
+numeri (tick, etichette, coefficienti) usano la notazione scientifica da
+1e6 in modulo (i tick e le costanti dell'AST anche sotto 1e-3).
 
 Testo matematico come geometria (A14): formula, coordinate esatte e ogni
 stringa mathtext sono disegnate con `TextPath` + `PathPatch` (font DejaVu
@@ -47,6 +55,8 @@ from app.services.figure_theme import (
     COLOR_MUTED,
     MATPLOTLIB_RC,
     PALETTE,
+    SCIENTIFIC_MAX_ABS,
+    SCIENTIFIC_MIN_ABS,
     format_number,
 )
 
@@ -57,7 +67,14 @@ FIGSIZE = (5.2, 3.6)
 DPI = 200
 MARGINS = {"left": 0.08, "right": 0.97, "top": 0.94, "bottom": 0.10}
 MATH_SIZE_PT = 9.0
+# Corpo minimo della formula ridotta per entrare nella figura.
+MIN_MATH_SIZE_PT = 6.5
 LABEL_SIZE_PT = 8.0
+# La formula è ancorata a destra a questa frazione degli assi e può
+# estendersi a sinistra fino a `FORMULA_LEFT_FRACTION`.
+FORMULA_ANCHOR_FRACTION = 0.985
+FORMULA_LEFT_FRACTION = 0.015
+FORMULA_TOO_WIDE = "formula_too_wide"
 # Font bundled di matplotlib: la geometria è identica su ogni macchina.
 _TEXTPATH_FAMILY = "DejaVu Sans"
 
@@ -139,7 +156,15 @@ def _escape_text(s: str) -> str:
 
 
 def _number_mathtext(value: float) -> str:
-    if float(value).is_integer() and abs(value) < 1e15:
+    """Costante dell'AST in mathtext: intero, decimale a 6 cifre
+    significative o, fuori da [1e-3, 1e6) in modulo, `1.5 \\cdot 10^{7}`
+    (mai «1e+07» né 145 cifre)."""
+    magnitude = abs(float(value))
+    if magnitude >= SCIENTIFIC_MAX_ABS or 0.0 < magnitude < SCIENTIFIC_MIN_ABS:
+        mantissa, _, exponent = f"{value:.5e}".partition("e")
+        mantissa = mantissa.rstrip("0").rstrip(".")
+        return rf"{mantissa} \cdot 10^{{{int(exponent)}}}"
+    if float(value).is_integer():
         return str(int(value))
     return f"{value:.6g}"
 
@@ -153,7 +178,9 @@ def _node_mathtext(node: ast.AST) -> tuple[str, int]:
     passo 1 (`function_parse`); solleva `ValueError` su nodi imprevisti."""
     if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
         text = _number_mathtext(float(node.value))
-        return (text, _PREC_UNARY if text.startswith("-") else _PREC_ATOM)
+        if text.startswith("-"):
+            return (text, _PREC_UNARY)
+        return (text, _PREC_MUL if r"\cdot" in text else _PREC_ATOM)
     if isinstance(node, ast.Name):
         if node.id == "pi":
             return (r"\pi", _PREC_ATOM)
@@ -218,6 +245,10 @@ class _Canvas:
         self.fig = fig
         self.ax = ax
         self.warnings: list[str] = []
+
+    def axes_width_pt(self) -> float:
+        """Larghezza degli assi in punti tipografici."""
+        return float(self.ax.get_position().width * self.fig.get_figwidth() * 72.0)
 
     def draw_math(
         self,
@@ -347,9 +378,18 @@ def _setup_axes(canvas: _Canvas, study: NumericStudy, *, names: tuple[str, str])
     ax.spines["right"].set_visible(False)
     ax.spines["left"].set_position(("data", sx))
     ax.spines["bottom"].set_position(("data", sy))
-    ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _p: format_number(v)))
+    # Tick in notazione scientifica anche sotto 1e-3 (domini stretti,
+    # ampiezza minima 1e-3); un tick a 1e-17 per rumore di virgola mobile
+    # è «0», non «1×10⁻¹⁷».
+    x_eps = 1e-9 * abs(study.xlim[1] - study.xlim[0])
+    y_eps = 1e-9 * abs(study.ylim[1] - study.ylim[0])
+
+    def tick(v: float, eps: float) -> str:
+        return format_number(0.0 if abs(v) < eps else v, scientific_small=True)
+
+    ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _p: tick(v, x_eps)))
     ax.yaxis.set_major_formatter(
-        FuncFormatter(lambda v, _p: "" if (sy == 0.0 and v == 0.0) else format_number(v))
+        FuncFormatter(lambda v, _p: "" if (sy == 0.0 and abs(v) < y_eps) else tick(v, y_eps))
     )
     ax.tick_params(length=3, pad=2)
     ax.plot(
@@ -600,6 +640,53 @@ def _draw_annotations(canvas: _Canvas, study: NumericStudy, computed: Mapping[st
         )
 
 
+def text_width_pt(text: str, *, size: float) -> float:
+    """Larghezza in punti di `text` (tondo o misto mathtext) al corpo
+    `size`, misurata con `TextPath` sul font bundled: la stessa geometria
+    del disegno, quindi la stima è esatta per `draw_math` e prossima per
+    `<text>` (Noto Sans ha metriche vicine a DejaVu Sans)."""
+    from matplotlib.font_manager import FontProperties
+    from matplotlib.textpath import TextPath
+
+    bbox = TextPath(
+        (0, 0), text, size=size, prop=FontProperties(family=_TEXTPATH_FAMILY)
+    ).get_extents()
+    return float(bbox.x1 - bbox.x0)
+
+
+def fit_size(text: str, *, available_pt: float) -> float | None:
+    """Corpo con cui `text` entra in `available_pt`: `MATH_SIZE_PT` se
+    basta, altrimenti ridotto in proporzione (la larghezza di `TextPath` è
+    lineare nel corpo) ma non sotto `MIN_MATH_SIZE_PT`; `None` se non
+    entra nemmeno al minimo."""
+    width = text_width_pt(text, size=MATH_SIZE_PT)
+    if width <= available_pt:
+        return MATH_SIZE_PT
+    if width <= 0.0:
+        return MATH_SIZE_PT
+    size = MATH_SIZE_PT * available_pt / width
+    return size if size >= MIN_MATH_SIZE_PT else None
+
+
+def _formula_candidates(item_expr: str, source: str | None) -> list[tuple[str, bool]]:
+    """`(testo dopo «=», è mathtext)` in ordine di preferenza: LaTeX del
+    figlio sympy, poi mathtext scritto dall'AST dell'espressione (timeout,
+    errore, LaTeX assente o troppo lungo); l'espressione in chiaro (sintassi
+    Python) solo quando mathtext non rende nessuna delle due. Ogni candidato
+    ha lunghezza bounded (LaTeX ≤ `MAX_FORMULA_LATEX`, espressione ≤ 200
+    caratteri)."""
+    out: list[tuple[str, bool]] = []
+    mt = to_mathtext(source) if isinstance(source, str) else None
+    if mt is not None:
+        out.append((mt, True))
+    from_ast = expr_to_mathtext(item_expr)
+    if from_ast is not None and from_ast != mt:
+        out.append((from_ast, True))
+    if not out:
+        out.append((item_expr, False))
+    return out
+
+
 def _draw_formulas(
     canvas: _Canvas,
     spec: FunctionFigureSpec,
@@ -607,41 +694,55 @@ def _draw_formulas(
     *,
     variables: str,
 ) -> None:
+    """Formule in alto a destra, una riga per espressione, sempre dentro la
+    figura: ogni candidato è misurato contro la larghezza disponibile e
+    ridotto di corpo fino a `MIN_MATH_SIZE_PT`; se nessuno entra resta il
+    solo nome (`f(x)`) con l'avvertenza `formula_too_wide` (l'espressione
+    completa è nell'editor e nella didascalia)."""
     ax = canvas.ax
     line_pt = MATH_SIZE_PT * 1.9
+    available = (FORMULA_ANCHOR_FRACTION - FORMULA_LEFT_FRACTION) * canvas.axes_width_pt()
     for i, item in enumerate(spec.expressions):
         gid = "formula" if i == 0 else f"formula-{i}"
-        label = _escape_text(spec.expression_label(i))
-        prefix = f"{label}({variables}) = "
+        head = f"{_escape_text(spec.expression_label(i))}({variables})"
         source = latex[i] if i < len(latex) else None
-        mt = to_mathtext(source) if isinstance(source, str) else None
-        if mt is None:
-            # Senza il LaTeX del figlio sympy (timeout, errore, assente) la
-            # formula è scritta dall'AST dell'espressione, mai in sintassi
-            # Python (`x**2`).
-            mt = expr_to_mathtext(item.expr)
+        chosen: tuple[str, bool, float] | None = None
+        for body, is_math in _formula_candidates(item.expr, source):
+            text = f"{head} = ${body}$" if is_math else f"{head} = {body}"
+            size = fit_size(text, available_pt=available)
+            if size is not None:
+                chosen = (text, is_math, size)
+                break
+        if chosen is None:
+            canvas.warnings.append(FORMULA_TOO_WIDE)
+            chosen = (head, False, MATH_SIZE_PT)
+        text, is_math, size = chosen
+        if not is_math and text != head:
+            # Mathtext non rende né il LaTeX né l'AST: espressione in
+            # chiaro (sintassi Python visibile).
+            canvas.warnings.append("formula_not_mathtext")
         offset = (0.0, -i * line_pt)
-        if mt is not None:
+        if is_math:
             canvas.draw_math(
-                prefix + "$" + mt + "$",
-                anchor=(0.985, 0.985),
+                text,
+                anchor=(FORMULA_ANCHOR_FRACTION, 0.985),
                 transform=ax.transAxes,
                 offset_pt=offset,
                 ha="right",
                 va="top",
+                size=size,
                 gid=gid,
             )
             continue
-        canvas.warnings.append("formula_not_mathtext")
         ax.annotate(
-            prefix + item.expr,
-            xy=(0.985, 0.985),
+            text,
+            xy=(FORMULA_ANCHOR_FRACTION, 0.985),
             xycoords="axes fraction",
             xytext=offset,
             textcoords="offset points",
             ha="right",
             va="top",
-            fontsize=MATH_SIZE_PT,
+            fontsize=size,
             color=COLOR_INK,
             gid=gid,
             annotation_clip=False,
@@ -703,4 +804,13 @@ def render_svg(
     return svg, canvas.warnings
 
 
-__all__ = ["expr_to_mathtext", "mathtext_parses", "render_svg", "to_mathtext"]
+__all__ = [
+    "FORMULA_TOO_WIDE",
+    "MIN_MATH_SIZE_PT",
+    "expr_to_mathtext",
+    "fit_size",
+    "mathtext_parses",
+    "render_svg",
+    "text_width_pt",
+    "to_mathtext",
+]

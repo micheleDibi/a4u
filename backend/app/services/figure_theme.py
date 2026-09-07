@@ -612,15 +612,15 @@ FIGURE_I18N: dict[str, dict[str, str]] = {
         "courses.figures.formats.dot": "Grafo Graphviz",
         "courses.figures.formats.function": "Figura matematica",
         "courses.figures.formats.image": "Immagine",
-        "courses.figures.function.zeros": "Zeri in x = {{values}}.",
+        "courses.figures.function.zeros": "Zeri in {{var}} = {{values}}.",
         "courses.figures.function.zero_intervals": "Si annulla su {{values}}.",
-        "courses.figures.function.critical_points": "Punti critici in x = {{values}}.",
-        "courses.figures.function.inflection_points": "Flessi in x = {{values}}.",
+        "courses.figures.function.critical_points": "Punti critici in {{var}} = {{values}}.",
+        "courses.figures.function.inflection_points": "Flessi in {{var}} = {{values}}.",
         "courses.figures.function.asymptote_vertical": "Asintoto verticale {{expr}}.",
         "courses.figures.function.asymptote_horizontal": "Asintoto orizzontale {{expr}}.",
         "courses.figures.function.asymptote_oblique": "Asintoto obliquo {{expr}}.",
         "courses.figures.function.integral": "Integrale su [{{a}}, {{b}}] pari a {{value}}.",
-        "courses.figures.function.tangent": "Tangente in x = {{at}} con pendenza {{slope}}.",
+        "courses.figures.function.tangent": "Tangente in {{var}} = {{at}} con pendenza {{slope}}.",
         "courses.figures.function.levels": "Curve di livello per z = {{values}}.",
         "courses.figures.function.none": "Nessun punto notevole nel dominio considerato.",
         "courses.figures.function.truncated": (
@@ -640,15 +640,15 @@ FIGURE_I18N: dict[str, dict[str, str]] = {
         "courses.figures.formats.dot": "Graphviz graph",
         "courses.figures.formats.function": "Mathematical figure",
         "courses.figures.formats.image": "Image",
-        "courses.figures.function.zeros": "Zeros at x = {{values}}.",
+        "courses.figures.function.zeros": "Zeros at {{var}} = {{values}}.",
         "courses.figures.function.zero_intervals": "Vanishes on {{values}}.",
-        "courses.figures.function.critical_points": "Critical points at x = {{values}}.",
-        "courses.figures.function.inflection_points": "Inflection points at x = {{values}}.",
+        "courses.figures.function.critical_points": "Critical points at {{var}} = {{values}}.",
+        "courses.figures.function.inflection_points": "Inflection points at {{var}} = {{values}}.",
         "courses.figures.function.asymptote_vertical": "Vertical asymptote {{expr}}.",
         "courses.figures.function.asymptote_horizontal": "Horizontal asymptote {{expr}}.",
         "courses.figures.function.asymptote_oblique": "Oblique asymptote {{expr}}.",
         "courses.figures.function.integral": "Integral over [{{a}}, {{b}}] equal to {{value}}.",
-        "courses.figures.function.tangent": "Tangent at x = {{at}} with slope {{slope}}.",
+        "courses.figures.function.tangent": "Tangent at {{var}} = {{at}} with slope {{slope}}.",
         "courses.figures.function.levels": "Level curves for z = {{values}}.",
         "courses.figures.function.none": "No notable points in the considered domain.",
         "courses.figures.function.truncated": (
@@ -901,11 +901,41 @@ def latex_to_unicode(latex: str) -> str:
     return _latex_tidy(_latex_convert(latex.strip()))
 
 
-def format_number(value: float, *, digits: int = 3) -> str:
+# Da `SCIENTIFIC_MAX_ABS` in su (e, per i tick, sotto `SCIENTIFIC_MIN_ABS`)
+# `format_number` usa la notazione scientifica: un numero non occupa mai
+# più di una quindicina di caratteri (tick, didascalie, rette
+# asintotiche), qualunque sia il suo modulo.
+SCIENTIFIC_MIN_ABS = 1e-3
+SCIENTIFIC_MAX_ABS = 1e6
+_SUPERSCRIPT_DIGITS = str.maketrans("0123456789-", "⁰¹²³⁴⁵⁶⁷⁸⁹⁻")
+
+
+def _scientific(value: float, digits: int) -> str:
+    """`1.5×10⁷`, `2×10⁻⁴`: mantissa con al più `digits` cifre significative
+    (zeri finali rimossi), esponente in apice Unicode."""
+    mantissa, _, exponent = f"{value:.{max(digits - 1, 0)}e}".partition("e")
+    if "." in mantissa:
+        mantissa = mantissa.rstrip("0").rstrip(".")
+    superscript = str(int(exponent)).translate(_SUPERSCRIPT_DIGITS)
+    return f"{mantissa.replace('-', '−')}×10{superscript}"
+
+
+def format_number(value: float, *, digits: int = 3, scientific_small: bool = False) -> str:
     """Numero approssimato con `digits` decimali (zeri finali rimossi),
-    separatore decimale «.», segno meno tipografico."""
+    separatore decimale «.», segno meno tipografico. In modulo da
+    `SCIENTIFIC_MAX_ABS` in su la notazione è scientifica con `digits`
+    cifre significative («1×10¹⁴⁴»): la lunghezza del testo è bounded
+    qualunque sia il valore. Sotto `SCIENTIFIC_MIN_ABS` (non nullo) lo è
+    solo con `scientific_small=True` (tick degli assi su domini stretti,
+    «2×10⁻⁴»): nelle didascalie i valori approssimati restano a 3 decimali,
+    così il rumore numerico della bisezione (−1.03·10⁻²²) si legge «0»."""
     if value != value or value in (float("inf"), float("-inf")):  # NaN, ±∞
         return "∞" if value > 0 else ("−∞" if value < 0 else "n.d.")
+    magnitude = abs(float(value))
+    if magnitude >= SCIENTIFIC_MAX_ABS or (
+        scientific_small and 0.0 < magnitude < SCIENTIFIC_MIN_ABS
+    ):
+        return _scientific(float(value), digits)
     rounded = round(float(value), digits)
     if rounded == 0:
         rounded = 0.0
@@ -938,16 +968,21 @@ def function_caption(computed: Mapping[str, Any] | None, language: str | None) -
 
     `computed` è il dizionario prodotto dal renderer `function` (zeri, punti
     critici, flessi, asintoti, integrale, tangenti, livelli, `approximate`,
-    `warnings`). Ogni numero proviene dal calcolo: le forme esatte (`exact*`,
-    LaTeX) sono rese in Unicode con √ e π; in loro assenza il valore numerico
-    è arrotondato a 3 decimali. Mai persistita: si rigenera a ogni render.
+    `warnings`, `variable`). Ogni numero proviene dal calcolo: le forme
+    esatte (`exact*`, LaTeX) sono rese in Unicode con √ e π; in loro assenza
+    il valore numerico è arrotondato a 3 decimali. Il nome della variabile
+    (`variable`, default `x`) entra nelle frasi «Zeri in t = …», coerente
+    con la formula e con l'asse. Mai persistita: si rigenera a ogni render.
     """
     if not isinstance(computed, Mapping) or not computed:
         return ""
     labels = figure_labels(language)
     sentences: list[str] = []
+    variable = computed.get("variable")
+    var = variable.strip() if isinstance(variable, str) and variable.strip() else "x"
 
     def phrase(key: str, **values: Any) -> None:
+        values.setdefault("var", var)
         sentences.append(_interpolate(labels[f"courses.figures.function.{key}"], values))
 
     def points(entries: Any, *, value_key: str, exact_key: str) -> list[str]:

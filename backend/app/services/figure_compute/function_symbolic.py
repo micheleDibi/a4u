@@ -20,6 +20,15 @@ breve, la forma esatta in LaTeX (`nsimplify` per i Float + `latex(...,
 ln_notation=True, fold_short_frac=False)`), che il servizio riconcilia con
 il calcolo numerico del padre: nessun numero entra nella figura senza
 riscontro numerico.
+
+Ogni testo prodotto è bounded (A13): il LaTeX dell'espressione oltre
+`MAX_FORMULA_LATEX` caratteri è omesso (il padre scrive la formula
+dall'AST), le forme esatte e le rette asintotiche oltre `MAX_EXACT_LATEX`
+sono omesse (il padre ripiega sul valore numerico in notazione
+scientifica); i Float con esponente fuori da [-4, 6] sono scritti in
+notazione scientifica (`1.0 \\cdot 10^{12}`). I parser di sympy valutano
+le potenze intere (`(10**12)**12` → un intero di 145 cifre): senza tetto la
+formula avrebbe prodotto SVG di megabyte.
 """
 
 from __future__ import annotations
@@ -29,10 +38,14 @@ from collections.abc import Iterable
 from typing import Any
 
 MAX_EXACT_LATEX = 80
+MAX_FORMULA_LATEX = 160
 MAX_RATIONAL_DENOMINATOR = 10_000
 MAX_EXACT_OPS = 12
 NSIMPLIFY_TOL = 1e-9
 INTERVAL_EPS = 1e-9
+# Esponenti dei Float oltre i quali `latex` usa la notazione scientifica.
+LATEX_FLOAT_MIN_EXP = -4
+LATEX_FLOAT_MAX_EXP = 6
 
 _SYMPY_FUNCTIONS: tuple[str, ...] = (
     "sin",
@@ -97,7 +110,24 @@ def parse_sympy(src: str, declared: Iterable[str]) -> Any:
 def _latex(value: Any) -> str:
     import sympy as sp
 
-    return str(sp.latex(value, ln_notation=True, fold_short_frac=False))
+    return str(
+        sp.latex(
+            value,
+            ln_notation=True,
+            fold_short_frac=False,
+            min=LATEX_FLOAT_MIN_EXP,
+            max=LATEX_FLOAT_MAX_EXP,
+        )
+    )
+
+
+def _bounded_latex(value: Any, limit: int) -> str | None:
+    """LaTeX di `value` se non supera `limit` caratteri, altrimenti `None`."""
+    try:
+        text = _latex(value)
+    except (ValueError, TypeError, RecursionError):
+        return None
+    return text if len(text) <= limit else None
 
 
 def _is_real_number(value: Any) -> bool:
@@ -142,13 +172,7 @@ def exact_form(value: Any) -> tuple[float | None, str | None]:
         exact = candidate
     if exact.has(sp.CRootOf) or exact.has(sp.RootSum):
         return (f, None)
-    try:
-        text = _latex(exact)
-    except (ValueError, TypeError, RecursionError):
-        return (f, None)
-    if len(text) > MAX_EXACT_LATEX:
-        return (f, None)
-    return (f, text)
+    return (f, _bounded_latex(exact, MAX_EXACT_LATEX))
 
 
 def _simplified(value: Any) -> Any:
@@ -249,6 +273,10 @@ def _limit(expr: Any, x: Any, point: Any, direction: str = "+") -> Any:
 
 
 def _tail(expr: Any, x: Any, y: Any, direction: Any) -> dict[str, Any] | None:
+    """Asintoto orizzontale/obliquo per `x → direction`. `expr` e `latex`
+    sono presenti solo se la retta ha una scrittura esatta breve (≤
+    `MAX_EXACT_LATEX`): altrimenti il padre la scrive dai coefficienti
+    numerici (`m·10^{144}` non è una forma esatta leggibile)."""
     import sympy as sp
 
     m = _limit(expr / x, x, direction)
@@ -261,12 +289,14 @@ def _tail(expr: Any, x: Any, y: Any, direction: Any) -> dict[str, Any] | None:
     if mf is None or qf is None:
         return None
     kind = "horizontal" if m == 0 else "oblique"
+    line = m * x + q
+    latex = _bounded_latex(sp.Eq(y, line), MAX_EXACT_LATEX)
     return {
         "kind": kind,
         "m": mf,
         "q": qf,
-        "expr": f"y = {sp.sstr(m * x + q)}",
-        "latex": _latex(sp.Eq(y, m * x + q)),
+        "expr": f"y = {sp.sstr(line)}" if latex is not None else None,
+        "latex": latex,
     }
 
 
@@ -338,12 +368,17 @@ def _study(payload: dict[str, Any], exprs: list[Any], x: Any, out: dict[str, Any
             left = _limit(f, x, s, "-")
             right = _limit(f, x, s, "+")
             if _is_infinite(left) or _is_infinite(right):
+                # Senza forma esatta breve il padre scrive `x = <valore>`.
                 vertical.append(
                     {
                         "x": xf,
                         "exact": exact,
-                        "expr": f"x = {sp.sstr(s)}",
-                        "latex": _latex(sp.Eq(x, s)),
+                        "expr": f"{x} = {sp.sstr(s)}" if exact is not None else None,
+                        "latex": (
+                            _bounded_latex(sp.Eq(x, s), MAX_EXACT_LATEX)
+                            if exact is not None
+                            else None
+                        ),
                     }
                 )
             else:
@@ -425,7 +460,8 @@ def analyze_symbolic(payload: dict[str, Any]) -> dict[str, Any]:
     [str], "variable": str, "domain": [lo, hi], "study_index": int | None,
     "tasks": [str], "tangents": [{index, at}], "integrals": [{index,
     against, between}]}` → dizionario JSON con `latex` per espressione
-    (None se il parse fallisce), `zeros`, `critical_points`,
+    (None se il parse fallisce o il LaTeX supera `MAX_FORMULA_LATEX`),
+    `zeros`, `critical_points`,
     `inflection_points`, `vertical_asymptotes`, `discontinuities`,
     `tail_asymptotes`, `tangents`, `integrals`, `warnings`."""
     import sympy as sp
@@ -448,12 +484,17 @@ def analyze_symbolic(payload: dict[str, Any]) -> dict[str, Any]:
     for src in payload.get("expressions") or []:
         try:
             expr = parse_sympy(str(src), declared)
-            exprs.append(expr)
-            out["latex"].append(_latex(expr))
         except Exception as exc:  # il parse del figlio non deve fermare le altre espressioni
             exprs.append(None)
             out["latex"].append(None)
             out["warnings"].append(f"symbolic_parse_failed: {type(exc).__name__}")
+            continue
+        exprs.append(expr)
+        latex = _bounded_latex(expr, MAX_FORMULA_LATEX)
+        if latex is None:
+            # Il padre scrive la formula dall'AST (`expr_to_mathtext`).
+            out["warnings"].append("symbolic_latex_too_long")
+        out["latex"].append(latex)
     _study(payload, exprs, x, out)
     _tangents(payload, exprs, x, out)
     _integrals(payload, exprs, x, out)

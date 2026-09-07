@@ -533,9 +533,13 @@ figlio importa il bersaglio dal disco (`"pacchetto.modulo:funzione"`):
 un monkeypatch nel padre non lo raggiunge, perciò il test del timeout usa
 un bersaglio reale (`tests/helpers/slow_target.py`). Eccezioni:
 `FigureTimeoutError` (scadenza, figlio ucciso e raccolto) e
-`FigureComputeError` (il figlio ha sollevato o è morto senza risposta),
-con i nomi di A18. `daemon=True` impedisce processi nipoti: accettabile,
-i bersagli non ne creano.
+`FigureComputeError` (il figlio ha sollevato o è morto senza risposta, o
+non è nemmeno partito: un errore di `Process.start()` — descrittori
+esauriti, bootstrap del processo principale non concluso — è convertito
+qui, così i renderer e il motore `function` lo trattano come ogni altro
+fallimento del figlio invece di lasciarlo risalire come 500), con i nomi
+di A18. `daemon=True` impedisce processi nipoti: accettabile, i bersagli
+non ne creano.
 
 Correzione dovuta in WP2b: dopo un `poll()` andato a buon fine, `recv()`
 non ha scadenza e i tre `join(5)` possono sommare fino a 5 s oltre
@@ -604,11 +608,12 @@ argomento (`log` anche due), nessuna keyword; `Name.id` ∈ funzioni ∪
 con esponente costante `|v| ≤ 12` (`2**1000000` passa l'AST ma non questo
 limite); ≤ 80 nodi, profondità ≤ 12.
 
-Passo 2, **solo nel figlio sympy**: `parse_expr(src,
-transformations=standard_transformations, global_dict={"Integer", "Float",
-"Rational", "Symbol", "pi", "E", <funzioni sympy>, "abs": Abs},
-local_dict={v: Symbol(v, real=True)}, evaluate=True)` sulla **stessa**
-stringa già filtrata; controllo finale `expr.free_symbols ⊆ dichiarati`.
+Passo 2, **solo nel figlio sympy** (`function_symbolic.parse_sympy`):
+`parse_expr(src, transformations=standard_transformations,
+global_dict={"__builtins__": {}, "Integer", "Float", "Rational", "Symbol",
+"pi", "E", <funzioni sympy>, "abs": Abs}, local_dict={v: Symbol(v,
+real=True)}, evaluate=True)` sulla **stessa** stringa già filtrata;
+controllo finale `expr.free_symbols ⊆ dichiarati`.
 `parse_expr` usa `eval(code, global_dict, local_dict)`: il `global_dict`
 ristretto e il passo 1 sono le due difese, una nel padre e una nel
 figlio. **Verificato il 7 settembre su sympy 1.14.0** (voce 6 del
@@ -633,12 +638,24 @@ Il test `importorskip("sympy")` in `test_function_figure_service.py`
 valutatore ricorsivo dell'AST (`sin → np.sin`, …, `Pow → np.power` in
 `errstate(all="ignore")`), niente `eval` né `lambdify`; `sample`,
 `split_branches` (taglia dove `y` non è finito o `|Δy| > 8·mediana` con
-`|y|` crescente verso il bordo: NaN inseriti, matplotlib spezza la linea),
-`find_zeros` (cambi di segno + bisezione), `find_critical` /
-`find_inflection` (derivate centrali), `vertical_asymptotes`,
-`oblique_or_horizontal` (regressione sulle code). **La figura non dipende
-da sympy.** Limiti introdotti dalla correzione di WP7 (A13, «bounded dai
-limiti della spec»): ogni categoria di punti notevoli è limitata a
+`|y|` crescente verso il taglio da entrambi i lati; ritorna i rami e le
+regioni di taglio), `classify_cuts(f, regions, scale, width, domain)`
+(per ogni regione interna: polo se `|f| > POLE_MAGNITUDE·scale` nel punto
+di minimo di `|1/f|`, salto se la discontinuità persiste bisecando, nulla
+altrimenti; i due estremi del dominio sono esaminati con `edge_pole`:
+`|f|` che almeno raddoppia per decade avvicinandosi al bordo e supera la
+stessa soglia a `1e-9·width` è un polo — `tan(x)` su [−π/2, π/2], `1/x`
+su [0, 1] — mentre un valore non finito lungo le sonde, cioè l'overflow di
+`exp(x)`, o una crescita lenta come `log(x)` non lo è), `find_zeros`
+(cambi di segno + bisezione, `ZeroSearch` con zeri, plateau e flag di
+troncamento), `find_critical` (`CriticalSearch`) / `find_inflection`
+(derivate centrali), `oblique_or_horizontal` (regressione lineare sulle
+due code `[1e3, 1e4]` e `[1e4, 1e5]`, accettata solo se le due stime
+coincidono; `|q| < 1e-3·(1 + |m|)` è rumore della regressione e diventa
+0), `tail_confirmed(f, m, q)` (verifica diretta di una retta asintotica
+proposta dal figlio). **La figura non dipende da sympy.** Limiti
+introdotti dalle correzioni di WP7 (A13, «bounded dai limiti della
+spec»): ogni categoria di punti notevoli è limitata a
 `MAX_NOTABLE_POINTS = 12` voci (le prime da sinistra; la ricerca si ferma
 al primo punto oltre il tetto, `computed["truncated"]` elenca le categorie
 e la didascalia aggiunge `courses.figures.function.truncated`); le
@@ -648,25 +665,45 @@ sottoflusso, uno zero di tangenza nel punto medio) e quelle con `f' == 0`
 un tratto stazionario (avvertenza `stationary_interval`, nessun punto); le
 tolleranze degli zeri di tangenza, dei punti stazionari e degli estremi
 sono locali (relative ai campioni vicini, mai alla mediana globale di
-`|y|`); le regioni di taglio che toccano un estremo del dominio (overflow
-di `exp(x)`, `log(x)` per x < 0) non sono poli. Il disegno è serializzato
-da un `threading.Lock` (`rcParams` è globale al processo) e il motore
-riceve dall'endpoint una scadenza monotona controllata fra un passo e
-l'altro; nel worker `validate(deep=True)` è avvolta in
+`|y|`). Il disegno è serializzato da un `threading.Lock` (`rcParams` è
+globale al processo) e il motore riceve dall'endpoint una scadenza
+monotona controllata fra un passo e l'altro; nel worker
+`validate(deep=True)` è avvolta in
 `asyncio.wait_for(figure_render_timeout_seconds)`.
 
-`function_symbolic.py` (importa sympy solo nel figlio): `solve(f)`,
-`solve(diff(f))`, `solve(diff(f, 2))`, `singularities`, `limit(f, x, ±oo)`,
-`limit(f − (m·x + q))`, `integrate`, `diff(f).subs`; `nsimplify(val, [pi,
-E], rational=True, tolerance=1e-9)` + `latex(..., ln_notation=True,
-fold_short_frac=False)` solo se `|val − float(exact)| < 1e-9`. Eseguito con
+`function_symbolic.py` (importa sympy solo nel figlio;
+`analyze_symbolic(payload)` è il bersaglio di `run_isolated`): zeri,
+punti critici e flessi con `solveset(expr, x, Interval)` e ripiego su
+`solve` filtrato ai reali nell'intervallo; singolarità con
+`singularities` e ripiego sul denominatore di `together(f)`; `limit(f, x,
+s, ±)` per distinguere asintoto verticale e discontinuità eliminabile;
+code con `limit(f/x)` e `limit(f − m·x)` per `x → ±∞`; `integrate` sugli
+intervalli delle aree; `diff(f).subs` per le tangenti. Forme esatte
+(`exact_form`): `nsimplify(val, [pi, E], rational=True, tolerance=1e-9)`
+accettato solo se `|val − float(exact)| < 1e-9`, denominatore ≤ 10.000 e
+`count_ops ≤ 12`, poi `latex(..., ln_notation=True, fold_short_frac=False,
+min=-4, max=6)` (Float fuori da quegli esponenti in notazione
+scientifica) purché non superi `MAX_EXACT_LATEX = 80` caratteri. Ogni
+testo del figlio è bounded: il LaTeX dell'espressione oltre
+`MAX_FORMULA_LATEX = 160` caratteri è omesso con l'avvertenza
+`symbolic_latex_too_long` (sympy valuta le potenze intere:
+`((10**12)**12)**12*x` produceva 1.731 cifre e un SVG di 1,4 MB) e le
+rette asintotiche senza scrittura esatta breve arrivano al padre senza
+`expr`/`latex`. Eseguito con
 `run_isolated("app.services.figure_compute.function_symbolic:analyze_symbolic",
-spec_dict, timeout=settings.figure_function_timeout_seconds)` dentro
-`asyncio.to_thread`. Riconciliazione: ogni punto numerico è sostituito
-dall'esatto entro `1e-6·ampiezza`; esatti senza riscontro numerico sono
-ignorati (mai numeri «plausibili»). Su timeout o eccezione:
-`approximate=True`, `warnings=["symbolic_timeout"]`, coda della didascalia
-con `courses.figures.approxValues`; l'SVG viene comunque prodotto.
+payload, timeout=settings.figure_function_timeout_seconds)` dentro
+`asyncio.to_thread`. Riconciliazione (`figure_function_service._Reconciler`):
+ogni punto numerico è sostituito dall'esatto entro `1e-6·ampiezza`; un
+esatto senza riscontro numerico entra solo se una verifica diretta con
+tolleranza locale lo conferma (`is_zero_at`, `is_stationary_at`,
+`inflection_confirmed`, `f` non finita nel punto, `tail_confirmed`),
+altrimenti è ignorato (mai numeri «plausibili»); le rette senza `expr`
+del figlio sono scritte dai coefficienti numerici con `format_number`
+(«y = 1×10¹⁴⁴ x») e i nomi degli assi della spec. Su timeout, eccezione o
+avvio del figlio fallito: `approximate=True`,
+`warnings=["symbolic_timeout" | "symbolic_failed"]`, coda della
+didascalia con `courses.figures.approxValues`; l'SVG viene comunque
+prodotto.
 
 ### 4.4 Render matplotlib con `TextPath` (A14)
 
@@ -692,26 +729,44 @@ tick esatti) sono quindi disegnate come geometria: `TextPath` +
 `function_plot.to_mathtext` rimuove `\left`/`\right`, `\tfrac → \frac`,
 `\lvert`/`\rvert → |`, `\displaystyle`; formule con `\begin{…}` o `\over`
 sono omesse; prova preventiva `MathTextParser("path").parse("$" + s + "$")`
-in `try/except` → testo tondo con warning. Guardia: test `set(font-family)
-⊆ {Noto Sans, DejaVu Sans}` sull'SVG. `function_plot` non produce mai
-raster (`<image>`): `contour` e `fill_between` sono path, `imshow` non è
-usato; un test lo asserisce perché `normalize_svg` rifiuta `<image>`
-mentre `MATPLOTLIB_RC` tiene `svg.image_inline: True`.
+in `try/except`. Senza il LaTeX del figlio (timeout, errore, sympy
+assente, LaTeX troppo lungo) la formula è scritta dall'AST
+dell'espressione con `expr_to_mathtext` (`x**2 - 2 → x^{2} - 2`,
+`(x**2-1)/(x-2) → \frac{x^{2} - 1}{x - 2}`, costanti fuori da [1e-3, 1e6)
+come `1.5 \cdot 10^{7}`), mai in sintassi Python; l'espressione in chiaro
+è l'ultimo ripiego, con l'avvertenza `formula_not_mathtext`. La formula
+è misurata (`text_width_pt`, `TextPath` sul font bundled) contro la
+larghezza degli assi: se eccede, il corpo scende in proporzione fino a
+`MIN_MATH_SIZE_PT = 6,5` (`fit_size`); se nessun candidato entra
+nemmeno al minimo resta il solo nome `f(x)` con l'avvertenza
+`formula_too_wide` (un polinomio di grado 11 con coefficienti decimali
+usciva dal viewBox a sinistra). I tick usano `format_number(...,
+scientific_small=True)`: notazione scientifica da 1e6 in modulo e, solo
+sui tick, anche sotto 1e-3 (domini di ampiezza minima 1e-3); un tick
+sotto `1e-9·ampiezza` è «0». Guardia: test `set(font-family) ⊆ {Noto
+Sans, DejaVu Sans}` sull'SVG e test che la formula resti dentro il
+viewBox. `function_plot` non produce mai raster (`<image>`): `contour` e
+`fill_between` sono path, `imshow` non è usato; un test lo asserisce
+perché `normalize_svg` rifiuta `<image>` mentre `MATPLOTLIB_RC` tiene
+`svg.image_inline: True`.
 
 ### 4.5 `computed` e didascalia calcolata (mai persistita)
 
-`computed = {approximate, latex: [str], zeros: [{x, exact}],
-critical_points: [{x, y, exact_x, exact_y, type}], inflection_points,
-asymptotes: [{kind, expr, latex}], discontinuities, integral: {between,
-value, exact} | None, tangents: [{at, slope, exact_slope}], levels,
-warnings}`. `figure_theme.function_caption(computed, language)`
-(`figure_theme.py:914`) compone la coda dalle frasi
-`courses.figures.function.*` (testo Unicode con √ e π via
-`latex_to_unicode`, 3 cifre se approssimato). La coda **non è mai
-persistita**: viene rigenerata a render e passata come `extra_caption` al
-partial; il frontend la riceve come `computed_caption` e la passa a
-`FigureFrame.extraCaption`. Guardia anti-doppia coda: `if
-caption.rstrip().endswith(tail): tail = ""`.
+`computed = {approximate, variable, latex: [str], zeros: [{x, exact}],
+zero_intervals: [[a, b]], critical_points: [{x, y, exact_x, exact_y,
+type}], inflection_points, asymptotes: [{kind, x | m, q, expr, latex}],
+discontinuities, integral: {between, value, exact} | None, tangents:
+[{at, slope, exact_slope}], levels, truncated, warnings}`.
+`figure_theme.function_caption(computed, language)` compone la coda dalle
+frasi `courses.figures.function.*` (testo Unicode con √ e π via
+`latex_to_unicode`, 3 decimali se approssimato, `format_number` in
+notazione scientifica da 1e6 in modulo; il segnaposto `{{var}}` delle
+frasi con «x =» — zeri, punti critici, flessi, tangente — prende
+`computed["variable"]`, così una spec con `variable: "t"` non contraddice
+formula e asse). La coda **non è mai persistita**: viene rigenerata a
+render e passata come `extra_caption` al partial; il frontend la riceve
+come `computed_caption` e la passa a `FigureFrame.extraCaption`. Guardia
+anti-doppia coda: `if caption.rstrip().endswith(tail): tail = ""`.
 
 ### 4.6 Endpoint `render-function`
 

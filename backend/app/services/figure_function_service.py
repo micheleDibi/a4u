@@ -174,7 +174,9 @@ def _symbolic_payload(spec: FunctionFigureSpec) -> dict[str, Any]:
 def _run_symbolic(
     spec: FunctionFigureSpec, *, timeout: float, target: str
 ) -> tuple[dict[str, Any] | None, list[str]]:
-    """`(esito del figlio | None, avvertenze)`; mai solleva."""
+    """`(esito del figlio | None, avvertenze)`; mai solleva: anche un
+    errore di avvio del processo figlio (spawn impossibile, pipe esaurite)
+    degrada a `symbolic_failed`, la figura resta numerica."""
     if importlib.util.find_spec("sympy") is None:
         return (None, ["symbolic_unavailable"])
     try:
@@ -184,6 +186,9 @@ def _run_symbolic(
         return (None, ["symbolic_timeout"])
     except FigureComputeError as exc:
         log.warning("function_symbolic_failed", reason=str(exc)[:300])
+        return (None, ["symbolic_failed"])
+    except Exception as exc:  # avvio del figlio o pickling: mai oltre il motore
+        log.warning("function_symbolic_failed", reason=f"{type(exc).__name__}: {exc}"[:300])
         return (None, ["symbolic_failed"])
     if not isinstance(result, dict):
         return (None, ["symbolic_failed"])
@@ -226,19 +231,32 @@ def _in_domain(spec: FunctionFigureSpec, x: float, tol: float) -> bool:
     return lo - tol <= x <= hi + tol
 
 
-def _line_expr(m: float, q: float) -> str:
-    if m == 0.0:
-        return f"y = {format_number(q)}"
-    if m == 1.0:
-        head = "x"
-    elif m == -1.0:
-        head = "−x"
+def _axis_names(spec: FunctionFigureSpec) -> tuple[str, str]:
+    """`(variabile, nome dell'ordinata)` come li scrive `function_plot`
+    (`y`, oppure `z` se la variabile è `y`)."""
+    var = spec.variable
+    return (var, "y" if var != "y" else "z")
+
+
+def _line_expr(m: float, q: float, *, names: tuple[str, str] = ("x", "y")) -> str:
+    """`y = m x + q` con i coefficienti numerici (`format_number`: notazione
+    scientifica fuori da [1e-3, 1e6) in modulo) e i nomi degli assi."""
+    var, y_name = names
+    # Decisioni sul valore formattato: una pendenza di regressione 1,00001
+    # si legge «y = t + 2», non «y = 1 t + 2».
+    m_text, q_text = format_number(m), format_number(abs(q))
+    if m_text == "0":
+        return f"{y_name} = {format_number(q)}"
+    if m_text == "1":
+        head = var
+    elif m_text == "−1":
+        head = f"−{var}"
     else:
-        head = f"{format_number(m)} x"
-    if q == 0.0:
-        return f"y = {head}"
+        head = f"{m_text} {var}"
+    if q_text == "0":
+        return f"{y_name} = {head}"
     sign = "+" if q > 0 else "−"
-    return f"y = {head} {sign} {format_number(abs(q))}"
+    return f"{y_name} = {head} {sign} {q_text}"
 
 
 class _Reconciler:
@@ -250,6 +268,7 @@ class _Reconciler:
         self.f: Callable[[float], float] | None = study.fn
         self.approximate = sym is None
         self.truncated: set[str] = set(study.truncated)
+        self.names = _axis_names(spec)
 
     def _note_exact(self, exact: Any) -> Any:
         if not isinstance(exact, str) or not exact.strip():
@@ -354,6 +373,19 @@ class _Reconciler:
             entry["type"] = str(match["type"])
         return entry
 
+    def _vertical(self, x: float, entry: Mapping[str, Any] | None) -> dict[str, Any]:
+        """Voce di asintoto verticale: `expr`/`latex` esatti del figlio se
+        brevi, altrimenti `x = <valore>` con il nome della variabile."""
+        expr = entry.get("expr") if entry else None
+        if not (isinstance(expr, str) and expr):
+            expr = f"{self.names[0]} = {format_number(x)}"
+        return {
+            "kind": "vertical",
+            "x": x,
+            "expr": str(expr),
+            "latex": entry.get("latex") if entry else None,
+        }
+
     def asymptotes(self) -> list[dict[str, Any]]:
         vertical_out: list[dict[str, Any]] = []
         vertical = _entries(self.sym, "vertical_asymptotes")
@@ -361,18 +393,9 @@ class _Reconciler:
         for xn in self.study.poles:
             match = _take_closest(vertical, xn, self.tol, used)
             if match:
-                vertical_out.append(
-                    {
-                        "kind": "vertical",
-                        "x": float(match["x"]),
-                        "expr": str(match.get("expr") or f"x = {format_number(float(match['x']))}"),
-                        "latex": match.get("latex"),
-                    }
-                )
+                vertical_out.append(self._vertical(float(match["x"]), match))
             else:
-                vertical_out.append(
-                    {"kind": "vertical", "x": xn, "expr": f"x = {format_number(xn)}", "latex": None}
-                )
+                vertical_out.append(self._vertical(xn, None))
         for i, entry in enumerate(vertical):
             x = float(entry["x"])
             if i in used or not _in_domain(self.spec, x, self.tol) or self.f is None:
@@ -385,14 +408,7 @@ class _Reconciler:
                 not math.isfinite(probe)
                 or near > function_numeric.POLE_MAGNITUDE * self.study.scale
             ):
-                vertical_out.append(
-                    {
-                        "kind": "vertical",
-                        "x": x,
-                        "expr": str(entry.get("expr") or f"x = {format_number(x)}"),
-                        "latex": entry.get("latex"),
-                    }
-                )
+                vertical_out.append(self._vertical(x, entry))
         out = self._finish(CATEGORY_ASYMPTOTES, vertical_out, exact_key="latex")
         tails_sym = self.sym.get("tail_asymptotes") if self.sym else None
         confirmed: list[tuple[str, float, float]] = []
@@ -405,12 +421,17 @@ class _Reconciler:
                     continue
                 if function_numeric.tail_confirmed(self.f, float(m), float(q)):
                     confirmed.append((str(entry.get("kind")), float(m), float(q)))
+                    expr = entry.get("expr")
                     out.append(
                         {
                             "kind": str(entry.get("kind")),
                             "m": float(m),
                             "q": float(q),
-                            "expr": str(entry.get("expr") or _line_expr(float(m), float(q))),
+                            "expr": (
+                                str(expr)
+                                if isinstance(expr, str) and expr
+                                else _line_expr(float(m), float(q), names=self.names)
+                            ),
                             "latex": self._note_exact(entry.get("latex")),
                         }
                     )
@@ -423,7 +444,15 @@ class _Reconciler:
             ):
                 continue
             self.approximate = True
-            out.append({"kind": kind, "m": m, "q": q, "expr": _line_expr(m, q), "latex": None})
+            out.append(
+                {
+                    "kind": kind,
+                    "m": m,
+                    "q": q,
+                    "expr": _line_expr(m, q, names=self.names),
+                    "latex": None,
+                }
+            )
         return out
 
     def discontinuities(self) -> list[float]:
@@ -500,6 +529,7 @@ def build_computed(
     analysed = spec.kind not in ("family", "level_curves")
     computed: dict[str, Any] = {
         "approximate": False,
+        "variable": spec.variable,
         "latex": r.latex(),
         "zeros": r.zeros() if analysed and "zeros" in show else None,
         "zero_intervals": r.zero_intervals() if analysed and "zeros" in show else None,

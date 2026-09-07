@@ -26,6 +26,7 @@ librerie di calcolo (`figure_render_service` lo importa all'avvio).
 from __future__ import annotations
 
 import ast
+import itertools
 import math
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -431,6 +432,26 @@ def split_branches(
     return branches, _merge_regions(regions)
 
 
+def edge_pole(
+    f: Callable[[float], float], edge: float, inward: float, *, scale: float, width: float
+) -> bool:
+    """Asintoto verticale su un estremo del dominio (`tan(x)` in ±π/2,
+    `1/x` in 0): `|f|` cresce come una potenza della distanza avvicinandosi
+    all'estremo (almeno un raddoppio per decade su ≥ 4 delle 6 decadi fra
+    `1e-3·width` e `1e-9·width`) e supera `POLE_MAGNITUDE·scale` alla
+    distanza minima. Un valore non finito lungo le sonde (`exp(x)` in
+    overflow prima del bordo) o una crescita lenta (`log(x)`, `x**10`)
+    non è un polo: stessa soglia di `classify_cuts` per i tagli interni."""
+    values: list[float] = []
+    for k in range(3, 10):
+        v = abs(f(edge + inward * width * 10.0**-k))
+        if not math.isfinite(v):
+            return False
+        values.append(v)
+    growing = sum(1 for prev, cur in itertools.pairwise(values) if cur > 2.0 * prev)
+    return growing >= 4 and values[-1] > POLE_MAGNITUDE * scale
+
+
 def classify_cuts(
     f: Callable[[float], float],
     regions: Sequence[tuple[float, float]],
@@ -444,12 +465,18 @@ def classify_cuts(
     discontinuità persiste bisecando) oppure nulla (funzione ripida ma
     continua, o bordo del dominio di f). Le regioni che toccano un estremo
     di `domain` (create da campioni non finiti al bordo: `exp(x)` in
-    overflow, `log(x)` per x < 0) non sono tagli interni e vengono
-    ignorate. Ritorna `(poli, salti (x, y), regioni oltre MAX_REGIONS
-    ignorate)`."""
+    overflow, `log(x)` per x < 0) non sono tagli interni e non vengono
+    bisecate; i due estremi sono invece esaminati direttamente con
+    `edge_pole` (un polo può coincidere con il bordo: `tan(x)` su
+    [−π/2, π/2], `1/x` su [0, 1]). Ritorna `(poli, salti (x, y), regioni
+    oltre MAX_REGIONS ignorate)`."""
     poles: list[float] = []
     jumps: list[tuple[float, float]] = []
     tol = 1e-9 * width
+    if domain is not None:
+        for edge, inward in ((domain[0], 1.0), (domain[1], -1.0)):
+            if edge_pole(f, edge, inward, scale=scale, width=width):
+                poles.append(edge)
     for a, b in regions[:MAX_REGIONS]:
         if not b > a:
             continue
@@ -753,6 +780,11 @@ def oblique_or_horizontal(
         m, q = m2, q2
         if abs(m) < 1e-6:
             m = 0.0
+        # La stima di `q` è affidabile a meno di `1e-3·(1 + |q|)` (tolleranza
+        # di accordo fra le due code): un'intercetta sotto quella soglia è
+        # rumore della regressione (`1/x` → 7·10⁻⁵), non «y = 7×10⁻⁵».
+        if abs(q) < 1e-3 * (1.0 + abs(m)):
+            q = 0.0
         kind = "horizontal" if m == 0.0 else "oblique"
         # Stesse rette da entrambi i lati: le stime per regressione
         # differiscono di ~1e-4, la tolleranza di fusione è relativa 1e-3.
@@ -1080,6 +1112,7 @@ __all__ = [
     "critical_type",
     "data_scale",
     "derivative",
+    "edge_pole",
     "find_critical",
     "find_inflection",
     "find_zeros",

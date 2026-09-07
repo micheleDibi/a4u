@@ -89,7 +89,17 @@ def run_isolated(fn_path: str, payload: Any, *, timeout: float) -> Any:
     ctx = multiprocessing.get_context("spawn")
     parent_conn, child_conn = ctx.Pipe(duplex=False)
     proc = ctx.Process(target=_child_main, args=(fn_path, payload, child_conn), daemon=True)
-    proc.start()
+    try:
+        proc.start()
+    except (OSError, RuntimeError, ValueError) as exc:
+        # Spawn impossibile (descrittori esauriti, bootstrap del processo
+        # principale non concluso, payload non picklabile): per il
+        # chiamante è un fallimento del calcolo, non un errore da 500.
+        child_conn.close()
+        parent_conn.close()
+        raise FigureComputeError(
+            f"{fn_path}: avvio del processo figlio fallito ({type(exc).__name__}: {exc})"
+        ) from exc
     child_conn.close()
     try:
         # `poll` prima di `recv`: `join(timeout)` seguito da `recv` andrebbe

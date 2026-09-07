@@ -218,6 +218,49 @@ def test_latex_to_unicode_and_format_number():
     assert theme.format_number(-0.0001) == "0"
     assert theme.format_number(-2.7182818) == "−2.718"
     assert theme.format_number(float("inf")) == "∞"
+    # Giro 2 di WP7 (cambiamento dichiarato): da 1e6 in modulo la notazione
+    # è scientifica con 3 cifre significative ed esponente in apice, così
+    # tick, didascalie e rette asintotiche non superano mai una quindicina
+    # di caratteri (`(10**12)**12*x` produceva numeri di 145 cifre).
+    assert theme.format_number(1e144) == "1×10¹⁴⁴"
+    assert theme.format_number(123456789.0) == "1.23×10⁸"
+    assert theme.format_number(-2.5e6) == "−2.5×10⁶"
+    assert theme.format_number(999999.0) == "999999"
+    assert theme.format_number(1e6) == "1×10⁶"
+    # Sotto 1e-3 solo su richiesta (tick degli assi sui domini stretti): nelle
+    # didascalie i valori approssimati restano a 3 decimali.
+    assert theme.format_number(0.0002) == "0"
+    assert theme.format_number(0.0002, scientific_small=True) == "2×10⁻⁴"
+    assert theme.format_number(-0.0001, scientific_small=True) == "−1×10⁻⁴"
+    assert theme.format_number(0.0, scientific_small=True) == "0"
+    assert theme.format_number(0.5, scientific_small=True) == "0.5"
+
+
+def test_function_caption_uses_the_spec_variable():
+    """`computed["variable"]` entra nelle frasi con «x =» (zeri, punti
+    critici, flessi, tangente); assente o vuota → «x»."""
+    computed = {
+        "approximate": True,
+        "variable": "t",
+        "zeros": [{"x": 1.0, "exact": "1"}],
+        "critical_points": [{"x": 0.5, "y": 1.0, "exact_x": None}],
+        "inflection_points": [{"x": 2.0, "exact_x": "2"}],
+        "tangents": [{"at": 3.0, "slope": 1.0, "exact_slope": "1"}],
+    }
+    assert theme.function_caption(computed, "it") == (
+        "Zeri in t = 1. Punti critici in t = 0.5. Flessi in t = 2. "
+        "Tangente in t = 3 con pendenza 1. Valori approssimati."
+    )
+    assert theme.function_caption(computed, "en") == (
+        "Zeros at t = 1. Critical points at t = 0.5. Inflection points at t = 2. "
+        "Tangent at t = 3 with slope 1. Approximate values."
+    )
+    assert theme.function_caption({"variable": "", "zeros": [{"x": 0, "exact": "0"}]}, "it") == (
+        "Zeri in x = 0."
+    )
+    assert theme.function_caption({"variable": 3, "zeros": [{"x": 0, "exact": "0"}]}, "en") == (
+        "Zeros at x = 0."
+    )
 
 
 # ---------------------------------------------------------------------------
