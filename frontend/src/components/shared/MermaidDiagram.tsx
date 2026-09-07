@@ -137,12 +137,16 @@ function MermaidDiagramImpl({ code, className }: MermaidDiagramProps) {
     <div
       ref={containerRef}
       className={cn(
-        // Diagramma a tutta larghezza: l'SVG fillsa il container così
+        // Diagramma a tutta larghezza: l'SVG riempie il container così
         // i nodi e le label restano leggibili anche su flowchart densi.
         // overflow-x-auto come fallback se qualche diagramma ha una
         // larghezza minima > container (mai dovrebbe accadere ora che
         // il max-width inline è strippato, ma resta come safety net).
-        "overflow-x-auto rounded bg-background p-2 [&_svg]:!w-full [&_svg]:!max-w-none [&_svg]:h-auto",
+        // Altezza limitata a 28rem (≈ `max_figure_height_cm` del PDF e
+        // `max-h-[28rem]` delle immagini): un diagramma compatto (torta,
+        // stato) dentro la FigureFrame non si dilata a tutta colonna; il
+        // viewBox lo centra in scala.
+        "overflow-x-auto rounded bg-background p-2 [&_svg]:!w-full [&_svg]:!max-w-none [&_svg]:h-auto [&_svg]:max-h-[28rem]",
         className,
       )}
       dangerouslySetInnerHTML={{ __html: svg }}

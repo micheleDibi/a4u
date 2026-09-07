@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ArrowDown,
@@ -15,6 +15,7 @@ import {
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
+import { assetErrorsAfterRemoval } from "@/lib/errors";
 import { isLegacyFormat } from "@/lib/figureFormats";
 
 import {
@@ -118,6 +119,14 @@ export function LessonContentEditDialog({
   const [visualAssets, setVisualAssets] = useState<LessonContentVisualAsset[]>(
     initial.visual_assets,
   );
+  // Copia locale degli errori 422 per asset: il container la rinnova a ogni
+  // salvataggio; l'eliminazione di una card la rimappa (la voce eliminata
+  // cade, le successive scalano) così un errore non scivola sulla card
+  // sbagliata prima del salvataggio seguente.
+  const [localAssetErrors, setLocalAssetErrors] = useState(assetErrors);
+  useEffect(() => {
+    setLocalAssetErrors(assetErrors);
+  }, [assetErrors]);
   const [tables, setTables] = useState<LessonContentTable[]>(initial.tables);
   const [equations, setEquations] = useState<LessonContentEquation[]>(
     initial.equations,
@@ -527,11 +536,12 @@ export function LessonContentEditDialog({
                   courseId={courseId}
                   asset={asset}
                   onChange={patchAsset}
-                  onDelete={() =>
-                    setVisualAssets(visualAssets.filter((_, i) => i !== idx))
-                  }
+                  onDelete={() => {
+                    setVisualAssets(visualAssets.filter((_, i) => i !== idx));
+                    setLocalAssetErrors((prev) => assetErrorsAfterRemoval(prev, idx));
+                  }}
                   disabled={isPending}
-                  error={assetErrors?.[idx]}
+                  error={localAssetErrors?.[idx]}
                   idSlot={
                     <RefIdField
                       kind="FIG"

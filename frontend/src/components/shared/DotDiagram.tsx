@@ -1,7 +1,14 @@
 import { memo, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { Viz } from "@viz-js/viz";
 
-import { stripFenceAndControl } from "@/lib/figureFormats";
+import {
+  describeFigureParseError,
+  figureErrorFromException,
+  sanitizeSvgElement,
+  stripFenceAndControl,
+  type FigureParseError,
+} from "@/lib/figureFormats";
 import { dotDefaultsPrelude, type DotDefaultsBlock } from "@/lib/figureTheme";
 import { cn } from "@/lib/utils";
 
@@ -13,11 +20,14 @@ import { FigureErrorBox, FigureLoading } from "./FigureFrame";
  * `@viz-js/viz` (Graphviz compilato in WebAssembly) è caricato con
  * `import()` dinamico e istanziato una sola volta; l'SVG prodotto da
  * `renderSVGElement` è un nodo DOM appeso tramite ref (nessun
- * `dangerouslySetInnerHTML`). Il tema (`DOT_DEFAULTS`, mirror di
- * `figure_theme.DOT_DEFAULTS`) è iniettato dopo la `{` di apertura per i
- * blocchi `graph/node/edge [` che il sorgente non definisce, come fa
- * `_dot_with_theme` nel registro backend. Un errore di sintassi diventa il
- * box controllato di `FigureErrorBox`.
+ * `dangerouslySetInnerHTML`) dopo `sanitizeSvgElement`: un `URL=` o un
+ * `href=` nel sorgente non produce mai un link attivo nell'anteprima
+ * (il gate del PATCH li rifiuta comunque per i contenuti persistiti). Il
+ * tema (`DOT_DEFAULTS`, mirror di `figure_theme.DOT_DEFAULTS`) è iniettato
+ * dopo la `{` di apertura per i blocchi `graph/node/edge [` che il sorgente
+ * non definisce, come fa `_dot_with_theme` nel registro backend. Un errore
+ * di sintassi diventa il box controllato di `FigureErrorBox` (dettaglio
+ * localizzato via `describeFigureParseError`).
  */
 interface DotDiagramProps {
   source: string;
@@ -59,9 +69,10 @@ function ensureViz(): Promise<Viz> {
 }
 
 function DotDiagramImpl({ source, className }: DotDiagramProps) {
+  const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [status, setStatus] = useState<Status>("loading");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FigureParseError | null>(null);
 
   const clean = stripFenceAndControl(source);
 
@@ -72,7 +83,7 @@ function DotDiagramImpl({ source, className }: DotDiagramProps) {
     setError(null);
 
     if (!clean) {
-      setError("sorgente vuoto");
+      setError({ code: "empty" });
       setStatus("error");
       return undefined;
     }
@@ -83,11 +94,12 @@ function DotDiagramImpl({ source, className }: DotDiagramProps) {
         if (cancelled || !container) return;
         const svg = viz.renderSVGElement(dotWithTheme(clean));
         svg.removeAttribute("style");
+        sanitizeSvgElement(svg);
         container.replaceChildren(svg);
         setStatus("ready");
       } catch (exc) {
         if (!cancelled) {
-          setError(exc instanceof Error ? exc.message : String(exc));
+          setError(figureErrorFromException(exc));
           setStatus("error");
         }
       }
@@ -102,7 +114,12 @@ function DotDiagramImpl({ source, className }: DotDiagramProps) {
   return (
     <div className={cn("w-full", className)}>
       {status === "loading" && <FigureLoading />}
-      {status === "error" && <FigureErrorBox detail={error} source={clean} />}
+      {status === "error" && (
+        <FigureErrorBox
+          detail={error ? describeFigureParseError(error, t) : null}
+          source={clean}
+        />
+      )}
       <div
         ref={containerRef}
         hidden={status !== "ready"}

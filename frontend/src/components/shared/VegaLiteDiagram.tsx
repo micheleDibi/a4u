@@ -1,7 +1,15 @@
 import { memo, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { EmbedOptions, VisualizationSpec } from "vega-embed";
 
-import { stripFenceAndControl } from "@/lib/figureFormats";
+import {
+  describeFigureParseError,
+  figureErrorFromException,
+  parseJsonObject,
+  sanitizeSvgElement,
+  stripFenceAndControl,
+  type FigureParseError,
+} from "@/lib/figureFormats";
 import { VEGALITE_THEME_CONFIG } from "@/lib/figureTheme";
 import { cn } from "@/lib/utils";
 
@@ -14,10 +22,13 @@ import { FigureErrorBox, FigureLoading } from "./FigureFrame";
  * (chunk separato, come Mermaid); la spec riceve lo stesso `$schema` e lo
  * stesso `config` del renderer server-side (`figure_theme.VEGALITE_THEME_CONFIG`,
  * mirror in `figureTheme.ts`) e viene montata nel DOM da vega-embed
- * tramite ref: nessun `dangerouslySetInnerHTML`. `actions: false` toglie
- * il menu di esportazione; `renderer: "svg"` produce lo stesso vettoriale
- * di vl-convert. Un errore del parser o del renderer diventa il box
- * controllato di `FigureErrorBox`, mai un'eccezione nella pagina.
+ * tramite ref: nessun `dangerouslySetInnerHTML`; l'SVG prodotto passa da
+ * `sanitizeSvgElement` (difesa in profondità: il gate del PATCH resta
+ * autoritativo). `actions: false` toglie il menu di esportazione;
+ * `renderer: "svg"` produce lo stesso vettoriale di vl-convert. Un errore
+ * del parser o del renderer diventa il box controllato di
+ * `FigureErrorBox` (dettaglio localizzato via `describeFigureParseError`),
+ * mai un'eccezione nella pagina.
  */
 const VEGALITE_SCHEMA = "https://vega.github.io/schema/vega-lite/v6.json";
 
@@ -28,30 +39,11 @@ interface VegaLiteDiagramProps {
 
 type Status = "loading" | "ready" | "error";
 
-function parseSpec(raw: string): {
-  spec: Record<string, unknown> | null;
-  error: string | null;
-} {
-  const text = stripFenceAndControl(raw);
-  if (!text) return { spec: null, error: "spec vuota" };
-  try {
-    const value: unknown = JSON.parse(text);
-    if (!value || typeof value !== "object" || Array.isArray(value)) {
-      return { spec: null, error: "la spec deve essere un oggetto JSON" };
-    }
-    return { spec: value as Record<string, unknown>, error: null };
-  } catch (exc) {
-    return {
-      spec: null,
-      error: exc instanceof Error ? exc.message : String(exc),
-    };
-  }
-}
-
 function VegaLiteDiagramImpl({ spec, className }: VegaLiteDiagramProps) {
+  const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [status, setStatus] = useState<Status>("loading");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FigureParseError | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -60,8 +52,8 @@ function VegaLiteDiagramImpl({ spec, className }: VegaLiteDiagramProps) {
     setStatus("loading");
     setError(null);
 
-    const parsed = parseSpec(spec);
-    if (!parsed.spec) {
+    const parsed = parseJsonObject(spec);
+    if (!parsed.value) {
       setError(parsed.error);
       setStatus("error");
       return undefined;
@@ -72,7 +64,7 @@ function VegaLiteDiagramImpl({ spec, className }: VegaLiteDiagramProps) {
         const { default: embed } = await import("vega-embed");
         if (cancelled || !container) return;
         const vlSpec = {
-          ...parsed.spec,
+          ...parsed.value,
           $schema: VEGALITE_SCHEMA,
         } as VisualizationSpec;
         const options: EmbedOptions = {
@@ -89,10 +81,13 @@ function VegaLiteDiagramImpl({ spec, className }: VegaLiteDiagramProps) {
           return;
         }
         finalize = () => result.finalize();
+        for (const svg of Array.from(container.querySelectorAll("svg"))) {
+          sanitizeSvgElement(svg);
+        }
         setStatus("ready");
       } catch (exc) {
         if (!cancelled) {
-          setError(exc instanceof Error ? exc.message : String(exc));
+          setError(figureErrorFromException(exc));
           setStatus("error");
         }
       }
@@ -109,7 +104,10 @@ function VegaLiteDiagramImpl({ spec, className }: VegaLiteDiagramProps) {
     <div className={cn("w-full", className)}>
       {status === "loading" && <FigureLoading />}
       {status === "error" && (
-        <FigureErrorBox detail={error} source={stripFenceAndControl(spec)} />
+        <FigureErrorBox
+          detail={error ? describeFigureParseError(error, t) : null}
+          source={stripFenceAndControl(spec)}
+        />
       )}
       <div
         ref={containerRef}

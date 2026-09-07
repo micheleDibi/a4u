@@ -811,7 +811,9 @@
           "syntaxError": "Sintassi del diagramma non valida.",
           "renderFailed": "Errore durante il rendering del diagramma.",
           "mermaidHint": "Il codice Mermaid contiene un errore e non è stato possibile generare il diagramma. Apri l'editor della lezione per correggere il sorgente.",
-          "showDetails": "Mostra sorgente e dettagli dell'errore"
+          "showDetails": "Mostra sorgente e dettagli dell'errore",
+          "emptySource": "Sorgente vuoto.",
+          "notAnObject": "La spec deve essere un oggetto JSON."
         },
         "words": "{{count}} parole stimate",
         "intro": "Introduzione",

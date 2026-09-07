@@ -22,8 +22,10 @@ export const FIG_REF_RE = /\[FIG:([^\]\n]+)\]/g;
 // lettera «4a»), poi UN separatore `. : - – — )` non seguito da cifra
 // (altrimenti «Figura 1.2 Schema» perderebbe «1.»), oppure fine del testo.
 // Il separatore è obbligatorio: senza, «Figure 2 shows …» è una frase.
+// `\p{Nd}` con il flag `u` equivale al `\d` Unicode di Python (cifre
+// arabo-indiane, a larghezza piena, …): stesso esito su entrambi i lati.
 const FIGURE_PREFIX_RE =
-  /^\s*(?:figura|figure|fig\.?|abb\.?)\s*\d+(?:\.\d+)*[a-z]?\s*(?:[.:\-–—)](?!\d)\s*|$)/i;
+  /^\s*(?:figura|figure|fig\.?|abb\.?)\s*\p{Nd}+(?:\.\p{Nd}+)*[a-z]?\s*(?:[.:\-–—)](?!\p{Nd})\s*|$)/iu;
 
 function norm(assetId: unknown): string {
   return String(assetId ?? "")

@@ -5,7 +5,7 @@ import type {
   FunctionShowItem,
 } from "@/api/courses";
 
-import { stripFenceAndControl } from "./figureFormats";
+import { parseJsonObject, type FigureParseError } from "./figureFormats";
 
 /**
  * Helper della spec `function` (D9) condivisi da `FunctionFigure` (vista)
@@ -89,26 +89,16 @@ function isInterval(value: unknown): value is [number, number] {
 
 export interface ParsedFunctionContent {
   spec: FunctionFigureSpec | null;
-  error: string | null;
+  /** Errore tipizzato (codice, non frase): il componente lo traduce con
+   *  `describeFigureParseError`. */
+  error: FigureParseError | null;
 }
 
 /** `content` (stringa JSON) → spec, senza controlli semantici: quelli
  *  sono del backend, che risponde con `meta.errors` per campo. */
 export function parseFunctionContent(content: string): ParsedFunctionContent {
-  const text = stripFenceAndControl(content);
-  if (!text) return { spec: null, error: "spec vuota" };
-  try {
-    const value: unknown = JSON.parse(text);
-    if (!value || typeof value !== "object" || Array.isArray(value)) {
-      return { spec: null, error: "la spec deve essere un oggetto JSON" };
-    }
-    return { spec: value as FunctionFigureSpec, error: null };
-  } catch (exc) {
-    return {
-      spec: null,
-      error: exc instanceof Error ? exc.message : String(exc),
-    };
-  }
+  const { value, error } = parseJsonObject(content);
+  return { spec: value as FunctionFigureSpec | null, error };
 }
 
 /**

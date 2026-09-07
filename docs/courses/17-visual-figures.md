@@ -1436,7 +1436,25 @@ Decisioni prese in Fase B (A1-A16) e nella ripresa del 7 settembre
   `figure.equation`).
 - **Vega-Lite e viz-js montano l'SVG nel DOM tramite ref** (nessun
   `dangerouslySetInnerHTML`, nessuna nuova direttiva `react/no-danger`);
-  `FunctionFigure` usa `<img data:svg>`.
+  `FunctionFigure` usa `<img data:svg>`. L'SVG dell'anteprima passa da
+  `sanitizeSvgElement` (`lib/figureFormats.ts`: elementi attivi rimossi,
+  `<a>` sostituiti dai figli, `on*` e `href` esterni eliminati), difesa in
+  profondità rispetto al gate del PATCH che resta autoritativo.
+- **Placeholder dei formati legacy uguale su tutte le superfici**: nella
+  vista lezione, nelle slide e nel PDF il corpo della figura legacy
+  (`image_prompt`, `image_search_query`, `description`) mostra `content`
+  (il prompt o la descrizione) dentro la cornice «Figura.»; nelle slide
+  prima di WP5 mostrava `alt_text || caption || content`. La didascalia sta
+  già nella `figcaption` e `alt_text` resta l'attributo di accessibilità:
+  cambiamento di comportamento dichiarato, non una regressione di
+  rendering (A11 riguarda i byte del PDF, non la vista).
+- **Errori del parser client come codici, non frasi**
+  (`FigureParseError` in `lib/figureFormats.ts`): `empty` e `not_object`
+  sono tradotti dal componente (`courses.lessonsContent.render.figure.
+  {emptySource,notAnObject}`), il messaggio nativo di `JSON.parse` o del
+  renderer resta come dettaglio tecnico; nessuna frase hard-coded nei
+  componenti nuovi (`tests/test_frontend_figure_i18n.py` lo verifica con
+  un lessico, escludendo i template didattici in backtick).
 
 ## 13. Rischi residui
 

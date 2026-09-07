@@ -250,6 +250,11 @@ export function LessonSlidesEditDialog({
 
   const removeNewAsset = (idx: number) => {
     setNewAssets((prev) => prev.filter((_, i) => i !== idx));
+    // Le posizioni visibili successive scalano di uno; la card eliminata
+    // non ha più un errore da mostrare (`-1` non indicizza `assetErrors`).
+    setSentAssetIndices((prev) =>
+      prev.map((i) => (i === idx ? -1 : i > idx ? i - 1 : i)),
+    );
   };
 
   // --- Tabelle nuove ---

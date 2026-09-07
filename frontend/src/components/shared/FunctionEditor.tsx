@@ -31,7 +31,11 @@ import {
   extractApiError,
   type ApiErrorEntry,
 } from "@/lib/errors";
-import { svgDataUri } from "@/lib/figureFormats";
+import {
+  describeFigureParseError,
+  svgDataUri,
+  type FigureParseError,
+} from "@/lib/figureFormats";
 import {
   ANNOTATION_KINDS,
   DEFAULT_FUNCTION_SPEC,
@@ -282,6 +286,13 @@ export function FunctionEditor({
     const parsed = parseFunctionContent(value);
     return normalizeFunctionSpec(parsed.spec ?? DEFAULT_FUNCTION_SPEC);
   });
+  // `content` non vuoto ma non parsabile (JSON rotto): il modulo mostra la
+  // spec di partenza e questo errore, e il content persistito resta quello
+  // finché il docente non modifica un campo (allora `update` lo sostituisce).
+  const [parseError, setParseError] = useState<FigureParseError | null>(() => {
+    const parsed = parseFunctionContent(value);
+    return !parsed.spec && value.trim() ? parsed.error : null;
+  });
 
   // `value` è la sorgente di verità del genitore: un asset nuovo (content
   // vuoto) riceve subito la spec di partenza; un cambiamento esterno del
@@ -292,17 +303,22 @@ export function FunctionEditor({
     if (parsed.spec) {
       lastEmitted.current = value;
       setSpec(normalizeFunctionSpec(parsed.spec));
+      setParseError(null);
     } else if (!value.trim()) {
       const initial = normalizeFunctionSpec(DEFAULT_FUNCTION_SPEC);
       const serialized = serializeFunctionSpec(initial);
       lastEmitted.current = serialized;
       setSpec(initial);
+      setParseError(null);
       onChange(serialized);
+    } else {
+      setParseError(parsed.error);
     }
   }, [value, onChange]);
 
   const update = (next: FunctionFigureSpec) => {
     setSpec(next);
+    setParseError(null);
     const serialized = serializeFunctionSpec(next);
     lastEmitted.current = serialized;
     onChange(serialized);
@@ -404,12 +420,17 @@ export function FunctionEditor({
         </Select>
       </div>
 
-      {(error || otherErrors.length > 0) && (
+      {(error || parseError || otherErrors.length > 0) && (
         <div className="m-2 rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive">
           <div className="font-semibold">
             {t("courses.lessonsContent.editor.assetRejected")}
           </div>
           {error && <div className="mt-0.5 break-words font-mono">{error}</div>}
+          {parseError && (
+            <div className="mt-0.5 break-words font-mono">
+              {describeFigureParseError(parseError, t)}
+            </div>
+          )}
           {otherErrors.map((msg, i) => (
             <div key={i} className="mt-0.5 break-words font-mono">
               {msg}
@@ -895,7 +916,12 @@ export function FunctionEditor({
             {t(`${PREFIX}.preview`)}
           </div>
           <div className="rounded-md border bg-muted/20 p-1">
-            {!complete ? (
+            {parseError ? (
+              <FigureErrorBox
+                detail={describeFigureParseError(parseError, t)}
+                source={value}
+              />
+            ) : !complete ? (
               <div className="flex min-h-[8rem] items-center justify-center px-3 py-2 text-center text-xs italic text-muted-foreground">
                 {t(`${PREFIX}.previewIncomplete`)}
               </div>

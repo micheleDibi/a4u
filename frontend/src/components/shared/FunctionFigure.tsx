@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import { coursesApi } from "@/api/courses";
 import { useCourseRef } from "@/contexts/CourseRefContext";
 import { describeApiError } from "@/lib/errors";
-import { svgDataUri } from "@/lib/figureFormats";
+import { describeFigureParseError, svgDataUri } from "@/lib/figureFormats";
 import { parseFunctionContent } from "@/lib/functionSpec";
 
 import { FigureErrorBox, FigureFrame, FigureLoading } from "./FigureFrame";
@@ -75,7 +75,12 @@ export function FunctionFigure({
       </div>
     );
   } else if (!spec) {
-    body = <FigureErrorBox detail={parsed.error} source={content} />;
+    body = (
+      <FigureErrorBox
+        detail={parsed.error ? describeFigureParseError(parsed.error, t) : null}
+        source={content}
+      />
+    );
   } else if (query.isError) {
     body = (
       <FigureErrorBox detail={describeApiError(query.error)} source={content} />

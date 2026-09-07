@@ -15,6 +15,8 @@
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -25,6 +27,27 @@ _FIXTURE = Path(__file__).parent / "fixtures" / "figure_numbering_cases.json"
 _DATA = json.loads(_FIXTURE.read_text(encoding="utf-8"))
 _CASES = _DATA["cases"]
 _STRIP = _DATA["strip_prefix"]
+_FRONTEND_MODULE = (
+    Path(__file__).resolve().parents[2] / "frontend" / "src" / "lib" / "figureNumbering.ts"
+)
+
+# Esegue la copia frontend sulla stessa fixture: `figureNumbering.ts` non ha
+# import, quindi Node ≥ 22.6 la carica con `--experimental-strip-types`.
+_FRONTEND_RUNNER = """
+import * as fn from {module!r};
+import {{ readFileSync }} from "node:fs";
+const data = JSON.parse(readFileSync({fixture!r}, "utf8"));
+const out = {{ cases: [], strip_prefix: [] }};
+for (const c of data.cases) {{
+  const appended = fn.appendUncitedFigureRefs(c.markdown, c.asset_ids);
+  out.cases.push({{
+    appended,
+    numbers: Object.fromEntries(fn.computeFigureNumbers(appended, c.asset_ids)),
+  }});
+}}
+for (const p of data.strip_prefix) out.strip_prefix.push(fn.stripFigurePrefix(p.input));
+process.stdout.write(JSON.stringify(out));
+"""
 
 
 @pytest.mark.parametrize("case", _CASES, ids=[c["name"] for c in _CASES])
@@ -126,3 +149,32 @@ def test_strip_prefix_edge_cases(caption: str, expected: str) -> None:
 def test_strip_prefix_handles_none_like_input() -> None:
     assert fn.strip_figure_prefix("") == ""
     assert fn.strip_figure_prefix(None) == ""  # type: ignore[arg-type]
+
+
+def test_frontend_copy_matches_fixture() -> None:
+    """Parità BE/FE eseguita davvero: la copia `lib/figureNumbering.ts` deve
+    produrre gli stessi `appended`/`numbers` e lo stesso `strip_prefix`
+    della fixture (cifre Unicode comprese: `\\d` Python = `\\p{Nd}` con `u`).
+    Salta con motivo esplicito se manca `node` (≥ 22.6) o il frontend."""
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node non disponibile: parità frontend non eseguibile")
+    if not _FRONTEND_MODULE.is_file():
+        pytest.skip(f"copia frontend assente: {_FRONTEND_MODULE}")
+    script = _FRONTEND_RUNNER.format(module=str(_FRONTEND_MODULE), fixture=str(_FIXTURE))
+    proc = subprocess.run(
+        [node, "--no-warnings", "--experimental-strip-types", "--input-type=module", "-e", script],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    if proc.returncode != 0 and "strip-types" in proc.stderr:
+        pytest.skip(f"node senza --experimental-strip-types: {proc.stderr.strip()[:200]}")
+    assert proc.returncode == 0, proc.stderr
+    got = json.loads(proc.stdout)
+    for case, fe in zip(_CASES, got["cases"], strict=True):
+        assert fe["appended"] == case["appended"], case["name"]
+        assert fe["numbers"] == case["numbers"], case["name"]
+    for pair, fe in zip(_STRIP, got["strip_prefix"], strict=True):
+        assert fe == pair["output"], pair["input"]

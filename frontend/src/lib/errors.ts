@@ -87,6 +87,25 @@ export function assetErrorsByIndex(
   return out;
 }
 
+/**
+ * Mappa per posizione dopo l'eliminazione della card `removed` nel dialog:
+ * la sua voce cade, le successive scalano di uno, così gli errori restano
+ * accanto all'asset giusto fino al salvataggio seguente.
+ */
+export function assetErrorsAfterRemoval(
+  errors: Record<number, string> | undefined,
+  removed: number,
+): Record<number, string> | undefined {
+  if (!errors) return errors;
+  const out: Record<number, string> = {};
+  for (const [key, msg] of Object.entries(errors)) {
+    const index = Number(key);
+    if (index === removed) continue;
+    out[index > removed ? index - 1 : index] = msg;
+  }
+  return out;
+}
+
 /** Le voci `meta.errors` di un errore API, filtrate sulla forma attesa
  *  (`loc` array, `msg` stringa); lista vuota se assenti o malformate. */
 export function apiErrorEntries(body: ApiErrorBody): ApiErrorEntry[] {

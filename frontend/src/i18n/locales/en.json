@@ -810,7 +810,9 @@
           "syntaxError": "Invalid diagram syntax.",
           "renderFailed": "Error while rendering the diagram.",
           "mermaidHint": "The Mermaid code contains an error and the diagram could not be generated. Open the lesson editor to fix the source.",
-          "showDetails": "Show source and error details"
+          "showDetails": "Show source and error details",
+          "emptySource": "Empty source.",
+          "notAnObject": "The spec must be a JSON object."
         },
         "words": "{{count}} estimated words",
         "intro": "Introduction",

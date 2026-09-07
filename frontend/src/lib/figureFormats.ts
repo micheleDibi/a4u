@@ -95,10 +95,14 @@ export function formatLabel(
 const FENCE_OPEN_RE = /^```[a-zA-Z0-9_-]*\n?/;
 const FENCE_CLOSE_RE = /\n?```\s*$/;
 
-/** Carattere di controllo C0 (salvo tab, newline, carriage return) o DEL. */
+/** Carattere di controllo C0 (salvo tab, newline, carriage return), DEL o
+ *  C1 (U+0080–U+009F): stessa classe di `_CONTROL_CHARS_RE` del backend. */
 function isControlChar(ch: string): boolean {
   const code = ch.charCodeAt(0);
-  return (code < 32 && code !== 9 && code !== 10 && code !== 13) || code === 127;
+  return (
+    (code < 32 && code !== 9 && code !== 10 && code !== 13) ||
+    (code >= 0x7f && code <= 0x9f)
+  );
 }
 
 /**
@@ -115,6 +119,101 @@ export function stripFenceAndControl(content: string): string {
     v = v.replace(FENCE_OPEN_RE, "").replace(FENCE_CLOSE_RE, "").trim();
   }
   return v;
+}
+
+/**
+ * Esito negativo del parse di un sorgente JSON (spec Vega-Lite o
+ * `function`) o di un sorgente testuale (DOT): un codice, non una frase,
+ * così il componente lo traduce con `describeFigureParseError`. Il
+ * messaggio nativo di `JSON.parse` (o del renderer) resta come dettaglio
+ * tecnico in `invalid`.
+ */
+export type FigureParseError =
+  | { code: "empty" }
+  | { code: "not_object" }
+  | { code: "invalid"; message: string };
+
+export function figureErrorFromException(exc: unknown): FigureParseError {
+  return {
+    code: "invalid",
+    message: exc instanceof Error ? exc.message : String(exc),
+  };
+}
+
+/** Testo localizzato di un `FigureParseError`, da mostrare nel dettaglio
+ *  del `FigureErrorBox`. */
+export function describeFigureParseError(
+  error: FigureParseError,
+  t: TFunction,
+): string {
+  switch (error.code) {
+    case "empty":
+      return t("courses.lessonsContent.render.figure.emptySource");
+    case "not_object":
+      return t("courses.lessonsContent.render.figure.notAnObject");
+    default:
+      return error.message;
+  }
+}
+
+export interface ParsedJsonObject {
+  value: Record<string, unknown> | null;
+  error: FigureParseError | null;
+}
+
+/** Sorgente (eventualmente in un code-fence) → oggetto JSON; array, scalari
+ *  e sorgente vuoto sono errori tipizzati. Nessun controllo semantico. */
+export function parseJsonObject(raw: string): ParsedJsonObject {
+  const text = stripFenceAndControl(raw);
+  if (!text) return { value: null, error: { code: "empty" } };
+  try {
+    const value: unknown = JSON.parse(text);
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return { value: null, error: { code: "not_object" } };
+    }
+    return { value: value as Record<string, unknown>, error: null };
+  } catch (exc) {
+    return { value: null, error: figureErrorFromException(exc) };
+  }
+}
+
+// Elementi che `svg_normalize.normalize_svg` rifiuta nel backend: nel DOM
+// dell'anteprima vengono rimossi (il sorgente persistito passa comunque dal
+// gate server-side; qui è difesa in profondità per l'auto-anteprima).
+const SVG_FORBIDDEN_SELECTOR = [
+  "script",
+  "foreignObject",
+  "iframe",
+  "image",
+  "set",
+  "animate",
+  "animateMotion",
+  "animateTransform",
+  "handler",
+].join(",");
+
+/**
+ * Rende inerte un SVG prodotto dal renderer client prima di appenderlo al
+ * DOM (viz-js, vega-embed): elementi attivi rimossi, `<a>` sostituiti dai
+ * loro figli, gestori `on*` e `href`/`xlink:href` non interni eliminati.
+ * Muta l'elemento in loco.
+ */
+export function sanitizeSvgElement(root: Element): void {
+  for (const el of Array.from(root.querySelectorAll(SVG_FORBIDDEN_SELECTOR))) {
+    el.remove();
+  }
+  for (const anchor of Array.from(root.querySelectorAll("a"))) {
+    anchor.replaceWith(...Array.from(anchor.childNodes));
+  }
+  for (const el of [root, ...Array.from(root.querySelectorAll("*"))]) {
+    for (const attr of Array.from(el.attributes)) {
+      const name = attr.name.toLowerCase();
+      const isHref = name === "href" || name === "xlink:href";
+      if (name.startsWith("on") || (isHref && !attr.value.trim().startsWith("#"))) {
+        el.removeAttribute(attr.name);
+      }
+    }
+  }
 }
 
 /** `data:image/svg+xml;base64,...` di un SVG (testo UTF-8), come
