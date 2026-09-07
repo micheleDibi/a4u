@@ -114,6 +114,17 @@ MERMAID_ALLOWED_TYPES: tuple[str, ...] = (
     "treemap-beta",
 )
 
+# Alias storici accettati in lettura ma non proposti al modello: i prompt di
+# fix e di digitalizzazione chiedono la forma canonica (`flowchart`,
+# `stateDiagram-v2`).
+MERMAID_LEGACY_ALIASES: tuple[str, ...] = ("graph", "stateDiagram")
+
+# I 15 tipi di D8 senza gli alias: unica proiezione condivisa dai prompt
+# (`openai_asset_fix_service`, `openai_image_to_mermaid_service`).
+MERMAID_D8_TYPES: tuple[str, ...] = tuple(
+    t for t in MERMAID_ALLOWED_TYPES if t not in MERMAID_LEGACY_ALIASES
+)
+
 # Esclusi da prompt, fix AI e gate statico. `journey` emette due
 # `<foreignObject>` anche in 10.9.4 (non renderizzabili da WeasyPrint); gli
 # altri non hanno uso didattico o dipendono da risorse esterne (icone).

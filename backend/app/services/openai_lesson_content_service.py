@@ -9,6 +9,7 @@ references e coverage_check.
 
 Errori → `OpenAILessonContentError` (sottoclasse di `OpenAIError`).
 """
+
 from __future__ import annotations
 
 import copy
@@ -25,6 +26,7 @@ from app.schemas.course_lesson_content import (
     LessonAssessmentOutput,
     LessonContentOutput,
 )
+from app.services.figure_render_service import available_formats
 from app.services.openai_client import (
     OpenAIError,
     OpenAINotConfiguredError,
@@ -340,7 +342,8 @@ Output: SOLO JSON valido conforme allo schema."""
 
 # Addendum §9.3 — appeso al system prompt quando si rigenera una lezione
 # già scritta (con o senza `regeneration_hint`).
-REGENERATION_SUFFIX = """\
+REGENERATION_SUFFIX = (
+    """\
 
 ATTENZIONE: stai RIGENERANDO una lezione già scritta. Tieni in
 considerazione la versione precedente e il feedback del docente.
@@ -351,7 +354,9 @@ considerazione la versione precedente e il feedback del docente.
 - Se il feedback chiede di rimuovere/sostituire un asset, fallo e
   documenta il cambiamento.
 - Mantieni lessico e terminologia coerenti con il resto del corso.
-""" + REGENERATION_REGISTER_NOTE
+"""
+    + REGENERATION_REGISTER_NOTE
+)
 
 
 # JSON Schema verbatim §6.4 — passato a OpenAI come response_format.json_schema.
@@ -404,9 +409,12 @@ LESSON_CONTENT_JSON_SCHEMA: dict[str, Any] = {
                     "type": "object",
                     "properties": {
                         "asset_id": {"type": "string"},
+                        # Le quattro famiglie renderizzabili (D1); a runtime
+                        # `build_lesson_content_json_schema` restringe l'enum
+                        # a `figure_render_service.available_formats()`.
                         "format": {
                             "type": "string",
-                            "enum": ["mermaid"],
+                            "enum": ["mermaid", "vegalite", "dot", "function"],
                         },
                         "content": {"type": "string"},
                         "caption": {"type": "string"},
@@ -579,33 +587,40 @@ LESSON_CONTENT_JSON_SCHEMA: dict[str, Any] = {
 
 
 def build_lesson_content_json_schema(
-    *, objective_ids: Sequence[str] = ()
+    *, objective_ids: Sequence[str] = (), visual_formats: Sequence[str] = ()
 ) -> dict[str, Any]:
     """Schema della singola chiamata: la costante base + l'`enum` dei
-    codici obiettivo sui due campi di contabilità.
+    codici obiettivo sui due campi di contabilità + l'`enum` dei formati
+    di figura offerti al modello.
 
     Con l'`enum` il modello non PUÒ emettere un obiettivo che non esiste
-    (era la causa di `lesson_content_unknown_objective`).
+    (era la causa di `lesson_content_unknown_objective`) né un formato di
+    figura non renderizzabile su questo server (`visual_formats` =
+    `figure_render_service.available_formats()`: kill-switch e dipendenze;
+    il testo del prompt resta statico, A19).
 
     `deepcopy` obbligatorio: fino a `COURSE_LESSON_CONTENT_MAX_CONCURRENCY`
     lezioni sono in volo insieme e una mutazione in place farebbe colare
     l'enum di una lezione nella richiesta di un'altra.
 
-    Lista vuota (lezione senza obiettivi di Fase 2) → nessun `enum`:
-    `"enum": []` non è uno schema strict valido e OpenAI risponderebbe
-    400 a ogni tentativo.
+    Con ENTRAMBI gli argomenti vuoti ritorna la costante per identità.
+    Lista di obiettivi vuota (lezione senza obiettivi di Fase 2) → nessun
+    `enum` sugli obiettivi: `"enum": []` non è uno schema strict valido e
+    OpenAI risponderebbe 400 a ogni tentativo; lo stesso vale per i
+    formati (vuoto → enum della costante, che elenca le quattro famiglie).
     """
-    if not objective_ids:
+    if not objective_ids and not visual_formats:
         return LESSON_CONTENT_JSON_SCHEMA
     schema = copy.deepcopy(LESSON_CONTENT_JSON_SCHEMA)
     props = schema["schema"]["properties"]
-    ids = list(objective_ids)
-    props["sections"]["items"]["properties"]["objectives_addressed"]["items"][
-        "enum"
-    ] = ids
-    props["coverage_check"]["properties"]["objectives_covered"]["items"][
-        "properties"
-    ]["objective"]["enum"] = ids
+    if objective_ids:
+        ids = list(objective_ids)
+        props["sections"]["items"]["properties"]["objectives_addressed"]["items"]["enum"] = ids
+        props["coverage_check"]["properties"]["objectives_covered"]["items"]["properties"][
+            "objective"
+        ]["enum"] = ids
+    if visual_formats:
+        props["visual_assets"]["items"]["properties"]["format"]["enum"] = list(visual_formats)
     return schema
 
 
@@ -650,7 +665,8 @@ async def generate_lesson_content(
         "response_format": {
             "type": "json_schema",
             "json_schema": build_lesson_content_json_schema(
-                objective_ids=objective_ids
+                objective_ids=objective_ids,
+                visual_formats=available_formats(),
             ),
         },
         "max_completion_tokens": settings.openai_lesson_content_max_tokens,
@@ -687,11 +703,7 @@ async def generate_lesson_content(
             payload = resp.json()
         except Exception:
             payload = {"text": resp.text}
-        message = (
-            payload.get("error", {}).get("message")
-            if isinstance(payload, dict)
-            else None
-        )
+        message = payload.get("error", {}).get("message") if isinstance(payload, dict) else None
         log.error(
             "openai_lesson_content_api_error",
             status=resp.status_code,
@@ -721,12 +733,9 @@ async def generate_lesson_content(
     if not content or not content.strip():
         usage_raw = data.get("usage") or {}
         completion_tokens = usage_raw.get("completion_tokens") or 0
-        reasoning_tokens = (
-            (usage_raw.get("completion_tokens_details") or {}).get(
-                "reasoning_tokens"
-            )
-            or 0
-        )
+        reasoning_tokens = (usage_raw.get("completion_tokens_details") or {}).get(
+            "reasoning_tokens"
+        ) or 0
         log.error(
             "openai_lesson_content_empty_content",
             finish_reason=finish_reason,
@@ -758,9 +767,7 @@ async def generate_lesson_content(
     try:
         parsed = json.loads(content)
     except json.JSONDecodeError as exc:
-        log.error(
-            "openai_lesson_content_json_decode_failed", content=content[:500]
-        )
+        log.error("openai_lesson_content_json_decode_failed", content=content[:500])
         raise OpenAILessonContentError(
             status=resp.status_code,
             message=f"OpenAI non ha restituito JSON valido: {exc}",
@@ -962,11 +969,7 @@ async def generate_lesson_assessment(
             payload = resp.json()
         except Exception:
             payload = {"text": resp.text}
-        message = (
-            payload.get("error", {}).get("message")
-            if isinstance(payload, dict)
-            else None
-        )
+        message = payload.get("error", {}).get("message") if isinstance(payload, dict) else None
         log.error(
             "openai_lesson_assessment_api_error",
             status=resp.status_code,
@@ -974,8 +977,7 @@ async def generate_lesson_assessment(
         )
         raise OpenAILessonContentError(
             status=resp.status_code,
-            message=message
-            or f"OpenAI ha risposto con HTTP {resp.status_code}.",
+            message=message or f"OpenAI ha risposto con HTTP {resp.status_code}.",
             payload=payload,
         )
 

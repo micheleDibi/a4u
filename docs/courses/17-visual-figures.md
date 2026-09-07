@@ -132,7 +132,14 @@ Algoritmo:
 
 1. filtra gli asset con `format in RENDERABLE_FORMATS` e contenuto non
    vuoto; per ognuno calcola la chiave di cache
-   `(fmt, sha256(sanitized), THEME_VERSION, language)`;
+   `(fmt, sha256(sanitized), THEME_VERSION)`. La lingua **non** entra nella
+   chiave (scelta di WP2b rispetto al piano, che la elencava): `render_svg`
+   del protocollo non la riceve, quindi l'SVG non può dipenderne — la
+   didascalia calcolata di `function` è composta fuori dall'SVG da
+   `figure_theme.function_caption` e l'endpoint `render-function` ha una
+   cache propria con la lingua (sezione 4.6). Con la lingua nella chiave
+   l'SVG prodotto da `validate(deep=True)` nel worker (che non conosce la
+   lingua) non sarebbe mai l'hit dell'export;
 2. serve dalla cache LRU (`OrderedDict` + `threading.Lock`, dimensione
    `figure_svg_cache_size`) le chiavi presenti; le chiavi nella **cache
    negativa** (render fallito negli ultimi 60 s) vengono saltate senza
@@ -284,6 +291,10 @@ messaggio di vl-convert) o `:render_svg_batch` (export: `None` per la spec
 che fallisce, senza motivo — accettato per il batch), quindi
 `normalize_svg`. Il tema e lo `$schema` li impone il **registro**, non il
 bersaglio del figlio: `vegalite_render.py` riceve `config` nel payload.
+Il `config` di render è `VEGALITE_THEME_CONFIG` più `aria: false` (WP2b):
+l'SVG va in `<img alt>` e gli attributi `aria-label` di Vega ripeterebbero i
+valori dei dati dentro i tag (il titolo conserva comunque il suo
+`aria-label`: la scansione di sezione 7 ignora gli attributi `aria-*`).
 vl-convert paga 361 ms alla prima chiamata di ogni processo; spawn + import
 misurati in 0,29-0,47 s.
 
@@ -758,7 +769,10 @@ per gli SVG di vl-convert, `dot` e matplotlib. **Mermaid non passa da qui.**
    matplotlib passano. La limitazione al contenuto dei tag è una correzione
    dovuta in WP2b: la prima stesura scandiva l'intero documento e una label
    di nodo o un tick contenente `href=`, `url(` o `javascript:` faceva
-   rifiutare la figura (fallback silenzioso), con test «vedi url(x)»;
+   rifiutare la figura (fallback silenzioso), con test «vedi url(x)». Gli
+   attributi `aria-*` (Vega: `aria-label="Title text 'vedi url(x)'"`) sono
+   testo inerte che ripete titoli e dati dentro il tag: esclusi dalla
+   scansione come il testo dei nodi (restano nell'SVG);
 4. tag radice: `viewBox` letto o costruito, `width`/`height` convertiti in
    **px** (`pt × 96/72`, `mm × 96/25.4`, `in × 96`) e riscritti come
    dimensione intrinseca dell'`<img>` (`max-width: 100%` riduce ma non
@@ -912,6 +926,13 @@ siti** fuori da quelli dichiarati qui.
 Le proiezioni duplicate «15 tipi senza alias» di
 `openai_asset_fix_service.py:45-47` e `openai_image_to_mermaid_service.py:40-42`
 sono centralizzate in `figure_theme.MERMAID_D8_TYPES` (WP2b).
+
+Dopo WP2b restano i siti 8, 9 e 10 (9 sparisce con WP4) più due confronti
+sul **kind** dello slot in `asset_validation_service._validate_slots` (gate
+statico prima del batch JS e lettura del risultato JS): sono il dispatch
+prescritto da Q1 — Mermaid è l'unico formato con il parse nel batch
+Playwright — non confronti di formato. Il test grep li dichiara con il
+numero massimo di occorrenze per file.
 
 ## 10. Configurazione
 
@@ -1182,8 +1203,14 @@ esplicito, mai falliscono. Vedi [backend/11 — Tests](../backend/11-tests.md).
   (import dinamici). Esito: (da completare in WP6).
 - Esito di `backend/scripts/revalidate_mermaid_assets.py` sul dump del
   docente o run sintetica dichiarata (A24). Esito: (da completare in WP6).
-- Prova manuale di `spawn` sotto uvicorn su Linux (Docker). Esito: (da
-  completare in WP2b/WP6).
+- Prova manuale di `spawn` sotto uvicorn. Esito WP2b (macOS, 7 settembre):
+  app FastAPI minima servita da `uvicorn`, handler che chiama
+  `asyncio.to_thread(run_isolated, …)` sui bersagli di
+  `tests/helpers/slow_target.py` → `echo` ok, risultato da 2 MB ok,
+  `sleep_forever` con `timeout=1` → `FigureTimeoutError`; 1,09 s per le tre
+  chiamate. Sotto pytest (loop di sessione) i test di
+  `test_figure_render_service.py` eseguono gli stessi bersagli. Su Linux
+  (Docker) la prova resta da eseguire in WP6.
 - Metriche dei font di vl-convert nel container. Esito: (da completare in
   WP6).
 - Screenshot: frame video di WP4 (`scratchpad/wp4_frame.png`),

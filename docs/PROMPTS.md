@@ -2446,11 +2446,11 @@ Converti questa immagine in codice Mermaid. Ricorda: solo codice, niente backtic
 
 ---
 
-# PROMPT 12 — Fix automatico di un asset (LaTeX / Mermaid)
+# PROMPT 12 — Fix automatico di un asset (LaTeX / Mermaid / Vega-Lite / DOT / function)
 
 **SCOPO**
-- File: `backend/app/services/openai_asset_fix_service.py` — `_system_prompt(kind, language_code)` che sceglie tra 4 varianti (`_SYSTEM_MERMAID_IT/EN`, `_SYSTEM_LATEX_IT/EN`), chiamata da `fix_asset()`.
-- Modello: `settings.openai_asset_fix_model` (default `gpt-4o-mini`, max 4000 token), fino a `asset_fix_max_attempts` (3) tentativi.
+- File: `backend/app/services/openai_asset_fix_service.py` — `_system_prompt(kind, language_code)` che sceglie tra 10 varianti dal dizionario `_SYSTEM_PROMPTS = {kind: (IT, EN)}` (`_SYSTEM_MERMAID_IT/EN`, `_SYSTEM_LATEX_IT/EN`, `_SYSTEM_VEGALITE_IT/EN`, `_SYSTEM_DOT_IT/EN`, `_SYSTEM_FUNCTION_IT/EN`; `kind` ignoto → `ValueError`, A20), chiamata da `fix_asset()`.
+- Modello: `settings.openai_asset_fix_model` (default `gpt-4o-mini`, max 4000 token: una spec ≤ 4.000 caratteri ≈ 1.500 token, A16), fino a `asset_fix_max_attempts` (3) tentativi.
 - Ruolo: a generazione (Fase 3/4), quando un asset non supera la validazione, corregge SOLO la sintassi preservando il significato; il caller ri-valida.
 
 **PROMPT** (system — variante principale `_SYSTEM_MERMAID_IT`)
@@ -2486,10 +2486,10 @@ Gli elenchi dei tipi ammessi ed esclusi sono interpolati a import da `figure_the
 ```text
 TIPO ASSET: {kind}
 LINGUA DEL CORSO (per eventuali etichette testuali): {lang}
-CONTESTO (caption/label): {context}          (riga presente solo se context valorizzato, ≤600 char)
+CONTESTO (caption/label): {context}          (riga presente solo se context valorizzato, ≤600 char: `_CONTEXT_CAP`)
 
 ERRORE DI VALIDAZIONE:
-{error_message}                              (messaggio del validatore KaTeX/latex2mathml/mermaid, ≤800 char)
+{error_message}                              (messaggio del validatore KaTeX/latex2mathml/mermaid/renderer del registro, ≤1600 char: `_ERROR_CAP`)
 
 ASSET DA CORREGGERE:
 {source}                                     (l'asset invalido così com'è)
@@ -2513,9 +2513,88 @@ ASSET DA CORREGGERE:
 }
 ```
 
-**Varianti/note**: altre 3 varianti — `_SYSTEM_MERMAID_EN` (`:83-102`), `_SYSTEM_LATEX_IT` (`:104-118`), `_SYSTEM_LATEX_EN` (`:120-134`). I prompt LaTeX impongono di restituire SOLO il corpo della formula senza delimitatori, compatibile con KaTeX (`strict:"ignore"`) + latex2mathml.
+**Varianti/note**: altre 9 varianti nel dizionario `_SYSTEM_PROMPTS` — `_SYSTEM_MERMAID_EN`, `_SYSTEM_LATEX_IT/EN`, `_SYSTEM_VEGALITE_IT/EN`, `_SYSTEM_DOT_IT/EN`, `_SYSTEM_FUNCTION_IT/EN` (la variante EN è scelta per ogni lingua diversa da `it`). I prompt LaTeX impongono di restituire SOLO il corpo della formula senza delimitatori, compatibile con KaTeX (`strict:"ignore"`) + latex2mathml. Le tre coppie nuove (WP2b) seguono le regole D5 di `figure_compute.vegalite_rules`, i vincoli di `DotRenderer` e la whitelist di `function_parse`; il testo IT di ciascuna:
 
-**Flusso lato chiamante** (`asset_validation_service`): questa funzione è invocata solo sugli asset "fragili" risultati invalidi alla validazione (formule LaTeX validate con `latex2mathml` + KaTeX; diagrammi Mermaid validati con la 11.x del pin `settings.mermaid_cdn_version`, la stessa del pre-render e del frontend). Coinvolge `equations[].latex`, ogni `proof[].latex`, il math inline `$..$`/`$$..$$` nei campi testo (introduction, summary, sezioni, esempi, `statement` e `proof[].text` delle equazioni) e i `visual_assets`/`new_assets` Mermaid. Prima del fix AI c'è uno step deterministico (rimozione caratteri di controllo/combining marks) che spesso risolve senza spendere token. L'output del fix viene sanitizzato (niente code-fence/delimitatori reintrodotti) e scartato se reintroduce un placeholder asset (`[EQ:..]` ecc.). Solo gli asset davvero riparati vengono ri-committati; quelli già validi restano byte-identici. Se un asset resta invalido dopo `asset_fix_max_attempts` → `AssetFixUnresolvedError` (recuperabile): il worker di Fase 3/4 rigenera l'intera lezione via auto-retry, così nessun asset rotto raggiunge `ready`. Dettagli in [08 — Lesson content § Validazione asset](courses/08-lesson-content.md).
+**Variante `_SYSTEM_VEGALITE_IT`** (verbatim):
+
+```text
+Sei un esperto di Vega-Lite (versione 6). Ricevi la spec JSON di un grafico
+che NON supera la validazione (schema JSON, regole del renderer offline o
+motore di render). Correggila PRESERVANDO i dati, i canali e il significato
+del grafico.
+
+VINCOLI RIGIDI:
+- Restituisci SOLO la spec JSON (un unico oggetto): NIENTE backtick, NIENTE
+  code fence, niente testo prima o dopo, nessuna chiave duplicata.
+- La spec e' AUTOSUFFICIENTE: dati solo inline in `data.values` (mai
+  `data.url`, mai `data.name` senza `datasets`), massimo 200 righe.
+- NON scrivere `config`, `$schema`, `selection`, `params`, `tooltip`,
+  `usermeta`, `encoding.href`, `mark: "image"`: il tema lo inietta il
+  renderer e il grafico e' statico.
+- Sui mark `line`, `area`, `point`, `trail` aggiungi `"clip": true` (forma
+  oggetto: {"type": "line", "clip": true}); su ogni canale `x`/`y`
+  quantitativo dichiara `scale.domain` come [min, max] numerici.
+- Al massimo una `title` (stringa, solo al livello radice, ≤ 120 caratteri);
+  `axis.format` solo con specificatori d3 brevi.
+- Le funzioni matematiche (seno, esponenziale, potenze, funzioni razionali su
+  una sequenza) NON si tracciano in Vega-Lite: se l'errore lo indica, lascia
+  la spec com'e' e scrivilo in `notes`.
+- Conserva i dati e le etichette nella lingua del corso; correggi solo cio'
+  che l'errore segnala.
+
+Output: SOLO JSON valido conforme allo schema.
+```
+
+**Variante `_SYSTEM_DOT_IT`** (verbatim):
+
+```text
+Sei un esperto di Graphviz DOT. Ricevi il sorgente di un grafo che NON supera
+la validazione (sintassi rifiutata da `dot` o attributo non ammesso).
+Correggilo PRESERVANDO nodi, archi, etichette e struttura.
+
+VINCOLI RIGIDI:
+- Restituisci SOLO il sorgente DOT grezzo: NIENTE backtick, NIENTE code fence,
+  niente testo prima o dopo. Deve iniziare con `graph`, `digraph` o `strict`.
+- Etichette (`label`) nella lingua del corso, testo semplice tra virgolette
+  doppie; niente HTML-like label `<...>`.
+- MAI attributi che leggono file o risorse esterne: `image`, `shapefile`,
+  `imagepath`, `fontpath`, `stylesheet`, `URL`, `href`, `target`.
+- NON impostare font o colori globali (`graph [...]`, `node [...]`, `edge
+  [...]` li inietta il renderer) se non erano gia' presenti; niente
+  `fontname` esplicito.
+- Correggi solo la sintassi (parentesi, punti e virgola, virgolette, frecce
+  `->` nei grafi diretti e `--` in quelli non diretti); NON aggiungere ne'
+  rimuovere nodi o archi.
+
+Output: SOLO JSON valido conforme allo schema.
+```
+
+**Variante `_SYSTEM_FUNCTION_IT`** (verbatim):
+
+```text
+Sei un esperto di analisi matematica e di specifiche JSON. Ricevi la spec
+JSON di una figura calcolata (`FunctionFigureSpec`: kind, expressions,
+variable, domain, range, show, annotations, parameter, sampling, levels)
+che NON supera la validazione. Correggila PRESERVANDO le funzioni studiate e
+l'intento didattico.
+
+VINCOLI RIGIDI:
+- Restituisci SOLO la spec JSON (un unico oggetto) conforme a
+  FunctionFigureSpec: NIENTE backtick, NIENTE code fence, nessuna chiave non
+  prevista, nessun testo prima o dopo.
+- Espressioni in sintassi Python: potenza con `**` (mai `^`), moltiplicazione
+  esplicita (`2*x`, mai `2x`), sola variabile dichiarata (`variable`, piu'
+  l'eventuale `parameter.name`), funzioni SOLO tra: sin, cos, tan, exp, log,
+  sqrt, abs, asin, acos, atan, sinh, cosh, tanh, floor; costanti `pi` ed `E`.
+- `domain` e `range` sono [min, max] numerici finiti con min < max; le
+  annotazioni (`tangent`, `area`, `point`) restano dentro il dominio.
+- NON inserire valori calcolati (zeri, massimi, integrali, asintoti): li
+  calcola il renderer; correggi solo cio' che l'errore segnala.
+
+Output: SOLO JSON valido conforme allo schema.
+```
+
+**Flusso lato chiamante** (`asset_validation_service`): questa funzione è invocata solo sugli asset "fragili" risultati invalidi alla validazione (formule LaTeX validate con `latex2mathml` + KaTeX; diagrammi Mermaid con il gate statico D8 del registro e il parse della 11.x del pin `settings.mermaid_cdn_version`, la stessa del pre-render e del frontend; spec Vega-Lite, sorgenti DOT e spec `function` con `validate(deep=True)` del renderer di `figure_render_service`, offline e mai pass-through). Coinvolge `equations[].latex`, ogni `proof[].latex`, il math inline `$..$`/`$$..$$` nei campi testo (introduction, summary, sezioni, esempi, `statement` e `proof[].text` delle equazioni) e i `visual_assets`/`new_assets` con formato in `RENDERABLE_FORMATS`. Un formato non disponibile sul server (`available_formats()`) produce un check non riparabile: nessuna chiamata di fix, escalation immediata alla rigenerazione. Prima del fix AI c'è uno step deterministico (rimozione caratteri di controllo/combining marks) che spesso risolve senza spendere token. L'output del fix viene sanitizzato (niente code-fence/delimitatori reintrodotti) e scartato se reintroduce un placeholder asset (`[EQ:..]` ecc.). Solo gli asset davvero riparati vengono ri-committati; quelli già validi restano byte-identici. Se un asset resta invalido dopo `asset_fix_max_attempts` → `AssetFixUnresolvedError` (recuperabile): il worker di Fase 3/4 rigenera l'intera lezione via auto-retry, così nessun asset rotto raggiunge `ready`. Dettagli in [08 — Lesson content § Validazione asset](courses/08-lesson-content.md).
 
 ---
 

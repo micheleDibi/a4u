@@ -9,6 +9,7 @@ scelta esplicita del docente. Le validazioni hard di §6.4 sono
 allentate per l'edit manuale (warning soft via log) per permettere
 correzioni granulari.
 """
+
 from __future__ import annotations
 
 import re
@@ -23,11 +24,12 @@ from app.core.errors import ConflictError
 from app.core.logging import get_logger
 from app.models.course import Course
 from app.models.course_lesson import CourseLesson
-from app.services import remote_storage
 from app.schemas.course_lesson_content import (
     LessonAssessmentUpdateInput,
     LessonContentUpdateInput,
 )
+from app.services import remote_storage
+from app.services.figure_render_service import validate_visual_assets_or_raise
 
 log = get_logger("app.course_lesson_content_crud")
 
@@ -52,9 +54,7 @@ def _ensure_editable(lesson: CourseLesson) -> None:
 def _dump_models(items: list[Any] | None) -> list[dict[str, Any]] | None:
     if items is None:
         return None
-    return [
-        i.model_dump() if hasattr(i, "model_dump") else i for i in items
-    ]
+    return [i.model_dump() if hasattr(i, "model_dump") else i for i in items]
 
 
 def _validate_consistency(
@@ -73,9 +73,7 @@ def _validate_consistency(
         if payload.sections is not None
         else current_raw.get("sections", [])
     )
-    section_ids = [
-        s.get("section_id") for s in sections if isinstance(s, dict)
-    ]
+    section_ids = [s.get("section_id") for s in sections if isinstance(s, dict)]
     if any(not sid or not str(sid).strip() for sid in section_ids):
         raise ConflictError(
             "Ogni sezione deve avere un `section_id` non vuoto.",
@@ -92,9 +90,7 @@ def _validate_consistency(
         if payload.visual_assets is not None
         else current_raw.get("visual_assets", [])
     )
-    visual_ids = [
-        a.get("asset_id") for a in visual_assets if isinstance(a, dict)
-    ]
+    visual_ids = [a.get("asset_id") for a in visual_assets if isinstance(a, dict)]
     if len(set(visual_ids)) != len(visual_ids):
         raise ConflictError(
             "Gli `asset_id` dei visual_assets devono essere univoci.",
@@ -106,9 +102,7 @@ def _validate_consistency(
         if payload.tables is not None
         else current_raw.get("tables", [])
     )
-    table_ids = [
-        t.get("table_id") for t in tables if isinstance(t, dict)
-    ]
+    table_ids = [t.get("table_id") for t in tables if isinstance(t, dict)]
     if len(set(table_ids)) != len(table_ids):
         raise ConflictError(
             "I `table_id` devono essere univoci.",
@@ -120,9 +114,7 @@ def _validate_consistency(
         if payload.equations is not None
         else current_raw.get("equations", [])
     )
-    eq_ids = [
-        e.get("equation_id") for e in equations if isinstance(e, dict)
-    ]
+    eq_ids = [e.get("equation_id") for e in equations if isinstance(e, dict)]
     if len(set(eq_ids)) != len(eq_ids):
         raise ConflictError(
             "Gli `equation_id` devono essere univoci.",
@@ -134,9 +126,7 @@ def _validate_consistency(
         if payload.examples is not None
         else current_raw.get("examples", [])
     )
-    ex_ids = [
-        ex.get("example_id") for ex in examples if isinstance(ex, dict)
-    ]
+    ex_ids = [ex.get("example_id") for ex in examples if isinstance(ex, dict)]
     if len(set(ex_ids)) != len(ex_ids):
         raise ConflictError(
             "Gli `example_id` devono essere univoci.",
@@ -220,6 +210,18 @@ async def update_lesson_content(
 
     _validate_consistency(payload=payload, current_raw=current_raw)
 
+    # Gate delle figure (A15): SOLO gli asset del payload con (format,
+    # content) diversi da quelli già salvati vengono validati offline dal
+    # registro dei renderer; un edit del testo non rivalida i diagrammi
+    # legacy già in DB. Errori → 422 con `meta.errors` per asset.
+    if payload.visual_assets is not None:
+        await validate_visual_assets_or_raise(
+            [a.model_dump() for a in payload.visual_assets],
+            previous=current_raw.get("visual_assets"),
+            loc_root="visual_assets",
+            code="lesson_content_invalid_visual_asset",
+        )
+
     # Snapshot dei visual_assets attuali PRIMA dell'update — serve per il
     # cleanup file (asset rimossi con format=image → unlink dopo commit).
     old_visual_assets: list[Any] = list(current_raw.get("visual_assets") or [])
@@ -240,9 +242,7 @@ async def update_lesson_content(
         current_raw["key_takeaways"] = list(payload.key_takeaways)
         changed["key_takeaways"] = len(payload.key_takeaways)
     if payload.visual_assets is not None:
-        current_raw["visual_assets"] = [
-            a.model_dump() for a in payload.visual_assets
-        ]
+        current_raw["visual_assets"] = [a.model_dump() for a in payload.visual_assets]
         changed["visual_assets"] = len(payload.visual_assets)
     if payload.tables is not None:
         current_raw["tables"] = [t.model_dump() for t in payload.tables]
@@ -254,9 +254,7 @@ async def update_lesson_content(
         current_raw["examples"] = [ex.model_dump() for ex in payload.examples]
         changed["examples"] = len(payload.examples)
     if payload.references is not None:
-        current_raw["references"] = [
-            r.model_dump() for r in payload.references
-        ]
+        current_raw["references"] = [r.model_dump() for r in payload.references]
         changed["references"] = len(payload.references)
     if payload.coverage_check is not None:
         current_raw["coverage_check"] = payload.coverage_check.model_dump()
@@ -335,9 +333,7 @@ async def update_lesson_assessment(
     )
 
     # Validazioni hard: question_id univoci, opzione corretta valida.
-    question_ids = [
-        q.get("question_id") for q in (mc + open_q) if isinstance(q, dict)
-    ]
+    question_ids = [q.get("question_id") for q in (mc + open_q) if isinstance(q, dict)]
     if any(not qid or not str(qid).strip() for qid in question_ids):
         raise ConflictError(
             "Ogni domanda deve avere un `question_id` non vuoto.",
@@ -351,14 +347,10 @@ async def update_lesson_assessment(
     for q in mc:
         if not isinstance(q, dict):
             continue
-        opt_ids = [
-            o.get("option_id") for o in (q.get("options") or [])
-            if isinstance(o, dict)
-        ]
+        opt_ids = [o.get("option_id") for o in (q.get("options") or []) if isinstance(o, dict)]
         if len(opt_ids) < 2:
             raise ConflictError(
-                f"La domanda {q.get('question_id')} deve avere almeno "
-                f"2 opzioni.",
+                f"La domanda {q.get('question_id')} deve avere almeno 2 opzioni.",
                 code="lesson_assessment_too_few_options",
             )
         if len(set(opt_ids)) != len(opt_ids):

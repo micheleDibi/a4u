@@ -88,11 +88,7 @@ async def build_course(
         db.add(module)
         await db.flush()
         for l_idx in range(1, lessons_per_module + 1):
-            is_assessment = (
-                with_assessment
-                and m_idx == modules
-                and l_idx == lessons_per_module
-            )
+            is_assessment = with_assessment and m_idx == modules and l_idx == lessons_per_module
             lesson = CourseLesson(
                 module_id=module.id,
                 course_id=course.id,
@@ -101,19 +97,13 @@ async def build_course(
                 title=f"Lezione {m_idx}.{l_idx}",
                 summary="Sommario di prova.",
                 is_assessment=is_assessment,
-                learning_objectives=(
-                    ["Comprendere l'argomento"] if with_structure else []
-                ),
+                learning_objectives=(["Comprendere l'argomento"] if with_structure else []),
                 mandatory_topics=(
-                    [{"topic_id": "T1", "title": "Argomento 1"}]
-                    if with_structure
-                    else []
+                    [{"topic_id": "T1", "title": "Argomento 1"}] if with_structure else []
                 ),
                 prerequisites=[],
                 section_outline=(
-                    [{"section_id": "S1", "title": "Introduzione"}]
-                    if with_structure
-                    else []
+                    [{"section_id": "S1", "title": "Introduzione"}] if with_structure else []
                 ),
                 content_status=content_status,
                 slides_status="empty" if is_assessment else slides_status,
@@ -150,9 +140,7 @@ def build_document_summary(
         "definitions": [{"term": "Termine", "definition": "Definizione."}],
         "examples_or_cases": [],
         "formulas_or_rules": [],
-        "authors_and_references": [
-            {"type": "author", "value": a} for a in (authors or [])
-        ],
+        "authors_and_references": [{"type": "author", "value": a} for a in (authors or [])],
         "didactic_relevance_tags": ["tag1"],
     }
     summary.update(overrides)
@@ -190,6 +178,7 @@ def build_lesson_content_output(
     sections: list[tuple[str, list[str], list[str]]] | None = None,
     coverage_objectives: list[str] | None = None,
     coverage_topics: list[str] | None = None,
+    visual_assets: list[dict[str, Any]] | None = None,
     **overrides: Any,
 ) -> LessonContentOutput:
     """Output di Fase 3 minimo e valido (§6.3).
@@ -198,6 +187,9 @@ def build_lesson_content_output(
     topics_addressed)`; il `coverage_check` rispecchia le sezioni se non
     si passano `coverage_objectives`/`coverage_topics` (che servono a
     simulare un modello che dichiara una copertura incoerente).
+    `visual_assets` è la lista di dict `{asset_id, format, content,
+    caption, alt_text}` (vuota per default): usata dai test del
+    validatore e del rendering delle figure.
     """
     rows = sections or [("S1", ["Comprendere l'argomento"], ["T1"])]
     objectives = (
@@ -228,7 +220,7 @@ def build_lesson_content_output(
         ],
         "summary": "Sintesi della lezione.",
         "key_takeaways": ["Primo punto", "Secondo punto", "Terzo punto"],
-        "visual_assets": [],
+        "visual_assets": list(visual_assets or []),
         "tables": [],
         "equations": [],
         "examples": [],
@@ -237,18 +229,14 @@ def build_lesson_content_output(
             "objectives_covered": [
                 {
                     "objective": objective,
-                    "covered_in_section_ids": [
-                        sid for sid, objs, _t in rows if objective in objs
-                    ],
+                    "covered_in_section_ids": [sid for sid, objs, _t in rows if objective in objs],
                 }
                 for objective in objectives
             ],
             "topics_covered": [
                 {
                     "topic_id": topic_id,
-                    "covered_in_section_ids": [
-                        sid for sid, _o, tids in rows if topic_id in tids
-                    ],
+                    "covered_in_section_ids": [sid for sid, _o, tids in rows if topic_id in tids],
                 }
                 for topic_id in topics
             ],

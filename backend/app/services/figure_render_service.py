@@ -1,0 +1,991 @@
+"""Registro dei renderer delle figure accademiche (D2) e orchestratore (Q1).
+
+Quattro famiglie di asset visivi condividono un protocollo unico
+(`FigureRenderer`): Mermaid 11 (pre-render Playwright), Vega-Lite
+(vl-convert nel processo figlio), Graphviz DOT (binario `dot`) e
+`function` (sympy + matplotlib, registrato da WP7 con
+`register_renderer`). I renderer sono oggetti sincroni e puri: il
+chiamante decide thread o processo.
+
+Tre punti di ingresso:
+- `available_formats()`: i formati offerti al modello e accettati dal
+  validatore (kill-switch del setting E dipendenza presente), calcolati
+  una volta per processo;
+- `render_svg_map(assets, *, language)`: l'UNICO punto in cui compaiono
+  `asyncio.to_thread`, `asyncio.wait_for` e il semaforo dei render
+  CPU-bound; raggruppa per formato, una `render_svg_batch` per formato,
+  cache LRU degli SVG e cache negativa dei render falliti; non solleva
+  mai (le chiavi assenti attivano il fallback del partial);
+- `validate_visual_assets_or_raise(...)`: gate offline del PATCH manuale
+  (A15) che valida SOLO gli asset con `(format, content)` cambiati e
+  solleva `ValidationAppError` 422 con `meta.errors` per asset.
+
+Cache degli SVG: chiave `(formato, sha256(sanitizzato), THEME_VERSION)`.
+La lingua NON entra nella chiave: `render_svg` del protocollo non la
+riceve, quindi l'SVG non può dipenderne (la didascalia calcolata di
+`function` è composta fuori dall'SVG da `figure_theme.function_caption`);
+così l'SVG prodotto dalla validazione profonda del worker
+(`validate(deep=True)`, senza lingua) è lo stesso hit che serve l'export.
+
+Gli SVG di Vega-Lite, DOT e `function` passano da
+`svg_normalize.normalize_svg`; quelli Mermaid no (catena byte-identica,
+A11). Progettazione: `docs/courses/17-visual-figures.md`.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import importlib.util
+import json
+import os
+import re
+import shutil
+import subprocess
+import tempfile
+import threading
+import time
+import weakref
+from collections import OrderedDict
+from collections.abc import Iterator, Mapping, Sequence
+from functools import lru_cache
+from pathlib import Path
+from typing import Any, Protocol
+
+from app.core.config import get_settings
+from app.core.errors import ValidationAppError
+from app.core.logging import get_logger
+from app.services.figure_compute.isolated import (
+    FigureComputeError,
+    FigureTimeoutError,
+    run_isolated,
+)
+from app.services.figure_compute.vegalite_rules import (
+    USE_FUNCTION_FORMAT,
+    check_vegalite_rules,
+)
+from app.services.figure_theme import (
+    MERMAID_ALLOWED_TYPES,
+    MERMAID_EXCLUDED_TYPES,
+    THEME_VERSION,
+    VEGALITE_THEME_CONFIG,
+    dot_defaults_prelude,
+)
+from app.services.mermaid_prerender import (
+    _prerender_mermaid_to_svg_batch_sync,
+    _sanitize_mermaid_code,
+    _strip_mermaid_max_width,
+)
+from app.services.svg_normalize import SvgRejectedError, normalize_svg
+
+log = get_logger("app.figure_render")
+
+RENDERABLE_FORMATS: tuple[str, ...] = ("mermaid", "vegalite", "dot", "function")
+
+# Tipi di errore del payload 422 (`meta.errors[].type`), stessa forma
+# `loc/msg/type` del handler Pydantic (`core/errors.py`).
+FIGURE_INVALID = "figure_invalid"
+FIGURE_FORMAT_UNAVAILABLE = "figure_format_unavailable"
+MERMAID_TYPE_NOT_ALLOWED = "mermaid_type_not_allowed"
+VEGALITE_USE_FUNCTION_FORMAT = USE_FUNCTION_FORMAT
+FUNCTION_SPEC_INVALID = "function_spec_invalid"
+
+# Un messaggio di `validate` che inizia con uno di questi prefissi viene
+# classificato con quel `type`; tutto il resto è `figure_invalid`.
+_TYPED_PREFIXES: tuple[str, ...] = (
+    MERMAID_TYPE_NOT_ALLOWED,
+    VEGALITE_USE_FUNCTION_FORMAT,
+    FUNCTION_SPEC_INVALID,
+)
+
+VEGALITE_SCHEMA_URL = "https://vega.github.io/schema/vega-lite/v6.json"
+VEGALITE_MAX_CHARS = 4_000
+DOT_MAX_EDGES = 600
+_ERROR_CAP = 1_600
+_PAYLOAD_MSG_CAP = 600
+NEGATIVE_CACHE_TTL_S = 60.0
+_NEGATIVE_CACHE_MAX = 1_024
+
+# Stessa classe di `asset_validation_service._CONTROL_CHARS_RE` (C0 senza
+# \t \n \r, DEL, C1): il modulo non può importarla da lì (ciclo).
+_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
+_FENCE_OPEN_RE = re.compile(r"^```[a-zA-Z0-9_-]*[ \t]*\n?")
+_FENCE_CLOSE_RE = re.compile(r"\n?```\s*$")
+
+
+def _strip_fence_and_control(content: str) -> str:
+    """Rimuove caratteri di controllo e un eventuale code-fence che
+    avvolge l'intero contenuto. Nessun'altra trasformazione: i byte del
+    contenuto restano quelli del docente o del modello."""
+    v = _CONTROL_CHARS_RE.sub("", content or "").strip()
+    if v.startswith("```"):
+        v = _FENCE_OPEN_RE.sub("", v, count=1)
+        v = _FENCE_CLOSE_RE.sub("", v, count=1).strip()
+    return v
+
+
+def error_type_for(message: str) -> str:
+    """`type` del payload 422 per il messaggio di `validate`."""
+    for prefix in _TYPED_PREFIXES:
+        if message.startswith(prefix):
+            return prefix
+    return FIGURE_INVALID
+
+
+# ---------------------------------------------------------------------------
+# Protocollo
+# ---------------------------------------------------------------------------
+
+
+class FigureRenderer(Protocol):
+    """Renderer di un formato. Metodi sincroni e puri.
+
+    - `available()`: la dipendenza è presente (binario, modulo);
+    - `sanitize()`: fence e caratteri di controllo, mai un round-trip che
+      alteri i byte;
+    - `validate(deep=False)`: gate offline; `deep=True` aggiunge la prova
+      di render, il cui SVG entra in cache;
+    - `render_svg()` / `render_svg_batch()`: `None` per la figura che
+      fallisce, mai un'eccezione;
+    - `extract_translatable()` / `apply_translations()`: campi testuali
+      per la localizzazione D7, con chiavi che sono percorsi DENTRO il
+      contenuto (`title`, `encoding.x.axis.title`, `label.0`); la chiave
+      vuota `""` indica l'intero contenuto (Mermaid).
+    """
+
+    fmt: str
+
+    def available(self) -> bool: ...
+
+    def sanitize(self, content: str) -> str: ...
+
+    def validate(self, content: str, *, deep: bool = False) -> tuple[bool, str]: ...
+
+    def render_svg(self, content: str, *, asset_id: str = "") -> str | None: ...
+
+    def render_svg_batch(
+        self, contents: list[str], *, asset_ids: list[str]
+    ) -> list[str | None]: ...
+
+    def extract_translatable(self, content: str) -> dict[str, str]: ...
+
+    def apply_translations(self, content: str, tr: Mapping[str, str]) -> str: ...
+
+
+# ---------------------------------------------------------------------------
+# Cache LRU degli SVG + cache negativa
+# ---------------------------------------------------------------------------
+
+CacheKey = tuple[str, str, str]
+
+_svg_cache: OrderedDict[CacheKey, str] = OrderedDict()
+_negative_cache: dict[CacheKey, float] = {}
+_cache_lock = threading.Lock()
+
+
+def cache_key(fmt: str, sanitized: str) -> CacheKey:
+    digest = hashlib.sha256(sanitized.encode("utf-8")).hexdigest()
+    return (fmt, digest, THEME_VERSION)
+
+
+def _cache_get(key: CacheKey) -> str | None:
+    with _cache_lock:
+        svg = _svg_cache.get(key)
+        if svg is not None:
+            _svg_cache.move_to_end(key)
+        return svg
+
+
+def _cache_put(key: CacheKey, svg: str) -> None:
+    size = max(1, int(get_settings().figure_svg_cache_size))
+    with _cache_lock:
+        _svg_cache[key] = svg
+        _svg_cache.move_to_end(key)
+        while len(_svg_cache) > size:
+            _svg_cache.popitem(last=False)
+        _negative_cache.pop(key, None)
+
+
+def _cache_is_negative(key: CacheKey) -> bool:
+    with _cache_lock:
+        stamp = _negative_cache.get(key)
+        if stamp is None:
+            return False
+        if time.monotonic() - stamp > NEGATIVE_CACHE_TTL_S:
+            del _negative_cache[key]
+            return False
+        return True
+
+
+def _cache_negative(key: CacheKey) -> None:
+    with _cache_lock:
+        _negative_cache[key] = time.monotonic()
+        if len(_negative_cache) > _NEGATIVE_CACHE_MAX:
+            oldest = sorted(_negative_cache, key=_negative_cache.__getitem__)
+            for stale in oldest[: len(_negative_cache) - _NEGATIVE_CACHE_MAX]:
+                del _negative_cache[stale]
+
+
+def clear_svg_cache() -> None:
+    """Svuota cache positiva e negativa (test, cambio di tema a caldo)."""
+    with _cache_lock:
+        _svg_cache.clear()
+        _negative_cache.clear()
+
+
+def _render_failed(fmt: str, asset_id: str, reason: str) -> None:
+    log.warning("figure_render_failed", format=fmt, asset_id=asset_id, reason=reason[:300])
+
+
+# ---------------------------------------------------------------------------
+# Mermaid — gate statico D8, pre-render Playwright (catena invariata)
+# ---------------------------------------------------------------------------
+
+_INIT_DIRECTIVE_RE = re.compile(r"%%\s*\{\s*init\b", re.IGNORECASE)
+# Tag HTML nelle label (`<br>`, `<b>`, ...): con `htmlLabels: false`
+# finirebbero in chiaro nel `<text>`. Le frecce (`-->`, `<|--`, `->>`) e le
+# annotazioni `<<interface>>` non sono tag.
+_HTML_TAG_RE = re.compile(
+    r"</?(?:br|b|i|u|em|strong|span|div|p|sub|sup|a|img|font|code|small|big)\b[^>]*>",
+    re.IGNORECASE,
+)
+
+
+def _mermaid_first_meaningful_line(code: str) -> str:
+    """Prima riga utile: salta righe vuote, commenti `%%` e il frontmatter
+    YAML `---...---` iniziale."""
+    lines = code.split("\n")
+    i, n = 0, len(lines)
+    while i < n and not lines[i].strip():
+        i += 1
+    if i < n and lines[i].strip() == "---":
+        i += 1
+        while i < n and lines[i].strip() != "---":
+            i += 1
+        i += 1
+    while i < n:
+        stripped = lines[i].strip()
+        if stripped and not stripped.startswith("%%"):
+            return stripped
+        i += 1
+    return ""
+
+
+class MermaidRenderer:
+    """Gate statico D8 al salvataggio (A15) e pre-render con un solo
+    Chromium per lezione. Il parse JS resta nel batch del validatore;
+    l'SVG non passa da `normalize_svg` (byte-identico a oggi)."""
+
+    fmt = "mermaid"
+
+    def available(self) -> bool:
+        return True
+
+    def sanitize(self, content: str) -> str:
+        return _sanitize_mermaid_code(_CONTROL_CHARS_RE.sub("", content or ""))
+
+    def validate(self, content: str, *, deep: bool = False) -> tuple[bool, str]:
+        code = self.sanitize(content)
+        if not code.strip():
+            return (False, "sorgente Mermaid vuoto")
+        line = _mermaid_first_meaningful_line(code)
+        kind = line.split()[0] if line else ""
+        if not kind or not any(kind.startswith(t) for t in MERMAID_ALLOWED_TYPES):
+            excluded = next((t for t in MERMAID_EXCLUDED_TYPES if kind.startswith(t)), None)
+            label = excluded or kind or "?"
+            return (
+                False,
+                f"{MERMAID_TYPE_NOT_ALLOWED}: tipo `{label}` non ammesso; tipi consentiti: "
+                + ", ".join(MERMAID_ALLOWED_TYPES),
+            )
+        if _INIT_DIRECTIVE_RE.search(code):
+            return (
+                False,
+                f"{MERMAID_TYPE_NOT_ALLOWED}: direttiva %%{{init ...}}%% non ammessa "
+                "(il tema è imposto dal renderer)",
+            )
+        m = _HTML_TAG_RE.search(code)
+        if m:
+            return (
+                False,
+                f"{MERMAID_TYPE_NOT_ALLOWED}: HTML nelle label non ammesso ({m.group(0)[:40]})",
+            )
+        if deep:
+            svg = self.render_svg(code)
+            if svg is None:
+                return (False, "mermaid: render fallito (parse o Chromium non disponibile)")
+        return (True, "")
+
+    def render_svg(self, content: str, *, asset_id: str = "") -> str | None:
+        """Fuori dal percorso di produzione (un Chromium per chiamata):
+        l'export usa il batch."""
+        return self.render_svg_batch([content], asset_ids=[asset_id])[0]
+
+    def render_svg_batch(self, contents: list[str], *, asset_ids: list[str]) -> list[str | None]:
+        codes = [self.sanitize(c) for c in contents]
+        svgs = _prerender_mermaid_to_svg_batch_sync(codes)
+        # `_strip_mermaid_max_width` è già applicato dal pre-render ed è
+        # idempotente: qui rende esplicito il contratto del registro.
+        return [_strip_mermaid_max_width(s) if s else None for s in svgs]
+
+    def extract_translatable(self, content: str) -> dict[str, str]:
+        return {"": content} if (content or "").strip() else {}
+
+    def apply_translations(self, content: str, tr: Mapping[str, str]) -> str:
+        return tr.get("", content)
+
+
+# ---------------------------------------------------------------------------
+# Vega-Lite — schema JSON v6 + regole D5, vl-convert nel processo figlio
+# ---------------------------------------------------------------------------
+
+
+def _vegalite_schema_path() -> Path | None:
+    spec = importlib.util.find_spec("altair")
+    if spec is None or not spec.submodule_search_locations:
+        return None
+    path = Path(next(iter(spec.submodule_search_locations)))
+    path = path / "vegalite" / "v6" / "schema" / "vega-lite-schema.json"
+    return path if path.is_file() else None
+
+
+@lru_cache(maxsize=1)
+def _vegalite_validator() -> Any:
+    """`Draft7Validator` sullo schema di Vega-Lite v6 letto dal wheel di
+    altair, senza `import altair`. Costo misurato: lettura 7 ms, init
+    0,02 ms, 0,5-1 ms per spec."""
+    from jsonschema import Draft7Validator
+
+    path = _vegalite_schema_path()
+    if path is None:
+        raise RuntimeError("schema Vega-Lite non trovato (pacchetto altair assente)")
+    return Draft7Validator(json.loads(path.read_text(encoding="utf-8")))
+
+
+def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in out:
+            raise ValueError(f"chiave duplicata: {key!r}")
+        out[key] = value
+    return out
+
+
+def _parse_vegalite(content: str) -> tuple[dict[str, Any] | None, str]:
+    """`(spec, "")` oppure `(None, errore)`: lunghezza, JSON, chiavi
+    duplicate, oggetto radice."""
+    if len(content) > VEGALITE_MAX_CHARS:
+        return (None, f"spec oltre {VEGALITE_MAX_CHARS} caratteri ({len(content)})")
+    if not content.strip():
+        return (None, "spec vuota")
+    try:
+        spec = json.loads(content, object_pairs_hook=_reject_duplicate_keys)
+    except ValueError as exc:  # JSONDecodeError è una ValueError
+        return (None, f"JSON non valido: {exc}"[:_ERROR_CAP])
+    if not isinstance(spec, dict):
+        return (None, "la spec deve essere un oggetto JSON")
+    return (spec, "")
+
+
+def _vegalite_spec_for_render(spec: Mapping[str, Any]) -> dict[str, Any]:
+    """Copia della spec con `$schema` imposto se assente (vl-convert sceglie
+    la versione di Vega-Lite dal `$schema`)."""
+    out = dict(spec)
+    out.setdefault("$schema", VEGALITE_SCHEMA_URL)
+    return out
+
+
+# `aria: false`: l'SVG va in `<img alt>` (PDF, slide, video) e gli
+# attributi `aria-label` di Vega ripeterebbero i valori dei dati dentro i
+# tag, dove la scansione di `normalize_svg` cerca `href=`/`url(`/`on*=`.
+_VEGALITE_RENDER_CONFIG: dict[str, Any] = {**VEGALITE_THEME_CONFIG, "aria": False}
+
+_VEGALITE_TARGET_ONE = "app.services.figure_compute.vegalite_render:render_svg"
+_VEGALITE_TARGET_BATCH = "app.services.figure_compute.vegalite_render:render_svg_batch"
+
+# Campi testuali localizzabili di una vista (D7): chiave = percorso dentro
+# la spec, con gli indici delle liste come segmenti numerici.
+_VEGALITE_TEXT_LEAVES = ("title",)
+_VEGALITE_CHANNEL_TEXT = ("title", "axis.title", "legend.title", "header.title")
+_VEGALITE_COMPOSITION = ("layer", "hconcat", "vconcat", "concat")
+
+
+def _walk_vegalite_text(node: Any, path: list[str], out: dict[str, str]) -> None:
+    if not isinstance(node, Mapping):
+        return
+    title = node.get("title")
+    if isinstance(title, str) and title.strip():
+        out[".".join([*path, "title"])] = title
+    elif isinstance(title, Mapping) and isinstance(title.get("text"), str):
+        out[".".join([*path, "title", "text"])] = title["text"]
+    mark = node.get("mark")
+    if isinstance(mark, Mapping) and isinstance(mark.get("text"), str) and mark["text"].strip():
+        out[".".join([*path, "mark", "text"])] = mark["text"]
+    encoding = node.get("encoding")
+    if isinstance(encoding, Mapping):
+        for channel, ch in encoding.items():
+            if not isinstance(ch, Mapping):
+                continue
+            for leaf in _VEGALITE_CHANNEL_TEXT:
+                parts = leaf.split(".")
+                cur: Any = ch
+                for part in parts:
+                    cur = cur.get(part) if isinstance(cur, Mapping) else None
+                if isinstance(cur, str) and cur.strip():
+                    out[".".join([*path, "encoding", str(channel), *parts])] = cur
+            if channel == "text" and isinstance(ch.get("value"), str) and ch["value"].strip():
+                out[".".join([*path, "encoding", "text", "value"])] = ch["value"]
+    for key in _VEGALITE_COMPOSITION:
+        items = node.get(key)
+        if isinstance(items, list):
+            for i, item in enumerate(items):
+                _walk_vegalite_text(item, [*path, key, str(i)], out)
+    if "spec" in node:
+        _walk_vegalite_text(node["spec"], [*path, "spec"], out)
+
+
+def _set_by_path(root: Any, path: str, value: str) -> None:
+    parts = path.split(".")
+    cur: Any = root
+    for part in parts[:-1]:
+        if isinstance(cur, list):
+            cur = cur[int(part)]
+        elif isinstance(cur, dict):
+            cur = cur[part]
+        else:
+            raise KeyError(path)
+    last = parts[-1]
+    if isinstance(cur, list):
+        cur[int(last)] = value
+    elif isinstance(cur, dict) and last in cur:
+        cur[last] = value
+    else:
+        raise KeyError(path)
+
+
+class VegaLiteRenderer:
+    """Validazione: lunghezza ≤ 4.000, JSON senza chiavi duplicate, schema
+    JSON v6 (`Draft7Validator`, `best_match`), regole D5 ed euristica del
+    criterio 10; profonda: anche la prova di render. Render: `$schema`
+    imposto, `config` del tema, `vl_convert` in `run_isolated`, poi
+    `normalize_svg`."""
+
+    fmt = "vegalite"
+
+    def available(self) -> bool:
+        return (
+            importlib.util.find_spec("vl_convert") is not None
+            and importlib.util.find_spec("jsonschema") is not None
+            and _vegalite_schema_path() is not None
+        )
+
+    def sanitize(self, content: str) -> str:
+        return _strip_fence_and_control(content)
+
+    def validate(self, content: str, *, deep: bool = False) -> tuple[bool, str]:
+        sanitized = self.sanitize(content)
+        spec, err = _parse_vegalite(sanitized)
+        if spec is None:
+            return (False, err)
+        try:
+            validator = _vegalite_validator()
+        except RuntimeError as exc:
+            return (False, str(exc))
+        from jsonschema.exceptions import best_match
+
+        error = best_match(validator.iter_errors(spec))
+        if error is not None:
+            where = ".".join(str(p) for p in error.absolute_path) or "$"
+            return (False, f"{where}: {error.message}"[:_ERROR_CAP])
+        violations = check_vegalite_rules(spec)
+        if violations:
+            return (False, "; ".join(violations)[:_ERROR_CAP])
+        if deep:
+            try:
+                svg = self._render_or_raise(spec)
+            except (FigureTimeoutError, FigureComputeError, SvgRejectedError) as exc:
+                return (False, f"render: {exc}"[:_ERROR_CAP])
+            _cache_put(cache_key(self.fmt, sanitized), svg)
+        return (True, "")
+
+    def _render_or_raise(self, spec: Mapping[str, Any]) -> str:
+        settings = get_settings()
+        payload = {"spec": _vegalite_spec_for_render(spec), "config": _VEGALITE_RENDER_CONFIG}
+        raw = run_isolated(
+            _VEGALITE_TARGET_ONE, payload, timeout=settings.figure_render_timeout_seconds
+        )
+        return normalize_svg(str(raw), max_bytes=settings.figure_svg_max_bytes).svg
+
+    def render_svg(self, content: str, *, asset_id: str = "") -> str | None:
+        sanitized = self.sanitize(content)
+        key = cache_key(self.fmt, sanitized)
+        hit = _cache_get(key)
+        if hit is not None:
+            return hit
+        spec, err = _parse_vegalite(sanitized)
+        if spec is None:
+            _render_failed(self.fmt, asset_id, err)
+            return None
+        try:
+            svg = self._render_or_raise(spec)
+        except (FigureTimeoutError, FigureComputeError, SvgRejectedError) as exc:
+            _cache_negative(key)
+            _render_failed(self.fmt, asset_id, str(exc))
+            return None
+        _cache_put(key, svg)
+        return svg
+
+    def render_svg_batch(self, contents: list[str], *, asset_ids: list[str]) -> list[str | None]:
+        """Un solo processo figlio per il batch: `None` per la spec che
+        fallisce (il motivo lo dà `validate(deep=True)` sulla singola)."""
+        settings = get_settings()
+        out: list[str | None] = [None] * len(contents)
+        specs: list[dict[str, Any]] = []
+        positions: list[int] = []
+        for i, content in enumerate(contents):
+            spec, err = _parse_vegalite(self.sanitize(content))
+            if spec is None:
+                _render_failed(self.fmt, asset_ids[i], err)
+                continue
+            specs.append(_vegalite_spec_for_render(spec))
+            positions.append(i)
+        if not specs:
+            return out
+        try:
+            raws = run_isolated(
+                _VEGALITE_TARGET_BATCH,
+                {"specs": specs, "config": _VEGALITE_RENDER_CONFIG},
+                timeout=settings.figure_render_timeout_seconds,
+            )
+        except (FigureTimeoutError, FigureComputeError) as exc:
+            for i in positions:
+                _render_failed(self.fmt, asset_ids[i], str(exc))
+            return out
+        for i, raw in zip(positions, raws, strict=True):
+            if not raw:
+                _render_failed(self.fmt, asset_ids[i], "vl-convert: render fallito")
+                continue
+            try:
+                out[i] = normalize_svg(str(raw), max_bytes=settings.figure_svg_max_bytes).svg
+            except SvgRejectedError as exc:
+                _render_failed(self.fmt, asset_ids[i], str(exc))
+        return out
+
+    def extract_translatable(self, content: str) -> dict[str, str]:
+        spec, _err = _parse_vegalite(self.sanitize(content))
+        if spec is None:
+            return {}
+        out: dict[str, str] = {}
+        _walk_vegalite_text(spec, [], out)
+        return out
+
+    def apply_translations(self, content: str, tr: Mapping[str, str]) -> str:
+        spec, _err = _parse_vegalite(self.sanitize(content))
+        if spec is None or not tr:
+            return content
+        for path, value in tr.items():
+            try:
+                _set_by_path(spec, path, value)
+            except (KeyError, IndexError, ValueError):
+                continue
+        return json.dumps(spec, ensure_ascii=False)
+
+
+# ---------------------------------------------------------------------------
+# Graphviz DOT — binario `dot` senza shell, cwd vuoto, env minimale
+# ---------------------------------------------------------------------------
+
+_DOT_HEADER_RE = re.compile(r"^\s*(?:strict\s+)?(?:di)?graph\b", re.IGNORECASE)
+# Attributi che fanno leggere file locali o risorse esterne a `dot`.
+_DOT_FORBIDDEN_ATTR_RE = re.compile(
+    r"\b(image|shapefile|imagepath|fontpath|stylesheet|URL|href|target)\s*=", re.IGNORECASE
+)
+_DOT_EDGE_RE = re.compile(r"->|--")
+_DOT_BLOCK_RES = {
+    "graph": re.compile(r"\bgraph\s*\["),
+    "node": re.compile(r"\bnode\s*\["),
+    "edge": re.compile(r"\bedge\s*\["),
+}
+_DOT_LABEL_RE = re.compile(
+    r"\b(label|xlabel|headlabel|taillabel)\s*=\s*\"((?:[^\"\\]|\\.)*)\"", re.IGNORECASE
+)
+_DOT_ENV_KEYS = ("PATH", "HOME", "FONTCONFIG_PATH", "FONTCONFIG_FILE", "XDG_CACHE_HOME")
+
+_dot_missing_logged = False
+
+
+class _DotError(RuntimeError):
+    """Esito negativo di `dot` (returncode, timeout, esecuzione)."""
+
+
+def _dot_binary() -> str | None:
+    return shutil.which(get_settings().graphviz_dot_path or "dot")
+
+
+def _dot_with_theme(source: str) -> str:
+    """Inserisce `graph/node/edge [...]` del tema dopo la `{` di apertura,
+    saltando i blocchi che il sorgente definisce già."""
+    brace = source.find("{")
+    if brace < 0:
+        return source
+    skip = frozenset(k for k, rx in _DOT_BLOCK_RES.items() if rx.search(source))
+    prelude = dot_defaults_prelude(skip=skip)
+    if not prelude:
+        return source
+    return source[: brace + 1] + "\n" + prelude + "\n" + source[brace + 1 :]
+
+
+def _dot_env() -> dict[str, str]:
+    env = {k: os.environ[k] for k in _DOT_ENV_KEYS if k in os.environ}
+    env.setdefault("PATH", "/usr/local/bin:/usr/bin:/bin")
+    env["LANG"] = "C.UTF-8"
+    env["LC_ALL"] = "C.UTF-8"
+    return env
+
+
+def _run_dot(source: str) -> str:
+    """UN solo `subprocess.run` di `dot -Tsvg`; ritorna l'SVG grezzo o
+    solleva `_DotError` con il motivo."""
+    binary = _dot_binary()
+    if binary is None:
+        raise _DotError("dot_unavailable")
+    timeout = get_settings().figure_render_timeout_seconds
+    with tempfile.TemporaryDirectory(prefix="a4u-dot-") as cwd:
+        try:
+            proc = subprocess.run(  # argv esplicito, nessuna shell
+                [binary, "-Tsvg", "-Gcharset=utf8"],
+                input=source.encode("utf-8"),
+                capture_output=True,
+                timeout=timeout,
+                check=False,
+                cwd=cwd,
+                env=_dot_env(),
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise _DotError("dot_timeout") from exc
+        except OSError as exc:
+            raise _DotError(f"dot_exec_failed: {exc}") from exc
+    if proc.returncode != 0:
+        stderr = proc.stderr.decode("utf-8", errors="replace").strip()
+        raise _DotError((stderr or f"dot: exit {proc.returncode}")[:_ERROR_CAP])
+    return proc.stdout.decode("utf-8", errors="replace")
+
+
+class DotRenderer:
+    """Validazione statica (lunghezza, intestazione, attributi che leggono
+    file, numero di archi) e, profonda, la prova di render con il tema
+    iniettato; `dot` assente → `dot_unavailable`, non fixable."""
+
+    fmt = "dot"
+
+    def available(self) -> bool:
+        global _dot_missing_logged
+        found = _dot_binary() is not None
+        if not found and not _dot_missing_logged:
+            _dot_missing_logged = True
+            log.error(
+                "graphviz_dot_missing",
+                path=get_settings().graphviz_dot_path or "dot",
+                hint="installare graphviz o impostare GRAPHVIZ_DOT_PATH",
+            )
+        return found
+
+    def sanitize(self, content: str) -> str:
+        return _strip_fence_and_control(content)
+
+    def validate(self, content: str, *, deep: bool = False) -> tuple[bool, str]:
+        if not self.available():
+            return (False, "dot_unavailable")
+        src = self.sanitize(content)
+        max_chars = int(get_settings().figure_dot_max_chars)
+        if not src:
+            return (False, "sorgente DOT vuoto")
+        if len(src) > max_chars:
+            return (False, f"sorgente DOT oltre {max_chars} caratteri ({len(src)})")
+        if not _DOT_HEADER_RE.match(src):
+            return (False, "il sorgente deve iniziare con `graph`, `digraph` o `strict`")
+        m = _DOT_FORBIDDEN_ATTR_RE.search(src)
+        if m:
+            return (False, f"attributo non ammesso: `{m.group(1)}=` (risorse esterne o file)")
+        edges = len(_DOT_EDGE_RE.findall(src))
+        if edges > DOT_MAX_EDGES:
+            return (False, f"troppi archi ({edges} > {DOT_MAX_EDGES})")
+        if deep:
+            try:
+                svg = self._render_or_raise(src)
+            except (_DotError, SvgRejectedError) as exc:
+                return (False, str(exc)[:_ERROR_CAP])
+            _cache_put(cache_key(self.fmt, src), svg)
+        return (True, "")
+
+    def _render_or_raise(self, sanitized: str) -> str:
+        raw = _run_dot(_dot_with_theme(sanitized))
+        return normalize_svg(raw, max_bytes=get_settings().figure_svg_max_bytes).svg
+
+    def render_svg(self, content: str, *, asset_id: str = "") -> str | None:
+        sanitized = self.sanitize(content)
+        key = cache_key(self.fmt, sanitized)
+        hit = _cache_get(key)
+        if hit is not None:
+            return hit
+        try:
+            svg = self._render_or_raise(sanitized)
+        except (_DotError, SvgRejectedError) as exc:
+            _cache_negative(key)
+            _render_failed(self.fmt, asset_id, str(exc))
+            return None
+        _cache_put(key, svg)
+        return svg
+
+    def render_svg_batch(self, contents: list[str], *, asset_ids: list[str]) -> list[str | None]:
+        return [
+            self.render_svg(c, asset_id=aid) for c, aid in zip(contents, asset_ids, strict=True)
+        ]
+
+    def extract_translatable(self, content: str) -> dict[str, str]:
+        out: dict[str, str] = {}
+        for n, m in enumerate(_DOT_LABEL_RE.finditer(self.sanitize(content))):
+            value = m.group(2)
+            if any(ch.isalpha() for ch in value):
+                out[f"{m.group(1).lower()}.{n}"] = value
+        return out
+
+    def apply_translations(self, content: str, tr: Mapping[str, str]) -> str:
+        if not tr:
+            return content
+        counter = iter(range(10**9))
+
+        def _replace(m: re.Match[str]) -> str:
+            n = next(counter)
+            key = f"{m.group(1).lower()}.{n}"
+            if key not in tr:
+                return m.group(0)
+            escaped = tr[key].replace("\\", "\\\\").replace('"', '\\"')
+            return f'{m.group(1)}="{escaped}"'
+
+        return _DOT_LABEL_RE.sub(_replace, content)
+
+
+# ---------------------------------------------------------------------------
+# Registro
+# ---------------------------------------------------------------------------
+
+REGISTRY: dict[str, FigureRenderer] = {
+    "mermaid": MermaidRenderer(),
+    "vegalite": VegaLiteRenderer(),
+    "dot": DotRenderer(),
+}
+
+
+def register_renderer(renderer: FigureRenderer) -> None:
+    """Registra (o sostituisce) il renderer di un formato; usato da WP7 per
+    `function`. Invalida la cache di `available_formats`."""
+    REGISTRY[renderer.fmt] = renderer
+    available_formats.cache_clear()
+
+
+@lru_cache(maxsize=1)
+def available_formats() -> tuple[str, ...]:
+    """Formati offerti al modello (enum dello schema strict) e accettati dal
+    validatore: kill-switch del setting E dipendenza presente. Mermaid è
+    sempre disponibile. Calcolato una volta per processo e loggato."""
+    settings = get_settings()
+    switches = {
+        "vegalite": settings.figure_vegalite_enabled,
+        "dot": settings.figure_dot_enabled,
+        "function": settings.figure_function_enabled,
+    }
+    out = ["mermaid"]
+    for fmt in RENDERABLE_FORMATS[1:]:
+        renderer = REGISTRY.get(fmt)
+        if switches.get(fmt) and renderer is not None and renderer.available():
+            out.append(fmt)
+    log.info("figure_formats_available", formats=out)
+    return tuple(out)
+
+
+# ---------------------------------------------------------------------------
+# Orchestratore asincrono
+# ---------------------------------------------------------------------------
+
+_semaphores: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore] = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def _render_semaphore() -> asyncio.Semaphore:
+    """Un semaforo per loop (uvicorn e test usano loop diversi)."""
+    loop = asyncio.get_running_loop()
+    sem = _semaphores.get(loop)
+    if sem is None:
+        sem = asyncio.Semaphore(max(1, int(get_settings().figure_render_max_workers)))
+        _semaphores[loop] = sem
+    return sem
+
+
+def _iter_renderable(assets: Sequence[Mapping[str, Any]]) -> Iterator[tuple[str, str, str]]:
+    for asset in assets:
+        fmt = str(asset.get("format") or "")
+        asset_id = str(asset.get("asset_id") or "")
+        content = asset.get("content")
+        if fmt in RENDERABLE_FORMATS and asset_id and isinstance(content, str) and content.strip():
+            yield fmt, asset_id, content
+
+
+async def render_svg_map(assets: Sequence[Mapping[str, Any]], *, language: str) -> dict[str, str]:
+    """`{asset_id: svg}` per gli asset renderizzabili di una lezione.
+
+    Unico punto di `asyncio.to_thread` + `asyncio.wait_for` + semaforo
+    (tenuto dal chiamante async, rilasciato anche su timeout). Raggruppa
+    per formato e chiama UNA `render_svg_batch` per formato; serve dalla
+    cache LRU e salta le chiavi in cache negativa (render fallito negli
+    ultimi 60 s). Non solleva mai: timeout ed eccezioni producono
+    `figure_render_failed` e la chiave resta assente (fallback del
+    partial). `language` è solo contesto di log (vedi la docstring del
+    modulo sulla chiave di cache).
+    """
+    settings = get_settings()
+    timeout = float(settings.figure_render_timeout_seconds)
+    formats = available_formats()
+    result: dict[str, str] = {}
+    pending: dict[str, list[tuple[str, str, CacheKey]]] = {}
+
+    for fmt, asset_id, content in _iter_renderable(assets):
+        renderer = REGISTRY.get(fmt)
+        if renderer is None or fmt not in formats:
+            _render_failed(fmt, asset_id, "format_unavailable")
+            continue
+        sanitized = renderer.sanitize(content)
+        key = cache_key(fmt, sanitized)
+        hit = _cache_get(key)
+        if hit is not None:
+            result[asset_id] = hit
+            continue
+        if _cache_is_negative(key):
+            _render_failed(fmt, asset_id, "negative_cache")
+            continue
+        pending.setdefault(fmt, []).append((asset_id, sanitized, key))
+
+    sem = _render_semaphore()
+    for fmt, items in pending.items():
+        renderer = REGISTRY[fmt]
+        ids = [aid for aid, _s, _k in items]
+        contents = [s for _a, s, _k in items]
+        async with sem:
+            try:
+                svgs = await asyncio.wait_for(
+                    asyncio.to_thread(renderer.render_svg_batch, contents, asset_ids=ids),
+                    timeout=timeout,
+                )
+            except TimeoutError:
+                for aid, _s, key in items:
+                    _cache_negative(key)
+                    _render_failed(fmt, aid, f"timeout dopo {timeout:g} s")
+                continue
+            except Exception as exc:  # il renderer non deve sollevare; difesa in profondità
+                for aid, _s, key in items:
+                    _cache_negative(key)
+                    _render_failed(fmt, aid, f"{type(exc).__name__}: {exc}")
+                continue
+        for (aid, _s, key), svg in zip(items, svgs, strict=True):
+            if svg:
+                _cache_put(key, svg)
+                result[aid] = svg
+            else:
+                _cache_negative(key)
+    log.info(
+        "figure_render_map",
+        language=language,
+        requested=sum(len(v) for v in pending.values()),
+        rendered=len(result),
+    )
+    return result
+
+
+def _changed_assets(
+    assets: Sequence[Mapping[str, Any]], previous: Sequence[Mapping[str, Any]] | None
+) -> list[tuple[int, Mapping[str, Any]]]:
+    """Asset del payload con `(format, content)` diversi da `previous`
+    (confronto per `asset_id`, A15): un edit del testo non rivalida i
+    diagrammi già in DB."""
+    prev: dict[str, tuple[Any, Any]] = {}
+    for p in previous or []:
+        prev[str(p.get("asset_id") or "")] = (p.get("format"), p.get("content"))
+    out: list[tuple[int, Mapping[str, Any]]] = []
+    for i, asset in enumerate(assets):
+        aid = str(asset.get("asset_id") or "")
+        if prev.get(aid) == (asset.get("format"), asset.get("content")):
+            continue
+        out.append((i, asset))
+    return out
+
+
+async def validate_visual_assets_or_raise(
+    assets: Sequence[Mapping[str, Any]],
+    *,
+    previous: Sequence[Mapping[str, Any]] | None,
+    loc_root: str,
+    code: str,
+) -> None:
+    """Gate del PATCH manuale: valida (`deep=False`, in thread) SOLO gli
+    asset renderizzabili con `(format, content)` cambiati e solleva
+    `ValidationAppError` 422 con `meta={"errors": [{loc, asset_id, format,
+    msg, type}]}`. Un formato assente da `available_formats()` è
+    `figure_format_unavailable`, mai un pass-through."""
+    formats = available_formats()
+    errors: list[dict[str, Any]] = []
+    for i, asset in _changed_assets(assets, previous):
+        fmt = str(asset.get("format") or "")
+        if fmt not in RENDERABLE_FORMATS:
+            continue
+        asset_id = str(asset.get("asset_id") or "")
+        entry: dict[str, Any] = {
+            "loc": [loc_root, i, "content"],
+            "asset_id": asset_id,
+            "format": fmt,
+        }
+        renderer = REGISTRY.get(fmt)
+        if renderer is None or fmt not in formats:
+            errors.append(
+                {
+                    **entry,
+                    "msg": f"formato `{fmt}` non disponibile su questo server",
+                    "type": FIGURE_FORMAT_UNAVAILABLE,
+                }
+            )
+            continue
+        content = asset.get("content")
+        ok, msg = await asyncio.to_thread(
+            renderer.validate, content if isinstance(content, str) else "", deep=False
+        )
+        if not ok:
+            errors.append({**entry, "msg": msg[:_PAYLOAD_MSG_CAP], "type": error_type_for(msg)})
+    if errors:
+        log.info("visual_assets_rejected", code=code, errors=len(errors))
+        raise ValidationAppError(
+            "Uno o più asset visivi non sono validi.",
+            code=code,
+            meta={"errors": errors},
+        )
+
+
+__all__ = [
+    "FIGURE_FORMAT_UNAVAILABLE",
+    "FIGURE_INVALID",
+    "FUNCTION_SPEC_INVALID",
+    "MERMAID_TYPE_NOT_ALLOWED",
+    "REGISTRY",
+    "RENDERABLE_FORMATS",
+    "VEGALITE_USE_FUNCTION_FORMAT",
+    "DotRenderer",
+    "FigureRenderer",
+    "MermaidRenderer",
+    "VegaLiteRenderer",
+    "available_formats",
+    "cache_key",
+    "clear_svg_cache",
+    "error_type_for",
+    "register_renderer",
+    "render_svg_map",
+    "validate_visual_assets_or_raise",
+]

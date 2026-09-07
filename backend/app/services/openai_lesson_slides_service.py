@@ -8,10 +8,13 @@ un asset adatto a coprire il bisogno.
 
 Errori → `OpenAILessonSlidesError` (sottoclasse di `OpenAIError`).
 """
+
 from __future__ import annotations
 
+import copy
 import json
 import time
+from collections.abc import Sequence
 from typing import Any
 
 import httpx
@@ -19,6 +22,7 @@ import httpx
 from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.schemas.course_lesson_slides import LessonSlidesOutput
+from app.services.figure_render_service import available_formats
 from app.services.openai_client import (
     OpenAIError,
     OpenAINotConfiguredError,
@@ -59,9 +63,7 @@ def _system_prompt(
         else "della durata indicata nel messaggio"
     )
     per_durata = (
-        f"Per {minuti_per_lezione} minuti"
-        if minuti_per_lezione
-        else "Per la durata della lezione"
+        f"Per {minuti_per_lezione} minuti" if minuti_per_lezione else "Per la durata della lezione"
     )
     eqf = livello_eqf or "indicato nel messaggio"
     ruolo = ruolo_docente or "indicato nel messaggio"
@@ -227,7 +229,8 @@ Output: SOLO JSON valido conforme allo schema."""
 
 # Addendum §9.4 — appeso al system prompt quando si rigenerano slide già
 # generate (con o senza `regeneration_hint`).
-REGENERATION_SUFFIX = """\
+REGENERATION_SUFFIX = (
+    """\
 
 ATTENZIONE: stai RIGENERANDO le slide di una lezione già slidificata.
 Considera la versione precedente e il feedback del docente.
@@ -238,7 +241,9 @@ Considera la versione precedente e il feedback del docente.
 - Se possibile, mantieni lo stesso slide_id per slide che corrispondono
   semanticamente alla versione precedente (utile per riusare il
   discorso esistente nella futura Fase 5).
-""" + REGENERATION_REGISTER_NOTE
+"""
+    + REGENERATION_REGISTER_NOTE
+)
 
 
 # JSON Schema verbatim §7.3 — passato a OpenAI come response_format.json_schema.
@@ -319,24 +324,17 @@ LESSON_SLIDES_JSON_SCHEMA: dict[str, Any] = {
                     "type": "object",
                     "properties": {
                         "asset_id": {"type": "string"},
-                        "asset_type": {
-                            "type": "string",
-                            "enum": [
-                                "diagram",
-                                "schema",
-                                "image",
-                                "illustration",
-                                "chart",
-                            ],
-                        },
+                        # Solo i formati renderizzabili offerti in Fase 4
+                        # (A1: `function` resta accettato dal Pydantic per
+                        # l'edit manuale, non proposto al modello); i legacy
+                        # `image_prompt|image_search_query|description` e il
+                        # vecchio `asset_type` non fanno più parte dello
+                        # schema strict. A runtime
+                        # `build_lesson_slides_json_schema` restringe l'enum
+                        # ai formati disponibili sul server.
                         "format": {
                             "type": "string",
-                            "enum": [
-                                "mermaid",
-                                "image_prompt",
-                                "image_search_query",
-                                "description",
-                            ],
+                            "enum": ["mermaid", "vegalite", "dot"],
                         },
                         "content": {"type": "string"},
                         "caption": {"type": "string"},
@@ -344,7 +342,6 @@ LESSON_SLIDES_JSON_SCHEMA: dict[str, Any] = {
                     },
                     "required": [
                         "asset_id",
-                        "asset_type",
                         "format",
                         "content",
                         "caption",
@@ -358,6 +355,27 @@ LESSON_SLIDES_JSON_SCHEMA: dict[str, Any] = {
         "additionalProperties": False,
     },
 }
+
+# Formati mai offerti al modello in Fase 4 (A1), anche se disponibili.
+_SLIDES_EXCLUDED_FORMATS = frozenset({"function"})
+
+
+def build_lesson_slides_json_schema(*, visual_formats: Sequence[str]) -> dict[str, Any]:
+    """Schema della singola chiamata: la costante base con l'`enum` di
+    `new_assets[].format` ristretto ai formati disponibili sul server
+    (`figure_render_service.available_formats()`) meno `function` (A1).
+
+    `deepcopy` obbligatorio: più lezioni sono in volo insieme e una
+    mutazione in place farebbe colare l'enum di una richiesta in un'altra.
+    Senza formati utili (impossibile: Mermaid è sempre disponibile) resta
+    l'enum della costante, mai `"enum": []` (schema strict non valido).
+    """
+    schema = copy.deepcopy(LESSON_SLIDES_JSON_SCHEMA)
+    formats = [f for f in visual_formats if f not in _SLIDES_EXCLUDED_FORMATS]
+    if formats:
+        props = schema["schema"]["properties"]
+        props["new_assets"]["items"]["properties"]["format"]["enum"] = formats
+    return schema
 
 
 async def generate_lesson_slides(
@@ -401,7 +419,7 @@ async def generate_lesson_slides(
         ],
         "response_format": {
             "type": "json_schema",
-            "json_schema": LESSON_SLIDES_JSON_SCHEMA,
+            "json_schema": build_lesson_slides_json_schema(visual_formats=available_formats()),
         },
         "max_completion_tokens": settings.openai_lesson_slides_max_tokens,
     }
@@ -435,11 +453,7 @@ async def generate_lesson_slides(
             payload = resp.json()
         except Exception:
             payload = {"text": resp.text}
-        message = (
-            payload.get("error", {}).get("message")
-            if isinstance(payload, dict)
-            else None
-        )
+        message = payload.get("error", {}).get("message") if isinstance(payload, dict) else None
         log.error(
             "openai_lesson_slides_api_error",
             status=resp.status_code,
@@ -467,12 +481,9 @@ async def generate_lesson_slides(
     if not content or not content.strip():
         usage_raw = data.get("usage") or {}
         completion_tokens = usage_raw.get("completion_tokens") or 0
-        reasoning_tokens = (
-            (usage_raw.get("completion_tokens_details") or {}).get(
-                "reasoning_tokens"
-            )
-            or 0
-        )
+        reasoning_tokens = (usage_raw.get("completion_tokens_details") or {}).get(
+            "reasoning_tokens"
+        ) or 0
         log.error(
             "openai_lesson_slides_empty_content",
             finish_reason=finish_reason,
@@ -504,9 +515,7 @@ async def generate_lesson_slides(
     try:
         parsed = json.loads(content)
     except json.JSONDecodeError as exc:
-        log.error(
-            "openai_lesson_slides_json_decode_failed", content=content[:500]
-        )
+        log.error("openai_lesson_slides_json_decode_failed", content=content[:500])
         raise OpenAILessonSlidesError(
             status=resp.status_code,
             message=f"OpenAI non ha restituito JSON valido: {exc}",
