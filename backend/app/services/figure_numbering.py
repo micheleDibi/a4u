@@ -19,7 +19,10 @@ Regole:
   con `.strip().lower()`;
 - `strip_figure_prefix` toglie un prefisso «Figura 3.», «Fig. 2:», «Figure
   4 –» già presente nella didascalia (cifra obbligatoria: «Figurativo» e
-  «Fig. X» restano intatti). Applicato SOLO a render, mai persistito.
+  «Fig. X» restano intatti; separatore obbligatorio dopo il numero, o fine
+  del testo: «Figure 2 shows the flow», «Figura 3 e 4 a confronto» e
+  «Figura 1.2 Schema» restano intatti, il prefisso non è mai «lossy»).
+  Applicato SOLO a render, mai persistito.
 """
 
 from __future__ import annotations
@@ -29,8 +32,12 @@ from collections.abc import Iterable
 
 FIG_REF_RE = re.compile(r"\[FIG:([^\]\n]+)\]")
 
+# Prefisso editoriale: parola, numero (con eventuali sottonumeri «1.2» e
+# lettera «4a»), poi UN separatore `. : - – — )` non seguito da cifra
+# (altrimenti «Figura 1.2 Schema» perderebbe «1.»), oppure fine del testo.
+# Il separatore è obbligatorio: senza, «Figure 2 shows …» è una frase.
 _FIGURE_PREFIX_RE = re.compile(
-    r"^\s*(?:figura|figure|fig\.?|abb\.?)\s*\d+[a-z]?\s*[.:\-–—)]?\s*",
+    r"^\s*(?:figura|figure|fig\.?|abb\.?)\s*\d+(?:\.\d+)*[a-z]?\s*(?:[.:\-–—)](?!\d)\s*|$)",
     re.IGNORECASE,
 )
 
@@ -81,9 +88,10 @@ def compute_figure_numbers(markdown: str, asset_ids: Iterable[str]) -> dict[str,
 
 
 def strip_figure_prefix(caption: str) -> str:
-    """Rimuove un prefisso «Figura N.» / «Fig. N:» / «Figure N –» / «Abb. N»
-    (cifra obbligatoria, eventuale lettera, separatore opzionale) dalla
-    didascalia. Solo a render: il testo persistito non cambia."""
+    """Rimuove un prefisso «Figura N.» / «Fig. N:» / «Figure N –» / «Abb.
+    N)» (cifra obbligatoria, eventuale lettera, separatore obbligatorio
+    salvo a fine testo) dalla didascalia. Solo a render: il testo
+    persistito non cambia."""
     return _FIGURE_PREFIX_RE.sub("", caption or "", count=1)
 
 

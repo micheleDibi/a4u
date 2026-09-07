@@ -241,6 +241,26 @@ def test_key_takeaways_and_references_do_not_participate() -> None:
     assert "Vedi [FIG:A]" in html
 
 
+def test_asset_ids_with_surrounding_spaces_and_case_are_matched_and_numbered() -> None:
+    """Le tre normalizzazioni dell'id coincidono (`.strip().lower()`): un
+    asset « A » citato come `[FIG: A ]` è reso e numerato, non «Asset non
+    trovato»; lo stesso per tabelle, equazioni ed esempi."""
+    content = {
+        "introduction": "Vedi [FIG: A ] e [TAB:t1] e [EQ: E1 ].",
+        "sections": [],
+        "summary": "",
+        "visual_assets": [_asset(" A ", "mermaid", "flowchart LR\n A", "Schema")],
+        "tables": [{"table_id": " T1 ", "caption": "Tabella", "markdown": "| c |\n|---|\n| 1 |"}],
+        "equations": [{"equation_id": "e1 ", "latex": "x=1", "label": "Eq"}],
+    }
+    html = _render(content, visual_svg_map={" A ": SVG_A})
+    assert 'class="missing-asset"' not in html
+    fig = _figures(html)[0]
+    assert fig["id"] == "A" and _label(fig) == "Figura 1."  # `data-asset-id` collassato
+    assert "<figcaption>Tabella</figcaption>" in html
+    assert '<figure class="equation">' in html and '<span class="label">Eq</span>' in html
+
+
 def test_missing_asset_reference_keeps_the_marker_and_no_number() -> None:
     content = {
         "introduction": "Vedi [FIG:ghost] e [FIG:A].",
@@ -386,12 +406,15 @@ def test_visual_svg_map_merges_with_legacy_mermaid_svg_map() -> None:
 # ---------------------------------------------------------------------------
 
 
+_TAIL = "Zeri in x = −1, 1."  # coda calcolata (segno meno tipografico, A17)
+
+
 def test_function_extra_caption_follows_the_author_caption(monkeypatch: pytest.MonkeyPatch) -> None:
     seen: dict[str, Any] = {}
 
-    def fake(content: str, *, language: str | None) -> str:
-        seen["content"], seen["language"] = content, language
-        return "Zeri in x = −1, 1."
+    def fake(content: str, *, language: str | None, asset_id: str = "") -> str:
+        seen["content"], seen["language"], seen["asset_id"] = content, language, asset_id
+        return _TAIL
 
     monkeypatch.setattr(frs, "function_computed_caption", fake)
     content = {
@@ -402,16 +425,62 @@ def test_function_extra_caption_follows_the_author_caption(monkeypatch: pytest.M
     }
     html = _render(content, visual_svg_map={"F": SVG_B})
     fig = _figures(html)[0]
-    assert fig["caption"] == (
-        '<span class="figure-label">Figura 1.</span> Parabola Zeri in x = −1, 1.'
-    )
-    assert seen == {"content": '{"kind": "function_study"}', "language": "it"}
+    assert fig["caption"] == f'<span class="figure-label">Figura 1.</span> Parabola {_TAIL}'
+    assert seen == {"content": '{"kind": "function_study"}', "language": "it", "asset_id": "F"}
+
+
+@pytest.mark.parametrize(
+    ("caption", "expected"),
+    [
+        # Coda già copiata dal docente in fondo alla didascalia: una sola volta.
+        (f"Parabola. {_TAIL}", f"Parabola. {_TAIL}"),
+        (_TAIL, _TAIL),
+        (f"Parabola.  {_TAIL}  ", f"Parabola. {_TAIL}"),
+        # Coda presente ma non in fondo: non è una ripetizione, resta.
+        (f"{_TAIL} Parabola", f"{_TAIL} Parabola {_TAIL}"),
+        ("Parabola", f"Parabola {_TAIL}"),
+    ],
+)
+def test_function_extra_caption_is_not_repeated_when_the_author_already_wrote_it(
+    monkeypatch: pytest.MonkeyPatch, caption: str, expected: str
+) -> None:
+    """Guardia anti-doppia coda (Q4): `if caption.rstrip().endswith(tail):
+    tail = ""`; stessa regola in `FigureFrame.extraCaption` (WP5)."""
+    monkeypatch.setattr(frs, "function_computed_caption", lambda c, *, language, asset_id="": _TAIL)
+    content = {
+        "introduction": "[FIG:F]",
+        "sections": [],
+        "summary": "",
+        "visual_assets": [_asset("F", "function", '{"kind": "function_study"}', caption)],
+    }
+    html = _render(content, visual_svg_map={"F": SVG_B})
+    assert _figures(html)[0]["caption"] == f'<span class="figure-label">Figura 1.</span> {expected}'
+
+
+def test_render_figure_html_double_tail_guard_is_exact_suffix() -> None:
+    kwargs: dict[str, Any] = {
+        "body_html": Markup("<i/>"),
+        "alt_text": "",
+        "asset_id": "A",
+        "fmt": "function",
+        "number": 1,
+        "labels": None,
+        "variant": "lesson",
+    }
+    same = figure_markup.render_figure_html(caption="Testo. Coda.", extra_caption="Coda.", **kwargs)
+    assert "Figura 1.</span> Testo. Coda.</figcaption>" in same
+    other = figure_markup.render_figure_html(caption="Testo. Coda", extra_caption="Coda.", **kwargs)
+    assert "Figura 1.</span> Testo. Coda Coda.</figcaption>" in other
+    empty = figure_markup.render_figure_html(caption="", extra_caption="Coda.", **kwargs)
+    assert "Figura 1.</span> Coda.</figcaption>" in empty
 
 
 def test_function_extra_caption_not_requested_on_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[str] = []
     monkeypatch.setattr(
-        frs, "function_computed_caption", lambda c, *, language: calls.append(c) or "x"
+        frs,
+        "function_computed_caption",
+        lambda c, *, language, asset_id="": calls.append(c) or "x",
     )
     content = {
         "introduction": "[FIG:F]",
@@ -455,6 +524,127 @@ def test_function_computed_caption_after_render_is_localized() -> None:
     assert en.startswith("Zeros at x = ")
     # Con fence ```json (contenuto non ancora sanificato) il risultato è lo stesso.
     assert frs.function_computed_caption(f"```json\n{content}\n```", language="it") == it
+
+
+_FUNCTION_SPEC = json.dumps(
+    {
+        "kind": "function_study",
+        "expressions": [{"expr": "x**2 - 1"}],
+        "domain": [-3, 3],
+        "show": ["zeros"],
+    }
+)
+
+
+def _function_content(caption: str = "Parabola") -> dict[str, Any]:
+    return {
+        "introduction": "[FIG:F]",
+        "sections": [],
+        "summary": "",
+        "visual_assets": [_asset("F", "function", _FUNCTION_SPEC, caption)],
+    }
+
+
+def test_function_caption_missing_from_the_result_cache_is_logged() -> None:
+    """SVG in mappa (cache SVG) ma risultato del motore espulso: la coda
+    manca e il fatto è nel log (`figure_caption_missing`), mai silenzioso."""
+    ffs.clear_result_cache()
+    with structlog.testing.capture_logs() as logs:
+        html = _render(_function_content(), visual_svg_map={"F": SVG_B})
+    assert _figures(html)[0]["caption"] == '<span class="figure-label">Figura 1.</span> Parabola'
+    events = [e for e in logs if e["event"] == "figure_caption_missing"]
+    assert len(events) == 1
+    assert events[0]["log_level"] == "warning"
+    assert events[0]["asset_id"] == "F"
+    assert events[0]["format"] == "function"
+    assert events[0]["reason"] == "result_not_cached"
+    # Spec non valida: nessun log (l'SVG a monte non esiste e il fallback è già loggato).
+    with structlog.testing.capture_logs() as logs:
+        assert frs.function_computed_caption("{non json", language="it", asset_id="X") == ""
+    assert logs == []
+
+
+async def test_function_svg_cache_hit_without_engine_result_is_rerendered(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Sequenza reale: export → anteprime dell'editor che espellono il
+    risultato dalla cache dei risultati (l'SVG resta in quella degli SVG)
+    → ri-export: `render_svg_map` non serve l'hit «incompleto», rimanda la
+    figura al renderer, che ricalcola e ripopola la cache dei risultati;
+    la coda della didascalia torna nel PDF. Motore finto: nessuna
+    dipendenza numerica richiesta."""
+    calls: list[str] = []
+
+    def fake_render_function_sync(spec: Any, *, language: str | None, **_kw: Any) -> Any:
+        calls.append(language or "")
+        base = ffs.FunctionRenderResult(
+            svg=SVG_B,
+            computed={"variable": "x", "zeros": [{"x": 1.0, "exact": "1"}]},
+            latex=[],
+            warnings=[],
+            approximate=False,
+            computed_caption="",
+            content_hash=spec.content_hash(),
+        )
+        ffs._cache_put(ffs.result_key(spec), base)
+        return ffs._with_caption(base, language)
+
+    monkeypatch.setattr(ffs, "render_function_sync", fake_render_function_sync)
+    monkeypatch.setattr(frs.FunctionRenderer, "available", lambda self: True)
+    frs.available_formats.cache_clear()
+    ffs.clear_result_cache()
+    frs.clear_svg_cache()
+    try:
+        assets = _function_content()["visual_assets"]
+        first = await frs.render_svg_map(assets, language="it")
+        assert first == {"F": SVG_B} and calls == [""]
+        # Hit completo: nessun ricalcolo.
+        assert await frs.render_svg_map(assets, language="it") == first and calls == [""]
+        # Eviction dalla sola cache dei risultati (anteprime dell'editor).
+        ffs.clear_result_cache()
+        assert frs._cache_get(frs.cache_key("function", _FUNCTION_SPEC)) == SVG_B
+        with structlog.testing.capture_logs() as logs:
+            again = await frs.render_svg_map(assets, language="it")
+            html = _render(_function_content(), visual_svg_map=again)
+        assert again == first and calls == ["", ""]
+        assert _figures(html)[0]["caption"] == (
+            '<span class="figure-label">Figura 1.</span> Parabola Zeri in x = 1.'
+        )
+        assert not [e for e in logs if e["event"] == "figure_caption_missing"]
+        # Anche `render_svg` diretto (validazione profonda, batch) ripopola.
+        ffs.clear_result_cache()
+        assert frs.REGISTRY["function"].render_svg(_FUNCTION_SPEC, asset_id="F") == SVG_B
+        assert calls == ["", "", ""]
+        assert frs.function_computed_caption(_FUNCTION_SPEC, language="en") == "Zeros at x = 1."
+    finally:
+        ffs.clear_result_cache()
+        frs.clear_svg_cache()
+        frs.available_formats.cache_clear()
+
+
+@pytest.mark.skipif(not ffs.dependencies_available(), reason="numpy, matplotlib o sympy assenti")
+async def test_function_caption_survives_result_cache_eviction_with_the_real_engine() -> None:
+    ffs.clear_result_cache()
+    frs.clear_svg_cache()
+    frs.available_formats.cache_clear()
+    try:
+        assets = _function_content()["visual_assets"]
+        svg_map = await frs.render_svg_map(assets, language="it")
+        assert "F" in svg_map
+        ffs.clear_result_cache()  # eviction simulata fra due export
+        with structlog.testing.capture_logs() as logs:
+            svg_map_again = await frs.render_svg_map(assets, language="it")
+            html = _render(_function_content(), visual_svg_map=svg_map_again)
+        assert svg_map_again == svg_map  # byte-identico (hashsalt fisso)
+        caption = _figures(html)[0]["caption"]
+        assert caption.startswith(
+            '<span class="figure-label">Figura 1.</span> Parabola Zeri in x = '
+        )
+        assert not [e for e in logs if e["event"] == "figure_caption_missing"]
+    finally:
+        ffs.clear_result_cache()
+        frs.clear_svg_cache()
+        frs.available_formats.cache_clear()
 
 
 # ---------------------------------------------------------------------------
@@ -513,7 +703,7 @@ def test_slides_use_unnumbered_label_and_img_for_every_format() -> None:
     assert bodies["N1"].startswith('<img class="figure-svg"')
     assert bodies["N2"] == '<pre class="figure-fallback">digraph { m }</pre>'
     assert figs[0]["caption"] == '<span class="figure-label">Figura.</span> Schema'
-    assert "<svg" not in html.split("<style")[0] or True  # nessun SVG inline nel body slide
+    assert "<svg" not in html.split("</style>", 1)[1]  # nessun SVG inline nel body slide
     assert '<div class="mermaid-svg">' not in html
     fallbacks = [e for e in logs if e["event"] == "figure_render_fallback"]
     assert [(e["asset_id"], e["format"], e["lesson_code"]) for e in fallbacks] == [
@@ -636,6 +826,37 @@ def test_render_figure_html_fallback_neutralizes_blank_lines() -> None:
     assert '<pre class="figure-fallback">{\n\u00a0\n  &#34;a&#34;: 1\n\u00a0\n}</pre>' in html
     assert '<span class="figure-label">Figura.</span></figcaption>' in html
     assert "figure--slide figure--vegalite" in html
+
+
+def test_render_figure_html_removes_blank_lines_from_the_body() -> None:
+    """Una riga vuota dentro l'SVG inline chiuderebbe l'HTML block di
+    markdown-it: il partial la rimuove (spazio bianco fra tag). Senza righe
+    vuote il body è byte-identico."""
+    svg = '<svg xmlns="http://www.w3.org/2000/svg">\n\n  \n<text>x</text>\r\n\r\n</svg>'
+    html = figure_markup.render_figure_html(
+        body_html=Markup(f'<div class="mermaid-svg">{svg}</div>'),
+        caption="c",
+        alt_text="",
+        asset_id="A",
+        fmt="mermaid",
+        number=1,
+        labels=None,
+        variant="lesson",
+    )
+    assert "\n\n" not in html and "\r\n\r\n" not in html
+    assert '<svg xmlns="http://www.w3.org/2000/svg">\n<text>x</text>\r\n</svg>' in html
+    assert figure_markup._body_without_blank_lines(Markup(SVG_A)) == SVG_A
+    # Nella dispensa il wrapper resta un unico HTML block, parsabile.
+    content = {
+        "introduction": "Prima.\n\n[FIG:A]\n\nDopo.",
+        "sections": [],
+        "summary": "",
+        "visual_assets": [_asset("A", "mermaid", "flowchart LR\n A", "Cap")],
+    }
+    page = _render(content, visual_svg_map={"A": svg})
+    fig = _figures(page)[0]
+    assert fig["body"].startswith('<div class="mermaid-svg"><svg')
+    assert "<p><text>" not in page and "<p></figure>" not in page and "</div></p>" not in page
 
 
 def test_render_figure_html_sanitizes_format_class_and_uses_unnumbered_label() -> None:

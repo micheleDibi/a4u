@@ -1,5 +1,5 @@
 {
-  "_comment": "Casi condivisi fra backend (figure_numbering.py, test_figure_numbering.py) e frontend (lib/figureNumbering.ts). `asset_ids` è l'ordine dell'array visual_assets; `appended` è il markdown dopo append_uncited_figure_refs; `numbers` la mappa {id_lower: N} calcolata sul markdown appeso. `strip_prefix` elenca coppie input → output di strip_figure_prefix.",
+  "_comment": "Casi condivisi fra backend (figure_numbering.py, test_figure_numbering.py) e frontend (lib/figureNumbering.ts). `asset_ids` è l'ordine dell'array visual_assets; `appended` è il markdown dopo append_uncited_figure_refs; `numbers` la mappa {id_lower: N} calcolata sul markdown appeso. `strip_prefix` elenca coppie input → output di strip_figure_prefix: parola (figura|figure|fig.|abb.), numero con eventuali sottonumeri e lettera, poi UN separatore `. : - – — )` non seguito da cifra oppure fine del testo; senza separatore («Figure 2 shows …») la didascalia resta intatta.",
   "cases": [
     {
       "name": "ordine di prima citazione, non dell'array",
@@ -78,8 +78,15 @@
     {"input": "Figure 3 – Overview", "output": "Overview"},
     {"input": "Fig. 2) Dettaglio", "output": "Dettaglio"},
     {"input": "Fig 4a - Variante", "output": "Variante"},
-    {"input": "Abb. 5 Übersicht", "output": "Übersicht"},
+    {"input": "Abb. 5: Übersicht", "output": "Übersicht"},
+    {"input": "Fig. 10b) Dettaglio", "output": "Dettaglio"},
+    {"input": "Figura 7.2. Sottonumero", "output": "Sottonumero"},
     {"input": "  Figura 1.   Spazi", "output": "Spazi"},
+    {"input": "Figura 3", "output": ""},
+    {"input": "Abb. 5 Übersicht", "output": "Abb. 5 Übersicht"},
+    {"input": "Figure 2 shows the flow", "output": "Figure 2 shows the flow"},
+    {"input": "Figura 1.2 Schema", "output": "Figura 1.2 Schema"},
+    {"input": "Figura 3 e 4 a confronto", "output": "Figura 3 e 4 a confronto"},
     {"input": "Figurativo 3 volte", "output": "Figurativo 3 volte"},
     {"input": "Fig. X non numerata", "output": "Fig. X non numerata"},
     {"input": "Figura senza numero", "output": "Figura senza numero"},

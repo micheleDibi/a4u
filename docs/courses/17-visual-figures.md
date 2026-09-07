@@ -141,10 +141,14 @@ Algoritmo:
    l'SVG prodotto da `validate(deep=True)` nel worker (che non conosce la
    lingua) non sarebbe mai l'hit dell'export;
 2. serve dalla cache LRU (`OrderedDict` + `threading.Lock`, dimensione
-   `figure_svg_cache_size`) le chiavi presenti; le chiavi nella **cache
-   negativa** (render fallito negli ultimi 60 s) vengono saltate senza
-   ritentare — evita di ripetere un render fallito a ogni giro del fix
-   loop;
+   `figure_svg_cache_size`) le chiavi presenti; per `function` l'hit vale
+   solo se anche il risultato del motore è nella cache dei risultati di
+   `figure_function_service` (`_svg_cache_hit_complete` →
+   `FunctionRenderer.result_cached`), altrimenti la figura torna nel batch
+   e `render_svg` ricalcola ripopolando entrambe le cache (correzione
+   WP4, sezione 6.3); le chiavi nella **cache negativa** (render fallito
+   negli ultimi 60 s) vengono saltate senza ritentare — evita di ripetere
+   un render fallito a ogni giro del fix loop;
 3. raggruppa i restanti per formato e chiama **una** `render_svg_batch`
    per formato in `to_thread` sotto semaforo e `wait_for`: per Mermaid è
    `_prerender_mermaid_to_svg_batch_sync` con `_sanitize_mermaid_code`
@@ -864,10 +868,19 @@ va replicata nel `.ts` nello stesso commit.
   Applicata al markdown **dopo** l'append, così la coda è numerata dopo le
   citate.
 - `strip_figure_prefix(caption)`: `^\s*(?:figura|figure|fig\.?|abb\.?)\s*
-  \d+[a-z]?\s*[.:\-–—)]?\s*` IGNORECASE, **cifra obbligatoria** («Figurativo»
-  e «Fig. X» intatti); applicato **solo a render**, mai persistito; nel
-  frontend `stripFigurePrefix`. I prompt P3/P4 vietano al modello di
-  iniziare la caption con «Figura N» (WP3).
+  \d+(?:\.\d+)*[a-z]?\s*(?:[.:\-–—)](?!\d)\s*|$)` IGNORECASE, **cifra
+  obbligatoria** («Figurativo» e «Fig. X» intatti) e **separatore
+  obbligatorio** dopo il numero (o fine del testo): il piano lo aveva
+  opzionale, ma così «Figure 2 shows the flow» diventava «shows the flow»,
+  «Figura 3 e 4 a confronto» → «e 4 a confronto» e «Figura 1.2 Schema» →
+  «2 Schema» (rilievo della verifica di WP4). Con il separatore
+  obbligatorio e non seguito da cifra il prefisso non è mai «lossy»: una
+  didascalia «Figura 3 Schema» resta intatta e viene resa come «Figura 1.
+  Figura 3 Schema» (brutta ma completa; i prompt P3/P4 vietano al modello
+  di iniziare la caption con «Figura N», WP3). Applicato **solo a
+  render**, mai persistito; nel frontend `stripFigurePrefix` con la stessa
+  fixture. Decisione presa in WP4 (correzione), da confermare con il
+  docente: è un solo regex e una coppia della fixture.
 
 Il testo di numerazione è il corpo della dispensa (`introduction →
 sections → summary`, il corpus «referenziato» di
@@ -933,17 +946,48 @@ perché la regola `figure.visual:has(.mermaid-svg) .figure-body { padding:
 
 Dettagli di `render_figure_html` (WP4): applica `strip_figure_prefix` alla
 didascalia e collassa gli spazi bianchi di didascalia, `alt` ed
-`extra_caption`; l'output non contiene righe vuote perché nella dispensa il
-blocco entra nel markdown come HTML block di markdown-it, che si chiude
-alla prima riga vuota: le righe vuote del sorgente di fallback sono rese
-con U+00A0 (non è spazio per markdown-it, invisibile nel `<pre>`). Un
+`extra_caption`; **guardia anti-doppia coda** (Q4): se la didascalia
+dell'autore termina già con la coda calcolata (il docente ha copiato nel
+campo caption il testo mostrato dall'anteprima, o una didascalia
+localizzata la include), `extra_caption` è omessa — confronto esatto sul
+suffisso dopo il collasso degli spazi, `if caption.rstrip().endswith(tail):
+tail = ""`; vale per dispensa, slide e frame video perché tutto passa dal
+partial, e il frontend (WP5) applica la stessa guardia in
+`FigureFrame.extraCaption`. L'output non contiene righe vuote perché nella
+dispensa il blocco entra nel markdown come HTML block di markdown-it, che
+si chiude alla prima riga vuota: le righe vuote del sorgente di fallback
+sono rese con U+00A0 (non è spazio per markdown-it, invisibile nel
+`<pre>`) e le righe vuote di `body_html` (spazio bianco fra tag di un SVG
+inline) sono rimosse — Mermaid non ne emette (le fixture 10 e 11 ne hanno
+zero, quindi il body Mermaid resta byte-identico, A11-L3), ma la garanzia
+vale per l'intero blocco e non solo per le parti prodotte dal partial. Un
 formato sconosciuto va nel fallback (mai il contenuto in chiaro nel corpo)
-con `log.warning("figure_format_unknown")`. Per `function` la coda della
-didascalia arriva da `figure_render_service.function_computed_caption(content,
-language=…)` → `FunctionRenderer.computed_caption`, che legge la cache dei
-risultati del motore (`figure_function_service.cached_result`) popolata da
-`render_svg_map`/`validate(deep=True)` e non calcola mai nel thread di
-composizione dell'HTML: senza risultato in cache la coda è vuota.
+con `log.warning("figure_format_unknown")`.
+
+Per `function` la coda della didascalia arriva da
+`figure_render_service.function_computed_caption(content, language=…,
+asset_id=…)` → `FunctionRenderer.computed_caption`, che legge la cache dei
+risultati del motore (`figure_function_service.cached_result`) e non
+calcola mai nel thread di composizione dell'HTML. Le due cache hanno la
+stessa dimensione (`figure_svg_cache_size`) ma **traffico diverso**:
+l'endpoint `render-function` (anteprime dell'editor) riempie solo la
+cache dei risultati, mai quella degli SVG; bastano quindi 256 anteprime
+distinte fra due export perché il risultato di una figura sia espulso
+mentre il suo SVG resta in cache (sequenza ordinaria: export della
+dispensa → anteprime → export delle slide o ri-export). Correzione WP4:
+`render_svg_map` serve un hit della cache SVG di `function` solo se anche
+il risultato è in cache (`FunctionRenderer.result_cached`), altrimenti
+rimanda la figura al renderer, e `FunctionRenderer.render_svg` sull'hit
+incompleto ricalcola con `render_function_sync` (nel thread di render con
+semaforo e timeout, mai in quello dell'HTML), che ripopola la cache dei
+risultati; l'SVG è byte-identico (`hashsalt` fisso). Se nonostante ciò il
+risultato manca al momento della composizione (eviction fra
+`render_svg_map` e `render_lesson_html`, in pratica impossibile: i due
+passi sono consecutivi), `computed_caption` emette
+`log.warning("figure_caption_missing", asset_id=…, format="function",
+reason="result_not_cached")` e la coda è vuota: mai una perdita silenziosa.
+Test: `test_function_svg_cache_hit_without_engine_result_is_rerendered`
+(motore finto) e `test_function_caption_survives_result_cache_eviction_with_the_real_engine`.
 
 CSS: in `lesson_pdf.html.j2` le regole card generiche `figure {}`
 (217-230) si restringono a `figure.table, figure.equation`;
@@ -1160,7 +1204,12 @@ nelle slide), `elif fmt in RENDERABLE_FORMATS` → `<img class="figure-svg"
 src="{svg_to_data_uri(svg)}" alt="…">` oppure body `None` → `<pre
 class="figure-fallback">`; tutto passa da `render_figure_html`;
 `_svg_to_data_uri` del servizio slide è un re-export di
-`svg_normalize.svg_to_data_uri`. Quando il partial riceve `body_html=None`
+`svg_normalize.svg_to_data_uri`. Le chiavi della mappa asset di
+`_build_asset_html_map` sono normalizzate con `.strip().lower()` per tutti
+i kind (FIG/TAB/EQ/EX), come `_substitute_asset_refs` e
+`compute_figure_numbers`: un asset con id « A » citato come `[FIG: A ]` è
+reso e numerato (prima restava «Asset non trovato» pur essendo numerato;
+correzione WP4). Quando il partial riceve `body_html=None`
 per un formato renderizzabile, `log.error("figure_render_fallback",
 lesson_code=…, asset_id=…, format=…, reason="svg_missing")` (A23): un
 fallback all'export è un errore visibile nei log, non un caso silenzioso.
@@ -1433,6 +1482,13 @@ Decisioni prese in Fase B (A1-A16) e nella ripresa del 7 settembre
 - Il testo delle figure `<img>` non è selezionabile nel PDF (Q3).
 - `[FIG:]` dentro esempi e tabelle (`ExampleBlock` usa `ReactMarkdown`
   direttamente) non è risolvibile né numerabile: limite dichiarato.
+- Coda della didascalia di `function` (D9): dipende dalla cache dei
+  risultati del motore, con traffico diverso da quella degli SVG (sezione
+  6.3). Dopo la correzione WP4 un hit incompleto viene ricalcolato; il
+  caso residuo (eviction fra pre-render e composizione dell'HTML) produce
+  `log.warning("figure_caption_missing", …)` e una didascalia senza coda,
+  mai silenziosa. Un cambio di lingua del corso fra due export non è un
+  problema: la coda è composta a render nella lingua richiesta.
 
 ## 14. Verifiche e consegna
 

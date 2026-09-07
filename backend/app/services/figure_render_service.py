@@ -1037,7 +1037,16 @@ class FunctionRenderer:
     completo, il cui SVG entra in cache. Render: `render_function_sync`
     del motore (numerico, simbolico nel figlio con timeout, disegno,
     `normalize_svg`). L'SVG non dipende dalla lingua: la didascalia
-    calcolata è composta fuori dall'SVG (`function_caption`)."""
+    calcolata è composta fuori dall'SVG (`function_caption`).
+
+    Due cache con traffico diverso: quella degli SVG (questo modulo) e
+    quella dei risultati del motore (`figure_function_service`), da cui
+    `computed_caption` legge la coda della didascalia (D9). Le anteprime
+    dell'editor (`render_function`) riempiono SOLO la seconda, quindi
+    possono espellerne il risultato di una figura il cui SVG è ancora in
+    cache: un hit della cache SVG vale solo se anche il risultato è
+    presente (`result_cached`), altrimenti `render_svg` ricalcola e
+    ripopola entrambe."""
 
     fmt = "function"
 
@@ -1060,16 +1069,28 @@ class FunctionRenderer:
             _cache_put(cache_key(self.fmt, sanitized), result.svg)
         return (True, "")
 
+    def result_cached(self, sanitized: str) -> bool:
+        """Il risultato del motore (SVG e `computed`) della spec è nella
+        cache dei risultati: un hit della cache SVG è completo."""
+        spec, _issues = parse_function_spec(sanitized)
+        if spec is None:
+            return False
+        return figure_function_service.cached_result(spec, language=None) is not None
+
     def render_svg(self, content: str, *, asset_id: str = "") -> str | None:
         sanitized = self.sanitize(content)
         key = cache_key(self.fmt, sanitized)
-        hit = _cache_get(key)
-        if hit is not None:
-            return hit
         spec, issues = parse_function_spec(sanitized)
         if spec is None:
             _render_failed(self.fmt, asset_id, format_issues(issues))
             return None
+        hit = _cache_get(key)
+        if hit is not None and figure_function_service.cached_result(spec, language=None):
+            return hit
+        # SVG assente, oppure presente ma con il risultato del motore
+        # espulso dalla cache dei risultati: si ricalcola (nel thread di
+        # render, mai in quello dell'HTML) e `render_function_sync`
+        # ripopola la cache dei risultati; l'SVG è byte-identico.
         try:
             result = figure_function_service.render_function_sync(spec, language=None)
         except FunctionRenderError as exc:
@@ -1092,16 +1113,28 @@ class FunctionRenderer:
         # fence ```json riceve le traduzioni sul JSON, non resta invariato.
         return figure_function_service.apply_translations(self.sanitize(content), tr)
 
-    def computed_caption(self, content: str, *, language: str | None) -> str:
+    def computed_caption(self, content: str, *, language: str | None, asset_id: str = "") -> str:
         """Coda della didascalia calcolata (D9) nella lingua richiesta,
         letta dalla cache dei risultati del motore popolata da
         `render_svg`/`validate(deep=True)`; mai calcolata qui. Vuota se la
-        spec non è valida o il risultato non è (più) in cache."""
+        spec non è valida (nessun SVG a monte: il fallback è già loggato)
+        o se il risultato non è (più) in cache: quest'ultimo caso non deve
+        accadere dopo `render_svg_map` (che lo ripopola) ed è loggato come
+        `figure_caption_missing`, così una coda persa non è silenziosa."""
         spec, _issues = parse_function_spec(self.sanitize(content))
         if spec is None:
             return ""
         hit = figure_function_service.cached_result(spec, language=language)
-        return hit.computed_caption if hit is not None else ""
+        if hit is None:
+            log.warning(
+                "figure_caption_missing",
+                format=self.fmt,
+                asset_id=asset_id,
+                language=language,
+                reason="result_not_cached",
+            )
+            return ""
+        return hit.computed_caption
 
 
 # ---------------------------------------------------------------------------
@@ -1208,14 +1241,26 @@ async def render_function(
             raise FigureTimeoutError(f"render-function: oltre {timeout:g} s") from exc
 
 
-def function_computed_caption(content: str, *, language: str | None) -> str:
+def function_computed_caption(content: str, *, language: str | None, asset_id: str = "") -> str:
     """Coda della didascalia di una figura `function` già renderizzata
     (`FunctionRenderer.computed_caption`): il PDF la passa al partial come
-    `extra_caption`. Stringa vuota per ogni altro caso."""
+    `extra_caption`. Stringa vuota per ogni altro caso (`asset_id` è solo
+    contesto del log `figure_caption_missing`)."""
     renderer = REGISTRY.get("function")
     if not isinstance(renderer, FunctionRenderer):
         return ""
-    return renderer.computed_caption(content, language=language)
+    return renderer.computed_caption(content, language=language, asset_id=asset_id)
+
+
+def _svg_cache_hit_complete(renderer: FigureRenderer, sanitized: str) -> bool:
+    """Un hit della cache SVG basta ai formati il cui unico prodotto è
+    l'SVG. Per `function` serve anche il risultato del motore (coda della
+    didascalia, D9) nella cache dei risultati, che ha traffico diverso: le
+    anteprime dell'editor la riempiono senza toccare quella degli SVG. Se
+    manca, la figura torna nel batch e `render_svg` ripopola entrambe."""
+    if isinstance(renderer, FunctionRenderer):
+        return renderer.result_cached(sanitized)
+    return True
 
 
 def _iter_renderable(assets: Sequence[Mapping[str, Any]]) -> Iterator[tuple[str, str, str]]:
@@ -1233,11 +1278,12 @@ async def render_svg_map(assets: Sequence[Mapping[str, Any]], *, language: str) 
     Unico punto di `asyncio.to_thread` + `asyncio.wait_for` + semaforo
     (tenuto dal chiamante async, rilasciato anche su timeout). Raggruppa
     per formato e chiama UNA `render_svg_batch` per formato; serve dalla
-    cache LRU e salta le chiavi in cache negativa (render fallito negli
-    ultimi 60 s). Non solleva mai: timeout ed eccezioni producono
-    `figure_render_failed` e la chiave resta assente (fallback del
-    partial). `language` è solo contesto di log (vedi la docstring del
-    modulo sulla chiave di cache).
+    cache LRU (per `function` solo se anche il risultato del motore è in
+    cache: `_svg_cache_hit_complete`) e salta le chiavi in cache negativa
+    (render fallito negli ultimi 60 s). Non solleva mai: timeout ed
+    eccezioni producono `figure_render_failed` e la chiave resta assente
+    (fallback del partial). `language` è solo contesto di log (vedi la
+    docstring del modulo sulla chiave di cache).
     """
     settings = get_settings()
     timeout = float(settings.figure_render_timeout_seconds)
@@ -1253,7 +1299,7 @@ async def render_svg_map(assets: Sequence[Mapping[str, Any]], *, language: str) 
         sanitized = renderer.sanitize(content)
         key = cache_key(fmt, sanitized)
         hit = _cache_get(key)
-        if hit is not None:
+        if hit is not None and _svg_cache_hit_complete(renderer, sanitized):
             result[asset_id] = hit
             continue
         if _cache_is_negative(key):

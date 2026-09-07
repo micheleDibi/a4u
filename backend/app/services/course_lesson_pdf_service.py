@@ -499,7 +499,7 @@ def _render_visual_asset_block(
             )
             if fmt == "function":
                 extra_caption = figure_render_service.function_computed_caption(
-                    content, language=language
+                    content, language=language, asset_id=asset_id
                 )
         else:
             fallback_source, fallback_reason = content, "svg_missing"
@@ -673,6 +673,12 @@ def _render_example_block(
     return f'<aside class="example">{title_html}<div class="example-body">{inner_html}</div></aside>'
 
 
+def _asset_key(asset_id: object) -> str:
+    """Id normalizzato della chiave della mappa asset (`.strip().lower()`,
+    come `_substitute_asset_refs` e `figure_numbering`)."""
+    return str(asset_id or "").strip().lower()
+
+
 def _build_asset_html_map(
     content: dict[str, Any],
     *,
@@ -685,10 +691,12 @@ def _build_asset_html_map(
 ) -> dict[tuple[str, str], str]:
     """Pre-renderizza ogni asset una sola volta. Chiavi: (KIND, id).
 
-    L'id nella chiave è normalizzato a minuscolo: i riferimenti `[KIND:id]`
-    nel testo e l'id dichiarato dell'asset sono generati dall'AI con case
-    non sempre coerente (es. asset `TAB_x` referenziato come `[TAB:tab_x]`).
-    Il lookup in `_substitute_asset_refs` normalizza nello stesso modo.
+    L'id nella chiave è normalizzato con `.strip().lower()`: i riferimenti
+    `[KIND:id]` nel testo e l'id dichiarato dell'asset sono generati
+    dall'AI con case e spazi non sempre coerenti (es. asset `TAB_x`
+    referenziato come `[TAB:tab_x]`, o `[FIG: A ]`). Il lookup in
+    `_substitute_asset_refs` e `compute_figure_numbers` normalizzano nello
+    stesso modo.
 
     `visual_svg_map` è il dict {asset_id → svg} prodotto da
     `_prerender_visual_assets_for_lesson` (tutti i formati renderizzabili).
@@ -700,26 +708,26 @@ def _build_asset_html_map(
     figure_i18n = labels if labels is not None else figure_labels(language)
     out: dict[tuple[str, str], str] = {}
     for asset in content.get("visual_assets") or []:
-        key = str(asset.get("asset_id", "")).lower()
+        key = _asset_key(asset.get("asset_id"))
         out[("FIG", key)] = _render_visual_asset_block(
             asset,
             visual_svg_map=visual_svg_map,
-            number=numbers.get(key.strip()),
+            number=numbers.get(key),
             labels=figure_i18n,
             variant="lesson",
             language=language,
             lesson_code=lesson_code,
         )
     for table in content.get("tables") or []:
-        out[("TAB", str(table.get("table_id", "")).lower())] = _render_table_block(
+        out[("TAB", _asset_key(table.get("table_id")))] = _render_table_block(
             table, math_svg_map=math_svg_map
         )
     for eq in content.get("equations") or []:
-        out[("EQ", str(eq.get("equation_id", "")).lower())] = _render_equation_block(
+        out[("EQ", _asset_key(eq.get("equation_id")))] = _render_equation_block(
             eq, math_svg_map=math_svg_map, language=language
         )
     for ex in content.get("examples") or []:
-        out[("EX", str(ex.get("example_id", "")).lower())] = _render_example_block(
+        out[("EX", _asset_key(ex.get("example_id")))] = _render_example_block(
             ex, math_svg_map=math_svg_map
         )
     return out

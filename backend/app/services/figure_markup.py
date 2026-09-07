@@ -15,10 +15,17 @@ Contratto:
   «Figura N.» / «Figure N.» (`courses.figures.label` interpolata con `n`)
   oppure «Figura.» (`labelUnnumbered`) quando `number` è `None` (slide e
   frame video, A2);
+- `extra_caption` (coda calcolata di `function`, D9) è omessa quando la
+  didascalia dell'autore termina già con lo stesso testo (guardia
+  anti-doppia coda di Q4: `if caption.rstrip().endswith(tail): tail = ""`,
+  da replicare nel frontend in `FigureFrame.extraCaption`);
 - l'output non contiene righe vuote: nel markdown della dispensa il blocco
   è un HTML block di markdown-it, che si chiude alla prima riga vuota. Le
   righe vuote del sorgente di fallback sono rese con U+00A0 (non è spazio
-  per markdown-it, è invisibile nel `<pre>`).
+  per markdown-it, è invisibile nel `<pre>`); le righe vuote di `body_html`
+  (spazio bianco fra tag di un SVG inline: Mermaid non ne emette, le
+  fixture 10 e 11 ne hanno zero) sono rimosse, così la garanzia vale per
+  l'intero blocco e non solo per le parti prodotte dal partial.
 """
 
 from __future__ import annotations
@@ -47,6 +54,7 @@ _env = Environment(
 )
 
 _BLANK_LINE_RE = re.compile(r"(?m)^[ \t]*$")
+_BLANK_LINE_WITH_BREAK_RE = re.compile(r"(?m)^[ \t]*\r?\n")
 _CLASS_TOKEN_RE = re.compile(r"[^a-z0-9_-]+")
 
 
@@ -62,6 +70,16 @@ def _fallback_text(source: str | None) -> Markup:
     text = (source or "").replace("\r\n", "\n").replace("\r", "\n")
     escaped = str(escape(text))
     return Markup(_BLANK_LINE_RE.sub("\u00a0", escaped))
+
+
+def _body_without_blank_lines(body_html: Markup) -> Markup:
+    """Body senza righe vuote (spazio bianco fra tag): una riga vuota
+    dentro l'SVG inline chiuderebbe l'HTML block di markdown-it e il resto
+    del wrapper finirebbe in un `<p>`. Per gli SVG senza righe vuote (tutti
+    quelli di Mermaid) è l'identità: il body resta byte-identico (A11-L3)."""
+    if "\n" not in body_html:
+        return body_html
+    return Markup(_BLANK_LINE_WITH_BREAK_RE.sub("", str(body_html)))
 
 
 def figure_label(labels: Mapping[str, str], number: int | None) -> str:
@@ -90,6 +108,11 @@ def render_figure_html(
     labels = labels if labels is not None else figure_labels(None)
     caption_text = _one_line(strip_figure_prefix(_one_line(caption)))
     alt = _one_line(alt_text)
+    extra = _one_line(extra_caption)
+    if extra and caption_text.rstrip().endswith(extra.rstrip()):
+        # Guardia anti-doppia coda (Q4): il docente ha copiato nella
+        # didascalia la coda calcolata mostrata dall'anteprima.
+        extra = ""
     fmt_class = _CLASS_TOKEN_RE.sub("", (fmt or "").lower()) or "unknown"
     template = _env.get_template("figure.html.j2")
     html = template.render(
@@ -97,11 +120,11 @@ def render_figure_html(
         fmt_class=fmt_class,
         asset_id=_one_line(asset_id),
         aria_label=alt or caption_text,
-        body_html=body_html,
+        body_html=_body_without_blank_lines(body_html) if body_html is not None else None,
         fallback_source=_fallback_text(fallback_source) if body_html is None else "",
         label=figure_label(labels, number),
         caption=caption_text,
-        extra_caption=_one_line(extra_caption),
+        extra_caption=extra,
     )
     return html.strip()
 

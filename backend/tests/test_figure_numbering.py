@@ -7,7 +7,9 @@
 - `FIG` case-sensitive (`[fig:x]` ignorato), id case-insensitive;
 - asset non citati accodati dopo il testo in ordine di array (A12) e
   numerati dopo le citate;
-- `strip_figure_prefix` con cifra obbligatoria, solo a render.
+- `strip_figure_prefix` con cifra obbligatoria e separatore obbligatorio
+  dopo il numero (o fine del testo), solo a render: mai «lossy» su una
+  frase («Figure 2 shows the flow»).
 """
 
 from __future__ import annotations
@@ -106,6 +108,15 @@ def test_cited_figure_ids_normalizes_and_deduplicates() -> None:
         ("Figura", "Figura"),
         ("Figura X. Non numerata", "Figura X. Non numerata"),
         ("Figurine 3 pezzi", "Figurine 3 pezzi"),
+        # Separatore obbligatorio: senza, il numero fa parte della frase.
+        ("Figure 2 shows the flow", "Figure 2 shows the flow"),
+        ("Figura 3 e 4 a confronto", "Figura 3 e 4 a confronto"),
+        ("Figura 1.2 Schema", "Figura 1.2 Schema"),  # «1.» non è un separatore
+        ("Figura 1.2: Schema", "Schema"),
+        ("Figura 3.", ""),
+        ("Figura 3   ", ""),
+        ("Fig. 10b) Dettaglio", "Dettaglio"),
+        ("Figura 3. 2 casi", "2 casi"),  # separatore seguito da spazio, poi cifra
     ],
 )
 def test_strip_prefix_edge_cases(caption: str, expected: str) -> None:
