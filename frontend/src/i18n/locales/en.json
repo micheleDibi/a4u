@@ -805,6 +805,13 @@
         "edit": "Edit"
       },
       "render": {
+        "missingAsset": "Asset not found:",
+        "figure": {
+          "syntaxError": "Invalid diagram syntax.",
+          "renderFailed": "Error while rendering the diagram.",
+          "mermaidHint": "The Mermaid code contains an error and the diagram could not be generated. Open the lesson editor to fix the source.",
+          "showDetails": "Show source and error details"
+        },
         "words": "{{count}} estimated words",
         "intro": "Introduction",
         "sections": "Sections",
@@ -867,7 +874,7 @@
       },
       "editor": {
         "text": "Lesson text",
-        "visualAssets": "Visual assets (Mermaid diagrams or uploaded images)",
+        "visualAssets": "Visual assets (figures and images)",
         "tables": "Tables",
         "equations": "Equations",
         "examples": "Examples",
@@ -893,8 +900,12 @@
           "convertToMermaidFailed": "Conversion failed. Try again.",
           "imageUploaded": "Image uploaded.",
           "imageUploadFailed": "Image upload failed.",
-          "uploading": "Uploading…"
+          "uploading": "Uploading…",
+          "writeVegalite": "Write a Vega-Lite chart",
+          "writeDot": "Write a Graphviz graph (DOT)",
+          "writeFunction": "Compose a mathematical figure"
         },
+        "assetRejected": "Asset rejected by the server",
         "legacyAssetBanner": "Legacy asset, no longer editable. Delete it and recreate as a Mermaid diagram or an uploaded image.",
         "refCode": "Reference code",
         "refCopy": "Copy reference",
@@ -1004,6 +1015,84 @@
             "class": "Class diagram",
             "gantt": "Gantt"
           }
+        },
+        "vegalite": {
+          "title": "Vega-Lite chart",
+          "code": "Specification (JSON)",
+          "preview": "Preview",
+          "previewEmpty": "Type the specification (or pick a template) to see the preview",
+          "insertTemplate": "Insert template…",
+          "templates": {
+            "histogram": "Histogram",
+            "barsWithError": "Bars with error bars",
+            "scatter": "Scatter plot",
+            "boxplot": "Box plot",
+            "timeSeries": "Time series"
+          }
+        },
+        "dot": {
+          "title": "Graphviz graph (DOT)",
+          "code": "DOT source",
+          "preview": "Preview",
+          "previewEmpty": "Type the source (or pick a template) to see the preview",
+          "insertTemplate": "Insert template…",
+          "templates": {
+            "tree": "Tree",
+            "digraph": "Directed graph",
+            "automaton": "Finite-state automaton",
+            "cluster": "Graph with clusters"
+          }
+        },
+        "function": {
+          "title": "Mathematical figure",
+          "kind": "Figure type",
+          "kinds": {
+            "function_study": "Function study",
+            "tangent": "Tangent line",
+            "area": "Area under the curve",
+            "family": "Family of curves",
+            "level_curves": "Level curves"
+          },
+          "expressions": "Expressions",
+          "expression": "Expression",
+          "expressionLabel": "Name",
+          "addExpression": "Add expression",
+          "syntaxHint": "Syntax: 2*x (not 2x), x**2 (not x^2); functions sin, cos, tan, exp, log, sqrt, abs; constants pi and E.",
+          "variable": "Variable",
+          "variables": "Variables",
+          "domain": "Domain (x axis)",
+          "range": "Range (y axis)",
+          "rangeAuto": "Automatic range",
+          "min": "Minimum",
+          "max": "Maximum",
+          "show": "Analyses to show",
+          "showItems": {
+            "zeros": "Zeros",
+            "critical_points": "Critical points",
+            "inflection_points": "Inflection points",
+            "asymptotes": "Asymptotes",
+            "discontinuities": "Discontinuities",
+            "formula": "Formula"
+          },
+          "annotations": "Annotations",
+          "annotationKinds": {
+            "tangent": "Tangent",
+            "area": "Area",
+            "point": "Point"
+          },
+          "addAnnotation": "Add annotation",
+          "annotationLabel": "Label",
+          "at": "Abscissa",
+          "againstAxis": "Against the axis",
+          "parameterName": "Parameter",
+          "parameterValues": "Parameter values (comma-separated)",
+          "levels": "Levels",
+          "levelsHint": "A number (how many levels) or the values, comma-separated.",
+          "advanced": "Advanced",
+          "samplingPoints": "Sampling points ({{min}}–{{max}})",
+          "preview": "Preview",
+          "previewIncomplete": "Fill in the required fields to see the preview",
+          "previewInvalid": "Fix the highlighted fields to refresh the preview"
         }
       }
     },
@@ -1091,7 +1180,13 @@
         "assetIdLabel": "Asset ID",
         "assetContent": "Content",
         "assetCaption": "Caption",
-        "assetAltText": "Alt text"
+        "assetAltText": "Alt text",
+        "assetKinds": {
+          "table": "Table",
+          "equation": "Equation",
+          "example": "Example",
+          "new": "new"
+        }
       },
       "dialog": {
         "generateLesson": {
@@ -1485,6 +1580,36 @@
       "speechPdf": {
         "label": "PDF out of sync with current speech",
         "action": "Regenerate PDF"
+      }
+    },
+    "figures": {
+      "label": "Figure {{n}}.",
+      "labelUnnumbered": "Figure.",
+      "illustrativeData": "Illustrative data, not experimental.",
+      "approxValues": "Approximate values.",
+      "renderError": "The figure could not be rendered.",
+      "loading": "Loading figure…",
+      "missing": "Figure not available.",
+      "formats": {
+        "mermaid": "Mermaid diagram",
+        "vegalite": "Vega-Lite chart",
+        "dot": "Graphviz graph",
+        "function": "Mathematical figure",
+        "image": "Image"
+      },
+      "function": {
+        "zeros": "Zeros at {{var}} = {{values}}.",
+        "zero_intervals": "Vanishes on {{values}}.",
+        "critical_points": "Critical points at {{var}} = {{values}}.",
+        "inflection_points": "Inflection points at {{var}} = {{values}}.",
+        "asymptote_vertical": "Vertical asymptote {{expr}}.",
+        "asymptote_horizontal": "Horizontal asymptote {{expr}}.",
+        "asymptote_oblique": "Oblique asymptote {{expr}}.",
+        "integral": "Integral over [{{a}}, {{b}}] equal to {{value}}.",
+        "tangent": "Tangent at {{var}} = {{at}} with slope {{slope}}.",
+        "levels": "Level curves for z = {{values}}.",
+        "none": "No notable points in the considered domain.",
+        "truncated": "List truncated to the first {{n}} points per category."
       }
     },
     "theorem": {

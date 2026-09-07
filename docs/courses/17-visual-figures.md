@@ -1525,7 +1525,29 @@ esplicito, mai falliscono. Vedi [backend/11 — Tests](../backend/11-tests.md).
 4. verifica a occhio: «Figura N.» in ordine di citazione, orfana in coda,
    nessuna card, palette e font del tema, box di errore controllato con
    `courses.figures.renderError` per un asset invalido;
-5. esito: (da completare in WP6).
+5. esito WP5 (macOS, 7 settembre): eseguito con backend su `:8001`
+   (`FRONTEND_ORIGIN=http://localhost:5174`, perché `8000`/`5173` erano
+   occupate da un altro progetto) e vite su `:5174` con un `vite.smoke.config.ts`
+   temporaneo; seed di `a4u_e2e` (`scratchpad/consegna/smoke_seed.py`: org,
+   docente `manager`, corso con una lezione `ready`) e Playwright Python
+   (`scratchpad/consegna/smoke_playwright.py`): login dal form; PATCH con
+   una spec Vega-Lite senza `clip`/`scale.domain` → 422
+   `lesson_content_invalid_visual_asset` con `meta.errors[0].loc =
+   ["visual_assets", 1, "content"]`; PATCH con `mermaid`, `vegalite`,
+   `dot`, `function` e un secondo `mermaid` non citato → 200; nella vista
+   i quattro renderer pronti (`figure--mermaid svg`, `figure--vegalite
+   svg`, `figure--dot svg`, `figure--function img`) e didascalie «Figura
+   1.» … «Figura 5.» in ordine di citazione (F1 e F3 citate due volte con lo
+   stesso numero, la coda calcolata di `function` «Zeri in x = −1, 1. …
+   Asintoto obliquo y = x + 2.», l'orfana in coda alla sintesi prima dei
+   punti chiave), nessuna card; nel dialog i quattro editor con anteprima
+   e badge di formato, e con una spec non parsabile il box controllato
+   «Impossibile visualizzare la figura.» al posto dell'anteprima. Immagini:
+   `scratchpad/consegna/lesson_content_view.png`,
+   `lesson_content_edit.png`, `lesson_content_edit_assets.png`,
+   `lesson_content_edit_function.png`, `lesson_content_edit_invalid.png`.
+   L'asset `image` non è stato incluso (richiede un file caricato sullo
+   storage).
 
 ### 14.3 Misure e prove residue
 
@@ -1535,7 +1557,15 @@ esplicito, mai falliscono. Vedi [backend/11 — Tests](../backend/11-tests.md).
   `graphviz`. Esito: (da completare in WP6).
 - Dimensione del bundle frontend prima (build pulito su HEAD prima di WP5)
   e dopo, con i kB dei chunk `vega`/`vega-lite`/`vega-embed`/`@viz-js/viz`
-  (import dinamici). Esito: (da completare in WP6).
+  (import dinamici). Esito WP5 (`vite build`, kB minificati, gzip fra
+  parentesi): totale JS+CSS 6.333 (1.772) → 8.431 (2.548), 61 → 71 chunk;
+  `index.js` 3.057 (853) → 3.092 (863); `mermaid.core.js` 678 (167) → 647
+  (158); chunk nuovi caricati solo a richiesta: `viz.js` 1.262 (485, il
+  WebAssembly di Graphviz è inlinato in base64), `embed.js` 792 (276:
+  vega + vega-lite + vega-embed), `step.js` 32, `time.js` 18,
+  `figureTheme.js` 4, `VegaLiteDiagram.js`/`MermaidDiagram.js`/
+  `DotDiagram.js` ≈ 1-2 ciascuno. Il bundle iniziale cresce di 35 kB
+  (editor e cornice, senza librerie di render).
 - Esito di `backend/scripts/revalidate_mermaid_assets.py` sul dump del
   docente o run sintetica dichiarata (A24). Esito: (da completare in WP6).
 - Prova manuale di `spawn` sotto uvicorn. Esito WP2b (macOS, 7 settembre):
@@ -1563,7 +1593,9 @@ esplicito, mai falliscono. Vedi [backend/11 — Tests](../backend/11-tests.md).
   False)`: `scratchpad/wp4_frame.png` (slide `function` con la didascalia
   calcolata) e `scratchpad/wp4_frames/slide_001..005.png`; «Figura.» in
   grassetto senza numero, nessuna card, fallback `<pre>` con il sorgente
-  nella quinta slide. Frontend: (da completare in WP5/WP6).
+  nella quinta slide. Frontend: esito WP5 nella checklist 14.2
+  (`scratchpad/consegna/lesson_content_view.png` con i quattro formati e
+  l'orfana in coda; dialog di modifica in `lesson_content_edit*.png`).
 - Resa di `<img src="data:image/svg+xml;base64,…">` in WeasyPrint 69
   (verifica residua del piano). Esito WP4 (macOS, 7 settembre): il testo
   degli SVG matplotlib (`svg.fonttype: none`), vl-convert e `dot` dentro

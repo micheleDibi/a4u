@@ -1,8 +1,10 @@
-import { AlertTriangle } from "lucide-react";
 import { memo, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { mermaidConfig } from "@/lib/figureTheme";
 import { cn } from "@/lib/utils";
+
+import { FigureErrorBox, FigureLoading } from "./FigureFrame";
 
 interface MermaidDiagramProps {
   code: string;
@@ -46,16 +48,19 @@ async function ensureMermaid() {
   return mermaid;
 }
 
+type MermaidFailure = { kind: "syntax" } | { kind: "render"; detail: string };
+
 function MermaidDiagramImpl({ code, className }: MermaidDiagramProps) {
+  const { t } = useTranslation();
   const [svg, setSvg] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<MermaidFailure | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   const cleanCode = sanitizeMermaidCode(code);
 
   useEffect(() => {
     let cancelled = false;
-    setError(null);
+    setFailure(null);
     setSvg(null);
 
     (async () => {
@@ -73,9 +78,7 @@ function MermaidDiagramImpl({ code, className }: MermaidDiagramProps) {
           suppressErrors: true,
         });
         if (!parseOk) {
-          if (!cancelled) {
-            setError("Sintassi del diagramma non valida.");
-          }
+          if (!cancelled) setFailure({ kind: "syntax" });
           return;
         }
 
@@ -97,11 +100,10 @@ function MermaidDiagramImpl({ code, className }: MermaidDiagramProps) {
         }
       } catch (exc) {
         if (!cancelled) {
-          setError(
-            exc instanceof Error
-              ? exc.message
-              : "Errore durante il rendering del diagramma.",
-          );
+          setFailure({
+            kind: "render",
+            detail: exc instanceof Error ? exc.message : String(exc),
+          });
         }
       }
     })();
@@ -111,47 +113,24 @@ function MermaidDiagramImpl({ code, className }: MermaidDiagramProps) {
     };
   }, [cleanCode]);
 
-  if (error) {
+  if (failure) {
     return (
-      <div
-        className={cn(
-          "rounded-md border border-amber-300/60 bg-amber-50/60 p-3 text-xs",
-          "dark:border-amber-700/40 dark:bg-amber-950/30",
-          className,
-        )}
-      >
-        <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200">
-          <AlertTriangle className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
-          <span className="font-medium">Diagramma non disponibile</span>
-        </div>
-        <p className="mt-1 text-amber-700/90 dark:text-amber-300/80">
-          Il codice mermaid contiene un errore di sintassi e non è stato
-          possibile generare il diagramma. Apri l'editor della lezione per
-          correggere il sorgente.
-        </p>
-        <details className="mt-2">
-          <summary className="cursor-pointer text-amber-700 dark:text-amber-300">
-            Mostra codice e dettagli errore
-          </summary>
-          <div className="mt-2 space-y-2">
-            <div className="font-mono text-[0.7rem] text-amber-900/80 dark:text-amber-200/80">
-              {error}
-            </div>
-            <pre className="overflow-x-auto whitespace-pre-wrap rounded bg-amber-100/60 p-2 text-[0.7rem] text-amber-900 dark:bg-amber-950/60 dark:text-amber-100">
-              {cleanCode}
-            </pre>
-          </div>
-        </details>
-      </div>
+      <FigureErrorBox
+        className={className}
+        hint={t("courses.lessonsContent.render.figure.mermaidHint")}
+        detail={
+          failure.kind === "syntax"
+            ? t("courses.lessonsContent.render.figure.syntaxError")
+            : failure.detail ||
+              t("courses.lessonsContent.render.figure.renderFailed")
+        }
+        source={cleanCode}
+      />
     );
   }
 
   if (!svg) {
-    return (
-      <div className="flex h-32 animate-pulse items-center justify-center rounded bg-muted text-xs text-muted-foreground">
-        Rendering del diagramma…
-      </div>
-    );
+    return <FigureLoading />;
   }
 
   return (

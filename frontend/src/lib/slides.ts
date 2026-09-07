@@ -9,6 +9,8 @@
  * Il viewer FE risolve l'ID in un payload tipizzato + ne sceglie il
  * componente di rendering corretto.
  */
+import type { TFunction } from "i18next";
+
 import type {
   LessonContentRaw,
   LessonContentVisualAsset,
@@ -17,6 +19,7 @@ import type {
   LessonContentExample,
   LessonSlideNewAsset,
 } from "@/api/courses";
+import { formatLabel } from "@/lib/figureFormats";
 
 export type ResolvedAsset =
   | { kind: "visual"; payload: LessonContentVisualAsset }
@@ -86,6 +89,8 @@ export function resolveAsset(
 /**
  * Lista tutti gli asset disponibili (Fase 3 + Fase 4) per un editor
  * multi-select. Ordine: visual, table, equation, example, new_assets.
+ * L'etichetta è `id (formato)` con il formato localizzato da
+ * `formatLabel` («A1 (Grafico Vega-Lite)», «tab_new_1 (Tabella, nuovo)»).
  */
 export interface AssetOption {
   id: string;
@@ -97,34 +102,37 @@ export interface AssetOption {
 export function listAvailableAssets(
   contentRaw: LessonContentRaw | null,
   newAssets: LessonSlideNewAsset[],
-  newTables: LessonContentTable[] = [],
-  newEquations: LessonContentEquation[] = [],
-  newExamples: LessonContentExample[] = [],
+  newTables: LessonContentTable[],
+  newEquations: LessonContentEquation[],
+  newExamples: LessonContentExample[],
+  t: TFunction,
 ): AssetOption[] {
   const out: AssetOption[] = [];
+  const label = (id: string, format: string, isNew = false) =>
+    `${id} (${formatLabel(format, t, { isNew })})`;
 
   if (contentRaw) {
     for (const a of contentRaw.visual_assets) {
       out.push({
         id: a.asset_id,
         kind: "visual",
-        label: `${a.asset_id} (${a.format})`,
+        label: label(a.asset_id, a.format),
         caption: a.caption,
       });
     }
-    for (const t of contentRaw.tables) {
+    for (const tb of contentRaw.tables) {
       out.push({
-        id: t.table_id,
+        id: tb.table_id,
         kind: "table",
-        label: `${t.table_id} (table)`,
-        caption: t.caption,
+        label: label(tb.table_id, "table"),
+        caption: tb.caption,
       });
     }
     for (const e of contentRaw.equations) {
       out.push({
         id: e.equation_id,
         kind: "equation",
-        label: `${e.equation_id} (equation)`,
+        label: label(e.equation_id, "equation"),
         caption: e.label,
       });
     }
@@ -132,7 +140,7 @@ export function listAvailableAssets(
       out.push({
         id: ex.example_id,
         kind: "example",
-        label: `${ex.example_id} (example)`,
+        label: label(ex.example_id, "example"),
         caption: ex.title,
       });
     }
@@ -142,23 +150,23 @@ export function listAvailableAssets(
     out.push({
       id: na.asset_id,
       kind: "new_visual",
-      label: `${na.asset_id} (${na.format}, new)`,
+      label: label(na.asset_id, na.format, true),
       caption: na.caption,
     });
   }
-  for (const t of newTables) {
+  for (const tb of newTables) {
     out.push({
-      id: t.table_id,
+      id: tb.table_id,
       kind: "table",
-      label: `${t.table_id} (table, new)`,
-      caption: t.caption,
+      label: label(tb.table_id, "table", true),
+      caption: tb.caption,
     });
   }
   for (const e of newEquations) {
     out.push({
       id: e.equation_id,
       kind: "equation",
-      label: `${e.equation_id} (equation, new)`,
+      label: label(e.equation_id, "equation", true),
       caption: e.label,
     });
   }
@@ -166,7 +174,7 @@ export function listAvailableAssets(
     out.push({
       id: ex.example_id,
       kind: "example",
-      label: `${ex.example_id} (example, new)`,
+      label: label(ex.example_id, "example", true),
       caption: ex.title,
     });
   }

@@ -40,8 +40,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Progress } from "@/components/ui/progress";
+import { CourseRefContext } from "@/contexts/CourseRefContext";
 import { useBatchEta } from "@/hooks/useBatchEta";
-import { extractApiError } from "@/lib/errors";
+import { assetErrorsByIndex, extractApiError } from "@/lib/errors";
 import { formatDuration } from "@/lib/formatDuration";
 import { isSlidesPdfStale, isSlidesStale } from "@/lib/staleness";
 
@@ -112,6 +113,16 @@ export function CourseLessonSlidesView({
     kind: "closed",
   });
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Errori 422 per asset dell'ultimo salvataggio manuale, mostrati dal
+  // dialog accanto alla card corrispondente (`meta.errors` del backend).
+  const [assetErrors, setAssetErrors] = useState<Record<number, string>>({});
+
+  // Riferimento al corso per le figure `function` (A21): letto da
+  // `FunctionFigure` via context, senza prop-drilling attraverso le righe.
+  const courseRef = useMemo(
+    () => ({ orgId, courseId: course.id }),
+    [orgId, course.id],
+  );
 
   const detailKey = ["courses", "detail", orgId, course.id];
   const setCache = (fresh: CourseOut) => {
@@ -316,13 +327,18 @@ export function CourseLessonSlidesView({
       coursesApi.lessonSlides.updateLesson(orgId, course.id, lessonId, payload),
     onSuccess: (fresh) => {
       setCache(fresh);
+      setAssetErrors({});
       setEditDialog({ kind: "closed" });
       toast.success(t("courses.lessonsSlides.toast.lessonUpdated"));
     },
-    onError: (err) =>
+    onError: (err) => {
+      // 422 del gate degli asset visivi: gli errori per asset restano nel
+      // dialog accanto alla card; il toast riporta il messaggio generale.
+      setAssetErrors(assetErrorsByIndex(err, "new_assets"));
       toast.error(
         extractApiError(err).message ?? t("courses.lessonsSlides.toast.error"),
-      ),
+      );
+    },
   });
 
   // === PDF export ===
@@ -546,6 +562,7 @@ export function CourseLessonSlidesView({
   }
 
   return (
+    <CourseRefContext.Provider value={courseRef}>
     <div className="space-y-5">
       {/* === Header con aggregate progress === */}
       <Card>
@@ -818,7 +835,11 @@ export function CourseLessonSlidesView({
               : editDialog.lesson.content_raw
           }
           isPending={updateLessonMut.isPending}
-          onClose={() => setEditDialog({ kind: "closed" })}
+          assetErrors={assetErrors}
+          onClose={() => {
+            setAssetErrors({});
+            setEditDialog({ kind: "closed" });
+          }}
           onSubmit={(payload) =>
             updateLessonMut.mutate({
               lessonId: editDialog.lesson.id,
@@ -857,6 +878,7 @@ export function CourseLessonSlidesView({
         />
       )}
     </div>
+    </CourseRefContext.Provider>
   );
 }
 

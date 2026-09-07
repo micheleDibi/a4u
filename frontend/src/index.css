@@ -403,6 +403,15 @@ body {
   margin: 1rem 0;
 }
 
+/* Figure (`FigureFrame`, D4): niente card né arrotondamento; l'SVG
+   delle figure `function` e le immagini caricate stanno nella cornice
+   senza margini propri (la spaziatura è della `<figure>`). Vince sulla
+   regola precedente per specificità. */
+.lesson-prose .figure img {
+  border-radius: 0;
+  margin: 0;
+}
+
 /* Dark mode — gli HSL token già coprono il contrasto, ma le tabelle
    alternate beneficiano di una piccola correzione. */
 .dark .lesson-prose tbody tr:nth-child(even) {

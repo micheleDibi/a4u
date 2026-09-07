@@ -1,20 +1,14 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ChevronDown,
   ChevronRight,
-  Image as ImageIcon,
-  Loader2,
   Plus,
   Save,
-  Sparkles,
   Trash2,
-  Upload,
 } from "lucide-react";
-import { toast } from "sonner";
 
 import {
-  coursesApi,
   type LessonContentEquation,
   type LessonContentExample,
   type LessonContentRaw,
@@ -36,12 +30,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -52,12 +40,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { AddVisualAssetMenu } from "@/components/shared/AddVisualAssetMenu";
 import { LatexEditor } from "@/components/shared/LatexEditor";
-import { MermaidEditor } from "@/components/shared/MermaidEditor";
 import { RichTextEditor } from "@/components/shared/RichTextEditor";
 import { TableEditor } from "@/components/shared/TableEditor";
-import { extractApiError } from "@/lib/errors";
-import { mediaUrl } from "@/lib/media";
+import { VisualAssetEditor } from "@/components/shared/VisualAssetEditor";
+import { isLegacyFormat } from "@/lib/figureFormats";
 import { listAvailableAssets } from "@/lib/slides";
 
 const SLIDE_TYPES: SlideType[] = [
@@ -93,6 +81,13 @@ interface Props {
   contentRaw: LessonContentRaw | null;
   onClose: () => void;
   onSubmit: (payload: LessonSlidesUpdateInput) => void;
+  /**
+   * Errori 422 per asset dell'ultimo salvataggio (`meta.errors` con
+   * `loc = ["new_assets", i, "content"]`), indicizzati per posizione
+   * nell'array INVIATO (gli asset vuoti scartati da `handleSubmit` non
+   * contano): rimappati qui sulle card visibili.
+   */
+  assetErrors?: Record<number, string>;
 }
 
 /**
@@ -118,6 +113,7 @@ export function LessonSlidesEditDialog({
   contentRaw,
   onClose,
   onSubmit,
+  assetErrors,
 }: Props) {
   const { t } = useTranslation();
   // Lazy init: clona `initial` UNA volta al mount. Vedi note in
@@ -139,6 +135,10 @@ export function LessonSlidesEditDialog({
     () => initial.new_examples ?? [],
   );
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Posizioni (nell'elenco visibile) degli asset inviati dall'ultimo
+  // salvataggio: `assetErrors` è indicizzato sull'array inviato, che
+  // esclude le card vuote.
+  const [sentAssetIndices, setSentAssetIndices] = useState<number[]>([]);
 
   // Asset disponibili per le multi-select references_assets.
   const availableAssets = useMemo(
@@ -149,8 +149,9 @@ export function LessonSlidesEditDialog({
         newTables,
         newEquations,
         newExamples,
+        t,
       ),
-    [contentRaw, newAssets, newTables, newEquations, newExamples],
+    [contentRaw, newAssets, newTables, newEquations, newExamples, t],
   );
 
   // Sezioni disponibili per source_section_id.
@@ -234,30 +235,8 @@ export function LessonSlidesEditDialog({
     return `asset_new_${n}`;
   };
 
-  const addMermaidAsset = () => {
-    setNewAssets((prev) => [
-      ...prev,
-      {
-        asset_id: nextNewAssetId(),
-        format: "mermaid",
-        content: "",
-        caption: "",
-        alt_text: "",
-      },
-    ]);
-  };
-
-  const addImageAsset = (path: string) => {
-    setNewAssets((prev) => [
-      ...prev,
-      {
-        asset_id: nextNewAssetId(),
-        format: "image",
-        content: path,
-        caption: "",
-        alt_text: "",
-      },
-    ]);
+  const addNewAsset = (asset: LessonSlideNewAsset) => {
+    setNewAssets((prev) => [...prev, asset]);
   };
 
   const updateNewAsset = (
@@ -360,7 +339,13 @@ export function LessonSlidesEditDialog({
     // Scarta gli asset nuovi senza contenuto (card aggiunta ma lasciata
     // vuota): il BE richiede content non vuoto e li rifiuterebbe con un
     // 422. Mermaid vuoto o immagine non caricata = asset incompleto.
-    const cleanedAssets = newAssets.filter((a) => a.content.trim().length > 0);
+    const sentIndices: number[] = [];
+    const cleanedAssets = newAssets.filter((a, i) => {
+      const keep = a.content.trim().length > 0;
+      if (keep) sentIndices.push(i);
+      return keep;
+    });
+    setSentAssetIndices(sentIndices);
     const cleanedTables = newTables.filter(
       (t) => t.markdown.trim().length > 0,
     );
@@ -442,24 +427,39 @@ export function LessonSlidesEditDialog({
               {t("courses.lessonsContent.editor.visualAssets")}
             </h5>
             {newAssets.map((asset, idx) => (
-              <NewAssetEditCard
+              <VisualAssetEditor
                 key={asset.asset_id + ":" + idx}
                 orgId={orgId}
                 courseId={courseId}
                 asset={asset}
-                onUpdate={(patch) => updateNewAsset(idx, patch)}
-                onRemove={() => removeNewAsset(idx)}
+                onChange={(patch) => updateNewAsset(idx, patch)}
+                onDelete={() => removeNewAsset(idx)}
                 disabled={isPending}
-                t={t}
+                error={assetErrors?.[sentAssetIndices.indexOf(idx)]}
+                idSlot={
+                  <div className="space-y-1.5">
+                    <Label>{t("courses.lessonsSlides.editor.assetIdLabel")}</Label>
+                    <Input
+                      value={asset.asset_id}
+                      onChange={(e) => updateNewAsset(idx, { asset_id: e.target.value })}
+                      disabled={isPending || isLegacyFormat(asset.format)}
+                    />
+                  </div>
+                }
+                labels={{
+                  caption: t("courses.lessonsSlides.editor.assetCaption"),
+                  altText: t("courses.lessonsSlides.editor.assetAltText"),
+                  remove: t("courses.lessonsSlides.editor.removeNewAsset"),
+                }}
               />
             ))}
-            <AddNewAssetMenu
+            <AddVisualAssetMenu
               orgId={orgId}
               courseId={courseId}
-              onAddMermaid={addMermaidAsset}
-              onAddImage={addImageAsset}
+              makeAssetId={nextNewAssetId}
+              onAdd={addNewAsset}
               disabled={isPending}
-              t={t}
+              triggerLabel={t("courses.lessonsSlides.editor.addNewAsset")}
             />
           </div>
 
@@ -888,265 +888,6 @@ function SlideEditCard({
         </div>
       )}
     </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// NewAssetEditCard
-// ---------------------------------------------------------------------------
-
-// Formati legacy (solo lettura) eventualmente presenti in slides_raw
-// generati da AI prima del refactor asset.
-const LEGACY_SLIDE_FORMATS: ReadonlyArray<LessonSlideNewAsset["format"]> = [
-  "image_prompt",
-  "image_search_query",
-  "description",
-];
-
-type TFn = ReturnType<typeof useTranslation>["t"];
-
-interface NewAssetEditCardProps {
-  orgId: string;
-  courseId: string;
-  asset: LessonSlideNewAsset;
-  onUpdate: (patch: Partial<LessonSlideNewAsset>) => void;
-  onRemove: () => void;
-  disabled: boolean;
-  t: TFn;
-}
-
-function NewAssetEditCard({
-  orgId,
-  courseId,
-  asset,
-  onUpdate,
-  onRemove,
-  disabled,
-  t,
-}: NewAssetEditCardProps) {
-  const [converting, setConverting] = useState(false);
-  const isLegacy = LEGACY_SLIDE_FORMATS.includes(asset.format);
-
-  const handleConvertToMermaid = async () => {
-    if (asset.format !== "image" || !asset.content) return;
-    setConverting(true);
-    try {
-      const { mermaid_code } = await coursesApi.lessonAssets.convertToMermaid(
-        orgId,
-        courseId,
-        asset.content,
-      );
-      onUpdate({ format: "mermaid", content: mermaid_code });
-      toast.success(
-        t("courses.lessonsContent.editor.assetActions.convertedToMermaid"),
-      );
-    } catch (err) {
-      toast.error(
-        extractApiError(err).message ??
-          t("courses.lessonsContent.editor.assetActions.convertToMermaidFailed"),
-      );
-    } finally {
-      setConverting(false);
-    }
-  };
-
-  return (
-    <div className="space-y-3 rounded-md border bg-muted/20 p-3">
-      <div className="space-y-1.5">
-        <Label>{t("courses.lessonsSlides.editor.assetIdLabel")}</Label>
-        <Input
-          value={asset.asset_id}
-          onChange={(e) => onUpdate({ asset_id: e.target.value })}
-          disabled={disabled || isLegacy}
-        />
-      </div>
-
-      {asset.format === "mermaid" && (
-        <MermaidEditor
-          value={asset.content}
-          onChange={(code) => onUpdate({ content: code })}
-          disabled={disabled}
-        />
-      )}
-
-      {asset.format === "image" && (
-        <div className="space-y-2">
-          <div className="overflow-hidden rounded-md border bg-background">
-            <img
-              src={mediaUrl(asset.content)}
-              alt={asset.alt_text || ""}
-              className="block max-h-80 w-full object-contain"
-            />
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleConvertToMermaid}
-            disabled={disabled || converting}
-          >
-            {converting ? (
-              <>
-                <Loader2 className="size-3.5 animate-spin" />
-                {t("courses.lessonsContent.editor.assetActions.convertingToMermaid")}
-              </>
-            ) : (
-              <>
-                <Sparkles className="size-3.5" />
-                {t("courses.lessonsContent.editor.assetActions.convertToMermaid")}
-              </>
-            )}
-          </Button>
-        </div>
-      )}
-
-      {isLegacy && (
-        <div className="space-y-2">
-          <div className="rounded-md border border-amber-400/40 bg-amber-50/40 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
-            {t("courses.lessonsContent.editor.legacyAssetBanner")}
-          </div>
-          <Textarea
-            rows={4}
-            value={asset.content}
-            readOnly
-            disabled={disabled}
-            className="font-mono text-xs"
-          />
-        </div>
-      )}
-
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <Label>{t("courses.lessonsSlides.editor.assetCaption")}</Label>
-          <Input
-            value={asset.caption}
-            onChange={(e) => onUpdate({ caption: e.target.value })}
-            disabled={disabled}
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label>{t("courses.lessonsSlides.editor.assetAltText")}</Label>
-          <Input
-            value={asset.alt_text}
-            onChange={(e) => onUpdate({ alt_text: e.target.value })}
-            disabled={disabled}
-          />
-        </div>
-      </div>
-      <div className="flex justify-end">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="text-destructive"
-          onClick={onRemove}
-          disabled={disabled}
-        >
-          <Trash2 className="size-3.5" />
-          {t("courses.lessonsSlides.editor.removeNewAsset")}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// AddNewAssetMenu — dropdown "Carica immagine" / "Scrivi Mermaid"
-// (stesso flusso del content editor delle Dispense)
-// ---------------------------------------------------------------------------
-
-interface AddNewAssetMenuProps {
-  orgId: string;
-  courseId: string;
-  onAddMermaid: () => void;
-  onAddImage: (path: string) => void;
-  disabled: boolean;
-  t: TFn;
-}
-
-function AddNewAssetMenu({
-  orgId,
-  courseId,
-  onAddMermaid,
-  onAddImage,
-  disabled,
-  t,
-}: AddNewAssetMenuProps) {
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [uploading, setUploading] = useState(false);
-
-  const triggerFilePicker = () => {
-    if (disabled || uploading) return;
-    fileInputRef.current?.click();
-  };
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    setUploading(true);
-    try {
-      const { path } = await coursesApi.lessonAssets.upload(
-        orgId,
-        courseId,
-        file,
-      );
-      onAddImage(path);
-      toast.success(
-        t("courses.lessonsContent.editor.assetActions.imageUploaded"),
-      );
-    } catch (err) {
-      toast.error(
-        extractApiError(err).message ??
-          t("courses.lessonsContent.editor.assetActions.imageUploadFailed"),
-      );
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  return (
-    <>
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/png,image/jpeg,image/webp"
-        className="hidden"
-        onChange={handleFileChange}
-      />
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={disabled || uploading}
-          >
-            {uploading ? (
-              <>
-                <Loader2 className="size-3.5 animate-spin" />
-                {t("courses.lessonsContent.editor.assetActions.uploading")}
-              </>
-            ) : (
-              <>
-                <Plus className="size-4" />
-                {t("courses.lessonsSlides.editor.addNewAsset")}
-              </>
-            )}
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start">
-          <DropdownMenuItem onClick={triggerFilePicker} disabled={uploading}>
-            <Upload className="size-3.5" />
-            {t("courses.lessonsContent.editor.assetActions.uploadImage")}
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={onAddMermaid}>
-            <ImageIcon className="size-3.5" />
-            {t("courses.lessonsContent.editor.assetActions.writeMermaid")}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </>
   );
 }
 

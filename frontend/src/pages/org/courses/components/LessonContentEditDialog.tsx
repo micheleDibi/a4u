@@ -8,22 +8,16 @@ import {
   ChevronRight,
   Copy,
   Eye,
-  ImageIcon,
-  Loader2,
   Plus,
   Save,
-  Sparkles,
   Trash2,
-  Upload,
 } from "lucide-react";
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
-import { extractApiError } from "@/lib/errors";
-import { mediaUrl } from "@/lib/media";
+import { isLegacyFormat } from "@/lib/figureFormats";
 
 import {
-  coursesApi,
   type LessonContentEquation,
   type LessonContentExample,
   type LessonContentRaw,
@@ -42,12 +36,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -57,11 +45,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
+import { AddVisualAssetMenu } from "@/components/shared/AddVisualAssetMenu";
 import { LatexEditor } from "@/components/shared/LatexEditor";
-import { MermaidEditor } from "@/components/shared/MermaidEditor";
 import { RichTextEditor } from "@/components/shared/RichTextEditor";
 import { TableEditor } from "@/components/shared/TableEditor";
+import { VisualAssetEditor } from "@/components/shared/VisualAssetEditor";
 
 // Tipi di asset equazione (mirror dello schema BE). Etichette localizzate
 // in `courses.theorem.kind.*`.
@@ -89,6 +77,13 @@ interface Props {
   courseId: string;
   onClose: () => void;
   onSubmit: (payload: LessonContentUpdateInput) => void;
+  /**
+   * Errori 422 per asset dell'ultimo salvataggio (`meta.errors` con
+   * `loc = ["visual_assets", i, "content"]`), indicizzati per posizione:
+   * mostrati accanto all'asset corrispondente finché l'utente non salva
+   * di nuovo.
+   */
+  assetErrors?: Record<number, string>;
 }
 
 /**
@@ -109,6 +104,7 @@ export function LessonContentEditDialog({
   courseId,
   onClose,
   onSubmit,
+  assetErrors,
 }: Props) {
   const { t } = useTranslation();
   const [introduction, setIntroduction] = useState(initial.introduction);
@@ -517,33 +513,60 @@ export function LessonContentEditDialog({
             open={openGroups.visualAssets}
             onToggle={() => toggleGroup("visualAssets")}
           >
-            {visualAssets.map((asset, idx) => (
-              <VisualAssetEditor
-                key={idx}
-                orgId={orgId}
-                courseId={courseId}
-                asset={asset}
-                onChange={(updates) =>
-                  setVisualAssets(
-                    visualAssets.map((a, i) =>
-                      i === idx ? { ...a, ...updates } : a,
-                    ),
-                  )
-                }
-                onIdRename={(oldId, newId) => patchRefs("FIG", oldId, newId)}
-                onDelete={() =>
-                  setVisualAssets(visualAssets.filter((_, i) => i !== idx))
-                }
-                onHighlightUsage={() => highlightUsage("FIG", asset.asset_id)}
-                disabled={isPending}
-              />
-            ))}
+            {visualAssets.map((asset, idx) => {
+              const patchAsset = (updates: Partial<LessonContentVisualAsset>) =>
+                setVisualAssets(
+                  visualAssets.map((a, i) =>
+                    i === idx ? { ...a, ...updates } : a,
+                  ),
+                );
+              return (
+                <VisualAssetEditor
+                  key={idx}
+                  orgId={orgId}
+                  courseId={courseId}
+                  asset={asset}
+                  onChange={patchAsset}
+                  onDelete={() =>
+                    setVisualAssets(visualAssets.filter((_, i) => i !== idx))
+                  }
+                  disabled={isPending}
+                  error={assetErrors?.[idx]}
+                  idSlot={
+                    <RefIdField
+                      kind="FIG"
+                      id={asset.asset_id}
+                      onChange={(id) => {
+                        const oldId = asset.asset_id;
+                        patchAsset({ asset_id: id });
+                        patchRefs("FIG", oldId, id);
+                      }}
+                      disabled={isPending || isLegacyFormat(asset.format)}
+                    />
+                  }
+                  headerActions={
+                    <HighlightUsageButton
+                      onClick={() => highlightUsage("FIG", asset.asset_id)}
+                      disabled={isPending || !asset.asset_id.trim()}
+                    />
+                  }
+                  labels={{
+                    caption: t("courses.lessonsContent.editor.caption"),
+                    altText: t("courses.lessonsContent.editor.altText"),
+                    remove: t("common.delete"),
+                  }}
+                />
+              );
+            })}
             <AddVisualAssetMenu
               orgId={orgId}
               courseId={courseId}
-              nextIndex={visualAssets.length + 1}
+              makeAssetId={() => nextVisualAssetId(visualAssets)}
               onAdd={(asset) => setVisualAssets([...visualAssets, asset])}
               disabled={isPending}
+              triggerLabel={t(
+                "courses.lessonsContent.editor.assetActions.addVisualAsset",
+              )}
             />
           </SectionGroup>
 
@@ -1163,282 +1186,17 @@ function RefIdField({ kind, id, onChange, disabled }: RefIdFieldProps) {
   );
 }
 
-interface VisualAssetEditorProps {
-  orgId: string;
-  courseId: string;
-  asset: LessonContentVisualAsset;
-  onChange: (updates: Partial<LessonContentVisualAsset>) => void;
-  onIdRename: (oldId: string, newId: string) => void;
-  onDelete: () => void;
-  onHighlightUsage: () => void;
-  disabled: boolean;
-}
-
-const LEGACY_FORMATS: ReadonlyArray<LessonContentVisualAsset["format"]> = [
-  "image_prompt",
-  "image_search_query",
-  "description",
-];
-
-function VisualAssetEditor({
-  orgId,
-  courseId,
-  asset,
-  onChange,
-  onIdRename,
-  onDelete,
-  onHighlightUsage,
-  disabled,
-}: VisualAssetEditorProps) {
-  const { t } = useTranslation();
-  const [converting, setConverting] = useState(false);
-
-  const isLegacy = LEGACY_FORMATS.includes(asset.format);
-
-  const handleConvertToMermaid = async () => {
-    if (asset.format !== "image" || !asset.content) return;
-    setConverting(true);
-    try {
-      const { mermaid_code } =
-        await coursesApi.lessonAssets.convertToMermaid(
-          orgId,
-          courseId,
-          asset.content,
-        );
-      onChange({ format: "mermaid", content: mermaid_code });
-      toast.success(
-        t("courses.lessonsContent.editor.assetActions.convertedToMermaid"),
-      );
-    } catch (err) {
-      toast.error(
-        extractApiError(err).message ??
-          t("courses.lessonsContent.editor.assetActions.convertToMermaidFailed"),
-      );
-    } finally {
-      setConverting(false);
-    }
-  };
-
-  return (
-    <div className="space-y-2 rounded-md border bg-muted/20 p-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="flex-1 min-w-0">
-          <RefIdField
-            kind="FIG"
-            id={asset.asset_id}
-            onChange={(id) => {
-              const oldId = asset.asset_id;
-              onChange({ asset_id: id });
-              onIdRename(oldId, id);
-            }}
-            disabled={disabled || isLegacy}
-          />
-        </div>
-        <HighlightUsageButton
-          onClick={onHighlightUsage}
-          disabled={disabled || !asset.asset_id.trim()}
-        />
-      </div>
-
-      {asset.format === "mermaid" && (
-        <MermaidEditor
-          value={asset.content}
-          onChange={(code) => onChange({ content: code })}
-          disabled={disabled}
-        />
-      )}
-
-      {asset.format === "image" && (
-        <div className="space-y-2">
-          <div className="overflow-hidden rounded-md border bg-background">
-            <img
-              src={mediaUrl(asset.content)}
-              alt={asset.alt_text || ""}
-              className="block max-h-80 w-full object-contain"
-            />
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleConvertToMermaid}
-            disabled={disabled || converting}
-          >
-            {converting ? (
-              <>
-                <Loader2 className="size-3.5 animate-spin" />
-                {t(
-                  "courses.lessonsContent.editor.assetActions.convertingToMermaid",
-                )}
-              </>
-            ) : (
-              <>
-                <Sparkles className="size-3.5" />
-                {t(
-                  "courses.lessonsContent.editor.assetActions.convertToMermaid",
-                )}
-              </>
-            )}
-          </Button>
-        </div>
-      )}
-
-      {isLegacy && (
-        <div className="space-y-2">
-          <div className="rounded-md border border-amber-400/40 bg-amber-50/40 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
-            {t("courses.lessonsContent.editor.legacyAssetBanner")}
-          </div>
-          <Textarea
-            rows={4}
-            value={asset.content}
-            readOnly
-            disabled={disabled}
-            className="font-mono text-xs"
-          />
-        </div>
-      )}
-
-      <Input
-        value={asset.caption}
-        onChange={(e) => onChange({ caption: e.target.value })}
-        placeholder={t("courses.lessonsContent.editor.caption")}
-        disabled={disabled}
-      />
-      <Input
-        value={asset.alt_text}
-        onChange={(e) => onChange({ alt_text: e.target.value })}
-        placeholder={t("courses.lessonsContent.editor.altText")}
-        disabled={disabled}
-      />
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        onClick={onDelete}
-        disabled={disabled}
-      >
-        <Trash2 className="size-3.5" />
-        {t("common.delete")}
-      </Button>
-    </div>
-  );
-}
-
-
-// ===========================================================================
-// AddVisualAssetMenu — dropdown "Carica immagine" / "Scrivi Mermaid"
-// ===========================================================================
-
-interface AddVisualAssetMenuProps {
-  orgId: string;
-  courseId: string;
-  nextIndex: number;
-  onAdd: (asset: LessonContentVisualAsset) => void;
-  disabled: boolean;
-}
-
-function AddVisualAssetMenu({
-  orgId,
-  courseId,
-  nextIndex,
-  onAdd,
-  disabled,
-}: AddVisualAssetMenuProps) {
-  const { t } = useTranslation();
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [uploading, setUploading] = useState(false);
-
-  const triggerFilePicker = () => {
-    if (disabled || uploading) return;
-    fileInputRef.current?.click();
-  };
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    // Reset il value subito così l'utente può ricaricare lo stesso file in
-    // un secondo momento (browser non triggera change su same-file altrimenti).
-    e.target.value = "";
-    if (!file) return;
-    setUploading(true);
-    try {
-      const { path } = await coursesApi.lessonAssets.upload(
-        orgId,
-        courseId,
-        file,
-      );
-      onAdd({
-        asset_id: `A${nextIndex}`,
-        format: "image",
-        content: path,
-        caption: "",
-        alt_text: "",
-      });
-      toast.success(
-        t("courses.lessonsContent.editor.assetActions.imageUploaded"),
-      );
-    } catch (err) {
-      toast.error(
-        extractApiError(err).message ??
-          t("courses.lessonsContent.editor.assetActions.imageUploadFailed"),
-      );
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const handleAddMermaid = () => {
-    onAdd({
-      asset_id: `A${nextIndex}`,
-      format: "mermaid",
-      content: "",
-      caption: "",
-      alt_text: "",
-    });
-  };
-
-  return (
-    <>
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/png,image/jpeg,image/webp"
-        className="hidden"
-        onChange={handleFileChange}
-      />
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={disabled || uploading}
-          >
-            {uploading ? (
-              <>
-                <Loader2 className="size-3.5 animate-spin" />
-                {t("courses.lessonsContent.editor.assetActions.uploading")}
-              </>
-            ) : (
-              <>
-                <Plus className="size-3.5" />
-                {t("courses.lessonsContent.editor.assetActions.addVisualAsset")}
-              </>
-            )}
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start">
-          <DropdownMenuItem onClick={triggerFilePicker} disabled={uploading}>
-            <Upload className="size-3.5" />
-            {t("courses.lessonsContent.editor.assetActions.uploadImage")}
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={handleAddMermaid}>
-            <ImageIcon className="size-3.5" />
-            {t("courses.lessonsContent.editor.assetActions.writeMermaid")}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </>
-  );
+/**
+ * Id del prossimo asset visivo (`A{n}`): parte da `length + 1` e salta gli
+ * id già presenti (confronto senza distinzione di maiuscole), come
+ * `nextNewAssetId` delle slide: una card cancellata in mezzo all'elenco non
+ * produce più un id duplicato.
+ */
+function nextVisualAssetId(assets: LessonContentVisualAsset[]): string {
+  const existing = new Set(assets.map((a) => a.asset_id.trim().toLowerCase()));
+  let n = assets.length + 1;
+  while (existing.has(`a${n}`)) n += 1;
+  return `A${n}`;
 }
 
 interface HighlightUsageButtonProps {

@@ -806,6 +806,13 @@
         "edit": "Modifica"
       },
       "render": {
+        "missingAsset": "Asset non trovato:",
+        "figure": {
+          "syntaxError": "Sintassi del diagramma non valida.",
+          "renderFailed": "Errore durante il rendering del diagramma.",
+          "mermaidHint": "Il codice Mermaid contiene un errore e non è stato possibile generare il diagramma. Apri l'editor della lezione per correggere il sorgente.",
+          "showDetails": "Mostra sorgente e dettagli dell'errore"
+        },
         "words": "{{count}} parole stimate",
         "intro": "Introduzione",
         "sections": "Sezioni",
@@ -868,7 +875,7 @@
       },
       "editor": {
         "text": "Testo della lezione",
-        "visualAssets": "Asset visivi (diagrammi Mermaid o immagini)",
+        "visualAssets": "Asset visivi (figure e immagini)",
         "tables": "Tabelle",
         "equations": "Equazioni",
         "examples": "Esempi",
@@ -894,8 +901,12 @@
           "convertToMermaidFailed": "Conversione fallita. Riprova.",
           "imageUploaded": "Immagine caricata.",
           "imageUploadFailed": "Caricamento immagine fallito.",
-          "uploading": "Caricamento…"
+          "uploading": "Caricamento…",
+          "writeVegalite": "Scrivi un grafico Vega-Lite",
+          "writeDot": "Scrivi un grafo Graphviz (DOT)",
+          "writeFunction": "Componi una figura matematica"
         },
+        "assetRejected": "Asset rifiutato dal server",
         "legacyAssetBanner": "Asset legacy non più editabile. Eliminalo e ricrealo come diagramma Mermaid o immagine caricata.",
         "refCode": "Codice riferimento",
         "refCopy": "Copia il riferimento",
@@ -1005,6 +1016,84 @@
             "class": "Diagramma delle classi",
             "gantt": "Gantt"
           }
+        },
+        "vegalite": {
+          "title": "Grafico Vega-Lite",
+          "code": "Specifica (JSON)",
+          "preview": "Anteprima",
+          "previewEmpty": "Scrivi la specifica (o scegli un template) per vedere l'anteprima",
+          "insertTemplate": "Inserisci template…",
+          "templates": {
+            "histogram": "Istogramma",
+            "barsWithError": "Barre con barre di errore",
+            "scatter": "Diagramma di dispersione",
+            "boxplot": "Diagramma a scatola (boxplot)",
+            "timeSeries": "Serie temporale"
+          }
+        },
+        "dot": {
+          "title": "Grafo Graphviz (DOT)",
+          "code": "Sorgente DOT",
+          "preview": "Anteprima",
+          "previewEmpty": "Scrivi il sorgente (o scegli un template) per vedere l'anteprima",
+          "insertTemplate": "Inserisci template…",
+          "templates": {
+            "tree": "Albero",
+            "digraph": "Grafo diretto",
+            "automaton": "Automa a stati finiti",
+            "cluster": "Grafo con raggruppamenti"
+          }
+        },
+        "function": {
+          "title": "Figura matematica",
+          "kind": "Tipo di figura",
+          "kinds": {
+            "function_study": "Studio di funzione",
+            "tangent": "Retta tangente",
+            "area": "Area sottesa",
+            "family": "Famiglia di curve",
+            "level_curves": "Curve di livello"
+          },
+          "expressions": "Espressioni",
+          "expression": "Espressione",
+          "expressionLabel": "Nome",
+          "addExpression": "Aggiungi espressione",
+          "syntaxHint": "Sintassi: 2*x (non 2x), x**2 (non x^2); funzioni sin, cos, tan, exp, log, sqrt, abs; costanti pi ed E.",
+          "variable": "Variabile",
+          "variables": "Variabili",
+          "domain": "Dominio (asse x)",
+          "range": "Intervallo (asse y)",
+          "rangeAuto": "Intervallo automatico",
+          "min": "Minimo",
+          "max": "Massimo",
+          "show": "Analisi da mostrare",
+          "showItems": {
+            "zeros": "Zeri",
+            "critical_points": "Punti critici",
+            "inflection_points": "Flessi",
+            "asymptotes": "Asintoti",
+            "discontinuities": "Discontinuità",
+            "formula": "Formula"
+          },
+          "annotations": "Annotazioni",
+          "annotationKinds": {
+            "tangent": "Tangente",
+            "area": "Area",
+            "point": "Punto"
+          },
+          "addAnnotation": "Aggiungi annotazione",
+          "annotationLabel": "Etichetta",
+          "at": "Ascissa",
+          "againstAxis": "Rispetto all'asse",
+          "parameterName": "Parametro",
+          "parameterValues": "Valori del parametro (separati da virgola)",
+          "levels": "Livelli",
+          "levelsHint": "Un numero (quantità di livelli) oppure i valori separati da virgola.",
+          "advanced": "Avanzate",
+          "samplingPoints": "Punti di campionamento ({{min}}–{{max}})",
+          "preview": "Anteprima",
+          "previewIncomplete": "Completa i campi obbligatori per vedere l'anteprima",
+          "previewInvalid": "Correggi i campi segnalati per aggiornare l'anteprima"
         }
       }
     },
@@ -1092,7 +1181,13 @@
         "assetIdLabel": "ID asset",
         "assetContent": "Contenuto",
         "assetCaption": "Didascalia",
-        "assetAltText": "Testo alternativo"
+        "assetAltText": "Testo alternativo",
+        "assetKinds": {
+          "table": "Tabella",
+          "equation": "Equazione",
+          "example": "Esempio",
+          "new": "nuovo"
+        }
       },
       "dialog": {
         "generateLesson": {
@@ -1486,6 +1581,36 @@
       "speechPdf": {
         "label": "PDF non allineato al discorso attuale",
         "action": "Rigenera PDF"
+      }
+    },
+    "figures": {
+      "label": "Figura {{n}}.",
+      "labelUnnumbered": "Figura.",
+      "illustrativeData": "Dati illustrativi, non sperimentali.",
+      "approxValues": "Valori approssimati.",
+      "renderError": "Impossibile visualizzare la figura.",
+      "loading": "Caricamento della figura…",
+      "missing": "Figura non disponibile.",
+      "formats": {
+        "mermaid": "Diagramma Mermaid",
+        "vegalite": "Grafico Vega-Lite",
+        "dot": "Grafo Graphviz",
+        "function": "Figura matematica",
+        "image": "Immagine"
+      },
+      "function": {
+        "zeros": "Zeri in {{var}} = {{values}}.",
+        "zero_intervals": "Si annulla su {{values}}.",
+        "critical_points": "Punti critici in {{var}} = {{values}}.",
+        "inflection_points": "Flessi in {{var}} = {{values}}.",
+        "asymptote_vertical": "Asintoto verticale {{expr}}.",
+        "asymptote_horizontal": "Asintoto orizzontale {{expr}}.",
+        "asymptote_oblique": "Asintoto obliquo {{expr}}.",
+        "integral": "Integrale su [{{a}}, {{b}}] pari a {{value}}.",
+        "tangent": "Tangente in {{var}} = {{at}} con pendenza {{slope}}.",
+        "levels": "Curve di livello per z = {{values}}.",
+        "none": "Nessun punto notevole nel dominio considerato.",
+        "truncated": "Elenco troncato ai primi {{n}} punti per categoria."
       }
     },
     "theorem": {
