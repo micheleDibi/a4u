@@ -883,10 +883,12 @@ Backend, in `render_lesson_html` (`course_lesson_pdf_service.py:1148`):
 `_replace_summary_heading` e `_substitute_asset_refs` invariati →
 `_build_asset_html_map(raw, …, figure_numbers=numbers,
 labels=figure_labels(language))` → `_render_visual_asset_block(asset, …,
-number=numbers.get(id.lower()), labels=…)`. Oggi l'ordine è invertito
-(`_build_asset_html_map` a 1179-1184 precede `_build_lesson_body_markdown`
-a 1185-1188): WP4 riordina. Slide e video: `number=None`,
-`variant="slide"`.
+number=numbers.get(id.lower()), labels=…)`. WP4 ha riordinato
+`render_lesson_html` in questo senso (il corpo markdown precede la mappa
+degli asset, che riceve i numeri). Slide e video: `number=None`,
+`variant="slide"`; `render_slides_html` costruisce i blocchi con la stessa
+mappa `visual_svg_map` che il video le passa da
+`_prerender_mermaid_for_slides` (nome storico, oggi tutti i formati).
 
 Frontend (`lib/figureNumbering.ts`, «mantenere allineato con
 `figure_numbering.py`»): `LessonContentView.buildFullMarkdown` si spezza in
@@ -923,10 +925,25 @@ extra_caption: str = "") -> str`.
 `body_html` entra come `Markup` (prodotto da noi), tutto il resto è
 escapato. Usato per **tutti** i formati: per Mermaid il body `<div
 class="mermaid-svg">{svg}</div>` è byte-identico a oggi e cambia solo il
-wrapper (A11-L3); `image` e legacy passano dallo stesso partial. Il
-wrapper interno `.mermaid-svg` va conservato perché la regola
-`figure.visual:has(.mermaid-svg) .figure-body { padding: 1mm }`
-(`lesson_pdf.html.j2:315-317`) continui ad applicarsi.
+wrapper (A11-L3); nelle slide (`variant="slide"`) Mermaid resta `<img
+class="mermaid-svg">` con data URI come prima; `image` e legacy passano
+dallo stesso partial. Il wrapper interno `.mermaid-svg` va conservato
+perché la regola `figure.visual:has(.mermaid-svg) .figure-body { padding:
+1mm }` (`lesson_pdf.html.j2`) continui ad applicarsi.
+
+Dettagli di `render_figure_html` (WP4): applica `strip_figure_prefix` alla
+didascalia e collassa gli spazi bianchi di didascalia, `alt` ed
+`extra_caption`; l'output non contiene righe vuote perché nella dispensa il
+blocco entra nel markdown come HTML block di markdown-it, che si chiude
+alla prima riga vuota: le righe vuote del sorgente di fallback sono rese
+con U+00A0 (non è spazio per markdown-it, invisibile nel `<pre>`). Un
+formato sconosciuto va nel fallback (mai il contenuto in chiaro nel corpo)
+con `log.warning("figure_format_unknown")`. Per `function` la coda della
+didascalia arriva da `figure_render_service.function_computed_caption(content,
+language=…)` → `FunctionRenderer.computed_caption`, che legge la cache dei
+risultati del motore (`figure_function_service.cached_result`) popolata da
+`render_svg_map`/`validate(deep=True)` e non calcola mai nel thread di
+composizione dell'HTML: senza risultato in cache la coda è vuota.
 
 CSS: in `lesson_pdf.html.j2` le regole card generiche `figure {}`
 (217-230) si restringono a `figure.table, figure.equation`;
@@ -1122,22 +1139,45 @@ di `asset_type` e dei tre legacy dallo schema strict) con `visual_formats
 
 ### 8.5 Pre-render e fallback all'export (WP4)
 
-`_prerender_mermaid_for_lesson` → `_prerender_visual_assets_for_lesson(content)
-= await render_svg_map(...)` con alias del vecchio nome;
-`render_lesson_html` e `render_slides_html` accettano `visual_svg_map=None`
-e fondono `{**(mermaid_svg_map or {}), **(visual_svg_map or {})}`
-(`mermaid_svg_map` mantenuto per i chiamanti esistenti; il video passa a
-`render_slides_html` a 216-233). `_render_visual_asset_block`
-(`course_lesson_pdf_service.py:412-462`) e `_build_slide_asset_html`
-(`course_lesson_slides_pdf_service.py:156-215`) estendono la firma con
-`number`, `labels`, `variant`, `language`: ramo `mermaid` testualmente
-identico, `elif fmt in ("vegalite", "dot", "function")` → `<img
-class="figure-svg" src="{svg_to_data_uri(svg)}" alt="…">` oppure body
-`None` → `<pre class="figure-fallback">`; tutto passa da
-`render_figure_html`. Quando il partial riceve `body_html=None` per un
-formato renderizzabile, `log.error("figure_render_fallback", …)` con
-`lesson_code`, `asset_id`, formato e motivo (A23): un fallback all'export
-è un errore visibile nei log, non un caso silenzioso.
+`_prerender_visual_assets_for_lesson(content, *, language="it") = await
+render_svg_map(...)` con l'alias del vecchio nome
+`_prerender_mermaid_for_lesson`; `_prerender_mermaid_for_slides(content_raw,
+new_assets, *, language)` (nome storico, alias
+`_prerender_visual_assets_for_slides`) fonde gli asset di Fase 3 e i
+`new_assets` di Fase 4 e delega alla stessa funzione. `render_lesson_html`
+e `render_slides_html` accettano `visual_svg_map=None` e fondono
+`{**(mermaid_svg_map or {}), **(visual_svg_map or {})}` (`mermaid_svg_map`
+mantenuto per i chiamanti esistenti); `materialize_lesson_pdf`,
+`materialize_lesson_slides_pdf` e `render_slides_to_png` (video) passano
+`visual_svg_map`. `_render_visual_asset_block(asset, *, visual_svg_map=None,
+number=None, labels=None, variant="lesson", language=None,
+lesson_code=None)` e `_build_slide_asset_html(asset, *, kind,
+visual_svg_map=None, math_svg_map=None, language="it", labels=None,
+lesson_code=None)` (delega completa per `visual`/`new_visual` con
+`variant="slide"`, `number=None`): ramo `mermaid` testualmente identico
+(`<div class="mermaid-svg">` nella dispensa, `<img class="mermaid-svg">`
+nelle slide), `elif fmt in RENDERABLE_FORMATS` → `<img class="figure-svg"
+src="{svg_to_data_uri(svg)}" alt="…">` oppure body `None` → `<pre
+class="figure-fallback">`; tutto passa da `render_figure_html`;
+`_svg_to_data_uri` del servizio slide è un re-export di
+`svg_normalize.svg_to_data_uri`. Quando il partial riceve `body_html=None`
+per un formato renderizzabile, `log.error("figure_render_fallback",
+lesson_code=…, asset_id=…, format=…, reason="svg_missing")` (A23): un
+fallback all'export è un errore visibile nei log, non un caso silenzioso.
+Il log è structlog (`PrintLoggerFactory`): i test lo osservano con
+`structlog.testing.capture_logs()`, non con `caplog`.
+
+CSS (WP4): `lesson_pdf.html.j2` restringe la card a `figure.table,
+figure.equation`, `figure.visual` senza bordo, `.figure-caption` 9pt tondo
+centrato, `.figure-label` in grassetto, `.figure-svg` con `max-height:
+{{ max_figure_height_cm }}cm` e senza `width: 100%`, `.mermaid-fallback,
+.figure-fallback` e `.missing-asset` (prima senza CSS);
+`lesson_slides_pdf.html.j2` porta `.slide-asset figcaption` a 8pt tondo con
+`.figure-label` in grassetto, una regola unica `max-height: 80mm` per
+`.figure-svg`/`.mermaid-svg`/`.uploaded-image` (la vecchia `.uploaded-image
+{ max-height: 100% }` è rimossa) e regole per `.figure-fallback` e
+`.missing-asset` (prima testo nudo). `_VIDEO_OVERRIDE_CSS` non tocca
+`.slide-asset`: i frame video ereditano tutto.
 
 ## 9. Siti `== "mermaid"` e decisione per ciascuno (D2)
 
@@ -1459,7 +1499,26 @@ esplicito, mai falliscono. Vedi [backend/11 — Tests](../backend/11-tests.md).
 - Metriche dei font di vl-convert nel container. Esito: (da completare in
   WP6).
 - Screenshot: frame video di WP4 (`scratchpad/wp4_frame.png`),
-  `LessonContentView` con i quattro formati (WP5). (da completare in WP6)
+  `LessonContentView` con i quattro formati (WP5). Esito WP4 (macOS, 7
+  settembre): lezione di prova con un asset per formato (Mermaid via
+  Chromium e CDN, Vega-Lite via vl-convert, DOT, `function`) più una figura
+  di Fase 4 lasciata senza SVG; `render_svg_map` in 4,5 s; frame 1980×1400
+  da `_screenshot_slides_sync` sull'HTML di `render_slides_html(enable_split=
+  False)`: `scratchpad/wp4_frame.png` (slide `function` con la didascalia
+  calcolata) e `scratchpad/wp4_frames/slide_001..005.png`; «Figura.» in
+  grassetto senza numero, nessuna card, fallback `<pre>` con il sorgente
+  nella quinta slide. Frontend: (da completare in WP5/WP6).
+- Resa di `<img src="data:image/svg+xml;base64,…">` in WeasyPrint 69
+  (verifica residua del piano). Esito WP4 (macOS, 7 settembre): il testo
+  degli SVG matplotlib (`svg.fonttype: none`), vl-convert e `dot` dentro
+  l'`<img>` è estratto da pypdf dal PDF prodotto («etichetta», «ascissa»,
+  «Volume (kt)», «Lemma»), come le label `<tspan>` dell'SVG Mermaid 11
+  inline della fixture; nessun warning di WeasyPrint oltre il filtro del
+  rumore SVG; «Figura 1.» … «Figura 4.» in ordine di citazione nel PDF
+  della dispensa di prova (4 pagine). Test riproducibili in
+  `tests/test_lesson_pdf_figures.py` (`weasyprint`/`pypdf`/`matplotlib`
+  con skip esplicito, `dot` con `skipif`). Nel container Linux la prova va
+  ripetuta per i font (WP6).
 - Esiti della revisione avversariale di Fase D (correttezza del dispatch,
   regressione ai cinque livelli di A11, sicurezza di spec e `dot`, i18n,
   tipografia). (da completare in WP6)

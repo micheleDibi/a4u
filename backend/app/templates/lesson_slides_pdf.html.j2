@@ -199,13 +199,19 @@
       word-wrap: break-word;
       overflow-wrap: break-word;
     }
+    /* Didascalie delle figure (D4): «Figura.» senza numero nelle slide e
+       nei frame video (A2), tondo, etichetta in grassetto. La regola vale
+       anche per le didascalie di tabelle ed equazioni. */
     .slide-asset .caption,
     .slide-asset figcaption {
-      font-size: 9pt;
-      font-style: italic;
-      opacity: 0.7;
+      font-size: 8pt;
+      font-style: normal;
+      opacity: 0.8;
       margin-top: 2mm;
       text-align: center;
+    }
+    .slide-asset .figure-label {
+      font-weight: 700;
     }
     .slide-asset .placeholder,
     .slide-asset .placeholder-image {
@@ -216,14 +222,47 @@
       text-align: center;
       border-radius: 1mm;
     }
-    /* Immagini caricate dall'utente (format=image): scala dentro l'area
-       slide-asset senza eccedere lo spazio verticale assegnato. */
+    /* Regola unica di altezza per tutte le figure `<img>` (Mermaid,
+       Vega-Lite/DOT/function, immagini caricate): cap di 80mm come per
+       gli SVG, riconciliando la regola generica `.slide-asset img` con le
+       immagini caricate, che prima usavano `max-height: 100%` e venivano
+       tagliate da `overflow: hidden` oltre gli 80mm. */
+    .slide-asset .figure-svg,
+    .slide-asset .mermaid-svg,
     .slide-asset .uploaded-image {
       max-width: 100%;
-      max-height: 100%;
+      max-height: 80mm;
+      width: auto;
+      height: auto;
       object-fit: contain;
       display: block;
       margin: 0 auto;
+    }
+    /* Sorgente della figura quando il render è fallito (A23) e riferimenti
+       senza asset: prima erano testo nudo. */
+    .slide-asset .figure-fallback,
+    .slide-asset .mermaid-fallback {
+      font-family: "Menlo", "Consolas", monospace;
+      font-size: 7pt;
+      line-height: 1.3;
+      white-space: pre-wrap;
+      text-align: left;
+      background: #f5f5f7;
+      border: 0.4pt solid #ddd;
+      border-radius: 1mm;
+      padding: 2mm 3mm;
+      margin: 0;
+      max-height: 80mm;
+      overflow: hidden;
+    }
+    .slide-asset .missing-asset,
+    .slide-body .missing-asset {
+      border: 0.5pt dashed #bbb;
+      padding: 2mm 3mm;
+      font-size: 8pt;
+      color: #888;
+      text-align: center;
+      border-radius: 1mm;
     }
 
     /* Footer: linea sottile + organizzazione · corso, page counter dx.

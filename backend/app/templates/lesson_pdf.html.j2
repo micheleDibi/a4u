@@ -214,20 +214,36 @@
     }
 
     /* === Asset blocks === */
-    figure {
-      margin: 4mm 0;
+    /* La card (bordo, sfondo, didascalia in corsivo) resta per tabelle ed
+       equazioni: sono elementi tipografici diversi da una figura. */
+    figure { margin: 4mm 0; }
+    figure.table, figure.equation {
       border: 0.5pt solid rgba(0, 0, 0, 0.12);
       border-radius: 3pt;
     }
-    figure .figure-body {
+    figure.table .figure-body, figure.equation .figure-body {
       padding: 3mm; background: rgba(255, 255, 255, 0.6);
     }
-    figure figcaption {
+    figure.table figcaption, figure.equation figcaption {
       padding: 1.5mm 3mm; font-size: 9pt;
       color: rgba(0, 0, 0, 0.6); font-style: italic;
       border-top: 0.5pt solid rgba(0, 0, 0, 0.1);
       background: rgba(255, 255, 255, 0.6);
     }
+    /* Figure (D4): nessuna card, didascalia «Figura N.» centrata in tondo
+       con l'etichetta in grassetto; stesso markup del partial
+       `partials/figure.html.j2` su dispensa, slide e frame video. */
+    figure.visual {
+      margin: 5mm 0; border: none; border-radius: 0;
+      text-align: center; page-break-inside: avoid;
+    }
+    figure.visual .figure-body { padding: 0; background: none; }
+    .figure-caption {
+      padding: 1.5mm 3mm 0; font-size: 9pt; font-style: normal;
+      text-align: center; border-top: none; background: none;
+      color: rgba(0, 0, 0, 0.7);
+    }
+    .figure-label { font-weight: 700; }
     .equation { text-align: center; }
     .equation .math-block { margin: 0; }
     .equation figcaption .label { font-style: normal; font-weight: 600; }
@@ -290,9 +306,31 @@
       display: block;
       margin: 0 auto;
     }
-    .mermaid-fallback {
+    /* Figure Vega-Lite, DOT e function: SVG normalizzato dentro un `<img>`
+       (replaced element: `max-height` rispettato). Nessun `width: 100%`:
+       la dimensione intrinseca in px riscritta da `normalize_svg` è un
+       massimo, `max-width` riduce ma non ingrandisce (un grafo DOT a tre
+       nodi resta piccolo). */
+    .figure-svg {
+      max-width: 100%;
+      height: auto;
+      max-height: {{ max_figure_height_cm }}cm;
+      display: block;
+      margin: 0 auto;
+    }
+    /* Sorgente della figura quando il render è fallito (A23): blocco
+       monospazio allineato a sinistra dentro la figura centrata. */
+    .mermaid-fallback, .figure-fallback {
       font-family: "Menlo", "Consolas", monospace; font-size: 9pt;
-      white-space: pre-wrap;
+      white-space: pre-wrap; text-align: left;
+      max-height: {{ max_figure_height_cm }}cm;
+    }
+    /* Riferimento `[KIND:id]` senza asset corrispondente. */
+    .missing-asset {
+      margin: 3mm 0; padding: 2mm 3mm;
+      border: 0.5pt dashed rgba(0, 0, 0, 0.35);
+      color: rgba(0, 0, 0, 0.55); font-size: 9pt;
+      font-family: "Menlo", "Consolas", monospace;
     }
     /* Immagini caricate dall'utente come asset visivi (format=image).
        Forziamo larghezza piena del container + altezza max coerente con
@@ -304,14 +342,15 @@
       display: block;
       margin: 0 auto;
     }
-    /* Le figure mermaid usano padding ridotto per dare più spazio
-       al diagramma: la fig-body normale ha 3mm, qui scende a 1mm.
-       NB la figure resta dentro i margini di testo del documento
-       (no offset negativi): il diagramma deve allinearsi al body
-       come gli altri elementi. La leggibilità su flowchart densi
-       è già migliorata dallo stripping del `max-width` inline di
-       mermaid — l'SVG riempie tutto il content-area invece di
-       fermarsi alla sua dimensione naturale (~340px). */
+    /* Le figure mermaid usano un padding minimo attorno al diagramma
+       (il wrapper interno `.mermaid-svg` è conservato dal partial perché
+       questa regola continui ad applicarsi). NB la figure resta dentro
+       i margini di testo del documento (no offset negativi): il
+       diagramma deve allinearsi al body come gli altri elementi. La
+       leggibilità su flowchart densi è già migliorata dallo stripping
+       del `max-width` inline di mermaid — l'SVG riempie tutto il
+       content-area invece di fermarsi alla sua dimensione naturale
+       (~340px). */
     figure.visual:has(.mermaid-svg) .figure-body {
       padding: 1mm;
     }

@@ -7,11 +7,13 @@ supportava asset Mermaid / equazioni LaTeX / immagini caricate e
 divergeva dal layout PDF approvato dall'utente.
 
 Approccio:
-1. Pre-render Mermaid → SVG via `slides_pdf._prerender_mermaid_for_slides`
-   (stessa logica del PDF: Playwright headless con mermaid.esm pinned).
+1. Pre-render delle figure → SVG via `slides_pdf._prerender_mermaid_for_slides`
+   (stessa logica del PDF: registro dei renderer, Mermaid con Playwright
+   headless e mermaid.esm pinned, Vega-Lite/DOT/function offline).
 2. Genera HTML completo via `slides_pdf.render_slides_html(..., enable_split=False)`
    — ottiene esattamente l'HTML che produrrebbe il PDF (con tutti gli
-   asset risolti, MathML inline, ecc.), senza lo split bullet/asset.
+   asset risolti, figure `<img data:svg>` con l'etichetta «Figura.»,
+   formule SVG MathJax inline, ecc.), senza lo split bullet/asset.
 3. Apre Playwright con viewport **1980×1400** (stessa proporzione
    A4 landscape delle slide), carica l'HTML, scala ogni `.slide` per
    riempire ESATTAMENTE il frame e ne fa lo screenshot. Niente bande
@@ -181,9 +183,10 @@ async def render_slides_to_png(
     """Renderizza le slide della lezione come PNG 1980×1400, una per slide.
 
     Riusa al 100% la pipeline del PDF:
-    - `_prerender_mermaid_for_slides` per Mermaid SVG inline
+    - `_prerender_mermaid_for_slides` per gli SVG di tutte le figure
+      (Mermaid, Vega-Lite, DOT, function)
     - `render_slides_html(enable_split=False)` per HTML identico al PDF
-    - Asset Mermaid, equazioni LaTeX→MathML, immagini caricate: tutti
+    - Figure, equazioni LaTeX→SVG MathJax, immagini caricate: tutti
       renderizzati nello stesso modo del PDF approvato dall'utente
 
     Returns:
@@ -213,8 +216,9 @@ async def render_slides_to_png(
 
     slides_raw = lesson.slides_raw or {}
     new_assets = slides_raw.get("new_assets") or []
-    mermaid_svg_map = await slides_pdf._prerender_mermaid_for_slides(
-        lesson.content_raw, new_assets
+    language = (course.language_code or "it").lower()
+    visual_svg_map = await slides_pdf._prerender_mermaid_for_slides(
+        lesson.content_raw, new_assets, language=language
     )
     # Pre-render LaTeX → SVG (MathJax), coerente col PDF slide.
     math_svg_map = await slides_pdf._prerender_math_for_slides(
@@ -227,7 +231,7 @@ async def render_slides_to_png(
         organization=organization,
         slide_template=slide_template,
         public_base_url=public_base_url,
-        mermaid_svg_map=mermaid_svg_map,
+        visual_svg_map=visual_svg_map,
         math_svg_map=math_svg_map,
         enable_split=False,  # 1 slide JSON → 1 frame video
     )

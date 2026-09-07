@@ -9,14 +9,16 @@ condizioni runtime: `speech_status='approved'` AND
 Pipeline (3 fasi):
 1. TTS XTTS-v2 (60% del progress): sintesi audio per ciascun
    `LessonSpeechSegment`, voce clonata da `Avatar.audio_path`.
-2. Slide PNG via Playwright (20%): viewport 1920×1080, riusa
-   pre-render Mermaid SVG di Fase 4.
+2. Slide PNG via Playwright (20%): viewport 1980×1400 (stessa proporzione
+   A4 landscape delle slide), riusa il pre-render delle figure del PDF
+   slide (Mermaid, Vega-Lite, DOT, function come `<img data:svg>`).
 3. Encoding ffmpeg (20%): per ciascuna slide `-loop 1 -i slide.png -i
    audio.wav -shortest -tune stillimage -c:v libx264 -c:a aac`, poi
    concat finale `-f concat -c copy`.
 
-Output: `/uploads/lesson_videos/{course_id}/{lesson_id}.mp4` 1080p30
-H.264 + AAC 192 kbps, servito da `StaticFiles` con HTTP Range nativo.
+Output: `/uploads/lesson_videos/{course_id}/{lesson_id}.mp4` 1980×1400
+(`video_framerate` fps) H.264 + AAC, servito da `StaticFiles` con HTTP
+Range nativo.
 """
 from __future__ import annotations
 

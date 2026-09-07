@@ -1092,6 +1092,17 @@ class FunctionRenderer:
         # fence ```json riceve le traduzioni sul JSON, non resta invariato.
         return figure_function_service.apply_translations(self.sanitize(content), tr)
 
+    def computed_caption(self, content: str, *, language: str | None) -> str:
+        """Coda della didascalia calcolata (D9) nella lingua richiesta,
+        letta dalla cache dei risultati del motore popolata da
+        `render_svg`/`validate(deep=True)`; mai calcolata qui. Vuota se la
+        spec non è valida o il risultato non è (più) in cache."""
+        spec, _issues = parse_function_spec(self.sanitize(content))
+        if spec is None:
+            return ""
+        hit = figure_function_service.cached_result(spec, language=language)
+        return hit.computed_caption if hit is not None else ""
+
 
 # ---------------------------------------------------------------------------
 # Registro
@@ -1195,6 +1206,16 @@ async def render_function(
             )
         except TimeoutError as exc:
             raise FigureTimeoutError(f"render-function: oltre {timeout:g} s") from exc
+
+
+def function_computed_caption(content: str, *, language: str | None) -> str:
+    """Coda della didascalia di una figura `function` già renderizzata
+    (`FunctionRenderer.computed_caption`): il PDF la passa al partial come
+    `extra_caption`. Stringa vuota per ogni altro caso."""
+    renderer = REGISTRY.get("function")
+    if not isinstance(renderer, FunctionRenderer):
+        return ""
+    return renderer.computed_caption(content, language=language)
 
 
 def _iter_renderable(assets: Sequence[Mapping[str, Any]]) -> Iterator[tuple[str, str, str]]:
@@ -1368,6 +1389,7 @@ __all__ = [
     "cache_key",
     "clear_svg_cache",
     "error_type_for",
+    "function_computed_caption",
     "mermaid_declared_type",
     "mermaid_first_meaningful_line",
     "mermaid_static_gate",
