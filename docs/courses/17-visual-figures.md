@@ -39,7 +39,7 @@ rispettare.
 |---|---|---|---|---|
 | Mermaid 11 | `mermaid` | Playwright + Chromium, pin `mermaid_cdn_version` (11.17.2) | `mermaid` 11.17.2 (lock npm) | gate statico D8 + parse JS in batch |
 | Vega-Lite | `vegalite` | `vl_convert.vegalite_to_svg` in processo figlio | `vega-embed` (import dinamico) | schema JSON v6 + regole D5 + criterio 10 |
-| Graphviz DOT | `dot` | binario `dot` in `subprocess` | `@viz-js/viz` (WASM, import dinamico) | limiti + regex di rifiuto + prova di render |
+| Graphviz DOT | `dot` | binario `dot` in `subprocess` | `@viz-js/viz` (WASM, import dinamico) | limiti + scansione dei nomi di attributo + prova di render |
 | Figura calcolata | `function` | numpy + matplotlib in thread, sympy in processo figlio | `<img>` dell'SVG prodotto dall'endpoint `render-function` | Pydantic + AST |
 
 Gli altri formati dell'alias `VisualAssetFormat` (`image`, `image_prompt`,
@@ -55,7 +55,7 @@ Stato dei work package al momento della v1 (dettaglio in
 | WP2a | alias `VisualAssetFormat`, `figure_theme.py` + `figureTheme.ts`, setting `figure_*`, `.env.example`, compose, pyproject, Dockerfile, CI | committato (`bb17b49`, `b97ff74`) |
 | WP1 | Mermaid 11: `mermaid_prerender.py` estratto, pin unico, `htmlLabels:false` top-level BE+FE, prompt fix/digitalizzazione, script `revalidate_mermaid_assets.py`, test D8 | committato (`8ce8160`) |
 | WP2b-0 | questo documento (v1) | questo commit |
-| WP2b | `figure_render_service.py`, `svg_normalize.py`, `figure_compute/`, dispatch del validatore, fix AI, localizzazione, PATCH 422, builder degli schemi OpenAI, filtro log | in corso (cinque moduli «leaf» presenti nel working tree, da correggere e completare) |
+| WP2b | `figure_render_service.py`, `svg_normalize.py`, `figure_compute/`, dispatch del validatore, fix AI, localizzazione, PATCH 422, builder degli schemi OpenAI, filtro log | committato (`61689b6`; correzioni `5cac685` e giro 2: gate Mermaid `initialize`/frontmatter, nomi DOT quotati, JSON annidato) |
 | WP7 | formato `function` (schema, parsing, calcolo, disegno, endpoint) | da fare |
 | WP4 | numerazione, partial `figure.html.j2`, PDF dispensa/slide, frame video | da fare |
 | WP3 | prompt P3/P4/P5, guardie di lunghezza, `PROMPTS.md` | da fare |
@@ -159,6 +159,22 @@ formato, `asset_id` e motivo, e la chiave resta assente. I worker
 (`materialize_*`) non vedono eccezioni nuove: un'eccezione lì farebbe
 ripartire l'intero export via auto-retry.
 
+**Tetto del batch Mermaid** (correzione WP2b, giro 2). Il `wait_for` è
+unico per formato come prescrive Q1, ma il batch Mermaid paga un costo
+fisso prima del primo render (lancio di Chromium, caricamento della CDN
+con `wait_for_function` fino a 15 s in `mermaid_prerender.py`) che con il
+timeout unico di 20 s farebbe perdere in blocco tutte le figure Mermaid
+della lezione appena la CDN rallenta — e oggi `_prerender_mermaid_for_lesson`
+non ha alcun tetto complessivo. Perciò `_BATCH_TIMEOUT_FLOOR_S = {"mermaid":
+60.0}` alza il tetto del solo batch Mermaid a `max(figure_render_timeout_seconds,
+60)`, e un timeout dell'**intero** batch Mermaid non entra in cache
+negativa (`_NO_NEGATIVE_CACHE_ON_BATCH_TIMEOUT`): il tempo è dominato dal
+costo fisso, non attribuibile alle singole figure, mentre un render
+fallito per figura (`None` nella lista) resta in cache negativa per 60 s.
+Le due tabelle sono per formato: nessun nuovo confronto letterale con
+`"mermaid"` (sezione 9). WP4 instrada il pre-render PDF su questo punto
+senza altre decisioni di dimensionamento.
+
 ### 2.3 `validate_visual_assets_or_raise` e il payload 422
 
 Chiamata nei due CRUD manuali (`course_lesson_content_crud.update_lesson_content`
@@ -251,18 +267,44 @@ il confronto esatto rifiuta con `mermaid_type_not_allowed` i tipi di
 `MERMAID_EXCLUDED_TYPES` (`journey`, `gitGraph`, `kanban`, `packet-beta`,
 `architecture-beta`), i token sconosciuti (`flowchartXYZ`) e
 `flowchart-elk` (layout esterno, assente nel pre-render da CDN). Rifiuta
-poi la direttiva `%%{init` **e la chiave `config:` del frontmatter** (in
-Mermaid 11 equivale alla direttiva: sovrascriverebbe il tema imposto dal
-renderer, D3) e i **tag HTML** nelle label (con `htmlLabels:false`
+poi la **direttiva `%%{init`** — anche nella forma `%%{initialize`, che
+Mermaid 11 tratta come alias (`detectInit` usa
+`/(?:init\b)|(?:initialize\b)/`; la regex del gate, `%%\s*\{\s*init(?:ialize)?\b`,
+è un soprainsieme della `%%{` contigua di Mermaid) — e il **frontmatter
+YAML** con qualunque chiave diversa da `title` e `displayMode`. Mermaid
+carica il frontmatter con js-yaml (`JSON_SCHEMA`) e legge SOLO
+`parsed.title`, `parsed.displayMode` e `parsed.config` (quest'ultima
+equivale alla direttiva: sovrascriverebbe tema e `htmlLabels:false`
+imposti dal renderer, D3, riportando i `<foreignObject>` nel PDF). Una
+chiave `config` si scrive in molte forme YAML equivalenti (`"config":`,
+`'config':`, `{config: …}` in forma flow, `"con\x66ig":` con escape,
+chiave complessa `? config`, alias `*a` di un'ancora): senza un parser
+YAML — PyYAML è installato in locale solo come dipendenza transitiva di
+`python-frontmatter`, non del backend — l'unico gate deterministico e
+senza dipendenze nuove è la **lista chiusa**: ogni riga del frontmatter
+deve essere vuota, un commento `#` o una voce `title:` / `displayMode:`
+in forma blocco (`_FRONTMATTER_LINE_RE`), altrimenti `mermaid_init_directive`
+con la riga incriminata nel messaggio. Un frontmatter con una chiave che
+Mermaid ignora (`theme: forest` al primo livello) è rifiutato con lo
+stesso esito e il motivo esplicito: costo accettato. Il `---` di
+chiusura deve avere lo **stesso rientro** di quello di apertura, come la
+`frontMatterRegex` di Mermaid (`^([^\S\n\r]*)-{3}…\n\1-{3}`): un `---`
+con rientro diverso è parte del frontmatter, non la sua fine, così il
+blocco che il gate analizza coincide con quello che Mermaid carica.
+Infine rifiuta i **tag HTML** nelle label (con `htmlLabels:false`
 finirebbero in chiaro nel `<text>`): regola generica «`<` seguito da un
 nome di elemento e chiuso da `>` sulla stessa riga», non un elenco di tag
 (`<script>`, `<table>`, `<svg>`, `<h1>` sono rifiutati come `<br>` e
-`<b>`). Non sono tag e passano: le frecce (`-->`, `<|--`, `->>`, `<<->>`),
-le annotazioni `<<interface>>`, un `<` isolato (`A[a < b]`) e un `<b` non
+`<b>`), applicata alle sole righe del corpo che non sono commenti `%%`
+(un tag in un commento o nel frontmatter non viene renderizzato: giro 2).
+Non sono tag e passano: le frecce (`-->`, `<|--`, `->>`, `<<->>`), le
+annotazioni `<<interface>>`, un `<` isolato (`A[a < b]`) e un `<b` non
 chiuso (`A[x <b] --> B`: la sezione degli attributi non attraversa `]`,
-`)`, `}`). Il parse JS resta nel batch di `_validate_slots` (sezione 8.1):
-al salvataggio manuale il gate statico basta (A15), il parse vive già
-nell'editor con la stessa major 11.
+`)`, `}`). Falso positivo dichiarato: i tipi generici di `classDiagram`
+scritti con `<…>` (`List<int>`) sono rifiutati; Mermaid vuole `List~int~`
+e il messaggio lo suggerisce. Il parse JS resta nel batch di
+`_validate_slots` (sezione 8.1): al salvataggio manuale il gate statico
+basta (A15), il parse vive già nell'editor con la stessa major 11.
 
 `render_svg_batch` delega a `mermaid_prerender._prerender_mermaid_to_svg_batch_sync`
 (Playwright, pin `settings.mermaid_cdn_version`, `mermaid_initialize_js(use_max_width=True)`);
@@ -282,8 +324,24 @@ JSON** (i byte del contenuto restano quelli del docente).
 
 1. lunghezza ≤ 4.000 caratteri;
 2. `json.loads(object_pairs_hook=…)` che **rifiuta le chiavi duplicate**
-   (un `"mark"` ripetuto vincerebbe silenziosamente l'ultimo);
-3. validazione contro lo **schema JSON di Vega-Lite v6** con
+   (un `"mark"` ripetuto vincerebbe silenziosamente l'ultimo); il decoder
+   C solleva `RecursionError` — non `ValueError` — oltre ~1.000 livelli,
+   raggiungibili in 3.000 caratteri (`[[[…]]]`): `_parse_vegalite` la
+   intercetta come «JSON non valido» (giro 2: prima attraversava il gate
+   del PATCH come HTTP 500 e `_validate_slots` come eccezione non gestita);
+3. **annidamento** complessivo ≤ `MAX_NESTING` = 32 livelli, misurato senza
+   ricorsione da `vegalite_rules.nesting_depth` (`spec annidata oltre 32
+   livelli (N)`): jsonschema ricorre in Python e, misurato il 7 settembre,
+   regge 60 livelli di `{"and": [{"and": …}]}` ma cade a 100 con
+   `RecursionError`; un oggetto annidato dentro `data.values` passa lo
+   schema (tipo `object`) e farebbe ricorrere le regole D5, la visita dei
+   campi testuali, `json.dumps` e il pickle verso il figlio. Il cap è
+   deterministico, indipendente dal limite dell'interprete, e vive in
+   `_parse_vegalite`, punto comune di validazione, render e localizzazione
+   (una spec legittima non supera la ventina: composizione ≤ 4 più
+   `encoding.x.axis…`); `validate` avvolge comunque schema e regole in un
+   `except RecursionError` come difesa in profondità;
+4. validazione contro lo **schema JSON di Vega-Lite v6** con
    `jsonschema.Draft7Validator`, costruito una volta (`lru_cache`) dal file
    `Path(find_spec("altair").submodule_search_locations[0]) /
    "vegalite/v6/schema/vega-lite-schema.json"` (1,9 MB; altair 6.2.2 porta
@@ -291,7 +349,7 @@ JSON** (i byte del contenuto restano quelli del docente).
    `best_match(iter_errors)` reso come `"path: msg"[:1600]`. Costo
    misurato il 7 settembre: init 0 ms, 1 ms per spec — nessun caching
    aggressivo necessario;
-4. `figure_compute.vegalite_rules.check_vegalite_rules(spec) -> list[str]`
+5. `figure_compute.vegalite_rules.check_vegalite_rules(spec) -> list[str]`
    (sezione 3.2.1); la prima violazione con prefisso
    `vegalite_use_function_format:` classifica l'errore come criterio 10.
 
@@ -356,9 +414,12 @@ Vega-Lite la traccia è uno solo: `data.sequence` più un
 - **H1** una funzione trascendente o non lineare (`sin cos tan asin acos
   atan sinh cosh tanh exp log sqrt pow abs`), oppure
 - **H2** una divisione con `datum` a denominatore (`/ datum.x`, `/ (2*datum.x
-  + 1)`, `/(-datum.x)`, `/(2*(datum.x+1))`: fra la barra e `datum` sono
-  ammessi, in qualunque ordine, segni, parentesi aperte e costanti seguite
-  da un operatore; `datum.x / 2` non è una funzione razionale), oppure
+  + 1)`, `/(-datum.x)`, `/(2*(datum.x+1))`, `/(PI*datum.x)`: fra la barra e
+  `datum` sono ammessi, in qualunque ordine, segni, parentesi aperte e
+  costanti seguite da un operatore — numeriche o simboliche di Vega (`PI`,
+  `E`, `LN2`, `SQRT2`, …: un identificatore, giro 2); `datum.x / 2` non è
+  una funzione razionale; una chiamata di funzione non in H1 davanti a
+  `datum` (`1/(round(2)*datum.x)`) resta un falso negativo), oppure
 - **H3** una potenza (`**` o `^`)
 
 viene rifiutata con `vegalite_use_function_format: transform[i].calculate
@@ -398,18 +459,36 @@ positivi su grafici legittimi.
   `_sanitize_mermaid_code`, che cancella le righe `all` (nodo DOT
   legittimo).
 - `validate(deep=False)`: lunghezza ≤ `figure_dot_max_chars` (12.000);
-  prima parola `strict | graph | digraph`; regex di rifiuto degli
-  attributi che fanno leggere file locali o risorse esterne a `dot`,
-  **con i composti** degli archi e delle label e con `SRC` dell'`<IMG>`
-  delle label HTML-like:
-  `\b((?:label|head|tail|edge)?(?:image|shapefile|imagepath|fontpath|stylesheet|URL|href|target)|SRC)\s*=`
-  (`labelURL`, `headhref`, `tailtarget`, `edgeURL`, `<IMG SRC="…">`
-  rifiutati; `headlabel`, `imagescale`, le `<TABLE>` HTML-like ammessi).
-  Motivo del `SRC`: `dot` apre il file indicato e il suo stderr
-  («was not found as a file» contro «No or improper image file»)
-  distinguerebbe un path esistente del server da uno assente nel messaggio
-  inoltrato al fix AI e nei log. `tooltip` e i suoi composti restano
-  ammessi: non leggono nulla e in `<img>`/PDF sono inerti; ≤ 600 archi.
+  prima parola `strict | graph | digraph`; rifiuto degli attributi che
+  fanno leggere file locali o risorse esterne a `dot`, **con i composti**
+  degli archi e delle label: `{image, shapefile, imagepath, fontpath,
+  stylesheet, URL, href, target}` con i prefissi `label | head | tail |
+  edge` (`_DOT_FORBIDDEN_NAMES`), più `SRC` dell'`<IMG>` delle label
+  HTML-like (`labelURL`, `headhref`, `tailtarget`, `edgeURL`, `<IMG
+  SRC="…">` rifiutati; `headlabel`, `imagescale`, le `<TABLE>` HTML-like
+  ammessi). Il piano prescriveva una regex `\b(…)\s*=` sul sorgente
+  grezzo: **sostituita nel giro 2 da un tokenizzatore**
+  (`_dot_tokens` / `_dot_forbidden_attribute`) perché lo scanner di
+  Graphviz risolve lo stesso nome in molte forme che la regex non vede —
+  quotato `"image"=`, concatenato `"ima"+"ge"=`, spezzato da una
+  continuazione di riga `"ima\⏎ge"=`, separato dall'`=` da un commento
+  `image/**/=`, stringa HTML `<image>=` — e tutte, verificate con dot
+  15.1.1, aprono il file indicato (`'image'` con apici singoli è invece
+  un errore di sintassi per `dot`: nessun file letto, non trattato).
+  Il tokenizzatore riproduce le regole dello scanner (`scan.l`: `\"` →
+  `"`, `\\` conservato, `\`+newline ignorato, `"a" + "b"` uniti,
+  commenti `/* */`, `//` e righe `#` saltati fuori dalle stringhe,
+  stringhe HTML `<…>` con annidamento) e confronta, senza distinzione di
+  maiuscole per prudenza (`dot` è case-sensitive: `IMAGE=` non è letto),
+  il **nome che precede un `=`**; nelle stringhe HTML cerca
+  `<IMG … SRC=`. Effetto collaterale voluto: un nome vietato come TESTO
+  (`label="vedi image=1"`, un commento, una riga `#`, `<TD>src=1</TD>`)
+  non è più un falso positivo. Motivo del `SRC`: `dot` apre il file
+  indicato e il suo stderr («was not found as a file» contro «No or
+  improper image file») distinguerebbe un path esistente del server da
+  uno assente nel messaggio inoltrato al fix AI e nei log. `tooltip` e i
+  suoi composti restano ammessi: non leggono nulla e in `<img>`/PDF sono
+  inerti; ≤ 600 archi.
   Al PATCH manuale il DOT è validato **solo staticamente** (`deep=False`,
   come prescrive Q1): un errore di sintassi accettato al salvataggio emerge
   nell'editor (viz-js, WP5) e all'export; `dot` costa ~50 ms e una
@@ -522,9 +601,21 @@ local_dict={v: Symbol(v, real=True)}, evaluate=True)` sulla **stessa**
 stringa già filtrata; controllo finale `expr.free_symbols ⊆ dichiarati`.
 `parse_expr` usa `eval(code, global_dict, local_dict)`: il `global_dict`
 ristretto e il passo 1 sono le due difese, una nel padre e una nel
-figlio. Il comportamento di `parse_expr` con `global_dict` ristretto su
-sympy 1.14 è da verificare con un test `importorskip("sympy")` in
-`test_function_figure_service.py` (voce 6 del «Delta», prima di WP7).
+figlio. **Verificato il 7 settembre su sympy 1.14.0** (voce 6 del
+«Delta», prova manuale con il `global_dict` sopra e
+`local_dict={"x": Symbol("x", real=True)}`): `__import__('os').system('id')`
+e `open('/etc/hosts').read()` → `NameError: name 'Function' is not
+defined` (la trasformazione `auto_symbol` converte i nomi ignoti in
+chiamate `Function`, assente dal `global_dict`: nessun accesso a builtin);
+`(lambda: 1)()` → valutata a `1`, `x.__class__.__mro__` e
+`[].__class__.__base__.__subclasses__()` → eseguiti: il `global_dict` NON
+li ferma, li ferma **solo il passo 1** (nodi `Lambda`, `Attribute`, `List`
+non ammessi), da cui l'obbligo dei due passi; `y + x` → simbolo libero
+`y` (colto dal controllo finale `free_symbols ⊆ dichiarati`);
+`2**1000000` → `ValueError: Exceeds the limit (4300 digits)` (e il passo 1
+lo rifiuta prima con `|esponente| ≤ 12`); `sin(x)**2 + 2*x` → ok in ~1 ms.
+Il test `importorskip("sympy")` in `test_function_figure_service.py`
+(WP7) fissa questi sei casi.
 
 ### 4.3 Numerico prima, simbolico nel figlio
 
@@ -814,7 +905,9 @@ per gli SVG di vl-convert, `dot` e matplotlib. **Mermaid non passa da qui.**
    fallback, non una sanificazione parziale) — globale sul documento per
    `<script`, `<foreignObject`, `<iframe`, `<image` e per gli elementi
    SMIL `<set`, `<animate*`, `<handler` (possono assegnare `href` o `on*` a
-   tempo di esecuzione; nessun renderer nostro li emette); limitata al
+   tempo di esecuzione; nessun renderer nostro li emette), anche con
+   prefisso di namespace (`<svg:script>`, `<x:foreignObject>`: stesso
+   elemento per un parser XML, giro 2); limitata al
    contenuto dei tag `<…>` per `<use` con `href` non-frammento, gestori
    `on[a-z]+=`, `href` esterni (quotati **o non quotati**: `href=http://x`),
    `javascript:`, `data:text/html`, `@import`, `url()` non-frammento. Il
@@ -1176,7 +1269,10 @@ Decisioni prese in Fase B (A1-A16) e nella ripresa del 7 settembre
 - Mermaid resta su CDN a runtime (validatore e pre-render): offline degrada
   come oggi (pass-through nel validatore, fallback nel PDF); i tre formati
   nuovi sono offline e non degradano. Bundle locale di Mermaid: lavoro
-  futuro.
+  futuro. Il batch Mermaid di `render_svg_map` ha un tetto proprio di
+  almeno 60 s (sezione 2.2): con una CDN lentissima l'export attende fino
+  a un minuto prima del fallback, e un timeout del batch non entra in
+  cache negativa (l'export successivo ritenta).
 - Diagrammi v10 già in DB che non parsano in v11, o di tipo escluso,
   finiscono nell'elenco «da correggere» dello script L5; il gate statico
   li blocca solo alla rigenerazione o alla modifica di quel singolo asset,
@@ -1269,6 +1365,12 @@ esplicito, mai falliscono. Vedi [backend/11 — Tests](../backend/11-tests.md).
   chiamate. Sotto pytest (loop di sessione) i test di
   `test_figure_render_service.py` eseguono gli stessi bersagli. Su Linux
   (Docker) la prova resta da eseguire in WP6.
+- `parse_expr` con `global_dict` ristretto su sympy 1.14.0. Esito WP2b
+  (7 settembre, prova manuale): registrato in sezione 4.2 — `__import__`
+  e `open` → `NameError` (`Function` assente dal `global_dict`), `lambda`
+  e accesso ad attributi eseguiti (fermati solo dal passo 1 sull'AST),
+  simbolo non dichiarato colto da `free_symbols`, `2**1000000` →
+  `ValueError` (4300 cifre). Il test `importorskip("sympy")` è di WP7.
 - Metriche dei font di vl-convert nel container. Esito: (da completare in
   WP6).
 - Screenshot: frame video di WP4 (`scratchpad/wp4_frame.png`),

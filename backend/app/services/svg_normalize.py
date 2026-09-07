@@ -15,7 +15,8 @@ Regole:
    gli elementi attivi, animati o esterni: `<script`, `<foreignObject`,
    `<iframe`, `<image`, `<set`, `<animate*`, `<handler` (SMIL può
    riscrivere `href` o `on*` a tempo di esecuzione; nessun renderer nostro
-   li emette). Limitata al contenuto dei tag `<…>` (attributi) per `<use`
+   li emette), anche con prefisso di namespace (`<svg:script`). Limitata
+   al contenuto dei tag `<…>` (attributi) per `<use`
    con href non-frammento, gestori `on*=`, `href` esterni (quotati o no),
    `javascript:`, `data:text/html`, `@import`, `url()` non-frammento; le
    stesse regole CSS valgono dentro `<style>…</style>`. Il riconoscimento
@@ -68,15 +69,18 @@ _PROLOGUE_RE = re.compile(
 # esecuzione), portano HTML (foreignObject, iframe) o risorse
 # esterne/raster (image). `function_plot` non produce mai `<image>`
 # nonostante `svg.image_inline` nei rcParams (contour e fill_between sono
-# path; niente imshow).
+# path; niente imshow). Il nome dell'elemento può portare un prefisso di
+# namespace (`<svg:script>`, `<x:foreignObject>`): stesso elemento per un
+# parser XML, stesso rifiuto.
+_NS_PREFIX = r"<\s*(?:[A-Za-z_][\w.-]*:)?"
 _FORBIDDEN_GLOBAL: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("script", re.compile(r"<\s*script\b", re.IGNORECASE)),
-    ("foreignObject", re.compile(r"<\s*foreignObject\b", re.IGNORECASE)),
-    ("iframe", re.compile(r"<\s*iframe\b", re.IGNORECASE)),
-    ("image", re.compile(r"<\s*image\b", re.IGNORECASE)),
-    ("set", re.compile(r"<\s*set\b", re.IGNORECASE)),
-    ("animate", re.compile(r"<\s*animate[a-z]*\b", re.IGNORECASE)),
-    ("handler", re.compile(r"<\s*handler\b", re.IGNORECASE)),
+    ("script", re.compile(_NS_PREFIX + r"script\b", re.IGNORECASE)),
+    ("foreignObject", re.compile(_NS_PREFIX + r"foreignObject\b", re.IGNORECASE)),
+    ("iframe", re.compile(_NS_PREFIX + r"iframe\b", re.IGNORECASE)),
+    ("image", re.compile(_NS_PREFIX + r"image\b", re.IGNORECASE)),
+    ("set", re.compile(_NS_PREFIX + r"set\b", re.IGNORECASE)),
+    ("animate", re.compile(_NS_PREFIX + r"animate[a-z]*\b", re.IGNORECASE)),
+    ("handler", re.compile(_NS_PREFIX + r"handler\b", re.IGNORECASE)),
 )
 
 # `href` esterno: valore quotato che non inizia con `#`, oppure valore non

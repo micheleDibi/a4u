@@ -130,6 +130,11 @@ def test_missing_root_is_rejected():
         ('<svg><a><animate attributeName="href" values="javascript:x"/></a></svg>', "animate"),
         ('<svg><rect><animateTransform attributeName="transform"/></rect></svg>', "animate"),
         ('<svg><handler type="text/ecmascript"/></svg>', "handler"),
+        # Nome con prefisso di namespace: stesso elemento per un parser XML.
+        ("<svg><svg:script>x</svg:script></svg>", "script"),
+        ("<svg><x:foreignObject><div>x</div></x:foreignObject></svg>", "foreignObject"),
+        ('<svg><a:image href="#a"/></svg>', "image"),
+        ('<svg><s:set attributeName="onclick" to="x"/></svg>', "set"),
         ('<svg><g style="background:url(http://x)"/></svg>', "url() esterno"),
         ("<svg><style>@import url(http://x/a.css);</style></svg>", "@import in <style>"),
         (

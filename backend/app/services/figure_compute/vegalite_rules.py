@@ -21,7 +21,15 @@ renderizzabilità offline decisi dalla specifica:
 - `axis.format` ⊆ `^[ ,.0-9a-z%$~+-]{0,12}$`; una sola `title` (stringa,
   ≤ 120 caratteri, solo al livello radice);
 - ricorsione ≤ 4 livelli su `layer | hconcat | vconcat | concat | spec |
-  facet | repeat`.
+  facet | repeat`;
+- annidamento complessivo del JSON ≤ `MAX_NESTING` (32) livelli, misurato
+  senza ricorsione da `nesting_depth`: un JSON legittimo non supera la
+  ventina (composizione ≤ 4 più `encoding.x.axis…`), mentre un filtro
+  `{"and": [{"and": …}]}` o un oggetto `data.values` annidato oltre il
+  centinaio di livelli fa sollevare `RecursionError` al validatore JSON
+  Schema o alle visite ricorsive di questo modulo. Il cap è deterministico
+  e indipendente dal limite di ricorsione dell'interprete; il chiamante
+  (`figure_render_service._parse_vegalite`) lo applica prima dello schema.
 
 Euristica del criterio 10 (`vegalite_use_function_format`)
 --------------------------------------------------------------
@@ -63,6 +71,9 @@ MAX_VALUES_ROWS = 200
 MAX_SEQUENCE_STEPS = 5_000
 MAX_TITLE_CHARS = 120
 MAX_DEPTH = 4
+# Annidamento complessivo del JSON (oggetti e liste, ovunque): misurato il
+# 7 settembre, jsonschema regge 60 livelli di `and` annidati e cade a 100.
+MAX_NESTING = 32
 
 USE_FUNCTION_FORMAT = "vegalite_use_function_format"
 
@@ -76,10 +87,11 @@ _H1_FUNCTIONS_RE = re.compile(
     r"\b(?:sin|cos|tan|asin|acos|atan|sinh|cosh|tanh|exp|log|sqrt|pow|abs)\s*\("
 )
 # Divisione con `datum` a denominatore: `/ datum.x`, `/ (datum.x - 2)`,
-# `/(2*datum.x + 1)`, `/(-datum.x)`, `/(2*(datum.x+1))`. Fra la barra e
-# `datum` sono ammessi, in qualunque ordine, segni, parentesi aperte e
-# costanti numeriche seguite da un operatore.
-_H2_DIVISION_RE = re.compile(r"/\s*(?:[-+(]\s*|[0-9.]+\s*[*+-]\s*)*datum\b")
+# `/(2*datum.x + 1)`, `/(-datum.x)`, `/(2*(datum.x+1))`, `/(PI*datum.x)`.
+# Fra la barra e `datum` sono ammessi, in qualunque ordine, segni,
+# parentesi aperte e costanti (numeriche o simboliche di Vega: `PI`, `E`,
+# `LN2`, `SQRT2`, ...: un identificatore) seguite da un operatore.
+_H2_DIVISION_RE = re.compile(r"/\s*(?:[-+(]\s*|(?:[0-9.]+|[A-Za-z_]\w*)\s*[*+-]\s*)*datum\b")
 _H3_POWER_RE = re.compile(r"\*\*|\^")
 # Chiavi della vista che NON vengono percorse dalla scansione degli oggetti
 # `data` annidati: le viste figlie hanno la propria visita, `data` di
@@ -93,6 +105,33 @@ def _is_mapping(value: Any) -> TypeGuard[Mapping[str, Any]]:
 
 def _is_number(value: Any) -> TypeGuard[float]:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def nesting_depth(value: Any) -> int:
+    """Profondità massima di annidamento di oggetti e liste (uno scalare
+    vale 0, `{}` e `[]` valgono 1). Iterativa: non dipende dal limite di
+    ricorsione dell'interprete."""
+    deepest = 0
+    stack: list[tuple[Any, int]] = [(value, 1)]
+    while stack:
+        node, depth = stack.pop()
+        if isinstance(node, Mapping):
+            children: list[Any] = list(node.values())
+        elif isinstance(node, list):
+            children = node
+        else:
+            continue
+        deepest = max(deepest, depth)
+        stack.extend((child, depth + 1) for child in children)
+    return deepest
+
+
+def nesting_violation(spec: Any) -> str | None:
+    """Messaggio di rifiuto se la spec supera `MAX_NESTING`, altrimenti `None`."""
+    depth = nesting_depth(spec)
+    if depth > MAX_NESTING:
+        return f"spec annidata oltre {MAX_NESTING} livelli ({depth})"
+    return None
 
 
 def _rows(values: Any) -> int | None:
@@ -322,6 +361,9 @@ def check_vegalite_rules(spec: Mapping[str, Any]) -> list[str]:
     """Lista di violazioni (vuota = conforme). L'eventuale rifiuto del
     criterio 10 è messo in testa con il prefisso
     `vegalite_use_function_format:` così il chiamante lo classifica."""
+    nesting = nesting_violation(spec)
+    if nesting is not None:
+        return [nesting]
     errors: list[str] = []
     datasets = spec.get("datasets")
     has_datasets = _is_mapping(datasets) and bool(datasets)
@@ -342,4 +384,10 @@ def check_vegalite_rules(spec: Mapping[str, Any]) -> list[str]:
     return errors
 
 
-__all__ = ["USE_FUNCTION_FORMAT", "check_vegalite_rules"]
+__all__ = [
+    "MAX_NESTING",
+    "USE_FUNCTION_FORMAT",
+    "check_vegalite_rules",
+    "nesting_depth",
+    "nesting_violation",
+]

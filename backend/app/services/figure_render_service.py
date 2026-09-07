@@ -63,6 +63,7 @@ from app.services.figure_compute.isolated import (
 from app.services.figure_compute.vegalite_rules import (
     USE_FUNCTION_FORMAT,
     check_vegalite_rules,
+    nesting_violation,
 )
 from app.services.figure_theme import (
     MERMAID_ALLOWED_TYPES,
@@ -240,10 +241,21 @@ def _render_failed(fmt: str, asset_id: str, reason: str) -> None:
 # Mermaid — gate statico D8, pre-render Playwright (catena invariata)
 # ---------------------------------------------------------------------------
 
-_INIT_DIRECTIVE_RE = re.compile(r"%%\s*\{\s*init\b", re.IGNORECASE)
-# Nel frontmatter YAML di Mermaid 11 la chiave `config:` equivale alla
-# direttiva `%%{init}%%` (sovrascrive tema e opzioni imposti dal renderer).
-_FRONTMATTER_CONFIG_RE = re.compile(r"^\s*config\s*:", re.IGNORECASE)
+# Mermaid 11 tratta `initialize` come alias di `init` (`detectInit` usa
+# `/(?:init\b)|(?:initialize\b)/`); `%%\s*\{` è un soprainsieme della sua
+# `%%{` contigua.
+_INIT_DIRECTIVE_RE = re.compile(r"%%\s*\{\s*init(?:ialize)?\b", re.IGNORECASE)
+# Frontmatter YAML: Mermaid 11 lo carica con js-yaml e legge SOLO le chiavi
+# `title`, `displayMode` e `config` (quest'ultima equivale alla direttiva
+# `%%{init}%%`: sovrascriverebbe tema e opzioni imposti dal renderer, D3).
+# Una chiave `config` può essere scritta in molte forme YAML (`"config"`,
+# `'config'`, `"con\x66ig"`, `{config: …}` in forma flow, chiave complessa
+# `? config`, alias `*a`): senza un parser YAML (PyYAML non è una
+# dipendenza dichiarata del backend) l'unico gate deterministico è una
+# lista chiusa: ogni riga del frontmatter deve essere vuota, un commento
+# `#` o una voce `title:` / `displayMode:` in forma blocco. Un frontmatter
+# che Mermaid ignora (chiave sconosciuta) è rifiutato con lo stesso esito.
+_FRONTMATTER_LINE_RE = re.compile(r"^(?:title|displayMode)\s*:(?:\s|$)")
 # Tag HTML nelle label (`<br>`, `<b>`, `<script>`, `<table>`, ...): con
 # `htmlLabels: false` finirebbero in chiaro nel `<text>`. Regola generica,
 # non un elenco di tag: `<` seguito da un nome di elemento e chiuso da `>`
@@ -269,17 +281,34 @@ _MERMAID_TYPE_ALIASES: dict[str, str] = {"classDiagram-v2": "classDiagram"}
 
 def _split_mermaid_frontmatter(code: str) -> tuple[list[str], list[str]]:
     """`(righe del frontmatter YAML, righe del corpo)`; il frontmatter è il
-    blocco `---...---` iniziale (dopo eventuali righe vuote)."""
+    blocco `---...---` iniziale (dopo eventuali righe vuote). Come la
+    `frontMatterRegex` di Mermaid 11, il `---` di chiusura deve avere lo
+    stesso rientro di quello di apertura: un `---` con rientro diverso è
+    parte del frontmatter, non la sua fine. Senza chiusura tutto il
+    sorgente è frontmatter (corpo vuoto → tipo `?`)."""
     lines = code.split("\n")
     i, n = 0, len(lines)
     while i < n and not lines[i].strip():
         i += 1
     if i < n and lines[i].strip() == "---":
+        indent = lines[i][: len(lines[i]) - len(lines[i].lstrip())]
         j = i + 1
-        while j < n and lines[j].strip() != "---":
+        while j < n and lines[j].rstrip() != indent + "---":
             j += 1
         return lines[i + 1 : j], lines[j + 1 :]
     return [], lines[i:]
+
+
+def _frontmatter_violation(frontmatter: list[str]) -> str | None:
+    """Prima riga del frontmatter che non è vuota, un commento `#` o una
+    voce `title:` / `displayMode:` (`None` se il frontmatter è ammesso)."""
+    for raw in frontmatter:
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if not _FRONTMATTER_LINE_RE.match(line):
+            return line
+    return None
 
 
 def mermaid_first_meaningful_line(code: str) -> str:
@@ -312,13 +341,23 @@ def mermaid_static_gate(code: str) -> tuple[str, str]:
     if _MERMAID_TYPE_ALIASES.get(kind, kind) not in MERMAID_ALLOWED_TYPES:
         return (MERMAID_GATE_TYPE, kind or "?")
     if _INIT_DIRECTIVE_RE.search(code):
-        return (MERMAID_GATE_INIT, "direttiva %%{init ...}%%")
-    frontmatter, _body = _split_mermaid_frontmatter(code)
-    if any(_FRONTMATTER_CONFIG_RE.match(line) for line in frontmatter):
-        return (MERMAID_GATE_INIT, "chiave `config:` nel frontmatter")
-    m = _HTML_TAG_RE.search(code)
-    if m:
-        return (MERMAID_GATE_HTML, m.group(0))
+        return (MERMAID_GATE_INIT, "direttiva %%{init ...}%% non ammessa")
+    frontmatter, body = _split_mermaid_frontmatter(code)
+    bad_line = _frontmatter_violation(frontmatter)
+    if bad_line is not None:
+        return (
+            MERMAID_GATE_INIT,
+            f"frontmatter: riga `{bad_line[:40]}` non ammessa "
+            "(ammesse solo `title:` e `displayMode:`)",
+        )
+    # Solo le righe del corpo che non sono commenti `%%`: un tag in un
+    # commento o nel frontmatter non viene renderizzato.
+    for line in body:
+        if line.lstrip().startswith("%%"):
+            continue
+        m = _HTML_TAG_RE.search(line)
+        if m:
+            return (MERMAID_GATE_HTML, m.group(0))
     return ("", "")
 
 
@@ -349,13 +388,16 @@ class MermaidRenderer:
         if outcome == MERMAID_GATE_INIT:
             return (
                 False,
-                f"{MERMAID_TYPE_NOT_ALLOWED}: {detail} non ammessa "
-                "(il tema è imposto dal renderer)",
+                f"{MERMAID_TYPE_NOT_ALLOWED}: {detail} (il tema è imposto dal renderer)",
             )
         if outcome == MERMAID_GATE_HTML:
+            kind = mermaid_declared_type(code)
+            hint = ""
+            if _MERMAID_TYPE_ALIASES.get(kind, kind) == "classDiagram":
+                hint = "; per i tipi generici usa `List~int~`, non `List<int>`"
             return (
                 False,
-                f"{MERMAID_TYPE_NOT_ALLOWED}: HTML nelle label non ammesso ({detail[:40]})",
+                f"{MERMAID_TYPE_NOT_ALLOWED}: HTML nelle label non ammesso ({detail[:40]}){hint}",
             )
         if deep:
             svg = self.render_svg(code)
@@ -420,17 +462,25 @@ def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 
 def _parse_vegalite(content: str) -> tuple[dict[str, Any] | None, str]:
     """`(spec, "")` oppure `(None, errore)`: lunghezza, JSON, chiavi
-    duplicate, oggetto radice."""
+    duplicate, oggetto radice, annidamento ≤ `MAX_NESTING`. Punto comune
+    di validazione, render e localizzazione: tutto ciò che ricorre sulla
+    spec (jsonschema, regole D5, visita dei campi testuali, `json.dumps`,
+    pickle verso il figlio) parte da qui con l'annidamento già limitato."""
     if len(content) > VEGALITE_MAX_CHARS:
         return (None, f"spec oltre {VEGALITE_MAX_CHARS} caratteri ({len(content)})")
     if not content.strip():
         return (None, "spec vuota")
     try:
         spec = json.loads(content, object_pairs_hook=_reject_duplicate_keys)
-    except ValueError as exc:  # JSONDecodeError è una ValueError
+    except (ValueError, RecursionError) as exc:
+        # JSONDecodeError è una ValueError; il decoder C solleva
+        # RecursionError oltre ~1.000 livelli (`[[[[…]]]]` in 3.000 caratteri).
         return (None, f"JSON non valido: {exc}"[:_ERROR_CAP])
     if not isinstance(spec, dict):
         return (None, "la spec deve essere un oggetto JSON")
+    nesting = nesting_violation(spec)
+    if nesting is not None:
+        return (None, nesting)
     return (spec, "")
 
 
@@ -540,11 +590,16 @@ class VegaLiteRenderer:
             return (False, str(exc))
         from jsonschema.exceptions import best_match
 
-        error = best_match(validator.iter_errors(spec))
-        if error is not None:
-            where = ".".join(str(p) for p in error.absolute_path) or "$"
-            return (False, f"{where}: {error.message}"[:_ERROR_CAP])
-        violations = check_vegalite_rules(spec)
+        try:
+            error = best_match(validator.iter_errors(spec))
+            if error is not None:
+                where = ".".join(str(p) for p in error.absolute_path) or "$"
+                return (False, f"{where}: {error.message}"[:_ERROR_CAP])
+            violations = check_vegalite_rules(spec)
+        except RecursionError:
+            # Difesa in profondità: `_parse_vegalite` limita già
+            # l'annidamento, qui nessuna eccezione deve attraversare il gate.
+            return (False, "spec troppo annidata per la validazione")
         if violations:
             return (False, "; ".join(violations)[:_ERROR_CAP])
         if deep:
@@ -645,12 +700,35 @@ class VegaLiteRenderer:
 _DOT_HEADER_RE = re.compile(r"^\s*(?:strict\s+)?(?:di)?graph\b", re.IGNORECASE)
 # Attributi che fanno leggere file locali o risorse esterne a `dot`, con i
 # composti degli archi e delle label (`labelURL`, `headhref`, `tailtarget`,
-# `edgeURL`, ...) e `SRC` dell'`<IMG>` delle label HTML-like (`dot` apre il
-# file indicato e il suo stderr distingue un path esistente da uno assente).
-_DOT_FORBIDDEN_ATTR_RE = re.compile(
-    r"\b((?:label|head|tail|edge)?(?:image|shapefile|imagepath|fontpath|stylesheet|URL|href"
-    r"|target)|SRC)\s*=",
-    re.IGNORECASE,
+# `edgeURL`, ...). `dot` apre il file indicato e il suo stderr distingue
+# un path esistente da uno assente. Il confronto è sul NOME dell'attributo
+# come lo vede lo scanner di Graphviz (`_dot_forbidden_attribute`): in DOT
+# un nome può essere quotato (`"image"=`), concatenato (`"ima"+"ge"=`),
+# spezzato da una continuazione di riga (`"ima\⏎ge"=`), separato dall'`=`
+# da un commento (`image/**/=`) o scritto come stringa HTML (`<image>=`);
+# verificato con dot 15.1.1: tutte le forme aprono il file. Una regex
+# `\bimage\s*=` sul sorgente grezzo non le vede. Confronto senza
+# distinzione di maiuscole per prudenza (`dot` è case-sensitive).
+_DOT_FORBIDDEN_BASE = (
+    "image",
+    "shapefile",
+    "imagepath",
+    "fontpath",
+    "stylesheet",
+    "url",
+    "href",
+    "target",
+)
+_DOT_FORBIDDEN_NAMES = frozenset(
+    f"{prefix}{base}"
+    for prefix in ("", "label", "head", "tail", "edge")
+    for base in _DOT_FORBIDDEN_BASE
+)
+# `SRC` dell'`<IMG>` nelle label HTML-like (`label=<<IMG SRC="…"/>>`).
+_DOT_HTML_IMG_SRC_RE = re.compile(r"<\s*img\b[^>]*\bsrc\s*=", re.IGNORECASE)
+# Identificatore o numerale DOT (lettere, `_`, caratteri non ASCII).
+_DOT_ID_RE = re.compile(
+    r"[A-Za-z_\x80-\uffff][A-Za-z_0-9\x80-\uffff]*|-?(?:\.[0-9]+|[0-9]+\.?[0-9]*)"
 )
 _DOT_EDGE_RE = re.compile(r"->|--")
 _DOT_BLOCK_RES = {
@@ -678,6 +756,121 @@ class _DotError(RuntimeError):
 
 def _dot_binary() -> str | None:
     return shutil.which(get_settings().graphviz_dot_path or "dot")
+
+
+def _dot_read_qstring(src: str, start: int) -> tuple[str, int]:
+    """Legge la stringa quotata che inizia in `src[start] == '"'` come lo
+    scanner di Graphviz (`\\"` → `"`, `\\\\` conservato, `\\`+newline
+    ignorato, ogni altro `\\` conservato). Ritorna `(testo, indice dopo la
+    virgoletta di chiusura)`; una stringa non chiusa termina alla fine."""
+    out: list[str] = []
+    i, n = start + 1, len(src)
+    while i < n:
+        ch = src[i]
+        if ch == "\\" and i + 1 < n:
+            nxt = src[i + 1]
+            if nxt == "\n":
+                i += 2
+                continue
+            if nxt == "\r" and src.startswith("\r\n", i + 1):
+                i += 3
+                continue
+            if nxt == '"':
+                out.append('"')
+                i += 2
+                continue
+            out.append(ch)
+            i += 1
+            continue
+        if ch == '"':
+            return ("".join(out), i + 1)
+        out.append(ch)
+        i += 1
+    return ("".join(out), n)
+
+
+def _dot_skip_blank(src: str, i: int) -> int:
+    """Indice del primo carattere significativo da `i`: salta spazi,
+    commenti `/* */`, `//` e righe `#` (preprocessore, a colonna 0)."""
+    n = len(src)
+    while i < n:
+        ch = src[i]
+        if ch.isspace():
+            i += 1
+        elif src.startswith("/*", i):
+            end = src.find("*/", i + 2)
+            i = n if end < 0 else end + 2
+        elif src.startswith("//", i) or (ch == "#" and (i == 0 or src[i - 1] == "\n")):
+            end = src.find("\n", i)
+            i = n if end < 0 else end
+        else:
+            break
+    return i
+
+
+def _dot_tokens(src: str) -> Iterator[tuple[str, str]]:
+    """Token significativi del sorgente DOT come `(tipo, testo)`: `id`
+    (identificatore o numerale), `str` (stringa quotata decodificata, con
+    le concatenazioni `"a" + "b"` già unite), `html` (contenuto della
+    stringa `<…>`), `op` (un carattere). Nessun parse della grammatica:
+    basta per sapere quale nome precede un `=`."""
+    i, n = 0, len(src)
+    while True:
+        i = _dot_skip_blank(src, i)
+        if i >= n:
+            return
+        ch = src[i]
+        if ch == '"':
+            text, i = _dot_read_qstring(src, i)
+            while True:
+                j = _dot_skip_blank(src, i)
+                if j < n and src[j] == "+":
+                    k = _dot_skip_blank(src, j + 1)
+                    if k < n and src[k] == '"':
+                        more, i = _dot_read_qstring(src, k)
+                        text += more
+                        continue
+                break
+            yield ("str", text)
+            continue
+        if ch == "<":
+            depth, j = 0, i
+            while j < n:
+                if src[j] == "<":
+                    depth += 1
+                elif src[j] == ">":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                j += 1
+            yield ("html", src[i + 1 : j])
+            i = j + 1
+            continue
+        m = _DOT_ID_RE.match(src, i)
+        if m:
+            yield ("id", m.group(0))
+            i = m.end()
+            continue
+        yield ("op", ch)
+        i += 1
+
+
+def _dot_forbidden_attribute(src: str) -> str | None:
+    """Nome (come scritto) del primo attributo che fa leggere a `dot` un
+    file o una risorsa esterna, oppure `SRC` per un `<IMG SRC=…>` in una
+    label HTML-like; `None` se il sorgente è pulito. Guarda solo i nomi
+    seguiti da `=`: `label="vedi image=1"` è testo e passa."""
+    prev: tuple[str, str] | None = None
+    for token in _dot_tokens(src):
+        kind, text = token
+        if kind == "op" and text == "=" and prev is not None and prev[0] != "op":
+            name = prev[1].strip()
+            if name.lower() in _DOT_FORBIDDEN_NAMES:
+                return name
+        if kind == "html" and _DOT_HTML_IMG_SRC_RE.search(text):
+            return "SRC"
+        prev = token
+    return None
 
 
 def _dot_with_theme(source: str) -> str:
@@ -762,9 +955,9 @@ class DotRenderer:
             return (False, f"sorgente DOT oltre {max_chars} caratteri ({len(src)})")
         if not _DOT_HEADER_RE.match(src):
             return (False, "il sorgente deve iniziare con `graph`, `digraph` o `strict`")
-        m = _DOT_FORBIDDEN_ATTR_RE.search(src)
-        if m:
-            return (False, f"attributo non ammesso: `{m.group(1)}=` (risorse esterne o file)")
+        forbidden = _dot_forbidden_attribute(src)
+        if forbidden is not None:
+            return (False, f"attributo non ammesso: `{forbidden}=` (risorse esterne o file)")
         edges = len(_DOT_EDGE_RE.findall(src))
         if edges > DOT_MAX_EDGES:
             return (False, f"troppi archi ({edges} > {DOT_MAX_EDGES})")
@@ -870,6 +1063,22 @@ _semaphores: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaph
     weakref.WeakKeyDictionary()
 )
 
+# Tetto minimo del batch per formato, applicato sopra
+# `figure_render_timeout_seconds` (20 s). Il batch Mermaid paga un costo
+# fisso (lancio di Chromium, caricamento della CDN con `wait_for_function`
+# fino a 15 s) prima del primo render: con il timeout unico una CDN lenta
+# farebbe perdere in blocco tutte le figure Mermaid della lezione. Oggi
+# `_prerender_mermaid_for_lesson` non ha alcun tetto complessivo.
+_BATCH_TIMEOUT_FLOOR_S: dict[str, float] = {"mermaid": 60.0}
+# Formati per cui un timeout dell'INTERO batch non entra in cache negativa:
+# il tempo è dominato dal costo fisso, non attribuibile alle singole figure
+# (un render fallito per figura, `None` nella lista, resta in cache negativa).
+_NO_NEGATIVE_CACHE_ON_BATCH_TIMEOUT: frozenset[str] = frozenset({"mermaid"})
+
+
+def _batch_timeout(fmt: str, base: float) -> float:
+    return max(base, _BATCH_TIMEOUT_FLOOR_S.get(fmt, 0.0))
+
 
 def _render_semaphore() -> asyncio.Semaphore:
     """Un semaforo per loop (uvicorn e test usano loop diversi)."""
@@ -929,16 +1138,18 @@ async def render_svg_map(assets: Sequence[Mapping[str, Any]], *, language: str) 
         renderer = REGISTRY[fmt]
         ids = [aid for aid, _s, _k in items]
         contents = [s for _a, s, _k in items]
+        fmt_timeout = _batch_timeout(fmt, timeout)
         async with sem:
             try:
                 svgs = await asyncio.wait_for(
                     asyncio.to_thread(renderer.render_svg_batch, contents, asset_ids=ids),
-                    timeout=timeout,
+                    timeout=fmt_timeout,
                 )
             except TimeoutError:
                 for aid, _s, key in items:
-                    _cache_negative(key)
-                    _render_failed(fmt, aid, f"timeout dopo {timeout:g} s")
+                    if fmt not in _NO_NEGATIVE_CACHE_ON_BATCH_TIMEOUT:
+                        _cache_negative(key)
+                    _render_failed(fmt, aid, f"timeout dopo {fmt_timeout:g} s")
                 continue
             except Exception as exc:  # il renderer non deve sollevare; difesa in profondità
                 for aid, _s, key in items:

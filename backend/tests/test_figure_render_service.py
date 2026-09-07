@@ -180,6 +180,10 @@ def test_mermaid_static_gate_accepts_the_d8_samples(code: str):
         "flowchart LR\n  A[x <b] --> B",  # `<b` non chiuso: non è un tag
         "flowchart LR\n  A[a < b] --> B",  # `<` isolato
         "erDiagram\n  A ||--o{ B : has",
+        "%% <b>commento</b>\nflowchart LR\n  A --> B",  # tag in un commento: non renderizzato
+        "---\ntitle: <b>x</b>\n---\nflowchart LR\n  A --> B",  # tag nel frontmatter
+        "---\ntitle: Schema\n# commento\ndisplayMode: compact\n---\ngantt\n  title x",
+        '---\n\ntitle: "Corso: parte 1"\n---\nflowchart LR\n  A --> B',
     ],
 )
 def test_mermaid_static_gate_accepts_comments_frontmatter_aliases_and_fences(code: str):
@@ -196,7 +200,19 @@ def test_mermaid_static_gate_accepts_comments_frontmatter_aliases_and_fences(cod
         ("flowchart-elk LR\n  A --> B", "flowchart-elk"),  # layout esterno, non nel CDN
         ("%%{init: {'theme': 'dark'}}%%\nflowchart LR\n  A --> B", "%%{init"),
         ("%%  { init: {'theme': 'dark'} }%%\nflowchart LR\n  A --> B", "%%{init"),
+        # `initialize` è l'alias di `init` in Mermaid 11 (`detectInit`).
+        ("%%{initialize: {'theme': 'dark', 'htmlLabels': true}}%%\nflowchart LR\n  A", "%%{init"),
+        ("%%{INITIALIZE: {'theme': 'dark'}}%%\nflowchart LR\n  A --> B", "%%{init"),
         ("---\nconfig:\n  theme: forest\n---\nflowchart LR\n  A --> B", "config:"),
+        # Forme YAML equivalenti della chiave `config` (js-yaml le legge tutte).
+        ('---\n"config":\n  theme: forest\n---\nflowchart LR\n  A --> B', '"config":'),
+        ("---\n'config': {theme: forest}\n---\nflowchart LR\n  A --> B", "'config'"),
+        ("---\n{config: {theme: forest}}\n---\nflowchart LR\n  A --> B", "{config:"),
+        ('---\n"con\\x66ig": {theme: forest}\n---\nflowchart LR\n  A --> B', "con\\x66ig"),
+        ("---\ntitle: x\nconfig: {theme: forest}\n---\nflowchart LR\n  A --> B", "config:"),
+        # Chiave che Mermaid ignora: rifiutata dalla lista chiusa, con il motivo.
+        ("---\ntheme: forest\n---\nflowchart LR\n  A --> B", "solo `title:` e `displayMode:`"),
+        ("---\n- config\n---\nflowchart LR\n  A --> B", "- config"),
         ("flowchart LR\n  A[<b>x</b>] --> B", "HTML"),
         ("flowchart LR\n  A[riga<br/>due] --> B", "HTML"),
         ("flowchart LR\n  A[<script>alert(1)</script>] --> B", "<script>"),
@@ -206,13 +222,24 @@ def test_mermaid_static_gate_accepts_comments_frontmatter_aliases_and_fences(cod
         ("", "vuoto"),
         ("   \n%% solo commenti\n", "?"),
         ("---\ntitle: x\nflowchart LR\n  A --> B", "?"),  # frontmatter mai chiuso
+        # Chiusura con rientro diverso dall'apertura: per la `frontMatterRegex`
+        # di Mermaid non chiude il frontmatter (tutto è frontmatter, corpo vuoto).
+        ("---\ntitle: x\n  ---\nflowchart LR\n  A --> B", "?"),
     ],
 )
 def test_mermaid_static_gate_rejects(code: str, needle: str):
     ok, err = frs.REGISTRY["mermaid"].validate(code)
-    assert ok is False and needle in err
+    assert ok is False and needle in err, err
     if code.strip():
         assert err.startswith("mermaid_type_not_allowed")
+
+
+def test_mermaid_html_gate_suggests_tilde_generics_for_class_diagrams():
+    r = frs.REGISTRY["mermaid"]
+    ok, err = r.validate("classDiagram\n  class A {\n    List<int> items\n  }")
+    assert ok is False and "(<int>)" in err and "List~int~" in err
+    ok, err = frs.REGISTRY["mermaid"].validate("flowchart LR\n  A[a<b and c>d] --> B")
+    assert ok is False and "<b and c>" in err and "~" not in err
 
 
 def test_mermaid_static_gate_is_shared_with_the_revalidation_script():
@@ -226,7 +253,14 @@ def test_mermaid_static_gate_is_shared_with_the_revalidation_script():
     assert static_gate("---\nconfig:\n  theme: x\n---\nflowchart LR\n  A") == (
         "mermaid_init_directive"
     )
+    assert static_gate('---\n"config": {theme: x}\n---\nflowchart LR\n  A') == (
+        "mermaid_init_directive"
+    )
+    assert static_gate("%%{initialize: {'theme': 'x'}}%%\nflowchart LR\n  A") == (
+        "mermaid_init_directive"
+    )
     assert static_gate("flowchart LR\n  A[x <b] --> B") == ""
+    assert static_gate("%% <b>c</b>\nflowchart LR\n  A --> B") == ""
 
 
 def test_mermaid_translatable_is_the_whole_source():
@@ -313,6 +347,54 @@ def test_vegalite_length_duplicates_and_non_object_are_rejected():
     assert ok is False and "oggetto" in err
     ok, err = r.validate("{non json")
     assert ok is False and "JSON" in err
+
+
+def _and_filter_spec(levels: int) -> str:
+    predicate: dict[str, Any] = {"field": "v", "gt": 0}
+    for _ in range(levels):
+        predicate = {"and": [predicate]}
+    return json.dumps(
+        {"data": {"values": [{"v": 1}]}, "transform": [{"filter": predicate}], "mark": "bar"}
+    )
+
+
+def test_vegalite_deeply_nested_json_is_rejected_without_recursion_error():
+    """Il decoder C di `json` solleva `RecursionError` (non `ValueError`)
+    oltre ~1.000 livelli entro i 4.000 caratteri; jsonschema ricorre in
+    Python e cade a ~100 livelli di `and`: entrambi i casi devono uscire
+    dal gate come `(False, msg)`, mai come eccezione (HTTP 500 dal PATCH,
+    eccezione non gestita nel worker). Offline: il cap di annidamento
+    precede lo schema."""
+    r = frs.REGISTRY["vegalite"]
+    ok, err = r.validate("[" * 1500 + "]" * 1500)
+    assert (
+        ok is False
+        and err.startswith("JSON non valido")
+        and frs.error_type_for(err) == ("figure_invalid")
+    )
+    ok, err = r.validate(_and_filter_spec(100))
+    assert ok is False and "annidata oltre" in err
+    nested: Any = 1
+    for _ in range(40):
+        nested = {"a": nested}
+    ok, err = r.validate(json.dumps({"data": {"values": [nested]}, "mark": "bar"}))
+    assert ok is False and "annidata oltre" in err
+    # Render e localizzazione passano dallo stesso `_parse_vegalite`.
+    assert r.render_svg("[" * 1500 + "]" * 1500, asset_id="A1") is None
+    assert r.extract_translatable(_and_filter_spec(100)) == {}
+
+
+async def test_validate_visual_assets_turns_deep_json_into_422(monkeypatch: pytest.MonkeyPatch):
+    _patch_settings(monkeypatch, figure_dot_enabled=False)
+    with pytest.raises(ValidationAppError) as exc:
+        await frs.validate_visual_assets_or_raise(
+            [{"asset_id": "A1", "format": "vegalite", "content": "[" * 1500 + "]" * 1500}],
+            previous=None,
+            loc_root="visual_assets",
+            code="lesson_content_invalid_visual_asset",
+        )
+    (error,) = exc.value.meta["errors"]
+    assert error["type"] == "figure_invalid" and error["msg"].startswith("JSON non valido")
 
 
 @needs_vl
@@ -410,14 +492,41 @@ def test_dot_static_validation_is_offline(monkeypatch: pytest.MonkeyPatch):
         ('digraph { a -> b [edgehref="x"] }', "edgehref="),
         ('digraph { a [labelhref="x"]; }', "labelhref="),
         ('digraph { a [label=<<IMG SRC="/etc/hosts"/>>] }', "SRC="),
+        ('digraph { a [label=<<IMG\n SCALE="TRUE" src="x"/>>] }', "SRC="),  # a capo, minuscolo
+        ('digraph { imagepath="/etc"; a -> b }', "imagepath="),  # attributo di grafo
+        # Forme del nome che lo scanner di Graphviz risolve in `image`
+        # (verificate con dot 15.1.1: tutte aprono il file indicato).
+        ('digraph { a ["image"="/etc/hosts"] }', "image="),
+        ('digraph { a ["image" = "/etc/hosts"] }', "image="),
+        ('digraph { node ["URL"="http://x"] }', "URL="),
+        ('digraph { a ["ima"+"ge"="/etc/hosts"] }', "image="),  # concatenazione
+        ('digraph { a ["ima" /*c*/ + "ge"="/etc/hosts"] }', "image="),
+        ('digraph { a ["ima\\\nge"="/etc/hosts"] }', "image="),  # continuazione di riga
+        ('digraph { a [image/*c*/="/etc/hosts"] }', "image="),  # commento prima di `=`
+        ('digraph { a [<image>="/etc/hosts"] }', "image="),  # stringa HTML come nome
+        ('digraph { a [label="//" image="/etc/hosts"] }', "image="),  # `//` in una stringa
+        ('digraph { a [label="a\\"b" image="/etc/hosts"] }', "image="),  # `\\"` nella stringa
+        ('digraph { a [IMAGE="/etc/hosts"] }', "IMAGE="),  # prudenza: dot è case-sensitive
     ):
         ok, err = r.validate(src)
         assert ok is False and needle in err, (src, err)
-    # Attributi leciti con prefissi simili restano ammessi.
-    ok, err = r.validate('digraph { a [imagescale=true]; a -> b [headlabel="h", taillabel="t"] }')
-    assert ok is True, err
-    ok, err = r.validate("digraph { a [label=<<TABLE><TR><TD>x</TD></TR></TABLE>>] }")
-    assert ok is True, err
+    # Attributi leciti con prefissi simili, e i nomi vietati come TESTO
+    # (valori di label, commenti, righe `#`) restano ammessi: il confronto
+    # è sul nome che precede un `=`.
+    for src in (
+        'digraph { a [imagescale=true]; a -> b [headlabel="h", taillabel="t"] }',
+        "digraph { a [label=<<TABLE><TR><TD>x</TD></TR></TABLE>>] }",
+        'digraph { a [label="vedi image=1 e URL=2"] }',
+        'digraph { a [label="x" /* image="y" */ ] }',
+        'digraph { a [label="x"\n#image="y"\n] }',
+        "digraph { a [label=<<TABLE><TR><TD>src=1</TD></TR></TABLE>>] }",
+        'digraph { a [tooltip="t", label="l"]; a -> b [edgetooltip="e"] }',
+    ):
+        ok, err = r.validate(src)
+        assert ok is True, (src, err)
+    # Apici singoli: non delimitano stringhe in DOT (errore di sintassi per
+    # `dot`, nessun file letto): il gate statico non li tratta.
+    assert frs._dot_forbidden_attribute("digraph { a ['image'='/etc/hosts'] }") is None
     ok, err = r.validate("subgraph { a -> b }")
     assert ok is False and "digraph" in err
     ok, err = r.validate("")
@@ -581,6 +690,30 @@ async def test_render_svg_map_times_out_without_raising(monkeypatch: pytest.Monk
     assert out == {}
     assert time.perf_counter() - t0 < 0.6
     await asyncio.sleep(0.7)  # il thread del renderer finto termina
+
+
+async def test_render_svg_map_gives_the_mermaid_batch_its_own_floor_and_no_negative_cache(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Il batch Mermaid paga un costo fisso (Chromium + CDN) prima del primo
+    render: ha un tetto minimo proprio sopra `figure_render_timeout_seconds`
+    e un suo timeout non entra in cache negativa (non è attribuibile alle
+    singole figure); per gli altri formati resta il comportamento di base."""
+    slow = _FakeRenderer("mermaid", delay=0.35)
+    monkeypatch.setitem(frs.REGISTRY, "mermaid", slow)
+    monkeypatch.setitem(frs._BATCH_TIMEOUT_FLOOR_S, "mermaid", 0.8)
+    _patch_settings(monkeypatch, figure_render_timeout_seconds=0.1)
+    assets = [{"asset_id": "M1", "format": "mermaid", "content": "flowchart LR\n A --> B"}]
+    assert frs._batch_timeout("mermaid", 0.1) == 0.8 and frs._batch_timeout("dot", 0.1) == 0.1
+    assert await frs.render_svg_map(assets, language="it") == {
+        "M1": "<svg>mermaid:flowchart LR\n A --> B</svg>"
+    }
+    monkeypatch.setitem(frs._BATCH_TIMEOUT_FLOOR_S, "mermaid", 0.1)
+    frs.clear_svg_cache()
+    assert await frs.render_svg_map(assets, language="it") == {}  # timeout
+    assert await frs.render_svg_map(assets, language="it") == {}  # ritenta: niente cache negativa
+    assert len(slow.batches) == 3
+    await asyncio.sleep(0.8)  # i thread del renderer finto terminano
 
 
 async def test_render_svg_map_skips_formats_disabled_by_the_kill_switch(

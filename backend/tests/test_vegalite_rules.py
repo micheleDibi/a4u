@@ -14,11 +14,14 @@ import pytest
 
 from app.services.figure_compute.vegalite_rules import (
     MAX_DEPTH,
+    MAX_NESTING,
     MAX_SEQUENCE_STEPS,
     MAX_TITLE_CHARS,
     MAX_VALUES_ROWS,
     USE_FUNCTION_FORMAT,
     check_vegalite_rules,
+    nesting_depth,
+    nesting_violation,
 )
 
 _QUANT_XY = {
@@ -211,6 +214,31 @@ def test_composition_depth_is_bounded():
     assert any("composizione oltre" in e for e in check_vegalite_rules(spec))
 
 
+def test_json_nesting_is_measured_iteratively_and_capped():
+    """`nesting_depth` non ricorre: un annidamento oltre il limite
+    dell'interprete non solleva; `check_vegalite_rules` rifiuta oltre
+    `MAX_NESTING` prima di ogni visita ricorsiva (jsonschema cade a ~100
+    livelli di `and`, misurato)."""
+    assert nesting_depth(1) == 0 and nesting_depth({}) == 1 and nesting_depth([[]]) == 2
+    assert nesting_depth(_bar()) == 5  # encoding.y.scale.domain
+    assert nesting_violation(_bar()) is None
+    deep: Any = 1
+    for _ in range(5_000):
+        deep = [deep]
+    assert nesting_depth(deep) == 5_000
+    predicate: dict[str, Any] = {"field": "v", "gt": 0}
+    for _ in range(MAX_NESTING):
+        predicate = {"and": [predicate]}
+    spec = {**_bar(), "transform": [{"filter": predicate}]}
+    (error,) = check_vegalite_rules(spec)
+    assert error.startswith(f"spec annidata oltre {MAX_NESTING} livelli")
+    assert nesting_violation(spec) == error
+    ok: dict[str, Any] = _bar()
+    for _ in range(MAX_DEPTH):
+        ok = {"layer": [ok]}
+    assert check_vegalite_rules(ok) == []  # composizione al massimo: sotto il cap
+
+
 # ---------------------------------------------------------------------------
 # Criterio 10: H1-H3 alla radice e nei figli (ereditarietà di `sequence`)
 # ---------------------------------------------------------------------------
@@ -228,6 +256,11 @@ def test_composition_depth_is_bounded():
         ("datum.x ** 2", "potenza"),
         ("datum.x^3", "potenza"),
         ("sqrt(datum['x'])", "trascendente"),  # forma datum["campo"]
+        # Costanti simboliche di Vega davanti a `datum` a denominatore.
+        ("1/(PI*datum.x)", "razionale"),
+        ("1/(2*PI*datum.x)", "razionale"),
+        ("1 / (E - datum.x)", "razionale"),
+        ("1/(LN2 + 3*datum.x)", "razionale"),
     ],
 )
 def test_criterion_10_at_root(calculate: str, reason: str):
