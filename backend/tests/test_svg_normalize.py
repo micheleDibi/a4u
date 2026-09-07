@@ -124,6 +124,12 @@ def test_missing_root_is_rejected():
         ('<svg><g onclick="x()"/></svg>', "gestore di evento"),
         ('<svg><a href="http://x"><text>t</text></a></svg>', "href esterno"),
         ('<svg><a xlink:href="javascript:alert(1)"><text>t</text></a></svg>', "href esterno"),
+        ("<svg><a href=http://x><text>t</text></a></svg>", "href esterno"),  # non quotato
+        ("<svg><use href=http://x/y.svg/></svg>", "use con href esterno"),
+        ('<svg><set attributeName="onclick" to="alert(1)"/></svg>', "set"),
+        ('<svg><a><animate attributeName="href" values="javascript:x"/></a></svg>', "animate"),
+        ('<svg><rect><animateTransform attributeName="transform"/></rect></svg>', "animate"),
+        ('<svg><handler type="text/ecmascript"/></svg>', "handler"),
         ('<svg><g style="background:url(http://x)"/></svg>', "url() esterno"),
         ("<svg><style>@import url(http://x/a.css);</style></svg>", "@import in <style>"),
         (
@@ -165,10 +171,26 @@ def test_aria_attributes_are_inert_text():
 def test_fragment_references_in_attributes_are_allowed():
     raw = (
         '<svg width="10" height="10"><a href="#sezione"><text>t</text></a>'
+        "<a href=#nudo><text>u</text></a>"
         '<g style="clip-path:url(#c)" fill="url( \'#grad\' )"/></svg>'
     )
     out = normalize_svg(raw, max_bytes=10_000)
-    assert 'href="#sezione"' in out.svg
+    assert 'href="#sezione"' in out.svg and "href=#nudo" in out.svg
+
+
+def test_tag_scan_respects_quotes():
+    """Un `>` dentro un valore quotato non chiude il tag: gli attributi che
+    seguono (`onclick=`) restano nella scansione. Vega emette `&gt;`, ma il
+    modulo non deve dipendere da questo."""
+    for raw in (
+        '<svg><text aria-label="a > b" onclick="x">t</text></svg>',
+        '<svg><text aria-label=\'a "b" > c\' onclick="x">t</text></svg>',
+        '<svg><text>it\'s</text><g onclick="x"/></svg>',
+    ):
+        with pytest.raises(SvgRejectedError, match="gestore di evento"):
+            normalize_svg(raw, max_bytes=10_000)
+    out = normalize_svg('<svg><text aria-label="a > b">t</text><settings/></svg>', max_bytes=10_000)
+    assert 'aria-label="a > b"' in out.svg  # `<settings` non è `<set`
 
 
 def test_svg_to_data_uri_is_base64():

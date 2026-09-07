@@ -7,7 +7,12 @@ renderizzabilità offline decisi dalla specifica:
 - vietati `data.url`, `data.name` senza `datasets`, `mark: "image"`,
   `selection | params | tooltip | interactive | config | usermeta`,
   `encoding.href` (niente interattività, niente rete, niente tema scritto
-  dal modello: il `config` lo inietta il renderer);
+  dal modello: il `config` lo inietta il renderer). Le regole su `data`
+  valgono per OGNI oggetto `data` della vista, non solo per quello di primo
+  livello: anche `transform[i].lookup.from.data` (una `lookup` può portare
+  un `url` nascosto in un transform; `allowed_base_urls=[]` di vl-convert
+  blocca solo gli URL http(s), mentre `file://` produce un join vuoto in
+  silenzio);
 - `values` ≤ 200 righe (anche in `datasets`); `sequence` ≤ 5.000 passi con
   `step > 0`;
 - obbligatorio `clip: true` sui mark `line | area | point | trail` e
@@ -40,6 +45,12 @@ I campi `sequence` sono EREDITATI dalle viste figlie (`layer`, `hconcat`,
 per i figli, quindi `data.sequence` alla radice e `calculate` dentro un
 `layer` sono la stessa figura. `_walk` propaga l'insieme dei campi ai figli
 e applica H1-H3 a ogni `transform.calculate` della sottovista.
+
+Gli ALIAS contano come campi `sequence`: un `calculate` che referenzia un
+campo `sequence` (anche solo `datum.x`) rende il proprio `as` un campo
+`sequence` per le trasformazioni successive e per le viste figlie, così
+`{"calculate": "datum.x", "as": "t"}` seguito da `sin(datum.t)` è rifiutato
+come `sin(datum.x)`.
 """
 
 from __future__ import annotations
@@ -65,9 +76,15 @@ _H1_FUNCTIONS_RE = re.compile(
     r"\b(?:sin|cos|tan|asin|acos|atan|sinh|cosh|tanh|exp|log|sqrt|pow|abs)\s*\("
 )
 # Divisione con `datum` a denominatore: `/ datum.x`, `/ (datum.x - 2)`,
-# `/(2*datum.x + 1)`.
-_H2_DIVISION_RE = re.compile(r"/\s*(?:\(\s*)*(?:[-+]?\s*[0-9.]+\s*[*+-]\s*)*datum\b")
+# `/(2*datum.x + 1)`, `/(-datum.x)`, `/(2*(datum.x+1))`. Fra la barra e
+# `datum` sono ammessi, in qualunque ordine, segni, parentesi aperte e
+# costanti numeriche seguite da un operatore.
+_H2_DIVISION_RE = re.compile(r"/\s*(?:[-+(]\s*|[0-9.]+\s*[*+-]\s*)*datum\b")
 _H3_POWER_RE = re.compile(r"\*\*|\^")
+# Chiavi della vista che NON vengono percorse dalla scansione degli oggetti
+# `data` annidati: le viste figlie hanno la propria visita, `data` di
+# primo livello e `datasets` sono controllati a parte.
+_NESTED_DATA_SKIP_KEYS = frozenset({*_COMPOSITION_KEYS, *_NESTED_SPEC_KEYS, "data", "datasets"})
 
 
 def _is_mapping(value: Any) -> TypeGuard[Mapping[str, Any]]:
@@ -165,24 +182,60 @@ def _check_encoding(encoding: Any, *, where: str, errors: list[str]) -> None:
                 errors.append(f"{where}encoding.{channel}.axis.format non ammesso ({fmt!r})")
 
 
+def _scan_nested_data(
+    node: Any, *, path: str, has_datasets: bool, where: str, errors: list[str]
+) -> None:
+    """Applica `_check_data` a ogni oggetto sotto una chiave `data` in
+    qualunque punto della vista (es. `transform[i].lookup.from.data`),
+    escluse le viste figlie (visitate da `_walk`), il `data` di primo
+    livello e `datasets` (controllati a parte)."""
+    if _is_mapping(node):
+        for key, value in node.items():
+            if not path and key in _NESTED_DATA_SKIP_KEYS:
+                continue
+            child = f"{path}.{key}" if path else str(key)
+            if key == "data" and _is_mapping(value):
+                # `_check_data` antepone `data.` al nome del campo: il
+                # percorso passato è quello del genitore (`transform[0].from.`).
+                prefix = f"{where}{path}." if path else where
+                _check_data(value, has_datasets=has_datasets, where=prefix, errors=errors)
+                continue
+            _scan_nested_data(
+                value, path=child, has_datasets=has_datasets, where=where, errors=errors
+            )
+    elif isinstance(node, list):
+        for i, item in enumerate(node):
+            _scan_nested_data(
+                item, path=f"{path}[{i}]", has_datasets=has_datasets, where=where, errors=errors
+            )
+
+
+def _refs_sequence(expr: str, sequence_fields: frozenset[str]) -> bool:
+    if any(re.search(rf"\bdatum\.{re.escape(f)}\b", expr) for f in sequence_fields):
+        return True
+    return "datum[" in expr and any(f in expr for f in sequence_fields)
+
+
 def _check_transforms(
     transforms: Any, *, sequence_fields: frozenset[str], where: str, errors: list[str]
-) -> None:
+) -> frozenset[str]:
     """Euristica del criterio 10 su ogni `calculate` della vista, con i
-    campi `sequence` della vista stessa e quelli ereditati dai padri."""
+    campi `sequence` della vista stessa e quelli ereditati dai padri.
+    Ritorna l'insieme esteso con gli alias (`as`) dei `calculate` che
+    referenziano un campo `sequence`: valgono per le trasformazioni
+    successive e per le viste figlie."""
     if not isinstance(transforms, list) or not sequence_fields:
-        return
+        return sequence_fields
+    fields = set(sequence_fields)
     for i, tr in enumerate(transforms):
         if not _is_mapping(tr):
             continue
         expr = tr.get("calculate")
-        if not isinstance(expr, str):
+        if not isinstance(expr, str) or not _refs_sequence(expr, frozenset(fields)):
             continue
-        refs_sequence = any(re.search(rf"\bdatum\.{re.escape(f)}\b", expr) for f in sequence_fields)
-        if not refs_sequence and "datum[" in expr:
-            refs_sequence = any(f in expr for f in sequence_fields)
-        if not refs_sequence:
-            continue
+        alias = tr.get("as")
+        if isinstance(alias, str) and alias:
+            fields.add(alias)
         reason = None
         if _H1_FUNCTIONS_RE.search(expr):
             reason = "funzione trascendente o non lineare"
@@ -195,6 +248,7 @@ def _check_transforms(
                 f"{USE_FUNCTION_FORMAT}: {where}transform[{i}].calculate traccia una "
                 f'{reason}: usa format="function"'
             )
+    return frozenset(fields)
 
 
 def _walk(
@@ -231,11 +285,14 @@ def _walk(
     own_fields = _check_data(
         view.get("data"), has_datasets=has_datasets, where=where, errors=errors
     )
-    sequence_fields = inherited | frozenset(own_fields)
+    _scan_nested_data(view, path="", has_datasets=has_datasets, where=where, errors=errors)
     _check_mark(view.get("mark"), where=where, errors=errors)
     _check_encoding(view.get("encoding"), where=where, errors=errors)
-    _check_transforms(
-        view.get("transform"), sequence_fields=sequence_fields, where=where, errors=errors
+    sequence_fields = _check_transforms(
+        view.get("transform"),
+        sequence_fields=inherited | frozenset(own_fields),
+        where=where,
+        errors=errors,
     )
     for key in _COMPOSITION_KEYS:
         items = view.get(key)

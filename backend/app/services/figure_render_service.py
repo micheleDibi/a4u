@@ -66,7 +66,6 @@ from app.services.figure_compute.vegalite_rules import (
 )
 from app.services.figure_theme import (
     MERMAID_ALLOWED_TYPES,
-    MERMAID_EXCLUDED_TYPES,
     THEME_VERSION,
     VEGALITE_THEME_CONFIG,
     dot_defaults_prelude,
@@ -242,33 +241,85 @@ def _render_failed(fmt: str, asset_id: str, reason: str) -> None:
 # ---------------------------------------------------------------------------
 
 _INIT_DIRECTIVE_RE = re.compile(r"%%\s*\{\s*init\b", re.IGNORECASE)
-# Tag HTML nelle label (`<br>`, `<b>`, ...): con `htmlLabels: false`
-# finirebbero in chiaro nel `<text>`. Le frecce (`-->`, `<|--`, `->>`) e le
-# annotazioni `<<interface>>` non sono tag.
-_HTML_TAG_RE = re.compile(
-    r"</?(?:br|b|i|u|em|strong|span|div|p|sub|sup|a|img|font|code|small|big)\b[^>]*>",
-    re.IGNORECASE,
-)
+# Nel frontmatter YAML di Mermaid 11 la chiave `config:` equivale alla
+# direttiva `%%{init}%%` (sovrascrive tema e opzioni imposti dal renderer).
+_FRONTMATTER_CONFIG_RE = re.compile(r"^\s*config\s*:", re.IGNORECASE)
+# Tag HTML nelle label (`<br>`, `<b>`, `<script>`, `<table>`, ...): con
+# `htmlLabels: false` finirebbero in chiaro nel `<text>`. Regola generica,
+# non un elenco di tag: `<` seguito da un nome di elemento e chiuso da `>`
+# sulla stessa riga. Non sono tag e passano: le frecce (`-->`, `<|--`,
+# `->>`, `<-->`), le annotazioni `<<interface>>` (doppio `<`), un `<`
+# isolato (`a < b`) e un `<b` non chiuso (`A[x <b] --> B`: la sezione degli
+# attributi non attraversa `]`, `)`, `}`).
+_HTML_TAG_RE = re.compile(r"(?<!<)</?[a-zA-Z][a-zA-Z0-9-]*(?:\s[^>\n\]\)\}]*)?/?>(?!>)")
+
+# Esiti del gate statico (condivisi con `scripts/revalidate_mermaid_assets.py`).
+MERMAID_GATE_EMPTY = "mermaid_empty"
+MERMAID_GATE_TYPE = MERMAID_TYPE_NOT_ALLOWED
+MERMAID_GATE_INIT = "mermaid_init_directive"
+MERMAID_GATE_HTML = "mermaid_html_in_label"
+
+# Alias del tipo accettati in lettura oltre a quelli di `MERMAID_ALLOWED_TYPES`
+# (`graph`, `stateDiagram`): Mermaid 11 tratta `classDiagram-v2` come
+# `classDiagram`. Il confronto sul token è ESATTO: `flowchartXYZ` e
+# `flowchart-elk` (layout esterno, assente nel pre-render da CDN) sono
+# rifiutati.
+_MERMAID_TYPE_ALIASES: dict[str, str] = {"classDiagram-v2": "classDiagram"}
 
 
-def _mermaid_first_meaningful_line(code: str) -> str:
-    """Prima riga utile: salta righe vuote, commenti `%%` e il frontmatter
-    YAML `---...---` iniziale."""
+def _split_mermaid_frontmatter(code: str) -> tuple[list[str], list[str]]:
+    """`(righe del frontmatter YAML, righe del corpo)`; il frontmatter è il
+    blocco `---...---` iniziale (dopo eventuali righe vuote)."""
     lines = code.split("\n")
     i, n = 0, len(lines)
     while i < n and not lines[i].strip():
         i += 1
     if i < n and lines[i].strip() == "---":
-        i += 1
-        while i < n and lines[i].strip() != "---":
-            i += 1
-        i += 1
-    while i < n:
-        stripped = lines[i].strip()
+        j = i + 1
+        while j < n and lines[j].strip() != "---":
+            j += 1
+        return lines[i + 1 : j], lines[j + 1 :]
+    return [], lines[i:]
+
+
+def mermaid_first_meaningful_line(code: str) -> str:
+    """Prima riga utile: salta righe vuote, commenti `%%` e il frontmatter
+    YAML `---...---` iniziale."""
+    _frontmatter, body = _split_mermaid_frontmatter(code)
+    for raw in body:
+        stripped = raw.strip()
         if stripped and not stripped.startswith("%%"):
             return stripped
-        i += 1
     return ""
+
+
+def mermaid_declared_type(code: str) -> str:
+    """Tipo dichiarato: primo token della prima riga utile (`graph TD` →
+    `graph`, `flowchart LR;` → `flowchart`)."""
+    line = mermaid_first_meaningful_line(code)
+    return line.split()[0].rstrip(";") if line else ""
+
+
+def mermaid_static_gate(code: str) -> tuple[str, str]:
+    """Gate statico D8 su un sorgente già sanificato: `("", "")` se passa,
+    altrimenti `(esito, dettaglio)` con esito in `MERMAID_GATE_*` e
+    dettaglio = tipo dichiarato (`?` se assente), motivo della direttiva o
+    tag trovato. Unico punto del gate: `MermaidRenderer.validate` e lo
+    script di rivalidazione lo consumano con messaggi propri."""
+    if not code.strip():
+        return (MERMAID_GATE_EMPTY, "")
+    kind = mermaid_declared_type(code)
+    if _MERMAID_TYPE_ALIASES.get(kind, kind) not in MERMAID_ALLOWED_TYPES:
+        return (MERMAID_GATE_TYPE, kind or "?")
+    if _INIT_DIRECTIVE_RE.search(code):
+        return (MERMAID_GATE_INIT, "direttiva %%{init ...}%%")
+    frontmatter, _body = _split_mermaid_frontmatter(code)
+    if any(_FRONTMATTER_CONFIG_RE.match(line) for line in frontmatter):
+        return (MERMAID_GATE_INIT, "chiave `config:` nel frontmatter")
+    m = _HTML_TAG_RE.search(code)
+    if m:
+        return (MERMAID_GATE_HTML, m.group(0))
+    return ("", "")
 
 
 class MermaidRenderer:
@@ -286,29 +337,25 @@ class MermaidRenderer:
 
     def validate(self, content: str, *, deep: bool = False) -> tuple[bool, str]:
         code = self.sanitize(content)
-        if not code.strip():
+        outcome, detail = mermaid_static_gate(code)
+        if outcome == MERMAID_GATE_EMPTY:
             return (False, "sorgente Mermaid vuoto")
-        line = _mermaid_first_meaningful_line(code)
-        kind = line.split()[0] if line else ""
-        if not kind or not any(kind.startswith(t) for t in MERMAID_ALLOWED_TYPES):
-            excluded = next((t for t in MERMAID_EXCLUDED_TYPES if kind.startswith(t)), None)
-            label = excluded or kind or "?"
+        if outcome == MERMAID_GATE_TYPE:
             return (
                 False,
-                f"{MERMAID_TYPE_NOT_ALLOWED}: tipo `{label}` non ammesso; tipi consentiti: "
+                f"{MERMAID_TYPE_NOT_ALLOWED}: tipo `{detail}` non ammesso; tipi consentiti: "
                 + ", ".join(MERMAID_ALLOWED_TYPES),
             )
-        if _INIT_DIRECTIVE_RE.search(code):
+        if outcome == MERMAID_GATE_INIT:
             return (
                 False,
-                f"{MERMAID_TYPE_NOT_ALLOWED}: direttiva %%{{init ...}}%% non ammessa "
+                f"{MERMAID_TYPE_NOT_ALLOWED}: {detail} non ammessa "
                 "(il tema è imposto dal renderer)",
             )
-        m = _HTML_TAG_RE.search(code)
-        if m:
+        if outcome == MERMAID_GATE_HTML:
             return (
                 False,
-                f"{MERMAID_TYPE_NOT_ALLOWED}: HTML nelle label non ammesso ({m.group(0)[:40]})",
+                f"{MERMAID_TYPE_NOT_ALLOWED}: HTML nelle label non ammesso ({detail[:40]})",
             )
         if deep:
             svg = self.render_svg(code)
@@ -596,9 +643,14 @@ class VegaLiteRenderer:
 # ---------------------------------------------------------------------------
 
 _DOT_HEADER_RE = re.compile(r"^\s*(?:strict\s+)?(?:di)?graph\b", re.IGNORECASE)
-# Attributi che fanno leggere file locali o risorse esterne a `dot`.
+# Attributi che fanno leggere file locali o risorse esterne a `dot`, con i
+# composti degli archi e delle label (`labelURL`, `headhref`, `tailtarget`,
+# `edgeURL`, ...) e `SRC` dell'`<IMG>` delle label HTML-like (`dot` apre il
+# file indicato e il suo stderr distingue un path esistente da uno assente).
 _DOT_FORBIDDEN_ATTR_RE = re.compile(
-    r"\b(image|shapefile|imagepath|fontpath|stylesheet|URL|href|target)\s*=", re.IGNORECASE
+    r"\b((?:label|head|tail|edge)?(?:image|shapefile|imagepath|fontpath|stylesheet|URL|href"
+    r"|target)|SRC)\s*=",
+    re.IGNORECASE,
 )
 _DOT_EDGE_RE = re.compile(r"->|--")
 _DOT_BLOCK_RES = {
@@ -609,6 +661,12 @@ _DOT_BLOCK_RES = {
 _DOT_LABEL_RE = re.compile(
     r"\b(label|xlabel|headlabel|taillabel)\s*=\s*\"((?:[^\"\\]|\\.)*)\"", re.IGNORECASE
 )
+# Ambiente minimale del figlio `dot`: oltre a PATH e LANG/LC_ALL del piano,
+# le chiavi che fontconfig usa per trovare la propria configurazione e la
+# cache dei font (HOME/XDG_CACHE_HOME: senza, nel container rescandisce le
+# famiglie a ogni run e scrive «No writable cache directories» su stderr;
+# FONTCONFIG_*: configurazione esplicita, se presente). Nessuna variabile
+# che influenzi l'esecuzione (LD_*, DYLD_*, GV*), nessuna shell.
 _DOT_ENV_KEYS = ("PATH", "HOME", "FONTCONFIG_PATH", "FONTCONFIG_FILE", "XDG_CACHE_HOME")
 
 _dot_missing_logged = False
@@ -973,6 +1031,10 @@ __all__ = [
     "FIGURE_FORMAT_UNAVAILABLE",
     "FIGURE_INVALID",
     "FUNCTION_SPEC_INVALID",
+    "MERMAID_GATE_EMPTY",
+    "MERMAID_GATE_HTML",
+    "MERMAID_GATE_INIT",
+    "MERMAID_GATE_TYPE",
     "MERMAID_TYPE_NOT_ALLOWED",
     "REGISTRY",
     "RENDERABLE_FORMATS",
@@ -985,6 +1047,9 @@ __all__ = [
     "cache_key",
     "clear_svg_cache",
     "error_type_for",
+    "mermaid_declared_type",
+    "mermaid_first_meaningful_line",
+    "mermaid_static_gate",
     "register_renderer",
     "render_svg_map",
     "validate_visual_assets_or_raise",

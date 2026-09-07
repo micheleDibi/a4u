@@ -12,14 +12,19 @@ Regole:
    versioni e date);
 3. scansione che RIFIUTA (i renderer sono nostri: un'anomalia è un
    fallback, non una sanificazione parziale). Globale sul documento per
-   gli elementi attivi o esterni: `<script`, `<foreignObject`, `<iframe`,
-   `<image`. Limitata al contenuto dei tag `<…>` (attributi) per `<use`
-   con href non-frammento, gestori `on*=`, `href` esterni, `javascript:`,
-   `data:text/html`, `@import`, `url()` non-frammento; le stesse regole
-   CSS valgono dentro `<style>…</style>`. Il testo dei nodi (label,
-   tick, `<title>`) NON è scandito: una label «vedi url(x)» o un tick
-   «href=» sono contenuti legittimi. I `<use xlink:href="#m…">` e i
-   `<clipPath>` interni di matplotlib passano;
+   gli elementi attivi, animati o esterni: `<script`, `<foreignObject`,
+   `<iframe`, `<image`, `<set`, `<animate*`, `<handler` (SMIL può
+   riscrivere `href` o `on*` a tempo di esecuzione; nessun renderer nostro
+   li emette). Limitata al contenuto dei tag `<…>` (attributi) per `<use`
+   con href non-frammento, gestori `on*=`, `href` esterni (quotati o no),
+   `javascript:`, `data:text/html`, `@import`, `url()` non-frammento; le
+   stesse regole CSS valgono dentro `<style>…</style>`. Il riconoscimento
+   del tag rispetta le virgolette: un `>` dentro un valore quotato
+   (`aria-label="a > b"`) non chiude il tag e gli attributi successivi
+   vengono scanditi. Il testo dei nodi (label, tick, `<title>`) NON è
+   scandito: una label «vedi url(x)» o un tick «href=» sono contenuti
+   legittimi. I `<use xlink:href="#m…">` e i `<clipPath>` interni di
+   matplotlib passano;
 4. tag radice: `viewBox` letto o costruito, `width`/`height` convertiti in
    px (`pt×96/72`, `mm×96/25.4`, `in×96`) e RISCRITTI come dimensione
    intrinseca dell'`<img>` (`max-width:100%` riduce ma non ingrandisce: un
@@ -58,16 +63,25 @@ _PROLOGUE_RE = re.compile(
 
 # --- scansione ----------------------------------------------------------
 
-# Elementi rifiutati ovunque compaiano: sono attivi (script), portano HTML
-# (foreignObject, iframe) o risorse esterne/raster (image). `function_plot`
-# non produce mai `<image>` nonostante `svg.image_inline` nei rcParams
-# (contour e fill_between sono path; niente imshow).
+# Elementi rifiutati ovunque compaiano: sono attivi (script), animati
+# (set, animate*, handler: SMIL può assegnare `href` o `on*` a tempo di
+# esecuzione), portano HTML (foreignObject, iframe) o risorse
+# esterne/raster (image). `function_plot` non produce mai `<image>`
+# nonostante `svg.image_inline` nei rcParams (contour e fill_between sono
+# path; niente imshow).
 _FORBIDDEN_GLOBAL: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("script", re.compile(r"<\s*script\b", re.IGNORECASE)),
     ("foreignObject", re.compile(r"<\s*foreignObject\b", re.IGNORECASE)),
     ("iframe", re.compile(r"<\s*iframe\b", re.IGNORECASE)),
     ("image", re.compile(r"<\s*image\b", re.IGNORECASE)),
+    ("set", re.compile(r"<\s*set\b", re.IGNORECASE)),
+    ("animate", re.compile(r"<\s*animate[a-z]*\b", re.IGNORECASE)),
+    ("handler", re.compile(r"<\s*handler\b", re.IGNORECASE)),
 )
+
+# `href` esterno: valore quotato che non inizia con `#`, oppure valore non
+# quotato (`href=http://x`) che non è un frammento.
+_EXTERNAL_HREF = r"\bhref\s*=\s*(?:[\"']\s*(?!#)|(?![\"'\s#]))"
 
 # Pattern applicati SOLO al contenuto dei tag `<…>` (attributi), non al
 # testo dei nodi: una label «vedi url(x)» è testo legittimo, un attributo
@@ -75,10 +89,10 @@ _FORBIDDEN_GLOBAL: tuple[tuple[str, re.Pattern[str]], ...] = (
 _FORBIDDEN_IN_TAG: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "use con href esterno",
-        re.compile(r"^<\s*use\b[^>]*\bhref\s*=\s*[\"'](?!#)", re.IGNORECASE),
+        re.compile(r"^<\s*use\b[^>]*" + _EXTERNAL_HREF, re.IGNORECASE),
     ),
     ("gestore di evento", re.compile(r"(?<![\w-])on[a-z]+\s*=", re.IGNORECASE)),
-    ("href esterno", re.compile(r"\bhref\s*=\s*[\"'](?!#)", re.IGNORECASE)),
+    ("href esterno", re.compile(_EXTERNAL_HREF, re.IGNORECASE)),
 )
 
 # Pattern CSS/URI: valgono negli attributi e dentro i blocchi `<style>`.
@@ -89,7 +103,9 @@ _FORBIDDEN_CSS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("url() esterno", re.compile(r"\burl\((?!\s*[\"']?#)", re.IGNORECASE)),
 )
 
-_TAG_RE = re.compile(r"<[^>]*>")
+# Un tag termina al primo `>` FUORI dalle virgolette: `aria-label="a > b"`
+# non lo spezza, così gli attributi che seguono restano nella scansione.
+_TAG_RE = re.compile(r"<(?:[^>\"']|\"[^\"]*\"|'[^']*')*>")
 _STYLE_BODY_RE = re.compile(r"<\s*style\b[^>]*>(.*?)<\s*/\s*style\s*>", re.IGNORECASE | re.DOTALL)
 # Gli attributi `aria-*` (Vega: `aria-label="Title text 'vedi url(x)'"`)
 # ripetono titoli e valori dei dati dentro il tag: sono testo inerte e non

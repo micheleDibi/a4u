@@ -172,7 +172,14 @@ def test_mermaid_static_gate_accepts_the_d8_samples(code: str):
         "graph TD\n  A --> B",
         "stateDiagram\n  [*] --> A",
         "sequenceDiagram\n  A->>B: ciao\n  B-->>A: <<risposta>>",
+        "sequenceDiagram\n  A<<->>B: bidirezionale",
         "```mermaid\nflowchart LR\n  A --> all\n```",
+        "classDiagram-v2\n  A <|-- B",  # alias di Mermaid 11 per classDiagram
+        "classDiagram\n  class A {\n    <<interface>>\n  }\n  A <|-- B",
+        "graph TD;\n  A-->B",
+        "flowchart LR\n  A[x <b] --> B",  # `<b` non chiuso: non è un tag
+        "flowchart LR\n  A[a < b] --> B",  # `<` isolato
+        "erDiagram\n  A ||--o{ B : has",
     ],
 )
 def test_mermaid_static_gate_accepts_comments_frontmatter_aliases_and_fences(code: str):
@@ -185,11 +192,20 @@ def test_mermaid_static_gate_accepts_comments_frontmatter_aliases_and_fences(cod
         ("journey\n  title x", "journey"),
         ("gitGraph\n  commit", "gitGraph"),
         ("requirementDiagram\n  x", "requirementDiagram"),
+        ("flowchartXYZ LR\n  A --> B", "flowchartXYZ"),  # confronto esatto sul token
+        ("flowchart-elk LR\n  A --> B", "flowchart-elk"),  # layout esterno, non nel CDN
         ("%%{init: {'theme': 'dark'}}%%\nflowchart LR\n  A --> B", "%%{init"),
+        ("%%  { init: {'theme': 'dark'} }%%\nflowchart LR\n  A --> B", "%%{init"),
+        ("---\nconfig:\n  theme: forest\n---\nflowchart LR\n  A --> B", "config:"),
         ("flowchart LR\n  A[<b>x</b>] --> B", "HTML"),
         ("flowchart LR\n  A[riga<br/>due] --> B", "HTML"),
+        ("flowchart LR\n  A[<script>alert(1)</script>] --> B", "<script>"),
+        ("flowchart LR\n  A[<table><tr><td>x</td></tr></table>] --> B", "<table>"),
+        ("flowchart LR\n  A[<h1>x</h1>] --> B", "<h1>"),
+        ("flowchart LR\n  A[<svg onload=x>] --> B", "<svg"),
         ("", "vuoto"),
         ("   \n%% solo commenti\n", "?"),
+        ("---\ntitle: x\nflowchart LR\n  A --> B", "?"),  # frontmatter mai chiuso
     ],
 )
 def test_mermaid_static_gate_rejects(code: str, needle: str):
@@ -197,6 +213,20 @@ def test_mermaid_static_gate_rejects(code: str, needle: str):
     assert ok is False and needle in err
     if code.strip():
         assert err.startswith("mermaid_type_not_allowed")
+
+
+def test_mermaid_static_gate_is_shared_with_the_revalidation_script():
+    """Un solo gate: lo script L5 di WP1 delega a `mermaid_static_gate`."""
+    from scripts.revalidate_mermaid_assets import static_gate
+
+    assert frs.mermaid_static_gate("flowchart LR\n  A --> B") == ("", "")
+    assert frs.mermaid_declared_type("---\ntitle: t\n---\n%% c\n graph TD;\n A") == "graph"
+    assert static_gate("flowchart-elk LR\n  A --> B") == "mermaid_type_not_allowed:flowchart-elk"
+    assert static_gate("flowchart LR\n  A[<table>x</table>]") == "mermaid_html_in_label"
+    assert static_gate("---\nconfig:\n  theme: x\n---\nflowchart LR\n  A") == (
+        "mermaid_init_directive"
+    )
+    assert static_gate("flowchart LR\n  A[x <b] --> B") == ""
 
 
 def test_mermaid_translatable_is_the_whole_source():
@@ -229,6 +259,28 @@ def test_vegalite_valid_spec_passes_shallow_validation():
         ),
         ({"data": {"values": []}, "mark": "image"}, "mark image", "figure_invalid"),
         ({"data": {"values": []}, "mark": "bogus_mark"}, "mark", "figure_invalid"),
+        (
+            {
+                "data": {"values": [{"k": "a", "v": 1}]},
+                "transform": [
+                    {
+                        "lookup": "k",
+                        "from": {
+                            "data": {"url": "https://example.org/x.json"},
+                            "key": "k",
+                            "fields": ["z"],
+                        },
+                    }
+                ],
+                "mark": "bar",
+                "encoding": {
+                    "x": {"field": "k", "type": "nominal"},
+                    "y": {"field": "v", "type": "quantitative", "scale": {"domain": [0, 2]}},
+                },
+            },
+            "transform[0].from.data.url",
+            "figure_invalid",
+        ),
         (
             {
                 "data": {"sequence": {"start": 0, "stop": 6, "step": 0.1, "as": "x"}},
@@ -350,6 +402,22 @@ def test_dot_static_validation_is_offline(monkeypatch: pytest.MonkeyPatch):
     assert ok is False and "image=" in err
     ok, err = r.validate('digraph { a [URL="http://x"]; }')
     assert ok is False and "URL=" in err
+    # Composti degli archi e delle label, e `SRC` dell'`<IMG>` HTML-like.
+    for src, needle in (
+        ('digraph { a -> b [labelURL="http://x", label="l"] }', "labelURL="),
+        ('digraph { a -> b [headURL="http://x"] }', "headURL="),
+        ('digraph { a -> b [tailtarget="_blank"] }', "tailtarget="),
+        ('digraph { a -> b [edgehref="x"] }', "edgehref="),
+        ('digraph { a [labelhref="x"]; }', "labelhref="),
+        ('digraph { a [label=<<IMG SRC="/etc/hosts"/>>] }', "SRC="),
+    ):
+        ok, err = r.validate(src)
+        assert ok is False and needle in err, (src, err)
+    # Attributi leciti con prefissi simili restano ammessi.
+    ok, err = r.validate('digraph { a [imagescale=true]; a -> b [headlabel="h", taillabel="t"] }')
+    assert ok is True, err
+    ok, err = r.validate("digraph { a [label=<<TABLE><TR><TD>x</TD></TR></TABLE>>] }")
+    assert ok is True, err
     ok, err = r.validate("subgraph { a -> b }")
     assert ok is False and "digraph" in err
     ok, err = r.validate("")

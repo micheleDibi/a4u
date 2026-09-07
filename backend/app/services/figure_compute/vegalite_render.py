@@ -7,8 +7,15 @@ modulo; `vl_convert` è importato dentro la funzione.
 
 Il modulo NON impone `$schema` né inietta il tema: lo fa il registro
 (`figure_render_service.VegaLiteRenderer`), che passa nel payload la spec
-già completata e `config=VEGALITE_THEME_CONFIG`. `allowed_base_urls=[]`
-chiude ogni accesso a risorse esterne (D5: dati solo inline).
+già completata e `config=VEGALITE_THEME_CONFIG`.
+
+`allowed_base_urls=[]` è una difesa in profondità, non il gate: vl-convert
+rifiuta con «External data url not allowed» solo gli URL http(s) (anche
+quelli relativi, risolti sul base URL dei vega-datasets), mentre un
+`file://…` non viene letto ma non solleva (join vuoto, verificato il 7
+settembre: nessun byte del file finisce nell'SVG). L'assenza di `data.url`
+in ogni punto della spec, `transform[].lookup.from.data` compreso, è
+garantita prima del render da `vegalite_rules.check_vegalite_rules` (D5).
 """
 
 from __future__ import annotations

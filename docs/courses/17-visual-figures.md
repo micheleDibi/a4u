@@ -238,18 +238,31 @@ processo figlio `spawn` e dai test puri.
 
 ### 3.1 `MermaidRenderer`: gate statico D8
 
-`validate(deep=False)` è un gate **statico e duro**, senza Chromium:
-salta le righe di commento `%%` e il frontmatter YAML `---…---`; la prima
-riga utile deve iniziare con un tipo di `MERMAID_ALLOWED_TYPES`
-(`figure_theme.py:97-115`: i 15 tipi D8 più gli alias `graph` e
-`stateDiagram` v1, accettati in lettura per i contenuti già in DB);
-rifiuta i tipi di `MERMAID_EXCLUDED_TYPES` (`journey`, `gitGraph`,
-`kanban`, `packet-beta`, `architecture-beta`) con
-`mermaid_type_not_allowed`, la direttiva `%%{init` e il carattere `<`
-nelle label (con `htmlLabels:false` l'HTML nelle label non è
-renderizzato). Il parse JS resta nel batch di `_validate_slots`
-(sezione 8.1): al salvataggio manuale il gate statico basta (A15), il
-parse vive già nell'editor con la stessa major 11.
+`validate(deep=False)` è un gate **statico e duro**, senza Chromium,
+realizzato da `mermaid_static_gate(code) -> (esito, dettaglio)` (unico
+punto: lo consuma anche `scripts/revalidate_mermaid_assets.py`, che nella
+prima stesura ne aveva una copia divergente). Salta le righe di commento
+`%%` e il frontmatter YAML `---…---`; il **primo token** della prima riga
+utile (`graph TD;` → `graph`) deve essere **esattamente** un tipo di
+`MERMAID_ALLOWED_TYPES` (`figure_theme.py:97-115`: i 15 tipi D8 più gli
+alias `graph` e `stateDiagram` v1, accettati in lettura per i contenuti già
+in DB) oppure `classDiagram-v2` (alias di Mermaid 11 per `classDiagram`);
+il confronto esatto rifiuta con `mermaid_type_not_allowed` i tipi di
+`MERMAID_EXCLUDED_TYPES` (`journey`, `gitGraph`, `kanban`, `packet-beta`,
+`architecture-beta`), i token sconosciuti (`flowchartXYZ`) e
+`flowchart-elk` (layout esterno, assente nel pre-render da CDN). Rifiuta
+poi la direttiva `%%{init` **e la chiave `config:` del frontmatter** (in
+Mermaid 11 equivale alla direttiva: sovrascriverebbe il tema imposto dal
+renderer, D3) e i **tag HTML** nelle label (con `htmlLabels:false`
+finirebbero in chiaro nel `<text>`): regola generica «`<` seguito da un
+nome di elemento e chiuso da `>` sulla stessa riga», non un elenco di tag
+(`<script>`, `<table>`, `<svg>`, `<h1>` sono rifiutati come `<br>` e
+`<b>`). Non sono tag e passano: le frecce (`-->`, `<|--`, `->>`, `<<->>`),
+le annotazioni `<<interface>>`, un `<` isolato (`A[a < b]`) e un `<b` non
+chiuso (`A[x <b] --> B`: la sezione degli attributi non attraversa `]`,
+`)`, `}`). Il parse JS resta nel batch di `_validate_slots` (sezione 8.1):
+al salvataggio manuale il gate statico basta (A15), il parse vive già
+nell'editor con la stessa major 11.
 
 `render_svg_batch` delega a `mermaid_prerender._prerender_mermaid_to_svg_batch_sync`
 (Playwright, pin `settings.mermaid_cdn_version`, `mermaid_initialize_js(use_max_width=True)`);
@@ -309,7 +322,15 @@ figlia):
   `mark: "image"`, `selection | params | interactive | config | usermeta |
   tooltip` (in ogni vista, anche dentro `mark` ed `encoding`),
   `encoding.href`: niente interattività, niente rete, niente tema scritto
-  dal modello (il `config` lo inietta il renderer);
+  dal modello (il `config` lo inietta il renderer). Le regole su `data`
+  valgono per **ogni** oggetto `data` della vista, non solo per quello di
+  primo livello: `transform[i].lookup.from.data` (`transform[0].from.data.url
+  non ammesso`) è l'unico altro punto in cui Vega-Lite accetta una sorgente
+  dati, e `allowed_base_urls=[]` di vl-convert non basta come gate
+  (verificato il 7 settembre: rifiuta con «External data url not allowed»
+  solo gli URL http(s), anche relativi; un `file://…` non viene letto ma
+  non solleva e produce un join vuoto in silenzio; nel browser di WP5
+  vega-embed farebbe la fetch);
 - `values` ≤ 200 righe (liste o CSV/TSV inline, anche in `datasets`);
   `sequence` con `start/stop/step` numerici, `step > 0`, ≤ 5.000 passi;
 - obbligatorio `clip: true` sui mark `line | area | point | trail` (anche
@@ -335,7 +356,9 @@ Vega-Lite la traccia è uno solo: `data.sequence` più un
 - **H1** una funzione trascendente o non lineare (`sin cos tan asin acos
   atan sinh cosh tanh exp log sqrt pow abs`), oppure
 - **H2** una divisione con `datum` a denominatore (`/ datum.x`, `/ (2*datum.x
-  + 1)`: funzione razionale), oppure
+  + 1)`, `/(-datum.x)`, `/(2*(datum.x+1))`: fra la barra e `datum` sono
+  ammessi, in qualunque ordine, segni, parentesi aperte e costanti seguite
+  da un operatore; `datum.x / 2` non è una funzione razionale), oppure
 - **H3** una potenza (`**` o `^`)
 
 viene rifiutata con `vegalite_use_function_format: transform[i].calculate
@@ -353,6 +376,13 @@ vista corrente e lo propaga a tutti i figli, applicando H1-H3 a ogni
 `transform.calculate` della sottovista. Test dedicati per `layer`,
 `vconcat` e `spec` (`test_vegalite_rules.py`).
 
+**Gli alias contano come campi `sequence`** (revisione del WP2b): un
+`calculate` che referenzia un campo `sequence` — anche solo `datum.x` —
+rende il proprio `as` un campo `sequence` per le trasformazioni successive
+e per le viste figlie, così `{"calculate": "datum.x", "as": "t"}` seguito
+da `sin(datum.t)` è rifiutato come `sin(datum.x)`; un `calculate` che non
+referenzia la sequenza (`"2"`) non crea alias.
+
 **Falso negativo accettato**: rette e polinomi scritti con `*`
 (`2*datum.x + 1`, `datum.x*datum.x`) restano ammessi. Una retta di
 regressione illustrativa su dati inline è legittima in Vega-Lite e non è
@@ -369,19 +399,39 @@ positivi su grafici legittimi.
   legittimo).
 - `validate(deep=False)`: lunghezza ≤ `figure_dot_max_chars` (12.000);
   prima parola `strict | graph | digraph`; regex di rifiuto degli
-  attributi che fanno leggere file locali o risorse esterne a `dot`:
-  `\b(image|shapefile|imagepath|fontpath|stylesheet|URL|href|target)\s*=`;
-  ≤ 600 archi.
+  attributi che fanno leggere file locali o risorse esterne a `dot`,
+  **con i composti** degli archi e delle label e con `SRC` dell'`<IMG>`
+  delle label HTML-like:
+  `\b((?:label|head|tail|edge)?(?:image|shapefile|imagepath|fontpath|stylesheet|URL|href|target)|SRC)\s*=`
+  (`labelURL`, `headhref`, `tailtarget`, `edgeURL`, `<IMG SRC="…">`
+  rifiutati; `headlabel`, `imagescale`, le `<TABLE>` HTML-like ammessi).
+  Motivo del `SRC`: `dot` apre il file indicato e il suo stderr
+  («was not found as a file» contro «No or improper image file»)
+  distinguerebbe un path esistente del server da uno assente nel messaggio
+  inoltrato al fix AI e nei log. `tooltip` e i suoi composti restano
+  ammessi: non leggono nulla e in `<img>`/PDF sono inerti; ≤ 600 archi.
+  Al PATCH manuale il DOT è validato **solo staticamente** (`deep=False`,
+  come prescrive Q1): un errore di sintassi accettato al salvataggio emerge
+  nell'editor (viz-js, WP5) e all'export; `dot` costa ~50 ms e una
+  validazione profonda nel gate resta un'opzione da valutare in Fase D.
 - Tema: `dot_defaults_prelude(skip=…)` inserisce i blocchi `graph [...]`,
   `node [...]`, `edge [...]` di `DOT_DEFAULTS` subito dopo la `{` di
   apertura, saltando quelli che il sorgente definisce già (il modello
   resta libero di sovrascrivere il tema in modo esplicito).
 - Render: **un solo** `subprocess.run([dot, "-Tsvg", "-Gcharset=utf8"],
   input=source, capture_output=True, timeout=T, check=False,
-  cwd=<tmpdir vuoto>, env={"PATH": …, "LANG": "C.UTF-8"})`, senza shell:
-  `returncode ≠ 0` → `(False, stderr[:1600])`, `TimeoutExpired` → `(False,
-  "dot_timeout")`; l'SVG normalizzato entra in cache (il render successivo
-  è un hit). La validazione profonda e il render sono la stessa chiamata.
+  cwd=<tmpdir vuoto>, env=…)`, senza shell: `returncode ≠ 0` → `(False,
+  stderr[:1600])`, `TimeoutExpired` → `(False, "dot_timeout")`; l'SVG
+  normalizzato entra in cache (il render successivo è un hit). La
+  validazione profonda e il render sono la stessa chiamata. L'ambiente del
+  figlio (`_dot_env`) è **più ampio** del `{"PATH", "LANG"}` del piano,
+  deviazione dichiarata: oltre a `PATH` e `LANG`/`LC_ALL=C.UTF-8` passa
+  `HOME`, `XDG_CACHE_HOME`, `FONTCONFIG_PATH`, `FONTCONFIG_FILE` se
+  presenti, cioè le sole chiavi con cui fontconfig trova configurazione e
+  cache dei font (senza `HOME` nel container rescandisce le famiglie a ogni
+  run e scrive «No writable cache directories» su stderr; in locale la
+  differenza è nulla: 42-50 ms in entrambi i casi). Nessuna variabile che
+  influenzi l'esecuzione (`LD_*`, `DYLD_*`, `GV*`).
 - `dot` assente: `(False, "dot_unavailable")` con `AssetCheck.fixable=False`
   (il fix AI non può installare un binario), mai pass-through.
 
@@ -762,17 +812,25 @@ per gli SVG di vl-convert, `dot` e matplotlib. **Mermaid non passa da qui.**
    versioni e date);
 3. scansione che **rifiuta** (i renderer sono nostri: un'anomalia è un
    fallback, non una sanificazione parziale) — globale sul documento per
-   `<script`, `<foreignObject`, `<iframe`, `<image`; limitata al contenuto
-   dei tag `<…>` per `<use` con `href` non-frammento, gestori `on[a-z]+=`,
-   `href` esterni, `javascript:`, `data:text/html`, `@import`, `url()`
-   non-frammento. I `<use xlink:href="#m…">` e i `<clipPath>` interni di
-   matplotlib passano. La limitazione al contenuto dei tag è una correzione
-   dovuta in WP2b: la prima stesura scandiva l'intero documento e una label
-   di nodo o un tick contenente `href=`, `url(` o `javascript:` faceva
-   rifiutare la figura (fallback silenzioso), con test «vedi url(x)». Gli
-   attributi `aria-*` (Vega: `aria-label="Title text 'vedi url(x)'"`) sono
-   testo inerte che ripete titoli e dati dentro il tag: esclusi dalla
-   scansione come il testo dei nodi (restano nell'SVG);
+   `<script`, `<foreignObject`, `<iframe`, `<image` e per gli elementi
+   SMIL `<set`, `<animate*`, `<handler` (possono assegnare `href` o `on*` a
+   tempo di esecuzione; nessun renderer nostro li emette); limitata al
+   contenuto dei tag `<…>` per `<use` con `href` non-frammento, gestori
+   `on[a-z]+=`, `href` esterni (quotati **o non quotati**: `href=http://x`),
+   `javascript:`, `data:text/html`, `@import`, `url()` non-frammento. Il
+   riconoscimento del tag **rispetta le virgolette**
+   (`<(?:[^>"']|"[^"]*"|'[^']*')*>`): un `>` dentro un valore quotato
+   (`aria-label="a > b"`) non chiude il tag e gli attributi successivi
+   (`onclick=`) restano nella scansione — vl-convert e `dot` emettono
+   `&gt;`/`&quot;` negli attributi, ma il modulo non dipende da questo. I
+   `<use xlink:href="#m…">` e i `<clipPath>` interni di matplotlib passano.
+   La limitazione al contenuto dei tag è una correzione dovuta in WP2b: la
+   prima stesura scandiva l'intero documento e una label di nodo o un tick
+   contenente `href=`, `url(` o `javascript:` faceva rifiutare la figura
+   (fallback silenzioso), con test «vedi url(x)». Gli attributi `aria-*`
+   (Vega: `aria-label="Title text 'vedi url(x)'"`) sono testo inerte che
+   ripete titoli e dati dentro il tag: esclusi dalla scansione come il
+   testo dei nodi (restano nell'SVG);
 4. tag radice: `viewBox` letto o costruito, `width`/`height` convertiti in
    **px** (`pt × 96/72`, `mm × 96/25.4`, `in × 96`) e riscritti come
    dimensione intrinseca dell'`<img>` (`max-width: 100%` riduce ma non

@@ -79,6 +79,41 @@ def test_data_url_is_rejected_inside_a_nested_layer():
     assert any("data.url" in e and "profondità 1" in e for e in errors)
 
 
+def _lookup(data: dict[str, Any]) -> dict[str, Any]:
+    """Vista con un `transform.lookup` il cui `from.data` è `data`."""
+    spec = _bar()
+    spec["transform"] = [{"lookup": "k", "from": {"data": data, "key": "k", "fields": ["z"]}}]
+    return spec
+
+
+@pytest.mark.parametrize(
+    "url", ["https://example.org/x.json", "file:///etc/hosts", "/etc/hosts", "data/x.json"]
+)
+def test_data_url_hidden_in_a_lookup_transform_is_rejected(url: str):
+    """`allowed_base_urls=[]` di vl-convert ferma solo gli URL http(s) e
+    `file://` produce un join vuoto in silenzio: il gate statico deve
+    vedere ogni oggetto `data` della vista, non solo quello di primo livello."""
+    errors = check_vegalite_rules(_lookup({"url": url}))
+    assert any("transform[0].from.data.url" in e for e in errors), errors
+
+
+def test_data_name_hidden_in_a_lookup_transform_requires_datasets():
+    spec = _lookup({"name": "tab"})
+    assert any("transform[0].from.data.name" in e for e in check_vegalite_rules(spec))
+    spec["datasets"] = {"tab": [{"k": "a", "z": 1}]}
+    assert check_vegalite_rules(spec) == []
+
+
+def test_lookup_data_rules_apply_inside_a_layer_and_cap_values():
+    nested = {"layer": [_lookup({"url": "x.csv"})]}
+    errors = check_vegalite_rules(nested)
+    assert any("profondità 1" in e and "transform[0].from.data.url" in e for e in errors)
+    big = _lookup({"values": [{"k": i, "z": i} for i in range(MAX_VALUES_ROWS + 1)]})
+    assert any("transform[0].from.data.values oltre" in e for e in check_vegalite_rules(big))
+    small = _lookup({"values": [{"k": "a", "z": 1}]})
+    assert check_vegalite_rules(small) == []
+
+
 def test_mark_image_is_rejected_in_both_forms():
     spec = _bar()
     spec["mark"] = "image"
@@ -188,6 +223,8 @@ def test_composition_depth_is_bounded():
         ("exp(-datum.x*datum.x)", "trascendente"),
         ("1 / datum.x", "razionale"),
         ("1/(2*datum.x + 1)", "razionale"),
+        ("1/(-datum.x)", "razionale"),  # segno prima di datum
+        ("1/(2*(datum.x+1))", "razionale"),  # parentesi annidata
         ("datum.x ** 2", "potenza"),
         ("datum.x^3", "potenza"),
         ("sqrt(datum['x'])", "trascendente"),  # forma datum["campo"]
@@ -200,9 +237,32 @@ def test_criterion_10_at_root(calculate: str, reason: str):
     assert reason in errors[0] and 'format="function"' in errors[0]
 
 
-@pytest.mark.parametrize("calculate", ["2*datum.x + 1", "datum.x*datum.x - 3*datum.x", "datum.x"])
+@pytest.mark.parametrize(
+    "calculate", ["2*datum.x + 1", "datum.x*datum.x - 3*datum.x", "datum.x", "datum.x / 2"]
+)
 def test_lines_and_polynomials_written_with_star_are_allowed(calculate: str):
     spec = {"data": _sequence(), **_line_view(calculate)}
+    assert not _use_function(check_vegalite_rules(spec))
+
+
+def test_alias_of_a_sequence_field_is_still_a_sequence_field():
+    """`{"calculate": "datum.x", "as": "t"}` seguito da `sin(datum.t)` è
+    `sin(datum.x)`: l'alias eredita la natura di campo `sequence`."""
+    spec = {"data": _sequence(), **_line_view("sin(datum.t)")}
+    spec["transform"].insert(0, {"calculate": "datum.x", "as": "t"})
+    errors = check_vegalite_rules(spec)
+    assert _use_function(errors) and "transform[1]" in errors[0], errors
+    # Un alias definito in una vista padre vale anche nei figli.
+    parent = {
+        "data": _sequence(),
+        "transform": [{"calculate": "2*datum.x", "as": "t"}],
+        "layer": [_line_view("exp(datum.t)")],
+    }
+    errors = check_vegalite_rules(parent)
+    assert _use_function(errors) and "profondità 1" in errors[0], errors
+    # Un `calculate` che non referenzia la sequenza non crea un alias.
+    spec = {"data": _sequence(), **_line_view("sin(datum.c)")}
+    spec["transform"].insert(0, {"calculate": "2", "as": "c"})
     assert not _use_function(check_vegalite_rules(spec))
 
 

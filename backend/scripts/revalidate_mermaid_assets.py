@@ -54,7 +54,12 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from app.services.figure_theme import MERMAID_ALLOWED_TYPES, MERMAID_EXCLUDED_TYPES
+from app.services.figure_render_service import (
+    MERMAID_GATE_TYPE,
+    mermaid_declared_type,
+    mermaid_first_meaningful_line,
+    mermaid_static_gate,
+)
 from app.services.mermaid_prerender import _sanitize_mermaid_code
 
 SCRIPT_VERSION = "1"
@@ -62,64 +67,32 @@ SCRIPT_VERSION = "1"
 # Stessa forma di `_ASSET_REF_RE` del PDF (case-sensitive su `FIG`); gli id
 # sono confrontati in minuscolo, come fa il renderer.
 _FIG_REF_RE = re.compile(r"\[FIG:([^\]\n]+)\]")
-_INIT_DIRECTIVE_RE = re.compile(r"%%\s*\{\s*init\b", re.IGNORECASE)
-# Tag HTML nelle label (`<br>`, `<b>`, ...): con `htmlLabels: false` finirebbero
-# in chiaro nel `<text>`. Le frecce (`-->`, `<|--`, `->>`) e le annotazioni
-# `<<interface>>` non sono tag e non vengono toccate.
-_HTML_TAG_RE = re.compile(
-    r"</?(?:br|b|i|u|em|strong|span|div|p|sub|sup|a|img|font|code|small|big)\b[^>]*>",
-    re.IGNORECASE,
-)
-
-
 # ---------------------------------------------------------------------------
-# Gate statico D8
+# Gate statico D8 — delegato al registro dei renderer (unico punto del gate)
 # ---------------------------------------------------------------------------
 
 
 def first_meaningful_line(code: str) -> str:
     """Prima riga utile: salta righe vuote, commenti `%%` e il frontmatter
     YAML `---...---` iniziale."""
-    lines = code.split("\n")
-    i = 0
-    n = len(lines)
-    while i < n and not lines[i].strip():
-        i += 1
-    if i < n and lines[i].strip() == "---":
-        i += 1
-        while i < n and lines[i].strip() != "---":
-            i += 1
-        i += 1
-    while i < n:
-        stripped = lines[i].strip()
-        if stripped and not stripped.startswith("%%"):
-            return stripped
-        i += 1
-    return ""
+    return mermaid_first_meaningful_line(code)
 
 
 def declared_type(code: str) -> str:
     """Tipo dichiarato (prima parola della prima riga utile, `graph TD` → `graph`)."""
-    line = first_meaningful_line(code)
-    return line.split()[0] if line else ""
+    return mermaid_declared_type(code)
 
 
 def static_gate(code: str) -> str:
-    """Ritorna `""` se il sorgente passa il gate statico D8, altrimenti un
-    codice d'errore leggibile (`mermaid_empty`, `mermaid_type_not_allowed:<tipo>`,
+    """Ritorna `""` se il sorgente passa il gate statico D8 di
+    `figure_render_service.mermaid_static_gate` (lo stesso di
+    `MermaidRenderer.validate`), altrimenti un codice d'errore leggibile
+    (`mermaid_empty`, `mermaid_type_not_allowed:<tipo>`,
     `mermaid_init_directive`, `mermaid_html_in_label`)."""
-    if not code.strip():
-        return "mermaid_empty"
-    kind = declared_type(code)
-    if not kind or not any(kind.startswith(t) for t in MERMAID_ALLOWED_TYPES):
-        label = kind or "?"
-        excluded = next((t for t in MERMAID_EXCLUDED_TYPES if kind.startswith(t)), None)
-        return f"mermaid_type_not_allowed:{excluded or label}"
-    if _INIT_DIRECTIVE_RE.search(code):
-        return "mermaid_init_directive"
-    if _HTML_TAG_RE.search(code):
-        return "mermaid_html_in_label"
-    return ""
+    outcome, detail = mermaid_static_gate(code)
+    if outcome == MERMAID_GATE_TYPE:
+        return f"{outcome}:{detail}"
+    return outcome
 
 
 # ---------------------------------------------------------------------------
