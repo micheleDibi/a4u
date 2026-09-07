@@ -12,21 +12,30 @@
 3. riconciliazione: ogni valore numerico è sostituito dall'esatto entro
    `1e-6·ampiezza` (tangenti e integrali entro una tolleranza relativa); un
    esatto senza riscontro numerico entra SOLO se una verifica numerica
-   diretta lo conferma (`f(x*) ≈ 0`, `f'(x*) ≈ 0`, `f` non finita nel
-   punto, `f(X) − (mX + q) → 0` sulle code), altrimenti è ignorato: nessun
-   numero «plausibile» nella figura;
+   diretta con tolleranza locale lo conferma (`f(x*) ≈ 0`, `f'(x*) ≈ 0`,
+   `f` non finita nel punto, `f(X) − (mX + q) → 0` sulle code), altrimenti
+   è ignorato: nessun numero «plausibile» nella figura; ogni categoria di
+   punti notevoli resta entro `function_numeric.MAX_NOTABLE_POINTS` voci
+   (le prime da sinistra) e le categorie troncate sono elencate in
+   `computed["truncated"]` con l'avvertenza `too_many_points`;
 4. disegno (`figure_compute.function_plot`) → `normalize_svg`;
 5. didascalia calcolata `figure_theme.function_caption(computed, language)`,
    mai persistita.
 
 Timeout o errore del figlio → `approximate=True`, avvertenza
 `symbolic_timeout` / `symbolic_failed`, SVG comunque prodotto con i valori
-numerici. Errore del calcolo numerico o del disegno → `FunctionRenderError`.
+numerici. Errore del calcolo numerico o del disegno → `FunctionRenderError`
+(dettaglio nel log `function_render_failed`, mai nel messaggio al client).
+`deadline` (tempo monotono) è la scadenza complessiva dell'endpoint: il
+thread non è interrompibile, ma il motore la controlla fra un passo e
+l'altro e si ferma al primo controllo con `FunctionRenderError`.
 
 Il registro (`figure_render_service.FunctionRenderer`) e l'endpoint
-`render-function` passano da qui; i risultati sono in una cache LRU per
-`(sha256 della spec canonica, lingua, THEME_VERSION)`. Questo modulo NON
-importa `figure_render_service` (che lo importa all'avvio).
+`render-function` passano da qui; SVG e `computed` (che non dipendono
+dalla lingua) sono in una cache LRU per `(sha256 della spec canonica,
+THEME_VERSION)`; la didascalia è composta per lingua a ogni chiamata
+(microsecondi). Questo modulo NON importa `figure_render_service` (che lo
+importa all'avvio).
 """
 
 from __future__ import annotations
@@ -35,16 +44,25 @@ import importlib.util
 import json
 import math
 import threading
+import time
 from collections import OrderedDict
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.schemas.figure_function import ANALYSIS_ITEMS, FunctionFigureSpec
 from app.services.figure_compute import function_numeric, function_plot
-from app.services.figure_compute.function_numeric import NumericStudy
+from app.services.figure_compute.function_numeric import (
+    CATEGORY_ASYMPTOTES,
+    CATEGORY_CRITICAL,
+    CATEGORY_DISCONTINUITIES,
+    CATEGORY_INFLECTION,
+    CATEGORY_ZEROS,
+    MAX_NOTABLE_POINTS,
+    NumericStudy,
+)
 from app.services.figure_compute.isolated import (
     FigureComputeError,
     FigureTimeoutError,
@@ -59,11 +77,14 @@ FUNCTION_SPEC_INVALID = "function_spec_invalid"
 SYMBOLIC_TARGET = "app.services.figure_compute.function_symbolic:analyze_symbolic"
 _DEPENDENCIES = ("numpy", "matplotlib", "sympy")
 
-ResultKey = tuple[str, str, str]
+# `(sha256 della spec canonica, THEME_VERSION)`: SVG e `computed` non
+# dipendono dalla lingua.
+ResultKey = tuple[str, str]
 
 
 class FunctionRenderError(RuntimeError):
-    """Calcolo numerico o disegno falliti: la figura non può essere prodotta."""
+    """Calcolo numerico o disegno falliti (o scadenza complessiva superata):
+    la figura non può essere prodotta."""
 
 
 @dataclass(frozen=True)
@@ -75,6 +96,11 @@ class FunctionRenderResult:
     approximate: bool
     computed_caption: str
     content_hash: str
+
+
+def _check_deadline(deadline: float | None, step: str) -> None:
+    if deadline is not None and time.monotonic() > deadline:
+        raise FunctionRenderError(f"scadenza superata prima del passo «{step}»")
 
 
 def dependencies_available() -> bool:
@@ -90,8 +116,8 @@ _result_cache: OrderedDict[ResultKey, FunctionRenderResult] = OrderedDict()
 _result_lock = threading.Lock()
 
 
-def result_key(spec: FunctionFigureSpec, language: str | None) -> ResultKey:
-    return (spec.content_hash(), (language or "it").strip().lower(), THEME_VERSION)
+def result_key(spec: FunctionFigureSpec) -> ResultKey:
+    return (spec.content_hash(), THEME_VERSION)
 
 
 def _cache_get(key: ResultKey) -> FunctionRenderResult | None:
@@ -223,12 +249,30 @@ class _Reconciler:
         self.tol = 1e-6 * study.width
         self.f: Callable[[float], float] | None = study.fn
         self.approximate = sym is None
+        self.truncated: set[str] = set(study.truncated)
 
     def _note_exact(self, exact: Any) -> Any:
         if not isinstance(exact, str) or not exact.strip():
             self.approximate = True
             return None
         return exact
+
+    def _finish(
+        self, category: str, out: list[dict[str, Any]], *, exact_key: str
+    ) -> list[dict[str, Any]]:
+        """Ordina per `x`, tronca a `MAX_NOTABLE_POINTS` (le prime voci da
+        sinistra) e registra le forme esatte SOLO delle voci mantenute:
+        `approximate` riguarda ciò che entra nella figura."""
+        out.sort(key=lambda e: e["x"])
+        if len(out) > MAX_NOTABLE_POINTS:
+            self.truncated.add(category)
+            out = out[:MAX_NOTABLE_POINTS]
+        for entry in out:
+            entry[exact_key] = self._note_exact(entry.get(exact_key))
+        return out
+
+    def _in_zero_interval(self, x: float) -> bool:
+        return any(a - self.tol <= x <= b + self.tol for a, b in self.study.zero_intervals)
 
     def zeros(self) -> list[dict[str, Any]]:
         entries = _entries(self.sym, "zeros")
@@ -237,15 +281,23 @@ class _Reconciler:
         for xn in self.study.zeros:
             match = _take_closest(entries, xn, self.tol, used)
             x = float(match["x"]) if match else xn
-            out.append({"x": x, "exact": self._note_exact(match.get("exact") if match else None)})
+            out.append({"x": x, "exact": match.get("exact") if match else None})
         for i, entry in enumerate(entries):
             x = float(entry["x"])
             if i in used or not _in_domain(self.spec, x, self.tol) or self.f is None:
                 continue
-            v = self.f(x)
-            if math.isfinite(v) and abs(v) <= 1e-8 * self.study.scale:
-                out.append({"x": x, "exact": self._note_exact(entry.get("exact"))})
-        return sorted(out, key=lambda e: e["x"])
+            # Un esatto dentro un plateau di zeri è già rappresentato
+            # dall'intervallo; fuori entra solo con `f(x) ≈ 0` locale.
+            if self._in_zero_interval(x):
+                continue
+            if function_numeric.is_zero_at(self.f, x, width=self.study.width):
+                out.append({"x": x, "exact": entry.get("exact")})
+        return self._finish(CATEGORY_ZEROS, out, exact_key="exact")
+
+    def zero_intervals(self) -> list[list[float]]:
+        if self.study.zero_intervals:
+            self.approximate = True
+        return [[a, b] for a, b in self.study.zero_intervals]
 
     def critical(self) -> list[dict[str, Any]]:
         entries = _entries(self.sym, "critical_points")
@@ -258,12 +310,13 @@ class _Reconciler:
             x = float(entry["x"])
             if i in used or not _in_domain(self.spec, x, self.tol) or self.f is None:
                 continue
-            slope = function_numeric.derivative(self.f, x)
             y = self.f(x)
-            if math.isfinite(slope) and math.isfinite(y) and abs(slope) <= 1e-6 * self.study.scale:
-                kind = function_numeric.critical_type(self.f, x, scale=self.study.scale)
+            if math.isfinite(y) and function_numeric.is_stationary_at(
+                self.f, x, width=self.study.width
+            ):
+                kind = function_numeric.critical_type(self.f, x, width=self.study.width)
                 out.append(self._point(x, y, kind, entry))
-        return sorted(out, key=lambda e: e["x"])
+        return self._finish(CATEGORY_CRITICAL, out, exact_key="exact_x")
 
     def inflection(self) -> list[dict[str, Any]]:
         entries = _entries(self.sym, "inflection_points")
@@ -281,7 +334,7 @@ class _Reconciler:
                 self.f, x, width=self.study.width
             ):
                 out.append(self._point(x, y, None, entry))
-        return sorted(out, key=lambda e: e["x"])
+        return self._finish(CATEGORY_INFLECTION, out, exact_key="exact_x")
 
     def _point(
         self, xn: float, yn: float, kind: str | None, match: Mapping[str, Any] | None
@@ -292,7 +345,7 @@ class _Reconciler:
         entry: dict[str, Any] = {
             "x": x,
             "y": y,
-            "exact_x": self._note_exact(match.get("exact_x") if match else None),
+            "exact_x": match.get("exact_x") if match else None,
             "exact_y": match.get("exact_y") if match else None,
         }
         if kind is not None:
@@ -302,23 +355,22 @@ class _Reconciler:
         return entry
 
     def asymptotes(self) -> list[dict[str, Any]]:
-        out: list[dict[str, Any]] = []
+        vertical_out: list[dict[str, Any]] = []
         vertical = _entries(self.sym, "vertical_asymptotes")
         used: set[int] = set()
         for xn in self.study.poles:
             match = _take_closest(vertical, xn, self.tol, used)
             if match:
-                out.append(
+                vertical_out.append(
                     {
                         "kind": "vertical",
                         "x": float(match["x"]),
                         "expr": str(match.get("expr") or f"x = {format_number(float(match['x']))}"),
-                        "latex": self._note_exact(match.get("latex")),
+                        "latex": match.get("latex"),
                     }
                 )
             else:
-                self.approximate = True
-                out.append(
+                vertical_out.append(
                     {"kind": "vertical", "x": xn, "expr": f"x = {format_number(xn)}", "latex": None}
                 )
         for i, entry in enumerate(vertical):
@@ -333,14 +385,15 @@ class _Reconciler:
                 not math.isfinite(probe)
                 or near > function_numeric.POLE_MAGNITUDE * self.study.scale
             ):
-                out.append(
+                vertical_out.append(
                     {
                         "kind": "vertical",
                         "x": x,
                         "expr": str(entry.get("expr") or f"x = {format_number(x)}"),
-                        "latex": self._note_exact(entry.get("latex")),
+                        "latex": entry.get("latex"),
                     }
                 )
+        out = self._finish(CATEGORY_ASYMPTOTES, vertical_out, exact_key="latex")
         tails_sym = self.sym.get("tail_asymptotes") if self.sym else None
         confirmed: list[tuple[str, float, float]] = []
         if isinstance(tails_sym, list) and self.f is not None:
@@ -383,7 +436,10 @@ class _Reconciler:
                 continue
             if not math.isfinite(self.f(x)):
                 values.append(x)
-        return sorted(values)
+        values.sort()
+        if len(values) > MAX_NOTABLE_POINTS:
+            self.truncated.add(CATEGORY_DISCONTINUITIES)
+        return values[:MAX_NOTABLE_POINTS]
 
     def tangents(self) -> list[dict[str, Any]]:
         sym_list = self.sym.get("tangents") if self.sym else None
@@ -446,6 +502,7 @@ def build_computed(
         "approximate": False,
         "latex": r.latex(),
         "zeros": r.zeros() if analysed and "zeros" in show else None,
+        "zero_intervals": r.zero_intervals() if analysed and "zeros" in show else None,
         "critical_points": r.critical() if analysed and "critical_points" in show else None,
         "inflection_points": (r.inflection() if analysed and "inflection_points" in show else None),
         "asymptotes": r.asymptotes() if analysed and "asymptotes" in show else None,
@@ -455,6 +512,7 @@ def build_computed(
         "integral": r.integral() if analysed else None,
         "tangents": r.tangents() if analysed else [],
         "levels": list(study.levels) if study.levels is not None else None,
+        "truncated": sorted(r.truncated),
         "warnings": [],
     }
     computed["approximate"] = r.approximate
@@ -466,54 +524,79 @@ def build_computed(
 # ---------------------------------------------------------------------------
 
 
+def _with_caption(base: FunctionRenderResult, language: str | None) -> FunctionRenderResult:
+    return replace(base, computed_caption=function_caption(base.computed, language))
+
+
+def _failed(reason: str, spec: FunctionFigureSpec, exc: BaseException) -> FunctionRenderError:
+    """`FunctionRenderError` con il dettaglio nel log e un messaggio breve
+    per il chiamante (il client riceve un testo fisso)."""
+    detail = f"{type(exc).__name__}: {exc}"
+    log.warning(
+        "function_render_failed",
+        reason=reason,
+        detail=detail[:300],
+        hash=spec.content_hash()[:12],
+    )
+    return FunctionRenderError(f"{reason}: {detail}")
+
+
 def render_function_sync(
     spec: FunctionFigureSpec,
     *,
     language: str | None,
     symbolic_timeout: float | None = None,
     symbolic_target: str = SYMBOLIC_TARGET,
+    deadline: float | None = None,
 ) -> FunctionRenderResult:
     """Render completo di una spec valida (bloccante). `symbolic_timeout` e
-    `symbolic_target` sono parametrizzabili per i test del timeout reale."""
-    key = result_key(spec, language)
+    `symbolic_target` sono parametrizzabili per i test del timeout reale;
+    `deadline` (tempo monotono) è la scadenza complessiva del chiamante,
+    controllata fra un passo e l'altro."""
+    key = result_key(spec)
     hit = _cache_get(key)
     if hit is not None:
-        return hit
+        return _with_caption(hit, language)
     settings = get_settings()
     timeout = float(
         symbolic_timeout
         if symbolic_timeout is not None
         else settings.figure_function_timeout_seconds
     )
+    _check_deadline(deadline, "numerico")
     try:
         study = function_numeric.analyze(spec)
     except Exception as exc:  # numpy: overflow, forme incompatibili, ...
-        raise FunctionRenderError(f"calcolo numerico fallito: {type(exc).__name__}: {exc}") from exc
+        raise _failed("calcolo numerico fallito", spec, exc) from exc
+    _check_deadline(deadline, "simbolico")
+    if deadline is not None:
+        timeout = max(0.0, min(timeout, deadline - time.monotonic()))
     sym, warnings = _run_symbolic(spec, timeout=timeout, target=symbolic_target)
     computed, approximate = build_computed(spec, study, sym)
     warnings = [*study.warnings, *warnings]
+    _check_deadline(deadline, "disegno")
     try:
         raw_svg, plot_warnings = function_plot.render_svg(
             spec, study, computed, content_hash=spec.content_hash()
         )
         svg = normalize_svg(raw_svg, max_bytes=settings.figure_svg_max_bytes).svg
     except SvgRejectedError as exc:
-        raise FunctionRenderError(f"svg rifiutato: {exc}") from exc
+        raise _failed("svg rifiutato", spec, exc) from exc
     except Exception as exc:  # matplotlib
-        raise FunctionRenderError(f"disegno fallito: {type(exc).__name__}: {exc}") from exc
+        raise _failed("disegno fallito", spec, exc) from exc
     warnings.extend(plot_warnings)
     computed["warnings"] = list(dict.fromkeys(warnings))
-    result = FunctionRenderResult(
+    base = FunctionRenderResult(
         svg=svg,
         computed=computed,
         latex=list(computed["latex"]),
         warnings=list(computed["warnings"]),
         approximate=approximate,
-        computed_caption=function_caption(computed, language),
+        computed_caption="",
         content_hash=spec.content_hash(),
     )
-    _cache_put(key, result)
-    return result
+    _cache_put(key, base)
+    return _with_caption(base, language)
 
 
 # ---------------------------------------------------------------------------

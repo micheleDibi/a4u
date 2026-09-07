@@ -577,8 +577,9 @@ async def _validate_slots(slots: list[_Slot]) -> list[AssetCheck]:
     - `mermaid`: gate statico D8 del registro (duro, offline), poi parse con
       la 11.x del pin `settings.mermaid_cdn_version` (JS);
     - `vegalite` | `dot` | `function`: `validate(deep=True)` del renderer in
-      un thread, mai pass-through; formato non disponibile → check non
-      fixable.
+      un thread con `wait_for(figure_render_timeout_seconds)`, mai
+      pass-through; formato non disponibile → check non fixable; timeout →
+      check invalido (riparabile: il fix AI può semplificare la spec).
 
     Nel batch JS entrano SOLO gli slot `latex` e i `mermaid` che superano il
     gate statico: `js_pos` rimappa l'indice dello slot sulla posizione nel
@@ -600,6 +601,7 @@ async def _validate_slots(slots: list[_Slot]) -> list[AssetCheck]:
             js_items.append((s.kind, s.current))
     js_results = await _validate_js_batch(js_items)
     formats = available_formats()
+    render_timeout = float(get_settings().figure_render_timeout_seconds)
 
     checks: list[AssetCheck] = []
     for i, slot in enumerate(slots):
@@ -629,7 +631,16 @@ async def _validate_slots(slots: list[_Slot]) -> list[AssetCheck]:
                     AssetCheck(slot.id, slot.kind, False, f"{slot.kind}_unavailable", fixable=False)
                 )
                 continue
-            ok, err = await asyncio.to_thread(renderer.validate, slot.current, deep=True)
+            # Stesso tetto dell'endpoint `render-function`: una spec costosa
+            # (o un renderer lento) non deve bloccare la validazione della
+            # lezione oltre `figure_render_timeout_seconds`.
+            try:
+                ok, err = await asyncio.wait_for(
+                    asyncio.to_thread(renderer.validate, slot.current, deep=True),
+                    timeout=render_timeout,
+                )
+            except TimeoutError:
+                ok, err = False, f"{slot.kind}: validazione oltre {render_timeout:g} s"
             checks.append(AssetCheck(slot.id, slot.kind, ok, "" if ok else err))
     return checks
 

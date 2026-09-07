@@ -1,9 +1,20 @@
 """Disegno del formato `function` con matplotlib (API a oggetti, in thread).
 
 Deterministico: `rc_context(MATPLOTLIB_RC | {"svg.hashsalt": "a4u:<hash>"})`,
-`Figure` + `FigureCanvasAgg` (nessun `pyplot`, nessuno stato globale),
+`Figure` + `FigureCanvasAgg` (nessun `pyplot`),
 `savefig(format="svg", metadata={"Date": None, "Creator": None})`; due
-render della stessa spec sono byte-identici.
+render della stessa spec sono byte-identici. `rc_context` modifica
+`matplotlib.rcParams`, che è GLOBALE al processo: il blocco
+`rc_context … savefig` è serializzato da un `threading.Lock` di modulo
+(`_DRAW_LOCK`), altrimenti due render concorrenti in thread si
+scambierebbero `svg.hashsalt` e gli altri parametri a metà disegno e
+lascerebbero rcParams inquinati. Il disegno dura 0,2-0,5 s: la
+serializzazione è accettabile.
+
+Il numero di punti notevoli disegnati è limitato per categoria a
+`function_numeric.MAX_NOTABLE_POINTS` (il calcolo li ha già troncati; qui
+è una difesa in profondità): il costo del disegno — un `TextPath` e un
+parse mathtext per etichetta — resta bounded dai limiti della spec (A13).
 
 Testo matematico come geometria (A14): formula, coordinate esatte e ogni
 stringa mathtext sono disegnate con `TextPath` + `PathPatch` (font DejaVu
@@ -22,12 +33,14 @@ I `gid` diventano `id=` nell'SVG e sono i ganci dei test: `formula`,
 
 from __future__ import annotations
 
+import ast
 import io
 import re
+import threading
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
-from app.services.figure_compute.function_numeric import NumericStudy
+from app.services.figure_compute.function_numeric import MAX_NOTABLE_POINTS, NumericStudy
 from app.services.figure_theme import (
     COLOR_AXIS,
     COLOR_INK,
@@ -68,6 +81,28 @@ _WS_RE = re.compile(r"\s{2,}")
 _SPACE_BEFORE_CLOSE_RE = re.compile(r"\s+([)\]|])")
 _SPACE_AFTER_OPEN_RE = re.compile(r"([(\[|])\s+")
 
+# `rcParams` è globale: un solo disegno alla volta per processo.
+_DRAW_LOCK = threading.Lock()
+
+# Precedenze della scrittura mathtext dall'AST (`expr_to_mathtext`).
+_PREC_ADD = 0
+_PREC_MUL = 1
+_PREC_UNARY = 2
+_PREC_POW = 3
+_PREC_ATOM = 4
+_MATHTEXT_FUNCTIONS = {
+    "sin": r"\sin",
+    "cos": r"\cos",
+    "tan": r"\tan",
+    "log": r"\ln",
+    "sinh": r"\sinh",
+    "cosh": r"\cosh",
+    "tanh": r"\tanh",
+    "asin": r"\arcsin",
+    "acos": r"\arccos",
+    "atan": r"\arctan",
+}
+
 
 def to_mathtext(latex: str) -> str | None:
     """Testo mathtext (senza `$`) per una stringa LaTeX di sympy, `None` se
@@ -101,6 +136,79 @@ def mathtext_parses(s: str) -> bool:
 def _escape_text(s: str) -> str:
     """Testo tondo dentro una stringa mixed text/mathtext: niente `$`."""
     return s.replace("$", "")
+
+
+def _number_mathtext(value: float) -> str:
+    if float(value).is_integer() and abs(value) < 1e15:
+        return str(int(value))
+    return f"{value:.6g}"
+
+
+def _wrap(text: str, prec: int, minimum: int) -> str:
+    return f"({text})" if prec < minimum else text
+
+
+def _node_mathtext(node: ast.AST) -> tuple[str, int]:
+    """`(mathtext, precedenza)` di un nodo dell'AST già accettato dal
+    passo 1 (`function_parse`); solleva `ValueError` su nodi imprevisti."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+        text = _number_mathtext(float(node.value))
+        return (text, _PREC_UNARY if text.startswith("-") else _PREC_ATOM)
+    if isinstance(node, ast.Name):
+        if node.id == "pi":
+            return (r"\pi", _PREC_ATOM)
+        return ("e" if node.id == "E" else node.id, _PREC_ATOM)
+    if isinstance(node, ast.UnaryOp):
+        inner, prec = _node_mathtext(node.operand)
+        sign = "-" if isinstance(node.op, ast.USub) else ""
+        return (sign + _wrap(inner, prec, _PREC_UNARY), _PREC_UNARY)
+    if isinstance(node, ast.BinOp):
+        left, lp = _node_mathtext(node.left)
+        right, rp = _node_mathtext(node.right)
+        if isinstance(node.op, (ast.Add, ast.Sub)):
+            # Il secondo addendo è parentesizzato se additivo o negativo
+            # (`x - (-2)`, `x + (y - 1)`).
+            minimum = _PREC_POW if right.startswith("-") else _PREC_MUL
+            sign = "+" if isinstance(node.op, ast.Add) else "-"
+            return (f"{left} {sign} {_wrap(right, rp, minimum)}", _PREC_ADD)
+        if isinstance(node.op, ast.Mult):
+            left, right = _wrap(left, lp, _PREC_MUL), _wrap(right, rp, _PREC_MUL)
+            joiner = r" \cdot " if right[:1].isdigit() or right[:1] == "-" else r"\,"
+            return (f"{left}{joiner}{right}", _PREC_MUL)
+        if isinstance(node.op, ast.Div):
+            return (rf"\frac{{{left}}}{{{right}}}", _PREC_ATOM)
+        if isinstance(node.op, ast.Pow):
+            return (f"{_wrap(left, lp, _PREC_ATOM)}^{{{right}}}", _PREC_POW)
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+        args = [_node_mathtext(a)[0] for a in node.args]
+        name = node.func.id
+        if name == "sqrt":
+            return (rf"\sqrt{{{args[0]}}}", _PREC_ATOM)
+        if name == "abs":
+            return (f"|{args[0]}|", _PREC_ATOM)
+        if name == "exp":
+            return (f"e^{{{args[0]}}}", _PREC_POW)
+        if name == "floor":
+            return (rf"\lfloor {args[0]} \rfloor", _PREC_ATOM)
+        if name == "log" and len(args) == 2:
+            return (rf"\log_{{{args[1]}}}({args[0]})", _PREC_ATOM)
+        if name in _MATHTEXT_FUNCTIONS:
+            return (f"{_MATHTEXT_FUNCTIONS[name]}({args[0]})", _PREC_ATOM)
+    raise ValueError(f"nodo non convertibile: {type(node).__name__}")
+
+
+def expr_to_mathtext(source: str) -> str | None:
+    """Mathtext (senza `$`) scritto direttamente dall'AST dell'espressione
+    (`x**2 - 2` → `x^{2} - 2`, `(x**2-1)/(x-2)` → `\\frac{x^{2} - 1}{x - 2}`):
+    ripiego della formula quando il figlio sympy non ha fornito il LaTeX
+    (timeout, errore, sympy assente). `None` se la conversione o la prova
+    preventiva di mathtext falliscono."""
+    try:
+        tree = ast.parse((source or "").strip(), mode="eval")
+        text, _prec = _node_mathtext(tree.body)
+    except (SyntaxError, ValueError, RecursionError, IndexError):
+        return None
+    return text if mathtext_parses("$" + text + "$") else None
 
 
 class _Canvas:
@@ -320,7 +428,8 @@ def _draw_asymptotes(canvas: _Canvas, computed: Mapping[str, Any]) -> None:
     entries = computed.get("asymptotes")
     if not isinstance(entries, list):
         return
-    for k, entry in enumerate(entries):
+    # Verticali ≤ MAX_NOTABLE_POINTS più al massimo due code.
+    for k, entry in enumerate(entries[: MAX_NOTABLE_POINTS + 2]):
         kind = entry.get("kind")
         style = {"linestyle": "--", "color": COLOR_MUTED, "linewidth": 0.9}
         if kind == "vertical" and isinstance(entry.get("x"), (int, float)):
@@ -335,7 +444,7 @@ def _draw_points(canvas: _Canvas, computed: Mapping[str, Any]) -> None:
     ax = canvas.ax
     zeros = computed.get("zeros")
     if isinstance(zeros, list):
-        for k, entry in enumerate(zeros):
+        for k, entry in enumerate(zeros[:MAX_NOTABLE_POINTS]):
             x = float(entry["x"])
             ax.plot([x], [0.0], "o", markersize=4, color=COLOR_INK, gid=f"zero-{k}")
             text, is_math = _value_label(entry.get("exact"), x)
@@ -347,6 +456,29 @@ def _draw_points(canvas: _Canvas, computed: Mapping[str, Any]) -> None:
                 gid=f"zero-label-{k}",
                 va="top",
             )
+    intervals = computed.get("zero_intervals")
+    if isinstance(intervals, list):
+        for k, pair in enumerate(intervals[:MAX_NOTABLE_POINTS]):
+            if not (isinstance(pair, (list, tuple)) and len(pair) == 2):
+                continue
+            a, b = float(pair[0]), float(pair[1])
+            ax.plot(
+                [a, b],
+                [0.0, 0.0],
+                color=COLOR_INK,
+                linewidth=2.4,
+                solid_capstyle="round",
+                gid=f"zero-interval-{k}",
+            )
+            canvas.draw_label(
+                f"[{format_number(a)}, {format_number(b)}]",
+                is_math=False,
+                xy=(0.5 * (a + b), 0.0),
+                offset_pt=(0.0, -10.0),
+                gid=f"zero-interval-label-{k}",
+                ha="center",
+                va="top",
+            )
     for key, marker, color, offset in (
         ("critical_points", "o", PALETTE[1], (4.0, 4.0)),
         ("inflection_points", "s", PALETTE[2], (4.0, -12.0)),
@@ -355,7 +487,7 @@ def _draw_points(canvas: _Canvas, computed: Mapping[str, Any]) -> None:
         if not isinstance(entries, list):
             continue
         prefix = "critical" if key == "critical_points" else "inflection"
-        for k, entry in enumerate(entries):
+        for k, entry in enumerate(entries[:MAX_NOTABLE_POINTS]):
             x, y = float(entry["x"]), entry.get("y")
             if not isinstance(y, (int, float)):
                 continue
@@ -378,7 +510,7 @@ def _draw_discontinuities(
     if not isinstance(entries, list) or study.fn is None:
         return
     ax = canvas.ax
-    for k, x in enumerate(entries):
+    for k, x in enumerate(entries[:MAX_NOTABLE_POINTS]):
         if not isinstance(x, (int, float)):
             continue
         h = 1e-6 * study.width
@@ -483,6 +615,11 @@ def _draw_formulas(
         prefix = f"{label}({variables}) = "
         source = latex[i] if i < len(latex) else None
         mt = to_mathtext(source) if isinstance(source, str) else None
+        if mt is None:
+            # Senza il LaTeX del figlio sympy (timeout, errore, assente) la
+            # formula è scritta dall'AST dell'espressione, mai in sintassi
+            # Python (`x**2`).
+            mt = expr_to_mathtext(item.expr)
         offset = (0.0, -i * line_pt)
         if mt is not None:
             canvas.draw_math(
@@ -536,7 +673,7 @@ def render_svg(
     from matplotlib.figure import Figure
 
     rc: Any = {**MATPLOTLIB_RC, "svg.hashsalt": f"a4u:{content_hash}"}
-    with rc_context(rc):
+    with _DRAW_LOCK, rc_context(rc):
         fig = Figure(figsize=FIGSIZE, dpi=DPI)
         FigureCanvasAgg(fig)
         fig.subplots_adjust(**MARGINS)
@@ -566,4 +703,4 @@ def render_svg(
     return svg, canvas.warnings
 
 
-__all__ = ["mathtext_parses", "render_svg", "to_mathtext"]
+__all__ = ["expr_to_mathtext", "mathtext_parses", "render_svg", "to_mathtext"]

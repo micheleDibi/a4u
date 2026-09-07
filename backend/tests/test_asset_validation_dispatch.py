@@ -158,6 +158,36 @@ async def test_unavailable_format_is_not_fixable(
     assert fake_js == [[]]
 
 
+async def test_validate_slots_bounds_a_slow_renderer_with_the_render_timeout(
+    monkeypatch: pytest.MonkeyPatch, fake_js: list[list[tuple[str, str]]]
+):
+    """`validate(deep=True)` gira in un thread non interrompibile: senza
+    `wait_for` una spec costosa bloccava la validazione della lezione per
+    minuti. Il timeout produce un check invalido (riparabile), non un
+    pass-through."""
+    import time
+
+    from app.core import config
+
+    class _SlowRenderer(_FakeRenderer):
+        def validate(self, content: str, *, deep: bool = False) -> tuple[bool, str]:
+            time.sleep(0.6)
+            return (True, "")
+
+    settings = config.get_settings().model_copy(update={"figure_render_timeout_seconds": 0.2})
+    monkeypatch.setattr(avs, "get_settings", lambda: settings)
+    monkeypatch.setitem(frs.REGISTRY, "function", _SlowRenderer("function"))
+    monkeypatch.setattr(avs, "available_formats", lambda: ("mermaid", "function"))
+    slot = avs._Slot(
+        id="asset:A1", kind="function", current="{}", context="", commit=lambda v: None
+    )
+    t0 = time.perf_counter()
+    [check] = await avs._validate_slots([slot])
+    assert time.perf_counter() - t0 < 0.55
+    assert check.ok is False and check.fixable is True
+    assert check.error_message == "function: validazione oltre 0.2 s"
+
+
 async def test_validate_and_fix_never_calls_the_ai_for_unfixable_checks(
     monkeypatch: pytest.MonkeyPatch, fake_js: list[list[tuple[str, str]]]
 ):

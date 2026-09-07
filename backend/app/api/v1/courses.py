@@ -2901,8 +2901,10 @@ async def render_function_figure(
             code="function_render_timeout",
         ) from exc
     except FunctionRenderError as exc:
+        # Messaggio fisso: il dettaglio (tipo e testo dell'eccezione numpy o
+        # matplotlib) è nel log `function_render_failed` del motore.
         raise ValidationAppError(
-            f"Render della figura fallito: {exc}",
+            "Render della figura fallito: calcolo numerico o disegno non riusciti.",
             code="function_render_failed",
         ) from exc
     return _FunctionRenderOut(

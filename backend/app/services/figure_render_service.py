@@ -1088,7 +1088,9 @@ class FunctionRenderer:
         return figure_function_service.extract_translatable(self.sanitize(content))
 
     def apply_translations(self, content: str, tr: Mapping[str, str]) -> str:
-        return figure_function_service.apply_translations(content, tr)
+        # Stessa sanificazione di `extract_translatable`: un contenuto con
+        # fence ```json riceve le traduzioni sul JSON, non resta invariato.
+        return figure_function_service.apply_translations(self.sanitize(content), tr)
 
 
 # ---------------------------------------------------------------------------
@@ -1176,10 +1178,18 @@ async def render_function(
     simbolico NON solleva (risultato `approximate`)."""
     timeout = float(get_settings().figure_render_timeout_seconds)
     async with _render_semaphore():
+        # La scadenza è passata anche al motore: allo scadere di `wait_for`
+        # il thread non è interrompibile, ma il motore la controlla fra un
+        # passo e l'altro (numerico, figlio sympy, disegno) e si ferma al
+        # primo controllo invece di completare il lavoro a vuoto.
+        deadline = time.monotonic() + timeout
         try:
             return await asyncio.wait_for(
                 asyncio.to_thread(
-                    figure_function_service.render_function_sync, spec, language=language
+                    figure_function_service.render_function_sync,
+                    spec,
+                    language=language,
+                    deadline=deadline,
                 ),
                 timeout=timeout,
             )

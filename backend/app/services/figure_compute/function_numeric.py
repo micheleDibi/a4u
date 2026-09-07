@@ -8,6 +8,17 @@ valutatore ricorsivo dell'AST (`sin → np.sin`, `Pow → np.power` sotto
 simbolico del figlio (`function_symbolic`) fornisce solo le forme esatte,
 che il servizio riconcilia con i valori numerici di questo modulo.
 
+Limiti (A13: il lavoro nel thread è bounded dai limiti della spec): ogni
+categoria di punti notevoli (zeri, punti critici, flessi, asintoti
+verticali, discontinuità) è limitata a `MAX_NOTABLE_POINTS` voci — la
+ricerca si ferma al primo punto oltre il tetto e lo segnala in
+`NumericStudy.truncated` — e le sequenze di campioni con `y == 0`
+(o `f' == 0`) sono un unico plateau, non un punto per campione: gli zeri a
+plateau diventano `zero_intervals`, i tratti stazionari un'avvertenza. Le
+tolleranze degli zeri di tangenza, dei punti stazionari e degli estremi
+sono LOCALI (relative ai campioni vicini), mai alla mediana globale di
+`|y|`: `x**10 + 1` non ha zeri anche su `[-100, 100]`.
+
 numpy è importato dentro le funzioni: il modulo resta importabile senza
 librerie di calcolo (`figure_render_service` lo importa all'avvio).
 """
@@ -37,6 +48,23 @@ FILL_POINTS = 400
 GRID_POINTS = 160
 TAIL_INNER = (1e3, 1e4)
 TAIL_OUTER = (1e4, 1e5)
+# Tetto per categoria di punti notevoli (zeri, punti critici, flessi,
+# asintoti verticali, discontinuità): oltre, la ricerca si ferma e la
+# categoria è segnata come troncata (avvertenza `too_many_points`).
+MAX_NOTABLE_POINTS = 12
+# Regioni di taglio classificate al massimo (ogni classificazione costa
+# ~110 valutazioni scalari).
+MAX_REGIONS = 200
+# Sotto questa soglia i campioni accanto a un plateau di zeri sono
+# sottoflusso (`x**20736` vicino a 0): il plateau è uno zero di tangenza,
+# non un intervallo su cui la funzione si annulla.
+UNDERFLOW_LIMIT = 1e-200
+# Categorie di `NumericStudy.truncated` / `computed["truncated"]`.
+CATEGORY_ZEROS = "zeros"
+CATEGORY_CRITICAL = "critical_points"
+CATEGORY_INFLECTION = "inflection_points"
+CATEGORY_ASYMPTOTES = "asymptotes"
+CATEGORY_DISCONTINUITIES = "discontinuities"
 
 _GOLDEN = (math.sqrt(5) - 1) / 2
 
@@ -79,14 +107,37 @@ class PointNumeric:
 
 
 @dataclass
+class ZeroSearch:
+    """Esito di `find_zeros`: zeri isolati, intervalli su cui la funzione
+    si annulla (plateau di campioni nulli) e troncamento oltre il tetto."""
+
+    zeros: list[float] = field(default_factory=list)
+    intervals: list[tuple[float, float]] = field(default_factory=list)
+    truncated: bool = False
+
+
+@dataclass
+class CriticalSearch:
+    """Esito di `find_critical`: punti `(x, y, tipo)`, troncamento oltre il
+    tetto, presenza di tratti stazionari (`f' ≡ 0` su più campioni)."""
+
+    points: list[tuple[float, float, str]] = field(default_factory=list)
+    truncated: bool = False
+    plateau: bool = False
+
+
+@dataclass
 class NumericStudy:
     """Esito del calcolo numerico: geometria per il disegno e valori
-    approssimati da riconciliare con le forme esatte."""
+    approssimati da riconciliare con le forme esatte. Ogni lista di punti
+    notevoli ha al più `MAX_NOTABLE_POINTS` voci; `truncated` elenca le
+    categorie che ne avrebbero avute di più."""
 
     xlim: tuple[float, float]
     ylim: tuple[float, float]
     curves: list[Curve] = field(default_factory=list)
     zeros: list[float] = field(default_factory=list)
+    zero_intervals: list[tuple[float, float]] = field(default_factory=list)
     critical: list[tuple[float, float, str]] = field(default_factory=list)
     inflection: list[tuple[float, float]] = field(default_factory=list)
     poles: list[float] = field(default_factory=list)
@@ -98,6 +149,7 @@ class NumericStudy:
     levels: list[float] | None = None
     grid: tuple[Array, Array, Array] | None = None
     warnings: list[str] = field(default_factory=list)
+    truncated: set[str] = field(default_factory=set)
     scale: float = 1.0
     width: float = 1.0
     fn: Callable[[float], float] | None = None
@@ -246,6 +298,18 @@ def _golden_min(g: Callable[[float], float], a: float, b: float) -> float:
     return 0.5 * (a + b)
 
 
+def _bisect_edge(is_inside: Callable[[float], bool], outside: float, inside: float) -> float:
+    """Confine di un plateau: `is_inside(inside)` è vero, `is_inside(outside)`
+    falso; ritorna il punto interno più vicino al confine."""
+    for _ in range(BISECT_ITERS):
+        m = 0.5 * (outside + inside)
+        if is_inside(m):
+            inside = m
+        else:
+            outside = m
+    return inside
+
+
 def derivative(f: Callable[[float], float], x: float, *, order: int = 1) -> float:
     """Derivata numerica centrale (ordine 1 o 2)."""
     if order == 1:
@@ -253,6 +317,31 @@ def derivative(f: Callable[[float], float], x: float, *, order: int = 1) -> floa
         return (f(x + h) - f(x - h)) / (2.0 * h)
     h = 1e-4 * (1.0 + abs(x))
     return (f(x + h) - 2.0 * f(x) + f(x - h)) / (h * h)
+
+
+def _neighbour_scale(g: Callable[[float], float], x: float, delta: float) -> float:
+    """`max(|g(x − δ)|, |g(x + δ)|)` sui soli valori finiti (mai zero)."""
+    values = [abs(g(x - delta)), abs(g(x + delta))]
+    finite = [v for v in values if math.isfinite(v)]
+    return max(finite) if finite else 1.0
+
+
+def is_zero_at(f: Callable[[float], float], x: float, *, width: float) -> bool:
+    """`f(x) ≈ 0` con tolleranza LOCALE: nove ordini sotto i valori di `f`
+    a distanza `1e-3·ampiezza` (mai relativa alla mediana globale)."""
+    v = f(x)
+    if not math.isfinite(v):
+        return False
+    return abs(v) <= 1e-9 * max(_neighbour_scale(f, x, 1e-3 * width), 1e-300)
+
+
+def is_stationary_at(f: Callable[[float], float], x: float, *, width: float) -> bool:
+    """`f'(x) ≈ 0` con tolleranza locale rispetto a `f'` nei dintorni."""
+    slope = derivative(f, x)
+    if not math.isfinite(slope):
+        return False
+    scale = _neighbour_scale(lambda t: derivative(f, t), x, 1e-3 * width)
+    return abs(slope) <= 1e-6 * max(scale, 1e-300)
 
 
 def _dedupe(values: list[float], tol: float) -> list[float]:
@@ -348,16 +437,23 @@ def classify_cuts(
     *,
     scale: float,
     width: float,
-) -> tuple[list[float], list[tuple[float, float]]]:
+    domain: tuple[float, float] | None = None,
+) -> tuple[list[float], list[tuple[float, float]], bool]:
     """Per ogni regione di taglio: asintoto verticale (|f| → oltre
     `POLE_MAGNITUDE·scale` nel punto di minimo di |1/f|), salto (la
     discontinuità persiste bisecando) oppure nulla (funzione ripida ma
-    continua, o bordo del dominio di f). Ritorna `(poli, salti (x, y))`."""
+    continua, o bordo del dominio di f). Le regioni che toccano un estremo
+    di `domain` (create da campioni non finiti al bordo: `exp(x)` in
+    overflow, `log(x)` per x < 0) non sono tagli interni e vengono
+    ignorate. Ritorna `(poli, salti (x, y), regioni oltre MAX_REGIONS
+    ignorate)`."""
     poles: list[float] = []
     jumps: list[tuple[float, float]] = []
     tol = 1e-9 * width
-    for a, b in regions:
+    for a, b in regions[:MAX_REGIONS]:
         if not b > a:
+            continue
+        if domain is not None and (a <= domain[0] or b >= domain[1]):
             continue
 
         def inv(x: float) -> float:
@@ -387,7 +483,17 @@ def classify_cuts(
                 lo, flo = mid, fm
         if abs(fhi - flo) >= 0.5 * original and original > 1e-9 * scale:
             jumps.append((0.5 * (lo + hi), 0.5 * (flo + fhi)))
-    return _dedupe(poles, tol), jumps
+    return _dedupe(poles, tol), jumps, len(regions) > MAX_REGIONS
+
+
+def _zero_run_end(ys: Array, finite: Array, start: int) -> int:
+    """Ultimo indice della sequenza di campioni esattamente nulli che
+    comincia in `start`."""
+    end = start
+    n = len(ys)
+    while end + 1 < n and finite[end + 1] and ys[end + 1] == 0.0:
+        end += 1
+    return end
 
 
 def find_zeros(
@@ -396,49 +502,93 @@ def find_zeros(
     ys: Array,
     regions: Sequence[tuple[float, float]],
     *,
-    scale: float,
     width: float,
-) -> list[float]:
-    """Zeri: cambi di segno (bisezione), campioni esattamente nulli, zeri
-    di tangenza (minimi locali di |y| raffinati) ed estremi del dominio."""
+    limit: int = MAX_NOTABLE_POINTS,
+) -> ZeroSearch:
+    """Zeri, in un'unica scansione da sinistra: cambi di segno
+    (bisezione), campioni esattamente nulli, zeri di tangenza (minimi
+    locali di |y| raffinati) ed estremi del dominio.
+
+    Una sequenza di campioni nulli è un plateau: un intervallo su cui la
+    funzione si annulla (`floor(x)` su `[0, 1)`), con i confini raffinati
+    per bisezione; se i campioni accanto al plateau sono in sottoflusso
+    (`x**20736` vicino a 0) è invece un solo zero di tangenza nel punto
+    medio. Tolleranze locali: uno zero di tangenza o di estremo vale se
+    `|f|` scende di nove ordini sotto i campioni vicini. La scansione si
+    ferma al primo zero oltre `limit` (`truncated`)."""
     import numpy as np
 
     n = len(xs)
     finite = np.isfinite(ys)
-    tol_val = 1e-9 * scale
-    out: list[float] = []
-    for i in range(n - 1):
-        if not (finite[i] and finite[i + 1]):
+    ay = np.abs(np.where(finite, ys, np.inf))
+    # Segni al posto dei prodotti: `y[i]·y[i+1]` va in overflow sopra 1e154.
+    sy = np.sign(np.where(finite, ys, 0.0))
+    found: list[float] = []
+    intervals: list[tuple[float, float]] = []
+
+    def budget_left() -> bool:
+        return len(found) + len(intervals) <= limit
+
+    if n and finite[0] and ys[0] != 0.0 and n > 1 and finite[1]:
+        v = float(ys[0])
+        if abs(v) <= 1e-9 * max(float(ay[1]), 1e-300):
+            found.append(float(xs[0]))
+    i = 0
+    while i < n - 1 and budget_left():
+        if not finite[i]:
+            i += 1
             continue
         a, b = float(xs[i]), float(xs[i + 1])
-        if _in_regions(a, b, regions):
-            continue
         if ys[i] == 0.0:
-            out.append(a)
-        elif ys[i] * ys[i + 1] < 0:
-            x_star = _bisect(f, a, b)
-            if abs(f(x_star)) <= 1e-6 * scale:
-                out.append(x_star)
-    if n and finite[-1] and ys[-1] == 0.0:
-        out.append(float(xs[-1]))
-    ay = np.abs(np.where(finite, ys, np.inf))
-    for i in range(1, n - 1):
-        if not (finite[i - 1] and finite[i] and finite[i + 1]):
+            end = _zero_run_end(ys, finite, i)
+            if end == i:
+                found.append(a)
+            else:
+                left = float(ay[i - 1]) if i > 0 and finite[i - 1] else None
+                right = float(ay[end + 1]) if end + 1 < n and finite[end + 1] else None
+                sides = [v for v in (left, right) if v is not None]
+                lo, hi = a, float(xs[end])
+                if sides and max(sides) < UNDERFLOW_LIMIT:
+                    found.append(0.5 * (lo + hi))
+                else:
+                    if left is not None:
+                        lo = _bisect_edge(lambda x: f(x) == 0.0, float(xs[i - 1]), lo)
+                    if right is not None:
+                        hi = _bisect_edge(lambda x: f(x) == 0.0, float(xs[end + 1]), hi)
+                    intervals.append((lo, hi))
+            i = end + 1
             continue
-        # `<=` a sinistra: su una griglia simmetrica i due campioni più
-        # vicini allo zero hanno lo stesso |y| (x² a ±0,00375).
-        if ay[i] <= ay[i - 1] and ay[i] < ay[i + 1] and ys[i - 1] * ys[i + 1] > 0:
-            a, b = float(xs[i - 1]), float(xs[i + 1])
-            if _in_regions(a, b, regions):
-                continue
-            x_star = _golden_min(lambda x: abs(f(x)), a, b)
-            if abs(f(x_star)) <= tol_val:
-                out.append(x_star)
-    for edge in (float(xs[0]), float(xs[-1])):
-        v = f(edge)
-        if math.isfinite(v) and abs(v) <= tol_val:
-            out.append(edge)
-    return _dedupe(out, 1e-9 * width)
+        if finite[i + 1] and sy[i] * sy[i + 1] < 0 and not _in_regions(a, b, regions):
+            x_star = _bisect(f, a, b)
+            if abs(f(x_star)) <= 1e-6 * max(float(ay[i]), float(ay[i + 1])):
+                found.append(x_star)
+        elif (
+            i > 0
+            and finite[i - 1]
+            and finite[i + 1]
+            # `<=` a sinistra: su una griglia simmetrica i due campioni più
+            # vicini allo zero hanno lo stesso |y| (x² a ±0,00375).
+            and ay[i] <= ay[i - 1]
+            and ay[i] < ay[i + 1]
+            and sy[i - 1] * sy[i + 1] > 0
+            and not _in_regions(float(xs[i - 1]), b, regions)
+        ):
+            x_star = _golden_min(lambda x: abs(f(x)), float(xs[i - 1]), b)
+            if abs(f(x_star)) <= 1e-9 * max(float(ay[i - 1]), float(ay[i + 1]), 1e-300):
+                found.append(x_star)
+        i += 1
+    if n > 1 and finite[-1] and ys[-1] != 0.0 and finite[-2] and budget_left():
+        v = float(ys[-1])
+        if abs(v) <= 1e-9 * max(float(ay[-2]), 1e-300):
+            found.append(float(xs[-1]))
+    zeros = _dedupe(found, 1e-9 * width)
+    truncated = len(zeros) + len(intervals) > limit or not budget_left()
+    kept_intervals = intervals[:limit]
+    return ZeroSearch(
+        zeros=zeros[: limit - len(kept_intervals)],
+        intervals=kept_intervals,
+        truncated=truncated,
+    )
 
 
 def find_critical(
@@ -446,55 +596,76 @@ def find_critical(
     xs: Array,
     regions: Sequence[tuple[float, float]],
     *,
-    scale: float,
     width: float,
-) -> list[tuple[float, float, str]]:
-    """Punti critici `(x, y, tipo)`: cambi di segno della derivata centrale
-    (bisezione) e stazionari di tangenza; il tipo viene dalla derivata
-    seconda numerica (`max`, `min`, `stationary`)."""
+    limit: int = MAX_NOTABLE_POINTS,
+) -> CriticalSearch:
+    """Punti critici `(x, y, tipo)` in un'unica scansione: cambi di segno
+    della derivata centrale (bisezione) e stazionari di tangenza (minimi
+    locali di |f'|, tolleranza locale); il tipo viene dalla derivata
+    seconda numerica (`max`, `min`, `stationary`). Una sequenza di campioni
+    con `f' == 0` è un tratto stazionario (costanti, `floor`, tratti
+    piatti): nessun punto, solo `plateau=True`. La scansione si ferma al
+    primo punto oltre `limit`."""
     import numpy as np
 
     n = len(xs)
     d = np.array([derivative(f, float(x)) for x in xs], dtype=float)
     finite = np.isfinite(d)
+    ad = np.abs(np.where(finite, d, np.inf))
+    sd = np.sign(np.where(finite, d, 0.0))
 
     def d1(x: float) -> float:
         return derivative(f, x)
 
     candidates: list[float] = []
-    for i in range(n - 1):
-        if not (finite[i] and finite[i + 1]):
+    plateau = False
+    i = 0
+    while i < n - 1 and len(candidates) <= limit:
+        if not finite[i]:
+            i += 1
             continue
         a, b = float(xs[i]), float(xs[i + 1])
-        if _in_regions(a, b, regions):
-            continue
         if d[i] == 0.0:
-            candidates.append(a)
-        elif d[i] * d[i + 1] < 0:
-            candidates.append(_bisect(d1, a, b))
-    ad = np.abs(np.where(finite, d, np.inf))
-    for i in range(1, n - 1):
-        if not (finite[i - 1] and finite[i] and finite[i + 1]):
+            end = _zero_run_end(d, finite, i)
+            if end == i:
+                candidates.append(a)
+            else:
+                plateau = True
+            i = end + 1
             continue
-        if ad[i] <= ad[i - 1] and ad[i] < ad[i + 1] and d[i - 1] * d[i + 1] > 0:
-            a, b = float(xs[i - 1]), float(xs[i + 1])
-            if _in_regions(a, b, regions):
-                continue
-            x_star = _golden_min(lambda x: abs(d1(x)), a, b)
-            if abs(d1(x_star)) <= 1e-7 * scale:
+        if finite[i + 1] and sd[i] * sd[i + 1] < 0 and not _in_regions(a, b, regions):
+            x_star = _bisect(d1, a, b)
+            if abs(d1(x_star)) <= 1e-3 * max(float(ad[i]), float(ad[i + 1])):
                 candidates.append(x_star)
+        elif (
+            i > 0
+            and finite[i - 1]
+            and finite[i + 1]
+            and ad[i] <= ad[i - 1]
+            and ad[i] < ad[i + 1]
+            and sd[i - 1] * sd[i + 1] > 0
+            and not _in_regions(float(xs[i - 1]), b, regions)
+        ):
+            x_star = _golden_min(lambda x: abs(d1(x)), float(xs[i - 1]), b)
+            if abs(d1(x_star)) <= 1e-6 * max(float(ad[i - 1]), float(ad[i + 1]), 1e-300):
+                candidates.append(x_star)
+        i += 1
     out: list[tuple[float, float, str]] = []
     for x_star in _dedupe(candidates, 1e-9 * width):
         y_star = f(x_star)
-        if not math.isfinite(y_star) or abs(d1(x_star)) > 1e-4 * scale:
-            continue
-        out.append((x_star, y_star, critical_type(f, x_star, scale=scale)))
-    return out
+        if math.isfinite(y_star):
+            out.append((x_star, y_star, critical_type(f, x_star, width=width)))
+    return CriticalSearch(points=out[:limit], truncated=len(candidates) > limit, plateau=plateau)
 
 
-def critical_type(f: Callable[[float], float], x: float, *, scale: float) -> str:
+def critical_type(f: Callable[[float], float], x: float, *, width: float) -> str:
+    """`max` / `min` dal segno della derivata seconda; `stationary` se
+    questa è nulla rispetto ai suoi valori nei dintorni (`x**3` in 0)."""
     d2 = derivative(f, x, order=2)
-    if not math.isfinite(d2) or abs(d2) <= 1e-6 * scale:
+    if not math.isfinite(d2):
+        return "stationary"
+    scale = _neighbour_scale(lambda t: derivative(f, t, order=2), x, 1e-3 * width)
+    if abs(d2) <= 1e-6 * max(scale, 1e-300):
         return "stationary"
     return "max" if d2 < 0 else "min"
 
@@ -506,15 +677,19 @@ def find_inflection(
     *,
     scale: float,
     width: float,
-) -> list[tuple[float, float]]:
+    limit: int = MAX_NOTABLE_POINTS,
+) -> tuple[list[tuple[float, float]], bool]:
     """Flessi `(x, y)`: cambi di segno della derivata seconda centrale con
     ampiezza sopra il rumore numerico, raffinati per bisezione e
-    confermati da un cambio di segno persistente attorno al punto."""
+    confermati da un cambio di segno persistente attorno al punto. La
+    scansione si ferma al primo flesso oltre `limit`; ritorna
+    `(flessi, troncato)`."""
     import numpy as np
 
     n = len(xs)
     d2 = np.array([derivative(f, float(x), order=2) for x in xs], dtype=float)
     finite = np.isfinite(d2)
+    sd2 = np.sign(np.where(finite, d2, 0.0))
     floor = 1e-5 * scale
 
     def g(x: float) -> float:
@@ -522,7 +697,9 @@ def find_inflection(
 
     out: list[float] = []
     for i in range(n - 1):
-        if not (finite[i] and finite[i + 1]) or d2[i] * d2[i + 1] >= 0:
+        if len(out) > limit:
+            break
+        if not (finite[i] and finite[i + 1]) or sd2[i] * sd2[i + 1] >= 0:
             continue
         if max(abs(d2[i]), abs(d2[i + 1])) < floor:
             continue
@@ -537,7 +714,7 @@ def find_inflection(
         y_star = f(x_star)
         if math.isfinite(y_star):
             result.append((x_star, y_star))
-    return result
+    return result[:limit], len(out) > limit
 
 
 def inflection_confirmed(f: Callable[[float], float], x: float, *, width: float) -> bool:
@@ -591,16 +768,23 @@ def oblique_or_horizontal(
 
 
 def tail_confirmed(f: Callable[[float], float], m: float, q: float) -> bool:
-    """`f(X) − (mX + q) → 0` su X crescente (entrambi i lati basta uno)."""
+    """`f(X) − (mX + q) → 0` su X = 1e3, 1e4, 1e5 (basta un lato): lo
+    scarto deve almeno dimezzarsi fra 1e3 e 1e5, a meno del rumore di
+    cancellazione (relativo a `|f(X)|`), e restare piccolo rispetto a `q`.
+    X moderati come `oblique_or_horizontal`: a 1e8 la cancellazione in
+    virgola mobile supera lo scarto reale e scarterebbe asintoti esatti."""
     for sign in (1.0, -1.0):
         gaps: list[float] = []
-        for big in (1e4, 1e6, 1e8):
+        noise = 0.0
+        for big in (1e3, 1e4, 1e5):
             x = sign * big
-            v = f(x) - (m * x + q)
+            value = f(x)
+            v = value - (m * x + q)
             if not math.isfinite(v):
                 break
             gaps.append(abs(v))
-        if len(gaps) == 3 and gaps[2] <= gaps[0] + 1e-12 and gaps[2] < 1e-3 * (1.0 + abs(q)):
+            noise = 1e-9 * (1.0 + abs(value))
+        if len(gaps) == 3 and gaps[2] <= 0.5 * gaps[0] + noise and gaps[2] <= 1e-2 * (1.0 + abs(q)):
             return True
     return False
 
@@ -689,17 +873,35 @@ def _analyze_curves(spec: FunctionFigureSpec) -> NumericStudy:
     show = set(spec.show)
     regions0 = regions_by_expr[0]
     if show & {"asymptotes", "discontinuities"}:
-        study.poles, study.jumps = classify_cuts(f0, regions0, scale=study.scale, width=width)
+        poles, jumps, more = classify_cuts(
+            f0, regions0, scale=study.scale, width=width, domain=(lo, hi)
+        )
+        study.poles = _keep(study, CATEGORY_ASYMPTOTES, poles, more)
+        study.jumps = _keep(study, CATEGORY_DISCONTINUITIES, jumps, more)
     if "zeros" in show:
-        study.zeros = find_zeros(f0, xs, samples[0], regions0, scale=study.scale, width=width)
+        zeros = find_zeros(f0, xs, samples[0], regions0, width=width)
+        study.zeros, study.zero_intervals = zeros.zeros, zeros.intervals
+        if zeros.truncated:
+            study.truncated.add(CATEGORY_ZEROS)
+        if zeros.intervals:
+            study.warnings.append("zero_interval")
     if "critical_points" in show:
-        study.critical = find_critical(f0, xs, regions0, scale=study.scale, width=width)
+        critical = find_critical(f0, xs, regions0, width=width)
+        study.critical = critical.points
+        if critical.truncated:
+            study.truncated.add(CATEGORY_CRITICAL)
+        if critical.plateau:
+            study.warnings.append("stationary_interval")
         include.extend(y for _x, y, _t in study.critical)
     if "inflection_points" in show:
-        study.inflection = find_inflection(f0, xs, regions0, scale=study.scale, width=width)
+        study.inflection, more = find_inflection(f0, xs, regions0, scale=study.scale, width=width)
+        if more:
+            study.truncated.add(CATEGORY_INFLECTION)
         include.extend(y for _x, y in study.inflection)
     if "asymptotes" in show:
         study.tails = oblique_or_horizontal(evaluators[0], variable=var, env=env)
+    if study.truncated:
+        study.warnings.append("too_many_points")
 
     for ann in spec.annotations:
         fn_i = scalar_function(evaluators[ann.expr_index], variable=var, env=env)
@@ -834,6 +1036,15 @@ def nice_levels(lo: float, hi: float, n: int) -> list[float]:
     return [float(v) for v in ((lo + (hi - lo) * k / (n - 1)) for k in range(n))] if n > 1 else [lo]
 
 
+def _keep[T](study: NumericStudy, category: str, items: list[T], more: bool) -> list[T]:
+    """Al più `MAX_NOTABLE_POINTS` voci; la categoria è segnata come
+    troncata se ne restano fuori (o se `more` dice che altre regioni non
+    sono state esaminate)."""
+    if more or len(items) > MAX_NOTABLE_POINTS:
+        study.truncated.add(category)
+    return items[:MAX_NOTABLE_POINTS]
+
+
 def _zero(_x: float) -> float:
     return 0.0
 
@@ -848,12 +1059,21 @@ def _difference(
 
 
 __all__ = [
+    "CATEGORY_ASYMPTOTES",
+    "CATEGORY_CRITICAL",
+    "CATEGORY_DISCONTINUITIES",
+    "CATEGORY_INFLECTION",
+    "CATEGORY_ZEROS",
+    "MAX_NOTABLE_POINTS",
+    "MAX_REGIONS",
     "AreaNumeric",
+    "CriticalSearch",
     "Curve",
     "Evaluator",
     "NumericStudy",
     "PointNumeric",
     "TangentNumeric",
+    "ZeroSearch",
     "analyze",
     "classify_cuts",
     "compile_numpy",
@@ -864,6 +1084,8 @@ __all__ = [
     "find_inflection",
     "find_zeros",
     "inflection_confirmed",
+    "is_stationary_at",
+    "is_zero_at",
     "nice_levels",
     "oblique_or_horizontal",
     "sample",

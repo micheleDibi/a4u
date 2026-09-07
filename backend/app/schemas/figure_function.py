@@ -31,7 +31,7 @@ from typing import Annotated, Any, Literal, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
 
-from app.services.figure_compute.function_parse import ExprError, check_expression
+from app.services.figure_compute.function_parse import CONSTANTS, ExprError, check_expression
 
 Var = Annotated[str, StringConstraints(pattern=r"^[a-zA-Z]$")]
 Interval = tuple[float, float]
@@ -256,6 +256,26 @@ def _check_annotations(
             labels.add(label)
 
 
+def _constant_issue(loc: Sequence[str | int], name: str) -> SpecIssue:
+    what = "la costante di Nepero" if name == "E" else "una costante"
+    return _issue(loc, f"{name} indica {what}: scegli un'altra lettera")
+
+
+def _check_symbols(spec: FunctionFigureSpec, issues: list[SpecIssue]) -> None:
+    """Variabili e parametro non possono chiamarsi come una costante
+    (`E`): il valutatore numpy e il passo 1 la risolverebbero come numero
+    di Nepero, sympy come simbolo, e la figura sarebbe incoerente con la
+    formula disegnata."""
+    if spec.variable in CONSTANTS:
+        issues.append(_constant_issue(("variable",), spec.variable))
+    if spec.variables is not None:
+        for i, name in enumerate(spec.variables):
+            if name in CONSTANTS:
+                issues.append(_constant_issue(("variables", i), name))
+    if spec.parameter is not None and spec.parameter.name in CONSTANTS:
+        issues.append(_constant_issue(("parameter", "name"), spec.parameter.name))
+
+
 def _check_kind(spec: FunctionFigureSpec, issues: list[SpecIssue]) -> None:
     kind = spec.kind
     kinds = [a.kind for a in spec.annotations]
@@ -293,6 +313,8 @@ def _check_kind(spec: FunctionFigureSpec, issues: list[SpecIssue]) -> None:
             )
         if any(not math.isfinite(v) for v in spec.parameter.values):
             issues.append(_issue(("parameter", "values"), "valori non finiti"))
+        elif len(set(spec.parameter.values)) != len(spec.parameter.values):
+            issues.append(_issue(("parameter", "values"), "valori duplicati"))
     if len(set(spec.show)) != len(spec.show):
         issues.append(_issue(("show",), "voci duplicate"))
 
@@ -317,6 +339,7 @@ def check_function_spec(spec: FunctionFigureSpec) -> list[SpecIssue]:
     issues: list[SpecIssue] = []
     domain_ok = _check_interval(spec.domain, ("domain",), required=True, issues=issues)
     _check_interval(spec.range, ("range",), required=False, issues=issues)
+    _check_symbols(spec, issues)
     _check_kind(spec, issues)
     _check_levels(spec, issues)
     _check_annotations(spec, domain_ok=domain_ok, issues=issues)

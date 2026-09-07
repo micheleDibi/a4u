@@ -637,7 +637,23 @@ valutatore ricorsivo dell'AST (`sin → np.sin`, …, `Pow → np.power` in
 `find_zeros` (cambi di segno + bisezione), `find_critical` /
 `find_inflection` (derivate centrali), `vertical_asymptotes`,
 `oblique_or_horizontal` (regressione sulle code). **La figura non dipende
-da sympy.**
+da sympy.** Limiti introdotti dalla correzione di WP7 (A13, «bounded dai
+limiti della spec»): ogni categoria di punti notevoli è limitata a
+`MAX_NOTABLE_POINTS = 12` voci (le prime da sinistra; la ricerca si ferma
+al primo punto oltre il tetto, `computed["truncated"]` elenca le categorie
+e la didascalia aggiunge `courses.figures.function.truncated`); le
+sequenze di campioni con `y == 0` sono un plateau (`zero_intervals`, frase
+`courses.figures.function.zero_intervals`; con campioni vicini in
+sottoflusso, uno zero di tangenza nel punto medio) e quelle con `f' == 0`
+un tratto stazionario (avvertenza `stationary_interval`, nessun punto); le
+tolleranze degli zeri di tangenza, dei punti stazionari e degli estremi
+sono locali (relative ai campioni vicini, mai alla mediana globale di
+`|y|`); le regioni di taglio che toccano un estremo del dominio (overflow
+di `exp(x)`, `log(x)` per x < 0) non sono poli. Il disegno è serializzato
+da un `threading.Lock` (`rcParams` è globale al processo) e il motore
+riceve dall'endpoint una scadenza monotona controllata fra un passo e
+l'altro; nel worker `validate(deep=True)` è avvolta in
+`asyncio.wait_for(figure_render_timeout_seconds)`.
 
 `function_symbolic.py` (importa sympy solo nel figlio): `solve(f)`,
 `solve(diff(f))`, `solve(diff(f, 2))`, `singularities`, `limit(f, x, ±oo)`,
@@ -706,8 +722,10 @@ warnings: list[str], computed_caption: str, content_hash: str)`,
 `@limiter.limit("30/minute")`, permesso `course:edit` (`_ensure_org` →
 `resolve_permissions` → `get_course` con 404 silenzioso), poi
 `figure_render_service.render_function(payload, language=course.language_code)`
-con cache LRU per `sha256(model_dump_json canonico) + language +
-THEME_VERSION`. Errori: body Pydantic → 422 standard (`loc` con `body` in
+con cache LRU di SVG e `computed` per `sha256(model_dump_json canonico) +
+THEME_VERSION` (la didascalia, l'unica parte che dipende dalla lingua, è
+composta a ogni chiamata) e scadenza monotona passata al motore. Errori:
+body Pydantic → 422 standard (`loc` con `body` in
 testa); semantici → `ValidationAppError("Specifica della funzione non
 valida.", code="function_spec_invalid", meta={"errors": [...]})`; timeout
 simbolico → 200 con `warnings` e `approximate`; render numerico o
@@ -888,9 +906,11 @@ chiavi pienamente qualificate** di `it.json`/`en.json`:
 `courses.figures.label` («Figura {{n}}.»), `courses.figures.labelUnnumbered`
 («Figura.»), `illustrativeData`, `approxValues`, `renderError`, `loading`,
 `missing`, `formats.{mermaid,vegalite,dot,function,image}`,
-`function.{zeros,critical_points,inflection_points,asymptote_vertical,
-asymptote_horizontal,asymptote_oblique,integral,tangent,levels,none}` (22
-chiavi per lingua). `figure_labels(language)` (`:644-649`) ritorna una
+`function.{zeros,zero_intervals,critical_points,inflection_points,
+asymptote_vertical,asymptote_horizontal,asymptote_oblique,integral,tangent,
+levels,none,truncated}` (24 chiavi per lingua; `zero_intervals` è la frase
+dei plateau su cui la funzione si annulla, `truncated` quella delle
+categorie troncate al tetto di `MAX_NOTABLE_POINTS`). `figure_labels(language)` (`:644-649`) ritorna una
 copia con fallback `it` (`de`, `None`, `ja` → it; `en-GB` → en), coerente
 con `_labels_for` del PDF (`course_lesson_pdf_service.py:1097-1132`) e
 con `fallbackLng: "it"` del frontend. `_interpolate` gestisce `{{n}}` e

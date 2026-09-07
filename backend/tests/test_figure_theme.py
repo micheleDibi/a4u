@@ -30,6 +30,7 @@ EXPECTED_KEYS = {
         f"courses.figures.function.{k}"
         for k in (
             "zeros",
+            "zero_intervals",
             "critical_points",
             "inflection_points",
             "asymptote_vertical",
@@ -39,6 +40,7 @@ EXPECTED_KEYS = {
             "tangent",
             "levels",
             "none",
+            "truncated",
         )
     ),
 }

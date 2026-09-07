@@ -613,6 +613,7 @@ FIGURE_I18N: dict[str, dict[str, str]] = {
         "courses.figures.formats.function": "Figura matematica",
         "courses.figures.formats.image": "Immagine",
         "courses.figures.function.zeros": "Zeri in x = {{values}}.",
+        "courses.figures.function.zero_intervals": "Si annulla su {{values}}.",
         "courses.figures.function.critical_points": "Punti critici in x = {{values}}.",
         "courses.figures.function.inflection_points": "Flessi in x = {{values}}.",
         "courses.figures.function.asymptote_vertical": "Asintoto verticale {{expr}}.",
@@ -622,6 +623,9 @@ FIGURE_I18N: dict[str, dict[str, str]] = {
         "courses.figures.function.tangent": "Tangente in x = {{at}} con pendenza {{slope}}.",
         "courses.figures.function.levels": "Curve di livello per z = {{values}}.",
         "courses.figures.function.none": "Nessun punto notevole nel dominio considerato.",
+        "courses.figures.function.truncated": (
+            "Elenco troncato ai primi {{n}} punti per categoria."
+        ),
     },
     "en": {
         "courses.figures.label": "Figure {{n}}.",
@@ -637,6 +641,7 @@ FIGURE_I18N: dict[str, dict[str, str]] = {
         "courses.figures.formats.function": "Mathematical figure",
         "courses.figures.formats.image": "Image",
         "courses.figures.function.zeros": "Zeros at x = {{values}}.",
+        "courses.figures.function.zero_intervals": "Vanishes on {{values}}.",
         "courses.figures.function.critical_points": "Critical points at x = {{values}}.",
         "courses.figures.function.inflection_points": "Inflection points at x = {{values}}.",
         "courses.figures.function.asymptote_vertical": "Vertical asymptote {{expr}}.",
@@ -646,6 +651,9 @@ FIGURE_I18N: dict[str, dict[str, str]] = {
         "courses.figures.function.tangent": "Tangent at x = {{at}} with slope {{slope}}.",
         "courses.figures.function.levels": "Level curves for z = {{values}}.",
         "courses.figures.function.none": "No notable points in the considered domain.",
+        "courses.figures.function.truncated": (
+            "List truncated to the first {{n}} points per category."
+        ),
     },
 }
 
@@ -954,6 +962,15 @@ def function_caption(computed: Mapping[str, Any] | None, language: str | None) -
     zeros = points(computed.get("zeros"), value_key="x", exact_key="exact")
     if zeros:
         phrase("zeros", values=_join(zeros))
+    intervals = computed.get("zero_intervals")
+    if isinstance(intervals, list):
+        spans = [
+            f"[{format_number(float(a))}, {format_number(float(b))}]"
+            for a, b in (p for p in intervals if isinstance(p, (list, tuple)) and len(p) == 2)
+            if _is_number(a) and _is_number(b)
+        ]
+        if spans:
+            phrase("zero_intervals", values=_join(spans))
     critical = points(computed.get("critical_points"), value_key="x", exact_key="exact_x")
     if critical:
         phrase("critical_points", values=_join(critical))
@@ -1004,6 +1021,17 @@ def function_caption(computed: Mapping[str, Any] | None, language: str | None) -
     analysis_ran = any(isinstance(computed.get(k), list) for k in analysis_keys)
     if not sentences and analysis_ran:
         phrase("none")
+
+    # Categorie troncate al tetto del calcolo: il numero mostrato è la
+    # lunghezza delle liste troncate (tutte uguali al tetto).
+    truncated = computed.get("truncated")
+    if isinstance(truncated, list) and truncated:
+        shown = max(
+            (len(v) for v in (computed.get(str(k)) for k in truncated) if isinstance(v, list)),
+            default=0,
+        )
+        if shown:
+            phrase("truncated", n=shown)
 
     if computed.get("approximate") and sentences:
         sentences.append(labels["courses.figures.approxValues"])

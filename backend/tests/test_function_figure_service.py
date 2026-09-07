@@ -23,6 +23,7 @@ matplotlib o sympy (mai falliscono per l'ambiente).
 
 from __future__ import annotations
 
+import asyncio
 import json
 import math
 import re
@@ -369,6 +370,49 @@ def test_parse_function_spec_accepts_the_examples():
             ["show"],
             "duplicate",
         ),
+        # `E` è la costante di Nepero per il passo 1 e per numpy, un simbolo
+        # per sympy: la figura sarebbe incoerente con la formula.
+        (
+            {
+                "kind": "function_study",
+                "expressions": [{"expr": "E**2"}],
+                "domain": [0, 1],
+                "variable": "E",
+            },
+            ["variable"],
+            "costante di Nepero",
+        ),
+        (
+            {
+                "kind": "family",
+                "expressions": [{"expr": "E*x"}],
+                "domain": [0, 1],
+                "parameter": {"name": "E", "values": [1, 2, 3]},
+            },
+            ["parameter", "name"],
+            "costante di Nepero",
+        ),
+        (
+            {
+                "kind": "level_curves",
+                "expressions": [{"expr": "E + y"}],
+                "domain": [0, 1],
+                "variables": ["E", "y"],
+                "levels": 3,
+            },
+            ["variables", 0],
+            "costante di Nepero",
+        ),
+        (
+            {
+                "kind": "family",
+                "expressions": [{"expr": "a*x"}],
+                "domain": [0, 1],
+                "parameter": {"name": "a", "values": [1, 1, 1]},
+            },
+            ["parameter", "values"],
+            "valori duplicati",
+        ),
     ],
 )
 def test_parse_function_spec_reports_the_field(data: dict[str, Any], loc: list[Any], needle: str):
@@ -469,9 +513,9 @@ def test_split_branches_never_crosses_the_pole():
         assert (seg_x < 2).all() or (seg_x > 2).all()
     assert any(a <= 2 <= b for a, b in regions)
     f = fnum.scalar_function(fn, variable="x", env={})
-    poles, jumps = fnum.classify_cuts(f, regions, scale=fnum.data_scale(ys), width=14.0)
+    poles, jumps, more = fnum.classify_cuts(f, regions, scale=fnum.data_scale(ys), width=14.0)
     assert len(poles) == 1 and abs(poles[0] - 2.0) < 1e-6
-    assert jumps == []
+    assert jumps == [] and more is False
 
 
 @needs_deps
@@ -495,9 +539,9 @@ def test_find_zeros_of_sin_are_multiples_of_pi():
     xs = np.linspace(lo, hi, 800)
     ys = fnum.sample(fn, xs, variable="x", env={})
     f = fnum.scalar_function(fn, variable="x", env={})
-    zeros = fnum.find_zeros(f, xs, ys, [], scale=1.0, width=hi - lo)
-    assert len(zeros) == 5
-    for z, k in zip(zeros, range(-2, 3), strict=True):
+    found = fnum.find_zeros(f, xs, ys, [], width=hi - lo)
+    assert len(found.zeros) == 5 and found.intervals == [] and found.truncated is False
+    for z, k in zip(found.zeros, range(-2, 3), strict=True):
         assert abs(z - k * math.pi) < 1e-9
 
 
@@ -510,7 +554,7 @@ def test_touching_zero_and_critical_points_are_found():
     xs = np.linspace(-3, 3, 800)
     ys = fnum.sample(fn, xs, variable="x", env={})
     f = fnum.scalar_function(fn, variable="x", env={})
-    zeros = fnum.find_zeros(f, xs, ys, [], scale=1.0, width=6.0)
+    zeros = fnum.find_zeros(f, xs, ys, [], width=6.0).zeros
     assert len(zeros) == 1 and abs(zeros[0]) < 1e-6
     study = fnum.analyze(_spec(TANGENT))
     kinds = [(round(x, 6), t) for x, _y, t in study.critical]
@@ -529,7 +573,7 @@ def test_jumps_poles_and_tails():
     ys = fnum.sample(floor, xs, variable="x", env={})
     _branches, regions = fnum.split_branches(xs, ys)
     f = fnum.scalar_function(floor, variable="x", env={})
-    poles, jumps = fnum.classify_cuts(f, regions, scale=1.0, width=5.0)
+    poles, jumps, _more = fnum.classify_cuts(f, regions, scale=1.0, width=5.0)
     assert poles == []
     assert [round(x, 6) for x, _y in jumps] == [-1.0, 0.0, 1.0, 2.0, 3.0][: len(jumps)]
     assert len(jumps) >= 4
@@ -545,6 +589,278 @@ def test_jumps_poles_and_tails():
     assert fnum.oblique_or_horizontal(sin, variable="x", env={}) == []
     fr = fnum.scalar_function(rational, variable="x", env={})
     assert fnum.tail_confirmed(fr, 1.0, 2.0) and not fnum.tail_confirmed(fr, 1.0, 3.0)
+    assert not fnum.tail_confirmed(fr, 1.0, 2.005)
+    # Discontinuità eliminabile: a X = 1e8 la cancellazione supererebbe lo
+    # scarto reale (nullo) e l'esatto `y = x + 1` verrebbe scartato.
+    removable = fnum.compile_numpy(fparse.check_expression("(x**2-1)/(x-1)", free_symbols=["x"]))
+    assert fnum.tail_confirmed(fnum.scalar_function(removable, variable="x", env={}), 1.0, 1.0)
+
+
+@needs_deps
+def test_local_tolerances_reject_false_zeros_and_boundary_poles():
+    """Tolleranze locali, non relative alla mediana globale di |y|:
+    `x**10 + 1` non ha zeri su [-100, 100] (scale 1e17 → tol 1e8 con la
+    vecchia regola), `exp(x)` non si annulla in −5 e non ha un polo dove
+    va in overflow al bordo del dominio."""
+    big = ffs.render_function_sync(
+        _spec(
+            {
+                "kind": "function_study",
+                "expressions": [{"expr": "x**10 + 1"}],
+                "domain": [-100, 100],
+            }
+        ),
+        language="it",
+    )
+    assert big.computed["zeros"] == []
+    assert [round(c["x"], 6) for c in big.computed["critical_points"]] == [0.0]
+    assert big.computed_caption == "Punti critici in x = 0."
+
+    exp_small = ffs.render_function_sync(
+        _spec({"kind": "function_study", "expressions": [{"expr": "exp(x)"}], "domain": [-5, 40]}),
+        language="it",
+    )
+    assert exp_small.computed["zeros"] == [] and exp_small.computed["critical_points"] == []
+    assert exp_small.computed_caption == "Asintoto orizzontale y = 0."
+
+    exp_big = ffs.render_function_sync(
+        _spec({"kind": "function_study", "expressions": [{"expr": "exp(x)"}], "domain": [0, 1000]}),
+        language="it",
+    )
+    assert exp_big.computed["zeros"] == []
+    assert [a["kind"] for a in exp_big.computed["asymptotes"]] == ["horizontal"]
+    assert exp_big.computed_caption == "Asintoto orizzontale y = 0."
+
+    # Il polo di log(x) in 0 (bordo del dominio numerico) arriva dal figlio
+    # sympy e passa la verifica numerica diretta (`f(0)` non finita).
+    log = ffs.render_function_sync(
+        _spec(
+            {
+                "kind": "function_study",
+                "expressions": [{"expr": "log(x)"}],
+                "domain": [-1, 1],
+                "show": ["zeros", "asymptotes", "formula"],
+            }
+        ),
+        language="it",
+    )
+    assert log.computed_caption == "Zeri in x = 1. Asintoto verticale x = 0."
+
+
+@needs_deps
+def test_plateaus_collapse_to_intervals_and_stationary_warnings():
+    """Sequenze di campioni nulli → un intervallo (non un punto per
+    campione); `f' ≡ 0` → nessun punto critico e avvertenza; il plateau
+    da sottoflusso di `x**20736` è un solo zero di tangenza (esatto 0)."""
+    show = ["zeros", "critical_points", "asymptotes", "discontinuities", "formula"]
+    floor = ffs.render_function_sync(
+        _spec(
+            {
+                "kind": "function_study",
+                "expressions": [{"expr": "floor(x)"}],
+                "domain": [-3, 3],
+                "show": show,
+            }
+        ),
+        language="it",
+    )
+    assert floor.computed["zeros"] == []
+    [(a, b)] = floor.computed["zero_intervals"]
+    assert abs(a) < 1e-9 and abs(b - 1.0) < 1e-9
+    assert floor.computed["critical_points"] == []
+    assert len(floor.computed["discontinuities"]) == 5
+    assert {"zero_interval", "stationary_interval"} <= set(floor.warnings)
+    assert floor.computed_caption == "Si annulla su [0, 1]. Valori approssimati."
+    assert "zero-interval-0" in _ids(floor.svg) and "zero-0" not in _ids(floor.svg)
+
+    constant = ffs.render_function_sync(
+        _spec({"kind": "function_study", "expressions": [{"expr": "3"}], "domain": [-2, 2]}),
+        language="it",
+    )
+    assert constant.computed["critical_points"] == [] and constant.computed["zeros"] == []
+    assert "stationary_interval" in constant.warnings
+    assert len(constant.svg) < 40_000
+
+    underflow = ffs.render_function_sync(
+        _spec(
+            {
+                "kind": "function_study",
+                "expressions": [{"expr": "(((x**12)**12)**12)**12"}],
+                "domain": [-2, 2],
+                "show": show,
+            }
+        ),
+        language="it",
+    )
+    assert [z["exact"] for z in underflow.computed["zeros"]] == ["0"]
+    assert underflow.computed["zero_intervals"] == []
+    assert underflow.computed_caption == "Zeri in x = 0. Punti critici in x = 0."
+
+
+@needs_deps
+def test_notable_points_are_capped_and_the_render_stays_bounded():
+    """`sin(50*x)` su [-10, 10] ha 318 zeri e 319 punti critici: senza il
+    tetto costava decine di secondi di CPU nel thread (un `TextPath` e un
+    parse mathtext per etichetta), un SVG oltre il limite e una didascalia
+    di migliaia di caratteri."""
+    spec = _spec(
+        {"kind": "function_study", "expressions": [{"expr": "sin(50*x)"}], "domain": [-10, 10]}
+    )
+    t0 = time.perf_counter()
+    study = fnum.analyze(spec)
+    computed, _approx = ffs.build_computed(spec, study, None)
+    fplot.render_svg(spec, study, computed, content_hash=spec.content_hash())
+    in_thread = time.perf_counter() - t0
+    assert in_thread < 2.0, in_thread  # solo numerico + disegno (il figlio sympy è a parte)
+    assert study.truncated == {"zeros", "critical_points"}
+    assert len(study.zeros) == fnum.MAX_NOTABLE_POINTS == 12
+
+    t0 = time.perf_counter()
+    result = ffs.render_function_sync(spec, language="it")
+    elapsed = time.perf_counter() - t0
+    assert elapsed < 5.0, elapsed  # percorso completo, figlio sympy compreso (era 126 s)
+    assert len(result.svg) < 300_000
+    assert len(result.computed["zeros"]) == 12 and len(result.computed["critical_points"]) == 12
+    assert result.computed["truncated"] == ["critical_points", "zeros"]
+    assert "too_many_points" in result.warnings
+    assert (
+        result.computed_caption.endswith("Elenco troncato ai primi 12 punti per categoria.")
+        and len(result.computed_caption) < 600
+    )
+    ids = _ids(result.svg)
+    assert "zero-11" in ids and "zero-12" not in ids and "critical-12" not in ids
+    # Gli zeri mantenuti sono i primi da sinistra, esatti (k·π/50).
+    xs = [z["x"] for z in result.computed["zeros"]]
+    assert xs == sorted(xs) and all(
+        abs(x / (math.pi / 50) - round(x / (math.pi / 50))) < 1e-6 for x in xs
+    )
+
+
+@needs_deps
+def test_removable_discontinuity_keeps_the_exact_oblique_asymptote():
+    result = ffs.render_function_sync(
+        _spec(
+            {
+                "kind": "function_study",
+                "expressions": [{"expr": "(x**2-1)/(x-1)"}],
+                "domain": [-3, 3],
+                "show": ["zeros", "asymptotes", "discontinuities", "formula"],
+            }
+        ),
+        language="it",
+    )
+    assert result.approximate is False
+    assert [(a["kind"], a["latex"]) for a in result.computed["asymptotes"]] == [
+        ("oblique", "y = x + 1")
+    ]
+    assert [round(x, 9) for x in result.computed["discontinuities"]] == [1.0]
+    assert result.computed_caption == "Zeri in x = −1. Asintoto obliquo y = x + 1."
+
+
+@needs_deps
+def test_concurrent_draws_match_serial_and_leave_rcparams_clean():
+    """`rc_context` tocca `matplotlib.rcParams` (globale): senza il lock di
+    modulo due disegni concorrenti si scambiavano `svg.hashsalt` e gli
+    altri parametri e lasciavano rcParams inquinati."""
+    import threading
+
+    import matplotlib
+
+    specs = [
+        _spec({"kind": "function_study", "expressions": [{"expr": "x**2 - 1"}], "domain": [-2, 2]}),
+        _spec({"kind": "function_study", "expressions": [{"expr": "sin(x)"}], "domain": [-3, 3]}),
+    ]
+    studies = {s.content_hash(): fnum.analyze(s) for s in specs}
+
+    def draw(spec: FunctionFigureSpec) -> str:
+        study = studies[spec.content_hash()]
+        computed, _ = ffs.build_computed(spec, study, None)
+        return fplot.render_svg(spec, study, computed, content_hash=spec.content_hash())[0]
+
+    def worker(spec: FunctionFigureSpec, out: dict[str, str]) -> None:
+        out[spec.content_hash()] = draw(spec)
+
+    before = (matplotlib.rcParams["svg.hashsalt"], matplotlib.rcParams["svg.fonttype"])
+    serial = {s.content_hash(): draw(s) for s in specs}
+    for _round in range(6):
+        out: dict[str, str] = {}
+        threads = [threading.Thread(target=worker, args=(s, out)) for s in specs * 2]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert out == serial
+    assert (matplotlib.rcParams["svg.hashsalt"], matplotlib.rcParams["svg.fonttype"]) == before
+
+
+@needs_deps
+def test_result_cache_is_shared_across_languages_and_deadline_stops_the_engine(monkeypatch):
+    spec = _spec(
+        {"kind": "function_study", "expressions": [{"expr": "x**2 - 1"}], "domain": [-2, 2]}
+    )
+    first = ffs.render_function_sync(spec, language="it")
+    calls: list[str] = []
+    monkeypatch.setattr(ffs.function_numeric, "analyze", lambda s: calls.append("analyze"))
+    english = ffs.render_function_sync(spec, language="en")
+    assert calls == []  # nessun ricalcolo: SVG e computed non dipendono dalla lingua
+    assert english.svg == first.svg and english.computed == first.computed
+    assert english.computed_caption == "Zeros at x = −1, 1. Critical points at x = 0."
+    assert len(ffs._result_cache) == 1
+    monkeypatch.undo()
+    # Scadenza già passata: il motore si ferma al primo controllo, senza
+    # calcolare né disegnare (il thread orfano dell'endpoint termina subito).
+    ffs.clear_result_cache()
+    with pytest.raises(ffs.FunctionRenderError, match="scadenza"):
+        ffs.render_function_sync(spec, language="it", deadline=time.monotonic() - 1)
+
+
+@needs_deps
+async def test_render_function_timeout_releases_and_the_thread_ends(monkeypatch):
+    from app.core import config
+
+    settings = config.get_settings().model_copy(update={"figure_render_timeout_seconds": 1})
+    monkeypatch.setattr(frs, "get_settings", lambda: settings)
+    spec = _spec(
+        {
+            "kind": "function_study",
+            "expressions": [{"expr": "sin(1000*x)"}],
+            "domain": [-10, 10],
+            "sampling": {"points": 2000},
+            "show": ["zeros", "critical_points", "inflection_points", "asymptotes", "formula"],
+        }
+    )
+    import threading
+
+    finished = threading.Event()
+    outcome: list[BaseException | None] = []
+    drawn: list[str] = []
+    original = ffs.render_function_sync
+
+    def tracked(*args: Any, **kwargs: Any) -> Any:
+        try:
+            return original(*args, **kwargs)
+        except BaseException as exc:
+            outcome.append(exc)
+            raise
+        finally:
+            finished.set()
+
+    monkeypatch.setattr(frs.figure_function_service, "render_function_sync", tracked)
+    monkeypatch.setattr(
+        ffs.function_plot, "render_svg", lambda *a, **k: drawn.append("draw") or ("", [])
+    )
+    t0 = time.perf_counter()
+    with pytest.raises(frs.FigureTimeoutError):
+        await frs.render_function(spec, language="it")
+    assert time.perf_counter() - t0 < 3.0
+    # Il thread (non interrompibile) riceve la scadenza: il figlio sympy è
+    # ucciso entro la stessa scadenza e il motore si ferma al controllo
+    # successivo senza disegnare, invece di completare il lavoro a vuoto.
+    assert await asyncio.to_thread(finished.wait, 6.0)
+    assert drawn == []
+    assert len(outcome) == 1 and isinstance(outcome[0], ffs.FunctionRenderError)
+    assert "scadenza" in str(outcome[0])
+    assert len(ffs._result_cache) == 0
 
 
 @needs_deps
@@ -669,8 +985,8 @@ def test_render_rational_study_is_exact_deterministic_and_vector_only():
         "asymptote-0",
     } <= _ids(svg)
     assert _font_families(svg) <= FONT_ALLOWED
-    # Cache dei risultati: stesso oggetto; lingua diversa: stesso SVG, altra coda.
-    assert ffs.render_function_sync(spec, language="it") is first
+    # Cache dei risultati: stesso esito; lingua diversa: stesso SVG, altra coda.
+    assert ffs.render_function_sync(spec, language="it") == first
     english = ffs.render_function_sync(spec, language="en")
     assert english.svg == svg and english.computed_caption.startswith("Zeros at x = −1, 1.")
     ffs.clear_result_cache()
@@ -743,6 +1059,10 @@ def test_render_survives_symbolic_timeout_and_failure():
     assert "symbolic_timeout" in result.warnings
     assert "branch-0-0" in _ids(result.svg) and "zero-0" in _ids(result.svg)
     assert result.computed["zeros"][0]["exact"] is None
+    # Senza il LaTeX del figlio la formula è scritta dall'AST (`x^{2} - 2`
+    # come geometria), mai in sintassi Python.
+    assert "formula_not_mathtext" not in result.warnings and "x**2" not in result.svg
+    assert '<g id="formula">' in result.svg
     assert (
         result.computed_caption
         == "Zeri in x = −1.414, 1.414. Punti critici in x = 0. Valori approssimati."
@@ -764,6 +1084,32 @@ def test_to_mathtext_rewrites_and_rejects():
     assert fplot.to_mathtext(r"{a \over b}") is None
     assert fplot.to_mathtext(r"\frac{x^{2} - 1}{x - 2}") == r"\frac{x^{2} - 1}{x - 2}"
     assert fplot.to_mathtext("") is None
+
+
+@pytest.mark.parametrize(
+    ("src", "expected"),
+    [
+        ("x**2 - 2", "x^{2} - 2"),
+        ("(x**2 - 1)/(x - 2)", r"\frac{x^{2} - 1}{x - 2}"),
+        ("2*x", r"2\,x"),
+        ("x*2", r"x \cdot 2"),
+        ("sin(x)**2 + 2*x", r"\sin(x)^{2} + 2\,x"),
+        ("log(x, 2)", r"\log_{2}(x)"),
+        ("exp(-x**2)", "e^{-x^{2}}"),
+        ("abs(x - 1)", "|x - 1|"),
+        ("floor(x)/pi", r"\frac{\lfloor x \rfloor}{\pi}"),
+        ("x - -2", "x - (-2)"),
+        ("x**(1/3)", r"x^{\frac{1}{3}}"),
+        ("E**x", "e^{x}"),
+        ("sqrt(x**2 + 1)", r"\sqrt{x^{2} + 1}"),
+        ("(x + 1)**2", "(x + 1)^{2}"),
+        ("-(x + 1)", "-(x + 1)"),
+    ],
+)
+def test_expr_to_mathtext_writes_the_formula_from_the_ast(src: str, expected: str):
+    pytest.importorskip("matplotlib")
+    assert fplot.expr_to_mathtext(src) == expected
+    assert fplot.expr_to_mathtext("x +") is None
 
 
 # ---------------------------------------------------------------------------
@@ -819,6 +1165,12 @@ def test_function_translatable_labels_round_trip():
     assert data["expressions"][1] == {"expr": "2*x"} and data["domain"] == [0, 1]
     assert renderer.apply_translations("non json", {"expressions.0.label": "x"}) == "non json"
     assert renderer.extract_translatable("[1]") == {}
+    # Contenuto con fence: estrazione e applicazione passano dalla stessa
+    # sanificazione (prima la traduzione andava persa in silenzio).
+    fenced = "```json\n" + content + "\n```"
+    assert renderer.extract_translatable(fenced) == fields
+    translated = json.loads(renderer.apply_translations(fenced, {"expressions.0.label": "speed"}))
+    assert translated["expressions"][0]["label"] == "speed"
 
 
 async def test_patch_gate_reports_function_spec_errors():
