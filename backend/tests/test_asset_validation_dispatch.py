@@ -280,7 +280,9 @@ def test_loc_fields_come_from_the_renderer(monkeypatch: pytest.MonkeyPatch):
     assert by_key["va.2.content.label.0"].kind == "dot" and "va.2.content.label.1" in by_key
     assert "va.4.content" not in by_key  # image: solo caption/alt_text
     assert by_key["va.4.caption"].kind == "text"
-    # `function` non è registrato (WP7): nessun campo del contenuto.
+    # `function`: la spec `{"kind": "x"}` non ha label (né è valida): nessun
+    # campo del contenuto (le label di espressioni e annotazioni sono in
+    # `test_function_figure_service`).
     assert not any(k.startswith("va.3.content") for k in by_key)
     by_key["va.0.content"].apply("flowchart LR\n A --> C")
     assert output.visual_assets[0].content == "flowchart LR\n A --> C"

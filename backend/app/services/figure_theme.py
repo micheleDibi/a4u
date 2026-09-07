@@ -780,8 +780,10 @@ def _latex_tidy(t: str) -> str:
     t = re.sub(r"\s+", " ", t).strip()
     t = re.sub(r"([(\[])\s+", r"\1", t)
     t = re.sub(r"\s+([)\]])", r"\1", t)
-    # Meno unario: «− √2» → «−√2», «(− 1 + √5)» → «(−1 + √5)».
-    t = re.sub(r"(^|[(\[/=,^])\s*−\s+", r"\1−", t)
+    # Meno unario: «− √2» → «−√2», «(− 1 + √5)» → «(−1 + √5)»; dopo «=» e
+    # «,» resta uno spazio: «x = − π/2» → «x = −π/2».
+    t = re.sub(r"(^|[(\[/^])\s*−\s+", r"\1−", t)
+    t = re.sub(r"([=,])\s*−\s+", r"\1 −", t)
     # Coefficienti: «2 √3» → «2√3», «3 π» → «3π», «2 x» → «2x»; «2 ln(3)» resta.
     t = re.sub(r"(?<=[0-9])\s+(?=[√∛∜π∞]|[a-zA-Z](?![a-zA-Z]))", "", t)
     return t

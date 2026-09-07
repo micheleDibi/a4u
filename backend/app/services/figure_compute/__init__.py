@@ -11,6 +11,11 @@ nelle funzioni.
 - `vegalite_rules`: regole D5 e euristica del criterio 10 sulle spec
   Vega-Lite (puro, senza rete né librerie);
 - `vegalite_render`: bersaglio del figlio per `vl_convert.vegalite_to_svg`;
-- `function_*` (WP7): parsing, calcolo numerico/simbolico e disegno delle
-  figure matematiche.
+- `function_parse`: passo 1 del parsing delle espressioni (AST con
+  whitelist, senza sympy, solo libreria standard);
+- `function_numeric`: campionamento, rami e punti notevoli (numpy);
+- `function_symbolic`: bersaglio del figlio per le forme esatte (sympy,
+  `parse_expr` con `global_dict` ristretto);
+- `function_plot`: disegno matplotlib con `TextPath` per il testo
+  matematico, mai raster.
 """

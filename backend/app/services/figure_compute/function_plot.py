@@ -1,0 +1,569 @@
+"""Disegno del formato `function` con matplotlib (API a oggetti, in thread).
+
+Deterministico: `rc_context(MATPLOTLIB_RC | {"svg.hashsalt": "a4u:<hash>"})`,
+`Figure` + `FigureCanvasAgg` (nessun `pyplot`, nessuno stato globale),
+`savefig(format="svg", metadata={"Date": None, "Creator": None})`; due
+render della stessa spec sono byte-identici.
+
+Testo matematico come geometria (A14): formula, coordinate esatte e ogni
+stringa mathtext sono disegnate con `TextPath` + `PathPatch` (font DejaVu
+Sans bundled da matplotlib: nessuna dipendenza da STIX o «DejaVu Sans
+Display», assenti nel container e nel browser). Il resto del testo (tick,
+legenda, nomi degli assi, valori approssimati) resta `<text>` con la
+famiglia del tema (`svg.fonttype: none`). Mai raster: `contour` e
+`fill_between` sono path, `imshow` non è usato, quindi l'SVG non contiene
+`<image>` (che `svg_normalize` rifiuta).
+
+I `gid` diventano `id=` nell'SVG e sono i ganci dei test: `formula`,
+`branch-{i}-{j}`, `zero-{k}`, `critical-{k}`, `inflection-{k}`,
+`asymptote-{k}`, `discontinuity-{k}`, `tangent-{k}`, `area-{k}`,
+`point-{k}`, `levels`.
+"""
+
+from __future__ import annotations
+
+import io
+import re
+from collections.abc import Mapping, Sequence
+from typing import TYPE_CHECKING, Any
+
+from app.services.figure_compute.function_numeric import NumericStudy
+from app.services.figure_theme import (
+    COLOR_AXIS,
+    COLOR_INK,
+    COLOR_MUTED,
+    MATPLOTLIB_RC,
+    PALETTE,
+    format_number,
+)
+
+if TYPE_CHECKING:
+    from app.schemas.figure_function import FunctionFigureSpec
+
+FIGSIZE = (5.2, 3.6)
+DPI = 200
+MARGINS = {"left": 0.08, "right": 0.97, "top": 0.94, "bottom": 0.10}
+MATH_SIZE_PT = 9.0
+LABEL_SIZE_PT = 8.0
+# Font bundled di matplotlib: la geometria è identica su ogni macchina.
+_TEXTPATH_FAMILY = "DejaVu Sans"
+
+_MATHTEXT_UNSUPPORTED = ("\\begin{", "\\end{", "\\over")
+_MATHTEXT_REPLACEMENTS: tuple[tuple[str, str], ...] = (
+    ("\\left.", ""),
+    ("\\right.", ""),
+    ("\\left", ""),
+    ("\\right", ""),
+    ("\\tfrac", "\\frac"),
+    ("\\dfrac", "\\frac"),
+    ("\\lvert", "|"),
+    ("\\rvert", "|"),
+    ("\\lVert", "\\|"),
+    ("\\rVert", "\\|"),
+    ("\\displaystyle", ""),
+    ("\\operatorname{", "\\mathrm{"),
+)
+_METADATA_RE = re.compile(r"\s*<metadata>.*?</metadata>", re.DOTALL)
+_WS_RE = re.compile(r"\s{2,}")
+_SPACE_BEFORE_CLOSE_RE = re.compile(r"\s+([)\]|])")
+_SPACE_AFTER_OPEN_RE = re.compile(r"([(\[|])\s+")
+
+
+def to_mathtext(latex: str) -> str | None:
+    """Testo mathtext (senza `$`) per una stringa LaTeX di sympy, `None` se
+    mathtext non la può rendere (`\\begin{…}`, `\\over` o errore del
+    parser nella prova preventiva)."""
+    text = (latex or "").strip()
+    if not text or any(marker in text for marker in _MATHTEXT_UNSUPPORTED):
+        return None
+    for old, new in _MATHTEXT_REPLACEMENTS:
+        text = text.replace(old, new)
+    text = _WS_RE.sub(" ", text).strip()
+    # `\left( x \right)` → `( x )`: gli spazi accanto ai delimitatori sono
+    # residui di `\left`/`\right`.
+    text = _SPACE_BEFORE_CLOSE_RE.sub(r"\1", text)
+    text = _SPACE_AFTER_OPEN_RE.sub(r"\1", text)
+    if not mathtext_parses("$" + text + "$"):
+        return None
+    return text
+
+
+def mathtext_parses(s: str) -> bool:
+    from matplotlib.mathtext import MathTextParser
+
+    try:
+        MathTextParser("path").parse(s)
+    except Exception:  # ValueError del parser, ma anche errori di font
+        return False
+    return True
+
+
+def _escape_text(s: str) -> str:
+    """Testo tondo dentro una stringa mixed text/mathtext: niente `$`."""
+    return s.replace("$", "")
+
+
+class _Canvas:
+    """Stato del disegno (figura, assi, contatori dei gid)."""
+
+    def __init__(self, fig: Any, ax: Any) -> None:
+        self.fig = fig
+        self.ax = ax
+        self.warnings: list[str] = []
+
+    def draw_math(
+        self,
+        s: str,
+        *,
+        anchor: tuple[float, float],
+        transform: Any,
+        offset_pt: tuple[float, float] = (0.0, 0.0),
+        ha: str = "left",
+        va: str = "baseline",
+        size: float = MATH_SIZE_PT,
+        color: str = COLOR_INK,
+        gid: str,
+    ) -> None:
+        """`TextPath` + `PathPatch` ancorati a `anchor` (nel sistema
+        `transform`) con spostamento in punti: la geometria resta in
+        punti tipografici qualunque sia il dpi del backend."""
+        from matplotlib.font_manager import FontProperties
+        from matplotlib.patches import PathPatch
+        from matplotlib.textpath import TextPath
+        from matplotlib.transforms import Affine2D, ScaledTranslation
+
+        path = TextPath((0, 0), s, size=size, prop=FontProperties(family=_TEXTPATH_FAMILY))
+        bbox = path.get_extents()
+        dx = -bbox.x0
+        if ha == "right":
+            dx = -bbox.x1
+        elif ha == "center":
+            dx = -(bbox.x0 + bbox.x1) / 2.0
+        dy = 0.0
+        if va == "top":
+            dy = -bbox.y1
+        elif va == "bottom":
+            dy = -bbox.y0
+        elif va == "center":
+            dy = -(bbox.y0 + bbox.y1) / 2.0
+        trans = (
+            Affine2D().translate(dx + offset_pt[0], dy + offset_pt[1]).scale(1.0 / 72.0)
+            + self.fig.dpi_scale_trans
+            + ScaledTranslation(anchor[0], anchor[1], transform)
+        )
+        patch = PathPatch(
+            path, facecolor=color, edgecolor="none", linewidth=0, transform=trans, clip_on=False
+        )
+        patch.set_gid(gid)
+        self.ax.add_patch(patch)
+
+    def draw_label(
+        self,
+        text: str,
+        *,
+        is_math: bool,
+        xy: tuple[float, float],
+        offset_pt: tuple[float, float],
+        gid: str,
+        ha: str = "left",
+        va: str = "bottom",
+        color: str = COLOR_INK,
+    ) -> None:
+        """Etichetta di un punto in coordinate dati: geometria se mathtext,
+        `<text>` altrimenti."""
+        if is_math:
+            self.draw_math(
+                text,
+                anchor=xy,
+                transform=self.ax.transData,
+                offset_pt=offset_pt,
+                ha=ha,
+                va=va,
+                size=LABEL_SIZE_PT,
+                color=color,
+                gid=gid,
+            )
+            return
+        self.ax.annotate(
+            text,
+            xy=xy,
+            xycoords="data",
+            xytext=offset_pt,
+            textcoords="offset points",
+            ha=ha,
+            va=va,
+            fontsize=LABEL_SIZE_PT,
+            color=color,
+            gid=gid,
+            annotation_clip=False,
+        )
+
+
+def _value_label(exact: Any, value: float) -> tuple[str, bool]:
+    """`(testo, è mathtext)`: forma esatta come mathtext se resa, altrimenti
+    il valore approssimato a 3 decimali."""
+    if isinstance(exact, str) and exact.strip():
+        mt = to_mathtext(exact)
+        if mt is not None:
+            return (mt, True)
+    return (format_number(value), False)
+
+
+def _pair_label(entry: Mapping[str, Any]) -> tuple[str, bool]:
+    x_text, x_math = _value_label(entry.get("exact_x"), float(entry.get("x", 0.0)))
+    y_val = entry.get("y")
+    if not isinstance(y_val, (int, float)):
+        return (f"${x_text}$" if x_math else x_text, x_math)
+    y_text, y_math = _value_label(entry.get("exact_y"), float(y_val))
+    if x_math or y_math:
+        return (f"$({x_text},\\ {y_text})$", True)
+    return (f"({x_text}, {y_text})", False)
+
+
+def _spine_positions(study: NumericStudy) -> tuple[float, float]:
+    xlo, xhi = study.xlim
+    ylo, yhi = study.ylim
+    sx = 0.0 if xlo <= 0.0 <= xhi else xlo
+    sy = 0.0 if ylo <= 0.0 <= yhi else ylo
+    return sx, sy
+
+
+def _setup_axes(canvas: _Canvas, study: NumericStudy, *, names: tuple[str, str]) -> None:
+    from matplotlib.ticker import FuncFormatter
+
+    ax = canvas.ax
+    ax.set_xlim(*study.xlim)
+    ax.set_ylim(*study.ylim)
+    sx, sy = _spine_positions(study)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_position(("data", sx))
+    ax.spines["bottom"].set_position(("data", sy))
+    ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _p: format_number(v)))
+    ax.yaxis.set_major_formatter(
+        FuncFormatter(lambda v, _p: "" if (sy == 0.0 and v == 0.0) else format_number(v))
+    )
+    ax.tick_params(length=3, pad=2)
+    ax.plot(
+        [1.0],
+        [sy],
+        marker=">",
+        color=COLOR_AXIS,
+        markersize=5,
+        linestyle="none",
+        transform=ax.get_yaxis_transform(),
+        clip_on=False,
+        gid="axis-arrow-x",
+    )
+    ax.plot(
+        [sx],
+        [1.0],
+        marker="^",
+        color=COLOR_AXIS,
+        markersize=5,
+        linestyle="none",
+        transform=ax.get_xaxis_transform(),
+        clip_on=False,
+        gid="axis-arrow-y",
+    )
+    ax.annotate(
+        names[0],
+        xy=(1.0, sy),
+        xycoords=ax.get_yaxis_transform(),
+        xytext=(2, -6),
+        textcoords="offset points",
+        ha="left",
+        va="top",
+        fontsize=9,
+        color=COLOR_INK,
+        gid="axis-name-x",
+        annotation_clip=False,
+    )
+    ax.annotate(
+        names[1],
+        xy=(sx, 1.0),
+        xycoords=ax.get_xaxis_transform(),
+        xytext=(5, -2),
+        textcoords="offset points",
+        ha="left",
+        va="top",
+        fontsize=9,
+        color=COLOR_INK,
+        gid="axis-name-y",
+        annotation_clip=False,
+    )
+
+
+def _draw_curves(canvas: _Canvas, study: NumericStudy) -> bool:
+    """Rami delle curve; ritorna `True` se serve la legenda."""
+    ax = canvas.ax
+    labelled = 0
+    for curve in study.curves:
+        # `index` è l'espressione (studio) o la serie (famiglia): in
+        # entrambi i casi numera colore e gid.
+        color = PALETTE[curve.index % len(PALETTE)]
+        for j, (xs, ys) in enumerate(curve.branches):
+            ax.plot(
+                xs,
+                ys,
+                color=color,
+                gid=f"branch-{curve.index}-{j}",
+                label=curve.label if j == 0 else None,
+            )
+            if j == 0:
+                labelled += 1
+    return labelled > 1
+
+
+def _draw_asymptotes(canvas: _Canvas, computed: Mapping[str, Any]) -> None:
+    ax = canvas.ax
+    entries = computed.get("asymptotes")
+    if not isinstance(entries, list):
+        return
+    for k, entry in enumerate(entries):
+        kind = entry.get("kind")
+        style = {"linestyle": "--", "color": COLOR_MUTED, "linewidth": 0.9}
+        if kind == "vertical" and isinstance(entry.get("x"), (int, float)):
+            ax.axvline(float(entry["x"]), gid=f"asymptote-{k}", **style)
+        elif kind in ("horizontal", "oblique"):
+            m, q = entry.get("m"), entry.get("q")
+            if isinstance(m, (int, float)) and isinstance(q, (int, float)):
+                ax.axline((0.0, float(q)), slope=float(m), gid=f"asymptote-{k}", **style)
+
+
+def _draw_points(canvas: _Canvas, computed: Mapping[str, Any]) -> None:
+    ax = canvas.ax
+    zeros = computed.get("zeros")
+    if isinstance(zeros, list):
+        for k, entry in enumerate(zeros):
+            x = float(entry["x"])
+            ax.plot([x], [0.0], "o", markersize=4, color=COLOR_INK, gid=f"zero-{k}")
+            text, is_math = _value_label(entry.get("exact"), x)
+            canvas.draw_label(
+                f"${text}$" if is_math else text,
+                is_math=is_math,
+                xy=(x, 0.0),
+                offset_pt=(3.0, -10.0),
+                gid=f"zero-label-{k}",
+                va="top",
+            )
+    for key, marker, color, offset in (
+        ("critical_points", "o", PALETTE[1], (4.0, 4.0)),
+        ("inflection_points", "s", PALETTE[2], (4.0, -12.0)),
+    ):
+        entries = computed.get(key)
+        if not isinstance(entries, list):
+            continue
+        prefix = "critical" if key == "critical_points" else "inflection"
+        for k, entry in enumerate(entries):
+            x, y = float(entry["x"]), entry.get("y")
+            if not isinstance(y, (int, float)):
+                continue
+            ax.plot([x], [float(y)], marker, markersize=4, color=color, gid=f"{prefix}-{k}")
+            text, is_math = _pair_label(entry)
+            canvas.draw_label(
+                text,
+                is_math=is_math,
+                xy=(x, float(y)),
+                offset_pt=offset,
+                gid=f"{prefix}-label-{k}",
+                va="bottom" if offset[1] >= 0 else "top",
+            )
+
+
+def _draw_discontinuities(
+    canvas: _Canvas, study: NumericStudy, computed: Mapping[str, Any]
+) -> None:
+    entries = computed.get("discontinuities")
+    if not isinstance(entries, list) or study.fn is None:
+        return
+    ax = canvas.ax
+    for k, x in enumerate(entries):
+        if not isinstance(x, (int, float)):
+            continue
+        h = 1e-6 * study.width
+        left, right = study.fn(float(x) - h), study.fn(float(x) + h)
+        finite = [v for v in (left, right) if v == v and abs(v) != float("inf")]
+        if not finite:
+            continue
+        y = sum(finite) / len(finite)
+        ax.plot(
+            [float(x)],
+            [y],
+            "o",
+            markersize=4,
+            markerfacecolor="white",
+            markeredgecolor=COLOR_INK,
+            gid=f"discontinuity-{k}",
+        )
+
+
+def _draw_annotations(canvas: _Canvas, study: NumericStudy, computed: Mapping[str, Any]) -> None:
+    import numpy as np
+
+    ax = canvas.ax
+    tangents = computed.get("tangents")
+    for k, t in enumerate(study.tangents):
+        color = PALETTE[(t.index + 3) % len(PALETTE)]
+        ax.axline((t.at, t.y), slope=t.slope, color=color, linewidth=1.1, gid=f"tangent-{k}")
+        ax.plot([t.at], [t.y], "o", markersize=4, color=color, gid=f"tangent-point-{k}")
+        exact_slope = None
+        if isinstance(tangents, list) and k < len(tangents):
+            exact_slope = tangents[k].get("exact_slope")
+        slope_text, is_math = _value_label(exact_slope, t.slope)
+        custom = t.label.strip()
+        if custom:
+            label, is_math = _escape_text(custom), False
+        elif is_math:
+            label = f"m = ${slope_text}$"
+        else:
+            label = f"m = {slope_text}"
+        canvas.draw_label(
+            label,
+            is_math=is_math,
+            xy=(t.at, t.y),
+            offset_pt=(5.0, 5.0),
+            gid=f"tangent-label-{k}",
+            color=color,
+        )
+    for k, area in enumerate(study.areas):
+        color = PALETTE[area.index % len(PALETTE)]
+        mask = np.isfinite(area.lower) & np.isfinite(area.upper)
+        ax.fill_between(
+            area.xs,
+            area.lower,
+            area.upper,
+            where=mask,
+            alpha=0.25,
+            color=color,
+            linewidth=0,
+            gid=f"area-{k}",
+        )
+        if area.label.strip():
+            mid = 0.5 * (area.between[0] + area.between[1])
+            ax.annotate(
+                _escape_text(area.label.strip()),
+                xy=(mid, 0.0),
+                xycoords="data",
+                xytext=(0, 4),
+                textcoords="offset points",
+                ha="center",
+                va="bottom",
+                fontsize=LABEL_SIZE_PT,
+                color=COLOR_INK,
+                gid=f"area-label-{k}",
+                annotation_clip=False,
+            )
+    for k, p in enumerate(study.points):
+        color = PALETTE[p.index % len(PALETTE)]
+        ax.plot([p.at], [p.y], "o", markersize=4, color=color, gid=f"point-{k}")
+        text = p.label.strip() or f"({format_number(p.at)}, {format_number(p.y)})"
+        canvas.draw_label(
+            _escape_text(text),
+            is_math=False,
+            xy=(p.at, p.y),
+            offset_pt=(4.0, 4.0),
+            gid=f"point-label-{k}",
+            color=color,
+        )
+
+
+def _draw_formulas(
+    canvas: _Canvas,
+    spec: FunctionFigureSpec,
+    latex: Sequence[str | None],
+    *,
+    variables: str,
+) -> None:
+    ax = canvas.ax
+    line_pt = MATH_SIZE_PT * 1.9
+    for i, item in enumerate(spec.expressions):
+        gid = "formula" if i == 0 else f"formula-{i}"
+        label = _escape_text(spec.expression_label(i))
+        prefix = f"{label}({variables}) = "
+        source = latex[i] if i < len(latex) else None
+        mt = to_mathtext(source) if isinstance(source, str) else None
+        offset = (0.0, -i * line_pt)
+        if mt is not None:
+            canvas.draw_math(
+                prefix + "$" + mt + "$",
+                anchor=(0.985, 0.985),
+                transform=ax.transAxes,
+                offset_pt=offset,
+                ha="right",
+                va="top",
+                gid=gid,
+            )
+            continue
+        canvas.warnings.append("formula_not_mathtext")
+        ax.annotate(
+            prefix + item.expr,
+            xy=(0.985, 0.985),
+            xycoords="axes fraction",
+            xytext=offset,
+            textcoords="offset points",
+            ha="right",
+            va="top",
+            fontsize=MATH_SIZE_PT,
+            color=COLOR_INK,
+            gid=gid,
+            annotation_clip=False,
+        )
+
+
+def _draw_levels(canvas: _Canvas, study: NumericStudy) -> None:
+    ax = canvas.ax
+    if study.grid is None or not study.levels:
+        return
+    xx, yy, zz = study.grid
+    colors = [PALETTE[i % len(PALETTE)] for i in range(len(study.levels))]
+    contours = ax.contour(xx, yy, zz, levels=study.levels, colors=colors, linewidths=1.2)
+    contours.set_gid("levels")
+    ax.clabel(contours, fmt=lambda v: format_number(v), fontsize=LABEL_SIZE_PT, inline=True)
+    ax.grid(True)
+
+
+def render_svg(
+    spec: FunctionFigureSpec,
+    study: NumericStudy,
+    computed: Mapping[str, Any],
+    *,
+    content_hash: str,
+) -> tuple[str, list[str]]:
+    """SVG grezzo (da passare a `normalize_svg`) e avvertenze del disegno."""
+    from matplotlib import rc_context
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.figure import Figure
+
+    rc: Any = {**MATPLOTLIB_RC, "svg.hashsalt": f"a4u:{content_hash}"}
+    with rc_context(rc):
+        fig = Figure(figsize=FIGSIZE, dpi=DPI)
+        FigureCanvasAgg(fig)
+        fig.subplots_adjust(**MARGINS)
+        ax = fig.add_subplot(111)
+        canvas = _Canvas(fig, ax)
+        if spec.kind == "level_curves":
+            assert spec.variables is not None  # garantito da `check_function_spec`
+            names = (spec.variables[0], spec.variables[1])
+            _setup_axes(canvas, study, names=names)
+            _draw_levels(canvas, study)
+            _draw_formulas(canvas, spec, computed.get("latex") or [], variables=", ".join(names))
+        else:
+            _setup_axes(canvas, study, names=(spec.variable, "y" if spec.variable != "y" else "z"))
+            needs_legend = _draw_curves(canvas, study)
+            _draw_asymptotes(canvas, computed)
+            _draw_annotations(canvas, study, computed)
+            _draw_points(canvas, computed)
+            _draw_discontinuities(canvas, study, computed)
+            if "formula" in spec.show:
+                _draw_formulas(canvas, spec, computed.get("latex") or [], variables=spec.variable)
+            if needs_legend:
+                ax.legend(loc="upper left")
+        buf = io.BytesIO()
+        fig.savefig(buf, format="svg", metadata={"Date": None, "Creator": None})
+    svg = buf.getvalue().decode("utf-8")
+    svg = _METADATA_RE.sub("", svg, count=1)
+    return svg, canvas.warnings
+
+
+__all__ = ["mathtext_parses", "render_svg", "to_mathtext"]

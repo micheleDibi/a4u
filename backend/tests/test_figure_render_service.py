@@ -126,15 +126,22 @@ class _FakeRenderer:
 
 def test_registry_and_renderable_formats():
     assert frs.RENDERABLE_FORMATS == ("mermaid", "vegalite", "dot", "function")
-    assert set(frs.REGISTRY) >= {"mermaid", "vegalite", "dot"}
+    assert set(frs.REGISTRY) == {"mermaid", "vegalite", "dot", "function"}
     for fmt, renderer in frs.REGISTRY.items():
         assert renderer.fmt == fmt
     assert frs.available_formats()[0] == "mermaid"
-    assert "function" not in frs.available_formats()  # registrato da WP7
+    # `function` (WP7) richiede numpy, matplotlib e sympy.
+    function_available = frs.REGISTRY["function"].available()
+    assert ("function" in frs.available_formats()) is function_available
 
 
 def test_kill_switch_removes_a_format(monkeypatch: pytest.MonkeyPatch):
-    _patch_settings(monkeypatch, figure_vegalite_enabled=False, figure_dot_enabled=False)
+    _patch_settings(
+        monkeypatch,
+        figure_vegalite_enabled=False,
+        figure_dot_enabled=False,
+        figure_function_enabled=False,
+    )
     assert frs.available_formats() == ("mermaid",)
 
 

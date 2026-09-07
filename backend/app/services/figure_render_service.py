@@ -3,9 +3,11 @@
 Quattro famiglie di asset visivi condividono un protocollo unico
 (`FigureRenderer`): Mermaid 11 (pre-render Playwright), Vega-Lite
 (vl-convert nel processo figlio), Graphviz DOT (binario `dot`) e
-`function` (sympy + matplotlib, registrato da WP7 con
-`register_renderer`). I renderer sono oggetti sincroni e puri: il
-chiamante decide thread o processo.
+`function` (numpy + matplotlib in thread, sympy nel processo figlio: il
+motore è `figure_function_service`, qui vive solo il renderer). I
+renderer sono oggetti sincroni e puri: il chiamante decide thread o
+processo. `render_function` è l'ingresso asincrono dell'endpoint
+`render-function` (semaforo dei render + `to_thread` + `wait_for`).
 
 Tre punti di ingresso:
 - `available_formats()`: i formati offerti al modello e accettati dal
@@ -55,6 +57,8 @@ from typing import Any, Protocol
 from app.core.config import get_settings
 from app.core.errors import ValidationAppError
 from app.core.logging import get_logger
+from app.schemas.figure_function import FunctionFigureSpec, format_issues, parse_function_spec
+from app.services import figure_function_service
 from app.services.figure_compute.isolated import (
     FigureComputeError,
     FigureTimeoutError,
@@ -64,6 +68,11 @@ from app.services.figure_compute.vegalite_rules import (
     USE_FUNCTION_FORMAT,
     check_vegalite_rules,
     nesting_violation,
+)
+from app.services.figure_function_service import (
+    FUNCTION_SPEC_INVALID,
+    FunctionRenderError,
+    FunctionRenderResult,
 )
 from app.services.figure_theme import (
     MERMAID_ALLOWED_TYPES,
@@ -88,7 +97,7 @@ FIGURE_INVALID = "figure_invalid"
 FIGURE_FORMAT_UNAVAILABLE = "figure_format_unavailable"
 MERMAID_TYPE_NOT_ALLOWED = "mermaid_type_not_allowed"
 VEGALITE_USE_FUNCTION_FORMAT = USE_FUNCTION_FORMAT
-FUNCTION_SPEC_INVALID = "function_spec_invalid"
+# `FUNCTION_SPEC_INVALID` è importato da `figure_function_service`.
 
 # Un messaggio di `validate` che inizia con uno di questi prefissi viene
 # classificato con quel `type`; tutto il resto è `figure_invalid`.
@@ -1018,6 +1027,71 @@ class DotRenderer:
 
 
 # ---------------------------------------------------------------------------
+# function — Pydantic + AST offline, numerico/matplotlib in thread, sympy nel figlio
+# ---------------------------------------------------------------------------
+
+
+class FunctionRenderer:
+    """Validazione: `parse_function_spec` (struttura Pydantic + controlli
+    semantici + passo 1 dell'AST, senza sympy); profonda: anche il render
+    completo, il cui SVG entra in cache. Render: `render_function_sync`
+    del motore (numerico, simbolico nel figlio con timeout, disegno,
+    `normalize_svg`). L'SVG non dipende dalla lingua: la didascalia
+    calcolata è composta fuori dall'SVG (`function_caption`)."""
+
+    fmt = "function"
+
+    def available(self) -> bool:
+        return figure_function_service.dependencies_available()
+
+    def sanitize(self, content: str) -> str:
+        return _strip_fence_and_control(content)
+
+    def validate(self, content: str, *, deep: bool = False) -> tuple[bool, str]:
+        sanitized = self.sanitize(content)
+        spec, issues = parse_function_spec(sanitized)
+        if spec is None:
+            return (False, f"{FUNCTION_SPEC_INVALID}: {format_issues(issues)}"[:_ERROR_CAP])
+        if deep:
+            try:
+                result = figure_function_service.render_function_sync(spec, language=None)
+            except FunctionRenderError as exc:
+                return (False, f"render: {exc}"[:_ERROR_CAP])
+            _cache_put(cache_key(self.fmt, sanitized), result.svg)
+        return (True, "")
+
+    def render_svg(self, content: str, *, asset_id: str = "") -> str | None:
+        sanitized = self.sanitize(content)
+        key = cache_key(self.fmt, sanitized)
+        hit = _cache_get(key)
+        if hit is not None:
+            return hit
+        spec, issues = parse_function_spec(sanitized)
+        if spec is None:
+            _render_failed(self.fmt, asset_id, format_issues(issues))
+            return None
+        try:
+            result = figure_function_service.render_function_sync(spec, language=None)
+        except FunctionRenderError as exc:
+            _cache_negative(key)
+            _render_failed(self.fmt, asset_id, str(exc))
+            return None
+        _cache_put(key, result.svg)
+        return result.svg
+
+    def render_svg_batch(self, contents: list[str], *, asset_ids: list[str]) -> list[str | None]:
+        return [
+            self.render_svg(c, asset_id=aid) for c, aid in zip(contents, asset_ids, strict=True)
+        ]
+
+    def extract_translatable(self, content: str) -> dict[str, str]:
+        return figure_function_service.extract_translatable(self.sanitize(content))
+
+    def apply_translations(self, content: str, tr: Mapping[str, str]) -> str:
+        return figure_function_service.apply_translations(content, tr)
+
+
+# ---------------------------------------------------------------------------
 # Registro
 # ---------------------------------------------------------------------------
 
@@ -1025,12 +1099,13 @@ REGISTRY: dict[str, FigureRenderer] = {
     "mermaid": MermaidRenderer(),
     "vegalite": VegaLiteRenderer(),
     "dot": DotRenderer(),
+    "function": FunctionRenderer(),
 }
 
 
 def register_renderer(renderer: FigureRenderer) -> None:
-    """Registra (o sostituisce) il renderer di un formato; usato da WP7 per
-    `function`. Invalida la cache di `available_formats`."""
+    """Registra (o sostituisce) il renderer di un formato (test, estensioni).
+    Invalida la cache di `available_formats`."""
     REGISTRY[renderer.fmt] = renderer
     available_formats.cache_clear()
 
@@ -1088,6 +1163,28 @@ def _render_semaphore() -> asyncio.Semaphore:
         sem = asyncio.Semaphore(max(1, int(get_settings().figure_render_max_workers)))
         _semaphores[loop] = sem
     return sem
+
+
+async def render_function(
+    spec: FunctionFigureSpec, *, language: str | None
+) -> FunctionRenderResult:
+    """Ingresso asincrono dell'endpoint `render-function`: cache dei
+    risultati del motore, poi semaforo dei render CPU-bound + `to_thread`
+    + `wait_for(figure_render_timeout_seconds)`. Solleva
+    `FigureTimeoutError` (timeout complessivo) o `FunctionRenderError`
+    (calcolo numerico/disegno falliti); il timeout del solo passo
+    simbolico NON solleva (risultato `approximate`)."""
+    timeout = float(get_settings().figure_render_timeout_seconds)
+    async with _render_semaphore():
+        try:
+            return await asyncio.wait_for(
+                asyncio.to_thread(
+                    figure_function_service.render_function_sync, spec, language=language
+                ),
+                timeout=timeout,
+            )
+        except TimeoutError as exc:
+            raise FigureTimeoutError(f"render-function: oltre {timeout:g} s") from exc
 
 
 def _iter_renderable(assets: Sequence[Mapping[str, Any]]) -> Iterator[tuple[str, str, str]]:
@@ -1252,6 +1349,9 @@ __all__ = [
     "VEGALITE_USE_FUNCTION_FORMAT",
     "DotRenderer",
     "FigureRenderer",
+    "FunctionRenderError",
+    "FunctionRenderResult",
+    "FunctionRenderer",
     "MermaidRenderer",
     "VegaLiteRenderer",
     "available_formats",
@@ -1262,6 +1362,7 @@ __all__ = [
     "mermaid_first_meaningful_line",
     "mermaid_static_gate",
     "register_renderer",
+    "render_function",
     "render_svg_map",
     "validate_visual_assets_or_raise",
 ]

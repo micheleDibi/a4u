@@ -368,6 +368,10 @@ def test_figure_theme_ts_mirror_is_aligned():
         (r"a \cdot b \times c \pm d", "a · b × c ± d"),
         # Input malformati: mai un'eccezione, testo comunque leggibile.
         (r"\frac{1}{x - 2", "1/(x − 2)"),
+        # Uguaglianze con secondo membro negativo (asintoti verticali del
+        # formato `function`): lo spazio dopo «=» resta.
+        (r"x = - \frac{\pi}{2}", "x = −π/2"),
+        (r"y = - 2 x + 1", "y = −2x + 1"),
         (r"\foo{bar}", "foobar"),
         ("", ""),
     ],

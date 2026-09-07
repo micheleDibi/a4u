@@ -56,7 +56,7 @@ Stato dei work package al momento della v1 (dettaglio in
 | WP1 | Mermaid 11: `mermaid_prerender.py` estratto, pin unico, `htmlLabels:false` top-level BE+FE, prompt fix/digitalizzazione, script `revalidate_mermaid_assets.py`, test D8 | committato (`8ce8160`) |
 | WP2b-0 | questo documento (v1) | questo commit |
 | WP2b | `figure_render_service.py`, `svg_normalize.py`, `figure_compute/`, dispatch del validatore, fix AI, localizzazione, PATCH 422, builder degli schemi OpenAI, filtro log | committato (`61689b6`; correzioni `5cac685` e giro 2: gate Mermaid `initialize`/frontmatter, nomi DOT quotati, JSON annidato) |
-| WP7 | formato `function` (schema, parsing, calcolo, disegno, endpoint) | da fare |
+| WP7 | formato `function` (schema, parsing, calcolo, disegno, endpoint) | committato (livello 1: `function_study`, `tangent`, `area`, `family`, `level_curves`; il livello 2 — parametriche, polari, coniche, successioni — resta lavoro successivo, A9) |
 | WP4 | numerazione, partial `figure.html.j2`, PDF dispensa/slide, frame video | da fare |
 | WP3 | prompt P3/P4/P5, guardie di lunghezza, `PROMPTS.md` | da fare |
 | WP5 | frontend: `FigureFrame`, renderer ed editor per formato, dialog, i18n | da fare |
@@ -566,14 +566,24 @@ StringConstraints(pattern=r"^[a-zA-Z]$")]`.
   show (≤ 6), annotations (≤ 6), parameter | None, sampling, levels: int |
   list[float] | None (2..12))`.
 
-`model_validator(mode="after")`: dominio e range finiti con `lo < hi` e
-ampiezza in `[1e-3, 1e4]`; `parameter.name != variable`; `expr_index <
-len(expressions)`; `tangent` richiede almeno una `TangentAnnotation` con
-`at` nel dominio; `area` almeno una `AreaAnnotation` con `between ⊂
-domain`; `family` richiede `parameter` e una sola espressione;
-`level_curves` richiede `variables` distinte, `levels`, una espressione e
-nessuna annotazione; label non vuote univoche; ogni `expr` passa
-`check_expression` con simboli liberi ⊆ `{variable(s), parameter.name}`.
+Controlli semantici in `check_function_spec(spec) -> list[SpecIssue]`
+(scelta di WP7: non un `model_validator`, perché un `ValueError` del
+modello collasserebbe ogni errore in una sola voce con `loc` radice,
+mentre il 422 dell'endpoint e il frontend richiedono la `loc` del campo;
+`parse_function_spec(content)` esegue struttura e semantica insieme ed è
+l'ingresso del renderer e del gate del PATCH): dominio e range finiti con
+`lo < hi` e ampiezza in `[1e-3, 1e4]`; `parameter.name != variable`;
+`expr_index < len(expressions)`; `tangent` richiede almeno una
+`TangentAnnotation` con `at` nel dominio; `area` almeno una
+`AreaAnnotation` con `between ⊂ domain`; `family` richiede `parameter` e
+una sola espressione; `level_curves` richiede `variables` distinte,
+`levels`, una espressione e nessuna annotazione; label non vuote univoche;
+ogni `expr` passa `check_expression` con simboli liberi ⊆ `{variable(s),
+parameter.name}`. Le analisi (zeri, punti critici, flessi, asintoti,
+discontinuità) riguardano la prima espressione; `show` omesso vale
+`zeros, critical_points, asymptotes, formula`. Costo misurato del passo
+simbolico (`run_isolated` + import di sympy): 0,31-0,32 s per chiamata
+(spawn da solo 0,04 s), render completo 0,2-0,7 s.
 `content` dell'asset è la stringa JSON di questo oggetto; nel prompt P3
 va lo schema compatto a una riga (~330 caratteri) più l'esempio di D9
 (~480), con un test che verifica la presenza dei nomi dei campi e degli
