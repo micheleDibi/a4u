@@ -344,6 +344,10 @@ caricare un'immagine dall'host scelto da chi lo ha scritto
 - cambiarla richiede `docker compose build frontend`, altrimenti
   l'immagine continua a servire la politica vecchia e le immagini
   caricate spariscono;
+- il valore è normalizzato (spazi ai bordi tolti, schema e host in
+  minuscolo) e una forma anomala — apice doppio, spazio interno, schema
+  senza host — **fa fallire la build** invece di generare una politica
+  sbagliata;
 - in sviluppo il server di Vite non passa da nginx: la politica non c'è.
 
 ## File `.python-version`

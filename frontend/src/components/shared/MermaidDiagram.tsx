@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 
 import {
   fullWidthSvgMaxHeightPx,
+  renderMermaidSvg,
   sanitizeMermaidSvg,
   svgIntrinsicSize,
 } from "@/lib/figureFormats";
@@ -96,7 +97,13 @@ function MermaidDiagramImpl({ code, className }: MermaidDiagramProps) {
 
         renderCounter += 1;
         const id = `mermaid-${renderCounter}-${Date.now()}`;
-        const { svg: rendered } = await mermaid.render(id, cleanCode);
+        // `renderMermaidSvg` e non `mermaid.render`: quando il render
+        // fallisce Mermaid lascia nel `<body>` il `<div id="d<id>">` con
+        // cui ha misurato il diagramma, e in produzione fallisce sempre
+        // per una shape `img:` esterna (la politica della pagina blocca
+        // l'immagine, `EncodingError`). Senza la rimozione l'editor
+        // impilava una copia visibile del diagramma a ogni battuta.
+        const rendered = await renderMermaidSvg(mermaid, id, cleanCode);
         // Sanificazione PRIMA di toccare il documento vivo: il diagramma
         // è reso nel browser di chi guarda, non dal backend, quindi un
         // `<image href="http://…">` uscito da una shape che il gate

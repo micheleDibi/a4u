@@ -418,8 +418,13 @@ regge.** I controlli che reggono sono quattro, indipendenti fra loro:
    'self' data: blob: <origine degli upload>`, e il browser rifiuta la
    richiesta verso l'host scelto dall'autore prima ancora che parta. È
    questa — non la sanificazione — che chiude il residuo del render
-   client-side, perché agisce sul documento e non sul markup. **In
-   sviluppo non c'è**: il server di Vite non passa da nginx (sezione 15);
+   client-side, perché agisce sul documento e non sul markup. **Governa
+   le sole immagini**: senza `default-src`, `@import`, `@font-face`,
+   `<iframe>`, `<object>`, `<video><source>`, `prefetch` e `fetch`
+   restano liberi, e oggi non è un buco solo perché Mermaid 11.17.2 con
+   `htmlLabels: false` non emette nessuno di quei nodi (misurato in
+   sezione 14.11). **In sviluppo non c'è**: il server di Vite non passa
+   da nginx (sezione 15);
 4. **sanificazione lato client** (`sanitizeMermaidSvg` in
    `lib/figureFormats.ts`): l'SVG che Mermaid rende nel browser del
    lettore è reso inerte prima di entrare nella pagina, così il nodo
@@ -1503,8 +1508,17 @@ Chromium registra la violazione in console. Le immagini
 dell'applicazione non ne risentono — stessa origine, origine dello
 storage, `data:` delle anteprime di Vega-Lite/DOT/`function`, `blob:`
 delle anteprime di un file appena scelto: tutte caricate nella stessa
-prova. `sanitizeMermaidSvg` resta perché la politica blocca la richiesta
-ma non toglie il nodo dal markup (sezione 3.1, punti 3 e 4).
+prova. La sola sorgente di immagine dell'applicazione che la politica
+blocca è l'**immagine markdown esterna scritta nel corpo della dispensa**
+(`![](http://…)`, che `MarkdownRenderer` rende come `<img src>` senza
+riscrivere l'URL): è la stessa classe di richiesta dell'`<image>` di
+Mermaid e il blocco è voluto, ma è un cambiamento visibile sui contenuti
+già in DB (misurato in sezione 14.11, voce di sezione 13).
+`sanitizeMermaidSvg` resta perché la politica blocca la richiesta ma non
+toglie il nodo dal markup (sezione 3.1, punti 3 e 4). **La politica
+governa le sole immagini**: senza `default-src`, `@import`, `@font-face`,
+`<iframe>`, `<object>`, `<video><source>`, `prefetch` e `fetch` restano
+liberi — misurato, sette classi di direttiva passano (sezione 14.11).
 
 1. oltre `max_bytes` (`figure_svg_max_bytes`, 1,5 MB) → `SvgRejectedError`;
 2. strip del prologo: BOM, `<?xml …?>`, `<!DOCTYPE …>`, commenti iniziali
@@ -2027,6 +2041,17 @@ Decisioni prese in Fase B (A1-A16) e nella ripresa del 7 settembre
   (D4), figure orfane rese in coda (A12), caption già prefissate ripulite
   a render, cap di 80 mm anche per le immagini caricate nelle slide (oggi
   tagliate da `overflow: hidden` oltre 80 mm).
+- **Le immagini markdown esterne del corpo della dispensa non si vedono
+  più nel browser** (SEC-1, giro 7, dichiarato al giro 8):
+  `MarkdownRenderer` rende `![](http://…)` come `<img src>` senza
+  riscrivere l'URL, e la politica `img-src` della pagina la rifiuta —
+  misurato con il pacchetto vero (immagine in errore, violazione in
+  console, GET assente dalla spia; senza header, caricata). È la stessa
+  classe di richiesta dell'`<image>` di Mermaid e il blocco è voluto, ma
+  vale su contenuti già in DB e non c'è alcun avviso nell'editor. Se
+  servisse ammetterle, la strada è un `urlTransform` che riscriva gli URL
+  esterni (o li porti sullo storage), non un allargamento della politica.
+  Nel PDF restano invece scaricate: è la via del markdown, sotto.
 - L'endpoint `render-function` e l'export condividono il semaforo a 2 su
   una VM a 2 core: un picco di anteprime rallenta gli export. La
   validazione profonda dei worker resta fuori dal semaforo (sezione 2.2,
@@ -2776,6 +2801,138 @@ politica); frontend non toccato nel codice (solo `nginx.conf` e
 `Dockerfile`) — `npm run lint` 4 errori di baseline e 23 warning,
 `npm run type-check` e `npm run build` verdi.
 
+### 14.11 Ottavo giro: i sette rilievi minori della chiusura
+
+I due verificatori del giro 7 hanno dato l'ok — nessun rilievo bloccante o
+maggiore — e hanno lasciato sette rilievi **minori**. Sono chiusi tutti:
+quattro da tre correzioni (la derivazione dell'origine nel `Dockerfile`,
+un'asserzione su `nginx.conf`, il nodo residuo nel frontend), tre
+dichiarando qui il confine che il documento non diceva.
+
+**1. Il confine della politica.** `img-src` è l'**unica** direttiva:
+tutto ciò che non è un'immagine esce comunque dalla pagina. Rimisurato in
+proprio, iniettando 14 costrutti nel documento vivo servito con la
+politica di produzione (`img-src 'self' data: blob: http://127.0.0.1:8003`,
+Chromium, spia HTTP che registra le GET):
+
+| costrutto | direttiva che deciderebbe | GET con la politica attiva |
+| --- | --- | --- |
+| `<img>`, `<image href>`, `poster`, `<input type=image>` | `img-src` | **0** (4 violazioni in console) |
+| `@import` nel `<style>` dell'SVG e in quello della pagina, `<link rel=stylesheet>` | `style-src` | 3 su 3 |
+| `@font-face` | `font-src` | 1 |
+| `<iframe>`, `<foreignObject><iframe>` | `frame-src` | 2 |
+| `<video><source>` | `media-src` | 1 |
+| `<object data>` | `object-src` | 1 |
+| `<link rel=prefetch>` | `prefetch-src` | 1 |
+| `fetch()` | `connect-src` | 1 |
+
+Sette classi di direttiva, dieci costrutti, passano. **Oggi non è un
+buco**, ed è misurato: il verificatore del giro 7 ha costruito 22 sorgenti
+apposta per far emettere a Mermaid un `@import`, un `@font-face` o un
+`<iframe>` (`style A fill:url(…)`, `classDef` con la graffa chiusa a mano,
+`linkStyle`, `accTitle:`/`accDescr {}`, `subgraph`, `mindmap ::icon(URL)`)
+e nessuno ci riesce — il lexer dei flowchart non ammette `@`, `(`, `)` in
+`NODE_STRING` e con `htmlLabels: false` non esistono `<foreignObject>`; i
+due casi in cui `@import` compare davvero nell'SVG (`accTitle`, `accDescr`)
+lo mettono in `<title>`/`<desc>` come TESTO, 0 GET. Ha poi reso nel
+browser i 58 maligni che il gate accetta oggi: 31 resi, **0 GET**, nessun
+`<image>` né `href="http"`. Il confine conta perché il meccanismo è lo
+stesso dell'`<image>`: un `<style>` con `@import` partirebbe **durante**
+`mermaid.render`, e `sanitizeSvgCss` — che pure toglie `@import` e i
+`url(…)` esterni — arriverebbe tardi esattamente come per l'`<image>`. Se
+un domani `htmlLabels` tornasse `true`, o una versione nuova di Mermaid
+emettesse un `<style>` con `@import`, la politica non fermerebbe nulla:
+allargarla a `default-src` ha un raggio d'azione molto maggiore e va
+deciso a parte (sezione 15).
+
+**2. La derivazione dell'origine degli upload era fragile.** Il blocco
+`RUN` del `Dockerfile` confrontava il valore grezzo con un `case` della
+shell, che è sensibile alle maiuscole e agli spazi, e verificava la riga
+generata con un `grep -F` sulla sola presenza. Tre valori plausibili
+passavano il build in silenzio; eseguendo il blocco tale e quale (la
+tecnica del test):
+
+| `VITE_UPLOADS_BASE_URL` | prima (`1bbbdce`) | oggi |
+| --- | --- | --- |
+| `HTTPS://Progettiersaf.com/media/uploads` | build **verde**, `img-src 'self' data: blob:` — origine PERSA | `… blob: https://progettiersaf.com` |
+| ` https://a.example.com/u` (spazio iniziale, `.env` copiato male) | build **verde**, origine PERSA | `… blob: https://a.example.com` |
+| `https://a.example.com"; add_header X-Evil "1` | build **verde**, con `add_header X-Evil "1" always;` in più nel file generato | build **FALLITO** |
+
+I primi due sono un guasto visibile solo in produzione: `media.ts` usa
+`/^(https?:)?\/\//i`, insensibile alle maiuscole, e il browser ignora gli
+spazi ai bordi dell'attributo, quindi le immagini caricate venivano
+chieste all'host giusto mentre la politica non lo elencava — tutte
+bloccate, senza un errore in build né in avvio. La correzione normalizza
+il valore (spazi ai bordi tolti, schema e host in minuscolo: per la CSP
+sono comunque insensibili alle maiuscole, e il path non entra
+nell'origine) e sostituisce il `grep -F` con un `grep -E` sulla **forma**
+della riga, così un apice doppio, uno spazio interno o un path residuo
+fermano il build. Verificato anche costruendo davvero lo stage `runtime`
+con `docker build` (busybox `sed`/`tr`/`grep`): i tre valori sopra danno
+l'esito della colonna «oggi», e i quattro valori legittimi
+(`/uploads`, l'URL OVH, `//cdn…`, `http://127.0.0.1:9000/uploads`) sono
+invariati.
+
+**3. La politica arriva su ogni risposta solo per ereditarietà.** nginx
+eredita gli `add_header` del livello superiore SOLO se il livello corrente
+non ne ha nessuno: **un** `add_header` dentro un `location` cancella lì
+tutti e cinque quelli del `server`, la Content-Security-Policy compresa.
+Misurato su nginx 1.27.5, aggiungendo `add_header X-Futuro "1" always;`
+dentro `location / { … }` del file del repo: la risposta porta
+`X-Futuro: 1` e nessuno degli altri cinque, `nginx -t` passa e il test del
+giro 7 restava verde. Ora `test_frontend_csp_header.py` asserisce che
+nessun blocco `location` contenga un `add_header`, e `nginx.conf` lo dice
+in un commento sopra i cinque header.
+
+**4. Ogni render Mermaid fallito lasciava una copia visibile nel `<body>`.**
+`mermaid.render` misura la geometria in un `<div id="d<id>">` che ATTACCA
+al documento e lo toglie solo quando arriva in fondo (`removeTempElements`,
+`mermaid.core.mjs`): se `draw` lancia, il div resta. Con la politica
+l'innesco è certo — una shape `img:` esterna non carica più e il render
+lancia `EncodingError` — e l'editor rende a ogni battuta. Misurato in
+Chromium con il pacchetto di `node_modules`, dieci render dello stesso
+sorgente:
+
+| percorso | errori | nodi rimasti nel `<body>` |
+| --- | --- | --- |
+| `mermaid.render` nudo (com'era) | 10 | **10**, `<div>` in flusso normale larghi 1264 px, `visibility: visible`, con dentro l'SVG del diagramma |
+| `renderMermaidSvg` (oggi) | 10 | **0**, `body.children` torna al valore di partenza |
+
+La correzione è `renderMermaidSvg` in `lib/figureFormats.ts`: `finally`
+con `document.getElementById('d' + id)?.remove()`, no-op sul percorso
+felice. Non è un difetto introdotto dal ramo (senza alcuna politica, un
+`img:` verso un host morto lascia lo stesso nodo), ma è la politica a
+renderlo certo per i contenuti già in DB e per la digitazione.
+
+**5. Le immagini markdown del corpo della dispensa sono una sorgente
+`<img>`, e la politica le blocca.** `MarkdownRenderer` monta
+`ReactMarkdown` senza `urlTransform`, `allowedElements` o `rehype-raw`,
+quindi `![](http://…)` arriva intatto: con il pacchetto vero del progetto,
+`Testo ![alt](http://127.0.0.1:8001/estranea.png) altro` rende
+`<p>Testo <img src="http://127.0.0.1:8001/estranea.png" alt="alt"/> altro</p>`.
+Quel markup nella pagina servita con la politica: immagine in `errore`,
+una violazione in console, **GET assente** dalla spia; nella stessa pagina
+senza header, immagine `caricata` e GET registrata. **L'effetto è voluto**
+— è la stessa classe di richiesta dell'`<image>` di Mermaid — ma è un
+cambiamento visibile su contenuti già in DB, e va contato fra le sorgenti
+di immagine dell'applicazione (sezione 7 e voce di sezione 13), non solo
+come rischio del PDF.
+
+**Test aggiunti.** 10 in `test_frontend_csp_header.py` (4 valori
+normalizzati che oggi producono l'origine giusta, 5 malformati che devono
+far FALLIRE il build, l'asserzione sull'ereditarietà degli `add_header`) e
+4 in `test_frontend_mermaid_render_cleanup.py` (il componente passa dal
+wrapper, la rimozione sta in un `finally`, i dieci render falliti con la
+controprova a `mermaid.render` nudo, il diagramma sano che non lascia
+nulla).
+
+Gate dopo il giro 8 (8 settembre 2026): `ruff check` e `ruff format
+--check` puliti sui file toccati; `ruff check .` del repo **372**
+(invariato); `mypy app` **205** errori in 32 file (invariato); pytest
+**1272/1272** verdi, zero saltati (**14 test in più** rispetto ai 1258 del
+giro 7); `npm run lint` 4 errori di baseline (nessuno nei file toccati),
+`npm run type-check` e `npm run build` verdi.
+
 ## 15. Limiti dichiarati e lavori futuri
 
 Limiti noti alla chiusura del branch, con la ragione per cui restano e
@@ -2884,7 +3041,11 @@ rilievo che li ha resi espliciti.
   figure non caricano più nulla, ma `MarkdownIt(..., html=True)` lascia
   passare `<img src="file:///…">` e `![](http://…)` nel testo, e WeasyPrint
   li scarica. Preesistente al ramo; il rimedio è un `url_fetcher` che
-  ammetta i soli `data:` per tutti i PDF.
+  ammetta i soli `data:` per tutti i PDF. **Nel browser, invece, dal giro
+  7 la politica le blocca**: `![](http://…)` diventa un `<img src>` che
+  `img-src` rifiuta (misurato, sezione 14.11) — quindi la stessa dispensa
+  mostra l'immagine nel PDF e non nella pagina, ed è la sola sorgente di
+  immagine dell'applicazione che la politica tocca (sezione 13).
 - **Il gate statico Mermaid è una euristica di difesa in profondità**
   (SEC-1, giri 5 e 7).
   Riconoscere leggendo il sorgente come testo se un diagramma caricherà
@@ -2894,8 +3055,15 @@ rilievo che li ha resi espliciti.
   sette vettori che il terzo rifiutava. Dal giro 5 il gate si corregge
   solo per unione (nessun sorgente già rifiutato può tornare ammesso, con
   il confronto sugli alberi `939f0a5` e `6c3e067` in sezione 14.8) e la
-  sicurezza NON si regge su di lui: si regge sull'isolamento di rete del
-  pre-render, sulla scansione dell'SVG e sulla sanificazione lato client.
+  sicurezza NON si regge su di lui: si regge sui quattro controlli di
+  sezione 3.1 — isolamento di rete del pre-render, scansione dell'SVG
+  reso e, nel browser, la politica del documento (in produzione, non in
+  sviluppo). La sanificazione lato client è il quarto e viene per ultima
+  con il suo limite: toglie il riferimento dal markup che entra nella
+  pagina, ma **non può precedere la prima richiesta** — misurato, sulla
+  pagina di controllo senza header le GET dei vettori `img:` arrivano
+  comunque al listener con `sanitizeMermaidSvg` nel percorso, e con
+  l'header sono zero.
   Il gate resta perché dà al docente un 422 leggibile invece di una figura
   che sparisce, e perché impedisce che il payload arrivi in DB. **È
   aggirabile oggi, non in una versione futura di Mermaid**: con la
@@ -2988,7 +3156,27 @@ rilievo che li ha resi espliciti.
   con il rischio che i due divergano: lavoro separato. Il test
   `test_the_render_of_mermaid_itself_still_fetches_declared_limit`
   continua a segnalare il giorno in cui Mermaid cambia comportamento da
-  sé.
+  sé. Il nodo temporaneo che il render lascia indietro quando fallisce non
+  resta più nella pagina (`renderMermaidSvg`, sezione 14.11): la GET
+  precoce, invece, resta il limite qui dichiarato.
+- **La politica governa le sole immagini** (SEC-1, giro 8). Non c'è
+  `default-src`, quindi `@import` e `<link rel=stylesheet>` (`style-src`),
+  `@font-face` (`font-src`), `<iframe>` e `<foreignObject><iframe>`
+  (`frame-src`), `<object>` (`object-src`), `<video><source>`
+  (`media-src`), `prefetch` e `fetch` (`prefetch-src`, `connect-src`)
+  restano liberi: misurato, sette classi di direttiva e dieci costrutti
+  passano con la politica attiva, mentre tutto ciò che è immagine è
+  bloccato (sezione 14.11). Oggi non è un buco perché con
+  `htmlLabels: false` e il lexer dei flowchart Mermaid 11.17.2 non emette
+  nessuno di quei nodi — verificato su 22 sorgenti costruiti apposta e sui
+  58 maligni che il gate accetta, 0 GET — ma è una superficie residua, non
+  solo un vantaggio di compatibilità: se `htmlLabels` tornasse `true` o
+  una versione nuova di Mermaid emettesse un `<style>` con `@import`, la
+  richiesta partirebbe durante `mermaid.render` e il controllo che
+  resterebbe sarebbe `sanitizeSvgCss`, che arriva dopo. Allargare la
+  politica a `default-src` è la direzione, ma tocca script, stili, font e
+  connessioni di tutta l'applicazione (Google Fonts in `index.html`, il
+  CDN di Mermaid, le chiamate all'API): va deciso e misurato a parte.
 - **L'origine ammessa dalla politica è derivata da una sola variabile**
   (SEC-1, giro 7). `img-src` aggiunge l'origine di
   `VITE_UPLOADS_BASE_URL`, che è quella da cui il frontend carica le
@@ -3000,7 +3188,13 @@ rilievo che li ha resi espliciti.
   finché l'origine non viene aggiunta a mano alla direttiva: la
   derivazione automatica non la indovina. Dichiarato in
   `docs/07-deployment.md` insieme al fatto che cambiare la variabile
-  richiede un `docker compose build frontend`, non un riavvio.
+  richiede un `docker compose build frontend`, non un riavvio. Il valore
+  deve essere un URL assoluto o un path: dal giro 8 spazi ai bordi e
+  schema in maiuscolo sono normalizzati e ogni altra forma anomala fa
+  **fallire il build** invece di generare una direttiva sbagliata
+  (sezione 14.11); resta che la politica e `media.ts` leggono la stessa
+  variabile con due funzioni diverse, quindi ogni cambiamento a una delle
+  due va fatto guardando l'altra.
   **Fino al giro 3 l'affermazione scritta qui era falsa**: il gate era una
   lista di pattern testuali su un blocco che Mermaid dà a js-yaml,
   `A@{ "\x69mg": "\x68ttp://…" }` veniva ACCETTATO dal PATCH, il payload

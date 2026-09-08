@@ -326,7 +326,13 @@ BACKEND_PORT=9001
   sostituisce il segnaposto con l'origine di `VITE_UPLOADS_BASE_URL`: vuota
   se il valore è relativo (il default `/uploads`, proxato qui), altrimenti
   `schema://host[:porta]` (con `//host/…` resta il solo host). La build
-  fallisce se il segnaposto resta. Il valore è passato come build arg dal
+  fallisce se il segnaposto resta. **Il valore va scritto come URL
+  assoluto o come path**: gli spazi ai bordi e lo schema in maiuscolo sono
+  normalizzati dal build, ma ogni altra forma anomala (un apice doppio, uno
+  spazio interno, uno schema senza host) **fa fallire la build**, perché la
+  riga generata è verificata nella forma e non solo nella presenza — prima
+  un `HTTPS://…` o uno spazio iniziale svuotava l'origine in silenzio e le
+  immagini caricate sparivano solo in produzione. Il valore è passato come build arg dal
   compose, quindi **una modifica di `VITE_UPLOADS_BASE_URL` richiede un
   `docker compose build frontend`**, non solo un riavvio: con la variabile
   cambiata e l'immagine vecchia le immagini caricate spariscono dalla

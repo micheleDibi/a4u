@@ -26,18 +26,38 @@ ARG VITE_UPLOADS_BASE_URL=/uploads
 COPY nginx.conf /etc/nginx/a4u-nginx.conf.in
 # Il blocco è eseguito TALE E QUALE anche da
 # `backend/tests/test_frontend_csp_header.py`, che lo estrae da qui e ne
-# verifica l'esito nei due casi: perciò niente `sed -i` (BSD e GNU non
-# concordano) e percorsi su una riga sola, come li cerca il test.
+# verifica l'esito sui valori reali e su quelli malformati: perciò niente
+# `sed -i` (BSD e GNU non concordano) e percorsi su una riga sola, come li
+# cerca il test.
+#
+# Il valore è NORMALIZZATO prima di ricavarne l'origine e la riga generata
+# è verificata nella FORMA, non solo nella presenza (Fase D, giro 8):
+#   * gli spazi ai bordi sono tolti — un `.env` copiato male dava
+#     ` https://host/u`, che il `case` non riconosceva come assoluto; il
+#     browser invece li ignora nell'attributo e caricava da quell'host,
+#     quindi la politica e `media.ts` divergevano e le immagini caricate
+#     sparivano in silenzio;
+#   * schema e host passano a minuscolo — `HTTPS://…` cadeva nel ramo `*)`
+#     e l'origine spariva, mentre `media.ts` (`/^(https?:)?\/\//i`) lo
+#     tratta come assoluto; per la CSP schema e host sono comunque
+#     insensibili alle maiuscole, e il path non entra nell'origine;
+#   * la `grep -E` finale pretende `img-src 'self' data: blob:` seguito al
+#     più da un'origine ben formata, così un apice doppio (che iniettava
+#     una direttiva nginx nel file generato), uno spazio interno o un path
+#     residuo FANNO FALLIRE il build invece di passare inosservati. Un host
+#     IPv6 fra parentesi quadre non è previsto: fallirebbe qui, a voce
+#     alta, invece di generare una direttiva sbagliata.
 RUN set -eu; \
-    case "$VITE_UPLOADS_BASE_URL" in \
-      http://*|https://*) origin=" $(printf '%s' "$VITE_UPLOADS_BASE_URL" | cut -d/ -f1-3)" ;; \
-      //*) origin=" $(printf '%s' "$VITE_UPLOADS_BASE_URL" | cut -d/ -f3)" ;; \
+    valore="$(printf '%s' "$VITE_UPLOADS_BASE_URL" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | tr 'A-Z' 'a-z')"; \
+    case "$valore" in \
+      http://*|https://*) origin=" $(printf '%s' "$valore" | cut -d/ -f1-3)" ;; \
+      //*) origin=" $(printf '%s' "$valore" | cut -d/ -f3)" ;; \
       *) origin="" ;; \
     esac; \
     sed "s|__A4U_UPLOADS_ORIGIN__|${origin}|" /etc/nginx/a4u-nginx.conf.in > /etc/nginx/conf.d/default.conf; \
     rm /etc/nginx/a4u-nginx.conf.in; \
     ! grep -q __A4U_UPLOADS_ORIGIN__ /etc/nginx/conf.d/default.conf; \
-    grep -F 'add_header Content-Security-Policy' /etc/nginx/conf.d/default.conf
+    grep -Eq "^ *add_header Content-Security-Policy \"img-src 'self' data: blob:( https?://[a-z0-9.-]+(:[0-9]+)?| [a-z0-9.-]+(:[0-9]+)?)?\" always;$" /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 80
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \

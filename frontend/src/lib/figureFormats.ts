@@ -333,6 +333,42 @@ export function sanitizeMermaidSvgElement(root: Element): void {
   }
 }
 
+/** La sola parte di Mermaid che serve qui: il modulo è importato a
+ *  richiesta da `MermaidDiagram.tsx` e non deve entrare in questo bundle,
+ *  nemmeno come tipo. */
+interface MermaidRenderer {
+  render(id: string, code: string): Promise<{ svg: string }>;
+}
+
+/**
+ * `mermaid.render` con il nodo di misura sempre rimosso.
+ *
+ * Mermaid calcola la geometria del diagramma dentro un `<div id="d<id>">`
+ * che ATTACCA al `<body>`, e lo toglie solo quando il render arriva in
+ * fondo: se `draw` lancia, quel div resta nella pagina — in flusso
+ * normale, largo quanto la finestra, con dentro l'SVG. In produzione
+ * l'innesco è certo, perché la Content-Security-Policy della pagina fa
+ * fallire il caricamento di una shape `img:` esterna (`EncodingError`), e
+ * l'editor rende a ogni battuta: dieci tentativi lasciavano dieci copie
+ * impilate sotto l'applicazione (Fase D, giro 8). Il `finally` è un no-op
+ * sul percorso felice, dove il nodo l'ha già tolto Mermaid.
+ *
+ * Vale con `securityLevel: "strict"` (quello di `figureTheme`): in
+ * `sandbox` il nodo temporaneo sarebbe l'`<iframe id="i<id>">`.
+ */
+export async function renderMermaidSvg(
+  mermaid: MermaidRenderer,
+  id: string,
+  code: string,
+): Promise<string> {
+  try {
+    const { svg } = await mermaid.render(id, code);
+    return svg;
+  } finally {
+    document.getElementById(`d${id}`)?.remove();
+  }
+}
+
 /**
  * `sanitizeMermaidSvgElement` sul markup che `mermaid.render` restituisce:
  * la stringa è analizzata in un documento INERTE (`DOMParser`, nessun
