@@ -279,20 +279,22 @@ _FRONTMATTER_LINE_RE = re.compile(r"^(?:title|displayMode)\s*:(?:\s|$)")
 # `->>`, `<-->`), le annotazioni `<<interface>>` (doppio `<`), un `<`
 # isolato (`a < b`) e un `<b` non chiuso (`A[x <b] --> B`: la sezione degli
 # attributi non attraversa `]`, `)`, `}`).
-# Eccezione `<br>`: non è HTML reso in chiaro ma sintassi di Mermaid
-# (`lineBreakRegex = /<br\s*\/?>/gi`), che 10.9.4 e 11.17.2 rendono come
-# `tspan.row` senza alcun `<foreignObject>`; il lookahead ricalca ESATTAMENTE
-# quella regex (`<br>`, `<br >`, `<br/>`, `<br />`, senza distinzione di
-# maiuscole) e lascia passare solo la forma di apertura: `</br>` resta un tag.
+# Eccezione `<br>`: non è HTML reso in chiaro ma un a capo di Mermaid, che
+# 10.9.4 e 11.17.2 rendono come `tspan.row` senza alcun `<foreignObject>`.
+# Il criterio NON è `lineBreakRegex = /<br\s*\/?>/gi`: la label passa dal
+# parser HTML del browser PRIMA di quella regex, che vede quindi una forma
+# già normalizzata. Le varianti con spazi dopo la barra (`<br/ >`,
+# `<br / >`) e la forma di chiusura (`</br>`) diventano `<br>` e sono a
+# capo a tutti gli effetti — misurato sul pre-render di produzione:
+# `test_mermaid_br_forms_render_as_a_line_break` rende ogni forma e la
+# confronta con l'SVG di `<br>` (identico a meno dell'id `mmd-N`).
+# Il lookahead ricalca quell'insieme misurato — `<`, una `/` facoltativa,
+# `br`, poi soli spazi e `/` fino a `>` — di cui `lineBreakRegex` è un
+# sottoinsieme (giro 3). Restano tag e sono rifiutati `<br x>` e
+# `<br class="x">`: il parser li serializza in chiaro nella label.
 _HTML_TAG_RE = re.compile(
-    r"(?<!<)(?!<[bB][rR]\s*/?>)</?[a-zA-Z][a-zA-Z0-9-]*(?:\s[^>\n\]\)\}]*)?/?>(?!>)"
+    r"(?<!<)(?!</?[bB][rR][\s/]*>)</?[a-zA-Z][a-zA-Z0-9-]*(?:\s[^>\n\]\)\}]*)?/?>(?!>)"
 )
-# Forme `<br…>` con uno spazio DOPO la barra: `lineBreakRegex` non le
-# riconosce (`\s*` sta prima di `/`), quindi Mermaid le lascerebbe in
-# chiaro nella label. `<br / >` cade già in `_HTML_TAG_RE`; `<br/ >` no,
-# perché la sezione degli attributi di quella regex non ammette una `/`
-# prima degli spazi: serve questa regola dedicata (REG-1).
-_MERMAID_BR_SPURIOUS_RE = re.compile(r"<[bB][rR]\s*/\s+>")
 # Attributi di shape dei flowchart Mermaid 11 (`A@{ img: "https://…" }`):
 # il nodo diventa un `<image href="…">` che il Chromium del pre-render,
 # WeasyPrint (dispensa e slide) e il browser del docente dereferenziano —
@@ -454,7 +456,7 @@ def mermaid_static_gate(code: str) -> tuple[str, str]:
     # commento o nel frontmatter non viene renderizzato.
     lines = [line for line in body if not line.lstrip().startswith("%%")]
     for line in lines:
-        m = _MERMAID_BR_SPURIOUS_RE.search(line) or _HTML_TAG_RE.search(line)
+        m = _HTML_TAG_RE.search(line)
         if m:
             return (MERMAID_GATE_HTML, m.group(0))
     # Le direttive `@{ … }` possono occupare più righe: si guarda il corpo

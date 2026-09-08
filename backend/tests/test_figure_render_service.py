@@ -221,9 +221,8 @@ def test_mermaid_static_gate_accepts_comments_frontmatter_aliases_and_fences(cod
         ("---\ntheme: forest\n---\nflowchart LR\n  A --> B", "solo `title:` e `displayMode:`"),
         ("---\n- config\n---\nflowchart LR\n  A --> B", "- config"),
         ("flowchart LR\n  A[<b>x</b>] --> B", "HTML"),
-        # `</br>` non è la sintassi di a capo di Mermaid (`<br\s*/?>`): resta
-        # un tag e finirebbe in chiaro nel `<text>`.
-        ("flowchart LR\n  A[riga</br>due] --> B", "HTML"),
+        # `<brx>` è un nome di elemento sconosciuto: il parser lo toglie in
+        # silenzio e la label perde il tag senza andare a capo.
         ("flowchart LR\n  A[riga<brx>due] --> B", "HTML"),
         ('flowchart LR\n  A@{ img: "http://interno/x.png", label: "n" }\n  A --> B', "img:"),
         ('flowchart LR\n  A@{ img: "file:///etc/hosts" }\n  A --> B', "img:"),
@@ -242,10 +241,11 @@ def test_mermaid_static_gate_accepts_comments_frontmatter_aliases_and_fences(cod
         ('flowchart LR\n  A@{ label: "a\\", img: "http://interno/x.png" }', "img:"),
         # `@{` senza chiusura: il lexer arriva a EOF dentro la shape.
         ('flowchart LR\n  A@{ label: "}", img: "http://interno/x.png"', "img:"),
-        # REG-1: `<br/ >` e `<br / >` non sono a capo per `lineBreakRegex`
-        # (`/<br\s*\/?>/i`), quindi finirebbero in chiaro nella label.
-        ("flowchart LR\n  A[riga<br/ >due] --> B", "HTML"),
-        ("flowchart LR\n  A[riga<br / >due] --> B", "HTML"),
+        # REG-1 (giro 3): un `br` con un ATTRIBUTO non è un a capo — il
+        # parser HTML lo serializza in chiaro nella label (`<br x="">`),
+        # misurato sul pre-render in `test_mermaid_no_foreignobject.py`.
+        ("flowchart LR\n  A[riga<br x>due] --> B", "HTML"),
+        ('flowchart LR\n  A[riga<br class="x">due] --> B', "HTML"),
         ("flowchart LR\n  A[<script>alert(1)</script>] --> B", "<script>"),
         ("flowchart LR\n  A[<table><tr><td>x</td></tr></table>] --> B", "<table>"),
         ("flowchart LR\n  A[<h1>x</h1>] --> B", "<h1>"),
@@ -272,7 +272,6 @@ def test_mermaid_static_gate_rejects(code: str, needle: str):
         "flowchart LR\n  A[Riga 1<br>Riga 2] --> B",
         "flowchart LR\n  A[Riga 1<BR />Riga 2] --> B",
         "sequenceDiagram\n  A->>B: prima<br/>seconda",
-        # `<br >` e `<br  >` restano a capo per `/<br\s*\/?>/i`.
         "flowchart LR\n  A[Riga 1<br >Riga 2] --> B",
         'flowchart LR\n  A@{ shape: rect, label: "Etichetta" } --> B',
         # Una `}` dentro la stringa non deve far rifiutare una shape sana.
@@ -280,10 +279,50 @@ def test_mermaid_static_gate_rejects(code: str, needle: str):
     ],
 )
 def test_mermaid_gate_accepts_br_line_breaks_and_plain_shapes(code: str):
-    """`<br>` non è HTML reso in chiaro ma la sintassi di a capo di Mermaid
-    (`lineBreakRegex`), resa in `tspan.row` da 10.9.4 come da 11.17.2:
-    rifiutarla bocciava contenuti già in DB al PATCH e mandava al fix AI
-    diagrammi validi (REG-1)."""
+    """`<br>` non è HTML reso in chiaro ma la sintassi di a capo di Mermaid,
+    resa in `tspan.row` da 10.9.4 come da 11.17.2: rifiutarla bocciava
+    contenuti già in DB al PATCH e mandava al fix AI diagrammi validi
+    (REG-1)."""
+    assert frs.REGISTRY["mermaid"].validate(code) == (True, "")
+
+
+# Insieme MISURATO delle forme che Mermaid 11.17.2 rende come a capo: ognuna
+# dà un SVG identico a quello di `<br>` a meno dell'id `mmd-N`
+# (`test_mermaid_br_forms_render_as_a_line_break`, che le rende davvero).
+# `lineBreakRegex = /<br\s*\/?>/gi` ne copre solo le prime dieci, perché la
+# label passa dal parser HTML prima di quella regex: le forme con spazi dopo
+# la barra e la forma di chiusura arrivano a `lineBreakRegex` già
+# normalizzate. Il gate deve seguire il renderer, non la regex (REG-1,
+# giro 3: il giro 2 rifiutava le ultime nove con un 422 su contenuto sano).
+MERMAID_BR_LINE_BREAKS = (
+    "<br>",
+    "<BR>",
+    "<Br>",
+    "<br >",
+    "<br  >",
+    "<br\t>",
+    "<br/>",
+    "<br />",
+    "<br  />",
+    "<br\t/>",
+    "<br/ >",
+    "<br / >",
+    "<br  /  >",
+    "<br/\t>",
+    "<br\t/\t>",
+    "<br//>",
+    "</br>",
+    "</br >",
+    "</BR>",
+    "</br/>",
+)
+
+
+@pytest.mark.parametrize("token", MERMAID_BR_LINE_BREAKS)
+def test_mermaid_gate_accepts_every_measured_line_break(token: str):
+    """REG-1 (giro 3): nessuna delle venti forme che il renderer tratta da a
+    capo deve ricevere un 422 dal gate."""
+    code = f"flowchart LR\n  A[Riga 1{token}Riga 2] --> B"
     assert frs.REGISTRY["mermaid"].validate(code) == (True, "")
 
 

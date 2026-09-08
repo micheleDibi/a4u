@@ -359,14 +359,25 @@ Non sono tag e passano: le frecce (`-->`, `<|--`, `->>`, `<<->>`), le
 annotazioni `<<interface>>`, un `<` isolato (`A[a < b]`) e un `<b` non
 chiuso (`A[x <b] --> B`: la sezione degli attributi non attraversa `]`,
 `)`, `}`). **`<br>` è ammesso** (correzione di Fase D, REG-1): non è HTML
-reso in chiaro ma sintassi di Mermaid stesso
-(`lineBreakRegex = /<br\s*\/?>/gi`), che 10.9.4 e 11.17.2 rendono
-identicamente come due `tspan.row` senza alcun `<foreignObject>`;
+reso in chiaro ma un a capo di Mermaid stesso, che 10.9.4 e 11.17.2
+rendono identicamente come due `tspan.row` senza alcun `<foreignObject>`;
 rifiutarlo bocciava al PATCH contenuti già in DB che rendono
 correttamente, li segnalava come «da correggere» nel report L5 e mandava
-al fix AI diagrammi validi. Il lookahead ricalca quella regex (`<br>`,
-`<br/>`, `<br />`, senza distinzione di maiuscole) e lascia passare solo
-la forma di apertura: `</br>`, che Mermaid non riconosce, resta un tag.
+al fix AI diagrammi validi. Il criterio del lookahead **non** è
+`lineBreakRegex = /<br\s*\/?>/gi`: la label passa dal parser HTML del
+browser PRIMA di quella regex, che vede quindi una forma già
+normalizzata. L'insieme dei veri a capo è perciò un soprainsieme di
+`lineBreakRegex`, misurato sul pre-render di produzione (giro 3): sono a
+capo, e passano, `<br>`, `<br/>`, `<br />`, le varianti con spazi dopo la
+barra (`<br/ >`, `<br / >`) e la forma di chiusura (`</br>`), tutte con un
+SVG identico a quello di `<br>` a meno dell'id `mmd-N`. Resta un tag —
+rifiutato — un `br` con un attributo (`<br class="x">`), che il parser
+serializza in chiaro nella label.
+Falsi negativi misurati e non chiusi: `<br/x>` (reso in chiaro come `<br
+x="">`), `< br>` (reso in chiaro) e `</ br>` (tolto in silenzio) passano
+il gate, perché la regola generica dei tag non li riconosce come tale —
+stessa classe del `<b` non chiuso, costo estetico in una label, nessuna
+risorsa esterna.
 Falso positivo dichiarato: i tipi generici di `classDiagram`
 scritti con `<…>` (`List<int>`) sono rifiutati; Mermaid vuole `List~int~`
 e il messaggio lo suggerisce.
@@ -2074,7 +2085,7 @@ corretti sono dichiarati in sezione 15.
 | COR-6 | correttezza | minore | dichiarato come limite: tetto unico per formato (Q1), accumulo su `function`/`dot` a cache fredda; sezioni 2.2 e 15 | revisione avversariale |
 | COR-7 | correttezza | minore | corretto (documentazione): la `loc` del 422 si ferma a `content`, la `loc` per campo è dell'endpoint `render-function` | revisione avversariale |
 | COR-8 | correttezza | minore | corretto: un `new_asset` con l'id di una figura delle Dispense non entra nel batch e non ne sostituisce l'SVG | revisione avversariale |
-| REG-1 | regressione | maggiore | corretto (giro 1 + giro 2): `<br>` è sintassi di Mermaid, non HTML; dal giro 2 il lookahead ricalca ESATTAMENTE `lineBreakRegex` (`<br/ >` e `<br / >` sono rifiutati) | revisione avversariale (giro 2) |
+| REG-1 | regressione | maggiore | corretto (giro 1 + giro 3): `<br>` è un a capo di Mermaid, non HTML; il lookahead ricalca l'insieme MISURATO sul renderer (`<br/ >`, `<br / >` e `</br>` sono a capo e passano), non `lineBreakRegex`, che ne è un sottoinsieme. Il giro 2 aveva stretto il gate su quella regex, introducendo un falso positivo (sezione 14.6) | revisione avversariale (giro 3) |
 | REG-2 | regressione | minore | dichiarato come limite: rinominare l'`asset_id` rende l'asset nuovo per il gate (sezione 2.3) | revisione avversariale |
 | REG-3 | regressione | minore | dichiarato come limite: A11-L4 vale per 13 tipi su 15; `classDiagram` ed `erDiagram` non sono byte-deterministici, resa identica | revisione avversariale |
 | REG-4 | regressione | minore | corretto: il sorgente svuotato dalla sanificazione non entra nel batch (niente Chromium a vuoto) | revisione avversariale |
@@ -2124,7 +2135,7 @@ alla lettera.
 | SEC-2 | `digraph { # "⏎ x [image="<path>"] }` con file esistente e inesistente: gate `True`, `deep` distingue i due casi | corretto: `#` è commento fino a fine riga ovunque (come Graphviz 15.1.1) → gate `False` con lo STESSO messaggio nei due casi, nessun oracolo di esistenza |
 | I18N-3 | `roundtrip_d7.py`: `vegalite` e `function` non byte-identici con traduzioni identità | corretto: sostituzione chirurgica nel sorgente (`json_spans`), round-trip byte-identico per tutti e tre i formati |
 | TIP-3 | ritaglio `crop_area_formula.png`: la curva `x**2` attraversa l'alone di `f(x) = x²` | dichiarato come limite in sezione 15 (nessuna euristica di quadrante: il testo resta leggibile, la curva è interrotta dall'alone) |
-| REG-1 | `<br/ >` accettato dal gate ma non riconosciuto da `lineBreakRegex` | corretto: lookahead identico a `/<br\s*\/?>/i` più la regola dedicata per le forme con spazio dopo la barra |
+| REG-1 | `<br/ >` accettato dal gate ma non riconosciuto da `lineBreakRegex` | lookahead ristretto a `/<br\s*\/?>/i` più una regola dedicata per le forme con spazio dopo la barra. Allineamento alla regex vero, ma la scelta era sbagliata: `lineBreakRegex` non è il criterio del renderer e il gate ha iniziato a rifiutare sorgenti sani. **Rifatto nel giro 3** (sezione 14.6) |
 | regressione del giro 1 | `reg_atimport.py`: una label che cita `@import` o `url(https://…)` spariva dall'export | corretto: la scansione dell'SVG Mermaid guarda solo attributi e blocchi `<style>` (le stesse regioni di `svg_normalize`), le tre figure tornano a rendersi |
 
 Gate finali dopo il giro 2 (8 settembre 2026): `ruff check` e `ruff format
@@ -2137,6 +2148,47 @@ rete, 9 casi del gate Mermaid e del gate DOT, 5 fra scanner delle shape,
 scansione dell'SVG e round-trip della localizzazione); frontend non
 toccato dal giro 2, gate rieseguiti a conferma (`npm run lint` 4 errori di
 baseline e 23 warning, `type-check` e `build` verdi).
+
+### 14.6 Terzo giro della revisione (verifica del giro 2)
+
+Il verificatore del giro 2 ha confermato chiusi tutti e sei i punti
+riaperti, ma non ha dato l'ok per una **regressione nuova introdotta dalla
+correzione di REG-1**: stringendo il gate su `lineBreakRegex` il giro 2 ha
+iniziato a rifiutare con 422 sorgenti che Mermaid rende correttamente.
+Un solo punto, chiuso in questo giro.
+
+| punto | riproduzione del verificatore | esito del giro 3 |
+| --- | --- | --- |
+| REG-1 (regressione del giro 2) | `reg1_br.py`: `flowchart LR\n A["uno<br/ >due"] --> B` reso con il pre-render di produzione dà due righe `uno`/`due`, SVG identico a quello di `<br>`; a `b35d26e` il gate dava `('', '')`, a `da5625d` `('mermaid_html_in_label', '<br/ >')` | corretto: il criterio del lookahead è l'insieme MISURATO sul renderer, non `lineBreakRegex`. Rieseguita la riproduzione, le quattro forme (`<br/ >`, `<br / >`, `<br  /  >`, `</br>`) tornano a `('', '')`; il gate resta identico a `da5625d` su 25 tag maligni e 9 sorgenti sani |
+
+La causa era di metodo, non di regex: `lineBreakRegex` non è il criterio
+del renderer. Mermaid dà la label al parser HTML del browser prima di
+applicarla, quindi le forme `<br/ >`, `<br / >`, `<br  /  >`, `<br//>`,
+`</br>`, `</br >`, `</br/>` (e le varianti maiuscole e con tabulazione)
+arrivano a `lineBreakRegex` già normalizzate in `<br>` e sono a capo a
+tutti gli effetti: venti forme in tutto, ognuna con un SVG identico a
+quello di `<br>` a meno dell'id `mmd-N`. Il lookahead di `_HTML_TAG_RE`
+ricalca ora quell'insieme (`</?[bB][rR][\s/]*>`) e la regola dedicata
+`_MERMAID_BR_SPURIOUS_RE` del giro 2 è stata tolta. Il test che avrebbe
+colto la regressione è un oracolo reale, non una regex:
+`test_mermaid_br_forms_render_as_a_line_break` rende tutte e venti le
+forme con il pre-render e confronta gli SVG; il gate è fissato sulla
+stessa lista da `test_mermaid_gate_accepts_every_measured_line_break`, che
+gira anche senza rete. La controprova (`<br class="x">` non è un a capo e
+resta rifiutato) è in `test_mermaid_br_with_an_attribute_is_not_a_line_break`.
+Corrette anche le quattro affermazioni che davano per non renderizzate
+forme che il renderer rende (due righe del PR body, il commento della
+regola tolta e il commento del test) e aggiunti in sezione 2.2 e 15 i tre
+falsi negativi misurati del gate HTML.
+
+Gate finali dopo il giro 3 (8 settembre 2026): `ruff check` e `ruff format
+--check` puliti sui tre file toccati; `ruff check .` del repo **372**
+(invariato); `mypy app` **205** errori in 32 file (invariato, 215
+sorgenti); pytest **994/994** verdi, zero saltati (**40 test in più**
+rispetto ai 954 del giro 2: 20 per il gate sull'insieme misurato, 20 per
+l'oracolo di resa e 1 per la controprova, meno il caso `</br>` della
+tabella dei rifiuti che era un falso positivo); frontend non toccato dal
+giro 3.
 
 ## 15. Limiti dichiarati e lavori futuri
 
@@ -2256,6 +2308,17 @@ rilievo che li ha resi espliciti.
   riceve 422 al salvataggio. Il costo è un errore esplicito e leggibile al
   docente, non una figura che sparisce in silenzio; la direzione futura è
   un vero lexer Mermaid condiviso con il frontend.
+- **Tre forme di tag sfuggono al gate HTML delle label** (REG-1, giro 3):
+  misurate sul pre-render, `A[riga<br/x>due]` e `A[riga< br>due]` finiscono
+  in chiaro nella label (`<br x="">`, `< br>`) e `A[riga</ br>due]` viene
+  tolto in silenzio, ma tutte e tre passano il gate, perché la regola
+  generica dei tag vuole un nome di elemento subito dopo `<` o `</` e non
+  attraversa la barra. È la stessa classe del `<b` non chiuso già
+  dichiarata in sezione 2.2: costo estetico in una label, nessuna risorsa
+  esterna e nessuna persistenza di contenuto pericoloso. Allargare la
+  regola significherebbe riscriverla come un parser di tag, con il rischio
+  di falsi positivi sulle frecce; la direzione è il lexer Mermaid condiviso
+  con il frontend.
 - **L'anteprima dell'editor non passa dal gate** (SEC-1, giro 2): il render
   Mermaid nel browser del docente è client-side (`securityLevel: "strict"`,
   DOMPurify), quindi mentre scrive vede la figura che sta scrivendo, shape

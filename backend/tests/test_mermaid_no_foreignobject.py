@@ -16,6 +16,7 @@ Per rigenerare la fixture v11: `A4U_WRITE_FIXTURES=1 pytest tests/test_mermaid_n
 from __future__ import annotations
 
 import os
+import re
 import socket
 from pathlib import Path
 
@@ -24,10 +25,20 @@ import pytest
 from app.services import figure_theme as theme
 from app.services import mermaid_prerender as mp
 from app.services.figure_render_service import REGISTRY
+from tests.test_figure_render_service import MERMAID_BR_LINE_BREAKS
+
+_BR_CODE = "flowchart LR\n  A[Riga 1%sRiga 2] --> B"
+_MERMAID_ID_RE = re.compile(r"mmd-\d+")
 
 
 def theme_gate(code: str) -> tuple[bool, str]:
     return REGISTRY["mermaid"].validate(code)
+
+
+def _strip_mermaid_id(svg: str) -> str:
+    """Toglie l'id progressivo del batch (`mmd-0`, `mmd-1`, …), unico punto in
+    cui due SVG della stessa figura resi in posizioni diverse differiscono."""
+    return _MERMAID_ID_RE.sub("mmd-X", svg)
 
 
 pytest.importorskip("playwright.sync_api")
@@ -76,6 +87,53 @@ def test_br_in_a_label_is_a_line_break_not_html(rendered):
     assert svg.count('class="text-outer-tspan row"') >= 4, svg[:400]
     for needle in ("Riga", " 1", " 2", " 3", " 4"):
         assert f">{needle}</tspan>" in svg, needle
+
+
+@pytest.fixture(scope="module")
+def br_rendered() -> dict[str, str]:
+    """Rende `A[Riga 1<TOKEN>Riga 2] --> B` per ogni forma `<br…>` misurata."""
+    try:
+        socket.create_connection(("cdn.jsdelivr.net", 443), timeout=3).close()
+    except OSError:
+        pytest.skip("cdn.jsdelivr.net non raggiungibile")
+    codes = [_BR_CODE % token for token in MERMAID_BR_LINE_BREAKS]
+    try:
+        svgs = mp._prerender_mermaid_to_svg_batch_sync(codes)
+    except Exception as exc:  # launch o rete: verifica locale, non gate CI
+        pytest.skip(f"Chromium o CDN non disponibili: {exc!r}"[:300])
+    if all(s is None for s in svgs):
+        pytest.skip("pagina di rendering non pronta (__mermaidReady) o CDN non caricata")
+    return dict(zip(MERMAID_BR_LINE_BREAKS, svgs, strict=True))
+
+
+@pytest.mark.parametrize("token", MERMAID_BR_LINE_BREAKS)
+def test_mermaid_br_forms_render_as_a_line_break(br_rendered, token: str):
+    """REG-1 (giro 3): l'insieme delle forme che Mermaid 11.17.2 rende come a
+    capo è un SOPRAINSIEME di `lineBreakRegex = /<br\\s*\\/?>/gi`, perché la
+    label passa dal parser HTML prima di quella regex: `<br/ >`, `<br / >` e
+    `</br>` arrivano già normalizzati in `<br>`. Oracolo reale, non una
+    regex: si rende ogni forma e si confronta l'SVG con quello di `<br>`
+    (identico a meno dell'id `mmd-N` assegnato dal batch). Il gate deve
+    accettarle tutte — il giro 2 ne rifiutava nove con un 422 su un sorgente
+    che si rendeva correttamente."""
+    svg = br_rendered[token]
+    assert svg is not None, f"render non disponibile per {token!r}"
+    atteso = _strip_mermaid_id(br_rendered["<br>"] or "")
+    assert _strip_mermaid_id(svg) == atteso, token
+    assert theme_gate(_BR_CODE % token) == (True, ""), token
+
+
+def test_mermaid_br_with_an_attribute_is_not_a_line_break(br_rendered):
+    """Controprova dell'insieme misurato: `<br x>` NON è un a capo (il parser
+    lo serializza in chiaro come `<br x="">` dentro la label), quindi il gate
+    deve continuare a rifiutarlo."""
+    codes = [_BR_CODE % '<br class="x">']
+    svg = mp._prerender_mermaid_to_svg_batch_sync(codes)[0]
+    assert svg is not None, "render non disponibile"
+    assert _strip_mermaid_id(svg) != _strip_mermaid_id(br_rendered["<br>"] or "")
+    assert "&lt;br" in svg
+    ok, err = theme_gate(codes[0])
+    assert ok is False and "HTML nelle label" in err, err
 
 
 def test_cjk_label_is_emitted_as_text(rendered):
