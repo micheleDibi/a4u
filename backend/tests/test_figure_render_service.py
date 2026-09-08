@@ -267,6 +267,82 @@ def test_mermaid_static_gate_rejects(code: str, needle: str):
         assert err.startswith("mermaid_type_not_allowed")
 
 
+# `cleanupText` normalizza `\r` in `\n` e `cleanupComments` non tratta come
+# commento né una riga `%%{…` (è una direttiva) né un `%%` nudo: due
+# letture del sorgente che il gate non aveva e che gli nascondevano lo
+# statement o la shape che segue. Ogni sorgente qui sotto è stato reso con
+# Mermaid 11.17.2 e ha prodotto un `<image href>` o un `<a xlink:href>`
+# verso l'host scelto dall'autore (giri 6 e 7); i primi due hanno fatto
+# arrivare la GET al listener.
+@pytest.mark.parametrize(
+    ("code", "needle"),
+    [
+        # `\r` dentro una riga di commento: il gate scartava tutta la riga
+        # fisica, Mermaid ne vede due ed esegue la seconda.
+        ('flowchart LR\n%%nota\r  A@{ img: "http://interno/x.png" } --> B', "img:"),
+        ('flowchart LR\n  A --> B\n%%nota\rclick A href "http://interno/x"', "`click`"),
+        ('flowchart LR\n  A --> B\n   %% nota\rclick A href "http://interno/x"', "`click`"),
+        ('graph LR\n  A --> B\n%%n\rclick A href "http://interno/x"', "`click`"),
+        ('classDiagram\n  class A\n%%n\rclick A href "http://interno/x"', "`click`"),
+        ('stateDiagram-v2\n  [*] --> A\n%%n\rclick A href "http://interno/x"', "`click`"),
+        (
+            'sequenceDiagram\n  A->>B: x\n%%n\rproperties A: {"icon": "http://interno/x"}',
+            "`properties`",
+        ),
+        ('sequenceDiagram\n  A->>B: x\n%%n\rlinks A: {"a": "http://interno/x"}', "`links`"),
+        # `%%` nudo: per `cleanupComments` serve almeno un carattere dopo.
+        ('flowchart LR\n  A --> B\n%%\rclick A href "http://interno/x"', "`click`"),
+        # Il `\r` nasconde anche un tag HTML e una chiave del frontmatter.
+        ('flowchart LR\n%%n\r  A["<b>x</b>"] --> B', "HTML"),
+        ("---\ntitle: a\rconfig:\r  theme: dark\n---\nflowchart LR\n  A --> B", "config:"),
+        # Riga `%%{…}%%`: direttiva, non commento. `removeDirectives` ne
+        # toglie solo la direttiva e lo statement che segue resta.
+        ('flowchart LR\n  A --> B\n%%{x}%% click A href "http://interno/x"', "`click`"),
+        ('flowchart LR\n%%{x}%% A@{ img: "http://interno/x.png" } --> B', "img:"),
+        ('stateDiagram-v2\n  [*] --> A\n%%{x}%% click A href "http://interno/x"', "`click`"),
+        (
+            'sequenceDiagram\n  A->>B: x\n%%{x}%% properties A: {"img": "http://interno/x"}',
+            "`properties`",
+        ),
+        ('flowchart LR\n  A --> B\n%%{wrap}%% click A href "http://interno/x"', "`click`"),
+        ('flowchart LR\n%%{x}%% A["<b>x</b>"] --> B', "HTML"),
+        # Le stesse due letture con la chiave scritta in una forma YAML che
+        # nessun pattern testuale vede (`"\x69mg"` è `img` per js-yaml).
+        (
+            'flowchart LR\n%%n\r  A@{ "\\x69mg": "\\x68ttp://interno/x.png" } --> B',
+            "\\x69mg",
+        ),
+        (
+            'flowchart LR\n%%{x}%% A@{ "\\x69mg": "\\x68ttp://interno/x.png" } --> B',
+            "\\x69mg",
+        ),
+    ],
+)
+def test_mermaid_static_gate_rejects_cr_and_directive_lines(code: str, needle: str):
+    """Giro 7: le due letture del sorgente che mancavano al gate."""
+    ok, err = frs.REGISTRY["mermaid"].validate(code)
+    assert ok is False and needle in err, err
+    assert err.startswith("mermaid_type_not_allowed")
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        # Controprove sane della stessa classe: la lettura fedele non deve
+        # costare diagrammi legittimi.
+        "flowchart LR\r\n  A --> B\r\n%% una nota\r\n",  # CRLF (editor Windows)
+        "flowchart LR\n  A[100%] --> B\n%% il 50% dei casi",
+        "flowchart LR\n  A --> B\n%%{wrap}%%",  # direttiva sola, senza statement
+        "%%{wrap}%%\nflowchart LR\n  A --> B",
+        "flowchart LR\n  A --> B\n%%",  # `%%` nudo, senza nulla dopo
+        "flowchart LR\n  A --> B\n%% nota\r%% seconda nota",  # due commenti, un `\r`
+        'flowchart LR\n  A["riga1\rriga2"] --> B',  # `\r` dentro una label
+    ],
+)
+def test_mermaid_static_gate_accepts_cr_and_directive_lines_without_statements(code: str):
+    assert frs.REGISTRY["mermaid"].validate(code) == (True, "")
+
+
 @pytest.mark.parametrize(
     "code",
     [

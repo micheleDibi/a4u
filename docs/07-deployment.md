@@ -320,6 +320,26 @@ BACKEND_PORT=9001
 - Build da `frontend/Dockerfile` (`node:20` build → `nginx:alpine` runtime).
 - Serve `dist/` con `nginx.conf` (gzip, header di sicurezza, SPA fallback).
 - Proxy `/api/` e `/uploads/` verso `backend:8000`.
+- **Content-Security-Policy `img-src` derivata a build time.** `nginx.conf`
+  contiene `add_header Content-Security-Policy "img-src 'self' data:
+  blob:__A4U_UPLOADS_ORIGIN__" always;` e lo stage `runtime` del Dockerfile
+  sostituisce il segnaposto con l'origine di `VITE_UPLOADS_BASE_URL`: vuota
+  se il valore è relativo (il default `/uploads`, proxato qui), altrimenti
+  `schema://host[:porta]` (con `//host/…` resta il solo host). La build
+  fallisce se il segnaposto resta. Il valore è passato come build arg dal
+  compose, quindi **una modifica di `VITE_UPLOADS_BASE_URL` richiede un
+  `docker compose build frontend`**, non solo un riavvio: con la variabile
+  cambiata e l'immagine vecchia le immagini caricate spariscono dalla
+  pagina (il browser blocca l'origine che la politica non elenca). Perché
+  esiste: la pagina dell'app è servita da qui, non dal backend, e la
+  politica del documento è l'unico controllo che impedisce a un diagramma
+  Mermaid di caricare un'immagine dall'host scelto da chi lo ha scritto
+  (`docs/courses/17-visual-figures.md`, §3.1 e §15). Solo `img-src`:
+  script, stili, font, connessioni e media restano invariati. Se in
+  produzione le immagini degli avatar arrivano da un'origine diversa da
+  quella degli upload (`PUBLIC_BASE_URL` con `STORAGE_BACKEND=local` su un
+  host diverso da quello del frontend), va aggiunta a mano alla direttiva:
+  la derivazione automatica guarda solo `VITE_UPLOADS_BASE_URL`.
 - Limite upload: `client_max_body_size 25m` configurato in
   `frontend/nginx.conf` (file più grandi servono per documenti corso DOC/PDF
   voluminosi). Se devi alzare il limite, modifica anche `COURSE_DOCUMENT_MAX_MB`

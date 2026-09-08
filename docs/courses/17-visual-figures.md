@@ -395,34 +395,42 @@ con la barra rovesciata): la regex `@\{[^}]*\}` del primo giro si fermava
 alla prima `}` e una label `"}"` le nascondeva l'`img:` che seguiva
 (giro 2 della revisione).
 
-**Postura dichiarata (giro 5): il gate statico è una euristica
-best-effort, non una prova di impossibilità.** Riconoscere leggendo il
-sorgente come testo se un diagramma caricherà una risorsa è una gara
-contro un parser vero (lexer con stati, js-yaml, una decina di grammatiche),
-e i primi quattro giri l'hanno persa a turno; il quinto e il sesto hanno
-trovato altri sorgenti che il gate accettava e che rendevano davvero un
-riferimento esterno. Le difese su cui il prodotto si regge sono tre,
-indipendenti fra loro; le prime due sono complete, la terza ha un residuo
-misurato e dichiarato:
+**Postura dichiarata (giro 5, confermata dal giro 7): il gate statico è
+una euristica di difesa in profondità, non una prova di impossibilità.**
+Riconoscere leggendo il sorgente come testo se un diagramma caricherà una
+risorsa è una gara contro un parser vero (lexer con stati, js-yaml, una
+decina di grammatiche), e i primi quattro giri l'hanno persa a turno; il
+quinto, il sesto e il settimo hanno trovato altri sorgenti che il gate
+accettava e che rendevano davvero un riferimento esterno. **Il gate non
+può vincere questa gara e non è il controllo su cui il prodotto si
+regge.** I controlli che reggono sono quattro, indipendenti fra loro:
 
 1. **isolamento di rete del pre-render** (`mermaid_prerender.block_external_requests`):
    il Chromium del server instrada ogni richiesta e annulla quelle fuori
    da `PRERENDER_ALLOWED_PREFIX`. È questa — non il gate — che impedisce
    l'SSRF dal server; il verificatore del giro 2 ha misurato 0 GET su 18
-   vettori con la guardia attiva, e quello del giro 6 le stesse 0 GET sui
-   vettori nuovi;
+   vettori con la guardia attiva, quello del giro 6 le stesse 0 GET sui
+   vettori nuovi e il giro 7 le stesse 0 GET sui suoi 19;
 2. **scansione dell'SVG reso** (`_svg_external_ref`): la figura con un
    riferimento esterno non entra nel documento consegnato;
-3. **sanificazione lato client** (`sanitizeMermaidSvg` in
+3. **politica del browser** (`frontend/nginx.conf`, giro 7): la pagina
+   dell'applicazione è servita con `Content-Security-Policy: img-src
+   'self' data: blob: <origine degli upload>`, e il browser rifiuta la
+   richiesta verso l'host scelto dall'autore prima ancora che parta. È
+   questa — non la sanificazione — che chiude il residuo del render
+   client-side, perché agisce sul documento e non sul markup. **In
+   sviluppo non c'è**: il server di Vite non passa da nginx (sezione 15);
+4. **sanificazione lato client** (`sanitizeMermaidSvg` in
    `lib/figureFormats.ts`): l'SVG che Mermaid rende nel browser del
-   lettore è reso inerte prima di entrare nella pagina. **Non è completa**:
-   `mermaid.render` misura il diagramma su un nodo che attacca al
-   documento, quindi per una shape `img:` la prima GET parte prima che
-   qualunque sanificazione possa intervenire (misurato in Chromium senza
-   intercettazioni, sezione 15). Nessuna opzione di Mermaid la evita:
+   lettore è reso inerte prima di entrare nella pagina, così il nodo
+   che resta nel documento non ha né `<image>` né `<a>` esterni. **Non
+   può arrivare prima della prima richiesta**: `mermaid.render` misura il
+   diagramma su un nodo che attacca al documento, quindi per una shape
+   `img:` la GET parte durante il render (misurato in Chromium senza
+   intercettazioni). Nessuna opzione di Mermaid la evita:
    `securityLevel: 'sandbox'` sposta il render in un `<iframe sandbox>`,
    e l'attributo `sandbox` non impedisce il caricamento delle
-   sottorisorse.
+   sottorisorse — per questo la rete che conta è la 3.
 
 Il gate resta la prima rete, ed è quella che dà al docente un errore
 leggibile invece di una figura che sparisce; ma il suo criterio di
@@ -431,6 +439,32 @@ aggiungere controlli, nessuno può sostituirne uno. Il giro 4 aveva
 sostituito la scansione larga `\bimg\s*:` con la sola lista chiusa e
 aveva così **riaperto sette vettori** che il giro 3 rifiutava; oggi i tre
 controlli si sommano e basta che uno segnali.
+
+L'unione del giro 7 vale sulla **lettura del sorgente**, non solo sui
+controlli: `_mermaid_gate_views` produce due letture e il gate ripete
+tutto su entrambe.
+
+* La prima è quella dei giri 1-6: righe da `str.split("\n")`, commento =
+  riga che comincia per `%%`.
+* La seconda ricalca `preprocessDiagram` (`mermaid.core.mjs`):
+  `cleanupText` normalizza `\r\n?` in `\n` PRIMA che Mermaid tolga
+  frontmatter, direttive e commenti, `removeDirectives` cancella le
+  direttive con la `directiveRegex` vera, e commento è ciò che
+  `cleanupComments` toglie davvero (`^\s*%%(?!{)[^\n]+`).
+
+Le due differenze erano entrambe sfruttabili, e misurate al giro 6 con la
+GET arrivata al listener: `%%nota\rclick A href "http://…"` era una sola
+riga di commento per il gate e due righe per Mermaid, che eseguiva la
+seconda (vale per `flowchart`, `graph`, `classDiagram`, `stateDiagram`,
+`sequenceDiagram` e per le shape `@{ img: … }`, anche con l'escape
+`"\x69mg"`, e anche con `%%\r` nudo perché `cleanupComments` pretende
+almeno un carattere dopo `%%`); `%%{x}%% click A href "http://…"` era un
+commento per il gate e una direttiva per Mermaid, che ne toglie solo
+`%%{x}%%` e lascia lo statement (`_INIT_DIRECTIVE_RE` non scatta perché
+la direttiva non è `init`). Perché due letture e non una sola, quella
+fedele: portare il `\r` nella divisione in righe sarebbe uno scambio, non
+un'unione — `---\rtitle: x\r---\rflowchart LR` oggi è rifiutato perché il
+tipo è `---`, e con il solo `\r` normalizzato tornerebbe ammesso.
 
 Dentro il blocco vale lo stesso ragionamento del frontmatter, e per la
 stessa ragione: **`@{ … }` non è testo, è YAML**. Mermaid lo dà a js-yaml
@@ -505,10 +539,11 @@ famiglie. Il `\r` è il caso simmetrico: è un a capo per il lexer ma non
 per `str.split("\n")`, quindi `A --> B\rclick A href "http://…"`
 registrava il click. Il BOM si toglie insieme agli spazi
 (`_MERMAID_TRIM_RE`) e il `\r` entra fra i separatori di statement
-(`_MERMAID_STATEMENT_SEPARATORS`), **non** nella divisione in righe:
-spostare quella cambierebbe anche il riconoscimento del tipo e del
-frontmatter, e un sorgente oggi rifiutato (`---\rtitle: x\r---\rflowchart
-LR`, tipo `---`) tornerebbe ammesso — sarebbe uno scambio, non un'unione.
+(`_MERMAID_STATEMENT_SEPARATORS`); nella divisione in righe non si sposta,
+ci si aggiunge una lettura in più (giro 7, sopra), perché spostarlo
+cambierebbe anche il riconoscimento del tipo e del frontmatter e un
+sorgente oggi rifiutato (`---\rtitle: x\r---\rflowchart LR`, tipo `---`)
+tornerebbe ammesso — sarebbe uno scambio, non un'unione.
 
 Il `<image>` però non nasce solo dalle shape. Misurando ogni parola
 chiave in tutte e 15 le famiglie D8 e cercando l'URL negli ATTRIBUTI
@@ -548,9 +583,9 @@ figura che ne contiene uno degrada a fallback invece di finire nel
 documento (Fase D, SEC-1). Non è un doppione del gate ma una difesa
 indipendente, ed è quello che serve: sorgenti che il gate accetta e che
 producono davvero un `<image href>` o un `<a xlink:href>` sono stati
-trovati in ognuno dei sei giri della revisione — l'ultimo, quello del
-giro 6, con un apice singolo dispari, con un `U+FEFF` e con un `\r`
-(sezione 14.9). Nessuno dei quindici campioni D8 resi fa scattare la
+trovati in ognuno dei sette giri della revisione — l'ultimo, quello del
+giro 7, con un `\r` dentro una riga di commento e con una riga `%%{…}%%`
+(sezione 14.10). Nessuno dei quindici campioni D8 resi fa scattare la
 scansione, quindi non costa figure sane. L'ancora è la
 correzione del giro 5. Fino al giro 4 la scansione non la cercava, con la
 motivazione «un collegamento non è una richiesta, ed è il gate degli
@@ -574,14 +609,21 @@ annulla quelle che non stanno sotto `mermaid_prerender.PRERENDER_ALLOWED_PREFIX`
 al gate non farebbe eseguire al server una GET verso l'host scelto
 dall'autore (`prerender_request_blocked` nei log).
 
-Quarta difesa, quella che manca al PDF e serve alla vista: la
-**sanificazione lato client** (`sanitizeMermaidSvg`, sezione 7). Editor e
-vista lezione rendono il diagramma con Mermaid NEL BROWSER DI CHI GUARDA,
-senza passare dal backend: fino al giro 4 quel markup entrava nel
-documento vivo così com'era (`dangerouslySetInnerHTML` in
-`MermaidDiagram.tsx`), quindi un `<image href="http://…">` uscito da una
-shape che il gate non riconosce faceva partire la richiesta dal browser
-del lettore.
+Le due difese che non riguardano il PDF ma la vista e l'editor, dove il
+diagramma è reso con Mermaid NEL BROWSER DI CHI GUARDA e senza passare dal
+backend. La **politica del browser** (`frontend/nginx.conf`, giro 7):
+`Content-Security-Policy: img-src 'self' data: blob: <origine degli
+upload>` sulla pagina dell'applicazione, che rifiuta la richiesta verso
+l'host scelto dall'autore. È l'unica che arriva prima della richiesta,
+perché `mermaid.render` attacca l'SVG al documento per misurarne la
+geometria e la GET parte lì; e vale anche per un sorgente che il gate
+rifiuta, perché l'editor rende mentre il docente scrive, molto prima di
+qualunque salvataggio. La **sanificazione lato client**
+(`sanitizeMermaidSvg`, sezione 7) resta e serve a ciò che la politica non
+fa: togliere dal markup che entra nella pagina l'`<image>` e l'`<a>`
+esterni, che senza di lei resterebbero nel documento (fino al giro 4 il
+markup entrava così com'era, con `dangerouslySetInnerHTML` in
+`MermaidDiagram.tsx`).
 
 `journey` è escluso perché emette due `<foreignObject>` anche in 10.9.4
 (WeasyPrint non li rende); gli altri esclusi non hanno uso didattico o
@@ -1447,6 +1489,23 @@ tre vettori (shape `img:`, `click href` di `flowchart` e di
 `stateDiagram`) in Chromium, e si contano le richieste che il browser
 tenta con e senza sanificazione.
 
+**La sanificazione però arriva dopo la prima richiesta, e ciò che la
+precede è la politica del documento** (giro 7): `mermaid.render` attacca
+l'SVG al documento per misurarlo, quindi la GET di una shape `img:` parte
+lì. La pagina servita da `frontend/nginx.conf` porta
+`Content-Security-Policy: img-src 'self' data: blob: <origine degli
+upload>` e il browser la rifiuta. Misurato con la pagina servita da un
+server vero, Mermaid 11.17.2 (il pacchetto di `node_modules`), Chromium e
+un listener HTTP: senza l'header arrivano le GET dei quattro vettori
+(`img:`, `img:` dietro un `\r`, `img:` dietro `%%{x}%%`,
+`sequenceDiagram properties icon`), con l'header non ne arriva nessuna e
+Chromium registra la violazione in console. Le immagini
+dell'applicazione non ne risentono — stessa origine, origine dello
+storage, `data:` delle anteprime di Vega-Lite/DOT/`function`, `blob:`
+delle anteprime di un file appena scelto: tutte caricate nella stessa
+prova. `sanitizeMermaidSvg` resta perché la politica blocca la richiesta
+ma non toglie il nodo dal markup (sezione 3.1, punti 3 e 4).
+
 1. oltre `max_bytes` (`figure_svg_max_bytes`, 1,5 MB) → `SvgRejectedError`;
 2. strip del prologo: BOM, `<?xml …?>`, `<!DOCTYPE …>`, commenti iniziali
    («Created with matplotlib», «Generated by graphviz»: determinismo fra
@@ -1984,10 +2043,21 @@ Decisioni prese in Fase B (A1-A16) e nella ripresa del 7 settembre
   Hardening da fare fuori da questo perimetro: restringere
   `--forwarded-allow-ips` alla subnet del reverse proxy, o affiancare una
   chiave per utente/organizzazione (Fase D, SEC-3).
+- **La Content-Security-Policy non c'è in sviluppo** (SEC-1, giro 7). La
+  politica `img-src` sta in `frontend/nginx.conf` e vale per la pagina
+  servita dall'immagine Docker; con `npm run dev` la pagina la serve Vite,
+  che non ha quell'header, quindi in sviluppo il residuo del render
+  client-side resta aperto: un diagramma con una shape `img:` scritto
+  nell'editor fa partire la GET dal browser di chi lo scrive. Restano le
+  altre difese (il gate, la guardia di rete del server, la scansione
+  dell'SVG). Portarla anche in sviluppo significa aggiungere l'header alla
+  configurazione del server di Vite: lavoro separato, con il rischio di
+  divergenza fra i due punti in cui la politica sarebbe scritta.
 - **Risorse esterne nel PDF per vie che non sono le figure.** Le figure ora
   rifiutano URL e file: il gate DOT, le regole D5 di Vega-Lite,
   `normalize_svg` e — per Mermaid, esente da A11 — il gate delle shape
-  `@{ … }` e degli statement (euristica best-effort, sezione 15) più la
+  `@{ … }` e degli statement (euristica di difesa in profondità, sezione
+  15) più la
   scansione dell'SVG, che è la difesa vera sul documento consegnato e dal
   giro 5 rifiuta anche l'`<a href>` esterno (sezione 3.1). Resta aperta, e
   preesistente al ramo, la via del **markdown della dispensa**:
@@ -2281,7 +2351,7 @@ corretti sono dichiarati in sezione 15.
 | REG-2 | regressione | minore | dichiarato come limite: rinominare l'`asset_id` rende l'asset nuovo per il gate (sezione 2.3) | revisione avversariale |
 | REG-3 | regressione | minore | dichiarato come limite: A11-L4 vale per 13 tipi su 15; `classDiagram` ed `erDiagram` non sono byte-deterministici, resa identica | revisione avversariale |
 | REG-4 | regressione | minore | corretto: il sorgente svuotato dalla sanificazione non entra nel batch (niente Chromium a vuoto) | revisione avversariale |
-| SEC-1 | sicurezza | maggiore | corretto in sei giri, con un residuo dichiarato. Il gate statico è dichiarato per quello che è — una euristica best-effort — e corretto per UNIONE, mai per scambio, controlli e segmentazioni compresi: lista chiusa delle chiavi sul `metadata` che il lexer produce davvero, scansione `img:`/`icon:` sul blocco grezzo (giro 3, rimessa), schemi di URL, `stateDiagram` fra gli statement con URL (giro 5), le tre modalità di quotatura, il BOM e il `\r` (giro 6). Le difese vere sono tre: isolamento di rete del pre-render (giro 2) e scansione dell'SVG estesa agli `<a href>` esterni sono complete; la sanificazione lato client (giro 5) NON lo è — `mermaid.render` fa partire la GET da un nodo che attacca al documento prima di poter sanificare, misurato e dichiarato in sezione 15. Il gate resta aggirabile in linea di principio: ogni giro dal secondo in poi ha trovato sorgenti che lo passavano e rendevano un riferimento esterno, e nulla prova che il giro 6 sia stato l'ultimo. La via del markdown resta dichiarata (sezione 13) | revisione avversariale (giri 5 e 6) |
+| SEC-1 | sicurezza | maggiore | corretto in sette giri, con i limiti dichiarati. La correzione vera è la **Content-Security-Policy** della pagina dell'applicazione (`frontend/nginx.conf`, giro 7): `img-src 'self' data: blob: <origine upload>`, con l'origine derivata a build time da `VITE_UPLOADS_BASE_URL`, blocca la richiesta che `mermaid.render` fa partire attaccando l'SVG al documento — misurato con la pagina servita con quell'header, Mermaid 11.17.2, Chromium e un listener: 4 GET su 4 senza header, 0 con header, e nessuna immagine dell'app rotta. Il gate statico è dichiarato per quello che è — una euristica di difesa in profondità, aggirabile oggi con la 11.17.2 pinnata — e corretto per UNIONE, mai per scambio, controlli, segmentazioni e LETTURE del sorgente comprese: lista chiusa delle chiavi sul `metadata` che il lexer produce davvero, scansione `img:`/`icon:` sul blocco grezzo (giro 3, rimessa), schemi di URL, `stateDiagram` fra gli statement con URL (giro 5), le tre modalità di quotatura, il BOM e il `\r` (giro 6), la seconda lettura con `\r` come a capo e la riga `%%{…}%%` che non è un commento (giro 7). Le altre difese: isolamento di rete del pre-render (giro 2) e scansione dell'SVG estesa agli `<a href>` esterni (giro 5); la sanificazione lato client toglie il nodo dal markup ma non può precedere la prima richiesta. In sviluppo la politica non c'è (Vite non passa da nginx): dichiarato in sezione 15. La via del markdown resta dichiarata (sezione 13) | revisione avversariale (giri 5, 6 e 7) |
 | SEC-2 | sicurezza | maggiore | corretto nel giro 2 (terzo vettore residuo dopo il giro 1): `\\` consumato come coppia, concatenazione con stringhe HTML e `#` trattato come commento fino a fine riga ovunque, come lo scanner di Graphviz | revisione avversariale (giro 2) |
 | SEC-3 | sicurezza | minore | non corretto, motivato: `X-Forwarded-For` è infrastruttura preesistente identica a `main`, fuori perimetro; dichiarato in sezione 13 | revisione avversariale |
 | I18N-1 | i18n | maggiore | corretto: estrai/applica simmetrici sulle label DOT, `\n` e `\l` intatti; regola aggiunta al prompt di localizzazione | revisione avversariale |
@@ -2586,6 +2656,126 @@ l'SVG contenga davvero il riferimento esterno prima di chiedere il 422);
 il frontend non è stato toccato — `npm run lint` 4 errori di baseline e 23
 warning, `npm run type-check` e `npm run build` verdi.
 
+### 14.10 Settimo giro: la correzione vera di SEC-1 è la politica del browser
+
+Il verificatore del giro 6 ha trovato altre due classi di sorgenti che il
+gate accettava e che rendevano davvero un riferimento esterno, entrambe
+per lo stesso motivo — il gate legge il sorgente in un modo, Mermaid in un
+altro — e il giro 7 ha smesso di rincorrere: il gate resta e si corregge
+(sotto), ma **il controllo che chiude SEC-1 sul residuo è la
+Content-Security-Policy della pagina**.
+
+**1. La politica.** Il progetto aveva già `img-src 'self' data: blob:`,
+ma solo sulle risposte del backend (`middleware/security_headers.py`); la
+pagina dell'applicazione la serve nginx, che aveva gli altri header di
+sicurezza e non questo, e il browser applica la politica del documento.
+`frontend/nginx.conf` ora porta `add_header Content-Security-Policy
+"img-src 'self' data: blob:<origine upload>" always;` — **solo `img-src`**,
+senza `default-src`, così script, stili, font (Google Fonts sta in
+`index.html`), connessioni e media restano invariati e il raggio d'azione
+è le sole immagini. L'origine degli upload non può essere fissa: in
+produzione gli upload stanno sullo storage OVH
+(`VITE_UPLOADS_BASE_URL=https://progettiersaf.com/media/uploads`) e con
+`'self'` secco le immagini caricate sparirebbero. È derivata a build time
+dalla STESSA variabile che decide da dove il frontend carica le immagini
+(`src/lib/media.ts`): lo stage `runtime` di `frontend/Dockerfile`
+sostituisce il segnaposto `__A4U_UPLOADS_ORIGIN__` con
+`schema://host[:porta]` se il valore è assoluto, con la stringa vuota se è
+relativo, e fallisce il build se il segnaposto resta.
+
+Verificato sul file generato DENTRO l'immagine, nei due casi:
+
+| build arg | `docker run --rm <img> cat /etc/nginx/conf.d/default.conf` |
+| --- | --- |
+| `VITE_UPLOADS_BASE_URL=/uploads` | `add_header Content-Security-Policy "img-src 'self' data: blob:" always;` |
+| `…=https://progettiersaf.com/media/uploads` | `add_header Content-Security-Policy "img-src 'self' data: blob: https://progettiersaf.com" always;` |
+
+Verificato che **blocchi davvero**, con la pagina servita da un server
+vero con quell'header, Mermaid 11.17.2 (il pacchetto di `node_modules`,
+non un CDN), Chromium via Playwright e un listener HTTP che registra le
+GET. Quattro vettori che rendono un `<image href>`: la shape `img:` nuda,
+la stessa dietro un `\r`, la stessa dietro `%%{x}%%` e `sequenceDiagram`
+con `properties A: {"icon": …}`.
+
+| pagina | GET arrivate al listener | immagini dell'app |
+| --- | --- | --- |
+| senza header (controllo) | **4 su 4** (una per vettore) | tutte caricate |
+| `img-src 'self' data: blob: http://127.0.0.1:8003` | **0** (4 violazioni in console) | stessa origine, origine upload, `data:`, `blob:` caricate; host estraneo bloccato |
+| `img-src 'self' data: blob:` (default) | **0** | come sopra, ma l'origine upload è bloccata — è la misura del perché la derivazione a build time serve |
+
+Il controllo senza header è la prova che l'apparato misura qualcosa: le
+GET partono anche con `sanitizeMermaidSvg` attiva, perché
+`mermaid.render` attacca l'SVG al documento prima che la sanificazione
+possa intervenire. Con la politica, i tre vettori con la shape `img:`
+falliscono il render in Chromium (`EncodingError: The source image cannot
+be decoded`), cioè il diagramma non compare: è il comportamento voluto, e
+quei sorgenti prendono comunque 422 al salvataggio.
+
+**2. Le due classi ancora aperte del gate.** Chiuse comunque, perché la
+regola dell'unione non ammette vettori noti e accettati. La correzione è
+una seconda LETTURA del sorgente, non un cambio di quella esistente
+(`_mermaid_gate_views`, sezione 3.1): `\r` normalizzato in `\n` come
+`cleanupText`, direttive tolte come `removeDirectives` e commento
+riconosciuto come da `cleanupComments`. Il gate ripete tutti i controlli
+su entrambe le letture e rifiuta se una segnala.
+
+| classe | riproduzione a `1ca2284` | oggi |
+| --- | --- | --- |
+| `\r` dentro una riga di commento | `flowchart LR⏎%%nota\r  A@{ img: "http://…" } --> B` → gate `('', '')`, `<image href>` nell'SVG e **GET arrivata** al listener. Stessa via per `click` in `flowchart`, `graph`, `classDiagram`, `stateDiagram-v2`, per `links`/`properties` in `sequenceDiagram`, per un tag HTML nella label, per una chiave `config:` nel frontmatter e con `%%\r` nudo | `('mermaid_external_resource', 'img:')` e gli esiti corrispondenti per le altre forme |
+| riga `%%{…}%%` (direttiva, non commento) | `flowchart LR⏎%%{x}%% A@{ img: "http://…" } --> B` → gate `('', '')`, `<image href>` e **GET arrivata**. Stessa via per `click`, `properties`, un tag HTML e la chiave con escape `"\x69mg"` | `('mermaid_external_resource', 'img:')` |
+
+**Oracolo di rendering, 19 vettori.** Ognuno reso con il pre-render vero:
+tutti producono un `<image href>` o un `<a xlink:href>` verso l'host
+dell'autore (5 hanno fatto arrivare la GET al listener con la guardia di
+rete disattivata), e tutti sono rifiutati dal gate di oggi. Con la
+guardia attiva — la produzione — le GET sono **0**. Nessun sorgente con
+il gate aperto rende un riferimento esterno.
+
+**Confronto dell'unione su CINQUE alberi** (`939f0a5`, `6c3e067`,
+`acc02a1`, `1ca2284` e l'albero di lavoro), corpus estratto con l'AST
+dagli script dei giri 1-6 più i 19 vettori e le 8 controprove del giro 7:
+**301 maligni e 364 sani**.
+
+| gate | maligni ACCETTATI (301) | falsi positivi (364) |
+| --- | --- | --- |
+| giro 3 (`939f0a5`) | 214 | 20 |
+| giro 4 (`6c3e067`) | 161 | 67 |
+| giro 5 (`acc02a1`) | 130 | 78 |
+| giro 6 (`1ca2284`) | 98 | 82 |
+| giro 7 (oggi) | **62** | 87 |
+
+**Nessun vettore riaperto** rispetto ad alcuno dei quattro alberi. I
+cinque «falsi positivi» in più rispetto a `1ca2284` sono cinque vettori
+di attacco della sonda del giro 6 che il classificatore del corpus conta
+come sani perché non contengono un `http:` letterale (portano un tag
+HTML, una chiave `config:` o un URL con escape `\x68ttp`): sul corpus
+benigno vero i falsi positivi restano **gli stessi 82**, e sul corpus
+benigno curato del giro 5 restano **4 su 75**, quelli già dichiarati in
+sezione 15. I 62 maligni ancora accettati sono i 31 inerti del giro 6 più
+i vettori che i verificatori precedenti avevano già misurato come non
+renderizzabili.
+
+**Test aggiunti.** 19 vettori delle due classi in
+`test_mermaid_static_gate_rejects_cr_and_directive_lines` (verificati uno
+per uno contro l'albero `1ca2284`: tutti `PASSA` prima, tutti rifiutati
+adesso), 7 controprove sane in
+`test_mermaid_static_gate_accepts_cr_and_directive_lines_without_statements`
+(CRLF, percentuali nelle label, `%%{wrap}%%` da solo e in testa, `%%`
+nudo, due commenti separati da un `\r`, `\r` dentro una label — le ultime
+due rese davvero da Mermaid) e 7 in
+`test_frontend_csp_header.py`, che pinna la forma della direttiva, il
+fatto che sia l'unica (niente `default-src`) ed esegue lo stesso blocco
+`sh` del `Dockerfile` sui valori reali di `VITE_UPLOADS_BASE_URL`.
+
+Gate finali dopo il giro 7 (8 settembre 2026): `ruff check` e `ruff
+format --check` puliti sui file toccati; `ruff check .` del repo **372**
+(invariato); `mypy app` **205** errori in 32 file (invariato, 215
+sorgenti); pytest **1258/1258** verdi, zero saltati (**33 test in più**
+rispetto ai 1225 del giro 6: 19 vettori, 7 controprove sane, 7 sulla
+politica); frontend non toccato nel codice (solo `nginx.conf` e
+`Dockerfile`) — `npm run lint` 4 errori di baseline e 23 warning,
+`npm run type-check` e `npm run build` verdi.
+
 ## 15. Limiti dichiarati e lavori futuri
 
 Limiti noti alla chiusura del branch, con la ragione per cui restano e
@@ -2660,7 +2850,7 @@ caso produce un fallback visibile, un log o un errore esplicito.
   riportati a parità di configurazione (sezione 14.3).
 - **Campione reale** per lo script di rivalidazione (A24): aperto, da
   eseguire su un dump di staging prima del rilascio. La revisione
-  avversariale di Fase D è chiusa in sei giri (sezioni 14.4-14.9).
+  avversariale di Fase D è chiusa in sette giri (sezioni 14.4-14.10).
 
 Limiti aggiunti dalla revisione avversariale di Fase D, con l'id del
 rilievo che li ha resi espliciti.
@@ -2695,7 +2885,8 @@ rilievo che li ha resi espliciti.
   passare `<img src="file:///…">` e `![](http://…)` nel testo, e WeasyPrint
   li scarica. Preesistente al ramo; il rimedio è un `url_fetcher` che
   ammetta i soli `data:` per tutti i PDF.
-- **Il gate statico Mermaid è una euristica best-effort** (SEC-1, giro 5).
+- **Il gate statico Mermaid è una euristica di difesa in profondità**
+  (SEC-1, giri 5 e 7).
   Riconoscere leggendo il sorgente come testo se un diagramma caricherà
   una risorsa significa rincorrere un lexer con stati, js-yaml e una
   decina di grammatiche: quattro giri di correzione l'hanno perso a turno,
@@ -2711,15 +2902,19 @@ rilievo che li ha resi espliciti.
   11.17.2 pinnata, il giro 5 ha trovato sorgenti che lo passavano e
   rendevano un `<image href>` con la GET arrivata al listener (apice
   singolo dispari in uno scalare YAML piano, `U+FEFF` davanti alla parola
-  chiave di uno statement), e il giro 6 ne ha aggiunto uno suo (il `\r`
-  come a capo del lexer). Il giro 6 li ha chiusi tutti e tre e ha
-  misurato 0 GET sui vettori dei sei giri (sezione 14.9), ma nulla prova
-  che sia stato l'ultimo: è l'esito atteso di una euristica testuale
-  contro un parser vero, e per questo l'analisi di sicurezza si appoggia
-  alle altre difese. Chi trova un nuovo aggiramento incontra
-  l'isolamento di rete (0 GET dal server) e la scansione dell'SVG (la
-  figura non entra nel documento); quello che resta scoperto è il render
-  client-side, nella misura dichiarata più sotto. La direzione è un vero
+  chiave di uno statement), il giro 6 ne ha aggiunto uno suo (il `\r`
+  come a capo del lexer) e il verificatore del giro 6 altre due classi
+  intere (il `\r` dentro una riga di commento e la riga `%%{…}%%`, che
+  per Mermaid è una direttiva e non un commento), chiuse dal giro 7 con
+  una seconda lettura del sorgente. **Nulla prova che il giro 7 sia stato
+  l'ultimo**: è l'esito atteso di una euristica testuale contro un parser
+  vero, e sette giri di controesempi sono la misura del fatto che questa
+  gara non si vince. Per questo l'analisi di sicurezza non si appoggia al
+  gate: chi trova un nuovo aggiramento incontra l'isolamento di rete (0
+  GET dal server), la scansione dell'SVG (la figura non entra nel
+  documento) e, nel browser, la Content-Security-Policy della pagina, che
+  è la correzione vera del residuo client-side (sezione 14.10) — in
+  produzione, non in sviluppo (voce sotto). La direzione resta un vero
   lexer Mermaid condiviso con il frontend.
 - **Il gate delle shape Mermaid è un soprainsieme del lexer** (SEC-1,
   giro 2, allargato dai giri 4 e 5): `_mermaid_shape_blocks` considera
@@ -2769,28 +2964,43 @@ rilievo che li ha resi espliciti.
   di falsi positivi sulle frecce; la direzione è il lexer Mermaid condiviso
   con il frontend.
 - **Il render di Mermaid nel browser tocca il documento prima della
-  sanificazione** (SEC-1, giro 5). Editor e vista lezione rendono
+  sanificazione; a fermare la richiesta è la politica del browser, che in
+  sviluppo non c'è** (SEC-1, giri 5 e 7). Editor e vista lezione rendono
   client-side; dal giro 5 il markup passa da `sanitizeMermaidSvg` prima di
   entrare nella pagina, quindi il nodo che il lettore vede non ha né
-  `<image>` né `<a>` verso l'esterno, e nessuna richiesta parte da lì
-  (misurato in Chromium, `test_frontend_mermaid_sanitize.py`). Resta un
-  residuo, misurato e fissato da un test: `mermaid.render` calcola la
+  `<image>` né `<a>` verso l'esterno (misurato in Chromium,
+  `test_frontend_mermaid_sanitize.py`). La sanificazione però **non può
+  arrivare prima della prima richiesta**: `mermaid.render` calcola la
   geometria su un nodo temporaneo che ATTACCA al documento, quindi per una
-  shape `img:` la prima GET parte durante il render, prima che il
-  componente possa sanificare alcunché. Vale per chi scrive il diagramma
-  nell'editor (contenuto proprio, richiesta propria) e, se un sorgente
-  aggirasse il gate e finisse in DB, per chi apre la lezione — e il gate
-  è aggirabile, come dice la voce precedente. È **la sola delle tre
-  difese che non è completa**, e nessuna opzione di Mermaid la completa:
-  `securityLevel: 'sandbox'` sposta il render in un `<iframe sandbox="">`
-  (letto in `mermaid.core.mjs`, `sandboxedIframe`), ma l'attributo
-  `sandbox` isola l'origine, non la rete, e le sottorisorse si caricano
-  lo stesso. Chiuderlo richiede di rendere in un contesto senza accesso
-  alla rete — un `<iframe srcdoc>` con una CSP `img-src 'none'`, con
-  Mermaid caricato dentro — cioè di riscrivere il ciclo di render del
-  componente e la sua misurazione della geometria; il test
+  shape `img:` la GET parte durante il render. Nessuna opzione di Mermaid
+  lo evita: `securityLevel: 'sandbox'` sposta il render in un `<iframe
+  sandbox="">` (letto in `mermaid.core.mjs`, `sandboxedIframe`), ma
+  l'attributo `sandbox` isola l'origine, non la rete. Il giro 7 lo chiude
+  dove conta, cioè nel documento: la pagina servita da
+  `frontend/nginx.conf` porta `img-src 'self' data: blob: <origine degli
+  upload>` e il browser rifiuta la richiesta (misurato: 4 GET su 4 senza
+  header, 0 con header; sezione 14.10). **Resta scoperto lo sviluppo**:
+  con `npm run dev` la pagina la serve Vite, che non passa da nginx e non
+  ha quell'header, quindi chi scrive un diagramma con una shape `img:`
+  nell'editor locale fa partire la GET dal proprio browser (contenuto
+  proprio, richiesta propria). Portare la politica anche lì significa
+  scriverla in un secondo punto — la configurazione del server di Vite —
+  con il rischio che i due divergano: lavoro separato. Il test
   `test_the_render_of_mermaid_itself_still_fetches_declared_limit`
-  segnala il giorno in cui Mermaid cambia comportamento da sé.
+  continua a segnalare il giorno in cui Mermaid cambia comportamento da
+  sé.
+- **L'origine ammessa dalla politica è derivata da una sola variabile**
+  (SEC-1, giro 7). `img-src` aggiunge l'origine di
+  `VITE_UPLOADS_BASE_URL`, che è quella da cui il frontend carica le
+  immagini caricate dal docente e — con `STORAGE_BACKEND=ovh_*` — anche
+  gli avatar, perché `OVH_PUBLIC_BASE_URL` e `VITE_UPLOADS_BASE_URL`
+  stanno sullo stesso host. Un deployment che serva le immagini da un
+  terzo host (per esempio `STORAGE_BACKEND=local` con `PUBLIC_BASE_URL`
+  diverso dall'origine del frontend) vedrebbe quelle immagini bloccate
+  finché l'origine non viene aggiunta a mano alla direttiva: la
+  derivazione automatica non la indovina. Dichiarato in
+  `docs/07-deployment.md` insieme al fatto che cambiare la variabile
+  richiede un `docker compose build frontend`, non un riavvio.
   **Fino al giro 3 l'affermazione scritta qui era falsa**: il gate era una
   lista di pattern testuali su un blocco che Mermaid dà a js-yaml,
   `A@{ "\x69mg": "\x68ttp://…" }` veniva ACCETTATO dal PATCH, il payload

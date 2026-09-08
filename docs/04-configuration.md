@@ -323,10 +323,28 @@ relevance score, riassunto AI): [Courses 16 — Paper search](courses/16-paper-s
 | Variabile | Default | Descrizione |
 |---|---|---|
 | `VITE_API_BASE_URL` | `/api/v1` | Prefisso API. In dev è proxato da Vite a localhost:8000. In prod è servito da nginx. |
-| `VITE_UPLOADS_BASE_URL` | `/uploads` | Prefisso upload. Stessa logica di proxy. |
+| `VITE_UPLOADS_BASE_URL` | `/uploads` | Prefisso upload. Stessa logica di proxy. **Decide anche l'`img-src` della CSP** (sotto). |
 | `VITE_SENTRY_DSN` | _(vuoto)_ | Se valorizzato, abilita Sentry sul frontend. |
 
 > Le variabili Vite **devono** iniziare con `VITE_` per essere esposte al client.
+
+`VITE_UPLOADS_BASE_URL` ha un secondo effetto: lo stage `runtime` di
+`frontend/Dockerfile` ne ricava l'origine e la scrive nella
+Content-Security-Policy di `frontend/nginx.conf`, che in produzione è
+`img-src 'self' data: blob: <origine>` (nessuna altra direttiva). Serve
+perché la pagina dell'applicazione è servita da nginx e la politica del
+documento è l'unico controllo che impedisce a un diagramma Mermaid di
+caricare un'immagine dall'host scelto da chi lo ha scritto
+(`docs/courses/17-visual-figures.md`, §3.1 e §15). Conseguenze pratiche:
+
+- valore relativo (il default `/uploads`) → nessuna origine aggiunta:
+  gli upload stanno sulla stessa origine e `'self'` li copre;
+- URL assoluto (produzione: `https://progettiersaf.com/media/uploads`) →
+  viene aggiunto `https://progettiersaf.com`;
+- cambiarla richiede `docker compose build frontend`, altrimenti
+  l'immagine continua a servire la politica vecchia e le immagini
+  caricate spariscono;
+- in sviluppo il server di Vite non passa da nginx: la politica non c'è.
 
 ## File `.python-version`
 

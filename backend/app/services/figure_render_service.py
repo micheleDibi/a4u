@@ -271,6 +271,26 @@ _INIT_DIRECTIVE_RE = re.compile(r"%%\s*\{\s*init(?:ialize)?\b", re.IGNORECASE)
 # `#` o una voce `title:` / `displayMode:` in forma blocco. Un frontmatter
 # che Mermaid ignora (chiave sconosciuta) è rifiutato con lo stesso esito.
 _FRONTMATTER_LINE_RE = re.compile(r"^(?:title|displayMode)\s*:(?:\s|$)")
+# `cleanupText` normalizza `\r\n` e `\r` in `\n` PRIMA che Mermaid tolga il
+# frontmatter, le direttive e i commenti (`preprocessDiagram` in
+# `mermaid.core.mjs`): un `\r` dentro una riga di commento apre per il
+# renderer una riga nuova che il gate, dividendo su `\n`, non vedeva mai
+# (`%%nota\rclick A href "http://…"` → `<a xlink:href>`, giro 7).
+_MERMAID_CR_RE = re.compile(r"\r\n?")
+# Riga che `cleanupComments` toglie DAVVERO: `^\s*%%(?!{)[^\n]+\n?`. Due
+# differenze rispetto al `startswith("%%")` del gate, entrambe sfruttabili:
+# una riga che comincia per `%%{` non è un commento (il lookahead la
+# esclude: la direttiva la toglie `removeDirectives`, il resto della riga
+# resta uno statement) e un `%%` nudo non lo è (serve almeno un carattere
+# dopo). Il `\s` di JavaScript comprende `U+FEFF`, quello di Python no.
+_MERMAID_COMMENT_LINE_RE = re.compile(r"^[\s\ufeff]*%%(?!\{)[^\n]")
+# `directiveRegex` di Mermaid 11.17.2 (`chunk-DU6HZSFF.mjs:5010`), usata da
+# `removeDirectives` per cancellare le direttive dal sorgente prima del
+# parse. La chiusura `}%%` è FACOLTATIVA anche per lei.
+_MERMAID_DIRECTIVE_RE = re.compile(
+    r"%{2}\{\s*(?:(?:\w+)\s*:|(?:\w+))\s*(?:(?:\w+)|(?:(?:(?!\}%{2}).|\r?\n)*))?\s*(?:\}%{2})?",
+    re.IGNORECASE,
+)
 # Tag HTML nelle label (`<b>`, `<script>`, `<table>`, ...): con
 # `htmlLabels: false` finirebbero in chiaro nel `<text>`. Regola generica,
 # non un elenco di tag: `<` seguito da un nome di elemento e chiuso da `>`
@@ -745,14 +765,49 @@ def mermaid_declared_type(code: str) -> str:
     return line.split()[0].rstrip(";") if line else ""
 
 
+def _mermaid_gate_views(code: str) -> Iterator[tuple[str, bool]]:
+    """Le due letture del sorgente su cui il gate ripete TUTTI i controlli,
+    come `(testo, fedele)`.
+
+    * `(code, False)` — la lettura dei giri 1-6: righe da `str.split("\\n")`,
+      commento = riga che comincia per `%%`.
+    * `(…, True)` — la lettura di `preprocessDiagram`: `\\r\\n?` normalizzato
+      in `\\n` da `cleanupText` e direttive tolte da `removeDirectives`,
+      con il criterio di commento vero di `cleanupComments`.
+
+    Sono due VISTE, non una sostituzione: il gate rifiuta se una qualsiasi
+    delle due segnala. La prima resta identica a oggi, quindi nessun
+    sorgente rifiutato da un albero precedente può tornare ammesso — la
+    regola dell'unione vale anche qui, come per la segmentazione delle
+    virgolette (giro 6). Serviva un'unione e non uno scambio proprio
+    perché la lettura fedele è più permissiva in un punto: con `\\r` come
+    a capo `---\\rtitle: x\\r---\\rflowchart LR` diventa un frontmatter
+    valido, mentre per la prima lettura il tipo è `---` e non è ammesso."""
+    yield (code, False)
+    yield (_MERMAID_DIRECTIVE_RE.sub("", _MERMAID_CR_RE.sub("\n", code)), True)
+
+
 def mermaid_static_gate(code: str) -> tuple[str, str]:
     """Gate statico D8 su un sorgente già sanificato: `("", "")` se passa,
     altrimenti `(esito, dettaglio)` con esito in `MERMAID_GATE_*` e
     dettaglio = tipo dichiarato (`?` se assente), motivo della direttiva o
     tag trovato. Unico punto del gate: `MermaidRenderer.validate` e lo
-    script di rivalidazione lo consumano con messaggi propri."""
+    script di rivalidazione lo consumano con messaggi propri.
+
+    I controlli girano su ogni vista di `_mermaid_gate_views` e basta che
+    una segnali."""
     if not code.strip():
         return (MERMAID_GATE_EMPTY, "")
+    for view, faithful in _mermaid_gate_views(code):
+        outcome, detail = _mermaid_gate_once(view, faithful=faithful)
+        if outcome:
+            return (outcome, detail)
+    return ("", "")
+
+
+def _mermaid_gate_once(code: str, *, faithful: bool) -> tuple[str, str]:
+    """Un passaggio del gate su una singola vista del sorgente; `faithful`
+    sceglie il criterio con cui si scartano le righe di commento."""
     kind = mermaid_declared_type(code)
     if _MERMAID_TYPE_ALIASES.get(kind, kind) not in MERMAID_ALLOWED_TYPES:
         return (MERMAID_GATE_TYPE, kind or "?")
@@ -766,9 +821,15 @@ def mermaid_static_gate(code: str) -> tuple[str, str]:
             f"frontmatter: riga `{bad_line[:40]}` non ammessa "
             "(ammesse solo `title:` e `displayMode:`)",
         )
-    # Solo le righe del corpo che non sono commenti `%%`: un tag in un
-    # commento o nel frontmatter non viene renderizzato.
-    lines = [line for line in body if not line.lstrip().startswith("%%")]
+    # Solo le righe del corpo che non sono commenti: un tag in un commento
+    # o nel frontmatter non viene renderizzato. Nella vista fedele il
+    # criterio è quello di `cleanupComments`, che NON toglie né una riga
+    # `%%{…` (è una direttiva: `removeDirectives` ne cancella solo la
+    # direttiva e lo statement che segue resta) né un `%%` nudo.
+    if faithful:
+        lines = [line for line in body if not _MERMAID_COMMENT_LINE_RE.match(line)]
+    else:
+        lines = [line for line in body if not line.lstrip().startswith("%%")]
     for line in lines:
         m = _HTML_TAG_RE.search(line)
         if m:
