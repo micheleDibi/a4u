@@ -1,7 +1,11 @@
 import { memo, useEffect, useRef, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 
-import { fullWidthSvgMaxHeightPx, svgIntrinsicSize } from "@/lib/figureFormats";
+import {
+  fullWidthSvgMaxHeightPx,
+  sanitizeMermaidSvg,
+  svgIntrinsicSize,
+} from "@/lib/figureFormats";
 import { mermaidConfig } from "@/lib/figureTheme";
 import { cn } from "@/lib/utils";
 
@@ -93,6 +97,19 @@ function MermaidDiagramImpl({ code, className }: MermaidDiagramProps) {
         renderCounter += 1;
         const id = `mermaid-${renderCounter}-${Date.now()}`;
         const { svg: rendered } = await mermaid.render(id, cleanCode);
+        // Sanificazione PRIMA di toccare il documento vivo: il diagramma
+        // è reso nel browser di chi guarda, non dal backend, quindi un
+        // `<image href="http://…">` uscito da una shape che il gate
+        // statico non ha riconosciuto farebbe partire la richiesta da qui
+        // (SEC-1, giro 5). `securityLevel: "strict"` di Mermaid sanifica
+        // le LABEL, non gli attributi che il renderer stesso emette.
+        const safe = sanitizeMermaidSvg(rendered);
+        // Markup senza `<svg>`: nessun dettaglio tecnico da mostrare, il
+        // box usa la frase localizzata di ripiego («render fallito»).
+        if (!safe) {
+          if (!cancelled) setFailure({ kind: "render", detail: "" });
+          return;
+        }
         if (!cancelled) {
           // Mermaid imposta `style="max-width: <natural_px>"` sull'SVG.
           // Questo impedisce al diagramma di crescere oltre la sua
@@ -100,10 +117,7 @@ function MermaidDiagramImpl({ code, className }: MermaidDiagramProps) {
           // molto più largo — risultato: testo illeggibile.
           // Strippiamo quel max-width così l'SVG riempie tutto il
           // container disponibile.
-          const cleaned = rendered.replace(
-            /max-width\s*:\s*[\d.]+px\s*;?/gi,
-            "",
-          );
+          const cleaned = safe.replace(/max-width\s*:\s*[\d.]+px\s*;?/gi, "");
           // Il tetto d'altezza dipende dall'orientamento letto dal viewBox
           // (vedi le classi del contenitore sotto).
           setSvg({

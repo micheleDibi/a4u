@@ -457,7 +457,7 @@ def test_mermaid_shape_entries_split_like_js_yaml():
     entries = frs._mermaid_shape_entries
     assert list(entries('@{ shape: rect, label: "a, b" }')) == ["shape: rect", 'label: "a, b"']
     assert list(entries("@{\n  shape: rect\n  w: 60\n}")) == ["shape: rect", "w: 60"]
-    # `;` e virgole dentro le parentesi annidate non separano.
+    # Le collezioni flow annidate non separano.
     assert list(entries("@{ label: [x, y], w: 1 }")) == ["label: [x, y]", "w: 1"]
     key = frs._mermaid_shape_key
     assert key('label: "a: b"') == "label"
@@ -465,6 +465,163 @@ def test_mermaid_shape_entries_split_like_js_yaml():
     # Gli escape NON si decodificano: la chiave resta irriconoscibile e
     # quindi fuori dalla lista.
     assert key('"\\x69mg": "u"') == "\\x69mg"
+
+
+def test_mermaid_shape_metadata_follows_the_lexer():
+    """SEC-1 (giro 5): il gate deve segmentare il `metadata` che il lexer
+    consegna ad `addVertex`, non il sorgente grezzo.
+
+    Nello stato `shapeDataStr` la regola 10 sostituisce `/\\n\\s*/g` con
+    `<br/>`, quindi un a capo dentro le virgolette sparisce e `addVertex`
+    sceglie la forma FLOW: leggendo il sorgente grezzo il gate sceglieva
+    la forma BLOCCO e vedeva una voce sola, con la sola chiave `label`."""
+    meta = frs._mermaid_shape_metadata
+    assert meta('@{ label: "a\nb", img: "u" }') == ' label: "a<br/>b", img: "u" '
+    assert meta("@{\n  shape: rect\n  w: 60\n}") == "\n  shape: rect\n  w: 60\n"
+    # Fuori dalle virgolette l'a capo resta: è la forma blocco vera.
+    assert "\n" in meta('@{\n  label: "x"\n}')
+    # Virgolette dispari: la `}` finale è dentro la stringa, non la chiude.
+    assert meta('@{ x: "aperta') == ' x: "aperta'
+
+    entries = frs._mermaid_shape_entries
+    assert list(entries('@{ label: "a\nb", img: "u" }')) == ['label: "a<br/>b"', 'img: "u"']
+    # Le parentesi tonde NON sono un indicatore YAML: per js-yaml
+    # `label: (` è uno scalare e la virgola che segue separa davvero.
+    assert list(entries('@{ label: ( , img: "u" }')) == ["label: (", 'img: "u"']
+    # Negli statement, invece, `(` apre la sezione di una label di Mermaid.
+    assert list(frs._mermaid_statements(["A(fai clic; qui) --> B"])) == ["A(fai clic; qui) --> B"]
+
+
+# SEC-1, vettori RIAPERTI dal giro 4 (misurati end-to-end: gate verde,
+# `mermaid.parse` verde, PATCH 200 e `<image href>` nell'SVG con la GET
+# davvero arrivata al listener). Il giro 3 li rifiutava con la scansione
+# larga `\bimg\s*:`, che il giro 4 aveva SOSTITUITO con la sola lista
+# chiusa: da qui la regola dell'unione, mai dello scambio.
+MERMAID_SHAPE_DESYNC_BYPASSES = (
+    # a capo dentro la stringa: il gate vedeva la forma blocco, js-yaml la flow
+    'flowchart LR\n  A@{ label: "a\nb", img: "http://interno/x.png", w: 40 }\n  A-->B',
+    'flowchart LR\n  A@{ label: "a\nb", "\\x69mg": "\\x68ttp://interno/x.png" }\n  A-->B',
+    'flowchart LR\n  A@{ label: "a\nb", icon: "\\x68ttp://interno/x.png" }\n  A-->B',
+    'flowchart LR\n  A@{ label: "x\n  #", "\\x69mg": "\\x68ttp://interno/x.png" }\n  A-->B',
+    'flowchart LR\n  A@{ label: "x\n  #", img: "//interno/x.png" }\n  A-->B',
+    'flowchart LR\n  A@{\n    label: "x\n    #", img: "//interno/x.png"\n  }\n  A-->B',
+    'flowchart LR\n  A@{ label: "x\n  shape: rect, img: "//interno/x.png" }\n  A-->B',
+    # parentesi tonda: profondità per lo splitter, scalare per js-yaml
+    'flowchart LR\n  A@{ label: ( , img: "\\x68ttp://interno/x.png" }\n  A-->B',
+    'flowchart LR\n  A@{ label: ( , img: "http://interno/x.png" }\n  A-->B',
+    # forma blocco con due chiavi sulla stessa riga (js-yaml la rifiuta, ma
+    # il gate non deve dipendere da quel dettaglio per rifiutarla)
+    'flowchart LR\n  A@{\n    label: "x", img: "\\x68ttp://interno/x.png"\n  }\n  A-->B',
+)
+
+
+@pytest.mark.parametrize("code", MERMAID_SHAPE_DESYNC_BYPASSES)
+def test_mermaid_shape_gate_unions_the_closed_list_with_the_text_scan(code: str):
+    """SEC-1 (giro 5): i controlli si sommano. La lista chiusa sul
+    `metadata` del lexer chiude la desincronizzazione, la scansione
+    `img:`/`icon:` sul blocco grezzo tiene le forme che nessuna
+    segmentazione spezza."""
+    ok, err = frs.REGISTRY["mermaid"].validate(code)
+    assert ok is False, code
+    assert "risorsa esterna non ammessa nella shape" in err, err
+
+
+# `stateDiagram` non era in `MERMAID_URL_STATEMENTS` fino al giro 4:
+# `click A href "http://…"` passava il gate, il PATCH e arrivava nel PDF
+# come `<a xlink:href="http://…" target="_blank">` (misurato in entrambe le
+# scritture del tipo; il lexer di stato è case-insensitive su `click` e
+# `href`, `chunk-IMKFNOWR.mjs`).
+MERMAID_STATE_URL_STATEMENTS = (
+    'stateDiagram-v2\n  [*] --> A\n  click A href "http://interno/x.png"',
+    'stateDiagram\n  [*] --> A\n  click A href "http://interno/x.png"',
+    'stateDiagram-v2\n  [*] --> A\n  CLICK A HREF "http://interno/x.png"',
+    'stateDiagram-v2\n  [*] --> A\n  click A href "http://interno/x.png" "t"',
+    'stateDiagram-v2\n  [*] --> A\n  click A call cb("http://interno/x.png")',
+    'stateDiagram-v2\n  [*] --> A\n  A --> B; click A href "http://interno/x.png"',
+)
+
+
+@pytest.mark.parametrize("code", MERMAID_STATE_URL_STATEMENTS)
+def test_mermaid_gate_rejects_the_state_click_statement(code: str):
+    ok, err = frs.REGISTRY["mermaid"].validate(code)
+    assert ok is False, code
+    assert "non è ammesso (porta un URL o un'icona" in err, err
+    assert err.lower().count("`click`") == 1, err
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        # `click` come TESTO di uno stateDiagram: lo statement non comincia
+        # con quella parola, quindi passa (tutti resi con il pre-render).
+        "stateDiagram-v2\n  [*] --> A\n  A --> B: click qui\n  B --> [*]",
+        'stateDiagram-v2\n  state "click qui" as A\n  [*] --> A',
+        "stateDiagram-v2\n  [*] --> A\n  note right of A: click qui",
+    ],
+)
+def test_mermaid_state_gate_keeps_click_as_text(code: str):
+    assert frs.REGISTRY["mermaid"].validate(code) == (True, "")
+
+
+# Ogni sorgente che un giro precedente della revisione rifiutava: il gate
+# di oggi deve rifiutarli TUTTI. È la rete che avrebbe colto il giro 4, che
+# chiudendo gli escape YAML aveva riaperto sette vettori del giro 3.
+MERMAID_HISTORICAL_VECTORS = (
+    *MERMAID_SHAPE_BYPASSES,
+    *MERMAID_URL_STATEMENTS_REJECTED,
+    *MERMAID_SHAPE_DESYNC_BYPASSES,
+    *MERMAID_STATE_URL_STATEMENTS,
+    # giro 1: `}` dentro una stringa quotata
+    'flowchart LR\n  A@{ label: "}", img: "http://interno/x.png", w: 60 }\n  A-->B',
+    # giro 2: URL protocol-relative e apici singoli
+    'flowchart LR\n  A@{ img: "//interno/x.png" } --> B',
+    "flowchart LR\n  A@{ 'img': 'http://interno/x.png' } --> B",
+)
+
+
+@pytest.mark.parametrize("code", MERMAID_HISTORICAL_VECTORS)
+def test_the_gate_never_reopens_a_vector_a_previous_round_rejected(code: str):
+    """Unione, mai scambio: la regola di metodo del giro 5. Il confronto
+    completo con gli alberi `939f0a5` e `6c3e067` sui corpora dei
+    verificatori sta in sezione 14.8; questa è la sua parte eseguibile."""
+    assert frs.REGISTRY["mermaid"].validate(code)[0] is False, code
+
+
+# Falsi positivi AGGIUNTI dal giro 5, tutti misurati sul pre-render (i
+# sorgenti si rendono davvero) e dichiarati in sezione 15. Sono il prezzo
+# dell'unione: la scansione `img:`/`icon:` sul blocco grezzo non distingue
+# una chiave da una label che ne parla, e la segmentazione fedele a YAML
+# spezza dove le parentesi tonde non proteggono.
+MERMAID_GIRO5_FALSE_POSITIVES = (
+    'flowchart LR\n  A@{ label: "img: la sorgente" } --> B',
+    'flowchart LR\n  A@{ shape: rect, label: "icon: la sua icona" } --> B',
+    "flowchart LR\n  A@{ label: f(x, y) } --> B",
+    "stateDiagram-v2\n  [*] --> A\n  note right of A\n    click qui\n  end note",
+)
+
+
+@pytest.mark.parametrize("code", MERMAID_GIRO5_FALSE_POSITIVES)
+def test_the_false_positives_added_by_the_union_are_declared(code: str):
+    """Non nascosti dal codice: ognuno prende un 422 esplicito, con la
+    ragione nel messaggio. Le forme equivalenti che NON li innescano stanno
+    nel test successivo."""
+    ok, err = frs.REGISTRY["mermaid"].validate(code)
+    assert ok is False, code
+    assert err.startswith("mermaid_type_not_allowed"), err
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        # Le stesse frasi fuori da un blocco `@{ … }`, o con le virgolette
+        # al posto giusto, passano: il costo si evita riscrivendo la label.
+        'flowchart LR\n  A["img: sorgente"] --> B["icon: simbolo"]',
+        'flowchart LR\n  A@{ label: "f(x, y)", shape: rect } --> B',
+        "stateDiagram-v2\n  [*] --> A\n  note right of A: click qui",
+    ],
+)
+def test_the_equivalent_healthy_forms_still_pass(code: str):
+    assert frs.REGISTRY["mermaid"].validate(code) == (True, "")
 
 
 def test_a_quoted_at_brace_in_a_label_is_a_declared_false_positive():
@@ -499,6 +656,31 @@ def test_mermaid_render_batch_refuses_an_svg_with_an_external_resource(
     )
     assert out[:3] == [None, None, None]
     assert out[3] == "<svg><g>ok</g></svg>"
+
+
+@pytest.mark.parametrize(
+    ("svg", "rifiutato"),
+    [
+        ('<svg><a xlink:href="http://interno/x">t</a></svg>', True),
+        ('<svg><a href="https://interno/x" target="_blank">t</a></svg>', True),
+        ("<svg><a href=http://interno/x>t</a></svg>", True),  # valore non quotato
+        ('<svg><a xlink:href="  http://interno/x">t</a></svg>', True),
+        # Un ancoraggio interno non punta fuori: resta.
+        ('<svg><a href="#nodo1">t</a></svg>', False),
+        # `<animate>` comincia per `a` ma non è un `<a>`: lo prende la regola
+        # degli elementi, non questa (qui la scansione non deve confondersi).
+        ('<svg><g class="a href=x">t</g></svg>', False),
+        ('<svg><text>vedi a href="http://interno/x"</text></svg>', False),
+    ],
+)
+def test_svg_scan_catches_an_external_anchor(svg: str, rifiutato: bool):
+    """SEC-1 (giro 5): `<a xlink:href="http://…">` è il costrutto che
+    `click`, `link` e `links` producono. Non è una GET immediata, ma è un
+    collegamento verso l'host scelto dall'autore dentro il PDF consegnato e
+    dentro la vista lezione. Fino al giro 4 la scansione non lo cercava,
+    delegando al gate degli statement — e `stateDiagram` ci passava."""
+    trovato = frs._svg_external_ref(svg)
+    assert (trovato is not None) is rifiutato, trovato
 
 
 def test_mermaid_render_batch_keeps_labels_that_talk_about_css(

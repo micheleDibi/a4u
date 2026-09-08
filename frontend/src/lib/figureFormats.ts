@@ -265,6 +265,89 @@ export function sanitizeSvgElement(root: Element): void {
   }
 }
 
+// Elementi che un SVG Mermaid D8 non contiene mai (`htmlLabels: false`,
+// tipi ammessi dal gate) e che caricano o eseguono qualcosa: `<image>`
+// nasce solo dalle shape `img:`/`icon:` e da `sequenceDiagram properties`,
+// gli elementi SMIL possono riscrivere `href` o `on*` a tempo di
+// esecuzione. `<style>` NON è qui, al contrario di `SVG_FORBIDDEN_SELECTOR`:
+// Mermaid ci mette il tema (colori, font, tratti) e toglierlo
+// smonterebbe la figura; il suo CSS viene ripulito, non rimosso.
+// `<foreignObject>` non è qui perché con `htmlLabels: false` non compare
+// (misurato su tutti e 15 i tipi) e rimuoverlo cancellerebbe una label.
+const MERMAID_ACTIVE_SELECTOR = [
+  "script",
+  "iframe",
+  "image",
+  "set",
+  "animate",
+  "animateMotion",
+  "animateTransform",
+  "handler",
+].join(",");
+
+const CSS_IMPORT_RE = /@import[^;}]*;?/gi;
+const CSS_EXTERNAL_URL_RE = /url\(\s*(?!\s*['"]?#)[^)]*\)/gi;
+
+/** CSS di un `<style>` interno senza `@import` e senza `url(…)` esterni
+ *  (i riferimenti a un frammento `url(#id)` restano). */
+function sanitizeSvgCss(css: string): string {
+  return css.replace(CSS_IMPORT_RE, "").replace(CSS_EXTERNAL_URL_RE, "none");
+}
+
+/**
+ * Rende inerte l'SVG di Mermaid prima che entri nel documento: `<image>`
+ * ed elementi attivi rimossi, `<a>` sostituiti dai propri figli (il testo
+ * del nodo resta, il collegamento no), gestori `on*`, `href`/`xlink:href`
+ * non interni e `url(…)` esterni eliminati dagli attributi, `@import` e
+ * `url(…)` esterni tolti dal CSS interno. Muta l'elemento in loco.
+ *
+ * Non è un doppione del gate del PATCH: nell'editor e nella vista lezione
+ * il diagramma è reso da Mermaid nel browser di CHI GUARDA, senza passare
+ * dal backend, quindi un sorgente che il gate statico non riconosce
+ * farebbe partire la richiesta da quel browser (SEC-1, residuo del giro 4).
+ */
+export function sanitizeMermaidSvgElement(root: Element): void {
+  for (const el of Array.from(root.querySelectorAll(MERMAID_ACTIVE_SELECTOR))) {
+    el.remove();
+  }
+  for (const anchor of Array.from(root.querySelectorAll("a"))) {
+    anchor.replaceWith(...Array.from(anchor.childNodes));
+  }
+  for (const style of Array.from(root.querySelectorAll("style"))) {
+    const css = style.textContent ?? "";
+    const clean = sanitizeSvgCss(css);
+    if (clean !== css) style.textContent = clean;
+  }
+  for (const el of [root, ...Array.from(root.querySelectorAll("*"))]) {
+    for (const attr of Array.from(el.attributes)) {
+      const name = attr.name.toLowerCase();
+      const isHref = name === "href" || name.endsWith(":href");
+      if (
+        name.startsWith("on") ||
+        (isHref && !attr.value.trim().startsWith("#")) ||
+        hasExternalUrl(attr.value)
+      ) {
+        el.removeAttribute(attr.name);
+      }
+    }
+  }
+}
+
+/**
+ * `sanitizeMermaidSvgElement` sul markup che `mermaid.render` restituisce:
+ * la stringa è analizzata in un documento INERTE (`DOMParser`, nessun
+ * contesto di navigazione: le risorse non vengono scaricate) e riserializzata,
+ * così l'`<image href="http://…">` sparisce PRIMA di toccare il documento
+ * vivo. Stringa vuota se il markup non contiene un `<svg>`.
+ */
+export function sanitizeMermaidSvg(svg: string): string {
+  const doc = new DOMParser().parseFromString(svg || "", "text/html");
+  const root = doc.body.querySelector("svg");
+  if (!root) return "";
+  sanitizeMermaidSvgElement(root);
+  return new XMLSerializer().serializeToString(root);
+}
+
 export interface SvgSize {
   width: number;
   height: number;

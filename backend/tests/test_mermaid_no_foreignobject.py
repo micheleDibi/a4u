@@ -24,7 +24,7 @@ import pytest
 
 from app.services import figure_theme as theme
 from app.services import mermaid_prerender as mp
-from app.services.figure_render_service import REGISTRY
+from app.services.figure_render_service import REGISTRY, _svg_external_ref
 from tests.test_figure_render_service import MERMAID_BR_LINE_BREAKS
 
 _BR_CODE = "flowchart LR\n  A[Riga 1%sRiga 2] --> B"
@@ -70,6 +70,17 @@ def test_d8_samples_render_as_text_without_foreignobject(rendered, kind: str):
     assert svg is not None, kind
     assert "<foreignObject" not in svg, kind
     assert "<text" in svg, kind
+
+
+@pytest.mark.parametrize("kind", list(theme.MERMAID_D8_SAMPLES))
+def test_the_svg_scan_has_no_false_positive_on_the_d8_samples(rendered, kind: str):
+    """Controprova della scansione dell'SVG, allargata agli `<a href>`
+    esterni nel giro 5: nessuno dei quindici campioni D8 reso dal
+    pre-render la fa scattare, quindi allargarla non fa sparire figure sane
+    dall'export."""
+    svg = rendered[kind]
+    assert svg is not None, kind
+    assert _svg_external_ref(svg) is None, kind
 
 
 def test_br_in_a_label_is_a_line_break_not_html(rendered):
@@ -186,6 +197,29 @@ _EXTERNAL_RESOURCE_SOURCES: dict[str, tuple[str, str]] = {
     "flowchart_click_href": (
         'flowchart LR\n  A --> B\n  click A href "' + _INVALID_URL + '" "t"',
         _ANCHOR,
+    ),
+    # --- giro 5: le vie che il giro 4 aveva riaperto o non vedeva
+    "state_v2_click_href": (
+        'stateDiagram-v2\n  [*] --> A\n  click A href "' + _INVALID_URL + '"',
+        _ANCHOR,
+    ),
+    "state_v1_click_href": (
+        'stateDiagram\n  [*] --> A\n  click A href "' + _INVALID_URL + '"',
+        _ANCHOR,
+    ),
+    # A capo DENTRO la stringa: il lexer lo sostituisce con `<br/>`, quindi
+    # js-yaml legge la forma flow e la chiave `img`, mentre il gate del
+    # giro 4 leggeva il sorgente grezzo e vedeva la sola chiave `label`.
+    "shape_img_after_newline_in_string": (
+        'flowchart LR\n  A@{ label: "a\nb", img: "' + _PIXEL_DATA_URI + '", w: 20, h: 20 }\n'
+        "  A --> B",
+        "<image",
+    ),
+    # Parentesi tonda non bilanciata: profondità per lo splitter del gate,
+    # scalare per js-yaml.
+    "shape_img_after_open_paren": (
+        'flowchart LR\n  A@{ label: ( , img: "' + _PIXEL_DATA_URI + '", w: 20, h: 20 }\n  A --> B',
+        "<image",
     ),
 }
 

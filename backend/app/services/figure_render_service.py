@@ -51,7 +51,6 @@ import weakref
 from collections import OrderedDict
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from functools import lru_cache
-from itertools import chain
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -319,6 +318,14 @@ _HTML_TAG_RE = re.compile(
 # che puntano a una risorsa — restano fuori, e con loro ogni chiave
 # scritta in una forma diversa da quella piana (`"\\x69mg"`, `? img`,
 # `<<`, un alias `*a`).
+#
+# Il gate è dichiaratamente BEST-EFFORT (sezione 15): rincorre un parser
+# vero (lexer con stati + js-yaml) e il giro 4 lo ha perso sostituendo la
+# scansione larga del giro 3 con la sola lista chiusa, riaprendo sette
+# vettori. Dal giro 5 i controlli si SOMMANO — lista chiusa delle chiavi,
+# scansione `img:`/`icon:` sul blocco grezzo (giro 3) e schemi di URL —
+# e basta che uno segnali per rifiutare: nessun sorgente rifiutato da un
+# giro precedente può tornare ammesso.
 MERMAID_SHAPE_KEYS = frozenset(
     {
         "shape",
@@ -335,6 +342,25 @@ MERMAID_SHAPE_KEYS = frozenset(
     }
 )
 _MERMAID_SHAPE_URL_RE = re.compile(r"\b(?:https?|file|data|blob|ftp):", re.IGNORECASE)
+# Rete del giro 3, rimessa dal giro 5: le due chiavi che puntano a una
+# risorsa, cercate come TESTO sul blocco grezzo. Non vede gli escape YAML
+# (`"\\x69mg"`), ma vede le forme che la segmentazione in voci non riesce a
+# spezzare — una `,` dentro una riga di una mappa in forma blocco, che per
+# js-yaml è un errore di indentazione ma per il gate era una voce sola.
+# Sommata alla lista chiusa, non sostituita ad essa.
+_MERMAID_SHAPE_RESOURCE_KEY_RE = re.compile(r"\b(?:img|icon)\s*:", re.IGNORECASE)
+# Sostituzione che il lexer applica al testo DENTRO le virgolette dello
+# stato `shapeDataStr` (regola 10 di `chunk-SHT3W25Y.mjs`:
+# `yytext.replace(/\n\s*/g, "<br/>")`), prima che `addVertex` decida se
+# passare a js-yaml una mappa in forma flow o in forma blocco.
+_MERMAID_SHAPE_STR_NEWLINE_RE = re.compile(r"\n\s*")
+# Indicatori di collezione di YAML in forma flow: `(` NON è fra questi (per
+# js-yaml `label: (` è lo scalare `(`), quindi non protegge le virgole che
+# seguono. Gli statement invece passano dal parser di Mermaid, dove `(` apre
+# la sezione di una label (`A(fai clic; qui)`).
+_YAML_FLOW_BRACKETS = "[{"
+_MERMAID_STATEMENT_BRACKETS = "[({"
+_BRACKET_PAIRS = {"[": "]", "(": ")", "{": "}"}
 # Statement che attaccano a un nodo un URL, un'icona o una callback: non
 # passano dalle shape e nessun gate li vedeva (SEC-1, terza via). Elenco
 # MISURATO rendendo ogni parola chiave in ognuna delle 15 famiglie D8 e
@@ -346,24 +372,44 @@ _MERMAID_SHAPE_URL_RE = re.compile(r"\b(?:https?|file|data|blob|ftp):", re.IGNOR
 # è il nome di un'entità, in `mindmap` e `timeline` il testo di un nodo —
 # e non va rifiutata. Il valore booleano dice se la parola chiave è
 # case-insensitive: lo è nel lexer di `sequenceDiagram` (`PROPERTIES`
-# funziona), NON in quello di `flowchart` e `classDiagram`, dove
-# `Link --> Other` è una classe legittima e `CLICK …` non parsa.
+# funziona) e in quello di `stateDiagram` (regole `/^(?:click\b)/i` e
+# `/^(?:href\b)/i` di `chunk-IMKFNOWR.mjs`, dove `CLICK A HREF "…"` rende),
+# NON in quello di `flowchart` e `classDiagram`, dove `Link --> Other` è
+# una classe legittima e `CLICK …` non parsa.
+# `stateDiagram` è entrato nella mappa al giro 5: `click A href "http://…"`
+# arrivava fino al PDF come `<a xlink:href>` (misurato in entrambe le
+# scritture del tipo). Uno stato che si chiama davvero `click` non esiste —
+# `stateDiagram-v2 / click --> B` non parsa — quindi la coppia non ha falsi
+# positivi renderizzabili.
 MERMAID_URL_STATEMENTS: dict[str, tuple[frozenset[str], bool]] = {
     "flowchart": (frozenset({"click"}), False),
     "graph": (frozenset({"click"}), False),
     "classDiagram": (frozenset({"click", "link"}), False),
     "sequenceDiagram": (frozenset({"link", "links", "properties", "details"}), True),
+    "stateDiagram": (frozenset({"click"}), True),
+    "stateDiagram-v2": (frozenset({"click"}), True),
 }
 _MERMAID_FIRST_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*")
 # Costrutti che caricano una risorsa esterna in un SVG Mermaid già reso:
 # nessun sorgente D8 che passi il gate li produce, quindi la loro presenza
 # è sempre il segno di un contenuto che lo ha aggirato. Applicati SOLO al
-# contenuto dei tag e ai blocchi `<style>` (vedi `_svg_external_ref`). Un
-# `<a xlink:href>` non è qui: un collegamento non è una richiesta, ed è il
-# gate degli statement a impedirne la nascita (`MERMAID_URL_STATEMENTS`).
+# contenuto dei tag e ai blocchi `<style>` (vedi `_svg_external_ref`).
 _SVG_EXTERNAL_REF_RE = re.compile(
     r"<(?:image|script|iframe)\b|url\(\s*[\'\"]?\s*(?:https?:|file:|//)|@import",
     re.IGNORECASE,
+)
+# `<a xlink:href="http://…">`, prodotto dagli statement `click`, `link` e
+# `links`. Non è una richiesta immediata come `<image>`, ma è un
+# collegamento verso un host scelto dall'autore che finisce nel PDF
+# consegnato e nella vista lezione, dove un lettore lo segue. Fino al
+# giro 4 la scansione non lo cercava perché «è il gate degli statement a
+# impedirne la nascita»: era una delega, non una difesa, e `stateDiagram`
+# ci passava in mezzo (giro 5). L'`href` esterno è riconosciuto come in
+# `svg_normalize`: valore quotato che non inizia per `#`, oppure non
+# quotato e non frammento; `\b` prima di `href` copre anche `xlink:href`.
+_SVG_EXTERNAL_ANCHOR_RE = re.compile(
+    r"^<\s*(?:[A-Za-z_][\w.-]*:)?a\b.*?\bhref\s*=\s*(?:[\"']\s*(?!#)|(?![\"'\s#]))",
+    re.IGNORECASE | re.DOTALL,
 )
 
 
@@ -377,8 +423,14 @@ def _svg_external_ref(svg: str) -> str | None:
     sparire dall'export una figura legittima la cui label parla di CSS —
     visibile nell'editor (il render client-side non scandisce nulla) e
     sostituita da un `<pre>` in dispensa, slide e video."""
-    for region in chain(iter_tag_contents(svg), iter_style_bodies(svg)):
-        found = _SVG_EXTERNAL_REF_RE.search(region)
+    for tag in iter_tag_contents(svg):
+        found = _SVG_EXTERNAL_REF_RE.search(tag)
+        if found is not None:
+            return found.group(0)
+        if _SVG_EXTERNAL_ANCHOR_RE.search(tag) is not None:
+            return "<a href esterno>"
+    for css in iter_style_bodies(svg):
+        found = _SVG_EXTERNAL_REF_RE.search(css)
         if found is not None:
             return found.group(0)
     return None
@@ -417,28 +469,67 @@ def _mermaid_shape_blocks(code: str) -> Iterator[str]:
         i = j
 
 
+def _mermaid_shape_metadata(block: str) -> str:
+    """Testo che il lexer consegna ad `addVertex` per un blocco `@{ … }`.
+
+    Non è il sorgente grezzo: nello stato `shapeDataStr` la regola 10 del
+    lexer sostituisce `/\\n\\s*/g` con `<br/>`, quindi un a capo scritto
+    DENTRO le virgolette sparisce dal `metadata` — e con lui la scelta
+    della forma, perché `addVertex` guarda `metadata.includes("\\n")` per
+    decidere se avvolgere il testo in `{ … }` (mappa flow, voci separate
+    da virgola) o passarlo così com'è (mappa blocco, una voce per riga).
+    Leggere il sorgente grezzo desincronizzava il gate dal parser: in
+    `A@{ label: "a\\nb", img: "http://…" }` il gate vedeva la forma blocco
+    e una voce sola (chiave `label`, ammessa) mentre js-yaml leggeva la
+    forma flow e la chiave `img` (SEC-1, riaperto dal giro 4, misurato con
+    la GET al listener e l'`<image href>` nell'SVG).
+
+    I delimitatori restano fuori: il lexer azzera `yytext` su `@{`
+    (regola 7) e non restituisce la `}` di chiusura (regola 12). La `}`
+    finale si toglie solo se le virgolette del blocco sono bilanciate:
+    se non lo sono quella `}` sta dentro una stringa ed è testo."""
+    inner = block[2:]
+    if inner.endswith("}") and inner.count('"') % 2 == 0:
+        inner = inner[:-1]
+    out: list[str] = []
+    quoted, start = False, 0
+    for i, ch in enumerate(inner):
+        if ch != '"':
+            continue
+        chunk = inner[start:i]
+        out.append(_MERMAID_SHAPE_STR_NEWLINE_RE.sub("<br/>", chunk) if quoted else chunk)
+        out.append('"')
+        quoted, start = not quoted, i + 1
+    tail = inner[start:]
+    out.append(_MERMAID_SHAPE_STR_NEWLINE_RE.sub("<br/>", tail) if quoted else tail)
+    return "".join(out)
+
+
 def _mermaid_shape_entries(block: str) -> Iterator[str]:
     """Voci di primo livello di un blocco `@{ … }` (delimitatori esclusi).
 
-    Segue la stessa biforcazione di `addVertex`: senza a capo Mermaid
+    Segue la stessa biforcazione di `addVertex` sul `metadata` che il
+    lexer produce (`_mermaid_shape_metadata`): senza a capo Mermaid
     avvolge il contenuto in `{ … }` e js-yaml lo legge come mappa in
     forma flow (voci separate da virgola); con almeno un a capo lo legge
     come mappa in forma blocco (una voce per riga). Virgolette (doppie e
-    singole) e parentesi annidate non separano. Le voci vuote e i
-    commenti `#` sono saltati, come nel gate del frontmatter."""
-    inner = block[2:]
-    if inner.endswith("}"):
-        inner = inner[:-1]
-    seps = "\n" if "\n" in inner else ","
-    for entry in _split_top_level(inner, seps):
+    singole) e collezioni flow annidate (`[`, `{`) non separano; le
+    parentesi tonde sì, perché per YAML non sono un indicatore. Le voci
+    vuote e i commenti `#` sono saltati, come nel gate del frontmatter."""
+    metadata = _mermaid_shape_metadata(block)
+    seps = "\n" if "\n" in metadata else ","
+    for entry in _split_top_level(metadata, seps, brackets=_YAML_FLOW_BRACKETS):
         stripped = entry.strip()
         if stripped and not stripped.startswith("#"):
             yield stripped
 
 
-def _split_top_level(text: str, separators: str) -> Iterator[str]:
+def _split_top_level(
+    text: str, separators: str, *, brackets: str = _MERMAID_STATEMENT_BRACKETS
+) -> Iterator[str]:
     """Spezza `text` sui separatori che stanno fuori dalle virgolette
-    (doppie e singole) e fuori da parentesi annidate `[`, `(`, `{`."""
+    (doppie e singole) e fuori dalle parentesi annidate di `brackets`."""
+    closers = {_BRACKET_PAIRS[b] for b in brackets}
     depth, quote, start = 0, "", 0
     for i, ch in enumerate(text):
         if quote:
@@ -446,9 +537,9 @@ def _split_top_level(text: str, separators: str) -> Iterator[str]:
                 quote = ""
         elif ch in "\"'":
             quote = ch
-        elif ch in "[({":
+        elif ch in brackets:
             depth += 1
-        elif ch in "])}":
+        elif ch in closers:
             depth = max(0, depth - 1)
         elif depth == 0 and ch in separators:
             yield text[start:i]
@@ -609,10 +700,14 @@ def mermaid_static_gate(code: str) -> tuple[str, str]:
             return (MERMAID_GATE_HTML, m.group(0))
     # Le direttive `@{ … }` possono occupare più righe: si guarda il corpo
     # intero, senza i commenti.
+    # Unione dei tre controlli, mai uno scambio: basta che uno segnali.
     for block in _mermaid_shape_blocks("\n".join(lines)):
         bad_key = _mermaid_shape_violation(block)
         if bad_key is not None:
             return (MERMAID_GATE_RESOURCE, bad_key)
+        resource_key = _MERMAID_SHAPE_RESOURCE_KEY_RE.search(block)
+        if resource_key is not None:
+            return (MERMAID_GATE_RESOURCE, resource_key.group(0).strip())
         url = _MERMAID_SHAPE_URL_RE.search(block)
         if url is not None:
             return (MERMAID_GATE_RESOURCE, url.group(0))
