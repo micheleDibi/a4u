@@ -1864,9 +1864,12 @@ Decisioni prese in Fase B (A1-A16) e nella ripresa del 7 settembre
 - **A21 — `courseRef` via React context** (`CourseRefContext` fornito dai
   due container) invece di cinque livelli di prop-drilling per lato;
   `LessonContentView` resta memoizzato sul solo `content`.
-- **A22 — `MermaidEditor.TEMPLATES` non riusa `MERMAID_D8_SAMPLES`**: i 7
-  template restano (8 tipi senza chiave i18n e 6 id da rinominare non
-  valgono il costo).
+- **A22 — `MermaidEditor.TEMPLATES` non riusa `MERMAID_D8_SAMPLES`**: i
+  campioni sono minimi per il test di `foreignObject`, i template
+  dell'editor sono didattici. L'assunzione regge ancora dopo il
+  completamento del catalogo (8 settembre 2026, sezione 16): i template
+  coprono tutti e quindici i tipi D8 ma restano sorgenti propri, con le
+  proprie chiavi i18n.
 - **A23 — Figura non renderizzabile all'export = errore visibile** nei log
   (`figure_render_fallback`), sezione 8.5 e rischi residui.
 - **A24 — Esito dello script di rivalidazione.** Nessun DB locale ha asset
@@ -1919,7 +1922,9 @@ Decisioni prese in Fase B (A1-A16) e nella ripresa del 7 settembre
   comparatore `memo` di `LessonContentView`).
 - **`TEMPLATES` Mermaid non riusano i campioni D8** (A22): i campioni sono
   minimi per il test di `foreignObject`, i template dell'editor sono
-  didattici; il riuso avrebbe costretto 8 chiavi i18n e 6 rinomine.
+  didattici. Le 8 chiavi i18n che allora avevano sconsigliato il riuso
+  esistono dal completamento del catalogo (sezione 16), ma i due insiemi
+  restano separati per ragione, non per costo.
 - **Gate statico duro per Mermaid al PATCH** (A15) invece del parse JS:
   un Chromium per richiesta HTTP non è accettabile; il parse vive già
   nell'editor con la stessa major.
@@ -3257,3 +3262,74 @@ rilievo che li ha resi espliciti.
   il placeholder «[immagine mancante: …]» del PDF resta italiano in ogni
   lingua e il fix AI comprime la lingua del corso a it/en (A4). Tutte e tre
   sono identiche su `main`.
+
+## 16. Catalogo dei modelli degli editor (8 settembre 2026)
+
+Richiesta del docente dopo la prova in produzione: «per i grafici
+Vega-Lite vedo pochi template, ne possiamo aggiungere altri? Tutti i
+diagrammi possibilmente… Mancano parecchi grafici come quelli a torta.
+Vorrei che ci fossero proprio tutti». Il menu «Inserisci template…» dei
+tre editor testuali passa da 16 a 47 modelli.
+
+| Editor | Prima | Ora | Copertura |
+|---|---|---|---|
+| `VegaLiteEditor.tsx` | 5 | 24 | otto famiglie d'uso, torta e ciambella comprese |
+| `MermaidEditor.tsx` | 7 | 15 | **tutti** i tipi di `MERMAID_D8_TYPES` |
+| `DotEditor.tsx` | 4 | 8 | gerarchie, flussi, relazioni, modelli, architetture |
+
+**Ordinamento per famiglia d'uso, non alfabetico.** `SourceTemplate`
+guadagna `groupKey` (chiave i18n della famiglia) e `FigureSourceEditor`
+esporta `TemplateSelect`, il `Select` che raggruppa i modelli consecutivi
+con lo stesso `groupKey` in un `SelectGroup` con la propria `SelectLabel`.
+Lo usa anche `MermaidEditor`, che ha un layout proprio e non passa da
+`FigureSourceEditor`. Le famiglie sono: Vega-Lite — confronto fra
+categorie, parte sul tutto, distribuzione, andamento nel tempo,
+correlazione, matrice, incertezza, graduatoria; Mermaid — processi e
+flussi, struttura e modelli, organizzazione dei concetti, quantità e
+ripartizioni, pianificazione e decisione; DOT — gerarchie e alberi,
+flussi e dipendenze, relazioni e reti, modelli e strutture, architetture.
+
+**Ogni modello è dimostrato, non presunto** —
+`backend/tests/test_frontend_figure_templates.py` estrae i modelli dai
+sorgenti TypeScript e li fa passare dal validatore e dal renderer di
+produzione: Vega-Lite da `REGISTRY["vegalite"].validate(deep=True)` (schema
+v6 + regole D5 + criterio 10 + `vl_convert`), Mermaid dal gate statico D8 e
+dal pre-render Chromium con **zero** `<foreignObject>`, DOT da
+`REGISTRY["dot"].validate(deep=True)` e dal binario. Il test verifica anche
+che ogni modello e ogni famiglia abbiano la chiave in `it.json` **e** in
+`en.json`, che nessuna chiave `templates.*` resti orfana nei locale, che i
+gruppi siano contigui nel menu e che i quindici tipi D8 siano coperti;
+tre controprove (`line` senza `clip`, `image=` in DOT, `journey`) provano
+che l'oracolo fallirebbe davvero su un modello rotto. Motivo: un modello
+scelto dal menu e poi rifiutato al salvataggio con un 422 è un difetto
+peggiore della sua assenza.
+
+Note di merito emerse scrivendo i modelli:
+
+- **Torta e ciambella passano le regole D5**, verificato eseguendo il
+  validatore e non deducendolo: `arc` non è fra i mark che richiedono
+  `clip` (`line | area | point | trail`) e `theta`/`color` non sono canali
+  `x`/`y`, quindi non serve `scale.domain`. La ciambella è lo stesso mark
+  con `innerRadius`.
+- **Parentesi angolari nelle label Mermaid**: nel flowchart si scrivono
+  come entità (`&lt;`), altrimenti Mermaid le legge come tag e cancella il
+  testo — difetto visto in produzione su un diagramma con i generici Java.
+  Nel diagramma delle classi la forma giusta è quella nativa `List~String~`,
+  che Mermaid rende come `List<String>`. Entrambi i modelli portano il caso
+  ed entrambi sono fissati da un test sull'SVG reso.
+- **Il violino usa `transform.density` con `encoding.column`**: passa le
+  regole D5 (nessun `params`, `clip: true` sull'area, `scale.domain` sui
+  due assi quantitativi) e sta in 393 px con `width: 140` per faccetta.
+- **La mappa di calore dichiara `scale.scheme` sul colore**: il tema
+  inietta la sola scala categoriale (`range.category`), quindi senza
+  schema esplicito una scala continua userebbe il default di Vega.
+- **I dati sono dichiaratamente illustrativi**: ogni modello con dati
+  inventati lo dice nella `title` («dati illustrativi») o lo rende
+  evidente dai nomi dei campi, come chiede il registro del prodotto.
+
+Non incluso, con il motivo misurato: nessun modello Vega-Lite che tracci
+una funzione matematica (`data.sequence` + `calculate`), perché
+l'euristica del criterio 10 lo rifiuta per progetto e quel contenuto va nel
+formato `function`; nessun tipo Mermaid fuori da D8 (`journey`,
+`gitGraph`, `kanban`, `packet-beta`, `architecture-beta`), che il gate
+rifiuta.

@@ -488,17 +488,26 @@ la sorgente delle figure:
   relations, operators, greek, matrices) — click inserisce token al
   cursore. Errori LaTeX visibili nel preview (rosso KaTeX).
 - **`MermaidEditor.tsx`** — split textarea + preview live `<MermaidDiagram>`
-  con debounce 500ms. Dropdown **template** (`flowchart`, `sequence`,
-  `state`, `er`, `mindmap`, `class`, `gantt`) sostituisce il
-  contenuto con uno scheletro funzionante (i template restano distinti dai
-  campioni D8 dei test, A22).
+  con debounce 500ms. Dropdown **template** con un modello per ciascuno dei
+  **quindici** tipi ammessi da D8, raggruppati per famiglia d'uso (processi
+  e flussi: `flowchart`, `sequence`, `state`; struttura e modelli: `class`,
+  `er`, `block`; organizzazione dei concetti: `mindmap`, `timeline`,
+  `treemap`; quantità e ripartizioni: `pie`, `xychart`, `radar`, `sankey`;
+  pianificazione e decisione: `gantt`, `quadrant`). La scelta sostituisce
+  il contenuto con uno scheletro funzionante; i template restano distinti
+  dai campioni D8 dei test (A22).
 - **`VegaLiteEditor.tsx`** / **`DotEditor.tsx`** — costruiti su
   `FigureSourceEditor` (textarea + anteprima client con
-  `useDebouncedValue`, select dei template): template accademici che
-  rispettano le regole D5 del validatore (Vega-Lite: `data.values` ≤ 200
-  righe, `clip: true`, `scale.domain`, una sola `title`; DOT: nessun
-  attributo `image`/`URL`/`href`, nessun blocco `graph/node/edge [` così
-  il tema è iniettato per intero). L'errore del parser client va sotto
+  `useDebouncedValue`, select dei template raggruppato per famiglia
+  d'uso): template accademici che rispettano le regole D5 del validatore
+  (Vega-Lite, 24 modelli — confronto fra categorie, parte sul tutto
+  (torta e ciambella), distribuzione, andamento nel tempo, correlazione,
+  matrice, incertezza, graduatoria — con `data.values` ≤ 200 righe,
+  `clip: true`, `scale.domain`, una sola `title`; DOT, 8 modelli —
+  gerarchie, flussi e dipendenze, relazioni non orientate, modelli e
+  strutture, architetture — senza attributo `image`/`URL`/`href` e senza
+  blocco `graph/node/edge [` così il tema è iniettato per intero).
+  L'errore del parser client va sotto
   l'anteprima; il 422 per-asset del PATCH (`meta.errors`) in testa alla
   card (pattern `LatexEditor`).
 - **`FunctionEditor.tsx`** — modulo a campi per la spec `FunctionFigureSpec`

@@ -1181,9 +1181,15 @@ un'eccezione che rompa la pagina.
 - **Props**: `{ value, onChange, disabled?, className?, rows?,
   serverError?, i18nPrefix, templates: SourceTemplate[], placeholder,
   renderPreview: (source) => ReactNode, debounceMs? }` con
-  `SourceTemplate { id, labelKey, code }`.
+  `SourceTemplate { id, labelKey, groupKey?, code }`.
+- Esporta anche `TemplateSelect` (`{ templates, placeholder, onPick,
+  disabled? }`), il `Select` dei template raggruppato per **famiglia
+  d'uso**: i modelli consecutivi che condividono `groupKey` formano un
+  `SelectGroup` con la propria `SelectLabel`, così il menu si legge per uso
+  e non in ordine alfabetico. Lo usa anche `MermaidEditor`, che non è
+  costruito su `FigureSourceEditor`.
 - Base condivisa di `VegaLiteEditor` e `DotEditor`: textarea monospace
-  del sorgente, `useDebouncedValue` per l'anteprima, `Select` dei template
+  del sorgente, `useDebouncedValue` per l'anteprima, `TemplateSelect`
   (chiavi i18n sotto `i18nPrefix`, es.
   `courses.lessonsContent.editorUI.vegalite`), slot per l'anteprima
   (`Suspense` + `FigureLoading`, reso da `renderPreview`) e per l'errore
@@ -1193,14 +1199,28 @@ un'eccezione che rompa la pagina.
 ### `VegaLiteEditor.tsx` / `DotEditor.tsx`
 
 - **Props**: `{ value, onChange, disabled?, className?, rows?, error? }`.
-- Template accademici conformi alle regole del validatore backend
-  (Vega-Lite: istogramma, barre con errore, scatter, boxplot, serie
-  temporale — `data.values` ≤ 200 righe, `clip: true`, `scale.domain`,
-  una sola `title`, niente `tooltip`/`selection`/`config`; DOT: albero,
-  grafo diretto, automa, cluster — nessun attributo `image`/`URL`/`href`,
-  nessun blocco `graph/node/edge [` così il tema è iniettato per intero).
-  I template sono contenuto didattico (etichette in italiano nei template
-  literal), non interfaccia (A22).
+- Template accademici conformi alle regole del validatore backend,
+  ordinati per famiglia d'uso.
+  - **Vega-Lite (24)** — confronto fra categorie (barre verticali,
+    orizzontali, raggruppate, impilate, impilate normalizzate); parte sul
+    tutto (torta, ciambella); distribuzione (istogramma, boxplot, punti
+    impilati, violino); andamento nel tempo (linea, linee multiple, area,
+    aree impilate, linea a gradini, serie temporale); correlazione
+    (dispersione, bolle); matrice (mappa di calore); incertezza (barre con
+    errore, banda di confidenza); graduatoria (barre ordinate, lollipop).
+    Tutti con `data.values` ≤ 200 righe, `clip: true` sui mark che lo
+    richiedono, `scale.domain` sugli assi quantitativi, una sola `title`,
+    niente `tooltip`/`selection`/`params`/`config`.
+  - **DOT (8)** — albero, albero binario di ricerca, grafo diretto, grafo
+    delle dipendenze, grafo non orientato, automa a stati finiti, nodi a
+    record, grafo con raggruppamenti: nessun attributo
+    `image`/`URL`/`href`, nessun blocco `graph/node/edge [` così il tema è
+    iniettato per intero.
+- I template sono contenuto didattico (etichette in italiano nei template
+  literal), non interfaccia (A22). Ognuno è provato da
+  `backend/tests/test_frontend_figure_templates.py`, che li estrae da
+  questi file e li fa passare dal validatore e dal renderer di produzione:
+  un modello del menu non può produrre un 422 al salvataggio.
 
 ### `FunctionEditor.tsx`
 

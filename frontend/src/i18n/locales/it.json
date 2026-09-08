@@ -1008,14 +1008,29 @@
           "previewEmpty": "Scrivi del codice (o scegli un template) per vedere l'anteprima",
           "loading": "Rendering del diagramma…",
           "insertTemplate": "Inserisci template…",
+          "groups": {
+            "process": "Processi e flussi",
+            "structure": "Struttura e modelli",
+            "knowledge": "Organizzazione dei concetti",
+            "quantities": "Quantità e ripartizioni",
+            "planning": "Pianificazione e decisione"
+          },
           "templates": {
             "flowchart": "Diagramma di flusso",
             "sequence": "Diagramma di sequenza",
             "state": "Diagramma di stato",
-            "er": "Diagramma ER",
-            "mindmap": "Mappa mentale",
             "class": "Diagramma delle classi",
-            "gantt": "Gantt"
+            "er": "Diagramma ER",
+            "block": "Diagramma a blocchi",
+            "mindmap": "Mappa mentale",
+            "timeline": "Linea del tempo",
+            "treemap": "Mappa ad albero (treemap)",
+            "pie": "Grafico a torta",
+            "xychart": "Grafico XY (barre e linea)",
+            "radar": "Diagramma radar",
+            "sankey": "Diagramma di Sankey",
+            "gantt": "Diagramma di Gantt",
+            "quadrant": "Matrice a quadranti"
           }
         },
         "vegalite": {
@@ -1024,12 +1039,41 @@
           "preview": "Anteprima",
           "previewEmpty": "Scrivi la specifica (o scegli un template) per vedere l'anteprima",
           "insertTemplate": "Inserisci template…",
+          "groups": {
+            "comparison": "Confronto fra categorie",
+            "partToWhole": "Parte sul tutto",
+            "distribution": "Distribuzione",
+            "trend": "Andamento nel tempo",
+            "correlation": "Correlazione",
+            "matrix": "Matrice",
+            "uncertainty": "Incertezza",
+            "ranking": "Graduatoria"
+          },
           "templates": {
+            "barsVertical": "Barre verticali",
+            "barsHorizontal": "Barre orizzontali",
+            "barsGrouped": "Barre raggruppate",
+            "barsStacked": "Barre impilate",
+            "barsNormalized": "Barre impilate normalizzate",
+            "pie": "Grafico a torta",
+            "donut": "Grafico a ciambella",
             "histogram": "Istogramma",
-            "barsWithError": "Barre con barre di errore",
-            "scatter": "Diagramma di dispersione",
             "boxplot": "Diagramma a scatola (boxplot)",
-            "timeSeries": "Serie temporale"
+            "dotPlot": "Grafico a punti impilati",
+            "violin": "Grafico a violino",
+            "line": "Linea singola",
+            "multiLine": "Linee multiple",
+            "area": "Area",
+            "stackedArea": "Aree impilate",
+            "stepLine": "Linea a gradini",
+            "timeSeries": "Serie temporale",
+            "scatter": "Diagramma di dispersione",
+            "bubble": "Grafico a bolle",
+            "heatmap": "Mappa di calore",
+            "barsWithError": "Barre con barre di errore",
+            "confidenceBand": "Banda di confidenza",
+            "barsRanked": "Barre ordinate",
+            "lollipop": "Grafico a bastoncini (lollipop)"
           }
         },
         "dot": {
@@ -1038,10 +1082,21 @@
           "preview": "Anteprima",
           "previewEmpty": "Scrivi il sorgente (o scegli un template) per vedere l'anteprima",
           "insertTemplate": "Inserisci template…",
+          "groups": {
+            "hierarchy": "Gerarchie e alberi",
+            "flow": "Flussi e dipendenze",
+            "relations": "Relazioni e reti",
+            "models": "Modelli e strutture",
+            "architecture": "Architetture"
+          },
           "templates": {
             "tree": "Albero",
+            "binaryTree": "Albero binario di ricerca",
             "digraph": "Grafo diretto",
+            "pipeline": "Grafo delle dipendenze",
+            "undirected": "Grafo non orientato",
             "automaton": "Automa a stati finiti",
+            "record": "Nodi a record (struttura dati)",
             "cluster": "Grafo con raggruppamenti"
           }
         },

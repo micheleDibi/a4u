@@ -4,7 +4,9 @@ import { useTranslation } from "react-i18next";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -28,7 +30,75 @@ import { FigureLoading } from "./FigureFrame";
 export interface SourceTemplate {
   id: string;
   labelKey: string;
+  /**
+   * Chiave i18n della FAMIGLIA D'USO (confronto, distribuzione, andamento…):
+   * il menu raggruppa i template consecutivi che la condividono, così il
+   * docente cerca per uso e non per nome. I template senza `groupKey`
+   * restano in un gruppo senza intestazione, nell'ordine di dichiarazione.
+   */
+  groupKey?: string;
   code: string;
+}
+
+interface TemplateGroup {
+  key: string;
+  items: SourceTemplate[];
+}
+
+/** Gruppi consecutivi per `groupKey`, nell'ordine di dichiarazione. */
+function groupTemplates(templates: readonly SourceTemplate[]): TemplateGroup[] {
+  const out: TemplateGroup[] = [];
+  for (const tpl of templates) {
+    const key = tpl.groupKey ?? "";
+    const last = out.at(-1);
+    if (last && last.key === key) last.items.push(tpl);
+    else out.push({ key, items: [tpl] });
+  }
+  return out;
+}
+
+export interface TemplateSelectProps {
+  templates: readonly SourceTemplate[];
+  /** Testo già tradotto del segnaposto («Inserisci template…»). */
+  placeholder: string;
+  onPick: (id: string) => void;
+  disabled?: boolean;
+}
+
+/**
+ * Select dei template raggruppato per famiglia d'uso, condiviso da
+ * `FigureSourceEditor` (Vega-Lite, DOT) e da `MermaidEditor`.
+ */
+export function TemplateSelect({
+  templates,
+  placeholder,
+  onPick,
+  disabled = false,
+}: TemplateSelectProps) {
+  const { t } = useTranslation();
+  return (
+    <Select onValueChange={onPick} disabled={disabled}>
+      <SelectTrigger className="h-7 w-56 text-xs">
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectContent>
+        {groupTemplates(templates).map((group) => (
+          <SelectGroup key={group.key || "ungrouped"}>
+            {group.key ? (
+              <SelectLabel className="text-xs font-semibold text-muted-foreground">
+                {t(group.key)}
+              </SelectLabel>
+            ) : null}
+            {group.items.map((tpl) => (
+              <SelectItem key={tpl.id} value={tpl.id}>
+                {t(tpl.labelKey)}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        ))}
+      </SelectContent>
+    </Select>
+  );
 }
 
 export interface FigureSourceEditorProps {
@@ -81,18 +151,12 @@ export function FigureSourceEditor({
         <span className="text-xs font-medium text-muted-foreground">
           {t(`${i18nPrefix}.title`)}
         </span>
-        <Select onValueChange={applyTemplate} disabled={disabled}>
-          <SelectTrigger className="h-7 w-56 text-xs">
-            <SelectValue placeholder={t(`${i18nPrefix}.insertTemplate`)} />
-          </SelectTrigger>
-          <SelectContent>
-            {templates.map((tpl) => (
-              <SelectItem key={tpl.id} value={tpl.id}>
-                {t(tpl.labelKey)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <TemplateSelect
+          templates={templates}
+          placeholder={t(`${i18nPrefix}.insertTemplate`)}
+          onPick={applyTemplate}
+          disabled={disabled}
+        />
       </div>
       {serverError && (
         <div className="m-2 rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive">

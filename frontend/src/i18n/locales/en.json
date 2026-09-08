@@ -1008,14 +1008,29 @@
           "previewEmpty": "Type some code (or pick a template) to see the preview",
           "loading": "Rendering diagram…",
           "insertTemplate": "Insert template…",
+          "groups": {
+            "process": "Processes and flows",
+            "structure": "Structure and models",
+            "knowledge": "Concept organization",
+            "quantities": "Quantities and shares",
+            "planning": "Planning and decision"
+          },
           "templates": {
             "flowchart": "Flowchart",
             "sequence": "Sequence diagram",
             "state": "State diagram",
-            "er": "ER diagram",
-            "mindmap": "Mind map",
             "class": "Class diagram",
-            "gantt": "Gantt"
+            "er": "ER diagram",
+            "block": "Block diagram",
+            "mindmap": "Mind map",
+            "timeline": "Timeline",
+            "treemap": "Treemap",
+            "pie": "Pie chart",
+            "xychart": "XY chart (bars and line)",
+            "radar": "Radar chart",
+            "sankey": "Sankey diagram",
+            "gantt": "Gantt chart",
+            "quadrant": "Quadrant matrix"
           }
         },
         "vegalite": {
@@ -1024,12 +1039,41 @@
           "preview": "Preview",
           "previewEmpty": "Type the specification (or pick a template) to see the preview",
           "insertTemplate": "Insert template…",
+          "groups": {
+            "comparison": "Category comparison",
+            "partToWhole": "Part to whole",
+            "distribution": "Distribution",
+            "trend": "Trend over time",
+            "correlation": "Correlation",
+            "matrix": "Matrix",
+            "uncertainty": "Uncertainty",
+            "ranking": "Ranking"
+          },
           "templates": {
+            "barsVertical": "Vertical bars",
+            "barsHorizontal": "Horizontal bars",
+            "barsGrouped": "Grouped bars",
+            "barsStacked": "Stacked bars",
+            "barsNormalized": "Normalized stacked bars",
+            "pie": "Pie chart",
+            "donut": "Donut chart",
             "histogram": "Histogram",
-            "barsWithError": "Bars with error bars",
-            "scatter": "Scatter plot",
             "boxplot": "Box plot",
-            "timeSeries": "Time series"
+            "dotPlot": "Stacked dot plot",
+            "violin": "Violin plot",
+            "line": "Single line",
+            "multiLine": "Multiple lines",
+            "area": "Area",
+            "stackedArea": "Stacked areas",
+            "stepLine": "Step line",
+            "timeSeries": "Time series",
+            "scatter": "Scatter plot",
+            "bubble": "Bubble chart",
+            "heatmap": "Heat map",
+            "barsWithError": "Bars with error bars",
+            "confidenceBand": "Confidence band",
+            "barsRanked": "Ranked bars",
+            "lollipop": "Lollipop chart"
           }
         },
         "dot": {
@@ -1038,10 +1082,21 @@
           "preview": "Preview",
           "previewEmpty": "Type the source (or pick a template) to see the preview",
           "insertTemplate": "Insert template…",
+          "groups": {
+            "hierarchy": "Hierarchies and trees",
+            "flow": "Flows and dependencies",
+            "relations": "Relations and networks",
+            "models": "Models and structures",
+            "architecture": "Architectures"
+          },
           "templates": {
             "tree": "Tree",
+            "binaryTree": "Binary search tree",
             "digraph": "Directed graph",
+            "pipeline": "Dependency graph",
+            "undirected": "Undirected graph",
             "automaton": "Finite-state automaton",
+            "record": "Record nodes (data structure)",
             "cluster": "Graph with clusters"
           }
         },
