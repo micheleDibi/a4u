@@ -49,7 +49,7 @@ import threading
 import time
 import weakref
 from collections import OrderedDict
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from functools import lru_cache
 from itertools import chain
 from pathlib import Path
@@ -298,18 +298,69 @@ _HTML_TAG_RE = re.compile(
 # Attributi di shape dei flowchart Mermaid 11 (`A@{ img: "https://…" }`):
 # il nodo diventa un `<image href="…">` che il Chromium del pre-render,
 # WeasyPrint (dispensa e slide) e il browser del docente dereferenziano —
-# SSRF dal server e risorsa esterna dentro il PDF consegnato. Il gate
-# rifiuta l'attributo `img` e ogni URL dentro una direttiva `@{ … }`;
+# SSRF dal server e risorsa esterna dentro il PDF consegnato.
 # `svg_normalize` non può fare da rete perché Mermaid ne è esente (A11),
 # quindi le difese successive sono la scansione dell'SVG
 # (`_svg_external_ref`) e l'isolamento di rete del pre-render
 # (`mermaid_prerender.allows_prerender_url`).
-_MERMAID_SHAPE_IMG_RE = re.compile(r"\bimg\s*:", re.IGNORECASE)
+#
+# Il blocco `@{ … }` NON è testo: Mermaid lo passa a js-yaml
+# (`addVertex` → `load(yamlData, {schema: JSON_SCHEMA})`), esattamente
+# come il frontmatter. Una lista di pattern testuali (`\bimg\s*:`) è
+# quindi evadibile con gli escape di YAML — `A@{ "\\x69mg": "…" }` è la
+# chiave `img` per js-yaml e non lo è per la regex (SEC-1, residuo dei
+# giri 2 e 3, misurato end-to-end: gate verde, `mermaid.parse` verde,
+# PATCH 200, `<image href="…">` nell'SVG reso). Vale qui lo stesso
+# ragionamento già applicato al frontmatter: senza un parser YAML
+# l'unico gate deterministico è una lista CHIUSA di chiavi ammesse.
+# L'elenco è quello che Mermaid 11.17.2 legge davvero da `doc`: nodo
+# (`shape`, `label`, `labelType`, `form`, `pos`, `w`, `h`, `constraint`),
+# arco (`animate`, `animation`, `curve`); `img` e `icon` — le sole due
+# che puntano a una risorsa — restano fuori, e con loro ogni chiave
+# scritta in una forma diversa da quella piana (`"\\x69mg"`, `? img`,
+# `<<`, un alias `*a`).
+MERMAID_SHAPE_KEYS = frozenset(
+    {
+        "shape",
+        "label",
+        "labelType",
+        "form",
+        "pos",
+        "w",
+        "h",
+        "constraint",
+        "animate",
+        "animation",
+        "curve",
+    }
+)
 _MERMAID_SHAPE_URL_RE = re.compile(r"\b(?:https?|file|data|blob|ftp):", re.IGNORECASE)
+# Statement che attaccano a un nodo un URL, un'icona o una callback: non
+# passano dalle shape e nessun gate li vedeva (SEC-1, terza via). Elenco
+# MISURATO rendendo ogni parola chiave in ognuna delle 15 famiglie D8 e
+# cercando l'URL negli ATTRIBUTI dell'SVG reso: solo queste coppie lo
+# producono (`sequenceDiagram` con `properties A: {"icon": "http://…"}`
+# dà un `<image xlink:href>`, cioè una GET vera; `click`, `link` e
+# `links` danno un `<a xlink:href>` verso l'host scelto dall'autore).
+# Fuori da queste coppie la parola resta testo — in `erDiagram` `click`
+# è il nome di un'entità, in `mindmap` e `timeline` il testo di un nodo —
+# e non va rifiutata. Il valore booleano dice se la parola chiave è
+# case-insensitive: lo è nel lexer di `sequenceDiagram` (`PROPERTIES`
+# funziona), NON in quello di `flowchart` e `classDiagram`, dove
+# `Link --> Other` è una classe legittima e `CLICK …` non parsa.
+MERMAID_URL_STATEMENTS: dict[str, tuple[frozenset[str], bool]] = {
+    "flowchart": (frozenset({"click"}), False),
+    "graph": (frozenset({"click"}), False),
+    "classDiagram": (frozenset({"click", "link"}), False),
+    "sequenceDiagram": (frozenset({"link", "links", "properties", "details"}), True),
+}
+_MERMAID_FIRST_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*")
 # Costrutti che caricano una risorsa esterna in un SVG Mermaid già reso:
-# nessuna delle 15 famiglie D8 li produce, quindi la loro presenza è
-# sempre il segno di un contenuto che ha aggirato il gate. Applicati SOLO
-# al contenuto dei tag e ai blocchi `<style>` (vedi `_svg_external_ref`).
+# nessun sorgente D8 che passi il gate li produce, quindi la loro presenza
+# è sempre il segno di un contenuto che lo ha aggirato. Applicati SOLO al
+# contenuto dei tag e ai blocchi `<style>` (vedi `_svg_external_ref`). Un
+# `<a xlink:href>` non è qui: un collegamento non è una richiesta, ed è il
+# gate degli statement a impedirne la nascita (`MERMAID_URL_STATEMENTS`).
 _SVG_EXTERNAL_REF_RE = re.compile(
     r"<(?:image|script|iframe)\b|url\(\s*[\'\"]?\s*(?:https?:|file:|//)|@import",
     re.IGNORECASE,
@@ -364,6 +415,103 @@ def _mermaid_shape_blocks(code: str) -> Iterator[str]:
             j += 1
         yield code[start:j]
         i = j
+
+
+def _mermaid_shape_entries(block: str) -> Iterator[str]:
+    """Voci di primo livello di un blocco `@{ … }` (delimitatori esclusi).
+
+    Segue la stessa biforcazione di `addVertex`: senza a capo Mermaid
+    avvolge il contenuto in `{ … }` e js-yaml lo legge come mappa in
+    forma flow (voci separate da virgola); con almeno un a capo lo legge
+    come mappa in forma blocco (una voce per riga). Virgolette (doppie e
+    singole) e parentesi annidate non separano. Le voci vuote e i
+    commenti `#` sono saltati, come nel gate del frontmatter."""
+    inner = block[2:]
+    if inner.endswith("}"):
+        inner = inner[:-1]
+    seps = "\n" if "\n" in inner else ","
+    for entry in _split_top_level(inner, seps):
+        stripped = entry.strip()
+        if stripped and not stripped.startswith("#"):
+            yield stripped
+
+
+def _split_top_level(text: str, separators: str) -> Iterator[str]:
+    """Spezza `text` sui separatori che stanno fuori dalle virgolette
+    (doppie e singole) e fuori da parentesi annidate `[`, `(`, `{`."""
+    depth, quote, start = 0, "", 0
+    for i, ch in enumerate(text):
+        if quote:
+            if ch == quote:
+                quote = ""
+        elif ch in "\"'":
+            quote = ch
+        elif ch in "[({":
+            depth += 1
+        elif ch in "])}":
+            depth = max(0, depth - 1)
+        elif depth == 0 and ch in separators:
+            yield text[start:i]
+            start = i + 1
+    yield text[start:]
+
+
+def _mermaid_shape_key(entry: str) -> str:
+    """Chiave di una voce del blocco: il testo prima dei due punti di
+    primo livello (l'intera voce se non ce ne sono), tolto un solo strato
+    di virgolette esterne.
+
+    Le virgolette si tolgono senza interpretare gli escape: `"img"` è la
+    chiave `img` (rifiutata perché fuori dalla lista), `"\\x69mg"` resta
+    `\\x69mg` e non somiglia ad alcuna chiave ammessa. È il verso giusto
+    in cui sbagliare: ogni forma che non riconosciamo è rifiutata."""
+    key = next(_split_top_level(entry, ":")).strip()
+    if len(key) >= 2 and key[0] == key[-1] and key[0] in "\"'":
+        key = key[1:-1]
+    return key.strip()
+
+
+def _mermaid_shape_violation(block: str) -> str | None:
+    """Prima chiave non ammessa di un blocco `@{ … }` (`None` se il blocco
+    è tutto dentro la lista chiusa)."""
+    for entry in _mermaid_shape_entries(block):
+        key = _mermaid_shape_key(entry)
+        if key not in MERMAID_SHAPE_KEYS:
+            # I due punti finali distinguono il dettaglio di una shape da
+            # quello di uno statement in `MermaidRenderer.validate`: la
+            # troncatura va fatta PRIMA di aggiungerli.
+            return f"{(key or entry)[:38]}:"
+    return None
+
+
+def _mermaid_statements(lines: Iterable[str]) -> Iterator[str]:
+    """Statement del corpo: Mermaid tratta `;` come un a capo, quindi una
+    riga può contenerne più d'uno (`A-->B; click A href "…"` registra il
+    click, misurato). Il `;` dentro le virgolette o dentro la sezione di
+    una label non separa: `A["fai clic; click qui"]` è un solo
+    statement, e si rende."""
+    for line in lines:
+        for stmt in _split_top_level(line, ";"):
+            stripped = stmt.strip()
+            if stripped:
+                yield stripped
+
+
+def _mermaid_url_statement(kind: str, lines: Iterable[str]) -> str | None:
+    """Prima parola chiave di statement che, nella famiglia dichiarata,
+    porta un URL o un'icona nell'SVG (`None` se non ce ne sono)."""
+    entry = MERMAID_URL_STATEMENTS.get(_MERMAID_TYPE_ALIASES.get(kind, kind))
+    if entry is None:
+        return None
+    keywords, fold = entry
+    for stmt in _mermaid_statements(lines):
+        token = _MERMAID_FIRST_TOKEN_RE.match(stmt)
+        if token is None:
+            continue
+        word = token.group(0)
+        if (word.lower() if fold else word) in keywords:
+            return word
+    return None
 
 
 # Esiti del gate statico (condivisi con `scripts/revalidate_mermaid_assets.py`).
@@ -461,12 +609,16 @@ def mermaid_static_gate(code: str) -> tuple[str, str]:
             return (MERMAID_GATE_HTML, m.group(0))
     # Le direttive `@{ … }` possono occupare più righe: si guarda il corpo
     # intero, senza i commenti.
-    for inner in _mermaid_shape_blocks("\n".join(lines)):
-        if _MERMAID_SHAPE_IMG_RE.search(inner):
-            return (MERMAID_GATE_RESOURCE, "img:")
-        url = _MERMAID_SHAPE_URL_RE.search(inner)
+    for block in _mermaid_shape_blocks("\n".join(lines)):
+        bad_key = _mermaid_shape_violation(block)
+        if bad_key is not None:
+            return (MERMAID_GATE_RESOURCE, bad_key)
+        url = _MERMAID_SHAPE_URL_RE.search(block)
         if url is not None:
             return (MERMAID_GATE_RESOURCE, url.group(0))
+    statement = _mermaid_url_statement(kind, lines)
+    if statement is not None:
+        return (MERMAID_GATE_RESOURCE, statement)
     return ("", "")
 
 
@@ -500,10 +652,22 @@ class MermaidRenderer:
                 f"{MERMAID_TYPE_NOT_ALLOWED}: {detail} (il tema è imposto dal renderer)",
             )
         if outcome == MERMAID_GATE_RESOURCE:
+            # Il dettaglio finisce con `:` quando viene da una shape
+            # (chiave non ammessa o URL), altrimenti è la parola chiave di
+            # uno statement che porta un URL o un'icona nella figura.
+            if detail.endswith(":"):
+                ammesse = ", ".join(f"`{k}`" for k in sorted(MERMAID_SHAPE_KEYS))
+                return (
+                    False,
+                    f"{MERMAID_TYPE_NOT_ALLOWED}: risorsa esterna non ammessa nella shape "
+                    f"`@{{ … }}` (`{detail}`); le figure non caricano file né URL e nelle "
+                    f"shape sono ammesse solo le chiavi {ammesse}",
+                )
             return (
                 False,
-                f"{MERMAID_TYPE_NOT_ALLOWED}: risorsa esterna non ammessa nelle shape "
-                f"(`{detail}`); le figure non caricano file né URL",
+                f"{MERMAID_TYPE_NOT_ALLOWED}: lo statement `{detail}` non è ammesso "
+                "(porta un URL o un'icona nella figura); le figure non caricano "
+                "file né URL",
             )
         if outcome == MERMAID_GATE_HTML:
             kind = mermaid_declared_type(code)

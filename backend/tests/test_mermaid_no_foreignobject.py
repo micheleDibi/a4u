@@ -136,6 +136,109 @@ def test_mermaid_br_with_an_attribute_is_not_a_line_break(br_rendered):
     assert ok is False and "HTML nelle label" in err, err
 
 
+# SEC-1 (giro 4) — oracolo di rendering delle vie che portano una risorsa
+# esterna nell'SVG, per non gattare forme innocue: ognuna di queste, PRIMA
+# del giro 4, passava il gate statico, `mermaid.parse` e il PATCH.
+# La shape `img` usa un data URI: con un URL http la guardia di rete del
+# pre-render annulla la richiesta e Mermaid non emette nulla, mentre il
+# data URI è inerte (`allows_prerender_url`) e prova comunque che la chiave
+# scritta `"\x69mg"` arriva a js-yaml come `img`. Gli statement usano un
+# host riservato `.invalid`: la guardia annulla la richiesta ma l'elemento
+# resta nell'SVG, che è esattamente quello che finirebbe nel browser di chi
+# apre la lezione.
+_PIXEL_DATA_URI = (
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAA"
+    "DUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+)
+_INVALID_URL = "http://esempio.invalid/icona.png"
+_ANCHOR = f'<a xlink:href="{_INVALID_URL}"'
+_SEQ_HEAD = "sequenceDiagram\n  participant A\n  "
+_EXTERNAL_RESOURCE_SOURCES: dict[str, tuple[str, str]] = {
+    # nome -> (sorgente, frammento atteso nell'SVG reso)
+    "shape_img_escaped": (
+        'flowchart LR\n  A@{ "\\x69mg": "' + _PIXEL_DATA_URI + '", w: 20, h: 20 }\n  A --> B',
+        "<image",
+    ),
+    "shape_img_plain": (
+        'flowchart LR\n  A@{ img: "' + _PIXEL_DATA_URI + '", w: 20, h: 20 }\n  A --> B',
+        "<image",
+    ),
+    "seq_properties_icon": (
+        _SEQ_HEAD + 'properties A: {"icon": "' + _INVALID_URL + '"}\n  A->>A: x',
+        f'<image x="130" y="171" xlink:href="{_INVALID_URL}"',
+    ),
+    "seq_links": (
+        _SEQ_HEAD + 'links A: {"D": "' + _INVALID_URL + '"}\n  A->>A: x',
+        _ANCHOR,
+    ),
+    "seq_link": (
+        _SEQ_HEAD + "link A: D @ " + _INVALID_URL + "\n  A->>A: x",
+        _ANCHOR,
+    ),
+    "class_link": (
+        'classDiagram\n  class A\n  link A "' + _INVALID_URL + '" "t"',
+        _ANCHOR,
+    ),
+    "class_click_href": (
+        'classDiagram\n  class A\n  click A href "' + _INVALID_URL + '" "t"',
+        _ANCHOR,
+    ),
+    "flowchart_click_href": (
+        'flowchart LR\n  A --> B\n  click A href "' + _INVALID_URL + '" "t"',
+        _ANCHOR,
+    ),
+}
+
+
+@pytest.fixture(scope="module")
+def external_resource_rendered() -> dict[str, str | None]:
+    try:
+        socket.create_connection(("cdn.jsdelivr.net", 443), timeout=3).close()
+    except OSError:
+        pytest.skip("cdn.jsdelivr.net non raggiungibile")
+    names = list(_EXTERNAL_RESOURCE_SOURCES)
+    codes = [_EXTERNAL_RESOURCE_SOURCES[n][0] for n in names]
+    try:
+        svgs = mp._prerender_mermaid_to_svg_batch_sync(codes)
+    except Exception as exc:  # launch o rete: verifica locale, non gate CI
+        pytest.skip(f"Chromium o CDN non disponibili: {exc!r}"[:300])
+    if all(s is None for s in svgs):
+        pytest.skip("pagina di rendering non pronta (__mermaidReady) o CDN non caricata")
+    return dict(zip(names, svgs, strict=True))
+
+
+@pytest.mark.parametrize("name", list(_EXTERNAL_RESOURCE_SOURCES))
+def test_the_gate_rejects_sources_that_really_emit_an_external_resource(
+    external_resource_rendered, name: str
+):
+    """SEC-1 (giro 4): ogni via chiusa dal gate è misurata sul renderer, non
+    dedotta. Il sorgente si rende e l'SVG contiene davvero il riferimento
+    esterno — quindi il 422 non è un falso positivo — e il gate lo rifiuta.
+
+    Prima del giro 4 il gate era una lista di pattern TESTUALI sul blocco
+    `@{ … }`, che Mermaid passa invece a js-yaml: `"\\x69mg"` è la chiave
+    `img` per js-yaml e non lo è per una regex. Gli statement
+    (`properties`, `links`, `link`, `click href`) non passavano da alcuna
+    shape e nessun gate li guardava."""
+    code, needle = _EXTERNAL_RESOURCE_SOURCES[name]
+    svg = external_resource_rendered[name]
+    assert svg is not None, f"render non disponibile per {name}"
+    assert needle in svg, f"{name}: atteso {needle!r} nell'SVG reso"
+    ok, err = theme_gate(code)
+    assert ok is False, f"{name}: il gate accetta un sorgente che emette una risorsa esterna"
+    assert "non caricano file né URL" in err, err
+
+
+def test_a_plain_shape_still_renders_and_passes_the_gate():
+    """Controprova della lista chiusa: una shape con le sole chiavi che
+    Mermaid legge si rende e passa (nessun 422 su contenuto sano)."""
+    code = 'flowchart LR\n  A@{ shape: rect, label: "Etichetta", w: 60, h: 40 } --> B'
+    assert theme_gate(code) == (True, "")
+    svg = mp._prerender_mermaid_to_svg_batch_sync([code])[0]
+    assert svg is not None, "render non disponibile"
+    assert "<image" not in svg and "Etichetta" in svg
+
+
 def test_cjk_label_is_emitted_as_text(rendered):
     svg = rendered["mindmap"]
     assert svg is not None

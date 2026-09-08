@@ -37,6 +37,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
+from app.services.figure_render_service import MERMAID_SHAPE_KEYS, MERMAID_URL_STATEMENTS
 from app.services.figure_theme import MERMAID_D8_TYPES, MERMAID_EXCLUDED_TYPES
 from app.services.openai_client import (
     OpenAIError,
@@ -59,6 +60,15 @@ _CONTEXT_CAP = 600
 # accettati in lettura, ma il riparatore deve produrre la forma canonica.
 _MERMAID_D8_TYPES = ", ".join(MERMAID_D8_TYPES)
 _MERMAID_EXCLUDED = ", ".join(MERMAID_EXCLUDED_TYPES)
+# Unico punto del gate delle risorse esterne: la lista chiusa delle chiavi
+# di shape e le parole chiave di statement che portano un URL o un'icona
+# nella figura vivono in `figure_render_service`. Ripeterle qui a mano
+# farebbe divergere il riparatore dal 422 che deve far sparire.
+_MERMAID_SHAPE_KEYS = ", ".join(f"`{key}`" for key in sorted(MERMAID_SHAPE_KEYS))
+_MERMAID_URL_STMT = ", ".join(
+    f"`{word}`"
+    for word in sorted({w for words, _fold in MERMAID_URL_STATEMENTS.values() for w in words})
+)
 
 
 class OpenAIAssetFixError(OpenAIError):
@@ -89,6 +99,9 @@ VINCOLI RIGIDI:
   frontmatter di configurazione; se servono caratteri speciali (`(`, `)`,
   `:`, `"`) racchiudi l'etichetta tra virgolette doppie come da sintassi
   Mermaid.
+- MAI risorse esterne: nelle shape `@{{ ... }}` sono ammesse SOLO le chiavi
+  {_MERMAID_SHAPE_KEYS} (niente `img:` ne' `icon:`), e sono vietati gli
+  statement {_MERMAID_URL_STMT}; le figure non caricano file ne' URL.
 - NON aggiungere ne' rimuovere contenuti rispetto all'originale: correggi
   solo la sintassi.
 
@@ -111,6 +124,9 @@ STRICT CONSTRAINTS:
   markdown inside labels, no `%%{{init: ...}}%%` directives or configuration
   frontmatter; if special characters (`(`, `)`, `:`, `"`) are needed, wrap
   the label in double quotes per Mermaid syntax.
+- NEVER use external resources: inside `@{{ ... }}` shapes ONLY the keys
+  {_MERMAID_SHAPE_KEYS} are allowed (no `img:`, no `icon:`), and the
+  statements {_MERMAID_URL_STMT} are forbidden; figures load no file, no URL.
 - Do NOT add or remove content vs the original: fix syntax only.
 
 Output: ONLY valid JSON conforming to the schema."""

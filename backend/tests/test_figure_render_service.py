@@ -234,7 +234,9 @@ def test_mermaid_static_gate_accepts_comments_frontmatter_aliases_and_fences(cod
             'flowchart LR\n  A@{ label: "}", img: "http://interno/x.png", w: 60 }\n  A --> B',
             "img:",
         ),
-        ('flowchart LR\n  A@{ label: "}", x: "https://interno/y" }\n  A --> B', "http"),
+        # Chiave fuori dalla lista chiusa: rifiutata prima ancora di
+        # guardare il valore (giro 4).
+        ('flowchart LR\n  A@{ label: "}", x: "https://interno/y" }\n  A --> B', "`x:`"),
         ('flowchart LR\n  A@{ label: "}}}", img: "/etc/hosts" }\n  A --> B', "img:"),
         # `\\` non è un escape nello stato `shapeDataStr`: la stringa
         # finisce comunque alla virgoletta successiva.
@@ -337,6 +339,146 @@ def test_mermaid_shape_blocks_close_like_the_lexer():
     # Shape mai chiusa: si prende tutto il resto (Mermaid arriva a EOF e la
     # parse fallisce, quindi rifiutare è la scelta prudente).
     assert list(blocks('A@{ x: "aperta')) == ['@{ x: "aperta']
+
+
+# SEC-1, residuo dei giri 2 e 3: il blocco `@{ … }` finisce in js-yaml, non
+# in una regex. Ogni forma qui sotto è la chiave `img` (o una chiave che
+# nasconde una risorsa) scritta in un modo che i pattern testuali
+# `\bimg\s*:` e `https?:` non vedono; tutte passavano il gate, `mermaid.parse`
+# e il PATCH, e sette di esse facevano davvero partire la GET nel browser di
+# chi apriva la lezione. La lista chiusa delle chiavi le chiude in blocco.
+MERMAID_SHAPE_BYPASSES = (
+    'flowchart LR\n  A@{ "\\x69mg": "http://interno/x.png" }\n  A --> B',
+    'flowchart LR\n  A@{ "img": "\\x68ttp://interno/x.png" }\n  A --> B',
+    'flowchart LR\n  A@{ "img": "http\\u003a//interno/x.png" }\n  A --> B',
+    "flowchart LR\n  A@{ 'img': 'http://interno/x.png' }\n  A --> B",
+    'flowchart LR\n  A@{\n    "img": "\\x68ttp://interno/x.png"\n  }\n  A --> B',
+    'flowchart LR\n  A@{ x: &a "\\x68ttp://interno/x.png", "img": *a }\n  A --> B',
+    'flowchart LR\n  A@{\n    ? img\n    : "http://interno/x.png"\n  }\n  A --> B',
+    'flowchart LR\n  A@{ !!str img: "http://interno/x.png" }\n  A --> B',
+    'flowchart LR\n  A@{ <<: {img: "http://interno/x.png"} }\n  A --> B',
+    'flowchart LR\n  A@{ img : "http://interno/x.png" }\n  A --> B',
+    'flowchart LR\n  A@{ label: "]", img: "/etc/hosts" }\n  A --> B',
+    'flowchart LR\n  A@{ icon: "http://interno/x.png" }\n  A --> B',
+    'flowchart LR\n  A@{\n    label: |\n      testo\n    img: "http://interno/x.png"\n  }',
+)
+
+
+@pytest.mark.parametrize("code", MERMAID_SHAPE_BYPASSES)
+def test_mermaid_shape_gate_is_a_closed_key_list(code: str):
+    """SEC-1 (giro 4): nessuna forma YAML della chiave `img` deve passare.
+
+    Il gate non prova a decodificare gli escape — li rifiuta: una chiave che
+    non è scritta in forma piana e dentro la lista ammessa non passa,
+    qualunque cosa js-yaml ne farà."""
+    ok, err = frs.REGISTRY["mermaid"].validate(code)
+    assert ok is False, code
+    assert "risorsa esterna non ammessa nella shape" in err, err
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        # Le undici chiavi che Mermaid 11.17.2 legge davvero da `doc`: nodo,
+        # arco e sottografo. Tutte si rendono (`probe4`/`gate_check`).
+        'flowchart LR\n  A@{ shape: rect, label: "Etichetta", w: 60, h: 40 } --> B',
+        'flowchart LR\n  A@{ shape: rect, label: "X", pos: "t", form: "square" } --> B',
+        'flowchart LR\n  A@{ shape: rect, label: "**X**", labelType: "markdown" } --> B',
+        'flowchart LR\n  A@{ shape: rect, label: "X", constraint: "on" } --> B',
+        "flowchart LR\n  A e1@--> B\n  e1@{ animate: true }",
+        "flowchart LR\n  A e1@--> B\n  e1@{ curve: basis }",
+        'flowchart LR\n  subgraph s1\n    A --> B\n  end\n  s1@{ label: "X" }',
+        # Chiave quotata senza escape e commento `#`: forme ammesse.
+        'flowchart LR\n  A@{ "shape": "rect", "label": "X" } --> B',
+        "flowchart LR\n  A@{\n    # una nota\n    shape: rect\n  } --> B",
+    ],
+)
+def test_mermaid_shape_gate_accepts_every_key_mermaid_reads(code: str):
+    """Controprova della lista chiusa: le chiavi legittime non prendono 422."""
+    assert frs.REGISTRY["mermaid"].validate(code) == (True, "")
+
+
+# Statement che portano un URL o un'icona nell'SVG senza passare da alcuna
+# shape: `sequenceDiagram / properties A: {"icon": "http://…"}` produce un
+# `<image xlink:href>` (una GET vera nel browser del lettore), gli altri un
+# `<a xlink:href>` verso l'host scelto dall'autore. Nessun gate li vedeva
+# fino al giro 4; l'oracolo di rendering è in `test_mermaid_no_foreignobject`.
+MERMAID_URL_STATEMENTS_REJECTED = (
+    'sequenceDiagram\n  participant A\n  properties A: {"icon": "http://i/x.png"}\n  A->>A: x',
+    'sequenceDiagram\n  participant A\n  PROPERTIES A: {"icon": "http://i/x.png"}\n  A->>A: x',
+    'sequenceDiagram\n  participant A\n  properties A: {"icon": "/rel.png"}\n  A->>A: x',
+    'sequenceDiagram\n  participant A\n  details A: {"properties": {"icon": "http://i/x"}}',
+    'sequenceDiagram\n  participant A\n  links A: {"D": "http://i/x.png"}\n  A->>A: x',
+    "sequenceDiagram\n  participant A\n  link A: D @ http://i/x.png\n  A->>A: x",
+    'classDiagram\n  class A\n  link A "http://i/x.png" "t"',
+    'classDiagram\n  class A\n  click A href "http://i/x.png" "t"',
+    'flowchart LR\n  A --> B\n  click A href "http://i/x.png" "t"',
+    # `;` è un a capo per Mermaid: lo statement può stare in coda a un altro.
+    'flowchart LR\n  A --> B; click A href "http://i/x.png" "t"',
+    'graph LR\n  A --> B\n  click A href "http://i/x.png" "t"',
+)
+
+
+@pytest.mark.parametrize("code", MERMAID_URL_STATEMENTS_REJECTED)
+def test_mermaid_gate_rejects_the_statements_that_carry_a_url(code: str):
+    ok, err = frs.REGISTRY["mermaid"].validate(code)
+    assert ok is False, code
+    assert "non è ammesso" in err and "un URL o un'icona" in err, err
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        # Le stesse parole fuori dalle coppie misurate restano testo: in
+        # `mindmap` e `timeline` sono il testo di un nodo, in `sankey-beta` e
+        # `erDiagram` il nome di un nodo/entità, in `classDiagram` il nome di
+        # una classe (`Link` con la maiuscola: il lexer è case-sensitive).
+        "mindmap\n  root((r))\n    click qui\n    link https://esempio.it",
+        "timeline\n  title T\n  2020 : click qui",
+        "sankey-beta\n\nclick,link,1",
+        "erDiagram\n  click ||--|| link : r",
+        "classDiagram\n  Link --> Other",
+        "classDiagram\n  links --> other",
+        "sequenceDiagram\n  A ->> B: properties di x",
+        # `;` dentro una label non separa lo statement.
+        'flowchart LR\n  A["fai clic; click qui"] --> B',
+    ],
+)
+def test_mermaid_gate_keeps_the_keywords_that_are_only_text(code: str):
+    """Il gate degli statement non deve trasformarsi in un divieto di
+    parole: fuori dalle coppie (famiglia, parola chiave) misurate, `click` e
+    `link` sono contenuto legittimo."""
+    assert frs.REGISTRY["mermaid"].validate(code) == (True, "")
+
+
+def test_mermaid_shape_entries_split_like_js_yaml():
+    """Le voci del blocco seguono la biforcazione di `addVertex`: virgola in
+    forma flow (una riga sola), a capo in forma blocco."""
+    entries = frs._mermaid_shape_entries
+    assert list(entries('@{ shape: rect, label: "a, b" }')) == ["shape: rect", 'label: "a, b"']
+    assert list(entries("@{\n  shape: rect\n  w: 60\n}")) == ["shape: rect", "w: 60"]
+    # `;` e virgole dentro le parentesi annidate non separano.
+    assert list(entries("@{ label: [x, y], w: 1 }")) == ["label: [x, y]", "w: 1"]
+    key = frs._mermaid_shape_key
+    assert key('label: "a: b"') == "label"
+    assert key('"img": "u"') == "img"
+    # Gli escape NON si decodificano: la chiave resta irriconoscibile e
+    # quindi fuori dalla lista.
+    assert key('"\\x69mg": "u"') == "\\x69mg"
+
+
+def test_a_quoted_at_brace_in_a_label_is_a_declared_false_positive():
+    """Limite dichiarato in sezione 15: `_mermaid_shape_blocks` considera
+    shape OGNI `@{` del corpo, anche uno citato dentro una label, perché
+    seguire le virgolette di primo livello farebbe sparire il gate su un
+    sorgente con una virgoletta non chiusa. Con la lista chiusa (giro 4)
+    basta una chiave sconosciuta per il 422, dove prima serviva un URL:
+    è l'unico esito che cambia su contenuto sano, ed è fissato qui."""
+    assert frs.REGISTRY["mermaid"].validate('flowchart LR\n  A["Sintassi: @{"] --> B')[0] is False
+    assert frs.REGISTRY["mermaid"].validate('flowchart LR\n  A["insieme @{a}"] --> B')[0] is False
+    # Con una chiave della lista il sorgente passa, `@{` citato compreso.
+    passa = 'flowchart LR\n  A["esempio @{shape: rect}"] --> B'
+    assert frs.REGISTRY["mermaid"].validate(passa) == (True, "")
 
 
 def test_mermaid_render_batch_refuses_an_svg_with_an_external_resource(
