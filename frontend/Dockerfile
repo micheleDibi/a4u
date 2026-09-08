@@ -44,9 +44,13 @@ COPY nginx.conf /etc/nginx/a4u-nginx.conf.in
 #   * la `grep -E` finale pretende `img-src 'self' data: blob:` seguito al
 #     più da un'origine ben formata, così un apice doppio (che iniettava
 #     una direttiva nginx nel file generato), uno spazio interno o un path
-#     residuo FANNO FALLIRE il build invece di passare inosservati. Un host
-#     IPv6 fra parentesi quadre non è previsto: fallirebbe qui, a voce
-#     alta, invece di generare una direttiva sbagliata.
+#     residuo FANNO FALLIRE il build invece di passare inosservati. Anche
+#     un host che esce dalla classe `[a-z0-9.-]` — un trattino basso
+#     (`my_host.internal`), un IPv6 fra parentesi quadre — ferma il build:
+#     la grammatica `host-source` della CSP non li ammette, quindi la
+#     direttiva sarebbe scartata dal browser e le immagini caricate
+#     sparirebbero in silenzio. Meglio fallire qui, a voce alta: in quei
+#     casi l'origine va scritta a mano in `nginx.conf`.
 RUN set -eu; \
     valore="$(printf '%s' "$VITE_UPLOADS_BASE_URL" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | tr 'A-Z' 'a-z')"; \
     case "$valore" in \

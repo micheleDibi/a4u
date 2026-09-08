@@ -179,6 +179,13 @@ def test_la_sostituzione_a_build_time_produce_la_direttiva(
         # Schema senza host e schema non http(s) con host vuoto.
         "https://",
         "//",
+        # Host fuori dalla classe `[a-z0-9.-]`: la grammatica `host-source`
+        # della CSP non ammette né il trattino basso né le parentesi quadre
+        # dell'IPv6, quindi il browser scarterebbe la direttiva e le
+        # immagini caricate sparirebbero in silenzio. Il build si ferma e
+        # l'origine va scritta a mano in `nginx.conf` (giro 8).
+        "https://my_host.internal/u",
+        "https://[::1]:9000/uploads",
     ],
 )
 def test_la_sostituzione_fallisce_su_un_valore_malformato(tmp_path: Path, uploads: str):

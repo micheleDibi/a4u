@@ -329,7 +329,9 @@ BACKEND_PORT=9001
   fallisce se il segnaposto resta. **Il valore va scritto come URL
   assoluto o come path**: gli spazi ai bordi e lo schema in maiuscolo sono
   normalizzati dal build, ma ogni altra forma anomala (un apice doppio, uno
-  spazio interno, uno schema senza host) **fa fallire la build**, perché la
+  spazio interno, uno schema senza host, e un host fuori dalla classe
+  `[a-z0-9.-]` come `my_host.internal` o un IPv6 fra parentesi quadre)
+  **fa fallire la build**, perché la
   riga generata è verificata nella forma e non solo nella presenza — prima
   un `HTTPS://…` o uno spazio iniziale svuotava l'origine in silenzio e le
   immagini caricate sparivano solo in produzione. Il valore è passato come build arg dal
