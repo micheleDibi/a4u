@@ -163,7 +163,10 @@ _PIXEL_DATA_URI = (
 )
 _INVALID_URL = "http://esempio.invalid/icona.png"
 _ANCHOR = f'<a xlink:href="{_INVALID_URL}"'
+_IMAGE_HREF = f'xlink:href="{_INVALID_URL}"'
 _SEQ_HEAD = "sequenceDiagram\n  participant A\n  "
+# BOM come costante: nel sorgente del test resta visibile, non invisibile.
+_BOM = "\ufeff"
 _EXTERNAL_RESOURCE_SOURCES: dict[str, tuple[str, str]] = {
     # nome -> (sorgente, frammento atteso nell'SVG reso)
     "shape_img_escaped": (
@@ -220,6 +223,62 @@ _EXTERNAL_RESOURCE_SOURCES: dict[str, tuple[str, str]] = {
     "shape_img_after_open_paren": (
         'flowchart LR\n  A@{ label: ( , img: "' + _PIXEL_DATA_URI + '", w: 20, h: 20 }\n  A --> B',
         "<image",
+    ),
+    # --- giro 6: le tre desincronizzazioni misurate dal verificatore del
+    # giro 5 e dalla sonda del giro 6. L'apice singolo non è un delimitatore
+    # né per il lexer (è un carattere di NODE_STRING) né per js-yaml in
+    # mezzo a uno scalare piano, ma lo era per lo splitter del gate; il BOM
+    # è whitespace per `\s` di JavaScript e non per `str.strip()`; il `\r`
+    # è un a capo per il lexer e non per `str.split("\n")`.
+    "shape_img_after_odd_quote": (
+        'flowchart LR\n  A@{ label: x\'y, "\\x69mg": "'
+        + _PIXEL_DATA_URI
+        + '", w: 20, h: 20 }\n  A --> B',
+        "<image",
+    ),
+    "flowchart_click_after_odd_quote": (
+        "flowchart LR\n  A[it's] --> B; click A href \"" + _INVALID_URL + '"',
+        _ANCHOR,
+    ),
+    "state_click_after_odd_quote": (
+        "stateDiagram-v2\n  A: l's; click A href \"" + _INVALID_URL + '"',
+        _ANCHOR,
+    ),
+    "seq_properties_after_odd_quote": (
+        _SEQ_HEAD + 'A->>A: l\'x; properties A: {"icon": "' + _INVALID_URL + '"}',
+        _IMAGE_HREF,
+    ),
+    "flowchart_click_after_bom": (
+        "flowchart LR\n  A --> B\n" + _BOM + 'click A href "' + _INVALID_URL + '"',
+        _ANCHOR,
+    ),
+    "seq_properties_after_bom": (
+        "sequenceDiagram\n  participant A\n"
+        + _BOM
+        + 'properties A: {"icon": "'
+        + _INVALID_URL
+        + '"}\n  A->>A: x',
+        _IMAGE_HREF,
+    ),
+    "class_link_after_bom": (
+        "classDiagram\n  class A\n" + _BOM + 'link A "' + _INVALID_URL + '" "t"',
+        _ANCHOR,
+    ),
+    "state_click_after_bom": (
+        "stateDiagram-v2\n  [*] --> A\n" + _BOM + 'click A href "' + _INVALID_URL + '"',
+        _ANCHOR,
+    ),
+    "flowchart_click_after_cr": (
+        'flowchart LR\n  A --> B\rclick A href "' + _INVALID_URL + '"',
+        _ANCHOR,
+    ),
+    "seq_properties_after_cr": (
+        _SEQ_HEAD + 'A->>A: x\rproperties A: {"icon": "' + _INVALID_URL + '"}',
+        _IMAGE_HREF,
+    ),
+    "state_click_after_cr": (
+        'stateDiagram-v2\n  [*] --> A\rclick A href "' + _INVALID_URL + '"',
+        _ANCHOR,
     ),
 }
 

@@ -399,19 +399,30 @@ alla prima `}` e una label `"}"` le nascondeva l'`img:` che seguiva
 best-effort, non una prova di impossibilità.** Riconoscere leggendo il
 sorgente come testo se un diagramma caricherà una risorsa è una gara
 contro un parser vero (lexer con stati, js-yaml, una decina di grammatiche),
-e i primi quattro giri l'hanno persa a turno. Le difese su cui il prodotto
-si regge sono tre, indipendenti fra loro e tutte complete:
+e i primi quattro giri l'hanno persa a turno; il quinto e il sesto hanno
+trovato altri sorgenti che il gate accettava e che rendevano davvero un
+riferimento esterno. Le difese su cui il prodotto si regge sono tre,
+indipendenti fra loro; le prime due sono complete, la terza ha un residuo
+misurato e dichiarato:
 
 1. **isolamento di rete del pre-render** (`mermaid_prerender.block_external_requests`):
    il Chromium del server instrada ogni richiesta e annulla quelle fuori
    da `PRERENDER_ALLOWED_PREFIX`. È questa — non il gate — che impedisce
    l'SSRF dal server; il verificatore del giro 2 ha misurato 0 GET su 18
-   vettori con la guardia attiva;
+   vettori con la guardia attiva, e quello del giro 6 le stesse 0 GET sui
+   vettori nuovi;
 2. **scansione dell'SVG reso** (`_svg_external_ref`): la figura con un
    riferimento esterno non entra nel documento consegnato;
 3. **sanificazione lato client** (`sanitizeMermaidSvg` in
    `lib/figureFormats.ts`): l'SVG che Mermaid rende nel browser del
-   lettore è reso inerte prima di entrare nella pagina.
+   lettore è reso inerte prima di entrare nella pagina. **Non è completa**:
+   `mermaid.render` misura il diagramma su un nodo che attacca al
+   documento, quindi per una shape `img:` la prima GET parte prima che
+   qualunque sanificazione possa intervenire (misurato in Chromium senza
+   intercettazioni, sezione 15). Nessuna opzione di Mermaid la evita:
+   `securityLevel: 'sandbox'` sposta il render in un `<iframe sandbox>`,
+   e l'attributo `sandbox` non impedisce il caricamento delle
+   sottorisorse.
 
 Il gate resta la prima rete, ed è quella che dà al docente un errore
 leggibile invece di una figura che sparisce; ma il suo criterio di
@@ -462,6 +473,43 @@ forme che nessuna segmentazione spezza (due chiavi sulla stessa riga di
 una mappa in forma blocco: per js-yaml è un errore di indentazione, ma il
 gate non deve dipendere da quel dettaglio).
 
+Il giro 6 ha aggiunto l'unione anche alla **segmentazione**, non solo ai
+controlli, perché nessuna delle segmentazioni possibili coincide con il
+parser vero: il lexer di Mermaid, js-yaml e il gate hanno tre idee diverse
+di che cosa sia una stringa. `_split_top_level` ha quindi tre modalità
+(`_QUOTING_ANY`, `_QUOTING_YAML`, `_QUOTING_DOUBLE`) e il gate le prova a
+coppie — `any`+`yaml` per le voci di shape, `any`+`double` per gli
+statement — rifiutando se una qualsiasi segnala. La ragione è l'**apice
+singolo**: per il lexer dei flowchart è uno dei caratteri ammessi in un
+`NODE_STRING`, insieme alla virgoletta doppia (classe
+`[A-Za-z0-9!"#$%&'*+./?\\_]` più l'apice inverso, in
+`chunk-SHT3W25Y.mjs`), per
+js-yaml in mezzo a uno scalare piano è un carattere qualsiasi
+(`label: x'y` è lo scalare `x'y`), ma per lo splitter era un delimitatore.
+Un apice DISPARI «quotava» quindi tutto quello che seguiva: nel blocco
+`@{ … }` la virgola che separava la voce successiva
+(`A@{ label: x'y, "\x69mg": "\x68ttp://…" }` era UNA voce con chiave
+`label`, e rendeva un `<image href>` con la GET arrivata al listener), in
+una riga il `;` che separava lo statement successivo
+(`A[it's]; click A href "http://…"` → `<a xlink:href>`). A inizio nodo
+l'apice resta un delimitatore anche per il gate, perché lì lo è davvero
+per js-yaml: `A@{ label: 'x, img: y' }` passa e si rende senza alcun
+riferimento esterno.
+
+Stesso giro, stessa classe di errore sul **whitespace**. `U+FEFF` (BOM) è
+l'unico carattere in cui `\s` di JavaScript — il whitespace che il lexer
+salta — è più largo dell'insieme di `str.strip()` di Python: un BOM
+davanti a `click`, `link`, `links` o `properties` nascondeva la parola
+chiave al gate mentre il renderer la eseguiva, in tutte e quattro le
+famiglie. Il `\r` è il caso simmetrico: è un a capo per il lexer ma non
+per `str.split("\n")`, quindi `A --> B\rclick A href "http://…"`
+registrava il click. Il BOM si toglie insieme agli spazi
+(`_MERMAID_TRIM_RE`) e il `\r` entra fra i separatori di statement
+(`_MERMAID_STATEMENT_SEPARATORS`), **non** nella divisione in righe:
+spostare quella cambierebbe anche il riconoscimento del tipo e del
+frontmatter, e un sorgente oggi rifiutato (`---\rtitle: x\r---\rflowchart
+LR`, tipo `---`) tornerebbe ammesso — sarebbe uno scambio, non un'unione.
+
 Il `<image>` però non nasce solo dalle shape. Misurando ogni parola
 chiave in tutte e 15 le famiglie D8 e cercando l'URL negli ATTRIBUTI
 dell'SVG reso, escono gli **statement** che portano nella figura un
@@ -474,8 +522,9 @@ href` (in `flowchart`/`graph`, `classDiagram` e **`stateDiagram` /
 `MERMAID_URL_STATEMENTS` è la mappa misurata (famiglia → parole chiave,
 con la distinzione di maiuscole del lexer: `sequenceDiagram` e
 `stateDiagram` sono case-insensitive — `CLICK A HREF "…"` rende —
-`flowchart` e `classDiagram` no) e il gate rifiuta quelle coppie, `;` come
-separatore di statement compreso. `stateDiagram` è entrato nella mappa al
+`flowchart` e `classDiagram` no) e il gate rifiuta quelle coppie, con `;`
+e `\r` come separatori di statement e il BOM tolto insieme agli spazi
+davanti alla parola chiave. `stateDiagram` è entrato nella mappa al
 giro 5: fino al giro 4 `click A href "http://…"` passava gate e PATCH e
 arrivava nel PDF come `<a xlink:href="http://…" target="_blank">`; la
 coppia non ha falsi positivi renderizzabili, perché uno stato che si
@@ -494,10 +543,15 @@ l'SVG Mermaid **non** passa dalla normalizzazione di sezione 7: la catena
 resta byte-identica rispetto a oggi (A11, livello L3). Proprio perché
 manca quella rete, l'SVG reso è scansionato per i costrutti che caricano
 una risorsa esterna (`<image`, `<script`, `<iframe`, `url(http|file|//)`,
-`@import`) **e per gli `<a>` con un `href`/`xlink:href` non interno**:
-nessun sorgente D8 che passi il gate li produce, quindi
-trovarli significa che qualcosa lo ha aggirato e la figura degrada a
-fallback invece di finire nel documento (Fase D, SEC-1). L'ancora è la
+`@import`) **e per gli `<a>` con un `href`/`xlink:href` non interno**: la
+figura che ne contiene uno degrada a fallback invece di finire nel
+documento (Fase D, SEC-1). Non è un doppione del gate ma una difesa
+indipendente, ed è quello che serve: sorgenti che il gate accetta e che
+producono davvero un `<image href>` o un `<a xlink:href>` sono stati
+trovati in ognuno dei sei giri della revisione — l'ultimo, quello del
+giro 6, con un apice singolo dispari, con un `U+FEFF` e con un `\r`
+(sezione 14.9). Nessuno dei quindici campioni D8 resi fa scattare la
+scansione, quindi non costa figure sane. L'ancora è la
 correzione del giro 5. Fino al giro 4 la scansione non la cercava, con la
 motivazione «un collegamento non è una richiesta, ed è il gate degli
 statement a impedirne la nascita»: era una delega a un controllo che
@@ -2227,7 +2281,7 @@ corretti sono dichiarati in sezione 15.
 | REG-2 | regressione | minore | dichiarato come limite: rinominare l'`asset_id` rende l'asset nuovo per il gate (sezione 2.3) | revisione avversariale |
 | REG-3 | regressione | minore | dichiarato come limite: A11-L4 vale per 13 tipi su 15; `classDiagram` ed `erDiagram` non sono byte-deterministici, resa identica | revisione avversariale |
 | REG-4 | regressione | minore | corretto: il sorgente svuotato dalla sanificazione non entra nel batch (niente Chromium a vuoto) | revisione avversariale |
-| SEC-1 | sicurezza | maggiore | corretto nel giro 5 (i giri 1-4 lasciavano aperta una via; il giro 4 ne aveva riaperte sette). Il gate statico è dichiarato per quello che è — una euristica best-effort — e corretto per UNIONE, mai per scambio: lista chiusa delle chiavi sul `metadata` che il lexer produce davvero, scansione `img:`/`icon:` sul blocco grezzo (giro 3, rimessa), schemi di URL, `stateDiagram` fra gli statement con URL. Le difese vere sono tre e ora sono complete: isolamento di rete del pre-render (giro 2), scansione dell'SVG estesa agli `<a href>` esterni, sanificazione lato client dell'SVG Mermaid nell'editor e nella vista (mancava del tutto). La via del markdown resta dichiarata (sezione 13) | revisione avversariale (giro 5) |
+| SEC-1 | sicurezza | maggiore | corretto in sei giri, con un residuo dichiarato. Il gate statico è dichiarato per quello che è — una euristica best-effort — e corretto per UNIONE, mai per scambio, controlli e segmentazioni compresi: lista chiusa delle chiavi sul `metadata` che il lexer produce davvero, scansione `img:`/`icon:` sul blocco grezzo (giro 3, rimessa), schemi di URL, `stateDiagram` fra gli statement con URL (giro 5), le tre modalità di quotatura, il BOM e il `\r` (giro 6). Le difese vere sono tre: isolamento di rete del pre-render (giro 2) e scansione dell'SVG estesa agli `<a href>` esterni sono complete; la sanificazione lato client (giro 5) NON lo è — `mermaid.render` fa partire la GET da un nodo che attacca al documento prima di poter sanificare, misurato e dichiarato in sezione 15. Il gate resta aggirabile in linea di principio: ogni giro dal secondo in poi ha trovato sorgenti che lo passavano e rendevano un riferimento esterno, e nulla prova che il giro 6 sia stato l'ultimo. La via del markdown resta dichiarata (sezione 13) | revisione avversariale (giri 5 e 6) |
 | SEC-2 | sicurezza | maggiore | corretto nel giro 2 (terzo vettore residuo dopo il giro 1): `\\` consumato come coppia, concatenazione con stringhe HTML e `#` trattato come commento fino a fine riga ovunque, come lo scanner di Graphviz | revisione avversariale (giro 2) |
 | SEC-3 | sicurezza | minore | non corretto, motivato: `X-Forwarded-For` è infrastruttura preesistente identica a `main`, fuori perimetro; dichiarato in sezione 13 | revisione avversariale |
 | I18N-1 | i18n | maggiore | corretto: estrai/applica simmetrici sulle label DOT, `\n` e `\l` intatti; regola aggiunta al prompt di localizzazione | revisione avversariale |
@@ -2404,7 +2458,9 @@ best-effort, correzione per unione, e le tre difese vere rese complete.
 loro `mermaid_static_gate` eseguiti fianco a fianco con quello di oggi sui
 corpora dei verificatori — 81 sorgenti sani (i 15 campioni D8, i 14
 benigni del giro 2, i 35 del giro 4, 17 nuovi mirati alle modifiche) e 27
-vettori maligni di tutti e quattro i giri:
+vettori maligni scelti fra quelli dei quattro giri (un sottoinsieme
+curato: gli script dei verificatori ne contengono 77, e il confronto sul
+set completo è nella tabella della sezione 14.9):
 
 | gate | vettori maligni ACCETTATI | falsi positivi sui sani |
 | --- | --- | --- |
@@ -2433,6 +2489,102 @@ del lexer e le nuove segmentazioni, 4 nell'oracolo di rendering, 8 nella
 prova Playwright della sanificazione client);
 `npm run lint` 4 errori di baseline e 23 warning, nessuno nei
 file toccati; `npm run type-check` e `npm run build` verdi.
+
+### 14.9 Sesto giro della revisione (verifica del giro 5)
+
+Il verificatore del giro 5 ha rifatto per conto suo tutto il lavoro del
+correttore — `git archive` di `939f0a5` e `6c3e067`, corpus estratto con
+l'AST direttamente dagli script dei verificatori dei giri 1-4 (77 vettori
+maligni e 65 sorgenti sani, quasi il triplo del sottoinsieme di 27 usato
+in sezione 14.8), sanificazione client provata in Chromium senza
+intercettazioni — e ha confermato sei punti su sette e l'unione. Non ha
+dato l'ok per due ragioni, ed erano entrambe fondate.
+
+La prima: **il gate era aggirabile oggi**, con la 11.17.2 pinnata. Il
+verificatore ha trovato dieci sorgenti nuovi che il gate accettava e che
+producevano davvero un riferimento esterno nell'SVG reso, con la GET
+arrivata al suo listener. La seconda: **tre righe della documentazione
+sovrastimavano** rispetto a ciò che il codice fa.
+
+| punto | riproduzione | esito del giro 6 |
+| --- | --- | --- |
+| apice singolo dispari in uno scalare YAML piano | `verifica-giro5/nuovi_vettori.py`: `A@{ label: x'y, "\x69mg": "\x68ttp://…" }` → gate `('', '')`, PATCH 200, `<image href="http://…">` nell'SVG e GET arrivata al listener. L'apice non è un delimitatore né per il lexer (è un carattere di `NODE_STRING`) né per js-yaml in mezzo a uno scalare piano, ma lo era per `_split_top_level`, che vedeva UNA voce con chiave `label` | corretto: `_split_top_level` ha tre modalità di quotatura e il gate ne prova due per volta (`any`+`yaml` per le shape, `any`+`double` per gli statement), rifiutando se una qualsiasi segnala. Rieseguita: gate `('mermaid_external_resource', '\x69mg:')` e PATCH 422, dove prima erano `('', '')` e 200. Se il gate venisse scavalcato restano le altre due difese, misurate sullo stesso vettore: la guardia di rete annulla la GET (`prerender_request_blocked`) e la figura non entra nel documento — qui perché senza l'immagine il render torna vuoto (`mermaid_render_returned_empty`), nel vettore gemello con `<a xlink:href>` perché la scansione dell'SVG lo trova (`<a href esterno>`) |
+| apice singolo dispari che nasconde il `;` | stessa fonte: `A["x"] --> B[it's]; click A href "http://…"` e, dalla sonda del giro 6, `A->>A: l'x; properties A: {"icon": "http://…"}` → gate `('', '')` e `<a xlink:href>` / `<image xlink:href>` nell'SVG | corretto dalla stessa unione di segmentazioni (`_QUOTING_DOUBLE` per gli statement). Rieseguita: gate `('mermaid_external_resource', 'click')` e `('…', 'properties')` |
+| `U+FEFF` davanti alla parola chiave di uno statement | stessa fonte: `\ufeffproperties A: {"icon": "http://…"}` in `sequenceDiagram` e la stessa via per `click`/`link`/`links` in `flowchart`, `classDiagram`, `sequenceDiagram` e `stateDiagram`. Il BOM è whitespace per `\s` di JavaScript e non per `str.strip()` di Python | corretto: `_MERMAID_TRIM_RE` toglie il BOM insieme agli spazi. Verificate anche le forme `graph`, `classDiagram-v2`, `stateDiagram` v1, dopo un `;`, con frontmatter e con due BOM di fila |
+| `\r` come a capo del lexer (trovato dal giro 6) | sonda del giro 6: `A --> B\rclick A href "http://…"` → gate `('', '')` e `<a xlink:href>` nell'SVG; `str.split("\n")` non vede il `\r`, il lexer sì | corretto: il `\r` entra fra i separatori di statement, non nella divisione in righe (spostare quella riammetterebbe `---\rtitle: x\r---\rflowchart LR`, oggi rifiutato per tipo: sarebbe uno scambio) |
+| doc: «nessun sorgente D8 che passi il gate li produce» (§3.1, scansione dell'SVG) | falsa: due dei vettori del verificatore passano il gate e producono `<image href>` | riscritta: la scansione è dichiarata difesa indipendente, e la frase dice che sorgenti così sono stati trovati in ognuno dei sei giri |
+| doc: «le difese vere sono tre e ora sono complete» (§3.1, §14.4, PR body) | falsa: §15 documenta che la terza non lo è | riscritta in tutti e tre i punti: le prime due sono complete, la terza ha il residuo del render client-side, con la misura |
+| doc: «una versione futura di Mermaid può aggiungere una via nuova» (§15) | falsa: è aggirabile OGGI con la 11.17.2 pinnata | riscritta: l'aggirabilità è di oggi, con i tre vettori misurati, e nulla prova che il giro 6 sia stato l'ultimo |
+| doc: «27 vettori maligni di tutti e quattro i giri» (§14.8, PR body) | è un sottoinsieme curato: gli script dei verificatori ne contengono 77 | detto: la riga dichiara il sottoinsieme e rimanda alla tabella su corpus completo qui sotto |
+
+**Confronto obbligatorio, su corpus completo.** `939f0a5` (giro 3),
+`6c3e067` (giro 4) e `acc02a1` (giro 5) sono stati estratti con `git
+archive` in tre alberi separati e i loro `mermaid_static_gate` caricati
+con `importlib` accanto a quello dell'albero di lavoro. Il corpus è quello
+estratto con l'AST dagli script dei verificatori dei giri 1-4, più i 31
+vettori nuovi del verificatore del giro 5 e i 27 della sonda del giro 6:
+**135 vettori maligni e 87 sorgenti sani**.
+
+| gate | maligni ACCETTATI (135) | falsi positivi (87) |
+| --- | --- | --- |
+| giro 3 (`939f0a5`) | 100 | 2 |
+| giro 4 (`6c3e067`) | 85 | 4 |
+| giro 5 (`acc02a1`) | 65 | 5 |
+| giro 6 (oggi) | **31** | 5 |
+
+Sul solo corpus storico (77 maligni, 65 sani), che è quello con cui il
+verificatore del giro 5 ha misurato, i numeri sono 43 / 29 / 9 / **9**
+accettati e 1 / 4 / 4 / **4** falsi positivi: il giro 6 non tocca né i
+nove vettori storici ancora accettati né i quattro falsi positivi già
+dichiarati in sezione 15. I **34 vettori che rifiuta e che il giro 5
+accettava** stanno tutti fra i 58 aggiunti dai giri 5 e 6, e i 22 che
+restano accettati fra quelli sono inerti (paragrafo successivo). Nessun
+sorgente rifiutato da uno dei tre alberi precedenti è accettato oggi.
+
+**I 31 vettori ancora accettati sono inerti, e lo sono per misura, non
+per deduzione.** Rendendoli tutti con il pre-render e la guardia di rete
+DISATTIVATA, verso un listener HTTP locale: **0 GET arrivate** e nessun
+`<image>`, `<a href>` esterno o `url(http…)` negli attributi degli SVG
+resi. Sono sorgenti che non parsano (`style A fill:url(…)`,
+`A@ { img: … }`, `%%{ … }%%` a metà riga, le parentesi non bilanciate,
+`Click` maiuscolo, `click` in `block-beta`, `treemap-beta`, `pie`,
+`quadrantChart`, `xychart-beta`, `radar-beta`) o che rendono senza alcun
+riferimento (`mindmap ::icon`, che richiede un pacchetto di icone
+registrato, e `gantt click href`). L'unico che porta l'host nell'SVG è
+`erDiagram` con `click A href "http://…"`, dove `click` diventa il nome
+di un'entità e l'URL finisce nell'`id` del nodo
+(`id="mmd-N-entity-http://…"`) e nel testo dell'entità disegnata. La
+figura entra quindi nel documento (`render_svg_map` la rende, la
+scansione non ha nulla da segnalare), ma l'`id` è testo in un attributo,
+non un riferimento: non parte alcuna richiesta, né dal server né dal
+browser del lettore. Rifiutarlo significherebbe rifiutare l'entità che si
+chiama `click` in ogni `erDiagram`, cioè un falso positivo su contenuto
+legittimo: resta accettato, dichiarato qui.
+
+**Falsi positivi.** Restano i quattro del giro 5, invariati e già
+dichiarati in sezione 15; il giro 6 non ne aggiunge nessuno sul corpus
+storico. Il quinto della tabella (`A@{ label: 'x, img: y' }`) è un
+sorgente sano che ho aggiunto io al corpus e che `acc02a1` rifiutava già:
+lo prende la scansione `\b(?:img|icon)\s*:` sul blocco grezzo, la stessa
+rete del giro 3 che vale già per `A@{ label: "img: la sorgente" }`.
+Verificate invece sane, e passanti, tutte le forme che l'apostrofo rende
+sospette e che sono normalissime in italiano: `A["l'esempio d'uso"]`,
+`A[l'esempio] --> B[d'oro]`, `A@{ label: l'uso }`,
+`A@{ shape: rect, label: "l'a, la b" }`, `A->>B: l'esempio`,
+`stateDiagram-v2 / [*] --> A: l'avvio`, più il BOM davanti a un commento
+`%%`, un sorgente con fine riga CRLF e un `\r` dentro una label quotata.
+
+Gate finali dopo il giro 6 (8 settembre 2026): `ruff check` e `ruff
+format --check` puliti sui file toccati; `ruff check .` del repo **372**
+(invariato); `mypy app` **205** errori in 32 file (invariato, 215
+sorgenti); pytest **1225/1225** verdi, zero saltati (**75 test in più**
+rispetto ai 1150 del giro 5: 10 per l'apice singolo, 16 per il BOM e il
+`\r`, 11 per le forme sane che devono continuare a passare, 1 per le tre
+modalità di quotatura in isolamento, 26 per la rete storica dell'unione,
+11 nell'oracolo di rendering, che rende ogni vettore nuovo e verifica che
+l'SVG contenga davvero il riferimento esterno prima di chiedere il 422);
+il frontend non è stato toccato — `npm run lint` 4 errori di baseline e 23
+warning, `npm run type-check` e `npm run build` verdi.
 
 ## 15. Limiti dichiarati e lavori futuri
 
@@ -2508,7 +2660,7 @@ caso produce un fallback visibile, un log o un errore esplicito.
   riportati a parità di configurazione (sezione 14.3).
 - **Campione reale** per lo script di rivalidazione (A24): aperto, da
   eseguire su un dump di staging prima del rilascio. La revisione
-  avversariale di Fase D è chiusa in cinque giri (sezioni 14.4-14.8).
+  avversariale di Fase D è chiusa in sei giri (sezioni 14.4-14.9).
 
 Limiti aggiunti dalla revisione avversariale di Fase D, con l'id del
 rilievo che li ha resi espliciti.
@@ -2554,10 +2706,21 @@ rilievo che li ha resi espliciti.
   sicurezza NON si regge su di lui: si regge sull'isolamento di rete del
   pre-render, sulla scansione dell'SVG e sulla sanificazione lato client.
   Il gate resta perché dà al docente un 422 leggibile invece di una figura
-  che sparisce, e perché impedisce che il payload arrivi in DB. Non c'è
-  prova che non sia aggirabile: una versione futura di Mermaid può
-  aggiungere una via nuova, e allora la fermeranno le altre tre. La
-  direzione è un vero lexer Mermaid condiviso con il frontend.
+  che sparisce, e perché impedisce che il payload arrivi in DB. **È
+  aggirabile oggi, non in una versione futura di Mermaid**: con la
+  11.17.2 pinnata, il giro 5 ha trovato sorgenti che lo passavano e
+  rendevano un `<image href>` con la GET arrivata al listener (apice
+  singolo dispari in uno scalare YAML piano, `U+FEFF` davanti alla parola
+  chiave di uno statement), e il giro 6 ne ha aggiunto uno suo (il `\r`
+  come a capo del lexer). Il giro 6 li ha chiusi tutti e tre e ha
+  misurato 0 GET sui vettori dei sei giri (sezione 14.9), ma nulla prova
+  che sia stato l'ultimo: è l'esito atteso di una euristica testuale
+  contro un parser vero, e per questo l'analisi di sicurezza si appoggia
+  alle altre difese. Chi trova un nuovo aggiramento incontra
+  l'isolamento di rete (0 GET dal server) e la scansione dell'SVG (la
+  figura non entra nel documento); quello che resta scoperto è il render
+  client-side, nella misura dichiarata più sotto. La direzione è un vero
+  lexer Mermaid condiviso con il frontend.
 - **Il gate delle shape Mermaid è un soprainsieme del lexer** (SEC-1,
   giro 2, allargato dai giri 4 e 5): `_mermaid_shape_blocks` considera
   shape OGNI `@{` del corpo, anche uno scritto dentro una label
@@ -2574,7 +2737,10 @@ rilievo che li ha resi espliciti.
   misurati sul pre-render (i sorgenti si rendono davvero) e tutti con un
   422 esplicito che spiega la ragione; il confronto completo dei tre gate
   su 81 sorgenti sani è in sezione 14.8 (8 falsi positivi su 81, erano 4
-  con il gate del giro 4 e 2 con quello del giro 3).
+  con il gate del giro 4 e 2 con quello del giro 3). Il giro 6 non ne
+  aggiunge nessuno: sul corpus benigno storico dei verificatori restano
+  esattamente questi quattro (sezione 14.9), e le forme con l'apostrofo
+  — normali in italiano — passano tutte.
   - `A@{ label: "img: la sorgente" }` e `A@{ label: "icon: la sua icona" }`:
     la scansione `\b(?:img|icon)\s*:` guarda il blocco GREZZO e non
     distingue una chiave da una label che ne parla. È la rete del giro 3,
@@ -2613,10 +2779,17 @@ rilievo che li ha resi espliciti.
   shape `img:` la prima GET parte durante il render, prima che il
   componente possa sanificare alcunché. Vale per chi scrive il diagramma
   nell'editor (contenuto proprio, richiesta propria) e, se un sorgente
-  aggirasse il gate e finisse in DB, per chi apre la lezione. Chiuderlo
-  richiede di rendere fuori dal documento (un `<iframe>` sandbox o un
-  `container` staccato), cioè di riscrivere il ciclo di render del
-  componente: il test `test_the_render_of_mermaid_itself_still_fetches_declared_limit`
+  aggirasse il gate e finisse in DB, per chi apre la lezione — e il gate
+  è aggirabile, come dice la voce precedente. È **la sola delle tre
+  difese che non è completa**, e nessuna opzione di Mermaid la completa:
+  `securityLevel: 'sandbox'` sposta il render in un `<iframe sandbox="">`
+  (letto in `mermaid.core.mjs`, `sandboxedIframe`), ma l'attributo
+  `sandbox` isola l'origine, non la rete, e le sottorisorse si caricano
+  lo stesso. Chiuderlo richiede di rendere in un contesto senza accesso
+  alla rete — un `<iframe srcdoc>` con una CSP `img-src 'none'`, con
+  Mermaid caricato dentro — cioè di riscrivere il ciclo di render del
+  componente e la sua misurazione della geometria; il test
+  `test_the_render_of_mermaid_itself_still_fetches_declared_limit`
   segnala il giorno in cui Mermaid cambia comportamento da sé.
   **Fino al giro 3 l'affermazione scritta qui era falsa**: il gate era una
   lista di pattern testuali su un blocco che Mermaid dà a js-yaml,
@@ -2624,9 +2797,12 @@ rilievo che li ha resi espliciti.
   restava in DB e ogni lettore lo rendeva client-side. **Fino al giro 4
   era falsa la riga che dava SEC-1 per chiuso**: il gate del giro 4
   riapriva sette vettori del giro 3 e nessuna sanificazione client
-  esisteva. Il rimedio simmetrico che manca ancora è portare il gate
-  statico anche nel frontend, così che l'editor spieghi al docente perché
-  quel diagramma non si potrà salvare.
+  esisteva. **Fino al giro 5 erano sovrastimate le righe che davano le
+  tre difese per «complete»**: questa non lo è, e il verificatore del
+  giro 5 lo ha misurato riproducendo la GET del render in Chromium senza
+  intercettazioni. Il rimedio simmetrico che manca ancora è portare il
+  gate statico anche nel frontend, così che l'editor spieghi al docente
+  perché quel diagramma non si potrà salvare.
 - **Le chiavi di shape scritte in forme YAML non piane sono rifiutate**
   (SEC-1, giro 4): la lista chiusa ammette una chiave solo in forma piana
   o quotata senza escape, quindi `A@{ ? shape : rect }`, `A@{ "lab\x65l":

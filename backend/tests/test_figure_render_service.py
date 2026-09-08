@@ -563,6 +563,126 @@ def test_mermaid_state_gate_keeps_click_as_text(code: str):
     assert frs.REGISTRY["mermaid"].validate(code) == (True, "")
 
 
+# BOM: nel sorgente dei test resta una costante con il nome, non un
+# carattere invisibile in mezzo a una stringa.
+_BOM = "\ufeff"
+
+# Giro 6, prima desincronizzazione: l'apice singolo. Per il lexer dei
+# flowchart è un carattere di NODE_STRING (regola
+# `[A-Za-z0-9!"\#$%&'*+.`?\\_/]` di `chunk-SHT3W25Y.mjs`), per js-yaml in
+# mezzo a uno scalare piano è un carattere qualsiasi — per lo splitter del
+# gate era un delimitatore. Un apice DISPARI «quotava» quindi tutto ciò che
+# seguiva: nel blocco `@{ … }` la virgola che separava la voce successiva,
+# in una riga il `;` che separava lo statement successivo. Tutti misurati
+# sul pre-render: `<image href>` con la GET arrivata al listener per il
+# primo gruppo, `<a xlink:href>` per il secondo.
+MERMAID_ODD_QUOTE_BYPASSES = (
+    'flowchart LR\n  A@{ label: x\'y, "\\x69mg": "\\x68ttp://interno/x.png" }\n  A-->B',
+    'flowchart LR\n  A@{ label: don\'t, "\\x69mg": "\\x68ttp://interno/x.png" }\n  A-->B',
+    'flowchart LR\n  A@{ label: l\'a, "\\x69con": "\\x68ttp://interno/x.png" }\n  A-->B',
+    'flowchart LR\n  A@{ label: x\'y, img: "http://interno/x.png" }\n  A-->B',
+    'flowchart LR\n  A@{ label: x\'y\n  "\\x69mg": "\\x68ttp://interno/x.png" }\n  A-->B',
+    'flowchart LR\n  A["x"] --> B[it\'s]; click A href "http://interno/x.png"',
+    'flowchart LR\n  A[l\'esempio]; click A href "http://interno/x.png"',
+    'stateDiagram-v2\n  A: l\'s; click A href "http://interno/x.png"',
+    'sequenceDiagram\n  participant A\n  A->>A: l\'x; properties A: {"icon": "http://x"}',
+    'sequenceDiagram\n  participant A\n  Note over A: l\'x; links A: {"D": "http://x"}',
+)
+
+# Giro 6, seconda e terza desincronizzazione: il whitespace. `U+FEFF` è
+# l'unico carattere in cui `\s` di JavaScript — il whitespace che il lexer
+# salta — è più largo dell'insieme di `str.strip()` di Python, e nascondeva
+# la parola chiave iniziale di uno statement; il `\r` è un a capo per il
+# lexer ma non per `str.split("\n")`, e nascondeva l'intero statement che
+# lo seguiva. Ogni riga è misurata sul pre-render (sezione 14.9).
+MERMAID_JS_WHITESPACE_BYPASSES = (
+    "flowchart LR\n  A --> B\n" + _BOM + 'click A href "http://interno/x.png"',
+    "graph LR\n  A --> B\n" + _BOM + 'click A href "http://interno/x.png"',
+    "flowchart LR\n  A --> B;" + _BOM + 'click A href "http://interno/x.png"',
+    "flowchart LR\n  A --> B\n  " + _BOM + ' click A href "http://interno/x.png"',
+    "flowchart LR\n  A --> B\n" + _BOM * 2 + 'click A href "http://interno/x.png"',
+    "---\ntitle: x\n---\nflowchart LR\n  A --> B\n" + _BOM + 'click A href "http://x"',
+    "classDiagram\n  class A\n" + _BOM + 'link A "http://interno/x.png" "t"',
+    "classDiagram-v2\n  class A\n" + _BOM + 'link A "http://interno/x.png" "t"',
+    "stateDiagram\n  [*] --> A\n" + _BOM + 'click A href "http://interno/x.png"',
+    "stateDiagram-v2\n  [*] --> A\n" + _BOM + 'click A href "http://interno/x.png"',
+    "sequenceDiagram\n  participant A\n" + _BOM + 'properties A: {"icon": "http://x"}',
+    "sequenceDiagram\n  participant A\n" + _BOM + 'links A: {"D": "http://x"}',
+    "sequenceDiagram\n  participant A\n" + _BOM + 'details A: {"x": "http://x"}',
+    'flowchart LR\n  A --> B\rclick A href "http://interno/x.png"',
+    'stateDiagram-v2\n  [*] --> A\rclick A href "http://interno/x.png"',
+    'sequenceDiagram\n  participant A\n  A->>A: x\rproperties A: {"icon": "http://x"}',
+)
+
+
+@pytest.mark.parametrize("code", MERMAID_ODD_QUOTE_BYPASSES)
+def test_the_gate_segments_with_both_quotings(code: str):
+    """SEC-1 (giro 6): nessuna delle segmentazioni possibili coincide con il
+    parser vero, quindi il gate non ne sceglie una — le prova a coppie e
+    rifiuta se una qualsiasi segnala. `_QUOTING_ANY` è quella dei giri 2-5,
+    `_QUOTING_YAML` apre le stringhe solo dove può iniziare un nodo (come
+    js-yaml) e `_QUOTING_DOUBLE` non tratta l'apice come delimitatore (come
+    il lexer). È l'unione applicata alla segmentazione, non solo ai
+    controlli."""
+    assert frs.REGISTRY["mermaid"].validate(code)[0] is False, code
+
+
+@pytest.mark.parametrize("code", MERMAID_JS_WHITESPACE_BYPASSES)
+def test_the_gate_reads_the_whitespace_of_the_lexer(code: str):
+    """SEC-1 (giro 6): il gate deve leggere il whitespace come lo legge il
+    lexer, non come lo legge Python. Il BOM si toglie insieme agli spazi e
+    il `\r` è un separatore di statement; il `\r` NON entra invece nella
+    divisione in righe, che sposterebbe anche il riconoscimento del tipo e
+    del frontmatter e riammetterebbe sorgenti oggi rifiutati."""
+    assert frs.REGISTRY["mermaid"].validate(code)[0] is False, code
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        # L'apostrofo è normale in italiano e in inglese: le label che lo
+        # contengono devono continuare a passare, quotate o meno.
+        "flowchart LR\n  A[\"l'esempio d'uso\"] --> B",
+        "flowchart LR\n  A[l'esempio] --> B[d'oro]",
+        'flowchart LR\n  A@{ label: "l\'uso" } --> B',
+        "flowchart LR\n  A@{ label: l'uso } --> B",
+        'flowchart LR\n  A@{ shape: rect, label: "l\'a, la b" } --> B',
+        "sequenceDiagram\n  A->>B: l'esempio\n  B->>A: d'accordo",
+        "stateDiagram-v2\n  [*] --> A: l'avvio\n  A --> [*]",
+        # Apice a INIZIO nodo: lì è un vero delimitatore anche per js-yaml,
+        # quindi `img:` dentro lo scalare quotato è testo e il sorgente si
+        # rende senza alcun riferimento esterno.
+        "flowchart LR\n  A@{ label: 'x' } --> B",
+        # Un BOM davanti a un commento `%%` resta un commento anche per il
+        # lexer: il primo token dello statement non è una parola.
+        "flowchart LR\n  A --> B\n" + _BOM + "%% click qui",
+        # CRLF: il `\r` di fine riga produce statement vuoti, non falsi
+        # positivi.
+        "flowchart LR\r\n  A --> B\r\n  B --> C",
+        # `\r` dentro una label quotata non separa nulla.
+        'flowchart LR\n  A["riga1\rriga2"] --> B',
+    ],
+)
+def test_apostrophes_and_line_endings_are_not_false_positives(code: str):
+    assert frs.REGISTRY["mermaid"].validate(code) == (True, ""), code
+
+
+def test_split_top_level_follows_three_different_quotings():
+    """Le tre modalità in isolamento, sulla stessa stringa: `any` vede una
+    voce sola (l'apice le quota la virgola), `yaml` due (l'apice è in mezzo
+    a uno scalare piano, non a inizio nodo) e `double` due (l'apice non è
+    un delimitatore). Il gate usa `any`+`yaml` per le shape e `any`+`double`
+    per gli statement."""
+    testo = 'label: x\'y, img: "http://x"'
+    assert len(list(frs._split_top_level(testo, ",", quoting=frs._QUOTING_ANY))) == 1
+    assert len(list(frs._split_top_level(testo, ",", quoting=frs._QUOTING_YAML))) == 2
+    assert len(list(frs._split_top_level(testo, ",", quoting=frs._QUOTING_DOUBLE))) == 2
+    # A inizio nodo l'apice quota anche per `yaml`: è il caso in cui js-yaml
+    # legge davvero uno scalare quotato.
+    quotato = "label: 'x, img: y'"
+    assert len(list(frs._split_top_level(quotato, ",", quoting=frs._QUOTING_YAML))) == 1
+
+
 # Ogni sorgente che un giro precedente della revisione rifiutava: il gate
 # di oggi deve rifiutarli TUTTI. È la rete che avrebbe colto il giro 4, che
 # chiudendo gli escape YAML aveva riaperto sette vettori del giro 3.
@@ -571,6 +691,8 @@ MERMAID_HISTORICAL_VECTORS = (
     *MERMAID_URL_STATEMENTS_REJECTED,
     *MERMAID_SHAPE_DESYNC_BYPASSES,
     *MERMAID_STATE_URL_STATEMENTS,
+    *MERMAID_ODD_QUOTE_BYPASSES,
+    *MERMAID_JS_WHITESPACE_BYPASSES,
     # giro 1: `}` dentro una stringa quotata
     'flowchart LR\n  A@{ label: "}", img: "http://interno/x.png", w: 60 }\n  A-->B',
     # giro 2: URL protocol-relative e apici singoli

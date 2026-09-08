@@ -361,6 +361,51 @@ _MERMAID_SHAPE_STR_NEWLINE_RE = re.compile(r"\n\s*")
 _YAML_FLOW_BRACKETS = "[{"
 _MERMAID_STATEMENT_BRACKETS = "[({"
 _BRACKET_PAIRS = {"[": "]", "(": ")", "{": "}"}
+# Modalità di quotatura di `_split_top_level`. Nessuna delle tre coincide
+# con il parser vero — il lexer di Mermaid, js-yaml e il gate hanno tre
+# idee diverse di che cosa sia una stringa — quindi il gate non ne sceglie
+# una: le prova a coppie e rifiuta se una qualsiasi delle due segnala
+# (unione, mai scambio; giro 6).
+#   * `any`    — `"` e `'` aprono ovunque: è il comportamento dei giri 2-5,
+#                tenuto perché è l'unico che vede certe forme sbilanciate.
+#   * `double` — solo `"` apre. Per il lexer dei flowchart l'apice NON è un
+#                delimitatore ma uno dei caratteri ammessi in un
+#                NODE_STRING, insieme a `"` stesso (la classe
+#                `[A-Za-z0-9!"#$%&'*+./?\\_]` più l'apice inverso, in
+#                `chunk-SHT3W25Y.mjs`):
+#                un apice dispari «quotava» il resto della riga per il gate
+#                e nascondeva il `;` dello statement successivo
+#                (`A[it's]; click A href "http://…"` → `<a xlink:href>`,
+#                misurato al giro 6).
+#   * `yaml`   — `"` e `'` aprono solo a inizio nodo, come js-yaml: in
+#                mezzo a uno scalare piano sono caratteri come gli altri
+#                (`label: x'y` è lo scalare `x'y`), mentre per il gate
+#                erano un delimitatore e la virgola successiva spariva
+#                insieme alla voce che apriva (`A@{ label: x'y,
+#                "\x69mg": "\x68ttp://…" }` → `<image href>` e GET
+#                arrivata, misurato al giro 6).
+_QUOTING_ANY = "any"
+_QUOTING_DOUBLE = "double"
+_QUOTING_YAML = "yaml"
+# Caratteri dopo i quali (a meno di spazi) può iniziare un nodo YAML: solo
+# lì un apice o una virgoletta aprono uno scalare quotato.
+_YAML_NODE_START = ",:[{\n"
+# Separatori di statement: Mermaid tratta `;` come un a capo, e il lexer
+# salta il `\r` come qualsiasi altro spazio, quindi anche un `\r` separa
+# due statement (`A --> B\rclick A href "http://…"` registra il click,
+# misurato al giro 6) mentre `str.split("\n")` non lo vede. Il `\r` entra
+# QUI e non nella divisione in righe: spostare quella cambierebbe anche il
+# riconoscimento del tipo e del frontmatter, e un sorgente oggi rifiutato
+# (`---\rtitle: x\r---\rflowchart LR`, tipo `---`) tornerebbe ammesso.
+_MERMAID_STATEMENT_SEPARATORS = ";\r"
+# `U+FEFF` (BOM) è l'unico carattere in cui `\s` di JavaScript — cioè il
+# whitespace che il lexer di Mermaid salta — è più largo dell'insieme di
+# `str.strip()` di Python. Davanti a `click`, `link`, `links` o
+# `properties` nascondeva la parola chiave al gate mentre il renderer la
+# eseguiva: misurato al giro 6 con `<a xlink:href>` in flowchart,
+# classDiagram e stateDiagram e `<image xlink:href>` più la GET arrivata
+# al listener in sequenceDiagram.
+_MERMAID_TRIM_RE = re.compile(r"^[\s\ufeff]+|[\s\ufeff]+$")
 # Statement che attaccano a un nodo un URL, un'icona o una callback: non
 # passano dalle shape e nessun gate li vedeva (SEC-1, terza via). Elenco
 # MISURATO rendendo ogni parola chiave in ognuna delle 15 famiglie D8 e
@@ -390,10 +435,13 @@ MERMAID_URL_STATEMENTS: dict[str, tuple[frozenset[str], bool]] = {
     "stateDiagram-v2": (frozenset({"click"}), True),
 }
 _MERMAID_FIRST_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*")
-# Costrutti che caricano una risorsa esterna in un SVG Mermaid già reso:
-# nessun sorgente D8 che passi il gate li produce, quindi la loro presenza
-# è sempre il segno di un contenuto che lo ha aggirato. Applicati SOLO al
-# contenuto dei tag e ai blocchi `<style>` (vedi `_svg_external_ref`).
+# Costrutti che caricano una risorsa esterna in un SVG Mermaid già reso.
+# Questa scansione è una difesa indipendente, non un doppione del gate: il
+# gate è una euristica best-effort e ogni giro della revisione ha trovato
+# sorgenti che lo passano e producono davvero un `<image href>` o un
+# `<a xlink:href>` (giro 6: l'apice dispari, il BOM e il `\r`). Applicati
+# SOLO al contenuto dei tag e ai blocchi `<style>` (vedi
+# `_svg_external_ref`).
 _SVG_EXTERNAL_REF_RE = re.compile(
     r"<(?:image|script|iframe)\b|url\(\s*[\'\"]?\s*(?:https?:|file:|//)|@import",
     re.IGNORECASE,
@@ -505,37 +553,44 @@ def _mermaid_shape_metadata(block: str) -> str:
     return "".join(out)
 
 
-def _mermaid_shape_entries(block: str) -> Iterator[str]:
+def _mermaid_shape_entries(block: str, *, quoting: str = _QUOTING_ANY) -> Iterator[str]:
     """Voci di primo livello di un blocco `@{ … }` (delimitatori esclusi).
 
     Segue la stessa biforcazione di `addVertex` sul `metadata` che il
     lexer produce (`_mermaid_shape_metadata`): senza a capo Mermaid
     avvolge il contenuto in `{ … }` e js-yaml lo legge come mappa in
     forma flow (voci separate da virgola); con almeno un a capo lo legge
-    come mappa in forma blocco (una voce per riga). Virgolette (doppie e
-    singole) e collezioni flow annidate (`[`, `{`) non separano; le
-    parentesi tonde sì, perché per YAML non sono un indicatore. Le voci
-    vuote e i commenti `#` sono saltati, come nel gate del frontmatter."""
+    come mappa in forma blocco (una voce per riga). Le collezioni flow
+    annidate (`[`, `{`) non separano; le parentesi tonde sì, perché per
+    YAML non sono un indicatore. Le voci vuote e i commenti `#` sono
+    saltati, come nel gate del frontmatter."""
     metadata = _mermaid_shape_metadata(block)
     seps = "\n" if "\n" in metadata else ","
-    for entry in _split_top_level(metadata, seps, brackets=_YAML_FLOW_BRACKETS):
+    for entry in _split_top_level(metadata, seps, brackets=_YAML_FLOW_BRACKETS, quoting=quoting):
         stripped = entry.strip()
         if stripped and not stripped.startswith("#"):
             yield stripped
 
 
 def _split_top_level(
-    text: str, separators: str, *, brackets: str = _MERMAID_STATEMENT_BRACKETS
+    text: str,
+    separators: str,
+    *,
+    brackets: str = _MERMAID_STATEMENT_BRACKETS,
+    quoting: str = _QUOTING_ANY,
 ) -> Iterator[str]:
-    """Spezza `text` sui separatori che stanno fuori dalle virgolette
-    (doppie e singole) e fuori dalle parentesi annidate di `brackets`."""
+    """Spezza `text` sui separatori che stanno fuori dalle virgolette e
+    fuori dalle parentesi annidate di `brackets`; `quoting` dice quali
+    virgolette aprono e dove (vedi i `_QUOTING_*`)."""
     closers = {_BRACKET_PAIRS[b] for b in brackets}
-    depth, quote, start = 0, "", 0
+    openers = '"' if quoting == _QUOTING_DOUBLE else "\"'"
+    depth, quote, start, node_start = 0, "", 0, True
     for i, ch in enumerate(text):
         if quote:
             if ch == quote:
-                quote = ""
-        elif ch in "\"'":
+                quote, node_start = "", False
+            continue
+        if ch in openers and (quoting != _QUOTING_YAML or node_start):
             quote = ch
         elif ch in brackets:
             depth += 1
@@ -544,10 +599,11 @@ def _split_top_level(
         elif depth == 0 and ch in separators:
             yield text[start:i]
             start = i + 1
+        node_start = ch in _YAML_NODE_START or (node_start and ch in " \t")
     yield text[start:]
 
 
-def _mermaid_shape_key(entry: str) -> str:
+def _mermaid_shape_key(entry: str, *, quoting: str = _QUOTING_ANY) -> str:
     """Chiave di una voce del blocco: il testo prima dei due punti di
     primo livello (l'intera voce se non ce ne sono), tolto un solo strato
     di virgolette esterne.
@@ -556,7 +612,8 @@ def _mermaid_shape_key(entry: str) -> str:
     chiave `img` (rifiutata perché fuori dalla lista), `"\\x69mg"` resta
     `\\x69mg` e non somiglia ad alcuna chiave ammessa. È il verso giusto
     in cui sbagliare: ogni forma che non riconosciamo è rifiutata."""
-    key = next(_split_top_level(entry, ":")).strip()
+    brackets = _YAML_FLOW_BRACKETS if quoting == _QUOTING_YAML else _MERMAID_STATEMENT_BRACKETS
+    key = next(_split_top_level(entry, ":", brackets=brackets, quoting=quoting)).strip()
     if len(key) >= 2 and key[0] == key[-1] and key[0] in "\"'":
         key = key[1:-1]
     return key.strip()
@@ -564,44 +621,62 @@ def _mermaid_shape_key(entry: str) -> str:
 
 def _mermaid_shape_violation(block: str) -> str | None:
     """Prima chiave non ammessa di un blocco `@{ … }` (`None` se il blocco
-    è tutto dentro la lista chiusa)."""
-    for entry in _mermaid_shape_entries(block):
-        key = _mermaid_shape_key(entry)
-        if key not in MERMAID_SHAPE_KEYS:
-            # I due punti finali distinguono il dettaglio di una shape da
-            # quello di uno statement in `MermaidRenderer.validate`: la
-            # troncatura va fatta PRIMA di aggiungerli.
-            return f"{(key or entry)[:38]}:"
+    è tutto dentro la lista chiusa).
+
+    Le voci si ricavano con DUE segmentazioni e basta che una delle due
+    trovi una chiave fuori lista (unione, mai scambio): `any` è quella dei
+    giri 2-5, `yaml` apre le stringhe solo dove può iniziare un nodo,
+    come js-yaml. Nessuna delle due è il parser vero, e ognuna vede quello
+    che l'altra si perde: `A@{ label: x'y, "\\x69mg": "…" }` è una voce
+    sola per la prima (l'apice dispari le «quota» la virgola) e due per la
+    seconda, che quindi legge la chiave `\\x69mg` e rifiuta."""
+    for quoting in (_QUOTING_ANY, _QUOTING_YAML):
+        for entry in _mermaid_shape_entries(block, quoting=quoting):
+            key = _mermaid_shape_key(entry, quoting=quoting)
+            if key not in MERMAID_SHAPE_KEYS:
+                # I due punti finali distinguono il dettaglio di una shape
+                # da quello di uno statement in `MermaidRenderer.validate`:
+                # la troncatura va fatta PRIMA di aggiungerli.
+                return f"{(key or entry)[:38]}:"
     return None
 
 
-def _mermaid_statements(lines: Iterable[str]) -> Iterator[str]:
-    """Statement del corpo: Mermaid tratta `;` come un a capo, quindi una
-    riga può contenerne più d'uno (`A-->B; click A href "…"` registra il
-    click, misurato). Il `;` dentro le virgolette o dentro la sezione di
-    una label non separa: `A["fai clic; click qui"]` è un solo
-    statement, e si rende."""
+def _mermaid_statements(lines: Iterable[str], *, quoting: str = _QUOTING_ANY) -> Iterator[str]:
+    """Statement del corpo: Mermaid tratta `;` e `\\r` come un a capo,
+    quindi una riga di `str.split("\\n")` può contenerne più d'uno
+    (`A-->B; click A href "…"` registra il click, misurato). Il separatore
+    dentro le virgolette o dentro la sezione di una label non separa:
+    `A["fai clic; click qui"]` è un solo statement, e si rende.
+
+    Il BOM davanti allo statement si toglie con il whitespace: per il
+    lexer è uno spazio, per `str.strip()` no."""
     for line in lines:
-        for stmt in _split_top_level(line, ";"):
-            stripped = stmt.strip()
+        for stmt in _split_top_level(line, _MERMAID_STATEMENT_SEPARATORS, quoting=quoting):
+            stripped = _MERMAID_TRIM_RE.sub("", stmt)
             if stripped:
                 yield stripped
 
 
 def _mermaid_url_statement(kind: str, lines: Iterable[str]) -> str | None:
     """Prima parola chiave di statement che, nella famiglia dichiarata,
-    porta un URL o un'icona nell'SVG (`None` se non ce ne sono)."""
+    porta un URL o un'icona nell'SVG (`None` se non ce ne sono).
+
+    Come per le shape, gli statement si ricavano con DUE segmentazioni e
+    basta che una delle due veda la parola chiave: per il lexer dei
+    flowchart l'apice è un carattere di NODE_STRING, non un delimitatore,
+    e un apice dispari nascondeva il `;` dello statement successivo."""
     entry = MERMAID_URL_STATEMENTS.get(_MERMAID_TYPE_ALIASES.get(kind, kind))
     if entry is None:
         return None
     keywords, fold = entry
-    for stmt in _mermaid_statements(lines):
-        token = _MERMAID_FIRST_TOKEN_RE.match(stmt)
-        if token is None:
-            continue
-        word = token.group(0)
-        if (word.lower() if fold else word) in keywords:
-            return word
+    for quoting in (_QUOTING_ANY, _QUOTING_DOUBLE):
+        for stmt in _mermaid_statements(lines, quoting=quoting):
+            token = _MERMAID_FIRST_TOKEN_RE.match(stmt)
+            if token is None:
+                continue
+            word = token.group(0)
+            if (word.lower() if fold else word) in keywords:
+                return word
     return None
 
 
