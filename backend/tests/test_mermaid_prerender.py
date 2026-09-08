@@ -188,6 +188,48 @@ def test_strip_max_width_regex_cases(raw: str, expected: str):
 
 
 # ---------------------------------------------------------------------------
+# A capo dentro i `<text>`: WeasyPrint li rimuove, Chromium li mostra
+# ---------------------------------------------------------------------------
+
+
+def test_text_newlines_become_a_single_space():
+    """`sankey-beta` scrive nome e valore del nodo in UN solo `<text>`
+    separati da un a capo letterale, senza `<tspan>`. Con `xml:space` di
+    default la specifica SVG dice di RIMUOVERE i fine riga: WeasyPrint lo fa
+    e nel PDF si legge «Lezioni48», Chromium è indulgente e mostra «Lezioni
+    48». Il post-processing porta i due renderer a dire la stessa cosa."""
+    svg = '<svg><text x="1" y="2" dy="0em">Lezioni\n48</text></svg>'
+    unito = mp._join_mermaid_text_newlines(svg)
+    assert unito == '<svg><text x="1" y="2" dy="0em">Lezioni 48</text></svg>'
+    assert mp._join_mermaid_text_newlines(unito) == unito  # idempotente
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        # Nessun a capo: byte per byte lo stesso documento.
+        ("<text>Lezioni 48</text>", "<text>Lezioni 48</text>"),
+        # Più a capo e spazi accumulati collassano in uno solo.
+        ("<text>a\n\n  b</text>", "<text>a b</text>"),
+        # `<text>` con figli (`<tspan>`): gli a capo sono impaginazione del
+        # documento, non testo, e non vanno toccati.
+        ("<text>\n  <tspan>a</tspan>\n</text>", "<text>\n  <tspan>a</tspan>\n</text>"),
+        ("", ""),
+    ],
+)
+def test_join_text_newlines_cases(raw: str, expected: str):
+    assert mp._join_mermaid_text_newlines(raw) == expected
+
+
+def test_the_v10_and_v11_fixtures_are_untouched_by_the_newline_join():
+    """Nessun tipo D8 oltre a sankey emette a capo dentro un `<text>`: sulle
+    due fixture storiche il passaggio è un no-op byte per byte (L2)."""
+    for name in ("mermaid_v10_sample.svg", "mermaid11_flowchart.svg"):
+        svg = (_FIXTURES / name).read_text(encoding="utf-8")
+        assert mp._join_mermaid_text_newlines(svg) == svg, name
+
+
+# ---------------------------------------------------------------------------
 # Sanitizer del sorgente
 # ---------------------------------------------------------------------------
 

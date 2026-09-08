@@ -23,6 +23,7 @@ from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.schemas.course_lesson_slides import LessonSlidesOutput
 from app.services.figure_render_service import available_formats
+from app.services.figure_theme import MERMAID_EXCLUDED_TYPES
 from app.services.openai_client import (
     OpenAIError,
     OpenAINotConfiguredError,
@@ -36,6 +37,13 @@ from app.services.prompt_register import (
 )
 
 log = get_logger("app.openai_lesson_slides")
+
+# Fase 4 crea `new_assets` senza avere in contesto il prompt di Fase 3, che
+# è l'altro punto in cui i tipi esclusi sono scritti: `journey` è la scelta
+# naturale per una slide sul «percorso dello studente» ed emette
+# `<foreignObject>`, che il gate rifiuta e costa un giro di riparazione.
+# Stessa costante del validatore, come in Fase 3: non possono divergere.
+_MERMAID_EXCLUDED_TEXT = ", ".join(MERMAID_EXCLUDED_TYPES)
 
 
 class OpenAILessonSlidesError(OpenAIError):
@@ -119,8 +127,12 @@ PRINCIPI
    11, solo i tipi ammessi, label in testo semplice, nessuna
    direttiva), `vegalite` (spec JSON entro 4000 caratteri, dati
    inline, `clip` e `scale.domain`, niente `config` né interattività)
-   e `dot` (sorgente Graphviz senza attributi di stile né file
-   esterni); niente prompt per immagini né descrizioni testuali.
+   e `dot` (sorgente Graphviz senza colori né font e senza file
+   esterni, `shape` solo quando porta significato: `doublecircle` per
+   uno stato accettante, `Mrecord` per una struttura dati); niente
+   prompt per immagini né descrizioni testuali. Ogni figura che porta
+   numeri dichiara la fonte nella caption o la chiude con «Dati
+   illustrativi, non sperimentali».
    CATALOGO — per `vegalite` scegli il tipo dalla famiglia d'uso:
    confronto fra categorie (barre verticali, orizzontali, raggruppate,
    impilate), parte sul tutto (barre normalizzate, torta, ciambella),
@@ -130,10 +142,12 @@ PRINCIPI
    matrice (mappa di calore), incertezza (barre di errore, banda di
    confidenza), graduatoria (barre ordinate, bastoncini). La torta
    solo con poche categorie che compongono un intero e con quote
-   nettamente diverse: altrimenti barre ordinate. Per `mermaid`, oltre
+   nettamente diverse: altrimenti barre ordinate. Dichiara `sort`
+   quando l'ordine delle categorie è cronologico, logico o per quota:
+   senza, Vega-Lite le mette in ordine alfabetico. Per `mermaid`, oltre
    ai diagrammi di struttura e di processo, sono ammessi gantt,
    quadrantChart, sankey-beta, block-beta, radar-beta, treemap-beta,
-   pie e xychart-beta.
+   pie e xychart-beta; esclusi {_MERMAID_EXCLUDED_TEXT}.
    Per evitare collisioni di ID, prefissa con `*_new_*` (es.
    `fig_new_1`, `tab_new_2`). Anche i `new_assets` seguono il punto 2:
    una slide dedicata ciascuno.

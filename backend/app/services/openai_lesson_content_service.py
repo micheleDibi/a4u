@@ -336,9 +336,11 @@ formato e al tipo di diagramma:
   e cardinalità), mindmap (organizzazione dei concetti), timeline
   (cronologia), gantt (pianificazione e dipendenze temporali),
   block-beta (architettura a blocchi e livelli), sankey-beta (flussi
-  che si ripartiscono fra stadi), quadrantChart (posizionamento su due
-  criteri), radar-beta (profilo su più criteri), treemap-beta
-  (gerarchia con quantità), pie (ripartizione a poche voci),
+  che si ripartiscono fra stadi; unico tipo con colori propri, non del
+  tema: usalo solo quando il flusso è il contenuto), quadrantChart
+  (posizionamento su due criteri), radar-beta (profilo su più criteri,
+  etichette brevi), treemap-beta (gerarchia con quantità
+  confrontabili), pie (ripartizione a poche voci),
   xychart-beta (serie breve su assi, senza pretesa quantitativa);
 - dati, misure, distribuzioni, confronti quantitativi, serie
   temporali → `vegalite` (catalogo dei tipi sotto);
@@ -347,6 +349,9 @@ formato e al tipo di diagramma:
   con parametro, curve di livello) → `function`.
 Niente prompt per immagini né descrizioni testuali: le immagini reali
 le carica il docente dall'editor.
+ONESTÀ DEI DATI, per TUTTI e quattro i formati: ogni figura che porta
+numeri dichiara la fonte nella caption oppure la chiude con «Dati
+illustrativi, non sperimentali».
 
 MERMAID 11. Tipi ammessi: {_MERMAID_TYPES_TEXT}.
 Esclusi: {_MERMAID_EXCLUDED_TEXT}.
@@ -354,23 +359,29 @@ Label in testo semplice (niente HTML né markdown), tra virgolette
 doppie se contengono caratteri speciali; nessuna direttiva
 `%%{{init}}%%` né frontmatter: il tema lo impone il renderer.
 
-VEGA-LITE (spec JSON v6, ≤ 4000 caratteri) SOLO per: (a) rette o
-polinomi ausiliari sui dati con `data.sequence` + `transform.calculate`;
-(b) dati dei documenti del corso, con la fonte nella caption; (c) dati
-illustrativi, con la caption che termina con «Dati illustrativi, non
-sperimentali». Dati inline in `data.values` (≤ 200 righe); vietati
+VEGA-LITE (spec JSON v6, ≤ 4000 caratteri) SOLO per dati dei documenti
+del corso, dati illustrativi (vale la regola di onestà sopra) o rette e
+polinomi ausiliari con `data.sequence` + `transform.calculate`.
+Dati inline in `data.values` (≤ 200 righe); vietati
 `data.url`, `data.name`, `mark: "image"`, `config`, `$schema`, `params`,
 `selection`, `tooltip`, `usermeta`, `encoding.href`: il tema lo inietta
 il renderer e il grafico è statico. Obbligatori `"clip": true` sui mark
 `line`/`area`/`point`/`trail` e `scale.domain` [min, max] sui canali
 `x`/`y` quantitativi; al massimo una `title` (radice, ≤ 120 caratteri);
 `axis.title` con l'unità di misura sugli assi quantitativi; legenda solo
-con più serie.
+con più serie, ma OBBLIGATORIA quando il colore è l'unico canale che
+nomina i dati (`arc`, `rect`).
+`scale.domain` sul valore che si VEDE: con `stack: "normalize"` è
+[0, 1] e l'asse porta `"format": ".0%"`; con `aggregate`, `bin` o
+`density` contiene il massimo effettivo, altrimenti le barre escono dal
+riquadro. Senza `sort` le categorie escono in ordine ALFABETICO:
+dichiaralo con l'elenco esplicito se l'ordine è cronologico o logico,
+con `{{"field": …, "order": "descending"}}` se conta la quota.
 CATALOGO VEGA-LITE — famiglia d'uso: tipi (costrutto):
 - confronto fra categorie: barre verticali od orizzontali (`bar`;
-  orizzontali quando le etichette sono lunghe), barre raggruppate
-  (`xOffset` sulla seconda variabile), barre impilate
-  (`stack: "zero"`);
+  orizzontali quando le etichette sono lunghe, oltre ~40 caratteri il
+  renderer le tronca), barre raggruppate (`xOffset` sulla seconda
+  variabile), barre impilate (`stack: "zero"`);
 - parte sul tutto: barre impilate normalizzate (`stack: "normalize"`),
   torta e ciambella (`arc` con `theta`; la ciambella aggiunge
   `innerRadius`);
@@ -400,8 +411,13 @@ razionali su una `sequence`) NON si tracciano in Vega-Lite: usa
 {_VEGALITE_EXAMPLE}
 
 DOT (Graphviz): inizia con `graph`, `digraph` o `strict`; label brevi
-tra virgolette doppie; nessun colore, font o stile (li impone il
-renderer); mai `image`, `URL`, `href` o attributi che leggono file.
+tra virgolette doppie; nessun colore né font (li impone il renderer) e
+`shape` SOLO quando porta significato; mai `image`, `URL`, `href` o
+attributi che leggono file. Tipi: albero, albero binario, grafo diretto
+e non orientato (`--`), dipendenze, automa (`shape=circle`,
+`doublecircle` sugli stati accettanti, ingresso `shape=point`), record
+di una struttura dati (`shape=Mrecord` con le porte), raggruppamenti
+(`subgraph cluster_*`).
 Esempio: {_DOT_EXAMPLE}
 
 FUNCTION (figura calcolata da sympy e matplotlib): `content` è la
@@ -468,9 +484,10 @@ TUTTO il testo leggibile dall'utente DEVE essere scritto in {language_code}: non
 la prosa, ma anche OGNI campo testuale degli asset. In particolare:
 - `caption` e `alt_text` degli asset visivi;
 - le ETICHETTE / il testo dei nodi DENTRO il codice Mermaid (le label, NON la sintassi);
-- `title`, `axis.title`, `legend.title` e `header.title` delle spec Vega-Lite; le
-  `label` dei sorgenti DOT; `expressions[].label` e `annotations[].label` delle spec
-  `function`;
+- `title`, `axis.title`, `legend.title` e `header.title` delle spec Vega-Lite e i
+  VALORI TESTUALI dentro `data.values` (le categorie che si leggono su assi e
+  legenda); le `label` dei sorgenti DOT; `expressions[].label` e
+  `annotations[].label` delle spec `function`;
 - `caption`, intestazioni e celle delle tabelle (`markdown`);
 - `label`, `statement`, `explanation` delle equazioni e il `text` di OGNI passo di `proof`;
 - `title` e `content` degli esempi.

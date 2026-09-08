@@ -22,6 +22,17 @@ const MermaidDiagram = lazy(() => import("./MermaidDiagram"));
  * diagramma delle classi i generici si scrivono invece `List~String~`, la
  * forma nativa del linguaggio.
  *
+ * Vincoli di GEOMETRIA, verificati misurando in Chromium il bbox reale dei
+ * `<text>` contro il viewBox (`test_frontend_figure_templates.py`): i tipi
+ * a tela fissa non ridimensionano il riquadro sul testo, e ciò che esce
+ * dalla tela lo taglia WeasyPrint nel PDF. Nel radar il margine del tema
+ * (100 px a sinistra, 200 a destra per la legenda) tiene un'etichetta di
+ * una ventina di caratteri: oltre, va accorciata. Nel treemap il corpo del
+ * testo segue l'ALTEZZA della piastrella e Mermaid lo riduce fino a farlo
+ * stare in larghezza con ~10 px di margine: valori troppo diversi fra loro
+ * producono piastrelle strette con l'etichetta al limite del ritaglio,
+ * quindi il modello tiene le quantità confrontabili.
+ *
  * Ogni template è provato dal test `test_frontend_figure_templates.py`, che
  * li estrae da questo file, li fa passare dal gate di produzione e li rende
  * con Chromium verificando ZERO `<foreignObject>`.
@@ -149,11 +160,11 @@ const TEMPLATES: readonly SourceTemplate[] = [
     code: `treemap-beta
 "Monte ore del corso"
     "Teoria"
-        "Lezioni": 48
-        "Seminari": 12
+        "Lezioni": 40
+        "Seminari": 20
     "Pratica"
-        "Esercitazioni": 24
-        "Laboratorio": 16`,
+        "Esercitazioni": 20
+        "Laboratorio": 20`,
   },
   // --- Quantità e ripartizioni -------------------------------------------
   {

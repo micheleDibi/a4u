@@ -143,6 +143,12 @@ def test_palette_and_theme_configs():
     # Etichette dell'asse discreto in orizzontale, non ruotate di -90° come
     # vuole il default di Vega-Lite (TIP-8).
     assert theme.VEGALITE_THEME_CONFIG["axisX"]["labelAngle"] == 0
+    # Sull'asse y scorrono le categorie per esteso: con i 120 px comuni a
+    # 11 px si taglia oltre una ventina di caratteri e le barre orizzontali
+    # — il tipo che esiste apposta per le etichette lunghe — escono con
+    # «Esercitazion…». Vale per le figure generate, non per i soli modelli.
+    assert theme.VEGALITE_THEME_CONFIG["axis"]["labelLimit"] == 120
+    assert theme.VEGALITE_THEME_CONFIG["axisY"]["labelLimit"] == 220
     # Il config Vega-Lite deve restare serializzabile (viene fuso nella spec).
     json.dumps(theme.VEGALITE_THEME_CONFIG)
     assert set(theme.DOT_DEFAULTS) == {"graph", "node", "edge"}
@@ -355,7 +361,12 @@ def test_mermaid_theme_variables_follow_palette():
                     assert color in allowed, (key, v)
     # Sankey: i link seguono il nodo sorgente (nessun gradiente, D3).
     assert cfg["sankey"] == {"linkColor": "source", "useMaxWidth": True}
-    assert theme.THEME_VERSION == "2026.09.3"
+    # Radar: la tela è fissa (600 px più i margini) e non cresce sul testo.
+    # Con i 50 px di default l'etichetta dell'asse di sinistra e la legenda
+    # di destra finiscono fuori dal viewBox e WeasyPrint le taglia; il
+    # margine destro è il più largo perché ospita la legenda.
+    assert cfg["radar"] == {"marginLeft": 100, "marginRight": 240, "useMaxWidth": True}
+    assert theme.THEME_VERSION == "2026.09.4"
 
 
 def test_figure_theme_ts_mirror_is_aligned():
@@ -382,6 +393,13 @@ def test_figure_theme_ts_mirror_is_aligned():
         assert needle in ts, needle
     assert 'sankey: { linkColor: "source"' in ts
     assert "useGradient: false" in ts
+    # Parametri di GEOMETRIA del tema: la copia frontend disegna l'anteprima
+    # dell'editor, quindi deve tagliare (o non tagliare) esattamente come il
+    # PDF. Un valore diverso qui è una figura che il docente vede intera
+    # nell'editor e trova troncata nella dispensa.
+    radar = theme.mermaid_config(use_max_width=True)["radar"]
+    assert f"radar: {{ marginLeft: {radar['marginLeft']}, marginRight: {radar['marginRight']}" in ts
+    assert f"axisY: {{ labelLimit: {theme.VEGALITE_THEME_CONFIG['axisY']['labelLimit']} }}" in ts
 
 
 # ---------------------------------------------------------------------------

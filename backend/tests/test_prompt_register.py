@@ -37,7 +37,17 @@ MAX_BLOCK_REDUCED = 6_400
 # descritti, solo l'`enum` dello schema strict segue
 # `available_formats()`), quindi le guardie sono deterministiche e restano
 # fissate alla misura reale della variante più lunga + ~5%.
-MAX_SYSTEM_P3 = 27_400
+#
+# Misure del 9 settembre 2026, dopo le correzioni della revisione del
+# catalogo (regole di dominio e ordine delle categorie, legenda
+# obbligatoria su `arc`/`rect`, onestà dei dati estesa ai quattro
+# formati, tipi DOT con `shape`, `data.values` nel blocco LINGUA, tipi
+# Mermaid esclusi anche in Fase 4): P3 27.236 con grounding, 25.817
+# senza, 27.289 con ruolo/stile/EQF interpolati (la variante più lunga);
+# P4 15.100 in entrambe le varianti; P5 invariato. Le correzioni pesano
+# 1.127 caratteri in P3 e 447 in P4, quindi la guardia di P3 sale da
+# 27.400 a 27.700 (~1,5% di margine sulla misura reale).
+MAX_SYSTEM_P3 = 27_700
 MAX_SYSTEM_P4 = 15_400
 MAX_SYSTEM_P5 = 12_500
 

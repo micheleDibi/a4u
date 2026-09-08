@@ -12,7 +12,7 @@ import type { MermaidConfig } from "mermaid";
  * default) e FigureFrame.
  */
 
-export const THEME_VERSION = "2026.09.3";
+export const THEME_VERSION = "2026.09.4";
 
 export const FONT_FAMILY_PRIMARY = "Noto Sans";
 export const FONT_STACK = '"Noto Sans", "DejaVu Sans", sans-serif';
@@ -279,7 +279,9 @@ export function mermaidConfig({
     quadrantChart: { ...perType },
     sankey: { linkColor: "source", ...perType },
     block: { ...perType },
-    radar: { ...perType },
+    // Margini più larghi dei 50 px di default: altrimenti l'etichetta
+    // dell'asse di sinistra e la legenda di destra escono dalla tela.
+    radar: { marginLeft: 100, marginRight: 240, ...perType },
   };
 }
 
@@ -313,6 +315,9 @@ export const VEGALITE_THEME_CONFIG: Record<string, unknown> = {
   },
   // Asse x discreto in orizzontale (il default di Vega-Lite lo ruota).
   axisX: { labelAngle: 0, labelOverlap: "greedy" },
+  // Asse y: ci scorrono le categorie per esteso, non i numeri. Con i
+  // 120 px comuni le barre orizzontali escono con «Esercitazion…».
+  axisY: { labelLimit: 220 },
   legend: {
     labelFont: FONT_FAMILY_PRIMARY,
     titleFont: FONT_FAMILY_PRIMARY,

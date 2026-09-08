@@ -34,7 +34,7 @@ from typing import Any, TypeGuard
 
 # Entra nella chiave di cache `(fmt, sha256(content), THEME_VERSION, language)`
 # di `figure_render_service`: un tema diverso invalida gli SVG in cache.
-THEME_VERSION = "2026.09.3"
+THEME_VERSION = "2026.09.4"
 
 FONT_FAMILY_PRIMARY = "Noto Sans"
 # Gli stessi font installati nel Dockerfile (fonts-noto-core, fonts-dejavu-core).
@@ -455,7 +455,13 @@ def mermaid_config(*, use_max_width: bool, security_level: str = "loose") -> dic
         "quadrantChart": dict(per_type),
         "sankey": {"linkColor": "source", **per_type},
         "block": dict(per_type),
-        "radar": dict(per_type),
+        # Radar: con i margini di default (50 px per lato) la tela è
+        # 700×700 e il cerchio arriva a 31 px dal bordo — l'etichetta
+        # dell'asse che punta a sinistra e la legenda a destra escono dal
+        # viewBox e WeasyPrint le taglia («ittura», due voci entrambe
+        # «Rilevazione»). Il margine destro è il più largo perché ospita la
+        # legenda. Misurato in Chromium sul bbox reale dei `<text>`.
+        "radar": {"marginLeft": 100, "marginRight": 240, **per_type},
     }
 
 
@@ -505,6 +511,14 @@ VEGALITE_THEME_CONFIG: dict[str, Any] = {
     # larghezza discreta di `view` le categorie hanno spazio; se non basta
     # `labelOverlap` ne nasconde una invece di sovrapporle.
     "axisX": {"labelAngle": 0, "labelOverlap": "greedy"},
+    # Asse y: ci scorrono le CATEGORIE scritte per esteso («Studio
+    # individuale assistito»), mentre sull'asse x sono numeri o etichette
+    # brevi. Con i 120 px comuni, a 11 px si taglia oltre una ventina di
+    # caratteri e le barre orizzontali — il tipo che esiste apposta per le
+    # etichette lunghe — escono con «Esercitazion…». Il limite più
+    # generoso vale anche per le figure GENERATE dal modello, non solo per
+    # i modelli degli editor.
+    "axisY": {"labelLimit": 220},
     "legend": {
         "labelFont": FONT_FAMILY_PRIMARY,
         "titleFont": FONT_FAMILY_PRIMARY,

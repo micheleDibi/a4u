@@ -18,6 +18,18 @@ const VegaLiteDiagram = lazy(() => import("./VegaLiteDiagram"));
  * `test_frontend_figure_templates.py`, che li estrae da questo file e li
  * fa passare dal validatore di produzione e da `vl_convert`: un template
  * che non si salverebbe fa fallire la suite.
+ *
+ * Regole di LEGGIBILITÀ, verificate sull'SVG reso e non presunte (le
+ * stesse che il prompt di Fase 3 chiede al modello):
+ * - l'ORDINE delle categorie è contenuto: senza `sort` Vega-Lite le
+ *   dispone in ordine alfabetico e un orario esce «Giovedì, Lunedì…».
+ *   Sulla torta e sulla ciambella `color.sort` ordina la legenda ma NON
+ *   gli spicchi: l'ordine angolare lo decide il canale `order`;
+ * - il DOMINIO va scelto sul valore che si vede: con `stack: "normalize"`
+ *   è [0, 1] con `axis.format` ".0%", con `aggregate`/`bin`/`density`
+ *   contiene il massimo effettivo (`bar` non è ritagliato da `clip`);
+ * - le etichette d'asse oltre il `labelLimit` del tema (220 px sull'asse
+ *   y, ~40 caratteri) escono troncate con un'ellissi.
  */
 interface VegaLiteEditorProps {
   value: string;
@@ -141,12 +153,20 @@ const TEMPLATES: readonly SourceTemplate[] = [
   },
   "mark": "bar",
   "encoding": {
-    "x": {"field": "sessione", "type": "nominal", "axis": {"title": "Sessione"}},
+    "x": {
+      "field": "sessione", "type": "nominal",
+      "sort": ["Invernale", "Estiva", "Autunnale"],
+      "axis": {"title": "Sessione"}
+    },
     "y": {
       "field": "studenti", "type": "quantitative", "stack": "zero",
       "scale": {"domain": [0, 100]}, "axis": {"title": "Studenti"}
     },
-    "color": {"field": "esito", "type": "nominal", "legend": {"title": "Esito"}}
+    "color": {
+      "field": "esito", "type": "nominal",
+      "sort": ["Superato", "Respinto", "Ritirato"],
+      "legend": {"title": "Esito"}
+    }
   }
 }`,
   },
@@ -171,13 +191,21 @@ const TEMPLATES: readonly SourceTemplate[] = [
   },
   "mark": "bar",
   "encoding": {
-    "x": {"field": "sessione", "type": "nominal", "axis": {"title": "Sessione"}},
+    "x": {
+      "field": "sessione", "type": "nominal",
+      "sort": ["Invernale", "Estiva", "Autunnale"],
+      "axis": {"title": "Sessione"}
+    },
     "y": {
       "field": "studenti", "type": "quantitative", "stack": "normalize",
       "scale": {"domain": [0, 1]},
       "axis": {"title": "Quota sul totale", "format": ".0%"}
     },
-    "color": {"field": "esito", "type": "nominal", "legend": {"title": "Esito"}}
+    "color": {
+      "field": "esito", "type": "nominal",
+      "sort": ["Superato", "Respinto", "Ritirato"],
+      "legend": {"title": "Esito"}
+    }
   }
 }`,
   },
@@ -199,7 +227,12 @@ const TEMPLATES: readonly SourceTemplate[] = [
   "mark": {"type": "arc"},
   "encoding": {
     "theta": {"field": "ore", "type": "quantitative", "stack": true},
-    "color": {"field": "componente", "type": "nominal", "legend": {"title": "Componente"}}
+    "order": {"field": "ore", "type": "quantitative", "sort": "descending"},
+    "color": {
+      "field": "componente", "type": "nominal",
+      "sort": {"field": "ore", "order": "descending"},
+      "legend": {"title": "Componente"}
+    }
   }
 }`,
   },
@@ -219,7 +252,12 @@ const TEMPLATES: readonly SourceTemplate[] = [
   "mark": {"type": "arc", "innerRadius": 60},
   "encoding": {
     "theta": {"field": "peso", "type": "quantitative", "stack": true},
-    "color": {"field": "prova", "type": "nominal", "legend": {"title": "Prova"}}
+    "order": {"field": "peso", "type": "quantitative", "sort": "descending"},
+    "color": {
+      "field": "prova", "type": "nominal",
+      "sort": {"field": "peso", "order": "descending"},
+      "legend": {"title": "Prova"}
+    }
   }
 }`,
   },
@@ -319,7 +357,9 @@ const TEMPLATES: readonly SourceTemplate[] = [
     ]
   },
   "transform": [
-    {"density": "valore", "groupby": ["gruppo"], "extent": [0, 8], "steps": 40}
+    {"density": "valore", "groupby": ["gruppo"], "extent": [0, 8], "steps": 40},
+    {"calculate": "datum.density / 2", "as": "meta"},
+    {"calculate": "-datum.density / 2", "as": "metaneg"}
   ],
   "mark": {
     "type": "area", "clip": true, "orient": "horizontal",
@@ -331,9 +371,10 @@ const TEMPLATES: readonly SourceTemplate[] = [
       "scale": {"domain": [0, 8]}, "axis": {"title": "Valore (unità)"}
     },
     "x": {
-      "field": "density", "type": "quantitative", "stack": "center",
+      "field": "metaneg", "type": "quantitative",
       "scale": {"domain": [-0.5, 0.5]}, "axis": {"title": "Densità"}
     },
+    "x2": {"field": "meta"},
     "column": {"field": "gruppo", "type": "nominal", "header": {"title": "Gruppo"}}
   }
 }`,
@@ -605,8 +646,16 @@ const TEMPLATES: readonly SourceTemplate[] = [
   },
   "mark": {"type": "rect"},
   "encoding": {
-    "x": {"field": "giorno", "type": "nominal", "axis": {"title": "Giorno"}},
-    "y": {"field": "fascia", "type": "ordinal", "axis": {"title": "Fascia oraria"}},
+    "x": {
+      "field": "giorno", "type": "nominal",
+      "sort": ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì"],
+      "axis": {"title": "Giorno"}
+    },
+    "y": {
+      "field": "fascia", "type": "ordinal",
+      "sort": ["9-11", "11-13", "14-16"],
+      "axis": {"title": "Fascia oraria"}
+    },
     "color": {
       "field": "ore", "type": "quantitative",
       "scale": {"scheme": "blues"}, "legend": {"title": "Ore"}
@@ -640,10 +689,13 @@ const TEMPLATES: readonly SourceTemplate[] = [
       }
     },
     {
-      "mark": {"type": "errorbar", "ticks": true},
+      "mark": {"type": "errorbar", "ticks": {"size": 12}},
       "encoding": {
         "x": {"field": "gruppo", "type": "nominal"},
-        "y": {"field": "lo", "type": "quantitative", "scale": {"domain": [0, 7]}},
+        "y": {
+          "field": "lo", "type": "quantitative",
+          "scale": {"domain": [0, 7]}, "axis": {"title": "Media (unità)"}
+        },
         "y2": {"field": "hi"}
       }
     }

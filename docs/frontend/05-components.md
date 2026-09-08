@@ -1221,6 +1221,24 @@ un'eccezione che rompa la pagina.
   `backend/tests/test_frontend_figure_templates.py`, che li estrae da
   questi file e li fa passare dal validatore e dal renderer di produzione:
   un modello del menu non può produrre un 422 al salvataggio.
+- **Decisione dichiarata, non svista: il CODICE dei modelli resta in
+  italiano anche con l'interfaccia in inglese.** I nomi nel menu e le
+  famiglie d'uso sono tradotti (164 chiavi speculari in `it.json` e
+  `en.json`, verificate dal test), ma i dati d'esempio dentro il template
+  literal no: un docente anglofono che sceglie «Pie chart» ottiene
+  «Ripartizione del monte ore del corso». Il modello è un punto di
+  partenza da riscrivere con i dati del proprio corso — quello che resta
+  della lingua sono etichette che vanno comunque sostituite — e un
+  secondo insieme di modelli per lingua raddoppierebbe la superficie da
+  provare (47 modelli × N lingue) senza togliere quel passaggio. Se un
+  giorno il prodotto avrà più lingue d'interfaccia che utenti italiani,
+  la via è un insieme di modelli con etichette neutre (A/B/C, gruppo
+  1..n, mesi abbreviati), non una traduzione dei dati d'esempio.
+- **I modelli sono anche il campione di GEOMETRIA** del tema: le loro
+  etichette stanno dentro la tela (misurato in Chromium sul bbox reale,
+  §18 del doc 17) e non vengono troncate dal `labelLimit` di Vega-Lite.
+  Un modello nuovo con un'etichetta lunga fa fallire i test di geometria,
+  che è il modo giusto per scoprirlo.
 
 ### `FunctionEditor.tsx`
 

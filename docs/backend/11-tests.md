@@ -456,6 +456,13 @@ target, testo matematico e lingue latine no. Puro.
 
 ### `docs/PROMPTS.md` contro i prompt reali
 
+**Nella suite dal 9 settembre 2026**: `tests/test_prompts_md_matches_code.py`
+invoca la stessa funzione di confronto dello script e fallisce sul diff,
+con la controprova che tolta una riga il confronto la vede. Finché il
+controllo era solo un comando da lanciare a mano la deriva passava in
+silenzio (il documento aveva perso tre righe del PROMPT 12 per diversi
+commit). Lo script resta il modo di LEGGERE il diff e di riallineare.
+
 `docs/PROMPTS.md` riporta i system prompt «verbatim». Lo script
 `backend/scripts/check_prompts_md.py` estrae il primo blocco ```text di
 ogni sezione «# PROMPT n» pertinente (3 dispense con grounding, 4
@@ -474,8 +481,9 @@ JWT_SECRET=$(printf 'x%.0s' $(seq 1 40)) python3 -m scripts.check_prompts_md
 ```
 
 Exit 0 se ogni blocco coincide, 1 con un diff unificato per blocco
-divergente o mancante. Va eseguito dopo ogni modifica dei prompt e
-prima di chiudere una PR che li tocca; i messaggi user e gli schemi JSON
+divergente o mancante. Va eseguito dopo ogni modifica dei prompt (il
+diff dice esattamente che cosa incollare nel documento) e prima di
+chiudere una PR che li tocca; i messaggi user e gli schemi JSON
 restano documentazione descrittiva e non sono confrontati.
 
 ### Rivalidazione degli asset Mermaid in DB

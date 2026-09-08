@@ -1176,9 +1176,10 @@ Mermaid, stesso `THEME_VERSION`), pinnata dal test di parità
 `test_figure_theme.py` (`:304-327`). Ogni nuova chiave di `themeVariables`
 va replicata nel `.ts` nello stesso commit.
 
-- `THEME_VERSION = "2026.09.3"`: entra nella chiave di cache degli SVG; ogni
+- `THEME_VERSION = "2026.09.4"`: entra nella chiave di cache degli SVG; ogni
   modifica visibile del tema lo incrementa (Fase D lo ha portato da
-  `2026.09.2` a `2026.09.3` per le tre correzioni del tema qui sotto).
+  `2026.09.2` a `2026.09.3` per le tre correzioni del tema qui sotto, la
+  revisione del catalogo a `2026.09.4` per le due di geometria, §18).
 - Font: `FONT_FAMILY_PRIMARY = "Noto Sans"`, `FONT_STACK = '"Noto Sans",
   "DejaVu Sans", sans-serif'`, `FONT_ALLOWED = {Noto Sans, DejaVu Sans}`
   (guardia dei test), `MERMAID_FONT_FAMILY` con `Noto Sans CJK JP` per le
@@ -1205,7 +1206,11 @@ va replicata nel `.ts` nello stesso commit.
   TIP-7). Limite noto: `sankey-beta`
   colora i nodi con `schemeTableau10` di d3, hard-coded nel renderer.
   `security_level`: `loose` nei Chromium headless del backend, `strict` nel
-  browser dell'utente (default di `mermaidConfig` nel `.ts`).
+  browser dell'utente (default di `mermaidConfig` nel `.ts`). Il blocco per
+  tipo porta anche l'unica correzione di GEOMETRIA: `radar: {marginLeft:
+  100, marginRight: 240}`, perché con i 50 px di default la tela 700×700
+  lascia 31 px all'etichetta dell'asse di sinistra e 71 alla legenda, e
+  WeasyPrint taglia quello che esce dal `viewBox` (§18).
 - Vega-Lite: `VEGALITE_THEME_CONFIG` (`figure_theme.py:458`): `font`,
   `background: "transparent"` (lo schema non ammette `null`), `view`
   360×220 senza bordo — `continuousWidth/Height` **e**
@@ -1215,7 +1220,11 @@ va replicata nel `.ts` nello stesso commit.
   più alto che largo e alto un terzo di colonna accanto a uno scatter
   (Fase D, TIP-6) —, `axisX: {labelAngle: 0, labelOverlap: "greedy"}`
   perché Vega-Lite ruota di −90° le etichette ordinali e nominali (resa da
-  cruscotto, TIP-8), `axis`/`legend`/`header`/`title`/`text` con font,
+  cruscotto, TIP-8), `axisY: {labelLimit: 220}` perché sull'asse y scorrono
+  le categorie per esteso e i 120 px comuni le tagliavano oltre una
+  ventina di caratteri — proprio nelle barre orizzontali, il tipo che
+  esiste per le etichette lunghe (§18) —,
+  `axis`/`legend`/`header`/`title`/`text` con font,
   dimensioni e colori del tema, `range.category = PALETTE`, `mark.color =
   PALETTE[0]`, `line.strokeWidth 2`, `point` pieno, `area` 0,35 con linea.
   È iniettato dal renderer: il modello non scrive mai `config` (D5).
@@ -2954,6 +2963,35 @@ caso produce un fallback visibile, un log o un errore esplicito.
   futuro è instradare la duplicazione sugli stessi metodi, con la
   rivalidazione offline dopo la traduzione. La didascalia calcolata di
   `function` non è persistita e segue sempre la lingua del corso a render.
+  **Caso peggiorato dal catalogo (§18)**: `extract_translatable` di
+  Vega-Lite raccoglie `title` e i `*.title` dei canali, non le stringhe
+  dentro `data.values` — e nei tipi che il catalogo ora raccomanda
+  (torta, ciambella, barre ordinate, mappa di calore) le categorie SONO
+  l'etichettatura: su una torta due terzi del testo reso resterebbero in
+  italiano. In generazione il buco è chiuso dal prompt (il blocco LINGUA
+  nomina esplicitamente `data.values`); nella duplicazione no. Chi
+  implementerà l'estrazione deve soddisfare due condizioni misurate: (a)
+  tradurre INSIEME le liste `sort` che ripetono le stesse categorie, o
+  l'ordine dichiarato smette di corrispondere e la figura torna
+  alfabetica in silenzio; (b) tenere sotto controllo il numero di campi
+  di localizzazione, perché il meccanismo è una chiave per percorso e
+  una spec da 200 righe con due campi testuali ne produrrebbe 400 per
+  figura.
+- **Geometria dei tipi Mermaid a tela fissa** (§18). Radar e treemap non
+  ridimensionano il riquadro sulle etichette: il tema allarga i margini
+  del radar (100/240 px) e i test misurano il bbox reale di ogni `<text>`
+  contro il `viewBox`, ma un'etichetta molto lunga esce comunque —
+  l'oracolo la vede, il renderer no. Nel treemap Mermaid riduce il corpo
+  del testo fino a farlo stare in larghezza con ~10 px di margine, e
+  l'impaginazione la decide il font di Chromium mentre il PDF ridisegna
+  con quello di WeasyPrint: in produzione sono lo stesso «Noto Sans»
+  (installato nel container), su una macchina senza quel font le
+  metriche divergono e il margine sottile si perde. Le intestazioni di
+  sezione del treemap usano `cScaleLabel` (bianco sopra il blu della
+  palette) su un riempimento al 60% di opacità, quindi con un contrasto
+  più basso di quello calcolato per il colore pieno: è un limite di
+  Mermaid, non del tema. Lavoro futuro: portare `PALETTE_LABEL` a
+  dipendere dall'opacità del riempimento, o riportare l'opacità a 1.
 - **Mermaid via CDN a runtime** (validatore e pre-render caricano
   `mermaid@11.17.2` da jsdelivr in Chromium). Offline degrada come prima
   del branch: pass-through nel validatore, fallback `<pre>` nel PDF con
@@ -3320,6 +3358,9 @@ Note di merito emerse scrivendo i modelli:
 - **Il violino usa `transform.density` con `encoding.column`**: passa le
   regole D5 (nessun `params`, `clip: true` sull'area, `scale.domain` sui
   due assi quantitativi) e sta in 393 px con `width: 140` per faccetta.
+  La semidensità è calcolata e disegnata con `x`/`x2`: `stack: "center"`
+  centrerebbe la pila sul massimo e non sullo zero, con metà riquadro
+  bianco (§18).
 - **La mappa di calore dichiara `scale.scheme` sul colore**: il tema
   inietta la sola scala categoriale (`range.category`), quindi senza
   schema esplicito una scala continua userebbe il default di Vega.
@@ -3404,3 +3445,148 @@ nuovo nell'editor, o un tipo tolto dal prompt, fa fallire il test. In
 Mermaid nella tabella dei casi d'uso con il loro criterio, le otto
 famiglie e i quattordici costrutti Vega-Lite del catalogo, il criterio
 della torta, il catalogo breve di Fase 4 senza graffe.
+
+## 18. Revisione del catalogo: la figura si giudica RESA (9 settembre 2026)
+
+Due verificatori indipendenti hanno riletto §16 e §17 rendendo davvero i
+modelli e leggendo i PDF. Il catalogo era corretto — nessun modello viene
+rifiutato al salvataggio — ma «valido» e «leggibile» non sono la stessa
+cosa: le prove passavano perché `validate(deep=True)` e `render_svg()`
+dicono soltanto che un SVG esiste, non che il lettore ci trovi il testo.
+I difetti trovati stanno tutti in quello scarto.
+
+**L'oracolo nuovo: la geometria del testo reso.** Per i tipi Mermaid a
+tela fissa si misura in Chromium il bbox reale di ogni `<text>` e lo si
+confronta con il `viewBox`
+(`test_mermaid_template_keeps_its_text_inside_the_canvas`, con la
+controprova su un'etichetta di legenda lunga). Per Vega-Lite si guarda
+l'ellissi: il tema tronca le etichette d'asse oltre `labelLimit` e il
+testo reso finisce con «…»
+(`test_no_vegalite_label_is_truncated_by_the_theme`, con la controprova
+su un'etichetta oltre il limite). Sono controlli che un difetto di resa
+lo vedono; l'ispezione a occhio dei render, che il commit precedente
+dichiarava, non lo aveva visto.
+
+**Correzioni nel TEMA — valgono anche per le figure generate dal
+modello**, che è la metà della richiesta del docente che i modelli degli
+editor non coprono. `THEME_VERSION` sale a `2026.09.4` (la chiave di
+cache degli SVG cambia, come per ogni modifica visibile).
+
+| Difetto misurato | Correzione | Prova |
+|---|---|---|
+| `axis.labelLimit: 120` taglia le categorie oltre ~22 caratteri: le barre **orizzontali** — il tipo che esiste apposta per le etichette lunghe — uscivano con «Esercitazion…», «Studio indiv…» | `axisY.labelLimit: 220` (l'asse y porta le categorie per esteso; sull'asse x restano numeri ed etichette brevi) | i quattro testi tornano interi; nessuno dei 24 modelli resi contiene «…» |
+| Radar: tela 700×700 con margini di 50 px, l'etichetta dell'asse di sinistra e la legenda di destra fuori dal `viewBox`, e nel PDF si leggeva «ittura» e due voci entrambe «Rilevazione» | `radar: {marginLeft: 100, marginRight: 240}` (il margine destro ospita la legenda) | overflow massimo da 30,5 px a 0; PDF WeasyPrint rileggibile, con 17% di margine sull'etichetta più lunga |
+| `sankey-beta` scrive nome e valore in un solo `<text>` separati da un a capo: la specifica SVG dice di RIMUOVERE i fine riga, WeasyPrint lo fa («Lezioni48») e Chromium no («Lezioni 48») | `_join_mermaid_text_newlines` nel post-processing del pre-render, accanto a `_strip_mermaid_max_width` | il PDF legge «Lezioni 48», «Esercitazioni 24»; no-op byte per byte sulle due fixture storiche |
+
+Il margine del radar è misurato, non scelto a occhio: con 200 px la
+legenda resta a 7 px dal bordo e il font di WeasyPrint (più largo di
+quello di Chromium, che ha deciso l'impaginazione) mangiava l'ultima
+lettera; con 240 px il margine è il 17% della larghezza del testo. Resta
+noto e tollerato un solo sconfinamento: Mermaid disegna il **titolo** del
+radar a filo del bordo superiore (`y = -altezza/2`,
+`dominant-baseline: hanging`), quindi l'em box sporge di ~2,6 px anche
+nel campione ufficiale D8; rasterizzando, la prima riga di pixel è vuota
+— l'inchiostro sta dentro. La tolleranza del test è 4 px.
+
+**Correzioni nei MODELLI**, ognuna verificata sull'SVG reso:
+
+- **ordine delle categorie** (`heatmap`, `barsStacked`, `barsNormalized`,
+  `pie`, `donut`): senza `sort` Vega-Lite dispone i domini nominali e
+  ordinali in ordine alfabetico, e l'orario delle lezioni usciva
+  «Giovedì, Lunedì, Martedì…» con le fasce «11-13, 14-16, 9-11». Ora i
+  cinque modelli dichiarano `sort` — elenco esplicito dove l'ordine è
+  cronologico o logico, `{"field": …, "order": "descending"}` sulla torta
+  e sulla ciambella — e il test confronta l'ordine dei testi **nell'SVG
+  reso**, non la presenza di `sort` nella sorgente. Sulla torta la misura
+  ha corretto anche la correzione: `color.sort` mette in ordine la
+  LEGENDA, ma gli spicchi restano sparsi (86,4° → 57,6° → 172,8° →
+  43,2°) e `sort` su `theta` li scompiglia; l'ordine angolare lo decide
+  il canale `order`, e il test lo verifica sulla geometria degli archi
+  resi (ampiezze non crescenti girando in senso orario da ore 12);
+- **`barsWithError`**: il secondo layer codificava `y` sul campo `lo`
+  senza `axis.title`, e Vega-Lite fondeva i titoli dei due layer in
+  «Media (unità), lo» — il nome interno di un campo esposto al lettore.
+  Con `axis.title` sul layer e `ticks: {"size": 12}` i testi resi sono
+  `['A', 'B', 'C', 'Gruppo', 'Media (unità)', …]` e le barre d'errore
+  hanno cappucci normali invece di una riga a tutta banda;
+- **`violin`**: `stack: "center"` centra la pila sul massimo, non sullo
+  zero, e i violini uscivano appoggiati al bordo destro con metà riquadro
+  bianco. Ora la semidensità è calcolata (`datum.density / 2` e il suo
+  opposto) e disegnata con `x`/`x2`: i due violini sono simmetrici sullo
+  zero (centro misurato 70,0 px su una faccetta larga 140);
+- **`treemap`**: Mermaid deduce il corpo del testo dall'**altezza** della
+  piastrella e poi lo riduce fino a farlo stare in larghezza con ~10 px
+  di margine — un margine così sottile si perde appena il font del PDF
+  ha metriche diverse da quello con cui Chromium ha impaginato. Le
+  quantità del modello passano da 48/12/24/16 a 40/20/20/20 (sempre 100
+  ore): stesse etichette accademiche, margine minimo da 10,5 a 27,1 px.
+
+**Correzioni nei PROMPT.** Le clausole nuove non sono raccomandazioni:
+ognuna nasce da una spec che passa `validate(deep=True)` e rende una
+figura illeggibile, e ognuna ha il test che lo dimostra
+(`test_prompt_figures.py`, sezione «lettura letterale»).
+
+- **dominio dei valori derivati**: nei quattro tipi in cui il valore
+  dell'asse quantitativo non è nei dati scritti dal modello
+  (normalizzate, istogramma, scatola, violino) `scale.domain` è
+  obbligatorio ma nessuno diceva come sceglierlo, e `bar` non è fra i
+  mark con `clip` obbligatorio. Misurato: `stack: "normalize"` con
+  dominio [0, 100] è **valido** e rende un asse «0%, 2000%, … 10000%»;
+  con `aggregate: "count"` e un dominio più corto del massimo effettivo
+  le barre escono dal riquadro (ordinata −110 px su un'area alta 433);
+- **ordine delle categorie**: la stessa regola dei modelli, perché il
+  difetto è dell'ordinamento di default di Vega-Lite e vale per ogni
+  figura generata;
+- **legenda**: «solo con più serie» era scritta per i grafici a x/y; su
+  `arc` e `rect` la legenda è l'unico canale che nomina i dati, e la
+  lettura letterale produceva quattro spicchi colorati anonimi (SVG con
+  un solo testo, il titolo, contro sei con la legenda);
+- **onestà dei dati**: la clausola «fonte nella caption oppure "Dati
+  illustrativi, non sperimentali"» stava dentro il paragrafo Vega-Lite,
+  mentre la tabella raccomanda sei tipi Mermaid quantitativi (`pie`,
+  `xychart-beta`, `sankey-beta`, `treemap-beta`, `radar-beta`,
+  `quadrantChart`): la stessa ripartizione 60/40 inventata era dichiarata
+  illustrativa con `arc` e muta con `pie` di Mermaid. Ora è una riga sola
+  nel blocco «FORMATI DELLE FIGURE», per tutti e quattro i formati, e
+  vale anche in Fase 4;
+- **DOT aveva il catalogo mancante e un divieto sbagliato**: il prompt
+  diceva «nessun colore, font o stile», ma cinque degli otto modelli
+  provati si reggono su `shape` (`doublecircle` per uno stato accettante,
+  `Mrecord` per una struttura dati, `point` per l'ingresso di un automa)
+  e il validatore le ammette. Un automa generato usciva con tutti gli
+  stati identici: non impoverito, con la notazione sbagliata. Ora il
+  divieto è «nessun colore né font; `shape` SOLO quando porta
+  significato» e il paragrafo elenca gli otto tipi, legati ai modelli da
+  `test_the_p3_paragraph_names_every_proven_dot_template`;
+- **limiti dei tipi quantitativi Mermaid** nella tabella: `sankey-beta` è
+  l'unico tipo con colori propri (schemeTableau10 di d3, hard-coded nel
+  renderer, §5) e va usato «solo quando il flusso è il contenuto»; il
+  radar vuole etichette brevi, il treemap quantità confrontabili;
+- **`data.values` nel blocco LINGUA**: nei tipi che il catalogo
+  raccomanda (torta, ciambella, barre ordinate, mappa di calore) le
+  categorie SONO l'etichettatura, e stanno lì; l'elenco «in particolare»
+  — dove il modello guarda — non le nominava;
+- **Fase 4** nominava otto tipi Mermaid ammessi e nessuno dei cinque
+  esclusi, pur creando `new_assets` senza il prompt di Fase 3 in
+  contesto: `journey` è la scelta naturale per una slide sul «percorso
+  dello studente», emette `<foreignObject>`, viene rifiutato dal gate e
+  costa un giro di riparazione. L'elenco arriva dalla stessa costante di
+  Fase 3 (`MERMAID_EXCLUDED_TYPES`), non da una lista riscritta a mano.
+
+**Misure (caratteri) e guardie.** P3 con grounding 26.142 → **27.236**,
+senza grounding 24.690 → **25.817**, con ruolo/stile/EQF interpolati
+**27.289** (la variante più lunga); P4 **15.100** in entrambe le
+varianti; P5 invariato. Le correzioni pesano 1.127 caratteri in P3 e 447
+in P4. `MAX_SYSTEM_P3` sale da 27.400 a **27.700** (~1,5% di margine
+sulla misura reale); `MAX_SYSTEM_P4` resta 15.400 e `MAX_SYSTEM_P5`
+12.500. Il commento sopra le costanti porta i numeri misurati.
+
+**`docs/PROMPTS.md` non è più una promessa.** Il repository aveva già il
+confronto meccanico (`backend/scripts/check_prompts_md.py`), ma finché
+restava un comando da lanciare a mano la deriva passava in silenzio: il
+documento aveva perso tre righe del PROMPT 12 (il divieto di risorse
+esterne nelle shape `@{ ... }`), aggiunte al codice diversi commit prima.
+Ora `tests/test_prompts_md_matches_code.py` invoca la stessa funzione di
+confronto dello script e fallisce sul diff, con la controprova che tolta
+una riga il confronto la vede. I nove blocchi sono riallineati
+rigenerandoli dai renderer dello script, non trascrivendoli a mano.

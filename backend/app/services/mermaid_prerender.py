@@ -56,6 +56,25 @@ def _strip_mermaid_max_width(svg: str) -> str:
     return _MERMAID_MAX_WIDTH_RE.sub("", svg)
 
 
+# `sankey-beta` scrive nome e valore del nodo in UN SOLO `<text>` separati da
+# un a capo letterale (`<text …>Lezioni\n48</text>`): non usa `<tspan>`.
+# Con `xml:space` di default la specifica SVG 1.1 dice di RIMUOVERE i fine
+# riga — WeasyPrint lo fa e nel PDF si legge «Lezioni48», mentre Chromium è
+# indulgente e mostra «Lezioni 48». La normalizzazione porta i due renderer
+# a dire la stessa cosa. Vale per ogni figura sankey, non per i soli modelli
+# degli editor. Nessun altro tipo D8 emette a capo dentro `<text>` (gli altri
+# vanno a capo con `<tspan>`), quindi la sostituzione è mirata: solo il
+# contenuto di un `<text>` SENZA figli.
+_MERMAID_TEXT_NEWLINE_RE = re.compile(r"(<text\b[^>]*>)([^<]*\n[^<]*)(</text>)")
+
+
+def _join_mermaid_text_newlines(svg: str) -> str:
+    """A capo letterali dentro un `<text>` senza figli → spazio singolo."""
+    return _MERMAID_TEXT_NEWLINE_RE.sub(
+        lambda m: m.group(1) + " ".join(m.group(2).split()) + m.group(3), svg
+    )
+
+
 # ---------------------------------------------------------------------------
 # Pagina headless di rendering
 # ---------------------------------------------------------------------------
@@ -199,7 +218,7 @@ async def _prerender_mermaid_to_svg_batch_async(
                         [f"mmd-{i}", code],
                     )
                     if isinstance(svg, str) and svg.strip():
-                        results.append(_strip_mermaid_max_width(svg))
+                        results.append(_join_mermaid_text_newlines(_strip_mermaid_max_width(svg)))
                     else:
                         log.warning(
                             "mermaid_render_returned_empty",

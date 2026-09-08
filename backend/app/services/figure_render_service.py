@@ -82,6 +82,7 @@ from app.services.figure_theme import (
 )
 from app.services.json_spans import replace_strings as replace_json_strings
 from app.services.mermaid_prerender import (
+    _join_mermaid_text_newlines,
     _prerender_mermaid_to_svg_batch_sync,
     _sanitize_mermaid_code,
     _strip_mermaid_max_width,
@@ -928,9 +929,9 @@ class MermaidRenderer:
             if not svg:
                 out.append(None)
                 continue
-            # `_strip_mermaid_max_width` è già applicato dal pre-render ed è
+            # Il post-processing è già applicato dal pre-render ed è
             # idempotente: qui rende esplicito il contratto del registro.
-            svg = _strip_mermaid_max_width(svg)
+            svg = _join_mermaid_text_newlines(_strip_mermaid_max_width(svg))
             ref = _svg_external_ref(svg)
             if ref is not None:
                 _render_failed(self.fmt, asset_id, f"risorsa esterna nell'SVG: {ref}")
