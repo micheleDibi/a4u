@@ -3333,3 +3333,74 @@ l'euristica del criterio 10 lo rifiuta per progetto e quel contenuto va nel
 formato `function`; nessun tipo Mermaid fuori da D8 (`journey`,
 `gitGraph`, `kanban`, `packet-beta`, `architecture-beta`), che il gate
 rifiuta.
+
+## 17. Il catalogo nel prompt di generazione (8 settembre 2026)
+
+La seconda metà della richiesta del docente — «tutti i diagrammi
+possibilmente, anche in produzione di contenuti e non solo in modifica» —
+non si risolve con i modelli degli editor (§16): quelli servono a chi
+scrive a mano. In generazione il repertorio lo decide il prompt, e il
+prompt di Fase 3 diceva per Vega-Lite soltanto «barre, linee, punti,
+aree». Da qui il difetto misurato in produzione: il modello produceva
+quasi solo barre e linee, mai una torta, mai una distribuzione, mai una
+mappa di calore.
+
+**Che cosa cambia in Fase 3** (`openai_lesson_content_service._system_prompt`):
+
+- la tabella «dal contenuto al formato» nomina ora **tutti e quindici** i
+  tipi Mermaid di `MERMAID_D8_TYPES`, ciascuno con il proprio caso d'uso
+  fra parentesi (`gantt` pianificazione e dipendenze temporali,
+  `sankey-beta` flussi che si ripartiscono fra stadi, `quadrantChart`
+  posizionamento su due criteri, `radar-beta` profilo su più criteri,
+  `treemap-beta` gerarchia con quantità, `block-beta` architettura a
+  blocchi, `xychart-beta` serie breve su assi). Prima ne nominava otto:
+  la riga «Tipi ammessi» li elencava tutti, ma senza un caso d'uso
+  accanto al nome il modello non li sceglieva;
+- la sezione Vega-Lite guadagna il **CATALOGO per famiglia d'uso**, una
+  riga per famiglia con i tipi e il costrutto che li produce: confronto
+  fra categorie, parte sul tutto, distribuzione, andamento nel tempo,
+  correlazione, matrice, incertezza, graduatoria. Le otto famiglie e i
+  ventiquattro tipi sono gli stessi del menu degli editor;
+- la **torta** è guidata, non solo autorizzata: «poche categorie —
+  indicativamente fino a sei — che compongono un intero e hanno quote
+  nettamente diverse; con molte categorie o valori vicini le barre
+  ordinate si leggono meglio. Mai per confrontare grandezze che non
+  sommano a un tutto». Il docente l'ha chiesta, il registro accademico
+  del prodotto impone di dire anche quando non si usa;
+- l'**esempio** Vega-Lite resta uno solo e resta quello che c'era (barre
+  con dati inline, `clip`, `scale.domain`, `axis.title` con l'unità): il
+  budget non ne consente un secondo, e l'esempio deve mostrare i vincoli
+  che il validatore rifiuta più spesso, non un tipo di grafico esotico
+  che il catalogo nomina in una riga.
+
+**Fase 4** (`openai_lesson_slides_service._system_prompt`) crea
+`new_assets` senza avere in contesto il prompt di Fase 3: il rinvio
+«valgono gli STESSI formati, regole e limiti di Fase 3» non porta con sé
+il repertorio. La regola 3 ripete quindi il catalogo in forma breve (le
+otto famiglie con i tipi, il criterio della torta, i sette tipi Mermaid
+che la riga dei formati non nominava), senza graffe — il prompt di Fase 4
+non può contenerne (`test_prompt_composition_bugs.py`). Fase 5 non tocca
+i formati: vieta solo di leggere a voce le sorgenti.
+
+**Misure (caratteri) e guardie.** Prima → dopo: P3 con grounding
+24.155 → **26.142**, senza grounding 22.703 → **24.690** (il catalogo
+pesa 1.987); P4 13.747 con tutti gli argomenti e 13.817 con i default →
+**14.583** e **14.653** (pesa 836); P5 invariato, 11.074 e 11.169. Le
+guardie di `test_prompt_register.py` salgono alla misura reale della
+variante più lunga + ~5%: `MAX_SYSTEM_P3` 25.400 → **27.400**,
+`MAX_SYSTEM_P4` 14.500 → **15.400**; `MAX_SYSTEM_P5` resta 12.500. Il
+commento sopra le costanti porta i numeri misurati, come le volte
+precedenti.
+
+**Il catalogo non promette nulla di non provato.**
+`test_frontend_figure_templates.test_the_p3_catalogue_names_every_proven_vegalite_template`
+lega le due metà: la mappa `_P3_CATALOGUE_TERMS` deve coprire
+esattamente gli id dei modelli estratti da `VegaLiteEditor.tsx` (che
+poche righe più sotto passano schema, regole D5, criterio 10 e render con
+`vl_convert`) e ogni termine deve comparire nel catalogo del prompt,
+insieme al nome italiano di ogni famiglia preso da `it.json`. Un modello
+nuovo nell'editor, o un tipo tolto dal prompt, fa fallire il test. In
+`test_prompt_figures.py` restano i controlli di presenza: i quindici tipi
+Mermaid nella tabella dei casi d'uso con il loro criterio, le otto
+famiglie e i quattordici costrutti Vega-Lite del catalogo, il criterio
+della torta, il catalogo breve di Fase 4 senza graffe.

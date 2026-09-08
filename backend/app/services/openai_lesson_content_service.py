@@ -329,12 +329,19 @@ al parser). La `caption` è una breve descrizione semantica leggibile.
 FORMATI DELLE FIGURE (`visual_assets[].format`; `content` è sempre una
 stringa: codice, sorgente o spec JSON serializzata). Dal contenuto al
 formato e al tipo di diagramma:
-- processo, flusso, gerarchia, relazioni fra entità, scambio di
-  messaggi, stati, linea del tempo, ripartizione → `mermaid` (tipo di
-  diagramma corrispondente: flowchart, sequenceDiagram, classDiagram,
-  stateDiagram-v2, erDiagram, mindmap, timeline, pie);
+- struttura, processo o relazione qualitativa → `mermaid`, con il tipo
+  scelto dal contenuto: flowchart (processo, decisione),
+  sequenceDiagram (scambio di messaggi), classDiagram (classi e
+  relazioni), stateDiagram-v2 (stati e transizioni), erDiagram (entità
+  e cardinalità), mindmap (organizzazione dei concetti), timeline
+  (cronologia), gantt (pianificazione e dipendenze temporali),
+  block-beta (architettura a blocchi e livelli), sankey-beta (flussi
+  che si ripartiscono fra stadi), quadrantChart (posizionamento su due
+  criteri), radar-beta (profilo su più criteri), treemap-beta
+  (gerarchia con quantità), pie (ripartizione a poche voci),
+  xychart-beta (serie breve su assi, senza pretesa quantitativa);
 - dati, misure, distribuzioni, confronti quantitativi, serie
-  temporali → `vegalite` (barre, linee, punti, aree);
+  temporali → `vegalite` (catalogo dei tipi sotto);
 - grafi con archi etichettati, alberi, automi, reti → `dot`;
 - funzione matematica da studiare (grafico, tangente, area, famiglia
   con parametro, curve di livello) → `function`.
@@ -358,7 +365,36 @@ il renderer e il grafico è statico. Obbligatori `"clip": true` sui mark
 `line`/`area`/`point`/`trail` e `scale.domain` [min, max] sui canali
 `x`/`y` quantitativi; al massimo una `title` (radice, ≤ 120 caratteri);
 `axis.title` con l'unità di misura sugli assi quantitativi; legenda solo
-con più serie. Le FUNZIONI MATEMATICHE (seno, esponenziale, potenze,
+con più serie.
+CATALOGO VEGA-LITE — famiglia d'uso: tipi (costrutto):
+- confronto fra categorie: barre verticali od orizzontali (`bar`;
+  orizzontali quando le etichette sono lunghe), barre raggruppate
+  (`xOffset` sulla seconda variabile), barre impilate
+  (`stack: "zero"`);
+- parte sul tutto: barre impilate normalizzate (`stack: "normalize"`),
+  torta e ciambella (`arc` con `theta`; la ciambella aggiunge
+  `innerRadius`);
+- distribuzione: istogramma (`bar` con `bin` e `aggregate: "count"`),
+  diagramma a scatola (`boxplot`), punti impilati (`point` con
+  `transform.window`, poche osservazioni), violino
+  (`transform.density` con `column`);
+- andamento nel tempo: linea singola o linee multiple (`line`, una
+  serie per `color`), linea a gradini (`interpolate: "step-after"`),
+  area e aree impilate (`area`), serie temporale (`type: "temporal"`);
+- correlazione: dispersione (`point`), bolle (`point` con `size`
+  quantitativo per la terza variabile);
+- matrice: mappa di calore (`rect`, `color` con `scale.scheme`);
+- incertezza: barre con barre di errore (`layer` di `bar` ed
+  `errorbar`), banda di confidenza (`layer` di `area` con
+  `line: false` più `line`);
+- graduatoria: barre ordinate (`sort: "-x"`), bastoncini (`layer` di
+  `rule` e `point`).
+La TORTA (e la ciambella) vale solo per poche categorie —
+indicativamente fino a sei — che compongono un intero e hanno quote
+nettamente diverse; con molte categorie o valori vicini le barre
+ordinate si leggono meglio. Mai per confrontare grandezze che non
+sommano a un tutto.
+Le FUNZIONI MATEMATICHE (seno, esponenziale, potenze,
 razionali su una `sequence`) NON si tracciano in Vega-Lite: usa
 `function`. Esempio:
 {_VEGALITE_EXAMPLE}

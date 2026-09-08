@@ -56,6 +56,79 @@ def test_p3_figure_block_names_the_four_formats_and_maps_content_to_them():
     assert prompt.index("FORMATI DELLE FIGURE") < prompt.index("LINGUA — REGOLA TASSATIVA")
 
 
+def test_p3_use_case_table_names_every_allowed_mermaid_type():
+    """La tabella «dal contenuto al formato» nomina TUTTI i tipi D8, non i
+    soli otto storici: senza il caso d'uso accanto al nome il modello non
+    produce mai gantt, sankey-beta, quadrantChart e compagnia, anche se la
+    riga «Tipi ammessi» li elenca."""
+    block = _figure_block(_p3())
+    table = _flat(block[: block.index("MERMAID 11.")])
+    for name in MERMAID_D8_TYPES:
+        assert name in table, name
+    # Ogni tipo porta il proprio criterio di scelta fra parentesi.
+    for criterion in (
+        "flowchart (processo, decisione)",
+        "gantt (pianificazione e dipendenze temporali)",
+        "sankey-beta (flussi che si ripartiscono fra stadi)",
+        "quadrantChart (posizionamento su due criteri)",
+        "radar-beta (profilo su più criteri)",
+        "treemap-beta (gerarchia con quantità)",
+        "block-beta (architettura a blocchi e livelli)",
+        "pie (ripartizione a poche voci)",
+        "xychart-beta (serie breve su assi, senza pretesa quantitativa)",
+    ):
+        assert criterion in table, criterion
+
+
+def test_p3_vegalite_catalogue_lists_the_eight_use_families():
+    """Il catalogo Vega-Lite: una riga per famiglia d'uso, con i tipi e il
+    costrutto che li produce. È la risposta al difetto misurato in
+    produzione (solo barre e linee) e ogni tipo nominato è uno dei modelli
+    provati dagli editor (`test_frontend_figure_templates`)."""
+    block = _flat(_figure_block(_p3()))
+    assert "CATALOGO VEGA-LITE — famiglia d'uso: tipi (costrutto):" in block
+    for family in (
+        "confronto fra categorie:",
+        "parte sul tutto:",
+        "distribuzione:",
+        "andamento nel tempo:",
+        "correlazione:",
+        "matrice:",
+        "incertezza:",
+        "graduatoria:",
+    ):
+        assert family in block, family
+    for construct in (
+        '`stack: "zero"`',
+        '`stack: "normalize"`',
+        "`arc` con `theta`",
+        "`innerRadius`",
+        "`bar` con `bin`",
+        "`boxplot`",
+        "`transform.density`",
+        '`interpolate: "step-after"`',
+        '`type: "temporal"`',
+        "`point` con `size`",
+        "`rect`, `color` con `scale.scheme`",
+        "`errorbar`",
+        '`sort: "-x"`',
+        "`layer` di `rule` e `point`",
+    ):
+        assert construct in block, construct
+
+
+def test_p3_pie_carries_the_professional_criterion_not_just_the_permission():
+    """La torta è autorizzata ma guidata: poche categorie che compongono un
+    intero, altrimenti barre. Il prodotto ha un registro accademico."""
+    block = _flat(_figure_block(_p3()))
+    rule = block[block.index("La TORTA") : block.index("Le FUNZIONI MATEMATICHE")]
+    assert "poche categorie" in rule
+    assert "fino a sei" in rule
+    assert "compongono un intero" in rule
+    assert "le barre ordinate si leggono meglio" in rule
+    assert "Mai per confrontare grandezze che non sommano a un tutto" in rule
+
+
 def test_p3_lists_mermaid_allowed_and_excluded_types():
     block = _figure_block(_p3())
     allowed = block[block.index("Tipi ammessi:") : block.index("Esclusi:")]
@@ -220,6 +293,38 @@ def test_p4_refers_to_phase3_formats_without_braces_or_image_prompt():
         lingua = _flat(prompt[prompt.index("LINGUA — REGOLA TASSATIVA") :])
         assert "`axis.title`" in lingua and "`label` dei sorgenti DOT" in lingua
         assert "di DOT (ID dei nodi, `->`/`--`" in lingua
+
+
+def test_p4_new_assets_carry_the_same_catalogue_of_chart_types():
+    """Fase 4 crea `new_assets` senza avere in contesto il prompt di Fase
+    3: il catalogo va ripetuto in forma breve, altrimenti anche qui il
+    modello produce solo barre e linee. Vale il vincolo di composizione:
+    nessuna graffa nel prompt di Fase 4."""
+    for prompt in (
+        slides._system_prompt("it"),
+        slides._system_prompt("it", minuti_per_lezione=45, livello_eqf="EQF 6"),
+    ):
+        assert "{" not in prompt and "}" not in prompt
+        flat = _flat(prompt)
+        assert "CATALOGO — per `vegalite` scegli il tipo dalla famiglia d'uso:" in flat
+        for family in (
+            "confronto fra categorie (barre verticali, orizzontali, raggruppate, impilate)",
+            "parte sul tutto (barre normalizzate, torta, ciambella)",
+            "distribuzione (istogramma, diagramma a scatola, punti impilati, violino)",
+            "andamento nel tempo (linea, linea a gradini, area, aree impilate, serie temporale)",
+            "correlazione (dispersione, bolle)",
+            "matrice (mappa di calore)",
+            "incertezza (barre di errore, banda di confidenza)",
+            "graduatoria (barre ordinate, bastoncini)",
+        ):
+            assert family in flat, family
+        assert "La torta solo con poche categorie che compongono un intero" in flat
+        assert "altrimenti barre ordinate" in flat
+        # I tipi Mermaid che la riga dei formati di Fase 4 non nominava.
+        for name in ("gantt", "quadrantChart", "sankey-beta", "block-beta"):
+            assert name in flat, name
+        for name in ("radar-beta", "treemap-beta", "xychart-beta"):
+            assert name in flat, name
 
 
 def test_p5_forbids_reading_sources_aloud():

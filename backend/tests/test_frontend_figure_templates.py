@@ -20,8 +20,11 @@ assenza. Qui la garanzia è un oracolo reale, non una rilettura del codice.
 
 Si verifica inoltre che ogni modello e ogni famiglia d'uso abbiano la
 propria chiave in `it.json` e `en.json`, che i quindici tipi Mermaid
-ammessi da D8 siano coperti tutti e che il menu sia ordinato per famiglia
-(gruppi contigui, non alfabetici).
+ammessi da D8 siano coperti tutti, che il menu sia ordinato per famiglia
+(gruppi contigui, non alfabetici) e che il CATALOGO del prompt di Fase 3
+nomini ogni modello Vega-Lite provato qui: il modello che genera i
+contenuti e il menu dell'editor devono offrire gli stessi tipi di
+grafico, e nessuno che il validatore rifiuterebbe.
 
 Salta con motivo esplicito se l'albero `frontend/` manca; la parte Mermaid
 salta senza Chromium o senza la CDN (verifica locale o nel container, come
@@ -40,6 +43,7 @@ from typing import Any
 import pytest
 
 from app.services import figure_theme as theme
+from app.services import openai_lesson_content_service as content
 from app.services.figure_render_service import REGISTRY, mermaid_static_gate
 
 _FRONTEND = Path(__file__).resolve().parents[2] / "frontend" / "src"
@@ -220,6 +224,62 @@ def test_vegalite_catalogue_covers_the_requested_families() -> None:
         "ranking",
     }, sorted(groups)
     assert {"pie", "donut"} <= set(_ids(VEGALITE)), "la torta è stata chiesta esplicitamente"
+
+
+# Termine con cui il CATALOGO del prompt di Fase 3 nomina ciascun modello
+# provato qui sotto. La mappa lega le due metà della richiesta del docente
+# («tutti i diagrammi, anche in produzione di contenuti e non solo in
+# modifica»): il prompt non promette al modello nessun tipo di grafico che
+# il validatore rifiuterebbe, e un modello nuovo negli editor obbliga ad
+# aggiornare il prompt.
+_P3_CATALOGUE_TERMS: dict[str, str] = {
+    "barsVertical": "barre verticali",
+    "barsHorizontal": "orizzontali",
+    "barsGrouped": "barre raggruppate",
+    "barsStacked": "barre impilate",
+    "barsNormalized": "barre impilate normalizzate",
+    "pie": "torta",
+    "donut": "ciambella",
+    "histogram": "istogramma",
+    "boxplot": "diagramma a scatola",
+    "dotPlot": "punti impilati",
+    "violin": "violino",
+    "line": "linea singola",
+    "multiLine": "linee multiple",
+    "area": "area e aree impilate",
+    "stackedArea": "aree impilate",
+    "stepLine": "linea a gradini",
+    "timeSeries": "serie temporale",
+    "scatter": "dispersione",
+    "bubble": "bolle",
+    "heatmap": "mappa di calore",
+    "barsWithError": "barre di errore",
+    "confidenceBand": "banda di confidenza",
+    "barsRanked": "barre ordinate",
+    "lollipop": "bastoncini",
+}
+
+
+def _p3_vegalite_catalogue() -> str:
+    prompt = content._system_prompt("it")
+    block = prompt[prompt.index("CATALOGO VEGA-LITE") : prompt.index("Le FUNZIONI MATEMATICHE")]
+    return " ".join(block.split())
+
+
+def test_the_p3_catalogue_names_every_proven_vegalite_template() -> None:
+    """Il catalogo del prompt di Fase 3 e il menu degli editor dicono la
+    stessa cosa: ogni tipo di grafico suggerito al modello è uno dei
+    modelli che passano validatore e renderer poco più sotto."""
+    assert set(_P3_CATALOGUE_TERMS) == set(_ids(VEGALITE)), sorted(
+        set(_P3_CATALOGUE_TERMS) ^ set(_ids(VEGALITE))
+    )
+    catalogue = _p3_vegalite_catalogue()
+    for template_id, term in sorted(_P3_CATALOGUE_TERMS.items()):
+        assert term in catalogue, f"{template_id}: «{term}» assente dal catalogo di Fase 3"
+    italian = _locale("it")
+    for tpl in VEGALITE:
+        family = italian[tpl.group_key].lower()
+        assert family in catalogue, f"{tpl.group_key}: famiglia «{family}» assente dal catalogo"
 
 
 def _mermaid_type(code: str) -> str:

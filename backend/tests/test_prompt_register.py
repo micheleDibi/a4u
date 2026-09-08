@@ -24,18 +24,21 @@ from app.services import prompt_register as reg
 # Guardie di lunghezza (caratteri) derivate dal testo finale + ~10%.
 MAX_BLOCK_CONTENT = 7_800
 MAX_BLOCK_REDUCED = 6_400
-# Misure dopo il blocco «FORMATI DELLE FIGURE» (WP3: tabella D8, regole
-# D5, stile D3, esempi Vega-Lite/DOT, schema compatto ed esempio di
-# `function`): P3 con grounding 24.155, senza grounding 22.736; P4 13.747
-# con tutti gli argomenti e 13.817 con i default; P5 11.074 e 11.169 con
-# i default. Il testo dei prompt è statico e indipendente dall'ambiente
-# (A19: i quattro formati sono sempre descritti, solo l'`enum` dello
-# schema strict segue `available_formats()`), quindi le guardie sono
-# deterministiche. Il tetto di 22.500 previsto dal piano (A5) assumeva
-# ≈ 2.400 caratteri lordi per il blocco: il blocco reale ne pesa ≈ 4.200
-# e la guardia P3 è fissata alla misura reale + ~5%, dichiarato nel WP3.
-MAX_SYSTEM_P3 = 25_400
-MAX_SYSTEM_P4 = 14_500
+# Misure dell'8 settembre 2026, dopo il catalogo dei tipi di grafico nel
+# blocco «FORMATI DELLE FIGURE» (tabella D8 con i quindici tipi Mermaid,
+# catalogo Vega-Lite per famiglia d'uso, criterio della torta, regole D5,
+# stile D3, esempi Vega-Lite/DOT, schema compatto ed esempio di
+# `function`): P3 26.142 con grounding e 24.690 senza (26.109 con gli
+# argomenti di default); P4 14.583 con tutti gli argomenti e 14.653 con i
+# default; P5 11.074 e 11.169 con i default. Prima del catalogo erano
+# 24.155 / 22.703 (P3) e 13.747 / 13.817 (P4): il catalogo pesa 1.987
+# caratteri in P3 e 836 in P4. Il testo dei prompt è statico e
+# indipendente dall'ambiente (A19: i quattro formati sono sempre
+# descritti, solo l'`enum` dello schema strict segue
+# `available_formats()`), quindi le guardie sono deterministiche e restano
+# fissate alla misura reale della variante più lunga + ~5%.
+MAX_SYSTEM_P3 = 27_400
+MAX_SYSTEM_P4 = 15_400
 MAX_SYSTEM_P5 = 12_500
 
 # Formule più frequenti nel corpus: devono comparire nei prompt SOLO come

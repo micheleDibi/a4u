@@ -426,7 +426,7 @@ In rigenerazione: `## Versione attuale del modulo (DA RIVEDERE)` + `## Indicazio
 **SCOPO**
 - File: `backend/app/services/openai_lesson_content_service.py` — `_system_prompt(language_code, *, ruolo_docente, stile_insegnamento, livello_eqf, grounding_enabled)`, chiamata da `generate_lesson_content()`.
 - Modello: `settings.openai_lesson_content_model` (default `gpt-5.5`, reasoning `high`, max 32000 token — il task più complesso della pipeline).
-- Ruolo: scrive il testo completo Markdown della lezione (sezioni, figure nei quattro formati `mermaid`/`vegalite`/`dot`/`function` — blocco «FORMATI DELLE FIGURE»: tabella «contenuto → formato → tipo di diagramma» (D8), tipi Mermaid ammessi ed esclusi, regole D5 sui dati e vincoli del validatore, stile D3, esempi minimi Vega-Lite/DOT, schema compatto ed esempio di `FunctionFigureSpec` (D9) —, formule LaTeX, tabelle, equazioni con enunciato/dimostrazione, esempi, riferimenti, coverage_check). Il testo è statico (A19): i quattro formati sono sempre descritti; solo l'`enum` dello schema strict segue `figure_render_service.available_formats()`. Gli elenchi dei tipi Mermaid e delle funzioni ammesse sono interpolati a import da `figure_theme.MERMAID_D8_TYPES`/`MERMAID_EXCLUDED_TYPES` e `function_parse.FUNCTIONS`: il testo sotto è il risultato con i valori correnti.
+- Ruolo: scrive il testo completo Markdown della lezione (sezioni, figure nei quattro formati `mermaid`/`vegalite`/`dot`/`function` — blocco «FORMATI DELLE FIGURE»: tabella «contenuto → formato → tipo di diagramma» (D8) che nomina TUTTI e quindici i tipi Mermaid con il proprio caso d'uso, tipi Mermaid ammessi ed esclusi, regole D5 sui dati e vincoli del validatore, CATALOGO Vega-Lite per famiglia d'uso (confronto fra categorie, parte sul tutto, distribuzione, andamento nel tempo, correlazione, matrice, incertezza, graduatoria) con il criterio professionale della torta, stile D3, esempi minimi Vega-Lite/DOT, schema compatto ed esempio di `FunctionFigureSpec` (D9) —, formule LaTeX, tabelle, equazioni con enunciato/dimostrazione, esempi, riferimenti, coverage_check). Il testo è statico (A19): i quattro formati sono sempre descritti; solo l'`enum` dello schema strict segue `figure_render_service.available_formats()`. Gli elenchi dei tipi Mermaid e delle funzioni ammesse sono interpolati a import da `figure_theme.MERMAID_D8_TYPES`/`MERMAID_EXCLUDED_TYPES` e `function_parse.FUNCTIONS`: il testo sotto è il risultato con i valori correnti.
 - Interpolazione: `ruolo_docente`, `stile_insegnamento` e `livello_eqf` entrano nel tono del testo, entro il REGISTRO; `{register_block}` è il blocco condiviso di `prompt_register.academic_register_block("content", language_code)` (vedi sezione «Blocco condiviso — Registro accademico»). Resta un solo campione di prosa umana (registro didattico), da imitare per costruzione, non per contenuto; il Campione A (ritmo) è stato rimosso perché induceva frasi-sentenza e antitesi a effetto.
 - Grounding sui documenti (`_system_prompt(..., grounding_enabled=True)`, da `Settings.course_lesson_content_documents_selection_enabled`): il blocco `FONTI E ANCORAGGIO — REGOLA FORTE` (subito dopo il ruolo) sostituisce il vecchio `RIFERIMENTI`; nel messaggio user il blocco documenti è selezionato PER LEZIONE da `lesson_document_selection` (definizioni, formule, concetti, esempi e struttura dei riassunti, scelti per sovrapposizione lessicale con titolo/temi/scaletta/obiettivi; budget `COURSE_LESSON_CONTENT_DOCUMENTS_CONTEXT_MAX_CHARS`, default 40k) e sta dopo `## Lezione da generare`, prima di `## Compito`. Con il kill-switch a `false` torna il comportamento storico (blocco `RIFERIMENTI`, `_build_documents_context`, vecchio ordine).
 
@@ -758,12 +758,19 @@ al parser). La `caption` è una breve descrizione semantica leggibile.
 FORMATI DELLE FIGURE (`visual_assets[].format`; `content` è sempre una
 stringa: codice, sorgente o spec JSON serializzata). Dal contenuto al
 formato e al tipo di diagramma:
-- processo, flusso, gerarchia, relazioni fra entità, scambio di
-  messaggi, stati, linea del tempo, ripartizione → `mermaid` (tipo di
-  diagramma corrispondente: flowchart, sequenceDiagram, classDiagram,
-  stateDiagram-v2, erDiagram, mindmap, timeline, pie);
+- struttura, processo o relazione qualitativa → `mermaid`, con il tipo
+  scelto dal contenuto: flowchart (processo, decisione),
+  sequenceDiagram (scambio di messaggi), classDiagram (classi e
+  relazioni), stateDiagram-v2 (stati e transizioni), erDiagram (entità
+  e cardinalità), mindmap (organizzazione dei concetti), timeline
+  (cronologia), gantt (pianificazione e dipendenze temporali),
+  block-beta (architettura a blocchi e livelli), sankey-beta (flussi
+  che si ripartiscono fra stadi), quadrantChart (posizionamento su due
+  criteri), radar-beta (profilo su più criteri), treemap-beta
+  (gerarchia con quantità), pie (ripartizione a poche voci),
+  xychart-beta (serie breve su assi, senza pretesa quantitativa);
 - dati, misure, distribuzioni, confronti quantitativi, serie
-  temporali → `vegalite` (barre, linee, punti, aree);
+  temporali → `vegalite` (catalogo dei tipi sotto);
 - grafi con archi etichettati, alberi, automi, reti → `dot`;
 - funzione matematica da studiare (grafico, tangente, area, famiglia
   con parametro, curve di livello) → `function`.
@@ -787,7 +794,36 @@ il renderer e il grafico è statico. Obbligatori `"clip": true` sui mark
 `line`/`area`/`point`/`trail` e `scale.domain` [min, max] sui canali
 `x`/`y` quantitativi; al massimo una `title` (radice, ≤ 120 caratteri);
 `axis.title` con l'unità di misura sugli assi quantitativi; legenda solo
-con più serie. Le FUNZIONI MATEMATICHE (seno, esponenziale, potenze,
+con più serie.
+CATALOGO VEGA-LITE — famiglia d'uso: tipi (costrutto):
+- confronto fra categorie: barre verticali od orizzontali (`bar`;
+  orizzontali quando le etichette sono lunghe), barre raggruppate
+  (`xOffset` sulla seconda variabile), barre impilate
+  (`stack: "zero"`);
+- parte sul tutto: barre impilate normalizzate (`stack: "normalize"`),
+  torta e ciambella (`arc` con `theta`; la ciambella aggiunge
+  `innerRadius`);
+- distribuzione: istogramma (`bar` con `bin` e `aggregate: "count"`),
+  diagramma a scatola (`boxplot`), punti impilati (`point` con
+  `transform.window`, poche osservazioni), violino
+  (`transform.density` con `column`);
+- andamento nel tempo: linea singola o linee multiple (`line`, una
+  serie per `color`), linea a gradini (`interpolate: "step-after"`),
+  area e aree impilate (`area`), serie temporale (`type: "temporal"`);
+- correlazione: dispersione (`point`), bolle (`point` con `size`
+  quantitativo per la terza variabile);
+- matrice: mappa di calore (`rect`, `color` con `scale.scheme`);
+- incertezza: barre con barre di errore (`layer` di `bar` ed
+  `errorbar`), banda di confidenza (`layer` di `area` con
+  `line: false` più `line`);
+- graduatoria: barre ordinate (`sort: "-x"`), bastoncini (`layer` di
+  `rule` e `point`).
+La TORTA (e la ciambella) vale solo per poche categorie —
+indicativamente fino a sei — che compongono un intero e hanno quote
+nettamente diverse; con molte categorie o valori vicini le barre
+ordinate si leggono meglio. Mai per confrontare grandezze che non
+sommano a un tutto.
+Le FUNZIONI MATEMATICHE (seno, esponenziale, potenze,
 razionali su una `sequence`) NON si tracciano in Vega-Lite: usa
 `function`. Esempio:
 {"data":{"values":[{"mese":"gen","mm":80},{"mese":"feb","mm":65}]},"mark":{"type":"bar","clip":true},"encoding":{"x":{"field":"mese","type":"nominal","axis":{"title":"Mese"}},"y":{"field":"mm","type":"quantitative","scale":{"domain":[0,100]},"axis":{"title":"Precipitazioni (mm)"}}}}
@@ -1281,7 +1317,7 @@ In rigenerazione: blocco con la verifica attuale (`content_raw`) + indicazioni d
 # PROMPT 5 — Slide della lezione (Fase 4)
 
 **SCOPO**
-- File: `backend/app/services/openai_lesson_slides_service.py` — `_system_prompt(language_code, *, minuti_per_lezione, livello_eqf, ruolo_docente, stile_insegnamento)`, chiamata da `generate_lesson_slides()`. Durata, livello EQF, ruolo e stile sono interpolati davvero (prima restavano segnaposto letterali); i valori arrivano dal worker (`course.lesson_duration_minutes`, `didactic_style_labels`). La regola 3 rinvia ai formati, alle regole e ai limiti di Fase 3 (`mermaid`, `vegalite`, `dot`) con soli rinvii testuali, senza esempi né graffe; `function` non è offerto in Fase 4 (A1).
+- File: `backend/app/services/openai_lesson_slides_service.py` — `_system_prompt(language_code, *, minuti_per_lezione, livello_eqf, ruolo_docente, stile_insegnamento)`, chiamata da `generate_lesson_slides()`. Durata, livello EQF, ruolo e stile sono interpolati davvero (prima restavano segnaposto letterali); i valori arrivano dal worker (`course.lesson_duration_minutes`, `didactic_style_labels`). La regola 3 rinvia ai formati, alle regole e ai limiti di Fase 3 (`mermaid`, `vegalite`, `dot`) con soli rinvii testuali, senza esempi né graffe, e ripete in forma breve il CATALOGO dei tipi di grafico per famiglia d'uso, con il criterio della torta: Fase 4 crea `new_assets` senza avere in contesto il prompt di Fase 3; `function` non è offerto in Fase 4 (A1).
 - Modello: `settings.openai_lesson_slides_model` (default `gpt-5.5`, reasoning `medium`, max 16000 token).
 - Ruolo: trasforma il testo della lezione in una sequenza di slide dimensionata sui minuti per lezione, riusando gli asset di Fase 3 (una slide dedicata per ogni asset visivo/tabella).
 
@@ -1439,10 +1475,23 @@ PRINCIPI
    direttiva), `vegalite` (spec JSON entro 4000 caratteri, dati
    inline, `clip` e `scale.domain`, niente `config` né interattività)
    e `dot` (sorgente Graphviz senza attributi di stile né file
-   esterni); niente prompt per immagini né descrizioni testuali. Per
-   evitare collisioni di ID, prefissa con `*_new_*` (es. `fig_new_1`,
-   `tab_new_2`). Anche i `new_assets` seguono il punto 2: una slide
-   dedicata ciascuno.
+   esterni); niente prompt per immagini né descrizioni testuali.
+   CATALOGO — per `vegalite` scegli il tipo dalla famiglia d'uso:
+   confronto fra categorie (barre verticali, orizzontali, raggruppate,
+   impilate), parte sul tutto (barre normalizzate, torta, ciambella),
+   distribuzione (istogramma, diagramma a scatola, punti impilati,
+   violino), andamento nel tempo (linea, linea a gradini, area, aree
+   impilate, serie temporale), correlazione (dispersione, bolle),
+   matrice (mappa di calore), incertezza (barre di errore, banda di
+   confidenza), graduatoria (barre ordinate, bastoncini). La torta
+   solo con poche categorie che compongono un intero e con quote
+   nettamente diverse: altrimenti barre ordinate. Per `mermaid`, oltre
+   ai diagrammi di struttura e di processo, sono ammessi gantt,
+   quadrantChart, sankey-beta, block-beta, radar-beta, treemap-beta,
+   pie e xychart-beta.
+   Per evitare collisioni di ID, prefissa con `*_new_*` (es.
+   `fig_new_1`, `tab_new_2`). Anche i `new_assets` seguono il punto 2:
+   una slide dedicata ciascuno.
 
 4. NUMERO DI SLIDE: stima ~2-3 minuti per slide di contenuto, meno
    per slide di apertura/transizione/agenda. Anche le lezioni brevi

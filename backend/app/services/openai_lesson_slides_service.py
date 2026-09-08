@@ -120,10 +120,23 @@ PRINCIPI
    direttiva), `vegalite` (spec JSON entro 4000 caratteri, dati
    inline, `clip` e `scale.domain`, niente `config` né interattività)
    e `dot` (sorgente Graphviz senza attributi di stile né file
-   esterni); niente prompt per immagini né descrizioni testuali. Per
-   evitare collisioni di ID, prefissa con `*_new_*` (es. `fig_new_1`,
-   `tab_new_2`). Anche i `new_assets` seguono il punto 2: una slide
-   dedicata ciascuno.
+   esterni); niente prompt per immagini né descrizioni testuali.
+   CATALOGO — per `vegalite` scegli il tipo dalla famiglia d'uso:
+   confronto fra categorie (barre verticali, orizzontali, raggruppate,
+   impilate), parte sul tutto (barre normalizzate, torta, ciambella),
+   distribuzione (istogramma, diagramma a scatola, punti impilati,
+   violino), andamento nel tempo (linea, linea a gradini, area, aree
+   impilate, serie temporale), correlazione (dispersione, bolle),
+   matrice (mappa di calore), incertezza (barre di errore, banda di
+   confidenza), graduatoria (barre ordinate, bastoncini). La torta
+   solo con poche categorie che compongono un intero e con quote
+   nettamente diverse: altrimenti barre ordinate. Per `mermaid`, oltre
+   ai diagrammi di struttura e di processo, sono ammessi gantt,
+   quadrantChart, sankey-beta, block-beta, radar-beta, treemap-beta,
+   pie e xychart-beta.
+   Per evitare collisioni di ID, prefissa con `*_new_*` (es.
+   `fig_new_1`, `tab_new_2`). Anche i `new_assets` seguono il punto 2:
+   una slide dedicata ciascuno.
 
 4. NUMERO DI SLIDE: stima ~2-3 minuti per slide di contenuto, meno
    per slide di apertura/transizione/agenda. Anche le lezioni brevi
