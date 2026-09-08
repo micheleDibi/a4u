@@ -15,7 +15,8 @@ Pre-condizioni runtime (verificate dopo il claim):
 Pipeline (3 fasi con cancel-check tra una e l'altra):
 1. TTS XTTS-v2 su RunPod GPU (0→60%): voice cloning dal campione
    dell'assegnatario, sintesi in streaming (1 risultato per segment).
-2. Slides PNG (60→80%): Playwright headless 1920×1080.
+2. Slides PNG (60→80%): Playwright headless 1980×1400 (stessa
+   proporzione A4 landscape delle slide, figure come nel PDF slide).
 3. Encoding ffmpeg (80→100%): per-slide MP4 + concat finale.
 
 Output: `/uploads/lesson_videos/{course_id}/{lesson_id}.mp4` (servito da

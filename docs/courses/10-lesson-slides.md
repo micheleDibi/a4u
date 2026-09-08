@@ -14,7 +14,14 @@ OpenAI produce la sequenza di slide dimensionata sui
 - **Riusano** gli asset di Fase 3 (visual_assets, tables, equations,
   examples) tramite `references_assets[]` con asset_id
 - Possono creare **nuovi asset** (`new_assets[]`) quando il contenuto
-  richiede una visualizzazione che non è già stata prodotta in Fase 3
+  richiede una visualizzazione che non è già stata prodotta in Fase 3:
+  lo schema strict offre al modello `mermaid`, `vegalite` e `dot`
+  (`build_lesson_slides_json_schema(visual_formats=available_formats()
+  − {"function"})`, A1: `function` non è offerto in Fase 4 ma è accettato
+  dall'alias Pydantic se il docente lo aggiunge a mano); `asset_type` e i
+  tre formati legacy non sono più nello schema strict. Le regole dei
+  formati (D5, D8) sono quelle di Fase 3 (PROMPT 5 rinvia a PROMPT 3),
+  vedi [17 — Figure accademiche](17-visual-figures.md)
 - Hanno tipo classificato (16 valori: title, agenda, prerequisites,
   concept, definition, diagram, formula, table, example, case_study,
   exercise, discussion, summary, takeaways, references, bibliography)
@@ -193,9 +200,16 @@ non degrada lo stato (`approved` resta `approved`). Hard fail solo per:
 - `new_asset_id` duplicati o vuoti
 - `references_assets` verso ID non risolvibili (in `content_raw` ∪ `new_assets`)
 - `source_section_id` non vuoto verso sezione Fase 3 inesistente
+- `new_assets[]` con `(format, content)` cambiati che non superano il
+  validatore del formato (`figure_render_service.validate_visual_assets_or_raise`,
+  A15) → `422 lesson_slides_invalid_new_asset` con
+  `meta.errors[{loc, asset_id, format, msg, type}]`, mostrato dal dialog
+  sulla card dell'asset
 
 `PATCH /lessons/{id}/slides` setta `slides_modified_at = now()` per
 stale-detection downstream (PDF slide e Fase 5 si segnaleranno stale).
+Nel PDF slide e nei frame video le figure sono rese con l'etichetta
+«Figura.» senza numero (A2).
 
 ## Frontend — `CourseLessonSlidesView.tsx`
 
@@ -247,4 +261,5 @@ frequenti:
 - `lesson_slides_count_out_of_range` — il modello AI ha generato troppe/troppo poche slide. Risolvere con `regeneration_hint` esplicito sul numero.
 - `lesson_slides_unknown_asset_ref` — `references_assets[i]` punta a un asset non risolvibile. Quasi sempre causato da edit manuale post-AI che ha rimosso un asset. Aggiungere il `new_assets[]` o rimuovere il riferimento.
 - `lesson_content_not_ready_for_slides` — la dispensa della lezione non è `approved`; tornare a Fase 3 e approvarla.
+- `lesson_slides_invalid_new_asset` — un `new_assets[]` modificato a mano non supera il validatore del suo formato (spec Vega-Lite senza `clip`/`scale.domain`, tipo Mermaid escluso, attributo DOT che legge file, spec `function` incoerente): `meta.errors` indica asset e campo.
 - `OpenAILessonSlidesError` con finish_reason=length — output troncato, alzare `OPENAI_LESSON_SLIDES_MAX_TOKENS`.

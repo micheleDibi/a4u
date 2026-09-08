@@ -369,8 +369,23 @@ Costanti:
 
 **NON tradotti** (preservati AS-IS): tutti gli ID (`lesson_id`,
 `section_id`, `asset_id`, `slide_id`, `segment_id`, ecc.), `format`
-(Literal mermaid/image/…), `latex`, `markdown`, `mermaid` code,
-`detected_language` (codice ISO), numeri, booleani.
+(Literal mermaid/vegalite/dot/function/image/…), `latex`, `markdown`, il
+`content` degli asset visivi (codice Mermaid, spec Vega-Lite, sorgente
+DOT, spec `function`), `detected_language` (codice ISO), numeri, booleani.
+
+> **TODO tracciato (doc 17, limiti dichiarati)**: i testi *dentro* il
+> `content` delle figure — label dei nodi Mermaid e DOT, `title` e
+> `axis.title` di Vega-Lite, `label` delle espressioni e delle annotazioni
+> di `function` — restano nella lingua del corso sorgente dopo la
+> duplicazione. A generazione la rete di sicurezza i18n
+> (`asset_validation_service` + `openai_asset_localize_service`) li
+> ritraduce con `extract_translatable`/`apply_translations` del renderer
+> di ciascun formato (D7), ma la duplicazione traduce solo i path di
+> `CONTENT_RAW_TRANSLATE_PATHS` / `SLIDES_RAW_TRANSLATE_PATHS`
+> (`caption`, `alt_text`). Estendere la duplicazione agli stessi campi
+> tramite il registro dei renderer è lavoro successivo; la didascalia
+> calcolata di `function` non è persistita e segue sempre la lingua del
+> corso a render.
 
 > `coverage_check.objectives_covered[].objective` resta **lingua
 > naturale per scelta**: in Fase 3 il modello risponde con i codici

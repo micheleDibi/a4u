@@ -12,8 +12,8 @@ iterazioni a partire dalla foundation. Ogni file di codice rilevante è document
 - [05 — API reference](05-api-reference.md): tutti gli endpoint sotto `/orgs/{org_id}/courses`.
 - [06 — Frontend](06-frontend.md): pagine, componenti, dialog, polling.
 - [07 — Lesson structure (Fase 2)](07-lesson-structure.md): generazione AI parallela della struttura delle lezioni (obiettivi, temi, prerequisiti, scaletta) — §5 di `prompt_generazione_corsi.md`.
-- [08 — Lesson content (Fase 3) + Glossario](08-lesson-content.md): generazione AI parallela del testo completo delle lezioni con asset visivi (Mermaid + LaTeX + tabelle), glossario corso, **editor user-friendly** (TipTap + custom Table/Latex/Mermaid editors) — §6 + §10.1 di `prompt_generazione_corsi.md`.
-- [09 — PDF export](09-pdf-export.md): export PDF di lezione testo, slide e discorso tramite WeasyPrint (CSS Paged Media completo) + Jinja2 + markdown-it-py + Playwright (pre-render Mermaid → SVG e formule LaTeX → SVG con MathJax, solo per PDF testo/slide; `latex2mathml` resta solo come fallback offline) + copertina (frontespizio) — §7 di `prompt_generazione_corsi.md`. Tre pipeline distinte: `pdf_*` (testo), `slides_pdf_*` (slide), `speech_pdf_*` (discorso).
+- [08 — Lesson content (Fase 3) + Glossario](08-lesson-content.md): generazione AI parallela del testo completo delle lezioni con asset visivi (figure Mermaid 11 / Vega-Lite / DOT / `function` + immagini caricate, LaTeX, tabelle), validazione e fix AI per formato, glossario corso, **editor user-friendly** (TipTap + editor Table/Latex/Mermaid/Vega-Lite/DOT/function) — §6 + §10.1 di `prompt_generazione_corsi.md`.
+- [09 — PDF export](09-pdf-export.md): export PDF di lezione testo, slide e discorso tramite WeasyPrint (CSS Paged Media completo) + Jinja2 + markdown-it-py + registro delle figure (`render_svg_map`: pre-render Mermaid → SVG con Playwright, Vega-Lite/DOT/`function` offline in `<img data:svg>`, partial unico con «Figura N.») + Playwright per le formule LaTeX → SVG con MathJax (solo per PDF testo/slide; `latex2mathml` resta solo come fallback offline) + copertina (frontespizio) — §7 di `prompt_generazione_corsi.md`. Tre pipeline distinte: `pdf_*` (testo), `slides_pdf_*` (slide), `speech_pdf_*` (discorso).
 - [10 — Lesson slides (Fase 4)](10-lesson-slides.md): generazione AI delle slide della presentazione, riusando gli asset di Fase 3 + nuovi asset opzionali — §7 (sezione "slides") di `prompt_generazione_corsi.md`.
 - [11 — Lesson speech (Fase 5)](11-lesson-speech.md): generazione AI del discorso temporizzato (parlato TTS-friendly suddiviso in segmenti sincronizzati alle slide) con vincolo `sum(durata) ≈ minuti_per_lezione × 60` ±5% e regole 130 wpm IT / 150 wpm EN — §8 + §9.5 di `prompt_generazione_corsi.md`.
 - [12 — Lesson video (Fase 6)](12-lesson-video.md): generazione del video MP4 della lezione — TTS XTTS-v2 su RunPod GPU + rendering slide Playwright + encoding ffmpeg — §9.
@@ -21,6 +21,7 @@ iterazioni a partire dalla foundation. Ogni file di codice rilevante è document
 - [14 — Assessment lesson](14-assessment-lesson.md): lezione di **verifica delle competenze** — l'ultima lezione di ogni modulo quando la verifica finale è attiva.
 - [15 — Duplicazione corso in altra lingua](15-course-duplication.md): job background che clona un corso e ne traduce via OpenAI architecture/lessons/slides/speech/glossary/document summaries nella lingua target. **Multi-pass persistente** (6 pass con backoff progressivo + fallback automatico `gpt-4o` sui pass 5-6) per garantire convergenza anche con OpenAI/Cloudflare 520 transient. **Resume-from-progress** nei retry: le phase già committate non vengono rifatte. **Cleanup automatico** del target su fail terminale o timeout (90 min). Video e Video con Avatar non vengono copiati (l'utente li rigenera). Permesso `COURSE_DUPLICATE`. Badge UX rich con ETA stimato, tooltip pipeline, shimmer e sub-progress "X/N lezioni completate".
 - [16 — Ricerca paper scientifici](16-paper-search.md): ricerca paper accademici via **OpenAlex** (discovery + paginazione cursor) con **enrichment on-demand** da Semantic Scholar (TL;DR + fallback PDF OA) e Crossref (abstract pulito da JATS + subjects + references_count); riassunto AI inline (`gpt-4o-mini`, 4 sezioni) e import del paper come `CourseDocument` (PDF OA se disponibile, altrimenti `.md` di metadata) nella tab Documenti. Permesso `COURSE_EDIT`.
+- [17 — Figure accademiche](17-visual-figures.md): sintesi di progettazione delle quattro famiglie di asset visivi (Mermaid 11, Vega-Lite via vl-convert, Graphviz DOT, figure matematiche `function` con sympy + matplotlib) — registro di renderer unico (`figure_render_service`), tema accademico unico (`figure_theme.py` / `figureTheme.ts`), numerazione «Figura N.» identica in editor, vista, slide, PDF e video, normalizzazione SVG, validazione e fix AI per formato, assunzioni A1-A24, decisioni e rischi residui.
 
 ## Stato pipeline (5 fasi AI + video + verifica)
 
@@ -169,7 +170,8 @@ backend/app/
 │   └── language.py                          # lingue supportate
 ├── schemas/
 │   ├── course.py / course_architecture.py / course_lesson_structure.py
-│   ├── course_lesson_content.py             # Fase 3 — LessonContentRaw + Assessment* (LessonAssessmentOutput, AssessmentMC/Open*)
+│   ├── course_lesson_content.py             # Fase 3 — LessonContentRaw + VisualAssetFormat/LessonContentVisualAsset + Assessment* (LessonAssessmentOutput, AssessmentMC/Open*)
+│   ├── figure_function.py                   # Figure (doc 17) — FunctionFigureSpec (D9), check_function_spec, parse_function_spec
 │   ├── course_lesson_slides.py / course_lesson_speech.py / course_glossary.py
 │   ├── course_lesson_video.py               # Fase 6 — LessonVideoStatusOut, LessonVideoBatchOut
 │   ├── course_lesson_avatar_video.py        # Fase 6b — LessonAvatarVideoStatusOut, LessonAvatarVideoBatchOut
@@ -192,11 +194,21 @@ backend/app/
 │   ├── crossref_client.py                   # Paper — enrichment on-demand: abstract de-JATS + subjects + references_count (non bloccante)
 │   ├── paper_enrichment_service.py          # Paper — merge multi-source (S2 + Crossref via asyncio.gather, solo se DOI)
 │   ├── openai_paper_summary_service.py      # Paper — riassunto AI 4 sezioni (gpt-4o-mini, json_schema strict; usage scartato)
-│   └── paper_import_service.py              # Paper — import come CourseDocument: PDF OA o .md metadata + filename slug
+│   ├── paper_import_service.py              # Paper — import come CourseDocument: PDF OA o .md metadata + filename slug
+│   ├── figure_theme.py                      # Figure (doc 17) — tema accademico D3 (font, palette Okabe-Ito, Mermaid/Vega-Lite/DOT/matplotlib), i18n it/en, function_caption
+│   ├── mermaid_prerender.py                 # Figure — pre-render Mermaid 11 → SVG (Playwright, pin `mermaid_cdn_version`), estratto dal PDF service
+│   ├── svg_normalize.py                     # Figure — normalizzazione degli SVG di vl-convert/dot/matplotlib (Q3; WP2b)
+│   ├── figure_compute/                      # Figure — moduli «leaf» per il processo figlio spawn: isolated, vegalite_rules, vegalite_render, function_* (WP2b/WP7)
+│   ├── figure_render_service.py             # Figure — registro dei renderer (Protocol FigureRenderer, render_svg_map, validate_visual_assets_or_raise; WP2b)
+│   ├── figure_numbering.py                  # Figure — numerazione «Figura N.» condivisa con figureNumbering.ts (WP4)
+│   ├── figure_markup.py                     # Figure — Environment Jinja dedicato + partial figure.html.j2 (WP4)
+│   └── figure_function_service.py           # Figure — motore del formato `function`: numerico → simbolico nel figlio → riconciliazione → disegno → didascalia (WP7)
 ├── musetalk_client/                         # Fase 6b — client MuseTalk vendored (copia verbatim, NON modificare)
 │   └── scripts/client/{synth_random_lipsync,runpod_client,video_assembler,clip_manifest}.py
-├── templates/                               # lesson_pdf / lesson_slides_pdf / lesson_speech_pdf .html.j2
-├── api/v1/courses.py                        # router REST corsi (~91 endpoint: Fasi 1-6/6b + 3 PDF + assessment + 3 /papers/*)
+├── templates/                               # lesson_pdf / lesson_slides_pdf / lesson_speech_pdf .html.j2 (+ partials/figure.html.j2, doc 17, WP4)
+├── ../scripts/revalidate_mermaid_assets.py  # Figure (doc 17) — dry-run: gate statico D8 + parse v11 + conteggio foreignObject sugli asset in DB (in backend/scripts/, fuori da app/)
+├── ../scripts/check_prompts_md.py           # Verifica meccanica di docs/PROMPTS.md contro i _system_prompt reali (exit 1 con diff se divergono)
+├── api/v1/courses.py                        # router REST corsi (99 endpoint: Fasi 1-6/6b + 3 PDF + assessment + 3 /papers/* + lesson-assets upload/convert-to-mermaid/render-function)
 ├── api/v1/me_avatar.py                      # avatar utente + PATCH /me/avatar/musetalk-params
 └── alembic/versions/
     ├── 0009 … 0024                          # foundation corsi + Fasi 1-5 + 3 PDF (vedi doc 10-alembic.md)
@@ -230,6 +242,12 @@ frontend/src/
 │   ├── useLessonVideo.ts                           # Fase 6 — query/mutation status video
 │   └── useLessonAvatarVideo.ts                     # Fase 6b — query/mutation status video con avatar
 ├── lib/staleness.ts                                # helper di stale-detection cascata
+├── lib/figureTheme.ts                              # Figure (doc 17) — copia frontend del tema D3 (palette, Mermaid initialize, config Vega-Lite, DOT defaults): mantenere allineata a figure_theme.py
+├── lib/figureNumbering.ts                          # Figure — copia di figure_numbering.py (FIG_REF_RE, computeFigureNumbers, stripFigurePrefix), fixture condivisa
+├── lib/figureFormats.ts                            # Figure — formati, formatLabel, parse/sanitize dell'SVG, tetto d'altezza dei Mermaid orizzontali
+├── lib/functionSpec.ts                             # Figure — helper della spec `function` per vista ed editor
+├── contexts/CourseRefContext.tsx                   # Figure — orgId/courseId per i renderer che chiamano il backend (A21)
+├── components/shared/                              # Figure — FigureFrame, MermaidDiagram, VegaLiteDiagram, DotDiagram, FunctionFigure, FigureSourceEditor, VegaLiteEditor, DotEditor, FunctionEditor, VisualAssetEditor, AddVisualAssetMenu (vedi frontend/05-components.md)
 └── pages/org/courses/
     ├── CourseEditorPage.tsx                        # editor a STEPPER di 4 macro-fasi (setup / architecture / content / media): lo stepper sostituisce la lista piatta di 11 tab; sotto, la TabsList mostra solo le sub-tab della fase corrente (currentPhase = phaseOfTab(activeTab))
     └── components/

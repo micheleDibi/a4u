@@ -698,9 +698,16 @@ markdown/LaTeX/Mermaid all'utente finale:
 | Campo | Editor |
 |---|---|
 | `introduction` / `sections[].content` / `summary` / `examples[].content` / `equations[].explanation` | `RichTextEditor` (TipTap) |
-| `visual_assets[]` con `format='mermaid'` | `MermaidEditor` (preview live) |
+| `visual_assets[]` con `format='mermaid'` | `MermaidEditor` (preview live) dentro `VisualAssetEditor` (componente condiviso con il dialog slide) |
+| `visual_assets[]` con `format='vegalite'` / `'dot'` | `VegaLiteEditor` / `DotEditor` (sorgente + anteprima client vega-embed / viz-js, template accademici, errore del parser sotto l'anteprima) |
+| `visual_assets[]` con `format='function'` | `FunctionEditor` (modulo a campi sulla spec `FunctionFigureSpec`, anteprima via `POST /lesson-assets/render-function`, errori 422 mappati sui campi) |
 | `visual_assets[]` con `format='image'` | preview `<img>` + bottone "Digitalizza in Mermaid" (Vision API) |
 | `visual_assets[]` legacy (`image_prompt|image_search_query|description`) | banner "Asset legacy" + `<Textarea>` readonly |
+
+Gli errori `422 lesson_content_invalid_visual_asset` del PATCH arrivano al
+dialog dal container (`onError` della mutation → `meta.errors` → prop
+`assetErrors`) e sono mostrati in testa alla card dell'asset indicato da
+`asset_id`/`loc` (pattern `LatexEditor`).
 | `tables[].markdown` | `TableEditor` |
 | `equations[].latex` | `LatexEditor` |
 | `key_takeaways[]` / `references[]` | `<Input>` lista |
@@ -714,8 +721,10 @@ ricordarsi di sincronizzare i riferimenti a mano.
 
 ### Asset visivi: aggiunta + upload + digitalizza (`AddVisualAssetMenu`)
 
-Refactor del commit `92d5f37`. Il pulsante "+ Aggiungi asset visivo"
-è ora un **dropdown** con due opzioni:
+Refactor del commit `92d5f37`, esteso ai quattro formati di figura. Il
+pulsante "+ Aggiungi asset visivo" è un **dropdown** (componente condiviso
+`components/shared/AddVisualAssetMenu.tsx`, usato anche dal dialog delle
+slide con `formats` senza `function`, A1) con cinque opzioni:
 
 - **"Carica immagine"** → apre file picker (`accept="image/png,image/jpeg,image/webp"`),
   poi `coursesApi.lessonAssets.upload(orgId, courseId, file)` →
@@ -723,6 +732,10 @@ Refactor del commit `92d5f37`. Il pulsante "+ Aggiungi asset visivo"
   `format="image"` e `content=path`.
 - **"Scrivi Mermaid a mano"** → asset nuovo con `format="mermaid"`,
   `content=""` e `MermaidEditor` subito aperto.
+- **"Grafico Vega-Lite"**, **"Grafo DOT"**, **"Figura calcolata"** →
+  asset nuovo con il formato scelto e il primo template dell'editor
+  corrispondente (`VegaLiteEditor` / `DotEditor` / `FunctionEditor`); gli
+  id sono generati da `makeAssetId` con loop anti-collisione.
 
 Sull'asset `format="image"` l'editor mostra una preview `<img>` con
 height max ~80 (320px) e un pulsante secondario `[✨ Digitalizza in
@@ -731,8 +744,10 @@ courseId, path)` → su successo l'editor sostituisce localmente
 `format`/`content` (immagine → codice Mermaid). Su errore (incluso il
 caso `UNRECOGNIZED`) toast con messaggio dal backend, asset invariato.
 
-Vedi anche [08 — Lesson content § Asset visivi: Mermaid + immagini caricate](08-lesson-content.md#asset-visivi-mermaid--immagini-caricate)
-per i dettagli del workflow + cleanup file orfani lato backend.
+Vedi anche [08 — Lesson content § Asset visivi: figure + immagini caricate](08-lesson-content.md#asset-visivi-figure-mermaid-vega-lite-dot-function--immagini-caricate)
+per i dettagli del workflow + cleanup file orfani lato backend, e
+[17 — Figure accademiche](17-visual-figures.md) per registro, tema e
+numerazione.
 
 ### "Evidenzia dove usato"
 
@@ -782,7 +797,7 @@ Per modulo: card con lista lezioni. Per lezione, riga espandibile con:
 
 Lista verticale di card per slide. Per ciascuna slide:
 - Header: badge slide_number + badge type + titolo + (opzionale) badge "Da sezione" con `source_section_id`
-- Body: prosa breve (`body`), bullets (`<ul>`), asset referenziati renderizzati via `resolveAsset()` di `lib/slides.ts` (visual mermaid → `<MermaidDiagram>`, table markdown → `<MarkdownRenderer>`, equation LaTeX → `$$...$$`, example card)
+- Body: prosa breve (`body`), bullets (`<ul>`), asset referenziati renderizzati via `resolveAsset()` di `lib/slides.ts` (figure → `FigureFrame` con `variant="slide"` ed etichetta «Figura.» senza numero, A2: Mermaid → `<MermaidDiagram>` lazy, Vega-Lite → `<VegaLiteDiagram>`, DOT → `<DotDiagram>`, `function` → `<FunctionFigure>`, `image` → `<img>`, legacy → placeholder con `content`; table markdown → `<MarkdownRenderer>`, equation LaTeX → `$$...$$`, example card). Le etichette delle multi-select passano da `formatLabel` (`lib/figureFormats.ts`), nessuna stringa hard-coded.
 - Asset orfano (riferimento senza definizione): box destructive con messaggio
 
 ### `LessonSlidesEditDialog.tsx`
@@ -1077,7 +1092,11 @@ Alert "qualcosa a monte è cambiato". `kind: 'structure' | 'content' | 'pdf' | '
   "@types/katex": "^0.16",
   "@radix-ui/react-progress": "^1",
 
-  "mermaid": "^11",
+  "mermaid": "^11.17.2",
+  "vega": "^6.4.0",
+  "vega-lite": "^6.4.3",
+  "vega-embed": "^7.2.0",
+  "@viz-js/viz": "^3.30.0",
   "react-markdown": "^9",
   "remark-gfm": "^4",
   "remark-math": "^6",
@@ -1090,3 +1109,9 @@ Alert "qualcosa a monte è cambiato". `kind: 'structure' | 'content' | 'pdf' | '
   "tiptap-markdown": "^0.9.0"
 }
 ```
+
+`vega`/`vega-lite`/`vega-embed` (chunk `embed.js`, ≈792 kB minificato,
+276 kB gzip) e `@viz-js/viz` (chunk `viz.js`, ≈1.262 kB con il WebAssembly
+di Graphviz inlinato in base64, 485 kB gzip) sono importati dinamicamente
+da `VegaLiteDiagram` e `DotDiagram`: non pesano sul bundle iniziale finché
+una figura del formato non è visibile. Vedi [17 — Figure accademiche](17-visual-figures.md).

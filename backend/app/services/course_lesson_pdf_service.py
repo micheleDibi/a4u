@@ -2,8 +2,10 @@
 
 Pipeline:
   content_raw (JSONB) + pdf_template (org)
-        ↓ Playwright (pre-render) → mermaid SVG inline
-        ↓ latex2mathml → MathML inline (math)
+        ↓ registro dei renderer (`figure_render_service.render_svg_map`):
+          Mermaid via Playwright, Vega-Lite, DOT, function → SVG
+        ↓ MathJax via Playwright → SVG inline (math; MathML solo come
+          fallback senza CDN)
         ↓ markdown-it-py + Jinja2 → HTML completo
         ↓ WeasyPrint → PDF bytes
         ↓ filesystem (`generated_pdfs/{org}/{course}/{lesson}.pdf`)
@@ -19,15 +21,24 @@ avviene nel worker, asincrono: questo modulo espone:
   - render_lesson_html — pure-function (markdown → HTML), riusabile in test
   - generate_pdf_bytes — pure-function (HTML → PDF bytes via WeasyPrint)
 
-Asset visivi:
+Asset visivi (tutti resi dal partial unico `partials/figure.html.j2` con
+l'etichetta «Figura N.» in ordine di citazione, D4; gli asset mai citati
+sono accodati dopo la sintesi, A12):
   - `format=mermaid` → SVG pre-renderizzato server-side (una sessione
-    Playwright headless per lezione carica mermaid.esm e produce SVG;
-    WeasyPrint embedda SVG nativamente)
+    Playwright headless per lezione carica mermaid.esm e produce SVG)
+    inserito inline (`<div class="mermaid-svg">`, catena byte-identica)
+  - `format=vegalite|dot|function` → SVG del registro (vl-convert,
+    Graphviz `dot`, matplotlib), normalizzato e incapsulato in
+    `<img class="figure-svg" src="data:image/svg+xml;base64,…">`; per
+    `function` la didascalia calcolata (D9) segue quella dell'autore
+  - SVG assente (render fallito) → `<pre class="figure-fallback">` con il
+    sorgente e `log.error("figure_render_fallback", …)` (A23)
+  - `format=image` → immagine caricata (data URL base64)
   - `format=image_prompt|image_search_query|description` → placeholder
-    testuale (in MVP non scarichiamo immagini)
+    testuale (formati legacy, solo in lettura)
   - `tables[].markdown` → pre-renderizzato a HTML
-  - `equations[].latex` → convertito in MathML server-side via
-    `latex2mathml` (WeasyPrint renderizza MathML nativamente)
+  - `equations[].latex` → SVG pre-renderizzato via MathJax (Playwright);
+    `latex2mathml` resta il fallback senza CDN
   - `examples[].content` → markdown ricorsivo
 
 Il template `pdf_templates` (org-scope) determina colori, font, page size,
@@ -43,6 +54,7 @@ import base64
 import re
 import sys
 import uuid
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -50,6 +62,7 @@ from typing import Any
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from latex2mathml.converter import convert as _latex_to_mathml
 from markdown_it import MarkdownIt
+from markupsafe import Markup
 from mdit_py_plugins.dollarmath import dollarmath_plugin
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -66,9 +79,35 @@ from app.models.course_module import CourseModule
 from app.models.organization import Organization
 from app.models.pdf_template import PdfTemplate
 from app.models.user import User
-from app.services import remote_storage
+
+# Re-export dei nomi storici del pre-render Mermaid (vedi la sezione
+# «Mermaid pre-rendering» più avanti): slides_pdf, video e test li importano
+# da qui. `_MERMAID_RENDERER_HTML` è pigra (dipende dal setting del pin) ed è
+# servita dal `__getattr__` di modulo in coda al file.
+from app.services import figure_render_service, remote_storage
+from app.services import mermaid_prerender as _mermaid_prerender
+from app.services.figure_markup import FigureVariant, render_figure_html
+from app.services.figure_numbering import append_uncited_figure_refs, compute_figure_numbers
+from app.services.figure_render_service import RENDERABLE_FORMATS
+from app.services.figure_theme import figure_labels
+from app.services.mermaid_prerender import (  # noqa: F401
+    _MERMAID_JUNK_LINE_RE,
+    _MERMAID_MAX_WIDTH_RE,
+    _prerender_mermaid_to_svg_batch,
+    _prerender_mermaid_to_svg_batch_async,
+    _prerender_mermaid_to_svg_batch_sync,
+    _sanitize_mermaid_code,
+    _strip_mermaid_max_width,
+)
+from app.services.svg_normalize import svg_to_data_uri
 
 log = get_logger("app.course_lesson_pdf.service")
+
+
+def __getattr__(name: str) -> Any:
+    if name == "_MERMAID_RENDERER_HTML":
+        return _mermaid_prerender._MERMAID_RENDERER_HTML
+    raise AttributeError(name)
 
 
 # ---------------------------------------------------------------------------
@@ -388,57 +427,131 @@ def _html_escape_text(text: str) -> str:
     )
 
 
+# Formati legacy di Fase 3/4 (solo in lettura): placeholder testuale.
+_LEGACY_PLACEHOLDER_FORMATS: frozenset[str] = frozenset(
+    {"image_prompt", "image_search_query", "description"}
+)
+
+
 def _render_visual_asset_block(
     asset: dict[str, Any],
     *,
-    mermaid_svg_map: dict[str, str] | None = None,
+    visual_svg_map: dict[str, str] | None = None,
+    number: int | None = None,
+    labels: Mapping[str, str] | None = None,
+    variant: FigureVariant = "lesson",
+    language: str | None = None,
+    lesson_code: str | None = None,
 ) -> str:
-    fmt = asset.get("format", "")
-    asset_id = str(asset.get("asset_id", ""))
+    """Blocco HTML di un asset visivo, per ogni formato, attraverso il
+    partial unico `render_figure_html` (D4).
+
+    `visual_svg_map` è `{asset_id → svg}` prodotto da
+    `_prerender_visual_assets_for_lesson` (registro dei renderer). Corpo per
+    formato:
+      - `mermaid`: SVG inline `<div class="mermaid-svg">` nella dispensa
+        (byte-identico alla catena precedente, A11-L3), `<img
+        class="mermaid-svg">` con data URI nelle slide (`variant="slide"`);
+      - `vegalite` / `dot` / `function`: `<img class="figure-svg">` con
+        data URI (replaced element: `max-height` rispettato da WeasyPrint);
+        `function` riceve la didascalia calcolata come `extra_caption`;
+      - `image`: immagine caricata (data URL) o placeholder «immagine
+        mancante»; formati legacy: placeholder con il testo;
+      - SVG assente per un formato renderizzabile, o formato sconosciuto:
+        `<pre class="figure-fallback">` con il sorgente escapato, mai il
+        contenuto in chiaro nel corpo; per i formati renderizzabili è un
+        errore visibile nei log (`figure_render_fallback`, A23).
+
+    `number` è il numero editoriale («Figura N.») o `None` («Figura.», slide
+    e frame video, A2); `labels` è la mappa di `figure_labels(language)`.
+    """
+    fmt = str(asset.get("format", "") or "")
+    asset_id = str(asset.get("asset_id", "") or "")
     content = asset.get("content", "") or ""
     caption = asset.get("caption", "") or ""
-    caption_html = (
-        f'<figcaption>{_html_escape_text(caption)}</figcaption>' if caption else ""
-    )
+    alt_text = asset.get("alt_text") or ""
+    svg_map = visual_svg_map or {}
+
+    body: Markup | None = None
+    fallback_source: str | None = None
+    fallback_reason = ""
+    extra_caption = ""
+
     if fmt == "mermaid":
         # WeasyPrint NON esegue JS — il rendering Mermaid avviene server-side
-        # via Playwright in `_prerender_mermaid_for_lesson`. Qui inseriamo
-        # l'SVG già renderizzato. Se per qualche motivo il rendering è
-        # fallito (rete, sintassi mermaid, ...) emettiamo un fallback
-        # leggibile col codice originale.
-        svg = (mermaid_svg_map or {}).get(asset_id) if asset_id else None
+        # via Playwright (registro dei renderer). Qui inseriamo l'SVG già
+        # renderizzato: inline nella dispensa, `<img>` nelle slide.
+        svg = svg_map.get(asset_id) if asset_id else None
         if svg:
-            body = f'<div class="mermaid-svg">{svg}</div>'
+            if variant == "slide":
+                body = Markup(f'<img class="mermaid-svg" src="{svg_to_data_uri(svg)}" alt="" />')
+            else:
+                body = Markup(f'<div class="mermaid-svg">{svg}</div>')
         else:
-            body = (
-                f'<pre class="mermaid-fallback">{_html_escape_text(content)}</pre>'
+            fallback_source, fallback_reason = content, "svg_missing"
+    elif fmt in RENDERABLE_FORMATS:
+        # vegalite | dot | function: SVG normalizzato del registro.
+        svg = svg_map.get(asset_id) if asset_id else None
+        if svg:
+            body = Markup(
+                f'<img class="figure-svg" src="{svg_to_data_uri(svg)}" '
+                f'alt="{_html_escape_text(alt_text)}" />'
             )
-        return f'<figure class="visual"><div class="figure-body">{body}</div>{caption_html}</figure>'
-    if fmt == "image":
+            if fmt == "function":
+                extra_caption = figure_render_service.function_computed_caption(
+                    content, language=language, asset_id=asset_id
+                )
+        else:
+            fallback_source, fallback_reason = content, "svg_missing"
+    elif fmt == "image":
         # Asset immagine caricato dall'utente (path relativo `lesson_assets/...`).
-        # Riusiamo il resolver dei template asset: legge dal filesystem e
+        # Riusiamo il resolver dei template asset: legge dallo storage e
         # produce una data URL base64 — WeasyPrint-friendly senza dipendenze
         # di rete.
-        alt = _html_escape_text(asset.get("alt_text") or "")
+        alt = _html_escape_text(alt_text)
         data_url = _resolve_template_asset_url(content)
         if data_url:
-            body = (
-                f'<img class="uploaded-image" src="{data_url}" alt="{alt}" />'
+            body = Markup(f'<img class="uploaded-image" src="{data_url}" alt="{alt}" />')
+        else:
+            body = Markup(
+                f'<div class="placeholder-image">[immagine mancante: '
+                f"{_html_escape_text(content)}]</div>"
+            )
+    elif fmt in _LEGACY_PLACEHOLDER_FORMATS:
+        body = Markup(f'<div class="placeholder-image">{_html_escape_text(content)}</div>')
+    else:
+        # Formato sconosciuto: sorgente nel fallback, mai in chiaro nel corpo.
+        fallback_source, fallback_reason = content, "format_unknown"
+
+    if fallback_source is not None:
+        if fmt in RENDERABLE_FORMATS:
+            log.error(
+                "figure_render_fallback",
+                lesson_code=lesson_code,
+                asset_id=asset_id,
+                format=fmt,
+                reason=fallback_reason,
             )
         else:
-            body = (
-                f'<div class="placeholder-image">[immagine mancante: '
-                f'{_html_escape_text(content)}]</div>'
+            log.warning(
+                "figure_format_unknown",
+                lesson_code=lesson_code,
+                asset_id=asset_id,
+                format=fmt,
             )
-        return f'<figure class="visual"><div class="figure-body">{body}</div>{caption_html}</figure>'
-    if fmt in {"image_prompt", "image_search_query", "description"}:
-        body = (
-            f'<div class="placeholder-image">{_html_escape_text(content)}</div>'
-        )
-        return f'<figure class="visual"><div class="figure-body">{body}</div>{caption_html}</figure>'
-    # formato sconosciuto
-    body = f'<div class="placeholder-image">[{fmt}] {_html_escape_text(content)}</div>'
-    return f'<figure class="visual"><div class="figure-body">{body}</div>{caption_html}</figure>'
+
+    return render_figure_html(
+        body_html=body,
+        caption=str(caption),
+        alt_text=str(alt_text),
+        asset_id=asset_id,
+        fmt=fmt,
+        number=number,
+        labels=labels if labels is not None else figure_labels(language),
+        variant=variant,
+        fallback_source=str(fallback_source) if fallback_source is not None else None,
+        extra_caption=extra_caption,
+    )
 
 
 def _render_table_block(
@@ -560,254 +673,98 @@ def _render_example_block(
     return f'<aside class="example">{title_html}<div class="example-body">{inner_html}</div></aside>'
 
 
+def _asset_key(asset_id: object) -> str:
+    """Id normalizzato della chiave della mappa asset (`.strip().lower()`,
+    come `_substitute_asset_refs` e `figure_numbering`)."""
+    return str(asset_id or "").strip().lower()
+
+
 def _build_asset_html_map(
     content: dict[str, Any],
     *,
-    mermaid_svg_map: dict[str, str] | None = None,
+    visual_svg_map: dict[str, str] | None = None,
     math_svg_map: dict | None = None,
     language: str = "it",
+    figure_numbers: Mapping[str, int] | None = None,
+    labels: Mapping[str, str] | None = None,
+    lesson_code: str | None = None,
 ) -> dict[tuple[str, str], str]:
     """Pre-renderizza ogni asset una sola volta. Chiavi: (KIND, id).
 
-    L'id nella chiave è normalizzato a minuscolo: i riferimenti `[KIND:id]`
-    nel testo e l'id dichiarato dell'asset sono generati dall'AI con case
-    non sempre coerente (es. asset `TAB_x` referenziato come `[TAB:tab_x]`).
-    Il lookup in `_substitute_asset_refs` normalizza nello stesso modo.
+    L'id nella chiave è normalizzato con `.strip().lower()`: i riferimenti
+    `[KIND:id]` nel testo e l'id dichiarato dell'asset sono generati
+    dall'AI con case e spazi non sempre coerenti (es. asset `TAB_x`
+    referenziato come `[TAB:tab_x]`, o `[FIG: A ]`). Il lookup in
+    `_substitute_asset_refs` e `compute_figure_numbers` normalizzano nello
+    stesso modo.
 
-    `mermaid_svg_map` è il dict {asset_id → svg_string} prodotto da
-    `_prerender_mermaid_for_lesson`. Se omesso, gli asset mermaid
-    vanno in fallback testuale."""
+    `visual_svg_map` è il dict {asset_id → svg} prodotto da
+    `_prerender_visual_assets_for_lesson` (tutti i formati renderizzabili).
+    Se omesso, le figure vanno in fallback testuale. `figure_numbers` è la
+    mappa `{id_lower → N}` di `compute_figure_numbers` (l'ordine dell'array
+    qui non conta: il numero è legato all'id) e `labels` la mappa di
+    `figure_labels(language)`."""
+    numbers = figure_numbers or {}
+    figure_i18n = labels if labels is not None else figure_labels(language)
     out: dict[tuple[str, str], str] = {}
     for asset in content.get("visual_assets") or []:
-        out[("FIG", str(asset.get("asset_id", "")).lower())] = (
-            _render_visual_asset_block(asset, mermaid_svg_map=mermaid_svg_map)
+        key = _asset_key(asset.get("asset_id"))
+        out[("FIG", key)] = _render_visual_asset_block(
+            asset,
+            visual_svg_map=visual_svg_map,
+            number=numbers.get(key),
+            labels=figure_i18n,
+            variant="lesson",
+            language=language,
+            lesson_code=lesson_code,
         )
     for table in content.get("tables") or []:
-        out[("TAB", str(table.get("table_id", "")).lower())] = _render_table_block(
+        out[("TAB", _asset_key(table.get("table_id")))] = _render_table_block(
             table, math_svg_map=math_svg_map
         )
     for eq in content.get("equations") or []:
-        out[("EQ", str(eq.get("equation_id", "")).lower())] = _render_equation_block(
+        out[("EQ", _asset_key(eq.get("equation_id")))] = _render_equation_block(
             eq, math_svg_map=math_svg_map, language=language
         )
     for ex in content.get("examples") or []:
-        out[("EX", str(ex.get("example_id", "")).lower())] = _render_example_block(
+        out[("EX", _asset_key(ex.get("example_id")))] = _render_example_block(
             ex, math_svg_map=math_svg_map
         )
     return out
 
 
 # ---------------------------------------------------------------------------
-# Mermaid pre-rendering (Playwright headless → SVG)
+# Pre-render delle figure (registro dei renderer → SVG)
 # ---------------------------------------------------------------------------
 
-
-# HTML mini-doc che carica mermaid.esm da CDN ed espone una funzione
-# globale `__renderMermaid(id, code)` che ritorna SVG (o null se errore).
-#
-# `htmlLabels: false` su tutti i diagrammi: Mermaid di default usa
-# `<foreignObject>` con HTML per le label dei nodi, ma WeasyPrint non
-# supporta foreignObject. Forzando le label come SVG `<text>` puro,
-# il diagramma si renderizza correttamente nel PDF.
-# Mermaid imposta `style="max-width: <natural_px>;"` sull'SVG generato
-# (con `useMaxWidth: true`). Questo IMPEDISCE all'SVG di crescere
-# oltre la sua dimensione naturale (tipicamente ~300-400px), anche
-# se il container del PDF è molto più largo (un foglio A4 ha ~170mm
-# di content area = ~640px). Risultato: il diagramma rimane piccolo
-# e le label illeggibili. Strippiamo quel `max-width:Xpx` lasciando
-# tutto il resto dello stile così l'SVG riempie il container.
-_MERMAID_MAX_WIDTH_RE = re.compile(r"max-width\s*:\s*[\d.]+px\s*;?", re.IGNORECASE)
+# La pagina di rendering Mermaid (pin `settings.mermaid_cdn_version`, tema di
+# `figure_theme` con `htmlLabels: false` top-level), il batch Playwright, il
+# post-processing `_strip_mermaid_max_width` e il sanitizer del sorgente
+# vivono in `mermaid_prerender` e sono re-esportati in testa a questo modulo
+# con i vecchi nomi: i chiamanti (`course_lesson_slides_pdf_service`, video,
+# test) non cambiano. Il dispatch per formato (Mermaid, Vega-Lite, DOT,
+# function) è di `figure_render_service.render_svg_map`.
 
 
-def _strip_mermaid_max_width(svg: str) -> str:
-    return _MERMAID_MAX_WIDTH_RE.sub("", svg)
-
-
-_MERMAID_RENDERER_HTML = """<!doctype html>
-<html><head><meta charset="utf-8"><style>body{margin:0;padding:0;font-family:"Noto Sans CJK JP","Noto Sans","DejaVu Sans",sans-serif;}</style></head>
-<body>
-<script type="module">
-// Mermaid 10.9.x rispetta `htmlLabels: false` ed emette SVG <text> puro
-// per le label dei nodi. Mermaid 11.x usa il "neo look" che ignora
-// l'opzione e produce sempre <foreignObject>+HTML — non renderizzabile
-// da WeasyPrint. Pinniamo deliberatamente alla 10.9.x.
-import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10.9.4/dist/mermaid.esm.min.mjs';
-mermaid.initialize({
-  startOnLoad: false,
-  theme: 'default',
-  // Font con copertura CJK per le label dei nodi (htmlLabels:false → <text>
-  // SVG): senza, il giapponese diventa "tofu" nonostante i font installati.
-  themeVariables: { fontFamily: '"Noto Sans CJK JP","Noto Sans","DejaVu Sans",sans-serif' },
-  securityLevel: 'loose',
-  flowchart: { htmlLabels: false, useMaxWidth: true },
-  sequence: { useMaxWidth: true },
-  class: { htmlLabels: false },
-  state: { htmlLabels: false },
-  er: { useMaxWidth: true },
-});
-window.__renderMermaid = async (id, code) => {
-  try {
-    // Pre-validate: se la parse fallisce, NON chiamiamo render(),
-    // altrimenti mermaid emette nel DOM un'icona "bomba" + scritta
-    // "Syntax error in text" che finirebbe nell'SVG ritornato.
-    // Con `suppressErrors: true`, parse ritorna `false` invece di
-    // throware e senza side-effects nel DOM.
-    const ok = await mermaid.parse(code, { suppressErrors: true });
-    if (!ok) return null;
-    const { svg } = await mermaid.render(id, code);
-    return svg;
-  } catch (e) {
-    return null;
-  }
-};
-window.__mermaidReady = true;
-</script>
-</body></html>
-"""
-
-
-async def _prerender_mermaid_to_svg_batch_async(
-    codes: list[str],
-) -> list[str | None]:
-    """Implementazione async del pre-render. NON va chiamata direttamente
-    dal worker uvicorn — Playwright richiede `subprocess_exec`, che su
-    Windows è supportato SOLO da `ProactorEventLoop` (non dal
-    SelectorEventLoop che uvicorn può aver impostato). Wrappare via
-    `_prerender_mermaid_to_svg_batch` che gira in un thread con loop
-    dedicato.
-
-    Renderizza una lista di sorgenti mermaid a SVG con UNA sola
-    sessione Playwright headless (~1s startup + ~50-200ms per
-    diagramma). Ritorna lista parallela; ogni elemento è la stringa
-    SVG o `None` se il rendering ha fallito.
-    """
-    if not codes:
-        return []
-
-    from playwright.async_api import async_playwright
-
-    results: list[str | None] = []
-    async with async_playwright() as pw:
-        browser = await pw.chromium.launch(args=["--no-sandbox"])
-        try:
-            page = await browser.new_page()
-            await page.set_content(
-                _MERMAID_RENDERER_HTML, wait_until="domcontentloaded"
-            )
-            try:
-                await page.wait_for_function(
-                    "window.__mermaidReady === true", timeout=15_000
-                )
-            except Exception as exc:  # noqa: BLE001
-                log.warning("mermaid_renderer_setup_failed", error=str(exc))
-                # Non possiamo renderizzare nulla → tutti None.
-                return [None] * len(codes)
-
-            for i, code in enumerate(codes):
-                if not (code or "").strip():
-                    results.append(None)
-                    continue
-                try:
-                    svg = await page.evaluate(
-                        "([id, code]) => window.__renderMermaid(id, code)",
-                        [f"mmd-{i}", code],
-                    )
-                    if isinstance(svg, str) and svg.strip():
-                        results.append(_strip_mermaid_max_width(svg))
-                    else:
-                        log.warning(
-                            "mermaid_render_returned_empty",
-                            preview=code[:80],
-                        )
-                        results.append(None)
-                except Exception as exc:  # noqa: BLE001
-                    log.warning(
-                        "mermaid_render_failed",
-                        error=str(exc),
-                        preview=code[:80],
-                    )
-                    results.append(None)
-        finally:
-            await browser.close()
-    return results
-
-
-def _prerender_mermaid_to_svg_batch_sync(
-    codes: list[str],
-) -> list[str | None]:
-    """Sync wrapper: crea un loop asyncio NUOVO e dedicato (su Windows
-    forza `ProactorEventLoop`, l'unico che supporta `subprocess_exec`
-    necessario al transport di Playwright). Va chiamato da un thread
-    diverso dal main (via `asyncio.to_thread`) per non interferire col
-    loop di uvicorn."""
-    if sys.platform == "win32":
-        loop = asyncio.ProactorEventLoop()
-    else:
-        loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        return loop.run_until_complete(_prerender_mermaid_to_svg_batch_async(codes))
-    finally:
-        try:
-            loop.close()
-        except Exception:  # noqa: BLE001
-            pass
-
-
-async def _prerender_mermaid_to_svg_batch(
-    codes: list[str],
-) -> list[str | None]:
-    """Wrapper async: esegue il pre-render Playwright in un thread pool.
-    Il thread crea il proprio loop (ProactorEventLoop su Windows) così
-    indipendente dal loop scelto da uvicorn. Stessa firma della vecchia
-    versione async — caller non cambia."""
-    if not codes:
-        return []
-    return await asyncio.to_thread(_prerender_mermaid_to_svg_batch_sync, codes)
-
-
-# Righe spurie a volte emesse dall'AI nel codice Mermaid: fence markdown
-# residuo (```/```mermaid) o nodi-segnaposto isolati come `mermaid` /
-# `all` / `all:`. Passano mermaid.parse ma compaiono come box anomali.
-# Rimosse solo quando una riga è ESATTAMENTE uno di questi token (non
-# tocchiamo archi/nodi reali tipo `A --> all` o `all[Etichetta]`).
-# Mirror del sanitizer frontend in MermaidDiagram.tsx.
-_MERMAID_JUNK_LINE_RE = re.compile(r"^(?:```.*|mermaid|all)\s*:?\s*$", re.IGNORECASE)
-
-
-def _sanitize_mermaid_code(code: str) -> str:
-    if not code:
-        return code
-    lines = [
-        ln for ln in code.split("\n") if not _MERMAID_JUNK_LINE_RE.match(ln.strip())
-    ]
-    return "\n".join(lines).strip()
-
-
-async def _prerender_mermaid_for_lesson(
+async def _prerender_visual_assets_for_lesson(
     content: dict[str, Any],
+    *,
+    language: str = "it",
 ) -> dict[str, str]:
-    """Estrae tutti i mermaid dalla lezione (se presenti) e li
-    pre-renderizza in batch. Ritorna {asset_id → svg}; chiavi assenti
-    indicano rendering fallito (gestito dal fallback testuale)."""
-    pairs: list[tuple[str, str]] = []
-    for asset in content.get("visual_assets") or []:
-        if asset.get("format") != "mermaid":
-            continue
-        asset_id = str(asset.get("asset_id", ""))
-        code = _sanitize_mermaid_code(asset.get("content") or "")
-        if asset_id and code.strip():
-            pairs.append((asset_id, code))
-
-    if not pairs:
+    """Pre-renderizza in batch tutti gli asset visivi renderizzabili della
+    lezione attraverso il registro (`render_svg_map`: un batch per formato,
+    cache LRU, semaforo e timeout). Ritorna {asset_id → svg}; chiavi
+    assenti indicano rendering fallito o formato non disponibile (fallback
+    del partial). Non solleva mai: i worker non vedono eccezioni nuove."""
+    assets = [a for a in content.get("visual_assets") or [] if isinstance(a, dict)]
+    if not assets:
         return {}
+    return await figure_render_service.render_svg_map(assets, language=language)
 
-    svgs = await _prerender_mermaid_to_svg_batch([code for _, code in pairs])
-    out: dict[str, str] = {}
-    for (asset_id, _), svg in zip(pairs, svgs, strict=True):
-        if svg:
-            out[asset_id] = svg
-    return out
+
+# Alias del nome storico (i chiamanti esterni e la documentazione lo citano):
+# oggi pre-renderizza tutti i formati, non solo Mermaid.
+_prerender_mermaid_for_lesson = _prerender_visual_assets_for_lesson
 
 
 # ---------------------------------------------------------------------------
@@ -1309,16 +1266,27 @@ def render_lesson_html(
     mermaid_svg_map: dict[str, str] | None = None,
     math_svg_map: dict | None = None,
     teacher_name: str | None = None,
+    visual_svg_map: dict[str, str] | None = None,
 ) -> str:
     """Pure-function: produce l'HTML completo della lezione, pronto per
     WeasyPrint.
 
-    `mermaid_svg_map` è opzionale: se omesso e ci sono asset mermaid,
-    il template emette un fallback testuale invece dell'SVG. Nel
-    flusso di produzione (`materialize_lesson_pdf`) viene riempito
-    via `_prerender_mermaid_for_lesson`. Indipendente dal DB e dal
-    worker — testabile in isolamento (purché i mermaid siano stati
-    pre-renderizzati a monte se richiesti).
+    `visual_svg_map` è `{asset_id → svg}` per tutti i formati renderizzabili
+    (Mermaid, Vega-Lite, DOT, function); `mermaid_svg_map` è il nome storico
+    dello stesso argomento, mantenuto per i chiamanti esistenti: le due
+    mappe sono fuse (`visual_svg_map` prevale). Se una figura manca dalla
+    mappa, il partial emette il fallback `<pre class="figure-fallback">` e
+    il log registra `figure_render_fallback` (A23). Nel flusso di
+    produzione (`materialize_lesson_pdf`) la mappa è riempita da
+    `_prerender_visual_assets_for_lesson`. Indipendente dal DB e dal
+    worker: testabile in isolamento.
+
+    Numerazione D4: il corpo (introduzione → sezioni → sintesi) riceve in
+    coda i tag `[FIG:id]` degli asset mai citati (A12), poi
+    `compute_figure_numbers` assegna «Figura N.» per id nell'ordine di
+    prima citazione; la mappa degli asset è costruita DOPO, con i numeri.
+    `key_takeaways` e `references` non partecipano (il template li rende
+    senza sostituzione dei tag), come nel frontend.
     """
     raw = lesson.content_raw or {}
     if not raw:
@@ -1329,14 +1297,23 @@ def render_lesson_html(
 
     language = (course.language_code or "it").lower()
     labels = _labels_for(language)
+    svg_map = {**(mermaid_svg_map or {}), **(visual_svg_map or {})}
 
+    asset_ids = [
+        str(a.get("asset_id") or "") for a in raw.get("visual_assets") or [] if isinstance(a, dict)
+    ]
+    body_md = _build_lesson_body_markdown(raw)
+    body_md = append_uncited_figure_refs(body_md, asset_ids)
+    figure_numbers = compute_figure_numbers(body_md, asset_ids)
     asset_map = _build_asset_html_map(
         raw,
-        mermaid_svg_map=mermaid_svg_map,
+        visual_svg_map=svg_map,
         math_svg_map=math_svg_map,
         language=language,
+        figure_numbers=figure_numbers,
+        labels=figure_labels(language),
+        lesson_code=lesson.lesson_code,
     )
-    body_md = _build_lesson_body_markdown(raw)
     body_md = _replace_summary_heading(body_md, labels["summary"])
     body_md = _substitute_asset_refs(body_md, asset_map)
     body_html = render_markdown(body_md, math_svg_map)
@@ -1431,10 +1408,12 @@ async def materialize_lesson_pdf(
 
     Pipeline:
       1. Risolve il template (lesson.pdf_template_id → org default).
-      2. Pre-renderizza i diagrammi mermaid via Playwright headless
-         (una sola sessione per lezione → SVG inline).
+      2. Pre-renderizza le figure attraverso il registro dei renderer
+         (Mermaid via Playwright con una sola sessione per lezione,
+         Vega-Lite, DOT, function → SVG) e le formule via MathJax.
       3. Costruisce l'HTML completo della lezione (markdown → HTML +
-         math → MathML + asset map con SVG mermaid).
+         math → SVG MathJax + asset map con gli SVG delle figure e la
+         numerazione «Figura N.»).
       4. Renderizza il PDF con WeasyPrint (single-pass, sfondo
          edge-to-edge garantito dal CSS Paged Media).
 
@@ -1453,11 +1432,12 @@ async def materialize_lesson_pdf(
     teacher = await db.get(User, course.assignee_user_id)
     teacher_name = teacher.full_name if teacher else None
 
-    # Pre-render mermaid: una singola sessione Playwright produce gli SVG
-    # di tutti i diagrammi della lezione in batch. Se la lezione non ha
-    # mermaid, non viene avviata nessuna istanza di Playwright.
+    # Pre-render delle figure: un batch per formato attraverso il registro
+    # (per Mermaid una singola sessione Playwright produce gli SVG di tutti
+    # i diagrammi della lezione; senza diagrammi Mermaid nessun Chromium).
     raw_content = lesson.content_raw or {}
-    mermaid_svg_map = await _prerender_mermaid_for_lesson(raw_content)
+    language = (course.language_code or "it").lower()
+    visual_svg_map = await _prerender_visual_assets_for_lesson(raw_content, language=language)
     # Pre-render LaTeX → SVG (MathJax): WeasyPrint non rende il MathML.
     math_svg_map = await _prerender_math_for_lesson(raw_content)
 
@@ -1468,7 +1448,7 @@ async def materialize_lesson_pdf(
         organization=organization,
         pdf_template=pdf_template,
         public_base_url=public_base_url,
-        mermaid_svg_map=mermaid_svg_map,
+        visual_svg_map=visual_svg_map,
         math_svg_map=math_svg_map,
         teacher_name=teacher_name,
     )

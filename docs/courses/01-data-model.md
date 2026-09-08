@@ -430,14 +430,19 @@ Vincoli applicati nella materializzazione/edit (vedi §5.4 della spec):
 ### Asset visivi: schema corrente
 
 `content_raw.visual_assets[*]` segue lo schema `LessonContentVisualAsset`
-(`backend/app/schemas/course_lesson_content.py:42`):
+(`backend/app/schemas/course_lesson_content.py:75`; l'alias
+`VisualAssetFormat` è a `:47` ed è importato anche da
+`course_lesson_slides.py` per i `new_assets` di Fase 4):
 
 ```python
 {
   "asset_id": str,            # 1-50 chars, univoco per lezione/tipo
-  "format": Literal[
-    # produciibili dall'editor + dall'AI Fase 3
-    "mermaid",   # `content` = codice Mermaid
+  "format": Literal[          # alias VisualAssetFormat
+    # figure (registro dei renderer, doc 17) — prodotte dall'editor e dall'AI Fase 3
+    "mermaid",   # `content` = codice Mermaid 11 (tipi D8)
+    "vegalite",  # `content` = spec JSON Vega-Lite v6 (dati inline, regole D5)
+    "dot",       # `content` = sorgente Graphviz DOT
+    "function",  # `content` = spec JSON `FunctionFigureSpec` (D9)
     "image",     # `content` = path relativo (es. lesson_assets/{cid}/{uuid}.png)
     # — legacy read-only —
     "image_prompt",
@@ -445,7 +450,7 @@ Vincoli applicati nella materializzazione/edit (vedi §5.4 della spec):
     "description",
   ],
   "content": str,
-  "caption": str,
+  "caption": str,             # senza prefisso «Figura N»: il numero lo mette il renderer
   "alt_text": str,
   # asset_type: REMOVED (Pydantic `extra="ignore"` su record vecchi).
 }
@@ -454,11 +459,23 @@ Vincoli applicati nella materializzazione/edit (vedi §5.4 della spec):
 Pre-refactor (commit `92d5f37`) lo schema aveva anche `asset_type`
 (`diagram|schema|image|illustration|chart`) — etichetta semantica mai
 letta dai renderer. Rimosso dal codice; i record JSONB esistenti possono
-ancora contenere il campo, viene ignorato dal Pydantic in lettura.
+ancora contenere il campo, viene ignorato dal Pydantic in lettura. Lo
+schema strict OpenAI di Fase 4 lo richiedeva ancora fino al branch
+`feat/academic-figures`: oggi `build_lesson_slides_json_schema` lo toglie
+insieme ai tre formati legacy.
 
 **`format` ammessi**:
-- `mermaid`: l'unica modalità "code-based". Renderizzata in lezione via
-  `MermaidDiagram` (lazy) e in PDF via Playwright pre-render → SVG inline.
+- `mermaid`, `vegalite`, `dot`, `function`: le quattro famiglie di
+  figure con sorgente testuale (`figure_render_service.RENDERABLE_FORMATS`).
+  Renderizzate in lezione dai componenti del frontend (`MermaidDiagram`,
+  `VegaLiteDiagram`, `DotDiagram`, `FunctionFigure` — quest'ultima via
+  `POST /lesson-assets/render-function`) e in PDF/slide/video dal
+  registro backend (Mermaid via Playwright → SVG inline nella dispensa;
+  gli altri offline → `<img data:svg>`), sempre nella cornice «Figura N.»
+  (dispensa) / «Figura.» (slide, video). Il numero non è persistito. Lo
+  schema strict di Fase 3 offre al modello i formati in
+  `available_formats()`; il PATCH manuale valida gli asset con `(format,
+  content)` cambiati (`422 lesson_content_invalid_visual_asset`).
 - `image`: immagine caricata dall'utente via
   `POST /lesson-assets/upload`. `content` è un path relativo sotto
   `lesson_assets/{course_id}/{uuid}.{ext}` servito da
@@ -467,8 +484,8 @@ ancora contenere il campo, viene ignorato dal Pydantic in lettura.
   (`_resolve_template_asset_url` in `course_lesson_pdf_service.py`).
 - `image_prompt | image_search_query | description`: SOLO legacy. Erano
   i 3 format pre-refactor; l'editor non li produce più. In lettura
-  vengono renderizzati come placeholder testuale (vedi
-  `MarkdownRenderer.VisualAssetBlock`).
+  vengono renderizzati come placeholder testuale con il `content` dentro
+  la cornice (vedi `MarkdownRenderer.VisualAssetBody`).
 
 **Cleanup file orfani**: quando un asset con `format=image` viene rimosso
 da `content_raw.visual_assets` via PATCH, `update_lesson_content`

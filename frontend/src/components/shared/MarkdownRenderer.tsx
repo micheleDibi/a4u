@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo, type ReactNode } from "react";
+import { lazy, useMemo, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
@@ -15,9 +15,15 @@ import type {
   LessonContentTable,
   LessonContentVisualAsset,
 } from "@/api/courses";
+import { isLegacyFormat } from "@/lib/figureFormats";
 import { cn } from "@/lib/utils";
 
+import { FigureFrame } from "./FigureFrame";
+import { FunctionFigure } from "./FunctionFigure";
+
 const MermaidDiagram = lazy(() => import("./MermaidDiagram"));
+const VegaLiteDiagram = lazy(() => import("./VegaLiteDiagram"));
+const DotDiagram = lazy(() => import("./DotDiagram"));
 
 interface MarkdownRendererProps {
   source: string;
@@ -25,6 +31,14 @@ interface MarkdownRendererProps {
   tables?: LessonContentTable[];
   equations?: LessonContentEquation[];
   examples?: LessonContentExample[];
+  /**
+   * Numeri delle figure (`Map<asset_id minuscolo, N>`) calcolati dal
+   * chiamante con `computeFigureNumbers` sull'intero corpo della dispensa
+   * (`LessonContentView`): il renderer non può numerare da solo perché è
+   * montato anche su frammenti (slide, esempi). Senza mappa le figure
+   * hanno l'etichetta senza numero («Figura.»).
+   */
+  figureNumbers?: Map<string, number>;
   className?: string;
 }
 
@@ -35,7 +49,9 @@ interface AssetReference {
   id: string;
 }
 
-const ASSET_REF_RE = /\[(FIG|TAB|EQ|EX):([^\]]+)\]/g;
+// Allineata a `FIG_REF_RE` di `lib/figureNumbering.ts`, a `ASSET_REF_RE` di
+// `RichTextEditor` e a `_ASSET_REF_RE` del PDF: il tag non attraversa la riga.
+const ASSET_REF_RE = /\[(FIG|TAB|EQ|EX):([^\]\n]+)\]/g;
 const ASSET_PLACEHOLDER_RE = /^@@ASSET_(FIG|TAB|EQ|EX)_([^@]+)@@$/;
 
 /**
@@ -84,6 +100,7 @@ export function MarkdownRenderer({
   tables = [],
   equations = [],
   examples = [],
+  figureNumbers,
   className,
 }: MarkdownRendererProps) {
   const { preprocessed } = useMemo(
@@ -133,13 +150,14 @@ export function MarkdownRenderer({
               tableMap,
               equationMap,
               exampleMap,
+              figureNumbers,
             });
           }
         }
         return <p {...rest}>{children}</p>;
       },
     }),
-    [visualMap, tableMap, equationMap, exampleMap],
+    [visualMap, tableMap, equationMap, exampleMap, figureNumbers],
   );
 
   return (
@@ -160,6 +178,7 @@ interface AssetMaps {
   tableMap: Map<string, LessonContentTable>;
   equationMap: Map<string, LessonContentEquation>;
   exampleMap: Map<string, LessonContentExample>;
+  figureNumbers?: Map<string, number>;
 }
 
 function renderAssetBlock(
@@ -176,7 +195,9 @@ function renderAssetBlock(
       if (!asset) {
         return <MissingAssetBlock kind={kind} id={id} />;
       }
-      return <VisualAssetBlock asset={asset} />;
+      return (
+        <VisualAssetBlock asset={asset} number={maps.figureNumbers?.get(key)} />
+      );
     }
     case "TAB": {
       const table = maps.tableMap.get(key);
@@ -202,69 +223,88 @@ function renderAssetBlock(
   }
 }
 
-function VisualAssetBlock({ asset }: { asset: LessonContentVisualAsset }) {
+/**
+ * Corpo di una figura per formato (senza cornice): usato da
+ * `VisualAssetBlock` (dispensa) e da `LessonSlidesView` (slide). I
+ * renderer pesanti sono caricati in modo pigro; il fallback `Suspense`
+ * sta nella `FigureFrame` del chiamante. Le figure `function` hanno il
+ * proprio componente con cornice (`FunctionFigure`: la didascalia
+ * calcolata arriva dal backend insieme all'SVG).
+ */
+export function VisualAssetBody({
+  asset,
+  imageClassName,
+}: {
+  asset: LessonContentVisualAsset;
+  imageClassName?: string;
+}) {
+  const { t } = useTranslation();
   if (asset.format === "mermaid") {
-    return (
-      <figure className="my-6 overflow-hidden rounded-lg border border-border bg-card">
-        <div className="bg-muted/30 p-4">
-          <Suspense
-            fallback={
-              <div className="flex h-32 animate-pulse items-center justify-center rounded bg-muted text-xs text-muted-foreground">
-                Caricamento diagramma…
-              </div>
-            }
-          >
-            <MermaidDiagram code={asset.content} />
-          </Suspense>
-        </div>
-        {asset.caption && (
-          <figcaption className="border-t border-border bg-muted/20 px-4 py-2 text-xs italic text-muted-foreground">
-            {asset.caption}
-          </figcaption>
-        )}
-      </figure>
-    );
+    return <MermaidDiagram code={asset.content} />;
+  }
+  if (asset.format === "vegalite") {
+    return <VegaLiteDiagram spec={asset.content} />;
+  }
+  if (asset.format === "dot") {
+    return <DotDiagram source={asset.content} />;
   }
   if (asset.format === "image") {
     // Immagine caricata dall'utente. `content` è un path relativo (es.
     // `lesson_assets/{cid}/{uuid}.png`); il file è servito da StaticFiles
     // su `/uploads/...`.
     return (
-      <figure className="my-6 overflow-hidden rounded-lg border border-border bg-card">
-        <div className="flex justify-center bg-muted/30 p-4">
-          <img
-            src={mediaUrl(asset.content)}
-            alt={asset.alt_text || ""}
-            className="max-h-[28rem] w-auto max-w-full rounded"
-          />
-        </div>
-        {asset.caption && (
-          <figcaption className="border-t border-border bg-muted/20 px-4 py-2 text-xs italic text-muted-foreground">
-            {asset.caption}
-          </figcaption>
-        )}
-      </figure>
+      <img
+        src={mediaUrl(asset.content)}
+        alt={asset.alt_text || ""}
+        className={cn("mx-auto block h-auto w-auto max-w-full", imageClassName)}
+      />
     );
   }
-  if (
-    asset.format === "image_prompt" ||
-    asset.format === "image_search_query" ||
-    asset.format === "description"
-  ) {
+  if (isLegacyFormat(asset.format)) {
+    // image_prompt / image_search_query / description: il testo del
+    // prompt o della descrizione, come nel PDF (`figure-fallback`).
     return (
-      <figure className="my-6 overflow-hidden rounded-lg border border-dashed border-border bg-muted/10">
-        <div className="flex min-h-[10rem] items-center justify-center p-6 text-center text-sm text-muted-foreground">
-          <span className="italic">{asset.content}</span>
-        </div>
-        {asset.caption && (
-          <figcaption className="border-t border-dashed border-border bg-muted/20 px-4 py-2 text-xs italic text-muted-foreground">
-            {asset.caption}
-          </figcaption>
-        )}
-      </figure>
+      <div className="flex min-h-[6rem] items-center justify-center rounded border border-dashed bg-muted/10 px-4 py-3 text-center text-sm italic text-muted-foreground">
+        {asset.content}
+      </div>
     );
   }
-  return null;
+  return (
+    <div className="flex min-h-[6rem] items-center justify-center rounded border border-dashed bg-muted/10 px-4 py-3 text-center text-xs italic text-muted-foreground">
+      {t("courses.figures.missing")}
+    </div>
+  );
+}
+
+function VisualAssetBlock({
+  asset,
+  number,
+}: {
+  asset: LessonContentVisualAsset;
+  number?: number;
+}) {
+  if (asset.format === "function") {
+    return (
+      <FunctionFigure
+        assetId={asset.asset_id}
+        content={asset.content}
+        caption={asset.caption}
+        altText={asset.alt_text}
+        number={number}
+      />
+    );
+  }
+  return (
+    <FigureFrame
+      assetId={asset.asset_id}
+      format={asset.format}
+      caption={asset.caption}
+      altText={asset.alt_text}
+      number={number}
+    >
+      <VisualAssetBody asset={asset} imageClassName="max-h-[28rem]" />
+    </FigureFrame>
+  );
 }
 
 function TableBlock({ table }: { table: LessonContentTable }) {
@@ -444,9 +484,11 @@ function ExampleBlock({ example }: { example: LessonContentExample }) {
 }
 
 function MissingAssetBlock({ kind, id }: { kind: AssetKind; id: string }) {
+  const { t } = useTranslation();
   return (
     <div className="my-3 rounded-md border border-dashed border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-      Asset non trovato: <span className="font-mono">[{kind}:{id}]</span>
+      {t("courses.lessonsContent.render.missingAsset")}{" "}
+      <span className="font-mono">[{kind}:{id}]</span>
     </div>
   );
 }

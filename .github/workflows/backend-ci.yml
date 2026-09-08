@@ -42,6 +42,9 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: backend/pyproject.toml
+      - name: Install system dependencies (graphviz)
+        # Binario `dot` per i test del renderer DOT (figure accademiche).
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends graphviz
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip

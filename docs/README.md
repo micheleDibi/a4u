@@ -62,11 +62,11 @@ avatar) + CRUD manuale completo per ogni payload AI, gestione tramite
 - [02 — Document pre-processing](courses/02-document-preprocessing.md): worker estrazione testo + summarize OpenAI (Appendice A).
 - [03 — Architecture generation (Fase 1)](courses/03-architecture-generation.md): worker AI con progress tracking + materializzazione moduli/lezioni.
 - [04 — Manual editing & AI lesson generation](courses/04-manual-editing.md): CRUD inline + auto-trigger AI sui moduli aggiunti manualmente.
-- [05 — API reference (corsi)](courses/05-api-reference.md): ~50 endpoint sotto `/orgs/{org_id}/courses` (Fasi 1-5 + 3 pipeline PDF).
+- [05 — API reference (corsi)](courses/05-api-reference.md): 99 endpoint del router `courses.py` (98 sotto `/orgs/{org_id}/courses` + cancel dei job di duplicazione; Fasi 1-6/6b + 3 pipeline PDF + assessment + paper + lesson-assets), conteggio dalle route FastAPI del 7 settembre 2026.
 - [06 — Frontend](courses/06-frontend.md): editor a **stepper di 4 macro-fasi** (Setup / Architettura / Contenuti / Media) con sub-tab della fase corrente — Setup (Base/Didattica/Obiettivi/Documenti), Architettura (Architettura/Struttura), Contenuti (Contenuti/Slide/Discorso), Media (Video/Video con avatar); gate di accessibilità via `COURSE_STATUS_RANK`, dialog, optimistic update, ETA display, KaTeX, TipTap, TTS-safety inline.
 - [07 — Lesson structure (Fase 2)](courses/07-lesson-structure.md): worker parallelo per generare struttura lezioni (obiettivi, temi, prerequisiti, scaletta).
-- [08 — Lesson content (Fase 3) + Glossario](courses/08-lesson-content.md): worker parallelo per testo lezione + asset visivi (Mermaid + LaTeX + tabelle), glossario corso, editor TipTap user-friendly.
-- [09 — PDF export](courses/09-pdf-export.md): tre pipeline PDF (testo §7 + slide Fase 4 + discorso Fase 5) via WeasyPrint + Playwright pre-render Mermaid → SVG e formule LaTeX → SVG con MathJax (`latex2mathml` resta solo come fallback offline) + copertina (frontespizio).
+- [08 — Lesson content (Fase 3) + Glossario](courses/08-lesson-content.md): worker parallelo per testo lezione + asset visivi (figure Mermaid 11 / Vega-Lite / DOT / `function` + immagini, LaTeX, tabelle) con validazione e fix AI per formato, glossario corso, editor TipTap user-friendly ed editor per formato delle figure.
+- [09 — PDF export](courses/09-pdf-export.md): tre pipeline PDF (testo §7 + slide Fase 4 + discorso Fase 5) via WeasyPrint + registro delle figure (Playwright per Mermaid → SVG; Vega-Lite, DOT e `function` offline in `<img data:svg>`; partial unico «Figura N.») + formule LaTeX → SVG con MathJax (`latex2mathml` resta solo come fallback offline) + copertina (frontespizio).
 - [10 — Lesson slides (Fase 4)](courses/10-lesson-slides.md): worker parallelo per generare slide della presentazione (riusa asset Fase 3 + nuovi asset, body field opzionale, 16 tipi slide).
 - [11 — Lesson speech (Fase 5)](courses/11-lesson-speech.md): worker parallelo per generare discorso temporizzato TTS-friendly (vincolo durata ±5%, 130 wpm IT / 150 wpm EN, 8 validazioni inclusa TTS-safety).
 - [12 — Lesson video (Fase 6)](courses/12-lesson-video.md): video MP4 della lezione — TTS XTTS-v2 su RunPod GPU + rendering slide Playwright + encoding ffmpeg.
@@ -74,6 +74,7 @@ avatar) + CRUD manuale completo per ogni payload AI, gestione tramite
 - [14 — Assessment lesson](courses/14-assessment-lesson.md): lezione di verifica delle competenze — ultima lezione di ogni modulo quando la verifica finale è attiva.
 - [15 — Duplicazione corso in altra lingua](courses/15-course-duplication.md): job background che clona un corso e ne traduce via OpenAI architettura/lezioni/slide/discorso/glossario/document summaries (multi-pass persistente con resume e cleanup automatico). Permesso `course:duplicate`.
 - [16 — Ricerca paper scientifici](courses/16-paper-search.md): ricerca multi-source nella tab Documenti — discovery OpenAlex + enrichment on-demand Semantic Scholar/Crossref, riassunto AI inline, import come `CourseDocument` (PDF OA o `.md` metadata). 3 endpoint `papers/search|ai-summary|import`, permission `course:edit`.
+- [17 — Figure accademiche](courses/17-visual-figures.md): sintesi di progettazione delle quattro famiglie di asset visivi (Mermaid 11, Vega-Lite, Graphviz DOT, figure matematiche `function`) — registro di renderer unico, tema accademico unico BE/FE, numerazione «Figura N.» su tutte le superfici, normalizzazione SVG, validazione e fix AI per formato, assunzioni, decisioni e rischi residui.
 
 ### Database & API
 
@@ -89,6 +90,7 @@ avatar) + CRUD manuale completo per ogni payload AI, gestione tramite
 
 Funzionalità integrate nell'ultima iterazione (documentate nei file linkati sopra):
 
+- **Figure accademiche in quattro famiglie** — Mermaid 11 (pin unico `mermaid_cdn_version`, `htmlLabels:false` top-level, tema condiviso BE/FE), Vega-Lite (vl-convert), Graphviz DOT (`dot`) e figure matematiche `function` (sympy + matplotlib, endpoint `render-function`), con registro di renderer unico (`figure_render_service`), validazione e fix AI per formato, gate 422 per-asset sul PATCH manuale, tema accademico unico, editor per formato nel frontend e didascalie «Figura N.» identiche in editor, vista, slide, PDF e frame video. Documento di progettazione, decisioni, misure ed esiti: [17 — Figure accademiche](courses/17-visual-figures.md); variabili `FIGURE_*` in [04 — Configuration](04-configuration.md); troubleshooting in [07 — Deployment](07-deployment.md).
 - **Storage file pluggable** — backend selezionabile via `settings.storage_backend`: `local` (default), `ovh_ftp` (FTP/FTPS) e `ovh_sftp` (SFTP via Paramiko). Vedi [storage-ovh-migration.md](storage-ovh-migration.md).
 - **Permesso `member:avatar:view`** — visibilità degli avatar degli altri membri (default per `creator`/`org_admin`/`manager`, non per `member`). Vedi [06 — Permissions](06-permissions.md).
 - **Hardening prompt injection** — `core/prompt_safety.py` (`sanitize_user_input` + `contains_injection_attempt`) usato dall'assistente conversazionale Nova. Vedi [05 — Security](05-security.md).

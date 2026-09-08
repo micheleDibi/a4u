@@ -130,9 +130,17 @@ Il `creator` è unico per organizzazione e si trasferisce con `transfer-creator`
   una lezione didattica. Si genera nella Fase 3 (in parallelo alle lezioni
   didattiche) ed è esclusa da slide/discorso/video/PDF. Vedi
   [Courses 14 — Assessment lesson](courses/14-assessment-lesson.md).
+- **Figure accademiche in quattro famiglie** negli asset visivi delle
+  dispense e delle slide: diagrammi Mermaid 11, grafici Vega-Lite, grafi
+  Graphviz DOT e figure matematiche calcolate (`function`, sympy +
+  matplotlib), con un registro di renderer unico, un tema accademico
+  unico condiviso da backend e frontend e didascalie «Figura N.»
+  identiche in editor, vista lezione, slide, PDF e frame video. Vedi
+  [Courses 17 — Figure accademiche](courses/17-visual-figures.md).
 - **Tre pipeline PDF** indipendenti (`pdf_*` testo, `slides_pdf_*` slide,
-  `speech_pdf_*` discorso) con stack comune (WeasyPrint + Jinja2 + Playwright
-  per pre-render Mermaid solo dove serve) ma layout dedicati: A4 portrait
+  `speech_pdf_*` discorso) con stack comune (WeasyPrint + Jinja2 + il
+  registro delle figure: Playwright per il pre-render Mermaid, vl-convert /
+  `dot` / matplotlib offline per le altre famiglie) ma layout dedicati: A4 portrait
   single-column per testo e discorso, slide split bullet/asset per il PDF
   slide, per-slide grouping con timeline cumulativa per il PDF discorso.
 - **CRUD manuale completo** per tutti i payload AI (moduli, lezioni
@@ -157,9 +165,12 @@ Il `creator` è unico per organizzazione e si trasferisce con `transfer-creator`
   Contenuti lezioni, **Slide**, **Discorso** — con auto-save debounced,
   polling per stato pipeline (esteso a tutti i 10 worker), optimistic update
   sui reorder, **ETA + tempo medio per task** durante i batch
-  (`useBatchEta` / `useTaskEta`), Mermaid live (con pre-validazione syntax
-  e error UI controllata), KaTeX, editor TipTap user-friendly per il
-  contenuto lezione, editor segmenti con TTS-safety inline + auto-durata
+  (`useBatchEta` / `useTaskEta`), figure live nella cornice «Figura N.»
+  (Mermaid, Vega-Lite, DOT, `function`, con pre-validazione e box di
+  errore controllato), KaTeX, editor TipTap user-friendly per il
+  contenuto lezione ed editor per formato delle figure (modulo a campi
+  per `function` con anteprima dal backend), editor segmenti con
+  TTS-safety inline + auto-durata
   da word count, progress bar per ogni operazione AI/PDF.
 
 ## Cosa NON è ancora incluso (e perché)
@@ -177,8 +188,8 @@ Il `creator` è unico per organizzazione e si trasferisce con `transfer-creator`
 
 | Livello | Tecnologia |
 |---|---|
-| Frontend | React 18, Vite, TypeScript, Tailwind v4 + shadcn/ui + Radix primitives, TanStack Query, axios, sonner, **katex** + **mermaid** (rendering live lezioni), **TipTap** (editor user-friendly markdown), i18next (24 lingue UE) |
-| Backend | Python 3.12, FastAPI, SQLAlchemy 2 async + asyncpg, Alembic, Pydantic v2, structlog, slowapi, Pillow, PyJWT, passlib(bcrypt), httpx (OpenAI), **pdfplumber + python-docx + docx2txt + striprtf** (estrazione documenti), **WeasyPrint** (HTML → PDF Paged Media), **Playwright** (Chromium pre-render Mermaid → SVG + render slide → PNG per il video), **latex2mathml** (LaTeX → MathML), **markdown-it-py + Jinja2** (rendering lezione PDF), **ffmpeg** (encoding video MP4 + overlay avatar), **boto3 + requests** (client MuseTalk vendored: R2 + RunPod) |
+| Frontend | React 18, Vite, TypeScript, Tailwind v4 + shadcn/ui + Radix primitives, TanStack Query, axios, sonner, **katex** + **mermaid 11** + **vega / vega-lite / vega-embed** + **@viz-js/viz** (rendering live delle figure, import dinamici), **TipTap** (editor user-friendly markdown), i18next (24 lingue UE) |
+| Backend | Python 3.12, FastAPI, SQLAlchemy 2 async + asyncpg, Alembic, Pydantic v2, structlog, slowapi, Pillow, PyJWT, passlib(bcrypt), httpx (OpenAI), **pdfplumber + python-docx + docx2txt + striprtf** (estrazione documenti), **WeasyPrint** (HTML → PDF Paged Media), **Playwright** (Chromium pre-render Mermaid → SVG e MathJax + render slide → PNG per il video), **vl-convert-python + jsonschema (+ altair per lo schema)** (Vega-Lite → SVG offline), **Graphviz `dot`** (apt), **sympy + matplotlib + numpy** (figure `function`), **latex2mathml** (LaTeX → MathML, fallback), **markdown-it-py + Jinja2** (rendering lezione PDF), **ffmpeg** (encoding video MP4 + overlay avatar), **boto3 + requests** (client MuseTalk vendored: R2 + RunPod) |
 | GPU esterna | **RunPod Serverless GPU** — endpoint TTS XTTS-v2 (immagine in `XTTS/`) + endpoint MuseTalk lip-sync |
 | Database | PostgreSQL 16 (Docker compose) |
 | File storage | Filesystem locale (`backend/uploads/` — include video MP4 generati, cache audio TTS, manifest MuseTalk — + `backend/generated_pdfs/`) servito tramite `StaticFiles` con HTTP Range; **Cloudflare R2** (S3-compatible) come storage di transito per il job MuseTalk |

@@ -128,7 +128,9 @@ body {
   background-color: hsl(var(--background));
   color: hsl(var(--foreground));
   font-family: var(--font-sans);
-  font-feature-settings: "rlig" 1, "calt" 1;
+  font-feature-settings:
+    "rlig" 1,
+    "calt" 1;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -401,6 +403,30 @@ body {
   height: auto;
   border-radius: 0.5rem;
   margin: 1rem 0;
+}
+
+/* Figure (`FigureFrame`, D4): niente card né arrotondamento; l'SVG
+   delle figure `function` e le immagini caricate stanno nella cornice
+   senza margini verticali propri (la spaziatura è della `<figure>`) e
+   centrate come nel partial del PDF (`.figure-svg { margin: 0 auto }`).
+   La regola vince per specificità (0,2,1) sia sulla precedente sia su
+   `mx-auto` (0,1,0): per questo i margini orizzontali sono `auto` qui,
+   non delegati alla classe utility. */
+.lesson-prose .figure img {
+  border-radius: 0;
+  margin: 0 auto;
+}
+
+/* Vega-Lite e Graphviz scrivono nell'SVG la sola famiglia «Noto Sans»
+   (il tema deve restare a una famiglia: vl-convert misura il testo con la
+   PRIMA famiglia della lista e una lista cambierebbe la geometria del
+   server). Nel browser del docente quella famiglia spesso non esiste e
+   Chromium ripiega sul suo default, Times: la regola aggiunge il ripiego
+   sans SOLO a schermo, senza toccare l'SVG consegnato (D3, nessun serif).
+   Vale anche per l'anteprima dell'editor, che monta le stesse figure. */
+.figure--vegalite svg text,
+.figure--dot svg text {
+  font-family: "Noto Sans", "DejaVu Sans", ui-sans-serif, system-ui, sans-serif;
 }
 
 /* Dark mode — gli HSL token già coprono il contrasto, ma le tabelle

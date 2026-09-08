@@ -1,7 +1,16 @@
-import { AlertTriangle } from "lucide-react";
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState, type CSSProperties } from "react";
+import { useTranslation } from "react-i18next";
 
+import {
+  fullWidthSvgMaxHeightPx,
+  renderMermaidSvg,
+  sanitizeMermaidSvg,
+  svgIntrinsicSize,
+} from "@/lib/figureFormats";
+import { mermaidConfig } from "@/lib/figureTheme";
 import { cn } from "@/lib/utils";
+
+import { FigureErrorBox, FigureLoading } from "./FigureFrame";
 
 interface MermaidDiagramProps {
   code: string;
@@ -32,27 +41,39 @@ async function ensureMermaid() {
   const mod = await import("mermaid");
   const mermaid = mod.default;
   if (!mermaidInitialized) {
-    mermaid.initialize({
-      startOnLoad: false,
-      theme: "default",
-      securityLevel: "strict",
-      fontFamily: "inherit",
-    });
+    // Stessa configurazione del validatore e del pre-render backend
+    // (`figure_theme.mermaid_initialize_js`, mirror in figureTheme.ts):
+    // `htmlLabels: false` al livello top e tema D3, così l'anteprima
+    // coincide con PDF, slide e video. `securityLevel: "strict"` (default
+    // di figureTheme) nel browser dell'utente. `useMaxWidth: true` come da
+    // default Mermaid: il `max-width` naturale è poi rimosso sotto perché
+    // l'SVG riempia il contenitore.
+    mermaid.initialize(mermaidConfig({ useMaxWidth: true }));
     mermaidInitialized = true;
   }
   return mermaid;
 }
 
+type MermaidFailure = { kind: "syntax" } | { kind: "render"; detail: string };
+
+interface RenderedSvg {
+  html: string;
+  /** Tetto d'altezza dell'SVG a larghezza piena (`fullWidthSvgMaxHeightPx`):
+   *  solo per i diagrammi orizzontali, `null` per quelli verticali. */
+  maxHeightPx: number | null;
+}
+
 function MermaidDiagramImpl({ code, className }: MermaidDiagramProps) {
-  const [svg, setSvg] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { t } = useTranslation();
+  const [svg, setSvg] = useState<RenderedSvg | null>(null);
+  const [failure, setFailure] = useState<MermaidFailure | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   const cleanCode = sanitizeMermaidCode(code);
 
   useEffect(() => {
     let cancelled = false;
-    setError(null);
+    setFailure(null);
     setSvg(null);
 
     (async () => {
@@ -70,15 +91,32 @@ function MermaidDiagramImpl({ code, className }: MermaidDiagramProps) {
           suppressErrors: true,
         });
         if (!parseOk) {
-          if (!cancelled) {
-            setError("Sintassi del diagramma non valida.");
-          }
+          if (!cancelled) setFailure({ kind: "syntax" });
           return;
         }
 
         renderCounter += 1;
         const id = `mermaid-${renderCounter}-${Date.now()}`;
-        const { svg: rendered } = await mermaid.render(id, cleanCode);
+        // `renderMermaidSvg` e non `mermaid.render`: quando il render
+        // fallisce Mermaid lascia nel `<body>` il `<div id="d<id>">` con
+        // cui ha misurato il diagramma, e in produzione fallisce sempre
+        // per una shape `img:` esterna (la politica della pagina blocca
+        // l'immagine, `EncodingError`). Senza la rimozione l'editor
+        // impilava una copia visibile del diagramma a ogni battuta.
+        const rendered = await renderMermaidSvg(mermaid, id, cleanCode);
+        // Sanificazione PRIMA di toccare il documento vivo: il diagramma
+        // è reso nel browser di chi guarda, non dal backend, quindi un
+        // `<image href="http://…">` uscito da una shape che il gate
+        // statico non ha riconosciuto farebbe partire la richiesta da qui
+        // (SEC-1, giro 5). `securityLevel: "strict"` di Mermaid sanifica
+        // le LABEL, non gli attributi che il renderer stesso emette.
+        const safe = sanitizeMermaidSvg(rendered);
+        // Markup senza `<svg>`: nessun dettaglio tecnico da mostrare, il
+        // box usa la frase localizzata di ripiego («render fallito»).
+        if (!safe) {
+          if (!cancelled) setFailure({ kind: "render", detail: "" });
+          return;
+        }
         if (!cancelled) {
           // Mermaid imposta `style="max-width: <natural_px>"` sull'SVG.
           // Questo impedisce al diagramma di crescere oltre la sua
@@ -86,19 +124,20 @@ function MermaidDiagramImpl({ code, className }: MermaidDiagramProps) {
           // molto più largo — risultato: testo illeggibile.
           // Strippiamo quel max-width così l'SVG riempie tutto il
           // container disponibile.
-          const cleaned = rendered.replace(
-            /max-width\s*:\s*[\d.]+px\s*;?/gi,
-            "",
-          );
-          setSvg(cleaned);
+          const cleaned = safe.replace(/max-width\s*:\s*[\d.]+px\s*;?/gi, "");
+          // Il tetto d'altezza dipende dall'orientamento letto dal viewBox
+          // (vedi le classi del contenitore sotto).
+          setSvg({
+            html: cleaned,
+            maxHeightPx: fullWidthSvgMaxHeightPx(svgIntrinsicSize(cleaned)),
+          });
         }
       } catch (exc) {
         if (!cancelled) {
-          setError(
-            exc instanceof Error
-              ? exc.message
-              : "Errore durante il rendering del diagramma.",
-          );
+          setFailure({
+            kind: "render",
+            detail: exc instanceof Error ? exc.message : String(exc),
+          });
         }
       }
     })();
@@ -108,62 +147,55 @@ function MermaidDiagramImpl({ code, className }: MermaidDiagramProps) {
     };
   }, [cleanCode]);
 
-  if (error) {
+  if (failure) {
     return (
-      <div
-        className={cn(
-          "rounded-md border border-amber-300/60 bg-amber-50/60 p-3 text-xs",
-          "dark:border-amber-700/40 dark:bg-amber-950/30",
-          className,
-        )}
-      >
-        <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200">
-          <AlertTriangle className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
-          <span className="font-medium">Diagramma non disponibile</span>
-        </div>
-        <p className="mt-1 text-amber-700/90 dark:text-amber-300/80">
-          Il codice mermaid contiene un errore di sintassi e non è stato
-          possibile generare il diagramma. Apri l'editor della lezione per
-          correggere il sorgente.
-        </p>
-        <details className="mt-2">
-          <summary className="cursor-pointer text-amber-700 dark:text-amber-300">
-            Mostra codice e dettagli errore
-          </summary>
-          <div className="mt-2 space-y-2">
-            <div className="font-mono text-[0.7rem] text-amber-900/80 dark:text-amber-200/80">
-              {error}
-            </div>
-            <pre className="overflow-x-auto whitespace-pre-wrap rounded bg-amber-100/60 p-2 text-[0.7rem] text-amber-900 dark:bg-amber-950/60 dark:text-amber-100">
-              {cleanCode}
-            </pre>
-          </div>
-        </details>
-      </div>
+      <FigureErrorBox
+        className={className}
+        hint={t("courses.lessonsContent.render.figure.mermaidHint")}
+        detail={
+          failure.kind === "syntax"
+            ? t("courses.lessonsContent.render.figure.syntaxError")
+            : failure.detail ||
+              t("courses.lessonsContent.render.figure.renderFailed")
+        }
+        source={cleanCode}
+      />
     );
   }
 
   if (!svg) {
-    return (
-      <div className="flex h-32 animate-pulse items-center justify-center rounded bg-muted text-xs text-muted-foreground">
-        Rendering del diagramma…
-      </div>
-    );
+    return <FigureLoading />;
   }
+
+  const style =
+    svg.maxHeightPx != null
+      ? ({ "--mermaid-max-h": `${svg.maxHeightPx}px` } as CSSProperties)
+      : undefined;
 
   return (
     <div
       ref={containerRef}
+      style={style}
       className={cn(
-        // Diagramma a tutta larghezza: l'SVG fillsa il container così
+        // Diagramma a tutta larghezza: l'SVG riempie il container così
         // i nodi e le label restano leggibili anche su flowchart densi.
         // overflow-x-auto come fallback se qualche diagramma ha una
         // larghezza minima > container (mai dovrebbe accadere ora che
         // il max-width inline è strippato, ma resta come safety net).
-        "overflow-x-auto rounded bg-background p-2 [&_svg]:!w-full [&_svg]:!max-w-none [&_svg]:h-auto",
+        // Fondo chiaro e fisso come le altre figure: gli archi e le
+        // frecce del tema (COLOR_AXIS) sul fondo scuro del tema dark
+        // resterebbero sotto il rapporto di contrasto minimo.
+        "overflow-x-auto rounded bg-white p-2 [&_svg]:!w-full [&_svg]:!max-w-none [&_svg]:h-auto",
+        // Tetto d'altezza SOLO per i diagrammi orizzontali (torta, flowchart
+        // LR): max(28rem, altezza naturale), così un diagramma compatto non
+        // si dilata a tutta colonna e uno grande non è mai rimpicciolito.
+        // Un tetto unito a `width: 100%` farebbe scalare in `meet` i
+        // diagrammi verticali (sequence, flowchart TD, class) fino a testo
+        // illeggibile: per quelli nessun tetto, geometria a larghezza piena.
+        svg.maxHeightPx != null && "[&_svg]:max-h-[var(--mermaid-max-h)]",
         className,
       )}
-      dangerouslySetInnerHTML={{ __html: svg }}
+      dangerouslySetInnerHTML={{ __html: svg.html }}
     />
   );
 }

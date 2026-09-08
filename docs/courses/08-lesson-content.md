@@ -12,10 +12,14 @@ Per ogni lezione approvata in Fase 2 (con `learning_objectives`,
 - **Testo Markdown completo** in stile capitolo di manuale: introduzione
   → sezioni (in ordine della `section_outline`) → sintesi →
   key_takeaways.
-- **Asset visivi**: diagrammi Mermaid (renderizzati live) o immagini
-  caricate dall'utente (`format=image`, vedi
-  [§ Asset visivi: Mermaid + immagini caricate](#asset-visivi-mermaid--immagini-caricate)
-  per il workflow), formule LaTeX, tabelle markdown. Record legacy
+- **Asset visivi**: figure in quattro formati — diagrammi **Mermaid 11**,
+  grafici **Vega-Lite**, grafi **Graphviz DOT** e figure matematiche
+  calcolate (`function`, sympy + matplotlib) — oppure immagini caricate
+  dall'utente (`format=image`; vedi
+  [§ Asset visivi: figure + immagini caricate](#asset-visivi-figure-mermaid-vega-lite-dot-function--immagini-caricate)
+  per il workflow e [17 — Figure accademiche](17-visual-figures.md) per il
+  registro dei renderer, il tema unico e la numerazione «Figura N.»),
+  formule LaTeX, tabelle markdown. Record legacy
   (`image_prompt|image_search_query|description`) ancora supportati in
   lettura come placeholder.
 - **Esempi**, **references**, **coverage_check**.
@@ -26,8 +30,8 @@ Per ogni lezione approvata in Fase 2 (con `learning_objectives`,
 
 L'output è validato (10 validazioni di §6.4, di cui 5 tolleranti o
 derivate — vedi sotto) e materializzato come JSONB `content_raw` su
-`course_lesson`. La UI rende live Mermaid +
-KaTeX + tabelle.
+`course_lesson`. La UI rende live le figure (Mermaid, Vega-Lite, DOT,
+`function`) con la cornice «Figura N.», KaTeX e tabelle.
 
 ## Glossario corso (§10.1)
 
@@ -204,10 +208,33 @@ video / preview FE):
   Validate con **`latex2mathml`** (motore dell'export PDF/video, sync e
   offline — gate duro) **E** con **KaTeX** (motore del preview FE): una
   formula è valida solo se passa entrambi.
-- **Diagrammi Mermaid** — `visual_assets[].format=="mermaid"`. Validati
-  con **Mermaid v10.9.4** (la versione del pre-render PDF/video; il FE
-  usa v11, quindi un diagramma "verde" nell'editor può comunque rompersi
-  nell'output).
+- **Figure** — `visual_assets[].format` in `figure_render_service.
+  RENDERABLE_FORMATS` (`mermaid`, `vegalite`, `dot`, `function`), ciascuna
+  validata dal renderer del registro (vedi
+  [17 — Figure accademiche](17-visual-figures.md)):
+  - `mermaid`: gate statico D8 + parse con **Mermaid 11.x**, pin unico
+    `settings.mermaid_cdn_version` (default `11.17.2`), lo stesso del
+    pre-render PDF/video (`mermaid_prerender`) e del lock npm del frontend,
+    con la stessa inizializzazione `figure_theme.mermaid_initialize_js`
+    (`htmlLabels: false` al livello top, tema D3): un diagramma "verde"
+    nell'editor lo è anche nell'output. I tipi ammessi sono i 15 di D8
+    (`figure_theme.MERMAID_ALLOWED_TYPES`); `journey`, `gitGraph`,
+    `kanban`, `packet-beta` e `architecture-beta` sono esclusi (`journey`
+    emette `<foreignObject>`, non renderizzabile da WeasyPrint);
+  - `vegalite`: schema JSON di Vega-Lite v6, regole D5 (dati inline,
+    niente `data.url`/interattività/`config`, `clip` e `scale.domain`) ed
+    euristica del criterio 10 (funzioni matematiche → `function`), poi
+    render offline con vl-convert;
+  - `dot`: gate statico (header, attributi che leggono file, numero di
+    archi) e render con il binario `dot`;
+  - `function`: `FunctionFigureSpec` (struttura Pydantic + controlli
+    semantici) e render con sympy/matplotlib.
+
+  Il prompt di Fase 3 (PROMPT 3 in `docs/PROMPTS.md`, blocco «FORMATI
+  DELLE FIGURE») descrive sempre i quattro formati; lo schema strict
+  offre al modello solo quelli abilitati e disponibili sul server
+  (`available_formats()`). Un formato non disponibile produce un check
+  non riparabile: nessun fix AI, rigenerazione immediata.
 
 La validazione JS (KaTeX + Mermaid) gira in una pagina Playwright
 headless con un loop dedicato. Flusso (`_validate_and_fix`):
@@ -220,10 +247,12 @@ headless con un loop dedicato. Flusso (`_validate_and_fix`):
 3. **fix AI iterativo** sui soli asset ancora invalidi, fino a
    `settings.asset_fix_max_attempts` (default `3`):
    `openai_asset_fix_service.fix_asset` (`openai_asset_fix_model`,
-   default `gpt-4o-mini`, 4 varianti di system prompt LaTeX/Mermaid ×
-   IT/EN) chiede al modello di correggere **solo la sintassi**
-   preservando il significato (LaTeX
-   senza delimitatori / Mermaid grezzo, compatibile v10.9.x). L'output
+   default `gpt-4o-mini`, 10 varianti di system prompt LaTeX/Mermaid/
+   Vega-Lite/DOT/function × IT/EN) chiede al modello di correggere
+   **solo la sintassi** preservando il significato (LaTeX senza
+   delimitatori / Mermaid grezzo per la 11.x: solo i tipi ammessi di D8,
+   label in testo semplice, niente `%%{init}%%` / spec JSON o sorgente
+   DOT conformi alle regole del renderer). L'output
    viene sanitizzato (niente code-fence/delimitatori reintrodotti) e
    scartato se reintroduce un placeholder asset (`[EQ:..]` ecc.).
 
@@ -394,22 +423,48 @@ lifespan `app/main.py`.
   output gpt-5.5 emettono LaTeX "puro" che `remark-math` non
   riconosce. Le classi tipografiche sono `lesson-prose` (custom CSS in
   `index.css`, niente `@tailwindcss/typography`).
+- `FigureFrame.tsx` — cornice unica delle figure (D4): stesso markup del
+  partial backend `templates/partials/figure.html.j2` (`<figure
+  class="figure figure--{variant} figure--{format}">` + `<figcaption>` con
+  «Figura N.» in grassetto, `stripFigurePrefix` sulla didascalia, coda
+  calcolata di `function` come `extraCaption`), fallback `Suspense`
+  interno, nessuna card. Il numero arriva da `lib/figureNumbering.ts`
+  (copia di `figure_numbering.py`: prima citazione `[FIG:id]` nel corpo
+  intro → sezioni → sintesi, orfane accodate dopo la sintesi, A12).
 - `MermaidDiagram.tsx` — lazy-load di `mermaid` (dynamic import) +
-  init + render SVG. **Pre-validazione con `mermaid.parse(code,
-  { suppressErrors: true })` PRIMA del render**: se la sintassi è
-  invalida, mostra una error UI controllata (icona ⚠ ambra +
-  collapsible "Mostra dettagli" col messaggio di parse). Senza la
-  pre-validazione, `mermaid.render()` su syntax invalida inietta nel
-  DOM una grossa SVG bomb-icon che rompe il layout della pagina.
-  Strip programmaticamente l'attributo `max-width` inline dell'SVG
-  generato (mermaid lo emette di default a ~150px) e applica
-  `[&_svg]:!w-full [&_svg]:!max-w-none` Tailwind per fillare il
-  container.
+  `initialize` da `lib/figureTheme.ts` (tema D3, `htmlLabels: false` al
+  livello top, `securityLevel: "strict"` nel browser) + render SVG.
+  **Pre-validazione con `mermaid.parse(code, { suppressErrors: true })`
+  PRIMA del render**: se la sintassi è invalida, mostra il box di errore
+  controllato `FigureErrorBox` (`courses.figures.renderError` + dettagli
+  collassabili). Senza la pre-validazione, `mermaid.render()` su syntax
+  invalida inietta nel DOM una grossa SVG bomb-icon che rompe il layout
+  della pagina. Strip programmaticamente l'attributo `max-width` inline
+  dell'SVG generato e applica `width: 100%`; il tetto d'altezza
+  (`fullWidthSvgMaxHeightPx` in `lib/figureFormats.ts`) vale solo per i
+  diagrammi orizzontali (`viewBox` con larghezza ≥ altezza), mai sotto
+  l'altezza naturale: un tetto incondizionato faceva scalare i diagrammi
+  verticali (sequence, flowchart TD) fino a testo di 7 px.
+- `VegaLiteDiagram.tsx` — import dinamico di `vega` / `vega-lite` /
+  `vega-embed` (`actions: false`, `config` = `VEGALITE_THEME_CONFIG`,
+  `loader` inerte che rifiuta `load/http/file`: un `data.url` non viene
+  mai scaricato dal browser del docente); l'SVG è montato nel DOM tramite
+  ref dopo `sanitizeSvgElement` (nessun `dangerouslySetInnerHTML`).
+- `DotDiagram.tsx` — `@viz-js/viz` (Graphviz in WebAssembly, import
+  dinamico) con `dotDefaultsPrelude` del tema iniettato dopo la `{` di
+  apertura; stesso montaggio via ref e stesso box di errore.
+- `FunctionFigure.tsx` — la spec JSON `function` è resa dal backend
+  (`POST /lesson-assets/render-function`, `useQuery` con `staleTime:
+  Infinity` per `(orgId, courseId, assetId, content)`): `<img>` con
+  l'SVG in data URI e didascalia calcolata (`computed_caption`) come
+  coda; `orgId`/`courseId` arrivano da `CourseRefContext` (A21), senza
+  provider mostra `courses.figures.missing`.
 
 ### Componenti shared (editing) — editor user-friendly
 
 L'edit manuale del contenuto **non espone più la sintassi grezza**.
-Quattro editor specializzati nascondono markdown, mermaid e LaTeX:
+Gli editor specializzati nascondono markdown, LaTeX e — dove possibile —
+la sorgente delle figure:
 
 - **`RichTextEditor.tsx`** — wrapper TipTap (`@tiptap/react` 3.22 +
   `@tiptap/starter-kit` + `@tiptap/extension-link` + `tiptap-markdown`
@@ -435,10 +490,34 @@ Quattro editor specializzati nascondono markdown, mermaid e LaTeX:
 - **`MermaidEditor.tsx`** — split textarea + preview live `<MermaidDiagram>`
   con debounce 500ms. Dropdown **template** (`flowchart`, `sequence`,
   `state`, `er`, `mindmap`, `class`, `gantt`) sostituisce il
-  contenuto con uno scheletro funzionante.
+  contenuto con uno scheletro funzionante (i template restano distinti dai
+  campioni D8 dei test, A22).
+- **`VegaLiteEditor.tsx`** / **`DotEditor.tsx`** — costruiti su
+  `FigureSourceEditor` (textarea + anteprima client con
+  `useDebouncedValue`, select dei template): template accademici che
+  rispettano le regole D5 del validatore (Vega-Lite: `data.values` ≤ 200
+  righe, `clip: true`, `scale.domain`, una sola `title`; DOT: nessun
+  attributo `image`/`URL`/`href`, nessun blocco `graph/node/edge [` così
+  il tema è iniettato per intero). L'errore del parser client va sotto
+  l'anteprima; il 422 per-asset del PATCH (`meta.errors`) in testa alla
+  card (pattern `LatexEditor`).
+- **`FunctionEditor.tsx`** — modulo a campi per la spec `FunctionFigureSpec`
+  (D9): il docente non vede JSON. Select `kind`, espressioni (max 4) con
+  label, variabile (+ `variables` per `level_curves`), dominio/range,
+  `show`, annotazioni (tangente / area / punto), parametro, `sampling` in
+  «Avanzate». Anteprima via `POST /lesson-assets/render-function`
+  (`useDebouncedValue(spec, 700)` + `useQuery` con `keepPreviousData`,
+  timeout client 30 s), errori `meta.errors` mappati sul campo con
+  `aria-invalid`, KaTeX per il LaTeX di ogni espressione, didascalia
+  calcolata mostrata come coda.
+- **`VisualAssetEditor.tsx`** e **`AddVisualAssetMenu.tsx`** — componenti
+  condivisi dai dialog di Fase 3 e Fase 4 (prima duplicati in ~220 righe):
+  badge di formato, campi caption / alt text, editor per formato, errore
+  422 per-asset, `makeAssetId` con loop anti-collisione.
 
-I dati salvati restano **markdown / LaTeX / mermaid stringhe** —
-backend, schema e renderer di vista invariati.
+I dati salvati restano **markdown / LaTeX / sorgenti delle figure come
+stringhe** (`content`: codice Mermaid, spec JSON Vega-Lite, sorgente DOT,
+spec JSON `function`) — schema e renderer di vista condivisi con il PDF.
 
 ### Vista principale
 
@@ -457,7 +536,11 @@ backend, schema e renderer di vista invariati.
 - Lista per modulo con sub-card per lezione (status badge + Progress
   live + bottoni contestuali Generate/Regenerate/Retry/Approve/Edit)
 - Quando lezione è `ready`/`approved` ed espansa: render completo via
-  `LessonContentView.tsx` (Mermaid live, KaTeX, tabelle, esempi card)
+  `LessonContentView.tsx` (figure live con «Figura N.» — Mermaid,
+  Vega-Lite, DOT, `function` —, KaTeX, tabelle, esempi card). Il
+  container fornisce `CourseRefContext` (`orgId`/`courseId`) ai renderer
+  che chiamano il backend e inoltra al dialog gli errori 422 per-asset
+  (`meta.errors`) della mutation di salvataggio.
 
 ### Dialogs
 
@@ -466,7 +549,7 @@ backend, schema e renderer di vista invariati.
 - `LessonContentEditDialog.tsx` — `max-w-6xl` con pannello unico
   scrollabile organizzato in `SectionGroup` collassabili:
   - Testo della lezione (intro / sections / summary) → `RichTextEditor`
-  - Asset visivi → vedi sezione [Asset visivi: Mermaid + immagini caricate](#asset-visivi-mermaid--immagini-caricate)
+  - Asset visivi → vedi sezione [Asset visivi: figure + immagini caricate](#asset-visivi-figure-mermaid-vega-lite-dot-function--immagini-caricate)
     qui sotto.
   - Tabelle → `TableEditor`
   - Formule → `LatexEditor` (latex) + `RichTextEditor` (explanation)
@@ -498,18 +581,39 @@ backend, schema e renderer di vista invariati.
     invece un substring match case-insensitive della `citation` —
     best-effort. Se nessuna occorrenza viene trovata → toast informativo.
 
-#### Asset visivi: Mermaid + immagini caricate
+#### Asset visivi: figure (Mermaid, Vega-Lite, DOT, function) + immagini caricate
 
-Refactor del commit `92d5f37`. Pre-refactor lo schema aveva `asset_type`
-(diagramma/schema/...) + `format` (mermaid/image_prompt/...). Oggi:
+Refactor del commit `92d5f37` (asset `image` + Mermaid) esteso dal branch
+`feat/academic-figures` alle quattro famiglie di figure (documento
+[17 — Figure accademiche](17-visual-figures.md)). Pre-refactor lo schema
+aveva `asset_type` (diagramma/schema/...) + `format`
+(mermaid/image_prompt/...). Oggi:
 
-- L'editor produce solo asset con `format ∈ { "mermaid", "image" }`.
-- L'AI Fase 3 genera solo `format="mermaid"` (JSON schema strict).
+- L'editor produce asset con `format ∈ { "mermaid", "vegalite", "dot",
+  "function", "image" }` (alias `VisualAssetFormat` in
+  `schemas/course_lesson_content.py`).
+- L'AI Fase 3 genera i quattro formati di figura: lo schema strict offre
+  al modello quelli in `figure_render_service.available_formats()`
+  (kill-switch `FIGURE_*_ENABLED` e dipendenza presente sul server); il
+  testo del prompt li descrive sempre tutti (A19).
+- Ogni figura è validata dal renderer del suo formato: a generazione
+  (`validate(deep=True)`, con fix AI per kind) e al salvataggio manuale
+  (`PATCH …/content`, solo gli asset con `(format, content)` cambiati,
+  A15) — un asset invalido produce `422 lesson_content_invalid_visual_asset`
+  con `meta.errors[{loc, asset_id, format, msg, type}]`, che l'editor
+  mostra sulla card dell'asset.
 - Asset legacy (`image_prompt|image_search_query|description`) restano
-  in DB e vengono renderizzati come placeholder testuale. L'editor li
-  mostra come banner readonly: l'utente deve eliminarli e ricrearli.
+  in DB e vengono renderizzati come placeholder testuale dentro la
+  cornice «Figura.». L'editor li mostra come banner readonly: l'utente
+  deve eliminarli e ricrearli.
+- Numerazione: il numero della figura non è persistito; è calcolato a
+  render (vista e PDF) dall'ordine di prima citazione `[FIG:id]` nel corpo
+  intro → sezioni → sintesi; le figure non citate sono accodate dopo la
+  sintesi (A12). I prompt vietano al modello di iniziare la caption con
+  «Figura N»; un prefisso già presente è ripulito a render, mai nel DB.
 
-**Workflow nuovo asset** (componente `AddVisualAssetMenu`):
+**Workflow nuovo asset** (componente condiviso `AddVisualAssetMenu`,
+usato anche dal dialog delle slide):
 
 ```
 [+ Aggiungi asset visivo]
@@ -517,7 +621,10 @@ Refactor del commit `92d5f37`. Pre-refactor lo schema aveva `asset_type`
     ▼
 ┌──────────────────────────────────┐
 │ Carica immagine                  │ → file picker (jpg/png/webp ≤5 MB)
-│ Scrivi Mermaid a mano            │
+│ Scrivi Mermaid a mano            │ → MermaidEditor
+│ Grafico Vega-Lite                │ → VegaLiteEditor (template accademici)
+│ Grafo DOT                        │ → DotEditor
+│ Figura calcolata (function)      │ → FunctionEditor (modulo a campi)
 └──────────────────────────────────┘
 ```
 
@@ -527,6 +634,10 @@ Refactor del commit `92d5f37`. Pre-refactor lo schema aveva `asset_type`
   bottone `[✨ Digitalizza in Mermaid]`.
 - **Scrivi Mermaid a mano** → push asset con `format="mermaid"`,
   `content=""`. L'editor apre subito `MermaidEditor` (live preview).
+- **Grafico Vega-Lite** / **Grafo DOT** / **Figura calcolata** → push
+  asset con il formato scelto e il primo template dell'editor
+  corrispondente; l'id è generato con `makeAssetId` (loop
+  anti-collisione sugli id esistenti).
 
 **Digitalizza in Mermaid** (Vision API) — sull'asset `format="image"`:
 
@@ -538,10 +649,12 @@ Refactor del commit `92d5f37`. Pre-refactor lo schema aveva `asset_type`
   riconoscibile, il modello risponde `UNRECOGNIZED` → il service
   solleva `OpenAIImageToMermaidError` → endpoint 409
   `image_to_mermaid_failed`.
-- Validazione superficiale del codice: deve iniziare con una keyword
-  Mermaid nota (`flowchart|graph|sequenceDiagram|classDiagram|...`).
-  La validazione semantica vera avviene sul frontend tramite live
-  preview di `MermaidEditor`.
+- Validazione superficiale del codice: deve iniziare con un tipo di
+  `figure_theme.MERMAID_ALLOWED_TYPES` (i 15 tipi D8 più gli alias
+  `graph`/`stateDiagram`; `journey`, `gitGraph`, `kanban`, `packet-beta`,
+  `architecture-beta` sono rifiutati). La validazione semantica vera
+  avviene sul frontend tramite live preview di `MermaidEditor` e, al
+  salvataggio, con il gate statico del registro.
 - Successo → editor sostituisce localmente `format="mermaid"` +
   `content=<codice>`. Il file PNG resta sul disco fino al successivo
   salvataggio del `content_raw`, dove il cleanup orfani lo elimina.
@@ -566,7 +679,11 @@ restituisce `5000ms` se almeno una lezione è in
 
 ```json
 {
-  "mermaid": "^11",
+  "mermaid": "^11.17.2",
+  "vega": "^6.4.0",
+  "vega-lite": "^6.4.3",
+  "vega-embed": "^7.2.0",
+  "@viz-js/viz": "^3.30.0",
   "react-markdown": "^9",
   "remark-gfm": "^4",
   "remark-math": "^6",
@@ -580,7 +697,10 @@ restituisce `5000ms` se almeno una lezione è in
 }
 ```
 
-(KaTeX era già installato per il summary documenti.)
+(KaTeX era già installato per il summary documenti.) `vega`, `vega-lite`,
+`vega-embed` e `@viz-js/viz` sono caricati con import dinamico solo
+quando una figura del formato è visibile: il bundle iniziale cresce di
+circa 38 kB (vedi le misure in [17 — Figure accademiche](17-visual-figures.md)).
 
 ### i18n
 
@@ -622,9 +742,10 @@ schema strict). Per accelerare drasticamente un corso grande, abbassare a
 
 1. **Generazione AI ex-novo di immagini** (DALL·E / Stable Diffusion):
    il backend non chiama nessun text-to-image. L'AI Fase 3 produce solo
-   codice Mermaid; le immagini "vere" arrivano da upload utente
-   (eventualmente convertibili in Mermaid via Vision API, vedi
-   `openai_image_to_mermaid_service`).
+   figure descritte da una sorgente testuale (codice Mermaid, spec
+   Vega-Lite, sorgente DOT, spec `function`); le immagini "vere" arrivano
+   da upload utente (eventualmente convertibili in Mermaid via Vision
+   API, vedi `openai_image_to_mermaid_service`).
 2. **Cascade invalidation di Fase 4-5** su edit di Fase 3.
 3. **Versioning storico** delle rigenerazioni (`content_raw` snapshotta
    solo l'ultima versione).

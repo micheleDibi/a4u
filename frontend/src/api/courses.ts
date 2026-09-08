@@ -215,11 +215,14 @@ export interface LessonContentSection {
 /**
  * Asset visivo di una lezione.
  *
- * Nuovi asset prodotti dal frontend hanno solo `format` ∈ { "mermaid", "image" }.
- * I valori `image_prompt | image_search_query | description` sono LEGACY:
- * presenti nei corsi pre-refactor, vengono ancora renderizzati come
- * placeholder testuale (vedi `MarkdownRenderer.VisualAssetBlock`) ma l'editor
- * non li produce più.
+ * Specchio dell'alias `VisualAssetFormat` del backend
+ * (`schemas/course_lesson_content.py`): quattro formati di figura resi da
+ * un renderer (`mermaid`, `vegalite`, `dot`, `function`), l'immagine
+ * caricata (`image`) e i tre valori LEGACY `image_prompt |
+ * image_search_query | description`, presenti nei corsi pre-refactor e
+ * resi come placeholder testuale (vedi `MarkdownRenderer.VisualAssetBlock`)
+ * ma che l'editor non produce più. Le costanti e le etichette dei formati
+ * sono in `lib/figureFormats.ts`.
  *
  * Il campo `asset_type` è stato rimosso (era puramente metadata; nessun
  * codice di rendering lo leggeva). Vecchi record JSONB possono ancora
@@ -227,6 +230,9 @@ export interface LessonContentSection {
  */
 export type LessonContentVisualAssetFormat =
   | "mermaid"
+  | "vegalite"
+  | "dot"
+  | "function"
   | "image"
   // — legacy read-only —
   | "image_prompt"
@@ -238,6 +244,9 @@ export interface LessonContentVisualAsset {
   format: LessonContentVisualAssetFormat;
   /**
    * - `format="mermaid"`: codice Mermaid.
+   * - `format="vegalite"`: spec Vega-Lite (stringa JSON).
+   * - `format="dot"`: sorgente Graphviz DOT.
+   * - `format="function"`: `FunctionFigureSpec` serializzata in JSON.
    * - `format="image"`: path pubblico relativo (es. `lesson_assets/{cid}/{uuid}.png`).
    *   Per renderizzare l'immagine usare `/uploads/${content}`.
    * - legacy: testo libero (prompt, query, descrizione).
@@ -245,6 +254,99 @@ export interface LessonContentVisualAsset {
   content: string;
   caption: string;
   alt_text: string;
+}
+
+// ---------------------------------------------------------------------------
+// Figure `function` (D9): specchio di `schemas/figure_function.py`.
+// ---------------------------------------------------------------------------
+
+export type FunctionKind =
+  | "function_study"
+  | "tangent"
+  | "area"
+  | "family"
+  | "level_curves";
+
+export type FunctionShowItem =
+  | "zeros"
+  | "critical_points"
+  | "inflection_points"
+  | "asymptotes"
+  | "discontinuities"
+  | "formula";
+
+export interface FunctionExpressionSpec {
+  /** Espressione Python-like: `2*x` (non `2x`), `x**2` (non `x^2`). */
+  expr: string;
+  label?: string;
+}
+
+export interface FunctionTangentAnnotation {
+  kind: "tangent";
+  at: number;
+  expr_index?: number;
+  label?: string;
+}
+
+export interface FunctionAreaAnnotation {
+  kind: "area";
+  between: [number, number];
+  expr_index?: number;
+  against?: number | null;
+  label?: string;
+}
+
+export interface FunctionPointAnnotation {
+  kind: "point";
+  at: number;
+  expr_index?: number;
+  label?: string;
+}
+
+export type FunctionAnnotation =
+  | FunctionTangentAnnotation
+  | FunctionAreaAnnotation
+  | FunctionPointAnnotation;
+
+export interface FunctionParameterSpec {
+  name: string;
+  values: number[];
+}
+
+export interface FunctionSamplingSpec {
+  points?: number;
+}
+
+/**
+ * `content` di un asset `format="function"` è la stringa JSON di questo
+ * oggetto (`extra="forbid"` nel backend: nessuna chiave in più).
+ */
+export interface FunctionFigureSpec {
+  kind: FunctionKind;
+  expressions: FunctionExpressionSpec[];
+  variable?: string;
+  variables?: [string, string] | null;
+  domain: [number, number];
+  range?: [number, number] | null;
+  show?: FunctionShowItem[];
+  annotations?: FunctionAnnotation[];
+  parameter?: FunctionParameterSpec | null;
+  sampling?: FunctionSamplingSpec;
+  levels?: number | number[] | null;
+}
+
+/** Risposta di `POST /lesson-assets/render-function`. */
+export interface FunctionRenderOut {
+  /** SVG normalizzato (da mostrare come `data:image/svg+xml;base64`). */
+  svg: string;
+  /** Contratto D9 (`approximate`, `zeros`, `critical_points`, …). */
+  computed: Record<string, unknown>;
+  /** LaTeX di ogni espressione, nello stesso ordine di `expressions`. */
+  latex: string[];
+  warnings: string[];
+  /** Coda della didascalia calcolata (mai persistita). */
+  computed_caption: string;
+  content_hash: string;
 }
 
 export interface LessonContentTable {
@@ -2028,6 +2130,23 @@ export const coursesApi = {
       }>(
         `${base(orgId)}/${courseId}/lesson-assets/convert-to-mermaid`,
         { path },
+      );
+      return res.data;
+    },
+    /** Anteprima di una figura `function` (D9): SVG, LaTeX delle
+     *  espressioni, avvertenze e didascalia calcolata. 422
+     *  `function_spec_invalid` con `meta.errors[{loc,msg,type}]` per campo;
+     *  il render (numerico, sympy nel figlio, matplotlib) può superare il
+     *  timeout client di default (20 s): override a 30 s. */
+    renderFunction: async (
+      orgId: string,
+      courseId: string,
+      spec: FunctionFigureSpec,
+    ): Promise<FunctionRenderOut> => {
+      const res = await apiClient.post<FunctionRenderOut>(
+        `${base(orgId)}/${courseId}/lesson-assets/render-function`,
+        spec,
+        { timeout: 30_000 },
       );
       return res.data;
     },

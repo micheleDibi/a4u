@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import uuid
 
+import pytest
+
 from app.models.course import Course
 from app.models.course_lesson import CourseLesson
 from app.models.course_taxonomy import CourseTaxonomyTerm
@@ -24,7 +26,7 @@ from app.services import (
     openai_lesson_slides_service,
     openai_lesson_speech_service,
 )
-from tests.course_builders import build_course, find_lesson
+from tests.course_builders import build_course, build_lesson_content_output, find_lesson
 
 # asyncio_mode = "auto" (pyproject): i test async non hanno bisogno del mark.
 
@@ -155,7 +157,37 @@ def test_speech_system_prompt_defaults_and_regeneration_suffix():
 # ---------------------------------------------------------------------------
 
 
-def test_previous_lesson_serialization_lists_assets_without_placeholder():
+_ASSET_CONTENT_BY_FORMAT = {
+    "mermaid": "flowchart TD\n  A[Inizio] --> B[Fine]",
+    "vegalite": '{"data":{"values":[{"a":1}]},"mark":"bar","encoding":{"x":{"field":"a"}}}',
+    "dot": 'digraph G { A -> B [label="arco"]; }',
+    "function": '{"kind":"function_study","expressions":[{"expr":"x**2"}],"domain":[-2,2]}',
+}
+
+
+@pytest.mark.parametrize("fmt", sorted(_ASSET_CONTENT_BY_FORMAT))
+def test_previous_lesson_serialization_lists_assets_with_format(fmt):
+    """La versione precedente elenca `- {asset_id} [{format}]: {caption}`
+    per le quattro famiglie renderizzabili, senza il "(?)" storico."""
+    output = build_lesson_content_output(
+        visual_assets=[
+            {
+                "asset_id": "fig_1",
+                "format": fmt,
+                "content": _ASSET_CONTENT_BY_FORMAT[fmt],
+                "caption": "Schema del flusso",
+                "alt_text": "",
+            }
+        ]
+    )
+    lesson = CourseLesson(lesson_code="M1.L1", title="Lezione", content_raw=output.model_dump())
+    text = content_svc._format_current_lesson_phase3(lesson)
+    assert f"- fig_1 [{fmt}]: Schema del flusso" in text
+    assert "(?)" not in text
+
+
+def test_previous_lesson_serialization_without_format_has_no_suffix():
+    """Record storici senza `format`: nessun suffisso, nessun placeholder."""
     lesson = CourseLesson(
         lesson_code="M1.L1",
         title="Lezione",
@@ -165,18 +197,13 @@ def test_previous_lesson_serialization_lists_assets_without_placeholder():
             "summary": "Sintesi.",
             "key_takeaways": ["Uno", "Due", "Tre"],
             "visual_assets": [
-                {
-                    "asset_id": "fig_1",
-                    "format": "mermaid",
-                    "content": "graph TD; A-->B",
-                    "caption": "Schema del flusso",
-                    "alt_text": "",
-                }
+                {"asset_id": "fig_1", "content": "graph TD; A-->B", "caption": "Schema del flusso"}
             ],
         },
     )
     text = content_svc._format_current_lesson_phase3(lesson)
     assert "- fig_1: Schema del flusso" in text
+    assert "[" not in text.split("### Asset visivi")[1]
     assert "(?)" not in text
 
 

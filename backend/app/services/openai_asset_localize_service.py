@@ -12,6 +12,7 @@ Chiamato da `asset_validation_service` dopo il fix di sintassi. Sincrono,
 `response_format=json_object` (chiavi dinamiche), niente persistenza. Pattern
 speculare a `openai_asset_fix_service` / `openai_translate_service`.
 """
+
 from __future__ import annotations
 
 import json
@@ -61,6 +62,14 @@ def _system_prompt(language_code: str) -> str:
         "(TD, LR, RL, BT), arrows (-->, ---, -.->, ==>, :), node/edge IDs and the "
         "bracket characters. Translate ONLY the human-readable LABEL text inside "
         "the nodes/edges.\n"
+        "   - Vega-Lite / JSON values (chart titles, axis and legend titles, "
+        "literal texts): return the translated string only; never alter JSON "
+        "keys, `field` names, `type` values or `datum.*` expressions.\n"
+        "   - Graphviz DOT labels (values of label, xlabel, headlabel, taillabel): "
+        "return the translated label text only; node IDs, arrows (-> and --) and "
+        "every attribute other than the label stay as they are. KEEP the escape "
+        "sequences of the label exactly as received (\\n line break, \\l left "
+        "align, \\r, \\N): they are DOT syntax, not text.\n"
         "   - Markdown structure: table pipes `|`, separator rows `---`, heading "
         "markers `#`, list markers. In tables translate the CELL text and headers "
         "but keep the grid intact.\n"
@@ -129,11 +138,7 @@ async def localize_texts(
             payload = resp.json()
         except Exception:
             payload = {"text": resp.text}
-        message = (
-            payload.get("error", {}).get("message")
-            if isinstance(payload, dict)
-            else None
-        )
+        message = payload.get("error", {}).get("message") if isinstance(payload, dict) else None
         log.error(
             "openai_asset_localize_api_error",
             status=resp.status_code,
@@ -199,4 +204,4 @@ async def localize_texts(
     return out, usage
 
 
-__all__ = ["localize_texts", "OpenAIAssetLocalizeError"]
+__all__ = ["OpenAIAssetLocalizeError", "localize_texts"]

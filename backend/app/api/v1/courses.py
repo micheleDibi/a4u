@@ -11,6 +11,7 @@ from fastapi import (
     File,
     Form,
     Query,
+    Request,
     Response,
     UploadFile,
     status,
@@ -20,8 +21,14 @@ from sqlalchemy import select
 
 from app.core.config import get_settings
 from app.core.deps import CurrentUser, DbSession
-from app.core.errors import ConflictError, NotFoundError, PermissionDeniedError
+from app.core.errors import (
+    ConflictError,
+    NotFoundError,
+    PermissionDeniedError,
+    ValidationAppError,
+)
 from app.core.permissions import P, require, require_membership, resolve_permissions
+from app.core.rate_limit import limiter
 from app.models.course import Course
 from app.models.membership import Membership
 from app.models.organization import Organization
@@ -47,7 +54,16 @@ from app.schemas.course_architecture import (
     ModuleUpdateInput,
     ReorderInput,
 )
+from app.schemas.course_duplication import (
+    CourseDuplicationJobCompact,
+    CourseDuplicationJobOut,
+)
 from app.schemas.course_glossary import GlossaryRegenerateInput
+from app.schemas.course_lesson_avatar_video import (
+    LessonAvatarVideoBatchOut,
+    LessonAvatarVideoGenerateInput,
+    LessonAvatarVideoStatusOut,
+)
 from app.schemas.course_lesson_content import (
     LessonAssessmentUpdateInput,
     LessonContentGenerateInput,
@@ -62,23 +78,15 @@ from app.schemas.course_lesson_speech import (
     LessonSpeechUpdateInput,
 )
 from app.schemas.course_lesson_structure import (
-    LessonStructureUpdateInput,
     LessonsStructureGenerateInput,
-)
-from app.schemas.course_lesson_avatar_video import (
-    LessonAvatarVideoBatchOut,
-    LessonAvatarVideoGenerateInput,
-    LessonAvatarVideoStatusOut,
+    LessonStructureUpdateInput,
 )
 from app.schemas.course_lesson_video import (
     LessonVideoBatchOut,
     LessonVideoGenerateInput,
     LessonVideoStatusOut,
 )
-from app.schemas.course_duplication import (
-    CourseDuplicationJobCompact,
-    CourseDuplicationJobOut,
-)
+from app.schemas.figure_function import FunctionFigureSpec, check_function_spec
 from app.schemas.paper_ai_summary import PaperAISummaryOut
 from app.schemas.paper_search import (
     PaperAISummaryInput,
@@ -108,9 +116,12 @@ from app.services import (
     course_lesson_video_service,
     course_module_pdf_service,
     course_service,
+    figure_render_service,
     file_service,
     remote_storage,
 )
+from app.services.figure_compute.isolated import FigureTimeoutError
+from app.services.figure_function_service import FunctionRenderError
 from app.services.openai_client import OpenAINotConfiguredError
 from app.services.openai_image_to_mermaid_service import (
     OpenAIImageToMermaidError,
@@ -2821,6 +2832,89 @@ async def convert_lesson_asset_to_mermaid(
             code="image_to_mermaid_failed",
         ) from exc
     return _LessonAssetConvertOut(mermaid_code=mermaid_code, usage=usage)
+
+
+class _FunctionRenderOut(BaseModel):
+    """Risposta del POST /lesson-assets/render-function: SVG normalizzato,
+    `computed` (contratto D9), LaTeX per espressione, avvertenze,
+    didascalia calcolata (mai persistita) e hash della spec canonica."""
+
+    svg: str
+    computed: dict[str, Any]
+    latex: list[str]
+    warnings: list[str]
+    computed_caption: str
+    content_hash: str
+
+
+@router.post(
+    "/{course_id}/lesson-assets/render-function",
+    response_model=_FunctionRenderOut,
+)
+@limiter.limit("30/minute")
+async def render_function_figure(
+    request: Request,
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    payload: FunctionFigureSpec,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_EDIT),
+) -> _FunctionRenderOut:
+    """Anteprima di una figura `function` per l'editor (D9).
+
+    Il body è validato nella struttura da FastAPI (422 standard, `loc` con
+    `body` in testa); i controlli semantici producono
+    `422 function_spec_invalid` con `meta.errors[{loc, msg, type}]` per
+    campo. Il calcolo simbolico oltre il suo timeout NON è un errore
+    (`approximate=True`, avvertenza `symbolic_timeout`); il render
+    numerico/matplotlib fallito o il timeout complessivo sono
+    `422 function_render_failed` / `422 function_render_timeout`.
+    Rate limit 30/min per IP; la lingua della didascalia calcolata è
+    quella del corso.
+    """
+    await _ensure_org(db, org_id)
+    granted = await resolve_permissions(
+        db, user=current, organization_id=org_id
+    )
+    course = await course_service.get_course(
+        db,
+        organization_id=org_id,
+        course_id=course_id,
+        current_user=current,
+        granted_permissions=granted,
+    )
+    issues = check_function_spec(payload)
+    if issues:
+        raise ValidationAppError(
+            "Specifica della funzione non valida.",
+            code="function_spec_invalid",
+            meta={"errors": issues},
+        )
+    try:
+        result = await figure_render_service.render_function(
+            payload, language=course.language_code
+        )
+    except FigureTimeoutError as exc:
+        raise ValidationAppError(
+            "Il calcolo della figura ha superato il tempo massimo.",
+            code="function_render_timeout",
+        ) from exc
+    except FunctionRenderError as exc:
+        # Messaggio fisso: il dettaglio (tipo e testo dell'eccezione numpy o
+        # matplotlib) è nel log `function_render_failed` del motore.
+        raise ValidationAppError(
+            "Render della figura fallito: calcolo numerico o disegno non riusciti.",
+            code="function_render_failed",
+        ) from exc
+    return _FunctionRenderOut(
+        svg=result.svg,
+        computed=result.computed,
+        latex=result.latex,
+        warnings=result.warnings,
+        computed_caption=result.computed_caption,
+        content_hash=result.content_hash,
+    )
 
 
 # ---------------------------------------------------------------------------

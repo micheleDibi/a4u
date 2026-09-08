@@ -385,8 +385,11 @@ L'audio sintetizzato viene salvato come un WAV per segment
 
 **Scopo**: render Playwright delle slide come PNG per il video MP4.
 Riusa **al 100%** la pipeline del PDF slide (Fase 4): stesso template
-(`lesson_slides_pdf.html.j2`), stesso pre-render Mermaid → SVG, stessa
-risoluzione di asset (LaTeX → MathML, immagini caricate). Sostituisce il
+(`lesson_slides_pdf.html.j2`), stesso pre-render delle figure → SVG
+(`render_svg_map` del registro `figure_render_service`: Mermaid,
+Vega-Lite, DOT, `function`, tutte in `<img data:svg>` con la cornice
+«Figura.» senza numero), stessa risoluzione di asset (formule LaTeX →
+SVG MathJax con fallback MathML, immagini caricate). Sostituisce il
 vecchio `lesson_slides_png_service.py` (template custom, eliminato).
 
 ### Costanti
@@ -569,8 +572,12 @@ ogni struttura JSONB del corso. Esporta costanti come
 - `"a[]"` → array di stringhe
 - `"a[].b"` → field di oggetti in array
 
-Tutto ciò che NON è dichiarato resta AS-IS (UUID, codice mermaid,
-LaTeX, format Literal, ID, numeri, booleani).
+Tutto ciò che NON è dichiarato resta AS-IS (UUID, `content` delle figure
+— codice Mermaid, spec Vega-Lite, sorgente DOT, spec `function` —,
+LaTeX, format Literal, ID, numeri, booleani). I testi interni alle
+figure non sono tradotti dalla duplicazione (TODO tracciato in
+[Courses 15](../courses/15-course-duplication.md) e
+[Courses 17](../courses/17-visual-figures.md)).
 
 Vedi [Courses 15 — Duplicazione corso](../courses/15-course-duplication.md)
 per la tabella completa di cosa è tradotto vs cosa è preservato.
@@ -1313,6 +1320,10 @@ riassunti anche in [Courses 05](../courses/05-api-reference.md).
 | `openai_lesson_content_service.py` | [Courses 08](../courses/08-lesson-content.md) | Wrapper OpenAI Fase 3 + addendum §9.3 in rigenerazione + `generate_lesson_assessment` (verifica) + `build_lesson_content_json_schema` (enum dei codici obiettivo per chiamata) |
 | `lesson_coverage_resolver.py` | [Courses 08](../courses/08-lesson-content.md) | Modulo puro: risolve i riferimenti di contabilità di Fase 3 (`O1`/testo/varianti tipografiche → obiettivo canonico, `topic_id` case-insensitive). Cascata deterministica, nessun fuzzy |
 | `openai_glossary_service.py` | [Courses 08](../courses/08-lesson-content.md) | Wrapper OpenAI glossario (10-30 termini) |
+| `asset_validation_service.py` | [Courses 08 § Validazione asset](../courses/08-lesson-content.md#validazione-asset-latexmermaid--auto-fix-ai-a-generazione) | Validazione + auto-fix degli asset «fragili» a generazione (Fase 3 `validate_and_fix_content_assets`, Fase 4 `validate_and_fix_slides_assets`): formule LaTeX con `latex2mathml` E KaTeX (batch Playwright con Mermaid 11, pin `mermaid_cdn_version`); figure con `format` in `RENDERABLE_FORMATS` validate dal renderer del registro (`_validate_slots` con rimappatura `js_pos`: nel batch JS entrano solo `latex` e `mermaid`, gli altri kind in `to_thread` con `validate(deep=True)`, mai pass-through; `AssetCheck.fixable=False` per un formato non disponibile → `AssetFixUnresolvedError` senza fix AI); step deterministico (caratteri di controllo) → fix AI fino a `asset_fix_max_attempts`; rete di sicurezza i18n (`_LocField` per ogni kind con `extract_translatable`/`apply_translations` del renderer, rivalidazione offline dopo la traduzione). Scheda dettagliata più sotto |
+| `openai_asset_fix_service.py` | [PROMPTS 12](../PROMPTS.md) | `fix_asset(kind, source, error, …)`: correzione della sola sintassi di un asset invalido; `AssetKind = Literal["latex","mermaid","vegalite","dot","function"]`, prompt per kind × IT/EN (`_SYSTEM_PROMPTS`), kind ignoto → `ValueError` (A20); `_ERROR_CAP = 1600`, contesto ≤ 600, `max_tokens` 4.000 (A16); output JSON `AssetFixOut{fixed_content, notes}` |
+| `openai_asset_localize_service.py` | [Courses 08](../courses/08-lesson-content.md) | `localize_texts(items, language_code)`: ritraduce i campi testuali degli asset rimasti in un'altra lingua (rete di sicurezza per script non latini, kill-switch `asset_localize_enabled`), preservando LaTeX, sintassi Mermaid, chiavi/`field`/`datum.*` di Vega-Lite, id e `->`/`--` di DOT, placeholder `[FIG:..]`; `response_format=json_object` |
+| `openai_image_to_mermaid_service.py` | [Courses 05 § lesson-assets](../courses/05-api-reference.md#lesson-assets-upload-immagini--imagemermaid--anteprima-function), [PROMPTS 11](../PROMPTS.md) | `convert_image_to_mermaid(image_bytes, …)`: Vision (`openai_image_to_mermaid_model`, default `gpt-4o`) → codice Mermaid 11 dei soli tipi `MERMAID_ALLOWED_TYPES` (label in testo semplice, niente `%%{init}%%`), `UNRECOGNIZED` → `OpenAIImageToMermaidError`; `_extract_mermaid_code` ripulisce i fence, `_is_valid_mermaid_keyword` controlla il tipo dichiarato |
 
 > Verifica delle competenze (`is_assessment`): vedi
 > [Courses 14 — Assessment lesson](../courses/14-assessment-lesson.md).
@@ -1323,7 +1334,7 @@ riassunti anche in [Courses 05](../courses/05-api-reference.md).
 
 | Service | Documentato in | Scopo |
 |---|---|---|
-| `course_lesson_pdf_service.py` | [Courses 09](../courses/09-pdf-export.md) | Render HTML + Playwright pre-render mermaid + WeasyPrint + materialize |
+| `course_lesson_pdf_service.py` | [Courses 09](../courses/09-pdf-export.md) | Render HTML + pre-render delle figure via `figure_render_service.render_svg_map` (`_prerender_visual_assets_for_lesson`, alias storico `_prerender_mermaid_for_lesson`) + MathJax + WeasyPrint + materialize; numerazione «Figura N.» (`figure_numbering`) calcolata sul corpo markdown prima della sostituzione degli asset, orfane accodate dopo la sintesi; ogni figura passa dal partial unico (`figure_markup.render_figure_html`); re-esporta i nomi storici di `mermaid_prerender` |
 | `course_lesson_pdf_worker.py` | [Courses 09](../courses/09-pdf-export.md) | Worker parallelo (cap=2 default) + cancel-check post-render |
 
 ### Fase 4 — Slide + PDF slide
@@ -1334,7 +1345,7 @@ riassunti anche in [Courses 05](../courses/05-api-reference.md).
 | `course_lesson_slides_crud.py` | [Courses 10](../courses/10-lesson-slides.md) | Edit manuale `slides_raw` + validazione allentata |
 | `course_lesson_slides_worker.py` | [Courses 10](../courses/10-lesson-slides.md) | Worker parallelo (cap=3 default) + auto-retry trasparente + atomic claim. Accetta ancora content `ready\|approved` (transitorio, stretta a `approved` a code svuotate) |
 | `openai_lesson_slides_service.py` | [Courses 10](../courses/10-lesson-slides.md) | Wrapper OpenAI Fase 4 con JSON schema + REGENERATION_SUFFIX §9.4 |
-| `course_lesson_slides_pdf_service.py` | [Courses 09](../courses/09-pdf-export.md) | Render PDF slide A4 portrait + slide split + Mermaid base64 + slide_template |
+| `course_lesson_slides_pdf_service.py` | [Courses 09](../courses/09-pdf-export.md) | Render PDF slide A4 portrait + slide split + figure in `<img data:svg>` (tutti i formati, `_prerender_mermaid_for_slides` → `render_svg_map` fondendo asset di Fase 3 e `new_assets`; `svg_to_data_uri` re-esportata da `svg_normalize`) con etichetta «Figura.» senza numero + slide_template |
 | `course_lesson_slides_pdf_worker.py` | [Courses 09](../courses/09-pdf-export.md) | Worker parallelo (cap=2, riusa env `course_lesson_pdf_*`) |
 
 ### Fase 5 — Discorso + PDF discorso
@@ -1366,6 +1377,71 @@ Service documentati più sopra (`course_lesson_avatar_video_service`,
 [Courses 13 — Avatar video](../courses/13-avatar-video.md). Sovrappone
 un avatar parlante (lip-sync MuseTalk su RunPod GPU) al video MP4 già
 generato della lezione.
+
+### Figure accademiche (doc 17) — registro dei renderer, tema, numerazione
+
+Moduli del branch `feat/academic-figures` (progettazione e decisioni in
+[Courses 17](../courses/17-visual-figures.md)). Tutti i moduli «leaf»
+(`figure_theme`, `svg_normalize`, `figure_numbering`, `figure_compute/*`)
+non importano `app.core.config` né SQLAlchemy: sono importabili dal
+processo figlio `spawn` e dai test puri.
+
+| Service | Documentato in | Scopo |
+|---|---|---|
+| `figure_theme.py` | [Courses 17 § 5](../courses/17-visual-figures.md) | Tema accademico unico (D3) e testi delle didascalie: `THEME_VERSION` (entra nella chiave di cache degli SVG), `FONT_STACK`/`FONT_ALLOWED`, palette di Okabe-Ito (`PALETTE`, `PALETTE_LABEL`), `MERMAID_ALLOWED_TYPES` (15 tipi D8 + alias `graph`/`stateDiagram`) / `MERMAID_EXCLUDED_TYPES` / `MERMAID_D8_SAMPLES`, `mermaid_config` e `mermaid_initialize_js(*, use_max_width, security_level)` (`htmlLabels: false` top-level, `theme: neutral` con ogni variabile derivata fissata), `VEGALITE_THEME_CONFIG`, `DOT_DEFAULTS` + `dot_defaults_prelude`, `MATPLOTLIB_RC`, `FIGURE_I18N` it/en con chiavi `courses.figures.*` speculari ai locale del frontend, `figure_labels(language)` (fallback it, A4), `latex_to_unicode`, `format_number`, `function_caption(computed, language)`. Copia frontend `lib/figureTheme.ts` da mantenere allineata (test di parità) |
+| `mermaid_prerender.py` | [Courses 09](../courses/09-pdf-export.md) | Pre-render Mermaid → SVG estratto da `course_lesson_pdf_service` (che re-esporta i nomi storici): `build_mermaid_renderer_html(version=…)` con pin `settings.mermaid_cdn_version`, `_prerender_mermaid_to_svg_batch_{async,sync}` (una sessione Playwright per lezione, `window.__renderMermaid`), `_strip_mermaid_max_width`, `_sanitize_mermaid_code` (righe `mermaid`/`all`/fence) |
+| `svg_normalize.py` | [Courses 17 § 7](../courses/17-visual-figures.md) | `normalize_svg(svg, *, max_bytes) -> NormalizedSvg(svg, width_px, height_px)` per gli SVG di vl-convert, `dot` e matplotlib (Mermaid non passa da qui): prologo rimosso, scansione che RIFIUTA (`SvgRejectedError`) `<script>`, `<foreignObject>`, `<iframe>`, `<image>`, SMIL, e nei tag `href` esterni, `on*=`, `javascript:`, `url()` non-frammento (anche in `<style>`); radice riscritta con `width`/`height` in px, `viewBox`, `preserveAspectRatio`, `xmlns`. `svg_to_data_uri` (base64) unica per dispensa e slide |
+| `figure_compute/isolated.py` | [Courses 17 § 3.5](../courses/17-visual-figures.md) | `run_isolated(fn_path, payload, *, timeout)`: processo figlio `spawn` + `Pipe`, `poll(remaining)` prima di `recv` (nessuno stallo con risultati grandi), deadline monotona, `kill()` allo scadere → `FigureTimeoutError`; figlio morto o errore di avvio → `FigureComputeError` (A13, A18) |
+| `figure_compute/vegalite_rules.py` | [Courses 17 § 3.2](../courses/17-visual-figures.md) | `check_vegalite_rules(spec) -> list[str]`: regole D5 (`data.url`/`data.name`/`lookup.from.data`, `mark image`, `selection|params|tooltip|interactive|config|usermeta`, `encoding.href`, `values` ≤ 200, `sequence` ≤ 5.000 con `step > 0`, `clip: true` su line/area/point/trail, `scale.domain` sugli assi quantitativi, `axis.format`, una sola `title`) con ricorsione ≤ 4 su `layer|hconcat|vconcat|concat|spec`; euristica del criterio 10 (H1 funzioni, H2 `datum` a denominatore, H3 potenza) con ereditarietà dei campi `sequence` e degli alias `calculate` → `vegalite_use_function_format`; `nesting_depth`/`MAX_NESTING = 32` |
+| `figure_compute/vegalite_render.py` | [Courses 17 § 3.2](../courses/17-visual-figures.md) | Bersagli del figlio: `render_svg(payload)` (solleva con il messaggio di vl-convert) e `render_svg_batch(payload)` (`None` per la spec che fallisce); `$schema` e `config` arrivano dal registro; `allowed_base_urls=[]` |
+| `figure_compute/function_parse.py` | [Courses 17 § 4.2](../courses/17-visual-figures.md) | Passo 1 delle espressioni `function`, senza sympy: `check_expression(src, *, free_symbols) -> ParsedExpr` (AST con nodi ammessi, `FUNCTIONS` whitelist, `pi`/`E`, `Pow` con esponente ≤ 12, ≤ 80 nodi, profondità ≤ 12; `ExprError(loc_suffix, msg, type)` con messaggi per il docente: «scrivi 2*x», «usa ** per la potenza», «simbolo non dichiarato: y») |
+| `figure_compute/function_numeric.py` | [Courses 17 § 4.3](../courses/17-visual-figures.md) | Calcolo numerico in thread (numpy): `compile_numpy` (valutatore dell'AST, niente `eval`/`lambdify`), `sample`, `split_branches` + `classify_cuts` (poli, salti, `edge_pole`), `find_zeros` (bisezione, plateau), `find_critical`/`find_inflection`, `oblique_or_horizontal` (regressione sulle code), `tail_confirmed`, verifiche locali (`is_zero_at`, `is_stationary_at`); `MAX_NOTABLE_POINTS = 12` per categoria |
+| `figure_compute/function_symbolic.py` | [Courses 17 § 4.3](../courses/17-visual-figures.md) | `analyze_symbolic(payload)` SOLO nel figlio: `parse_sympy` con `global_dict` ristretto (passo 2), `solveset`/`solve`, `singularities`, `limit` sulle code, `integrate`, `diff`; `exact_form` (`nsimplify` + `latex` bounded: `MAX_EXACT_LATEX = 80`, `MAX_FORMULA_LATEX = 160`) |
+| `figure_compute/function_plot.py` | [Courses 17 § 4.4](../courses/17-visual-figures.md) | Disegno matplotlib (API a oggetti, `rc_context(MATPLOTLIB_RC)` + `svg.hashsalt` per asset, serializzato da `_DRAW_LOCK`): assi con frecce, rami, asintoti, punti notevoli con coordinate esatte, formula come `TextPath` (A14: `to_mathtext`, `expr_to_mathtext`, `fit_size`, `MIN_MATH_SIZE_PT`), `contour` per le curve di livello, `fill_between` per le aree; mai `<image>` |
+| `figure_function_service.py` | [Courses 17 § 4](../courses/17-visual-figures.md) | Motore del formato `function`: `render_function_sync(spec, language=…)` = numerico → simbolico nel figlio (`SYMBOLIC_TARGET`, timeout `figure_function_timeout_seconds`) → riconciliazione (`_Reconciler`: esatti accettati solo con riscontro numerico) → disegno → `normalize_svg` → `function_caption`; `FunctionRenderResult(svg, computed, latex, warnings, computed_caption, content_hash)`; cache LRU dei risultati (`cached_result`, `clear_result_cache`); `extract_translatable`/`apply_translations` sulle label; `FunctionRenderError` |
+| `figure_render_service.py` | [Courses 17 § 2-3](../courses/17-visual-figures.md) | Registro D2: `FigureRenderer` (Protocol), `MermaidRenderer` (gate statico `mermaid_static_gate`: tipo D8, `%%{init`, frontmatter, HTML nelle label; batch via `mermaid_prerender`), `VegaLiteRenderer` (≤ 4.000 char, chiavi duplicate, annidamento ≤ 32, `Draft7Validator` sullo schema v6 di altair senza `import altair`, regole D5, render in `run_isolated` con tema), `DotRenderer` (tokenizzatore degli attributi vietati `image|shapefile|imagepath|fontpath|stylesheet|URL|href|target` e composti, ≤ 600 archi, `dot -Tsvg` senza shell con timeout), `FunctionRenderer`; `REGISTRY`, `RENDERABLE_FORMATS`, `available_formats()` (kill-switch ∧ dipendenza, `lru_cache`), `render_svg_map(assets, *, language)` (unico punto di `to_thread` + `wait_for` + semaforo, una `render_svg_batch` per formato, cache LRU + negativa 60 s, mai solleva), `validate_visual_assets_or_raise` (gate del PATCH, A15, `ValidationAppError` con `meta.errors`), `render_function` (endpoint) e `function_computed_caption` |
+| `figure_numbering.py` | [Courses 17 § 6.1](../courses/17-visual-figures.md) | Modulo puro: `FIG_REF_RE`, `cited_figure_ids`, `append_uncited_figure_refs` (orfane in coda, A12), `compute_figure_numbers` (numero legato all'id, prima citazione), `strip_figure_prefix` (cifra e separatore obbligatori, solo a render). Copia frontend `lib/figureNumbering.ts`, fixture condivisa `tests/fixtures/figure_numbering_cases.json` |
+| `figure_markup.py` | [Courses 17 § 6.3](../courses/17-visual-figures.md) | Quarto `Environment` Jinja (`templates/partials/`, `autoescape=True`) e `render_figure_html(*, body_html, caption, alt_text, asset_id, fmt, number, labels, variant, fallback_source, extra_caption)`: partial unico `figure.html.j2` per dispensa (`lesson`) e slide/video (`slide`, «Figura.»), guardia anti-doppia coda, nessuna riga vuota nell'output, `log.warning("figure_format_unknown")` per formati ignoti |
+| `scripts/revalidate_mermaid_assets.py` | [Courses 09 § Settings comuni](../courses/09-pdf-export.md) | Dry-run L5 (A11): gate statico D8 + render Mermaid 11 + conteggio `<foreignObject>` sugli asset Mermaid in DB, lezioni con asset non citati (A12); `--skip-render`, `--course`, `--lesson`, `--sample`, `--format csv`, `--show-ok` |
+| `scripts/check_prompts_md.py` | [Backend 11 — Tests](11-tests.md) | Verifica meccanica di `docs/PROMPTS.md`: i blocchi ```text dei PROMPT 3, 4, 5, 6, 11 e 12 (con le varianti verbatim) confrontati con i `_system_prompt(...)` reali resi con i segnaposto documentati; exit 1 con diff se divergono |
+
+#### `app/services/asset_validation_service.py` — scheda
+
+**Scopo**: nessun asset «fragile» raggiunge `ready` rotto. Entrata:
+`validate_and_fix_content_assets(output: LessonContentOutput, *, language_code, …)`
+(Fase 3, progress `validating_assets` a 88%) e
+`validate_and_fix_slides_assets(output: LessonSlidesOutput, …)` (Fase 4).
+
+- **Slot** (`_Slot(id, kind, current, …)`): `_collect_content_slots` /
+  `_collect_slides_slots` raccolgono `equations[].latex`, `proof[].latex`, il
+  math inline `$..$`/`$$..$$` dei campi testo (`_InlineField`) e ogni
+  `visual_assets[]` / `new_assets[]` con `format in RENDERABLE_FORMATS`
+  (`kind = asset.format`). `_sanitize` toglie fence (anche ```` ```vega-lite ````)
+  e caratteri di controllo senza alterare i byte utili.
+- **`_validate_slots`**: batch Playwright (`_validate_js_batch`, pagina
+  `_validator_html()` con KaTeX 0.16.9 e Mermaid `settings.mermaid_cdn_version`,
+  `mermaid_initialize_js(use_max_width=False)`) per i soli kind `latex` e
+  `mermaid`, risultati riallineati con `js_pos`; `latex` anche con
+  `validate_latex_mathml` (`latex2mathml`, gate offline); `mermaid` prima
+  con il gate statico del registro, poi il parse JS (pass-through se la
+  CDN è irraggiungibile); `vegalite`/`dot`/`function` con
+  `REGISTRY[kind].validate(deep=True)` in `to_thread` — mai pass-through;
+  formato assente da `available_formats()` → `AssetCheck(fixable=False)`.
+- **`_validate_and_fix`**: giro 0 sugli originali (validi → byte-identici);
+  step deterministico (`_clean_latex_source`) sugli invalidi; loop di fix
+  AI (`openai_asset_fix_service.fix_asset`, kind dello slot) fino a
+  `asset_fix_max_attempts`; `_raise_if_unfixable` alza subito
+  `AssetFixUnresolvedError` (recuperabile: auto-retry dell'intera lezione)
+  per i check non riparabili; contatori di log per kind.
+- **Localizzazione (D7)**: `_collect_*_loc_fields` → `_LocField` per
+  caption/alt_text/enunciati/celle e per i campi testuali estratti dai
+  renderer (`extract_translatable`: `title`/`axis.title`/`text` di
+  Vega-Lite, `label|xlabel|headlabel|taillabel` di DOT, `label` delle
+  espressioni e annotazioni di `function`, label Mermaid);
+  `_needs_localization` (script non latino, `asset_localize_enabled`) →
+  `openai_asset_localize_service.localize_texts` → `apply_translations` e
+  rivalidazione offline dei kind strutturali.
+- `validate_assets_for_test` resta l'hook dei test.
 
 ### Pattern condivisi (tutti i worker AI)
 

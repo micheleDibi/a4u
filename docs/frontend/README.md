@@ -2,7 +2,9 @@
 
 React 18 + Vite + TypeScript + Tailwind v4 + Radix UI (pattern shadcn/ui) +
 TanStack Query + React Hook Form + Zod + axios + i18next (24 lingue UE) +
-TipTap + KaTeX + Mermaid.
+TipTap + KaTeX + figure accademiche (Mermaid 11, Vega-Lite via vega-embed,
+Graphviz DOT via `@viz-js/viz`, figure `function` rese dal backend — vedi
+[Courses 17](../courses/17-visual-figures.md)).
 
 Avviabile con `npm run start` (alias di `vite`).
 
@@ -28,11 +30,11 @@ frontend/
     ├── vite-env.d.ts              # types per import.meta.env
     ├── api/                       # axios client + moduli endpoint
     ├── auth/                      # AuthContext, ProtectedRoute, PermissionGate
-    ├── components/                # ui (shadcn/Radix), layout, forms, feedback, shared, templates, media
-    ├── contexts/                  # React context (es. tema)
+    ├── components/                # ui (shadcn/Radix), layout, forms, feedback, shared (incl. figure: FigureFrame, VegaLiteDiagram, DotDiagram, FunctionFigure ed editor), templates, media
+    ├── contexts/                  # React context (tema, CourseRefContext per i renderer che chiamano il backend)
     ├── providers/                 # ThemeProvider
     ├── hooks/                     # useBatchEta, useTaskEta, useLessonVideo, useLessonAvatarVideo, ...
-    ├── lib/                       # permissions, errors, format, logger, staleness, utils/cn
+    ├── lib/                       # permissions, errors, format, logger, staleness, utils/cn, figureTheme/figureNumbering/figureFormats/functionSpec (figure, doc courses/17)
     ├── pages/                     # auth, admin, org, RootRedirect
     ├── routes/                    # router.tsx
     ├── types/                     # tipi condivisi
@@ -46,7 +48,7 @@ frontend/
 - [02 — `api/`](02-api-client.md)
 - [03 — `auth/`](03-auth.md)
 - [04 — Routing (`routes/router.tsx`, `pages/RootRedirect.tsx`)](04-routing.md)
-- [05 — `components/` (layout, forms, feedback, shared, templates)](05-components.md)
+- [05 — `components/` (layout, forms, feedback, shared, templates, figure ed editor delle figure)](05-components.md)
 - [06 — `pages/` (auth, admin, org)](06-pages.md)
 - [07 — `lib/`](07-lib.md)
 - [08 — `hooks/`](08-hooks.md)

@@ -3,6 +3,10 @@ import { useTranslation } from "react-i18next";
 
 import type { LessonContentRaw } from "@/api/courses";
 import { MarkdownRenderer } from "@/components/shared/MarkdownRenderer";
+import {
+  appendUncitedFigureRefs,
+  computeFigureNumbers,
+} from "@/lib/figureNumbering";
 
 interface Props {
   content: LessonContentRaw;
@@ -15,6 +19,13 @@ interface Props {
  * key takeaways, references) sono concatenate con `## Titolo` come unico
  * marcatore strutturale.
  *
+ * Figure (D4, A12): il corpo (introduzione → sezioni → sintesi) riceve in
+ * coda i tag `[FIG:id]` degli asset mai citati e la numerazione «Figura N.»
+ * è calcolata sul corpo così esteso (`lib/figureNumbering.ts`, allineato al
+ * backend `figure_numbering.py`); punti chiave e riferimenti seguono dopo,
+ * come nel PDF. `orgId`/`courseId` per le figure `function` arrivano dal
+ * `CourseRefContext` del container (A21), non da qui.
+ *
  * NB: il contenitore della lezione fa polling (refetchInterval) finché
  * un'altra lezione/PDF è in elaborazione. A ogni tick react-query
  * restituisce un nuovo oggetto `content` con identità diversa ma stesso
@@ -25,16 +36,21 @@ interface Props {
 function LessonContentViewImpl({ content }: Props) {
   const { t } = useTranslation();
 
-  // Concatena tutto in un solo documento markdown.
-  const fullMarkdown = useMemo(
-    () =>
-      buildFullMarkdown(content, {
-        summaryHeading: t("courses.lessonsContent.render.summary"),
-        keyTakeawaysHeading: t("courses.lessonsContent.render.keyTakeaways"),
-        referencesHeading: t("courses.lessonsContent.render.references"),
-      }),
-    [content, t],
-  );
+  // Corpo (con le figure orfane accodate), coda e numerazione.
+  const { fullMarkdown, figureNumbers } = useMemo(() => {
+    const assetIds = (content.visual_assets ?? []).map((a) => a.asset_id);
+    const body = appendUncitedFigureRefs(buildBodyMarkdown(content, {
+      summaryHeading: t("courses.lessonsContent.render.summary"),
+    }), assetIds);
+    const tail = buildTailMarkdown(content, {
+      keyTakeawaysHeading: t("courses.lessonsContent.render.keyTakeaways"),
+      referencesHeading: t("courses.lessonsContent.render.references"),
+    });
+    return {
+      fullMarkdown: [body, tail].filter((p) => p.trim()).join("\n\n"),
+      figureNumbers: computeFigureNumbers(body, assetIds),
+    };
+  }, [content, t]);
 
   return (
     <article className="rounded-lg border bg-card px-6 py-8 shadow-sm sm:px-10 sm:py-12">
@@ -44,6 +60,7 @@ function LessonContentViewImpl({ content }: Props) {
         tables={content.tables}
         equations={content.equations}
         examples={content.examples}
+        figureNumbers={figureNumbers}
       />
     </article>
   );
@@ -58,16 +75,19 @@ export const LessonContentView = memo(
     JSON.stringify(prev.content) === JSON.stringify(next.content),
 );
 
-interface BuildOpts {
+interface BodyOpts {
   summaryHeading: string;
+}
+
+interface TailOpts {
   keyTakeawaysHeading: string;
   referencesHeading: string;
 }
 
-function buildFullMarkdown(
-  content: LessonContentRaw,
-  opts: BuildOpts,
-): string {
+/** Introduzione → sezioni → sintesi: il corpus in cui le figure sono
+ *  citate e numerate (stesso perimetro di `_build_lesson_body_markdown`
+ *  nel backend). */
+function buildBodyMarkdown(content: LessonContentRaw, opts: BodyOpts): string {
   const parts: string[] = [];
 
   // Introduction (no heading — è l'incipit)
@@ -90,6 +110,13 @@ function buildFullMarkdown(
     parts.push(`## ${opts.summaryHeading}`);
     parts.push(content.summary.trim());
   }
+
+  return parts.join("\n\n");
+}
+
+/** Punti chiave e riferimenti: dopo le figure orfane, senza numerazione. */
+function buildTailMarkdown(content: LessonContentRaw, opts: TailOpts): string {
+  const parts: string[] = [];
 
   // Key takeaways come bullet list
   if (content.key_takeaways && content.key_takeaways.length > 0) {

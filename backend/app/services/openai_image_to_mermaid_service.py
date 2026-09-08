@@ -9,6 +9,7 @@ Niente persistenza dei token: l'usage viene tornato nel response JSON
 per debug/log futuri ma non scritto su DB (non è parte di una pipeline
 batch).
 """
+
 from __future__ import annotations
 
 import base64
@@ -20,6 +21,11 @@ import httpx
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
+from app.services.figure_theme import (
+    MERMAID_ALLOWED_TYPES,
+    MERMAID_D8_TYPES,
+    MERMAID_EXCLUDED_TYPES,
+)
 from app.services.openai_client import (
     OpenAIError,
     OpenAINotConfiguredError,
@@ -31,24 +37,14 @@ from app.services.openai_pricing import build_usage_dict
 log = get_logger("app.openai.image_to_mermaid")
 
 
-_MERMAID_KEYWORDS = (
-    "flowchart",
-    "graph",
-    "sequenceDiagram",
-    "classDiagram",
-    "stateDiagram",
-    "stateDiagram-v2",
-    "erDiagram",
-    "gantt",
-    "pie",
-    "journey",
-    "mindmap",
-    "timeline",
-    "gitGraph",
-    "quadrantChart",
-    "requirementDiagram",
-    "C4Context",
-)
+# Tipi accettati in uscita dal modello: i 15 di D8 più gli alias storici
+# (`graph`, `stateDiagram` v1), unica sorgente in `figure_theme` (D10). I tipi
+# esclusi (`journey`, `gitGraph`, ...) non passano più: non sono
+# renderizzabili nel PDF o non hanno uso didattico. Nel prompt compaiono i
+# soli 15 tipi canonici (`MERMAID_D8_TYPES`).
+_MERMAID_KEYWORDS: tuple[str, ...] = MERMAID_ALLOWED_TYPES
+_MERMAID_D8_TYPES = ", ".join(MERMAID_D8_TYPES)
+_MERMAID_EXCLUDED = ", ".join(MERMAID_EXCLUDED_TYPES)
 
 _UNRECOGNIZED_TOKEN = "UNRECOGNIZED"
 
@@ -58,26 +54,29 @@ class OpenAIImageToMermaidError(OpenAIError):
 
 
 def _system_prompt(language_code: str) -> str:
-    lang_hint = (
-        "italiano" if language_code.lower().startswith("it") else "inglese"
-    )
+    lang_hint = "italiano" if language_code.lower().startswith("it") else "inglese"
     return (
         "Sei un assistente che converte immagini di schemi, diagrammi e "
-        "grafici in codice Mermaid valido.\n\n"
+        "grafici in codice Mermaid valido (Mermaid 11.x).\n\n"
         "REGOLE:\n"
         "1. Analizza l'immagine: identifica nodi, relazioni, gerarchie, "
         "frecce, gruppi.\n"
-        "2. Scegli il tipo di diagramma Mermaid più adatto "
-        "(flowchart/sequenceDiagram/classDiagram/stateDiagram/erDiagram/"
-        "mindmap/timeline/ecc.).\n"
+        "2. Scegli il tipo di diagramma più adatto SOLO tra questi: "
+        + _MERMAID_D8_TYPES
+        + ". Mai "
+        + _MERMAID_EXCLUDED
+        + ".\n"
         "3. Produci codice Mermaid SINTATTICAMENTE VALIDO.\n"
-        "4. Usa label leggibili in " + lang_hint + ".\n"
+        "4. Usa label leggibili in " + lang_hint + ", in testo semplice: "
+        "niente HTML né markdown dentro le label, niente direttive "
+        "`%%{init: ...}%%` né frontmatter di configurazione; se una label "
+        "contiene caratteri speciali (parentesi, due punti, virgolette) "
+        "racchiudila tra virgolette doppie come da sintassi Mermaid.\n"
         "5. Output: SOLO il codice Mermaid grezzo. Niente backtick, "
         "niente prefissi tipo `mermaid`, niente prosa esplicativa.\n"
         "6. Se l'immagine NON contiene uno schema/diagramma riconoscibile "
         "(es. è una fotografia generica, un paesaggio, un volto, un "
-        "documento di testo), rispondi con esattamente: "
-        + _UNRECOGNIZED_TOKEN
+        "documento di testo), rispondi con esattamente: " + _UNRECOGNIZED_TOKEN
     )
 
 
@@ -183,11 +182,7 @@ async def convert_image_to_mermaid(
             payload = resp.json()
         except Exception:
             payload = {"text": resp.text}
-        message = (
-            payload.get("error", {}).get("message")
-            if isinstance(payload, dict)
-            else None
-        )
+        message = payload.get("error", {}).get("message") if isinstance(payload, dict) else None
         log.error(
             "openai_image_to_mermaid_api_error",
             status=resp.status_code,
@@ -237,10 +232,7 @@ async def convert_image_to_mermaid(
         )
         raise OpenAIImageToMermaidError(
             status=resp.status_code,
-            message=(
-                "Il codice generato non è Mermaid valido. Riprova oppure "
-                "scrivilo a mano."
-            ),
+            message=("Il codice generato non è Mermaid valido. Riprova oppure scrivilo a mano."),
         )
 
     usage = build_usage_dict(

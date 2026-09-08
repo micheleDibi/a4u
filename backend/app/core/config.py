@@ -253,9 +253,10 @@ class Settings(BaseSettings):
 
     # Auto-fix degli asset "fragili" (formule LaTeX + diagrammi Mermaid)
     # a generazione AI (Fase 3 + Fase 4). Quando un asset generato non
-    # supera la validazione (latex2mathml + KaTeX per le formule, mermaid
-    # v10.9.4 per i diagrammi), viene riparato con una chiamata AI mirata
-    # e ri-validato, finché valido o esaurito `asset_fix_max_attempts`.
+    # supera la validazione (latex2mathml + KaTeX per le formule, Mermaid
+    # 11.x — pin `mermaid_cdn_version` — per i diagrammi), viene riparato
+    # con una chiamata AI mirata e ri-validato, finché valido o esaurito
+    # `asset_fix_max_attempts`.
     # gpt-4o-mini basta per il fix sintattico mirato; l'escalation (re-gen
     # intera lezione con gpt-5.5) copre i casi residui via auto-retry.
     openai_asset_fix_model: str = "gpt-4o-mini"
@@ -275,6 +276,43 @@ class Settings(BaseSettings):
     openai_asset_localize_model: str = "gpt-4o-mini"
     openai_asset_localize_max_tokens: int = 8_000
     asset_localize_enabled: bool = True
+
+    # --- Figure accademiche (Fase 3/4) ---
+    # Quattro famiglie di asset visivi renderizzati dal registro
+    # `figure_render_service`: Mermaid (sempre attivo), Vega-Lite
+    # (vl-convert), Graphviz DOT (binario `dot`), `function` (sympy +
+    # matplotlib). Kill-switch per formato: `False` toglie il formato dallo
+    # schema strict offerto al modello e dal validatore (i contenuti già in
+    # DB con quel formato ricadono sul fallback `<pre>` a render). Un
+    # formato è offerto solo se abilitato E la dipendenza è presente
+    # (`available_formats()`).
+    figure_vegalite_enabled: bool = True
+    figure_dot_enabled: bool = True
+    figure_function_enabled: bool = True
+    # Unico pin di Mermaid per validatore (Playwright) e pre-render
+    # PDF/video: con `htmlLabels:false` top-level la 11.x emette `<text>`
+    # puro (0 foreignObject) per i tipi D8. Il frontend segue con il lock npm.
+    mermaid_cdn_version: str = "11.17.2"
+    # Tetto per il render di un batch di figure di una lezione (thread +
+    # `asyncio.wait_for`): oltre, le figure mancanti degradano a fallback e
+    # l'export prosegue.
+    figure_render_timeout_seconds: int = 20
+    # Tetto del calcolo simbolico di `function` (processo figlio `spawn`,
+    # ucciso allo scadere): oltre, il risultato numerico resta e la
+    # didascalia riporta «valori approssimati».
+    figure_function_timeout_seconds: int = 10
+    # Render CPU-bound concorrenti (worker + anteprime `render-function`).
+    # Default 2 per la VM a 2 core.
+    figure_render_max_workers: int = 2
+    # Cache LRU in memoria degli SVG renderizzati (chiave: formato, hash del
+    # contenuto, versione del tema, lingua).
+    figure_svg_cache_size: int = 256
+    # Oltre questa dimensione un SVG prodotto viene rifiutato (fallback).
+    figure_svg_max_bytes: int = 1_500_000
+    # Limite del sorgente DOT accettato dal validatore.
+    figure_dot_max_chars: int = 12_000
+    # Percorso del binario `dot`; None = ricerca nel PATH (`shutil.which`).
+    graphviz_dot_path: str | None = None
 
     # §7 — Export PDF lezioni.
     # Cap=2: rendering Playwright è I/O+CPU intensive (Chromium istanza).

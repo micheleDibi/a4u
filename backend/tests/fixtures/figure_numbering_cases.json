@@ -1,0 +1,243 @@
+{
+  "_comment": "Casi condivisi fra backend (figure_numbering.py, test_figure_numbering.py) e frontend (lib/figureNumbering.ts). `asset_ids` è l'ordine dell'array visual_assets; `appended` è il markdown dopo append_uncited_figure_refs; `numbers` la mappa {id_lower: N} calcolata sul markdown appeso. `strip_prefix` elenca coppie input → output di strip_figure_prefix: parola (figura|figure|fig.|abb.), numero con eventuali sottonumeri e lettera, poi UN separatore `. : - – — )` non seguito da cifra oppure fine del testo; senza separatore («Figure 2 shows …») la didascalia resta intatta. Le cifre sono Unicode (`\\d` di Python, `\\p{Nd}` con flag `u` in JavaScript): «Figura ١٢.» e «Figura ５.» sono prefissi su entrambi i lati. La lettera dopo il numero comprende «ı» (U+0131) e «İ» (U+0130): Python le piega a `i` con IGNORECASE, JavaScript no con `iu`, quindi la copia frontend le elenca esplicitamente.",
+  "cases": [
+    {
+      "name": "ordine di prima citazione, non dell'array",
+      "markdown": "Vedi [FIG:C] e poi [FIG:A].\n\n## Sezione\n\nAncora [FIG:B].",
+      "asset_ids": [
+        "A",
+        "B",
+        "C"
+      ],
+      "appended": "Vedi [FIG:C] e poi [FIG:A].\n\n## Sezione\n\nAncora [FIG:B].",
+      "numbers": {
+        "c": 1,
+        "a": 2,
+        "b": 3
+      }
+    },
+    {
+      "name": "citazioni ripetute condividono il numero",
+      "markdown": "[FIG:A] testo [FIG:B] testo [FIG:A] ancora [FIG:A].",
+      "asset_ids": [
+        "A",
+        "B"
+      ],
+      "appended": "[FIG:A] testo [FIG:B] testo [FIG:A] ancora [FIG:A].",
+      "numbers": {
+        "a": 1,
+        "b": 2
+      }
+    },
+    {
+      "name": "id senza asset non consuma numeri",
+      "markdown": "Prima [FIG:ghost], poi [FIG:A] e [FIG:B].",
+      "asset_ids": [
+        "A",
+        "B"
+      ],
+      "appended": "Prima [FIG:ghost], poi [FIG:A] e [FIG:B].",
+      "numbers": {
+        "a": 1,
+        "b": 2
+      }
+    },
+    {
+      "name": "case diverso fra citazione e id dichiarato",
+      "markdown": "Vedi [FIG:fig_1] e [FIG: Fig_2 ].",
+      "asset_ids": [
+        "FIG_1",
+        "fig_2"
+      ],
+      "appended": "Vedi [FIG:fig_1] e [FIG: Fig_2 ].",
+      "numbers": {
+        "fig_1": 1,
+        "fig_2": 2
+      }
+    },
+    {
+      "name": "[fig:x] minuscolo è ignorato (case-sensitive su FIG) e l'asset va in coda",
+      "markdown": "Vedi [fig:A] e [FIG:B].",
+      "asset_ids": [
+        "A",
+        "B"
+      ],
+      "appended": "Vedi [fig:A] e [FIG:B].\n\n[FIG:A]",
+      "numbers": {
+        "b": 1,
+        "a": 2
+      }
+    },
+    {
+      "name": "asset non citati accodati in ordine di array dopo le citate",
+      "markdown": "Solo [FIG:B] nel testo.",
+      "asset_ids": [
+        "A",
+        "B",
+        "C"
+      ],
+      "appended": "Solo [FIG:B] nel testo.\n\n[FIG:A]\n\n[FIG:C]",
+      "numbers": {
+        "b": 1,
+        "a": 2,
+        "c": 3
+      }
+    },
+    {
+      "name": "nessuna figura",
+      "markdown": "Testo senza figure. [TAB:t1] e [EQ:e1] non contano.",
+      "asset_ids": [],
+      "appended": "Testo senza figure. [TAB:t1] e [EQ:e1] non contano.",
+      "numbers": {}
+    },
+    {
+      "name": "testo vuoto con asset: solo la coda",
+      "markdown": "",
+      "asset_ids": [
+        "A"
+      ],
+      "appended": "\n\n[FIG:A]",
+      "numbers": {
+        "a": 1
+      }
+    },
+    {
+      "name": "id vuoti e duplicati nell'array sono ignorati",
+      "markdown": "[FIG:A]",
+      "asset_ids": [
+        "A",
+        "",
+        "a",
+        "B",
+        "B"
+      ],
+      "appended": "[FIG:A]\n\n[FIG:B]",
+      "numbers": {
+        "a": 1,
+        "b": 2
+      }
+    },
+    {
+      "name": "il tag non attraversa la riga",
+      "markdown": "[FIG:A\n] non è un tag; [FIG:B] sì.",
+      "asset_ids": [
+        "A",
+        "B"
+      ],
+      "appended": "[FIG:A\n] non è un tag; [FIG:B] sì.\n\n[FIG:A]",
+      "numbers": {
+        "b": 1,
+        "a": 2
+      }
+    },
+    {
+      "name": "id che il token non sa trasportare (]) saltato, id con [ accodato",
+      "markdown": "Testo.",
+      "asset_ids": [
+        "A]",
+        " ",
+        "B",
+        "A[1"
+      ],
+      "appended": "Testo.\n\n[FIG:B]\n\n[FIG:A[1]",
+      "numbers": {
+        "b": 1,
+        "a[1": 2
+      }
+    }
+  ],
+  "strip_prefix": [
+    {
+      "input": "Figura 7. Schema",
+      "output": "Schema"
+    },
+    {
+      "input": "figura 12: Schema",
+      "output": "Schema"
+    },
+    {
+      "input": "Figure 3 – Overview",
+      "output": "Overview"
+    },
+    {
+      "input": "Fig. 2) Dettaglio",
+      "output": "Dettaglio"
+    },
+    {
+      "input": "Fig 4a - Variante",
+      "output": "Variante"
+    },
+    {
+      "input": "Abb. 5: Übersicht",
+      "output": "Übersicht"
+    },
+    {
+      "input": "Fig. 10b) Dettaglio",
+      "output": "Dettaglio"
+    },
+    {
+      "input": "Figura 7.2. Sottonumero",
+      "output": "Sottonumero"
+    },
+    {
+      "input": "  Figura 1.   Spazi",
+      "output": "Spazi"
+    },
+    {
+      "input": "Figura 3",
+      "output": ""
+    },
+    {
+      "input": "Abb. 5 Übersicht",
+      "output": "Abb. 5 Übersicht"
+    },
+    {
+      "input": "Figure 2 shows the flow",
+      "output": "Figure 2 shows the flow"
+    },
+    {
+      "input": "Figura 1.2 Schema",
+      "output": "Figura 1.2 Schema"
+    },
+    {
+      "input": "Figura 3 e 4 a confronto",
+      "output": "Figura 3 e 4 a confronto"
+    },
+    {
+      "input": "Figurativo 3 volte",
+      "output": "Figurativo 3 volte"
+    },
+    {
+      "input": "Fig. X non numerata",
+      "output": "Fig. X non numerata"
+    },
+    {
+      "input": "Figura senza numero",
+      "output": "Figura senza numero"
+    },
+    {
+      "input": "Schema del flusso",
+      "output": "Schema del flusso"
+    },
+    {
+      "input": "Figura ١٢. Cifre arabo-indiane",
+      "output": "Cifre arabo-indiane"
+    },
+    {
+      "input": "Figura ５. Cifre a larghezza piena",
+      "output": "Cifre a larghezza piena"
+    },
+    {
+      "input": "Figura 2ı: i senza punto",
+      "output": "i senza punto"
+    },
+    {
+      "input": "Figura 2İ. I con punto",
+      "output": "I con punto"
+    },
+    {
+      "input": "",
+      "output": ""
+    }
+  ]
+}

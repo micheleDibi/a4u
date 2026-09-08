@@ -90,7 +90,7 @@ PLATFORM_KNOWLEDGE = """=== FUNZIONALITÀ DELLA PIATTAFORMA A4U ===
 **CORSI** — pipeline AI in 6 fasi sequenziali + verifica competenze:
 1. **Architettura** (`/orgs/:orgId/corsi/:id` tab Architettura): AI genera moduli del corso a partire da titolo, obiettivi, taxonomia. Approvazione manuale.
 2. **Struttura lezioni** (tab Struttura): per ogni modulo, AI genera obiettivi di apprendimento, temi obbligatori, prerequisiti, scaletta. Parallelo per modulo.
-3. **Contenuti lezioni** (tab Contenuti): AI genera il testo completo (sections, asset Mermaid/LaTeX, tabelle, esempi, riferimenti). Parallelo per lezione. Editor TipTap user-friendly. Glossario corso autogenerato. Export PDF.
+3. **Contenuti lezioni** (tab Contenuti): AI genera il testo completo (sections, figure Mermaid/Vega-Lite/DOT/function, formule LaTeX, tabelle, esempi, riferimenti). Parallelo per lezione. Editor TipTap user-friendly. Glossario corso autogenerato. Export PDF.
 4. **Slide** (tab Slide): AI genera le slide della presentazione riusando gli asset di Fase 3. Editor visuale. Export PDF slide.
 5. **Discorso temporizzato** (tab Discorso): AI genera parlato TTS-friendly suddiviso in segmenti sincronizzati alle slide. Vincolo durata ±5% del target. Export PDF discorso.
 6. **Video MP4** (tab Video): generazione del video della lezione (TTS XTTS-v2 su RunPod + slide Playwright + ffmpeg). Richiede speech e slide approvati + voice sample dell'assegnatario.

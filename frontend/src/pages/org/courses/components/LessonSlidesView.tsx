@@ -7,12 +7,13 @@ import type {
 } from "@/api/courses";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { FigureFrame } from "@/components/shared/FigureFrame";
+import { FunctionFigure } from "@/components/shared/FunctionFigure";
 import {
   EquationBlock,
   MarkdownRenderer,
+  VisualAssetBody,
 } from "@/components/shared/MarkdownRenderer";
-import { MermaidDiagram } from "@/components/shared/MermaidDiagram";
-import { mediaUrl } from "@/lib/media";
 import { resolveAsset } from "@/lib/slides";
 
 interface Props {
@@ -29,6 +30,10 @@ interface Props {
  *
  * Risoluzione asset: cerca prima in `contentRaw` (Fase 3), poi in
  * `slides.new_assets` (asset creati dalla Fase 4). Vedi `lib/slides.ts`.
+ *
+ * Figure: `FigureFrame` con `variant="slide"` e senza numero («Figura.»,
+ * A2), come nel PDF delle slide e nei frame video; i renderer (Mermaid,
+ * Vega-Lite, DOT) sono caricati in modo pigro da `VisualAssetBody`.
  */
 export function LessonSlidesView({ slides, contentRaw }: Props) {
   const { t } = useTranslation();
@@ -158,6 +163,7 @@ function SlideAssetRender({
   newEquations,
   newExamples,
 }: SlideAssetRenderProps) {
+  const { t } = useTranslation();
   const resolved = resolveAsset(
     assetId,
     contentRaw,
@@ -169,54 +175,35 @@ function SlideAssetRender({
   if (!resolved) {
     return (
       <div className="rounded border border-dashed border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive">
-        Asset non trovato: {assetId}
+        {t("courses.lessonsContent.render.missingAsset")}{" "}
+        <span className="font-mono">{assetId}</span>
       </div>
     );
   }
 
   if (resolved.kind === "visual" || resolved.kind === "new_visual") {
     const a = resolved.payload;
-    if (a.format === "mermaid") {
+    if (a.format === "function") {
       return (
-        <figure className="space-y-1">
-          <MermaidDiagram code={a.content} />
-          {a.caption && (
-            <figcaption className="text-xs italic text-muted-foreground">
-              {a.caption}
-            </figcaption>
-          )}
-        </figure>
+        <FunctionFigure
+          assetId={a.asset_id}
+          content={a.content}
+          caption={a.caption}
+          altText={a.alt_text}
+          variant="slide"
+        />
       );
     }
-    if (a.format === "image") {
-      return (
-        <figure className="space-y-1">
-          <img
-            src={mediaUrl(a.content)}
-            alt={a.alt_text || ""}
-            className="block max-h-[24rem] w-auto max-w-full rounded"
-          />
-          {a.caption && (
-            <figcaption className="text-xs italic text-muted-foreground">
-              {a.caption}
-            </figcaption>
-          )}
-        </figure>
-      );
-    }
-    // Per image_prompt / image_search_query / description (legacy):
-    // placeholder testuale.
     return (
-      <figure className="space-y-1">
-        <div className="rounded-md border bg-muted/30 p-4 text-center text-xs text-muted-foreground">
-          {a.alt_text || a.caption || a.content}
-        </div>
-        {a.caption && (
-          <figcaption className="text-xs italic text-muted-foreground">
-            {a.caption}
-          </figcaption>
-        )}
-      </figure>
+      <FigureFrame
+        assetId={a.asset_id}
+        format={a.format}
+        caption={a.caption}
+        altText={a.alt_text}
+        variant="slide"
+      >
+        <VisualAssetBody asset={a} imageClassName="max-h-[24rem]" />
+      </FigureFrame>
     );
   }
 

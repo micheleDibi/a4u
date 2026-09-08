@@ -4,11 +4,17 @@ Una chiamata API per lezione: prende in input la struttura formativa
 approvata (Fase 2 — `learning_objectives`, `mandatory_topics`,
 `prerequisites`, `section_outline`), il glossario corso e i documenti
 di riferimento; produce il testo Markdown della lezione + asset visivi
-(Mermaid, formule LaTeX, tabelle, esempi), esercizi auto-studio,
-references e coverage_check.
+(figure Mermaid, Vega-Lite, DOT e `function`, formule LaTeX, tabelle,
+esempi), references e coverage_check.
+
+Il testo del system prompt è statico e descrive sempre le quattro
+famiglie di figure (A19); solo l'`enum` di `visual_assets[].format`
+nello schema strict è ristretto a `figure_render_service.available_formats()`
+(kill-switch e dipendenze del server).
 
 Errori → `OpenAILessonContentError` (sottoclasse di `OpenAIError`).
 """
+
 from __future__ import annotations
 
 import copy
@@ -25,6 +31,9 @@ from app.schemas.course_lesson_content import (
     LessonAssessmentOutput,
     LessonContentOutput,
 )
+from app.services.figure_compute.function_parse import FUNCTIONS
+from app.services.figure_render_service import available_formats
+from app.services.figure_theme import MERMAID_D8_TYPES, MERMAID_EXCLUDED_TYPES
 from app.services.openai_client import (
     OpenAIError,
     OpenAINotConfiguredError,
@@ -98,6 +107,56 @@ REFERENCES (schema esistente: `citation` + `source`)
   né menzionato come fonte: usane i contenuti senza riferirne l'origine.
 - NON inventare bibliografia.
 """
+
+# Blocco «FORMATI DELLE FIGURE» (D5, D8, D9): gli elenchi dei tipi Mermaid
+# e delle funzioni ammesse sono derivati dalle stesse costanti del
+# validatore, così prompt e gate non possono divergere. Gli esempi sono
+# costanti separate (non f-string: le graffe sono JSON letterale) e
+# vengono verificati dai validatori del registro in
+# `tests/test_prompt_figures.py`.
+_MERMAID_TYPES_TEXT = ", ".join(MERMAID_D8_TYPES)
+_MERMAID_EXCLUDED_TEXT = ", ".join(MERMAID_EXCLUDED_TYPES)
+_FUNCTION_FUNCTIONS_TEXT = ", ".join(sorted(FUNCTIONS))
+
+# Esempio Vega-Lite minimo (≤ 300 caratteri): barre con dati inline,
+# `clip`, `scale.domain` e unità di misura sull'asse quantitativo; senza
+# `title` (opzionale) per restare nel budget di A5.
+_VEGALITE_EXAMPLE = (
+    '{"data":{"values":[{"mese":"gen","mm":80},{"mese":"feb","mm":65}]},"mark":{"type":"bar",'
+    '"clip":true},"encoding":{"x":{"field":"mese","type":"nominal","axis":{"title":"Mese"}},'
+    '"y":{"field":"mm","type":"quantitative","scale":{"domain":[0,100]},"axis":{"title":'
+    '"Precipitazioni (mm)"}}}}'
+)
+
+# Esempio DOT minimo (≤ 150 caratteri): label brevi, nessuno stile.
+_DOT_EXAMPLE = (
+    'digraph G { rankdir=LR; A [label="Ingresso"]; B [label="Elaborazione"]; '
+    'C [label="Uscita"]; A -> B -> C; }'
+)
+
+# Schema compatto di `FunctionFigureSpec` (schemas/figure_function.py) a
+# una riga: campi, enum e limiti; il test di WP3 verifica che ogni campo
+# e ogni valore degli enum compaiano nel prompt.
+_FUNCTION_SPEC_COMPACT = (
+    '{"kind":"function_study|tangent|area|family|level_curves",'
+    '"expressions":[{"expr":str,"label":str}] (1-4),'
+    '"variable":"x","variables":["x","y"] (solo level_curves),'
+    '"domain":[min,max],"range":[min,max]|null,'
+    '"show":["zeros"|"critical_points"|"inflection_points"|"asymptotes"|'
+    '"discontinuities"|"formula"],'
+    '"annotations":[{"kind":"tangent"|"point","at":n,"expr_index":0,"label":str}|'
+    '{"kind":"area","between":[a,b],"expr_index":0,"against":int|null,"label":str}] (≤ 6),'
+    '"parameter":{"name":"k","values":[n,...]} (solo family),'
+    '"sampling":{"points":800},"levels":int|[n,...] (solo level_curves)}'
+)
+
+# Esempio D9 completo (studio di funzione): nessun numero calcolato.
+_FUNCTION_EXAMPLE = (
+    '{"kind":"function_study","expressions":[{"expr":"(x**2-1)/(x-2)","label":"f"}],'
+    '"variable":"x","domain":[-4,6],"range":[-12,12],"show":["zeros","critical_points",'
+    '"asymptotes","formula"],"annotations":[{"kind":"point","at":0,"expr_index":0,'
+    '"label":"intercetta"}]}'
+)
 
 
 def _system_prompt(
@@ -229,7 +288,8 @@ DIVIETI ASSOLUTI NEL TESTO VISIBILE
   visto..."), MAI il codice.
 - Le caption di figure, tabelle, formule devono essere brevi
   descrizioni semantiche; NON includere codici come "[A1]" o
-  "Figura M1.L2.01".
+  "Figura M1.L2.01", né iniziare con "Figura 1"/"Fig. 1": il numero
+  lo mette il renderer.
 
 CASO SPECIALE — LEZIONE INTRODUTTIVA (is_introductory=true):
 - Nessun caso studio o dimostrazione tecnica complessa
@@ -254,8 +314,8 @@ Linea guida (non vincolante):
 
 REQUISITI — ASSET VISIVI
 
-- 1-3 diagrammi/schemi per lezione (NON per la lezione introduttiva,
-  dove sono opzionali e tipicamente 0-1)
+- 1-3 figure per lezione (NON per la lezione introduttiva, dove sono
+  opzionali e tipicamente 0-1)
 - formule LaTeX TUTTE le volte che la disciplina lo richiede
 - tabelle quando devi confrontare alternative o riassumere
   classificazioni
@@ -266,13 +326,58 @@ una volta nel testo tramite `[FIG:asset_id]`, `[TAB:asset_id]`,
 l'asset rendering — non devono apparire al lettore finale, ma servono
 al parser). La `caption` è una breve descrizione semantica leggibile.
 
-FORMATI ACCETTATI:
-- visual_assets → SOLO `format = "mermaid"`, content = codice Mermaid
-  valido. NON generare prompt per immagini, query di ricerca o
-  descrizioni testuali: l'utente caricherà eventualmente immagini
-  reali a mano dall'editor.
-- formula → format = "latex" (senza delimitatori $...$)
-- table → format = "markdown"
+FORMATI DELLE FIGURE (`visual_assets[].format`; `content` è sempre una
+stringa: codice, sorgente o spec JSON serializzata). Dal contenuto al
+formato e al tipo di diagramma:
+- processo, flusso, gerarchia, relazioni fra entità, scambio di
+  messaggi, stati, linea del tempo, ripartizione → `mermaid` (tipo di
+  diagramma corrispondente: flowchart, sequenceDiagram, classDiagram,
+  stateDiagram-v2, erDiagram, mindmap, timeline, pie);
+- dati, misure, distribuzioni, confronti quantitativi, serie
+  temporali → `vegalite` (barre, linee, punti, aree);
+- grafi con archi etichettati, alberi, automi, reti → `dot`;
+- funzione matematica da studiare (grafico, tangente, area, famiglia
+  con parametro, curve di livello) → `function`.
+Niente prompt per immagini né descrizioni testuali: le immagini reali
+le carica il docente dall'editor.
+
+MERMAID 11. Tipi ammessi: {_MERMAID_TYPES_TEXT}.
+Esclusi: {_MERMAID_EXCLUDED_TEXT}.
+Label in testo semplice (niente HTML né markdown), tra virgolette
+doppie se contengono caratteri speciali; nessuna direttiva
+`%%{{init}}%%` né frontmatter: il tema lo impone il renderer.
+
+VEGA-LITE (spec JSON v6, ≤ 4000 caratteri) SOLO per: (a) rette o
+polinomi ausiliari sui dati con `data.sequence` + `transform.calculate`;
+(b) dati dei documenti del corso, con la fonte nella caption; (c) dati
+illustrativi, con la caption che termina con «Dati illustrativi, non
+sperimentali». Dati inline in `data.values` (≤ 200 righe); vietati
+`data.url`, `data.name`, `mark: "image"`, `config`, `$schema`, `params`,
+`selection`, `tooltip`, `usermeta`, `encoding.href`: il tema lo inietta
+il renderer e il grafico è statico. Obbligatori `"clip": true` sui mark
+`line`/`area`/`point`/`trail` e `scale.domain` [min, max] sui canali
+`x`/`y` quantitativi; al massimo una `title` (radice, ≤ 120 caratteri);
+`axis.title` con l'unità di misura sugli assi quantitativi; legenda solo
+con più serie. Le FUNZIONI MATEMATICHE (seno, esponenziale, potenze,
+razionali su una `sequence`) NON si tracciano in Vega-Lite: usa
+`function`. Esempio:
+{_VEGALITE_EXAMPLE}
+
+DOT (Graphviz): inizia con `graph`, `digraph` o `strict`; label brevi
+tra virgolette doppie; nessun colore, font o stile (li impone il
+renderer); mai `image`, `URL`, `href` o attributi che leggono file.
+Esempio: {_DOT_EXAMPLE}
+
+FUNCTION (figura calcolata da sympy e matplotlib): `content` è la
+stringa JSON di questo oggetto:
+{_FUNCTION_SPEC_COMPACT}
+Espressioni in sintassi Python: `**` (mai `^`), `2*x` (mai `2x`), solo
+la variabile dichiarata e l'eventuale `parameter.name`, costanti `pi`
+ed `E`, funzioni ammesse: {_FUNCTION_FUNCTIONS_TEXT}.
+NON scrivere numeri calcolati (zeri, massimi, integrali, asintoti) né
+nella spec né nella caption: li calcola il renderer e li aggiunge alla
+didascalia. Esempio:
+{_FUNCTION_EXAMPLE}
 
 EQUAZIONI — ENUNCIATO E DIMOSTRAZIONE (`equations[]`)
 Per OGNI asset in `equations[]`:
@@ -327,12 +432,17 @@ TUTTO il testo leggibile dall'utente DEVE essere scritto in {language_code}: non
 la prosa, ma anche OGNI campo testuale degli asset. In particolare:
 - `caption` e `alt_text` degli asset visivi;
 - le ETICHETTE / il testo dei nodi DENTRO il codice Mermaid (le label, NON la sintassi);
+- `title`, `axis.title`, `legend.title` e `header.title` delle spec Vega-Lite; le
+  `label` dei sorgenti DOT; `expressions[].label` e `annotations[].label` delle spec
+  `function`;
 - `caption`, intestazioni e celle delle tabelle (`markdown`);
 - `label`, `statement`, `explanation` delle equazioni e il `text` di OGNI passo di `proof`;
 - `title` e `content` degli esempi.
 Restano invariati SOLO: la notazione matematica LaTeX (campi `latex`), la struttura
-sintattica di Mermaid (tipo di diagramma, frecce, ID dei nodi), gli ID degli asset, i
-tag `[FIG:..]`/`[TAB:..]`/`[EQ:..]`/`[EX:..]` e i codici di obiettivi (`O1`) e temi
+sintattica di Mermaid (tipo di diagramma, frecce, ID dei nodi), di Vega-Lite (chiavi
+JSON, `field`, `type`, espressioni `datum.*`), di DOT (ID dei nodi, `->`/`--`, attributi
+diversi da `label`) e di `function` (chiavi JSON, `expr`, `kind`, `show`), gli ID degli
+asset, i tag `[FIG:..]`/`[TAB:..]`/`[EQ:..]`/`[EX:..]` e i codici di obiettivi (`O1`) e temi
 (`T1`). NON lasciare in nessun campo testo in un'altra lingua (es. italiano): traduci
 tutto in {language_code}.
 Output: SOLO JSON valido conforme allo schema."""
@@ -340,7 +450,8 @@ Output: SOLO JSON valido conforme allo schema."""
 
 # Addendum §9.3 — appeso al system prompt quando si rigenera una lezione
 # già scritta (con o senza `regeneration_hint`).
-REGENERATION_SUFFIX = """\
+REGENERATION_SUFFIX = (
+    """\
 
 ATTENZIONE: stai RIGENERANDO una lezione già scritta. Tieni in
 considerazione la versione precedente e il feedback del docente.
@@ -351,7 +462,9 @@ considerazione la versione precedente e il feedback del docente.
 - Se il feedback chiede di rimuovere/sostituire un asset, fallo e
   documenta il cambiamento.
 - Mantieni lessico e terminologia coerenti con il resto del corso.
-""" + REGENERATION_REGISTER_NOTE
+"""
+    + REGENERATION_REGISTER_NOTE
+)
 
 
 # JSON Schema verbatim §6.4 — passato a OpenAI come response_format.json_schema.
@@ -404,9 +517,12 @@ LESSON_CONTENT_JSON_SCHEMA: dict[str, Any] = {
                     "type": "object",
                     "properties": {
                         "asset_id": {"type": "string"},
+                        # Le quattro famiglie renderizzabili (D1); a runtime
+                        # `build_lesson_content_json_schema` restringe l'enum
+                        # a `figure_render_service.available_formats()`.
                         "format": {
                             "type": "string",
-                            "enum": ["mermaid"],
+                            "enum": ["mermaid", "vegalite", "dot", "function"],
                         },
                         "content": {"type": "string"},
                         "caption": {"type": "string"},
@@ -579,33 +695,40 @@ LESSON_CONTENT_JSON_SCHEMA: dict[str, Any] = {
 
 
 def build_lesson_content_json_schema(
-    *, objective_ids: Sequence[str] = ()
+    *, objective_ids: Sequence[str] = (), visual_formats: Sequence[str] = ()
 ) -> dict[str, Any]:
     """Schema della singola chiamata: la costante base + l'`enum` dei
-    codici obiettivo sui due campi di contabilità.
+    codici obiettivo sui due campi di contabilità + l'`enum` dei formati
+    di figura offerti al modello.
 
     Con l'`enum` il modello non PUÒ emettere un obiettivo che non esiste
-    (era la causa di `lesson_content_unknown_objective`).
+    (era la causa di `lesson_content_unknown_objective`) né un formato di
+    figura non renderizzabile su questo server (`visual_formats` =
+    `figure_render_service.available_formats()`: kill-switch e dipendenze;
+    il testo del prompt resta statico, A19).
 
     `deepcopy` obbligatorio: fino a `COURSE_LESSON_CONTENT_MAX_CONCURRENCY`
     lezioni sono in volo insieme e una mutazione in place farebbe colare
     l'enum di una lezione nella richiesta di un'altra.
 
-    Lista vuota (lezione senza obiettivi di Fase 2) → nessun `enum`:
-    `"enum": []` non è uno schema strict valido e OpenAI risponderebbe
-    400 a ogni tentativo.
+    Con ENTRAMBI gli argomenti vuoti ritorna la costante per identità.
+    Lista di obiettivi vuota (lezione senza obiettivi di Fase 2) → nessun
+    `enum` sugli obiettivi: `"enum": []` non è uno schema strict valido e
+    OpenAI risponderebbe 400 a ogni tentativo; lo stesso vale per i
+    formati (vuoto → enum della costante, che elenca le quattro famiglie).
     """
-    if not objective_ids:
+    if not objective_ids and not visual_formats:
         return LESSON_CONTENT_JSON_SCHEMA
     schema = copy.deepcopy(LESSON_CONTENT_JSON_SCHEMA)
     props = schema["schema"]["properties"]
-    ids = list(objective_ids)
-    props["sections"]["items"]["properties"]["objectives_addressed"]["items"][
-        "enum"
-    ] = ids
-    props["coverage_check"]["properties"]["objectives_covered"]["items"][
-        "properties"
-    ]["objective"]["enum"] = ids
+    if objective_ids:
+        ids = list(objective_ids)
+        props["sections"]["items"]["properties"]["objectives_addressed"]["items"]["enum"] = ids
+        props["coverage_check"]["properties"]["objectives_covered"]["items"]["properties"][
+            "objective"
+        ]["enum"] = ids
+    if visual_formats:
+        props["visual_assets"]["items"]["properties"]["format"]["enum"] = list(visual_formats)
     return schema
 
 
@@ -650,7 +773,8 @@ async def generate_lesson_content(
         "response_format": {
             "type": "json_schema",
             "json_schema": build_lesson_content_json_schema(
-                objective_ids=objective_ids
+                objective_ids=objective_ids,
+                visual_formats=available_formats(),
             ),
         },
         "max_completion_tokens": settings.openai_lesson_content_max_tokens,
@@ -687,11 +811,7 @@ async def generate_lesson_content(
             payload = resp.json()
         except Exception:
             payload = {"text": resp.text}
-        message = (
-            payload.get("error", {}).get("message")
-            if isinstance(payload, dict)
-            else None
-        )
+        message = payload.get("error", {}).get("message") if isinstance(payload, dict) else None
         log.error(
             "openai_lesson_content_api_error",
             status=resp.status_code,
@@ -721,12 +841,9 @@ async def generate_lesson_content(
     if not content or not content.strip():
         usage_raw = data.get("usage") or {}
         completion_tokens = usage_raw.get("completion_tokens") or 0
-        reasoning_tokens = (
-            (usage_raw.get("completion_tokens_details") or {}).get(
-                "reasoning_tokens"
-            )
-            or 0
-        )
+        reasoning_tokens = (usage_raw.get("completion_tokens_details") or {}).get(
+            "reasoning_tokens"
+        ) or 0
         log.error(
             "openai_lesson_content_empty_content",
             finish_reason=finish_reason,
@@ -758,9 +875,7 @@ async def generate_lesson_content(
     try:
         parsed = json.loads(content)
     except json.JSONDecodeError as exc:
-        log.error(
-            "openai_lesson_content_json_decode_failed", content=content[:500]
-        )
+        log.error("openai_lesson_content_json_decode_failed", content=content[:500])
         raise OpenAILessonContentError(
             status=resp.status_code,
             message=f"OpenAI non ha restituito JSON valido: {exc}",
@@ -962,11 +1077,7 @@ async def generate_lesson_assessment(
             payload = resp.json()
         except Exception:
             payload = {"text": resp.text}
-        message = (
-            payload.get("error", {}).get("message")
-            if isinstance(payload, dict)
-            else None
-        )
+        message = payload.get("error", {}).get("message") if isinstance(payload, dict) else None
         log.error(
             "openai_lesson_assessment_api_error",
             status=resp.status_code,
@@ -974,8 +1085,7 @@ async def generate_lesson_assessment(
         )
         raise OpenAILessonContentError(
             status=resp.status_code,
-            message=message
-            or f"OpenAI ha risposto con HTTP {resp.status_code}.",
+            message=message or f"OpenAI ha risposto con HTTP {resp.status_code}.",
             payload=payload,
         )
 

@@ -18,7 +18,8 @@ Fonte autorevole: `backend/app/core/config.py` (classe `Settings`). Override via
 | `openai_lesson_slides_model` | `gpt-5.5` | `medium` | 16000 | Slide (PROMPT 5) |
 | `openai_lesson_speech_model` | `gpt-5.5` | `medium` | 16000 | Discorso (PROMPT 6) |
 | `openai_image_to_mermaid_model` | `gpt-4o` | `None` | 4000 | Immagine → Mermaid (PROMPT 11) |
-| `openai_asset_fix_model` | `gpt-4o-mini` | `None` | 4000 | Fix asset LaTeX/Mermaid (PROMPT 12) |
+| `openai_asset_fix_model` | `gpt-4o-mini` | `None` | 4000 | Fix asset LaTeX/Mermaid/Vega-Lite/DOT/function (PROMPT 12) |
+| `openai_asset_localize_model` | `gpt-4o-mini` | — | 8000 | Localizzazione dei campi testuali degli asset (`openai_asset_localize_service`, kill-switch `asset_localize_enabled`) |
 | `openai_nova_model` | `gpt-4o-mini` | — | 512 (`temperature 0.7`) | Nova chat + welcome (PROMPT 15, 16) |
 | `minimax_video_model` | `MiniMax-Hailuo-02` | — | — | Clip avatar (Nota A) |
 | XTTS-v2 (RunPod) | hardcoded nel handler (`XTTS/handler.py`) | — | — | Sintesi vocale lezione (Nota C) |
@@ -423,9 +424,9 @@ In rigenerazione: `## Versione attuale del modulo (DA RIVEDERE)` + `## Indicazio
 **Versione: "v4" — due fasi interne (bozza → riscrittura stile) in un solo call, output solo Fase 2.** Il system prompt impone al modello un processo di scrittura in due fasi interne, eseguite in un'**unica** chiamata OpenAI: Fase 1 = prima stesura concentrata su correttezza e copertura (stile ignorato); Fase 2 = riscrittura integrale applicando le regole di STILE e avvicinandosi ai campioni di prosa di riferimento. Nell'output JSON il modello inserisce **solo il risultato della Fase 2** (la prima stesura non compare mai); contenuti, formule, tabelle e tag asset restano invariati tra le due fasi. Non è un doppio call: è un'istruzione di processo dentro lo stesso prompt.
 
 **SCOPO**
-- File: `backend/app/services/openai_lesson_content_service.py` — `_system_prompt(language_code, *, ruolo_docente, stile_insegnamento, livello_eqf)`, chiamata da `generate_lesson_content()`.
+- File: `backend/app/services/openai_lesson_content_service.py` — `_system_prompt(language_code, *, ruolo_docente, stile_insegnamento, livello_eqf, grounding_enabled)`, chiamata da `generate_lesson_content()`.
 - Modello: `settings.openai_lesson_content_model` (default `gpt-5.5`, reasoning `high`, max 32000 token — il task più complesso della pipeline).
-- Ruolo: scrive il testo completo Markdown della lezione (sezioni, asset Mermaid, formule LaTeX, tabelle, equazioni con enunciato/dimostrazione, esempi, riferimenti, coverage_check).
+- Ruolo: scrive il testo completo Markdown della lezione (sezioni, figure nei quattro formati `mermaid`/`vegalite`/`dot`/`function` — blocco «FORMATI DELLE FIGURE»: tabella «contenuto → formato → tipo di diagramma» (D8), tipi Mermaid ammessi ed esclusi, regole D5 sui dati e vincoli del validatore, stile D3, esempi minimi Vega-Lite/DOT, schema compatto ed esempio di `FunctionFigureSpec` (D9) —, formule LaTeX, tabelle, equazioni con enunciato/dimostrazione, esempi, riferimenti, coverage_check). Il testo è statico (A19): i quattro formati sono sempre descritti; solo l'`enum` dello schema strict segue `figure_render_service.available_formats()`. Gli elenchi dei tipi Mermaid e delle funzioni ammesse sono interpolati a import da `figure_theme.MERMAID_D8_TYPES`/`MERMAID_EXCLUDED_TYPES` e `function_parse.FUNCTIONS`: il testo sotto è il risultato con i valori correnti.
 - Interpolazione: `ruolo_docente`, `stile_insegnamento` e `livello_eqf` entrano nel tono del testo, entro il REGISTRO; `{register_block}` è il blocco condiviso di `prompt_register.academic_register_block("content", language_code)` (vedi sezione «Blocco condiviso — Registro accademico»). Resta un solo campione di prosa umana (registro didattico), da imitare per costruzione, non per contenuto; il Campione A (ritmo) è stato rimosso perché induceva frasi-sentenza e antitesi a effetto.
 - Grounding sui documenti (`_system_prompt(..., grounding_enabled=True)`, da `Settings.course_lesson_content_documents_selection_enabled`): il blocco `FONTI E ANCORAGGIO — REGOLA FORTE` (subito dopo il ruolo) sostituisce il vecchio `RIFERIMENTI`; nel messaggio user il blocco documenti è selezionato PER LEZIONE da `lesson_document_selection` (definizioni, formule, concetti, esempi e struttura dei riassunti, scelti per sovrapposizione lessicale con titolo/temi/scaletta/obiettivi; budget `COURSE_LESSON_CONTENT_DOCUMENTS_CONTEXT_MAX_CHARS`, default 40k) e sta dopo `## Lezione da generare`, prima di `## Compito`. Con il kill-switch a `false` torna il comportamento storico (blocco `RIFERIMENTI`, `_build_documents_context`, vecchio ordine).
 
@@ -716,7 +717,8 @@ DIVIETI ASSOLUTI NEL TESTO VISIBILE
   visto..."), MAI il codice.
 - Le caption di figure, tabelle, formule devono essere brevi
   descrizioni semantiche; NON includere codici come "[A1]" o
-  "Figura M1.L2.01".
+  "Figura M1.L2.01", né iniziare con "Figura 1"/"Fig. 1": il numero
+  lo mette il renderer.
 
 CASO SPECIALE — LEZIONE INTRODUTTIVA (is_introductory=true):
 - Nessun caso studio o dimostrazione tecnica complessa
@@ -741,8 +743,8 @@ Linea guida (non vincolante):
 
 REQUISITI — ASSET VISIVI
 
-- 1-3 diagrammi/schemi per lezione (NON per la lezione introduttiva,
-  dove sono opzionali e tipicamente 0-1)
+- 1-3 figure per lezione (NON per la lezione introduttiva, dove sono
+  opzionali e tipicamente 0-1)
 - formule LaTeX TUTTE le volte che la disciplina lo richiede
 - tabelle quando devi confrontare alternative o riassumere
   classificazioni
@@ -753,13 +755,58 @@ una volta nel testo tramite `[FIG:asset_id]`, `[TAB:asset_id]`,
 l'asset rendering — non devono apparire al lettore finale, ma servono
 al parser). La `caption` è una breve descrizione semantica leggibile.
 
-FORMATI ACCETTATI:
-- visual_assets → SOLO `format = "mermaid"`, content = codice Mermaid
-  valido. NON generare prompt per immagini, query di ricerca o
-  descrizioni testuali: l'utente caricherà eventualmente immagini
-  reali a mano dall'editor.
-- formula → format = "latex" (senza delimitatori $...$)
-- table → format = "markdown"
+FORMATI DELLE FIGURE (`visual_assets[].format`; `content` è sempre una
+stringa: codice, sorgente o spec JSON serializzata). Dal contenuto al
+formato e al tipo di diagramma:
+- processo, flusso, gerarchia, relazioni fra entità, scambio di
+  messaggi, stati, linea del tempo, ripartizione → `mermaid` (tipo di
+  diagramma corrispondente: flowchart, sequenceDiagram, classDiagram,
+  stateDiagram-v2, erDiagram, mindmap, timeline, pie);
+- dati, misure, distribuzioni, confronti quantitativi, serie
+  temporali → `vegalite` (barre, linee, punti, aree);
+- grafi con archi etichettati, alberi, automi, reti → `dot`;
+- funzione matematica da studiare (grafico, tangente, area, famiglia
+  con parametro, curve di livello) → `function`.
+Niente prompt per immagini né descrizioni testuali: le immagini reali
+le carica il docente dall'editor.
+
+MERMAID 11. Tipi ammessi: flowchart, sequenceDiagram, classDiagram, stateDiagram-v2, erDiagram, mindmap, timeline, pie, xychart-beta, quadrantChart, sankey-beta, block-beta, gantt, radar-beta, treemap-beta.
+Esclusi: journey, gitGraph, kanban, packet-beta, architecture-beta.
+Label in testo semplice (niente HTML né markdown), tra virgolette
+doppie se contengono caratteri speciali; nessuna direttiva
+`%%{init}%%` né frontmatter: il tema lo impone il renderer.
+
+VEGA-LITE (spec JSON v6, ≤ 4000 caratteri) SOLO per: (a) rette o
+polinomi ausiliari sui dati con `data.sequence` + `transform.calculate`;
+(b) dati dei documenti del corso, con la fonte nella caption; (c) dati
+illustrativi, con la caption che termina con «Dati illustrativi, non
+sperimentali». Dati inline in `data.values` (≤ 200 righe); vietati
+`data.url`, `data.name`, `mark: "image"`, `config`, `$schema`, `params`,
+`selection`, `tooltip`, `usermeta`, `encoding.href`: il tema lo inietta
+il renderer e il grafico è statico. Obbligatori `"clip": true` sui mark
+`line`/`area`/`point`/`trail` e `scale.domain` [min, max] sui canali
+`x`/`y` quantitativi; al massimo una `title` (radice, ≤ 120 caratteri);
+`axis.title` con l'unità di misura sugli assi quantitativi; legenda solo
+con più serie. Le FUNZIONI MATEMATICHE (seno, esponenziale, potenze,
+razionali su una `sequence`) NON si tracciano in Vega-Lite: usa
+`function`. Esempio:
+{"data":{"values":[{"mese":"gen","mm":80},{"mese":"feb","mm":65}]},"mark":{"type":"bar","clip":true},"encoding":{"x":{"field":"mese","type":"nominal","axis":{"title":"Mese"}},"y":{"field":"mm","type":"quantitative","scale":{"domain":[0,100]},"axis":{"title":"Precipitazioni (mm)"}}}}
+
+DOT (Graphviz): inizia con `graph`, `digraph` o `strict`; label brevi
+tra virgolette doppie; nessun colore, font o stile (li impone il
+renderer); mai `image`, `URL`, `href` o attributi che leggono file.
+Esempio: digraph G { rankdir=LR; A [label="Ingresso"]; B [label="Elaborazione"]; C [label="Uscita"]; A -> B -> C; }
+
+FUNCTION (figura calcolata da sympy e matplotlib): `content` è la
+stringa JSON di questo oggetto:
+{"kind":"function_study|tangent|area|family|level_curves","expressions":[{"expr":str,"label":str}] (1-4),"variable":"x","variables":["x","y"] (solo level_curves),"domain":[min,max],"range":[min,max]|null,"show":["zeros"|"critical_points"|"inflection_points"|"asymptotes"|"discontinuities"|"formula"],"annotations":[{"kind":"tangent"|"point","at":n,"expr_index":0,"label":str}|{"kind":"area","between":[a,b],"expr_index":0,"against":int|null,"label":str}] (≤ 6),"parameter":{"name":"k","values":[n,...]} (solo family),"sampling":{"points":800},"levels":int|[n,...] (solo level_curves)}
+Espressioni in sintassi Python: `**` (mai `^`), `2*x` (mai `2x`), solo
+la variabile dichiarata e l'eventuale `parameter.name`, costanti `pi`
+ed `E`, funzioni ammesse: abs, acos, asin, atan, cos, cosh, exp, floor, log, sin, sinh, sqrt, tan, tanh.
+NON scrivere numeri calcolati (zeri, massimi, integrali, asintoti) né
+nella spec né nella caption: li calcola il renderer e li aggiunge alla
+didascalia. Esempio:
+{"kind":"function_study","expressions":[{"expr":"(x**2-1)/(x-2)","label":"f"}],"variable":"x","domain":[-4,6],"range":[-12,12],"show":["zeros","critical_points","asymptotes","formula"],"annotations":[{"kind":"point","at":0,"expr_index":0,"label":"intercetta"}]}
 
 EQUAZIONI — ENUNCIATO E DIMOSTRAZIONE (`equations[]`)
 Per OGNI asset in `equations[]`:
@@ -814,12 +861,17 @@ TUTTO il testo leggibile dall'utente DEVE essere scritto in {language_code}: non
 la prosa, ma anche OGNI campo testuale degli asset. In particolare:
 - `caption` e `alt_text` degli asset visivi;
 - le ETICHETTE / il testo dei nodi DENTRO il codice Mermaid (le label, NON la sintassi);
+- `title`, `axis.title`, `legend.title` e `header.title` delle spec Vega-Lite; le
+  `label` dei sorgenti DOT; `expressions[].label` e `annotations[].label` delle spec
+  `function`;
 - `caption`, intestazioni e celle delle tabelle (`markdown`);
 - `label`, `statement`, `explanation` delle equazioni e il `text` di OGNI passo di `proof`;
 - `title` e `content` degli esempi.
 Restano invariati SOLO: la notazione matematica LaTeX (campi `latex`), la struttura
-sintattica di Mermaid (tipo di diagramma, frecce, ID dei nodi), gli ID degli asset, i
-tag `[FIG:..]`/`[TAB:..]`/`[EQ:..]`/`[EX:..]` e i codici di obiettivi (`O1`) e temi
+sintattica di Mermaid (tipo di diagramma, frecce, ID dei nodi), di Vega-Lite (chiavi
+JSON, `field`, `type`, espressioni `datum.*`), di DOT (ID dei nodi, `->`/`--`, attributi
+diversi da `label`) e di `function` (chiavi JSON, `expr`, `kind`, `show`), gli ID degli
+asset, i tag `[FIG:..]`/`[TAB:..]`/`[EQ:..]`/`[EX:..]` e i codici di obiettivi (`O1`) e temi
 (`T1`). NON lasciare in nessun campo testo in un'altra lingua (es. italiano): traduci
 tutto in {language_code}.
 Output: SOLO JSON valido conforme allo schema.
@@ -892,14 +944,18 @@ li coprono; per i temi non coperti usa conoscenza consolidata della
 disciplina e registralo in `references` come `suggerimento_generale`.
 ```
 
-In rigenerazione: `## Versione attuale della lezione (DA RIVEDERE)` (solo se esiste già `content_raw`; gli asset sono elencati come `- asset_id: caption`) + `## Indicazioni del docente per la rigenerazione` (se c'è un hint; entra anche su lezioni mai generate, senza `REGENERATION_SUFFIX`).
+In rigenerazione: `## Versione attuale della lezione (DA RIVEDERE)` (solo se esiste già `content_raw`; gli asset sono elencati come `- asset_id [format]: caption`, senza suffisso se il record storico non ha `format`) + `## Indicazioni del docente per la rigenerazione` (se c'è un hint; entra anche su lezioni mai generate, senza `REGENERATION_SUFFIX`).
 
 **JSON schema** (`LESSON_CONTENT_JSON_SCHEMA`) — la costante è la base;
-`build_lesson_content_json_schema(objective_ids=[...])` ne fa un `deepcopy`
-e inietta l'`enum` dei codici obiettivo su `sections[].objectives_addressed`
-e su `coverage_check.objectives_covered[].objective`, così il modello non
-può riferirsi a un obiettivo inesistente. Con zero obiettivi non inietta
-nulla (`"enum": []` non è uno schema strict valido):
+`build_lesson_content_json_schema(objective_ids=[...], visual_formats=[...])`
+ne fa un `deepcopy` e inietta l'`enum` dei codici obiettivo su
+`sections[].objectives_addressed` e su
+`coverage_check.objectives_covered[].objective`, così il modello non
+può riferirsi a un obiettivo inesistente, e l'`enum` di
+`visual_assets[].format` ristretto a `figure_render_service.available_formats()`
+(kill-switch `figure_*_enabled` e dipendenze presenti sul server). Con zero
+obiettivi non inietta nulla (`"enum": []` non è uno schema strict valido);
+con entrambi gli argomenti vuoti ritorna la costante per identità:
 
 ```python
 {
@@ -941,7 +997,10 @@ nulla (`"enum": []` non è uno schema strict valido):
                     "type": "object",
                     "properties": {
                         "asset_id": {"type": "string"},
-                        "format": {"type": "string", "enum": ["mermaid"]},
+                        "format": {
+                            "type": "string",
+                            "enum": ["mermaid", "vegalite", "dot", "function"],
+                        },
                         "content": {"type": "string"},
                         "caption": {"type": "string"},
                         "alt_text": {"type": "string"},
@@ -1222,7 +1281,7 @@ In rigenerazione: blocco con la verifica attuale (`content_raw`) + indicazioni d
 # PROMPT 5 — Slide della lezione (Fase 4)
 
 **SCOPO**
-- File: `backend/app/services/openai_lesson_slides_service.py` — `_system_prompt(language_code, *, minuti_per_lezione, livello_eqf)`, chiamata da `generate_lesson_slides()`. Durata e livello EQF sono interpolati davvero (prima restavano segnaposto letterali); i valori arrivano dal worker (`course.lesson_duration_minutes`, `didactic_style_labels`).
+- File: `backend/app/services/openai_lesson_slides_service.py` — `_system_prompt(language_code, *, minuti_per_lezione, livello_eqf, ruolo_docente, stile_insegnamento)`, chiamata da `generate_lesson_slides()`. Durata, livello EQF, ruolo e stile sono interpolati davvero (prima restavano segnaposto letterali); i valori arrivano dal worker (`course.lesson_duration_minutes`, `didactic_style_labels`). La regola 3 rinvia ai formati, alle regole e ai limiti di Fase 3 (`mermaid`, `vegalite`, `dot`) con soli rinvii testuali, senza esempi né graffe; `function` non è offerto in Fase 4 (A1).
 - Modello: `settings.openai_lesson_slides_model` (default `gpt-5.5`, reasoning `medium`, max 16000 token).
 - Ruolo: trasforma il testo della lezione in una sequenza di slide dimensionata sui minuti per lezione, riusando gli asset di Fase 3 (una slide dedicata per ogni asset visivo/tabella).
 
@@ -1350,9 +1409,10 @@ PRINCIPI
 
 2. UNA SLIDE DEDICATA PER OGNI ASSET VISIVO E PER OGNI TABELLA
    (regola tassativa, vale identica per slide e video):
-   - Ogni asset visivo (`visual_assets`: diagrammi Mermaid e
-     immagini) e ogni tabella (`tables`) va su una SLIDE TUTTA SUA,
-     separata. NON va MAI inserito in una slide di contenuto.
+   - Ogni asset visivo (`visual_assets`: figure Mermaid, Vega-Lite,
+     DOT o `function` e immagini) e ogni tabella (`tables`) va su una
+     SLIDE TUTTA SUA, separata. NON va MAI inserito in una slide di
+     contenuto.
    - Una slide dedicata referenzia ESATTAMENTE UN asset visivo o
      UNA tabella: `references_assets` contiene quell'unico ID. È
      VIETATO referenziare due o più asset visivi/tabelle nella
@@ -1373,11 +1433,16 @@ PRINCIPI
 3. NUOVI ASSET solo se necessario: puoi proporre nuovi asset in
    `new_assets` solo se il contenuto del testo richiede una
    visualizzazione che NON è già stata prodotta in Fase 3 (es. uno
-   schema di sintesi, un'icona di sezione, un grafico di confronto
-   non presente). Usa lo stesso formato di Fase 3 (mermaid/latex/
-   markdown/image_prompt). Per evitare collisioni di ID, prefissa con
-   `*_new_*` (es. `fig_new_1`, `tab_new_2`). Anche i `new_assets`
-   seguono il punto 2: una slide dedicata ciascuno.
+   schema di sintesi o un grafico di confronto non presente). Valgono
+   gli STESSI formati, regole e limiti di Fase 3: `mermaid` (versione
+   11, solo i tipi ammessi, label in testo semplice, nessuna
+   direttiva), `vegalite` (spec JSON entro 4000 caratteri, dati
+   inline, `clip` e `scale.domain`, niente `config` né interattività)
+   e `dot` (sorgente Graphviz senza attributi di stile né file
+   esterni); niente prompt per immagini né descrizioni testuali. Per
+   evitare collisioni di ID, prefissa con `*_new_*` (es. `fig_new_1`,
+   `tab_new_2`). Anche i `new_assets` seguono il punto 2: una slide
+   dedicata ciascuno.
 
 4. NUMERO DI SLIDE: stima ~2-3 minuti per slide di contenuto, meno
    per slide di apertura/transizione/agenda. Anche le lezioni brevi
@@ -1476,12 +1541,15 @@ TUTTO il testo leggibile dall'utente DEVE essere scritto in {language_code}: `ti
 `body` e `bullets` di OGNI slide, e OGNI campo testuale degli asset, inclusi i NUOVI
 asset di Fase 4. In particolare:
 - `caption` e `alt_text` di `new_assets`, e le ETICHETTE/testo dei nodi DENTRO il loro
-  codice Mermaid (le label, NON la sintassi);
+  codice Mermaid (le label, NON la sintassi), `title`, `axis.title` e `legend.title`
+  delle spec Vega-Lite, le `label` dei sorgenti DOT;
 - `caption`, intestazioni e celle (`markdown`) di `new_tables`;
 - `label`, `statement`, `explanation` e il `text` di ogni passo di `proof` in `new_equations`;
 - `title` e `content` di `new_examples`.
 Restano invariati SOLO: la notazione matematica LaTeX (campi `latex`), la struttura
-sintattica di Mermaid (tipo di diagramma, frecce, ID dei nodi), gli ID e gli `slide_id`.
+sintattica di Mermaid (tipo di diagramma, frecce, ID dei nodi), di Vega-Lite (chiavi JSON,
+`field`, `type`) e di DOT (ID dei nodi, `->`/`--`, attributi diversi da `label`), gli ID e
+gli `slide_id`.
 NON lasciare in nessun campo testo in un'altra lingua (es. italiano): traduci tutto in
 {language_code}.
 Output: SOLO JSON valido conforme allo schema.
@@ -1518,7 +1586,7 @@ strettamente necessario.
 
 In rigenerazione: `## Versione attuale delle slide (DA RIVEDERE)` (solo se esiste già `slides_raw`) + `## Indicazioni del docente per la rigenerazione` (se c'è un hint; entra anche su lezioni mai slidificate, senza `REGENERATION_SUFFIX`).
 
-**JSON schema** (`LESSON_SLIDES_JSON_SCHEMA`):
+**JSON schema** (`LESSON_SLIDES_JSON_SCHEMA`) — la costante è la base; `build_lesson_slides_json_schema(visual_formats=available_formats())` ne fa un `deepcopy` e restringe l'`enum` di `new_assets[].format` ai formati disponibili sul server meno `function` (A1). Il vecchio `asset_type` e i formati legacy `image_prompt|image_search_query|description` non fanno più parte dello schema strict (restano accettati in lettura dal Pydantic):
 
 ```python
 {
@@ -1570,21 +1638,15 @@ In rigenerazione: `## Versione attuale delle slide (DA RIVEDERE)` (solo se esist
                     "type": "object",
                     "properties": {
                         "asset_id": {"type": "string"},
-                        "asset_type": {
-                            "type": "string",
-                            "enum": ["diagram", "schema", "image", "illustration", "chart"],
-                        },
                         "format": {
                             "type": "string",
-                            "enum": ["mermaid", "image_prompt", "image_search_query", "description"],
+                            "enum": ["mermaid", "vegalite", "dot"],
                         },
                         "content": {"type": "string"},
                         "caption": {"type": "string"},
                         "alt_text": {"type": "string"},
                     },
-                    "required": [
-                        "asset_id", "asset_type", "format", "content", "caption", "alt_text",
-                    ],
+                    "required": ["asset_id", "format", "content", "caption", "alt_text"],
                     "additionalProperties": False,
                 },
             },
@@ -1777,8 +1839,8 @@ REGOLE — STRUTTURA E SINCRONIZZAZIONE
   - DESCRIVERE e COMMENTARE a voce ciò che l'asset mostra: risolvi
     l'ID in `references_assets` consultando gli asset di Fase 3
     (visual_assets, tables) e spiega il diagramma o la tabella
-    passo per passo, in prosa — MAI leggere codice Mermaid o
-    sintassi markdown;
+    passo per passo, in prosa — MAI leggere codice Mermaid, spec JSON
+    Vega-Lite/function, sorgente DOT o sintassi markdown;
   - chiudere riconducendo l'asset al discorso generale prima di
     passare alla slide successiva.
 
@@ -2423,16 +2485,18 @@ PAPER DA ANALIZZARE:
 **PROMPT** (system) — `lang_hint` = "italiano" se lingua inizia per `it`, altrimenti "inglese"
 
 ```text
-Sei un assistente che converte immagini di schemi, diagrammi e grafici in codice Mermaid valido.
+Sei un assistente che converte immagini di schemi, diagrammi e grafici in codice Mermaid valido (Mermaid 11.x).
 
 REGOLE:
 1. Analizza l'immagine: identifica nodi, relazioni, gerarchie, frecce, gruppi.
-2. Scegli il tipo di diagramma Mermaid più adatto (flowchart/sequenceDiagram/classDiagram/stateDiagram/erDiagram/mindmap/timeline/ecc.).
+2. Scegli il tipo di diagramma più adatto SOLO tra questi: flowchart, sequenceDiagram, classDiagram, stateDiagram-v2, erDiagram, mindmap, timeline, pie, xychart-beta, quadrantChart, sankey-beta, block-beta, gantt, radar-beta, treemap-beta. Mai journey, gitGraph, kanban, packet-beta, architecture-beta.
 3. Produci codice Mermaid SINTATTICAMENTE VALIDO.
-4. Usa label leggibili in {lang_hint}.
+4. Usa label leggibili in {lang_hint}, in testo semplice: niente HTML né markdown dentro le label, niente direttive `%%{init: ...}%%` né frontmatter di configurazione; se una label contiene caratteri speciali (parentesi, due punti, virgolette) racchiudila tra virgolette doppie come da sintassi Mermaid.
 5. Output: SOLO il codice Mermaid grezzo. Niente backtick, niente prefissi tipo `mermaid`, niente prosa esplicativa.
 6. Se l'immagine NON contiene uno schema/diagramma riconoscibile (es. è una fotografia generica, un paesaggio, un volto, un documento di testo), rispondi con esattamente: UNRECOGNIZED
 ```
+
+Gli elenchi dei tipi ammessi (i 15 di D8) ed esclusi sono derivati a import da `figure_theme.MERMAID_ALLOWED_TYPES` / `MERMAID_EXCLUDED_TYPES` (D10): il testo sopra è il risultato con i valori correnti.
 
 **Messaggio user** (multimodale): testo fisso + immagine in base64 (`image_url` data URL). Testo verbatim:
 
@@ -2440,15 +2504,15 @@ REGOLE:
 Converti questa immagine in codice Mermaid. Ricorda: solo codice, niente backtick, niente spiegazioni.
 ```
 
-**JSON schema**: nessuno — risposta in testo grezzo (codice Mermaid). Validazione lato service: ripulitura fence (`_extract_mermaid_code`) + check keyword Mermaid noti (`_is_valid_mermaid_keyword`); il token speciale `UNRECOGNIZED` segnala immagine non riconosciuta.
+**JSON schema**: nessuno — risposta in testo grezzo (codice Mermaid). Validazione lato service: ripulitura fence (`_extract_mermaid_code`) + check del tipo dichiarato tra `figure_theme.MERMAID_ALLOWED_TYPES` (`_is_valid_mermaid_keyword`: i 15 tipi D8 più gli alias `graph`/`stateDiagram`; `journey`, `gitGraph`, `requirementDiagram`, `C4Context` non passano più); il token speciale `UNRECOGNIZED` segnala immagine non riconosciuta.
 
 ---
 
-# PROMPT 12 — Fix automatico di un asset (LaTeX / Mermaid)
+# PROMPT 12 — Fix automatico di un asset (LaTeX / Mermaid / Vega-Lite / DOT / function)
 
 **SCOPO**
-- File: `backend/app/services/openai_asset_fix_service.py` — `_system_prompt(kind, language_code)` che sceglie tra 4 varianti (`_SYSTEM_MERMAID_IT/EN`, `_SYSTEM_LATEX_IT/EN`), chiamata da `fix_asset()`.
-- Modello: `settings.openai_asset_fix_model` (default `gpt-4o-mini`, max 4000 token), fino a `asset_fix_max_attempts` (3) tentativi.
+- File: `backend/app/services/openai_asset_fix_service.py` — `_system_prompt(kind, language_code)` che sceglie tra 10 varianti dal dizionario `_SYSTEM_PROMPTS = {kind: (IT, EN)}` (`_SYSTEM_MERMAID_IT/EN`, `_SYSTEM_LATEX_IT/EN`, `_SYSTEM_VEGALITE_IT/EN`, `_SYSTEM_DOT_IT/EN`, `_SYSTEM_FUNCTION_IT/EN`; `kind` ignoto → `ValueError`, A20), chiamata da `fix_asset()`.
+- Modello: `settings.openai_asset_fix_model` (default `gpt-4o-mini`, max 4000 token: una spec ≤ 4.000 caratteri ≈ 1.500 token, A16), fino a `asset_fix_max_attempts` (3) tentativi.
 - Ruolo: a generazione (Fase 3/4), quando un asset non supera la validazione, corregge SOLO la sintassi preservando il significato; il caller ri-valida.
 
 **PROMPT** (system — variante principale `_SYSTEM_MERMAID_IT`)
@@ -2460,30 +2524,34 @@ valido e renderizzabile, PRESERVANDO il significato e i contenuti originali
 (stesso tipo di diagramma, stessi nodi, etichette e relazioni).
 
 VINCOLI RIGIDI:
-- Compatibilita' con Mermaid v10.9.x. NON usare sintassi "neo look"/v11.
+- Compatibilita' con Mermaid 11.x. Tipi ammessi: flowchart, sequenceDiagram, classDiagram, stateDiagram-v2, erDiagram, mindmap, timeline, pie, xychart-beta, quadrantChart, sankey-beta, block-beta, gantt, radar-beta, treemap-beta.
+  Tipi vietati (non renderizzabili nel PDF): journey, gitGraph, kanban, packet-beta, architecture-beta.
 - Restituisci SOLO il codice Mermaid grezzo: NIENTE backtick, NIENTE code
   fence ```, niente testo prima o dopo.
-- Mantieni il tipo di diagramma dichiarato (flowchart, sequenceDiagram,
-  classDiagram, stateDiagram, erDiagram, ...) se corretto; se la prima riga
-  e' errata o assente, scegli il tipo piu' adatto al contenuto.
-- Etichette compatibili con `htmlLabels:false`: testo semplice, niente HTML
-  ne' markdown dentro le label; se servono caratteri speciali (`(`, `)`, `:`,
-  `"`) racchiudi l'etichetta tra virgolette doppie come da sintassi Mermaid.
+- Mantieni il tipo di diagramma dichiarato se ammesso e corretto; se la prima
+  riga e' errata o assente, scegli il tipo ammesso piu' adatto al contenuto.
+- Etichette in testo semplice (le label sono rese come `<text>` SVG): niente
+  HTML ne' markdown dentro le label, niente direttive `%%{init: ...}%%` ne'
+  frontmatter di configurazione; se servono caratteri speciali (`(`, `)`,
+  `:`, `"`) racchiudi l'etichetta tra virgolette doppie come da sintassi
+  Mermaid.
 - NON aggiungere ne' rimuovere contenuti rispetto all'originale: correggi
   solo la sintassi.
 
 Output: SOLO JSON valido conforme allo schema.
 ```
 
-**Messaggio user** — assemblato in `fix_asset()` (`openai_asset_fix_service.py:170-182`). Template verbatim:
+Gli elenchi dei tipi ammessi ed esclusi sono interpolati a import da `figure_theme.MERMAID_ALLOWED_TYPES` (senza gli alias `graph`/`stateDiagram`) e `MERMAID_EXCLUDED_TYPES`: il testo sopra è il risultato con i valori correnti.
+
+**Messaggio user** — assemblato in `fix_asset()` (`openai_asset_fix_service.py:184-196`). Template verbatim:
 
 ```text
 TIPO ASSET: {kind}
 LINGUA DEL CORSO (per eventuali etichette testuali): {lang}
-CONTESTO (caption/label): {context}          (riga presente solo se context valorizzato, ≤600 char)
+CONTESTO (caption/label): {context}          (riga presente solo se context valorizzato, ≤600 char: `_CONTEXT_CAP`)
 
 ERRORE DI VALIDAZIONE:
-{error_message}                              (messaggio del validatore KaTeX/latex2mathml/mermaid, ≤800 char)
+{error_message}                              (messaggio del validatore KaTeX/latex2mathml/mermaid/renderer del registro, ≤1600 char: `_ERROR_CAP`)
 
 ASSET DA CORREGGERE:
 {source}                                     (l'asset invalido così com'è)
@@ -2507,9 +2575,88 @@ ASSET DA CORREGGERE:
 }
 ```
 
-**Varianti/note**: altre 3 varianti — `_SYSTEM_MERMAID_EN` (`:70-88`), `_SYSTEM_LATEX_IT` (`:90-104`), `_SYSTEM_LATEX_EN` (`:106-120`). I prompt LaTeX impongono di restituire SOLO il corpo della formula senza delimitatori, compatibile con KaTeX (`strict:"ignore"`) + latex2mathml.
+**Varianti/note**: altre 9 varianti nel dizionario `_SYSTEM_PROMPTS` — `_SYSTEM_MERMAID_EN`, `_SYSTEM_LATEX_IT/EN`, `_SYSTEM_VEGALITE_IT/EN`, `_SYSTEM_DOT_IT/EN`, `_SYSTEM_FUNCTION_IT/EN` (la variante EN è scelta per ogni lingua diversa da `it`). I prompt LaTeX impongono di restituire SOLO il corpo della formula senza delimitatori, compatibile con KaTeX (`strict:"ignore"`) + latex2mathml. Le tre coppie nuove (WP2b) seguono le regole D5 di `figure_compute.vegalite_rules`, i vincoli di `DotRenderer` e la whitelist di `function_parse`; il testo IT di ciascuna:
 
-**Flusso lato chiamante** (`asset_validation_service`): questa funzione è invocata solo sugli asset "fragili" risultati invalidi alla validazione (formule LaTeX validate con `latex2mathml` + KaTeX; diagrammi Mermaid validati con v10.9.4). Coinvolge `equations[].latex`, ogni `proof[].latex`, il math inline `$..$`/`$$..$$` nei campi testo (introduction, summary, sezioni, esempi, `statement` e `proof[].text` delle equazioni) e i `visual_assets`/`new_assets` Mermaid. Prima del fix AI c'è uno step deterministico (rimozione caratteri di controllo/combining marks) che spesso risolve senza spendere token. L'output del fix viene sanitizzato (niente code-fence/delimitatori reintrodotti) e scartato se reintroduce un placeholder asset (`[EQ:..]` ecc.). Solo gli asset davvero riparati vengono ri-committati; quelli già validi restano byte-identici. Se un asset resta invalido dopo `asset_fix_max_attempts` → `AssetFixUnresolvedError` (recuperabile): il worker di Fase 3/4 rigenera l'intera lezione via auto-retry, così nessun asset rotto raggiunge `ready`. Dettagli in [08 — Lesson content § Validazione asset](courses/08-lesson-content.md).
+**Variante `_SYSTEM_VEGALITE_IT`** (verbatim):
+
+```text
+Sei un esperto di Vega-Lite (versione 6). Ricevi la spec JSON di un grafico
+che NON supera la validazione (schema JSON, regole del renderer offline o
+motore di render). Correggila PRESERVANDO i dati, i canali e il significato
+del grafico.
+
+VINCOLI RIGIDI:
+- Restituisci SOLO la spec JSON (un unico oggetto): NIENTE backtick, NIENTE
+  code fence, niente testo prima o dopo, nessuna chiave duplicata.
+- La spec e' AUTOSUFFICIENTE: dati solo inline in `data.values` (mai
+  `data.url`, mai `data.name` senza `datasets`), massimo 200 righe.
+- NON scrivere `config`, `$schema`, `selection`, `params`, `tooltip`,
+  `usermeta`, `encoding.href`, `mark: "image"`: il tema lo inietta il
+  renderer e il grafico e' statico.
+- Sui mark `line`, `area`, `point`, `trail` aggiungi `"clip": true` (forma
+  oggetto: {"type": "line", "clip": true}); su ogni canale `x`/`y`
+  quantitativo dichiara `scale.domain` come [min, max] numerici.
+- Al massimo una `title` (stringa, solo al livello radice, ≤ 120 caratteri);
+  `axis.format` solo con specificatori d3 brevi.
+- Le funzioni matematiche (seno, esponenziale, potenze, funzioni razionali su
+  una sequenza) NON si tracciano in Vega-Lite: se l'errore lo indica, lascia
+  la spec com'e' e scrivilo in `notes`.
+- Conserva i dati e le etichette nella lingua del corso; correggi solo cio'
+  che l'errore segnala.
+
+Output: SOLO JSON valido conforme allo schema.
+```
+
+**Variante `_SYSTEM_DOT_IT`** (verbatim):
+
+```text
+Sei un esperto di Graphviz DOT. Ricevi il sorgente di un grafo che NON supera
+la validazione (sintassi rifiutata da `dot` o attributo non ammesso).
+Correggilo PRESERVANDO nodi, archi, etichette e struttura.
+
+VINCOLI RIGIDI:
+- Restituisci SOLO il sorgente DOT grezzo: NIENTE backtick, NIENTE code fence,
+  niente testo prima o dopo. Deve iniziare con `graph`, `digraph` o `strict`.
+- Etichette (`label`) nella lingua del corso, testo semplice tra virgolette
+  doppie; niente HTML-like label `<...>`.
+- MAI attributi che leggono file o risorse esterne: `image`, `shapefile`,
+  `imagepath`, `fontpath`, `stylesheet`, `URL`, `href`, `target`.
+- NON impostare font o colori globali (`graph [...]`, `node [...]`, `edge
+  [...]` li inietta il renderer) se non erano gia' presenti; niente
+  `fontname` esplicito.
+- Correggi solo la sintassi (parentesi, punti e virgola, virgolette, frecce
+  `->` nei grafi diretti e `--` in quelli non diretti); NON aggiungere ne'
+  rimuovere nodi o archi.
+
+Output: SOLO JSON valido conforme allo schema.
+```
+
+**Variante `_SYSTEM_FUNCTION_IT`** (verbatim):
+
+```text
+Sei un esperto di analisi matematica e di specifiche JSON. Ricevi la spec
+JSON di una figura calcolata (`FunctionFigureSpec`: kind, expressions,
+variable, domain, range, show, annotations, parameter, sampling, levels)
+che NON supera la validazione. Correggila PRESERVANDO le funzioni studiate e
+l'intento didattico.
+
+VINCOLI RIGIDI:
+- Restituisci SOLO la spec JSON (un unico oggetto) conforme a
+  FunctionFigureSpec: NIENTE backtick, NIENTE code fence, nessuna chiave non
+  prevista, nessun testo prima o dopo.
+- Espressioni in sintassi Python: potenza con `**` (mai `^`), moltiplicazione
+  esplicita (`2*x`, mai `2x`), sola variabile dichiarata (`variable`, piu'
+  l'eventuale `parameter.name`), funzioni SOLO tra: sin, cos, tan, exp, log,
+  sqrt, abs, asin, acos, atan, sinh, cosh, tanh, floor; costanti `pi` ed `E`.
+- `domain` e `range` sono [min, max] numerici finiti con min < max; le
+  annotazioni (`tangent`, `area`, `point`) restano dentro il dominio.
+- NON inserire valori calcolati (zeri, massimi, integrali, asintoti): li
+  calcola il renderer; correggi solo cio' che l'errore segnala.
+
+Output: SOLO JSON valido conforme allo schema.
+```
+
+**Flusso lato chiamante** (`asset_validation_service`): questa funzione è invocata solo sugli asset "fragili" risultati invalidi alla validazione (formule LaTeX validate con `latex2mathml` + KaTeX; diagrammi Mermaid con il gate statico D8 del registro e il parse della 11.x del pin `settings.mermaid_cdn_version`, la stessa del pre-render e del frontend; spec Vega-Lite, sorgenti DOT e spec `function` con `validate(deep=True)` del renderer di `figure_render_service`, offline e mai pass-through). Coinvolge `equations[].latex`, ogni `proof[].latex`, il math inline `$..$`/`$$..$$` nei campi testo (introduction, summary, sezioni, esempi, `statement` e `proof[].text` delle equazioni) e i `visual_assets`/`new_assets` con formato in `RENDERABLE_FORMATS`. Un formato non disponibile sul server (`available_formats()`) produce un check non riparabile: nessuna chiamata di fix, escalation immediata alla rigenerazione. Prima del fix AI c'è uno step deterministico (rimozione caratteri di controllo/combining marks) che spesso risolve senza spendere token. L'output del fix viene sanitizzato (niente code-fence/delimitatori reintrodotti) e scartato se reintroduce un placeholder asset (`[EQ:..]` ecc.). Solo gli asset davvero riparati vengono ri-committati; quelli già validi restano byte-identici. Se un asset resta invalido dopo `asset_fix_max_attempts` → `AssetFixUnresolvedError` (recuperabile): il worker di Fase 3/4 rigenera l'intera lezione via auto-retry, così nessun asset rotto raggiunge `ready`. Dettagli in [08 — Lesson content § Validazione asset](courses/08-lesson-content.md).
 
 ---
 
@@ -2694,7 +2841,7 @@ IMPORTANTE: NON dire mai all'utente "pagina sconosciuta", "pagina non specificat
 **CORSI** — pipeline AI in 6 fasi sequenziali + verifica competenze:
 1. **Architettura** (`/orgs/:orgId/corsi/:id` tab Architettura): AI genera moduli del corso a partire da titolo, obiettivi, taxonomia. Approvazione manuale.
 2. **Struttura lezioni** (tab Struttura): per ogni modulo, AI genera obiettivi di apprendimento, temi obbligatori, prerequisiti, scaletta. Parallelo per modulo.
-3. **Contenuti lezioni** (tab Contenuti): AI genera il testo completo (sections, asset Mermaid/LaTeX, tabelle, esempi, riferimenti). Parallelo per lezione. Editor TipTap user-friendly. Glossario corso autogenerato. Export PDF.
+3. **Contenuti lezioni** (tab Contenuti): AI genera il testo completo (sections, figure Mermaid/Vega-Lite/DOT/function, formule LaTeX, tabelle, esempi, riferimenti). Parallelo per lezione. Editor TipTap user-friendly. Glossario corso autogenerato. Export PDF.
 4. **Slide** (tab Slide): AI genera le slide della presentazione riusando gli asset di Fase 3. Editor visuale. Export PDF slide.
 5. **Discorso temporizzato** (tab Discorso): AI genera parlato TTS-friendly suddiviso in segmenti sincronizzati alle slide. Vincolo durata ±5% del target. Export PDF discorso.
 6. **Video MP4** (tab Video): generazione del video della lezione (TTS XTTS-v2 su RunPod + slide Playwright + ffmpeg). Richiede speech e slide approvati + voice sample dell'assegnatario.

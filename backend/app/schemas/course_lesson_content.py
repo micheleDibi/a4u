@@ -18,6 +18,7 @@ Validazione (§6.4) è in `course_lesson_content_service.materialize_lesson_cont
   è l'unico controllo di contabilità rimasto bloccante
 - coverage_check è DERIVATO dalle sections, non più confrontato
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -26,6 +27,34 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.common import ORMModel
+
+# ---------------------------------------------------------------------------
+# Formato degli asset visivi (D1) — condiviso con la Fase 4
+# ---------------------------------------------------------------------------
+
+# Contratto di `visual_assets[].format` (Fase 3) e `new_assets[].format`
+# (Fase 4, che importa questo alias). `content` resta sempre una stringa:
+# - `mermaid`: codice Mermaid 11 (tipi ammessi in `figure_theme.MERMAID_ALLOWED_TYPES`);
+# - `vegalite`: spec Vega-Lite JSON serializzata (senza `config`, iniettato dal renderer);
+# - `dot`: sorgente Graphviz DOT;
+# - `function`: `FunctionFigureSpec` JSON serializzata (figura calcolata da sympy/matplotlib);
+# - `image`: path pubblico relativo dell'immagine caricata (servita da `/uploads/...`);
+# - `image_prompt|image_search_query|description`: SOLO LEGACY in lettura
+#   (corsi pre-refactor); nessun percorso di scrittura li produce più.
+# Il render di ogni formato passa da `figure_render_service.REGISTRY`; lo
+# schema strict OpenAI offre al modello solo i formati abilitati e
+# disponibili (`available_formats()`), mai i legacy.
+VisualAssetFormat = Literal[
+    "mermaid",
+    "vegalite",
+    "dot",
+    "function",
+    "image",
+    # — legacy, read-only —
+    "image_prompt",
+    "image_search_query",
+    "description",
+]
 
 # ---------------------------------------------------------------------------
 # Output AI (§6.3) — validato dopo la chiamata OpenAI
@@ -44,17 +73,14 @@ class LessonContentSection(BaseModel):
 
 
 class LessonContentVisualAsset(BaseModel):
-    """Asset visivo: oggi solo Mermaid + immagine caricata.
+    """Asset visivo della lezione: quattro famiglie renderizzate
+    (Mermaid, Vega-Lite, DOT, `function`) più l'immagine caricata.
 
-    `format`:
-    - `mermaid`: `content` è codice Mermaid (renderizzato live).
-    - `image`: `content` è un path pubblico relativo (es.
-      `lesson_assets/{course_id}/{uuid}.png`); l'immagine viene
-      servita da StaticFiles in `/uploads/...`.
-    - `image_prompt|image_search_query|description`: SOLO LEGACY in
-      lettura. Sono valori di vecchi corsi pre-refactor; il frontend
-      di scrittura non li produce più. Restano accettati qui per non
-      far esplodere il parsing dei `content_raw` storici.
+    `format` è `VisualAssetFormat` (contratto documentato sull'alias);
+    `content` è sempre una stringa (codice, spec JSON serializzata, sorgente
+    o path). I valori legacy `image_prompt|image_search_query|description`
+    restano accettati in lettura per non far esplodere il parsing dei
+    `content_raw` storici.
 
     `extra="ignore"` per tollerare il vecchio campo `asset_type`
     (rimosso dal refactor) presente nei record antecedenti.
@@ -62,14 +88,7 @@ class LessonContentVisualAsset(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
     asset_id: str = Field(min_length=1, max_length=50)
-    format: Literal[
-        "mermaid",
-        "image",
-        # — legacy, read-only —
-        "image_prompt",
-        "image_search_query",
-        "description",
-    ]
+    format: VisualAssetFormat
     content: str = Field(min_length=1)
     caption: str = Field(default="", max_length=600)
     alt_text: str = Field(default="", max_length=400)
@@ -137,12 +156,8 @@ class LessonContentTopicCovered(BaseModel):
 
 class LessonContentCoverageCheck(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    objectives_covered: list[LessonContentObjectiveCovered] = Field(
-        default_factory=list
-    )
-    topics_covered: list[LessonContentTopicCovered] = Field(
-        default_factory=list
-    )
+    objectives_covered: list[LessonContentObjectiveCovered] = Field(default_factory=list)
+    topics_covered: list[LessonContentTopicCovered] = Field(default_factory=list)
 
 
 class LessonContentOutput(BaseModel):
@@ -157,7 +172,7 @@ class LessonContentOutput(BaseModel):
     sections: list[LessonContentSection] = Field(min_length=1)
     summary: str = Field(min_length=1)
     # Spec §6.4 chiede 3-7 come linea guida; il modello può sforare di
-     # qualche unità in domini ricchi → cap a 12 per evitare reject inutili.
+    # qualche unità in domini ricchi → cap a 12 per evitare reject inutili.
     key_takeaways: list[str] = Field(min_length=3, max_length=12)
     visual_assets: list[LessonContentVisualAsset] = Field(default_factory=list)
     tables: list[LessonContentTable] = Field(default_factory=list)
@@ -211,9 +226,7 @@ class LessonAssessmentOutput(BaseModel):
     lesson_id: str
     lesson_title: str
     is_assessment: Literal[True] = True
-    multiple_choice_questions: list[AssessmentMCQuestion] = Field(
-        default_factory=list
-    )
+    multiple_choice_questions: list[AssessmentMCQuestion] = Field(default_factory=list)
     open_questions: list[AssessmentOpenQuestion] = Field(default_factory=list)
 
 

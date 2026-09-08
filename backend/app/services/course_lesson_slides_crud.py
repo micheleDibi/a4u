@@ -10,6 +10,7 @@ allentata rispetto a `materialize_lesson_slides` (che valida l'output
 fresh dell'AI): hard fail solo per duplicati di ID e per ref orfani
 (che renderebbero la slide inutilizzabile a render).
 """
+
 from __future__ import annotations
 
 import uuid
@@ -24,6 +25,7 @@ from app.core.logging import get_logger
 from app.models.course import Course
 from app.models.course_lesson import CourseLesson
 from app.schemas.course_lesson_slides import LessonSlidesUpdateInput
+from app.services.figure_render_service import validate_visual_assets_or_raise
 
 log = get_logger("app.course_lesson_slides_crud")
 
@@ -45,9 +47,7 @@ def _ensure_editable(lesson: CourseLesson) -> None:
 def _dump_models(items: list[Any] | None) -> list[dict[str, Any]] | None:
     if items is None:
         return None
-    return [
-        i.model_dump() if hasattr(i, "model_dump") else i for i in items
-    ]
+    return [i.model_dump() if hasattr(i, "model_dump") else i for i in items]
 
 
 def _validate_consistency(
@@ -89,9 +89,7 @@ def _validate_consistency(
     ) or []
 
     # 1. slide_id univoci
-    slide_ids = [
-        s.get("slide_id") for s in slides if isinstance(s, dict)
-    ]
+    slide_ids = [s.get("slide_id") for s in slides if isinstance(s, dict)]
     if any(not sid or not str(sid).strip() for sid in slide_ids):
         raise ConflictError(
             "Ogni slide deve avere uno `slide_id` non vuoto.",
@@ -116,8 +114,7 @@ def _validate_consistency(
         )
     if sorted(nums) != list(range(1, len(nums) + 1)):
         raise ConflictError(
-            "Gli `slide_number` devono essere sequenziali 1..N "
-            f"(trovati: {sorted(nums)}).",
+            f"Gli `slide_number` devono essere sequenziali 1..N (trovati: {sorted(nums)}).",
             code="lesson_slides_nonsequential",
         )
 
@@ -143,8 +140,7 @@ def _validate_consistency(
         )
     if len(set(new_ids)) != len(new_ids):
         raise ConflictError(
-            "Gli id dei nuovi asset (tabelle/equazioni/esempi inclusi) "
-            "devono essere univoci.",
+            "Gli id dei nuovi asset (tabelle/equazioni/esempi inclusi) devono essere univoci.",
             code="lesson_slides_duplicate_new_asset_id",
         )
 
@@ -163,7 +159,7 @@ def _validate_consistency(
                         "equation_id",
                         "example_id",
                     ):
-                        if id_key in a and a[id_key]:
+                        if a.get(id_key):
                             valid_asset_ids.add(str(a[id_key]).lower())
 
     for s in slides:
@@ -218,6 +214,17 @@ async def update_lesson_slides(
         content_raw=lesson.content_raw,
     )
 
+    # Gate delle figure (A15): SOLO i `new_assets` del payload con (format,
+    # content) diversi da quelli già salvati vengono validati offline dal
+    # registro dei renderer. Errori → 422 con `meta.errors` per asset.
+    if payload.new_assets is not None:
+        await validate_visual_assets_or_raise(
+            [a.model_dump() for a in payload.new_assets],
+            previous=current_raw.get("new_assets"),
+            loc_root="new_assets",
+            code="lesson_slides_invalid_new_asset",
+        )
+
     changed: dict[str, int | str] = {}
 
     if payload.slides is not None:
@@ -232,14 +239,10 @@ async def update_lesson_slides(
         current_raw["new_tables"] = [tbl.model_dump() for tbl in payload.new_tables]
         changed["new_tables"] = len(payload.new_tables)
     if payload.new_equations is not None:
-        current_raw["new_equations"] = [
-            eq.model_dump() for eq in payload.new_equations
-        ]
+        current_raw["new_equations"] = [eq.model_dump() for eq in payload.new_equations]
         changed["new_equations"] = len(payload.new_equations)
     if payload.new_examples is not None:
-        current_raw["new_examples"] = [
-            ex.model_dump() for ex in payload.new_examples
-        ]
+        current_raw["new_examples"] = [ex.model_dump() for ex in payload.new_examples]
         changed["new_examples"] = len(payload.new_examples)
 
     if not changed:

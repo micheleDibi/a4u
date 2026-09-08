@@ -370,10 +370,46 @@ video (Fasi 6 / 6b) — che hanno endpoint backend di riferimento.
 ## `app/schemas/course_lesson_content.py` — equazioni e classi assessment
 
 Oltre agli schemi della Fase 3 (contenuto didattico, `LessonContent*`),
-questo file definisce gli asset matematici (equazioni / teoremi con
-dimostrazione) e gli schemi della **verifica delle competenze**: il
-payload polimorfico che vive in `course_lesson.content_raw` quando
-`lesson.is_assessment`.
+questo file definisce gli asset visivi (figure e immagini), gli asset
+matematici (equazioni / teoremi con dimostrazione) e gli schemi della
+**verifica delle competenze**: il payload polimorfico che vive in
+`course_lesson.content_raw` quando `lesson.is_assessment`.
+
+### `VisualAssetFormat = Literal["mermaid", "vegalite", "dot", "function", "image", "image_prompt", "image_search_query", "description"]`
+
+Alias dei formati degli asset visivi (`:47`), importato anche da
+`course_lesson_slides.py` per i `new_assets` di Fase 4. Contratto
+(docstring): le prime quattro voci sono le famiglie di **figure** con
+sorgente testuale, renderizzate dal registro `figure_render_service`
+(documento [Courses 17](../courses/17-visual-figures.md)); `image` è
+l'immagine caricata dal docente; le ultime tre sono legacy in sola
+lettura. Pydantic accetta sempre gli otto valori; lo schema strict
+OpenAI di Fase 3 offre al modello solo `available_formats()` (kill-switch
+`figure_*_enabled` e dipendenza presente), quello di Fase 4 gli stessi
+senza `function` (A1). Il frontend ne tiene la copia
+`LessonContentVisualAssetFormat` in `api/courses.ts`.
+
+### `class LessonContentVisualAsset(BaseModel)`
+
+Asset visivo della Fase 3 (`:75`; referenziato nel testo come `[FIG:..]`).
+`extra="ignore"` (i record JSONB precedenti al commit `92d5f37` possono
+ancora contenere `asset_type`, ignorato in lettura).
+- `asset_id: str` (1..50),
+- `format: VisualAssetFormat`,
+- `content: str` — codice Mermaid / spec JSON Vega-Lite / sorgente DOT /
+  spec JSON `FunctionFigureSpec` / path relativo dell'immagine /
+  testo del placeholder legacy,
+- `caption: str`, `alt_text: str` (default `""`) — la didascalia non porta
+  il prefisso «Figura N»: il numero è calcolato a render
+  (`figure_numbering`) e un prefisso già presente è ripulito, mai
+  persistito.
+
+La validazione del `content` non è nello schema: a generazione la fa
+`asset_validation_service` (renderer del formato, `validate(deep=True)`,
+fix AI per kind), al PATCH manuale `figure_render_service.
+validate_visual_assets_or_raise` sui soli asset con `(format, content)`
+cambiati (`422 lesson_content_invalid_visual_asset` con
+`meta.errors[{loc, asset_id, format, msg, type}]`).
 
 ### `class ProofStep(BaseModel)`
 
@@ -444,6 +480,80 @@ di consistenza (id univoci, una sola opzione corretta) nel service.
 `extra="forbid"`.
 - `multiple_choice_questions: list[AssessmentMCQuestion] | None`,
 - `open_questions: list[AssessmentOpenQuestion] | None`.
+
+---
+
+## `app/schemas/figure_function.py` — spec delle figure calcolate (D9)
+
+`content` di un asset `format="function"` è la stringa JSON di
+`FunctionFigureSpec`. Due livelli di validazione: **struttura** (Pydantic,
+`extra="forbid"` ovunque) e **semantica** (`check_function_spec(spec) ->
+list[SpecIssue]`, deliberatamente NON un `model_validator`: un
+`ValueError` del modello collasserebbe ogni errore in una voce con `loc`
+radice, mentre il 422 dell'endpoint `render-function` e il frontend
+richiedono la `loc` del campo). `parse_function_spec(content) ->
+tuple[FunctionFigureSpec | None, list[SpecIssue]]` esegue entrambi i
+livelli ed è l'ingresso del renderer e del gate del PATCH. Solo libreria
+standard più `figure_compute.function_parse` (passo 1 dell'AST, senza
+sympy). Vedi [Courses 17 § 4](../courses/17-visual-figures.md).
+
+### Tipi
+
+- `Var = Annotated[str, StringConstraints(pattern=r"^[a-zA-Z]$")]`,
+- `FunctionKind = Literal["function_study", "tangent", "area", "family", "level_curves"]`,
+- `ShowItem = Literal["zeros", "critical_points", "inflection_points", "asymptotes", "discontinuities", "formula"]`,
+- `SpecIssue(TypedDict)`: `loc: list[str | int]`, `msg: str`, `type: str`
+  (`spec_invalid`, `expr_syntax`, `expr_forbidden`, `expr_symbol`,
+  `expr_limit`) — stessa forma `loc/msg/type` del handler Pydantic.
+
+### `class ExpressionSpec(BaseModel)`
+
+- `expr: str` (1..200) — espressione in sintassi Python ristretta
+  (`**` per la potenza, `2*x` non `2x`, funzioni della whitelist di
+  `function_parse.FUNCTIONS`, costanti `pi` ed `E`),
+- `label: str = ""` (≤ 24; vuota → `f`, `g`, `h`, `k` assegnate al render).
+
+### Annotazioni (`Annotation`, discriminatore `kind`)
+
+- `TangentAnnotation(kind="tangent", at: float, expr_index: int = 0, label: str = "")`,
+- `AreaAnnotation(kind="area", between: tuple[float, float], expr_index, against: int | None, label)`,
+- `PointAnnotation(kind="point", at, expr_index, label ≤ 40)`.
+
+### `class ParameterSpec(BaseModel)` / `class SamplingSpec(BaseModel)`
+
+- `ParameterSpec(name: Var, values: list[float])` (1..6 valori; famiglie di curve),
+- `SamplingSpec(points: int = 800)` (100..2000).
+
+### `class FunctionFigureSpec(BaseModel)`
+
+- `kind: FunctionKind`,
+- `expressions: list[ExpressionSpec]` (1..4),
+- `variable: Var = "x"`, `variables: tuple[Var, Var] | None` (solo `level_curves`),
+- `domain: Interval` (obbligatorio), `range: Interval | None`,
+- `show: list[ShowItem]` (≤ 6; default `zeros, critical_points, asymptotes, formula`),
+- `annotations: list[Annotation]` (≤ 6),
+- `parameter: ParameterSpec | None`, `sampling: SamplingSpec`,
+- `levels: int | list[float] | None` (2..12, solo `level_curves`).
+
+Metodi: `declared_symbols()` (variabile/i + parametro),
+`expression_label(i)`, `canonical_json()` (chiavi ordinate, default
+inclusi: due spec equivalenti producono la stessa stringa) e
+`content_hash()` (SHA-256 del canonico: chiave di cache dell'SVG e dei
+risultati).
+
+### `check_function_spec(spec) -> list[SpecIssue]`
+
+Controlli semantici con `loc` per campo: dominio e range finiti con
+`lo < hi` e ampiezza in `[1e-3, 1e4]`; `parameter.name != variable`;
+`expr_index < len(expressions)`; `tangent` richiede almeno una
+`TangentAnnotation` con `at` nel dominio; `area` almeno una
+`AreaAnnotation` con `between ⊂ domain`; `family` richiede `parameter` e
+una sola espressione; `level_curves` richiede `variables` distinte,
+`levels`, una espressione e nessuna annotazione; label non vuote
+univoche; ogni `expr` passa `check_expression` con simboli liberi ⊆
+`declared_symbols()` (gli errori dell'AST arrivano con `loc`
+`["expressions", i, "expr"]` e il messaggio per il docente, es.
+«moltiplicazione implicita non ammessa: scrivi 2*x»).
 
 ---
 

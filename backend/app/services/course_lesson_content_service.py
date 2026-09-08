@@ -285,16 +285,20 @@ def _format_current_lesson_phase3(lesson: CourseLesson) -> str:
         )
     assets = raw.get("visual_assets") or []
     if assets:
-        # Solo id e caption: `asset_type` non esiste più nello schema
-        # (stampava un "(?)" sistematico nel prompt di rigenerazione).
-        parts.append(
-            "### Asset visivi (asset_id)\n"
-            + "\n".join(
-                f"- {a.get('asset_id', '?')}: {(a.get('caption') or '').strip()}"
-                for a in assets
-                if isinstance(a, dict)
-            )
-        )
+        # Id, formato e caption: `- {asset_id} [{format}]: {caption}`. Il
+        # formato dice al modello con quale famiglia (mermaid, vegalite,
+        # dot, function) era stato reso l'asset da riusare; se manca (record
+        # storici) non si emette alcun suffisso. `asset_type` non esiste più
+        # nello schema (stampava un "(?)" sistematico nel prompt).
+        lines: list[str] = []
+        for a in assets:
+            if not isinstance(a, dict):
+                continue
+            fmt = str(a.get("format") or "").strip()
+            suffix = f" [{fmt}]" if fmt else ""
+            caption = (a.get("caption") or "").strip()
+            lines.append(f"- {a.get('asset_id', '?')}{suffix}: {caption}")
+        parts.append("### Asset visivi (asset_id)\n" + "\n".join(lines))
     return "\n\n".join(parts) if parts else "(Nessuna versione precedente.)"
 
 

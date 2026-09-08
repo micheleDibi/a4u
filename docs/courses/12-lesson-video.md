@@ -200,8 +200,14 @@ RunPod e va dritto al 60 %.
 -> (png_paths, slide_id_order)`.
 
 Riusa **al 100 %** la pipeline del PDF slide (Fase 4): stesso template
-(`lesson_slides_pdf.html.j2`), stesso pre-render Mermaid → SVG, stessa
-risoluzione di asset (LaTeX → MathML, immagini caricate). La differenza
+(`lesson_slides_pdf.html.j2`), stesso pre-render delle figure → SVG
+(`render_svg_map` del registro `figure_render_service`: Mermaid via
+Playwright, Vega-Lite, DOT e `function` offline, tutte in `<img
+data:svg>` con la cornice «Figura.» senza numero — A2, A8; vedi
+[17 — Figure accademiche](17-visual-figures.md)), stessa risoluzione di
+asset (formule LaTeX → SVG MathJax con fallback MathML, immagini
+caricate). `_VIDEO_OVERRIDE_CSS` non tocca `.slide-asset`: ogni regola
+del template slide vale 1:1 nei frame. La differenza
 è il viewport: Playwright apre **1980×1400** (proporzione A4 landscape
 297:210 = 99:70) e scala ogni `.slide` per riempire esattamente il
 frame — niente bande bianche, niente distorsione. `enable_split=False`:

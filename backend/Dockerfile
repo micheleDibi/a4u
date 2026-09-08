@@ -18,15 +18,20 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
     # HOME=/app (default per useradd -d /app).
     HOME=/app \
-    XDG_CACHE_HOME=/tmp/cache
+    XDG_CACHE_HOME=/tmp/cache \
+    # matplotlib (figure `function`): cache dei font in una directory
+    # scrivibile dall'utente `app` e backend Agg senza display.
+    MPLCONFIGDIR=/tmp/cache/matplotlib \
+    MPLBACKEND=Agg
 
 # Runtime deps in due gruppi:
 #  - WeasyPrint (Pango, GDK-Pixbuf, HarfBuzz, libffi, fonts) per il
 #    rendering finale del PDF.
 #  - Chromium di Playwright (libnss, libgbm, libasound, ecc.) per il
 #    pre-render dei diagrammi Mermaid in SVG.
+#  - Graphviz (`dot`) per il render server-side delle figure DOT.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        libpq5 curl \
+        libpq5 curl graphviz \
         # WeasyPrint
         libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b \
         libgdk-pixbuf-2.0-0 libffi8 \
@@ -63,7 +68,7 @@ RUN python -m playwright install chromium \
 COPY --chown=app:app . /app
 RUN mkdir -p /app/uploads/organizations /app/uploads/avatars /app/uploads/templates \
              /app/uploads/courses /app/uploads/lesson_assets /app/uploads/lesson_videos \
-             /app/generated_pdfs /tmp/cache \
+             /app/generated_pdfs /tmp/cache /tmp/cache/matplotlib \
     && chown -R app:app /app/uploads /app/generated_pdfs /tmp/cache
 USER app
 EXPOSE 8000
