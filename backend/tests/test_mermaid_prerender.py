@@ -67,6 +67,47 @@ def test_renderer_and_validator_initialize_from_figure_theme():
     assert theme.MERMAID_FONT_FAMILY in mp._MERMAID_RENDERER_HTML  # body del mini-doc
 
 
+@pytest.mark.parametrize(
+    ("url", "allowed"),
+    [
+        ("https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.esm.min.mjs", True),
+        ("https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.mjs", True),
+        ("about:blank", True),
+        ("data:image/png;base64,AAAA", True),
+        ("blob:null/0-1", True),
+        # SSRF: l'host scelto dall'autore di una figura, in ogni forma.
+        ("http://127.0.0.1:8001/SSRF-PROBE.png", False),
+        ("http://169.254.169.254/latest/meta-data/", False),
+        ("file:///etc/hosts", False),
+        ("https://esempio.invalid/x.png", False),
+        # Sosia dell'origine ammessa: il prefisso comprende la barra finale.
+        ("https://cdn.jsdelivr.net.esempio.invalid/x.js", False),
+        ("https://CDN.JSDELIVR.NET/npm/mermaid/dist/mermaid.esm.min.mjs", True),
+    ],
+)
+def test_prerender_network_isolation_allows_only_the_cdn(url: str, allowed: bool):
+    """Difesa in profondità di SEC-1: la pagina headless può contattare solo
+    il CDN da cui importa i moduli. Anche se un costrutto sfuggisse al gate
+    statico, il server non eseguirebbe la richiesta verso l'host scelto."""
+    assert mp.allows_prerender_url(url) is allowed
+
+
+def test_both_headless_pages_install_the_network_guard():
+    """Il pre-render e il validatore instradano le richieste PRIMA di
+    caricare il contenuto della pagina."""
+    for source in (
+        Path(mp.__file__).read_text(encoding="utf-8"),
+        Path(avs.__file__).read_text(encoding="utf-8"),
+    ):
+        guard = source.index("await block_external_requests(page)")
+        assert guard < source.index("await page.set_content(")
+    # Se un giorno le pagine cambiassero CDN, la guardia le bloccherebbe:
+    # ogni URL che caricano deve stare sotto il prefisso ammesso.
+    for html in (mp._MERMAID_RENDERER_HTML, avs._VALIDATOR_HTML):
+        for url in re.findall(r"https?://[^'\"\s]+", html):
+            assert mp.allows_prerender_url(url), url
+
+
 def test_build_renderer_html_accepts_explicit_version():
     html = mp.build_mermaid_renderer_html(version="10.9.4")
     assert "mermaid@10.9.4/dist/mermaid.esm.min.mjs" in html

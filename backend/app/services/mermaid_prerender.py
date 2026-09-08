@@ -26,6 +26,7 @@ import asyncio
 import contextlib
 import re
 import sys
+from typing import Any
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
@@ -92,6 +93,46 @@ window.__mermaidReady = true;
 """
 
 
+# ---------------------------------------------------------------------------
+# Isolamento di rete della pagina headless
+# ---------------------------------------------------------------------------
+
+# Unica origine che le pagine headless devono poter contattare: il CDN da
+# cui importano i moduli (Mermaid nel pre-render, Mermaid e KaTeX nel
+# validatore). Tutto il resto è bloccato PRIMA della richiesta: se un
+# giorno un costrutto Mermaid sfuggisse al gate statico (`A@{ img: "…" }`,
+# SEC-1) il server non eseguirebbe comunque la GET verso l'host scelto
+# dall'autore. La barra finale è parte del prefisso: `cdn.jsdelivr.net.…`
+# non lo soddisfa.
+PRERENDER_ALLOWED_PREFIX = "https://cdn.jsdelivr.net/"
+# Schemi che non escono dal processo (il documento stesso, gli URL inline).
+_PRERENDER_INERT_SCHEMES = ("about:", "data:", "blob:")
+
+
+def allows_prerender_url(url: str) -> bool:
+    """`True` se la pagina headless può eseguire la richiesta."""
+    lowered = (url or "").strip().lower()
+    return lowered.startswith(PRERENDER_ALLOWED_PREFIX) or lowered.startswith(
+        _PRERENDER_INERT_SCHEMES
+    )
+
+
+async def block_external_requests(page: Any) -> None:
+    """Instrada TUTTE le richieste della pagina e annulla quelle che
+    `allows_prerender_url` non ammette (isolamento di rete del pre-render,
+    difesa in profondità di SEC-1)."""
+
+    async def _guard(route: Any) -> None:
+        url = route.request.url
+        if allows_prerender_url(url):
+            await route.continue_()
+            return
+        log.warning("prerender_request_blocked", url=url[:200])
+        await route.abort()
+
+    await page.route("**/*", _guard)
+
+
 def build_mermaid_renderer_html(*, version: str | None = None) -> str:
     """Pagina di rendering con il pin richiesto (default: il setting) e
     l'inizializzazione del tema (`useMaxWidth: true`: l'SVG riempie il
@@ -139,6 +180,7 @@ async def _prerender_mermaid_to_svg_batch_async(
         browser = await pw.chromium.launch(args=["--no-sandbox"])
         try:
             page = await browser.new_page()
+            await block_external_requests(page)
             await page.set_content(build_mermaid_renderer_html(), wait_until="domcontentloaded")
             try:
                 await page.wait_for_function("window.__mermaidReady === true", timeout=15_000)

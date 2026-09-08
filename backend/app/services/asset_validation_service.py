@@ -63,6 +63,7 @@ from app.services.figure_render_service import (
     available_formats,
 )
 from app.services.figure_theme import mermaid_initialize_js
+from app.services.mermaid_prerender import block_external_requests
 
 log = get_logger("app.asset_validation")
 
@@ -183,6 +184,7 @@ async def _validate_js_batch_async(
             browser = await pw.chromium.launch(args=["--no-sandbox"])
             try:
                 page = await browser.new_page()
+                await block_external_requests(page)
                 await page.set_content(_validator_html(), wait_until="domcontentloaded")
                 try:
                     await page.wait_for_function("window.__validatorReady === true", timeout=15_000)

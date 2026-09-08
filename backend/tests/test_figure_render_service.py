@@ -228,6 +228,24 @@ def test_mermaid_static_gate_accepts_comments_frontmatter_aliases_and_fences(cod
         ('flowchart LR\n  A@{ img: "http://interno/x.png", label: "n" }\n  A --> B', "img:"),
         ('flowchart LR\n  A@{ img: "file:///etc/hosts" }\n  A --> B', "img:"),
         ('flowchart LR\n  A@{\n    shape: rect,\n    label: "https://x/y"\n  }', "http"),
+        # SEC-1: una `}` DENTRO una stringa quotata non chiude la shape per
+        # il lexer di Mermaid (stato `shapeDataStr`). Con la vecchia regex
+        # `@\{[^}]*\}` il gate si fermava lì e non vedeva `img:`.
+        (
+            'flowchart LR\n  A@{ label: "}", img: "http://interno/x.png", w: 60 }\n  A --> B',
+            "img:",
+        ),
+        ('flowchart LR\n  A@{ label: "}", x: "https://interno/y" }\n  A --> B', "http"),
+        ('flowchart LR\n  A@{ label: "}}}", img: "/etc/hosts" }\n  A --> B', "img:"),
+        # `\\` non è un escape nello stato `shapeDataStr`: la stringa
+        # finisce comunque alla virgoletta successiva.
+        ('flowchart LR\n  A@{ label: "a\\", img: "http://interno/x.png" }', "img:"),
+        # `@{` senza chiusura: il lexer arriva a EOF dentro la shape.
+        ('flowchart LR\n  A@{ label: "}", img: "http://interno/x.png"', "img:"),
+        # REG-1: `<br/ >` e `<br / >` non sono a capo per `lineBreakRegex`
+        # (`/<br\s*\/?>/i`), quindi finirebbero in chiaro nella label.
+        ("flowchart LR\n  A[riga<br/ >due] --> B", "HTML"),
+        ("flowchart LR\n  A[riga<br / >due] --> B", "HTML"),
         ("flowchart LR\n  A[<script>alert(1)</script>] --> B", "<script>"),
         ("flowchart LR\n  A[<table><tr><td>x</td></tr></table>] --> B", "<table>"),
         ("flowchart LR\n  A[<h1>x</h1>] --> B", "<h1>"),
@@ -254,7 +272,11 @@ def test_mermaid_static_gate_rejects(code: str, needle: str):
         "flowchart LR\n  A[Riga 1<br>Riga 2] --> B",
         "flowchart LR\n  A[Riga 1<BR />Riga 2] --> B",
         "sequenceDiagram\n  A->>B: prima<br/>seconda",
+        # `<br >` e `<br  >` restano a capo per `/<br\s*\/?>/i`.
+        "flowchart LR\n  A[Riga 1<br >Riga 2] --> B",
         'flowchart LR\n  A@{ shape: rect, label: "Etichetta" } --> B',
+        # Una `}` dentro la stringa non deve far rifiutare una shape sana.
+        'flowchart LR\n  A@{ shape: rect, label: "insieme {a}" } --> B',
     ],
 )
 def test_mermaid_gate_accepts_br_line_breaks_and_plain_shapes(code: str):
@@ -265,16 +287,53 @@ def test_mermaid_gate_accepts_br_line_breaks_and_plain_shapes(code: str):
     assert frs.REGISTRY["mermaid"].validate(code) == (True, "")
 
 
+def test_mermaid_shape_blocks_close_like_the_lexer():
+    """SEC-1: il blocco `@{ … }` si chiude sulla `}` FUORI dalle virgolette,
+    come lo stato `shapeDataStr` del lexer di Mermaid 11.17.2."""
+    blocks = frs._mermaid_shape_blocks
+    assert list(blocks("A@{ shape: rect }")) == ["@{ shape: rect }"]
+    assert list(blocks('A@{ label: "}", img: "u" } B')) == ['@{ label: "}", img: "u" }']
+    assert list(blocks("A@{ a: 1 } B@{ b: 2 }")) == ["@{ a: 1 }", "@{ b: 2 }"]
+    assert list(blocks("nessuna direttiva")) == []
+    # Shape mai chiusa: si prende tutto il resto (Mermaid arriva a EOF e la
+    # parse fallisce, quindi rifiutare è la scelta prudente).
+    assert list(blocks('A@{ x: "aperta')) == ['@{ x: "aperta']
+
+
 def test_mermaid_render_batch_refuses_an_svg_with_an_external_resource(
     monkeypatch: pytest.MonkeyPatch,
 ):
     """Seconda rete dopo il gate: Mermaid è esente da `normalize_svg` (A11),
     quindi un `<image href="http://…">` uscito comunque dal pre-render non
     deve raggiungere il PDF, le slide o i frame (SEC-1)."""
-    svgs = ['<svg><image href="http://interno/x.png"/></svg>', "<svg><g>ok</g></svg>"]
+    svgs = [
+        '<svg><image href="http://interno/x.png"/></svg>',
+        '<svg><g style="fill:url(https://interno/y)"/></svg>',
+        "<svg><style>@import url(https://interno/z.css);</style><g>x</g></svg>",
+        "<svg><g>ok</g></svg>",
+    ]
     monkeypatch.setattr(frs, "_prerender_mermaid_to_svg_batch_sync", lambda codes: list(svgs))
-    out = frs.REGISTRY["mermaid"].render_svg_batch(["a", "b"], asset_ids=["A", "B"])
-    assert out[0] is None and out[1] == "<svg><g>ok</g></svg>"
+    out = frs.REGISTRY["mermaid"].render_svg_batch(
+        ["a", "b", "c", "d"], asset_ids=["A", "B", "C", "D"]
+    )
+    assert out[:3] == [None, None, None]
+    assert out[3] == "<svg><g>ok</g></svg>"
+
+
+def test_mermaid_render_batch_keeps_labels_that_talk_about_css(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """La scansione guarda gli ATTRIBUTI e il CSS, non il testo dei nodi:
+    una label che cita `@import` o `url(https://…)` — normale in una lezione
+    sul web — deve restare una figura valida in dispensa, slide e video."""
+    svgs = [
+        "<svg><text><tspan>Regola @import nel CSS</tspan></text></svg>",
+        "<svg><text><tspan>background: url(https://cdn/x.png)</tspan></text></svg>",
+        '<svg><g aria-label="url(https://cdn/x.png)"><text>ok</text></g></svg>',
+    ]
+    monkeypatch.setattr(frs, "_prerender_mermaid_to_svg_batch_sync", lambda codes: list(svgs))
+    out = frs.REGISTRY["mermaid"].render_svg_batch(["a", "b", "c"], asset_ids=["A", "B", "C"])
+    assert out == svgs
 
 
 def test_mermaid_html_gate_suggests_tilde_generics_for_class_diagrams():
@@ -509,15 +568,36 @@ def test_vegalite_translatable_fields_round_trip():
     spec = json.loads(out)
     assert spec["title"] == "Example" and spec["encoding"]["x"]["axis"]["title"] == "class"
     assert spec["data"] == _BAR["data"]  # dati intatti
+    # Nessun percorso applicabile: il sorgente non viene toccato (I18N-3).
     unchanged = r.apply_translations(_BAR_JSON, {"non.esiste": "x"})
-    assert json.loads(unchanged) == _BAR
-    # La riserializzazione è compatta: non deve allungare la spec (e farle
-    # superare il tetto D5) per i soli spazi di `json.dumps` (I18N-3).
-    assert len(unchanged) <= len(_BAR_JSON)
-    padded = json.dumps(_BAR, indent=2)
-    assert len(r.apply_translations(padded, {"title": "Example"})) < len(padded)
+    assert unchanged == _BAR_JSON
     nested = json.dumps({"layer": [{"mark": "bar", "encoding": {"y": {"legend": {"title": "L"}}}}]})
     assert r.extract_translatable(nested) == {"layer.0.encoding.y.legend.title": "L"}
+
+
+@needs_vl
+def test_vegalite_translation_keeps_source_formatting():
+    """I18N-3: la localizzazione sostituisce le sole stringhe tradotte nel
+    sorgente. La formattazione del docente resta, il round-trip con
+    traduzioni identiche è byte-identico e il tetto D5 non può essere
+    superato dalla sola localizzazione."""
+    r = frs.REGISTRY["vegalite"]
+    padded = json.dumps(_BAR, indent=2)
+    out = r.apply_translations(padded, {"title": "Example"})
+    assert out == padded.replace('"Esempio"', '"Example"')
+    assert out.count("\n") == padded.count("\n")  # rientri e a capo intatti
+    # Round-trip identità: nemmeno un byte cambia.
+    assert r.apply_translations(padded, r.extract_translatable(padded)) == padded
+    # Una spec formattata al limite del tetto D5 con una traduzione più
+    # lunga ricade sulla forma compatta invece di sfondarlo.
+    big = json.dumps(
+        {"title": "t", "mark": "bar", "data": {"values": [{"k": f"k{i}"} for i in range(109)]}},
+        indent=2,
+    )
+    assert frs.VEGALITE_MAX_CHARS - 40 < len(big) <= frs.VEGALITE_MAX_CHARS
+    localized = r.apply_translations(big, {"title": "t" * 80})
+    assert len(localized) <= frs.VEGALITE_MAX_CHARS
+    assert json.loads(localized)["title"] == "t" * 80
 
 
 # ---------------------------------------------------------------------------
@@ -586,9 +666,21 @@ def test_dot_static_validation_is_offline(monkeypatch: pytest.MonkeyPatch):
         ('digraph { x [<ima>+"ge"="/etc/hosts"] }', "image="),
         ('digraph { x ["ima"+<ge>="/etc/hosts"] }', "image="),
         ('digraph { x [<ima>+<ge>="/etc/hosts"] }', "image="),
+        # `#` a METÀ riga: per lo scanner di Graphviz è un commento fino a
+        # fine riga come a colonna 0 (verificato: `digraph { a # -> b⏎; c }`
+        # non produce archi), quindi la virgoletta che lo segue non apre
+        # alcuna stringa e l'attributo dopo il capo riga resta visibile.
+        ('digraph { # "\n x [image="/etc/hosts"] }', "image="),
+        ('digraph { a; # commento "\n x [URL="http://x"] }', "URL="),
     ):
         ok, err = r.validate(src)
         assert ok is False and needle in err, (src, err)
+    # Lo stesso sorgente con un file esistente e con uno inesistente dà lo
+    # stesso esito: nessun oracolo di esistenza dei file del server (SEC-2).
+    esiste = f'digraph {{ # "\n x [image="{__file__}"] }}'
+    manca = 'digraph { # "\n x [image="/tmp/a4u-non-esiste.png"] }'
+    assert r.validate(esiste) == r.validate(manca)
+    assert r.validate(esiste, deep=True) == r.validate(manca, deep=True)
     # Il `\\\\` dentro una label resta testo: nessun falso positivo.
     assert r.validate('digraph { a [label="c:\\\\dir"]; a -> b }') == (True, "")
     # Apici singoli: non delimitano stringhe in DOT (errore di sintassi per

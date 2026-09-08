@@ -1486,6 +1486,30 @@ def test_function_translatable_labels_round_trip():
     assert translated["expressions"][0]["label"] == "speed"
 
 
+def test_function_translation_keeps_source_formatting():
+    """I18N-3: la spec non viene riserializzata. La formattazione scritta
+    dal docente resta e il round-trip con traduzioni identiche è
+    byte-identico."""
+    renderer = frs.REGISTRY["function"]
+    content = (
+        '{\n  "kind": "function_study",\n'
+        '  "expressions": [{"expr": "x**2", "label": "parabola"}],\n'
+        '  "domain": [-3, 3],\n'
+        '  "annotations": [{"kind": "point", "at": 1, "label": "vertice"}]\n}'
+    )
+    assert renderer.apply_translations(content, renderer.extract_translatable(content)) == content
+    out = renderer.apply_translations(content, {"expressions.0.label": "parabola (rossa)"})
+    assert out == content.replace('"parabola"', '"parabola (rossa)"')
+    assert out.count("\n") == content.count("\n")
+    # Una label che nel sorgente non esiste non ha una posizione da
+    # sostituire: si ricade sulla riserializzazione, senza perderla.
+    senza = (
+        '{\n  "kind": "function_study",\n  "expressions": [{"expr": "x"}],\n  "domain": [0, 1]\n}'
+    )
+    nuova = json.loads(renderer.apply_translations(senza, {"expressions.0.label": "retta"}))
+    assert nuova["expressions"][0] == {"expr": "x", "label": "retta"}
+
+
 async def test_patch_gate_reports_function_spec_errors():
     assets = [
         {

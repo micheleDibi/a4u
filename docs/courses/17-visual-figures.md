@@ -378,7 +378,13 @@ immagine diventa un `<image href="…">` che il Chromium del pre-render,
 WeasyPrint (dispensa e slide) e il browser del docente dereferenziano —
 SSRF dal server e risorsa esterna dentro il PDF consegnato, con il solo
 `course:edit`. Le shape senza risorse (`A@{ shape: rect, label: "x" }`)
-restano ammesse. Il parse JS resta nel batch di
+restano ammesse. Il blocco è delimitato da `_mermaid_shape_blocks`, uno
+scanner a carattere che chiude sulla `}` FUORI dalle virgolette come lo
+stato `shapeDataStr` del lexer di Mermaid 11.17.2 (regole `["]` push,
+`["]` pop, `[^"]+`, nessun escape con la barra rovesciata): la regex
+`@\{[^}]*\}` del primo giro si fermava alla prima `}` e una label
+`"}"` le nascondeva l'`img:` che seguiva (giro 2 della revisione).
+Il parse JS resta nel batch di
 `_validate_slots` (sezione 8.1): al salvataggio manuale il gate statico
 basta (A15), il parse vive già nell'editor con la stessa major 11.
 
@@ -390,7 +396,18 @@ manca quella rete, l'SVG reso è scansionato per i costrutti che caricano
 una risorsa esterna (`<image`, `<script`, `<iframe`, `url(http|file|//)`,
 `@import`): nessuna delle 15 famiglie D8 li produce, quindi trovarli
 significa che qualcosa ha aggirato il gate e la figura degrada a fallback
-invece di finire nel documento (Fase D, SEC-1).
+invece di finire nel documento (Fase D, SEC-1). La scansione guarda solo
+il contenuto dei tag e i blocchi `<style>` — le stesse regioni di
+`svg_normalize`, ottenute dalle sue `iter_tag_contents` /
+`iter_style_bodies` — e mai il testo dei nodi: guardando tutto l'SVG,
+nel primo giro faceva sparire dall'export una figura la cui label parla
+di `@import` o di `url(https://…)`, caso normale in una lezione sul web
+(giro 2). Terza difesa, indipendente dalle prime due: la pagina del
+pre-render (e quella del validatore) instrada tutte le richieste e
+annulla quelle che non stanno sotto `mermaid_prerender.PRERENDER_ALLOWED_PREFIX`
+(il CDN da cui importa i moduli), quindi anche un costrutto che sfuggisse
+al gate non farebbe eseguire al server una GET verso l'host scelto
+dall'autore (`prerender_request_blocked` nei log).
 
 `journey` è escluso perché emette due `<foreignObject>` anche in 10.9.4
 (WeasyPrint non li rende); gli altri esclusi non hanno uso didattico o
@@ -563,7 +580,12 @@ positivi su grafici legittimi.
   `\`+newline ignorato, `"a" + "b"` uniti **come `<a>+"b"` e `"a"+<b>`**,
   perché per Graphviz la concatenazione unisce anche le stringhe HTML in
   un solo ID (`<ima>+"ge"=` è `image=`, SEC-2),
-  commenti `/* */`, `//` e righe `#` saltati fuori dalle stringhe,
+  commenti `/* */`, `//` e `#` saltati fuori dalle stringhe — il `#` è
+  documentato come riga di preprocessore ma lo scanner reale lo tratta
+  come commento fino a fine riga anche a metà riga (verificato: `digraph
+  { a # -> b⏎; c }` non produce archi), e limitarlo alla colonna 0
+  lasciava che una virgoletta dentro un commento desincronizzasse il
+  tokenizzatore (SEC-2, terzo vettore chiuso nel giro 2) —,
   stringhe HTML `<…>` con annidamento) e confronta, senza distinzione di
   maiuscole per prudenza (`dot` è case-sensitive: `IMAGE=` non è letto),
   il **nome che precede un `=`**; nelle stringhe HTML cerca
@@ -1220,7 +1242,9 @@ Due precisazioni emerse in Fase D.
 width_px, height_px)`, modulo puro (regex sul solo tag radice + scansione),
 per gli SVG di vl-convert, `dot` e matplotlib. **Mermaid non passa da qui**
 (A11): al suo posto, dopo il pre-render, una scansione mirata dei soli
-costrutti che caricano una risorsa esterna (sezione 3.1).
+costrutti che caricano una risorsa esterna (sezione 3.1), che riusa da
+qui le regioni «codice» del documento (`iter_tag_contents`,
+`iter_style_bodies`: attributi e blocchi `<style>`, mai il testo dei nodi).
 
 1. oltre `max_bytes` (`figure_svg_max_bytes`, 1,5 MB) → `SvgRejectedError`;
 2. strip del prologo: BOM, `<?xml …?>`, `<!DOCTYPE …>`, commenti iniziali
@@ -1342,7 +1366,13 @@ tipi D8, label testo semplice, niente `%%{init}%%`» (WP1).
 `extract_translatable` / `apply_translations` del renderer: Vega-Lite
 `title`, `axis.title`, `legend.title`, `header.title` e i `text` letterali;
 DOT i valori di `label | xlabel | headlabel | taillabel`; `function`
-`expressions[i].label` e `annotations[i].label`. La tupla «structural»
+`expressions[i].label` e `annotations[i].label`. Tutti e tre applicano la
+traduzione **nel sorgente**, senza riserializzarlo: DOT sostituisce il
+corpo della label, Vega-Lite e `function` passano da `json_spans`, che
+individua la posizione esatta di ogni stringa valore e cambia le sole
+tradotte. Conseguenza verificata: la formattazione scritta dal docente
+sopravvive al ciclo e una traduzione identica lascia il sorgente
+byte-identico (I18N-3, giro 2). La tupla «structural»
 (`:828`, oggi `("mermaid", "table")`) diventa «tutti i kind non-text»: un
 asset localizzato viene rivalidato offline. Il prompt di
 `openai_asset_localize_service._system_prompt` (38-74) dichiara gli
@@ -2044,16 +2074,16 @@ corretti sono dichiarati in sezione 15.
 | COR-6 | correttezza | minore | dichiarato come limite: tetto unico per formato (Q1), accumulo su `function`/`dot` a cache fredda; sezioni 2.2 e 15 | revisione avversariale |
 | COR-7 | correttezza | minore | corretto (documentazione): la `loc` del 422 si ferma a `content`, la `loc` per campo è dell'endpoint `render-function` | revisione avversariale |
 | COR-8 | correttezza | minore | corretto: un `new_asset` con l'id di una figura delle Dispense non entra nel batch e non ne sostituisce l'SVG | revisione avversariale |
-| REG-1 | regressione | maggiore | corretto: `<br>` è sintassi di Mermaid, non HTML; gate, script L5 e documentazione allineati | revisione avversariale |
+| REG-1 | regressione | maggiore | corretto (giro 1 + giro 2): `<br>` è sintassi di Mermaid, non HTML; dal giro 2 il lookahead ricalca ESATTAMENTE `lineBreakRegex` (`<br/ >` e `<br / >` sono rifiutati) | revisione avversariale (giro 2) |
 | REG-2 | regressione | minore | dichiarato come limite: rinominare l'`asset_id` rende l'asset nuovo per il gate (sezione 2.3) | revisione avversariale |
 | REG-3 | regressione | minore | dichiarato come limite: A11-L4 vale per 13 tipi su 15; `classDiagram` ed `erDiagram` non sono byte-deterministici, resa identica | revisione avversariale |
 | REG-4 | regressione | minore | corretto: il sorgente svuotato dalla sanificazione non entra nel batch (niente Chromium a vuoto) | revisione avversariale |
-| SEC-1 | sicurezza | maggiore | corretto: gate delle shape `@{ img: … }` e scansione anti-risorsa esterna sull'SVG Mermaid; la via del markdown resta dichiarata (sezione 13) | revisione avversariale |
-| SEC-2 | sicurezza | maggiore | corretto: `\\` consumato come coppia e concatenazione con stringhe HTML nel tokenizzatore DOT | revisione avversariale |
+| SEC-1 | sicurezza | maggiore | corretto nel giro 2 (nel giro 1 la correzione era aggirabile): scanner del blocco `@{ … }` che rispetta le virgolette come il lexer, scansione dell'SVG limitata agli attributi e isolamento di rete del Chromium di pre-render; la via del markdown resta dichiarata (sezione 13) | revisione avversariale (giro 2) |
+| SEC-2 | sicurezza | maggiore | corretto nel giro 2 (terzo vettore residuo dopo il giro 1): `\\` consumato come coppia, concatenazione con stringhe HTML e `#` trattato come commento fino a fine riga ovunque, come lo scanner di Graphviz | revisione avversariale (giro 2) |
 | SEC-3 | sicurezza | minore | non corretto, motivato: `X-Forwarded-For` è infrastruttura preesistente identica a `main`, fuori perimetro; dichiarato in sezione 13 | revisione avversariale |
 | I18N-1 | i18n | maggiore | corretto: estrai/applica simmetrici sulle label DOT, `\n` e `\l` intatti; regola aggiunta al prompt di localizzazione | revisione avversariale |
 | I18N-2 | i18n | minore | dichiarato come limite: l'etichetta nella vista segue la lingua UI come le altre intestazioni del corpo (sezione 6.4) | revisione avversariale |
-| I18N-3 | i18n | maggiore | corretto: riserializzazione compatta di Vega-Lite e `function` (non supera più il tetto D5 per i soli spazi) | revisione avversariale |
+| I18N-3 | i18n | maggiore | corretto nel giro 2 (nel giro 1 era chiusa la sola aggravante del tetto D5): sostituzione chirurgica delle stringhe tradotte nel sorgente (`json_spans`), formattazione conservata e round-trip identità byte-identico per tutti e tre i formati | revisione avversariale (giro 2) |
 | I18N-4 | i18n | minore | dichiarato come limite: «n.d.» è un ramo difensivo irraggiungibile dal motore, fissato da un test | revisione avversariale |
 | I18N-5 | i18n | minore | dichiarato come limite: `illustrativeData` è un valore canonico condiviso, non una chiave letta (sezione 6.4) | revisione avversariale |
 | I18N-6 | i18n | minore | corretto: le avvertenze del motore sono frasi localizzate it/en nell'anteprima dell'editor | revisione avversariale |
@@ -2062,7 +2092,7 @@ corretti sono dichiarati in sezione 15.
 | I18N-9 | i18n | minore | non corretto, motivato: le tre voci sono preesistenti su `main` e fuori perimetro; il fallback di rete NON è italiano (è il messaggio inglese di axios) | revisione avversariale |
 | TIP-1 | tipografia | maggiore | corretto: ripiego sans a schermo per Vega-Lite e DOT + webfont Noto Sans; il tema resta a una famiglia per non muovere la geometria | revisione avversariale |
 | TIP-2 | tipografia | maggiore | corretto: superficie chiara fissa sotto ogni figura (`FIGURE_SURFACE`), Mermaid compreso | revisione avversariale |
-| TIP-3 | tipografia | maggiore | corretto: testo sopra le curve con alone bianco (formula, coordinate esatte, etichette) | revisione avversariale |
+| TIP-3 | tipografia | maggiore | corretto con un residuo dichiarato in sezione 15: testo sopra le curve con alone bianco (formula, coordinate esatte, etichette); una curva può ancora attraversare l'alone della formula | revisione avversariale |
 | TIP-4 | tipografia | maggiore | corretto: nome dell'asse x sopra la freccia, mai fuso con il tick dell'estremo | revisione avversariale |
 | TIP-5 | tipografia | maggiore | corretto: assi sopra i dati con riquadro bianco sui tick; etichetta esatta omessa se duplica il tick, altrimenti su una seconda riga | revisione avversariale |
 | TIP-6 | tipografia | maggiore | corretto: `discreteWidth/Height` nel tema Vega-Lite (barre 419×269 invece di 147×318) | revisione avversariale |
@@ -2070,8 +2100,8 @@ corretti sono dichiarati in sezione 15.
 | TIP-8 | tipografia | minore | corretto: `axisX.labelAngle: 0` con `labelOverlap: "greedy"` | revisione avversariale |
 | TIP-9 | tipografia | minore | corretto: punto fra didascalia e coda calcolata, nel partial e in `FigureFrame` | revisione avversariale |
 
-Gate finali dopo le correzioni (8 settembre 2026): `ruff check` e `ruff
-format --check` puliti sui file toccati (unica eccezione dichiarata:
+Gate dopo le correzioni del giro 1 (8 settembre 2026): `ruff check` e
+`ruff format --check` puliti sui file toccati (unica eccezione dichiarata:
 `course_lesson_slides_pdf_service.py` non era formattato già a HEAD e non
 è stato riformattato per non introdurre un diff estraneo); `ruff check .`
 del repo **372** (era 373: un `E741` preesistente è caduto con la
@@ -2079,6 +2109,34 @@ correzione COR-8); `mypy app` **205** errori (invariato); pytest
 **915/915** verdi (877 a HEAD, 38 test nuovi o estesi); `npm run lint` 4
 errori di baseline e 23 warning, nessuno nei file toccati; `npm run
 type-check` e `npm run build` verdi.
+
+### 14.5 Secondo giro della revisione (verifica del giro 1)
+
+Il verificatore finale del giro 1 non ha dato l'ok: quattro rilievi
+dichiarati «corretto» erano più ottimistici del comportamento reale e la
+correzione di SEC-1 aveva introdotto un falso positivo nuovo. Sei punti
+riaperti, tutti chiusi con la riproduzione del verificatore rieseguita
+alla lettera.
+
+| punto | riproduzione del verificatore | esito del giro 2 |
+| --- | --- | --- |
+| SEC-1 | `A@{ label: "}", img: "http://127.0.0.1:8001/…" }`: gate `('', '')`, `validate` `(True, '')`, `mermaid.parse` verde, listener che registra la GET | corretto: `_mermaid_shape_blocks` chiude il blocco sulla `}` fuori dalle virgolette come lo stato `shapeDataStr` del lexer → gate `('mermaid_external_resource', 'img:')`, e il Chromium di pre-render non può più uscire dal CDN (`prerender_request_blocked`, listener a zero richieste) |
+| SEC-2 | `digraph { # "⏎ x [image="<path>"] }` con file esistente e inesistente: gate `True`, `deep` distingue i due casi | corretto: `#` è commento fino a fine riga ovunque (come Graphviz 15.1.1) → gate `False` con lo STESSO messaggio nei due casi, nessun oracolo di esistenza |
+| I18N-3 | `roundtrip_d7.py`: `vegalite` e `function` non byte-identici con traduzioni identità | corretto: sostituzione chirurgica nel sorgente (`json_spans`), round-trip byte-identico per tutti e tre i formati |
+| TIP-3 | ritaglio `crop_area_formula.png`: la curva `x**2` attraversa l'alone di `f(x) = x²` | dichiarato come limite in sezione 15 (nessuna euristica di quadrante: il testo resta leggibile, la curva è interrotta dall'alone) |
+| REG-1 | `<br/ >` accettato dal gate ma non riconosciuto da `lineBreakRegex` | corretto: lookahead identico a `/<br\s*\/?>/i` più la regola dedicata per le forme con spazio dopo la barra |
+| regressione del giro 1 | `reg_atimport.py`: una label che cita `@import` o `url(https://…)` spariva dall'export | corretto: la scansione dell'SVG Mermaid guarda solo attributi e blocchi `<style>` (le stesse regioni di `svg_normalize`), le tre figure tornano a rendersi |
+
+Gate finali dopo il giro 2 (8 settembre 2026): `ruff check` e `ruff format
+--check` puliti sugli undici file toccati, senza eccezioni (il giro 2 non
+tocca `course_lesson_slides_pdf_service.py`); `ruff check
+.` del repo **372** (invariato); `mypy app` **205** errori (invariato,
+215 sorgenti); pytest **954/954** verdi, zero saltati (**39 test in più**
+rispetto ai 915 del giro 1: 13 per `json_spans`, 12 per l'isolamento di
+rete, 9 casi del gate Mermaid e del gate DOT, 5 fra scanner delle shape,
+scansione dell'SVG e round-trip della localizzazione); frontend non
+toccato dal giro 2, gate rieseguiti a conferma (`npm run lint` 4 errori di
+baseline e 23 warning, `type-check` e `build` verdi).
 
 ## 15. Limiti dichiarati e lavori futuri
 
@@ -2189,6 +2247,48 @@ rilievo che li ha resi espliciti.
   passare `<img src="file:///…">` e `![](http://…)` nel testo, e WeasyPrint
   li scarica. Preesistente al ramo; il rimedio è un `url_fetcher` che
   ammetta i soli `data:` per tutti i PDF.
+- **Il gate delle shape Mermaid è un soprainsieme del lexer** (SEC-1,
+  giro 2): `_mermaid_shape_blocks` considera shape OGNI `@{` del corpo,
+  anche uno scritto dentro una label (`A["Sintassi: @{"]`), perché seguire
+  anche le virgolette di primo livello significherebbe far sparire il gate
+  su un sorgente con una virgoletta non chiusa. Conseguenza: un diagramma
+  che cita un `@{` spaiato in una label E contiene un URL più avanti
+  riceve 422 al salvataggio. Il costo è un errore esplicito e leggibile al
+  docente, non una figura che sparisce in silenzio; la direzione futura è
+  un vero lexer Mermaid condiviso con il frontend.
+- **L'anteprima dell'editor non passa dal gate** (SEC-1, giro 2): il render
+  Mermaid nel browser del docente è client-side (`securityLevel: "strict"`,
+  DOMPurify), quindi mentre scrive vede la figura che sta scrivendo, shape
+  `img:` compresa, e il suo browser esegue quella richiesta. Il gate
+  impedisce di SALVARLA (422 al PATCH), quindi il payload non raggiunge
+  altri utenti né i documenti prodotti; resta una richiesta che l'autore fa
+  partire dal proprio browser con il proprio contenuto. Il rimedio
+  simmetrico è portare il gate statico anche nel frontend, come è già per
+  la sanificazione degli SVG di DOT e Vega-Lite (`sanitizeSvgElement`).
+- **`click … href` mette un collegamento esterno nell'SVG** (SEC-1,
+  giro 2): con `securityLevel: "loose"` Mermaid rende `click A href
+  "https://…"` come `<a xlink:href="https://…">`. Verificato che NON è una
+  richiesta di rete (il listener non registra nulla e WeasyPrint non
+  dereferenzia i link di un SVG usato come immagine): è un collegamento
+  inerte nel PDF consegnato. Nessun prompt lo produce; rifiutarlo sarebbe
+  un falso positivo su una funzione legittima, quindi resta dichiarato.
+- **Una curva può attraversare l'alone della formula** (TIP-3): il testo
+  delle figure `function` è disegnato sopra le curve con un alone bianco,
+  quindi resta sempre leggibile, ma la formula è ancorata a una posizione
+  fissa (in alto a destra) e la curva che le passa sotto appare interrotta
+  dall'alone — visibile per esempio su `x**2` nella spec `FN_AREA`.
+  Sceglierne il quadrante in base ai dati renderebbe il disegno dipendente
+  dal campionamento, cioè meno deterministico di quanto A11 richieda: il
+  lavoro futuro è una collocazione calcolata una sola volta dai valori
+  esatti, non dai punti campionati.
+- **La localizzazione può ricadere sulla forma compatta** (I18N-3, giro 2):
+  la sostituzione chirurgica conserva la formattazione della spec, ma se la
+  traduzione è più lunga dell'originale e farebbe superare il tetto D5 di
+  4.000 caratteri a una spec che lo rispettava, `apply_translations`
+  riserializza in forma compatta per recuperare quel margine (la
+  formattazione si perde, la figura resta valida). Se nemmeno la forma
+  compatta basta, la spec localizzata supera il tetto e la figura degrada
+  come in A23 in quella lingua.
 - **Il rate limit dell'endpoint è per valore di `X-Forwarded-For`**
   (SEC-3): infrastruttura preesistente identica a `main`; non è il cancello
   del carico (autenticazione, `course:edit` e semaforo lo sono).

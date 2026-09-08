@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import base64
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 SVG_NS = "http://www.w3.org/2000/svg"
@@ -117,17 +118,33 @@ _STYLE_BODY_RE = re.compile(r"<\s*style\b[^>]*>(.*?)<\s*/\s*style\s*>", re.IGNOR
 _ARIA_ATTR_RE = re.compile(r"\saria-[a-z]+\s*=\s*(?:\"[^\"]*\"|'[^']*')", re.IGNORECASE)
 
 
+def iter_tag_contents(body: str) -> Iterator[str]:
+    """Contenuto dei tag `<…>` di un SVG (delimitatori compresi), con gli
+    attributi `aria-*` rimossi. È l'unica parte del documento in cui un
+    riferimento esterno è davvero un attributo: il testo dei nodi
+    (`<text>`, `<tspan>`, `<title>`) non compare mai, così una label che
+    parla di `url(https://…)` resta contenuto legittimo. Riusata dal
+    controllo degli SVG Mermaid, che non passano da `normalize_svg`."""
+    for raw_tag in _TAG_RE.findall(body):
+        yield _ARIA_ATTR_RE.sub("", raw_tag)
+
+
+def iter_style_bodies(body: str) -> Iterator[str]:
+    """Corpo dei blocchi `<style>…</style>`: CSS a tutti gli effetti,
+    quindi soggetto alle stesse regole degli attributi `style`."""
+    yield from _STYLE_BODY_RE.findall(body)
+
+
 def _scan_forbidden(body: str) -> str | None:
     """Ritorna l'etichetta del primo contenuto non ammesso, `None` se pulito."""
     for label, pattern in _FORBIDDEN_GLOBAL:
         if pattern.search(body):
             return label
-    for raw_tag in _TAG_RE.findall(body):
-        tag = _ARIA_ATTR_RE.sub("", raw_tag)
+    for tag in iter_tag_contents(body):
         for label, pattern in (*_FORBIDDEN_IN_TAG, *_FORBIDDEN_CSS):
             if pattern.search(tag):
                 return label
-    for css in _STYLE_BODY_RE.findall(body):
+    for css in iter_style_bodies(body):
         for label, pattern in _FORBIDDEN_CSS:
             if pattern.search(css):
                 return f"{label} in <style>"

@@ -198,6 +198,24 @@ def test_tag_scan_respects_quotes():
     assert 'aria-label="a > b"' in out.svg  # `<settings` non è `<set`
 
 
+def test_scannable_regions_are_shared_with_the_mermaid_check():
+    """`iter_tag_contents` e `iter_style_bodies` sono la parte «codice» di
+    un SVG: gli attributi e il CSS, mai il testo dei nodi. Le usa anche il
+    controllo degli SVG Mermaid, che non passano da `normalize_svg`."""
+    from app.services.svg_normalize import iter_style_bodies, iter_tag_contents
+
+    svg = (
+        "<svg><style>.a{fill:red}</style>"
+        '<text aria-label="url(https://a)">@import e url(https://b)</text></svg>'
+    )
+    tags = list(iter_tag_contents(svg))
+    assert tags[0] == "<svg>" and tags[-1] == "</svg>"
+    joined = "".join(tags)
+    assert "@import" not in joined  # testo del nodo
+    assert "https://a" not in joined  # attributo `aria-*`
+    assert list(iter_style_bodies(svg)) == [".a{fill:red}"]
+
+
 def test_svg_to_data_uri_is_base64():
     svg = '<svg xmlns="http://www.w3.org/2000/svg"/>'
     uri = svg_to_data_uri(svg)

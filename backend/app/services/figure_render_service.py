@@ -51,6 +51,7 @@ import weakref
 from collections import OrderedDict
 from collections.abc import Iterator, Mapping, Sequence
 from functools import lru_cache
+from itertools import chain
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -80,12 +81,18 @@ from app.services.figure_theme import (
     VEGALITE_THEME_CONFIG,
     dot_defaults_prelude,
 )
+from app.services.json_spans import replace_strings as replace_json_strings
 from app.services.mermaid_prerender import (
     _prerender_mermaid_to_svg_batch_sync,
     _sanitize_mermaid_code,
     _strip_mermaid_max_width,
 )
-from app.services.svg_normalize import SvgRejectedError, normalize_svg
+from app.services.svg_normalize import (
+    SvgRejectedError,
+    iter_style_bodies,
+    iter_tag_contents,
+    normalize_svg,
+)
 
 log = get_logger("app.figure_render")
 
@@ -274,29 +281,88 @@ _FRONTMATTER_LINE_RE = re.compile(r"^(?:title|displayMode)\s*:(?:\s|$)")
 # attributi non attraversa `]`, `)`, `}`).
 # Eccezione `<br>`: non è HTML reso in chiaro ma sintassi di Mermaid
 # (`lineBreakRegex = /<br\s*\/?>/gi`), che 10.9.4 e 11.17.2 rendono come
-# `tspan.row` senza alcun `<foreignObject>`; il lookahead ricalca quella
-# regex (`<br>`, `<br/>`, `<br />`, senza distinzione di maiuscole) e
-# lascia passare solo la forma di apertura: `</br>` resta un tag.
+# `tspan.row` senza alcun `<foreignObject>`; il lookahead ricalca ESATTAMENTE
+# quella regex (`<br>`, `<br >`, `<br/>`, `<br />`, senza distinzione di
+# maiuscole) e lascia passare solo la forma di apertura: `</br>` resta un tag.
 _HTML_TAG_RE = re.compile(
-    r"(?<!<)(?!<[bB][rR](?:\s*/)?\s*>)</?[a-zA-Z][a-zA-Z0-9-]*(?:\s[^>\n\]\)\}]*)?/?>(?!>)"
+    r"(?<!<)(?!<[bB][rR]\s*/?>)</?[a-zA-Z][a-zA-Z0-9-]*(?:\s[^>\n\]\)\}]*)?/?>(?!>)"
 )
+# Forme `<br…>` con uno spazio DOPO la barra: `lineBreakRegex` non le
+# riconosce (`\s*` sta prima di `/`), quindi Mermaid le lascerebbe in
+# chiaro nella label. `<br / >` cade già in `_HTML_TAG_RE`; `<br/ >` no,
+# perché la sezione degli attributi di quella regex non ammette una `/`
+# prima degli spazi: serve questa regola dedicata (REG-1).
+_MERMAID_BR_SPURIOUS_RE = re.compile(r"<[bB][rR]\s*/\s+>")
 # Attributi di shape dei flowchart Mermaid 11 (`A@{ img: "https://…" }`):
 # il nodo diventa un `<image href="…">` che il Chromium del pre-render,
 # WeasyPrint (dispensa e slide) e il browser del docente dereferenziano —
 # SSRF dal server e risorsa esterna dentro il PDF consegnato. Il gate
 # rifiuta l'attributo `img` e ogni URL dentro una direttiva `@{ … }`;
 # `svg_normalize` non può fare da rete perché Mermaid ne è esente (A11),
-# quindi la seconda difesa è la scansione dell'SVG (`_SVG_EXTERNAL_REF_RE`).
-_MERMAID_SHAPE_RE = re.compile(r"@\{[^}]*\}", re.DOTALL)
+# quindi le difese successive sono la scansione dell'SVG
+# (`_svg_external_ref`) e l'isolamento di rete del pre-render
+# (`mermaid_prerender.allows_prerender_url`).
 _MERMAID_SHAPE_IMG_RE = re.compile(r"\bimg\s*:", re.IGNORECASE)
 _MERMAID_SHAPE_URL_RE = re.compile(r"\b(?:https?|file|data|blob|ftp):", re.IGNORECASE)
 # Costrutti che caricano una risorsa esterna in un SVG Mermaid già reso:
 # nessuna delle 15 famiglie D8 li produce, quindi la loro presenza è
-# sempre il segno di un contenuto che ha aggirato il gate.
+# sempre il segno di un contenuto che ha aggirato il gate. Applicati SOLO
+# al contenuto dei tag e ai blocchi `<style>` (vedi `_svg_external_ref`).
 _SVG_EXTERNAL_REF_RE = re.compile(
     r"<(?:image|script|iframe)\b|url\(\s*[\'\"]?\s*(?:https?:|file:|//)|@import",
     re.IGNORECASE,
 )
+
+
+def _svg_external_ref(svg: str) -> str | None:
+    """Primo riferimento esterno trovato negli ATTRIBUTI o nel CSS di un
+    SVG Mermaid già reso; `None` se è pulito.
+
+    La scansione è limitata al contenuto dei tag e ai blocchi `<style>`,
+    come quella di `svg_normalize` per gli altri renderer: il testo dei
+    nodi non è codice, e cercarvi `@import` o `url(https://…)` faceva
+    sparire dall'export una figura legittima la cui label parla di CSS —
+    visibile nell'editor (il render client-side non scandisce nulla) e
+    sostituita da un `<pre>` in dispensa, slide e video."""
+    for region in chain(iter_tag_contents(svg), iter_style_bodies(svg)):
+        found = _SVG_EXTERNAL_REF_RE.search(region)
+        if found is not None:
+            return found.group(0)
+    return None
+
+
+def _mermaid_shape_blocks(code: str) -> Iterator[str]:
+    """Blocchi `@{ … }` del sorgente, delimitatori compresi, con lo stesso
+    criterio di chiusura del lexer di Mermaid 11.
+
+    Il lexer entra in `shapeData` su `@{` e ne esce sulla `}` che incontra
+    fuori dalle virgolette: lo stato `shapeDataStr` (regole 8/9/10 del
+    lexer di 11.17.2: `["]` push, `["]` pop, `[^"]+`) fa sì che una `}`
+    dentro una stringa quotata NON chiuda la shape, e la barra rovesciata
+    non vi ha alcun ruolo di escape. Una regex `@\\{[^}]*\\}` si fermava
+    invece alla prima `}`, e quel disallineamento nascondeva al gate tutto
+    quello che seguiva (`A@{ label: "}", img: "http://…" }`, SEC-1).
+
+    Uno `@{` senza chiusura estende il blocco fino alla fine del sorgente:
+    è il caso in cui Mermaid arriva a EOF dentro la shape e la parse
+    fallisce, quindi rifiutare tutto è la scelta prudente."""
+    i, n = 0, len(code)
+    while True:
+        start = code.find("@{", i)
+        if start < 0:
+            return
+        j, in_string = start + 2, False
+        while j < n:
+            ch = code[j]
+            if ch == '"':
+                in_string = not in_string
+            elif ch == "}" and not in_string:
+                j += 1
+                break
+            j += 1
+        yield code[start:j]
+        i = j
+
 
 # Esiti del gate statico (condivisi con `scripts/revalidate_mermaid_assets.py`).
 MERMAID_GATE_EMPTY = "mermaid_empty"
@@ -388,13 +454,12 @@ def mermaid_static_gate(code: str) -> tuple[str, str]:
     # commento o nel frontmatter non viene renderizzato.
     lines = [line for line in body if not line.lstrip().startswith("%%")]
     for line in lines:
-        m = _HTML_TAG_RE.search(line)
+        m = _MERMAID_BR_SPURIOUS_RE.search(line) or _HTML_TAG_RE.search(line)
         if m:
             return (MERMAID_GATE_HTML, m.group(0))
     # Le direttive `@{ … }` possono occupare più righe: si guarda il corpo
     # intero, senza i commenti.
-    for shape in _MERMAID_SHAPE_RE.finditer("\n".join(lines)):
-        inner = shape.group(0)
+    for inner in _mermaid_shape_blocks("\n".join(lines)):
         if _MERMAID_SHAPE_IMG_RE.search(inner):
             return (MERMAID_GATE_RESOURCE, "img:")
         url = _MERMAID_SHAPE_URL_RE.search(inner)
@@ -469,9 +534,9 @@ class MermaidRenderer:
             # `_strip_mermaid_max_width` è già applicato dal pre-render ed è
             # idempotente: qui rende esplicito il contratto del registro.
             svg = _strip_mermaid_max_width(svg)
-            ref = _SVG_EXTERNAL_REF_RE.search(svg)
+            ref = _svg_external_ref(svg)
             if ref is not None:
-                _render_failed(self.fmt, asset_id, f"risorsa esterna nell'SVG: {ref.group(0)}")
+                _render_failed(self.fmt, asset_id, f"risorsa esterna nell'SVG: {ref}")
                 out.append(None)
                 continue
             out.append(svg)
@@ -742,18 +807,28 @@ class VegaLiteRenderer:
         return out
 
     def apply_translations(self, content: str, tr: Mapping[str, str]) -> str:
-        spec, _err = _parse_vegalite(self.sanitize(content))
+        source = self.sanitize(content)
+        spec, _err = _parse_vegalite(source)
         if spec is None or not tr:
             return content
+        applied: dict[str, str] = {}
         for path, value in tr.items():
             try:
                 _set_by_path(spec, path, value)
             except (KeyError, IndexError, ValueError):
                 continue
-        # Separatori compatti: la riserializzazione non deve gonfiare la
-        # spec e farle superare il tetto D5 di `VEGALITE_MAX_CHARS` solo
-        # per gli spazi che `json.dumps` reintrodurrebbe (I18N-3).
-        return json.dumps(spec, ensure_ascii=False, separators=(",", ":"))
+            applied[path] = value
+        # Sostituzione chirurgica delle sole stringhe tradotte: la spec
+        # NON viene riserializzata, quindi la formattazione del docente
+        # sopravvive e il round-trip con traduzioni identiche è
+        # byte-identico (I18N-3).
+        out = replace_json_strings(source, applied)
+        if out is None or (len(out) > VEGALITE_MAX_CHARS >= len(source)):
+            # Sorgente non scandibile, oppure la formattazione conservata
+            # farebbe superare il tetto D5 a una spec che lo rispettava:
+            # la forma compatta è la sola che recupera quel margine.
+            return json.dumps(spec, ensure_ascii=False, separators=(",", ":"))
+        return out
 
 
 # ---------------------------------------------------------------------------
@@ -866,7 +941,16 @@ def _dot_read_qstring(src: str, start: int) -> tuple[str, int]:
 
 def _dot_skip_blank(src: str, i: int) -> int:
     """Indice del primo carattere significativo da `i`: salta spazi,
-    commenti `/* */`, `//` e righe `#` (preprocessore, a colonna 0)."""
+    commenti `/* */`, `//` e `#`.
+
+    Il `#` è documentato come riga di preprocessore, ma lo scanner di
+    Graphviz 15.1.1 lo tratta come commento fino a fine riga OVUNQUE, non
+    solo a colonna 0: verificato che `digraph { a # -> b⏎; c }` non
+    produce archi e che `digraph { a# [image="…"] ⏎ b }` non apre alcun
+    file. Limitarlo alla colonna 0 lasciava desincronizzare il
+    tokenizzatore da una virgoletta dentro un commento a metà riga
+    (`digraph { # "⏎ x [image="…"] }`, SEC-2). Dentro le stringhe non
+    arriva mai: `_dot_tokens` le legge con `_dot_read_string_atom`."""
     n = len(src)
     while i < n:
         ch = src[i]
@@ -875,7 +959,7 @@ def _dot_skip_blank(src: str, i: int) -> int:
         elif src.startswith("/*", i):
             end = src.find("*/", i + 2)
             i = n if end < 0 else end + 2
-        elif src.startswith("//", i) or (ch == "#" and (i == 0 or src[i - 1] == "\n")):
+        elif src.startswith("//", i) or ch == "#":
             end = src.find("\n", i)
             i = n if end < 0 else end
         else:

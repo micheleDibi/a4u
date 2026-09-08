@@ -69,6 +69,7 @@ from app.services.figure_compute.isolated import (
     run_isolated,
 )
 from app.services.figure_theme import THEME_VERSION, format_number, function_caption
+from app.services.json_spans import replace_strings as replace_json_strings
 from app.services.svg_normalize import SvgRejectedError, normalize_svg
 
 log = get_logger("app.figure_function")
@@ -674,6 +675,7 @@ def apply_translations(content: str, tr: Mapping[str, str]) -> str:
     data = _load_json_object(content)
     if data is None or not tr:
         return content
+    applied: dict[str, str] = {}
     for path, value in tr.items():
         parts = path.split(".")
         if len(parts) != 3 or parts[2] != "label" or parts[0] not in ("expressions", "annotations"):
@@ -685,8 +687,13 @@ def apply_translations(content: str, tr: Mapping[str, str]) -> str:
             continue
         if isinstance(items, list) and 0 <= index < len(items) and isinstance(items[index], dict):
             items[index]["label"] = value
-    # Separatori compatti: la riserializzazione della spec non deve
-    # allungare il contenuto per i soli spazi di `json.dumps` (I18N-3).
+            applied[path] = value
+    # Sostituzione chirurgica delle sole label tradotte: la spec NON viene
+    # riserializzata, quindi la formattazione del docente sopravvive e il
+    # round-trip con traduzioni identiche è byte-identico (I18N-3).
+    out = replace_json_strings(content, applied)
+    if out is not None:
+        return out
     return json.dumps(data, ensure_ascii=False, separators=(",", ":"))
 
 
