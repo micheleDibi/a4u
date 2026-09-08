@@ -425,7 +425,7 @@ def test_function_extra_caption_follows_the_author_caption(monkeypatch: pytest.M
     }
     html = _render(content, visual_svg_map={"F": SVG_B})
     fig = _figures(html)[0]
-    assert fig["caption"] == f'<span class="figure-label">Figura 1.</span> Parabola {_TAIL}'
+    assert fig["caption"] == f'<span class="figure-label">Figura 1.</span> Parabola. {_TAIL}'
     assert seen == {"content": '{"kind": "function_study"}', "language": "it", "asset_id": "F"}
 
 
@@ -437,8 +437,11 @@ def test_function_extra_caption_follows_the_author_caption(monkeypatch: pytest.M
         (_TAIL, _TAIL),
         (f"Parabola.  {_TAIL}  ", f"Parabola. {_TAIL}"),
         # Coda presente ma non in fondo: non è una ripetizione, resta.
-        (f"{_TAIL} Parabola", f"{_TAIL} Parabola {_TAIL}"),
-        ("Parabola", f"Parabola {_TAIL}"),
+        # La coda è un periodo a sé: se la didascalia non chiude, il
+        # partial aggiunge il punto (TIP-9).
+        (f"{_TAIL} Parabola", f"{_TAIL} Parabola. {_TAIL}"),
+        ("Parabola", f"Parabola. {_TAIL}"),
+        ("Parabola:", f"Parabola: {_TAIL}"),
     ],
 )
 def test_function_extra_caption_is_not_repeated_when_the_author_already_wrote_it(
@@ -470,9 +473,36 @@ def test_render_figure_html_double_tail_guard_is_exact_suffix() -> None:
     same = figure_markup.render_figure_html(caption="Testo. Coda.", extra_caption="Coda.", **kwargs)
     assert "Figura 1.</span> Testo. Coda.</figcaption>" in same
     other = figure_markup.render_figure_html(caption="Testo. Coda", extra_caption="Coda.", **kwargs)
-    assert "Figura 1.</span> Testo. Coda Coda.</figcaption>" in other
+    assert "Figura 1.</span> Testo. Coda. Coda.</figcaption>" in other
     empty = figure_markup.render_figure_html(caption="", extra_caption="Coda.", **kwargs)
     assert "Figura 1.</span> Coda.</figcaption>" in empty
+
+
+def test_caption_and_computed_tail_are_separated_by_a_full_stop() -> None:
+    """La coda calcolata è un periodo autonomo: giustapposta a una didascalia
+    senza punteggiatura si leggeva «…razionale Zeri in x = −1, 1.». Il
+    punto lo aggiunge il partial, stessa regola di `FigureFrame` (TIP-9)."""
+    kwargs: dict[str, Any] = {
+        "body_html": Markup("<i/>"),
+        "alt_text": "",
+        "asset_id": "A",
+        "fmt": "function",
+        "number": 1,
+        "labels": None,
+        "variant": "lesson",
+    }
+    for caption, expected in (
+        ("Studio della funzione", "Studio della funzione. Coda."),
+        ("Studio della funzione.", "Studio della funzione. Coda."),
+        ("Domanda?", "Domanda? Coda."),
+        ("Titolo:", "Titolo: Coda."),
+        ("", "Coda."),
+    ):
+        html = figure_markup.render_figure_html(caption=caption, extra_caption="Coda.", **kwargs)
+        assert f"Figura 1.</span> {expected}</figcaption>" in html, caption
+    # Senza coda la didascalia resta quella del docente, punto compreso.
+    plain = figure_markup.render_figure_html(caption="Senza coda", extra_caption="", **kwargs)
+    assert "Figura 1.</span> Senza coda</figcaption>" in plain
 
 
 def test_function_extra_caption_not_requested_on_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -608,7 +638,7 @@ async def test_function_svg_cache_hit_without_engine_result_is_rerendered(
             html = _render(_function_content(), visual_svg_map=again)
         assert again == first and calls == ["", ""]
         assert _figures(html)[0]["caption"] == (
-            '<span class="figure-label">Figura 1.</span> Parabola Zeri in x = 1.'
+            '<span class="figure-label">Figura 1.</span> Parabola. Zeri in x = 1.'
         )
         assert not [e for e in logs if e["event"] == "figure_caption_missing"]
         # Anche `render_svg` diretto (validazione profonda, batch) ripopola.
@@ -638,7 +668,7 @@ async def test_function_caption_survives_result_cache_eviction_with_the_real_eng
         assert svg_map_again == svg_map  # byte-identico (hashsalt fisso)
         caption = _figures(html)[0]["caption"]
         assert caption.startswith(
-            '<span class="figure-label">Figura 1.</span> Parabola Zeri in x = '
+            '<span class="figure-label">Figura 1.</span> Parabola. Zeri in x = '
         )
         assert not [e for e in logs if e["event"] == "figure_caption_missing"]
     finally:
@@ -785,6 +815,12 @@ async def test_prerender_for_slides_merges_content_and_new_assets(
     assert (
         slides_pdf._prerender_visual_assets_for_slides is slides_pdf._prerender_mermaid_for_slides
     )
+    # Id in collisione con una figura delle Dispense: il nuovo asset non
+    # entra nel batch, altrimenti il suo SVG sostituirebbe quello della
+    # figura di Fase 3 sotto la didascalia di quest'ultima (COR-8).
+    collisione = [_asset("a", "dot", "digraph { x -> y }")]
+    await slides_pdf._prerender_mermaid_for_slides(content_raw, collisione, language="it")
+    assert seen["ids"] == ["A"]
 
 
 # ---------------------------------------------------------------------------
@@ -872,7 +908,7 @@ def test_render_figure_html_sanitizes_format_class_and_uses_unnumbered_label() -
         extra_caption="  extra\n\ncoda ",
     )
     assert "figure--weird" in html
-    assert '<span class="figure-label">Figure.</span> c extra coda</figcaption>' in html
+    assert '<span class="figure-label">Figure.</span> c. extra coda</figcaption>' in html
 
 
 def test_figure_label_interpolates_number() -> None:

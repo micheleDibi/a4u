@@ -51,6 +51,7 @@ from typing import TYPE_CHECKING, Any
 from app.services.figure_compute.function_numeric import MAX_NOTABLE_POINTS, NumericStudy
 from app.services.figure_theme import (
     COLOR_AXIS,
+    COLOR_GRID,
     COLOR_INK,
     COLOR_MUTED,
     MATPLOTLIB_RC,
@@ -77,6 +78,21 @@ FORMULA_LEFT_FRACTION = 0.015
 FORMULA_TOO_WIDE = "formula_too_wide"
 # Font bundled di matplotlib: la geometria è identica su ogni macchina.
 _TEXTPATH_FAMILY = "DejaVu Sans"
+# Il testo va SOPRA le curve (i `PathPatch` di matplotlib stanno a zorder 1,
+# le linee a 2: senza questo la formula e le coordinate esatte finiscono
+# sotto il grafico) e su un alone bianco che lo stacca da ciò che passa
+# sotto. L'alone è un tratto sul contorno del `TextPath`, quindi resta
+# geometria (A14) e non tocca il resto del testo, che rimane `<text>`.
+TEXT_ZORDER = 5.0
+HALO_WIDTH_PT = 2.2
+# Alone delle etichette `<text>` (tick, coordinate approssimate): un
+# riquadro bianco dietro il testo, che così resta testo estraibile.
+TEXT_HALO_BBOX: dict[str, Any] = {
+    "boxstyle": "square,pad=0.12",
+    "facecolor": "white",
+    "edgecolor": "none",
+    "alpha": 0.82,
+}
 
 _MATHTEXT_UNSUPPORTED = ("\\begin{", "\\end{", "\\over")
 _MATHTEXT_REPLACEMENTS: tuple[tuple[str, str], ...] = (
@@ -268,6 +284,7 @@ class _Canvas:
         punti tipografici qualunque sia il dpi del backend."""
         from matplotlib.font_manager import FontProperties
         from matplotlib.patches import PathPatch
+        from matplotlib.patheffects import withStroke
         from matplotlib.textpath import TextPath
         from matplotlib.transforms import Affine2D, ScaledTranslation
 
@@ -291,8 +308,15 @@ class _Canvas:
             + ScaledTranslation(anchor[0], anchor[1], transform)
         )
         patch = PathPatch(
-            path, facecolor=color, edgecolor="none", linewidth=0, transform=trans, clip_on=False
+            path,
+            facecolor=color,
+            edgecolor="none",
+            linewidth=0,
+            transform=trans,
+            clip_on=False,
+            zorder=TEXT_ZORDER,
         )
+        patch.set_path_effects([withStroke(linewidth=HALO_WIDTH_PT, foreground="white")])
         patch.set_gid(gid)
         self.ax.add_patch(patch)
 
@@ -335,6 +359,8 @@ class _Canvas:
             color=color,
             gid=gid,
             annotation_clip=False,
+            zorder=TEXT_ZORDER,
+            bbox=dict(TEXT_HALO_BBOX),
         )
 
 
@@ -392,6 +418,14 @@ def _setup_axes(canvas: _Canvas, study: NumericStudy, *, names: tuple[str, str])
         FuncFormatter(lambda v, _p: "" if (sy == 0.0 and abs(v) < y_eps) else tick(v, y_eps))
     )
     ax.tick_params(length=3, pad=2)
+    # Con le spine a zero i tick stanno DENTRO l'area dati e matplotlib
+    # disegna l'asse sotto le curve: senza questo un ramo che passa per un
+    # tick lo cancella. Assi sopra i dati (la griglia delle curve di
+    # livello è disegnata a mano, sotto) e riquadro bianco sotto ogni
+    # etichetta, che resta `<text>` (TIP-5).
+    ax.set_axisbelow(False)
+    for label in (*ax.get_xticklabels(), *ax.get_yticklabels()):
+        label.set_bbox(dict(TEXT_HALO_BBOX))
     ax.plot(
         [1.0],
         [sy],
@@ -418,10 +452,13 @@ def _setup_axes(canvas: _Canvas, study: NumericStudy, *, names: tuple[str, str])
         names[0],
         xy=(1.0, sy),
         xycoords=ax.get_yaxis_transform(),
-        xytext=(2, -6),
+        # Sopra la freccia, non sotto: l'etichetta del tick dell'estremo
+        # destro è centrata sulla fine dell'asse e a `va="top"` i due
+        # testi si toccavano, leggendosi come un unico token («8x»).
+        xytext=(3, 4),
         textcoords="offset points",
         ha="left",
-        va="top",
+        va="bottom",
         fontsize=9,
         color=COLOR_INK,
         gid="axis-name-x",
@@ -440,6 +477,35 @@ def _setup_axes(canvas: _Canvas, study: NumericStudy, *, names: tuple[str, str])
         gid="axis-name-y",
         annotation_clip=False,
     )
+
+
+_MATH_MARKUP_RE = re.compile(r"[$\s]")
+
+
+def _label_plain(text: str) -> str:
+    """Etichetta ridotta alla forma confrontabile con un tick: senza `$` né
+    spazi e con il segno meno tipografico usato da `format_number`."""
+    return _MATH_MARKUP_RE.sub("", text).replace("-", "\u2212")
+
+
+def _x_tick_conflict(ax: Any, x: float, text: str) -> str:
+    """Rapporto fra l'etichetta di un punto notevole in `x` e i tick già
+    disegnati: `"duplicate"` se in quel punto c'è un tick con lo STESSO
+    testo (`0` sopra `0`), `"shift"` se ce n'è uno abbastanza vicino da
+    sovrapporsi (`−π` sopra `−3`), `""` se il posto è libero. Le posizioni
+    vengono dal locator, che dipende solo dai limiti già fissati: l'esito
+    è deterministico."""
+    lo, hi = ax.get_xlim()
+    tolerance = 0.025 * abs(hi - lo)
+    formatter = ax.xaxis.get_major_formatter()
+    conflict = ""
+    for i, value in enumerate(ax.get_xticks()):
+        if not lo <= value <= hi or abs(value - x) > tolerance:
+            continue
+        if _label_plain(str(formatter(value, i))) == _label_plain(text):
+            return "duplicate"
+        conflict = "shift"
+    return conflict
 
 
 def _draw_curves(canvas: _Canvas, study: NumericStudy) -> bool:
@@ -488,11 +554,18 @@ def _draw_points(canvas: _Canvas, computed: Mapping[str, Any]) -> None:
             x = float(entry["x"])
             ax.plot([x], [0.0], "o", markersize=4, color=COLOR_INK, gid=f"zero-{k}")
             text, is_math = _value_label(entry.get("exact"), x)
+            label = f"${text}$" if is_math else text
+            conflict = _x_tick_conflict(ax, x, label)
+            if conflict == "duplicate":
+                # Il tick dice già lo stesso: l'etichetta sarebbe «0₀».
+                continue
             canvas.draw_label(
-                f"${text}$" if is_math else text,
+                label,
                 is_math=is_math,
                 xy=(x, 0.0),
-                offset_pt=(3.0, -10.0),
+                # Seconda riga quando il tick è lì ma dice altro (`−π`
+                # sopra `−3`): l'informazione esatta resta, senza fusione.
+                offset_pt=(3.0, -20.0 if conflict else -10.0),
                 gid=f"zero-label-{k}",
                 va="top",
             )
@@ -758,7 +831,19 @@ def _draw_levels(canvas: _Canvas, study: NumericStudy) -> None:
     contours = ax.contour(xx, yy, zz, levels=study.levels, colors=colors, linewidths=1.2)
     contours.set_gid("levels")
     ax.clabel(contours, fmt=lambda v: format_number(v), fontsize=LABEL_SIZE_PT, inline=True)
-    ax.grid(True)
+    # Griglia disegnata a mano SOTTO le curve: `ax.grid(True)` la
+    # affiderebbe all'asse, che ora sta sopra i dati per non farsi
+    # cancellare i tick (TIP-5).
+    xlo, xhi = ax.get_xlim()
+    ylo, yhi = ax.get_ylim()
+    for value in ax.get_xticks():
+        if xlo <= value <= xhi:
+            ax.axvline(value, color=COLOR_GRID, linewidth=0.6, zorder=0.5)
+    for value in ax.get_yticks():
+        if ylo <= value <= yhi:
+            ax.axhline(value, color=COLOR_GRID, linewidth=0.6, zorder=0.5)
+    ax.set_xlim(xlo, xhi)
+    ax.set_ylim(ylo, yhi)
 
 
 def render_svg(

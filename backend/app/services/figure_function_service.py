@@ -685,7 +685,9 @@ def apply_translations(content: str, tr: Mapping[str, str]) -> str:
             continue
         if isinstance(items, list) and 0 <= index < len(items) and isinstance(items[index], dict):
             items[index]["label"] = value
-    return json.dumps(data, ensure_ascii=False)
+    # Separatori compatti: la riserializzazione della spec non deve
+    # allungare il contenuto per i soli spazi di `json.dumps` (I18N-3).
+    return json.dumps(data, ensure_ascii=False, separators=(",", ":"))
 
 
 __all__ = [

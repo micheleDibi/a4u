@@ -271,12 +271,19 @@ async def _prerender_mermaid_for_slides(
     # Costruisce un dict-like content con tutti gli asset visivi:
     # base_pdf._prerender_visual_assets_for_lesson legge `visual_assets`.
     merged_visual_assets: list[dict[str, Any]] = []
+    seen: set[str] = set()
     if content_raw:
         for a in content_raw.get("visual_assets") or []:
             if isinstance(a, dict):
                 merged_visual_assets.append(a)
+                seen.add(str(a.get("asset_id", "")).lower())
     for na in new_assets or []:
-        if isinstance(na, dict):
+        # La mappa è indicizzata per `asset_id`: un nuovo asset con l'id di
+        # una figura delle Dispense ne sovrascriverebbe l'SVG, e siccome
+        # `_resolve_asset_for_slide` risolve prima le Dispense la slide
+        # mostrerebbe la didascalia di una figura e il disegno dell'altra.
+        # L'id di Fase 4 è già irraggiungibile: qui si salta il render.
+        if isinstance(na, dict) and str(na.get("asset_id", "")).lower() not in seen:
             merged_visual_assets.append(na)
     return await base_pdf._prerender_visual_assets_for_lesson(
         {"visual_assets": merged_visual_assets}, language=language
@@ -779,7 +786,7 @@ async def cancel_all_slides_pdf_exports(
             target_type="course",
             target_id=str(course.id),
             metadata={
-                "cancelled_lesson_codes": [l.lesson_code for l in affected],
+                "cancelled_lesson_codes": [x.lesson_code for x in affected],
             },
         )
     await db.commit()

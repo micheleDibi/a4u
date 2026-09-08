@@ -769,7 +769,7 @@
     },
     "lessonsContent": {
       "title": "Lecture notes",
-      "description": "For each lesson the AI writes the full markdown text with visual assets (Mermaid, LaTeX formulas, tables), examples, exercises and references.",
+      "description": "For each lesson the AI writes the full markdown text with figures (Mermaid, Vega-Lite, DOT, mathematical), images, LaTeX formulas, tables, examples, exercises and references.",
       "lessonsStructureNotApproved": "Approve the lesson structure first to generate lecture notes.",
       "generateAll": "Generate lecture notes for all lessons",
       "regenerateAll": "Regenerate all lecture notes",
@@ -908,7 +908,7 @@
           "writeFunction": "Compose a mathematical figure"
         },
         "assetRejected": "Asset rejected by the server",
-        "legacyAssetBanner": "Legacy asset, no longer editable. Delete it and recreate as a Mermaid diagram or an uploaded image.",
+        "legacyAssetBanner": "Legacy asset, no longer editable. Delete it and recreate it as a figure (Mermaid, Vega-Lite, DOT, mathematical) or an uploaded image.",
         "refCode": "Reference code",
         "refCopy": "Copy reference",
         "refCopied": "Copied: {{token}}",
@@ -1094,7 +1094,23 @@
           "samplingPoints": "Sampling points ({{min}}–{{max}})",
           "preview": "Preview",
           "previewIncomplete": "Fill in the required fields to see the preview",
-          "previewInvalid": "Fix the highlighted fields to refresh the preview"
+          "previewInvalid": "Fix the highlighted fields to refresh the preview",
+          "warnings": {
+            "label": "Warnings:",
+            "expressionUndefined": "The expression is undefined everywhere on the domain: fix the domain or the expression.",
+            "seriesUndefined": "One curve of the family is undefined on the chosen domain.",
+            "zeroInterval": "The function vanishes on an interval, not at isolated points.",
+            "stationaryInterval": "The function is constant on an interval: critical points are not isolated.",
+            "tooManyPoints": "Too many notable points: the list was truncated.",
+            "tangentUndefined": "The tangent is undefined at the requested point.",
+            "integralUndefined": "The integral cannot be computed on the requested interval.",
+            "pointUndefined": "The annotated point is undefined on the domain.",
+            "levelsUndefined": "The requested levels do not appear on the chosen domain.",
+            "formulaNotMathtext": "The formula is shown in Python syntax: mathematical notation is unavailable.",
+            "formulaTooWide": "The formula does not fit in the figure: only the function name is kept.",
+            "symbolicTimeout": "Symbolic computation timed out: values are approximate.",
+            "symbolic": "Symbolic computation unavailable: values are approximate."
+          }
         }
       }
     },

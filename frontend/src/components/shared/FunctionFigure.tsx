@@ -7,8 +7,14 @@ import { useCourseRef } from "@/contexts/CourseRefContext";
 import { describeApiError } from "@/lib/errors";
 import { describeFigureParseError, svgDataUri } from "@/lib/figureFormats";
 import { parseFunctionContent } from "@/lib/functionSpec";
+import { cn } from "@/lib/utils";
 
-import { FigureErrorBox, FigureFrame, FigureLoading } from "./FigureFrame";
+import {
+  FIGURE_SURFACE,
+  FigureErrorBox,
+  FigureFrame,
+  FigureLoading,
+} from "./FigureFrame";
 
 /**
  * Figura `function` (D9) in vista lezione e slide: la spec JSON è resa dal
@@ -90,11 +96,13 @@ export function FunctionFigure({
   } else {
     extraCaption = query.data.computed_caption;
     body = (
-      <img
-        src={svgDataUri(query.data.svg)}
-        alt={altText || caption || ""}
-        className="figure-svg mx-auto block h-auto max-w-full"
-      />
+      <div className={cn(FIGURE_SURFACE, "flex justify-center")}>
+        <img
+          src={svgDataUri(query.data.svg)}
+          alt={altText || caption || ""}
+          className="figure-svg mx-auto block h-auto max-w-full"
+        />
+      </div>
     );
   }
 

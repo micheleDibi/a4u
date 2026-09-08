@@ -12,7 +12,7 @@ import type { MermaidConfig } from "mermaid";
  * default) e FigureFrame.
  */
 
-export const THEME_VERSION = "2026.09.2";
+export const THEME_VERSION = "2026.09.3";
 
 export const FONT_FAMILY_PRIMARY = "Noto Sans";
 export const FONT_STACK = '"Noto Sans", "DejaVu Sans", sans-serif';
@@ -223,6 +223,9 @@ export function mermaidConfig({
     pieLegendTextColor: COLOR_INK,
     pieStrokeColor: COLOR_WHITE,
     pieOuterStrokeColor: COLOR_WHITE,
+    // Senza questa Mermaid 11 default a 0.7: fette schiarite e diverse
+    // dai riquadri della legenda.
+    pieOpacity: "1",
     // xychart: palette delle serie, assi e titolo.
     xyChart: {
       backgroundColor: COLOR_WHITE,
@@ -285,7 +288,15 @@ export const VEGALITE_THEME_CONFIG: Record<string, unknown> = {
   font: FONT_FAMILY_PRIMARY,
   background: "transparent",
   padding: 8,
-  view: { stroke: null, continuousWidth: 360, continuousHeight: 220 },
+  // `discrete*`: senza, le scale band/point userebbero il passo di
+  // default (20 px) e le barre uscirebbero minuscole.
+  view: {
+    stroke: null,
+    continuousWidth: 360,
+    continuousHeight: 220,
+    discreteWidth: 360,
+    discreteHeight: 220,
+  },
   axis: {
     labelFont: FONT_FAMILY_PRIMARY,
     titleFont: FONT_FAMILY_PRIMARY,
@@ -300,6 +311,8 @@ export const VEGALITE_THEME_CONFIG: Record<string, unknown> = {
     gridWidth: 0.6,
     labelLimit: 120,
   },
+  // Asse x discreto in orizzontale (il default di Vega-Lite lo ruota).
+  axisX: { labelAngle: 0, labelOverlap: "greedy" },
   legend: {
     labelFont: FONT_FAMILY_PRIMARY,
     titleFont: FONT_FAMILY_PRIMARY,
@@ -341,7 +354,9 @@ export const DOT_DEFAULTS = {
 
 export type DotDefaultsBlock = keyof typeof DOT_DEFAULTS;
 
-export function dotDefaultsPrelude(skip: ReadonlySet<DotDefaultsBlock> = new Set()): string {
+export function dotDefaultsPrelude(
+  skip: ReadonlySet<DotDefaultsBlock> = new Set(),
+): string {
   return (Object.keys(DOT_DEFAULTS) as DotDefaultsBlock[])
     .filter((k) => !skip.has(k))
     .map((k) => DOT_DEFAULTS[k])

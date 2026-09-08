@@ -139,6 +139,14 @@ def test_d8_main_fills_and_borders_follow_palette(rendered, kind, selector, prop
     assert _prop(rendered[kind], selector, prop) == expected.lower()
 
 
+def test_pie_slices_are_fully_opaque(rendered):
+    """Senza `pieOpacity` Mermaid 11 disegna le fette a 0.7: i riempimenti
+    percepiti escono dalla palette (#4798C6 invece di #0072B2) e non
+    coincidono con i riquadri della legenda, che stanno a opacità piena
+    (TIP-7)."""
+    assert _prop(rendered["pie"], ".pieCircle", "opacity").strip() == "1"
+
+
 def test_pie_xychart_quadrant_use_palette_inline(rendered):
     # Questi tipi scrivono i colori negli attributi, non nel `<style>`.
     blue = theme.PALETTE[0]

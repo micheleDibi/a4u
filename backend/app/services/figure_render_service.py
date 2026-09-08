@@ -265,20 +265,45 @@ _INIT_DIRECTIVE_RE = re.compile(r"%%\s*\{\s*init(?:ialize)?\b", re.IGNORECASE)
 # `#` o una voce `title:` / `displayMode:` in forma blocco. Un frontmatter
 # che Mermaid ignora (chiave sconosciuta) è rifiutato con lo stesso esito.
 _FRONTMATTER_LINE_RE = re.compile(r"^(?:title|displayMode)\s*:(?:\s|$)")
-# Tag HTML nelle label (`<br>`, `<b>`, `<script>`, `<table>`, ...): con
+# Tag HTML nelle label (`<b>`, `<script>`, `<table>`, ...): con
 # `htmlLabels: false` finirebbero in chiaro nel `<text>`. Regola generica,
 # non un elenco di tag: `<` seguito da un nome di elemento e chiuso da `>`
 # sulla stessa riga. Non sono tag e passano: le frecce (`-->`, `<|--`,
 # `->>`, `<-->`), le annotazioni `<<interface>>` (doppio `<`), un `<`
 # isolato (`a < b`) e un `<b` non chiuso (`A[x <b] --> B`: la sezione degli
 # attributi non attraversa `]`, `)`, `}`).
-_HTML_TAG_RE = re.compile(r"(?<!<)</?[a-zA-Z][a-zA-Z0-9-]*(?:\s[^>\n\]\)\}]*)?/?>(?!>)")
+# Eccezione `<br>`: non è HTML reso in chiaro ma sintassi di Mermaid
+# (`lineBreakRegex = /<br\s*\/?>/gi`), che 10.9.4 e 11.17.2 rendono come
+# `tspan.row` senza alcun `<foreignObject>`; il lookahead ricalca quella
+# regex (`<br>`, `<br/>`, `<br />`, senza distinzione di maiuscole) e
+# lascia passare solo la forma di apertura: `</br>` resta un tag.
+_HTML_TAG_RE = re.compile(
+    r"(?<!<)(?!<[bB][rR](?:\s*/)?\s*>)</?[a-zA-Z][a-zA-Z0-9-]*(?:\s[^>\n\]\)\}]*)?/?>(?!>)"
+)
+# Attributi di shape dei flowchart Mermaid 11 (`A@{ img: "https://…" }`):
+# il nodo diventa un `<image href="…">` che il Chromium del pre-render,
+# WeasyPrint (dispensa e slide) e il browser del docente dereferenziano —
+# SSRF dal server e risorsa esterna dentro il PDF consegnato. Il gate
+# rifiuta l'attributo `img` e ogni URL dentro una direttiva `@{ … }`;
+# `svg_normalize` non può fare da rete perché Mermaid ne è esente (A11),
+# quindi la seconda difesa è la scansione dell'SVG (`_SVG_EXTERNAL_REF_RE`).
+_MERMAID_SHAPE_RE = re.compile(r"@\{[^}]*\}", re.DOTALL)
+_MERMAID_SHAPE_IMG_RE = re.compile(r"\bimg\s*:", re.IGNORECASE)
+_MERMAID_SHAPE_URL_RE = re.compile(r"\b(?:https?|file|data|blob|ftp):", re.IGNORECASE)
+# Costrutti che caricano una risorsa esterna in un SVG Mermaid già reso:
+# nessuna delle 15 famiglie D8 li produce, quindi la loro presenza è
+# sempre il segno di un contenuto che ha aggirato il gate.
+_SVG_EXTERNAL_REF_RE = re.compile(
+    r"<(?:image|script|iframe)\b|url\(\s*[\'\"]?\s*(?:https?:|file:|//)|@import",
+    re.IGNORECASE,
+)
 
 # Esiti del gate statico (condivisi con `scripts/revalidate_mermaid_assets.py`).
 MERMAID_GATE_EMPTY = "mermaid_empty"
 MERMAID_GATE_TYPE = MERMAID_TYPE_NOT_ALLOWED
 MERMAID_GATE_INIT = "mermaid_init_directive"
 MERMAID_GATE_HTML = "mermaid_html_in_label"
+MERMAID_GATE_RESOURCE = "mermaid_external_resource"
 
 # Alias del tipo accettati in lettura oltre a quelli di `MERMAID_ALLOWED_TYPES`
 # (`graph`, `stateDiagram`): Mermaid 11 tratta `classDiagram-v2` come
@@ -361,12 +386,20 @@ def mermaid_static_gate(code: str) -> tuple[str, str]:
         )
     # Solo le righe del corpo che non sono commenti `%%`: un tag in un
     # commento o nel frontmatter non viene renderizzato.
-    for line in body:
-        if line.lstrip().startswith("%%"):
-            continue
+    lines = [line for line in body if not line.lstrip().startswith("%%")]
+    for line in lines:
         m = _HTML_TAG_RE.search(line)
         if m:
             return (MERMAID_GATE_HTML, m.group(0))
+    # Le direttive `@{ … }` possono occupare più righe: si guarda il corpo
+    # intero, senza i commenti.
+    for shape in _MERMAID_SHAPE_RE.finditer("\n".join(lines)):
+        inner = shape.group(0)
+        if _MERMAID_SHAPE_IMG_RE.search(inner):
+            return (MERMAID_GATE_RESOURCE, "img:")
+        url = _MERMAID_SHAPE_URL_RE.search(inner)
+        if url is not None:
+            return (MERMAID_GATE_RESOURCE, url.group(0))
     return ("", "")
 
 
@@ -399,6 +432,12 @@ class MermaidRenderer:
                 False,
                 f"{MERMAID_TYPE_NOT_ALLOWED}: {detail} (il tema è imposto dal renderer)",
             )
+        if outcome == MERMAID_GATE_RESOURCE:
+            return (
+                False,
+                f"{MERMAID_TYPE_NOT_ALLOWED}: risorsa esterna non ammessa nelle shape "
+                f"(`{detail}`); le figure non caricano file né URL",
+            )
         if outcome == MERMAID_GATE_HTML:
             kind = mermaid_declared_type(code)
             hint = ""
@@ -422,9 +461,21 @@ class MermaidRenderer:
     def render_svg_batch(self, contents: list[str], *, asset_ids: list[str]) -> list[str | None]:
         codes = [self.sanitize(c) for c in contents]
         svgs = _prerender_mermaid_to_svg_batch_sync(codes)
-        # `_strip_mermaid_max_width` è già applicato dal pre-render ed è
-        # idempotente: qui rende esplicito il contratto del registro.
-        return [_strip_mermaid_max_width(s) if s else None for s in svgs]
+        out: list[str | None] = []
+        for svg, asset_id in zip(svgs, asset_ids, strict=True):
+            if not svg:
+                out.append(None)
+                continue
+            # `_strip_mermaid_max_width` è già applicato dal pre-render ed è
+            # idempotente: qui rende esplicito il contratto del registro.
+            svg = _strip_mermaid_max_width(svg)
+            ref = _SVG_EXTERNAL_REF_RE.search(svg)
+            if ref is not None:
+                _render_failed(self.fmt, asset_id, f"risorsa esterna nell'SVG: {ref.group(0)}")
+                out.append(None)
+                continue
+            out.append(svg)
+        return out
 
     def extract_translatable(self, content: str) -> dict[str, str]:
         return {"": content} if (content or "").strip() else {}
@@ -699,7 +750,10 @@ class VegaLiteRenderer:
                 _set_by_path(spec, path, value)
             except (KeyError, IndexError, ValueError):
                 continue
-        return json.dumps(spec, ensure_ascii=False)
+        # Separatori compatti: la riserializzazione non deve gonfiare la
+        # spec e farle superare il tetto D5 di `VEGALITE_MAX_CHARS` solo
+        # per gli spazi che `json.dumps` reintrodurrebbe (I18N-3).
+        return json.dumps(spec, ensure_ascii=False, separators=(",", ":"))
 
 
 # ---------------------------------------------------------------------------
@@ -748,6 +802,10 @@ _DOT_BLOCK_RES = {
 _DOT_LABEL_RE = re.compile(
     r"\b(label|xlabel|headlabel|taillabel)\s*=\s*\"((?:[^\"\\]|\\.)*)\"", re.IGNORECASE
 )
+# Escape delle virgolette dentro il corpo di una label (D7): la forma
+# letta (`\\"`) e quella da riscrivere (`"` non ancora escapato).
+_DOT_ESCAPED_QUOTE_RE = re.compile(r'(?<!\\)\\"')
+_DOT_BARE_QUOTE_RE = re.compile(r'(?<!\\)"')
 # Ambiente minimale del figlio `dot`: oltre a PATH e LANG/LC_ALL del piano,
 # le chiavi che fontconfig usa per trovare la propria configurazione e la
 # cache dei font (HOME/XDG_CACHE_HOME: senza, nel container rescandisce le
@@ -788,6 +846,14 @@ def _dot_read_qstring(src: str, start: int) -> tuple[str, int]:
                 out.append('"')
                 i += 2
                 continue
+            if nxt == "\\":
+                # Coppia conservata (come lo scanner reale) e consumata
+                # INTERA: leggerne solo il primo carattere farebbe passare
+                # il `\"` successivo per un apice escapato e la stringa
+                # inghiottirebbe l'attributo che segue.
+                out.append("\\\\")
+                i += 2
+                continue
             out.append(ch)
             i += 1
             continue
@@ -817,6 +883,27 @@ def _dot_skip_blank(src: str, i: int) -> int:
     return i
 
 
+def _dot_read_string_atom(src: str, i: int) -> tuple[str, str, int] | None:
+    """`(tipo, testo, indice successivo)` per la stringa che inizia in
+    `src[i]`: `str` per una stringa quotata (decodificata), `html` per una
+    stringa `<…>`. `None` se in `i` non inizia una stringa."""
+    if src[i] == '"':
+        text, j = _dot_read_qstring(src, i)
+        return ("str", text, j)
+    if src[i] == "<":
+        depth, j, n = 0, i, len(src)
+        while j < n:
+            if src[j] == "<":
+                depth += 1
+            elif src[j] == ">":
+                depth -= 1
+                if depth == 0:
+                    break
+            j += 1
+        return ("html", src[i + 1 : j], j + 1)
+    return None
+
+
 def _dot_tokens(src: str) -> Iterator[tuple[str, str]]:
     """Token significativi del sorgente DOT come `(tipo, testo)`: `id`
     (identificatore o numerale), `str` (stringa quotata decodificata, con
@@ -829,31 +916,25 @@ def _dot_tokens(src: str) -> Iterator[tuple[str, str]]:
         if i >= n:
             return
         ch = src[i]
-        if ch == '"':
-            text, i = _dot_read_qstring(src, i)
+        atom = _dot_read_string_atom(src, i) if ch in '"<' else None
+        if atom is not None:
+            kind, text, i = atom
+            # Concatenazione: lo scanner di Graphviz unisce con `+` ogni
+            # stringa, quotata o HTML, in un solo ID — `<ima>+"ge"=` è
+            # `image=` tanto quanto `"ima"+"ge"=`.
             while True:
                 j = _dot_skip_blank(src, i)
                 if j < n and src[j] == "+":
                     k = _dot_skip_blank(src, j + 1)
-                    if k < n and src[k] == '"':
-                        more, i = _dot_read_qstring(src, k)
-                        text += more
+                    more = _dot_read_string_atom(src, k) if k < n else None
+                    if more is not None:
+                        if more[0] == "html":
+                            kind = "html"
+                        text += more[1]
+                        i = more[2]
                         continue
                 break
-            yield ("str", text)
-            continue
-        if ch == "<":
-            depth, j = 0, i
-            while j < n:
-                if src[j] == "<":
-                    depth += 1
-                elif src[j] == ">":
-                    depth -= 1
-                    if depth == 0:
-                        break
-                j += 1
-            yield ("html", src[i + 1 : j])
-            i = j + 1
+            yield (kind, text)
             continue
         m = _DOT_ID_RE.match(src, i)
         if m:
@@ -880,6 +961,26 @@ def _dot_forbidden_attribute(src: str) -> str | None:
             return "SRC"
         prev = token
     return None
+
+
+def _dot_label_unescape(raw: str) -> str:
+    """Corpo di una label DOT nella forma che va al traduttore: torna `"`
+    solo l'apice escapato. Le sequenze che `dot` interpreta (`\\n` a capo,
+    `\\l` allineamento) e i backslash raddoppiati restano come sono, perché
+    il modello deve riconsegnarle intatte."""
+    return _DOT_ESCAPED_QUOTE_RE.sub('"', raw)
+
+
+def _dot_label_escape(value: str) -> str:
+    """Inverso di `_dot_label_unescape`: escapa le sole virgolette non già
+    escapate, mai i backslash (raddoppiarli trasformerebbe l'a capo `\\n`
+    in un `\\n` letterale a ogni passata di localizzazione). Un backslash
+    finale isolato viene raddoppiato: da solo escaperebbe la virgoletta di
+    chiusura."""
+    out = _DOT_BARE_QUOTE_RE.sub('\\"', value)
+    if (len(out) - len(out.rstrip("\\"))) % 2:
+        out += "\\"
+    return out
 
 
 def _dot_with_theme(source: str) -> str:
@@ -1005,7 +1106,7 @@ class DotRenderer:
     def extract_translatable(self, content: str) -> dict[str, str]:
         out: dict[str, str] = {}
         for n, m in enumerate(_DOT_LABEL_RE.finditer(self.sanitize(content))):
-            value = m.group(2)
+            value = _dot_label_unescape(m.group(2))
             if any(ch.isalpha() for ch in value):
                 out[f"{m.group(1).lower()}.{n}"] = value
         return out
@@ -1020,8 +1121,7 @@ class DotRenderer:
             key = f"{m.group(1).lower()}.{n}"
             if key not in tr:
                 return m.group(0)
-            escaped = tr[key].replace("\\", "\\\\").replace('"', '\\"')
-            return f'{m.group(1)}="{escaped}"'
+            return f'{m.group(1)}="{_dot_label_escape(tr[key])}"'
 
         return _DOT_LABEL_RE.sub(_replace, content)
 
@@ -1029,6 +1129,12 @@ class DotRenderer:
 # ---------------------------------------------------------------------------
 # function — Pydantic + AST offline, numerico/matplotlib in thread, sympy nel figlio
 # ---------------------------------------------------------------------------
+
+
+# Avvertenza del motore per un'espressione senza alcun campione finito
+# (`sqrt(x)` su [-2, -1], `x/0`, `log(x)` su un dominio negativo): la
+# figura esce senza rami e `validate(deep=True)` la rifiuta.
+_EXPRESSION_UNDEFINED_RE = re.compile(r"expression_\d+_undefined")
 
 
 class FunctionRenderer:
@@ -1066,6 +1172,16 @@ class FunctionRenderer:
                 result = figure_function_service.render_function_sync(spec, language=None)
             except FunctionRenderError as exc:
                 return (False, f"render: {exc}"[:_ERROR_CAP])
+            undefined = [w for w in result.warnings if _EXPRESSION_UNDEFINED_RE.fullmatch(w)]
+            if undefined:
+                # Nessun campione finito: la figura esiste ma è senza curva
+                # (dominio incompatibile con quello naturale). Il worker la
+                # manda al fix AI invece di pubblicare una figura vuota.
+                return (
+                    False,
+                    "espressione indefinita su tutto il dominio: "
+                    "correggi `domain` oppure l'espressione",
+                )
             _cache_put(cache_key(self.fmt, sanitized), result.svg)
         return (True, "")
 
@@ -1305,6 +1421,12 @@ async def render_svg_map(assets: Sequence[Mapping[str, Any]], *, language: str) 
         if _cache_is_negative(key):
             _render_failed(fmt, asset_id, "negative_cache")
             continue
+        if not sanitized:
+            # Contenuto svuotato dalla sanificazione (fence vuoto, sole
+            # righe di controllo): niente da rendere e, per Mermaid,
+            # nessun Chromium da avviare a vuoto (REG-4).
+            _render_failed(fmt, asset_id, "sorgente vuoto dopo la sanificazione")
+            continue
         pending.setdefault(fmt, []).append((asset_id, sanitized, key))
 
     sem = _render_semaphore()
@@ -1330,6 +1452,18 @@ async def render_svg_map(assets: Sequence[Mapping[str, Any]], *, language: str) 
                     _cache_negative(key)
                     _render_failed(fmt, aid, f"{type(exc).__name__}: {exc}")
                 continue
+        # Il contratto vuole una lista parallela agli item: un renderer
+        # registrato che lo violasse non deve far saltare l'export (uno
+        # `zip(strict=True)` qui risalirebbe fino al worker, COR-1).
+        svgs = list(svgs) if isinstance(svgs, list) else []
+        if len(svgs) != len(items):
+            log.warning(
+                "figure_render_batch_length_mismatch",
+                format=fmt,
+                expected=len(items),
+                got=len(svgs),
+            )
+            svgs = (svgs + [None] * len(items))[: len(items)]
         for (aid, _s, key), svg in zip(items, svgs, strict=True):
             if svg:
                 _cache_put(key, svg)
@@ -1419,6 +1553,7 @@ __all__ = [
     "MERMAID_GATE_EMPTY",
     "MERMAID_GATE_HTML",
     "MERMAID_GATE_INIT",
+    "MERMAID_GATE_RESOURCE",
     "MERMAID_GATE_TYPE",
     "MERMAID_TYPE_NOT_ALLOWED",
     "REGISTRY",

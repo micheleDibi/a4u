@@ -23,6 +23,12 @@ import pytest
 
 from app.services import figure_theme as theme
 from app.services import mermaid_prerender as mp
+from app.services.figure_render_service import REGISTRY
+
+
+def theme_gate(code: str) -> tuple[bool, str]:
+    return REGISTRY["mermaid"].validate(code)
+
 
 pytest.importorskip("playwright.sync_api")
 
@@ -53,6 +59,23 @@ def test_d8_samples_render_as_text_without_foreignobject(rendered, kind: str):
     assert svg is not None, kind
     assert "<foreignObject" not in svg, kind
     assert "<text" in svg, kind
+
+
+def test_br_in_a_label_is_a_line_break_not_html(rendered):
+    """`<br>` è sintassi di Mermaid (`lineBreakRegex`), non HTML: 11.17.2 lo
+    rende in due `tspan.row` senza `<foreignObject>` e senza lasciarlo in
+    chiaro nel `<text>`. Il gate lo accetta (REG-1)."""
+    code = "flowchart LR\n  A[Riga 1<br/>Riga 2] --> B[Riga 3<br>Riga 4]"
+    assert theme_gate(code) == (True, "")
+    svg = mp._prerender_mermaid_to_svg_batch_sync([code])[0]
+    assert svg is not None, "render non disponibile"
+    assert "<foreignObject" not in svg
+    assert "&lt;br" not in svg and "<br" not in svg
+    # Due righe per nodo: `<tspan class="text-outer-tspan row">` per riga
+    # (Mermaid spezza poi ogni riga in un `tspan` per parola).
+    assert svg.count('class="text-outer-tspan row"') >= 4, svg[:400]
+    for needle in ("Riga", " 1", " 2", " 3", " 4"):
+        assert f">{needle}</tspan>" in svg, needle
 
 
 def test_cjk_label_is_emitted_as_text(rendered):

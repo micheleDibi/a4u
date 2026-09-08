@@ -152,10 +152,17 @@ class _Walker:
             raise ExprError("usa ** per la potenza (x^2 → x**2)", type=EXPR_SYNTAX)
         if type(node.op) not in _BINOPS:
             raise ExprError(f"operatore non ammesso: {type(node.op).__name__}")
-        self.visit(node.left, depth + 1)
+        # Profondità = annidamento REALE: una catena associativa a
+        # sinistra (`a + b + c`, `a*b*c`) è piatta per chi legge, anche se
+        # l'AST la annida, e non deve consumare livelli (COR-3).
+        left = node.left
+        chained = isinstance(left, ast.BinOp) and _ASSOCIATIVE_GROUP.get(
+            type(left.op)
+        ) == _ASSOCIATIVE_GROUP.get(type(node.op))
+        self.visit(left, depth if chained else depth + 1)
         self.visit(node.right, depth + 1)
         if isinstance(node.op, ast.Pow):
-            exponent = constant_value(node.right)
+            exponent = _constant_exponent(node.right)
             if exponent is not None and abs(exponent) > MAX_POW_EXPONENT:
                 raise ExprError(f"esponente costante oltre ±{MAX_POW_EXPONENT:g}", type=EXPR_LIMIT)
 
@@ -187,6 +194,28 @@ class _Walker:
             )
         for arg in node.args:
             self.visit(arg, depth + 1)
+
+
+# Operatori le cui catene si leggono piatte: `a + b - c` e `a*b/c` non
+# sono annidamenti, l'AST li associa solo a sinistra.
+_ASSOCIATIVE_GROUP: dict[type, str] = {
+    ast.Add: "sum",
+    ast.Sub: "sum",
+    ast.Mult: "product",
+    ast.Div: "product",
+}
+
+
+def _constant_exponent(node: ast.AST) -> float | None:
+    """Valore dell'esponente se è una costante ripiegabile, `None` se
+    contiene simboli. A differenza di `constant_value` non nasconde un
+    esponente fatto di sole costanti ma non calcolabile (`1/0`,
+    overflow): lì l'espressione è indefinita e va rifiutata subito, non
+    lasciata passare come `x**inf` (COR-2)."""
+    try:
+        return _fold(node)
+    except (ZeroDivisionError, OverflowError, ValueError) as exc:
+        raise ExprError("esponente costante non calcolabile", type=EXPR_LIMIT) from exc
 
 
 def constant_value(node: ast.AST) -> float | None:
@@ -259,10 +288,15 @@ def check_expression(src: str, *, free_symbols: Iterable[str]) -> ParsedExpr:
         raise ExprError(_syntax_message(text, exc), type=EXPR_SYNTAX) from None
     except (ValueError, RecursionError, MemoryError) as exc:
         raise ExprError(f"sintassi non valida: {exc}", type=EXPR_SYNTAX) from None
-    # Conteggio prima della visita: una somma di 42 addendi è annidata a
-    # sinistra (profondità 42) e deve essere rifiutata per dimensione, non
-    # per profondità.
-    total = sum(1 for node in ast.walk(tree) if not isinstance(node, ast.expr_context))
+    # Conteggio prima della visita, sulla stessa unità che conta il
+    # `_Walker`: i nodi `ast.operator`/`ast.unaryop` (`Add`, `Div`, `Pow`,
+    # `USub`) non sono operandi e la visita non li conta, quindi contarli
+    # qui abbasserebbe di un terzo il tetto dichiarato (COR-3).
+    total = sum(
+        1
+        for node in ast.walk(tree)
+        if not isinstance(node, (ast.expr_context, ast.operator, ast.unaryop))
+    )
     if total > MAX_NODES:
         raise ExprError(f"espressione troppo lunga (oltre {MAX_NODES} nodi)", type=EXPR_LIMIT)
     walker = _Walker(declared)

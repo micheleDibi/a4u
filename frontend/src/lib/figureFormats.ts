@@ -48,9 +48,7 @@ export function isLegacyFormat(format: string): format is LegacyFormat {
   return (LEGACY_FORMATS as readonly string[]).includes(format);
 }
 
-export function isRenderableFormat(
-  format: string,
-): format is RenderableFormat {
+export function isRenderableFormat(format: string): format is RenderableFormat {
   return (RENDERABLE_FORMATS as readonly string[]).includes(format);
 }
 
@@ -156,6 +154,38 @@ export function describeFigureParseError(
   }
 }
 
+/** Chiave i18n di un'avvertenza del motore `function`: le forme indicizzate
+ *  (`expression_0_undefined`) e la famiglia `symbolic_*` collassano su una
+ *  chiave sola, il resto è una corrispondenza diretta. `null` per un codice
+ *  che non conosciamo (mostrato tale e quale). */
+function functionWarningKey(code: string): string | null {
+  if (/^expression_\d+_undefined$/.test(code)) return "expressionUndefined";
+  if (/^series_\d+_undefined$/.test(code)) return "seriesUndefined";
+  if (code === "symbolic_timeout") return "symbolicTimeout";
+  if (code.startsWith("symbolic_")) return "symbolic";
+  const direct: Record<string, string> = {
+    zero_interval: "zeroInterval",
+    stationary_interval: "stationaryInterval",
+    too_many_points: "tooManyPoints",
+    tangent_undefined: "tangentUndefined",
+    integral_undefined: "integralUndefined",
+    point_undefined: "pointUndefined",
+    levels_undefined: "levelsUndefined",
+    formula_not_mathtext: "formulaNotMathtext",
+    formula_too_wide: "formulaTooWide",
+  };
+  return direct[code] ?? null;
+}
+
+/** Frase localizzata di un'avvertenza del motore `function`, per l'anteprima
+ *  dell'editor: il docente legge una spiegazione, non il codice interno. */
+export function describeFunctionWarning(code: string, t: TFunction): string {
+  const key = functionWarningKey(code);
+  return key === null
+    ? code
+    : t(`courses.lessonsContent.editorUI.function.warnings.${key}`);
+}
+
 export interface ParsedJsonObject {
   value: Record<string, unknown> | null;
   error: FigureParseError | null;
@@ -246,8 +276,14 @@ const VIEWBOX_RE = new RegExp(
   String.raw`\bviewBox\s*=\s*["']\s*${NUM}[\s,]+${NUM}[\s,]+(${NUM})[\s,]+(${NUM})\s*["']`,
   "i",
 );
-const WIDTH_RE = new RegExp(String.raw`\bwidth\s*=\s*["']\s*(${NUM})(?:px)?\s*["']`, "i");
-const HEIGHT_RE = new RegExp(String.raw`\bheight\s*=\s*["']\s*(${NUM})(?:px)?\s*["']`, "i");
+const WIDTH_RE = new RegExp(
+  String.raw`\bwidth\s*=\s*["']\s*(${NUM})(?:px)?\s*["']`,
+  "i",
+);
+const HEIGHT_RE = new RegExp(
+  String.raw`\bheight\s*=\s*["']\s*(${NUM})(?:px)?\s*["']`,
+  "i",
+);
 
 /**
  * Dimensioni intrinseche di un SVG (testo) dal `viewBox` del tag radice,

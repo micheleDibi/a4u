@@ -148,3 +148,36 @@ def test_scanner_catches_the_original_defects() -> None:
     # Un template didattico (DOT/Vega-Lite in backtick) non è interfaccia.
     template = 'code: `digraph g { a -> b [label="non valido"]; }`,'
     assert not any(_ITALIAN_RE.search(s) for s in _ui_texts(template))
+
+
+def test_engine_warning_codes_are_localized_not_shown_raw() -> None:
+    """L'anteprima dell'editor mostrava i codici del motore tal quali
+    (`integral_undefined; symbolic_latex_too_long`), in it come in en:
+    ora passano da `describeFunctionWarning` e ogni chiave esiste nei due
+    locale (I18N-6)."""
+    editor = _read("components/shared/FunctionEditor.tsx")
+    assert "warnings.join" not in editor, "codici del motore mostrati tal quali"
+    assert "describeFunctionWarning" in editor
+    formats = _read("lib/figureFormats.ts")
+    keys = set(re.findall(r'return "([A-Za-z]+)";', formats))
+    mapped = set(re.findall(r'^\s*[a-z_]+: "([A-Za-z]+)",$', formats, re.M))
+    expected = (keys | mapped) - {"invalid"}
+    assert {"expressionUndefined", "symbolic", "formulaTooWide"} <= expected
+    for language in ("it", "en"):
+        flat = _locale(language)
+        root = "courses.lessonsContent.editorUI.function.warnings"
+        assert f"{root}.label" in flat
+        for key in expected:
+            assert f"{root}.{key}" in flat, f"{root}.{key} assente da {language}.json"
+
+
+def test_legacy_asset_banner_names_every_figure_family() -> None:
+    """Il banner dell'asset legacy suggeriva solo «diagramma Mermaid o
+    immagine» mentre il menu offre quattro famiglie di figure (I18N-8)."""
+    for language, needles in (
+        ("it", ("Mermaid", "Vega-Lite", "DOT")),
+        ("en", ("Mermaid", "Vega-Lite", "DOT")),
+    ):
+        banner = _locale(language)["courses.lessonsContent.editor.legacyAssetBanner"]
+        for needle in needles:
+            assert needle in banner, (language, banner)

@@ -34,7 +34,7 @@ from typing import Any, TypeGuard
 
 # Entra nella chiave di cache `(fmt, sha256(content), THEME_VERSION, language)`
 # di `figure_render_service`: un tema diverso invalida gli SVG in cache.
-THEME_VERSION = "2026.09.2"
+THEME_VERSION = "2026.09.3"
 
 FONT_FAMILY_PRIMARY = "Noto Sans"
 # Gli stessi font installati nel Dockerfile (fonts-noto-core, fonts-dejavu-core).
@@ -401,6 +401,10 @@ def mermaid_config(*, use_max_width: bool, security_level: str = "loose") -> dic
         "pieLegendTextColor": COLOR_INK,
         "pieStrokeColor": COLOR_WHITE,
         "pieOuterStrokeColor": COLOR_WHITE,
+        # Senza questa Mermaid 11 default a 0.7 e le fette escono
+        # schiarite (`#4798C6` invece di `#0072B2`), diverse dai riquadri
+        # della legenda che stanno a opacità piena.
+        "pieOpacity": "1",
         # xychart: palette delle serie, assi e titolo.
         "xyChart": {
             "backgroundColor": COLOR_WHITE,
@@ -472,7 +476,16 @@ VEGALITE_THEME_CONFIG: dict[str, Any] = {
     # stringa colore che produce lo sfondo nullo richiesto da D3.
     "background": "transparent",
     "padding": 8,
-    "view": {"stroke": None, "continuousWidth": 360, "continuousHeight": 220},
+    # `continuous*` non copre le scale band/point: senza `discrete*` un
+    # grafico a barre userebbe il passo di default (20 px per banda) e
+    # uscirebbe alto e stretto accanto a uno scatter da 360 px (TIP-6).
+    "view": {
+        "stroke": None,
+        "continuousWidth": 360,
+        "continuousHeight": 220,
+        "discreteWidth": 360,
+        "discreteHeight": 220,
+    },
     "axis": {
         "labelFont": FONT_FAMILY_PRIMARY,
         "titleFont": FONT_FAMILY_PRIMARY,
@@ -487,6 +500,11 @@ VEGALITE_THEME_CONFIG: dict[str, Any] = {
         "gridWidth": 0.6,
         "labelLimit": 120,
     },
+    # Asse x discreto: Vega-Lite ruota di -90° le etichette ordinali e
+    # nominali, resa da cruscotto e non accademica (TIP-8). Con la
+    # larghezza discreta di `view` le categorie hanno spazio; se non basta
+    # `labelOverlap` ne nasconde una invece di sovrapporle.
+    "axisX": {"labelAngle": 0, "labelOverlap": "greedy"},
     "legend": {
         "labelFont": FONT_FAMILY_PRIMARY,
         "titleFont": FONT_FAMILY_PRIMARY,

@@ -12,7 +12,7 @@ import {
 import { dotDefaultsPrelude, type DotDefaultsBlock } from "@/lib/figureTheme";
 import { cn } from "@/lib/utils";
 
-import { FigureErrorBox, FigureLoading } from "./FigureFrame";
+import { FIGURE_SURFACE, FigureErrorBox, FigureLoading } from "./FigureFrame";
 
 /**
  * Anteprima client di un sorgente Graphviz DOT (`format="dot"`).
@@ -123,7 +123,10 @@ function DotDiagramImpl({ source, className }: DotDiagramProps) {
       <div
         ref={containerRef}
         hidden={status !== "ready"}
-        className="flex justify-center overflow-x-auto [&_svg]:h-auto [&_svg]:max-w-full"
+        className={cn(
+          FIGURE_SURFACE,
+          "flex justify-center overflow-x-auto [&_svg]:h-auto [&_svg]:max-w-full",
+        )}
       />
     </div>
   );

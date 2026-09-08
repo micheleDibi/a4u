@@ -33,6 +33,7 @@ import {
 } from "@/lib/errors";
 import {
   describeFigureParseError,
+  describeFunctionWarning,
   svgDataUri,
   type FigureParseError,
 } from "@/lib/figureFormats";
@@ -106,7 +107,10 @@ const SLOT_RULES: Array<[RegExp, (m: RegExpMatchArray) => string]> = [
     /^annotations\.(\d+)\.(at|expr_index|against|label)$/,
     (m) => `annotations.${m[1]}.${m[2]}`,
   ],
-  [/^annotations\.(\d+)\.between(?:\..*)?$/, (m) => `annotations.${m[1]}.between`],
+  [
+    /^annotations\.(\d+)\.between(?:\..*)?$/,
+    (m) => `annotations.${m[1]}.between`,
+  ],
   [/^parameter(?:\.name)?$/, () => "parameter.name"],
   [/^parameter\.values(?:\..*)?$/, () => "parameter.values"],
   [/^levels(?:\..*)?$/, () => "levels"],
@@ -116,7 +120,10 @@ const SLOT_RULES: Array<[RegExp, (m: RegExpMatchArray) => string]> = [
 function fieldSlot(key: string): string | null {
   // Le annotazioni sono una union discriminata: Pydantic inserisce il tag
   // (`annotations.0.tangent.at`) nella `loc`.
-  const normalized = key.replace(/^(annotations\.\d+)\.(tangent|area|point)\./, "$1.");
+  const normalized = key.replace(
+    /^(annotations\.\d+)\.(tangent|area|point)\./,
+    "$1.",
+  );
   for (const [re, slot] of SLOT_RULES) {
     const m = normalized.match(re);
     if (m) return slot(m);
@@ -134,7 +141,9 @@ function mapErrorsToFields(entries: ApiErrorEntry[]): {
     const key = apiErrorFieldKey(entry);
     const slot = key ? fieldSlot(key) : null;
     if (slot) {
-      fieldErrors[slot] = fieldErrors[slot] ? `${fieldErrors[slot]}; ${entry.msg}` : entry.msg;
+      fieldErrors[slot] = fieldErrors[slot]
+        ? `${fieldErrors[slot]}; ${entry.msg}`
+        : entry.msg;
     } else {
       otherErrors.push(key ? `${key}: ${entry.msg}` : entry.msg);
     }
@@ -186,7 +195,11 @@ function NumberField({
       placeholder={placeholder}
       aria-label={ariaLabel}
       aria-invalid={invalid || undefined}
-      className={cn("font-mono text-xs", invalid && "border-destructive", className)}
+      className={cn(
+        "font-mono text-xs",
+        invalid && "border-destructive",
+        className,
+      )}
       onChange={(e) => {
         const raw = e.target.value;
         setText(raw);
@@ -257,7 +270,13 @@ function CsvNumbersField({
 }
 
 /** Formula KaTeX in linea, montata nel DOM tramite ref (`katex.render`). */
-function KatexInline({ latex, className }: { latex: string; className?: string }) {
+function KatexInline({
+  latex,
+  className,
+}: {
+  latex: string;
+  className?: string;
+}) {
   const ref = useRef<HTMLSpanElement | null>(null);
   useEffect(() => {
     if (!ref.current) return;
@@ -331,7 +350,8 @@ export function FunctionEditor({
 
   const query = useQuery({
     queryKey: ["function-preview", orgId, courseId, wireKey],
-    queryFn: () => coursesApi.lessonAssets.renderFunction(orgId, courseId, wire),
+    queryFn: () =>
+      coursesApi.lessonAssets.renderFunction(orgId, courseId, wire),
     enabled: complete,
     retry: false,
     staleTime: 5 * 60_000,
@@ -339,10 +359,12 @@ export function FunctionEditor({
   });
 
   const { fieldErrors, otherErrors } = useMemo(() => {
-    if (!query.error) return { fieldErrors: {} as FieldErrors, otherErrors: [] as string[] };
+    if (!query.error)
+      return { fieldErrors: {} as FieldErrors, otherErrors: [] as string[] };
     const body = extractApiError(query.error);
     const entries = apiErrorEntries(body);
-    if (entries.length === 0) return { fieldErrors: {} as FieldErrors, otherErrors: [body.message] };
+    if (entries.length === 0)
+      return { fieldErrors: {} as FieldErrors, otherErrors: [body.message] };
     return mapErrorsToFields(entries);
   }, [query.error]);
   const hasFieldErrors = Object.keys(fieldErrors).length > 0;
@@ -358,24 +380,40 @@ export function FunctionEditor({
   const latex = query.data?.latex ?? [];
   const approximate = query.data?.computed?.approximate === true;
 
-  const updateExpression = (i: number, patch: { expr?: string; label?: string }) =>
+  const updateExpression = (
+    i: number,
+    patch: { expr?: string; label?: string },
+  ) =>
     update({
       ...spec,
-      expressions: expressions.map((e, j) => (j === i ? { ...e, ...patch } : e)),
+      expressions: expressions.map((e, j) =>
+        j === i ? { ...e, ...patch } : e,
+      ),
     });
 
   const updateAnnotation = (i: number, next: FunctionAnnotation) =>
-    update({ ...spec, annotations: annotations.map((a, j) => (j === i ? next : a)) });
+    update({
+      ...spec,
+      annotations: annotations.map((a, j) => (j === i ? next : a)),
+    });
 
   const changeAnnotationKind = (i: number, next: AnnotationKind) => {
     const current = annotations[i];
     const [lo, hi] = spec.domain;
     const mid = (lo + hi) / 2;
-    const base = { expr_index: current.expr_index ?? 0, label: current.label ?? "" };
+    const base = {
+      expr_index: current.expr_index ?? 0,
+      label: current.label ?? "",
+    };
     const at = current.kind === "area" ? mid : current.at;
     const replaced: FunctionAnnotation =
       next === "area"
-        ? { kind: "area", between: [lo + (hi - lo) / 4, hi - (hi - lo) / 4], against: null, ...base }
+        ? {
+            kind: "area",
+            between: [lo + (hi - lo) / 4, hi - (hi - lo) / 4],
+            against: null,
+            ...base,
+          }
         : { kind: next, at, ...base };
     updateAnnotation(i, replaced);
   };
@@ -401,11 +439,16 @@ export function FunctionEditor({
         </span>
         <Select
           value={kind}
-          onValueChange={(k) => update(adaptSpecToKind(spec, k as FunctionKind))}
+          onValueChange={(k) =>
+            update(adaptSpecToKind(spec, k as FunctionKind))
+          }
           disabled={disabled}
         >
           <SelectTrigger
-            className={cn("h-7 w-56 text-xs", fieldErrors.kind && "border-destructive")}
+            className={cn(
+              "h-7 w-56 text-xs",
+              fieldErrors.kind && "border-destructive",
+            )}
             aria-invalid={fieldErrors.kind ? true : undefined}
           >
             <SelectValue placeholder={t(`${PREFIX}.kind`)} />
@@ -453,7 +496,9 @@ export function FunctionEditor({
                   <div className="flex items-center gap-1.5">
                     <Input
                       value={e.label ?? ""}
-                      onChange={(ev) => updateExpression(i, { label: ev.target.value })}
+                      onChange={(ev) =>
+                        updateExpression(i, { label: ev.target.value })
+                      }
                       disabled={disabled}
                       maxLength={24}
                       placeholder={expressionLabel(i)}
@@ -469,7 +514,9 @@ export function FunctionEditor({
                     </span>
                     <Input
                       value={e.expr}
-                      onChange={(ev) => updateExpression(i, { expr: ev.target.value })}
+                      onChange={(ev) =>
+                        updateExpression(i, { expr: ev.target.value })
+                      }
                       disabled={disabled}
                       maxLength={200}
                       spellCheck={false}
@@ -494,7 +541,9 @@ export function FunctionEditor({
                             ...spec,
                             expressions: expressions.filter((_, j) => j !== i),
                             annotations: annotations.filter(
-                              (a) => (a.expr_index ?? 0) !== i && (a.kind !== "area" || a.against !== i),
+                              (a) =>
+                                (a.expr_index ?? 0) !== i &&
+                                (a.kind !== "area" || a.against !== i),
                             ),
                           })
                         }
@@ -520,14 +569,19 @@ export function FunctionEditor({
                 size="sm"
                 disabled={disabled}
                 onClick={() =>
-                  update({ ...spec, expressions: [...expressions, { expr: "", label: "" }] })
+                  update({
+                    ...spec,
+                    expressions: [...expressions, { expr: "", label: "" }],
+                  })
                 }
               >
                 <Plus className="size-3.5" />
                 {t(`${PREFIX}.addExpression`)}
               </Button>
             )}
-            <p className="text-[11px] text-muted-foreground">{t(`${PREFIX}.syntaxHint`)}</p>
+            <p className="text-[11px] text-muted-foreground">
+              {t(`${PREFIX}.syntaxHint`)}
+            </p>
           </div>
 
           {/* Variabili */}
@@ -567,8 +621,13 @@ export function FunctionEditor({
                 maxLength={1}
                 disabled={disabled}
                 aria-invalid={fieldErrors.variable ? true : undefined}
-                className={cn("w-14 font-mono text-xs", fieldErrors.variable && "border-destructive")}
-                onChange={(ev) => update({ ...spec, variable: ev.target.value })}
+                className={cn(
+                  "w-14 font-mono text-xs",
+                  fieldErrors.variable && "border-destructive",
+                )}
+                onChange={(ev) =>
+                  update({ ...spec, variable: ev.target.value })
+                }
               />
               <FieldError message={fieldErrors.variable} />
             </div>
@@ -584,7 +643,9 @@ export function FunctionEditor({
                   invalid={Boolean(fieldErrors.domain)}
                   disabled={disabled}
                   ariaLabel={t(`${PREFIX}.min`)}
-                  onChange={(n) => update({ ...spec, domain: [n, spec.domain[1]] })}
+                  onChange={(n) =>
+                    update({ ...spec, domain: [n, spec.domain[1]] })
+                  }
                 />
                 <span className="text-xs text-muted-foreground">–</span>
                 <NumberField
@@ -592,7 +653,9 @@ export function FunctionEditor({
                   invalid={Boolean(fieldErrors.domain)}
                   disabled={disabled}
                   ariaLabel={t(`${PREFIX}.max`)}
-                  onChange={(n) => update({ ...spec, domain: [spec.domain[0], n] })}
+                  onChange={(n) =>
+                    update({ ...spec, domain: [spec.domain[0], n] })
+                  }
                 />
               </div>
               <FieldError message={fieldErrors.domain} />
@@ -606,7 +669,10 @@ export function FunctionEditor({
                   onCheckedChange={(checked) =>
                     update({
                       ...spec,
-                      range: checked === true ? null : [spec.domain[0], spec.domain[1]],
+                      range:
+                        checked === true
+                          ? null
+                          : [spec.domain[0], spec.domain[1]],
                     })
                   }
                 />
@@ -619,7 +685,9 @@ export function FunctionEditor({
                     invalid={Boolean(fieldErrors.range)}
                     disabled={disabled}
                     ariaLabel={t(`${PREFIX}.min`)}
-                    onChange={(n) => update({ ...spec, range: [n, spec.range![1]] })}
+                    onChange={(n) =>
+                      update({ ...spec, range: [n, spec.range![1]] })
+                    }
                   />
                   <span className="text-xs text-muted-foreground">–</span>
                   <NumberField
@@ -627,7 +695,9 @@ export function FunctionEditor({
                     invalid={Boolean(fieldErrors.range)}
                     disabled={disabled}
                     ariaLabel={t(`${PREFIX}.max`)}
-                    onChange={(n) => update({ ...spec, range: [spec.range![0], n] })}
+                    onChange={(n) =>
+                      update({ ...spec, range: [spec.range![0], n] })
+                    }
                   />
                 </div>
               )}
@@ -667,12 +737,16 @@ export function FunctionEditor({
           {isFamily && (
             <div className="grid gap-3 sm:grid-cols-[6rem_1fr]">
               <div className="space-y-1.5">
-                <Label className="text-xs">{t(`${PREFIX}.parameterName`)}</Label>
+                <Label className="text-xs">
+                  {t(`${PREFIX}.parameterName`)}
+                </Label>
                 <Input
                   value={spec.parameter?.name ?? ""}
                   maxLength={1}
                   disabled={disabled}
-                  aria-invalid={fieldErrors["parameter.name"] ? true : undefined}
+                  aria-invalid={
+                    fieldErrors["parameter.name"] ? true : undefined
+                  }
                   className={cn(
                     "w-14 font-mono text-xs",
                     fieldErrors["parameter.name"] && "border-destructive",
@@ -680,14 +754,19 @@ export function FunctionEditor({
                   onChange={(ev) =>
                     update({
                       ...spec,
-                      parameter: { name: ev.target.value, values: spec.parameter?.values ?? [] },
+                      parameter: {
+                        name: ev.target.value,
+                        values: spec.parameter?.values ?? [],
+                      },
                     })
                   }
                 />
                 <FieldError message={fieldErrors["parameter.name"]} />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs">{t(`${PREFIX}.parameterValues`)}</Label>
+                <Label className="text-xs">
+                  {t(`${PREFIX}.parameterValues`)}
+                </Label>
                 <CsvNumbersField
                   values={spec.parameter?.values ?? []}
                   max={MAX_PARAMETER_VALUES}
@@ -711,7 +790,13 @@ export function FunctionEditor({
             <div className="space-y-1.5">
               <Label className="text-xs">{t(`${PREFIX}.levels`)}</Label>
               <CsvNumbersField
-                values={Array.isArray(spec.levels) ? spec.levels : spec.levels != null ? [spec.levels] : []}
+                values={
+                  Array.isArray(spec.levels)
+                    ? spec.levels
+                    : spec.levels != null
+                      ? [spec.levels]
+                      : []
+                }
                 max={12}
                 disabled={disabled}
                 invalid={Boolean(fieldErrors.levels)}
@@ -719,11 +804,18 @@ export function FunctionEditor({
                 onChange={(values) =>
                   update({
                     ...spec,
-                    levels: values.length === 1 ? Math.round(values[0]) : values.length > 0 ? values : null,
+                    levels:
+                      values.length === 1
+                        ? Math.round(values[0])
+                        : values.length > 0
+                          ? values
+                          : null,
                   })
                 }
               />
-              <p className="text-[11px] text-muted-foreground">{t(`${PREFIX}.levelsHint`)}</p>
+              <p className="text-[11px] text-muted-foreground">
+                {t(`${PREFIX}.levelsHint`)}
+              </p>
               <FieldError message={fieldErrors.levels} />
             </div>
           )}
@@ -736,11 +828,16 @@ export function FunctionEditor({
               {annotations.map((a, i) => {
                 const slot = `annotations.${i}`;
                 return (
-                  <div key={i} className="space-y-1.5 rounded-md border bg-background p-2">
+                  <div
+                    key={i}
+                    className="space-y-1.5 rounded-md border bg-background p-2"
+                  >
                     <div className="flex flex-wrap items-center gap-1.5">
                       <Select
                         value={a.kind}
-                        onValueChange={(k) => changeAnnotationKind(i, k as AnnotationKind)}
+                        onValueChange={(k) =>
+                          changeAnnotationKind(i, k as AnnotationKind)
+                        }
                         disabled={disabled}
                       >
                         <SelectTrigger className="h-7 w-36 text-xs">
@@ -757,7 +854,9 @@ export function FunctionEditor({
                       {expressions.length > 1 && (
                         <Select
                           value={String(a.expr_index ?? 0)}
-                          onValueChange={(v) => updateAnnotation(i, { ...a, expr_index: Number(v) })}
+                          onValueChange={(v) =>
+                            updateAnnotation(i, { ...a, expr_index: Number(v) })
+                          }
                           disabled={disabled}
                         >
                           <SelectTrigger className="h-7 w-20 text-xs">
@@ -780,22 +879,39 @@ export function FunctionEditor({
                             disabled={disabled}
                             className="w-20"
                             ariaLabel={t(`${PREFIX}.min`)}
-                            onChange={(n) => updateAnnotation(i, { ...a, between: [n, a.between[1]] })}
+                            onChange={(n) =>
+                              updateAnnotation(i, {
+                                ...a,
+                                between: [n, a.between[1]],
+                              })
+                            }
                           />
-                          <span className="text-xs text-muted-foreground">–</span>
+                          <span className="text-xs text-muted-foreground">
+                            –
+                          </span>
                           <NumberField
                             value={a.between[1]}
                             invalid={Boolean(fieldErrors[`${slot}.between`])}
                             disabled={disabled}
                             className="w-20"
                             ariaLabel={t(`${PREFIX}.max`)}
-                            onChange={(n) => updateAnnotation(i, { ...a, between: [a.between[0], n] })}
+                            onChange={(n) =>
+                              updateAnnotation(i, {
+                                ...a,
+                                between: [a.between[0], n],
+                              })
+                            }
                           />
                           {expressions.length > 1 && (
                             <Select
-                              value={a.against == null ? "none" : String(a.against)}
+                              value={
+                                a.against == null ? "none" : String(a.against)
+                              }
                               onValueChange={(v) =>
-                                updateAnnotation(i, { ...a, against: v === "none" ? null : Number(v) })
+                                updateAnnotation(i, {
+                                  ...a,
+                                  against: v === "none" ? null : Number(v),
+                                })
                               }
                               disabled={disabled}
                             >
@@ -803,7 +919,9 @@ export function FunctionEditor({
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="none">{t(`${PREFIX}.againstAxis`)}</SelectItem>
+                                <SelectItem value="none">
+                                  {t(`${PREFIX}.againstAxis`)}
+                                </SelectItem>
                                 {expressions.map((_, j) =>
                                   j === (a.expr_index ?? 0) ? null : (
                                     <SelectItem key={j} value={String(j)}>
@@ -831,12 +949,16 @@ export function FunctionEditor({
                         maxLength={40}
                         disabled={disabled}
                         placeholder={t(`${PREFIX}.annotationLabel`)}
-                        aria-invalid={fieldErrors[`${slot}.label`] ? true : undefined}
+                        aria-invalid={
+                          fieldErrors[`${slot}.label`] ? true : undefined
+                        }
                         className={cn(
                           "min-w-[6rem] flex-1 text-xs",
                           fieldErrors[`${slot}.label`] && "border-destructive",
                         )}
-                        onChange={(ev) => updateAnnotation(i, { ...a, label: ev.target.value })}
+                        onChange={(ev) =>
+                          updateAnnotation(i, { ...a, label: ev.target.value })
+                        }
                       />
                       <Button
                         type="button"
@@ -846,7 +968,10 @@ export function FunctionEditor({
                         disabled={disabled}
                         title={t("common.delete")}
                         onClick={() =>
-                          update({ ...spec, annotations: annotations.filter((_, j) => j !== i) })
+                          update({
+                            ...spec,
+                            annotations: annotations.filter((_, j) => j !== i),
+                          })
                         }
                       >
                         <Trash2 className="size-3.5" />
@@ -896,14 +1021,19 @@ export function FunctionEditor({
             </summary>
             <div className="mt-2 space-y-1.5">
               <Label className="text-xs">
-                {t(`${PREFIX}.samplingPoints`, { min: MIN_POINTS, max: MAX_POINTS })}
+                {t(`${PREFIX}.samplingPoints`, {
+                  min: MIN_POINTS,
+                  max: MAX_POINTS,
+                })}
               </Label>
               <NumberField
                 value={spec.sampling?.points ?? null}
                 invalid={Boolean(fieldErrors["sampling.points"])}
                 disabled={disabled}
                 className="w-28"
-                onChange={(n) => update({ ...spec, sampling: { points: Math.round(n) } })}
+                onChange={(n) =>
+                  update({ ...spec, sampling: { points: Math.round(n) } })
+                }
               />
               <FieldError message={fieldErrors["sampling.points"]} />
             </div>
@@ -960,8 +1090,13 @@ export function FunctionEditor({
             </p>
           )}
           {query.data && query.data.warnings.length > 0 && (
-            <p className="px-1 font-mono text-[11px] text-muted-foreground">
-              {query.data.warnings.join("; ")}
+            <p className="px-1 text-[11px] text-muted-foreground">
+              <span className="font-medium">
+                {t("courses.lessonsContent.editorUI.function.warnings.label")}
+              </span>{" "}
+              {query.data.warnings
+                .map((code) => describeFunctionWarning(code, t))
+                .join(" ")}
             </p>
           )}
         </div>

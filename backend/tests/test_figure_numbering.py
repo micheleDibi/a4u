@@ -178,3 +178,14 @@ def test_frontend_copy_matches_fixture() -> None:
         assert fe["numbers"] == case["numbers"], case["name"]
     for pair, fe in zip(_STRIP, got["strip_prefix"], strict=True):
         assert fe == pair["output"], pair["input"]
+
+
+def test_uncited_refs_skip_ids_the_token_cannot_carry() -> None:
+    """`asset_id` è solo `str` 1..50 e un PATCH manuale può salvare `A]`: la
+    coda `[FIG:A]]` veniva letta come `A` e produceva un «Asset non trovato»
+    falso più un `]` orfano, invece della figura (COR-4). Gli id che il
+    token non rilegge esattamente vengono saltati."""
+    out = fn.append_uncited_figure_refs("Testo.", ["A]", " ", "C\nD", "[FIG:E]", "B"])
+    assert out == "Testo.\n\n[FIG:B]"
+    # Gli id ordinari (anche con parentesi quadre aperte) restano.
+    assert fn.append_uncited_figure_refs("T.", ["A[1", "F_2"]) == "T.\n\n[FIG:A[1]\n\n[FIG:F_2]"

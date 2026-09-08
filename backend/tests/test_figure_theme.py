@@ -133,7 +133,16 @@ def test_palette_and_theme_configs():
     assert len(theme.PALETTE) == 8 and len(set(theme.PALETTE)) == 8
     assert theme.VEGALITE_THEME_CONFIG["font"] == theme.FONT_FAMILY_PRIMARY
     assert theme.VEGALITE_THEME_CONFIG["range"]["category"] == list(theme.PALETTE)
-    assert theme.VEGALITE_THEME_CONFIG["view"]["stroke"] is None
+    view = theme.VEGALITE_THEME_CONFIG["view"]
+    assert view["stroke"] is None
+    # Le scale band/point non leggono `continuous*`: senza `discrete*` un
+    # grafico a barre userebbe il passo di default (20 px) e uscirebbe alto
+    # e stretto accanto a uno scatter da 360 px (TIP-6).
+    assert view["discreteWidth"] == view["continuousWidth"] == 360
+    assert view["discreteHeight"] == view["continuousHeight"] == 220
+    # Etichette dell'asse discreto in orizzontale, non ruotate di -90° come
+    # vuole il default di Vega-Lite (TIP-8).
+    assert theme.VEGALITE_THEME_CONFIG["axisX"]["labelAngle"] == 0
     # Il config Vega-Lite deve restare serializzabile (viene fuso nella spec).
     json.dumps(theme.VEGALITE_THEME_CONFIG)
     assert set(theme.DOT_DEFAULTS) == {"graph", "node", "edge"}
@@ -331,6 +340,9 @@ def test_mermaid_theme_variables_follow_palette():
         assert tv[f"cScaleLabel{i}"] == theme.PALETTE_LABEL[i % 8]
         assert tv[f"pie{i + 1}"] == theme.PALETTE[i % 8]
     assert tv["useGradient"] is False and tv["dropShadow"] == "none"
+    # Senza `pieOpacity` Mermaid 11 disegna le fette a 0.7: colori diversi
+    # dalla palette e dai riquadri della legenda (TIP-7).
+    assert tv["pieOpacity"] == "1"
     assert tv["xyChart"]["plotColorPalette"] == ", ".join(theme.PALETTE)
     assert tv["radar"] == {"axisColor": theme.COLOR_AXIS, "graticuleColor": theme.COLOR_GRID}
     # Ogni colore del tema appartiene alla palette, alle sue tinte o ai neutri.
@@ -343,7 +355,7 @@ def test_mermaid_theme_variables_follow_palette():
                     assert color in allowed, (key, v)
     # Sankey: i link seguono il nodo sorgente (nessun gradiente, D3).
     assert cfg["sankey"] == {"linkColor": "source", "useMaxWidth": True}
-    assert theme.THEME_VERSION == "2026.09.2"
+    assert theme.THEME_VERSION == "2026.09.3"
 
 
 def test_figure_theme_ts_mirror_is_aligned():

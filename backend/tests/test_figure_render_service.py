@@ -221,7 +221,13 @@ def test_mermaid_static_gate_accepts_comments_frontmatter_aliases_and_fences(cod
         ("---\ntheme: forest\n---\nflowchart LR\n  A --> B", "solo `title:` e `displayMode:`"),
         ("---\n- config\n---\nflowchart LR\n  A --> B", "- config"),
         ("flowchart LR\n  A[<b>x</b>] --> B", "HTML"),
-        ("flowchart LR\n  A[riga<br/>due] --> B", "HTML"),
+        # `</br>` non è la sintassi di a capo di Mermaid (`<br\s*/?>`): resta
+        # un tag e finirebbe in chiaro nel `<text>`.
+        ("flowchart LR\n  A[riga</br>due] --> B", "HTML"),
+        ("flowchart LR\n  A[riga<brx>due] --> B", "HTML"),
+        ('flowchart LR\n  A@{ img: "http://interno/x.png", label: "n" }\n  A --> B', "img:"),
+        ('flowchart LR\n  A@{ img: "file:///etc/hosts" }\n  A --> B', "img:"),
+        ('flowchart LR\n  A@{\n    shape: rect,\n    label: "https://x/y"\n  }', "http"),
         ("flowchart LR\n  A[<script>alert(1)</script>] --> B", "<script>"),
         ("flowchart LR\n  A[<table><tr><td>x</td></tr></table>] --> B", "<table>"),
         ("flowchart LR\n  A[<h1>x</h1>] --> B", "<h1>"),
@@ -239,6 +245,36 @@ def test_mermaid_static_gate_rejects(code: str, needle: str):
     assert ok is False and needle in err, err
     if code.strip():
         assert err.startswith("mermaid_type_not_allowed")
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "flowchart LR\n  A[Riga 1<br/>Riga 2] --> B",
+        "flowchart LR\n  A[Riga 1<br>Riga 2] --> B",
+        "flowchart LR\n  A[Riga 1<BR />Riga 2] --> B",
+        "sequenceDiagram\n  A->>B: prima<br/>seconda",
+        'flowchart LR\n  A@{ shape: rect, label: "Etichetta" } --> B',
+    ],
+)
+def test_mermaid_gate_accepts_br_line_breaks_and_plain_shapes(code: str):
+    """`<br>` non è HTML reso in chiaro ma la sintassi di a capo di Mermaid
+    (`lineBreakRegex`), resa in `tspan.row` da 10.9.4 come da 11.17.2:
+    rifiutarla bocciava contenuti già in DB al PATCH e mandava al fix AI
+    diagrammi validi (REG-1)."""
+    assert frs.REGISTRY["mermaid"].validate(code) == (True, "")
+
+
+def test_mermaid_render_batch_refuses_an_svg_with_an_external_resource(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Seconda rete dopo il gate: Mermaid è esente da `normalize_svg` (A11),
+    quindi un `<image href="http://…">` uscito comunque dal pre-render non
+    deve raggiungere il PDF, le slide o i frame (SEC-1)."""
+    svgs = ['<svg><image href="http://interno/x.png"/></svg>', "<svg><g>ok</g></svg>"]
+    monkeypatch.setattr(frs, "_prerender_mermaid_to_svg_batch_sync", lambda codes: list(svgs))
+    out = frs.REGISTRY["mermaid"].render_svg_batch(["a", "b"], asset_ids=["A", "B"])
+    assert out[0] is None and out[1] == "<svg><g>ok</g></svg>"
 
 
 def test_mermaid_html_gate_suggests_tilde_generics_for_class_diagrams():
@@ -473,7 +509,13 @@ def test_vegalite_translatable_fields_round_trip():
     spec = json.loads(out)
     assert spec["title"] == "Example" and spec["encoding"]["x"]["axis"]["title"] == "class"
     assert spec["data"] == _BAR["data"]  # dati intatti
-    assert r.apply_translations(_BAR_JSON, {"non.esiste": "x"}) == _BAR_JSON.strip()
+    unchanged = r.apply_translations(_BAR_JSON, {"non.esiste": "x"})
+    assert json.loads(unchanged) == _BAR
+    # La riserializzazione è compatta: non deve allungare la spec (e farle
+    # superare il tetto D5) per i soli spazi di `json.dumps` (I18N-3).
+    assert len(unchanged) <= len(_BAR_JSON)
+    padded = json.dumps(_BAR, indent=2)
+    assert len(r.apply_translations(padded, {"title": "Example"})) < len(padded)
     nested = json.dumps({"layer": [{"mark": "bar", "encoding": {"y": {"legend": {"title": "L"}}}}]})
     assert r.extract_translatable(nested) == {"layer.0.encoding.y.legend.title": "L"}
 
@@ -531,6 +573,24 @@ def test_dot_static_validation_is_offline(monkeypatch: pytest.MonkeyPatch):
     ):
         ok, err = r.validate(src)
         assert ok is True, (src, err)
+    # Forme che facevano divergere il tokenizzatore dallo scanner reale
+    # (verificate contro dot 15.1.1: tutte aprono il file, SEC-2).
+    for src, needle in (
+        # `\\` è una coppia: leggerne solo il primo carattere faceva passare
+        # la virgoletta di chiusura per un apice escapato e l'attributo
+        # seguente restava dentro la «stringa».
+        ('digraph { "\\\\" ; x [image="/etc/hosts"] }', "image="),
+        ('digraph { a [label="c:\\\\"]; x [URL="http://x"] }', "URL="),
+        # Concatenazione fra stringa HTML e stringa quotata: per Graphviz
+        # è un solo ID (`<ima>+"ge"` è `image`).
+        ('digraph { x [<ima>+"ge"="/etc/hosts"] }', "image="),
+        ('digraph { x ["ima"+<ge>="/etc/hosts"] }', "image="),
+        ('digraph { x [<ima>+<ge>="/etc/hosts"] }', "image="),
+    ):
+        ok, err = r.validate(src)
+        assert ok is False and needle in err, (src, err)
+    # Il `\\\\` dentro una label resta testo: nessun falso positivo.
+    assert r.validate('digraph { a [label="c:\\\\dir"]; a -> b }') == (True, "")
     # Apici singoli: non delimitano stringhe in DOT (errore di sintassi per
     # `dot`, nessun file letto): il gate statico non li tratta.
     assert frs._dot_forbidden_attribute("digraph { a ['image'='/etc/hosts'] }") is None
@@ -571,6 +631,24 @@ def test_dot_translatable_labels_round_trip():
     assert 'a [label="Start"]' in out and 'b [label="The \\"end\\""]' in out
     assert 'label="passo 1"' in out
     assert r.apply_translations(src, {}) == src
+
+
+def test_dot_translatable_labels_keep_escapes_byte_for_byte():
+    """`\\n` (a capo) e `\\"` devono sopravvivere al giro estrai/applica: la
+    riscrittura incondizionata dei backslash li raddoppiava a ogni passata
+    di localizzazione e la label finiva su una riga sola con un `\\n`
+    letterale (I18N-1)."""
+    r = frs.REGISTRY["dot"]
+    src = 'digraph g {\n  a [label="Livello\\nclient"];\n  b [label="Base di \\"dati\\""];\n}'
+    fields = r.extract_translatable(src)
+    assert fields == {"label.0": "Livello\\nclient", "label.1": 'Base di "dati"'}
+    assert r.apply_translations(src, fields) == src  # identità = byte identici
+    twice = r.apply_translations(src, fields)
+    assert r.apply_translations(twice, r.extract_translatable(twice)) == src
+    out = r.apply_translations(src, {"label.0": "Level\\nclient", "label.1": 'The "data"'})
+    assert 'label="Level\\nclient"' in out and 'label="The \\"data\\""' in out
+    # Un backslash finale isolato escaperebbe la virgoletta di chiusura.
+    assert r.apply_translations(src, {"label.0": "fine\\"}).count('"') % 2 == 0
 
 
 @needs_dot
@@ -830,3 +908,51 @@ def test_fence_and_control_chars_are_stripped_without_touching_the_body():
     assert frs._strip_fence_and_control(f"```json5 \n{body}```") == body
     assert frs._strip_fence_and_control("x\x1by") == "xy"
     assert re.sub(r"\s", "", frs._strip_fence_and_control(body)) == re.sub(r"\s", "", body)
+
+
+class _WrongLengthRenderer(_FakeRenderer):
+    """Renderer che viola il contratto: la lista non è parallela agli item."""
+
+    def __init__(self, fmt: str, *, out: object) -> None:
+        super().__init__(fmt)
+        self.out = out
+
+    def render_svg_batch(self, contents: list[str], *, asset_ids: list[str]) -> Any:
+        self.batches.append(list(contents))
+        return self.out
+
+
+@pytest.mark.parametrize("out", [[], None, ["<svg>uno</svg>"], ["a", "b", "c"]])
+async def test_render_svg_map_survives_a_renderer_with_a_non_parallel_list(
+    monkeypatch: pytest.MonkeyPatch, out: object
+):
+    """`render_svg_map` non solleva mai: un renderer registrato che ritorna
+    una lista di lunghezza diversa (o non una lista) deve degradare a
+    fallback per figura, non far ripartire l'export dal worker (COR-1)."""
+    monkeypatch.setitem(frs.REGISTRY, "dot", _WrongLengthRenderer("dot", out=out))
+    frs.available_formats.cache_clear()
+    assets = [
+        {"asset_id": "D1", "format": "dot", "content": "digraph { a }"},
+        {"asset_id": "D2", "format": "dot", "content": "digraph { b }"},
+    ]
+    result = await frs.render_svg_map(assets, language="it")
+    assert set(result) <= {"D1", "D2"}
+
+
+async def test_render_svg_map_skips_sources_emptied_by_sanitize(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Un sorgente che si svuota con la sanificazione (fence vuoto) non entra
+    nel batch: per Mermaid significherebbe avviare Chromium e caricare la
+    CDN per nulla (REG-4)."""
+    calls: list[list[str]] = []
+
+    def _never(codes: list[str]) -> list[str | None]:
+        calls.append(list(codes))
+        return [None] * len(codes)
+
+    monkeypatch.setattr(frs, "_prerender_mermaid_to_svg_batch_sync", _never)
+    frs.available_formats.cache_clear()
+    assets = [{"asset_id": "M1", "format": "mermaid", "content": "```mermaid\n```"}]
+    assert await frs.render_svg_map(assets, language="it") == {}
+    assert calls == []

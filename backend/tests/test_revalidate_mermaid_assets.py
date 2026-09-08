@@ -53,7 +53,14 @@ def test_static_gate_rejects_unknown_empty_init_and_html():
         static_gate("%%{init: {'theme': 'dark'}}%%\nflowchart LR\n A --> B")
         == "mermaid_init_directive"
     )
-    assert static_gate("flowchart LR\n  A[Riga 1<br>Riga 2] --> B") == "mermaid_html_in_label"
+    assert static_gate("flowchart LR\n  A[<b>x</b>] --> B") == "mermaid_html_in_label"
+    assert (
+        static_gate('flowchart LR\n  A@{ img: "http://x/y.png" } --> B')
+        == "mermaid_external_resource"
+    )
+    # `<br>` è la sintassi di a capo di Mermaid, non HTML: nessun falso
+    # positivo nel report L5 (REG-1).
+    assert static_gate("flowchart LR\n  A[Riga 1<br>Riga 2] --> B") == ""
     # Frecce e annotazioni con `<` non sono tag HTML.
     assert static_gate("classDiagram\n  class A {\n    <<interface>>\n  }\n  A <|-- B") == ""
     assert static_gate("sequenceDiagram\n  A->>B: x\n  B-->>A: y") == ""

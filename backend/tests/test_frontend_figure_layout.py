@@ -256,3 +256,53 @@ def test_landscape_svg_is_capped_at_natural_height(measured: dict[str, Any]) -> 
     box = measured["landscape"]
     assert box["boxH"] == pytest.approx(450, abs=1)
     assert box["scale"] == pytest.approx(1.0, abs=0.01)
+
+
+# ---------------------------------------------------------------------------
+# Tipografia e superficie delle figure (Fase D: TIP-1, TIP-2, TIP-9)
+# ---------------------------------------------------------------------------
+
+_SHARED = _FRONTEND / "components" / "shared"
+_FIGURE_FRAME = _SHARED / "FigureFrame.tsx"
+
+
+def test_vegalite_and_dot_text_has_a_sans_fallback_in_the_browser() -> None:
+    """L'SVG di Vega-Lite e di `dot` dichiara la sola famiglia «Noto Sans»
+    (il tema deve restare a una famiglia: vl-convert misura il testo con la
+    prima e una lista cambierebbe la geometria del server). Nel browser del
+    docente quella famiglia spesso non c'è e Chromium ripiega su Times: la
+    regola di `index.css` aggiunge il ripiego sans solo a schermo (TIP-1)."""
+    css = _read(_INDEX_CSS)
+    m = re.search(r"\.figure--vegalite svg text,\s*\.figure--dot svg text\s*\{([^}]*)\}", css)
+    assert m, "regola di ripiego dei font delle figure assente da index.css"
+    family = m.group(1)
+    assert "Noto Sans" in family and "sans-serif" in family, family
+    assert "serif" not in re.sub(r"sans-serif", "", family), family
+    # Il webfont serve la stessa famiglia dichiarata dal tema, così a
+    # schermo le metriche coincidono con il PDF.
+    assert "Noto+Sans" in _read(_FRONTEND.parent / "index.html")
+
+
+def test_every_figure_renderer_paints_on_a_light_surface() -> None:
+    """Il tema D3 è inchiostro scuro su fondo trasparente (identico a PDF,
+    slide e frame): sul fondo scuro del frontend le figure sarebbero nere su
+    nero. La superficie chiara è unica e fissa, non legata al tema (TIP-2)."""
+    frame = _read(_FIGURE_FRAME)
+    m = re.search(r'FIGURE_SURFACE = "([^"]*)"', frame)
+    assert m, "FIGURE_SURFACE assente da FigureFrame.tsx"
+    assert "bg-white" in m.group(1), m.group(1)
+    for name in ("VegaLiteDiagram.tsx", "DotDiagram.tsx", "FunctionFigure.tsx"):
+        assert "FIGURE_SURFACE" in _read(_SHARED / name), name
+    mermaid = _read(_MERMAID_DIAGRAM)
+    assert "bg-background" not in mermaid and "bg-white" in mermaid
+
+
+def test_figure_frame_separates_the_computed_tail_with_a_full_stop() -> None:
+    """Mirror di `figure_markup`: la coda calcolata è un periodo autonomo e
+    senza punto si fonderebbe con la didascalia del docente (TIP-9)."""
+    frame = _read(_FIGURE_FRAME)
+    m = re.search(r"CAPTION_END_RE = /(\[[^/]*\])\$/", frame)
+    assert m, "CAPTION_END_RE assente da FigureFrame.tsx"
+    for ch in ".!?:":
+        assert ch in m.group(1), m.group(1)
+    assert re.search(r"\$\{text\}\$\{stop\}", frame), "punto non applicato alla didascalia"

@@ -57,16 +57,27 @@ def cited_figure_ids(markdown: str) -> list[str]:
     return list(seen)
 
 
+def _round_trips(asset_id: str) -> bool:
+    """Il token `[FIG:{id}]` rilegge esattamente `id`: falso per gli id con
+    `]` o con un a capo, che nessun percorso automatico produce ma un PATCH
+    manuale può salvare (gli schemi accettano qualunque stringa 1..50)."""
+    m = FIG_REF_RE.fullmatch(f"[FIG:{asset_id}]")
+    return m is not None and m.group(1) == asset_id
+
+
 def append_uncited_figure_refs(markdown: str, asset_ids: Iterable[str]) -> str:
     """Accoda `"\\n\\n[FIG:{id}]"` per ogni asset mai citato, nell'ordine
     dell'array (A12). L'id è scritto come dichiarato (il lookup del
-    renderer è già case-insensitive). Id vuoti e duplicati sono ignorati."""
+    renderer è già case-insensitive). Id vuoti e duplicati sono ignorati,
+    e così gli id che il token non sa trasportare: `A]` produrrebbe
+    `[FIG:A]]`, che `FIG_REF_RE` legge come `A` — un «Asset non trovato»
+    falso e un `]` orfano nel testo, invece della figura (COR-4)."""
     out = markdown or ""
     cited = set(cited_figure_ids(out))
     for asset_id in asset_ids:
         raw = str(asset_id or "").strip()
         key = raw.lower()
-        if not key or key in cited:
+        if not key or key in cited or not _round_trips(raw):
             continue
         cited.add(key)
         out += f"\n\n[FIG:{raw}]"

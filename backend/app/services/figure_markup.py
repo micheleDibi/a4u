@@ -82,6 +82,11 @@ def _body_without_blank_lines(body_html: Markup) -> Markup:
     return Markup(_BLANK_LINE_WITH_BREAK_RE.sub("", str(body_html)))
 
 
+# Punteggiatura che chiude una didascalia (mirror di `CAPTION_END_RE` in
+# `FigureFrame.tsx`).
+_CAPTION_END_PUNCT = ".!?…:;"
+
+
 def figure_label(labels: Mapping[str, str], number: int | None) -> str:
     """«Figura 3.» oppure «Figura.» (slide) dalla mappa `figure_labels`."""
     if number is None:
@@ -113,6 +118,12 @@ def render_figure_html(
         # Guardia anti-doppia coda (Q4): il docente ha copiato nella
         # didascalia la coda calcolata mostrata dall'anteprima.
         extra = ""
+    caption_out = caption_text
+    if extra and caption_text and caption_text[-1] not in _CAPTION_END_PUNCT:
+        # La coda calcolata è un periodo a sé («Zeri in x = −1, 1.»): senza
+        # il punto si fonderebbe con la didascalia del docente, che il
+        # prompt non obbliga a chiudere («…razionale Zeri in x = −1, 1.»).
+        caption_out = f"{caption_text}."
     fmt_class = _CLASS_TOKEN_RE.sub("", (fmt or "").lower()) or "unknown"
     template = _env.get_template("figure.html.j2")
     html = template.render(
@@ -123,7 +134,7 @@ def render_figure_html(
         body_html=_body_without_blank_lines(body_html) if body_html is not None else None,
         fallback_source=_fallback_text(fallback_source) if body_html is None else "",
         label=figure_label(labels, number),
-        caption=caption_text,
+        caption=caption_out,
         extra_caption=extra,
     )
     return html.strip()

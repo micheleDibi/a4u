@@ -88,7 +88,9 @@ def static_gate(code: str) -> str:
     `figure_render_service.mermaid_static_gate` (lo stesso di
     `MermaidRenderer.validate`), altrimenti un codice d'errore leggibile
     (`mermaid_empty`, `mermaid_type_not_allowed:<tipo>`,
-    `mermaid_init_directive`, `mermaid_html_in_label`)."""
+    `mermaid_init_directive`, `mermaid_html_in_label`,
+    `mermaid_external_resource`). `<br>` NON è un tag HTML per il gate: è
+    la sintassi di a capo di Mermaid e passa."""
     outcome, detail = mermaid_static_gate(code)
     if outcome == MERMAID_GATE_TYPE:
         return f"{outcome}:{detail}"

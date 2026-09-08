@@ -228,6 +228,38 @@ def test_parser_limits_nodes_and_depth():
     fparse.check_expression("-" * 10 + "x", free_symbols=["x"])
 
 
+def test_parser_measures_flat_chains_by_size_not_by_nesting():
+    """Una catena associativa (`x**11 + … + 1`, `(x-1)*…*(x-12)`) è piatta per
+    chi legge: contarne i livelli la faceva rifiutare come «troppo annidata»
+    e il messaggio arrivava al docente e al fix AI. E il conteggio
+    preliminare includeva i nodi operatore, che la visita non conta: il
+    tetto effettivo era ~40 nodi invece degli 80 dichiarati (COR-3)."""
+    poly = " + ".join(f"x**{k}" for k in range(11, 0, -1)) + " + 1"
+    product = "*".join(f"(x-{k})" for k in range(1, 13))
+    taylor = " + ".join(
+        ["1", "x"] + [f"x**{k}/{__import__('math').factorial(k)}" for k in range(2, 12)]
+    )
+    for src in (poly, product, taylor):
+        parsed = fparse.check_expression(src, free_symbols=["x"])
+        assert parsed.node_count <= fparse.MAX_NODES
+        assert parsed.depth <= fparse.MAX_DEPTH
+    # L'annidamento VERO resta il criterio della profondità.
+    with pytest.raises(fparse.ExprError, match="troppo annidata"):
+        fparse.check_expression("sqrt(" * 13 + "x" + ")" * 13, free_symbols=["x"])
+
+
+def test_parser_rejects_a_constant_exponent_that_is_not_computable():
+    """`-x**(1/0)` passava il passo 1 perché `constant_value` nasconde la
+    `ZeroDivisionError`: numpy calcolava `x**inf` e la figura usciva con una
+    didascalia matematicamente falsa (COR-2)."""
+    with pytest.raises(fparse.ExprError, match="esponente costante"):
+        fparse.check_expression("-x**(1/0)", free_symbols=["x"])
+    # `constant_value` resta un ripiegatore, non un validatore.
+    import ast
+
+    assert fparse.constant_value(ast.parse("1/0", mode="eval").body) is None
+
+
 def test_constant_value_folds_only_constants():
     import ast
 
@@ -1557,3 +1589,164 @@ async def test_endpoint_403_without_course_edit(client, seeded_db):
     user_id, org_id, course_id = await _course_for(seeded_db, role_code=R.MEMBER)
     res = await client.post(_url(org_id, course_id), json=AREA, headers=_bearer(user_id))
     assert res.status_code == 403, res.text
+
+
+# ---------------------------------------------------------------------------
+# Leggibilità del disegno (Fase D: TIP-3, TIP-4, TIP-5)
+# ---------------------------------------------------------------------------
+
+
+_TEXT_RE = re.compile(r'<text[^>]*\sx="([-\d.]+)"[^>]*\sy="([-\d.]+)"[^>]*>([^<]*)</text>')
+
+
+def _texts(svg: str) -> list[tuple[float, float, str]]:
+    return [(float(m.group(1)), float(m.group(2)), m.group(3)) for m in _TEXT_RE.finditer(svg)]
+
+
+def _path_y_range(svg: str, gid: str) -> tuple[float, float]:
+    ys: list[float] = []
+    for d in re.findall(r'\sd="([^"]+)"', _group(svg, gid)):
+        numbers = [float(t) for t in _NUMBER_RE.findall(d)]
+        ys.extend(numbers[1::2])
+    assert ys, gid
+    return (min(ys), max(ys))
+
+
+@needs_deps
+def test_axis_name_sits_above_the_last_tick_label():
+    """Il nome dell'asse x era ancorato alla punta della freccia con
+    `va="top"` e 2 pt di scarto: sulla stessa riga del tick dell'estremo
+    destro, che è centrato sulla fine dell'asse, i due si leggevano come un
+    unico token («8x»). Ora sta sopra la freccia (TIP-4)."""
+    result = ffs.render_function_sync(
+        _spec(
+            {
+                "kind": "function_study",
+                "expressions": [{"expr": "(x**2 - 1)/(x - 2)"}],
+                "domain": [-6, 8],
+            }
+        ),
+        language="it",
+    )
+    texts = _texts(result.svg)
+    name = next(t for t in texts if t[2] == "x")
+    tick = max((t for t in texts if t[2] == "8"), key=lambda t: t[0])
+    assert abs(tick[0] - name[0]) < 12.0, (name, tick)  # il tick è all'estremo
+    assert name[1] <= tick[1] - 8.0, (name, tick)  # su una riga più alta
+
+
+@needs_deps
+def test_tick_labels_are_drawn_over_the_curves_with_a_white_backdrop():
+    """Con le spine a zero i tick stanno dentro l'area dati e matplotlib
+    disegna l'asse SOTTO le curve: un ramo che passa per un tick lo
+    cancellava (le ellissi di livello passano esattamente per ±1, ±2). Ora
+    ogni etichetta ha un riquadro bianco e resta `<text>` (TIP-5, A14)."""
+    result = ffs.render_function_sync(
+        _spec(
+            {
+                "kind": "level_curves",
+                "expressions": [{"expr": "x**2 + y**2"}],
+                "variables": ["x", "y"],
+                "domain": [-3, 3],
+                "range": [-3, 3],
+                "levels": [1, 2, 4],
+            }
+        ),
+        language="it",
+    )
+    svg = result.svg
+    assert "<image" not in svg  # nessun raster: l'alone è geometria
+    minus_two = next(m.start() for m in re.finditer(r">−2</text>", svg))
+    backdrop = svg.rfind('style="fill: #ffffff; opacity:', 0, minus_two)
+    assert backdrop > 0 and minus_two - backdrop < 400, "riquadro bianco assente sotto il tick"
+    # I tick sono disegnati dopo le curve: l'ordine del documento è
+    # l'ordine di pittura.
+    assert svg.index('id="levels"') < minus_two
+
+
+@needs_deps
+def test_exact_zero_labels_never_duplicate_or_overlap_a_tick():
+    """`0` sopra il tick `0` («0₀») e `−π` sopra il tick `−3` («−3π»): la
+    prima è informazione duplicata, la seconda una lettura falsa. Ora
+    l'etichetta identica al tick è omessa e quella diversa scende di una
+    riga (TIP-5)."""
+    parabola = ffs.render_function_sync(
+        _spec(
+            {
+                "kind": "function_study",
+                "expressions": [{"expr": "x**2 - 2*x"}],
+                "domain": [-3, 3],
+            }
+        ),
+        language="it",
+    )
+    # Zeri in 0 e 2, entrambi su un tick con lo stesso testo: nessuna
+    # etichetta esatta, i marcatori restano.
+    assert not [i for i in _ids(parabola.svg) if i.startswith("zero-label-")]
+    assert "zero-0" in _ids(parabola.svg)
+
+    tangente = ffs.render_function_sync(
+        _spec(
+            {
+                "kind": "function_study",
+                "expressions": [{"expr": "tan(x)"}],
+                "domain": [-4.5, 4.5],
+                "range": [-6, 6],
+            }
+        ),
+        language="it",
+    )
+    svg = tangente.svg
+    assert svg.count(">0</text>") == 1  # solo il tick, non anche lo zero esatto
+    top, _bottom = _path_y_range(svg, "zero-label-0")
+    tick = next(t for t in _texts(svg) if t[2] == "−3")
+    assert top > tick[1], (top, tick)  # seconda riga, sotto il tick
+
+
+@needs_deps
+def test_formula_and_point_labels_are_painted_over_the_curves_with_a_halo():
+    """I `PathPatch` di matplotlib stanno a zorder 1, le linee a 2: la curva
+    passava sopra «f(x) = eˣ» e sopra le coordinate esatte dei punti
+    critici. Ora il testo è sopra, con un alone bianco (TIP-3)."""
+    result = ffs.render_function_sync(
+        _spec({"kind": "function_study", "expressions": [{"expr": "exp(x)"}], "domain": [-2, 3]}),
+        language="it",
+    )
+    svg = result.svg
+    assert svg.index('id="branch-0-0"') < svg.index('id="formula"')
+    formula = _group(svg, "formula")
+    assert formula.count("<path") == 2  # alone + glifi
+    assert "stroke: #ffffff" in formula
+
+
+@needs_deps
+@pytest.mark.parametrize(
+    ("expr", "domain"),
+    [("x/0", [-2, 2]), ("sqrt(x)", [-2, -1]), ("log(x)", [-3, -1]), ("asin(x)", [2, 3])],
+)
+def test_deep_validation_rejects_an_expression_undefined_on_the_whole_domain(
+    expr: str, domain: list[float]
+):
+    """Senza campioni finiti la figura esce senza rami, `approximate=False` e
+    con la didascalia «Nessun punto notevole nel dominio considerato»: il
+    check del worker era verde, il fix AI non partiva e la lezione andava
+    `ready` con una figura vuota in dispensa, slide e frame (COR-2)."""
+    content = json.dumps(
+        {"kind": "function_study", "expressions": [{"expr": expr}], "domain": domain}
+    )
+    ok, err = frs.REGISTRY["function"].validate(content, deep=True)
+    assert ok is False and "indefinita" in err, err
+    # La spec resta valida a `deep=False` (gate del PATCH, A15) e
+    # l'anteprima dell'editor continua a rispondere: il docente vede il
+    # dominio sbagliato invece di un errore secco.
+    assert frs.REGISTRY["function"].validate(content) == (True, "")
+
+
+@needs_deps
+def test_deep_validation_keeps_accepting_informative_warnings():
+    """Le avvertenze informative (`zero_interval`, `symbolic_*`) non sono
+    errori: solo l'assenza totale di rami lo è."""
+    content = json.dumps(
+        {"kind": "function_study", "expressions": [{"expr": "1/(x - 0.5)"}], "domain": [-2, 2]}
+    )
+    assert frs.REGISTRY["function"].validate(content, deep=True) == (True, "")

@@ -769,7 +769,7 @@
     },
     "lessonsContent": {
       "title": "Dispense delle lezioni",
-      "description": "Per ogni lezione, l'AI scrive il testo completo in markdown con asset visivi (Mermaid, formule LaTeX, tabelle), esempi, esercizi e references.",
+      "description": "Per ogni lezione, l'AI scrive il testo completo in markdown con figure (Mermaid, Vega-Lite, DOT, matematiche), immagini, formule LaTeX, tabelle, esempi, esercizi e references.",
       "lessonsStructureNotApproved": "Approva prima la struttura delle lezioni per generare le dispense.",
       "generateAll": "Genera dispense per tutte le lezioni",
       "regenerateAll": "Rigenera tutte le dispense",
@@ -802,8 +802,7 @@
         "retry": "Riprova",
         "approve": "Approva",
         "edit": "Modifica",
-        "failed": "Generazione fallita",
-        "edit": "Modifica"
+        "failed": "Generazione fallita"
       },
       "render": {
         "missingAsset": "Asset non trovato:",
@@ -909,7 +908,7 @@
           "writeFunction": "Componi una figura matematica"
         },
         "assetRejected": "Asset rifiutato dal server",
-        "legacyAssetBanner": "Asset legacy non più editabile. Eliminalo e ricrealo come diagramma Mermaid o immagine caricata.",
+        "legacyAssetBanner": "Asset legacy non più editabile. Eliminalo e ricrealo come figura (Mermaid, Vega-Lite, DOT, matematica) o immagine caricata.",
         "refCode": "Codice riferimento",
         "refCopy": "Copia il riferimento",
         "refCopied": "Copiato: {{token}}",
@@ -1095,7 +1094,23 @@
           "samplingPoints": "Punti di campionamento ({{min}}–{{max}})",
           "preview": "Anteprima",
           "previewIncomplete": "Completa i campi obbligatori per vedere l'anteprima",
-          "previewInvalid": "Correggi i campi segnalati per aggiornare l'anteprima"
+          "previewInvalid": "Correggi i campi segnalati per aggiornare l'anteprima",
+          "warnings": {
+            "label": "Avvertenze:",
+            "expressionUndefined": "L'espressione non è definita in nessun punto del dominio: correggi il dominio oppure l'espressione.",
+            "seriesUndefined": "Una curva della famiglia non è definita nel dominio scelto.",
+            "zeroInterval": "La funzione si annulla su un intervallo, non in punti isolati.",
+            "stationaryInterval": "La funzione è costante su un intervallo: i punti critici non sono isolati.",
+            "tooManyPoints": "Punti notevoli troppo numerosi: l'elenco è stato troncato.",
+            "tangentUndefined": "La tangente non è definita nel punto richiesto.",
+            "integralUndefined": "L'integrale non è calcolabile sull'intervallo richiesto.",
+            "pointUndefined": "Il punto annotato non è definito nel dominio.",
+            "levelsUndefined": "I livelli richiesti non compaiono nel dominio scelto.",
+            "formulaNotMathtext": "La formula è mostrata in sintassi Python: la notazione matematica non è disponibile.",
+            "formulaTooWide": "La formula non entra nella figura: resta il solo nome della funzione.",
+            "symbolicTimeout": "Calcolo simbolico oltre il tempo massimo: i valori sono approssimati.",
+            "symbolic": "Calcolo simbolico non disponibile: i valori sono approssimati."
+          }
         }
       }
     },

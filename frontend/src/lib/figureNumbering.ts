@@ -51,6 +51,14 @@ export function citedFigureIds(markdown: string): string[] {
 /** Accoda `"\n\n[FIG:{id}]"` per ogni asset mai citato, nell'ordine
  *  dell'array (A12). L'id è scritto come dichiarato (il lookup del renderer
  *  è già case-insensitive). Id vuoti e duplicati sono ignorati. */
+/** Il token `[FIG:{id}]` rilegge esattamente `id`: falso per gli id con `]`
+ *  o con un a capo, che nessun percorso automatico produce ma un PATCH
+ *  manuale può salvare (mirror di `_round_trips`). */
+function roundTrips(assetId: string): boolean {
+  const m = new RegExp(`^${FIG_REF_RE.source}$`).exec(`[FIG:${assetId}]`);
+  return m !== null && m[1] === assetId;
+}
+
 export function appendUncitedFigureRefs(
   markdown: string,
   assetIds: Iterable<string>,
@@ -60,7 +68,7 @@ export function appendUncitedFigureRefs(
   for (const assetId of assetIds) {
     const raw = String(assetId ?? "").trim();
     const key = raw.toLowerCase();
-    if (!key || cited.has(key)) continue;
+    if (!key || cited.has(key) || !roundTrips(raw)) continue;
     cited.add(key);
     out += `\n\n[FIG:${raw}]`;
   }

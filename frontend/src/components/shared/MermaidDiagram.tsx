@@ -161,7 +161,10 @@ function MermaidDiagramImpl({ code, className }: MermaidDiagramProps) {
         // overflow-x-auto come fallback se qualche diagramma ha una
         // larghezza minima > container (mai dovrebbe accadere ora che
         // il max-width inline è strippato, ma resta come safety net).
-        "overflow-x-auto rounded bg-background p-2 [&_svg]:!w-full [&_svg]:!max-w-none [&_svg]:h-auto",
+        // Fondo chiaro e fisso come le altre figure: gli archi e le
+        // frecce del tema (COLOR_AXIS) sul fondo scuro del tema dark
+        // resterebbero sotto il rapporto di contrasto minimo.
+        "overflow-x-auto rounded bg-white p-2 [&_svg]:!w-full [&_svg]:!max-w-none [&_svg]:h-auto",
         // Tetto d'altezza SOLO per i diagrammi orizzontali (torta, flowchart
         // LR): max(28rem, altezza naturale), così un diagramma compatto non
         // si dilata a tutta colonna e uno grande non è mai rimpicciolito.

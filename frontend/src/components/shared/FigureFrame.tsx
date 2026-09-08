@@ -35,6 +35,18 @@ export interface FigureFrameProps {
   children: ReactNode;
 }
 
+/** Superficie della figura: chiara e FISSA, non legata al tema. Il tema
+ * D3 disegna inchiostro scuro su fondo trasparente (identico a PDF, slide
+ * e frame video); sul fondo scuro del frontend le figure Vega-Lite, DOT e
+ * `function` sarebbero nere su nero. Una palette scura alternativa
+ * romperebbe l'identità con gli artefatti consegnati e la parità con la
+ * copia backend del tema: la superficie chiara la conserva. */
+/** Punteggiatura che chiude una didascalia: se manca e c'è una coda
+ *  calcolata, il partial (e questa cornice) aggiungono un punto. */
+const CAPTION_END_RE = /[.!?…:;]$/;
+
+export const FIGURE_SURFACE = "rounded bg-white p-2";
+
 export function FigureFrame({
   assetId,
   format,
@@ -54,6 +66,11 @@ export function FigureFrame({
   const text = stripFigurePrefix(caption || "").trim();
   let extra = (extraCaption || "").trim();
   if (extra && text.endsWith(extra)) extra = "";
+  // La coda calcolata è un periodo a sé («Zeri in x = -1, 1.»): senza il
+  // punto la didascalia del docente le si fonderebbe contro («…razionale
+  // Zeri in x…»). Stessa regola del partial del PDF (`figure_markup`).
+  const stop =
+    extra !== "" && text !== "" && !CAPTION_END_RE.test(text) ? "." : "";
 
   return (
     <figure
@@ -78,7 +95,7 @@ export function FigureFrame({
         )}
       >
         <span className="figure-label font-semibold">{label}</span>
-        {text ? ` ${text}` : ""}
+        {text ? ` ${text}${stop}` : ""}
         {extra ? ` ${extra}` : ""}
       </figcaption>
     </figure>

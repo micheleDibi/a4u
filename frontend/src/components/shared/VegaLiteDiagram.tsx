@@ -14,7 +14,7 @@ import {
 import { VEGALITE_THEME_CONFIG } from "@/lib/figureTheme";
 import { cn } from "@/lib/utils";
 
-import { FigureErrorBox, FigureLoading } from "./FigureFrame";
+import { FIGURE_SURFACE, FigureErrorBox, FigureLoading } from "./FigureFrame";
 
 /**
  * Anteprima client di una spec Vega-Lite (`format="vegalite"`).
@@ -131,7 +131,10 @@ function VegaLiteDiagramImpl({ spec, className }: VegaLiteDiagramProps) {
       <div
         ref={containerRef}
         hidden={status !== "ready"}
-        className="flex justify-center overflow-x-auto [&_svg]:h-auto [&_svg]:max-w-full"
+        className={cn(
+          FIGURE_SURFACE,
+          "flex justify-center overflow-x-auto [&_svg]:h-auto [&_svg]:max-w-full",
+        )}
       />
     </div>
   );
