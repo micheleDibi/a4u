@@ -503,9 +503,10 @@ la sorgente delle figure:
   (Vega-Lite, 24 modelli — confronto fra categorie, parte sul tutto
   (torta e ciambella), distribuzione, andamento nel tempo, correlazione,
   matrice, incertezza, graduatoria — con `data.values` ≤ 200 righe,
-  `clip: true`, `scale.domain`, una sola `title`; DOT, 8 modelli —
-  gerarchie, flussi e dipendenze, relazioni non orientate, modelli e
-  strutture, architetture — senza attributo `image`/`URL`/`href` e senza
+  `clip: true`, `scale.domain`, una sola `title`; DOT, 18 modelli —
+  gerarchie e alberi, grafi orientati e dipendenze, grafi non orientati e
+  reti, automi e strutture dati, architetture, cammini e flussi — senza
+  attributo `image`/`URL`/`href` e senza
   blocco `graph/node/edge [` così il tema è iniettato per intero).
   L'errore del parser client va sotto
   l'anteprima; il 422 per-asset del PATCH (`meta.errors`) in testa alla

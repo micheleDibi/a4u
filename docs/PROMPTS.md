@@ -846,7 +846,11 @@ attributi che leggono file. Tipi: albero, albero binario, grafo diretto
 e non orientato (`--`), dipendenze, automa (`shape=circle`,
 `doublecircle` sugli stati accettanti, ingresso `shape=point`), record
 di una struttura dati (`shape=Mrecord` con le porte), raggruppamenti
-(`subgraph cluster_*`).
+(`subgraph cluster_*`); albero di derivazione, tassonomia, grafo delle
+chiamate, grafo pesato e bipartito (`rank=same` sui due insiemi),
+topologia di rete, tabella hash, architettura a livelli, cammino minimo
+(in evidenza con `penwidth`, mai col colore) e rete di flusso
+(`portata/capacità` sugli archi).
 Esempio: digraph G { rankdir=LR; A [label="Ingresso"]; B [label="Elaborazione"]; C [label="Uscita"]; A -> B -> C; }
 
 FUNCTION (figura calcolata da sympy e matplotlib): `content` è la

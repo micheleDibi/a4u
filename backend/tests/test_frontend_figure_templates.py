@@ -12,7 +12,10 @@ modelli e li fa passare dal validatore e dal renderer DI PRODUZIONE:
   `foreignObject` non è renderizzabile da WeasyPrint e la figura sparirebbe
   dal PDF;
 * DOT — `REGISTRY["dot"].validate(code, deep=True)`: limiti, attributi che
-  leggono file e prova di render con il binario `dot`.
+  leggono file e prova di render con il binario `dot`, più la MISURA della
+  geometria dell'SVG reso (ogni testo dentro la tela e dentro il nodo che
+  lo possiede, nessuna etichetta sovrapposta a un'altra, nessun arco che
+  attraversa un'etichetta).
 
 Motivo: un modello che il docente sceglie dal menu e che poi viene
 rifiutato al salvataggio (422 per asset) è un difetto peggiore della sua
@@ -142,7 +145,7 @@ def test_the_extractor_sees_the_whole_catalogue() -> None:
     farebbe passare l'intero test su ZERO modelli."""
     assert len(MERMAID) == len(theme.MERMAID_D8_TYPES), _ids(MERMAID)
     assert len(VEGALITE) >= 20, _ids(VEGALITE)
-    assert len(DOT) >= 8, _ids(DOT)
+    assert len(DOT) >= 18, _ids(DOT)
     for tpl in ALL:
         assert tpl.code.strip(), f"{tpl.editor}: modello {tpl.id} vuoto"
         assert tpl.group, f"{tpl.editor}: modello {tpl.id} senza famiglia d'uso"
@@ -290,25 +293,36 @@ def test_the_p3_catalogue_names_every_proven_vegalite_template() -> None:
 _P3_DOT_TERMS: dict[str, str] = {
     "tree": "albero",
     "binaryTree": "albero binario",
+    "parseTree": "albero di derivazione",
+    "taxonomy": "tassonomia",
     "digraph": "grafo diretto",
     "pipeline": "dipendenze",
+    "callGraph": "grafo delle chiamate",
     "undirected": "non orientato (`--`)",
+    "weighted": "grafo pesato",
+    "bipartite": "bipartito (`rank=same` sui due insiemi)",
+    "network": "topologia di rete",
     "automaton": "automa (`shape=circle`, `doublecircle` sugli stati accettanti",
     "record": "record di una struttura dati (`shape=Mrecord` con le porte)",
+    "hashTable": "tabella hash",
     "cluster": "raggruppamenti (`subgraph cluster_*`)",
+    "layers": "architettura a livelli",
+    "shortestPath": "cammino minimo (in evidenza con `penwidth`, mai col colore)",
+    "flowNetwork": "rete di flusso (`portata/capacità` sugli archi)",
 }
 
 
 def test_the_p3_paragraph_names_every_proven_dot_template() -> None:
     """Il paragrafo DOT del prompt di Fase 3 e il menu dell'editor dicono la
-    stessa cosa: ogni tipo di grafo suggerito al modello è uno degli otto
-    modelli che passano validatore e binario `dot` poco più sotto."""
+    stessa cosa: ogni tipo di grafo suggerito al modello è uno dei diciotto
+    modelli che passano validatore, binario `dot` e misura della geometria
+    poco più sotto."""
     assert set(_P3_DOT_TERMS) == set(_ids(DOT)), sorted(set(_P3_DOT_TERMS) ^ set(_ids(DOT)))
     prompt = content._system_prompt("it")
     dot = " ".join(prompt[prompt.index("DOT (Graphviz)") : prompt.index("FUNCTION (")].split())
     for template_id, term in sorted(_P3_DOT_TERMS.items()):
         assert term in dot, f"{template_id}: «{term}» assente dal paragrafo DOT di Fase 3"
-    # Le forme su cui si reggono cinque modelli su otto devono essere
+    # Le forme su cui si reggono nove modelli su diciotto devono essere
     # ammesse dal prompt, non solo dal validatore.
     assert "`shape` SOLO quando porta significato" in dot
     for tpl in DOT:
@@ -539,6 +553,159 @@ def test_the_dot_check_would_catch_a_broken_template() -> None:
         pytest.skip("il binario `dot` non è disponibile")
     ok, err = renderer.validate('digraph g { a [image="/etc/passwd"]; a -> b; }', deep=True)
     assert ok is False and "image" in err, err
+
+
+# ---------------------------------------------------------------------------
+# DOT — GEOMETRIA: anche qui la figura si giudica RESA
+#
+# `dot` non sovrappone i nodi, ma «valido» non è «leggibile»: il testo può
+# uscire dal nodo che lo possiede, due etichette possono collidere e un
+# arco può passare SOPRA l'etichetta di un cluster. È il difetto trovato
+# su `layers`: con i nodi impilati in colonna la freccia entrante nel
+# livello tagliava le parole «Livello applicativo» e «Livello di
+# persistenza» (misurato: 6,2 px dentro il riquadro del testo). Qui si
+# misura in Chromium il bbox reale di ogni `<text>`, il riquadro del nodo
+# o del cluster che lo possiede e il tracciato di ogni arco.
+# ---------------------------------------------------------------------------
+
+# Tolleranza: mezzo pixel, sotto il quale i riquadri si sfiorano soltanto.
+_DOT_TOLLERANZA_PX = 0.5
+
+_DOT_GEOMETRIA_JS = """
+(svg) => {
+  document.body.innerHTML = svg;
+  const root = document.querySelector('svg');
+  const vb = root.viewBox.baseVal;
+  const inv = (el) => root.getScreenCTM().inverse().multiply(el.getScreenCTM());
+  const box = (el) => {
+    const b = el.getBBox(); const m = inv(el);
+    const p = (x, y) => { const q = root.createSVGPoint(); q.x = x; q.y = y;
+                          return q.matrixTransform(m); };
+    const c = [p(b.x, b.y), p(b.x + b.width, b.y),
+               p(b.x, b.y + b.height), p(b.x + b.width, b.y + b.height)];
+    const xs = c.map(v => v.x), ys = c.map(v => v.y);
+    return {x0: Math.min(...xs), x1: Math.max(...xs),
+            y0: Math.min(...ys), y1: Math.max(...ys)};
+  };
+  const unione = (bs) => bs.reduce((a, b) => a === null ? b : {
+      x0: Math.min(a.x0, b.x0), x1: Math.max(a.x1, b.x1),
+      y0: Math.min(a.y0, b.y0), y1: Math.max(a.y1, b.y1)}, null);
+  // Quanto `b` sborda da `o`: negativo se `b` è tutto dentro `o`.
+  const sconfina = (b, o) => Math.max(o.x0 - b.x0, b.x1 - o.x1,
+                                      o.y0 - b.y0, b.y1 - o.y1);
+  const gruppi = [...root.querySelectorAll('g.node, g.cluster, g.edge, g.graph')];
+  const testi = [];
+  gruppi.forEach((g, gi) => {
+    const tipo = g.getAttribute('class');
+    const forme = [...g.querySelectorAll(':scope > ellipse, :scope > polygon, ' +
+                                         ':scope > path, :scope > polyline')];
+    const proprietario = (tipo === 'node' || tipo === 'cluster')
+      ? unione(forme.map(box)) : null;
+    for (const t of g.querySelectorAll(':scope > text')) {
+      const testo = (t.textContent || '').trim();
+      if (testo) testi.push({tipo, gi, testo, b: box(t), proprietario});
+    }
+  });
+  const difetti = [];
+  const tela = {x0: vb.x, x1: vb.x + vb.width, y0: vb.y, y1: vb.y + vb.height};
+  for (const t of testi) {
+    const fuori = sconfina(t.b, tela);
+    if (fuori > TOLL) difetti.push(`${t.testo}: fuori dalla tela di ${fuori.toFixed(1)}px`);
+    if (t.proprietario) {
+      const o = sconfina(t.b, t.proprietario);
+      if (o > TOLL) difetti.push(`${t.testo}: fuori dal suo ${t.tipo} di ${o.toFixed(1)}px`);
+    }
+  }
+  for (let i = 0; i < testi.length; i++) {
+    for (let j = i + 1; j < testi.length; j++) {
+      const a = testi[i].b, b = testi[j].b;
+      const s = Math.min(Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0),
+                         Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0));
+      if (s > TOLL) difetti.push(
+        `${testi[i].testo}/${testi[j].testo}: etichette sovrapposte di ${s.toFixed(1)}px`);
+    }
+  }
+  gruppi.forEach((g, gi) => {
+    if (g.getAttribute('class') !== 'edge') return;
+    for (const p of g.querySelectorAll(':scope > path')) {
+      const m = inv(p), lunghezza = p.getTotalLength();
+      for (let d = 0; d <= lunghezza; d += 2) {
+        const q = p.getPointAtLength(d).matrixTransform(m);
+        for (const t of testi) {
+          if (t.gi === gi) continue;
+          const b = t.b;
+          if (q.x > b.x0 + 1 && q.x < b.x1 - 1 && q.y > b.y0 + 1 && q.y < b.y1 - 1)
+            difetti.push(`${t.testo}: un arco attraversa l'etichetta`);
+        }
+      }
+    }
+  });
+  return [...new Set(difetti)];
+}
+""".replace("TOLL", str(_DOT_TOLLERANZA_PX))
+
+
+def _dot_defects(sources: dict[str, str]) -> dict[str, list[str]]:
+    """Difetti di geometria per ciascun sorgente, misurati sull'SVG reso."""
+    sync_playwright = pytest.importorskip("playwright.sync_api").sync_playwright
+    renderer = REGISTRY["dot"]
+    resi: dict[str, str] = {}
+    for name, code in sources.items():
+        svg = renderer.render_svg(code, asset_id=name)
+        assert svg is not None, name
+        resi[name] = svg
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            page = browser.new_page()
+            page.set_content("<html><body></body></html>")
+            out = {name: page.evaluate(_DOT_GEOMETRIA_JS, svg) for name, svg in resi.items()}
+            browser.close()
+    except Exception as exc:  # pragma: no cover - launch di Chromium
+        pytest.skip(f"Chromium non disponibile per la misura: {exc!r}"[:200])
+    return out
+
+
+@pytest.fixture(scope="module")
+def dot_geometry() -> dict[str, list[str]]:
+    if not REGISTRY["dot"].available():  # pragma: no cover - binario assente
+        pytest.skip("il binario `dot` non è disponibile")
+    return _dot_defects({tpl.id: tpl.code for tpl in DOT})
+
+
+@pytest.mark.parametrize("tpl", DOT, ids=_ids(DOT))
+def test_dot_template_is_legible_once_rendered(
+    dot_geometry: dict[str, list[str]], tpl: Template
+) -> None:
+    assert not dot_geometry[tpl.id], f"{tpl.id}: {dot_geometry[tpl.id]}"
+
+
+def test_the_dot_geometry_check_would_catch_an_edge_across_a_label() -> None:
+    """Controprova misurata: `layers` prima della correzione — i due nodi di
+    ogni livello impilati in colonna, l'etichetta del cluster centrata sopra
+    di essi — passa validatore e binario `dot` e resta illeggibile, perché
+    la freccia che entra nel livello attraversa il suo nome. La correzione è
+    la coppia `rank=same` (i nodi in riga) più `labeljust="r"` (il nome
+    fuori dalla colonna delle frecce)."""
+    if not REGISTRY["dot"].available():  # pragma: no cover - binario assente
+        pytest.skip("il binario `dot` non è disponibile")
+    prima = """digraph architettura_a_livelli {
+  rankdir=TB;
+  subgraph cluster_applicazione {
+    label="Livello applicativo";
+    api [label="Servizi REST"];
+    dominio [label="Logica di dominio"];
+  }
+  subgraph cluster_persistenza {
+    label="Livello di persistenza";
+    mappatura [label="Mappatura oggetti"];
+  }
+  api -> dominio;
+  dominio -> mappatura;
+}"""
+    assert REGISTRY["dot"].validate(prima, deep=True)[0]
+    difetti = _dot_defects({"layers-prima": prima})["layers-prima"]
+    assert any("attraversa l'etichetta" in d for d in difetti), difetti
 
 
 # ---------------------------------------------------------------------------

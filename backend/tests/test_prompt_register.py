@@ -47,7 +47,18 @@ MAX_BLOCK_REDUCED = 6_400
 # P4 15.100 in entrambe le varianti; P5 invariato. Le correzioni pesano
 # 1.127 caratteri in P3 e 447 in P4, quindi la guardia di P3 sale da
 # 27.400 a 27.700 (~1,5% di margine sulla misura reale).
-MAX_SYSTEM_P3 = 27_700
+#
+# Misure del 9 settembre 2026, dopo i dieci tipi di grafo aggiunti
+# all'editor DOT (albero di derivazione, tassonomia, grafo delle chiamate,
+# grafo pesato, bipartito, topologia di rete, tabella hash, architettura a
+# livelli, cammino minimo, rete di flusso): P3 27.517 con grounding,
+# 26.098 senza, 27.550 con ruolo/stile/EQF interpolati (la variante più
+# lunga); P4 e P5 invariati, il paragrafo DOT sta solo in Fase 3. I tipi
+# nuovi sono NOMINATI e non spiegati: il paragrafo passa da 620 a 901
+# caratteri, +281 in P3. Con la guardia a 27.700 il margine scendeva a 150
+# caratteri (0,5%), troppo poco per la prossima riga: sale a 28.900, cioè
+# la misura reale + ~5%.
+MAX_SYSTEM_P3 = 28_900
 MAX_SYSTEM_P4 = 15_400
 MAX_SYSTEM_P5 = 12_500
 

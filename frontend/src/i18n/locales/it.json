@@ -1084,20 +1084,31 @@
           "insertTemplate": "Inserisci template…",
           "groups": {
             "hierarchy": "Gerarchie e alberi",
-            "flow": "Flussi e dipendenze",
-            "relations": "Relazioni e reti",
-            "models": "Modelli e strutture",
-            "architecture": "Architetture"
+            "flow": "Grafi orientati e dipendenze",
+            "relations": "Grafi non orientati e reti",
+            "models": "Automi e strutture dati",
+            "architecture": "Architetture",
+            "paths": "Cammini e flussi"
           },
           "templates": {
             "tree": "Albero",
             "binaryTree": "Albero binario di ricerca",
+            "parseTree": "Albero di derivazione",
+            "taxonomy": "Tassonomia",
             "digraph": "Grafo diretto",
             "pipeline": "Grafo delle dipendenze",
+            "callGraph": "Grafo delle chiamate",
             "undirected": "Grafo non orientato",
+            "weighted": "Grafo pesato",
+            "bipartite": "Grafo bipartito",
+            "network": "Topologia di rete",
             "automaton": "Automa a stati finiti",
             "record": "Nodi a record (struttura dati)",
-            "cluster": "Grafo con raggruppamenti"
+            "hashTable": "Tabella hash",
+            "cluster": "Grafo con raggruppamenti",
+            "layers": "Architettura a livelli",
+            "shortestPath": "Cammino minimo",
+            "flowNetwork": "Rete di flusso"
           }
         },
         "function": {

@@ -207,8 +207,8 @@ def test_p3_dot_rules():
 def test_p3_dot_paragraph_allows_the_shapes_that_carry_meaning():
     """Il divieto di «stile» tolse a DOT la notazione: un automa senza
     `doublecircle` non è impoverito, è sbagliato. Il validatore ammette
-    `shape` (rifiuta solo gli attributi che leggono file) e cinque degli
-    otto modelli dell'editor ci si reggono."""
+    `shape` (rifiuta solo gli attributi che leggono file) e nove dei
+    diciotto modelli dell'editor ci si reggono."""
     dot = _flat(_figure_block(_p3()))
     dot = dot[dot.index("DOT (Graphviz)") : dot.index("FUNCTION (")]
     assert "nessun colore né font (li impone il renderer)" in dot

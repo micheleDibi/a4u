@@ -33,6 +33,7 @@ const GROUP = {
   relations: `${PREFIX}.groups.relations`,
   models: `${PREFIX}.groups.models`,
   architecture: `${PREFIX}.groups.architecture`,
+  paths: `${PREFIX}.groups.paths`,
 } as const;
 
 const TEMPLATES: readonly SourceTemplate[] = [
@@ -78,7 +79,66 @@ const TEMPLATES: readonly SourceTemplate[] = [
   n10 -> n14;
 }`,
   },
-  // --- Flussi e dipendenze ------------------------------------------------
+  {
+    id: "parseTree",
+    groupKey: GROUP.hierarchy,
+    labelKey: `${PREFIX}.templates.parseTree`,
+    code: `digraph albero_di_derivazione {
+  rankdir=TB;
+  ordering=out;
+  f [label="F"];
+  sn [label="SN"];
+  sv [label="SV"];
+  art1 [label="Art"];
+  n1 [label="N"];
+  v [label="V"];
+  sn2 [label="SN"];
+  art2 [label="Art"];
+  n2 [label="N"];
+  w1 [label="il"];
+  w2 [label="docente"];
+  w3 [label="corregge"];
+  w4 [label="la"];
+  w5 [label="prova"];
+  f -> sn;
+  f -> sv;
+  sn -> art1;
+  sn -> n1;
+  sv -> v;
+  sv -> sn2;
+  sn2 -> art2;
+  sn2 -> n2;
+  art1 -> w1;
+  n1 -> w2;
+  v -> w3;
+  art2 -> w4;
+  n2 -> w5;
+}`,
+  },
+  {
+    id: "taxonomy",
+    groupKey: GROUP.hierarchy,
+    labelKey: `${PREFIX}.templates.taxonomy`,
+    code: `digraph tassonomia {
+  rankdir=TB;
+  radice [label="Apprendimento automatico"];
+  sup [label="Supervisionato"];
+  nonsup [label="Non supervisionato"];
+  rinf [label="Per rinforzo"];
+  classificazione [label="Classificazione"];
+  regressione [label="Regressione"];
+  raggruppamento [label="Raggruppamento"];
+  riduzione [label="Riduzione dimensionale"];
+  radice -> sup;
+  radice -> nonsup;
+  radice -> rinf;
+  sup -> classificazione;
+  sup -> regressione;
+  nonsup -> raggruppamento;
+  nonsup -> riduzione;
+}`,
+  },
+  // --- Grafi orientati e dipendenze ---------------------------------------
   {
     id: "digraph",
     groupKey: GROUP.flow,
@@ -113,7 +173,31 @@ const TEMPLATES: readonly SourceTemplate[] = [
   analisi -> relazione [label="tabelle", style=dashed];
 }`,
   },
-  // --- Relazioni e reti ---------------------------------------------------
+  {
+    id: "callGraph",
+    groupKey: GROUP.flow,
+    labelKey: `${PREFIX}.templates.callGraph`,
+    code: `digraph grafo_delle_chiamate {
+  rankdir=TB;
+  main [label="main()"];
+  carica [label="carica_dati()"];
+  valida [label="valida()"];
+  normalizza [label="normalizza()"];
+  analizza [label="analizza()"];
+  media [label="media()"];
+  varianza [label="varianza()"];
+  referto [label="stampa_referto()"];
+  main -> carica;
+  main -> analizza;
+  main -> referto;
+  carica -> valida;
+  carica -> normalizza;
+  analizza -> media;
+  analizza -> varianza;
+  varianza -> media;
+}`,
+  },
+  // --- Grafi non orientati e reti -----------------------------------------
   {
     id: "undirected",
     groupKey: GROUP.relations,
@@ -132,7 +216,68 @@ const TEMPLATES: readonly SourceTemplate[] = [
   dino -- elena;
 }`,
   },
-  // --- Modelli e strutture ------------------------------------------------
+  {
+    id: "weighted",
+    groupKey: GROUP.relations,
+    labelKey: `${PREFIX}.templates.weighted`,
+    code: `graph distanze_campus {
+  rankdir=LR;
+  aule [label="Aule"];
+  biblioteca [label="Biblioteca"];
+  mensa [label="Mensa"];
+  laboratori [label="Laboratori"];
+  residenza [label="Residenza"];
+  aule -- biblioteca [label="4"];
+  aule -- mensa [label="7"];
+  biblioteca -- laboratori [label="3"];
+  mensa -- laboratori [label="2"];
+  laboratori -- residenza [label="6"];
+  mensa -- residenza [label="9"];
+}`,
+  },
+  {
+    id: "bipartite",
+    groupKey: GROUP.relations,
+    labelKey: `${PREFIX}.templates.bipartite`,
+    code: `graph abbinamento_tesi {
+  rankdir=LR;
+  s1 [label="Studente 1"];
+  s2 [label="Studente 2"];
+  s3 [label="Studente 3"];
+  r1 [label="Relatore Rossi"];
+  r2 [label="Relatrice Bianchi"];
+  { rank=same; s1; s2; s3; }
+  { rank=same; r1; r2; }
+  s1 -- r1;
+  s2 -- r1;
+  s2 -- r2;
+  s3 -- r2;
+}`,
+  },
+  {
+    id: "network",
+    groupKey: GROUP.relations,
+    labelKey: `${PREFIX}.templates.network`,
+    code: `graph topologia_di_rete {
+  rankdir=TB;
+  esterna [label="Rete esterna"];
+  frontiera [label="Router di frontiera"];
+  firewall [label="Firewall"];
+  commutatore [label="Commutatore di piano"];
+  web [label="Server web"];
+  applicativo [label="Server applicativo"];
+  archivio [label="Base di dati", shape=cylinder];
+  laboratorio [label="Laboratorio didattico"];
+  esterna -- frontiera;
+  frontiera -- firewall;
+  firewall -- commutatore;
+  commutatore -- web;
+  commutatore -- applicativo;
+  commutatore -- laboratorio;
+  applicativo -- archivio;
+}`,
+  },
+  // --- Automi e strutture dati --------------------------------------------
   {
     id: "automaton",
     groupKey: GROUP.models,
@@ -163,6 +308,23 @@ const TEMPLATES: readonly SourceTemplate[] = [
   n2:succ -> n3;
 }`,
   },
+  {
+    id: "hashTable",
+    groupKey: GROUP.models,
+    labelKey: `${PREFIX}.templates.hashTable`,
+    code: `digraph tabella_hash {
+  rankdir=LR;
+  tabella [shape=Mrecord, label="{<b0> 0|<b1> 1|<b2> 2|<b3> 3}"];
+  e0 [shape=Mrecord, label="{aula: B12|<succ> succ}"];
+  e1 [shape=Mrecord, label="{esame: 27|nil}"];
+  e2 [shape=Mrecord, label="{corso: 9 CFU|nil}"];
+  e3 [shape=Mrecord, label="{docente: Rossi|nil}"];
+  tabella:b0 -> e0;
+  e0:succ -> e1;
+  tabella:b2 -> e2;
+  tabella:b3 -> e3;
+}`,
+  },
   // --- Architetture -------------------------------------------------------
   {
     id: "cluster",
@@ -181,6 +343,80 @@ const TEMPLATES: readonly SourceTemplate[] = [
   }
   browser -> api [label="HTTP"];
   api -> db [label="SQL"];
+}`,
+  },
+  {
+    id: "layers",
+    groupKey: GROUP.architecture,
+    labelKey: `${PREFIX}.templates.layers`,
+    code: `digraph architettura_a_livelli {
+  rankdir=TB;
+  subgraph cluster_presentazione {
+    label="Livello di presentazione";
+    labeljust="r";
+    web [label="Interfaccia web"];
+    mobile [label="App mobile"];
+    { rank=same; web; mobile; }
+  }
+  subgraph cluster_applicazione {
+    label="Livello applicativo";
+    labeljust="r";
+    api [label="Servizi REST"];
+    dominio [label="Logica di dominio"];
+    { rank=same; api; dominio; }
+  }
+  subgraph cluster_persistenza {
+    label="Livello di persistenza";
+    labeljust="r";
+    mappatura [label="Mappatura oggetti"];
+    archivio [label="Base di dati", shape=cylinder];
+    { rank=same; mappatura; archivio; }
+  }
+  web -> api;
+  mobile -> api;
+  api -> dominio;
+  dominio -> mappatura;
+  mappatura -> archivio;
+}`,
+  },
+  // --- Cammini e flussi ---------------------------------------------------
+  {
+    id: "shortestPath",
+    groupKey: GROUP.paths,
+    labelKey: `${PREFIX}.templates.shortestPath`,
+    code: `digraph cammino_minimo {
+  rankdir=LR;
+  s [label="S", shape=circle];
+  a [label="A", shape=circle];
+  b [label="B", shape=circle];
+  c [label="C", shape=circle];
+  t [label="T", shape=circle];
+  s -> a [label="2", style=bold, penwidth=2.0];
+  a -> b [label="1", style=bold, penwidth=2.0];
+  b -> c [label="3", style=bold, penwidth=2.0];
+  c -> t [label="2", style=bold, penwidth=2.0];
+  s -> b [label="5"];
+  a -> c [label="7"];
+  b -> t [label="9"];
+}`,
+  },
+  {
+    id: "flowNetwork",
+    groupKey: GROUP.paths,
+    labelKey: `${PREFIX}.templates.flowNetwork`,
+    code: `digraph rete_di_flusso {
+  rankdir=LR;
+  s [label="Sorgente"];
+  a [label="Smistamento A"];
+  b [label="Smistamento B"];
+  c [label="Deposito C"];
+  t [label="Pozzo"];
+  s -> a [label="8/10"];
+  s -> b [label="6/6"];
+  a -> b [label="2/4"];
+  a -> c [label="6/8"];
+  b -> c [label="8/9"];
+  c -> t [label="14/16"];
 }`,
   },
 ];

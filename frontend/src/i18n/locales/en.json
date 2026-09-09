@@ -1084,20 +1084,31 @@
           "insertTemplate": "Insert template…",
           "groups": {
             "hierarchy": "Hierarchies and trees",
-            "flow": "Flows and dependencies",
-            "relations": "Relations and networks",
-            "models": "Models and structures",
-            "architecture": "Architectures"
+            "flow": "Directed graphs and dependencies",
+            "relations": "Undirected graphs and networks",
+            "models": "Automata and data structures",
+            "architecture": "Architectures",
+            "paths": "Paths and flows"
           },
           "templates": {
             "tree": "Tree",
             "binaryTree": "Binary search tree",
+            "parseTree": "Parse tree",
+            "taxonomy": "Taxonomy",
             "digraph": "Directed graph",
             "pipeline": "Dependency graph",
+            "callGraph": "Call graph",
             "undirected": "Undirected graph",
+            "weighted": "Weighted graph",
+            "bipartite": "Bipartite graph",
+            "network": "Network topology",
             "automaton": "Finite-state automaton",
             "record": "Record nodes (data structure)",
-            "cluster": "Graph with clusters"
+            "hashTable": "Hash table",
+            "cluster": "Graph with clusters",
+            "layers": "Layered architecture",
+            "shortestPath": "Shortest path",
+            "flowNetwork": "Flow network"
           }
         },
         "function": {

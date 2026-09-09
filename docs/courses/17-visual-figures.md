@@ -842,6 +842,11 @@ positivi su grafici legittimi.
   influenzi l'esecuzione (`LD_*`, `DYLD_*`, `GV*`).
 - `dot` assente: `(False, "dot_unavailable")` con `AssetCheck.fixable=False`
   (il fix AI non può installare un binario), mai pass-through.
+- Modelli dell'editor (`DotEditor.tsx`): **diciotto**, ordinati per
+  famiglia d'uso e provati uno per uno dal validatore, dal binario `dot`
+  e dalla misura della geometria dell'SVG reso — sezione 19, che porta
+  anche i dieci tipi di grafo aggiunti il 9 settembre e il paragrafo DOT
+  del prompt di Fase 3 che li nomina.
 
 Nessun pacchetto pip `graphviz` (A3): il wrapper non espone un timeout.
 
@@ -3313,7 +3318,7 @@ tre editor testuali passa da 16 a 47 modelli.
 |---|---|---|---|
 | `VegaLiteEditor.tsx` | 5 | 24 | otto famiglie d'uso, torta e ciambella comprese |
 | `MermaidEditor.tsx` | 7 | 15 | **tutti** i tipi di `MERMAID_D8_TYPES` |
-| `DotEditor.tsx` | 4 | 8 | gerarchie, flussi, relazioni, modelli, architetture |
+| `DotEditor.tsx` | 4 | 8 | gerarchie, flussi, relazioni, modelli, architetture (→ **18** il 9 settembre, sezione 19) |
 
 **Ordinamento per famiglia d'uso, non alfabetico.** `SourceTemplate`
 guadagna `groupKey` (chiave i18n della famiglia) e `FigureSourceEditor`
@@ -3590,3 +3595,77 @@ Ora `tests/test_prompts_md_matches_code.py` invoca la stessa funzione di
 confronto dello script e fallisce sul diff, con la controprova che tolta
 una riga il confronto la vede. I nove blocchi sono riallineati
 rigenerandoli dai renderer dello script, non trascrivendoli a mano.
+
+## 19. I dieci grafi che mancavano a DOT (9 settembre 2026)
+
+Richiesta del docente dopo §16: l'editor Vega-Lite offre 24 modelli e
+quello Mermaid 15 (tutti i tipi ammessi da D8), «per i grafi ne vedo solo
+otto, vorrei il catalogo completo anche lì». Il menu di `DotEditor.tsx`
+passa da 8 a **18** modelli; i tre editor testuali da 47 a **57**.
+
+| Modello | Famiglia | Che cosa mostra |
+|---|---|---|
+| `parseTree` | gerarchie e alberi | albero di derivazione di una frase (`ordering=out` tiene le foglie nell'ordine delle parole) |
+| `taxonomy` | gerarchie e alberi | tassonomia a due livelli |
+| `callGraph` | grafi orientati e dipendenze | grafo delle chiamate, con una funzione richiamata da due rami |
+| `weighted` | grafi non orientati e reti | grafo pesato: le distanze fra le sedi del campus |
+| `bipartite` | grafi non orientati e reti | abbinamento studenti/relatori, i due insiemi in ranghi distinti (`rank=same`) |
+| `network` | grafi non orientati e reti | topologia di rete, con la base di dati in `shape=cylinder` |
+| `hashTable` | automi e strutture dati | tabella hash: bucket in `Mrecord` con le porte e una catena di trabocco |
+| `layers` | architetture | architettura in tre livelli, un `cluster` per livello |
+| `shortestPath` | cammini e flussi | cammino minimo in evidenza con `penwidth` e non col colore: si legge anche in bianco e nero |
+| `flowNetwork` | cammini e flussi | rete di flusso, portata e capacità sugli archi (`8/10`) |
+
+**Le famiglie del menu restano l'ordinamento, non l'alfabeto** (§16):
+alle cinque esistenti si aggiunge `paths` («Cammini e flussi» / «Paths
+and flows»), e tre etichette diventano il nome del tipo di grafo che
+contengono — «Grafi orientati e dipendenze», «Grafi non orientati e
+reti», «Automi e strutture dati». Le chiavi i18n non cambiano, quindi
+nessuna traduzione resta orfana; l'ordine è gerarchie → grafi orientati →
+grafi non orientati → automi e strutture → architetture → cammini.
+
+**Il difetto che l'occhio non aveva visto: `layers`.** Nella prima
+stesura i due nodi di ogni livello stavano impilati in colonna e
+l'etichetta del `cluster` era centrata sopra di essi: la freccia che
+entra nel livello scendeva esattamente lungo quella colonna e
+**attraversava le parole** «Livello applicativo» e «Livello di
+persistenza» (misurato: 6,2 px dentro il riquadro del testo, cioè in
+mezzo alle lettere). La figura era valida, resa e sbagliata da leggere.
+Correzione in due mosse, entrambe nel sorgente del modello: `rank=same`
+mette i due nodi del livello in riga — il `cluster` diventa largo e il
+diagramma prende la forma a gradini che si legge meglio in colonna di
+testo — e `labeljust="r"` porta il nome del livello fuori dalla colonna
+delle frecce. Provate anche, e scartate perché l'arco continua a passare
+sul testo: la sola `labeljust="l"`, il nome del livello accorciato,
+`labelloc="b"`.
+
+**L'oracolo di leggibilità, esteso a DOT.** §18 aveva dato a Mermaid e
+Vega-Lite una misura sull'SVG reso; DOT restava giudicato da
+`validate(deep=True)` e da `render_svg()`, che dicono solo che un SVG
+esiste. Ora `test_dot_template_is_legible_once_rendered` misura in
+Chromium, per tutti e diciotto i modelli, il bbox reale di ogni `<text>`,
+il riquadro del nodo o del `cluster` che lo possiede e il tracciato di
+ogni arco, e rifiuta quattro difetti: testo fuori dalla tela, testo fuori
+dal proprio nodo, etichette sovrapposte, arco che attraversa
+un'etichetta. La controprova
+(`test_the_dot_geometry_check_would_catch_an_edge_across_a_label`) rende
+la versione di `layers` precedente alla correzione e verifica che
+l'oracolo la bocci: senza, il controllo sarebbe una formalità. I dieci
+sorgenti sono stati resi e **guardati** uno per uno prima di entrare nel
+menu; l'unico che l'occhio aveva approvato e la misura ha ripreso è
+`layers`.
+
+**Prompt di Fase 3 e guardia.** Il paragrafo «DOT (Graphviz)» nomina i
+tipi nuovi senza spiegarli — un elenco, non un manuale — e passa da 620 a
+**901** caratteri (+281). Misure del system prompt: P3 27.236 → **27.517**
+con grounding, 25.817 → **26.098** senza, 27.269 → **27.550** con
+ruolo/stile/EQF interpolati (la variante più lunga); P4 e P5 invariati,
+il paragrafo DOT sta solo in Fase 3. Con `MAX_SYSTEM_P3 = 27.700` il
+margine sarebbe sceso a 150 caratteri (0,5%): la guardia sale a
+**28.900**, cioè la misura reale + ~5%, e il commento sopra la costante
+porta i numeri. Il legame fra le due metà resta meccanico:
+`test_the_p3_paragraph_names_every_proven_dot_template` chiede
+l'uguaglianza fra gli identificativi dei diciotto modelli e i termini che
+il paragrafo nomina, così un modello nuovo nell'editor obbliga ad
+aggiornare il prompt e viceversa. `docs/PROMPTS.md` è riallineato con
+`backend/scripts/check_prompts_md.py` (9/9 blocchi identici al codice).
