@@ -89,31 +89,22 @@ const TEMPLATES: readonly SourceTemplate[] = [
   f [label="F"];
   sn [label="SN"];
   sv [label="SV"];
-  art1 [label="Art"];
-  n1 [label="N"];
+  art [label="Art"];
+  n [label="N"];
   v [label="V"];
-  sn2 [label="SN"];
-  art2 [label="Art"];
-  n2 [label="N"];
-  w1 [label="il"];
-  w2 [label="docente"];
-  w3 [label="corregge"];
-  w4 [label="la"];
-  w5 [label="prova"];
+  w1 [label="la"];
+  w2 [label="lezione"];
+  w3 [label="inizia"];
   f -> sn;
   f -> sv;
-  sn -> art1;
-  sn -> n1;
+  sn -> art;
+  sn -> n;
   sv -> v;
-  sv -> sn2;
-  sn2 -> art2;
-  sn2 -> n2;
-  art1 -> w1;
-  n1 -> w2;
+  art -> w1;
+  n -> w2;
   v -> w3;
-  art2 -> w4;
-  n2 -> w5;
-}`,
+}
+`,
   },
   {
     id: "taxonomy",
@@ -259,7 +250,7 @@ const TEMPLATES: readonly SourceTemplate[] = [
     groupKey: GROUP.relations,
     labelKey: `${PREFIX}.templates.network`,
     code: `graph topologia_di_rete {
-  rankdir=TB;
+  rankdir=LR;
   esterna [label="Rete esterna"];
   frontiera [label="Router di frontiera"];
   firewall [label="Firewall"];

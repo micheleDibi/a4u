@@ -654,15 +654,22 @@ def _dot_defects(sources: dict[str, str]) -> dict[str, list[str]]:
         svg = renderer.render_svg(code, asset_id=name)
         assert svg is not None, name
         resi[name] = svg
-    try:
-        with sync_playwright() as p:
+    # Il `try` copre SOLO l'avvio del browser, che in un ambiente senza
+    # Chromium manca legittimamente. La misura resta fuori: un errore nel
+    # JS dell'oracolo (o un `getBBox` che solleva) deve FALLIRE, non far
+    # saltare in silenzio i diciotto controlli di leggibilità e la loro
+    # controprova, lasciando la suite verde senza che nessuno se ne accorga.
+    with sync_playwright() as p:
+        try:
             browser = p.chromium.launch()
+        except Exception as exc:  # pragma: no cover - launch di Chromium
+            pytest.skip(f"Chromium non disponibile per la misura: {exc!r}"[:200])
+        try:
             page = browser.new_page()
             page.set_content("<html><body></body></html>")
             out = {name: page.evaluate(_DOT_GEOMETRIA_JS, svg) for name, svg in resi.items()}
+        finally:
             browser.close()
-    except Exception as exc:  # pragma: no cover - launch di Chromium
-        pytest.skip(f"Chromium non disponibile per la misura: {exc!r}"[:200])
     return out
 
 
