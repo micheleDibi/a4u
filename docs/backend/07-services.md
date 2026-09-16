@@ -1334,7 +1334,7 @@ riassunti anche in [Courses 05](../courses/05-api-reference.md).
 
 | Service | Documentato in | Scopo |
 |---|---|---|
-| `course_lesson_pdf_service.py` | [Courses 09](../courses/09-pdf-export.md) | Render HTML + pre-render delle figure via `figure_render_service.render_svg_map` (`_prerender_visual_assets_for_lesson`, alias storico `_prerender_mermaid_for_lesson`) + MathJax + WeasyPrint + materialize; numerazione «Figura N.» (`figure_numbering`) calcolata sul corpo markdown prima della sostituzione degli asset, orfane accodate dopo la sintesi; ogni figura passa dal partial unico (`figure_markup.render_figure_html`); re-esporta i nomi storici di `mermaid_prerender` |
+| `course_lesson_pdf_service.py` | [Courses 09](../courses/09-pdf-export.md) | Render HTML + pre-render delle figure via `figure_render_service.render_svg_map` (`_prerender_visual_assets_for_lesson`, alias storico `_prerender_mermaid_for_lesson`) + MathJax + WeasyPrint + materialize; numerazione «Figura N.» (`figure_numbering`) calcolata sul corpo markdown prima della sostituzione degli asset, orfane accodate dopo la sintesi; ogni figura passa dal partial unico (`figure_markup.render_figure_html`); math: i quattro token dollarmath resi da `_render_math_token` (`_install_math_grammar`, core rule anti-currency `math_currency_guard`), `MathSvgMap` con `requested`/`misses`, fallback MathML loggato (`math_render_fallback` per formula, `lesson_pdf_math_fallbacks` per lezione); re-esporta i nomi storici di `mermaid_prerender` |
 | `course_lesson_pdf_worker.py` | [Courses 09](../courses/09-pdf-export.md) | Worker parallelo (cap=2 default) + cancel-check post-render |
 
 ### Fase 4 — Slide + PDF slide

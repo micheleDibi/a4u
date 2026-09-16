@@ -369,6 +369,9 @@
     /* Inline: l'SVG MathJax porta il proprio `vertical-align` per
        l'allineamento alla baseline del testo; limitiamo solo la larghezza. */
     .math-inline svg { max-width: 100%; }
+    /* `$$..$$` con i delimitatori su righe proprie dentro un paragrafo:
+       blocco via span (mai un <div> in un <p>). */
+    span.math-block { display: block; }
     .math-error {
       color: #cc0000; background: rgba(204, 0, 0, 0.08);
       padding: 0.5pt 3pt; border-radius: 2pt;

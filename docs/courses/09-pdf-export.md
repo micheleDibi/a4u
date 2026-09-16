@@ -129,14 +129,30 @@ Pure-functions + orchestrazione DB. Diviso in sezioni logiche:
 ```python
 md = MarkdownIt("commonmark", {"html": True, "linkify": True, "breaks": False})
    .enable(["table", "strikethrough"])
-   .use(dollarmath_plugin, allow_labels=False, double_inline=True)
-
-# Custom renderers per dollarmath: cercano l'SVG MathJax pre-renderizzato
-# nella mappa `env["math_svg"]` (chiave `(latex_normalizzato, display)`);
-# in assenza ricadono su MathML via latex2mathml.
-md.add_render_rule("math_inline", _render_math_inline)  # → <span class="math-inline">{svg|mathml}</span>
-md.add_render_rule("math_block",  _render_math_block)   # → <div class="math-block">{svg|mathml}</div>
+_install_math_grammar(md)  # l'unica grammatica del math (B3):
+#  .use(dollarmath_plugin, **_DOLLARMATH_OPTIONS)
+#     allow_labels=False, double_inline=True, allow_space=False, allow_digits=True
+#     (`$ x $` e `$50 e sale a $70` non sono token; `2$^{10}$` resta math)
+#  core rule `math_currency_guard` prima di `text_join` (parse E parseInline):
+#     i `$..$` che sono importi (`$50/$70`, `5$, 10$`, `US$50 e US$70`,
+#     `50$-70$`) tornano testo; `$5$`, `$-1$`, `$0{,}866$` restano math
+#  add_render_rule(t, _render_math_token) per TUTTI e quattro i token:
+#     math_inline        → <span class="math-inline">{svg|mathml}</span>
+#     math_inline_double → <span class="math-inline"> in frase/cella/titolo,
+#                          <span class="math-block"> con i delimitatori su
+#                          righe proprie (CSS `span.math-block{display:block}`);
+#                          chiave SEMPRE `(src, "block")`, mai un <div> in un <p>
+#     math_block, math_block_label → <div class="math-block">{svg|mathml}</div>
+#  la chiave della mappa `env["math_svg"]` e' `_token_math_key(tok)`
+#  = (`_normalize_math_source(content)`, `_MATH_TOKEN_DISPLAY[tok.type]`)
 ```
+
+> Prima di B3 solo `math_inline` e `math_block` avevano una rule nostra:
+> `Sia $$E = mc^2$$ la relazione.` usciva come `<div class="math inline">`
+> del plugin dentro il `<p>`, senza consultare la mappa SVG. Il test
+> `test_lesson_pdf_math.py` pinna le quattro rule, i flag e l'ordine delle
+> core rule: un upgrade di `mdit-py-plugins` che li cambiasse fa fallire i
+> test, non il PDF in silenzio (`pyproject.toml`: `mdit-py-plugins<1`).
 
 > **Firma renderer markdown-it-py**: `add_render_rule` lega la funzione
 > come metodo del `RendererHTML` → la firma corretta è
@@ -156,15 +172,24 @@ applicata in modo IDENTICO sia in raccolta (`_collect_math_from_content`,
 che genera la chiave della mappa SVG) sia in lookup (`_render_math`),
 altrimenti le chiavi non combaciano.
 
-`_render_math(latex, *, display, svg_map=None)` è il punto unico di
-rendering di una formula: se `svg_map` contiene l'SVG MathJax
-pre-renderizzato per la chiave `(sorgente_normalizzata, display)` lo
-restituisce; altrimenti ricade su `_convert_math_to_mathml`.
+`_render_math_by_key((src, display), svg_map=…)` è il punto unico di
+lookup di una formula (rule di render dei token e `_render_math(latex, *,
+display, svg_map=None)` per le equazioni dedicate): se `svg_map` contiene
+l'SVG MathJax pre-renderizzato per la chiave lo restituisce; altrimenti
+ricade su `_convert_math_to_mathml` e lo dice con
+`log.warning("math_render_fallback", reason=…, display=…, latex=…)`, dove
+`reason` ∈ {`svg_map_missing` (chiamante senza pre-render), `svg_map_empty`
+(CDN MathJax giù), `svg_missing` (drift fra collector e renderer)}. Su una
+`MathSvgMap` il miss è anche contato (`misses`).
 
 `_convert_math_to_mathml(latex, *, display)` wrappa `latex2mathml.
-converter.convert` ed è solo il **fallback offline**. In caso di parse
-error emette un fallback `<code class="math-error">` col LaTeX grezzo,
-così la lezione resta leggibile anche con sintassi malformata.
+converter.convert` ed è solo il **fallback offline**: WeasyPrint NON rende
+il MathML, lo stampa come testo piatto e in silenzio (`x^{2}` → «x2»,
+`\frac{a}{b}` → «ab»; `test_weasyprint_non_rende_mathml` lo misura). Per
+`display="block"` l'attributo `display="inline"` emesso da latex2mathml è
+sostituito, non duplicato. In caso di parse error emette un fallback
+`<code class="math-error">` col LaTeX grezzo, così la lezione resta
+leggibile anche con sintassi malformata.
 
 **Asset substitution**
 
@@ -356,14 +381,23 @@ Mermaid). Come per il Mermaid è wrappata da `_..._sync` /
 di Playwright).
 
 `_collect_math_from_content` raccoglie le formule e
-`_prerender_math_for_lesson` restituisce la mappa `{(latex, display):
-svg}`, passata a `render_lesson_html(math_svg_map=...)`. Le chiavi
-assenti (formula non raccolta, o CDN MathJax giù) ricadono su MathML in
-`_render_math`/`_convert_math_to_mathml`. Lato template
-(`lesson_pdf.html.j2`): `.math-block svg` è centrato con `max-width:100%`,
-`.math-inline svg` conserva il `vertical-align` MathJax per allinearsi
-alla baseline del testo; la regola `math { font-size: 1.05em }` resta
-solo come fallback per il MathML.
+`_prerender_math_for_lesson` restituisce sempre una `MathSvgMap` (un
+`dict` `{(latex, display): svg}` con `requested` = chiavi raccolte e
+`misses` = lookup falliti, anche vuota), passata a
+`render_lesson_html(math_svg_map=...)`. Le chiavi assenti (formula non
+raccolta, o CDN MathJax giù) ricadono su MathML in
+`_render_math_by_key`/`_convert_math_to_mathml` con un warning
+`math_render_fallback` per formula; `materialize_lesson_pdf` chiude con un
+solo evento per lezione, `log.error("lesson_pdf_math_fallbacks",
+lesson_code=…, count=…, requested=…, rendered=…, sample=…)`
+(`_log_math_fallbacks`), che in produzione misura quante formule un PDF
+ha perso. Lato template (`lesson_pdf.html.j2`): `.math-block svg` è
+centrato con `max-width:100%`, `.math-inline svg` conserva il
+`vertical-align` MathJax per allinearsi alla baseline del testo,
+`span.math-block { display: block; }` (anche nelle slide) manda a capo il
+`$$..$$` con i delimitatori su righe proprie dentro un paragrafo; la
+regola `math { font-size: 1.05em }` resta solo come fallback per il
+MathML.
 
 **Immagini caricate (`format="image"`)**
 

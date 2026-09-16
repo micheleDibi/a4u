@@ -4,8 +4,9 @@ Pipeline:
   content_raw (JSONB) + pdf_template (org)
         ↓ registro dei renderer (`figure_render_service.render_svg_map`):
           Mermaid via Playwright, Vega-Lite, DOT, function → SVG
-        ↓ MathJax via Playwright → SVG inline (math; MathML solo come
-          fallback senza CDN)
+        ↓ MathJax via Playwright → SVG inline (formule: quattro token
+          dollarmath resi da una rule unica; MathML solo come fallback,
+          loggato: WeasyPrint lo stampa piatto)
         ↓ markdown-it-py + Jinja2 → HTML completo
         ↓ WeasyPrint → PDF bytes
         ↓ filesystem (`generated_pdfs/{org}/{course}/{lesson}.pdf`)
@@ -38,7 +39,8 @@ sono accodati dopo la sintesi, A12):
     testuale (formati legacy, solo in lettura)
   - `tables[].markdown` → pre-renderizzato a HTML
   - `equations[].latex` → SVG pre-renderizzato via MathJax (Playwright);
-    `latex2mathml` resta il fallback senza CDN
+    `latex2mathml` resta il fallback senza CDN (MathML piatto, loggato
+    come `math_render_fallback`)
   - `examples[].content` → markdown ricorsivo
 
 Il template `pdf_templates` (org-scope) determina colori, font, page size,
@@ -54,14 +56,16 @@ import base64
 import re
 import sys
 import uuid
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from latex2mathml.converter import convert as _latex_to_mathml
 from markdown_it import MarkdownIt
+from markdown_it.rules_core import StateCore
+from markdown_it.token import Token
 from markupsafe import Markup
 from mdit_py_plugins.dollarmath import dollarmath_plugin
 from sqlalchemy import select
@@ -290,8 +294,11 @@ def _normalize_math_delimiters(md: str) -> str:
 
 
 def _convert_math_to_mathml(latex: str, *, display: str) -> str:
-    """Converte LaTeX in MathML via `latex2mathml`. WeasyPrint renderizza
-    MathML nativamente — quindi niente KaTeX/JS in PDF.
+    """Converte LaTeX in MathML via `latex2mathml`: è SOLO il fallback
+    offline. WeasyPrint NON rende il MathML: lo stampa come testo piatto
+    (`x^{2}` → «x2», `\\frac{a}{b}` → «ab»), quindi ogni uso di questa
+    funzione nel PDF è una perdita tipografica, loggata a monte da
+    `_render_math_by_key` (`math_render_fallback`).
 
     `display` ∈ {"inline","block"}. In caso di parse error ritorna un
     fallback `<code>` col LaTeX grezzo, così la lezione resta leggibile
@@ -300,15 +307,18 @@ def _convert_math_to_mathml(latex: str, *, display: str) -> str:
     if not src:
         return ""
     try:
-        # latex2mathml.convert(...) produce sempre `<math ...>...</math>`.
-        # Per il display block aggiungiamo `display="block"` dopo il tag
-        # apertura — l'API non lo espone come kwarg in tutte le versioni.
+        # latex2mathml.convert(...) produce `<math … display="inline">…</math>`.
         mathml = _latex_to_mathml(src)
-    except Exception as exc:  # noqa: BLE001 — convertitore di terze parti
+    except Exception as exc:  # convertitore di terze parti
         log.warning("math_convert_failed", latex=src[:120], error=str(exc))
         return f'<code class="math-error">{_html_escape_text(src)}</code>'
-    if display == "block" and "<math" in mathml and 'display="block"' not in mathml:
-        mathml = mathml.replace("<math ", '<math display="block" ', 1)
+    if display == "block":
+        # L'attributo c'è già: va sostituito, non aggiunto, altrimenti il
+        # tag porta due `display`.
+        if 'display="inline"' in mathml:
+            mathml = mathml.replace('display="inline"', 'display="block"', 1)
+        elif 'display="block"' not in mathml:
+            mathml = mathml.replace("<math ", '<math display="block" ', 1)
     return mathml
 
 
@@ -343,54 +353,208 @@ def _normalize_math_source(latex: str) -> str:
     return s.strip()
 
 
-def _render_math(latex: str, *, display: str, svg_map: dict | None = None) -> str:
-    """Rende una formula LaTeX per il PDF/slide.
+# ---------------------------------------------------------------------------
+# Grammatica del math (B3): un plugin, quattro token, una rule di render
+# ---------------------------------------------------------------------------
 
-    Se `svg_map` contiene l'SVG pre-renderizzato (MathJax via Playwright,
-    `_prerender_math_for_lesson`) lo usa: WeasyPrint rende l'SVG
-    correttamente, a differenza del MathML che NON supporta. In assenza
-    di SVG (formula non raccolta, MathJax/CDN non disponibile) ricade su
-    `_convert_math_to_mathml` (MathML → `<code>`): mai peggio di prima.
-    La sorgente è normalizzata (`_normalize_math_source`) e la chiave della
-    mappa è `(sorgente_normalizzata, display)`."""
+# Opzioni di dollarmath, pinnate dai test. `allow_space=False` esclude
+# `$ x $` e gli importi `$50 e sale a $70` (nessun token, L4);
+# `allow_digits=True` conserva `la base 2$^{10}$` e `2$\pi$`.
+_DOLLARMATH_OPTIONS: Final[dict[str, bool]] = {
+    "allow_labels": False,
+    "double_inline": True,
+    "allow_space": False,
+    "allow_digits": True,
+}
+
+# Token dollarmath → `display` della chiave della mappa SVG: UNICA fonte
+# per la rule di render (e, da WP2, per il collector). `math_inline_double`
+# (`$$..$$` in frase, in cella, o su righe proprie senza riga vuota) ha
+# chiave block: è display style in LaTeX, coincide con la chiave del
+# `math_block` (un solo SVG per formula) e con `_DISPLAY_RE` del collector
+# regex. `math_block_label` è irraggiungibile con `allow_labels=False`:
+# registrato perché nessun token resti alla rule di default del plugin.
+_MATH_TOKEN_DISPLAY: Final[dict[str, str]] = {
+    "math_inline": "inline",
+    "math_inline_double": "block",
+    "math_block": "block",
+    "math_block_label": "block",
+}
+
+# Contenuto di un `$..$` che è un importo, non una formula: «importo +
+# separatore» (`$50/$70` → `50/`, `$5-$10` → `5-`) o «separatore +
+# importo» (`5$, 10$` → `, 10`, `5$/10$` → `/10`). Trattini en/em come
+# escape `\u2013`/`\u2014`, letti da `re` (stringa raw).
+_CURRENCY_CONTENT_RE = re.compile(r"^(?:\d[\d.,]*\s*[-\u2013\u2014/,;:]|[/,;:]\s*\d[\d.,]*)$")
+# Contenuto che inizia con una cifra, al più preceduta da segno o
+# separatore (`-70`, `, 10`, `/10`): con una cifra subito PRIMA del `$` di
+# apertura è la coda di un importo (`50$-70$`).
+_NUMERIC_START_RE = re.compile(r"^[\s+\-\u2013\u2014/,;:]*\d")
+
+
+def _is_currency_math(children: Sequence[Token], i: int) -> bool:
+    """Un `$..$` singolo è prosa (importo) se: il contenuto è «importo +
+    separatore» o «separatore + importo» (`$50/$70`, `$5-$10`, `5$, 10$`);
+    oppure subito DOPO il `$` di chiusura c'è una cifra e il contenuto
+    inizia con cifra (`$2$3`, `US$50 e US$70`); oppure subito PRIMA del `$`
+    di apertura c'è una cifra e il contenuto inizia con cifra/segno
+    (`50$-70$`, `5$-10$`). `$5$`, `$-1$`, `$0{,}866$`, `$x$2`, `2$^{10}$`
+    restano math. Solo `math_inline` con markup `$` (mai `$$`)."""
+    tok = children[i]
+    if tok.type != "math_inline" or tok.markup != "$":
+        return False
+    content = tok.content
+    if _CURRENCY_CONTENT_RE.match(content.strip()):
+        return True
+    prev = children[i - 1] if i else None
+    nxt = children[i + 1] if i + 1 < len(children) else None
+    next_c = nxt.content[:1] if nxt is not None and nxt.type == "text" else ""
+    prev_c = prev.content[-1:] if prev is not None and prev.type == "text" else ""
+    if next_c.isdigit() and content[:1].isdigit():
+        return True
+    return prev_c.isdigit() and bool(_NUMERIC_START_RE.match(content))
+
+
+def _math_currency_guard(state: StateCore) -> None:
+    """Core rule prima di `text_join` (attiva in `parse` E `parseInline`):
+    declassa i token currency a `text` col `$..$` originale; `text_join`
+    rifonde i frammenti. Collector e renderer non possono divergere."""
+    for tok in state.tokens:
+        if tok.type != "inline" or not tok.children:
+            continue
+        for i, child in enumerate(tok.children):
+            if _is_currency_math(tok.children, i):
+                child.type, child.tag, child.markup = "text", "", ""
+                child.content = f"${child.content}$"
+
+
+def _token_math_key(tok: Token) -> tuple[str, str] | None:
+    """`(sorgente normalizzata, display)` del token, o None se non è math
+    (o è vuoto). Usata dalla rule di render e, da WP2, dal collector: una
+    sola funzione token → chiave."""
+    display = _MATH_TOKEN_DISPLAY.get(tok.type)
+    if display is None:
+        return None
+    src = _normalize_math_source(tok.content)
+    return (src, display) if src else None
+
+
+def _math_markup(tok: Token) -> tuple[str, str]:
+    """`(tag, classe)` del contenitore. `math_inline_double` con i
+    delimitatori su righe proprie (contenuto `\\n…\\n`, la condizione del
+    flow math del frontend) è un blocco via span + CSS
+    (`span.math-block { display: block; }`); in frase, cella o titolo resta
+    in linea. Mai un `<div>` dentro `<p>`/`<td>`/`<h2>`."""
+    if tok.type == "math_inline":
+        return ("span", "math-inline")
+    if tok.type == "math_inline_double":
+        content = tok.content
+        own_lines = content.startswith("\n") and content.endswith("\n")
+        return ("span", "math-block" if own_lines else "math-inline")
+    return ("div", "math-block")
+
+
+class MathSvgMap(dict[tuple[str, str], str]):
+    """`{(latex_normalizzato, display) → svg}` con `requested` (chiavi
+    raccolte dal collector) e `misses` (lookup falliti, in ordine di
+    rendering). È un `dict`: i chiamanti delle slide e del video passano
+    la mappa come prima."""
+
+    def __init__(self, *args: Any, requested: int = 0, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.requested = requested
+        self.misses: list[tuple[str, str]] = []
+
+
+def _render_math_by_key(key: tuple[str, str], *, svg_map: dict | None) -> str:
+    """Lookup dell'SVG per chiave; senza SVG ricade sul MathML e lo dice.
+    WeasyPrint stampa il MathML piatto e in silenzio (`x^{2}` → «x2»,
+    `\\frac{a}{b}` → «ab»): il fallback è una perdita visibile solo nel
+    log `math_render_fallback`, dove `reason` distingue la mappa assente
+    (`svg_map_missing`: chiamante senza pre-render), la CDN MathJax giù
+    (`svg_map_empty`) e il drift fra collector e renderer (`svg_missing`).
+    Su una `MathSvgMap` il miss è anche contato (`misses`), per il summary
+    `lesson_pdf_math_fallbacks` di fine lezione."""
+    if svg_map:
+        svg = svg_map.get(key)
+        if svg:
+            return svg
+    if svg_map is None:
+        reason = "svg_map_missing"
+    elif not svg_map:
+        reason = "svg_map_empty"
+    else:
+        reason = "svg_missing"
+    if isinstance(svg_map, MathSvgMap):
+        svg_map.misses.append(key)
+    log.warning("math_render_fallback", reason=reason, display=key[1], latex=key[0][:80])
+    return _convert_math_to_mathml(key[0], display=key[1])
+
+
+def _render_math(latex: str, *, display: str, svg_map: dict | None = None) -> str:
+    """Rende una formula LaTeX per il PDF/slide (equazioni dedicate e
+    passaggi di dimostrazione). La sorgente è normalizzata
+    (`_normalize_math_source`) e la chiave della mappa è
+    `(sorgente_normalizzata, display)`, come in raccolta; lookup e fallback
+    (loggato) sono in `_render_math_by_key`."""
     src = _normalize_math_source(latex)
     if not src:
         return ""
-    if svg_map:
-        svg = svg_map.get((src, display))
-        if svg:
-            return svg
-    return _convert_math_to_mathml(src, display=display)
+    return _render_math_by_key((src, display), svg_map=svg_map)
+
+
+def _log_math_fallbacks(*, lesson_code: str, svg_map: dict | None) -> None:
+    """Un evento `lesson_pdf_math_fallbacks` per lezione, dopo il render:
+    quante formule sono ricadute sul MathML (`count`), quante ne aveva
+    raccolte il collector (`requested`), quante ne ha rese MathJax
+    (`rendered`) e un campione delle chiavi mancanti. Tace se non ci sono
+    miss (o se la mappa è un `dict` storico senza contatori)."""
+    misses = getattr(svg_map, "misses", None)
+    if not misses:
+        return
+    log.error(
+        "lesson_pdf_math_fallbacks",
+        lesson_code=lesson_code,
+        count=len(misses),
+        requested=getattr(svg_map, "requested", 0),
+        rendered=len(svg_map or {}),
+        sample=misses[:5],
+    )
+
+
+def _render_math_token(
+    _self: Any, tokens: Sequence[Token], idx: int, _options: Any, env: Any
+) -> str:
+    """L'unica rule di render dei quattro token dollarmath. `add_render_rule`
+    la installa come metodo del renderer: il 5° parametro È l'`env`, da cui
+    legge la mappa SVG passata da `render_markdown`."""
+    key = _token_math_key(tokens[idx])
+    if key is None:
+        return ""
+    inner = _render_math_by_key(key, svg_map=(env or {}).get("math_svg"))
+    tag, cls = _math_markup(tokens[idx])
+    return f'<{tag} class="{cls}">{inner}</{tag}>'
+
+
+def _install_math_grammar(md: MarkdownIt) -> MarkdownIt:
+    """L'unica grammatica del math: plugin dollarmath con le opzioni
+    pinnate, core rule anti-currency prima di `text_join`, quattro rule di
+    render legate a `_render_math_token`."""
+    md.use(dollarmath_plugin, **_DOLLARMATH_OPTIONS)
+    md.core.ruler.before("text_join", "math_currency_guard", _math_currency_guard)
+    for token_type in _MATH_TOKEN_DISPLAY:
+        md.add_render_rule(token_type, _render_math_token)
+    return md
 
 
 def _build_markdown_renderer() -> MarkdownIt:
-    """Crea un'istanza markdown-it configurata per le lezioni:
-    GFM (tabelle), HTML inline/block, dollarmath per i blocchi math.
-
-    I rule custom di math emettono MathML direttamente (via
-    `_convert_math_to_mathml`), così WeasyPrint può renderizzare le
-    formule senza dipendere da JavaScript in-page."""
-    md = (
-        MarkdownIt("commonmark", {"html": True, "linkify": True, "breaks": False})
-        .enable(["table", "strikethrough"])
-        .use(dollarmath_plugin, allow_labels=False, double_inline=True)
+    """Crea l'istanza markdown-it delle lezioni: GFM (tabelle), HTML
+    inline/block e la grammatica del math (`_install_math_grammar`)."""
+    return _install_math_grammar(
+        MarkdownIt("commonmark", {"html": True, "linkify": True, "breaks": False}).enable(
+            ["table", "strikethrough"]
+        )
     )
-
-    # I rule leggono la mappa SVG pre-renderizzata dall'`env` di
-    # markdown-it (passato da `render_markdown`); il 5° parametro È l'env.
-    def _render_math_inline(_self, tokens, idx, _options, env):
-        svg_map = (env or {}).get("math_svg")
-        inner = _render_math(tokens[idx].content, display="inline", svg_map=svg_map)
-        return f'<span class="math-inline">{inner}</span>'
-
-    def _render_math_block(_self, tokens, idx, _options, env):
-        svg_map = (env or {}).get("math_svg")
-        inner = _render_math(tokens[idx].content, display="block", svg_map=svg_map)
-        return f'<div class="math-block">{inner}</div>'
-
-    md.add_render_rule("math_inline", _render_math_inline)
-    md.add_render_rule("math_block", _render_math_block)
-    return md
 
 
 _md_renderer = _build_markdown_renderer()
@@ -957,16 +1121,16 @@ def _collect_math_from_content(
     return items
 
 
-async def _prerender_math_for_lesson(
-    content: dict[str, Any],
-) -> dict[tuple[str, str], str]:
-    """Estrae tutte le formule e le pre-renderizza in batch. Ritorna
-    `{(latex, display) → svg}`; le chiavi assenti ricadono su MathML."""
+async def _prerender_math_for_lesson(content: dict[str, Any]) -> MathSvgMap:
+    """Estrae tutte le formule e le pre-renderizza in batch. Ritorna sempre
+    una `MathSvgMap` `{(latex, display) → svg}` con `requested` = chiavi
+    raccolte (anche vuota: nessuna formula, o batch fallito); le chiavi
+    assenti ricadono sul MathML, loggate da `_render_math_by_key`."""
     items = _collect_math_from_content(content)
+    out = MathSvgMap(requested=len(items))
     if not items:
-        return {}
+        return out
     svgs = await _prerender_math_to_svg_batch(items)
-    out: dict[tuple[str, str], str] = {}
     for (latex, display), svg in zip(items, svgs, strict=True):
         if svg:
             out[(latex, display)] = svg
@@ -1452,6 +1616,8 @@ async def materialize_lesson_pdf(
         math_svg_map=math_svg_map,
         teacher_name=teacher_name,
     )
+    # Un evento per lezione se qualche formula è ricaduta sul MathML.
+    _log_math_fallbacks(lesson_code=lesson.lesson_code, svg_map=math_svg_map)
 
     pdf_bytes = await generate_pdf_bytes(html=html)
 
