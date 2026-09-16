@@ -11,10 +11,13 @@ Contratto:
 - `body_html` è `Markup` prodotto dai renderer (SVG Mermaid inline, `<img>`
   con data URI, placeholder legacy) e passa intatto; `None` produce il
   fallback `<pre class="figure-fallback">` con il sorgente escapato;
-- la didascalia riceve `strip_figure_prefix` (solo a render) e l'etichetta
-  «Figura N.» / «Figure N.» (`courses.figures.label` interpolata con `n`)
-  oppure «Figura.» (`labelUnnumbered`) quando `number` è `None` (slide e
-  frame video, A2);
+- la didascalia riceve `strip_figure_prefix` (solo a render, via
+  `caption_text`, condivisa con il collector del math del PDF) e
+  l'etichetta «Figura N.» / «Figure N.» (`courses.figures.label`
+  interpolata con `n`) oppure «Figura.» (`labelUnnumbered`) quando
+  `number` è `None` (slide e frame video, A2); con `caption_renderer` il
+  testo già pre-trattato è reso da un renderer esterno (math inline del
+  PDF, D9) che ritorna `Markup`; senza, l'output è byte-identico a prima;
 - `extra_caption` (coda calcolata di `function`, D9) è omessa quando la
   didascalia dell'autore termina già con lo stesso testo (guardia
   anti-doppia coda di Q4: `if caption.rstrip().endswith(tail): tail = ""`,
@@ -31,7 +34,7 @@ Contratto:
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Literal
 
@@ -93,6 +96,14 @@ def figure_label(labels: Mapping[str, str], number: int | None) -> str:
     return asset_label(labels, "FIG", number)
 
 
+def caption_text(caption: str) -> str:
+    """Testo della didascalia come lo vede il partial: su una riga e senza
+    il prefisso «Figura N.» dell'autore. Unico pre-trattamento, usato qui
+    e dal collector del math del PDF, così la chiave di una formula nella
+    didascalia è la stessa in raccolta e a render."""
+    return _one_line(strip_figure_prefix(_one_line(caption)))
+
+
 def render_figure_html(
     *,
     body_html: Markup | None,
@@ -105,38 +116,49 @@ def render_figure_html(
     variant: FigureVariant,
     fallback_source: str | None = None,
     extra_caption: str = "",
+    caption_renderer: Callable[[str], Markup] | None = None,
 ) -> str:
     """Rende il partial `partials/figure.html.j2` (vedi la docstring del
     modulo). `labels` è la mappa di `figure_labels(language)`; `None`
-    equivale alla lingua di fallback (it)."""
+    equivale alla lingua di fallback (it). `caption_renderer` riceve il
+    testo della didascalia DOPO `strip_figure_prefix` e la guardia della
+    coda calcolata (che lavorano sul testo, non sul markup) e ritorna
+    `Markup`; l'etichetta, `aria_label` e la coda restano testo."""
     labels = labels if labels is not None else figure_labels(None)
-    caption_text = _one_line(strip_figure_prefix(_one_line(caption)))
+    text = caption_text(caption)
     alt = _one_line(alt_text)
     extra = _one_line(extra_caption)
-    if extra and caption_text.rstrip().endswith(extra.rstrip()):
+    if extra and text.rstrip().endswith(extra.rstrip()):
         # Guardia anti-doppia coda (Q4): il docente ha copiato nella
         # didascalia la coda calcolata mostrata dall'anteprima.
         extra = ""
-    caption_out = caption_text
-    if extra and caption_text and caption_text[-1] not in _CAPTION_END_PUNCT:
+    caption_out = text
+    if extra and text and text[-1] not in _CAPTION_END_PUNCT:
         # La coda calcolata è un periodo a sé («Zeri in x = −1, 1.»): senza
         # il punto si fonderebbe con la didascalia del docente, che il
         # prompt non obbliga a chiudere («…razionale Zeri in x = −1, 1.»).
-        caption_out = f"{caption_text}."
+        caption_out = f"{text}."
     fmt_class = _CLASS_TOKEN_RE.sub("", (fmt or "").lower()) or "unknown"
     template = _env.get_template("figure.html.j2")
     html = template.render(
         variant=variant,
         fmt_class=fmt_class,
         asset_id=_one_line(asset_id),
-        aria_label=alt or caption_text,
+        aria_label=alt or text,
         body_html=_body_without_blank_lines(body_html) if body_html is not None else None,
         fallback_source=_fallback_text(fallback_source) if body_html is None else "",
         label=figure_label(labels, number),
-        caption=caption_out,
+        caption=caption_renderer(caption_out) if caption_renderer and caption_out else caption_out,
         extra_caption=extra,
     )
     return html.strip()
 
 
-__all__ = ["PARTIALS_DIR", "TEMPLATES_DIR", "FigureVariant", "figure_label", "render_figure_html"]
+__all__ = [
+    "PARTIALS_DIR",
+    "TEMPLATES_DIR",
+    "FigureVariant",
+    "caption_text",
+    "figure_label",
+    "render_figure_html",
+]

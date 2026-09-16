@@ -136,7 +136,16 @@ _install_math_grammar(md)  # l'unica grammatica del math (B3):
 #     (`$ x $` e `$50 e sale a $70` non sono token; `2$^{10}$` resta math)
 #  core rule `math_currency_guard` prima di `text_join` (parse E parseInline):
 #     i `$..$` che sono importi (`$50/$70`, `5$, 10$`, `US$50 e US$70`,
-#     `50$-70$`) tornano testo; `$5$`, `$-1$`, `$0{,}866$` restano math
+#     `50$-70$`) tornano testo; `$5$`, `$-1$`, `$0{,}866$` restano math;
+#     falsi positivi noti e pre-esistenti (identici a main, follow-up del
+#     predicato, non di WP2): «separatore + testo + importo» come
+#     `100$, poi 200$` (math «, poi 200»), `5$/h e 10$/h` (math «/h e 10»)
+#     e un URL con `?q=$x&y=$z` (math «x&y=»); la stessa grammatica è in
+#     `lib/inlineMath.ts`, quindi un ritocco va fatto su entrambi i lati
+#  rule inline `math_bsdelim` PRIMA di `escape` (`\(..\)` → math_inline,
+#     `\[..\]` → math_inline_double): limitata a `posMax` e al contenuto
+#     inline di un paragrafo, quindi fence, code span e HTML block non
+#     passano di li'; rifiuta `\[FIG:x\]` e `\[1\]` (lasciati a `escape`)
 #  add_render_rule(t, _render_math_token) per TUTTI e quattro i token:
 #     math_inline        → <span class="math-inline">{svg|mathml}</span>
 #     math_inline_double → <span class="math-inline"> in frase/cella/titolo,
@@ -146,14 +155,38 @@ _install_math_grammar(md)  # l'unica grammatica del math (B3):
 #     math_block, math_block_label → <div class="math-block">{svg|mathml}</div>
 #  la chiave della mappa `env["math_svg"]` e' `_token_math_key(tok)`
 #  = (`_normalize_math_source(content)`, `_MATH_TOKEN_DISPLAY[tok.type]`)
+
+_md_inline_renderer = _install_math_grammar(MarkdownIt("zero"))  # + rule `text` markupsafe
+#  campi inline (D9): didascalie di figura e tabella, titoli degli esempi,
+#  label delle equazioni, punti chiave, citazioni → `render_markdown_inline`:
+#  solo testo escapato (byte-identico a `markupsafe.escape`: `&#34;`, salvo
+#  la core rule `normalize` di markdown-it: CRLF/CR → LF, NUL → U+FFFD) e
+#  math; niente enfasi, link, code o escape (`\$5` resta `\$5`, `\[1\]`
+#  resta `\[1\]`, come nel frontend): senza la rule `code` un titolo come
+#  «Uso di `$HOME` e `$PATH`» rende «HOME` e `» come formula (nel CORPO il
+#  code span protegge, come su main); il frontend rende gli stessi campi
+#  con `InlineMath` (stessa grammatica in `lib/inlineMath.ts`, KaTeX):
+#  parità pinnata da `test_frontend_inline_math.py`
 ```
 
 > Prima di B3 solo `math_inline` e `math_block` avevano una rule nostra:
 > `Sia $$E = mc^2$$ la relazione.` usciva come `<div class="math inline">`
 > del plugin dentro il `<p>`, senza consultare la mappa SVG. Il test
-> `test_lesson_pdf_math.py` pinna le quattro rule, i flag e l'ordine delle
-> core rule: un upgrade di `mdit-py-plugins` che li cambiasse fa fallire i
-> test, non il PDF in silenzio (`pyproject.toml`: `mdit-py-plugins<1`).
+> `test_lesson_pdf_math.py` pinna le quattro rule su entrambe le istanze,
+> i flag, l'ordine delle core rule e delle rule inline (`math_inline` <
+> `math_bsdelim` < `escape`) e la fixture `tests/fixtures/
+> math_grammar_cases.json` (token e chiavi caso per caso): un upgrade di
+> `mdit-py-plugins` che li cambiasse fa fallire i test, non il PDF in
+> silenzio (`pyproject.toml`: `mdit-py-plugins<1`; il range
+> `markdown-it-py[plugins]>=3.0.0` resta aperto e senza lock in
+> `backend/`). Divergenze dal frontend dichiarate: `$ x_0 $` è prosa nel
+> PDF (math in remark-math); `$$..$$` in frase è in display style nel PDF
+> (text style in KaTeX); il frontend conserva `$50 e sale a $70` come
+> math inline (L4, ticket separato); un testo che termina con `\` e ha un
+> `$` nei primi due caratteri (`$x$\`) è prosa nel PDF (quirk di
+> `dollarmath.is_escaped` in mdit-py-plugins 0.6.1: l'indice negativo
+> legge l'ultimo carattere) e math nel frontend — collector e renderer
+> usano la stessa istanza, quindi nessun fallback.
 
 > **Firma renderer markdown-it-py**: `add_render_rule` lega la funzione
 > come metodo del `RendererHTML` → la firma corretta è
@@ -161,18 +194,41 @@ _install_math_grammar(md)  # l'unica grammatica del math (B3):
 > Il **5° parametro è l'`env`**: i renderer leggono da lì la mappa SVG
 > pre-renderizzata (`env["math_svg"]`), passata da `render_markdown`.
 
-`_normalize_math_delimiters` converte `\(..\)` / `\[..\]` (output AI
-"puro" LaTeX) in `$..$` / `$$..$$` riconosciuti da `dollarmath`. Esclude
-i pattern asset-ref `\[FIG:..\]` / `\[TAB:..\]` ecc.
+> Nessun pre-processing testuale: la vecchia `_normalize_math_delimiters`
+> (regex `\(..\)` / `\[..\]` → `$..$` / `$$..$$`, applicata due volte)
+> riscriveva anche il contenuto dei fence e dei `<pre>` degli esempi
+> reiniettati nel corpo (`print("a\[0\]")` → `a$$0$$`, L11). Ora i
+> delimitatori LaTeX puri sono una rule della grammatica (`math_bsdelim`) e
+> un html_block o un fence non producono token. Il collector
+> (`_collect_math_from_content(content, language=…)`) usa le STESSE due
+> istanze sugli STESSI testi del renderer: `parse` sul corpo preparato da
+> `_prepare_lesson_body` (titoli inclusi, rimandi «Figura N» già riscritti
+> nella lingua del corso, ancore sostituite da un HTML block segnaposto
+> `<div></div>`, così una formula a cavallo di un'ancora è spezzata dal
+> blocco come nel renderer), sulle tabelle, sugli esempi, sugli enunciati
+> e sui passaggi; `parseInline` sui campi inline (didascalie via
+> `figure_markup.caption_text`, titoli, label, punti chiave e citazioni
+> dopo `cite_asset_refs`). La chiave nasce da `_token_math_key`, la stessa
+> della rule di render: collector e renderer non possono divergere
+> (`test_collector_and_renderer_see_the_same_formulas`, uguaglianza;
+> `$a [FIG:x] b$` è la chiave `a Figura 1 b` su entrambi i lati,
+> `test_collector_parses_the_rewritten_citations_like_the_renderer`).
 
-**Asset substitution** (`render_lesson_html`): l'ordine è `ids_by_kind` →
-corpo markdown → `append_uncited_asset_refs` (orfani FIG → TAB → EQ → EX
-dopo la sintesi) → `compute_asset_numbers` (sul corpo NON normalizzato) →
-`_build_asset_html_map(asset_numbers=…)` → `normalize_asset_refs`
-(citazioni in linea → rimandi «Figura N», una sola ancora per asset) →
-`_substitute_asset_refs` (sostituisce le sole ancore con i blocchi) →
-`render_markdown`. `key_takeaways` e `references[].citation` passano da
-`cite_asset_refs`: rimandi testuali, mai blocchi.
+**Asset substitution** (`render_lesson_html`): `_prepare_lesson_body`
+(unica per renderer e collector) fa `ids_by_kind` → corpo markdown →
+`append_uncited_asset_refs` (orfani FIG → TAB → EQ → EX dopo la sintesi)
+→ `compute_asset_numbers` (sul corpo NON normalizzato) → etichetta della
+sintesi → `normalize_asset_refs` (citazioni in linea → rimandi «Figura
+N», una sola ancora per asset); poi il renderer fa
+`_build_asset_html_map(asset_numbers=…)` → `_substitute_asset_refs`
+(sostituisce le sole ancore con i blocchi, senza righe vuote interne:
+`_neutralize_blank_lines` normalizza CRLF/CR a LF, mette U+00A0 nelle
+righe vuote dei `<pre>` e rimuove le altre, così ogni blocco resta UN
+solo HTML block di markdown-it) → `render_markdown`. `key_takeaways` e
+`references[].citation` passano da `cite_asset_refs` (rimandi testuali,
+mai blocchi; `_PreparedBody.cite`) e poi da `render_markdown_inline`
+(math inline, D9), in questo ordine; il risultato è `Markup` per
+l'autoescape del template.
 
 `_normalize_math_source(latex)` rimuove i delimitatori residui (`$$`,
 `$`, `\[`, `\]`) e **ribilancia** gli ambienti malformati emessi a volte
@@ -371,9 +427,12 @@ sorgente e `log.error("figure_render_fallback", …)` (A23).
 **LaTeX pre-rendering (MathJax → SVG)**
 
 Lo stesso pattern Playwright è usato per le formule: `_MATHJAX_RENDERER_HTML`
-è un mini-documento che carica `mathjax@3.2.2/es5/tex-svg.js` da CDN
-(jsdelivr) ed espone `window.__renderMath(latex, display)`. Config
-chiave:
+(`build_mathjax_renderer_html(version=…)`, pin `settings.mathjax_cdn_version`,
+default `3.2.2`, stesso schema di `mermaid_prerender`) è un mini-documento
+che carica `mathjax@{versione}/es5/tex-svg.js` da CDN (jsdelivr) ed
+espone `window.__renderMath(latex, display)`; la pagina installa
+`block_external_requests` PRIMA di `set_content` e può contattare solo il
+CDN (SEC-1, come Mermaid e validatore). Config chiave:
 - `svg: { fontCache: 'none' }` — ogni SVG è autonomo (glyph come path
   inline, niente `<defs>/<use>` con id condivisi che collidono incollando
   molte formule nello stesso documento);
@@ -390,18 +449,44 @@ Mermaid). Come per il Mermaid è wrappata da `_..._sync` /
 (`ProactorEventLoop` su Windows, unico a supportare il `subprocess_exec`
 di Playwright).
 
-`_collect_math_from_content` raccoglie le formule e
-`_prerender_math_for_lesson` restituisce sempre una `MathSvgMap` (un
-`dict` `{(latex, display): svg}` con `requested` = chiavi raccolte e
-`misses` = lookup falliti, anche vuota), passata a
-`render_lesson_html(math_svg_map=...)`. Le chiavi assenti (formula non
-raccolta, o CDN MathJax giù) ricadono su MathML in
+Nessun retry del launch Chromium né del caricamento della pagina MathJax:
+un `pw.chromium.launch` fallito (binario assente, crash all'avvio)
+propaga l'eccezione a `materialize_lesson_pdf` e la lezione ricade
+sull'auto-retry del worker (`lesson_pdf_auto_retry`, fino a
+`COURSE_LESSON_PDF_AUTO_RETRY_MAX`), che ripete l'intero export; un
+`window.__mathReady` scaduto (CDN lenta o giù) non solleva ma degrada
+tutte le formule della lezione a MathML con un solo
+`mathjax_renderer_setup_failed` e il summary `lesson_pdf_math_fallbacks`.
+**Follow-up dichiarato (B3, non fatto in WP2)**: un retry del solo launch
+dentro il batch (stessa sessione, una ripetizione) andava deciso sul grep
+dei log di produzione (`mathjax_renderer_setup_failed`, errori di
+`launch`) che non era disponibile; resta da misurare e, solo se la
+frequenza è > 0, da aggiungere qui e in `mermaid_prerender` (che oggi non
+lo ha nemmeno). Vedi anche «Cosa NON fa questa iterazione», punto 7.
+
+`_collect_math_from_content(content, language=…)` raccoglie le formule
+per parse (le equazioni dedicate più ogni token math delle due istanze
+markdown-it sui campi di `_iter_math_sources`, che sono i testi del
+renderer: corpo di `_prepare_lesson_body` con i rimandi riscritti nella
+lingua del corso e le ancore sostituite da un HTML block segnaposto, coda
+dopo `cite_asset_refs`) e `_prerender_math_for_lesson(content,
+language=…)` restituisce sempre una `MathSvgMap` (un `dict` `{(latex,
+display): svg}` con `requested` = chiavi raccolte e `misses` = lookup
+falliti, anche vuota), passata a `render_lesson_html(math_svg_map=...)`
+insieme al corso della stessa lingua. Le chiavi assenti (CDN MathJax
+giù, o drift fra collector e renderer) ricadono su MathML in
 `_render_math_by_key`/`_convert_math_to_mathml` con un warning
-`math_render_fallback` per formula; `materialize_lesson_pdf` chiude con un
-solo evento per lezione, `log.error("lesson_pdf_math_fallbacks",
+`math_render_fallback` per formula; `materialize_lesson_pdf`,
+`materialize_lesson_slides_pdf` e `render_slides_to_png` (video) chiudono
+con un solo evento per lezione, `log.error("lesson_pdf_math_fallbacks",
 lesson_code=…, count=…, requested=…, rendered=…, sample=…)`
 (`_log_math_fallbacks`), che in produzione misura quante formule un PDF
-ha perso. Lato template (`lesson_pdf.html.j2`): `.math-block svg` è
+ha perso e quante chiavi in più raccoglie il collector per parse. Una
+formula a cavallo di un tag asset (`$a [FIG:x] b$`) è raccolta con il
+rimando già riscritto («a Figura 1 b»), la stessa chiave che cerca il
+renderer; una formula a cavallo di un'ancora su riga propria è spezzata
+dal blocco su entrambi i lati e non produce chiavi. Lato template
+(`lesson_pdf.html.j2`): `.math-block svg` è
 centrato con `max-width:100%`, `.math-inline svg` conserva il
 `vertical-align` MathJax per allinearsi alla baseline del testo,
 `span.math-block { display: block; }` (anche nelle slide) manda a capo il
@@ -482,11 +567,15 @@ versioning).
 6. salva il PDF (`remote_storage.upload_bytes(pdf_key(rel), ...)`);
 7. aggiorna `pdf_path`, `pdf_template_id`, `pdf_generated_at`.
 
-Le formule sono raccolte da `_collect_math_from_content`: equazioni
-dedicate (`equations[].latex` + passaggi `proof[].latex`) e il math
-inline/block `$..$`/`$$..$$` nei campi testo (introduction, sections,
-summary, celle tabella, esempi, `statement`/`explanation`/`proof[].text`).
-Dedup per chiave `(latex_normalizzato, display)`.
+Le formule sono raccolte da `_collect_math_from_content` con la stessa
+grammatica del renderer: equazioni dedicate (`equations[].latex` +
+passaggi `proof[].latex`) e i token math (`$..$`, `$$..$$`, `\(..\)`,
+`\[..\]`) del parse dei campi resi — corpo assemblato (introduction,
+`## title`, sections, summary), tabelle e didascalie, esempi e titoli,
+`statement`/`explanation`/`label`/`proof[].text`, didascalie delle
+figure, `key_takeaways`, `references[].citation`. Dedup per chiave
+`(latex_normalizzato, display)`; gli importi `$50` declassati dalla core
+rule non sono mai raccolti.
 
 ### `course_lesson_pdf_worker.py`
 
@@ -804,7 +893,9 @@ dependencies = [
    generazione.
 4. **Rendering offline parziale**: il pre-render carica
    `mermaid@{settings.mermaid_cdn_version}` (default `11.17.2`) e
-   `mathjax@3.2.2` da CDN (jsdelivr) in Playwright. Se la macchina del
+   `mathjax@{settings.mathjax_cdn_version}` (default `3.2.2`) da CDN
+   (jsdelivr) in Playwright, l'unica origine ammessa dalla guardia di
+   rete delle pagine headless. Se la macchina del
    worker non ha internet: i diagrammi Mermaid falliscono (fallback
    testuale `<pre class="figure-fallback">` con `log.error`); le formule
    ricadono su `latex2mathml` → MathML, che però WeasyPrint stampa solo
@@ -818,6 +909,13 @@ dependencies = [
 6. **Diff-detection** automatico tra `content_raw` modificato e PDF già
    generato: il badge resta `ready` finché l'utente non clicca "Rigenera
    PDF" esplicitamente.
+7. **Retry del launch Chromium nel pre-render MathJax/Mermaid**: il batch
+   apre Chromium una volta per lezione senza ripetere il launch; un launch
+   fallito fa fallire l'export (auto-retry del worker sull'intera
+   lezione), una CDN scaduta degrada le formule a MathML. Il retry del
+   solo launch era condizionato al grep dei log di produzione
+   (`mathjax_renderer_setup_failed`, errori di `launch`), non disponibile
+   in questa iterazione: follow-up da decidere sui dati, non implementato.
 
 ---
 
@@ -1029,6 +1127,7 @@ FIGURE_VEGALITE_ENABLED=true          # kill-switch per formato (Mermaid non dis
 FIGURE_DOT_ENABLED=true
 FIGURE_FUNCTION_ENABLED=true
 MERMAID_CDN_VERSION=11.17.2           # pin unico: validatore Playwright + pre-render PDF/video
+MATHJAX_CDN_VERSION=3.2.2             # pin MathJax tex-svg: pre-render delle formule PDF/video
 FIGURE_RENDER_TIMEOUT_SECONDS=20      # tetto del batch di figure di una lezione (Mermaid: almeno 60 s)
 FIGURE_FUNCTION_TIMEOUT_SECONDS=10    # calcolo simbolico nel processo figlio (oltre: valori approssimati)
 FIGURE_RENDER_MAX_WORKERS=2           # render CPU-bound concorrenti (worker + anteprime render-function)

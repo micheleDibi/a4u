@@ -186,6 +186,7 @@ def _build_slide_asset_html(
         return base_pdf._render_visual_asset_block(
             asset,
             visual_svg_map=visual_svg_map,
+            math_svg_map=math_svg_map,
             number=None,
             labels=figure_i18n,
             variant="slide",
@@ -298,21 +299,35 @@ async def _prerender_mermaid_for_slides(
 _prerender_visual_assets_for_slides = _prerender_mermaid_for_slides
 
 
-async def _prerender_math_for_slides(
+def _math_content_for_slides(
     content_raw: dict[str, Any] | None,
     slides_raw: dict[str, Any] | None,
-) -> dict[tuple[str, str], str]:
-    """Pre-render LaTeX → SVG per le slide: equazioni/tabelle/esempi delle
-    Dispense (`content_raw`) + i nuovi asset di Fase 4 (`slides_raw.new_*`).
-    Riusa il collector + batch MathJax del PDF lezione (`base_pdf`)."""
+) -> dict[str, Any]:
+    """Contenuto «fuso» su cui il collector del PDF raccoglie il math delle
+    slide: equazioni, tabelle, esempi e figure delle Dispense
+    (`content_raw`) più i nuovi asset di Fase 4 (`slides_raw.new_*`). Le
+    figure servono per le didascalie (D9). Helper puro, senza I/O."""
     cr = content_raw or {}
     sr = slides_raw or {}
-    merged = {
+    return {
         "equations": list(cr.get("equations") or []) + list(sr.get("new_equations") or []),
         "tables": list(cr.get("tables") or []) + list(sr.get("new_tables") or []),
         "examples": list(cr.get("examples") or []) + list(sr.get("new_examples") or []),
+        "visual_assets": list(cr.get("visual_assets") or []) + list(sr.get("new_assets") or []),
     }
-    return await base_pdf._prerender_math_for_lesson(merged)
+
+
+async def _prerender_math_for_slides(
+    content_raw: dict[str, Any] | None,
+    slides_raw: dict[str, Any] | None,
+) -> base_pdf.MathSvgMap:
+    """Pre-render LaTeX → SVG per le slide sul contenuto di
+    `_math_content_for_slides`. Riusa il collector + batch MathJax del PDF
+    lezione (`base_pdf`); la lingua del corso non serve: il contenuto fuso
+    non ha corpo né coda, quindi nessun rimando riscritto."""
+    return await base_pdf._prerender_math_for_lesson(
+        _math_content_for_slides(content_raw, slides_raw)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -609,6 +624,8 @@ async def materialize_lesson_slides_pdf(
         math_svg_map=math_svg_map,
         teacher_name=teacher_name,
     )
+    # Un evento per lezione se qualche formula è ricaduta sul MathML.
+    base_pdf._log_math_fallbacks(lesson_code=lesson.lesson_code, svg_map=math_svg_map)
 
     pdf_bytes = await base_pdf.generate_pdf_bytes(html=html)
 

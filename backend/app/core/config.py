@@ -293,6 +293,11 @@ class Settings(BaseSettings):
     # PDF/video: con `htmlLabels:false` top-level la 11.x emette `<text>`
     # puro (0 foreignObject) per i tipi D8. Il frontend segue con il lock npm.
     mermaid_cdn_version: str = "11.17.2"
+    # Pin di MathJax (tex-svg) per il pre-render delle formule del PDF
+    # dispensa, del PDF slide e dei frame video (`course_lesson_pdf_service.
+    # build_mathjax_renderer_html`); la pagina headless può contattare
+    # solo il CDN.
+    mathjax_cdn_version: str = "3.2.2"
     # Tetto per il render di un batch di figure di una lezione (thread +
     # `asyncio.wait_for`): oltre, le figure mancanti degradano a fallback e
     # l'export prosegue.

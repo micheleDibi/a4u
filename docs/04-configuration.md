@@ -236,6 +236,7 @@ descrive sempre i quattro formati (A19).
 | `FIGURE_DOT_ENABLED` | `true` | Kill-switch del formato `dot`. |
 | `FIGURE_FUNCTION_ENABLED` | `true` | Kill-switch del formato `function` (Mermaid non è disattivabile). |
 | `MERMAID_CDN_VERSION` | `11.17.2` | Pin unico di Mermaid: validatore Playwright a generazione e pre-render PDF/video caricano `mermaid@{versione}` da jsdelivr; il frontend segue con il lock npm. |
+| `MATHJAX_CDN_VERSION` | `3.2.2` | Pin di MathJax (`tex-svg`): il pre-render delle formule del PDF dispensa, del PDF slide e dei frame video carica `mathjax@{versione}/es5/tex-svg.js` da jsdelivr in una pagina headless che può contattare solo il CDN. |
 | `FIGURE_RENDER_TIMEOUT_SECONDS` | `20` | Tetto (`asyncio.wait_for`) del batch di figure di una lezione per formato; oltre, le figure mancanti degradano a fallback e l'export prosegue. Il batch Mermaid ha un tetto proprio di almeno 60 s (costo fisso Chromium + CDN). |
 | `FIGURE_FUNCTION_TIMEOUT_SECONDS` | `10` | Tetto del calcolo simbolico (sympy) nel processo figlio, ucciso allo scadere: resta il risultato numerico con «Valori approssimati.». |
 | `FIGURE_RENDER_MAX_WORKERS` | `2` | Render CPU-bound concorrenti (worker PDF/video + anteprime `render-function` dell'editor); 2 per la VM a 2 core. |

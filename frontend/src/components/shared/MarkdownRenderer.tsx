@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 
 import { FigureFrame } from "./FigureFrame";
 import { FunctionFigure } from "./FunctionFigure";
+import { InlineMath } from "./InlineMath";
 
 const MermaidDiagram = lazy(() => import("./MermaidDiagram"));
 const VegaLiteDiagram = lazy(() => import("./VegaLiteDiagram"));
@@ -310,7 +311,8 @@ function VisualAssetBlock({
 }
 
 /** Tabella con l'etichetta sempre presente («Tabella N.», senza `number`
- *  «Tabella.»: stessa forma del PDF), seguita dalla didascalia se c'è. */
+ *  «Tabella.»: stessa forma del PDF), seguita dalla didascalia se c'è
+ *  (solo il math è reso: `InlineMath`, come `render_markdown_inline`). */
 function TableBlock({
   table,
   number,
@@ -338,7 +340,7 @@ function TableBlock({
       </div>
       <figcaption className="border-t border-border bg-muted/20 px-4 py-2 text-xs italic text-muted-foreground">
         <span className="figure-label font-semibold not-italic">{label}</span>
-        {table.caption ? ` ${table.caption}` : ""}
+        {table.caption ? <InlineMath text={` ${table.caption}`} /> : null}
       </figcaption>
     </figure>
   );
@@ -404,8 +406,9 @@ function ProseMarkdown({ source }: { source: string }) {
  * teorema/proposizione con enunciato + dimostrazione a passaggi; la
  * famiglia è decisa da `equationLabelFamily` (mirror del backend). Con
  * `number` l'etichetta è «Equazione N.» / «Lemma N.»; senza (slide) è
- * «Equazione.» / la sola parola del kind. Esportato per riuso nelle slide
- * (`LessonSlidesView`).
+ * «Equazione.» / la sola parola del kind. La `label` dell'autore, in
+ * entrambi i rami, passa da `InlineMath` (solo il math è reso, come nel
+ * PDF). Esportato per riuso nelle slide (`LessonSlidesView`).
  */
 export function EquationBlock({
   equation,
@@ -434,7 +437,7 @@ export function EquationBlock({
         <figcaption className="border-t border-border bg-muted/30 px-4 py-2 text-xs text-muted-foreground">
           <div className="font-semibold not-italic">
             <span className="figure-label">{label}</span>
-            {equation.label ? ` ${equation.label}` : ""}
+            {equation.label ? <InlineMath text={` ${equation.label}`} /> : null}
           </div>
           {(equation.explanation || "").trim() && (
             <div className="italic [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
@@ -458,7 +461,7 @@ export function EquationBlock({
     <figure className="my-6 overflow-hidden rounded-lg border border-border bg-card">
       <div className="border-b border-border bg-muted/30 px-4 py-2 text-sm font-semibold text-primary">
         {head}
-        {equation.label ? ` ${equation.label}` : ""}
+        {equation.label ? <InlineMath text={` ${equation.label}`} /> : null}
       </div>
       <div className="space-y-2 p-4">
         {statement && <ProseMarkdown source={statement} />}
@@ -490,7 +493,8 @@ export function EquationBlock({
 }
 
 /** Esempio con l'etichetta sempre presente («Esempio N.», senza `number`
- *  «Esempio.»: stessa forma del PDF), seguita dal titolo se c'è. */
+ *  «Esempio.»: stessa forma del PDF), seguita dal titolo se c'è (solo il
+ *  math è reso: `InlineMath`). */
 function ExampleBlock({
   example,
   number,
@@ -507,7 +511,7 @@ function ExampleBlock({
     <aside className="my-6 overflow-hidden rounded-lg border-l-4 border-primary bg-primary/5">
       <div className="border-b border-primary/20 bg-primary/10 px-4 py-2 text-sm font-semibold text-primary">
         <span className="figure-label">{label}</span>
-        {example.title ? ` ${example.title}` : ""}
+        {example.title ? <InlineMath text={` ${example.title}`} /> : null}
       </div>
       <div className="lesson-prose px-4 py-3">
         <ReactMarkdown

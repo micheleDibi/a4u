@@ -22,9 +22,11 @@ Approccio:
 Output: lista ordinata di PNG 1:1 con `slides_raw.slides[].slide_id`
 (niente split → niente complessità di mapping audio↔frame).
 """
+
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import sys
 from pathlib import Path
 
@@ -84,9 +86,7 @@ _VIDEO_OVERRIDE_CSS = f"""
 """
 
 
-async def _screenshot_slides_async(
-    html: str, output_dir: Path
-) -> list[Path]:
+async def _screenshot_slides_async(html: str, output_dir: Path) -> list[Path]:
     """Playwright headless: viewport 1980×1400, screenshot per ogni .slide.
 
     Le slide del template PDF sono `width: 297mm; height: 210mm` (A4
@@ -108,14 +108,10 @@ async def _screenshot_slides_async(
             )
             page = await ctx.new_page()
             await page.set_content(html, wait_until="networkidle")
-            try:
-                # Aspetta che i font del template (Inter, ecc.) siano
-                # caricati prima dello screenshot.
-                await page.evaluate(
-                    "document.fonts && document.fonts.ready"
-                )
-            except Exception:  # pragma: no cover
-                pass
+            # Aspetta che i font del template (Inter, ecc.) siano
+            # caricati prima dello screenshot.
+            with contextlib.suppress(Exception):  # pragma: no cover
+                await page.evaluate("document.fonts && document.fonts.ready")
 
             slides = await page.query_selector_all(".slide")
             log.info("video_render_slides_found", count=len(slides))
@@ -123,7 +119,7 @@ async def _screenshot_slides_async(
             # Per ogni slide: nascondo le altre, così Playwright
             # centra questa nel viewport 1980×1400 e la screenshotta
             # full-frame (la slide riempie l'intero frame).
-            for i, slide_handle in enumerate(slides):
+            for i in range(len(slides)):
                 # Nascondi tutte le altre slide via display:none.
                 await page.evaluate(
                     """(idx) => {
@@ -162,14 +158,10 @@ def _screenshot_slides_sync(html: str, output_dir: Path) -> list[Path]:
         loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
-        return loop.run_until_complete(
-            _screenshot_slides_async(html, output_dir)
-        )
+        return loop.run_until_complete(_screenshot_slides_async(html, output_dir))
     finally:
-        try:
+        with contextlib.suppress(Exception):  # pragma: no cover
             loop.close()
-        except Exception:  # pragma: no cover
-            pass
 
 
 async def render_slides_to_png(
@@ -195,9 +187,7 @@ async def render_slides_to_png(
         - `slide_id_order`: `slide_id` corrispondente (1:1 con
           `slides_raw.slides[]`, niente split)
     """
-    organization = await base_pdf._get_organization(
-        db, course.organization_id
-    )
+    organization = await base_pdf._get_organization(db, course.organization_id)
     # Slide template: stesso default org del PDF slides.
     slide_template: SlideTemplate | None = None
     if lesson.slides_pdf_template_id is not None:
@@ -221,9 +211,7 @@ async def render_slides_to_png(
         lesson.content_raw, new_assets, language=language
     )
     # Pre-render LaTeX → SVG (MathJax), coerente col PDF slide.
-    math_svg_map = await slides_pdf._prerender_math_for_slides(
-        lesson.content_raw, slides_raw
-    )
+    math_svg_map = await slides_pdf._prerender_math_for_slides(lesson.content_raw, slides_raw)
 
     html_pdf = slides_pdf.render_slides_html(
         course=course,
@@ -235,12 +223,12 @@ async def render_slides_to_png(
         math_svg_map=math_svg_map,
         enable_split=False,  # 1 slide JSON → 1 frame video
     )
+    # Un evento per lezione se qualche formula è ricaduta sul MathML.
+    base_pdf._log_math_fallbacks(lesson_code=lesson.lesson_code, svg_map=math_svg_map)
 
     # Inject override CSS dopo `<head>` per neutralizzare i page-break
     # PDF-specifici e garantire sfondo bianco esplicito.
-    html_video = html_pdf.replace(
-        "</head>", _VIDEO_OVERRIDE_CSS + "</head>", 1
-    )
+    html_video = html_pdf.replace("</head>", _VIDEO_OVERRIDE_CSS + "</head>", 1)
 
     # Costruisce la lista degli slide_id nell'ordine del JSON
     # (1:1 con i `.slide` del DOM dato enable_split=False).
@@ -249,9 +237,7 @@ async def render_slides_to_png(
         if isinstance(s, dict) and s.get("slide_id"):
             slide_id_order.append(str(s["slide_id"]))
 
-    png_paths = await asyncio.to_thread(
-        _screenshot_slides_sync, html_video, output_dir
-    )
+    png_paths = await asyncio.to_thread(_screenshot_slides_sync, html_video, output_dir)
 
     if len(png_paths) != len(slide_id_order):
         log.warning(

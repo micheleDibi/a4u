@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { FigureFrame } from "@/components/shared/FigureFrame";
 import { FunctionFigure } from "@/components/shared/FunctionFigure";
+import { InlineMath } from "@/components/shared/InlineMath";
 import {
   EquationBlock,
   MarkdownRenderer,
@@ -210,7 +211,8 @@ function SlideAssetRender({
   // Tabelle, equazioni ed esempi: forme non numerate («Tabella.»,
   // «Equazione.», «Esempio.», A2) come nel PDF delle slide; il markup
   // resta quello delle slide (`MarkdownRenderer` conserva
-  // `normalizeMathDelimiters`), solo lo span dell'etichetta è aggiunto.
+  // `normalizeMathDelimiters`), solo lo span dell'etichetta è aggiunto;
+  // didascalia e titolo passano da `InlineMath` (solo il math è reso).
   if (resolved.kind === "table") {
     return (
       <figure className="space-y-1">
@@ -219,7 +221,9 @@ function SlideAssetRender({
           <span className="figure-label font-semibold not-italic">
             {t("courses.figures.table.labelUnnumbered")}
           </span>
-          {resolved.payload.caption ? ` ${resolved.payload.caption}` : ""}
+          {resolved.payload.caption ? (
+            <InlineMath text={` ${resolved.payload.caption}`} />
+          ) : null}
         </figcaption>
       </figure>
     );
@@ -239,7 +243,7 @@ function SlideAssetRender({
           <span className="figure-label">
             {t("courses.figures.example.labelUnnumbered")}
           </span>
-          {ex.title ? ` ${ex.title}` : ""}
+          {ex.title ? <InlineMath text={` ${ex.title}`} /> : null}
         </h5>
         <MarkdownRenderer source={ex.content} />
       </div>

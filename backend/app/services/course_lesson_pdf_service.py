@@ -4,10 +4,13 @@ Pipeline:
   content_raw (JSONB) + pdf_template (org)
         ↓ registro dei renderer (`figure_render_service.render_svg_map`):
           Mermaid via Playwright, Vega-Lite, DOT, function → SVG
-        ↓ MathJax via Playwright → SVG inline (formule: quattro token
-          dollarmath resi da una rule unica; MathML solo come fallback,
+        ↓ MathJax via Playwright → SVG inline (formule: una sola grammatica
+          markdown-it per renderer e collector, `$..$`/`$$..$$` e
+          `\\(..\\)`/`\\[..\\]` come token; MathML solo come fallback,
           loggato: WeasyPrint lo stampa piatto)
-        ↓ markdown-it-py + Jinja2 → HTML completo
+        ↓ markdown-it-py + Jinja2 → HTML completo (i campi inline —
+          didascalie, titoli degli esempi, label, punti chiave, citazioni —
+          passano da `render_markdown_inline`: solo testo escapato e math)
         ↓ WeasyPrint → PDF bytes
         ↓ filesystem (`generated_pdfs/{org}/{course}/{lesson}.pdf`)
 
@@ -38,10 +41,12 @@ sono accodati dopo la sintesi, A12):
   - `format=image_prompt|image_search_query|description` → placeholder
     testuale (formati legacy, solo in lettura)
   - `tables[].markdown` → pre-renderizzato a HTML
-  - `equations[].latex` → SVG pre-renderizzato via MathJax (Playwright);
-    `latex2mathml` resta il fallback senza CDN (MathML piatto, loggato
-    come `math_render_fallback`)
-  - `examples[].content` → markdown ricorsivo
+  - `equations[].latex` → SVG pre-renderizzato via MathJax (Playwright,
+    pin `settings.mathjax_cdn_version`); `latex2mathml` resta il fallback
+    senza CDN (MathML piatto, loggato come `math_render_fallback`)
+  - `examples[].content` → markdown ricorsivo; l'HTML iniettato nel corpo
+    non ha righe vuote (`_neutralize_blank_lines`): resta un solo HTML
+    block e i suoi `<pre>` non tornano a essere markdown (L11)
 
 Il template `pdf_templates` (org-scope) determina colori, font, page size,
 margini, header/footer height (mm), loghi e background. Il pattern CSS
@@ -58,17 +63,19 @@ import contextlib
 import re
 import sys
 import uuid
-from collections.abc import Callable, Mapping, Sequence
+from collections import deque
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, NamedTuple
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from latex2mathml.converter import convert as _latex_to_mathml
 from markdown_it import MarkdownIt
 from markdown_it.rules_core import StateCore
+from markdown_it.rules_inline import StateInline
 from markdown_it.token import Token
-from markupsafe import Markup
+from markupsafe import Markup, escape
 from mdit_py_plugins.dollarmath import dollarmath_plugin
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -93,7 +100,7 @@ from app.models.user import User
 from app.services import figure_render_service, remote_storage
 from app.services import mermaid_prerender as _mermaid_prerender
 from app.services.asset_ref_normalize import cite_asset_refs, normalize_asset_refs
-from app.services.figure_markup import FigureVariant, render_figure_html
+from app.services.figure_markup import FigureVariant, caption_text, render_figure_html
 from app.services.figure_numbering import (
     ASSET_KINDS,
     append_uncited_asset_refs,
@@ -118,8 +125,12 @@ log = get_logger("app.course_lesson_pdf.service")
 
 
 def __getattr__(name: str) -> Any:
+    """Pagine headless costruite alla prima lettura (PEP 562): il pin viene
+    da `get_settings()` e il modulo resta importabile senza ambiente."""
     if name == "_MERMAID_RENDERER_HTML":
         return _mermaid_prerender._MERMAID_RENDERER_HTML
+    if name == "_MATHJAX_RENDERER_HTML":
+        return build_mathjax_renderer_html()
     raise AttributeError(name)
 
 
@@ -276,26 +287,6 @@ async def _get_organization(db: AsyncSession, organization_id: uuid.UUID) -> Org
 # ---------------------------------------------------------------------------
 # Markdown → HTML pipeline
 # ---------------------------------------------------------------------------
-
-
-_LATEX_INLINE_BSPAREN_RE = re.compile(r"\\\(([\s\S]*?)\\\)")
-_LATEX_DISPLAY_BSBRACK_RE = re.compile(r"\\\[([\s\S]*?)\\\]")
-
-
-def _normalize_math_delimiters(md: str) -> str:
-    """Mappa i delimitatori in stile LaTeX puro (`\\(..\\)`, `\\[..\\]`) verso
-    `$..$` / `$$..$$` riconosciuti dal plugin dollarmath. Esclude i pattern
-    che assomigliano a riferimenti asset (`\\[FIG:..\\]`)."""
-
-    def _display_sub(m: re.Match[str]) -> str:
-        inner = m.group(1)
-        if re.match(r"^\s*(FIG|TAB|EQ|EX):", inner):
-            return m.group(0)
-        return f"$${inner}$$"
-
-    md = _LATEX_DISPLAY_BSBRACK_RE.sub(_display_sub, md)
-    md = _LATEX_INLINE_BSPAREN_RE.sub(lambda m: f"${m.group(1)}$", md)
-    return md
 
 
 def _convert_math_to_mathml(latex: str, *, display: str) -> str:
@@ -539,15 +530,79 @@ def _render_math_token(
     return f'<{tag} class="{cls}">{inner}</{tag}>'
 
 
+# Contenuto di un `\[..\]` che NON è math: un tag asset (`\[FIG:x\]`) o una
+# citazione bibliografica numerica (`\[1\]`, `\[2, 3\]`, `\[12–14\]`),
+# lasciati alla rule `escape` che li rende «[FIG:x]», «[1]».
+_ASSET_TAG_RE = re.compile(r"^\s*(FIG|TAB|EQ|EX):")
+_CITATION_LIKE_RE = re.compile(r"^\s*\d+(?:\s*[-–,;]\s*\d+)*\s*$")
+
+
+def _is_escaped_at(src: str, pos: int) -> bool:
+    """Numero dispari di `\\` subito prima di `pos` (stessa semantica di
+    `dollarmath.is_escaped`, riscritta in locale per non dipendere dall'API
+    privata del plugin)."""
+    count, i = 0, pos - 1
+    while i >= 0 and src[i] == "\\":
+        count += 1
+        i -= 1
+    return count % 2 == 1
+
+
+def _math_bsdelim(state: StateInline, silent: bool) -> bool:
+    """Rule inline per i delimitatori LaTeX puri: `\\(..\\)` → `math_inline`,
+    `\\[..\\]` → `math_inline_double` (stessa chiave block di `$$..$$`).
+    Registrata prima di `escape`; limitata a `state.posMax` (il testo di un
+    link) e al contenuto inline di un paragrafo: fence, code span e HTML
+    block non passano mai di qui, quindi `print("a\\[0\\]")` in un fence
+    resta byte-identico (L11). `\\[FIG:x\\]` e `\\[1\\]` sono rifiutati e
+    lasciati a `escape`."""
+    src, pos, pmax = state.src, state.pos, state.posMax
+    if src[pos] != "\\" or pos + 1 >= pmax or src[pos + 1] not in "([":
+        return False
+    if _is_escaped_at(src, pos):
+        return False
+    opener = src[pos + 1]
+    closer = "\\)" if opener == "(" else "\\]"
+    end = src.find(closer, pos + 2, pmax)
+    while end != -1 and _is_escaped_at(src, end):
+        end = src.find(closer, end + 1, pmax)
+    if end == -1 or end + 2 > pmax:
+        return False
+    inner = src[pos + 2 : end]
+    if not inner.strip():
+        return False
+    if opener == "[" and (_ASSET_TAG_RE.match(inner) or _CITATION_LIKE_RE.match(inner)):
+        return False
+    if not silent:
+        tok = state.push("math_inline" if opener == "(" else "math_inline_double", "math", 0)
+        tok.content = inner
+        # La guardia currency guarda solo i token con markup `$`.
+        tok.markup = "\\(" if opener == "(" else "\\["
+    state.pos = end + 2
+    return True
+
+
 def _install_math_grammar(md: MarkdownIt) -> MarkdownIt:
     """L'unica grammatica del math: plugin dollarmath con le opzioni
-    pinnate, core rule anti-currency prima di `text_join`, quattro rule di
-    render legate a `_render_math_token`."""
+    pinnate, rule inline `math_bsdelim` (`\\(..\\)`/`\\[..\\]`) prima di
+    `escape`, core rule anti-currency prima di `text_join`, quattro rule
+    di render legate a `_render_math_token`. Condivisa da renderer e
+    collector (`_collect_math_from_content`): non possono divergere."""
     md.use(dollarmath_plugin, **_DOLLARMATH_OPTIONS)
+    md.inline.ruler.before("escape", "math_bsdelim", _math_bsdelim)
     md.core.ruler.before("text_join", "math_currency_guard", _math_currency_guard)
     for token_type in _MATH_TOKEN_DISPLAY:
         md.add_render_rule(token_type, _render_math_token)
     return md
+
+
+def _render_text_token(
+    _self: Any, tokens: Sequence[Token], idx: int, _options: Any, _env: Any
+) -> str:
+    """Rule `text` dell'istanza inline: `markupsafe.escape`, così senza math
+    l'output è byte-identico a quello del partial figura (`&#34;`, non
+    `&quot;`)."""
+    return str(escape(tokens[idx].content))
 
 
 def _build_markdown_renderer() -> MarkdownIt:
@@ -560,18 +615,46 @@ def _build_markdown_renderer() -> MarkdownIt:
     )
 
 
+def _build_inline_renderer() -> MarkdownIt:
+    """Istanza dei campi inline (D9: didascalie, titoli degli esempi, label
+    delle equazioni, punti chiave, citazioni): preset `zero` (solo la rule
+    `text`) più la grammatica del math. Niente enfasi, link, code o
+    escape: il frontend rende questi campi letterali e il PDF fa lo
+    stesso; con `_render_text_token` l'output senza math è identico a
+    `markupsafe.escape`, a meno della core rule `normalize` di markdown-it
+    (CRLF/CR → LF, NUL → U+FFFD), che resta attiva anche nel preset
+    `zero`."""
+    md = _install_math_grammar(MarkdownIt("zero"))
+    md.add_render_rule("text", _render_text_token)
+    return md
+
+
 _md_renderer = _build_markdown_renderer()
+_md_inline_renderer = _build_inline_renderer()
 
 
 def render_markdown(source: str, math_svg_map: dict | None = None) -> str:
-    """Pipeline markdown → HTML (con normalizzazione math).
+    """Pipeline markdown → HTML dei campi a blocchi (corpo, tabelle,
+    esempi, enunciati). Nessun pre-processing testuale: `\\(..\\)` e
+    `\\[..\\]` sono una rule della grammatica (`_math_bsdelim`).
 
     `math_svg_map` (opzionale): mappa `{(latex, display) → svg}` pre-
     renderizzata da MathJax; passata ai rule math via l'`env` di
     markdown-it. Se omessa, le formule ricadono su MathML."""
     if not source:
         return ""
-    return _md_renderer.render(_normalize_math_delimiters(source), {"math_svg": math_svg_map})
+    return _md_renderer.render(source, {"math_svg": math_svg_map})
+
+
+def render_markdown_inline(text: str, math_svg_map: dict | None = None) -> str:
+    """Campi inline (D9): solo testo escapato e math (`$..$`, `$$..$$`,
+    `\\(..\\)`, `\\[..\\]`), senza `<p>` avvolgente e senza markdown ricco.
+    Senza math ritorna `str(markupsafe.escape(text))`, salvo la
+    normalizzazione d'ingresso di markdown-it (core rule `normalize`:
+    CRLF/CR → LF, NUL → U+FFFD)."""
+    if not text:
+        return ""
+    return _md_inline_renderer.renderInline(text, {"math_svg": math_svg_map})
 
 
 # ---------------------------------------------------------------------------
@@ -602,6 +685,7 @@ def _render_visual_asset_block(
     asset: dict[str, Any],
     *,
     visual_svg_map: dict[str, str] | None = None,
+    math_svg_map: dict | None = None,
     number: int | None = None,
     labels: Mapping[str, str] | None = None,
     variant: FigureVariant = "lesson",
@@ -612,7 +696,10 @@ def _render_visual_asset_block(
     partial unico `render_figure_html` (D4).
 
     `visual_svg_map` è `{asset_id → svg}` prodotto da
-    `_prerender_visual_assets_for_lesson` (registro dei renderer). Corpo per
+    `_prerender_visual_assets_for_lesson` (registro dei renderer);
+    `math_svg_map` serve alla didascalia, che riceve il math inline via
+    `render_markdown_inline` (D9) dopo `strip_figure_prefix` e prima
+    dell'etichetta «Figura N.», che resta fuori dal renderer. Corpo per
     formato:
       - `mermaid`: SVG inline `<div class="mermaid-svg">` nella dispensa
         (byte-identico alla catena precedente, A11-L3), `<img
@@ -716,6 +803,7 @@ def _render_visual_asset_block(
         variant=variant,
         fallback_source=str(fallback_source) if fallback_source is not None else None,
         extra_caption=extra_caption,
+        caption_renderer=lambda text: Markup(render_markdown_inline(text, math_svg_map)),
     )
 
 
@@ -742,8 +830,9 @@ def _render_table_block(
     md = (table.get("markdown") or "").strip()
     caption = table.get("caption") or ""
     table_html = render_markdown(md, math_svg_map) if md else ""
-    caption_text = f" {_html_escape_text(caption)}" if caption else ""
-    caption_html = f"<figcaption>{_label_span(labels, 'TAB', number)}{caption_text}</figcaption>"
+    # Didascalia con il math inline (D9), etichetta fuori dal renderer.
+    caption_inner = f" {render_markdown_inline(caption, math_svg_map)}" if caption else ""
+    caption_html = f"<figcaption>{_label_span(labels, 'TAB', number)}{caption_inner}</figcaption>"
     return (
         f'<figure class="table"><div class="figure-body">{table_html}</div>{caption_html}</figure>'
     )
@@ -794,7 +883,10 @@ def _render_equation_block(
     if equation_label_family(eq) == "EQ":
         caption_inner = _label_span(labels, "EQ", number)
         if label:
-            caption_inner += f' <span class="label">{_html_escape_text(label)}</span>'
+            # Label dell'autore con il math inline (D9).
+            caption_inner += (
+                f' <span class="label">{render_markdown_inline(label, math_svg_map)}</span>'
+            )
         if explanation:
             # Reso come markdown → math inline `$..$` tipografato (SVG).
             caption_inner += (
@@ -810,7 +902,7 @@ def _render_equation_block(
     pdf_labels = _labels_for(language)
     kind_word = _theorem_kind_word(eq, pdf_labels)
     head = _html_escape_text(asset_label(labels, "THM", number, kind_word=kind_word))
-    head += f" {_html_escape_text(label)}" if label else ""
+    head += f" {render_markdown_inline(label, math_svg_map)}" if label else ""
     parts = [f'<div class="theorem-head">{head}</div>']
     if statement:
         parts.append(
@@ -861,7 +953,8 @@ def _render_example_block(
     title = (example.get("title") or "").strip()
     content = (example.get("content") or "").strip()
     inner_html = render_markdown(content, math_svg_map) if content else ""
-    title_text = f" {_html_escape_text(title)}" if title else ""
+    # Titolo dell'autore con il math inline (D9), etichetta fuori dal renderer.
+    title_text = f" {render_markdown_inline(title, math_svg_map)}" if title else ""
     title_html = f'<div class="example-title">{_label_span(labels, "EX", number)}{title_text}</div>'
     body_html = f'<div class="example-body">{inner_html}</div>'
     return f'<aside class="example">{title_html}{body_html}</aside>'
@@ -907,6 +1000,7 @@ def _build_asset_html_map(
         out[("FIG", key)] = _render_visual_asset_block(
             asset,
             visual_svg_map=visual_svg_map,
+            math_svg_map=math_svg_map,
             number=numbers.get(("FIG", key)),
             labels=figure_i18n,
             variant="lesson",
@@ -1030,7 +1124,10 @@ _prerender_mermaid_for_lesson = _prerender_visual_assets_for_lesson
 # Mermaid — ed embeddiamo l'SVG, che WeasyPrint rende correttamente.
 # ---------------------------------------------------------------------------
 
-_MATHJAX_RENDERER_HTML = """<!doctype html>
+# Segnaposto sostituito da `build_mathjax_renderer_html` con il pin
+# `settings.mathjax_cdn_version` (stesso schema di `mermaid_prerender`);
+# `_MATHJAX_RENDERER_HTML` è servita pigra dal `__getattr__` di modulo.
+_MATHJAX_RENDERER_HTML_TEMPLATE = """<!doctype html>
 <html><head><meta charset="utf-8">
 <style>body{margin:0;padding:0;
 font-family:"Noto Sans CJK JP","Noto Sans","DejaVu Sans",sans-serif;}</style></head>
@@ -1051,7 +1148,7 @@ window.MathJax = {
   }
 };
 </script>
-<script src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@__MATHJAX_VERSION__/es5/tex-svg.js"></script>
 <script>
 window.__renderMath = (latex, display) => {
   try {
@@ -1070,6 +1167,13 @@ window.__renderMath = (latex, display) => {
 """
 
 
+def build_mathjax_renderer_html(*, version: str | None = None) -> str:
+    """Pagina di rendering MathJax con il pin richiesto (default:
+    `settings.mathjax_cdn_version`)."""
+    pin = version or get_settings().mathjax_cdn_version
+    return _MATHJAX_RENDERER_HTML_TEMPLATE.replace("__MATHJAX_VERSION__", pin)
+
+
 async def _prerender_math_to_svg_batch_async(
     items: list[tuple[str, str]],
 ) -> list[str | None]:
@@ -1077,7 +1181,11 @@ async def _prerender_math_to_svg_batch_async(
     Playwright headless (MathJax tex-svg). Ritorna lista parallela: SVG o
     `None` se il rendering fallisce. Stesso pattern di
     `_prerender_mermaid_to_svg_batch_async` (va wrappata via il `_sync`/
-    `_batch` per il ProactorEventLoop su Windows)."""
+    `_batch` per il ProactorEventLoop su Windows); la pagina può
+    contattare solo il CDN (`block_external_requests`, SEC-1). Nessun retry
+    del launch: un launch fallito propaga (auto-retry del worker sull'intera
+    lezione), una CDN scaduta degrada tutta la lezione a MathML; un retry
+    del solo launch è un follow-up da decidere sui log di produzione."""
     if not items:
         return []
 
@@ -1088,7 +1196,8 @@ async def _prerender_math_to_svg_batch_async(
         browser = await pw.chromium.launch(args=["--no-sandbox"])
         try:
             page = await browser.new_page()
-            await page.set_content(_MATHJAX_RENDERER_HTML, wait_until="domcontentloaded")
+            await _mermaid_prerender.block_external_requests(page)
+            await page.set_content(build_mathjax_renderer_html(), wait_until="domcontentloaded")
             try:
                 # MathJax tex-svg.js è ~1MB: timeout più ampio del Mermaid.
                 await page.wait_for_function("window.__mathReady === true", timeout=20_000)
@@ -1140,75 +1249,118 @@ async def _prerender_math_to_svg_batch(
     return await asyncio.to_thread(_prerender_math_to_svg_batch_sync, items)
 
 
-def _collect_math_from_content(
-    content: dict[str, Any],
-) -> list[tuple[str, str]]:
-    """Raccoglie tutte le formule `(latex, display)` di una lezione: le
-    equazioni dedicate (`equations[].latex`, block) e il math inline/block
-    `$..$`/`$$..$$` nei campi testo (intro, sezioni, summary, celle tabella,
-    esempi). Riusa `_find_math_spans` (estrazione condivisa con la
-    validazione asset). Dedup per `(latex.strip(), display)`."""
-    # Import lazy: evita di tirare openai_asset_fix_service all'import.
-    from app.services.asset_validation_service import _find_math_spans
+def _dicts(seq: object) -> list[dict[str, Any]]:
+    """Gli elementi `dict` di una lista di `content_raw` (gli altri sono
+    ignorati, come nei renderer)."""
+    return [x for x in (seq if isinstance(seq, list) else []) if isinstance(x, dict)]
 
+
+def _citation_text(ref: object) -> str:
+    """Testo di una voce di `references`: `citation` del dict, o la stringa
+    grezza (forma storica, solo nei test)."""
+    return str(ref.get("citation") or "") if isinstance(ref, dict) else str(ref or "")
+
+
+def _walk_tokens(tokens: Sequence[Token]) -> Iterator[Token]:
+    """Tutti i token, figli compresi, in ordine di documento."""
+    stack: deque[Token] = deque(tokens)
+    while stack:
+        tok = stack.popleft()
+        yield tok
+        if tok.children:
+            stack.extendleft(reversed(tok.children))
+
+
+def _iter_math_sources(
+    content: dict[str, Any], *, language: str = "it"
+) -> Iterator[tuple[str, str]]:
+    """`(testo, "block"|"inline")` per ogni campo markdown reso: specchio
+    dei call-site di `render_markdown` / `render_markdown_inline` in
+    `render_lesson_html` e `_build_asset_html_map`, con lo stesso
+    pre-trattamento (`strip`, `caption_text`). Il corpo è quello che il
+    renderer parsa davvero: `_prepare_lesson_body` (titoli `## title`,
+    sintesi, numerazione e rimandi «Figura N» già riscritti, nella lingua
+    del corso) con ogni ancora sostituita da un HTML block segnaposto,
+    perché una formula a cavallo di un'ancora (`$a\\n[FIG:x]\\nb$`) è
+    spezzata dal blocco nel renderer e deve esserlo anche qui; la coda
+    (`key_takeaways`, `references[].citation`) passa da `cite_asset_refs`
+    come in `render_lesson_html` (`$a [FIG:x] b$` → `a Figura 1 b` su
+    entrambi i lati). Ogni nuovo campo reso va aggiunto QUI: il test di
+    parità collector/renderer fallisce altrimenti."""
+    prepared = _prepare_lesson_body(content, language=language)
+    placeholders = dict.fromkeys(prepared.asset_numbers, _ASSET_ANCHOR_PLACEHOLDER_HTML)
+    yield _substitute_asset_refs(prepared.markdown, placeholders), "block"
+    for table in _dicts(content.get("tables")):
+        yield (table.get("markdown") or "").strip(), "block"
+        yield table.get("caption") or "", "inline"
+    for ex in _dicts(content.get("examples")):
+        yield (ex.get("content") or "").strip(), "block"
+        yield (ex.get("title") or "").strip(), "inline"
+    for eq in _dicts(content.get("equations")):
+        yield (eq.get("statement") or "").strip(), "block"
+        yield (eq.get("explanation") or "").strip(), "block"
+        yield (eq.get("label") or "").strip(), "inline"
+        for step in proof_steps(eq):
+            yield (step.get("text") or "").strip(), "block"
+    for asset in _dicts(content.get("visual_assets")):
+        yield caption_text(str(asset.get("caption") or "")), "inline"
+    for kt in content.get("key_takeaways") or []:
+        yield prepared.cite(kt), "inline"
+    for ref in content.get("references") or []:
+        yield prepared.cite(_citation_text(ref)), "inline"
+
+
+def _collect_math_from_content(
+    content: dict[str, Any], *, language: str = "it"
+) -> list[tuple[str, str]]:
+    """Raccoglie tutte le chiavi `(latex_normalizzato, display)` di una
+    lezione con la STESSA grammatica del renderer: le equazioni dedicate
+    (`equations[].latex` e `proof[].latex`, rese da `_render_math`) e ogni
+    token math prodotto dal parse dei campi di `_iter_math_sources` con le
+    due istanze markdown-it (`parse` per i blocchi, `parseInline` per i
+    campi inline). La chiave nasce da `_token_math_key`, la stessa della
+    rule di render; i `$..$` currency sono già stati declassati dalla core
+    rule: mai raccolti, mai resi. `language` è la lingua del corso: decide
+    il testo dei rimandi riscritti («Figura 1» / «Figure 1») che può finire
+    dentro una formula. Dedup nell'ordine di prima comparsa."""
     seen: set[tuple[str, str]] = set()
     items: list[tuple[str, str]] = []
 
-    def _add(latex: str, display: str) -> None:
-        key = ((latex or "").strip(), display)
-        if key[0] and key not in seen:
+    def _add(key: tuple[str, str] | None) -> None:
+        if key and key not in seen:
             seen.add(key)
             items.append(key)
 
-    for eq in content.get("equations") or []:
-        if isinstance(eq, dict):
-            # Normalizzazione identica a `_render_math` (lookup): chiavi
-            # coerenti anche per formule `aligned` malformate.
-            _add(_normalize_math_source(eq.get("latex") or ""), "block")
-            # Passaggi della dimostrazione (LaTeX block).
-            for step in eq.get("proof") or []:
-                if isinstance(step, dict):
-                    _add(_normalize_math_source(step.get("latex") or ""), "block")
+    for eq in _dicts(content.get("equations")):
+        src = _normalize_math_source(eq.get("latex") or "")
+        _add((src, "block") if src else None)
+        for step in proof_steps(eq):
+            src = _normalize_math_source(step.get("latex") or "")
+            _add((src, "block") if src else None)
 
-    texts: list[str] = [
-        content.get("introduction") or "",
-        content.get("summary") or "",
-    ]
-    for s in content.get("sections") or []:
-        if isinstance(s, dict):
-            texts.append(s.get("content") or "")
-    for t in content.get("tables") or []:
-        if isinstance(t, dict):
-            texts.append(t.get("markdown") or "")
-    for ex in content.get("examples") or []:
-        if isinstance(ex, dict):
-            texts.append(ex.get("content") or "")
-    # Enunciato, descrizione e testo dei passaggi: math inline `$..$`.
-    for eq in content.get("equations") or []:
-        if isinstance(eq, dict):
-            texts.append(eq.get("statement") or "")
-            texts.append(eq.get("explanation") or "")
-            for step in eq.get("proof") or []:
-                if isinstance(step, dict):
-                    texts.append(step.get("text") or "")
-
-    for text in texts:
+    for text, mode in _iter_math_sources(content, language=language):
         if not text:
             continue
-        # Normalizza `\(..\)`/`\[..\]` → `$..$`/`$$..$$` come fa il renderer,
-        # così le chiavi raccolte combaciano con i token dollarmath.
-        for sp in _find_math_spans(_normalize_math_delimiters(text)):
-            _add(_normalize_math_source(sp.inner), "block" if sp.display else "inline")
+        if mode == "inline":
+            tokens = _md_inline_renderer.parseInline(text, {})
+        else:
+            tokens = _md_renderer.parse(text, {})
+        for tok in _walk_tokens(tokens):
+            _add(_token_math_key(tok))
 
     return items
 
 
-async def _prerender_math_for_lesson(content: dict[str, Any]) -> MathSvgMap:
+async def _prerender_math_for_lesson(
+    content: dict[str, Any], *, language: str = "it"
+) -> MathSvgMap:
     """Estrae tutte le formule e le pre-renderizza in batch. Ritorna sempre
     una `MathSvgMap` `{(latex, display) → svg}` con `requested` = chiavi
     raccolte (anche vuota: nessuna formula, o batch fallito); le chiavi
-    assenti ricadono sul MathML, loggate da `_render_math_by_key`."""
-    items = _collect_math_from_content(content)
+    assenti ricadono sul MathML, loggate da `_render_math_by_key`.
+    `language` è la lingua del corso, la stessa di `render_lesson_html`
+    (vedi `_collect_math_from_content`)."""
+    items = _collect_math_from_content(content, language=language)
     out = MathSvgMap(requested=len(items))
     if not items:
         return out
@@ -1219,10 +1371,49 @@ async def _prerender_math_for_lesson(content: dict[str, Any]) -> MathSvgMap:
     return out
 
 
+_PRE_SEGMENT_RE = re.compile(r"(<pre\b[\s\S]*?</pre>)")
+_BLANK_LINE_RE = re.compile(r"(?m)^[ \t]*$")
+_BLANK_LINE_WITH_BREAK_RE = re.compile(r"(?m)^[ \t]*\r?\n")
+
+
+def _neutralize_blank_lines(html: str) -> str:
+    """L'HTML di un asset entra nel markdown della dispensa come HTML block,
+    che markdown-it chiude alla prima riga vuota: il resto finirebbe in un
+    `<p>` e le sue `\\[..\\]` o `$..$` tornerebbero a essere math (L11).
+    Dentro un `<pre>` (fence di un esempio) le righe vuote diventano U+00A0
+    (invisibile, come `figure_markup._fallback_text`); fuori sono rimosse
+    (come `figure_markup._body_without_blank_lines`). Gli a capo CRLF/CR
+    sono prima normalizzati a LF come in `_fallback_text`: markdown-it li
+    normalizza solo al parse, e una riga fatta di `\\r` chiuderebbe l'HTML
+    block. Identità sul partial figura, che non ha righe vuote per
+    costruzione."""
+    html = html.replace("\r\n", "\n").replace("\r", "\n")
+    out: list[str] = []
+    for i, part in enumerate(_PRE_SEGMENT_RE.split(html)):
+        if part.startswith("<pre"):
+            out.append(_BLANK_LINE_RE.sub("\u00a0", part))
+        elif i == 0:
+            out.append(_BLANK_LINE_WITH_BREAK_RE.sub("", part))
+        else:
+            # Dopo un `</pre>` la prima riga del segmento è la coda della
+            # riga di chiusura, non una riga vuota: il suo a capo resta.
+            head, sep, rest = part.partition("\n")
+            out.append(head + sep + _BLANK_LINE_WITH_BREAK_RE.sub("", rest))
+    return "".join(out)
+
+
+# HTML block segnaposto con cui il collector (`_iter_math_sources`)
+# sostituisce le ancore al posto dei blocchi veri: `<div>` apre un HTML
+# block di markdown-it come `<figure>`/`<aside>` degli asset, quindi il
+# parse ha la stessa struttura di paragrafi del renderer.
+_ASSET_ANCHOR_PLACEHOLDER_HTML: Final = "<div></div>"
+
+
 def _substitute_asset_refs(md_source: str, asset_html_map: dict[tuple[str, str], str]) -> str:
     """Sostituisce ogni `[KIND:id]` con il blocco HTML pre-renderizzato.
-    Il blocco è inserito su righe proprie (con righe vuote prima/dopo)
-    in modo che markdown-it lo riconosca come HTML block-level."""
+    Il blocco è inserito su righe proprie (con righe vuote prima/dopo) e
+    senza righe vuote interne (`_neutralize_blank_lines`), in modo che
+    markdown-it lo riconosca come UN SOLO HTML block-level."""
 
     def _sub(m: re.Match[str]) -> str:
         kind = m.group(1)
@@ -1236,7 +1427,7 @@ def _substitute_asset_refs(md_source: str, asset_html_map: dict[tuple[str, str],
                 f"Asset non trovato: [{kind}:{_html_escape_text(ref_id)}]"
                 f"</div>\n\n"
             )
-        return f"\n\n{html}\n\n"
+        return f"\n\n{_neutralize_blank_lines(html)}\n\n"
 
     return _ASSET_REF_RE.sub(_sub, md_source)
 
@@ -1265,6 +1456,46 @@ def _build_lesson_body_markdown(content: dict[str, Any]) -> str:
 
 def _replace_summary_heading(md: str, summary_label: str) -> str:
     return md.replace("__SUMMARY_HEADING__", summary_label)
+
+
+class _PreparedBody(NamedTuple):
+    """Corpo della dispensa dopo numerazione e rimandi (D1-D4) e PRIMA
+    della sostituzione delle ancore con l'HTML degli asset: è il testo che
+    renderer (`render_lesson_html`) e collector (`_iter_math_sources`)
+    parsano, con le stesse citazioni riscritte."""
+
+    markdown: str
+    asset_numbers: dict[tuple[str, str], int]
+    numbers: dict[str, dict[str, int]]
+    reference: Callable[[str, str, int], str]
+
+    def cite(self, text: object) -> str:
+        """Rimandi testuali della coda (`cite_asset_refs`): mai blocchi."""
+        return cite_asset_refs(str(text or ""), numbers=self.numbers, reference=self.reference)
+
+
+def _prepare_lesson_body(content: dict[str, Any], *, language: str) -> _PreparedBody:
+    """Pipeline D3/D4 + D1/D2 del corpo, unica per renderer e collector:
+    introduzione → sezioni → sintesi, tag degli asset mai citati in coda
+    (`append_uncited_asset_refs`), numeri per kind sul corpo NON ancora
+    normalizzato (`compute_asset_numbers`), etichetta della sintesi nella
+    lingua del corso, poi `normalize_asset_refs` (citazioni in linea →
+    «Figura N», una sola ancora per asset). Le ancore restano da
+    sostituire: con l'HTML vero nel renderer, con un segnaposto nel
+    collector."""
+    labels = _labels_for(language)
+    figure_i18n = figure_labels(language)
+    ids_by_kind = _asset_ids_by_kind(content)
+    body_md = _build_lesson_body_markdown(content)
+    body_md = append_uncited_asset_refs(body_md, ids_by_kind)
+    asset_numbers = compute_asset_numbers(body_md, ids_by_kind)
+    numbers: dict[str, dict[str, int]] = {kind: {} for kind in ASSET_KINDS}
+    for (kind, asset_id), n in asset_numbers.items():
+        numbers[kind][asset_id] = n
+    reference = _asset_reference_fn(content, figure_i18n=figure_i18n, pdf_labels=labels)
+    body_md = _replace_summary_heading(body_md, labels["summary"])
+    body_md = normalize_asset_refs(body_md, numbers=numbers, reference=reference)
+    return _PreparedBody(body_md, asset_numbers, numbers, reference)
 
 
 # ---------------------------------------------------------------------------
@@ -1526,9 +1757,12 @@ def render_lesson_html(
     «Tabella 1», «Lemma 2») e lascia/inserisce un'unica ancora su riga
     propria per asset, che `_substitute_asset_refs` sostituisce con il
     blocco: dopo la normalizzazione gli unici tag risolvibili nel corpo
-    sono ancore. La coda (`key_takeaways`, `references[].citation`) riceve
-    solo rimandi testuali (`cite_asset_refs`), mai blocchi, su entrambi i
-    lati (frontend `LessonContentView`): i numeri restano quelli del corpo.
+    sono ancore. La coda (`key_takeaways`, `references[].citation`) non
+    partecipa alla numerazione: riceve solo rimandi testuali
+    (`cite_asset_refs`), mai blocchi, su entrambi i lati (frontend
+    `LessonContentView`), e poi il math inline via `render_markdown_inline`
+    (D9: prima il rimando, poi il math; il risultato è `Markup` per
+    l'autoescape del template).
     """
     raw = lesson.content_raw or {}
     if not raw:
@@ -1542,35 +1776,26 @@ def render_lesson_html(
     figure_i18n = figure_labels(language)
     svg_map = {**(mermaid_svg_map or {}), **(visual_svg_map or {})}
 
-    ids_by_kind = _asset_ids_by_kind(raw)
-    body_md = _build_lesson_body_markdown(raw)
-    body_md = append_uncited_asset_refs(body_md, ids_by_kind)
-    asset_numbers = compute_asset_numbers(body_md, ids_by_kind)
+    prepared = _prepare_lesson_body(raw, language=language)
     asset_map = _build_asset_html_map(
         raw,
         visual_svg_map=svg_map,
         math_svg_map=math_svg_map,
         language=language,
-        asset_numbers=asset_numbers,
+        asset_numbers=prepared.asset_numbers,
         labels=figure_i18n,
         lesson_code=lesson.lesson_code,
     )
-    numbers: dict[str, dict[str, int]] = {kind: {} for kind in ASSET_KINDS}
-    for (kind, asset_id), n in asset_numbers.items():
-        numbers[kind][asset_id] = n
-    reference = _asset_reference_fn(raw, figure_i18n=figure_i18n, pdf_labels=labels)
-    body_md = _replace_summary_heading(body_md, labels["summary"])
-    body_md = normalize_asset_refs(body_md, numbers=numbers, reference=reference)
-    body_md = _substitute_asset_refs(body_md, asset_map)
+    body_md = _substitute_asset_refs(prepared.markdown, asset_map)
     body_html = render_markdown(body_md, math_svg_map)
 
-    def _cite(text: object) -> str:
-        return cite_asset_refs(str(text or ""), numbers=numbers, reference=reference)
+    def _tail(text: object) -> Markup:
+        return Markup(render_markdown_inline(prepared.cite(text), math_svg_map))
 
-    key_takeaways = [_cite(kt) for kt in raw.get("key_takeaways") or []]
+    key_takeaways = [_tail(kt) for kt in raw.get("key_takeaways") or []]
     references = [
-        {**r, "citation": _cite(r.get("citation"))} if isinstance(r, dict) else r
-        for r in raw.get("references") or []
+        {**(ref if isinstance(ref, dict) else {}), "citation": _tail(_citation_text(ref))}
+        for ref in raw.get("references") or []
     ]
 
     tpl_dict: dict[str, Any]
@@ -1690,7 +1915,7 @@ async def materialize_lesson_pdf(
     language = (course.language_code or "it").lower()
     visual_svg_map = await _prerender_visual_assets_for_lesson(raw_content, language=language)
     # Pre-render LaTeX → SVG (MathJax): WeasyPrint non rende il MathML.
-    math_svg_map = await _prerender_math_for_lesson(raw_content)
+    math_svg_map = await _prerender_math_for_lesson(raw_content, language=language)
 
     html = await asyncio.to_thread(
         render_lesson_html,

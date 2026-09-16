@@ -92,18 +92,23 @@ def test_prerender_network_isolation_allows_only_the_cdn(url: str, allowed: bool
     assert mp.allows_prerender_url(url) is allowed
 
 
-def test_both_headless_pages_install_the_network_guard():
-    """Il pre-render e il validatore instradano le richieste PRIMA di
+def test_all_headless_pages_install_the_network_guard():
+    """Il pre-render Mermaid, il validatore e il pre-render MathJax
+    (`course_lesson_pdf_service`) instradano le richieste PRIMA di
     caricare il contenuto della pagina."""
+    pytest.importorskip("weasyprint")
+    from app.services import course_lesson_pdf_service as pdf
+
     for source in (
         Path(mp.__file__).read_text(encoding="utf-8"),
         Path(avs.__file__).read_text(encoding="utf-8"),
+        Path(pdf.__file__).read_text(encoding="utf-8"),
     ):
-        guard = source.index("await block_external_requests(page)")
+        guard = source.index("block_external_requests(page)")
         assert guard < source.index("await page.set_content(")
     # Se un giorno le pagine cambiassero CDN, la guardia le bloccherebbe:
     # ogni URL che caricano deve stare sotto il prefisso ammesso.
-    for html in (mp._MERMAID_RENDERER_HTML, avs._VALIDATOR_HTML):
+    for html in (mp._MERMAID_RENDERER_HTML, avs._VALIDATOR_HTML, pdf._MATHJAX_RENDERER_HTML):
         for url in re.findall(r"https?://[^'\"\s]+", html):
             assert mp.allows_prerender_url(url), url
 

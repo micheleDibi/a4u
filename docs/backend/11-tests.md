@@ -319,7 +319,26 @@ top-level in entrambe, re-export dei nomi storici da
 byte-identico sulla fixture 10.9.4; la fixture 11.17.2 porta ancora
 `max-width`), `_sanitize_mermaid_code`, tipi ammessi in
 `openai_image_to_mermaid_service`, vincoli 11.x nei prompt di fix e
-conversione.
+conversione. La guardia di rete (`block_external_requests` prima di
+`set_content`, solo URL del CDN) è verificata sulle tre pagine headless:
+pre-render Mermaid, validatore e pre-render MathJax del PDF.
+
+### `tests/test_lesson_pdf_math.py`
+
+Grammatica unica del math del PDF (B3): le quattro rule dollarmath sono
+nostre su entrambe le istanze (`_md_renderer`, `_md_inline_renderer`),
+flag e ordine delle rule pinnati, corpus currency (prosa byte-identica)
+e corpus math numerico, `math_inline_double` mai `<div>` in un `<p>`,
+fallback MathML loggato con `reason` e contato, WeasyPrint non rende il
+MathML, frase currency e `$$..$$` in frase nel testo del PDF; parità
+collector/renderer per uguaglianza (`RecordingMap`) su dispensa e slide,
+fixture `fixtures/math_grammar_cases.json` (token e chiavi per caso, in
+modalità `block` e `inline`), rule `math_bsdelim` su fence, code span,
+citazioni `\[1\]`, tag `\[FIG:x\]` e link, nessun pre-processing testuale
+(L11 sul corpo assemblato), `render_markdown_inline` == `markupsafe.escape`
+senza math, campi inline con math ed escape (D9), esempio con fence e riga
+vuota reiniettato come UN html block, `_math_content_for_slides`, pin
+`settings.mathjax_cdn_version` e guardia di rete della pagina MathJax.
 
 ### `tests/test_mermaid_no_foreignobject.py` (20)
 
@@ -443,6 +462,22 @@ Geometria delle figure nel frontend misurata in Chromium (Playwright):
 `.lesson-prose .figure img { margin: 0 auto }`, tetto d'altezza dei
 Mermaid solo per i diagrammi orizzontali (`fullWidthSvgMaxHeightPx`
 eseguita con Node). Salta senza Playwright/Chromium.
+
+### `tests/test_frontend_inline_math.py` (8)
+
+Math inline nei campi dei blocchi del frontend (WP2, D9): i sei siti
+(`FigureFrame`, `TableBlock`, i due rami di `EquationBlock`,
+`ExampleBlock`, `LessonSlidesView`) passano da `InlineMath` (nessun
+`dangerouslySetInnerHTML`, `katex.render` con `throwOnError: false`,
+`trust: false`, `displayMode: false`); `lib/inlineMath.ts` eseguita con
+Node (`--experimental-strip-types`) produce, su un corpus di importi,
+decimali, escape, `\[FIG:x\]`/`\[1\]` e sui casi inline di
+`fixtures/math_grammar_cases.json`, gli stessi segmenti dei token
+dell'istanza zero del PDF; la `FigureFrame` vera (esbuild del frontend,
+react-i18next stubbata) montata in Chromium rende la didascalia senza
+math con il markup storico byte-identico e quella con math con
+`span.katex` in linea, senza `<p>` né `katex-display`. Salta senza
+Node/esbuild/Playwright.
 
 ### `tests/test_asset_localization_gate.py` (4)
 

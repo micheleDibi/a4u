@@ -538,7 +538,7 @@ def test_author_label_and_title_are_escaped_next_to_the_label() -> None:
     assert '<span class="figure-label">Tabella 1.</span> &lt;i&gt;c&lt;/i&gt;' in html
     assert (
         '<span class="figure-label">Equazione 1.</span> '
-        '<span class="label">&lt;b&gt;x&lt;/b&gt; &amp; &quot;y&quot;</span>' in html
+        '<span class="label">&lt;b&gt;x&lt;/b&gt; &amp; &#34;y&#34;</span>' in html
     )
     assert '<span class="figure-label">Esempio 1.</span> &lt;i&gt;t&lt;/i&gt;' in html
     assert "<i>" not in html.split("</style>", 1)[1] and "<b>x" not in html

@@ -1126,12 +1126,36 @@ un'eccezione che rompa la pagina.
   (slide e frame video, A2); `stripFigurePrefix(caption)` toglie un
   prefisso «Figura 3.» già scritto (solo a video, mai nel dato);
   `extraCaption` (coda calcolata di `function`) omessa se la didascalia
-  termina già con lo stesso testo. Stesso markup del partial backend
+  termina già con lo stesso testo. La didascalia (con il punto di
+  chiusura) passa da `InlineMath`: solo il math `$..$` / `\(..\)` è reso,
+  il resto è letterale; l'etichetta, la coda calcolata e l'`aria-label`
+  restano testo. Stesso markup del partial backend
   `partials/figure.html.j2`. Niente card: la figura è un elemento
   tipografico del testo. Esporta anche `FigureLoading` (segnaposto
   `courses.figures.loading`) e `FigureErrorBox` (titolo del formato,
   `courses.figures.renderError`, dettagli collassabili con sorgente ed
   errore tecnico).
+
+### `InlineMath.tsx`
+
+- **Props**: `{ text }`.
+- **Comportamento**: rende un campo inline (didascalia di figura o di
+  tabella, label di un'equazione, titolo di un esempio) con il SOLO math
+  (`$..$`, `$$..$$`, `\(..\)`, `\[..\]`) reso da KaTeX, tutto il resto
+  letterale: niente enfasi, link, code o escape (`\$5` resta `\$5`), in
+  parità con `render_markdown_inline` del PDF. La grammatica è
+  `lib/inlineMath.ts` (`splitInlineMath`, senza import: specchio di
+  dollarmath con `allow_space=False`/`allow_digits=True`, della rule
+  `\(..\)`/`\[..\]` che rifiuta `\[FIG:x\]` e `\[1\]`, e della guardia
+  anti-importi: `$50 e sale a $70`, `US$50 e US$70` restano prosa).
+  Ritorna un frammento senza elemento avvolgente: senza math il nodo di
+  testo è identico a prima; ogni formula è uno `<span class="math-inline">`
+  montato via ref con `katex.render` (`throwOnError: false`, `trust:
+  false`, `displayMode: false`: sempre text style), mai HTML da stringa.
+  Divergenze dichiarate rispetto al corpo (remark-math): `$ x $` è prosa
+  qui e math nel corpo; `$$..$$` è text style qui e display style nel PDF.
+  Parità con l'istanza zero del PDF e markup della figcaption pinnati da
+  `backend/tests/test_frontend_inline_math.py` (Node + Chromium).
 
 ### `MermaidDiagram.tsx`
 
@@ -1324,9 +1348,12 @@ ogni ancora `[KIND:id]` con `VisualAssetBody` dentro `FigureFrame`,
 «Lemma N.» quando `equationLabelFamily` è `THM`) o `ExampleBlock`
 («Esempio N.»), con le chiavi letterali
 `courses.figures.{table,equation,example,theorem}.*` e l'etichetta sempre
-presente; `LessonSlidesView` usa `FigureFrame` con `variant="slide"`
+presente; didascalia di tabella, `label` dell'equazione (entrambi i rami)
+e titolo dell'esempio passano da `InlineMath` (solo il math è reso, come
+nel PDF); `LessonSlidesView` usa `FigureFrame` con `variant="slide"`
 (nessun numero), le forme non numerate «Tabella.» / «Esempio.» sul proprio
-markup e `MermaidDiagram` lazy; entrambi leggono `CourseRefContext` per
+markup (didascalia e titolo via `InlineMath`) e `MermaidDiagram` lazy;
+entrambi leggono `CourseRefContext` per
 `FunctionFigure`. `[FIG:]` dentro esempi e tabelle (`ExampleBlock` usa
 `ReactMarkdown` direttamente) non è risolvibile né numerabile: limite
 dichiarato.
