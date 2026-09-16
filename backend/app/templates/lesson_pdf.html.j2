@@ -247,6 +247,11 @@
     .equation { text-align: center; }
     .equation .math-block { margin: 0; }
     .equation figcaption .label { font-style: normal; font-weight: 600; }
+    /* Etichette «Tabella N.» / «Equazione N.» (D5): in tondo dentro la
+       didascalia in corsivo, grassetto da `.figure-label`. */
+    figure.table figcaption .figure-label, figure.equation figcaption .figure-label {
+      font-style: normal;
+    }
 
     /* === Teoremi / enunciati + dimostrazioni === */
     /* Il blocco teorema usa testo allineato a sinistra; solo le formule

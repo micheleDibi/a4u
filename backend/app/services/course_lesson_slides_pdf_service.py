@@ -18,6 +18,7 @@ duplicazione: caricamento template, pre-render delle figure, blocco figura
 PDF bytes, audit pattern. Cambia la funzione di rendering HTML che usa il
 template dedicato per layout slide (A4 landscape, una slide per pagina).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -69,9 +70,7 @@ def slides_pdf_relative_path(
     return f"{organization_id}/{course_id}/{lesson_id}_slides.pdf"
 
 
-def slides_pdf_filename_for_download(
-    course_title: str, lesson: CourseLesson
-) -> str:
+def slides_pdf_filename_for_download(course_title: str, lesson: CourseLesson) -> str:
     """Nome file user-friendly (versione slide della
     `pdf_filename_for_download`)."""
     import re
@@ -177,28 +176,34 @@ def _build_slide_asset_html(
 
     `visual_svg_map` è `{asset_id → svg}` di `_prerender_mermaid_for_slides`
     (tutti i formati); `labels` la mappa di `figure_labels(language)`.
-    Gli altri asset (table/equation/example) usano gli helper del
-    PDF lezione testo invariati, perché non hanno il problema dello
-    scaling SVG.
+    Gli altri asset (table/equation/example) usano gli helper del PDF
+    lezione testo con `number=None`: etichetta non numerata («Tabella.»,
+    «Equazione.», «Esempio.», D5) e, per i teoremi, la sola parola del kind
+    come prima; non hanno il problema dello scaling SVG.
     """
+    figure_i18n = labels if labels is not None else figure_labels(language)
     if kind == "visual" or kind == "new_visual":
         return base_pdf._render_visual_asset_block(
             asset,
             visual_svg_map=visual_svg_map,
             number=None,
-            labels=labels if labels is not None else figure_labels(language),
+            labels=figure_i18n,
             variant="slide",
             language=language,
             lesson_code=lesson_code,
         )
     if kind == "table":
-        return base_pdf._render_table_block(asset, math_svg_map=math_svg_map)
+        return base_pdf._render_table_block(
+            asset, math_svg_map=math_svg_map, number=None, labels=figure_i18n, language=language
+        )
     if kind == "equation":
         return base_pdf._render_equation_block(
-            asset, math_svg_map=math_svg_map, language=language
+            asset, math_svg_map=math_svg_map, language=language, number=None, labels=figure_i18n
         )
     if kind == "example":
-        return base_pdf._render_example_block(asset, math_svg_map=math_svg_map)
+        return base_pdf._render_example_block(
+            asset, math_svg_map=math_svg_map, number=None, labels=figure_i18n, language=language
+        )
     return ""
 
 
@@ -303,11 +308,9 @@ async def _prerender_math_for_slides(
     cr = content_raw or {}
     sr = slides_raw or {}
     merged = {
-        "equations": list(cr.get("equations") or [])
-        + list(sr.get("new_equations") or []),
+        "equations": list(cr.get("equations") or []) + list(sr.get("new_equations") or []),
         "tables": list(cr.get("tables") or []) + list(sr.get("new_tables") or []),
-        "examples": list(cr.get("examples") or [])
-        + list(sr.get("new_examples") or []),
+        "examples": list(cr.get("examples") or []) + list(sr.get("new_examples") or []),
     }
     return await base_pdf._prerender_math_for_lesson(merged)
 
@@ -430,8 +433,7 @@ def render_slides_html(
     slides_raw = lesson.slides_raw or {}
     if not slides_raw:
         raise ConflictError(
-            f"Lezione {lesson.lesson_code} senza slides_raw — "
-            f"impossibile esportare.",
+            f"Lezione {lesson.lesson_code} senza slides_raw — impossibile esportare.",
             code="lesson_slides_missing",
         )
     content_raw = lesson.content_raw or {}
@@ -514,9 +516,7 @@ def render_slides_html(
         # separata dal suo titolo.
         # Disabilitato del tutto con `enable_split=False` (pipeline video).
         if enable_split and assets_html and bullets:
-            rendered_slides.append(
-                {**base_entry, "bullets": bullets, "assets_html": []}
-            )
+            rendered_slides.append({**base_entry, "bullets": bullets, "assets_html": []})
             rendered_slides.append(
                 {
                     **base_entry,
@@ -526,9 +526,7 @@ def render_slides_html(
                 }
             )
         else:
-            rendered_slides.append(
-                {**base_entry, "bullets": bullets, "assets_html": assets_html}
-            )
+            rendered_slides.append({**base_entry, "bullets": bullets, "assets_html": assets_html})
 
     # Riassegna slide_number / total in base alla sequenza espansa.
     total_slides = len(rendered_slides)
@@ -537,9 +535,7 @@ def render_slides_html(
 
     # Etichetta lezione "Modulo X - lezione Y" (localizzata), come le dispense.
     base_labels = base_pdf._labels_for(language)
-    lesson_label = base_pdf._format_lesson_code_label(
-        lesson.lesson_code, base_labels
-    )
+    lesson_label = base_pdf._format_lesson_code_label(lesson.lesson_code, base_labels)
 
     template = _jinja_env.get_template("lesson_slides_pdf.html.j2")
     html = template.render(
@@ -658,8 +654,7 @@ async def request_lesson_slides_pdf(
         )
     if lesson.slides_pdf_status not in VALID_SLIDES_PDF_REQUEST_STATUSES:
         raise ConflictError(
-            f"Export PDF slide già in corso per {lesson.lesson_code}: "
-            f"{lesson.slides_pdf_status}",
+            f"Export PDF slide già in corso per {lesson.lesson_code}: {lesson.slides_pdf_status}",
             code="slides_pdf_already_in_progress",
         )
 
@@ -686,9 +681,7 @@ async def request_lesson_slides_pdf(
         metadata={
             "course_id": str(course.id),
             "lesson_code": lesson.lesson_code,
-            "pdf_template_id": (
-                str(pdf_template_id) if pdf_template_id else None
-            ),
+            "pdf_template_id": (str(pdf_template_id) if pdf_template_id else None),
         },
     )
     await db.commit()
@@ -751,9 +744,7 @@ async def request_all_lessons_slides_pdf(
         target_id=str(course.id),
         metadata={
             "lessons_count": len(eligible),
-            "pdf_template_id": (
-                str(pdf_template_id) if pdf_template_id else None
-            ),
+            "pdf_template_id": (str(pdf_template_id) if pdf_template_id else None),
         },
     )
     await db.commit()

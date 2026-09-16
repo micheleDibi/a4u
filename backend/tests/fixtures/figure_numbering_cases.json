@@ -1,5 +1,5 @@
 {
-  "_comment": "Casi condivisi fra backend (figure_numbering.py, test_figure_numbering.py) e frontend (lib/figureNumbering.ts). `asset_ids` è l'ordine dell'array visual_assets; `appended` è il markdown dopo append_uncited_figure_refs; `numbers` la mappa {id_lower: N} calcolata sul markdown appeso. `strip_prefix` elenca coppie input → output di strip_figure_prefix: parola (figura|figure|fig.|abb.), numero con eventuali sottonumeri e lettera, poi UN separatore `. : - – — )` non seguito da cifra oppure fine del testo; senza separatore («Figure 2 shows …») la didascalia resta intatta. Le cifre sono Unicode (`\\d` di Python, `\\p{Nd}` con flag `u` in JavaScript): «Figura ١٢.» e «Figura ５.» sono prefissi su entrambi i lati. La lettera dopo il numero comprende «ı» (U+0131) e «İ» (U+0130): Python le piega a `i` con IGNORECASE, JavaScript no con `iu`, quindi la copia frontend le elenca esplicitamente.",
+  "_comment": "Casi condivisi fra backend (figure_numbering.py, test_figure_numbering.py) e frontend (lib/figureNumbering.ts). `asset_ids` è l'ordine dell'array visual_assets; `appended` è il markdown dopo append_uncited_figure_refs; `numbers` la mappa {id_lower: N} calcolata sul markdown appeso. `strip_prefix` elenca coppie input → output di strip_figure_prefix: parola (figura|figure|fig.|abb.), numero con eventuali sottonumeri e lettera, poi UN separatore `. : - – — )` non seguito da cifra oppure fine del testo; senza separatore («Figure 2 shows …») la didascalia resta intatta. Le cifre sono Unicode (`\\d` di Python, `\\p{Nd}` con flag `u` in JavaScript): «Figura ١٢.» e «Figura ５.» sono prefissi su entrambi i lati. La lettera dopo il numero comprende «ı» (U+0131) e «İ» (U+0130): Python le piega a `i` con IGNORECASE, JavaScript no con `iu`, quindi la copia frontend le elenca esplicitamente. Le sezioni `asset_cases` (D3) ed `equation_label_family` (B2) coprono i quattro kind: `ids_by_kind` è {KIND: [id, ...]} (kind assente = nessun numero e nessuna coda), `appended` è il markdown dopo append_uncited_asset_refs (orfani in ordine FIG → TAB → EQ → EX), `numbers` la mappa {\"KIND:id_lower\": N} di compute_asset_numbers serializzata con la chiave `KIND:id_lower` (la Map del frontend); `equation_label_family` elenca equazioni → famiglia `EQ` | `THM` (THM se `statement` non vuoto o almeno un passo di `proof` non vuoto; il `kind` da solo non decide).",
   "cases": [
     {
       "name": "ordine di prima citazione, non dell'array",
@@ -238,6 +238,303 @@
     {
       "input": "",
       "output": ""
+    }
+  ],
+  "asset_cases": [
+    {
+      "name": "stesso id in kind diversi non collide",
+      "markdown": "[FIG:k] [TAB:k] [EQ:k]",
+      "ids_by_kind": {
+        "FIG": [
+          "k"
+        ],
+        "TAB": [
+          "k"
+        ],
+        "EQ": [
+          "k"
+        ]
+      },
+      "appended": "[FIG:k] [TAB:k] [EQ:k]",
+      "numbers": {
+        "FIG:k": 1,
+        "TAB:k": 1,
+        "EQ:k": 1
+      }
+    },
+    {
+      "name": "[EQ:f] e [EQ:t] condividono il contatore EQ (formula e teorema)",
+      "markdown": "Da [EQ:f] e [EQ:t] segue.",
+      "ids_by_kind": {
+        "EQ": [
+          "f",
+          "t"
+        ]
+      },
+      "appended": "Da [EQ:f] e [EQ:t] segue.",
+      "numbers": {
+        "EQ:f": 1,
+        "EQ:t": 2
+      }
+    },
+    {
+      "name": "[TAB:ghost] senza asset non consuma numeri",
+      "markdown": "[TAB:ghost] [TAB:a]",
+      "ids_by_kind": {
+        "TAB": [
+          "a"
+        ]
+      },
+      "appended": "[TAB:ghost] [TAB:a]",
+      "numbers": {
+        "TAB:a": 1
+      }
+    },
+    {
+      "name": "citazioni ripetute condividono il numero per ogni kind",
+      "markdown": "[TAB:a] [EX:x] [TAB:b] [TAB:a] [EX:x]",
+      "ids_by_kind": {
+        "TAB": [
+          "a",
+          "b"
+        ],
+        "EX": [
+          "x"
+        ]
+      },
+      "appended": "[TAB:a] [EX:x] [TAB:b] [TAB:a] [EX:x]",
+      "numbers": {
+        "TAB:a": 1,
+        "EX:x": 1,
+        "TAB:b": 2
+      }
+    },
+    {
+      "name": "orfani accodati nell'ordine FIG → TAB → EQ → EX e numerati dopo i citati",
+      "markdown": "Solo [EX:x2].",
+      "ids_by_kind": {
+        "FIG": [
+          "f1"
+        ],
+        "TAB": [
+          "t1"
+        ],
+        "EQ": [
+          "e1"
+        ],
+        "EX": [
+          "x1",
+          "x2"
+        ]
+      },
+      "appended": "Solo [EX:x2].\n\n[FIG:f1]\n\n[TAB:t1]\n\n[EQ:e1]\n\n[EX:x1]",
+      "numbers": {
+        "EX:x2": 1,
+        "FIG:f1": 1,
+        "TAB:t1": 1,
+        "EQ:e1": 1,
+        "EX:x1": 2
+      }
+    },
+    {
+      "name": "[fig:x] e [tab:x] minuscoli sono ignorati e gli asset vanno in coda",
+      "markdown": "Vedi [fig:a] e [tab:b] e [TAB:c].",
+      "ids_by_kind": {
+        "FIG": [
+          "a"
+        ],
+        "TAB": [
+          "b",
+          "c"
+        ]
+      },
+      "appended": "Vedi [fig:a] e [tab:b] e [TAB:c].\n\n[FIG:a]\n\n[TAB:b]",
+      "numbers": {
+        "TAB:c": 1,
+        "FIG:a": 1,
+        "TAB:b": 2
+      }
+    },
+    {
+      "name": "contatori indipendenti per kind nell'ordine del documento",
+      "markdown": "Vedi [TAB:t2], [EQ:e1], [EX:x1], [TAB:t1] e ancora [EQ:e1].",
+      "ids_by_kind": {
+        "TAB": [
+          "t1",
+          "t2"
+        ],
+        "EQ": [
+          "e1"
+        ],
+        "EX": [
+          "x1"
+        ]
+      },
+      "appended": "Vedi [TAB:t2], [EQ:e1], [EX:x1], [TAB:t1] e ancora [EQ:e1].",
+      "numbers": {
+        "TAB:t2": 1,
+        "EQ:e1": 1,
+        "EX:x1": 1,
+        "TAB:t1": 2
+      }
+    },
+    {
+      "name": "kind assente dalla mappa: nessun numero e nessuna coda",
+      "markdown": "[TAB:t1] [FIG:a]",
+      "ids_by_kind": {
+        "FIG": [
+          "a"
+        ]
+      },
+      "appended": "[TAB:t1] [FIG:a]",
+      "numbers": {
+        "FIG:a": 1
+      }
+    },
+    {
+      "name": "id che il token non sa trasportare (]) saltato anche per TAB",
+      "markdown": "Testo.",
+      "ids_by_kind": {
+        "TAB": [
+          "A]",
+          "B"
+        ]
+      },
+      "appended": "Testo.\n\n[TAB:B]",
+      "numbers": {
+        "TAB:b": 1
+      }
+    },
+    {
+      "name": "case e spazi diversi fra citazione e id dichiarato, per ogni kind",
+      "markdown": "[TAB: T_1 ] e [EX:X].",
+      "ids_by_kind": {
+        "TAB": [
+          "t_1"
+        ],
+        "EX": [
+          " x "
+        ]
+      },
+      "appended": "[TAB: T_1 ] e [EX:X].",
+      "numbers": {
+        "TAB:t_1": 1,
+        "EX:x": 1
+      }
+    },
+    {
+      "name": "il tag non attraversa la riga (EX)",
+      "markdown": "[EX:a\n] no; [EX:b] si'.",
+      "ids_by_kind": {
+        "EX": [
+          "a",
+          "b"
+        ]
+      },
+      "appended": "[EX:a\n] no; [EX:b] si'.\n\n[EX:a]",
+      "numbers": {
+        "EX:b": 1,
+        "EX:a": 2
+      }
+    },
+    {
+      "name": "testo vuoto con asset di tre kind: solo la coda",
+      "markdown": "",
+      "ids_by_kind": {
+        "TAB": [
+          "t"
+        ],
+        "EQ": [
+          "e"
+        ],
+        "EX": [
+          "x"
+        ]
+      },
+      "appended": "\n\n[TAB:t]\n\n[EQ:e]\n\n[EX:x]",
+      "numbers": {
+        "TAB:t": 1,
+        "EQ:e": 1,
+        "EX:x": 1
+      }
+    }
+  ],
+  "equation_label_family": [
+    {
+      "name": "formula nuda",
+      "equation": {
+        "statement": "",
+        "proof": []
+      },
+      "family": "EQ"
+    },
+    {
+      "name": "solo enunciato",
+      "equation": {
+        "statement": "Sia $f$ continua.",
+        "proof": []
+      },
+      "family": "THM"
+    },
+    {
+      "name": "dimostrazione con soli passi vuoti",
+      "equation": {
+        "statement": "",
+        "proof": [
+          {
+            "latex": "",
+            "text": ""
+          },
+          {
+            "latex": "  ",
+            "text": ""
+          }
+        ]
+      },
+      "family": "EQ"
+    },
+    {
+      "name": "passo solo testuale",
+      "equation": {
+        "statement": "",
+        "proof": [
+          {
+            "latex": "",
+            "text": "Per induzione."
+          }
+        ]
+      },
+      "family": "THM"
+    },
+    {
+      "name": "passo solo LaTeX",
+      "equation": {
+        "statement": "",
+        "proof": [
+          {
+            "latex": "a=b",
+            "text": ""
+          }
+        ]
+      },
+      "family": "THM"
+    },
+    {
+      "name": "kind theorem senza enunciato né dimostrazione resta EQ",
+      "equation": {
+        "kind": "theorem",
+        "statement": "",
+        "proof": []
+      },
+      "family": "EQ"
+    },
+    {
+      "name": "enunciato di soli spazi",
+      "equation": {
+        "statement": "   ",
+        "proof": []
+      },
+      "family": "EQ"
     }
   ]
 }

@@ -1312,11 +1312,21 @@ un'eccezione che rompa la pagina.
 
 ### Integrazione nelle viste
 
-`MarkdownRenderer` riceve `figureNumbers` (calcolati in
-`LessonContentView.buildFullMarkdown` sul corpo intro → sezioni → sintesi
-con i tag orfani accodati) e rende ogni `[FIG:id]` con `VisualAssetBody`
-dentro `FigureFrame`; `LessonSlidesView` usa `FigureFrame` con
-`variant="slide"` (nessun numero) e `MermaidDiagram` lazy; entrambi
-leggono `CourseRefContext` per `FunctionFigure`. `[FIG:]` dentro esempi
-e tabelle (`ExampleBlock` usa `ReactMarkdown` direttamente) non è
-risolvibile né numerabile: limite dichiarato.
+`MarkdownRenderer` riceve `assetNumbers` (`Map<"KIND:id_lower", N>`,
+calcolata in `LessonContentView` con `computeAssetNumbers` sul corpo intro
+→ sezioni → sintesi con i tag orfani dei quattro kind accodati, PRIMA di
+`normalizeAssetRefs` di `lib/assetRefNormalize.ts`, che riscrive le
+citazioni in linea nel rimando «Figura N» / «Tabella N» / «Lemma N» —
+chiavi `courses.figures.*.ref` — e lascia una sola ancora per asset dopo il
+blocco della prima citazione; la coda passa da `citeAssetRefs`) e rende
+ogni ancora `[KIND:id]` con `VisualAssetBody` dentro `FigureFrame`,
+`TableBlock` («Tabella N.»), `EquationBlock` («Equazione N.», oppure
+«Lemma N.» quando `equationLabelFamily` è `THM`) o `ExampleBlock`
+(«Esempio N.»), con le chiavi letterali
+`courses.figures.{table,equation,example,theorem}.*` e l'etichetta sempre
+presente; `LessonSlidesView` usa `FigureFrame` con `variant="slide"`
+(nessun numero), le forme non numerate «Tabella.» / «Esempio.» sul proprio
+markup e `MermaidDiagram` lazy; entrambi leggono `CourseRefContext` per
+`FunctionFigure`. `[FIG:]` dentro esempi e tabelle (`ExampleBlock` usa
+`ReactMarkdown` direttamente) non è risolvibile né numerabile: limite
+dichiarato.

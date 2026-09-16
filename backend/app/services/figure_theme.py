@@ -26,7 +26,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Mapping
-from typing import Any, TypeGuard
+from typing import Any, Literal, TypeGuard
 
 # ---------------------------------------------------------------------------
 # Versione, font, palette
@@ -623,17 +623,21 @@ MATPLOTLIB_RC: dict[str, Any] = {
 }
 
 # ---------------------------------------------------------------------------
-# Localizzazione it/en delle didascalie (A4) — stesse chiavi di it.json/en.json
+# Localizzazione it/en delle etichette (A4, D5) — stesse chiavi di it.json/en.json
 # ---------------------------------------------------------------------------
 
 # Chiavi piatte con il percorso completo di `courses.figures.*` dei locale
-# frontend. Le altre 22 lingue ricadono su `it`, come `_labels_for` del PDF
-# e `fallbackLng: "it"` del frontend. I segnaposto `{{...}}` seguono la
-# sintassi di i18next e sono sostituiti da `_interpolate`.
+# frontend: etichette di figure, tabelle, equazioni, esempi e teoremi
+# (sotto-oggetti `table`, `equation`, `example`, `theorem`), rimando in
+# linea `ref` senza punto (D4) e frasi delle figure. Le altre 22 lingue
+# ricadono su `it`, come `_labels_for` del PDF e `fallbackLng: "it"` del
+# frontend. I segnaposto `{{...}}` seguono la sintassi di i18next e sono
+# sostituiti da `_interpolate`.
 FIGURE_I18N: dict[str, dict[str, str]] = {
     "it": {
         "courses.figures.label": "Figura {{n}}.",
         "courses.figures.labelUnnumbered": "Figura.",
+        "courses.figures.ref": "Figura {{n}}",
         "courses.figures.illustrativeData": "Dati illustrativi, non sperimentali.",
         "courses.figures.approxValues": "Valori approssimati.",
         "courses.figures.renderError": "Impossibile visualizzare la figura.",
@@ -658,10 +662,22 @@ FIGURE_I18N: dict[str, dict[str, str]] = {
         "courses.figures.function.truncated": (
             "Elenco troncato ai primi {{n}} punti per categoria."
         ),
+        "courses.figures.table.label": "Tabella {{n}}.",
+        "courses.figures.table.labelUnnumbered": "Tabella.",
+        "courses.figures.table.ref": "Tabella {{n}}",
+        "courses.figures.equation.label": "Equazione {{n}}.",
+        "courses.figures.equation.labelUnnumbered": "Equazione.",
+        "courses.figures.equation.ref": "Equazione {{n}}",
+        "courses.figures.example.label": "Esempio {{n}}.",
+        "courses.figures.example.labelUnnumbered": "Esempio.",
+        "courses.figures.example.ref": "Esempio {{n}}",
+        "courses.figures.theorem.label": "{{kind}} {{n}}.",
+        "courses.figures.theorem.ref": "{{kind}} {{n}}",
     },
     "en": {
         "courses.figures.label": "Figure {{n}}.",
         "courses.figures.labelUnnumbered": "Figure.",
+        "courses.figures.ref": "Figure {{n}}",
         "courses.figures.illustrativeData": "Illustrative data, not experimental.",
         "courses.figures.approxValues": "Approximate values.",
         "courses.figures.renderError": "The figure could not be rendered.",
@@ -686,6 +702,17 @@ FIGURE_I18N: dict[str, dict[str, str]] = {
         "courses.figures.function.truncated": (
             "List truncated to the first {{n}} points per category."
         ),
+        "courses.figures.table.label": "Table {{n}}.",
+        "courses.figures.table.labelUnnumbered": "Table.",
+        "courses.figures.table.ref": "Table {{n}}",
+        "courses.figures.equation.label": "Equation {{n}}.",
+        "courses.figures.equation.labelUnnumbered": "Equation.",
+        "courses.figures.equation.ref": "Equation {{n}}",
+        "courses.figures.example.label": "Example {{n}}.",
+        "courses.figures.example.labelUnnumbered": "Example.",
+        "courses.figures.example.ref": "Example {{n}}",
+        "courses.figures.theorem.label": "{{kind}} {{n}}.",
+        "courses.figures.theorem.ref": "{{kind}} {{n}}",
     },
 }
 
@@ -693,9 +720,10 @@ FIGURE_I18N_FALLBACK = "it"
 
 
 def figure_labels(language: str | None) -> dict[str, str]:
-    """Etichette della lingua richiesta (`it`, `en`, anche `en-GB`); ogni
-    altra lingua ricade su `it` (A4). Ritorna una copia: il chiamante può
-    interpolare senza toccare il dizionario condiviso."""
+    """Etichette di figure, tabelle, equazioni, esempi e teoremi della lingua
+    richiesta (`it`, `en`, anche `en-GB`); ogni altra lingua ricade su `it`
+    (A4). Ritorna una copia: il chiamante può interpolare senza toccare il
+    dizionario condiviso."""
     code = (language or FIGURE_I18N_FALLBACK).strip().lower().split("-")[0].split("_")[0]
     return dict(FIGURE_I18N.get(code) or FIGURE_I18N[FIGURE_I18N_FALLBACK])
 
@@ -705,6 +733,73 @@ _PLACEHOLDER_RE = re.compile(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}")
 
 def _interpolate(template: str, values: Mapping[str, Any]) -> str:
     return _PLACEHOLDER_RE.sub(lambda m: str(values.get(m.group(1), m.group(0))), template)
+
+
+AssetLabelKind = Literal["FIG", "TAB", "EQ", "EX", "THM"]
+AssetLabelForm = Literal["label", "labelUnnumbered", "ref"]
+
+# Radice i18n per famiglia (D5). `THM` è il ramo teorema di un'equazione
+# (enunciato o dimostrazione presenti, `figure_numbering.equation_label_
+# family`): stesso contatore di `EQ`, parola del kind nel segnaposto
+# `{{kind}}` (da `_labels_for` nel PDF, `courses.theorem.kind.*` nel FE).
+ASSET_LABEL_ROOTS: dict[str, str] = {
+    "FIG": "courses.figures",
+    "TAB": "courses.figures.table",
+    "EQ": "courses.figures.equation",
+    "EX": "courses.figures.example",
+    "THM": "courses.figures.theorem",
+}
+
+_ASSET_LABEL_FORMS: frozenset[str] = frozenset({"label", "labelUnnumbered", "ref"})
+
+
+def asset_label_key(kind: str, form: str) -> str:
+    """Chiave i18n `ASSET_LABEL_ROOTS[kind] + "." + form`. `KeyError` su kind
+    ignoto, `ValueError` su forma ignota e su `("THM", "labelUnnumbered")`
+    (senza numero il teorema resta la sola parola del kind): errori di
+    programmazione, i kind arrivano dal tag `[KIND:id]`, mai dal modello."""
+    root = ASSET_LABEL_ROOTS[kind]
+    if form not in _ASSET_LABEL_FORMS:
+        raise ValueError(f"asset_label_key: forma ignota {form!r}")
+    if kind == "THM" and form == "labelUnnumbered":
+        raise ValueError("asset_label_key: THM non ha una forma non numerata")
+    return f"{root}.{form}"
+
+
+def asset_label(
+    labels: Mapping[str, str], kind: str, number: int | None, *, kind_word: str = ""
+) -> str:
+    """Etichetta del blocco: «Tabella 3.» / «Tabella.» (`number` None: slide
+    e frame video, A2). `THM`: «Lemma 3.» oppure, senza numero, la sola
+    parola del kind («Lemma»); `ValueError` se `kind_word` è vuoto (mai
+    « 3.»). `labels` è la mappa di `figure_labels(language)`."""
+    if kind == "THM":
+        if not kind_word.strip():
+            raise ValueError("asset_label: THM richiede kind_word")
+        if number is None:
+            return kind_word
+        return _interpolate(
+            labels[asset_label_key("THM", "label")], {"kind": kind_word, "n": number}
+        )
+    if number is None:
+        return labels[asset_label_key(kind, "labelUnnumbered")]
+    return _interpolate(labels[asset_label_key(kind, "label")], {"n": number})
+
+
+def asset_ref(
+    labels: Mapping[str, str], kind: str, number: int | None, *, kind_word: str = ""
+) -> str:
+    """Rimando in linea senza punto (D4): «Figura 2», «Tabella 3», «Lemma 2».
+    Il numero è obbligatorio: un rimando senza numero è un errore del
+    risolutore (C2), non un caso di render → `ValueError` su `None`;
+    `ValueError` anche per `THM` senza `kind_word`."""
+    if number is None:
+        raise ValueError("asset_ref: il rimando richiede un numero")
+    if kind == "THM":
+        if not kind_word.strip():
+            raise ValueError("asset_ref: THM richiede kind_word")
+        return _interpolate(labels[asset_label_key("THM", "ref")], {"kind": kind_word, "n": number})
+    return _interpolate(labels[asset_label_key(kind, "ref")], {"n": number})
 
 
 # ---------------------------------------------------------------------------

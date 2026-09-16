@@ -20,6 +20,7 @@ from app.services import figure_theme as theme
 EXPECTED_KEYS = {
     "courses.figures.label",
     "courses.figures.labelUnnumbered",
+    "courses.figures.ref",
     "courses.figures.illustrativeData",
     "courses.figures.approxValues",
     "courses.figures.renderError",
@@ -43,6 +44,21 @@ EXPECTED_KEYS = {
             "truncated",
         )
     ),
+    # D5: etichette numerate, non numerate e rimando di tabelle, equazioni,
+    # esempi; il teorema non ha la forma non numerata (resta la parola del kind).
+    *(
+        f"courses.figures.{family}.{form}"
+        for family in ("table", "equation", "example")
+        for form in ("label", "labelUnnumbered", "ref")
+    ),
+    "courses.figures.theorem.label",
+    "courses.figures.theorem.ref",
+}
+_LABEL_FAMILIES = {
+    "FIG": "courses.figures",
+    "TAB": "courses.figures.table",
+    "EQ": "courses.figures.equation",
+    "EX": "courses.figures.example",
 }
 
 
@@ -58,9 +74,85 @@ def test_figure_i18n_it_en_same_keys():
         for key, text in theme.FIGURE_I18N[lang].items():
             assert key.startswith("courses.figures."), key
             assert text.strip(), key
+    assert len(EXPECTED_KEYS) == 36
     assert theme.FIGURE_I18N["it"]["courses.figures.label"] == "Figura {{n}}."
     assert theme.FIGURE_I18N["en"]["courses.figures.label"] == "Figure {{n}}."
     assert theme.FIGURE_I18N["it"]["courses.figures.labelUnnumbered"] == "Figura."
+    assert theme.FIGURE_I18N["it"]["courses.figures.ref"] == "Figura {{n}}"
+    assert theme.FIGURE_I18N["it"]["courses.figures.table.label"] == "Tabella {{n}}."
+    assert theme.FIGURE_I18N["it"]["courses.figures.equation.label"] == "Equazione {{n}}."
+    assert theme.FIGURE_I18N["it"]["courses.figures.example.label"] == "Esempio {{n}}."
+    assert theme.FIGURE_I18N["it"]["courses.figures.theorem.label"] == "{{kind}} {{n}}."
+    assert theme.FIGURE_I18N["en"]["courses.figures.table.label"] == "Table {{n}}."
+    assert theme.FIGURE_I18N["en"]["courses.figures.theorem.ref"] == "{{kind}} {{n}}"
+
+
+def test_label_forms_are_consistent():
+    """Le tre forme di ogni famiglia divergono solo per numero e punto:
+    `ref + "." == label`, `labelUnnumbered` è `label` senza ` {{n}}`; il
+    teorema ha solo `label`/`ref`, entrambe con `{{kind}}`."""
+    for lang in ("it", "en"):
+        labels = theme.FIGURE_I18N[lang]
+        for root in _LABEL_FAMILIES.values():
+            label = labels[f"{root}.label"]
+            unnumbered = labels[f"{root}.labelUnnumbered"]
+            ref = labels[f"{root}.ref"]
+            assert label.endswith(".") and "{{n}}" in label, (lang, root)
+            assert unnumbered.endswith(".") and "{{n}}" not in unnumbered, (lang, root)
+            assert ref + "." == label, (lang, root)
+            assert label.replace(" {{n}}", "") == unnumbered, (lang, root)
+            assert "{{kind}}" not in label and "{{kind}}" not in ref, (lang, root)
+        thm_label = labels["courses.figures.theorem.label"]
+        thm_ref = labels["courses.figures.theorem.ref"]
+        assert thm_ref + "." == thm_label
+        assert "{{kind}}" in thm_label and "{{n}}" in thm_label
+        assert "{{kind}}" in thm_ref and "{{n}}" in thm_ref
+        assert "courses.figures.theorem.labelUnnumbered" not in labels
+
+
+def test_asset_label_and_ref():
+    """Composizione in un solo punto (`asset_label`/`asset_ref`), mappe
+    sempre da `figure_labels(...)`."""
+    from app.services import figure_markup
+
+    it, en = theme.figure_labels("it"), theme.figure_labels("en")
+    assert theme.asset_label(it, "TAB", 3) == "Tabella 3."
+    assert theme.asset_label(it, "TAB", None) == "Tabella."
+    assert theme.asset_label(en, "EX", 2) == "Example 2."
+    assert theme.asset_label(it, "EQ", None) == "Equazione."
+    assert theme.asset_label(it, "THM", 1, kind_word="Lemma") == "Lemma 1."
+    assert theme.asset_label(it, "THM", None, kind_word="Teorema") == "Teorema"
+    assert theme.asset_label(en, "FIG", 12) == "Figure 12."
+    assert theme.asset_ref(it, "TAB", 3) == "Tabella 3"
+    assert theme.asset_ref(it, "THM", 4, kind_word="Corollario") == "Corollario 4"
+    assert theme.asset_ref(en, "FIG", 5) == "Figure 5"
+    assert theme.asset_ref(en, "EQ", 6) == "Equation 6"
+    with pytest.raises(ValueError, match="kind_word"):
+        theme.asset_label(it, "THM", 1)
+    with pytest.raises(ValueError, match="kind_word"):
+        theme.asset_ref(it, "THM", 1, kind_word="  ")
+    with pytest.raises(ValueError, match="numero"):
+        theme.asset_ref(it, "TAB", None)
+    assert theme.asset_label(it, "FIG", 12) == figure_markup.figure_label(it, 12)
+    assert theme.asset_label(en, "FIG", None) == figure_markup.figure_label(en, None)
+
+
+def test_asset_label_key_rejects_unknown_kind_and_theorem_unnumbered():
+    with pytest.raises(KeyError):
+        theme.asset_label_key("XX", "label")
+    with pytest.raises(ValueError, match="forma"):
+        theme.asset_label_key("TAB", "bogus")
+    with pytest.raises(ValueError, match="THM"):
+        theme.asset_label_key("THM", "labelUnnumbered")
+    assert theme.asset_label_key("EQ", "ref") == "courses.figures.equation.ref"
+    assert theme.asset_label_key("FIG", "label") == "courses.figures.label"
+    assert set(theme.ASSET_LABEL_ROOTS) == {"FIG", "TAB", "EQ", "EX", "THM"}
+    for kind in theme.ASSET_LABEL_ROOTS:
+        for form in ("label", "labelUnnumbered", "ref"):
+            if kind == "THM" and form == "labelUnnumbered":
+                continue
+            key = theme.asset_label_key(kind, form)
+            assert key in theme.FIGURE_I18N["it"] and key in theme.FIGURE_I18N["en"], key
 
 
 def test_figure_labels_fallback_it():

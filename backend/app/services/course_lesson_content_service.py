@@ -13,6 +13,7 @@ Responsabilità:
 Il worker `course_lesson_content_worker` consuma le righe lezioni
 `pending` IN PARALLELO (semaforo con cap configurabile, default 3).
 """
+
 from __future__ import annotations
 
 import re
@@ -45,15 +46,15 @@ from app.schemas.course_lesson_content import (
     LessonContentOutput,
     LessonContentTopicCovered,
 )
-from app.services.course_architecture_service import (
-    _build_documents_context,
-    _term_label,
-    didactic_style_labels,  # noqa: F401  (ri-esposta per il worker Fase 3)
-)
 from app.services import (
     document_citation_guard,
     lesson_coverage_resolver,
     lesson_document_selection,
+)
+from app.services.course_architecture_service import (
+    _build_documents_context,
+    _term_label,
+    didactic_style_labels,  # noqa: F401  (ri-esposta per il worker Fase 3)
 )
 from app.services.course_glossary_service import format_glossary_for_prompt
 
@@ -115,9 +116,7 @@ async def _refresh_full(db: AsyncSession, course: Course) -> Course:
 # ---------------------------------------------------------------------------
 
 
-def _format_previous_lessons_summary(
-    course: Course, target_lesson: CourseLesson
-) -> str:
+def _format_previous_lessons_summary(course: Course, target_lesson: CourseLesson) -> str:
     """Riassunto compatto delle lezioni precedenti alla target (per richiami)."""
     if not course.modules:
         return "(Nessuna lezione precedente.)"
@@ -132,9 +131,7 @@ def _format_previous_lessons_summary(
     return "\n".join(lines) if lines else "(Nessuna lezione precedente.)"
 
 
-def _format_next_lesson_summary(
-    course: Course, target_lesson: CourseLesson
-) -> str:
+def _format_next_lesson_summary(course: Course, target_lesson: CourseLesson) -> str:
     """Riassunto della lezione successiva (per agganci)."""
     found_target = False
     for m in course.modules:
@@ -147,17 +144,13 @@ def _format_next_lesson_summary(
     return "(Nessuna lezione successiva.)"
 
 
-def _format_recommended_bibliography(
-    course: Course, lesson: CourseLesson
-) -> str:
+def _format_recommended_bibliography(course: Course, lesson: CourseLesson) -> str:
     """Formatta `recommended_bibliography` (lista di dict) per il prompt.
     Le voci che matchano documenti a fonte riservata sono filtrate in
     lettura (il dato persistito resta intatto)."""
     if not lesson.is_introductory or not lesson.recommended_bibliography:
         return "(non applicabile)"
-    items = document_citation_guard.reserved_filtered_bibliography(
-        course, lesson
-    )
+    items = document_citation_guard.reserved_filtered_bibliography(course, lesson)
     if not items:
         return "(non applicabile)"
     lines: list[str] = []
@@ -170,10 +163,7 @@ def _format_recommended_bibliography(
         year = item.get("year", "")
         note = item.get("note", "")
         source = item.get("source", "")
-        lines.append(
-            f"- {authors}, *{title}*, {publisher} ({year}). "
-            f"[{source}] {note}".strip()
-        )
+        lines.append(f"- {authors}, *{title}*, {publisher} ({year}). [{source}] {note}".strip())
     return "\n".join(lines) if lines else "(non applicabile)"
 
 
@@ -185,9 +175,7 @@ def objective_ids_for_lesson(lesson: CourseLesson) -> list[str]:
     qui. Sono maniglie posizionali valide per una sola chiamata — non
     vengono mai persistite in `content_raw`.
     """
-    index = lesson_coverage_resolver.build_objective_index(
-        lesson.learning_objectives or []
-    )
+    index = lesson_coverage_resolver.build_objective_index(lesson.learning_objectives or [])
     return list(index.ids)
 
 
@@ -198,14 +186,11 @@ def _format_learning_objectives(lesson: CourseLesson) -> str:
     100+ caratteri per dichiararne la copertura, e un apostrofo diverso
     bastava a far scartare l'intera dispensa.
     """
-    index = lesson_coverage_resolver.build_objective_index(
-        lesson.learning_objectives or []
-    )
+    index = lesson_coverage_resolver.build_objective_index(lesson.learning_objectives or [])
     if not index.objectives:
         return "(nessuno)"
     return "\n".join(
-        f"- [{oid}] {text}"
-        for oid, text in zip(index.ids, index.objectives, strict=True)
+        f"- [{oid}] {text}" for oid, text in zip(index.ids, index.objectives, strict=True)
     )
 
 
@@ -243,15 +228,11 @@ def _format_section_outline(lesson: CourseLesson) -> str:
         title = s.get("title", "")
         purpose = s.get("purpose", "")
         covers = s.get("covers_topic_ids") or []
-        lines.append(
-            f"- [{sid}] {title} — {purpose}  (copre: {', '.join(covers)})"
-        )
+        lines.append(f"- [{sid}] {title} — {purpose}  (copre: {', '.join(covers)})")
     return "\n".join(lines) if lines else "(nessuna scaletta)"
 
 
-def _find_module_for_lesson(
-    course: Course, lesson: CourseLesson
-) -> CourseModule | None:
+def _find_module_for_lesson(course: Course, lesson: CourseLesson) -> CourseModule | None:
     for m in course.modules:
         if m.id == lesson.module_id:
             return m
@@ -280,9 +261,7 @@ def _format_current_lesson_phase3(lesson: CourseLesson) -> str:
         parts.append(f"### Sintesi\n{summary}")
     takeaways = raw.get("key_takeaways") or []
     if takeaways:
-        parts.append(
-            "### Key takeaways\n" + "\n".join(f"- {kt}" for kt in takeaways)
-        )
+        parts.append("### Key takeaways\n" + "\n".join(f"- {kt}" for kt in takeaways))
     assets = raw.get("visual_assets") or []
     if assets:
         # Id, formato e caption: `- {asset_id} [{format}]: {caption}`. Il
@@ -339,8 +318,8 @@ def build_user_prompt(course: Course, lesson: CourseLesson) -> str:
     current_module_id = current_module.module_code if current_module else "?"
     current_module_title = current_module.title if current_module else "?"
     current_module_description = (
-        (current_module.description if current_module else "") or "(non specificata)"
-    )
+        current_module.description if current_module else ""
+    ) or "(non specificata)"
 
     context_block = [
         "## Contesto del corso",
@@ -509,14 +488,8 @@ def _format_current_assessment(lesson: CourseLesson) -> str:
         parts.append(f"[Scelta multipla] {q.get('text', '')}")
         for opt in q.get("options") or []:
             if isinstance(opt, dict):
-                mark = (
-                    " (corretta)"
-                    if opt.get("option_id") == q.get("correct_option_id")
-                    else ""
-                )
-                parts.append(
-                    f"  {opt.get('option_id', '')}. {opt.get('text', '')}{mark}"
-                )
+                mark = " (corretta)" if opt.get("option_id") == q.get("correct_option_id") else ""
+                parts.append(f"  {opt.get('option_id', '')}. {opt.get('text', '')}{mark}")
     for q in raw.get("open_questions") or []:
         if isinstance(q, dict):
             parts.append(f"[Aperta] {q.get('text', '')}")
@@ -531,9 +504,7 @@ def build_assessment_user_prompt(course: Course, lesson: CourseLesson) -> str:
     lang = course.language_code
     module = _find_module_for_lesson(course, lesson)
     module_title = module.title if module else "?"
-    module_description = (
-        (module.description if module else "") or "(non specificata)"
-    )
+    module_description = (module.description if module else "") or "(non specificata)"
     mc_count = course.multiple_choice_questions_count
     open_count = course.open_questions_count
 
@@ -630,8 +601,7 @@ async def request_lesson_generation(
     ensure_lesson_structure_ready(course, lesson)
     if lesson.content_status not in VALID_LESSON_GENERATE_FROM_STATUSES:
         raise ConflictError(
-            f"Lezione {lesson.lesson_code} non in stato valido: "
-            f"{lesson.content_status}",
+            f"Lezione {lesson.lesson_code} non in stato valido: {lesson.content_status}",
             code="invalid_lesson_content_status",
         )
 
@@ -640,9 +610,7 @@ async def request_lesson_generation(
     lesson.content_error = None
     lesson.content_progress = 0
     lesson.content_progress_phase = None
-    lesson.content_regeneration_hint = (
-        regeneration_hint.strip() if regeneration_hint else None
-    )
+    lesson.content_regeneration_hint = regeneration_hint.strip() if regeneration_hint else None
 
     _recompute_course_content_status(course)
 
@@ -659,9 +627,7 @@ async def request_lesson_generation(
             "is_regeneration": is_regeneration_for_lesson(lesson),
             "attempts_reset_from": attempts_reset_from,
             "hint": (
-                lesson.content_regeneration_hint[:200]
-                if lesson.content_regeneration_hint
-                else None
+                lesson.content_regeneration_hint[:200] if lesson.content_regeneration_hint else None
             ),
         },
     )
@@ -682,23 +648,18 @@ async def request_all_lessons_generation(
     elabora in parallelo (cap configurabile, default 3)."""
     ensure_course_not_terminal(course)
 
-    all_lessons: list[CourseLesson] = [
-        lesson for m in course.modules for lesson in m.lessons
-    ]
+    all_lessons: list[CourseLesson] = [lesson for m in course.modules for lesson in m.lessons]
     if not all_lessons:
         raise ConflictError(
             "Il corso non ha lezioni — completa prima Fase 1 e Fase 2.",
             code="no_lessons_to_generate",
         )
     eligible_lessons = [
-        lesson
-        for lesson in all_lessons
-        if lesson_structure_is_ready(course, lesson)
+        lesson for lesson in all_lessons if lesson_structure_is_ready(course, lesson)
     ]
     if not eligible_lessons:
         raise ConflictError(
-            "Nessuna lezione pronta per la Fase 3: approva prima la "
-            "struttura dei moduli.",
+            "Nessuna lezione pronta per la Fase 3: approva prima la struttura dei moduli.",
             code="no_lessons_to_generate",
         )
 
@@ -756,8 +717,7 @@ async def request_missing_lessons_generation(
         lesson
         for m in course.modules
         for lesson in m.lessons
-        if lesson.content_status == "empty"
-        and lesson_structure_is_ready(course, lesson)
+        if lesson.content_status == "empty" and lesson_structure_is_ready(course, lesson)
     ]
     if not missing_lessons:
         raise ConflictError(
@@ -809,9 +769,7 @@ async def cancel_all_lessons_generation(
     risposta, vede lo status cambiato e scarta il risultato (vedi
     `_process_one` in `course_lesson_content_worker.py`).
     """
-    all_lessons: list[CourseLesson] = [
-        lesson for m in course.modules for lesson in m.lessons
-    ]
+    all_lessons: list[CourseLesson] = [lesson for m in course.modules for lesson in m.lessons]
     cancelled = 0
     for lesson in all_lessons:
         if lesson.content_status in ("pending", "processing"):
@@ -848,15 +806,16 @@ async def cancel_all_lessons_generation(
 # ---------------------------------------------------------------------------
 
 
-_ASSET_REF_RE = re.compile(r"\[(FIG|TAB|EQ|EX):([^\]]+)\]")
+# Stessa forma di `_ASSET_REF_RE` del PDF e di `figure_numbering.ASSET_REF_RE`:
+# un tag a cavallo di riga (`[FIG:a\n]`) non è un tag per nessun renderer e
+# non deve contare nemmeno qui.
+_ASSET_REF_RE = re.compile(r"\[(FIG|TAB|EQ|EX):([^\]\n]+)\]")
 
 
 def _collect_asset_refs(text: str) -> set[tuple[str, str]]:
-    """Estrae i tag `[FIG:..]` / `[TAB:..]` / `[EQ:..]` / `[EX:..]` dal testo."""
-    return {
-        (kind.upper(), aid.strip())
-        for kind, aid in _ASSET_REF_RE.findall(text or "")
-    }
+    """Estrae i tag `[FIG:..]` / `[TAB:..]` / `[EQ:..]` / `[EX:..]` dal testo
+    (kind maiuscolo, id senza `]` né a capo)."""
+    return {(kind.upper(), aid.strip()) for kind, aid in _ASSET_REF_RE.findall(text or "")}
 
 
 @dataclass
@@ -872,9 +831,7 @@ class _CoverageReport:
     dropped_topics: list[str]
 
 
-def _canonicalize_coverage(
-    *, lesson: CourseLesson, output: LessonContentOutput
-) -> _CoverageReport:
+def _canonicalize_coverage(*, lesson: CourseLesson, output: LessonContentOutput) -> _CoverageReport:
     """Riscrive i riferimenti delle sezioni con i valori canonici di
     Fase 2 e DERIVA `coverage_check` dalle sezioni.
 
@@ -888,12 +845,8 @@ def _canonicalize_coverage(
     (era una richiesta tautologica che scartava dispense valide): viene
     ricalcolato da ciò che le sezioni dichiarano davvero.
     """
-    obj_index = lesson_coverage_resolver.build_objective_index(
-        lesson.learning_objectives or []
-    )
-    topic_index = lesson_coverage_resolver.build_topic_index(
-        lesson.mandatory_topics or []
-    )
+    obj_index = lesson_coverage_resolver.build_objective_index(lesson.learning_objectives or [])
+    topic_index = lesson_coverage_resolver.build_topic_index(lesson.mandatory_topics or [])
     changed = False
     objective_cover: dict[str, list[str]] = {}
     topic_cover: dict[str, list[str]] = {}
@@ -983,8 +936,7 @@ async def materialize_lesson_content(
     # 1. Match lesson_id ↔ lesson_code
     if output.lesson_id != lesson.lesson_code:
         raise ConflictError(
-            f"L'AI ha prodotto lesson_id `{output.lesson_id}`, "
-            f"atteso `{lesson.lesson_code}`.",
+            f"L'AI ha prodotto lesson_id `{output.lesson_id}`, atteso `{lesson.lesson_code}`.",
             code="lesson_content_id_mismatch",
         )
 
@@ -1000,8 +952,7 @@ async def materialize_lesson_content(
     visual_ids = [a.asset_id for a in output.visual_assets]
     if len(set(visual_ids)) != len(visual_ids):
         raise ConflictError(
-            f"asset_id duplicati nei visual_assets della lezione "
-            f"{lesson.lesson_code}.",
+            f"asset_id duplicati nei visual_assets della lezione {lesson.lesson_code}.",
             code="lesson_content_duplicate_visual_asset_id",
         )
     table_ids = [t.table_id for t in output.tables]
@@ -1063,8 +1014,7 @@ async def materialize_lesson_content(
         )
         raise ConflictError(
             _uncovered_message(
-                f"Lezione {lesson.lesson_code}: obiettivi non coperti da "
-                f"alcuna sezione",
+                f"Lezione {lesson.lesson_code}: obiettivi non coperti da alcuna sezione",
                 uncovered_objs,
             ),
             code="lesson_content_objectives_uncovered",
@@ -1169,8 +1119,7 @@ async def materialize_lesson_assessment(
     # 1. Match lesson_id ↔ lesson_code
     if output.lesson_id != lesson.lesson_code:
         raise ConflictError(
-            f"L'AI ha prodotto lesson_id `{output.lesson_id}`, "
-            f"atteso `{lesson.lesson_code}`.",
+            f"L'AI ha prodotto lesson_id `{output.lesson_id}`, atteso `{lesson.lesson_code}`.",
             code="lesson_assessment_id_mismatch",
         )
 
@@ -1200,8 +1149,7 @@ async def materialize_lesson_assessment(
 
     # 4. Soft check: conteggio domande vs snapshot del corso (solo warning)
     if (
-        len(output.multiple_choice_questions)
-        != course.multiple_choice_questions_count
+        len(output.multiple_choice_questions) != course.multiple_choice_questions_count
         or len(output.open_questions) != course.open_questions_count
     ):
         log.warning(
@@ -1277,32 +1225,29 @@ async def approve_all_lessons_content(
     generate — normali nel flusso per-unità) vengono ignorate; blocca
     solo con lezioni in lavorazione o fallite. Idempotente: se sono già
     tutte `approved` ritorna success senza errore."""
-    all_lessons: list[CourseLesson] = [
-        lesson for m in course.modules for lesson in m.lessons
-    ]
+    all_lessons: list[CourseLesson] = [lesson for m in course.modules for lesson in m.lessons]
     not_ready = [
-        l for l in all_lessons
-        if l.content_status not in ("ready", "approved", "empty")
+        lesson
+        for lesson in all_lessons
+        if lesson.content_status not in ("ready", "approved", "empty")
     ]
     if not_ready:
         raise ConflictError(
             f"Non tutte le lezioni sono pronte. In attesa: "
-            f"{', '.join(l.lesson_code for l in not_ready)}.",
+            f"{', '.join(lesson.lesson_code for lesson in not_ready)}.",
             code="not_all_lessons_ready",
         )
 
     with_content = [
-        l for l in all_lessons
-        if l.content_status in ("ready", "approved")
+        lesson for lesson in all_lessons if lesson.content_status in ("ready", "approved")
     ]
     if not with_content:
         raise ConflictError(
-            "Nessuna lezione ha una dispensa generata. Genera prima le "
-            "dispense.",
+            "Nessuna lezione ha una dispensa generata. Genera prima le dispense.",
             code="no_content_to_approve",
         )
 
-    eligible = [l for l in all_lessons if l.content_status == "ready"]
+    eligible = [lesson for lesson in all_lessons if lesson.content_status == "ready"]
     # Idempotente: se sono già tutte approved, no-op success.
     if not eligible:
         return await _refresh_full(db, course)
@@ -1349,11 +1294,7 @@ def _recompute_course_content_status(course: Course) -> None:
     NON sovrascrive lo status se è in fase precedente alla Fase 3 quando
     nessuna lezione è in lavorazione.
     """
-    statuses = [
-        lesson.content_status
-        for m in course.modules
-        for lesson in m.lessons
-    ]
+    statuses = [lesson.content_status for m in course.modules for lesson in m.lessons]
     if not statuses:
         return
 
@@ -1365,9 +1306,7 @@ def _recompute_course_content_status(course: Course) -> None:
         advance_course_status(course, "content_approved")
         return
 
-    if all(s in ("ready", "approved") for s in statuses) and any(
-        s == "ready" for s in statuses
-    ):
+    if all(s in ("ready", "approved") for s in statuses) and any(s == "ready" for s in statuses):
         advance_course_status(course, "content_ready")
         return
 
@@ -1377,13 +1316,9 @@ def _recompute_course_content_status(course: Course) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def load_course_full(
-    db: AsyncSession, *, course_id: uuid.UUID
-) -> Course | None:
+async def load_course_full(db: AsyncSession, *, course_id: uuid.UUID) -> Course | None:
     res = await db.execute(
-        select(Course)
-        .where(Course.id == course_id)
-        .options(*_eager_full_options())
+        select(Course).where(Course.id == course_id).options(*_eager_full_options())
     )
     return res.scalar_one_or_none()
 

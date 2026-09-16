@@ -7,6 +7,15 @@ slide_template=None, enable_split=False)`.
 
 - didascalie «Figura N.» in ordine di prima citazione, orfano in coda dopo
   la sintesi, `en` → «Figure», `de` → «Figura» (fallback it);
+- rimandi testuali (D1, D2, D4): la citazione in linea resta nella frase
+  («Come mostrato in Figura 1, …»), il blocco segue il paragrafo, una
+  figura per asset anche con citazioni ripetute, code span/liste/fence
+  intatti; la coda (punti chiave, riferimenti) riceve rimandi, mai blocchi;
+- tabelle, equazioni ed esempi numerati per kind (D3, D5): «Tabella N.»,
+  «Equazione N.», «Esempio N.», teorema «Lemma N.» sul contatore EQ,
+  etichetta sempre presente, orfani accodati FIG → TAB → EQ → EX, forme
+  non numerate nelle slide; `_labels_for` e `_slide_type_label` senza
+  segnaposto (guardia D5);
 - prefisso «Figura 7.» ripulito a render, caption escapata;
 - `<pre class="figure-fallback">` per SVG mancante con
   `figure_render_fallback` nel log (A23; `structlog.testing.capture_logs`:
@@ -135,11 +144,15 @@ def test_figcaptions_follow_first_citation_and_orphans_go_last() -> None:
     figs = _figures(html)
     assert [(f["id"], _label(f)) for f in figs] == [
         ("C", "Figura 1."),
-        ("A", "Figura 2."),
-        ("A", "Figura 2."),  # citazione ripetuta: stesso numero
+        ("A", "Figura 2."),  # resa UNA volta: la citazione ripetuta è un rimando
         ("B", "Figura 3."),
         ("D", "Figura 4."),  # mai citata: in coda, ultimo numero
     ]
+    assert html.count('data-asset-id="A"') == 1
+    # Le frasi restano intere, con il rimando testuale al posto del tag.
+    assert "<p>Intro con Figura 1 e poi Figura 2.</p>" in html
+    assert "<p>Ancora Figura 2 e infine Figura 3.</p>" in html
+    assert "[FIG:" not in html
     # L'orfano segue la sintesi e precede i punti chiave.
     summary_pos = html.index("Sintesi della lezione.")
     orphan_pos = html.index('data-asset-id="D"')
@@ -219,26 +232,34 @@ def test_figure_without_caption_still_carries_the_label() -> None:
     assert _figures(html)[0]["caption"] == '<span class="figure-label">Figura 1.</span>'
 
 
-def test_key_takeaways_and_references_do_not_participate() -> None:
+def test_key_takeaways_and_references_get_textual_references_but_no_blocks() -> None:
+    """La coda non numera e non rende blocchi (C9): i tag nei punti chiave e
+    nelle citazioni bibliografiche diventano rimandi testuali con il numero
+    del corpo; gli asset non citati nel corpo restano orfani in coda."""
     content = {
         "introduction": "Testo senza citazioni.",
         "sections": [],
         "summary": "",
-        "key_takeaways": ["Vedi [FIG:A]"],
-        "references": ["[FIG:B]"],
+        "key_takeaways": ["Vedi [FIG:A]", "[FIG:A]"],
+        "references": [
+            {"citation": "Vedi [FIG:B]", "source": "suggerimento_generale"},
+            "[FIG:B]",  # forma grezza: non deve far fallire il render
+        ],
         "visual_assets": [
             _asset("A", "mermaid", "flowchart LR\n A", "Schema A"),
             _asset("B", "mermaid", "flowchart LR\n B", "Schema B"),
         ],
     }
     html = _render(content, visual_svg_map={"A": SVG_A, "B": SVG_A})
-    # Entrambe orfane: in coda in ordine di array, e il tag nei punti chiave
-    # resta testo (come oggi).
     assert [(f["id"], _label(f)) for f in _figures(html)] == [
         ("A", "Figura 1."),
         ("B", "Figura 2."),
     ]
-    assert "Vedi [FIG:A]" in html
+    assert "<li>Vedi Figura 1</li>" in html
+    assert "<li>Figura 1</li>" in html
+    assert "<li>Vedi Figura 2</li>" in html
+    assert "[FIG:" not in html
+    assert html.count("<figure") == 2
 
 
 def test_asset_ids_with_surrounding_spaces_and_case_are_matched_and_numbered() -> None:
@@ -257,8 +278,10 @@ def test_asset_ids_with_surrounding_spaces_and_case_are_matched_and_numbered() -
     assert 'class="missing-asset"' not in html
     fig = _figures(html)[0]
     assert fig["id"] == "A" and _label(fig) == "Figura 1."  # `data-asset-id` collassato
-    assert "<figcaption>Tabella</figcaption>" in html
-    assert '<figure class="equation">' in html and '<span class="label">Eq</span>' in html
+    assert "<p>Vedi Figura 1 e Tabella 1 e Equazione 1.</p>" in html
+    assert '<figcaption><span class="figure-label">Tabella 1.</span> Tabella</figcaption>' in html
+    assert '<figure class="equation">' in html
+    assert '<span class="figure-label">Equazione 1.</span> <span class="label">Eq</span>' in html
 
 
 def test_missing_asset_reference_keeps_the_marker_and_no_number() -> None:
@@ -271,6 +294,344 @@ def test_missing_asset_reference_keeps_the_marker_and_no_number() -> None:
     html = _render(content, visual_svg_map={"A": SVG_A})
     assert '<div class="missing-asset">Asset non trovato: [FIG:ghost]</div>' in html
     assert _label(_figures(html)[0]) == "Figura 1."
+    # Il tag irrisolto resta blocco `missing-asset`; quello risolto è un rimando.
+    assert "<p>e Figura 1.</p>" in html
+    assert html.count('class="missing-asset"') == 1
+    assert len(_figures(html)) == 1
+
+
+# ---------------------------------------------------------------------------
+# Rimandi testuali e ancora dopo il blocco (D1, D2, D4)
+# ---------------------------------------------------------------------------
+
+
+def _one_figure_content(introduction: str) -> dict[str, Any]:
+    return {
+        "introduction": introduction,
+        "sections": [],
+        "summary": "",
+        "visual_assets": [_asset("A", "mermaid", "flowchart LR\n A", "Schema")],
+    }
+
+
+def test_inline_citation_keeps_the_sentence_and_anchors_the_figure_after_the_paragraph() -> None:
+    """C2 sulla catena reale (markdown-it + Jinja): la frase resta intera e
+    il blocco figura segue il paragrafo, invece di spezzarlo in due `<p>`."""
+    html = _render(
+        _one_figure_content("Come mostrato in [FIG:A], il sistema converge."),
+        visual_svg_map={"A": SVG_A},
+    )
+    assert "<p>Come mostrato in Figura 1, il sistema converge.</p>" in html
+    assert "[FIG:A]" not in html
+    assert "<p>Come mostrato in</p>" not in html
+    assert html.index("il sistema converge.</p>") < html.index('data-asset-id="A"')
+    assert len(_figures(html)) == 1
+
+
+def test_citation_inside_code_span_keeps_one_figure() -> None:
+    """Dentro un code span il tag è una citazione: lasciarlo intatto
+    produrrebbe un secondo `<figure>` o markup escapato nel `<code>`."""
+    html = _render(
+        _one_figure_content("Il tag `[FIG:A]` e poi [FIG:A]."), visual_svg_map={"A": SVG_A}
+    )
+    assert "<p>Il tag <code>Figura 1</code> e poi Figura 1.</p>" in html
+    assert len(_figures(html)) == 1
+    assert "&lt;figure" not in html
+
+
+def test_citation_inside_tight_list_keeps_one_list() -> None:
+    html = _render(
+        _one_figure_content("- uno [FIG:A]\n- due\n\nDopo."), visual_svg_map={"A": SVG_A}
+    )
+    assert html.count("<ul>") == 1
+    assert "<li>uno Figura 1</li>" in html
+    assert html.index("</ul>") < html.index('data-asset-id="A"') < html.index("<p>Dopo.</p>")
+
+
+def test_citation_inside_fence_never_yields_escaped_markup() -> None:
+    html = _render(_one_figure_content("```\n[FIG:A]\n```"), visual_svg_map={"A": SVG_A})
+    assert "<pre><code>Figura 1\n</code></pre>" in html
+    assert "&lt;figure" not in html
+    assert len(_figures(html)) == 1
+
+
+@pytest.mark.parametrize(
+    ("language", "introduction", "expected"),
+    [
+        ("it", "Vedi [FIG:A].", "<p>Vedi Figura 1.</p>"),
+        ("en", "See [FIG:A].", "<p>See Figure 1.</p>"),
+        ("de", "Vedi [FIG:A].", "<p>Vedi Figura 1.</p>"),  # fallback it
+    ],
+)
+def test_reference_label_follows_course_language(
+    language: str, introduction: str, expected: str
+) -> None:
+    html = _render(
+        _one_figure_content(introduction), language=language, visual_svg_map={"A": SVG_A}
+    )
+    assert expected in html
+
+
+# ---------------------------------------------------------------------------
+# Tabelle, equazioni ed esempi numerati (D3, D5)
+# ---------------------------------------------------------------------------
+
+
+def _content_four_kinds() -> dict[str, Any]:
+    return {
+        "introduction": "Vedi [TAB:t2], [EQ:e1], [EX:x1], [TAB:t1] e ancora [EQ:e1].",
+        "sections": [
+            {
+                "section_id": "S1",
+                "title": "Prima",
+                "content": "Per [EQ:lem] e [FIG:A] vale.",
+            }
+        ],
+        "summary": "",
+        "visual_assets": [_asset("A", "mermaid", "flowchart LR\n A", "Schema")],
+        "tables": [
+            {"table_id": "t1", "caption": "Cap t1", "markdown": "| a |\n|---|\n| 1 |"},
+            {"table_id": "t2", "caption": "Cap t2", "markdown": "| b |\n|---|\n| 2 |"},
+            {"table_id": "t3", "caption": "Cap t3", "markdown": "| c |\n|---|\n| 3 |"},
+        ],
+        "equations": [
+            {"equation_id": "e1", "latex": "x=1", "label": "Eq"},
+            {"equation_id": "lem", "kind": "lemma", "latex": "y=2", "statement": "Sia $y$ dato."},
+        ],
+        "examples": [{"example_id": "x1", "title": "Titolo", "content": "Contenuto."}],
+    }
+
+
+def _positions(html: str, needles: list[str]) -> list[int]:
+    return [html.index(n) for n in needles]
+
+
+def test_table_equation_example_labels_follow_first_citation_per_kind() -> None:
+    html = _render(_content_four_kinds(), visual_svg_map={"A": SVG_A})
+    assert "<p>Vedi Tabella 1, Equazione 1, Esempio 1, Tabella 2 e ancora Equazione 1.</p>" in html
+    assert "<p>Per Lemma 2 e Figura 1 vale.</p>" in html
+    needles = [
+        '<span class="figure-label">Tabella 1.</span> Cap t2',
+        '<span class="figure-label">Equazione 1.</span> <span class="label">Eq</span>',
+        '<div class="example-title"><span class="figure-label">Esempio 1.</span> Titolo</div>',
+        '<span class="figure-label">Tabella 2.</span> Cap t1',
+        '<div class="theorem-head">Lemm' + "a 2.</div>",  # contatore EQ condiviso
+        '<span class="figure-label">Figura 1.</span>',  # contatore FIG indipendente
+        '<span class="figure-label">Tabella 3.</span> Cap t3',  # orfana: in coda
+    ]
+    positions = _positions(html, needles)
+    assert positions == sorted(positions)
+    # Il blocco è reso una volta sola; la seconda citazione è il rimando nel testo.
+    assert html.count('<span class="figure-label">Equazione 1.</span>') == 1
+    assert html.count("Equazione 1") == 3  # etichetta + due rimandi nel paragrafo
+    assert "[TAB:" not in html and "[EQ:" not in html and "[EX:" not in html
+
+
+def test_uncited_tables_equations_examples_are_appended_after_summary() -> None:
+    """D3 letterale: anche tabelle, equazioni ed esempi mai citati sono
+    accodati dopo la sintesi, in ordine FIG → TAB → EQ → EX, prima dei
+    punti chiave (cambiamento visibile sui contenuti storici: asset prima
+    invisibili nel PDF ora compaiono)."""
+    content = {
+        "introduction": "Solo testo.",
+        "sections": [],
+        "summary": "Sintesi della lezione.",
+        "key_takeaways": ["Uno"],
+        "visual_assets": [_asset("A", "mermaid", "flowchart LR\n A", "Schema")],
+        "tables": [{"table_id": "t1", "caption": "Cap", "markdown": "| a |\n|---|\n| 1 |"}],
+        "equations": [{"equation_id": "e1", "latex": "x=1"}],
+        "examples": [{"example_id": "x1", "title": "Titolo", "content": "Contenuto."}],
+    }
+    html = _render(content, visual_svg_map={"A": SVG_A})
+    positions = _positions(
+        html,
+        [
+            "Sintesi della lezione.",
+            'data-asset-id="A"',
+            '<span class="figure-label">Tabella 1.</span>',
+            '<span class="figure-label">Equazione 1.</span>',
+            '<span class="figure-label">Esempio 1.</span>',
+            "Punti chiave",
+        ],
+    )
+    assert positions == sorted(positions)
+
+
+def test_equation_branch_decides_the_label_family() -> None:
+    from app.services import figure_numbering as fn
+
+    content = {
+        "introduction": "[EQ:a] [EQ:b] [EQ:c] [EQ:d]",
+        "sections": [],
+        "summary": "",
+        "equations": [
+            {"equation_id": "a", "kind": "theorem", "latex": "x=1"},  # senza enunciato: EQ
+            {"equation_id": "b", "kind": "formula", "latex": "x=2", "statement": "S"},
+            {"equation_id": "c", "kind": "xyz", "latex": "x=3", "statement": "S"},
+            {"equation_id": "d", "latex": "x=4", "proof": [{"latex": "", "text": " "}]},
+        ],
+    }
+    html = _render(content)
+    assert '<span class="figure-label">Equazione 1.</span>' in html
+    assert '<div class="theorem-head">Formula 2.</div>' in html
+    assert '<div class="theorem-head">Teorema 3.</div>' in html  # kind ignoto: fallback
+    assert '<span class="figure-label">Equazione 4.</span>' in html
+    assert html.count('<div class="theorem-head">') == 2
+    assert [fn.equation_label_family(e) for e in content["equations"]] == ["EQ", "THM", "THM", "EQ"]
+
+
+def test_label_is_emitted_even_without_caption_label_or_title() -> None:
+    content = {
+        "introduction": "[TAB:t] [EQ:e] [EX:x]",
+        "sections": [],
+        "summary": "",
+        "tables": [{"table_id": "t", "markdown": "| a |\n|---|\n| 1 |"}],
+        "equations": [{"equation_id": "e", "latex": "x=1"}],
+        "examples": [{"example_id": "x", "title": "", "content": "Contenuto."}],
+    }
+    numbers = {("TAB", "t"): 1, ("EQ", "e"): 1, ("EX", "x"): 1}
+    blocks = pdf._build_asset_html_map(content, asset_numbers=numbers)
+    assert blocks[("TAB", "t")].endswith(
+        '<figcaption><span class="figure-label">Tabella 1.</span></figcaption></figure>'
+    )
+    assert blocks[("EQ", "e")].endswith(
+        '<figcaption><span class="figure-label">Equazione 1.</span></figcaption></figure>'
+    )
+    assert blocks[("EX", "x")].startswith(
+        '<aside class="example"><div class="example-title">'
+        '<span class="figure-label">Esempio 1.</span></div>'
+    )
+    for block in blocks.values():
+        assert "\n\n" not in block  # HTML block di markdown-it
+
+
+@pytest.mark.parametrize(
+    ("language", "table", "equation", "example", "theorem"),
+    [
+        ("it", "Tabella 1.", "Equazione 1.", "Esempio 1.", "Lemma 2."),
+        ("en", "Table 1.", "Equation 1.", "Example 1.", "Lemma 2."),
+        ("en-GB", "Table 1.", "Equation 1.", "Example 1.", "Lemma 2."),
+        ("de", "Tabella 1.", "Equazione 1.", "Esempio 1.", "Lemma 2."),
+        ("ja", "Tabella 1.", "Equazione 1.", "Esempio 1.", "Lemma 2."),
+    ],
+)
+def test_labels_language_for_tables_equations_examples(
+    language: str, table: str, equation: str, example: str, theorem: str
+) -> None:
+    html = _render(_content_four_kinds(), language=language, visual_svg_map={"A": SVG_A})
+    assert f'<span class="figure-label">{table}</span>' in html
+    assert f'<span class="figure-label">{equation}</span>' in html
+    assert f'<span class="figure-label">{example}</span>' in html
+    assert f'<div class="theorem-head">{theorem}</div>' in html
+
+
+def test_author_label_and_title_are_escaped_next_to_the_label() -> None:
+    content = {
+        "introduction": "[TAB:t] [EQ:e] [EX:x]",
+        "sections": [],
+        "summary": "",
+        "tables": [{"table_id": "t", "caption": "<i>c</i>", "markdown": "| a |\n|---|\n| 1 |"}],
+        "equations": [{"equation_id": "e", "latex": "x=1", "label": '<b>x</b> & "y"'}],
+        "examples": [{"example_id": "x", "title": "<i>t</i>", "content": "Contenuto."}],
+    }
+    html = _render(content)
+    assert '<span class="figure-label">Tabella 1.</span> &lt;i&gt;c&lt;/i&gt;' in html
+    assert (
+        '<span class="figure-label">Equazione 1.</span> '
+        '<span class="label">&lt;b&gt;x&lt;/b&gt; &amp; &quot;y&quot;</span>' in html
+    )
+    assert '<span class="figure-label">Esempio 1.</span> &lt;i&gt;t&lt;/i&gt;' in html
+    assert "<i>" not in html.split("</style>", 1)[1] and "<b>x" not in html
+
+
+def test_missing_table_reference_does_not_consume_a_number() -> None:
+    content = {
+        "introduction": "Vedi [TAB:ghost] e [TAB:t1].",
+        "sections": [],
+        "summary": "",
+        "tables": [{"table_id": "t1", "caption": "Cap", "markdown": "| a |\n|---|\n| 1 |"}],
+    }
+    html = _render(content)
+    assert '<div class="missing-asset">Asset non trovato: [TAB:ghost]</div>' in html
+    assert '<span class="figure-label">Tabella 1.</span> Cap' in html
+    assert "<p>e Tabella 1.</p>" in html
+
+
+def _flatten(node: Any, prefix: str = "") -> dict[str, str]:
+    out: dict[str, str] = {}
+    if isinstance(node, dict):
+        for key, value in node.items():
+            out.update(_flatten(value, f"{prefix}{key}."))
+    elif isinstance(node, str):
+        out[prefix[:-1]] = node
+    return out
+
+
+_LOCALES = Path(__file__).resolve().parents[2] / "frontend" / "src" / "i18n" / "locales"
+_THEOREM_KINDS = (
+    "definition",
+    "formula",
+    "identity",
+    "theorem",
+    "proposition",
+    "lemma",
+    "corollary",
+)
+
+
+@pytest.mark.parametrize("language", ["it", "en"])
+def test_theorem_kind_words_mirror_frontend(language: str) -> None:
+    """Le due metà di «Lemma 2.» (parola del kind da `_labels_for`, template
+    da `courses.figures.theorem.label`) coincidono con il frontend."""
+    path = _LOCALES / f"{language}.json"
+    assert path.is_file(), path
+    flat = _flatten(json.loads(path.read_text(encoding="utf-8")))
+    labels = pdf._labels_for(language)
+    for kind in _THEOREM_KINDS:
+        assert labels[f"kind_{kind}"] == flat[f"courses.theorem.kind.{kind}"], kind
+    assert labels["proof"] == flat["courses.theorem.proof"]
+
+
+def test_labels_for_and_slide_labels_have_no_asset_label_keys() -> None:
+    """Guardia D5: le etichette degli asset vivono solo in `figure_theme`;
+    `_labels_for` e `_slide_type_label` non ne ospitano né interpolano."""
+    expected = {
+        "summary",
+        "key_takeaways",
+        "references",
+        "module",
+        "lesson",
+        "cfu",
+        "teacher",
+        "proof",
+        *(f"kind_{k}" for k in _THEOREM_KINDS),
+    }
+    slide_types = (
+        "title",
+        "agenda",
+        "prerequisites",
+        "concept",
+        "definition",
+        "diagram",
+        "formula",
+        "table",
+        "example",
+        "case_study",
+        "exercise",
+        "discussion",
+        "summary",
+        "takeaways",
+        "references",
+        "bibliography",
+    )
+    for language in ("it", "en"):
+        labels = pdf._labels_for(language)
+        assert set(labels) == expected
+        values = list(labels.values()) + [
+            slides_pdf._slide_type_label(language, t) for t in slide_types
+        ]
+        for value in values:
+            assert "{{n}}" not in value and "{{kind}}" not in value, value
 
 
 # ---------------------------------------------------------------------------
@@ -741,6 +1102,65 @@ def test_slides_use_unnumbered_label_and_img_for_every_format() -> None:
     ]
 
 
+def _slides_lesson_with_blocks() -> CourseLesson:
+    content_raw = {
+        "introduction": "Testo [TAB:t1], [EQ:e1], [EQ:lem] ed [EX:x1].",
+        "sections": [],
+        "summary": "",
+        "tables": [{"table_id": "t1", "caption": "Confronto", "markdown": "| a |\n|---|\n| 1 |"}],
+        "equations": [
+            {"equation_id": "e1", "latex": "x=1"},
+            {
+                "equation_id": "lem",
+                "kind": "lemma",
+                "latex": "y=2",
+                "label": "Weierstrass",
+                "statement": "Ogni successione limitata ha una sottosuccessione convergente.",
+            },
+        ],
+        "examples": [{"example_id": "x1", "title": "Un esempio", "content": "Contenuto."}],
+    }
+    slides_raw = {
+        "slides": [
+            {
+                "slide_id": "s1",
+                "type": "table",
+                "title": "Blocchi",
+                "bullets": [],
+                "references_assets": ["t1", "e1", "lem", "x1"],
+            }
+        ],
+        "new_assets": [],
+    }
+    return _lesson(content_raw, slides_raw)
+
+
+@pytest.mark.parametrize(
+    ("language", "table", "equation", "example"),
+    [("it", "Tabella.", "Equazione.", "Esempio."), ("en", "Table.", "Equation.", "Example.")],
+)
+def test_slides_use_unnumbered_labels_for_tables_equations_examples(
+    language: str, table: str, equation: str, example: str
+) -> None:
+    """Slide e frame video: forma non numerata («Tabella.», A2) e teorema
+    byte-identico a prima (sola parola del kind, nessun numero)."""
+    html = slides_pdf.render_slides_html(
+        course=_course(language),
+        lesson=_slides_lesson_with_blocks(),
+        organization=None,
+        slide_template=None,
+        enable_split=False,
+    )
+    assert f'<span class="figure-label">{table}</span> Confronto' in html
+    assert f'<figcaption><span class="figure-label">{equation}</span></figcaption>' in html
+    assert (
+        f'<div class="example-title"><span class="figure-label">{example}</span> Un esempio</div>'
+        in html
+    )
+    assert '<div class="theorem-head">Lemma Weierstrass</div>' in html
+    assert not re.search(r"(Tabella|Equazione|Esempio|Table|Equation|Example|Lemma) \d", html)
+
+
 def test_slides_english_label() -> None:
     html = slides_pdf.render_slides_html(
         course=_course("en"),
@@ -941,6 +1361,10 @@ def test_lesson_template_css_for_figures() -> None:
     assert ".mermaid-fallback, .figure-fallback {" in css
     assert ".missing-asset {" in css
     assert "figure.visual:has(.mermaid-svg) .figure-body" in css
+    # Etichette «Tabella N.» / «Equazione N.» in tondo dentro la didascalia in corsivo (D5).
+    selector = "figure.table figcaption .figure-label, figure.equation figcaption .figure-label {"
+    assert selector in css
+    assert "font-style: normal" in css.split(selector, 1)[1].split("}", 1)[0]
     # La card generica sulle `figure` non esiste più.
     assert re.search(r"^\s*figure \{[^}]*border:", css, re.M) is None
 

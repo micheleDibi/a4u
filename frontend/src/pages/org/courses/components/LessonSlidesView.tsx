@@ -207,22 +207,27 @@ function SlideAssetRender({
     );
   }
 
+  // Tabelle, equazioni ed esempi: forme non numerate («Tabella.»,
+  // «Equazione.», «Esempio.», A2) come nel PDF delle slide; il markup
+  // resta quello delle slide (`MarkdownRenderer` conserva
+  // `normalizeMathDelimiters`), solo lo span dell'etichetta è aggiunto.
   if (resolved.kind === "table") {
     return (
       <figure className="space-y-1">
         <MarkdownRenderer source={resolved.payload.markdown} />
-        {resolved.payload.caption && (
-          <figcaption className="text-xs italic text-muted-foreground">
-            {resolved.payload.caption}
-          </figcaption>
-        )}
+        <figcaption className="text-xs italic text-muted-foreground">
+          <span className="figure-label font-semibold not-italic">
+            {t("courses.figures.table.labelUnnumbered")}
+          </span>
+          {resolved.payload.caption ? ` ${resolved.payload.caption}` : ""}
+        </figcaption>
       </figure>
     );
   }
 
   if (resolved.kind === "equation") {
     // Renderer unificato: formula nuda o blocco teorema (enunciato +
-    // dimostrazione a passaggi), identico alle Dispense.
+    // dimostrazione a passaggi), identico alle Dispense ma senza numero.
     return <EquationBlock equation={resolved.payload} />;
   }
 
@@ -230,9 +235,12 @@ function SlideAssetRender({
     const ex = resolved.payload;
     return (
       <div className="rounded-md border border-border bg-muted/20 p-3">
-        {ex.title && (
-          <h5 className="mb-1 text-sm font-semibold">{ex.title}</h5>
-        )}
+        <h5 className="mb-1 text-sm font-semibold">
+          <span className="figure-label">
+            {t("courses.figures.example.labelUnnumbered")}
+          </span>
+          {ex.title ? ` ${ex.title}` : ""}
+        </h5>
         <MarkdownRenderer source={ex.content} />
       </div>
     );

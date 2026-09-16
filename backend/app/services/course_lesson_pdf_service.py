@@ -49,14 +49,16 @@ del PDF (sfondo edge-to-edge, header running, page counter) è basato
 su CSS Paged Media puro — niente JavaScript, niente Chromium per il
 rendering finale.
 """
+
 from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import re
 import sys
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
@@ -71,7 +73,7 @@ from mdit_py_plugins.dollarmath import dollarmath_plugin
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from weasyprint import HTML as WeasyHTML
+from weasyprint import HTML
 
 from app.core.audit import write_audit
 from app.core.config import get_settings
@@ -90,10 +92,17 @@ from app.models.user import User
 # servita dal `__getattr__` di modulo in coda al file.
 from app.services import figure_render_service, remote_storage
 from app.services import mermaid_prerender as _mermaid_prerender
+from app.services.asset_ref_normalize import cite_asset_refs, normalize_asset_refs
 from app.services.figure_markup import FigureVariant, render_figure_html
-from app.services.figure_numbering import append_uncited_figure_refs, compute_figure_numbers
+from app.services.figure_numbering import (
+    ASSET_KINDS,
+    append_uncited_asset_refs,
+    compute_asset_numbers,
+    equation_label_family,
+    proof_steps,
+)
 from app.services.figure_render_service import RENDERABLE_FORMATS
-from app.services.figure_theme import figure_labels
+from app.services.figure_theme import asset_label, asset_ref, figure_labels
 from app.services.mermaid_prerender import (  # noqa: F401
     _MERMAID_JUNK_LINE_RE,
     _MERMAID_MAX_WIDTH_RE,
@@ -176,9 +185,7 @@ def _eager_full_options() -> list:
     ]
 
 
-async def load_course_full(
-    db: AsyncSession, *, course_id: uuid.UUID
-) -> Course | None:
+async def load_course_full(db: AsyncSession, *, course_id: uuid.UUID) -> Course | None:
     res = await db.execute(
         select(Course).where(Course.id == course_id).options(*_eager_full_options())
     )
@@ -262,9 +269,7 @@ async def _resolve_pdf_template_for_lesson(
     return await _get_default_pdf_template(db, organization_id=organization_id)
 
 
-async def _get_organization(
-    db: AsyncSession, organization_id: uuid.UUID
-) -> Organization | None:
+async def _get_organization(db: AsyncSession, organization_id: uuid.UUID) -> Organization | None:
     return await db.get(Organization, organization_id)
 
 
@@ -346,9 +351,7 @@ def _normalize_math_source(latex: str) -> str:
         s = f"\\begin{{{end_m.group(1)}}} {s}"
     elif begin_m and not end_m:
         s = f"{s} \\end{{{begin_m.group(1)}}}"
-    elif not begin_m and not end_m and (
-        re.search(r"\\\\", s) or re.search(r"(?<!\\)&", s)
-    ):
+    elif not begin_m and not end_m and (re.search(r"\\\\", s) or re.search(r"(?<!\\)&", s)):
         s = f"\\begin{{aligned}} {s} \\end{{aligned}}"
     return s.strip()
 
@@ -568,9 +571,7 @@ def render_markdown(source: str, math_svg_map: dict | None = None) -> str:
     markdown-it. Se omessa, le formule ricadono su MathML."""
     if not source:
         return ""
-    return _md_renderer.render(
-        _normalize_math_delimiters(source), {"math_svg": math_svg_map}
-    )
+    return _md_renderer.render(_normalize_math_delimiters(source), {"math_svg": math_svg_map})
 
 
 # ---------------------------------------------------------------------------
@@ -718,16 +719,42 @@ def _render_visual_asset_block(
     )
 
 
+def _label_span(labels: Mapping[str, str], kind: str, number: int | None, **kw: str) -> str:
+    """`<span class="figure-label">Tabella 3.</span>` (o «Tabella.» senza
+    numero, A2): l'etichetta del blocco è sempre presente, anche senza
+    didascalia, come per le figure (D3, D5)."""
+    text = _html_escape_text(asset_label(labels, kind, number, **kw))
+    return f'<span class="figure-label">{text}</span>'
+
+
 def _render_table_block(
-    table: dict[str, Any], *, math_svg_map: dict | None = None
+    table: dict[str, Any],
+    *,
+    math_svg_map: dict | None = None,
+    number: int | None = None,
+    labels: Mapping[str, str] | None = None,
+    language: str = "it",
 ) -> str:
+    """Blocco tabella con la didascalia «Tabella N.» (`number` None →
+    «Tabella.», slide e frame video); `labels` è la mappa di
+    `figure_labels(language)`."""
+    labels = labels if labels is not None else figure_labels(language)
     md = (table.get("markdown") or "").strip()
     caption = table.get("caption") or ""
     table_html = render_markdown(md, math_svg_map) if md else ""
-    caption_html = (
-        f'<figcaption>{_html_escape_text(caption)}</figcaption>' if caption else ""
+    caption_text = f" {_html_escape_text(caption)}" if caption else ""
+    caption_html = f"<figcaption>{_label_span(labels, 'TAB', number)}{caption_text}</figcaption>"
+    return (
+        f'<figure class="table"><div class="figure-body">{table_html}</div>{caption_html}</figure>'
     )
-    return f'<figure class="table"><div class="figure-body">{table_html}</div>{caption_html}</figure>'
+
+
+def _theorem_kind_word(eq: Mapping[str, Any], pdf_labels: Mapping[str, str]) -> str:
+    """Parola del kind del blocco teorema («Lemma», «Teorema» di fallback)
+    dalla mappa `_labels_for(language)`: unico punto per l'intestazione
+    del blocco e per il rimando in linea («Lemma 2»)."""
+    kind = str(eq.get("kind") or "formula").strip().lower()
+    return pdf_labels.get(f"kind_{kind}", pdf_labels.get("kind_theorem", "Teorema"))
 
 
 def _render_equation_block(
@@ -735,106 +762,109 @@ def _render_equation_block(
     *,
     math_svg_map: dict | None = None,
     language: str = "it",
+    number: int | None = None,
+    labels: Mapping[str, str] | None = None,
 ) -> str:
+    """Blocco equazione: formula nuda con «Equazione N.» (famiglia `EQ`)
+    oppure teorema con «Lemma N.» (famiglia `THM`, `equation_label_family`);
+    `number` None → «Equazione.» / sola parola del kind (slide e frame
+    video, byte-identico a prima per i teoremi). `labels` è la mappa di
+    `figure_labels(language)`; le parole dei kind vengono da
+    `_labels_for(language)` (`pdf_labels`)."""
+    labels = labels if labels is not None else figure_labels(language)
     latex = (eq.get("latex") or "").strip()
     label = (eq.get("label") or "").strip()
     explanation = (eq.get("explanation") or "").strip()
     kind = (eq.get("kind") or "formula").strip().lower()
     statement = (eq.get("statement") or "").strip()
-    proof = eq.get("proof") or []
 
     formula_html = (
         f'<div class="math-block">'
-        f'{_render_math(latex, display="block", svg_map=math_svg_map)}</div>'
+        f"{_render_math(latex, display='block', svg_map=math_svg_map)}</div>"
         if latex
         else ""
     )
 
-    proof_steps = [
-        s
-        for s in proof
-        if isinstance(s, dict)
-        and ((s.get("latex") or "").strip() or (s.get("text") or "").strip())
-    ]
-    has_proof = bool(proof_steps)
+    steps = proof_steps(eq)
+    has_proof = bool(steps)
 
     # Caso semplice (retro-compatibile): formula "nuda" senza enunciato né
-    # dimostrazione → rendering attuale (formula + caption label/explanation).
-    if not statement and not has_proof:
-        caption_inner = ""
+    # dimostrazione → formula + didascalia «Equazione N.» sempre presente,
+    # poi label/explanation dell'autore.
+    if equation_label_family(eq) == "EQ":
+        caption_inner = _label_span(labels, "EQ", number)
         if label:
-            caption_inner += f'<span class="label">{_html_escape_text(label)}</span>'
+            caption_inner += f' <span class="label">{_html_escape_text(label)}</span>'
         if explanation:
             # Reso come markdown → math inline `$..$` tipografato (SVG).
             caption_inner += (
-                f'<div class="explanation">'
-                f"{render_markdown(explanation, math_svg_map)}</div>"
+                f'<div class="explanation">{render_markdown(explanation, math_svg_map)}</div>'
             )
-        caption_html = (
-            f"<figcaption>{caption_inner}</figcaption>" if caption_inner else ""
-        )
         return (
             f'<figure class="equation"><div class="figure-body">{formula_html}</div>'
-            f"{caption_html}</figure>"
+            f"<figcaption>{caption_inner}</figcaption></figure>"
         )
 
-    # Blocco teorema/proposizione/definizione: intestazione + enunciato +
-    # formula + (eventuale) dimostrazione a passaggi.
-    labels = _labels_for(language)
-    kind_label = labels.get(f"kind_{kind}", labels.get("kind_theorem", "Teorema"))
-    head = kind_label + (f" {_html_escape_text(label)}" if label else "")
+    # Blocco teorema/proposizione/definizione: intestazione «Lemma N.» +
+    # enunciato + formula + (eventuale) dimostrazione a passaggi.
+    pdf_labels = _labels_for(language)
+    kind_word = _theorem_kind_word(eq, pdf_labels)
+    head = _html_escape_text(asset_label(labels, "THM", number, kind_word=kind_word))
+    head += f" {_html_escape_text(label)}" if label else ""
     parts = [f'<div class="theorem-head">{head}</div>']
     if statement:
         parts.append(
-            f'<div class="theorem-statement">'
-            f"{render_markdown(statement, math_svg_map)}</div>"
+            f'<div class="theorem-statement">{render_markdown(statement, math_svg_map)}</div>'
         )
     if formula_html:
         parts.append(formula_html)
     if has_proof:
-        proof_parts = [
-            f'<div class="proof-head">{_html_escape_text(labels.get("proof", "Dimostrazione"))}.</div>'
-        ]
-        for step in proof_steps:
+        proof_head = _html_escape_text(pdf_labels.get("proof", "Dimostrazione"))
+        proof_parts = [f'<div class="proof-head">{proof_head}.</div>']
+        for step in steps:
             slatex = (step.get("latex") or "").strip()
             stext = (step.get("text") or "").strip()
             step_html = '<div class="proof-step">'
             if stext:
                 step_html += (
-                    f'<div class="proof-step-text">'
-                    f"{render_markdown(stext, math_svg_map)}</div>"
+                    f'<div class="proof-step-text">{render_markdown(stext, math_svg_map)}</div>'
                 )
             if slatex:
                 step_html += (
                     f'<div class="math-block">'
-                    f'{_render_math(slatex, display="block", svg_map=math_svg_map)}</div>'
+                    f"{_render_math(slatex, display='block', svg_map=math_svg_map)}</div>"
                 )
             step_html += "</div>"
             proof_parts.append(step_html)
         proof_parts.append('<div class="proof-qed">&#8718;</div>')
         parts.append(f'<div class="proof">{"".join(proof_parts)}</div>')
     if explanation:
-        parts.append(
-            f"<figcaption>{render_markdown(explanation, math_svg_map)}</figcaption>"
-        )
+        parts.append(f"<figcaption>{render_markdown(explanation, math_svg_map)}</figcaption>")
     return (
         f'<figure class="equation theorem" data-kind="{_html_escape_text(kind)}">'
-        f'{"".join(parts)}</figure>'
+        f"{''.join(parts)}</figure>"
     )
 
 
 def _render_example_block(
-    example: dict[str, Any], *, math_svg_map: dict | None = None
+    example: dict[str, Any],
+    *,
+    math_svg_map: dict | None = None,
+    number: int | None = None,
+    labels: Mapping[str, str] | None = None,
+    language: str = "it",
 ) -> str:
+    """Blocco esempio con la barra del titolo «Esempio N.» sempre presente
+    (`number` None → «Esempio.», slide e frame video); `labels` è la mappa
+    di `figure_labels(language)`."""
+    labels = labels if labels is not None else figure_labels(language)
     title = (example.get("title") or "").strip()
     content = (example.get("content") or "").strip()
     inner_html = render_markdown(content, math_svg_map) if content else ""
-    title_html = (
-        f'<div class="example-title">{_html_escape_text(title)}</div>'
-        if title
-        else ""
-    )
-    return f'<aside class="example">{title_html}<div class="example-body">{inner_html}</div></aside>'
+    title_text = f" {_html_escape_text(title)}" if title else ""
+    title_html = f'<div class="example-title">{_label_span(labels, "EX", number)}{title_text}</div>'
+    body_html = f'<div class="example-body">{inner_html}</div>'
+    return f'<aside class="example">{title_html}{body_html}</aside>'
 
 
 def _asset_key(asset_id: object) -> str:
@@ -849,7 +879,7 @@ def _build_asset_html_map(
     visual_svg_map: dict[str, str] | None = None,
     math_svg_map: dict | None = None,
     language: str = "it",
-    figure_numbers: Mapping[str, int] | None = None,
+    asset_numbers: Mapping[tuple[str, str], int] | None = None,
     labels: Mapping[str, str] | None = None,
     lesson_code: str | None = None,
 ) -> dict[tuple[str, str], str]:
@@ -859,16 +889,17 @@ def _build_asset_html_map(
     `[KIND:id]` nel testo e l'id dichiarato dell'asset sono generati
     dall'AI con case e spazi non sempre coerenti (es. asset `TAB_x`
     referenziato come `[TAB:tab_x]`, o `[FIG: A ]`). Il lookup in
-    `_substitute_asset_refs` e `compute_figure_numbers` normalizzano nello
+    `_substitute_asset_refs` e `compute_asset_numbers` normalizzano nello
     stesso modo.
 
     `visual_svg_map` è il dict {asset_id → svg} prodotto da
     `_prerender_visual_assets_for_lesson` (tutti i formati renderizzabili).
-    Se omesso, le figure vanno in fallback testuale. `figure_numbers` è la
-    mappa `{id_lower → N}` di `compute_figure_numbers` (l'ordine dell'array
-    qui non conta: il numero è legato all'id) e `labels` la mappa di
-    `figure_labels(language)`."""
-    numbers = figure_numbers or {}
+    Se omesso, le figure vanno in fallback testuale. `asset_numbers` è la
+    mappa `{(KIND, id_lower) → N}` di `compute_asset_numbers` (contatore
+    per kind; l'ordine dell'array qui non conta: il numero è legato
+    all'id) e `labels` la mappa di `figure_labels(language)`; senza numero
+    il blocco porta la forma non numerata («Tabella.», A2)."""
+    numbers = asset_numbers or {}
     figure_i18n = labels if labels is not None else figure_labels(language)
     out: dict[tuple[str, str], str] = {}
     for asset in content.get("visual_assets") or []:
@@ -876,25 +907,84 @@ def _build_asset_html_map(
         out[("FIG", key)] = _render_visual_asset_block(
             asset,
             visual_svg_map=visual_svg_map,
-            number=numbers.get(key),
+            number=numbers.get(("FIG", key)),
             labels=figure_i18n,
             variant="lesson",
             language=language,
             lesson_code=lesson_code,
         )
     for table in content.get("tables") or []:
-        out[("TAB", _asset_key(table.get("table_id")))] = _render_table_block(
-            table, math_svg_map=math_svg_map
+        key = _asset_key(table.get("table_id"))
+        out[("TAB", key)] = _render_table_block(
+            table,
+            math_svg_map=math_svg_map,
+            number=numbers.get(("TAB", key)),
+            labels=figure_i18n,
+            language=language,
         )
     for eq in content.get("equations") or []:
-        out[("EQ", _asset_key(eq.get("equation_id")))] = _render_equation_block(
-            eq, math_svg_map=math_svg_map, language=language
+        key = _asset_key(eq.get("equation_id"))
+        out[("EQ", key)] = _render_equation_block(
+            eq,
+            math_svg_map=math_svg_map,
+            language=language,
+            number=numbers.get(("EQ", key)),
+            labels=figure_i18n,
         )
     for ex in content.get("examples") or []:
-        out[("EX", _asset_key(ex.get("example_id")))] = _render_example_block(
-            ex, math_svg_map=math_svg_map
+        key = _asset_key(ex.get("example_id"))
+        out[("EX", key)] = _render_example_block(
+            ex,
+            math_svg_map=math_svg_map,
+            number=numbers.get(("EX", key)),
+            labels=figure_i18n,
+            language=language,
         )
     return out
+
+
+def _asset_ids_by_kind(content: dict[str, Any]) -> dict[str, list[str]]:
+    """Id dichiarati per kind, nell'ordine degli array (`visual_assets`,
+    `tables`, `equations`, `examples`): input di `append_uncited_asset_refs`
+    e `compute_asset_numbers`."""
+    fields = {
+        "FIG": ("visual_assets", "asset_id"),
+        "TAB": ("tables", "table_id"),
+        "EQ": ("equations", "equation_id"),
+        "EX": ("examples", "example_id"),
+    }
+    return {
+        kind: [
+            str(item.get(id_field) or "")
+            for item in content.get(field) or []
+            if isinstance(item, dict)
+        ]
+        for kind, (field, id_field) in fields.items()
+    }
+
+
+def _asset_reference_fn(
+    content: dict[str, Any],
+    *,
+    figure_i18n: Mapping[str, str],
+    pdf_labels: Mapping[str, str],
+) -> Callable[[str, str, int], str]:
+    """Callable `reference(kind, id_lower, n)` del normalizzatore: «Figura
+    2», «Tabella 1», e per un `[EQ:id]` in famiglia teorema la parola del
+    kind («Lemma 2», stessa di `_render_equation_block`)."""
+    theorem_words = {
+        _asset_key(eq.get("equation_id")): _theorem_kind_word(eq, pdf_labels)
+        for eq in content.get("equations") or []
+        if isinstance(eq, dict) and equation_label_family(eq) == "THM"
+    }
+
+    def reference(kind: str, id_lower: str, n: int) -> str:
+        word = theorem_words.get(id_lower) if kind == "EQ" else None
+        if word:
+            return asset_ref(figure_i18n, "THM", n, kind_word=word)
+        return asset_ref(figure_i18n, kind, n)
+
+    return reference
 
 
 # ---------------------------------------------------------------------------
@@ -941,7 +1031,9 @@ _prerender_mermaid_for_lesson = _prerender_visual_assets_for_lesson
 # ---------------------------------------------------------------------------
 
 _MATHJAX_RENDERER_HTML = """<!doctype html>
-<html><head><meta charset="utf-8"><style>body{margin:0;padding:0;font-family:"Noto Sans CJK JP","Noto Sans","DejaVu Sans",sans-serif;}</style></head>
+<html><head><meta charset="utf-8">
+<style>body{margin:0;padding:0;
+font-family:"Noto Sans CJK JP","Noto Sans","DejaVu Sans",sans-serif;}</style></head>
 <body>
 <script>
 // Config PRIMA del load. fontCache:'none' → ogni SVG è autonomo (glyph
@@ -996,15 +1088,11 @@ async def _prerender_math_to_svg_batch_async(
         browser = await pw.chromium.launch(args=["--no-sandbox"])
         try:
             page = await browser.new_page()
-            await page.set_content(
-                _MATHJAX_RENDERER_HTML, wait_until="domcontentloaded"
-            )
+            await page.set_content(_MATHJAX_RENDERER_HTML, wait_until="domcontentloaded")
             try:
                 # MathJax tex-svg.js è ~1MB: timeout più ampio del Mermaid.
-                await page.wait_for_function(
-                    "window.__mathReady === true", timeout=20_000
-                )
-            except Exception as exc:  # noqa: BLE001 — CDN irraggiungibile
+                await page.wait_for_function("window.__mathReady === true", timeout=20_000)
+            except Exception as exc:  # CDN irraggiungibile
                 log.warning("mathjax_renderer_setup_failed", error=str(exc))
                 return [None] * len(items)
 
@@ -1017,13 +1105,9 @@ async def _prerender_math_to_svg_batch_async(
                         "([code, disp]) => window.__renderMath(code, disp)",
                         [latex, display == "block"],
                     )
-                    results.append(
-                        svg if (isinstance(svg, str) and svg.strip()) else None
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    log.warning(
-                        "math_render_failed", error=str(exc), preview=latex[:80]
-                    )
+                    results.append(svg if (isinstance(svg, str) and svg.strip()) else None)
+                except Exception as exc:
+                    log.warning("math_render_failed", error=str(exc), preview=latex[:80])
                     results.append(None)
         finally:
             await browser.close()
@@ -1043,10 +1127,8 @@ def _prerender_math_to_svg_batch_sync(
     try:
         return loop.run_until_complete(_prerender_math_to_svg_batch_async(items))
     finally:
-        try:
+        with contextlib.suppress(Exception):
             loop.close()
-        except Exception:  # noqa: BLE001
-            pass
 
 
 async def _prerender_math_to_svg_batch(
@@ -1137,9 +1219,7 @@ async def _prerender_math_for_lesson(content: dict[str, Any]) -> MathSvgMap:
     return out
 
 
-def _substitute_asset_refs(
-    md_source: str, asset_html_map: dict[tuple[str, str], str]
-) -> str:
+def _substitute_asset_refs(md_source: str, asset_html_map: dict[tuple[str, str], str]) -> str:
     """Sostituisce ogni `[KIND:id]` con il blocco HTML pre-renderizzato.
     Il blocco è inserito su righe proprie (con righe vuote prima/dopo)
     in modo che markdown-it lo riconosca come HTML block-level."""
@@ -1237,9 +1317,7 @@ def _resolve_template_asset_url(
     # WeasyPrint/Playwright non devono fare fetch HTTP a runtime.
     del public_base_url  # strategia #3 (fetch HTTP) deprecata: ora si embedda
     try:
-        data = remote_storage.get_storage().download_bytes(
-            remote_storage.uploads_key(raw)
-        )
+        data = remote_storage.get_storage().download_bytes(remote_storage.uploads_key(raw))
     except remote_storage.StorageFileNotFound:
         log.warning("pdf_template_asset_missing", path=raw)
         return None
@@ -1347,12 +1425,8 @@ def _compute_template_margins_cm(tpl_dict: dict[str, Any]) -> dict[str, float]:
     header_h_mm = int(tpl_dict.get("header_height_mm", 0))
     footer_h_mm = int(tpl_dict.get("footer_height_mm", 0))
 
-    has_running_header = bool(
-        tpl_dict.get("logo_left_url") or tpl_dict.get("logo_right_url")
-    )
-    top_mm = (
-        max(margin_mm, header_h_mm + 5) if has_running_header else margin_mm
-    )
+    has_running_header = bool(tpl_dict.get("logo_left_url") or tpl_dict.get("logo_right_url"))
+    top_mm = max(margin_mm, header_h_mm + 5) if has_running_header else margin_mm
     # Footer riservato sempre per page counter — anche se template non ha
     # footer_height_mm > 0, lasciamo almeno `margin_mm` di spazio.
     bottom_mm = max(margin_mm, footer_h_mm + 5) if footer_h_mm > 0 else margin_mm
@@ -1414,10 +1488,7 @@ def _format_lesson_code_label(lesson_code: str | None, labels: dict[str, str]) -
     m = re.match(r"^M(\d+)\.L(\d+)$", (lesson_code or "").strip())
     if not m:
         return lesson_code or ""
-    return (
-        f"{labels['module']} {int(m.group(1))} - "
-        f"{labels['lesson']} {int(m.group(2))}"
-    )
+    return f"{labels['module']} {int(m.group(1))} - {labels['lesson']} {int(m.group(2))}"
 
 
 def render_lesson_html(
@@ -1445,12 +1516,19 @@ def render_lesson_html(
     `_prerender_visual_assets_for_lesson`. Indipendente dal DB e dal
     worker: testabile in isolamento.
 
-    Numerazione D4: il corpo (introduzione → sezioni → sintesi) riceve in
-    coda i tag `[FIG:id]` degli asset mai citati (A12), poi
-    `compute_figure_numbers` assegna «Figura N.» per id nell'ordine di
-    prima citazione; la mappa degli asset è costruita DOPO, con i numeri.
-    `key_takeaways` e `references` non partecipano (il template li rende
-    senza sostituzione dei tag), come nel frontend.
+    Numerazione D3/D4 e rimandi D1/D2: il corpo (introduzione → sezioni →
+    sintesi) riceve in coda i tag `[KIND:id]` degli asset mai citati
+    (figure, tabelle, equazioni, esempi; ordine FIG → TAB → EQ → EX, A12),
+    poi `compute_asset_numbers` assegna N per kind nell'ordine di prima
+    citazione, sul corpo NON ancora normalizzato; la mappa degli asset è
+    costruita DOPO, con i numeri. Solo allora `normalize_asset_refs`
+    riscrive ogni citazione in linea nel rimando testuale («Figura 2»,
+    «Tabella 1», «Lemma 2») e lascia/inserisce un'unica ancora su riga
+    propria per asset, che `_substitute_asset_refs` sostituisce con il
+    blocco: dopo la normalizzazione gli unici tag risolvibili nel corpo
+    sono ancore. La coda (`key_takeaways`, `references[].citation`) riceve
+    solo rimandi testuali (`cite_asset_refs`), mai blocchi, su entrambi i
+    lati (frontend `LessonContentView`): i numeri restano quelli del corpo.
     """
     raw = lesson.content_raw or {}
     if not raw:
@@ -1461,32 +1539,43 @@ def render_lesson_html(
 
     language = (course.language_code or "it").lower()
     labels = _labels_for(language)
+    figure_i18n = figure_labels(language)
     svg_map = {**(mermaid_svg_map or {}), **(visual_svg_map or {})}
 
-    asset_ids = [
-        str(a.get("asset_id") or "") for a in raw.get("visual_assets") or [] if isinstance(a, dict)
-    ]
+    ids_by_kind = _asset_ids_by_kind(raw)
     body_md = _build_lesson_body_markdown(raw)
-    body_md = append_uncited_figure_refs(body_md, asset_ids)
-    figure_numbers = compute_figure_numbers(body_md, asset_ids)
+    body_md = append_uncited_asset_refs(body_md, ids_by_kind)
+    asset_numbers = compute_asset_numbers(body_md, ids_by_kind)
     asset_map = _build_asset_html_map(
         raw,
         visual_svg_map=svg_map,
         math_svg_map=math_svg_map,
         language=language,
-        figure_numbers=figure_numbers,
-        labels=figure_labels(language),
+        asset_numbers=asset_numbers,
+        labels=figure_i18n,
         lesson_code=lesson.lesson_code,
     )
+    numbers: dict[str, dict[str, int]] = {kind: {} for kind in ASSET_KINDS}
+    for (kind, asset_id), n in asset_numbers.items():
+        numbers[kind][asset_id] = n
+    reference = _asset_reference_fn(raw, figure_i18n=figure_i18n, pdf_labels=labels)
     body_md = _replace_summary_heading(body_md, labels["summary"])
+    body_md = normalize_asset_refs(body_md, numbers=numbers, reference=reference)
     body_md = _substitute_asset_refs(body_md, asset_map)
     body_html = render_markdown(body_md, math_svg_map)
 
+    def _cite(text: object) -> str:
+        return cite_asset_refs(str(text or ""), numbers=numbers, reference=reference)
+
+    key_takeaways = [_cite(kt) for kt in raw.get("key_takeaways") or []]
+    references = [
+        {**r, "citation": _cite(r.get("citation"))} if isinstance(r, dict) else r
+        for r in raw.get("references") or []
+    ]
+
     tpl_dict: dict[str, Any]
     if pdf_template is not None:
-        tpl_dict = _format_pdf_template_for_render(
-            pdf_template, public_base_url=public_base_url
-        )
+        tpl_dict = _format_pdf_template_for_render(pdf_template, public_base_url=public_base_url)
     else:
         tpl_dict = _default_template_dict(language=language)
 
@@ -1513,8 +1602,8 @@ def render_lesson_html(
         margin_bottom_cm=margins_cm["margin_bottom_cm"],
         max_figure_height_cm=margins_cm["max_figure_height_cm"],
         body_html=body_html,
-        key_takeaways=raw.get("key_takeaways") or [],
-        references=raw.get("references") or [],
+        key_takeaways=key_takeaways,
+        references=references,
     )
     return html
 
@@ -1524,9 +1613,7 @@ def render_lesson_html(
 # ---------------------------------------------------------------------------
 
 
-def _render_with_weasyprint_sync(
-    html: str, *, base_url: str | None = None
-) -> bytes:
+def _render_with_weasyprint_sync(html: str, *, base_url: str | None = None) -> bytes:
     """Render sincrono HTML → PDF via WeasyPrint.
 
     Niente JavaScript (WeasyPrint non lo esegue): tutta la logica
@@ -1539,7 +1626,7 @@ def _render_with_weasyprint_sync(
     relativi per immagini (loghi/sfondo). Nel flusso normale gli asset
     sono embedded come data: URL e `base_url=None` va bene.
     """
-    return WeasyHTML(string=html, base_url=base_url).write_pdf()
+    return HTML(string=html, base_url=base_url).write_pdf()
 
 
 async def generate_pdf_bytes(
@@ -1678,8 +1765,7 @@ async def request_lesson_pdf(
         )
     if lesson.pdf_status not in VALID_PDF_REQUEST_STATUSES:
         raise ConflictError(
-            f"Export PDF già in corso per {lesson.lesson_code}: "
-            f"{lesson.pdf_status}",
+            f"Export PDF già in corso per {lesson.lesson_code}: {lesson.pdf_status}",
             code="pdf_already_in_progress",
         )
 
@@ -1709,9 +1795,7 @@ async def request_lesson_pdf(
         metadata={
             "course_id": str(course.id),
             "lesson_code": lesson.lesson_code,
-            "pdf_template_id": (
-                str(pdf_template_id) if pdf_template_id else None
-            ),
+            "pdf_template_id": (str(pdf_template_id) if pdf_template_id else None),
         },
     )
     await db.commit()
@@ -1781,9 +1865,7 @@ async def request_all_lessons_pdf(
         target_id=str(course.id),
         metadata={
             "lessons_count": len(eligible),
-            "pdf_template_id": (
-                str(pdf_template_id) if pdf_template_id else None
-            ),
+            "pdf_template_id": (str(pdf_template_id) if pdf_template_id else None),
         },
     )
     await db.commit()
@@ -1818,7 +1900,7 @@ async def cancel_all_pdf_exports(
             target_type="course",
             target_id=str(course.id),
             metadata={
-                "cancelled_lesson_codes": [l.lesson_code for l in affected],
+                "cancelled_lesson_codes": [item.lesson_code for item in affected],
             },
         )
     await db.commit()
@@ -1827,9 +1909,7 @@ async def cancel_all_pdf_exports(
 
 async def _refresh_course_full(db: AsyncSession, course: Course) -> Course:
     res = await db.execute(
-        select(Course)
-        .where(Course.id == course.id)
-        .options(*_eager_full_options())
+        select(Course).where(Course.id == course.id).options(*_eager_full_options())
     )
     return res.scalar_one()
 

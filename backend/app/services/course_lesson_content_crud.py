@@ -12,7 +12,6 @@ correzioni granulari.
 
 from __future__ import annotations
 
-import re
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -36,9 +35,6 @@ log = get_logger("app.course_lesson_content_crud")
 
 # Stati della lezione da cui è ammesso l'edit manuale del content_raw.
 EDITABLE_LESSON_STATUSES = ("ready", "approved")
-
-
-_ASSET_REF_RE = re.compile(r"\[(FIG|TAB|EQ|EX):([^\]]+)\]")
 
 
 def _ensure_editable(lesson: CourseLesson) -> None:

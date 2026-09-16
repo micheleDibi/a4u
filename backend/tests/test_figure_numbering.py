@@ -1,15 +1,22 @@
-"""`figure_numbering` (D4, Q2): casi della fixture condivisa con il frontend
-(`tests/fixtures/figure_numbering_cases.json`, specchio di
+"""`figure_numbering` (D3, D4, Q2): casi della fixture condivisa con il
+frontend (`tests/fixtures/figure_numbering_cases.json`, specchio di
 `lib/figureNumbering.ts`) e proprietà del modulo.
 
 - prima citazione → N crescente; citazioni ripetute → stesso N;
 - id senza asset → nessun numero consumato;
-- `FIG` case-sensitive (`[fig:x]` ignorato), id case-insensitive;
-- asset non citati accodati dopo il testo in ordine di array (A12) e
-  numerati dopo le citate;
+- kind case-sensitive (`[fig:x]` ignorato), id case-insensitive;
+- contatore indipendente per kind (`asset_cases`): «Figura 1» e
+  «Tabella 1» convivono, `[EQ:f]` e `[EQ:t]` condividono il contatore EQ;
+- asset non citati accodati dopo il testo in ordine FIG → TAB → EQ → EX e,
+  dentro il kind, di array (A12, D3), numerati dopo i citati;
+- `equation_label_family`: `THM` se enunciato o passo di dimostrazione non
+  vuoti, altrimenti `EQ` (il `kind` da solo non decide);
 - `strip_figure_prefix` con cifra obbligatoria e separatore obbligatorio
   dopo il numero (o fine del testo), solo a render: mai «lossy» su una
   frase («Figure 2 shows the flow»).
+
+Il runner Node delle sezioni `asset_cases` ed `equation_label_family`
+fallisce (non salta) finché la copia frontend non le implementa.
 """
 
 from __future__ import annotations
@@ -27,6 +34,8 @@ _FIXTURE = Path(__file__).parent / "fixtures" / "figure_numbering_cases.json"
 _DATA = json.loads(_FIXTURE.read_text(encoding="utf-8"))
 _CASES = _DATA["cases"]
 _STRIP = _DATA["strip_prefix"]
+_ASSET_CASES = _DATA["asset_cases"]
+_FAMILY = _DATA["equation_label_family"]
 _FRONTEND_MODULE = (
     Path(__file__).resolve().parents[2] / "frontend" / "src" / "lib" / "figureNumbering.ts"
 )
@@ -49,6 +58,50 @@ for (const p of data.strip_prefix) out.strip_prefix.push(fn.stripFigurePrefix(p.
 process.stdout.write(JSON.stringify(out));
 """
 
+# Sezioni dei quattro kind (D3) e del ramo teorema (B2): `computeAssetNumbers`
+# ritorna una `Map` con chiave `KIND:id_lower`, serializzata come oggetto.
+_FRONTEND_ASSET_RUNNER = """
+import * as fn from {module!r};
+import {{ readFileSync }} from "node:fs";
+const data = JSON.parse(readFileSync({fixture!r}, "utf8"));
+const out = {{ asset_cases: [], equation_label_family: [] }};
+for (const c of data.asset_cases) {{
+  const appended = fn.appendUncitedAssetRefs(c.markdown, c.ids_by_kind);
+  out.asset_cases.push({{
+    appended,
+    numbers: Object.fromEntries(fn.computeAssetNumbers(appended, c.ids_by_kind)),
+  }});
+}}
+for (const c of data.equation_label_family) {{
+  out.equation_label_family.push(fn.equationLabelFamily(c.equation));
+}}
+process.stdout.write(JSON.stringify(out));
+"""
+
+
+def _serialized_numbers(numbers: dict[tuple[str, str], int]) -> dict[str, int]:
+    return {f"{kind}:{asset_id}": n for (kind, asset_id), n in numbers.items()}
+
+
+def _run_frontend(script_template: str) -> dict:
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node non disponibile: parità frontend non eseguibile")
+    if not _FRONTEND_MODULE.is_file():
+        pytest.skip(f"copia frontend assente: {_FRONTEND_MODULE}")
+    script = script_template.format(module=str(_FRONTEND_MODULE), fixture=str(_FIXTURE))
+    proc = subprocess.run(
+        [node, "--no-warnings", "--experimental-strip-types", "--input-type=module", "-e", script],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    if proc.returncode != 0 and "strip-types" in proc.stderr:
+        pytest.skip(f"node senza --experimental-strip-types: {proc.stderr.strip()[:200]}")
+    assert proc.returncode == 0, proc.stderr
+    return json.loads(proc.stdout)
+
 
 @pytest.mark.parametrize("case", _CASES, ids=[c["name"] for c in _CASES])
 def test_fixture_case(case: dict) -> None:
@@ -60,6 +113,78 @@ def test_fixture_case(case: dict) -> None:
 @pytest.mark.parametrize("pair", _STRIP, ids=[p["input"] or "vuoto" for p in _STRIP])
 def test_strip_prefix_fixture(pair: dict) -> None:
     assert fn.strip_figure_prefix(pair["input"]) == pair["output"]
+
+
+@pytest.mark.parametrize("case", _ASSET_CASES, ids=[c["name"] for c in _ASSET_CASES])
+def test_asset_fixture_case(case: dict) -> None:
+    appended = fn.append_uncited_asset_refs(case["markdown"], case["ids_by_kind"])
+    assert appended == case["appended"]
+    numbers = fn.compute_asset_numbers(appended, case["ids_by_kind"])
+    assert _serialized_numbers(numbers) == case["numbers"]
+    # Le chiavi sono coppie (KIND, id_lower) e i numeri restano interi.
+    assert all(isinstance(k, tuple) and len(k) == 2 for k in numbers)
+
+
+@pytest.mark.parametrize("case", _FAMILY, ids=[c["name"] for c in _FAMILY])
+def test_equation_label_family_fixture(case: dict) -> None:
+    assert fn.equation_label_family(case["equation"]) == case["family"]
+
+
+def test_asset_fixture_covers_the_required_scenarios() -> None:
+    names = " ".join(c["name"] for c in _ASSET_CASES)
+    for needle in (
+        "stesso id in kind diversi",
+        "condividono il contatore EQ",
+        "[TAB:ghost]",
+        "ripetute",
+        "FIG → TAB → EQ → EX",
+        "[fig:x]",
+    ):
+        assert needle in names, needle
+    assert len(_FAMILY) >= 7
+
+
+def test_figure_numbers_are_the_fig_projection_of_asset_numbers() -> None:
+    """`compute_figure_numbers` e `append_uncited_figure_refs` restano
+    proiezioni FIG: stessi risultati di prima su ogni caso della fixture
+    storica (la numerazione delle lezioni esistenti non cambia)."""
+    for case in _CASES:
+        ids = {"FIG": case["asset_ids"]}
+        assert fn.append_uncited_asset_refs(case["markdown"], ids) == case["appended"]
+        numbers = fn.compute_asset_numbers(case["appended"], ids)
+        assert {i: n for (_k, i), n in numbers.items()} == case["numbers"]
+        assert all(k == "FIG" for k, _i in numbers)
+
+
+def test_asset_numbers_follow_document_order_per_kind() -> None:
+    md = "[TAB:b] [FIG:x] [TAB:a] [EX:e] [TAB:b] [EQ:q]"
+    ids = {"FIG": ["x"], "TAB": ["a", "b"], "EQ": ["q"], "EX": ["e"]}
+    numbers = fn.compute_asset_numbers(md, ids)
+    assert list(numbers) == [("TAB", "b"), ("FIG", "x"), ("TAB", "a"), ("EX", "e"), ("EQ", "q")]
+    assert numbers == {
+        ("TAB", "b"): 1,
+        ("FIG", "x"): 1,
+        ("TAB", "a"): 2,
+        ("EX", "e"): 1,
+        ("EQ", "q"): 1,
+    }
+
+
+def test_proof_steps_selects_non_empty_steps_only() -> None:
+    eq = {"proof": [{"latex": " ", "text": ""}, {"latex": "a", "text": ""}, "x", {"text": "t"}]}
+    assert fn.proof_steps(eq) == [{"latex": "a", "text": ""}, {"text": "t"}]
+    assert fn.proof_steps({}) == []
+    assert fn.equation_label_family({"kind": "lemma"}) == "EQ"
+    assert fn.equation_label_family({"statement": "S"}) == "THM"
+
+
+def test_asset_ref_re_is_case_sensitive_on_kind_and_stops_at_newline() -> None:
+    assert fn.ASSET_REF_RE.pattern == r"\[(FIG|TAB|EQ|EX):([^\]\n]+)\]"
+    assert fn.ASSET_KINDS == ("FIG", "TAB", "EQ", "EX")
+    assert fn.ASSET_REF_RE.search("[TAB:t1]") is not None
+    assert fn.ASSET_REF_RE.search("[tab:t1]") is None
+    assert fn.ASSET_REF_RE.search("[EX:a\n1]") is None
+    assert fn.cited_asset_ids("[EQ: E ] [FIG:f] [EQ:e]") == [("EQ", "e"), ("FIG", "f")]
 
 
 def test_fixture_covers_the_required_scenarios() -> None:
@@ -178,6 +303,18 @@ def test_frontend_copy_matches_fixture() -> None:
         assert fe["numbers"] == case["numbers"], case["name"]
     for pair, fe in zip(_STRIP, got["strip_prefix"], strict=True):
         assert fe == pair["output"], pair["input"]
+
+
+def test_frontend_copy_matches_asset_and_family_sections() -> None:
+    """Parità BE/FE sui quattro kind e sul ramo teorema:
+    `appendUncitedAssetRefs`, `computeAssetNumbers` (Map `KIND:id_lower`) ed
+    `equationLabelFamily` di `lib/figureNumbering.ts` sulla stessa fixture."""
+    got = _run_frontend(_FRONTEND_ASSET_RUNNER)
+    for case, fe in zip(_ASSET_CASES, got["asset_cases"], strict=True):
+        assert fe["appended"] == case["appended"], case["name"]
+        assert fe["numbers"] == case["numbers"], case["name"]
+    for case, fe in zip(_FAMILY, got["equation_label_family"], strict=True):
+        assert fe == case["family"], case["name"]
 
 
 def test_uncited_refs_skip_ids_the_token_cannot_carry() -> None:

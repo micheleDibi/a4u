@@ -39,7 +39,7 @@ from jinja2 import Environment, FileSystemLoader
 from markupsafe import Markup, escape
 
 from app.services.figure_numbering import strip_figure_prefix
-from app.services.figure_theme import _interpolate, figure_labels
+from app.services.figure_theme import asset_label, figure_labels
 
 FigureVariant = Literal["lesson", "slide"]
 
@@ -88,10 +88,9 @@ _CAPTION_END_PUNCT = ".!?…:;"
 
 
 def figure_label(labels: Mapping[str, str], number: int | None) -> str:
-    """«Figura 3.» oppure «Figura.» (slide) dalla mappa `figure_labels`."""
-    if number is None:
-        return labels["courses.figures.labelUnnumbered"]
-    return _interpolate(labels["courses.figures.label"], {"n": number})
+    """«Figura 3.» oppure «Figura.» (slide) dalla mappa `figure_labels`:
+    wrapper di `figure_theme.asset_label` per il kind `FIG`."""
+    return asset_label(labels, "FIG", number)
 
 
 def render_figure_html(

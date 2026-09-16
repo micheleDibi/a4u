@@ -26,7 +26,10 @@ _FRONTEND = Path(__file__).resolve().parents[2] / "frontend" / "src"
 _LOCALES = _FRONTEND / "i18n" / "locales"
 
 # Inventario WP5: componenti nuovi, componenti migrati a i18n e moduli lib
-# che producono messaggi mostrati nel `FigureErrorBox`.
+# che producono messaggi mostrati nel `FigureErrorBox`; esteso (WP1 dei
+# rimandi) con la vista lezione, che chiude la callable del rimando su
+# chiavi `t()` letterali, e con il normalizzatore, che non deve avere
+# stringhe di interfaccia (le regole stanno nei commenti).
 _INVENTORY = [
     "components/shared/FigureFrame.tsx",
     "components/shared/VegaLiteDiagram.tsx",
@@ -41,18 +44,39 @@ _INVENTORY = [
     "components/shared/MermaidDiagram.tsx",
     "components/shared/MarkdownRenderer.tsx",
     "pages/org/courses/components/LessonSlidesView.tsx",
+    "pages/org/courses/components/LessonContentView.tsx",
     "lib/functionSpec.ts",
     "lib/figureFormats.ts",
     "lib/figureNumbering.ts",
+    "lib/assetRefNormalize.ts",
 ]
 
 # Lessico: parole italiane che in questi file possono comparire solo in una
 # frase di interfaccia scritta a mano (mai in un identificatore, in una
-# classe CSS o in una chiave i18n).
+# classe CSS o in una chiave i18n). «tabella», «equazione» ed «esempio»
+# intercettano un'etichetta di blocco o un rimando scritti a mano invece
+# che con le chiavi `courses.figures.*`.
 _ITALIAN_RE = re.compile(
     r"\b(vuot[oa]|sorgente|deve|errore|caricamento|anteprima|impossibile|"
-    r"didascalia|non valid[oa]|non disponibile|figura non)\b",
+    r"didascalia|non valid[oa]|non disponibile|figura non|tabella|equazione|"
+    r"esempio)\b",
     re.IGNORECASE,
+)
+
+# Chiavi letterali delle etichette di blocco (D5) attese nel renderer e
+# nella vista slide (forme non numerate).
+_RENDERER_LABEL_KEYS = (
+    "courses.figures.table.label",
+    "courses.figures.table.labelUnnumbered",
+    "courses.figures.equation.label",
+    "courses.figures.equation.labelUnnumbered",
+    "courses.figures.example.label",
+    "courses.figures.example.labelUnnumbered",
+    "courses.figures.theorem.label",
+)
+_SLIDES_LABEL_KEYS = (
+    "courses.figures.table.labelUnnumbered",
+    "courses.figures.example.labelUnnumbered",
 )
 
 _LINE_COMMENT_RE = re.compile(r"(?<![:\"'])//[^\n]*")
@@ -120,6 +144,33 @@ def test_literal_t_keys_resolve_in_locale(language: str) -> None:
                 continue
             missing.append(f"{rel}: {key}")
     assert not missing, f"chiavi assenti da {language}.json: {missing}"
+
+
+def test_asset_blocks_use_the_figures_keys() -> None:
+    """Tabelle, equazioni ed esempi portano l'etichetta come le figure
+    (D5): `MarkdownRenderer` compone «Tabella N.» / «Equazione N.» /
+    «Lemma N.» / «Esempio N.» con le chiavi letterali
+    `courses.figures.{table,equation,example,theorem}.*` e la mappa
+    `assetNumbers` (chiave `KIND:id_lower`, nessun residuo di
+    `figureNumbers`); la vista slide usa le forme non numerate. Le chiavi
+    esistono in entrambi i locale con i segnaposto attesi."""
+    renderer = _strip_comments_and_templates(_read("components/shared/MarkdownRenderer.tsx"))
+    for key in _RENDERER_LABEL_KEYS:
+        assert f't("{key}"' in renderer, key
+    assert "assetNumbers" in renderer
+    assert "figureNumbers" not in renderer
+    slides = _strip_comments_and_templates(
+        _read("pages/org/courses/components/LessonSlidesView.tsx")
+    )
+    for key in _SLIDES_LABEL_KEYS:
+        assert f't("{key}"' in slides, key
+    for language in ("it", "en"):
+        flat = _locale(language)
+        for key in _RENDERER_LABEL_KEYS:
+            assert key in flat, f"{key} assente da {language}.json"
+            if key.endswith(".label"):
+                assert "{{n}}" in flat[key], (language, key)
+        assert "{{kind}}" in flat["courses.figures.theorem.label"], language
 
 
 def test_parse_error_keys_exist_in_both_locales() -> None:

@@ -143,9 +143,22 @@ fallirebbero e i warning di asset orfani/non referenziati sarebbero
 falsi positivi.
 
 - **Backend** (`course_lesson_content_service`): `_ASSET_REF_RE =
-  r"\[(FIG|TAB|EQ|EX):([^\]]+)\]"`, `_collect_asset_refs` fa
-  `kind.upper()` + `aid.strip()`; le validazioni soft sugli asset (9 e 10
-  di §6.4) confrontano i set di ref e di id entrambi `.lower()`.
+  r"\[(FIG|TAB|EQ|EX):([^\]\n]+)\]"` (stessa forma del PDF e di
+  `figure_numbering.ASSET_REF_RE`: un tag a cavallo di riga non è un tag
+  per nessun renderer), `_collect_asset_refs` fa `kind.upper()` +
+  `aid.strip()`; le validazioni soft sugli asset (9 e 10 di §6.4)
+  confrontano i set di ref e di id entrambi `.lower()`.
+- **Rimandi e ancore a render** (`asset_ref_normalize`, mirror
+  `lib/assetRefNormalize.ts`): nella dispensa e nel PDF una citazione in
+  linea `[KIND:id]` diventa il rimando testuale «Figura N» / «Tabella N» /
+  «Equazione N» / «Esempio N» (teorema: «Lemma N», chiavi
+  `courses.figures.*.ref`, senza punto) e il blocco è inserito UNA volta
+  su riga propria dopo il blocco della prima citazione; una riga fatta del
+  solo tag è l'ancora del blocco. I numeri sono per kind
+  (`compute_asset_numbers`, prima citazione nell'ordine del documento,
+  calcolati PRIMA della normalizzazione); gli asset mai citati di ogni
+  kind sono accodati dopo la sintesi (FIG → TAB → EQ → EX). Punti chiave e
+  riferimenti ricevono solo rimandi, mai blocchi. Nulla è persistito.
 - **Frontend** (`MarkdownRenderer.tsx`): le `Map` degli asset hanno
   chiavi `asset_id.toLowerCase()` e `renderAssetBlock` cerca con
   `id.toLowerCase()`. Solo se il lookup fallisce mostra
@@ -422,7 +435,13 @@ lifespan `app/main.py`.
   pattern asset-ref `\[FIG:..\]` ecc.) — necessario perché alcuni
   output gpt-5.5 emettono LaTeX "puro" che `remark-math` non
   riconosce. Le classi tipografiche sono `lesson-prose` (custom CSS in
-  `index.css`, niente `@tailwindcss/typography`).
+  `index.css`, niente `@tailwindcss/typography`). Riceve `assetNumbers`
+  (`KIND:id_lower` → N) da `LessonContentView`, che numera il corpo NON
+  normalizzato (`computeAssetNumbers`) e poi lo passa da
+  `normalizeAssetRefs` / `citeAssetRefs` (`lib/assetRefNormalize.ts`):
+  tabelle, equazioni ed esempi portano l'etichetta «Tabella N.» /
+  «Equazione N.» / «Lemma N.» / «Esempio N.» (chiavi `courses.figures.*`,
+  sempre presente; senza mappa la forma non numerata, come nelle slide).
 - `FigureFrame.tsx` — cornice unica delle figure (D4): stesso markup del
   partial backend `templates/partials/figure.html.j2` (`<figure
   class="figure figure--{variant} figure--{format}">` + `<figcaption>` con

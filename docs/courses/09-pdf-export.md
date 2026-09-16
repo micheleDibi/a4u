@@ -73,7 +73,8 @@ Niente derivazione su `course.status`: la pipeline è indipendente.
 | Grafici Vega-Lite → SVG | `vl-convert-python` in processo figlio `spawn` | Registro `figure_render_service` (doc 17): validazione contro lo schema v6 + regole D5, tema `VEGALITE_THEME_CONFIG`, `normalize_svg` → `<img data:svg>` |
 | Grafi DOT → SVG | binario `dot` (apt `graphviz`) in `subprocess` con timeout | Tema `DOT_DEFAULTS` iniettato, `normalize_svg` → `<img data:svg>` |
 | Figure `function` → SVG | numpy + matplotlib in thread, sympy in processo figlio | `figure_function_service`: rami, punti notevoli, forme esatte, didascalia calcolata; `<img data:svg>` |
-| Cornice e numerazione «Figura N.» | `figure_numbering` + `figure_markup` (partial `partials/figure.html.j2`) | Numero dalla prima citazione `[FIG:id]`, orfane in coda (A12); «Figura.» senza numero nelle slide (A2) |
+| Cornice e numerazione «Figura N.» | `figure_numbering` + `figure_markup` (partial `partials/figure.html.j2`) | Numero dalla prima citazione `[KIND:id]`, contatore per kind (figure, tabelle, equazioni, esempi; teorema «Lemma N.» sul contatore EQ), orfani in coda (A12, D3); «Figura.»/«Tabella.» senza numero nelle slide (A2) |
+| Rimandi testuali e ancore | `asset_ref_normalize` (mirror `lib/assetRefNormalize.ts`) | Citazione in linea → «Figura N» (senza punto, lingua del corso), UNA ancora `[KIND:id]` dopo il blocco della prima citazione; coda (punti chiave, riferimenti) con soli rimandi via `cite_asset_refs` |
 | Template HTML | `Jinja2` | `backend/app/templates/lesson_pdf.html.j2` |
 | HTML → PDF | `WeasyPrint` 68+ | CSS Paged Media completo (background edge-to-edge, running header, page counter) |
 
@@ -163,6 +164,15 @@ _install_math_grammar(md)  # l'unica grammatica del math (B3):
 `_normalize_math_delimiters` converte `\(..\)` / `\[..\]` (output AI
 "puro" LaTeX) in `$..$` / `$$..$$` riconosciuti da `dollarmath`. Esclude
 i pattern asset-ref `\[FIG:..\]` / `\[TAB:..\]` ecc.
+
+**Asset substitution** (`render_lesson_html`): l'ordine è `ids_by_kind` →
+corpo markdown → `append_uncited_asset_refs` (orfani FIG → TAB → EQ → EX
+dopo la sintesi) → `compute_asset_numbers` (sul corpo NON normalizzato) →
+`_build_asset_html_map(asset_numbers=…)` → `normalize_asset_refs`
+(citazioni in linea → rimandi «Figura N», una sola ancora per asset) →
+`_substitute_asset_refs` (sostituisce le sole ancore con i blocchi) →
+`render_markdown`. `key_takeaways` e `references[].citation` passano da
+`cite_asset_refs`: rimandi testuali, mai blocchi.
 
 `_normalize_math_source(latex)` rimuove i delimitatori residui (`$$`,
 `$`, `\[`, `\]`) e **ribilancia** gli ambienti malformati emessi a volte
