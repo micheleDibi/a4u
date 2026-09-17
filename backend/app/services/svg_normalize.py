@@ -36,14 +36,15 @@ Regole:
 Due letture pure per la banda di leggibilità (D10, `figure_scale`), valide
 anche per gli SVG Mermaid perché non li modificano: `svg_intrinsic_box`
 (viewBox, dimensione intrinseca e `px_per_unit` della radice) e
-`svg_base_font_px` (corpo minimo dei testi di contenuto dagli attributi
-`font-size`/`style` dei `<text>`/`<tspan>` e dalla regola radice
-`#id{font-size}`).
+`svg_base_font_px` (corpo minimo dei testi di contenuto con una cascata
+CSS minima: attributi e `style` dei `<text>`/`<tspan>`, regole del
+`<style>` per id, classe e discendenza, eredità dal padre).
 """
 
 from __future__ import annotations
 
 import base64
+import html
 import re
 import statistics
 from collections.abc import Iterator
@@ -268,91 +269,406 @@ def svg_intrinsic_box(svg: str) -> SvgBox | None:
     )
 
 
-# Tag `<text>`/`<tspan>` con lo stesso trattamento delle virgolette di
-# `_TAG_RE`; il gruppo 3 è il testo proprio fino al tag successivo, quindi
-# in `<text><tspan>x</tspan></text>` conta lo `tspan`, non il `text`.
-_TEXT_TAG_RE = re.compile(
-    r"<(text|tspan)\b((?:[^>\"']|\"[^\"]*\"|'[^']*')*)>([^<]*)", re.IGNORECASE
+# --- corpo dei testi: cascata CSS minima per `font-size` -------------------
+#
+# Lettura statica senza parser XML né motore CSS: una scansione dei nodi
+# (tag con le virgolette rispettate, testo, commenti, CDATA) con la pila
+# degli elementi aperti, e le sole regole dei blocchi `<style>` che
+# dichiarano `font-size`. Selettori coperti: composti `tipo`/`*`, `#id`,
+# `.classe` uniti da discendente o `>` (tutto ciò che Mermaid emette, pie e
+# radar compresi); pseudo-classi dinamiche e pseudo-elementi non
+# corrispondono mai in un render statico. Qualunque altra dichiarazione di
+# corpo (selettori con attributi, `+`, `~`, `:not()`, regole annidate o
+# dentro una at-rule, shorthand `font:`) e ogni valore che dipende dal
+# contesto (`rem`, parole chiave, `var()`, `calc()`, `em`/`%` senza un
+# antenato che dichiari il corpo) rendono la lettura irrisolta: ripiego
+# sulla costante di formato, loggato, mai un valore inventato. `ex` e
+# `ch` dipendono dal font: valgono come limite inferiore
+# (`_EX_CH_MIN_EM`), che basta quando il testo non può essere il minimo
+# (il titolo `4ex` del timeline di Mermaid).
+
+_NODE_RE = re.compile(
+    r"<!--.*?-->"
+    r"|<!\[CDATA\[(?P<cdata>.*?)\]\]>"
+    r"|<[!?][^>]*>"
+    r"|<(?P<close>/)?(?P<name>[A-Za-z_][\w:.-]*)"
+    r"(?P<attrs>(?:[^>\"']|\"[^\"]*\"|'[^']*')*?)(?P<void>/)?\s*>"
+    r"|(?P<text>[^<]+)",
+    re.DOTALL,
 )
-_FONT_SIZE_ATTR_RE = re.compile(
-    r"(?<![\w-])font-size\s*=\s*(?:\"([^\"]*)\"|'([^']*)')", re.IGNORECASE
+_RAW_TEXT_END_RE = {
+    "style": re.compile(r"<\s*/\s*style\s*>", re.IGNORECASE),
+    "script": re.compile(r"<\s*/\s*script\s*>", re.IGNORECASE),
+}
+_FONT_SIZE_DECL_RE = re.compile(
+    r"(?:^|;)\s*font-size\s*:\s*([^;!]*?)\s*(!\s*important\s*)?(?=;|$)", re.IGNORECASE
 )
-_STYLE_ATTR_RE = re.compile(r"(?<![\w-])style\s*=\s*(?:\"([^\"]*)\"|'([^']*)')", re.IGNORECASE)
-_FONT_SIZE_DECL_RE = re.compile(r"(?:^|;)\s*font-size\s*:\s*([^;!]+)", re.IGNORECASE)
+_FONT_SHORTHAND_RE = re.compile(r"(?:^|[;{])\s*font\s*:", re.IGNORECASE)
+_CSS_NOISE_RE = re.compile(r"/\*.*?\*/|<!\[CDATA\[|\]\]>|<!--|-->", re.DOTALL)
+_SELECTOR_TOKEN_RE = re.compile(r"\s*>\s*|\s+|[^\s>]+")
+_COMPOUND_RE = re.compile(
+    r"(?P<tag>\*|[A-Za-z_][\w-]*)?(?P<sel>(?:[#.][\w-]+)*)(?P<pseudo>(?:::?[\w-]+)*)"
+)
+_PSEUDO_RE = re.compile(r"(::?)([\w-]+)")
+# Stati d'interazione: in un `<img>` o in un PDF non si verificano mai
+# (`:visited` non può comunque cambiare il corpo).
+_DYNAMIC_PSEUDO = frozenset(
+    {"hover", "focus", "active", "visited", "target", "focus-within", "focus-visible"}
+)
+# Limite inferiore di `1ex` e `1ch` in em per le famiglie del tema (x-height
+# 0,536 em in Noto Sans, 0,547 in DejaVu Sans; «0» largo 0,57-0,64 em).
+_EX_CH_MIN_EM = 0.4
 
 
-def _attr_value(pattern: re.Pattern[str], tag_attrs: str) -> str | None:
-    m = pattern.search(tag_attrs)
-    if m is None:
-        return None
-    return m.group(1) if m.group(1) is not None else (m.group(2) or "")
+@dataclass(frozen=True)
+class _Compound:
+    tag: str | None  # None = universale
+    # Token che il nodo deve portare tutti: "t:tipo", "#id", ".classe".
+    tokens: frozenset[str]
+    specificity: tuple[int, int, int]  # (id, classi, tipi)
 
 
-def _own_font_px(tag_attrs: str) -> float | None:
-    """Corpo proprio del tag in unità utente: `font-size:` dentro `style`
-    vince sull'attributo (precedenza CSS); `em`/`ex`/`%` non sono
-    risolvibili e valgono «nessun valore proprio»."""
-    style = _attr_value(_STYLE_ATTR_RE, tag_attrs)
-    if style is not None:
-        decl = _FONT_SIZE_DECL_RE.search(style)
-        if decl is not None:
-            return _length_px(decl.group(1))
-    return _length_px(_attr_value(_FONT_SIZE_ATTR_RE, tag_attrs))
+@dataclass(frozen=True)
+class _FontRule:
+    parts: tuple[_Compound, ...]  # da sinistra a destra
+    combinators: tuple[str, ...]  # fra parts[i] e parts[i + 1]: " " oppure ">"
+    # Chiave di cascata: (important, inline, foglio, id, classi, tipi, ordine).
+    key: tuple[int, ...]
+    value: str
+    # Token richiesti agli antenati (condizione necessaria, scarto rapido).
+    scope: frozenset[str]
 
 
-def _root_rule_font_px(svg: str, root_id: str | None) -> float | None:
-    """`font-size` della regola il cui selettore è ESATTAMENTE `#<id>` (non
-    `#<id> svg`, non `#<id> .x`) nei blocchi `<style>`; l'ultima vince."""
-    if not root_id:
-        return None
-    rule_re = re.compile(r"(?<![\w#.-])#" + re.escape(root_id) + r"\s*\{([^}]*)\}")
-    found: float | None = None
-    for css in iter_style_bodies(svg):
-        for rule in rule_re.finditer(css):
-            decl = _FONT_SIZE_DECL_RE.search(rule.group(1))
-            if decl is not None:
-                value = _length_px(decl.group(1))
-                if value is not None:
-                    found = value
+@dataclass(frozen=True)
+class _Font:
+    uu: float  # corpo in unità utente (limite inferiore se non esatto)
+    from_sheet: bool  # dal `<style>` (anche per eredità) invece che dai tag
+    exact: bool = True  # False per `ex`/`ch` e per chi li eredita
+
+
+@dataclass
+class _Node:
+    tag: str
+    tokens: frozenset[str]
+    attrs: dict[str, str]
+    scope: frozenset[str] = frozenset()  # token di tutti gli antenati
+    # Calcolato solo per i nodi con testo o con testo fra i discendenti;
+    # None se nessun antenato dichiara il corpo (valore iniziale sconosciuto).
+    font: _Font | None = None
+    resolved: bool = False
+    has_text: bool = False
+
+
+def _tag_attrs(raw: str) -> dict[str, str]:
+    """Attributi di un tag in scansione sequenziale (un `font-size=` dentro
+    il valore di un `aria-label` resta valore), nomi in minuscolo, valori
+    con le entità risolte come nel DOM."""
+    out: dict[str, str] = {}
+    for m in _ATTR_RE.finditer(raw):
+        value = m.group(2) if m.group(2) is not None else (m.group(3) or "")
+        out.setdefault(m.group(1).lower(), html.unescape(value))
+    return out
+
+
+def _last_font_size(block: str) -> tuple[str, bool] | None:
+    """Dichiarazione `font-size` che vince nel blocco: l'ultima, e fra le
+    `!important` l'ultima importante."""
+    found: tuple[str, bool] | None = None
+    for m in _FONT_SIZE_DECL_RE.finditer(block):
+        important = m.group(2) is not None
+        if found is None or important or not found[1]:
+            found = (m.group(1), important)
     return found
 
 
-def svg_base_font_px(svg: str) -> SvgMetrics:
-    """Metriche del testo di contenuto lette dagli attributi (Vega-Lite,
-    DOT, matplotlib) e, come secondo canale, dalla regola radice `#id{…}`
-    (Mermaid). Conta solo i tag con testo proprio non vuoto; un tag senza
-    valore proprio eredita la regola radice se esiste. Valori in px CSS
-    alla dimensione naturale (`× px_per_unit`).
+def _node_tokens(tag: str | None, ids: list[str], classes: list[str]) -> frozenset[str]:
+    tokens = {f"#{i}" for i in ids} | {f".{c}" for c in classes}
+    if tag is not None:
+        tokens.add(f"t:{tag}")
+    return frozenset(tokens)
 
-    Per Mermaid la regola radice è SBAGLIATA su `pie` (17) e `radar` (12,
-    classi nello `<style>` invisibili a una regex): è solo il fallback
-    della misura in Chromium e viaggia con `source="root_rule"`. Non
-    esclude `<defs>`/`<symbol>`/`<clipPath>`: nessun renderer nostro vi
-    mette testo. Non tocca l'SVG."""
-    attrs = _root_attrs(svg)
-    root_px = _root_rule_font_px(svg, attrs.get("id") if attrs else None)
-    box = svg_intrinsic_box(svg)
+
+def _parse_selector(selector: str) -> tuple[tuple[_Compound, ...], tuple[str, ...]] | None:
+    """Selettore nella grammatica coperta; `None` se fuori grammatica,
+    `((), ())` se non può corrispondere in un render statico."""
+    parts: list[_Compound] = []
+    combinators: list[str] = []
+    pending: str | None = None
+    never = False
+    for token in _SELECTOR_TOKEN_RE.findall(selector.strip()):
+        if not token.strip():
+            pending = pending or " "
+            continue
+        if token.strip() == ">":
+            if not parts or pending == ">":
+                return None
+            pending = ">"
+            continue
+        m = _COMPOUND_RE.fullmatch(token)
+        if m is None:
+            return None
+        for colons, name in _PSEUDO_RE.findall(m.group("pseudo")):
+            if colons == "::" or name.lower() in _DYNAMIC_PSEUDO:
+                never = True
+            else:
+                return None
+        sel = m.group("sel")
+        raw_tag = m.group("tag")
+        tag = None if raw_tag in (None, "*") else raw_tag.lower()
+        ids = re.findall(r"#([\w-]+)", sel)
+        classes = re.findall(r"\.([\w-]+)", sel)
+        compound = _Compound(
+            tag=tag,
+            tokens=_node_tokens(tag, ids, classes),
+            specificity=(len(ids), len(classes), int(tag is not None)),
+        )
+        if parts:
+            combinators.append(pending or " ")
+        pending = None
+        parts.append(compound)
+    if not parts or pending == ">":
+        return None
+    if never:
+        return (), ()
+    return tuple(parts), tuple(combinators)
+
+
+def _matching_brace(css: str, open_at: int) -> int:
+    depth = 0
+    for i in range(open_at, len(css)):
+        if css[i] == "{":
+            depth += 1
+        elif css[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return i
+    return len(css)
+
+
+def _style_font_rules(svg: str) -> tuple[dict[str | None, list[_FontRule]], bool]:
+    """Regole dei blocchi `<style>` che dichiarano il corpo, indicizzate per
+    tipo del composto più a destra (`None` = universale); il secondo valore
+    è vero se una dichiarazione di corpo sta fuori dalla grammatica
+    coperta."""
+    rules: dict[str | None, list[_FontRule]] = {}
+    unsupported = False
+    order = 0
+    for raw in iter_style_bodies(svg):
+        css = _CSS_NOISE_RE.sub(" ", raw)
+        pos = 0
+        while (open_at := css.find("{", pos)) >= 0:
+            close_at = _matching_brace(css, open_at)
+            prelude = css[pos:open_at].rsplit(";", 1)[-1].strip()
+            block = css[open_at + 1 : close_at]
+            pos = close_at + 1
+            sets_size = "font-size" in block.lower() or bool(_FONT_SHORTHAND_RE.search(block))
+            if not sets_size:
+                continue
+            if prelude.startswith("@"):
+                # `@media`/`@supports` condizionano il corpo, `@keyframes`
+                # lo anima nei frame video: nessuno dei due è statico.
+                unsupported = True
+                continue
+            if "{" in block or _FONT_SHORTHAND_RE.search(block):
+                unsupported = True
+                continue
+            decl = _last_font_size(block)
+            if decl is None:
+                continue
+            for selector in prelude.split(","):
+                parsed = _parse_selector(selector)
+                if parsed is None:
+                    unsupported = True
+                    continue
+                parts, combinators = parsed
+                if not parts:
+                    continue
+                order += 1
+                spec = [sum(p.specificity[k] for p in parts) for k in range(3)]
+                key = (int(decl[1]), 0, 1, *spec, order)
+                scope = frozenset().union(*(p.tokens for p in parts[:-1]))
+                rule = _FontRule(parts, combinators, key, decl[0], scope)
+                rules.setdefault(parts[-1].tag, []).append(rule)
+    return rules, unsupported
+
+
+def _rule_matches(rule: _FontRule, chain: list[_Node]) -> bool:
+    """Confronto da destra a sinistra con ritorno sui discendenti."""
+    if not (rule.parts[-1].tokens <= chain[-1].tokens and rule.scope <= chain[-1].scope):
+        return False
+
+    def match(part: int, at: int) -> bool:
+        if not rule.parts[part].tokens <= chain[at].tokens:
+            return False
+        if part == 0:
+            return True
+        if rule.combinators[part - 1] == ">":
+            return at > 0 and match(part - 1, at - 1)
+        return any(match(part - 1, k) for k in range(at - 1, -1, -1))
+
+    return match(len(rule.parts) - 1, len(chain) - 1)
+
+
+def _resolve_font(raw: str, from_sheet: bool, parent: _Font | None) -> tuple[_Font | None, bool]:
+    """Valore calcolato della dichiarazione vincente e vero se calcolabile:
+    lunghezze assolute in unità utente, `em`/`%` rispetto al padre, `ex`/
+    `ch` come limite inferiore (`_EX_CH_MIN_EM` em del padre), `inherit`/
+    `unset` il padre; nessun valore per zero (testo invisibile). Un
+    relativo senza antenati dichiarati, `rem`, parole chiave, `var()` e
+    `calc()` dipendono dal contesto (il corpo del contenitore HTML o i
+    16 px della radice di un `<img>`): il nodo prosegue col padre ma la
+    lettura è irrisolta."""
+    value = raw.strip().lower()
+    if value in ("inherit", "unset"):
+        return parent, True
+    m = _LENGTH_RE.match(value)
+    if m is None:
+        return parent, False
+    number = float(m.group(1))
+    unit = m.group(2)
+    if number <= 0:
+        return None, number == 0
+    if unit in ("em", "%", "ex", "ch"):
+        if parent is None:
+            return None, False
+        if unit in ("ex", "ch"):
+            return _Font(parent.uu * number * _EX_CH_MIN_EM, parent.from_sheet, False), True
+        factor = number / (100.0 if unit == "%" else 1.0)
+        return _Font(parent.uu * factor, parent.from_sheet, parent.exact), True
+    px = _length_px(value)
+    if px is None:
+        return parent, False
+    return _Font(px, from_sheet), True
+
+
+def _node_font(
+    chain: list[_Node], rules: dict[str | None, list[_FontRule]], parent: _Font | None
+) -> tuple[_Font | None, bool]:
+    """Corpo calcolato dell'ultimo nodo di `chain` e vero se la sua
+    dichiarazione è fuori grammatica (shorthand `font:` in linea, valore
+    non calcolabile). Cascata: `!important`, poi `style` in linea, poi
+    regole del foglio per specificità e ordine, poi l'attributo di
+    presentazione `font-size` (specificità zero), altrimenti il padre."""
+    attrs = chain[-1].attrs
+    best: tuple[tuple[int, ...], str, bool] | None = None
+    presentation = attrs.get("font-size")
+    if presentation is not None:
+        best = ((0, 0, 0, 0, 0, 0, 0), presentation, False)
+    for rule in (*rules.get(chain[-1].tag, ()), *rules.get(None, ())):
+        if (best is None or rule.key > best[0]) and _rule_matches(rule, chain):
+            best = (rule.key, rule.value, True)
+    style = attrs.get("style")
+    unsupported = False
+    if style is not None:
+        unsupported = bool(_FONT_SHORTHAND_RE.search(style))
+        inline = _last_font_size(style)
+        if inline is not None:
+            key = (int(inline[1]), 1, 0, 0, 0, 0, 0)
+            if best is None or key > best[0]:
+                best = (key, inline[0], False)
+    if best is None:
+        return parent, unsupported
+    font, computable = _resolve_font(best[1], best[2], parent)
+    return font, unsupported or not computable
+
+
+def _resolve_chain(stack: list[_Node], rules: dict[str | None, list[_FontRule]]) -> bool:
+    """Calcola, dall'alto, il corpo dei nodi della pila non ancora risolti;
+    vero se uno di essi ha una dichiarazione fuori grammatica."""
+    odd = False
+    for i, node in enumerate(stack):
+        if node.resolved:
+            continue
+        parent = stack[i - 1] if i else None
+        if parent is not None:
+            node.scope = parent.scope | parent.tokens
+        node.font, bad = _node_font(stack[: i + 1], rules, parent.font if parent else None)
+        node.resolved = True
+        odd = odd or bad
+    return odd
+
+
+def svg_base_font_px(svg: str) -> SvgMetrics:
+    """Metriche del testo di contenuto: corpo calcolato di ogni `<text>`/
+    `<tspan>` con testo proprio non vuoto (un nodo di testo figlio diretto,
+    come `__measureSvgFontPx`), con la cascata minima descritta sopra:
+    attributi e `style` in linea (Vega-Lite, DOT, matplotlib), regole del
+    `<style>` per id, classe e discendenza (Mermaid: radice `#id{…}`,
+    `.slice` del pie, `.radarAxisLabel` del radar) ed eredità dal padre
+    (lo `style` del `<text>` che contiene i `<tspan>` del sequence). Valori
+    in px CSS alla dimensione naturale (`× px_per_unit`).
+
+    `source="parsed"` se il minimo viene dagli attributi o dallo `style`
+    in linea (anche ereditati), `"root_rule"` se dal foglio di stile
+    dell'SVG, `"unresolved"` se nessun testo ha un valore esatto, se una
+    dichiarazione di corpo è fuori grammatica o dipende dal contesto, o se
+    un testo in `ex`/`ch` potrebbe stare sotto il minimo esatto (la
+    mediana, diagnostica, usa il limite inferiore); `"no_text"` senza
+    testi. Per Mermaid resta il ripiego della misura in Chromium.
+    Differenze dichiarate dal DOM: lo `display:none` non è filtrato;
+    `<defs>`/`<symbol>`/`<clipPath>` non sono esclusi (nessun renderer
+    nostro vi mette testo). Non tocca l'SVG."""
+    body = svg or ""
+    rules, unsupported = _style_font_rules(body)
+    box = svg_intrinsic_box(body)
     ppu = box.px_per_unit if box is not None else 1.0
 
-    values: list[tuple[float, bool]] = []  # (uu, dal tag)
-    count = 0
-    for m in _TEXT_TAG_RE.finditer(svg or ""):
-        if not m.group(3).strip():
+    stack: list[_Node] = []
+    texts: list[_Node] = []
+    pos = 0
+    while pos < len(body):
+        m = _NODE_RE.match(body, pos)
+        if m is None:
+            pos += 1
             continue
-        count += 1
-        own = _own_font_px(m.group(2))
-        if own is not None:
-            values.append((own, True))
-        elif root_px is not None:
-            values.append((root_px, False))
-    if count == 0:
+        pos = m.end()
+        text = m.group("text") if m.group("cdata") is None else m.group("cdata")
+        if text is not None:
+            if stack and stack[-1].tag in ("text", "tspan") and html.unescape(text).strip():
+                stack[-1].has_text = True
+            continue
+        name = m.group("name")
+        if name is None:
+            continue
+        tag = name.rsplit(":", 1)[-1].lower()
+        if m.group("close"):
+            for i in range(len(stack) - 1, -1, -1):
+                if stack[i].tag == tag:
+                    del stack[i:]
+                    break
+            continue
+        if tag in _RAW_TEXT_END_RE:
+            if not m.group("void"):
+                end = _RAW_TEXT_END_RE[tag].search(body, pos)
+                pos = end.end() if end is not None else len(body)
+            continue
+        if m.group("void"):
+            continue  # nessun testo proprio né discendenti: corpo irrilevante
+        attrs = _tag_attrs(m.group("attrs"))
+        elem_id = attrs.get("id")
+        node = _Node(
+            tag=tag,
+            tokens=_node_tokens(tag, [elem_id] if elem_id else [], attrs.get("class", "").split()),
+            attrs=attrs,
+        )
+        stack.append(node)
+        if tag in ("text", "tspan"):
+            texts.append(node)
+            unsupported = _resolve_chain(stack, rules) or unsupported
+
+    counted = [n for n in texts if n.has_text]
+    if not counted:
         return SvgMetrics(None, None, 0, "no_text")
-    if not values:
-        return SvgMetrics(None, None, count, "unresolved")
-    minimum = min(values, key=lambda v: (v[0], not v[1]))
-    median = statistics.median(v for v, _own in values)
-    source: MetricsSource = "parsed" if minimum[1] else "root_rule"
-    return SvgMetrics(minimum[0] * ppu, median * ppu, count, source)
+    values = [n.font for n in counted if n.font is not None]
+    exact = [v for v in values if v.exact]
+    if unsupported or not exact:
+        return SvgMetrics(None, None, len(counted), "unresolved")
+    minimum = min(exact, key=lambda v: (v.uu, v.from_sheet))
+    if any(v.uu < minimum.uu for v in values if not v.exact):
+        return SvgMetrics(None, None, len(counted), "unresolved")
+    median = statistics.median(v.uu for v in values)
+    source: MetricsSource = "root_rule" if minimum.from_sheet else "parsed"
+    return SvgMetrics(minimum.uu * ppu, median * ppu, len(counted), source)
 
 
 def normalize_svg(svg: str, *, max_bytes: int) -> NormalizedSvg:

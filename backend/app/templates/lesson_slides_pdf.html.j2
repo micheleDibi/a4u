@@ -87,12 +87,20 @@
        bottom 55mm. Lo spazio bottom-right (avatar futuro) non viene
        riservato dal body: l'asset è centrato orizzontalmente, quindi
        non intrude la zona avatar; quando l'avatar sarà aggiunto,
-       sarà drawn ON TOP del body. Block flow normale — slide con
-       asset sono già su pagine dedicate dal backend.
+       sarà drawn ON TOP del body. Block flow normale, `overflow: hidden`:
+       ciò che supera i 120mm sparisce senza errori.
 
-       Body height = 210 - 35 - 55 = 120mm. Spazio disponibile per
-       l'asset dopo tag (~5mm) + titolo (~14mm) + margine (4mm) =
-       ~97mm. L'asset CSS è capped a 80mm per safety. */
+       Geometria misurata (WeasyPrint 69, Helvetica; Chromium fra
+       parentesi): body 255 × 120mm (297 − 18 − 24 × 210 − 35 − 55);
+       tag 3,2mm (3,7); titolo 10,37mm per riga (line-height esplicito,
+       uguale nei due motori); prosa 6,65mm per riga; bullet 5,24mm per
+       riga + 2,5mm; didascalia 2,8mm (3,3) + 2mm. Sulla pagina asset-only
+       con titolo su una riga restano 92,6mm liberi. Il box della figura
+       NON è una costante CSS: `slide_geometry.page_figure_budget` lo
+       calcola per ogni pagina resa sul suo contenuto reale (D12) e il
+       blocco figura lo emette come `--figure-w`/`--figure-h` sul
+       `<figure>`; le regole sotto lo leggono con `var()`. Le costanti
+       Python sono il mirror di queste regole: `SlideGeometry`. */
     .slide-body {
       position: absolute;
       left: 18mm;
@@ -158,10 +166,15 @@
         {{ tpl.secondary_color }});
     }
 
-    /* Asset: nelle pagine "asset-only" (split dal backend), il body
-       ha tutto lo spazio disponibile (~108mm × 255mm). Lasciamo che
-       SVG/img si scalino al naturale entro il container, con un
-       max-height generoso. */
+    /* Asset: lo spazio verticale della figura è 120mm − tag − titolo
+       − prosa − bullet − 4mm di margine − didascalia − 3mm di safety,
+       calcolato per pagina resa (`slide_geometry`, D12): nelle pagine
+       asset-only con titolo su una riga 86,6mm di immagine, nel video
+       (senza split) quello che bullet e prosa lasciano. La larghezza del
+       wrapper è `--figure-w` (255mm); senza variabile (tabelle) degrada
+       ad `auto`, cioè la stessa larghezza. Equazioni ed esempi non
+       ricevono box: nella regola generica `var(--figure-h, 80mm)` ripiega
+       sul cap di 80mm di prima (un `aligned` di 8 righe è alto 107mm). */
     .slide-assets {
       margin-top: 4mm;
     }
@@ -176,13 +189,14 @@
     }
     .slide-asset .figure-body {
       max-width: 100%;
+      width: var(--figure-w);
     }
     .slide-asset svg,
     .slide-asset img {
       display: block;
       margin: 0 auto;
       max-width: 100%;
-      max-height: 80mm;
+      max-height: var(--figure-h, 80mm);
       width: auto;
       height: auto;
       object-fit: contain;
@@ -223,15 +237,18 @@
       border-radius: 1mm;
     }
     /* Regola unica di altezza per tutte le figure `<img>` (Mermaid,
-       Vega-Lite/DOT/function, immagini caricate): cap di 80mm come per
-       gli SVG, riconciliando la regola generica `.slide-asset img` con le
-       immagini caricate, che prima usavano `max-height: 100%` e venivano
-       tagliate da `overflow: hidden` oltre gli 80mm. */
+       Vega-Lite/DOT/function, immagini caricate): il tetto è il box della
+       pagina (`--figure-h`, D12), non una costante. La larghezza degli SVG
+       viene dalla banda di leggibilità come `style="width:Wmm"`
+       sull'`<img>` (D10), già calcolata dentro il box: `max-height` è la
+       cintura, `object-fit` evita la deformazione se scattasse. Le
+       immagini caricate (dimensione intrinseca) non vengono mai
+       ingrandite. */
     .slide-asset .figure-svg,
     .slide-asset .mermaid-svg,
     .slide-asset .uploaded-image {
       max-width: 100%;
-      max-height: 80mm;
+      max-height: var(--figure-h);
       width: auto;
       height: auto;
       object-fit: contain;
@@ -239,20 +256,31 @@
       margin: 0 auto;
     }
     /* Sorgente della figura quando il render è fallito (A23) e riferimenti
-       senza asset: prima erano testo nudo. */
+       senza asset: prima erano testo nudo. `white-space: pre`, non
+       `pre-wrap`: una riga di sorgente è una riga resa e le righe più
+       larghe del box sono tagliate a destra da `overflow: hidden`. È il
+       percorso d'errore di una figura non resa (log
+       `figure_render_fallback`): sei giri di stima delle righe a capo in
+       `pre-wrap` sono stati battuti da Pango e da Chromium, il conteggio
+       senza a capo è esatto nei due motori. `max-height` è solo la cintura
+       per Chromium: WeasyPrint lo ignora sui blocchi frammentati dal fondo
+       pagina (`weasyprint/layout/block.py`, «fill the blank space at the
+       bottom of the page»), quindi il sorgente è troncato in Python alle
+       righe che entrano nel box (`slide_geometry.truncate_fallback_source`,
+       marcatore «…»). La dispensa resta in `pre-wrap`. */
     .slide-asset .figure-fallback,
     .slide-asset .mermaid-fallback {
       font-family: "Menlo", "Consolas", monospace;
       font-size: 7pt;
       line-height: 1.3;
-      white-space: pre-wrap;
+      white-space: pre;
       text-align: left;
       background: #f5f5f7;
       border: 0.4pt solid #ddd;
       border-radius: 1mm;
       padding: 2mm 3mm;
       margin: 0;
-      max-height: 80mm;
+      max-height: var(--figure-h);
       overflow: hidden;
     }
     .slide-asset .missing-asset,
@@ -338,7 +366,9 @@
       font-weight: 700; color: {{ tpl.primary_color }}; margin-bottom: 1mm;
     }
     .slide-asset figure.theorem .math-block svg {
-      max-height: 40mm; /* più basso del cap asset generico per i passaggi */
+      /* Cap per singola formula dei passaggi: il blocco equazione non
+         passa dal partial figura e resta fuori dal box di pagina (D12). */
+      max-height: 40mm;
     }
     .slide-asset figure.theorem .proof {
       margin-top: 1.5mm; padding-left: 2.5mm;

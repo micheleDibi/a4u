@@ -22,6 +22,11 @@ Contratto:
   didascalia dell'autore termina già con lo stesso testo (guardia
   anti-doppia coda di Q4: `if caption.rstrip().endswith(tail): tail = ""`,
   da replicare nel frontend in `FigureFrame.extraCaption`);
+- `box` (solo slide e frame video, D12) è il `FigureBox` massimo
+  dell'immagine in mm, emesso come proprietà CSS personalizzate
+  `--figure-w`/`--figure-h` nello `style` del `<figure>`, DOPO
+  `aria-label`; la dispensa usa `max_figure_height_cm` e non passa box, e
+  senza box l'output è byte-identico a prima;
 - l'output non contiene righe vuote: nel markdown della dispensa il blocco
   è un HTML block di markdown-it, che si chiude alla prima riga vuota. Le
   righe vuote del sorgente di fallback sono rese con U+00A0 (non è spazio
@@ -35,6 +40,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
@@ -45,6 +51,30 @@ from app.services.figure_numbering import strip_figure_prefix
 from app.services.figure_theme import asset_label, figure_labels
 
 FigureVariant = Literal["lesson", "slide"]
+
+
+@dataclass(frozen=True)
+class FigureBox:
+    """Box massimo dell'immagine (o del `<pre>` di fallback) di una figura
+    nelle slide, in mm, arrotondato al decimo e strettamente positivo.
+    Emesso come `--figure-w`/`--figure-h` sul `<figure>` (D12); il CSS del
+    template slide lo legge con `var()`."""
+
+    w_mm: float
+    h_mm: float
+
+    def __post_init__(self) -> None:
+        w = round(float(self.w_mm), 1)
+        h = round(float(self.h_mm), 1)
+        if not (w > 0 and h > 0):
+            raise ValueError(f"FigureBox non positivo: {self.w_mm!r} × {self.h_mm!r}")
+        object.__setattr__(self, "w_mm", w)
+        object.__setattr__(self, "h_mm", h)
+
+    @property
+    def style(self) -> str:
+        return f"--figure-w: {self.w_mm:.1f}mm; --figure-h: {self.h_mm:.1f}mm"
+
 
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 PARTIALS_DIR = TEMPLATES_DIR / "partials"
@@ -117,13 +147,16 @@ def render_figure_html(
     fallback_source: str | None = None,
     extra_caption: str = "",
     caption_renderer: Callable[[str], Markup] | None = None,
+    box: FigureBox | None = None,
 ) -> str:
     """Rende il partial `partials/figure.html.j2` (vedi la docstring del
     modulo). `labels` è la mappa di `figure_labels(language)`; `None`
     equivale alla lingua di fallback (it). `caption_renderer` riceve il
     testo della didascalia DOPO `strip_figure_prefix` e la guardia della
     coda calcolata (che lavorano sul testo, non sul markup) e ritorna
-    `Markup`; l'etichetta, `aria_label` e la coda restano testo."""
+    `Markup`; l'etichetta, `aria_label` e la coda restano testo. `box`
+    (slide, D12) mette `--figure-w`/`--figure-h` sul `<figure>`; è
+    facoltativo per ogni variante: senza box il markup non cambia."""
     labels = labels if labels is not None else figure_labels(None)
     text = caption_text(caption)
     alt = _one_line(alt_text)
@@ -150,6 +183,7 @@ def render_figure_html(
         label=figure_label(labels, number),
         caption=caption_renderer(caption_out) if caption_renderer and caption_out else caption_out,
         extra_caption=extra,
+        box_style=box.style if box is not None else "",
     )
     return html.strip()
 
@@ -157,6 +191,7 @@ def render_figure_html(
 __all__ = [
     "PARTIALS_DIR",
     "TEMPLATES_DIR",
+    "FigureBox",
     "FigureVariant",
     "caption_text",
     "figure_label",

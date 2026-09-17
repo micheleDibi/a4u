@@ -337,7 +337,8 @@ def test_image_to_mermaid_prompt_lists_allowed_types_and_label_rules():
 # ---------------------------------------------------------------------------
 
 # Corpo minimo (px, unità utente) misurato in Chromium sui 15 campioni D8 di
-# Mermaid 11.17.2: la regola radice (14) è giusta solo su 9 tipi.
+# Mermaid 11.17.2: la sola regola radice (14) è giusta su 9 tipi (la
+# cascata del ripiego statico li risolve tutti, vedi sotto).
 _EXPECTED_MIN_PX: dict[str, float] = {
     "flowchart": 14,
     "sequenceDiagram": 16,
@@ -393,6 +394,21 @@ def test_measured_batch_returns_metrics_next_to_the_svg(
         assert item.metrics.font_px_min == pytest.approx(_EXPECTED_MIN_PX[kind], abs=0.01), kind
         assert item.metrics.text_count > 0 and item.metrics.font_px_median is not None, kind
         assert item.metrics.font_px_median >= item.metrics.font_px_min, kind
+
+
+def test_static_fallback_matches_the_measure_on_every_d8_type(
+    measured_batch: dict[str, mp.MermaidPrerender | None],
+) -> None:
+    """Il ripiego di una misura fallita (`svg_base_font_px`, cascata minima
+    del `<style>`) dà lo stesso minimo di Chromium su tutti i 15 tipi, pie
+    (17, classi `.slice`/`.legend text`), radar (12) e sequence (16, `style`
+    del `<text>` ereditato dai `tspan`) compresi: prima della correzione il
+    pie in dispensa usciva a 13,36 pt con `in_band=True`."""
+    for kind, item in measured_batch.items():
+        assert item is not None and item.metrics is not None, kind
+        parsed = svg_base_font_px(item.svg)
+        assert parsed.source in ("parsed", "root_rule"), kind
+        assert parsed.font_px_min == pytest.approx(item.metrics.font_px_min, abs=0.01), kind
 
 
 def test_render_mermaid_stays_a_string_and_a_failed_measure_keeps_the_svg(

@@ -88,8 +88,12 @@ def _join_mermaid_text_newlines(svg: str) -> str:
 # template frontend), host rimosso in `finally`. `fontSize` calcolato è in
 # unità utente, indipendente da viewBox e larghezza resa (`font-size="10"`
 # → 10, `"11pt"` → 14.667, `"4ex"` → 29.29). Ritorna `{min, median, count}`
-# (`{null, null, 0}` senza testi). Il sorgente è specchiato byte per byte in
-# `frontend/src/lib/figureFormats.ts` (`measureSvgFontPx`).
+# (`{null, null, 0}` senza testi). `measureSvgFontPx` in
+# `frontend/src/lib/figureFormats.ts` ne è il mirror funzionale, non una
+# copia letterale (TypeScript: `textContent ?? ""`, host creato dentro il
+# `try`, `catch` → `null`): stessa selezione, stesso filtro, stessa
+# mediana; la parità è provata in Chromium da
+# `tests/test_frontend_figure_layout.py::test_measure_js_parity_with_frontend`.
 MEASURE_SVG_FONT_PX_JS = """(svg) => {
   const host = document.createElement("div");
   host.style.cssText = "position:absolute;left:-100000px;top:0;width:1000px";

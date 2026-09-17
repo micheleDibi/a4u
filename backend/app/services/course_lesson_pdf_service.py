@@ -2,7 +2,7 @@
 
 Pipeline:
   content_raw (JSONB) + pdf_template (org)
-        ↓ registro dei renderer (`figure_render_service.render_svg_map`):
+        ↓ registro dei renderer (`figure_render_service.render_figure_map`):
           Mermaid via Playwright, Vega-Lite, DOT, function → SVG
         ↓ MathJax via Playwright → SVG inline (formule: una sola grammatica
           markdown-it per renderer e collector, `$..$`/`$$..$$` e
@@ -97,10 +97,16 @@ from app.models.user import User
 # «Mermaid pre-rendering» più avanti): slides_pdf, video e test li importano
 # da qui. `_MERMAID_RENDERER_HTML` è pigra (dipende dal setting del pin) ed è
 # servita dal `__getattr__` di modulo in coda al file.
-from app.services import figure_render_service, remote_storage
+from app.services import figure_render_service, remote_storage, slide_geometry
 from app.services import mermaid_prerender as _mermaid_prerender
 from app.services.asset_ref_normalize import cite_asset_refs, normalize_asset_refs
-from app.services.figure_markup import FigureVariant, caption_text, render_figure_html
+from app.services.figure_markup import (
+    FigureBox,
+    FigureVariant,
+    caption_text,
+    figure_label,
+    render_figure_html,
+)
 from app.services.figure_numbering import (
     ASSET_KINDS,
     append_uncited_asset_refs,
@@ -723,7 +729,9 @@ def _figure_width_style(
     `(larghezza, altezza | None)` in mm del contenuto della figura;
     `body_padding_mm` è il padding del wrapper da sottrarre;
     `expect_measured` segnala nei log un fallback dalle metriche misurate
-    (`figure_font_fallback`). Ogni fit è loggato (`figure_fit`); una banda
+    (`figure_font_fallback`); la costante di formato (lettura irrisolta o
+    metriche assenti) è segnalata così per ogni formato, perché il suo
+    `in_band` è un'ipotesi. Ogni fit è loggato (`figure_fit`); una banda
     irraggiungibile produce `figure_fit_out_of_band` e la voce del
     `fit_report` porta `in_band=False` (gate D13). L'SVG non è mai toccato."""
     if box is None:
@@ -775,7 +783,7 @@ def _figure_width_style(
         "text_count": text_count,
     }
     log.info("figure_fit", **fields)
-    if expect_measured and source != "measured":
+    if source == "constant" or (expect_measured and source != "measured"):
         log.warning("figure_font_fallback", **fields)
     if not fit.in_band:
         log.warning("figure_fit_out_of_band", **fields)
@@ -809,6 +817,7 @@ def _render_visual_asset_block(
     lesson_code: str | None = None,
     figure_box_mm: tuple[float, float | None] | None = None,
     fit_report: list[FigureFitEntry] | None = None,
+    figure_budget: slide_geometry.PageFigureBudget | None = None,
 ) -> str:
     """Blocco HTML di un asset visivo, per ogni formato, attraverso il
     partial unico `render_figure_html` (D4).
@@ -832,11 +841,23 @@ def _render_visual_asset_block(
         contenuto in chiaro nel corpo; per i formati renderizzabili è un
         errore visibile nei log (`figure_render_fallback`, A23).
 
-    `figure_box_mm` (D10) è il box `(larghezza, altezza | None)` in mm del
-    contenuto della figura: con esso i tre corpi SVG ricevono come ULTIMO
-    attributo `style="width:Wmm"` dalla banda di leggibilità
+    `figure_box_mm` (D10, dispensa) è il box `(larghezza, altezza | None)`
+    in mm del contenuto della figura: con esso i tre corpi SVG ricevono
+    come ULTIMO attributo `style="width:Wmm"` dalla banda di leggibilità
     (`_figure_width_style`); `None` = nessuna larghezza (chiamanti senza
     geometria). `fit_report` raccoglie una `FigureFitEntry` per figura.
+
+    `figure_budget` (D12, slide e frame video) è il budget del blocco
+    sulla pagina resa (`slide_geometry.page_figure_budget`): da esso, PRIMA
+    del fit, nasce il `FigureBox` dell'immagine (`slide_geometry.image_box`
+    sul testo reale di etichetta, didascalia e coda calcolata), emesso
+    come `--figure-w`/`--figure-h` sul `<figure>`; il fit usa quel box
+    (255 mm × altezza) al posto di `figure_box_mm`, e il sorgente del
+    fallback è troncato alle righe che entrano
+    (`slide_geometry.truncate_fallback_source`, log
+    `figure_fallback_truncated`). Un box al pavimento con budget non
+    clampato è loggato come `slide_figure_caption_squeezed`. Il ramo è
+    guardato da `figure_budget`, non da `variant`.
 
     `number` è il numero editoriale («Figura N.») o `None` («Figura.», slide
     e frame video, A2); `labels` è la mappa di `figure_labels(language)`.
@@ -847,61 +868,71 @@ def _render_visual_asset_block(
     caption = asset.get("caption", "") or ""
     alt_text = asset.get("alt_text") or ""
     svg_map: VisualSvgMap = visual_svg_map or {}
+    labels_map = labels if labels is not None else figure_labels(language)
 
     body: Markup | None = None
     fallback_source: str | None = None
     fallback_reason = ""
     extra_caption = ""
+    fig: RenderedFigure | None = None
+    is_mermaid = fmt == "mermaid"
 
-    if fmt == "mermaid":
-        # WeasyPrint NON esegue JS — il rendering Mermaid avviene server-side
-        # via Playwright (registro dei renderer). Qui inseriamo l'SVG già
-        # renderizzato: inline nella dispensa, `<img>` nelle slide.
+    if fmt in RENDERABLE_FORMATS:
+        # WeasyPrint NON esegue JS — il rendering avviene server-side (registro
+        # dei renderer: Mermaid via Playwright, gli altri offline). Qui si
+        # inserisce l'SVG già renderizzato: inline nella dispensa per
+        # Mermaid, `<img>` con data URI negli altri casi e nelle slide.
         fig = _figure_entry(svg_map, asset_id)
-        if fig is not None:
-            svg = fig.svg
-            style = _figure_width_style(
-                fig,
-                fmt=fmt,
-                variant=variant,
-                box=figure_box_mm,
-                body_padding_mm=_MERMAID_BODY_PADDING_MM if variant == "lesson" else 0.0,
-                expect_measured=True,
-                asset_id=asset_id,
-                lesson_code=lesson_code,
-                fit_report=fit_report,
-            )
-            if variant == "slide":
-                body = Markup(
-                    f'<img class="mermaid-svg" src="{svg_to_data_uri(svg)}" alt=""{style} />'
-                )
-            else:
-                body = Markup(f'<div class="mermaid-svg"{style}>{svg}</div>')
-        else:
+        if fig is None:
             fallback_source, fallback_reason = content, "svg_missing"
-    elif fmt in RENDERABLE_FORMATS:
-        # vegalite | dot | function: SVG normalizzato del registro.
-        fig = _figure_entry(svg_map, asset_id)
-        if fig is not None:
-            style = _figure_width_style(
-                fig,
-                fmt=fmt,
-                variant=variant,
-                box=figure_box_mm,
-                asset_id=asset_id,
-                lesson_code=lesson_code,
-                fit_report=fit_report,
+        elif fmt == "function":
+            extra_caption = figure_render_service.function_computed_caption(
+                content, language=language, asset_id=asset_id
             )
+
+    # Box dell'immagine dal budget della pagina (D12): calcolato PRIMA del
+    # fit perché ne fissa l'altezza, e sul testo reale della didascalia.
+    box: FigureBox | None = None
+    if figure_budget is not None:
+        caption_for_box = " ".join(
+            t for t in (figure_label(labels_map, number), str(caption), extra_caption) if t
+        )
+        box, squeezed = slide_geometry.image_box(figure_budget, caption_text=caption_for_box)
+        if squeezed and not figure_budget.clamped:
+            log.warning(
+                "slide_figure_caption_squeezed",
+                lesson_code=lesson_code,
+                asset_id=asset_id,
+                format=fmt,
+                box_h_mm=box.h_mm,
+            )
+    fit_box = (box.w_mm, box.h_mm) if box is not None else figure_box_mm
+
+    if fig is not None:
+        style = _figure_width_style(
+            fig,
+            fmt=fmt,
+            variant=variant,
+            box=fit_box,
+            body_padding_mm=(
+                _MERMAID_BODY_PADDING_MM if is_mermaid and variant == "lesson" else 0.0
+            ),
+            expect_measured=is_mermaid,
+            asset_id=asset_id,
+            lesson_code=lesson_code,
+            fit_report=fit_report,
+        )
+        if not is_mermaid:
             body = Markup(
                 f'<img class="figure-svg" src="{svg_to_data_uri(fig.svg)}" '
                 f'alt="{_html_escape_text(alt_text)}"{style} />'
             )
-            if fmt == "function":
-                extra_caption = figure_render_service.function_computed_caption(
-                    content, language=language, asset_id=asset_id
-                )
+        elif variant == "slide":
+            body = Markup(
+                f'<img class="mermaid-svg" src="{svg_to_data_uri(fig.svg)}" alt=""{style} />'
+            )
         else:
-            fallback_source, fallback_reason = content, "svg_missing"
+            body = Markup(f'<div class="mermaid-svg"{style}>{fig.svg}</div>')
     elif fmt == "image":
         # Asset immagine caricato dall'utente (path relativo `lesson_assets/...`).
         # Riusiamo il resolver dei template asset: legge dallo storage e
@@ -918,7 +949,7 @@ def _render_visual_asset_block(
             )
     elif fmt in _LEGACY_PLACEHOLDER_FORMATS:
         body = Markup(f'<div class="placeholder-image">{_html_escape_text(content)}</div>')
-    else:
+    elif fallback_source is None:
         # Formato sconosciuto: sorgente nel fallback, mai in chiaro nel corpo.
         fallback_source, fallback_reason = content, "format_unknown"
 
@@ -938,6 +969,22 @@ def _render_visual_asset_block(
                 asset_id=asset_id,
                 format=fmt,
             )
+        if box is not None:
+            # WeasyPrint ignora `max-height` sul `<pre>` frammentato dal fondo
+            # pagina: il sorgente si taglia qui alle righe che entrano. La
+            # lingua del corso decide l'altezza delle righe rese (font della
+            # riga base del `<pre>`, D12).
+            fallback_source, omitted = slide_geometry.truncate_fallback_source(
+                str(fallback_source), box=box, language=language
+            )
+            if omitted:
+                log.warning(
+                    "figure_fallback_truncated",
+                    lesson_code=lesson_code,
+                    asset_id=asset_id,
+                    format=fmt,
+                    omitted_lines=omitted,
+                )
 
     return render_figure_html(
         body_html=body,
@@ -946,11 +993,12 @@ def _render_visual_asset_block(
         asset_id=asset_id,
         fmt=fmt,
         number=number,
-        labels=labels if labels is not None else figure_labels(language),
+        labels=labels_map,
         variant=variant,
         fallback_source=str(fallback_source) if fallback_source is not None else None,
         extra_caption=extra_caption,
         caption_renderer=lambda text: Markup(render_markdown_inline(text, math_svg_map)),
+        box=box,
     )
 
 
@@ -1245,7 +1293,7 @@ def _asset_reference_fn(
 # vivono in `mermaid_prerender` e sono re-esportati in testa a questo modulo
 # con i vecchi nomi: i chiamanti (`course_lesson_slides_pdf_service`, video,
 # test) non cambiano. Il dispatch per formato (Mermaid, Vega-Lite, DOT,
-# function) è di `figure_render_service.render_svg_map`.
+# function) è di `figure_render_service.render_figure_map`.
 
 
 async def _prerender_visual_assets_for_lesson(
@@ -2026,9 +2074,11 @@ def render_lesson_html(
 def _log_figure_fit_report(
     *, lesson_code: str | None, fit_report: Sequence[FigureFitEntry]
 ) -> None:
-    """Summary per lezione del fit delle figure (D10): totale, in banda e
-    l'elenco delle figure fuori banda con corpo e provenienza del font
-    (input del gate editoriale D13). Condiviso da dispensa e slide."""
+    """Summary per lezione del fit delle figure (D10): totale, in banda,
+    l'elenco delle figure fuori banda con corpo e provenienza del font e
+    quello delle figure calcolate sulla costante di formato, il cui
+    `in_band` è un'ipotesi (input del gate editoriale D13). Condiviso da
+    dispensa e slide."""
     out_of_band = [
         (e.asset_id, e.fmt, e.text_pt, e.font_source) for e in fit_report if not e.in_band
     ]
@@ -2038,6 +2088,7 @@ def _log_figure_fit_report(
         total=len(fit_report),
         in_band=len(fit_report) - len(out_of_band),
         out_of_band=out_of_band,
+        font_fallback=[(e.asset_id, e.fmt) for e in fit_report if e.font_source == "constant"],
     )
 
 

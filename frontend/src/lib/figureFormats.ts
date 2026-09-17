@@ -631,9 +631,10 @@ export function formatMm(value: number): string {
  * Corpo del testo di un SVG misurato nel DOM: `{min, median, count}` sui
  * `text`/`tspan` con nodo di testo proprio non vuoto e non `display:none`,
  * in unità utente (`getComputedStyle().fontSize` non dipende da viewBox né
- * dalla larghezza resa). Stesso corpo di `MEASURE_SVG_FONT_PX_JS` nel
- * pre-render backend (`mermaid_prerender.py`), parità provata in Chromium
- * da `test_frontend_figure_layout.py`. Host fuori schermo, MAI
+ * dalla larghezza resa). Mirror funzionale (non copia letterale) di
+ * `MEASURE_SVG_FONT_PX_JS` nel pre-render backend (`mermaid_prerender.py`):
+ * stessa selezione, stesso filtro, stessa mediana; parità provata in
+ * Chromium da `test_frontend_figure_layout.py`. Host fuori schermo, MAI
  * `visibility:hidden` (azzererebbe i testi), rimosso in `finally`. `null`
  * se la misura fallisce (nessun DOM, eccezione): il chiamante ripiega sul
  * fallback del tema.

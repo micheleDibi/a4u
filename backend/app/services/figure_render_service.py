@@ -1791,7 +1791,8 @@ class FunctionRenderer:
         `render_svg`/`validate(deep=True)`; mai calcolata qui. Vuota se la
         spec non è valida (nessun SVG a monte: il fallback è già loggato)
         o se il risultato non è (più) in cache: quest'ultimo caso non deve
-        accadere dopo `render_svg_map` (che lo ripopola) ed è loggato come
+        accadere dopo `render_figure_map` (che lo ripopola, anche quando è
+        chiamata dalla proiezione `render_svg_map`) ed è loggato come
         `figure_caption_missing`, così una coda persa non è silenziosa."""
         spec, _issues = parse_function_spec(self.sanitize(content))
         if spec is None:

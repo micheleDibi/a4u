@@ -665,6 +665,136 @@
         "text_count": 2,
         "source": "parsed"
       }
+    },
+    {
+      "name": "pie Mermaid 11: regole di classe e di discendenza sopra la radice (Chromium 17)",
+      "svg": "<svg id=\"p\" width=\"100%\" viewBox=\"0 0 400 300\"><style>#p{font-size:14px}#p svg{font-size:14px}#p .pieTitleText{font-size:25px}#p .slice{font-size:17px}#p .legend text{font-size:17px}</style><g><text class=\"slice\">60%</text><text class=\"pieTitleText\">Ripartizione</text><g class=\"legend\"><text>Teoria</text></g></g></svg>",
+      "expected": {
+        "font_px_min": 17.0,
+        "font_px_median": 17.0,
+        "text_count": 3,
+        "source": "root_rule"
+      }
+    },
+    {
+      "name": "radar Mermaid 11: regola di classe sotto la radice (Chromium 12)",
+      "svg": "<svg id=\"r\" width=\"100%\" viewBox=\"0 0 600 200\"><style>#r{font-size:14px}#r .radarTitle{font-size:14px}#r .radarAxisLabel{font-size:12px}</style><text class=\"radarAxisLabel\">Analisi</text><text class=\"radarTitle\">Competenze</text></svg>",
+      "expected": {
+        "font_px_min": 12.0,
+        "font_px_median": 13.0,
+        "text_count": 2,
+        "source": "root_rule"
+      }
+    },
+    {
+      "name": "sequence Mermaid 11: lo tspan eredita lo style del text che lo contiene (Chromium 16)",
+      "svg": "<svg id=\"s\"><style>#s{font-size:14px}</style><text class=\"actor\" style=\"text-anchor: middle; font-size: 16px\"><tspan>Server</tspan></text></svg>",
+      "expected": {
+        "font_px_min": 16.0,
+        "font_px_median": 16.0,
+        "text_count": 1,
+        "source": "parsed"
+      }
+    },
+    {
+      "name": "flowchart: le regole di tooltip e titolo non toccano le label, resta la radice",
+      "svg": "<svg id=\"f\"><style>#f{font-size:14px}#f div.mermaidTooltip{font-size:12px}#f .flowchartTitleText{font-size:18px}</style><g class=\"label\"><text><tspan class=\"text-inner-tspan\">Tesi</tspan></text></g></svg>",
+      "expected": {
+        "font_px_min": 14.0,
+        "font_px_median": 14.0,
+        "text_count": 1,
+        "source": "root_rule"
+      }
+    },
+    {
+      "name": "cascata: !important del foglio > style in linea > foglio > attributo di presentazione",
+      "svg": "<svg id=\"c\"><style>#c .a{font-size:20px!important}#c .b{font-size:20px}#c .d{font-size:9px}</style><text class=\"a\" style=\"font-size:8px\">a</text><text class=\"b\" style=\"font-size:11px\">b</text><text class=\"d\" font-size=\"30\">d</text></svg>",
+      "expected": {
+        "font_px_min": 9.0,
+        "font_px_median": 11.0,
+        "text_count": 3,
+        "source": "root_rule"
+      }
+    },
+    {
+      "name": "unità relative: em e % sul padre",
+      "svg": "<svg id=\"u\"><style>#u{font-size:10px}</style><text font-size=\"1.5em\">a</text><g font-size=\"20\"><text style=\"font-size:50%\">b</text></g></svg>",
+      "expected": {
+        "font_px_min": 10.0,
+        "font_px_median": 12.5,
+        "text_count": 2,
+        "source": "parsed"
+      }
+    },
+    {
+      "name": "em senza antenati accanto a un testo esatto: irrisolto (il DOM usa il contenitore)",
+      "svg": "<svg><text font-size=\"0.6em\">relativo</text><text font-size=\"14\">voce</text></svg>",
+      "expected": {
+        "font_px_min": null,
+        "font_px_median": null,
+        "text_count": 2,
+        "source": "unresolved"
+      }
+    },
+    {
+      "name": "% senza antenati nello style in linea: irrisolto",
+      "svg": "<svg><text style=\"font-size:60%\">relativo</text><text font-size=\"14\">voce</text></svg>",
+      "expected": {
+        "font_px_min": null,
+        "font_px_median": null,
+        "text_count": 2,
+        "source": "unresolved"
+      }
+    },
+    {
+      "name": "ex come limite inferiore (0,4 em): il titolo 4ex del timeline non è il minimo",
+      "svg": "<svg id=\"t\"><style>#t{font-size:14px}</style><text font-size=\"4ex\">Cronologia</text><text>Evento</text></svg>",
+      "expected": {
+        "font_px_min": 14.0,
+        "font_px_median": 18.2,
+        "text_count": 2,
+        "source": "root_rule"
+      }
+    },
+    {
+      "name": "ex che potrebbe stare sotto il minimo esatto: irrisolto",
+      "svg": "<svg id=\"t\"><style>#t{font-size:14px}</style><text font-size=\"2ex\">a</text><text>b</text></svg>",
+      "expected": {
+        "font_px_min": null,
+        "font_px_median": null,
+        "text_count": 2,
+        "source": "unresolved"
+      }
+    },
+    {
+      "name": "selettore fuori grammatica che dichiara il corpo: irrisolto, mai un valore inventato",
+      "svg": "<svg id=\"x\"><style>#x text:first-child{font-size:30px}</style><text font-size=\"12\">a</text></svg>",
+      "expected": {
+        "font_px_min": null,
+        "font_px_median": null,
+        "text_count": 1,
+        "source": "unresolved"
+      }
+    },
+    {
+      "name": "pseudo-classe dinamica e pseudo-elemento: mai nel render statico",
+      "svg": "<svg id=\"h\"><style>#h{font-size:14px}#h .n:hover{font-size:30px}#h .n::before{font-size:2px}</style><text class=\"n\">a</text></svg>",
+      "expected": {
+        "font_px_min": 14.0,
+        "font_px_median": 14.0,
+        "text_count": 1,
+        "source": "root_rule"
+      }
+    },
+    {
+      "name": "testo dopo un figlio e CDATA contano come nel DOM, lo spazio non separabile no",
+      "svg": "<svg><text font-size=\"10\"><tspan font-size=\"12\">a</tspan>b</text><text font-size=\"9\"><![CDATA[c]]></text><text font-size=\"8\">&#160;</text></svg>",
+      "expected": {
+        "font_px_min": 9.0,
+        "font_px_median": 10.0,
+        "text_count": 3,
+        "source": "parsed"
+      }
     }
   ],
   "format_mm": [

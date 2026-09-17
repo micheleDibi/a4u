@@ -5,7 +5,14 @@ usano `httpx.AsyncClient` con `ASGITransport(app)` e una sessione SQLAlchemy
 isolata per fixture; i test «puri» (moduli leaf delle figure, prompt, script)
 non toccano il DB. Inventario rigenerato da `pytest --collect-only -q` sul
 branch `feat/academic-figures` (7 settembre 2026): **37 moduli, 877 item**;
-il conteggio degli item per modulo è indicato fra parentesi.
+il conteggio degli item per modulo è indicato fra parentesi. I conteggi
+dei moduli delle figure toccati da WP3 (`test_slide_figure_geometry`,
+`test_figure_scale`, `test_lesson_pdf_figure_text_size`,
+`test_svg_normalize`, `test_mermaid_prerender`,
+`test_figure_render_service`, `test_lesson_pdf_figures`,
+`test_frontend_figure_layout`) sono rigenerati con
+`python3 -m pytest --collect-only -q` il 17 settembre 2026; gli altri
+moduli non sono stati reinventariati.
 
 ---
 
@@ -310,7 +317,7 @@ Specchio fra `figure_theme.FIGURE_I18N` e i locale `it.json`/`en.json`
 (JSON annidato appiattito): chiavi coincidenti in entrambe le direzioni;
 salta se manca `../frontend`.
 
-### `tests/test_mermaid_prerender.py` (17)
+### `tests/test_mermaid_prerender.py` (41)
 
 Mermaid 11 (WP1), offline: pin unico `settings.mermaid_cdn_version` nella
 pagina di pre-render e in quella del validatore, `htmlLabels: false`
@@ -321,7 +328,11 @@ byte-identico sulla fixture 10.9.4; la fixture 11.17.2 porta ancora
 `openai_image_to_mermaid_service`, vincoli 11.x nei prompt di fix e
 conversione. La guardia di rete (`block_external_requests` prima di
 `set_content`, solo URL del CDN) è verificata sulle tre pagine headless:
-pre-render Mermaid, validatore e pre-render MathJax del PDF.
+pre-render Mermaid, validatore e pre-render MathJax del PDF. Misura del
+corpo dei testi (D10, Chromium e CDN): minimo per tipo sui 15 campioni
+D8, misura fallita che conserva l'SVG, e parità del ripiego statico
+(`svg_base_font_px`) con la misura su tutti i 15 tipi, pie, radar e
+sequence compresi.
 
 ### `tests/test_lesson_pdf_math.py`
 
@@ -362,13 +373,32 @@ HTML nelle label, frecce e annotazioni ammesse), estrazione degli asset
 dai JSONB, asset non citati, valutazione con un renderer finto, righe del
 report.
 
-### `tests/test_svg_normalize.py` (37)
+### `tests/test_svg_normalize.py` (44)
 
 `normalize_svg` (Q3): prologo rimosso, rifiuti (`<script>`,
 `<foreignObject>`, `<image>`, SMIL, `href` esterni quotati e non, `on*=`,
 `url()` non-frammento, anche con prefisso di namespace e dentro
 `<style>`), label «vedi url(x)» e attributi `aria-*` accettati, radice
-riscritta in px (pt/mm/in), `max_bytes`, `svg_to_data_uri`.
+riscritta in px (pt/mm/in), `max_bytes`, `svg_to_data_uri`. Letture per
+la banda (D10): `svg_intrinsic_box` e la cascata minima di
+`svg_base_font_px` (figlio diretto, specificità, ordine, `#id svg` solo
+annidato, `<style>` con `>`, commenti e CDATA; dichiarazioni di corpo
+fuori grammatica → `unresolved`; testo proprio come nel DOM).
+
+### `tests/test_figure_scale.py` (71)
+
+`figure_scale` (D10, D11): casi della fixture condivisa
+`figure_scale_cases.json` (`fit`, `svg_box`, `svg_font` — compresi i
+relativi `em`/`%` senza antenati, irrisolti —, `format_mm`) in Python e,
+con Node (`--experimental-strip-types`), sulla copia
+`lib/figureFormats.ts`; variant ignota, base non finita = senza testo,
+provenienze di `resolve_base_font_px`; invarianti property-based del fit
+(mai oltre il box, mai sopra il tetto, ingrandimento solo per i fluidi o
+fino al fondo della banda, fuori banda solo con il box come vincolo
+attivo); crescita massima di un `<img>` sotto banda (scala al più fondo /
+corpo naturale, corpo esattamente al fondo quando il box non la ferma,
+mai oltre il box: il costo documentato è qualche salto pagina anticipato
+nella dispensa); costanti di ripiego derivate dal tema.
 
 ### `tests/test_vegalite_rules.py` (55)
 
@@ -379,7 +409,7 @@ ereditarietà dei campi `sequence` alla radice e nei figli
 `layer`/`vconcat`/`concat`/`hconcat`/`spec`, alias `calculate`,
 `nesting_depth`.
 
-### `tests/test_figure_render_service.py` (100)
+### `tests/test_figure_render_service.py` (360)
 
 Registro dei renderer e `run_isolated` (checklist del brief §7):
 Vega-Lite (spec valida; `data.url` annidato, > 4.000 caratteri, `mark
@@ -390,9 +420,9 @@ mancante con `monkeypatch` di `shutil.which` → `(False, "dot_unavailable")`,
 mai pass-through); Mermaid (gate statico: tipi, `%%{init`/`initialize`,
 frontmatter, HTML nelle label); `run_isolated` (`slow_target`:
 timeout reale entro la scadenza senza figli vivi, risultato da 2 MB,
-eccezione del figlio → `FigureComputeError`); `render_svg_map` (un batch
-per formato, cache LRU, cache negativa, timeout senza eccezioni, tetto
-del batch Mermaid); `validate_visual_assets_or_raise` (solo asset
+eccezione del figlio → `FigureComputeError`); `render_figure_map` e la
+proiezione `render_svg_map` (un batch per formato, cache LRU, cache
+negativa, timeout senza eccezioni, tetto del batch Mermaid); `validate_visual_assets_or_raise` (solo asset
 cambiati, payload 422). `skipif` per i casi che eseguono vl-convert o
 `dot`.
 
@@ -435,7 +465,7 @@ crescente, citazioni ripetute → stesso N, id senza asset senza numero,
 `FIG` case-sensitive, orfane in coda, `strip_figure_prefix` mai «lossy»;
 parità con `lib/figureNumbering.ts` eseguita con Node.
 
-### `tests/test_lesson_pdf_figures.py` (50)
+### `tests/test_lesson_pdf_figures.py` (84)
 
 Rendering delle figure nei PDF (WP4), puro su oggetti non persistiti:
 didascalie «Figura N.» in ordine di citazione, orfano in coda dopo la
@@ -446,8 +476,114 @@ Mermaid/image/legacy nel wrapper (A11-L3), slide con «Figura.» e `<img
 class="figure-svg">`, coda `function` sopravvissuta all'eviction della
 cache; WeasyPrint 69 rende le label degli SVG Mermaid 11 e degli `<img
 data:svg>` matplotlib/dot (testo estratto con pypdf, nessun warning oltre
-il filtro). `importorskip` su weasyprint/pypdf/matplotlib, `skipif` su
-`dot`.
+il filtro); banda di leggibilità (D10): golden del percorso misurato
+(v11 a 140,76 mm in dispensa e 179,15 nelle slide), figure fuori banda
+loggate e nel `fit_report`, box dalla geometria del template, larghezza
+applicata da WeasyPrint; `figure_font_fallback` per la costante di
+formato su DOT, Vega-Lite e `function` e voce `font_fallback` del summary
+`figure_fit_report`; partial con `box` (D12): `style` sul `<figure>`
+dopo `aria-label`, `_FIGURE_RE` intatta, senza box markup identico; CSS
+del template slide con `var(--figure-h)` sulle figure, l'unico `80mm`
+come ripiego della regola generica (`var(--figure-h, 80mm)`) e i residui
+`max-height` 14 e 40 mm.
+`importorskip` su weasyprint/pypdf/matplotlib, `skipif` su `dot`.
+
+### `tests/test_lesson_pdf_figure_text_size.py` (26)
+
+Corpo del testo delle figure nel PDF (D10, D11), senza Chromium: per
+ogni caso (SVG fluidi 340×158, 507,8×158, 1200×420, 650×907, 300×1600,
+flowchart v11 misurato, DOT, Vega-Lite e `function` reali, ripieghi pie e
+radar letti dal `<style>`) dispensa e slide rese con
+`weasyprint.HTML(...).render()`, camminata sui box, scala `min(box_w/vb_w,
+box_h/vb_h)` e corpo `base × 0,75 × scala` fra 8 e 11 pt in dispensa e
+fra 10 e 14 pt nelle slide; i casi dichiarati fuori banda devono esserlo
+davvero, con `in_band=False` nel report. Tre `<img>` intrinseci in
+dispensa: testo a 4,5 pt che cresce esattamente fino a 8 pt, lo stesso
+fermato dal box di 242 mm (fuori banda, mai oltre il box), testo a 9 pt
+che resta a scala 1. Controprova: la geometria di prima di D10 porta il
+flowchart v11 a 13,3 e 19,9 pt.
+
+### `tests/test_slide_figure_geometry.py` (192)
+
+Box della figura per pagina nelle slide e nei frame video (D12):
+fixture `slide_figure_box_cases.json` (budget per pagina a 3 decimali,
+box al decimo, troncatura del fallback con gli a capo riscritti come
+`\n`, stime di righe pinnate); calibrazione dello stimatore sui
+`LineBox` reali di WeasyPrint per Helvetica, Arial, Verdana, Noto Sans,
+Liberation Sans, DejaVu Sans (`real ≤ stima ≤ real + 1` su 36 testi,
+simboli larghi compresi); `<pre>` di fallback senza a capo
+(`white-space: pre`, settimo giro): profili di lingua (35 codici:
+neutra o altra), riga alta di mn-cn, tcy e del mongolo tradizionale,
+esclusioni di vi, insieme base e righe alte a 1,70 em, righe con prima
+run ideografica a 2,46 em (ottavo giro: ideogrammi, kana, Hangul,
+Bopomofo, Tangut, Nüshu e Khitan in testa anche dopo spazi, cifre,
+parentesi, emoji, PUA, segni combinanti, modificatori e alfanumerici
+matematici; lettere latine, greche, cirilliche, arabe, devanagari,
+tibetane e a larghezza piena decidono per la baseline romana; costo
+indipendente dalle righe vicine; troncatura in bo a 12 righe contro 17
+con l'id ASCII in testa), classificatore contro gli script di GLib su
+tutto Unicode (ogni carattere a baseline ideografica è in
+`_IDEO_SCRIPT_RE`, ogni lettera che decide per la baseline romana ha uno
+script reale), una riga sorgente per riga resa qualunque sia la
+lunghezza, separatori (CRLF,
+CR, U+2028 e U+2029 a capo e riscritti come `\n`; NEL, FF e VT dentro la
+riga; NUL tolti), assenza della macchina delle larghezze mono rimossa
+(`estimate_lines(mono=True)` rifiutato); corpus avversario `pre_sources`
+(71 casi: i 25 testi dello stimatore `pre-wrap` rimosso, regole UAX #14
+dei giri 6 e 7, tab, spazi iniziali e finali, righe vuote, una riga da
+25.000 caratteri, JSON minificato, 200 righe corte, CJK, kana, Hangul,
+ebraico, arabo, devanagari, kannada, tibetano, mongolo, thai, emoji,
+separatori e controlli, riga DOT reale, i cinque casi V7-1 con
+ideogrammi, katakana e Hangul in testa e il controllo con l'id ASCII in
+testa) con le righe attese contate dagli a capo e reso nel `<pre>` del
+percorso reale in 13 lingue (it, vi, hi, th, he, ar, ru, ja, zh-cn, ko,
+kn, bo, my): `LineBox` di WeasyPrint e righe di Chromium UGUALI alla
+stima, altezza resa non oltre la stima, in WeasyPrint anche riga per
+riga;
+controprova con la regola `pre-wrap` di prima (più di 40 righe sui casi
+del sesto giro, righe in più su almeno 30 casi in entrambi i motori); i
+669 caratteri dell'insieme base su righe da 3,210 mm con DejaVu Sans
+Mono e con la pila del template; riga base più alta emulata con
+STIXNonUni (3,464 mm per riga): con `language="ja"` il marcatore resta
+nel `<pre>` e nel testo del PDF, con il profilo neutro l'ultima riga
+esce dal padding (controprova);
+mirror a regex delle costanti sul template (`white-space: pre` e
+`overflow: hidden` compresi) e dei numeri di riga citati in
+`slide_geometry.py`; modello
+additivo contro la geometria resa (`.slide-body` 255 × 120 a y 35, riga
+del titolo 10,37, figura a 35 + tag + 3 + 10,372 + 4); lezione da 14
+pagine resa senza split (titoli da 1/2/3 righe, prosa, bullet, SVG
+fluido alto, SVG intrinseco, PNG caricata, fallback da 60 righe, due
+figure, figura + tabella, didascalia da 559 caratteri, pagina
+impossibile): nessun `.slide-asset` sotto il body salvo la pagina
+impossibile loggata, immagini entro `--figure-h`, `<pre>` entro le righe
+che entrano, log di condivisione e troncatura; controprova con il cap 80
+mm monkeypatchato che DEVE sbordare; frame Chromium con
+`_VIDEO_OVERRIDE_CSS` (skip solo su `chromium.launch()`); dieci slide di
+fallback a righe lunghe, con U+2028/U+2029 o del sesto giro con le righe
+esatte, senza asset né didascalia sotto il body in WeasyPrint e nel
+frame video, `<pre>` senza pixel nascosti; il corpus nelle slide delle
+13 lingue, asset-only e con due bullet: righe esatte nei due motori,
+nessuna riga più alta della sua stima, nessuna riga sotto il clip, nessuno sbordo, una didascalia per slide,
+«…» reso e visibile dove il sorgente è troncato; nessun pixel scuro a
+destra del body nel PDF rasterizzato (pypdfium2) e nello screenshot del
+frame per otto righe larghe in it, he, ar e ja, con la controprova senza
+`overflow: hidden`; controprove della regola `pre-wrap` (didascalia persa
+e `<pre>` oltre il body di più di 40 mm sui casi del sesto giro) e dei
+separatori Unicode non contati (sbordano di oltre 40 mm) e del modello
+del settimo giro sulle righe con prima run ideografica (katakana in
+testa e birmano in un corso bo: righe oltre la stima e ultima riga sotto
+il clip; il controllo con l'id ASCII in testa resta pulito); slide di un
+corso in giapponese troncata a 18 righe più «…» (72 omesse contro 66
+in italiano); 1 slide JSON →
+1 pagina senza split; split con budget per pagina; budget diviso fra più
+blocchi; didascalia lunga e coda `function` reale che abbassano il box,
+`slide_figure_caption_squeezed` solo al pavimento con budget non
+clampato; equazioni alte (attributi esterni di SVG MathJax reali:
+`aligned` di 8 righe, `pmatrix` di 20) al cap di 80 mm del ripiego
+`var(--figure-h, 80mm)` in WeasyPrint e nel frame Chromium, con la
+controprova che senza ripiego sbordano o spariscono. `importorskip` su
+weasyprint e playwright.
 
 ### `tests/test_frontend_figure_i18n.py` (20)
 

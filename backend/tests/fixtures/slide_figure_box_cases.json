@@ -1,0 +1,1380 @@
+{
+  "_comment": "Casi di slide_geometry (D12): `pages` per page_figure_budget (titolo/body/bullets/n_blocks → budget del blocco, valori a 3 decimali calcolati con le costanti esatte del template: tag 4.7625, titolo 10.371667/riga, prosa 6.649861/riga, bullet 5.23875/riga, didascalia 4.233333/riga, safety 3), `captions` per image_box (block_h + testo reale della didascalia → box al decimo per difetto, pavimento 25), `fallback` per truncate_fallback_source (box e `language` facoltativa → righe base che entrano (`fit`), testo con gli a capo riscritti come \\n e, se troncato, «…», righe rese e altezza stimate del testo (`rows`, `height_mm`, mai oltre il box meno 4,28 mm di padding e bordi); il <pre> delle slide è in white-space: pre (settimo giro): una riga sorgente è una riga resa, tagliata a destra se più larga, a capo su CRLF, CR, LF, U+2028 e U+2029, i NUL scartati; costo di una riga = 1,3 em se è nell'insieme base e la lingua è neutra, 1,70 em altrimenti (con ja, zh-cn, hi, kn la pagina asset-only tiene 18 righe più «…» invece di 24), 2,46 em se il primo carattere con script reale è ideografico (ottavo giro, V7-1: Pango allinea le altre run sulla baseline ideografica; il caso zh-cn con righe cinesi in testa passa da 47 a 51 righe omesse), `lines` per lo stimatore di righe (limite superiore: il test WeasyPrint verifica real <= est <= real + 1 sui LineBox per Helvetica, Arial, Verdana, Noto Sans, Liberation Sans, DejaVu Sans). Stili: title 28pt bold 255mm, bullet 11pt 248mm, body 13pt max-width 72ch, caption 8pt 255mm. `pre_sources`: corpus avversario del <pre> di fallback (sorgente = text ripetuto `repeat` volte; i casi «stimatore a capo» sono i testi dello stimatore pre-wrap rimosso, gli altri le regole UAX #14 del sesto e settimo giro, i casi V7-1 dell'ottavo (script ideografico in testa), tab, spazi, righe vuote, righe lunghissime, script e separatori); `rows` = righe rese attese, contate con lo split sugli a capo: il test le verifica ESATTE sui LineBox di WeasyPrint e sulle righe di Chromium in 13 lingue, da sole e nelle slide, con l'altezza riga per riga.",
+  "pages": [
+    {
+      "name": "titolo su una riga, asset-only",
+      "title": "Titolo su una riga",
+      "body": "",
+      "bullets": [],
+      "n_blocks": 1,
+      "expected": {
+        "w_mm": 255.0,
+        "block_h_mm": 92.866,
+        "available_mm": 92.866,
+        "n_blocks": 1,
+        "clamped": false
+      },
+      "note": "used 27.134 → 92.866"
+    },
+    {
+      "name": "titolo 92 caratteri mixed-case (2 righe reali Helvetica, 3 stimate)",
+      "title": "Sistemi distribuiti e modelli di consistenza: replica, partizionamento e tolleranza ai guasti",
+      "body": "",
+      "bullets": [],
+      "n_blocks": 1,
+      "expected": {
+        "w_mm": 255.0,
+        "block_h_mm": 72.123,
+        "available_mm": 72.123,
+        "n_blocks": 1,
+        "clamped": false
+      },
+      "note": ""
+    },
+    {
+      "name": "titolo 160 caratteri (3 righe reali, 4 stimate)",
+      "title": "Introduzione alle architetture a microservizi: decomposizione del dominio, comunicazione asincrona, osservabilita del sistema e strategie di migrazione dal monolite",
+      "body": "",
+      "bullets": [],
+      "n_blocks": 1,
+      "expected": {
+        "w_mm": 255.0,
+        "block_h_mm": 51.379,
+        "available_mm": 51.379,
+        "n_blocks": 1,
+        "clamped": false
+      },
+      "note": ""
+    },
+    {
+      "name": "titolo tutto in maiuscolo 46 caratteri (2 righe reali)",
+      "title": "ARCHITETTURE DISTRIBUITE E SISTEMI CONCORRENTI",
+      "body": "",
+      "bullets": [],
+      "n_blocks": 1,
+      "expected": {
+        "w_mm": 255.0,
+        "block_h_mm": 82.494,
+        "available_mm": 82.494,
+        "n_blocks": 1,
+        "clamped": false
+      },
+      "note": ""
+    },
+    {
+      "name": "titolo mixed-case 53 caratteri (prudenza: Lt 2)",
+      "title": "Sistemi Distribuiti: Modelli di Consistenza e Replica",
+      "body": "",
+      "bullets": [],
+      "n_blocks": 1,
+      "expected": {
+        "w_mm": 255.0,
+        "block_h_mm": 82.494,
+        "available_mm": 82.494,
+        "n_blocks": 1,
+        "clamped": false
+      },
+      "note": ""
+    },
+    {
+      "name": "titolo CJK senza spazi (W/F a 1.0 em, parola unica)",
+      "title": "分散システムにおける一貫性モデルとレプリケーション戦略の比較と評価について解説",
+      "body": "",
+      "bullets": [],
+      "n_blocks": 1,
+      "expected": {
+        "w_mm": 255.0,
+        "block_h_mm": 82.494,
+        "available_mm": 82.494,
+        "n_blocks": 1,
+        "clamped": false
+      },
+      "note": ""
+    },
+    {
+      "name": "titolo di 60 lettere senza spazi (ceil, non 3)",
+      "title": "Pneumonoultramicroscopicsilicovolcanoconiosisxxxxxxxxxxxxxxx",
+      "body": "",
+      "bullets": [],
+      "n_blocks": 1,
+      "expected": {
+        "w_mm": 255.0,
+        "block_h_mm": 82.494,
+        "available_mm": 82.494,
+        "n_blocks": 1,
+        "clamped": false
+      },
+      "note": ""
+    },
+    {
+      "name": "titolo vuoto (una riga di budget)",
+      "title": "",
+      "body": "",
+      "bullets": [],
+      "n_blocks": 1,
+      "expected": {
+        "w_mm": 255.0,
+        "block_h_mm": 92.866,
+        "available_mm": 92.866,
+        "n_blocks": 1,
+        "clamped": false
+      },
+      "note": ""
+    },
+    {
+      "name": "slide dedicata Fase 4: titolo + body 234 caratteri",
+      "title": "Titolo su una riga",
+      "body": "Il diagramma mostra il flusso del protocollo di consenso fra il leader e i follower: la proposta viene replicata, confermata dalla maggioranza dei nodi e infine applicata; un timeout sul follower avvia una nuova elezione con termine incrementato.",
+      "bullets": [],
+      "n_blocks": 1,
+      "expected": {
+        "w_mm": 255.0,
+        "block_h_mm": 61.266,
+        "available_mm": 61.266,
+        "n_blocks": 1,
+        "clamped": false
+      },
+      "note": "a HEAD sbordava con il cap 80"
+    },
+    {
+      "name": "titolo + 5 bullet da una riga (video senza split)",
+      "title": "Titolo su una riga",
+      "body": "",
+      "bullets": [
+        "Punto 1: enunciato compiuto su una riga sola",
+        "Punto 2: enunciato compiuto su una riga sola",
+        "Punto 3: enunciato compiuto su una riga sola",
+        "Punto 4: enunciato compiuto su una riga sola",
+        "Punto 5: enunciato compiuto su una riga sola"
+      ],
+      "n_blocks": 1,
+      "expected": {
+        "w_mm": 255.0,
+        "block_h_mm": 51.672,
+        "available_mm": 51.672,
+        "n_blocks": 1,
+        "clamped": false
+      },
+      "note": "a HEAD sbordava di 25.9/26.8 mm"
+    },
+    {
+      "name": "titolo + 3 bullet",
+      "title": "Titolo su una riga",
+      "body": "",
+      "bullets": [
+        "Punto 1: enunciato compiuto su una riga sola",
+        "Punto 2: enunciato compiuto su una riga sola",
+        "Punto 3: enunciato compiuto su una riga sola"
+      ],
+      "n_blocks": 1,
+      "expected": {
+        "w_mm": 255.0,
+        "block_h_mm": 67.15,
+        "available_mm": 67.15,
+        "n_blocks": 1,
+        "clamped": false
+      },
+      "note": ""
+    },
+    {
+      "name": "titolo + body 234 + 5 bullet (clamp)",
+      "title": "Titolo su una riga",
+      "body": "Il diagramma mostra il flusso del protocollo di consenso fra il leader e i follower: la proposta viene replicata, confermata dalla maggioranza dei nodi e infine applicata; un timeout sul follower avvia una nuova elezione con termine incrementato.",
+      "bullets": [
+        "Punto 1: enunciato compiuto su una riga sola",
+        "Punto 2: enunciato compiuto su una riga sola",
+        "Punto 3: enunciato compiuto su una riga sola",
+        "Punto 4: enunciato compiuto su una riga sola",
+        "Punto 5: enunciato compiuto su una riga sola"
+      ],
+      "n_blocks": 1,
+      "expected": {
+        "w_mm": 255.0,
+        "block_h_mm": 31.233,
+        "available_mm": 20.073,
+        "n_blocks": 1,
+        "clamped": true
+      },
+      "note": ""
+    },
+    {
+      "name": "10 bullet + body (pagina impossibile)",
+      "title": "Titolo su una riga",
+      "body": "Il diagramma mostra il flusso del protocollo di consenso fra il leader e i follower: la proposta viene replicata, confermata dalla maggioranza dei nodi e infine applicata; un timeout sul follower avvia una nuova elezione con termine incrementato.",
+      "bullets": [
+        "Punto 1: enunciato compiuto su una riga sola",
+        "Punto 2: enunciato compiuto su una riga sola",
+        "Punto 3: enunciato compiuto su una riga sola",
+        "Punto 4: enunciato compiuto su una riga sola",
+        "Punto 5: enunciato compiuto su una riga sola",
+        "Punto 1: enunciato compiuto su una riga sola",
+        "Punto 2: enunciato compiuto su una riga sola",
+        "Punto 3: enunciato compiuto su una riga sola",
+        "Punto 4: enunciato compiuto su una riga sola",
+        "Punto 5: enunciato compiuto su una riga sola"
+      ],
+      "n_blocks": 1,
+      "expected": {
+        "w_mm": 255.0,
+        "block_h_mm": 31.233,
+        "available_mm": -18.621,
+        "n_blocks": 1,
+        "clamped": true
+      },
+      "note": "available negativo: la pagina sborda per i bullet"
+    },
+    {
+      "name": "un bullet da 240 caratteri (2 righe)",
+      "title": "Titolo su una riga",
+      "body": "",
+      "bullets": [
+        "La consistenza eventuale garantisce che, in assenza di nuovi aggiornamenti, tutte le repliche convergano allo stesso stato entro un tempo finito, accettando letture obsolete nel frattempo per privilegiare disponibilita e tolleranza alle partizioni"
+      ],
+      "n_blocks": 1,
+      "expected": {
+        "w_mm": 255.0,
+        "block_h_mm": 72.15,
+        "available_mm": 72.15,
+        "n_blocks": 1,
+        "clamped": false
+      },
+      "note": ""
+    },
+    {
+      "name": "un bullet stringa vuota (il template rende il li)",
+      "title": "Titolo su una riga",
+      "body": "",
+      "bullets": [
+        ""
+      ],
+      "n_blocks": 1,
+      "expected": {
+        "w_mm": 255.0,
+        "block_h_mm": 82.627,
+        "available_mm": 82.627,
+        "n_blocks": 1,
+        "clamped": false
+      },
+      "note": ""
+    },
+    {
+      "name": "body di soli spazi (non reso)",
+      "title": "Titolo su una riga",
+      "body": "   ",
+      "bullets": [],
+      "n_blocks": 1,
+      "expected": {
+        "w_mm": 255.0,
+        "block_h_mm": 92.866,
+        "available_mm": 92.866,
+        "n_blocks": 1,
+        "clamped": false
+      },
+      "note": ""
+    },
+    {
+      "name": "titolo 1 riga, 2 blocchi (due figure o figura + tabella)",
+      "title": "Titolo su una riga",
+      "body": "",
+      "bullets": [],
+      "n_blocks": 2,
+      "expected": {
+        "w_mm": 255.0,
+        "block_h_mm": 45.433,
+        "available_mm": 45.433,
+        "n_blocks": 2,
+        "clamped": false
+      },
+      "note": "a HEAD due figure sbordavano di 15.3/16.6 mm"
+    },
+    {
+      "name": "n_blocks 0 trattato come 1",
+      "title": "Titolo su una riga",
+      "body": "",
+      "bullets": [],
+      "n_blocks": 0,
+      "expected": {
+        "w_mm": 255.0,
+        "block_h_mm": 92.866,
+        "available_mm": 92.866,
+        "n_blocks": 1,
+        "clamped": false
+      },
+      "note": ""
+    },
+    {
+      "name": "titolo + body 1 riga",
+      "title": "Titolo su una riga",
+      "body": "Prosa di una riga.",
+      "bullets": [],
+      "n_blocks": 1,
+      "expected": {
+        "w_mm": 255.0,
+        "block_h_mm": 81.216,
+        "available_mm": 81.216,
+        "n_blocks": 1,
+        "clamped": false
+      },
+      "note": ""
+    }
+  ],
+  "captions": [
+    {
+      "name": "didascalia su una riga",
+      "block_h_mm": 92.866,
+      "caption_text": "Figura. Schema",
+      "expected": {
+        "w_mm": 255.0,
+        "h_mm": 86.6,
+        "squeezed": false
+      },
+      "note": "era 80 con il cap"
+    },
+    {
+      "name": "didascalia da 559 caratteri (4 righe)",
+      "block_h_mm": 92.866,
+      "caption_text": "Figura. Diagramma di flusso del protocollo di consenso: il leader riceve la proposta, la replica ai follower, attende la maggioranza degli acknowledgement e infine applica il commit; in caso di timeout il follower avvia una nuova elezione con termine incrementato. Il diagramma di flusso del protocollo di consenso mostra che il leader riceve la proposta, la replica ai follower, attende la maggioranza degli acknowledgement e infine applica il commit; in caso di timeout il follower avvia una nuova elezione con termine incrementato e il ciclo riparte da capo.",
+      "expected": {
+        "w_mm": 255.0,
+        "h_mm": 73.9,
+        "squeezed": false
+      },
+      "note": ""
+    },
+    {
+      "name": "didascalia 559 + coda function",
+      "block_h_mm": 92.866,
+      "caption_text": "Figura. Diagramma di flusso del protocollo di consenso: il leader riceve la proposta, la replica ai follower, attende la maggioranza degli acknowledgement e infine applica il commit; in caso di timeout il follower avvia una nuova elezione con termine incrementato. Il diagramma di flusso del protocollo di consenso mostra che il leader riceve la proposta, la replica ai follower, attende la maggioranza degli acknowledgement e infine applica il commit; in caso di timeout il follower avvia una nuova elezione con termine incrementato e il ciclo riparte da capo. Zeri in x = -1, 1. Minimo in x = 0 con f(0) = -1. Intervallo di crescita: (0, 3]. Intervallo di decrescita: [-3, 0). Nessun asintoto. Integrale su [-3, 3] = 12.",
+      "expected": {
+        "w_mm": 255.0,
+        "h_mm": 69.6,
+        "squeezed": false
+      },
+      "note": ""
+    },
+    {
+      "name": "titolo + body 1 riga, didascalia 559",
+      "block_h_mm": 81.216,
+      "caption_text": "Figura. Diagramma di flusso del protocollo di consenso: il leader riceve la proposta, la replica ai follower, attende la maggioranza degli acknowledgement e infine applica il commit; in caso di timeout il follower avvia una nuova elezione con termine incrementato. Il diagramma di flusso del protocollo di consenso mostra che il leader riceve la proposta, la replica ai follower, attende la maggioranza degli acknowledgement e infine applica il commit; in caso di timeout il follower avvia una nuova elezione con termine incrementato e il ciclo riparte da capo.",
+      "expected": {
+        "w_mm": 255.0,
+        "h_mm": 62.2,
+        "squeezed": false
+      },
+      "note": ""
+    },
+    {
+      "name": "due figure",
+      "block_h_mm": 45.433,
+      "caption_text": "Figura. Schema",
+      "expected": {
+        "w_mm": 255.0,
+        "h_mm": 39.2,
+        "squeezed": false
+      },
+      "note": ""
+    },
+    {
+      "name": "budget clampato: pavimento raggiunto esattamente",
+      "block_h_mm": 31.233,
+      "caption_text": "Figura. Schema",
+      "expected": {
+        "w_mm": 255.0,
+        "h_mm": 25.0,
+        "squeezed": false
+      },
+      "note": ""
+    },
+    {
+      "name": "5 bullet, didascalia 559",
+      "block_h_mm": 51.672,
+      "caption_text": "Figura. Diagramma di flusso del protocollo di consenso: il leader riceve la proposta, la replica ai follower, attende la maggioranza degli acknowledgement e infine applica il commit; in caso di timeout il follower avvia una nuova elezione con termine incrementato. Il diagramma di flusso del protocollo di consenso mostra che il leader riceve la proposta, la replica ai follower, attende la maggioranza degli acknowledgement e infine applica il commit; in caso di timeout il follower avvia una nuova elezione con termine incrementato e il ciclo riparte da capo.",
+      "expected": {
+        "w_mm": 255.0,
+        "h_mm": 32.7,
+        "squeezed": false
+      },
+      "note": ""
+    },
+    {
+      "name": "5 bullet, didascalia 559 + coda",
+      "block_h_mm": 51.672,
+      "caption_text": "Figura. Diagramma di flusso del protocollo di consenso: il leader riceve la proposta, la replica ai follower, attende la maggioranza degli acknowledgement e infine applica il commit; in caso di timeout il follower avvia una nuova elezione con termine incrementato. Il diagramma di flusso del protocollo di consenso mostra che il leader riceve la proposta, la replica ai follower, attende la maggioranza degli acknowledgement e infine applica il commit; in caso di timeout il follower avvia una nuova elezione con termine incrementato e il ciclo riparte da capo. Zeri in x = -1, 1. Minimo in x = 0 con f(0) = -1. Intervallo di crescita: (0, 3]. Intervallo di decrescita: [-3, 0). Nessun asintoto. Integrale su [-3, 3] = 12.",
+      "expected": {
+        "w_mm": 255.0,
+        "h_mm": 28.5,
+        "squeezed": false
+      },
+      "note": ""
+    },
+    {
+      "name": "5 bullet, didascalia da 6 righe (squeezed)",
+      "block_h_mm": 51.672,
+      "caption_text": "Figura. Diagramma di flusso del protocollo di consenso: il leader riceve la proposta, la replica ai follower, attende la maggioranza degli acknowledgement e infine applica il commit; in caso di timeout il follower avvia una nuova elezione con termine incrementato. Il diagramma di flusso del protocollo di consenso mostra che il leader riceve la proposta, la replica ai follower, attende la maggioranza degli acknowledgement e infine applica il commit; in caso di timeout il follower avvia una nuova elezione con termine incrementato e il ciclo riparte da capo. Zeri in x = -1, 1. Minimo in x = 0 con f(0) = -1. Intervallo di crescita: (0, 3]. Intervallo di decrescita: [-3, 0). Nessun asintoto. Integrale su [-3, 3] = 12. Zeri in x = -1, 1. Minimo in x = 0 con f(0) = -1. Intervallo di crescita: (0, 3]. Intervallo di decrescita: [-3, 0). Nessun asintoto. Integrale su [-3, 3] = 12.",
+      "expected": {
+        "w_mm": 255.0,
+        "h_mm": 25.0,
+        "squeezed": true
+      },
+      "note": ""
+    },
+    {
+      "name": "didascalia vuota (l'etichetta occupa la riga)",
+      "block_h_mm": 92.866,
+      "caption_text": "",
+      "expected": {
+        "w_mm": 255.0,
+        "h_mm": 86.6,
+        "squeezed": false
+      },
+      "note": ""
+    }
+  ],
+  "fallback": [
+    {
+      "name": "box 86.6, sorgente 60 righe",
+      "box_h_mm": 86.6,
+      "source": "n0 -> n1;\nn1 -> n2;\nn2 -> n3;\nn3 -> n4;\nn4 -> n5;\nn5 -> n6;\nn6 -> n7;\nn7 -> n8;\nn8 -> n9;\nn9 -> n10;\nn10 -> n11;\nn11 -> n12;\nn12 -> n13;\nn13 -> n14;\nn14 -> n15;\nn15 -> n16;\nn16 -> n17;\nn17 -> n18;\nn18 -> n19;\nn19 -> n20;\nn20 -> n21;\nn21 -> n22;\nn22 -> n23;\nn23 -> n24;\nn24 -> n25;\nn25 -> n26;\nn26 -> n27;\nn27 -> n28;\nn28 -> n29;\nn29 -> n30;\nn30 -> n31;\nn31 -> n32;\nn32 -> n33;\nn33 -> n34;\nn34 -> n35;\nn35 -> n36;\nn36 -> n37;\nn37 -> n38;\nn38 -> n39;\nn39 -> n40;\nn40 -> n41;\nn41 -> n42;\nn42 -> n43;\nn43 -> n44;\nn44 -> n45;\nn45 -> n46;\nn46 -> n47;\nn47 -> n48;\nn48 -> n49;\nn49 -> n50;\nn50 -> n51;\nn51 -> n52;\nn52 -> n53;\nn53 -> n54;\nn54 -> n55;\nn55 -> n56;\nn56 -> n57;\nn57 -> n58;\nn58 -> n59;\nn59 -> n60;",
+      "expected": {
+        "fit": 25,
+        "kept_lines": 24,
+        "omitted": 36,
+        "text": "n0 -> n1;\nn1 -> n2;\nn2 -> n3;\nn3 -> n4;\nn4 -> n5;\nn5 -> n6;\nn6 -> n7;\nn7 -> n8;\nn8 -> n9;\nn9 -> n10;\nn10 -> n11;\nn11 -> n12;\nn12 -> n13;\nn13 -> n14;\nn14 -> n15;\nn15 -> n16;\nn16 -> n17;\nn17 -> n18;\nn18 -> n19;\nn19 -> n20;\nn20 -> n21;\nn21 -> n22;\nn22 -> n23;\nn23 -> n24;\n…",
+        "rows": 25,
+        "height_mm": 80.257
+      },
+      "note": "fit 25: 24 righe + «…», 36 omesse"
+    },
+    {
+      "name": "box 60.9, sorgente 60 righe",
+      "box_h_mm": 60.9,
+      "source": "n0 -> n1;\nn1 -> n2;\nn2 -> n3;\nn3 -> n4;\nn4 -> n5;\nn5 -> n6;\nn6 -> n7;\nn7 -> n8;\nn8 -> n9;\nn9 -> n10;\nn10 -> n11;\nn11 -> n12;\nn12 -> n13;\nn13 -> n14;\nn14 -> n15;\nn15 -> n16;\nn16 -> n17;\nn17 -> n18;\nn18 -> n19;\nn19 -> n20;\nn20 -> n21;\nn21 -> n22;\nn22 -> n23;\nn23 -> n24;\nn24 -> n25;\nn25 -> n26;\nn26 -> n27;\nn27 -> n28;\nn28 -> n29;\nn29 -> n30;\nn30 -> n31;\nn31 -> n32;\nn32 -> n33;\nn33 -> n34;\nn34 -> n35;\nn35 -> n36;\nn36 -> n37;\nn37 -> n38;\nn38 -> n39;\nn39 -> n40;\nn40 -> n41;\nn41 -> n42;\nn42 -> n43;\nn43 -> n44;\nn44 -> n45;\nn45 -> n46;\nn46 -> n47;\nn47 -> n48;\nn48 -> n49;\nn49 -> n50;\nn50 -> n51;\nn51 -> n52;\nn52 -> n53;\nn53 -> n54;\nn54 -> n55;\nn55 -> n56;\nn56 -> n57;\nn57 -> n58;\nn58 -> n59;\nn59 -> n60;",
+      "expected": {
+        "fit": 17,
+        "kept_lines": 16,
+        "omitted": 44,
+        "text": "n0 -> n1;\nn1 -> n2;\nn2 -> n3;\nn3 -> n4;\nn4 -> n5;\nn5 -> n6;\nn6 -> n7;\nn7 -> n8;\nn8 -> n9;\nn9 -> n10;\nn10 -> n11;\nn11 -> n12;\nn12 -> n13;\nn13 -> n14;\nn14 -> n15;\nn15 -> n16;\n…",
+        "rows": 17,
+        "height_mm": 54.575
+      },
+      "note": "fit 17"
+    },
+    {
+      "name": "box 25.0, sorgente 60 righe",
+      "box_h_mm": 25.0,
+      "source": "n0 -> n1;\nn1 -> n2;\nn2 -> n3;\nn3 -> n4;\nn4 -> n5;\nn5 -> n6;\nn6 -> n7;\nn7 -> n8;\nn8 -> n9;\nn9 -> n10;\nn10 -> n11;\nn11 -> n12;\nn12 -> n13;\nn13 -> n14;\nn14 -> n15;\nn15 -> n16;\nn16 -> n17;\nn17 -> n18;\nn18 -> n19;\nn19 -> n20;\nn20 -> n21;\nn21 -> n22;\nn22 -> n23;\nn23 -> n24;\nn24 -> n25;\nn25 -> n26;\nn26 -> n27;\nn27 -> n28;\nn28 -> n29;\nn29 -> n30;\nn30 -> n31;\nn31 -> n32;\nn32 -> n33;\nn33 -> n34;\nn34 -> n35;\nn35 -> n36;\nn36 -> n37;\nn37 -> n38;\nn38 -> n39;\nn39 -> n40;\nn40 -> n41;\nn41 -> n42;\nn42 -> n43;\nn43 -> n44;\nn44 -> n45;\nn45 -> n46;\nn46 -> n47;\nn47 -> n48;\nn48 -> n49;\nn49 -> n50;\nn50 -> n51;\nn51 -> n52;\nn52 -> n53;\nn53 -> n54;\nn54 -> n55;\nn55 -> n56;\nn56 -> n57;\nn57 -> n58;\nn58 -> n59;\nn59 -> n60;",
+      "expected": {
+        "fit": 6,
+        "kept_lines": 5,
+        "omitted": 55,
+        "text": "n0 -> n1;\nn1 -> n2;\nn2 -> n3;\nn3 -> n4;\nn4 -> n5;\n…",
+        "rows": 6,
+        "height_mm": 19.262
+      },
+      "note": "fit 6: 5 righe + «…»"
+    },
+    {
+      "name": "box 86.6, sorgente 10 righe (invariato)",
+      "box_h_mm": 86.6,
+      "source": "n0 -> n1;\nn1 -> n2;\nn2 -> n3;\nn3 -> n4;\nn4 -> n5;\nn5 -> n6;\nn6 -> n7;\nn7 -> n8;\nn8 -> n9;\nn9 -> n10;",
+      "expected": {
+        "fit": 25,
+        "kept_lines": 10,
+        "omitted": 0,
+        "text": "n0 -> n1;\nn1 -> n2;\nn2 -> n3;\nn3 -> n4;\nn4 -> n5;\nn5 -> n6;\nn6 -> n7;\nn7 -> n8;\nn8 -> n9;\nn9 -> n10;",
+        "rows": 10,
+        "height_mm": 32.103
+      },
+      "note": ""
+    },
+    {
+      "name": "righe sorgente senza spazi da 300 e 400 caratteri: una riga l'una",
+      "box_h_mm": 25.0,
+      "source": "a\nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nb\nc\nd",
+      "expected": {
+        "fit": 6,
+        "kept_lines": 6,
+        "omitted": 0,
+        "text": "a\nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nb\nc\nd",
+        "rows": 6,
+        "height_mm": 19.262
+      },
+      "note": "fit 6: le sei righe (a, 300, 400, b, c, d) stanno su una riga l'una e tutte entrano (white-space: pre, taglio a destra); con pre-wrap costavano 4 e 5 righe"
+    },
+    {
+      "name": "righe vuote costano 1",
+      "box_h_mm": 25.0,
+      "source": "a\n\n\n\n\n\nb\nc",
+      "expected": {
+        "fit": 6,
+        "kept_lines": 5,
+        "omitted": 3,
+        "text": "a\n\n\n\n\n…",
+        "rows": 6,
+        "height_mm": 19.262
+      },
+      "note": ""
+    },
+    {
+      "name": "box 86.6, 58 righe DOT da 176 caratteri con 22 spazi",
+      "box_h_mm": 86.6,
+      "source": "digraph G {\n    \"Analisi dei requisiti del sottosistema 00\" -> \"Progettazione della architettura 00\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 01\" -> \"Progettazione della architettura 01\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 02\" -> \"Progettazione della architettura 02\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 03\" -> \"Progettazione della architettura 03\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 04\" -> \"Progettazione della architettura 04\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 05\" -> \"Progettazione della architettura 05\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 06\" -> \"Progettazione della architettura 06\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 07\" -> \"Progettazione della architettura 07\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 08\" -> \"Progettazione della architettura 08\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 09\" -> \"Progettazione della architettura 09\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 10\" -> \"Progettazione della architettura 10\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 11\" -> \"Progettazione della architettura 11\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 12\" -> \"Progettazione della architettura 12\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 13\" -> \"Progettazione della architettura 13\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 14\" -> \"Progettazione della architettura 14\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 15\" -> \"Progettazione della architettura 15\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 16\" -> \"Progettazione della architettura 16\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 17\" -> \"Progettazione della architettura 17\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 18\" -> \"Progettazione della architettura 18\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 19\" -> \"Progettazione della architettura 19\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 20\" -> \"Progettazione della architettura 20\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 21\" -> \"Progettazione della architettura 21\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 22\" -> \"Progettazione della architettura 22\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 23\" -> \"Progettazione della architettura 23\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 24\" -> \"Progettazione della architettura 24\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 25\" -> \"Progettazione della architettura 25\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 26\" -> \"Progettazione della architettura 26\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 27\" -> \"Progettazione della architettura 27\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 28\" -> \"Progettazione della architettura 28\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 29\" -> \"Progettazione della architettura 29\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 30\" -> \"Progettazione della architettura 30\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 31\" -> \"Progettazione della architettura 31\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 32\" -> \"Progettazione della architettura 32\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 33\" -> \"Progettazione della architettura 33\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 34\" -> \"Progettazione della architettura 34\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 35\" -> \"Progettazione della architettura 35\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 36\" -> \"Progettazione della architettura 36\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 37\" -> \"Progettazione della architettura 37\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 38\" -> \"Progettazione della architettura 38\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 39\" -> \"Progettazione della architettura 39\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 40\" -> \"Progettazione della architettura 40\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 41\" -> \"Progettazione della architettura 41\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 42\" -> \"Progettazione della architettura 42\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 43\" -> \"Progettazione della architettura 43\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 44\" -> \"Progettazione della architettura 44\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 45\" -> \"Progettazione della architettura 45\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 46\" -> \"Progettazione della architettura 46\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 47\" -> \"Progettazione della architettura 47\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 48\" -> \"Progettazione della architettura 48\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 49\" -> \"Progettazione della architettura 49\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 50\" -> \"Progettazione della architettura 50\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 51\" -> \"Progettazione della architettura 51\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 52\" -> \"Progettazione della architettura 52\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 53\" -> \"Progettazione della architettura 53\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 54\" -> \"Progettazione della architettura 54\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 55\" -> \"Progettazione della architettura 55\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 56\" -> \"Progettazione della architettura 56\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 57\" -> \"Progettazione della architettura 57\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n}",
+      "expected": {
+        "fit": 25,
+        "kept_lines": 24,
+        "omitted": 36,
+        "text": "digraph G {\n    \"Analisi dei requisiti del sottosistema 00\" -> \"Progettazione della architettura 00\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 01\" -> \"Progettazione della architettura 01\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 02\" -> \"Progettazione della architettura 02\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 03\" -> \"Progettazione della architettura 03\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 04\" -> \"Progettazione della architettura 04\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 05\" -> \"Progettazione della architettura 05\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 06\" -> \"Progettazione della architettura 06\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 07\" -> \"Progettazione della architettura 07\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 08\" -> \"Progettazione della architettura 08\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 09\" -> \"Progettazione della architettura 09\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 10\" -> \"Progettazione della architettura 10\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 11\" -> \"Progettazione della architettura 11\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 12\" -> \"Progettazione della architettura 12\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 13\" -> \"Progettazione della architettura 13\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 14\" -> \"Progettazione della architettura 14\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 15\" -> \"Progettazione della architettura 15\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 16\" -> \"Progettazione della architettura 16\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 17\" -> \"Progettazione della architettura 17\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 18\" -> \"Progettazione della architettura 18\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 19\" -> \"Progettazione della architettura 19\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 20\" -> \"Progettazione della architettura 20\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 21\" -> \"Progettazione della architettura 21\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n    \"Analisi dei requisiti del sottosistema 22\" -> \"Progettazione della architettura 22\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n…",
+        "rows": 25,
+        "height_mm": 80.257
+      },
+      "note": "fit 25: una riga per riga sorgente, 24 righe + «…»; in pre-wrap valevano 2 righe l'una"
+    },
+    {
+      "name": "box 86.6, 60 righe di parole brevi da 200 colonne",
+      "box_h_mm": 86.6,
+      "source": "a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a ",
+      "expected": {
+        "fit": 25,
+        "kept_lines": 24,
+        "omitted": 36,
+        "text": "a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \na a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a \n…",
+        "rows": 25,
+        "height_mm": 80.257
+      },
+      "note": "fit 25: 24 righe + «…»; con gli spazi collassati del primo stimatore il <pre> sbordava"
+    },
+    {
+      "name": "box 86.6, 60 righe con 170 spazi iniziali",
+      "box_h_mm": 86.6,
+      "source": "                                                                                                                                                                          riga 0\n                                                                                                                                                                          riga 1\n                                                                                                                                                                          riga 2\n                                                                                                                                                                          riga 3\n                                                                                                                                                                          riga 4\n                                                                                                                                                                          riga 5\n                                                                                                                                                                          riga 6\n                                                                                                                                                                          riga 7\n                                                                                                                                                                          riga 8\n                                                                                                                                                                          riga 9\n                                                                                                                                                                          riga 10\n                                                                                                                                                                          riga 11\n                                                                                                                                                                          riga 12\n                                                                                                                                                                          riga 13\n                                                                                                                                                                          riga 14\n                                                                                                                                                                          riga 15\n                                                                                                                                                                          riga 16\n                                                                                                                                                                          riga 17\n                                                                                                                                                                          riga 18\n                                                                                                                                                                          riga 19\n                                                                                                                                                                          riga 20\n                                                                                                                                                                          riga 21\n                                                                                                                                                                          riga 22\n                                                                                                                                                                          riga 23\n                                                                                                                                                                          riga 24\n                                                                                                                                                                          riga 25\n                                                                                                                                                                          riga 26\n                                                                                                                                                                          riga 27\n                                                                                                                                                                          riga 28\n                                                                                                                                                                          riga 29\n                                                                                                                                                                          riga 30\n                                                                                                                                                                          riga 31\n                                                                                                                                                                          riga 32\n                                                                                                                                                                          riga 33\n                                                                                                                                                                          riga 34\n                                                                                                                                                                          riga 35\n                                                                                                                                                                          riga 36\n                                                                                                                                                                          riga 37\n                                                                                                                                                                          riga 38\n                                                                                                                                                                          riga 39\n                                                                                                                                                                          riga 40\n                                                                                                                                                                          riga 41\n                                                                                                                                                                          riga 42\n                                                                                                                                                                          riga 43\n                                                                                                                                                                          riga 44\n                                                                                                                                                                          riga 45\n                                                                                                                                                                          riga 46\n                                                                                                                                                                          riga 47\n                                                                                                                                                                          riga 48\n                                                                                                                                                                          riga 49\n                                                                                                                                                                          riga 50\n                                                                                                                                                                          riga 51\n                                                                                                                                                                          riga 52\n                                                                                                                                                                          riga 53\n                                                                                                                                                                          riga 54\n                                                                                                                                                                          riga 55\n                                                                                                                                                                          riga 56\n                                                                                                                                                                          riga 57\n                                                                                                                                                                          riga 58\n                                                                                                                                                                          riga 59",
+      "expected": {
+        "fit": 25,
+        "kept_lines": 24,
+        "omitted": 36,
+        "text": "                                                                                                                                                                          riga 0\n                                                                                                                                                                          riga 1\n                                                                                                                                                                          riga 2\n                                                                                                                                                                          riga 3\n                                                                                                                                                                          riga 4\n                                                                                                                                                                          riga 5\n                                                                                                                                                                          riga 6\n                                                                                                                                                                          riga 7\n                                                                                                                                                                          riga 8\n                                                                                                                                                                          riga 9\n                                                                                                                                                                          riga 10\n                                                                                                                                                                          riga 11\n                                                                                                                                                                          riga 12\n                                                                                                                                                                          riga 13\n                                                                                                                                                                          riga 14\n                                                                                                                                                                          riga 15\n                                                                                                                                                                          riga 16\n                                                                                                                                                                          riga 17\n                                                                                                                                                                          riga 18\n                                                                                                                                                                          riga 19\n                                                                                                                                                                          riga 20\n                                                                                                                                                                          riga 21\n                                                                                                                                                                          riga 22\n                                                                                                                                                                          riga 23\n…",
+        "rows": 25,
+        "height_mm": 80.257
+      },
+      "note": "fit 25: gli spazi iniziali restano sulla riga, il testo oltre il bordo è tagliato"
+    },
+    {
+      "name": "box 86.6, 60 righe con 22 tab iniziali",
+      "box_h_mm": 86.6,
+      "source": "\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 0\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 1\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 2\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 3\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 4\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 5\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 6\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 7\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 8\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 9\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 10\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 11\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 12\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 13\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 14\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 15\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 16\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 17\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 18\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 19\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 20\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 21\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 22\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 23\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 24\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 25\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 26\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 27\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 28\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 29\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 30\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 31\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 32\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 33\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 34\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 35\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 36\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 37\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 38\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 39\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 40\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 41\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 42\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 43\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 44\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 45\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 46\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 47\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 48\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 49\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 50\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 51\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 52\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 53\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 54\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 55\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 56\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 57\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 58\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 59",
+      "expected": {
+        "fit": 25,
+        "kept_lines": 24,
+        "omitted": 36,
+        "text": "\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 0\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 1\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 2\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 3\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 4\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 5\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 6\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 7\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 8\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 9\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 10\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 11\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 12\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 13\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 14\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 15\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 16\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 17\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 18\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 19\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 20\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 21\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 22\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 23\n…",
+        "rows": 25,
+        "height_mm": 80.257
+      },
+      "note": "fit 25: 22 tab = 176 colonne, riga tagliata a destra"
+    },
+    {
+      "name": "box 86.6, lingua ja, 90 righe ASCII (riga base più alta)",
+      "box_h_mm": 86.6,
+      "language": "ja",
+      "source": "    N0[Nodo numero 0] --> N1[Nodo numero 1]\n    N1[Nodo numero 1] --> N2[Nodo numero 2]\n    N2[Nodo numero 2] --> N3[Nodo numero 3]\n    N3[Nodo numero 3] --> N4[Nodo numero 4]\n    N4[Nodo numero 4] --> N5[Nodo numero 5]\n    N5[Nodo numero 5] --> N6[Nodo numero 6]\n    N6[Nodo numero 6] --> N7[Nodo numero 7]\n    N7[Nodo numero 7] --> N8[Nodo numero 8]\n    N8[Nodo numero 8] --> N9[Nodo numero 9]\n    N9[Nodo numero 9] --> N10[Nodo numero 10]\n    N10[Nodo numero 10] --> N11[Nodo numero 11]\n    N11[Nodo numero 11] --> N12[Nodo numero 12]\n    N12[Nodo numero 12] --> N13[Nodo numero 13]\n    N13[Nodo numero 13] --> N14[Nodo numero 14]\n    N14[Nodo numero 14] --> N15[Nodo numero 15]\n    N15[Nodo numero 15] --> N16[Nodo numero 16]\n    N16[Nodo numero 16] --> N17[Nodo numero 17]\n    N17[Nodo numero 17] --> N18[Nodo numero 18]\n    N18[Nodo numero 18] --> N19[Nodo numero 19]\n    N19[Nodo numero 19] --> N20[Nodo numero 20]\n    N20[Nodo numero 20] --> N21[Nodo numero 21]\n    N21[Nodo numero 21] --> N22[Nodo numero 22]\n    N22[Nodo numero 22] --> N23[Nodo numero 23]\n    N23[Nodo numero 23] --> N24[Nodo numero 24]\n    N24[Nodo numero 24] --> N25[Nodo numero 25]\n    N25[Nodo numero 25] --> N26[Nodo numero 26]\n    N26[Nodo numero 26] --> N27[Nodo numero 27]\n    N27[Nodo numero 27] --> N28[Nodo numero 28]\n    N28[Nodo numero 28] --> N29[Nodo numero 29]\n    N29[Nodo numero 29] --> N30[Nodo numero 30]\n    N30[Nodo numero 30] --> N31[Nodo numero 31]\n    N31[Nodo numero 31] --> N32[Nodo numero 32]\n    N32[Nodo numero 32] --> N33[Nodo numero 33]\n    N33[Nodo numero 33] --> N34[Nodo numero 34]\n    N34[Nodo numero 34] --> N35[Nodo numero 35]\n    N35[Nodo numero 35] --> N36[Nodo numero 36]\n    N36[Nodo numero 36] --> N37[Nodo numero 37]\n    N37[Nodo numero 37] --> N38[Nodo numero 38]\n    N38[Nodo numero 38] --> N39[Nodo numero 39]\n    N39[Nodo numero 39] --> N40[Nodo numero 40]\n    N40[Nodo numero 40] --> N41[Nodo numero 41]\n    N41[Nodo numero 41] --> N42[Nodo numero 42]\n    N42[Nodo numero 42] --> N43[Nodo numero 43]\n    N43[Nodo numero 43] --> N44[Nodo numero 44]\n    N44[Nodo numero 44] --> N45[Nodo numero 45]\n    N45[Nodo numero 45] --> N46[Nodo numero 46]\n    N46[Nodo numero 46] --> N47[Nodo numero 47]\n    N47[Nodo numero 47] --> N48[Nodo numero 48]\n    N48[Nodo numero 48] --> N49[Nodo numero 49]\n    N49[Nodo numero 49] --> N50[Nodo numero 50]\n    N50[Nodo numero 50] --> N51[Nodo numero 51]\n    N51[Nodo numero 51] --> N52[Nodo numero 52]\n    N52[Nodo numero 52] --> N53[Nodo numero 53]\n    N53[Nodo numero 53] --> N54[Nodo numero 54]\n    N54[Nodo numero 54] --> N55[Nodo numero 55]\n    N55[Nodo numero 55] --> N56[Nodo numero 56]\n    N56[Nodo numero 56] --> N57[Nodo numero 57]\n    N57[Nodo numero 57] --> N58[Nodo numero 58]\n    N58[Nodo numero 58] --> N59[Nodo numero 59]\n    N59[Nodo numero 59] --> N60[Nodo numero 60]\n    N60[Nodo numero 60] --> N61[Nodo numero 61]\n    N61[Nodo numero 61] --> N62[Nodo numero 62]\n    N62[Nodo numero 62] --> N63[Nodo numero 63]\n    N63[Nodo numero 63] --> N64[Nodo numero 64]\n    N64[Nodo numero 64] --> N65[Nodo numero 65]\n    N65[Nodo numero 65] --> N66[Nodo numero 66]\n    N66[Nodo numero 66] --> N67[Nodo numero 67]\n    N67[Nodo numero 67] --> N68[Nodo numero 68]\n    N68[Nodo numero 68] --> N69[Nodo numero 69]\n    N69[Nodo numero 69] --> N70[Nodo numero 70]\n    N70[Nodo numero 70] --> N71[Nodo numero 71]\n    N71[Nodo numero 71] --> N72[Nodo numero 72]\n    N72[Nodo numero 72] --> N73[Nodo numero 73]\n    N73[Nodo numero 73] --> N74[Nodo numero 74]\n    N74[Nodo numero 74] --> N75[Nodo numero 75]\n    N75[Nodo numero 75] --> N76[Nodo numero 76]\n    N76[Nodo numero 76] --> N77[Nodo numero 77]\n    N77[Nodo numero 77] --> N78[Nodo numero 78]\n    N78[Nodo numero 78] --> N79[Nodo numero 79]\n    N79[Nodo numero 79] --> N80[Nodo numero 80]\n    N80[Nodo numero 80] --> N81[Nodo numero 81]\n    N81[Nodo numero 81] --> N82[Nodo numero 82]\n    N82[Nodo numero 82] --> N83[Nodo numero 83]\n    N83[Nodo numero 83] --> N84[Nodo numero 84]\n    N84[Nodo numero 84] --> N85[Nodo numero 85]\n    N85[Nodo numero 85] --> N86[Nodo numero 86]\n    N86[Nodo numero 86] --> N87[Nodo numero 87]\n    N87[Nodo numero 87] --> N88[Nodo numero 88]\n    N88[Nodo numero 88] --> N89[Nodo numero 89]\n    N89[Nodo numero 89] --> N90[Nodo numero 90]",
+      "expected": {
+        "fit": 25,
+        "kept_lines": 18,
+        "omitted": 72,
+        "text": "    N0[Nodo numero 0] --> N1[Nodo numero 1]\n    N1[Nodo numero 1] --> N2[Nodo numero 2]\n    N2[Nodo numero 2] --> N3[Nodo numero 3]\n    N3[Nodo numero 3] --> N4[Nodo numero 4]\n    N4[Nodo numero 4] --> N5[Nodo numero 5]\n    N5[Nodo numero 5] --> N6[Nodo numero 6]\n    N6[Nodo numero 6] --> N7[Nodo numero 7]\n    N7[Nodo numero 7] --> N8[Nodo numero 8]\n    N8[Nodo numero 8] --> N9[Nodo numero 9]\n    N9[Nodo numero 9] --> N10[Nodo numero 10]\n    N10[Nodo numero 10] --> N11[Nodo numero 11]\n    N11[Nodo numero 11] --> N12[Nodo numero 12]\n    N12[Nodo numero 12] --> N13[Nodo numero 13]\n    N13[Nodo numero 13] --> N14[Nodo numero 14]\n    N14[Nodo numero 14] --> N15[Nodo numero 15]\n    N15[Nodo numero 15] --> N16[Nodo numero 16]\n    N16[Nodo numero 16] --> N17[Nodo numero 17]\n    N17[Nodo numero 17] --> N18[Nodo numero 18]\n…",
+        "rows": 19,
+        "height_mm": 79.763
+      }
+    },
+    {
+      "name": "box 70.0, lingua zh-cn, Mermaid con etichette CJK",
+      "box_h_mm": 70.0,
+      "language": "zh-cn",
+      "source": "flowchart LR\n    节点0[\"传感器信号\"] --> 节点1[\"放大与滤波\"]\n    节点1[\"传感器信号\"] --> 节点2[\"放大与滤波\"]\n    节点2[\"传感器信号\"] --> 节点3[\"放大与滤波\"]\n    节点3[\"传感器信号\"] --> 节点4[\"放大与滤波\"]\n    节点4[\"传感器信号\"] --> 节点5[\"放大与滤波\"]\n    节点5[\"传感器信号\"] --> 节点6[\"放大与滤波\"]\n    节点6[\"传感器信号\"] --> 节点7[\"放大与滤波\"]\n    节点7[\"传感器信号\"] --> 节点8[\"放大与滤波\"]\n    节点8[\"传感器信号\"] --> 节点9[\"放大与滤波\"]\n    节点9[\"传感器信号\"] --> 节点10[\"放大与滤波\"]\n    节点10[\"传感器信号\"] --> 节点11[\"放大与滤波\"]\n    节点11[\"传感器信号\"] --> 节点12[\"放大与滤波\"]\n    节点12[\"传感器信号\"] --> 节点13[\"放大与滤波\"]\n    节点13[\"传感器信号\"] --> 节点14[\"放大与滤波\"]\n    节点14[\"传感器信号\"] --> 节点15[\"放大与滤波\"]\n    节点15[\"传感器信号\"] --> 节点16[\"放大与滤波\"]\n    节点16[\"传感器信号\"] --> 节点17[\"放大与滤波\"]\n    节点17[\"传感器信号\"] --> 节点18[\"放大与滤波\"]\n    节点18[\"传感器信号\"] --> 节点19[\"放大与滤波\"]\n    节点19[\"传感器信号\"] --> 节点20[\"放大与滤波\"]\n    节点20[\"传感器信号\"] --> 节点21[\"放大与滤波\"]\n    节点21[\"传感器信号\"] --> 节点22[\"放大与滤波\"]\n    节点22[\"传感器信号\"] --> 节点23[\"放大与滤波\"]\n    节点23[\"传感器信号\"] --> 节点24[\"放大与滤波\"]\n    节点24[\"传感器信号\"] --> 节点25[\"放大与滤波\"]\n    节点25[\"传感器信号\"] --> 节点26[\"放大与滤波\"]\n    节点26[\"传感器信号\"] --> 节点27[\"放大与滤波\"]\n    节点27[\"传感器信号\"] --> 节点28[\"放大与滤波\"]\n    节点28[\"传感器信号\"] --> 节点29[\"放大与滤波\"]\n    节点29[\"传感器信号\"] --> 节点30[\"放大与滤波\"]\n    节点30[\"传感器信号\"] --> 节点31[\"放大与滤波\"]\n    节点31[\"传感器信号\"] --> 节点32[\"放大与滤波\"]\n    节点32[\"传感器信号\"] --> 节点33[\"放大与滤波\"]\n    节点33[\"传感器信号\"] --> 节点34[\"放大与滤波\"]\n    节点34[\"传感器信号\"] --> 节点35[\"放大与滤波\"]\n    节点35[\"传感器信号\"] --> 节点36[\"放大与滤波\"]\n    节点36[\"传感器信号\"] --> 节点37[\"放大与滤波\"]\n    节点37[\"传感器信号\"] --> 节点38[\"放大与滤波\"]\n    节点38[\"传感器信号\"] --> 节点39[\"放大与滤波\"]\n    节点39[\"传感器信号\"] --> 节点40[\"放大与滤波\"]\n    节点40[\"传感器信号\"] --> 节点41[\"放大与滤波\"]\n    节点41[\"传感器信号\"] --> 节点42[\"放大与滤波\"]\n    节点42[\"传感器信号\"] --> 节点43[\"放大与滤波\"]\n    节点43[\"传感器信号\"] --> 节点44[\"放大与滤波\"]\n    节点44[\"传感器信号\"] --> 节点45[\"放大与滤波\"]\n    节点45[\"传感器信号\"] --> 节点46[\"放大与滤波\"]\n    节点46[\"传感器信号\"] --> 节点47[\"放大与滤波\"]\n    节点47[\"传感器信号\"] --> 节点48[\"放大与滤波\"]\n    节点48[\"传感器信号\"] --> 节点49[\"放大与滤波\"]\n    节点49[\"传感器信号\"] --> 节点50[\"放大与滤波\"]\n    节点50[\"传感器信号\"] --> 节点51[\"放大与滤波\"]\n    节点51[\"传感器信号\"] --> 节点52[\"放大与滤波\"]\n    节点52[\"传感器信号\"] --> 节点53[\"放大与滤波\"]\n    节点53[\"传感器信号\"] --> 节点54[\"放大与滤波\"]\n    节点54[\"传感器信号\"] --> 节点55[\"放大与滤波\"]\n    节点55[\"传感器信号\"] --> 节点56[\"放大与滤波\"]\n    节点56[\"传感器信号\"] --> 节点57[\"放大与滤波\"]\n    节点57[\"传感器信号\"] --> 节点58[\"放大与滤波\"]\n    节点58[\"传感器信号\"] --> 节点59[\"放大与滤波\"]\n    节点59[\"传感器信号\"] --> 节点60[\"放大与滤波\"]",
+      "expected": {
+        "fit": 20,
+        "kept_lines": 10,
+        "omitted": 51,
+        "text": "flowchart LR\n    节点0[\"传感器信号\"] --> 节点1[\"放大与滤波\"]\n    节点1[\"传感器信号\"] --> 节点2[\"放大与滤波\"]\n    节点2[\"传感器信号\"] --> 节点3[\"放大与滤波\"]\n    节点3[\"传感器信号\"] --> 节点4[\"放大与滤波\"]\n    节点4[\"传感器信号\"] --> 节点5[\"放大与滤波\"]\n    节点5[\"传感器信号\"] --> 节点6[\"放大与滤波\"]\n    节点6[\"传感器信号\"] --> 节点7[\"放大与滤波\"]\n    节点7[\"传感器信号\"] --> 节点8[\"放大与滤波\"]\n    节点8[\"传感器信号\"] --> 节点9[\"放大与滤波\"]\n…",
+        "rows": 11,
+        "height_mm": 63.07
+      }
+    },
+    {
+      "name": "box 86.6, lingua ja, Mermaid con katakana e kanji",
+      "box_h_mm": 86.6,
+      "language": "ja",
+      "source": "flowchart LR\n    S0[\"センサー入力 0\"] -->|\"変換\"| S1[\"増幅回路\"]\n    S1[\"センサー入力 1\"] -->|\"変換\"| S2[\"増幅回路\"]\n    S2[\"センサー入力 2\"] -->|\"変換\"| S3[\"増幅回路\"]\n    S3[\"センサー入力 3\"] -->|\"変換\"| S4[\"増幅回路\"]\n    S4[\"センサー入力 4\"] -->|\"変換\"| S5[\"増幅回路\"]\n    S5[\"センサー入力 5\"] -->|\"変換\"| S6[\"増幅回路\"]\n    S6[\"センサー入力 6\"] -->|\"変換\"| S7[\"増幅回路\"]\n    S7[\"センサー入力 7\"] -->|\"変換\"| S8[\"増幅回路\"]\n    S8[\"センサー入力 8\"] -->|\"変換\"| S9[\"増幅回路\"]\n    S9[\"センサー入力 9\"] -->|\"変換\"| S10[\"増幅回路\"]\n    S10[\"センサー入力 10\"] -->|\"変換\"| S11[\"増幅回路\"]\n    S11[\"センサー入力 11\"] -->|\"変換\"| S12[\"増幅回路\"]\n    S12[\"センサー入力 12\"] -->|\"変換\"| S13[\"増幅回路\"]\n    S13[\"センサー入力 13\"] -->|\"変換\"| S14[\"増幅回路\"]\n    S14[\"センサー入力 14\"] -->|\"変換\"| S15[\"増幅回路\"]\n    S15[\"センサー入力 15\"] -->|\"変換\"| S16[\"増幅回路\"]\n    S16[\"センサー入力 16\"] -->|\"変換\"| S17[\"増幅回路\"]\n    S17[\"センサー入力 17\"] -->|\"変換\"| S18[\"増幅回路\"]\n    S18[\"センサー入力 18\"] -->|\"変換\"| S19[\"増幅回路\"]\n    S19[\"センサー入力 19\"] -->|\"変換\"| S20[\"増幅回路\"]\n    S20[\"センサー入力 20\"] -->|\"変換\"| S21[\"増幅回路\"]\n    S21[\"センサー入力 21\"] -->|\"変換\"| S22[\"増幅回路\"]\n    S22[\"センサー入力 22\"] -->|\"変換\"| S23[\"増幅回路\"]\n    S23[\"センサー入力 23\"] -->|\"変換\"| S24[\"増幅回路\"]\n    S24[\"センサー入力 24\"] -->|\"変換\"| S25[\"増幅回路\"]\n    S25[\"センサー入力 25\"] -->|\"変換\"| S26[\"増幅回路\"]\n    S26[\"センサー入力 26\"] -->|\"変換\"| S27[\"増幅回路\"]\n    S27[\"センサー入力 27\"] -->|\"変換\"| S28[\"増幅回路\"]\n    S28[\"センサー入力 28\"] -->|\"変換\"| S29[\"増幅回路\"]\n    S29[\"センサー入力 29\"] -->|\"変換\"| S30[\"増幅回路\"]\n    S30[\"センサー入力 30\"] -->|\"変換\"| S31[\"増幅回路\"]\n    S31[\"センサー入力 31\"] -->|\"変換\"| S32[\"増幅回路\"]\n    S32[\"センサー入力 32\"] -->|\"変換\"| S33[\"増幅回路\"]\n    S33[\"センサー入力 33\"] -->|\"変換\"| S34[\"増幅回路\"]\n    S34[\"センサー入力 34\"] -->|\"変換\"| S35[\"増幅回路\"]\n    S35[\"センサー入力 35\"] -->|\"変換\"| S36[\"増幅回路\"]\n    S36[\"センサー入力 36\"] -->|\"変換\"| S37[\"増幅回路\"]\n    S37[\"センサー入力 37\"] -->|\"変換\"| S38[\"増幅回路\"]\n    S38[\"センサー入力 38\"] -->|\"変換\"| S39[\"増幅回路\"]\n    S39[\"センサー入力 39\"] -->|\"変換\"| S40[\"増幅回路\"]\n    S40[\"センサー入力 40\"] -->|\"変換\"| S41[\"増幅回路\"]\n    S41[\"センサー入力 41\"] -->|\"変換\"| S42[\"増幅回路\"]\n    S42[\"センサー入力 42\"] -->|\"変換\"| S43[\"増幅回路\"]\n    S43[\"センサー入力 43\"] -->|\"変換\"| S44[\"増幅回路\"]\n    S44[\"センサー入力 44\"] -->|\"変換\"| S45[\"増幅回路\"]\n    S45[\"センサー入力 45\"] -->|\"変換\"| S46[\"増幅回路\"]\n    S46[\"センサー入力 46\"] -->|\"変換\"| S47[\"増幅回路\"]\n    S47[\"センサー入力 47\"] -->|\"変換\"| S48[\"増幅回路\"]\n    S48[\"センサー入力 48\"] -->|\"変換\"| S49[\"増幅回路\"]\n    S49[\"センサー入力 49\"] -->|\"変換\"| S50[\"増幅回路\"]\n    S50[\"センサー入力 50\"] -->|\"変換\"| S51[\"増幅回路\"]\n    S51[\"センサー入力 51\"] -->|\"変換\"| S52[\"増幅回路\"]\n    S52[\"センサー入力 52\"] -->|\"変換\"| S53[\"増幅回路\"]\n    S53[\"センサー入力 53\"] -->|\"変換\"| S54[\"増幅回路\"]\n    S54[\"センサー入力 54\"] -->|\"変換\"| S55[\"増幅回路\"]\n    S55[\"センサー入力 55\"] -->|\"変換\"| S56[\"増幅回路\"]\n    S56[\"センサー入力 56\"] -->|\"変換\"| S57[\"増幅回路\"]\n    S57[\"センサー入力 57\"] -->|\"変換\"| S58[\"増幅回路\"]\n    S58[\"センサー入力 58\"] -->|\"変換\"| S59[\"増幅回路\"]\n    S59[\"センサー入力 59\"] -->|\"変換\"| S60[\"増幅回路\"]",
+      "expected": {
+        "fit": 25,
+        "kept_lines": 18,
+        "omitted": 43,
+        "text": "flowchart LR\n    S0[\"センサー入力 0\"] -->|\"変換\"| S1[\"増幅回路\"]\n    S1[\"センサー入力 1\"] -->|\"変換\"| S2[\"増幅回路\"]\n    S2[\"センサー入力 2\"] -->|\"変換\"| S3[\"増幅回路\"]\n    S3[\"センサー入力 3\"] -->|\"変換\"| S4[\"増幅回路\"]\n    S4[\"センサー入力 4\"] -->|\"変換\"| S5[\"増幅回路\"]\n    S5[\"センサー入力 5\"] -->|\"変換\"| S6[\"増幅回路\"]\n    S6[\"センサー入力 6\"] -->|\"変換\"| S7[\"増幅回路\"]\n    S7[\"センサー入力 7\"] -->|\"変換\"| S8[\"増幅回路\"]\n    S8[\"センサー入力 8\"] -->|\"変換\"| S9[\"増幅回路\"]\n    S9[\"センサー入力 9\"] -->|\"変換\"| S10[\"増幅回路\"]\n    S10[\"センサー入力 10\"] -->|\"変換\"| S11[\"増幅回路\"]\n    S11[\"センサー入力 11\"] -->|\"変換\"| S12[\"増幅回路\"]\n    S12[\"センサー入力 12\"] -->|\"変換\"| S13[\"増幅回路\"]\n    S13[\"センサー入力 13\"] -->|\"変換\"| S14[\"増幅回路\"]\n    S14[\"センサー入力 14\"] -->|\"変換\"| S15[\"増幅回路\"]\n    S15[\"センサー入力 15\"] -->|\"変換\"| S16[\"増幅回路\"]\n    S16[\"センサー入力 16\"] -->|\"変換\"| S17[\"増幅回路\"]\n…",
+        "rows": 19,
+        "height_mm": 79.763
+      }
+    },
+    {
+      "name": "box 86.6, lingua it, righe base, CJK ed emoji alternate",
+      "box_h_mm": 86.6,
+      "language": "it",
+      "source": "    n0 -> n1;\n    n1 [label=\"温度センサー 1\"];\n    n2 [label=\"stato 2 ✅\"];\n    n3 -> n4;\n    n4 [label=\"温度センサー 4\"];\n    n5 [label=\"stato 5 ✅\"];\n    n6 -> n7;\n    n7 [label=\"温度センサー 7\"];\n    n8 [label=\"stato 8 ✅\"];\n    n9 -> n10;\n    n10 [label=\"温度センサー 10\"];\n    n11 [label=\"stato 11 ✅\"];\n    n12 -> n13;\n    n13 [label=\"温度センサー 13\"];\n    n14 [label=\"stato 14 ✅\"];\n    n15 -> n16;\n    n16 [label=\"温度センサー 16\"];\n    n17 [label=\"stato 17 ✅\"];\n    n18 -> n19;\n    n19 [label=\"温度センサー 19\"];\n    n20 [label=\"stato 20 ✅\"];\n    n21 -> n22;\n    n22 [label=\"温度センサー 22\"];\n    n23 [label=\"stato 23 ✅\"];\n    n24 -> n25;\n    n25 [label=\"温度センサー 25\"];\n    n26 [label=\"stato 26 ✅\"];\n    n27 -> n28;\n    n28 [label=\"温度センサー 28\"];\n    n29 [label=\"stato 29 ✅\"];\n    n30 -> n31;\n    n31 [label=\"温度センサー 31\"];\n    n32 [label=\"stato 32 ✅\"];\n    n33 -> n34;\n    n34 [label=\"温度センサー 34\"];\n    n35 [label=\"stato 35 ✅\"];\n    n36 -> n37;\n    n37 [label=\"温度センサー 37\"];\n    n38 [label=\"stato 38 ✅\"];\n    n39 -> n40;\n    n40 [label=\"温度センサー 40\"];\n    n41 [label=\"stato 41 ✅\"];\n    n42 -> n43;\n    n43 [label=\"温度センサー 43\"];\n    n44 [label=\"stato 44 ✅\"];\n    n45 -> n46;\n    n46 [label=\"温度センサー 46\"];\n    n47 [label=\"stato 47 ✅\"];\n    n48 -> n49;\n    n49 [label=\"温度センサー 49\"];\n    n50 [label=\"stato 50 ✅\"];\n    n51 -> n52;\n    n52 [label=\"温度センサー 52\"];\n    n53 [label=\"stato 53 ✅\"];\n    n54 -> n55;\n    n55 [label=\"温度センサー 55\"];\n    n56 [label=\"stato 56 ✅\"];\n    n57 -> n58;\n    n58 [label=\"温度センサー 58\"];\n    n59 [label=\"stato 59 ✅\"];",
+      "expected": {
+        "fit": 25,
+        "kept_lines": 20,
+        "omitted": 40,
+        "text": "    n0 -> n1;\n    n1 [label=\"温度センサー 1\"];\n    n2 [label=\"stato 2 ✅\"];\n    n3 -> n4;\n    n4 [label=\"温度センサー 4\"];\n    n5 [label=\"stato 5 ✅\"];\n    n6 -> n7;\n    n7 [label=\"温度センサー 7\"];\n    n8 [label=\"stato 8 ✅\"];\n    n9 -> n10;\n    n10 [label=\"温度センサー 10\"];\n    n11 [label=\"stato 11 ✅\"];\n    n12 -> n13;\n    n13 [label=\"温度センサー 13\"];\n    n14 [label=\"stato 14 ✅\"];\n    n15 -> n16;\n    n16 [label=\"温度センサー 16\"];\n    n17 [label=\"stato 17 ✅\"];\n    n18 -> n19;\n    n19 [label=\"温度センサー 19\"];\n…",
+        "rows": 21,
+        "height_mm": 80.257
+      }
+    },
+    {
+      "name": "box 86.6, 40 righe con U+2028 e U+2029",
+      "box_h_mm": 86.6,
+      "source": "riga 0 seconda parte terza parte\nriga 1 seconda parte terza parte\nriga 2 seconda parte terza parte\nriga 3 seconda parte terza parte\nriga 4 seconda parte terza parte\nriga 5 seconda parte terza parte\nriga 6 seconda parte terza parte\nriga 7 seconda parte terza parte\nriga 8 seconda parte terza parte\nriga 9 seconda parte terza parte\nriga 10 seconda parte terza parte\nriga 11 seconda parte terza parte\nriga 12 seconda parte terza parte\nriga 13 seconda parte terza parte\nriga 14 seconda parte terza parte\nriga 15 seconda parte terza parte\nriga 16 seconda parte terza parte\nriga 17 seconda parte terza parte\nriga 18 seconda parte terza parte\nriga 19 seconda parte terza parte\nriga 20 seconda parte terza parte\nriga 21 seconda parte terza parte\nriga 22 seconda parte terza parte\nriga 23 seconda parte terza parte\nriga 24 seconda parte terza parte\nriga 25 seconda parte terza parte\nriga 26 seconda parte terza parte\nriga 27 seconda parte terza parte\nriga 28 seconda parte terza parte\nriga 29 seconda parte terza parte\nriga 30 seconda parte terza parte\nriga 31 seconda parte terza parte\nriga 32 seconda parte terza parte\nriga 33 seconda parte terza parte\nriga 34 seconda parte terza parte\nriga 35 seconda parte terza parte\nriga 36 seconda parte terza parte\nriga 37 seconda parte terza parte\nriga 38 seconda parte terza parte\nriga 39 seconda parte terza parte",
+      "expected": {
+        "fit": 25,
+        "kept_lines": 24,
+        "omitted": 96,
+        "text": "riga 0\nseconda parte\nterza parte\nriga 1\nseconda parte\nterza parte\nriga 2\nseconda parte\nterza parte\nriga 3\nseconda parte\nterza parte\nriga 4\nseconda parte\nterza parte\nriga 5\nseconda parte\nterza parte\nriga 6\nseconda parte\nterza parte\nriga 7\nseconda parte\nterza parte\n…",
+        "rows": 25,
+        "height_mm": 80.257
+      }
+    },
+    {
+      "name": "box 86.6, lingua hi, etichette devanagari",
+      "box_h_mm": 86.6,
+      "language": "hi",
+      "source": "    A0[\"संवेदक 0\"] --> A1[\"संकेत\"]\n    A1[\"संवेदक 1\"] --> A2[\"संकेत\"]\n    A2[\"संवेदक 2\"] --> A3[\"संकेत\"]\n    A3[\"संवेदक 3\"] --> A4[\"संकेत\"]\n    A4[\"संवेदक 4\"] --> A5[\"संकेत\"]\n    A5[\"संवेदक 5\"] --> A6[\"संकेत\"]\n    A6[\"संवेदक 6\"] --> A7[\"संकेत\"]\n    A7[\"संवेदक 7\"] --> A8[\"संकेत\"]\n    A8[\"संवेदक 8\"] --> A9[\"संकेत\"]\n    A9[\"संवेदक 9\"] --> A10[\"संकेत\"]\n    A10[\"संवेदक 10\"] --> A11[\"संकेत\"]\n    A11[\"संवेदक 11\"] --> A12[\"संकेत\"]\n    A12[\"संवेदक 12\"] --> A13[\"संकेत\"]\n    A13[\"संवेदक 13\"] --> A14[\"संकेत\"]\n    A14[\"संवेदक 14\"] --> A15[\"संकेत\"]\n    A15[\"संवेदक 15\"] --> A16[\"संकेत\"]\n    A16[\"संवेदक 16\"] --> A17[\"संकेत\"]\n    A17[\"संवेदक 17\"] --> A18[\"संकेत\"]\n    A18[\"संवेदक 18\"] --> A19[\"संकेत\"]\n    A19[\"संवेदक 19\"] --> A20[\"संकेत\"]\n    A20[\"संवेदक 20\"] --> A21[\"संकेत\"]\n    A21[\"संवेदक 21\"] --> A22[\"संकेत\"]\n    A22[\"संवेदक 22\"] --> A23[\"संकेत\"]\n    A23[\"संवेदक 23\"] --> A24[\"संकेत\"]\n    A24[\"संवेदक 24\"] --> A25[\"संकेत\"]\n    A25[\"संवेदक 25\"] --> A26[\"संकेत\"]\n    A26[\"संवेदक 26\"] --> A27[\"संकेत\"]\n    A27[\"संवेदक 27\"] --> A28[\"संकेत\"]\n    A28[\"संवेदक 28\"] --> A29[\"संकेत\"]\n    A29[\"संवेदक 29\"] --> A30[\"संकेत\"]\n    A30[\"संवेदक 30\"] --> A31[\"संकेत\"]\n    A31[\"संवेदक 31\"] --> A32[\"संकेत\"]\n    A32[\"संवेदक 32\"] --> A33[\"संकेत\"]\n    A33[\"संवेदक 33\"] --> A34[\"संकेत\"]\n    A34[\"संवेदक 34\"] --> A35[\"संकेत\"]\n    A35[\"संवेदक 35\"] --> A36[\"संकेत\"]\n    A36[\"संवेदक 36\"] --> A37[\"संकेत\"]\n    A37[\"संवेदक 37\"] --> A38[\"संकेत\"]\n    A38[\"संवेदक 38\"] --> A39[\"संकेत\"]\n    A39[\"संवेदक 39\"] --> A40[\"संकेत\"]\n    A40[\"संवेदक 40\"] --> A41[\"संकेत\"]\n    A41[\"संवेदक 41\"] --> A42[\"संकेत\"]\n    A42[\"संवेदक 42\"] --> A43[\"संकेत\"]\n    A43[\"संवेदक 43\"] --> A44[\"संकेत\"]\n    A44[\"संवेदक 44\"] --> A45[\"संकेत\"]\n    A45[\"संवेदक 45\"] --> A46[\"संकेत\"]\n    A46[\"संवेदक 46\"] --> A47[\"संकेत\"]\n    A47[\"संवेदक 47\"] --> A48[\"संकेत\"]\n    A48[\"संवेदक 48\"] --> A49[\"संकेत\"]\n    A49[\"संवेदक 49\"] --> A50[\"संकेत\"]\n    A50[\"संवेदक 50\"] --> A51[\"संकेत\"]\n    A51[\"संवेदक 51\"] --> A52[\"संकेत\"]\n    A52[\"संवेदक 52\"] --> A53[\"संकेत\"]\n    A53[\"संवेदक 53\"] --> A54[\"संकेत\"]\n    A54[\"संवेदक 54\"] --> A55[\"संकेत\"]\n    A55[\"संवेदक 55\"] --> A56[\"संकेत\"]\n    A56[\"संवेदक 56\"] --> A57[\"संकेत\"]\n    A57[\"संवेदक 57\"] --> A58[\"संकेत\"]\n    A58[\"संवेदक 58\"] --> A59[\"संकेत\"]\n    A59[\"संवेदक 59\"] --> A60[\"संकेत\"]",
+      "expected": {
+        "fit": 25,
+        "kept_lines": 18,
+        "omitted": 42,
+        "text": "    A0[\"संवेदक 0\"] --> A1[\"संकेत\"]\n    A1[\"संवेदक 1\"] --> A2[\"संकेत\"]\n    A2[\"संवेदक 2\"] --> A3[\"संकेत\"]\n    A3[\"संवेदक 3\"] --> A4[\"संकेत\"]\n    A4[\"संवेदक 4\"] --> A5[\"संकेत\"]\n    A5[\"संवेदक 5\"] --> A6[\"संकेत\"]\n    A6[\"संवेदक 6\"] --> A7[\"संकेत\"]\n    A7[\"संवेदक 7\"] --> A8[\"संकेत\"]\n    A8[\"संवेदक 8\"] --> A9[\"संकेत\"]\n    A9[\"संवेदक 9\"] --> A10[\"संकेत\"]\n    A10[\"संवेदक 10\"] --> A11[\"संकेत\"]\n    A11[\"संवेदक 11\"] --> A12[\"संकेत\"]\n    A12[\"संवेदक 12\"] --> A13[\"संकेत\"]\n    A13[\"संवेदक 13\"] --> A14[\"संकेत\"]\n    A14[\"संवेदक 14\"] --> A15[\"संकेत\"]\n    A15[\"संवेदक 15\"] --> A16[\"संकेत\"]\n    A16[\"संवेदक 16\"] --> A17[\"संकेत\"]\n    A17[\"संवेदक 17\"] --> A18[\"संकेत\"]\n…",
+        "rows": 19,
+        "height_mm": 79.763
+      }
+    },
+    {
+      "name": "box 60.9, lingua kn, 60 righe corte",
+      "box_h_mm": 60.9,
+      "language": "kn",
+      "source": "n0 -> n1;\nn1 -> n2;\nn2 -> n3;\nn3 -> n4;\nn4 -> n5;\nn5 -> n6;\nn6 -> n7;\nn7 -> n8;\nn8 -> n9;\nn9 -> n10;\nn10 -> n11;\nn11 -> n12;\nn12 -> n13;\nn13 -> n14;\nn14 -> n15;\nn15 -> n16;\nn16 -> n17;\nn17 -> n18;\nn18 -> n19;\nn19 -> n20;\nn20 -> n21;\nn21 -> n22;\nn22 -> n23;\nn23 -> n24;\nn24 -> n25;\nn25 -> n26;\nn26 -> n27;\nn27 -> n28;\nn28 -> n29;\nn29 -> n30;\nn30 -> n31;\nn31 -> n32;\nn32 -> n33;\nn33 -> n34;\nn34 -> n35;\nn35 -> n36;\nn36 -> n37;\nn37 -> n38;\nn38 -> n39;\nn39 -> n40;\nn40 -> n41;\nn41 -> n42;\nn42 -> n43;\nn43 -> n44;\nn44 -> n45;\nn45 -> n46;\nn46 -> n47;\nn47 -> n48;\nn48 -> n49;\nn49 -> n50;\nn50 -> n51;\nn51 -> n52;\nn52 -> n53;\nn53 -> n54;\nn54 -> n55;\nn55 -> n56;\nn56 -> n57;\nn57 -> n58;\nn58 -> n59;\nn59 -> n60;",
+      "expected": {
+        "fit": 17,
+        "kept_lines": 12,
+        "omitted": 48,
+        "text": "n0 -> n1;\nn1 -> n2;\nn2 -> n3;\nn3 -> n4;\nn4 -> n5;\nn5 -> n6;\nn6 -> n7;\nn7 -> n8;\nn8 -> n9;\nn9 -> n10;\nn10 -> n11;\nn11 -> n12;\n…",
+        "rows": 13,
+        "height_mm": 54.575
+      }
+    },
+    {
+      "name": "box 86.6, una riga da 4.000 caratteri tagliata a destra",
+      "box_h_mm": 86.6,
+      "source": "01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd ",
+      "note": "una riga resa: nessun a capo, il resto oltre il bordo non si vede",
+      "expected": {
+        "fit": 25,
+        "kept_lines": 1,
+        "omitted": 0,
+        "text": "01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd 01234567890123456789abcd ",
+        "rows": 1,
+        "height_mm": 3.21
+      }
+    },
+    {
+      "name": "box 86.6, puntini di guida ripetuti su una riga (V6-1)",
+      "box_h_mm": 86.6,
+      "source": "voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . ",
+      "note": "Pango non va a capo prima di «.» dopo uno spazio: in pre-wrap 46 righe rese contro 25 stimate",
+      "expected": {
+        "fit": 25,
+        "kept_lines": 1,
+        "omitted": 0,
+        "text": "voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . ",
+        "rows": 1,
+        "height_mm": 3.21
+      }
+    },
+    {
+      "name": "box 86.6, 200 righe corte e riga vuota finale",
+      "box_h_mm": 86.6,
+      "source": "A0-->A1\nA1-->A2\nA2-->A3\nA3-->A4\nA4-->A5\nA5-->A6\nA6-->A7\nA7-->A8\nA8-->A9\nA9-->A10\nA10-->A11\nA11-->A12\nA12-->A13\nA13-->A14\nA14-->A15\nA15-->A16\nA16-->A17\nA17-->A18\nA18-->A19\nA19-->A20\nA20-->A21\nA21-->A22\nA22-->A23\nA23-->A24\nA24-->A25\nA25-->A26\nA26-->A27\nA27-->A28\nA28-->A29\nA29-->A30\nA30-->A31\nA31-->A32\nA32-->A33\nA33-->A34\nA34-->A35\nA35-->A36\nA36-->A37\nA37-->A38\nA38-->A39\nA39-->A40\nA40-->A41\nA41-->A42\nA42-->A43\nA43-->A44\nA44-->A45\nA45-->A46\nA46-->A47\nA47-->A48\nA48-->A49\nA49-->A50\nA50-->A51\nA51-->A52\nA52-->A53\nA53-->A54\nA54-->A55\nA55-->A56\nA56-->A57\nA57-->A58\nA58-->A59\nA59-->A60\nA60-->A61\nA61-->A62\nA62-->A63\nA63-->A64\nA64-->A65\nA65-->A66\nA66-->A67\nA67-->A68\nA68-->A69\nA69-->A70\nA70-->A71\nA71-->A72\nA72-->A73\nA73-->A74\nA74-->A75\nA75-->A76\nA76-->A77\nA77-->A78\nA78-->A79\nA79-->A80\nA80-->A81\nA81-->A82\nA82-->A83\nA83-->A84\nA84-->A85\nA85-->A86\nA86-->A87\nA87-->A88\nA88-->A89\nA89-->A90\nA90-->A91\nA91-->A92\nA92-->A93\nA93-->A94\nA94-->A95\nA95-->A96\nA96-->A97\nA97-->A98\nA98-->A99\nA99-->A100\nA100-->A101\nA101-->A102\nA102-->A103\nA103-->A104\nA104-->A105\nA105-->A106\nA106-->A107\nA107-->A108\nA108-->A109\nA109-->A110\nA110-->A111\nA111-->A112\nA112-->A113\nA113-->A114\nA114-->A115\nA115-->A116\nA116-->A117\nA117-->A118\nA118-->A119\nA119-->A120\nA120-->A121\nA121-->A122\nA122-->A123\nA123-->A124\nA124-->A125\nA125-->A126\nA126-->A127\nA127-->A128\nA128-->A129\nA129-->A130\nA130-->A131\nA131-->A132\nA132-->A133\nA133-->A134\nA134-->A135\nA135-->A136\nA136-->A137\nA137-->A138\nA138-->A139\nA139-->A140\nA140-->A141\nA141-->A142\nA142-->A143\nA143-->A144\nA144-->A145\nA145-->A146\nA146-->A147\nA147-->A148\nA148-->A149\nA149-->A150\nA150-->A151\nA151-->A152\nA152-->A153\nA153-->A154\nA154-->A155\nA155-->A156\nA156-->A157\nA157-->A158\nA158-->A159\nA159-->A160\nA160-->A161\nA161-->A162\nA162-->A163\nA163-->A164\nA164-->A165\nA165-->A166\nA166-->A167\nA167-->A168\nA168-->A169\nA169-->A170\nA170-->A171\nA171-->A172\nA172-->A173\nA173-->A174\nA174-->A175\nA175-->A176\nA176-->A177\nA177-->A178\nA178-->A179\nA179-->A180\nA180-->A181\nA181-->A182\nA182-->A183\nA183-->A184\nA184-->A185\nA185-->A186\nA186-->A187\nA187-->A188\nA188-->A189\nA189-->A190\nA190-->A191\nA191-->A192\nA192-->A193\nA193-->A194\nA194-->A195\nA195-->A196\nA196-->A197\nA197-->A198\nA198-->A199\nA199-->A200\n",
+      "note": "fit 25: 24 righe + «…», 177 omesse (la riga vuota finale conta)",
+      "expected": {
+        "fit": 25,
+        "kept_lines": 24,
+        "omitted": 177,
+        "text": "A0-->A1\nA1-->A2\nA2-->A3\nA3-->A4\nA4-->A5\nA5-->A6\nA6-->A7\nA7-->A8\nA8-->A9\nA9-->A10\nA10-->A11\nA11-->A12\nA12-->A13\nA13-->A14\nA14-->A15\nA15-->A16\nA16-->A17\nA17-->A18\nA18-->A19\nA19-->A20\nA20-->A21\nA21-->A22\nA22-->A23\nA23-->A24\n…",
+        "rows": 25,
+        "height_mm": 80.257
+      }
+    },
+    {
+      "name": "box 86.6, separatori CRLF, CR, U+2028, U+2029 riscritti come a capo",
+      "box_h_mm": 86.6,
+      "source": "riga 0\r\nCR\rLS PS NELFF\fVT\u000bNUL\u0000fine\nriga 1\r\nCR\rLS PS NELFF\fVT\u000bNUL\u0000fine\nriga 2\r\nCR\rLS PS NELFF\fVT\u000bNUL\u0000fine\nriga 3\r\nCR\rLS PS NELFF\fVT\u000bNUL\u0000fine\nriga 4\r\nCR\rLS PS NELFF\fVT\u000bNUL\u0000fine\nriga 5\r\nCR\rLS PS NELFF\fVT\u000bNUL\u0000fine\nriga 6\r\nCR\rLS PS NELFF\fVT\u000bNUL\u0000fine\nriga 7\r\nCR\rLS PS NELFF\fVT\u000bNUL\u0000fine\nriga 8\r\nCR\rLS PS NELFF\fVT\u000bNUL\u0000fine\nriga 9\r\nCR\rLS PS NELFF\fVT\u000bNUL\u0000fine\nriga 10\r\nCR\rLS PS NELFF\fVT\u000bNUL\u0000fine\nriga 11\r\nCR\rLS PS NELFF\fVT\u000bNUL\u0000fine\nriga 12\r\nCR\rLS PS NELFF\fVT\u000bNUL\u0000fine\nriga 13\r\nCR\rLS PS NELFF\fVT\u000bNUL\u0000fine\nriga 14\r\nCR\rLS PS NELFF\fVT\u000bNUL\u0000fine\nriga 15\r\nCR\rLS PS NELFF\fVT\u000bNUL\u0000fine\nriga 16\r\nCR\rLS PS NELFF\fVT\u000bNUL\u0000fine\nriga 17\r\nCR\rLS PS NELFF\fVT\u000bNUL\u0000fine\nriga 18\r\nCR\rLS PS NELFF\fVT\u000bNUL\u0000fine\nriga 19\r\nCR\rLS PS NELFF\fVT\u000bNUL\u0000fine\nriga 20\r\nCR\rLS PS NELFF\fVT\u000bNUL\u0000fine\nriga 21\r\nCR\rLS PS NELFF\fVT\u000bNUL\u0000fine\nriga 22\r\nCR\rLS PS NELFF\fVT\u000bNUL\u0000fine\nriga 23\r\nCR\rLS PS NELFF\fVT\u000bNUL\u0000fine\nriga 24\r\nCR\rLS PS NELFF\fVT\u000bNUL\u0000fine\nriga 25\r\nCR\rLS PS NELFF\fVT\u000bNUL\u0000fine\nriga 26\r\nCR\rLS PS NELFF\fVT\u000bNUL\u0000fine\nriga 27\r\nCR\rLS PS NELFF\fVT\u000bNUL\u0000fine\nriga 28\r\nCR\rLS PS NELFF\fVT\u000bNUL\u0000fine\nriga 29\r\nCR\rLS PS NELFF\fVT\u000bNUL\u0000fine\n",
+      "note": "NEL, FF e VT restano nella riga (nessun motore ci va a capo), i NUL spariscono",
+      "expected": {
+        "fit": 25,
+        "kept_lines": 23,
+        "omitted": 128,
+        "text": "riga 0\nCR\nLS\nPS\nNELFF\fVT\u000bNULfine\nriga 1\nCR\nLS\nPS\nNELFF\fVT\u000bNULfine\nriga 2\nCR\nLS\nPS\nNELFF\fVT\u000bNULfine\nriga 3\nCR\nLS\nPS\nNELFF\fVT\u000bNULfine\nriga 4\nCR\nLS\n…",
+        "rows": 24,
+        "height_mm": 80.998
+      }
+    },
+    {
+      "name": "box 86.6, 10 righe con separatori: invariate salvo gli a capo",
+      "box_h_mm": 86.6,
+      "source": "n0 m0\r\nn1 m1\r\nn2 m2\r\nn3 m3\r\nn4 m4\r\nn5 m5\r\nn6 m6\r\nn7 m7\r\nn8 m8\r\nn9 m9\r\n",
+      "note": "tutto entra: il testo è lo stesso con gli a capo riscritti",
+      "expected": {
+        "fit": 25,
+        "kept_lines": 21,
+        "omitted": 0,
+        "text": "n0\nm0\nn1\nm1\nn2\nm2\nn3\nm3\nn4\nm4\nn5\nm5\nn6\nm6\nn7\nm7\nn8\nm8\nn9\nm9\n",
+        "rows": 21,
+        "height_mm": 67.416
+      }
+    },
+    {
+      "name": "box 86.6, lingua bo, ideogrammi in testa e tibetano (V7-1)",
+      "box_h_mm": 86.6,
+      "language": "bo",
+      "source": "flowchart LR\n    藏文0[\"བོད་ཡིག་ 0\"] --> 汉字0\n    藏文1[\"བོད་ཡིག་ 1\"] --> 汉字1\n    藏文2[\"བོད་ཡིག་ 2\"] --> 汉字2\n    藏文3[\"བོད་ཡིག་ 3\"] --> 汉字3\n    藏文4[\"བོད་ཡིག་ 4\"] --> 汉字4\n    藏文5[\"བོད་ཡིག་ 5\"] --> 汉字5\n    藏文6[\"བོད་ཡིག་ 6\"] --> 汉字6\n    藏文7[\"བོད་ཡིག་ 7\"] --> 汉字7\n    藏文8[\"བོད་ཡིག་ 8\"] --> 汉字8\n    藏文9[\"བོད་ཡིག་ 9\"] --> 汉字9\n    藏文10[\"བོད་ཡིག་ 10\"] --> 汉字10\n    藏文11[\"བོད་ཡིག་ 11\"] --> 汉字11\n    藏文12[\"བོད་ཡིག་ 12\"] --> 汉字12\n    藏文13[\"བོད་ཡིག་ 13\"] --> 汉字13\n    藏文14[\"བོད་ཡིག་ 14\"] --> 汉字14\n    藏文15[\"བོད་ཡིག་ 15\"] --> 汉字15\n    藏文16[\"བོད་ཡིག་ 16\"] --> 汉字16\n    藏文17[\"བོད་ཡིག་ 17\"] --> 汉字17\n    藏文18[\"བོད་ཡིག་ 18\"] --> 汉字18\n    藏文19[\"བོད་ཡིག་ 19\"] --> 汉字19\n    藏文20[\"བོད་ཡིག་ 20\"] --> 汉字20\n    藏文21[\"བོད་ཡིག་ 21\"] --> 汉字21\n    藏文22[\"བོད་ཡིག་ 22\"] --> 汉字22\n    藏文23[\"བོད་ཡིག་ 23\"] --> 汉字23\n    藏文24[\"བོད་ཡིག་ 24\"] --> 汉字24\n    藏文25[\"བོད་ཡིག་ 25\"] --> 汉字25\n    藏文26[\"བོད་ཡིག་ 26\"] --> 汉字26\n    藏文27[\"བོད་ཡིག་ 27\"] --> 汉字27\n    藏文28[\"བོད་ཡིག་ 28\"] --> 汉字28\n    藏文29[\"བོད་ཡིག་ 29\"] --> 汉字29\n    藏文30[\"བོད་ཡིག་ 30\"] --> 汉字30\n    藏文31[\"བོད་ཡིག་ 31\"] --> 汉字31\n    藏文32[\"བོད་ཡིག་ 32\"] --> 汉字32\n    藏文33[\"བོད་ཡིག་ 33\"] --> 汉字33\n    藏文34[\"བོད་ཡིག་ 34\"] --> 汉字34\n    藏文35[\"བོད་ཡིག་ 35\"] --> 汉字35\n    藏文36[\"བོད་ཡིག་ 36\"] --> 汉字36\n    藏文37[\"བོད་ཡིག་ 37\"] --> 汉字37\n    藏文38[\"བོད་ཡིག་ 38\"] --> 汉字38\n    藏文39[\"བོད་ཡིག་ 39\"] --> 汉字39",
+      "expected": {
+        "fit": 25,
+        "kept_lines": 13,
+        "omitted": 28,
+        "text": "flowchart LR\n    藏文0[\"བོད་ཡིག་ 0\"] --> 汉字0\n    藏文1[\"བོད་ཡིག་ 1\"] --> 汉字1\n    藏文2[\"བོད་ཡིག་ 2\"] --> 汉字2\n    藏文3[\"བོད་ཡིག་ 3\"] --> 汉字3\n    藏文4[\"བོད་ཡིག་ 4\"] --> 汉字4\n    藏文5[\"བོད་ཡིག་ 5\"] --> 汉字5\n    藏文6[\"བོད་ཡིག་ 6\"] --> 汉字6\n    藏文7[\"བོད་ཡིག་ 7\"] --> 汉字7\n    藏文8[\"བོད་ཡིག་ 8\"] --> 汉字8\n    藏文9[\"བོད་ཡིག་ 9\"] --> 汉字9\n    藏文10[\"བོད་ཡིག་ 10\"] --> 汉字10\n    藏文11[\"བོད་ཡིག་ 11\"] --> 汉字11\n…",
+        "rows": 14,
+        "height_mm": 81.294
+      }
+    },
+    {
+      "name": "box 86.6, lingua bo, id ASCII in testa e tibetano (controllo V7-1)",
+      "box_h_mm": 86.6,
+      "language": "bo",
+      "source": "flowchart LR\n    n0[\"藏文 བོད་ཡིག་ 0\"] --> 汉字0\n    n1[\"藏文 བོད་ཡིག་ 1\"] --> 汉字1\n    n2[\"藏文 བོད་ཡིག་ 2\"] --> 汉字2\n    n3[\"藏文 བོད་ཡིག་ 3\"] --> 汉字3\n    n4[\"藏文 བོད་ཡིག་ 4\"] --> 汉字4\n    n5[\"藏文 བོད་ཡིག་ 5\"] --> 汉字5\n    n6[\"藏文 བོད་ཡིག་ 6\"] --> 汉字6\n    n7[\"藏文 བོད་ཡིག་ 7\"] --> 汉字7\n    n8[\"藏文 བོད་ཡིག་ 8\"] --> 汉字8\n    n9[\"藏文 བོད་ཡིག་ 9\"] --> 汉字9\n    n10[\"藏文 བོད་ཡིག་ 10\"] --> 汉字10\n    n11[\"藏文 བོད་ཡིག་ 11\"] --> 汉字11\n    n12[\"藏文 བོད་ཡིག་ 12\"] --> 汉字12\n    n13[\"藏文 བོད་ཡིག་ 13\"] --> 汉字13\n    n14[\"藏文 བོད་ཡིག་ 14\"] --> 汉字14\n    n15[\"藏文 བོད་ཡིག་ 15\"] --> 汉字15\n    n16[\"藏文 བོད་ཡིག་ 16\"] --> 汉字16\n    n17[\"藏文 བོད་ཡིག་ 17\"] --> 汉字17\n    n18[\"藏文 བོད་ཡིག་ 18\"] --> 汉字18\n    n19[\"藏文 བོད་ཡིག་ 19\"] --> 汉字19\n    n20[\"藏文 བོད་ཡིག་ 20\"] --> 汉字20\n    n21[\"藏文 བོད་ཡིག་ 21\"] --> 汉字21\n    n22[\"藏文 བོད་ཡིག་ 22\"] --> 汉字22\n    n23[\"藏文 བོད་ཡིག་ 23\"] --> 汉字23\n    n24[\"藏文 བོད་ཡིག་ 24\"] --> 汉字24\n    n25[\"藏文 བོད་ཡིག་ 25\"] --> 汉字25\n    n26[\"藏文 བོད་ཡིག་ 26\"] --> 汉字26\n    n27[\"藏文 བོད་ཡིག་ 27\"] --> 汉字27\n    n28[\"藏文 བོད་ཡིག་ 28\"] --> 汉字28\n    n29[\"藏文 བོད་ཡིག་ 29\"] --> 汉字29\n    n30[\"藏文 བོད་ཡིག་ 30\"] --> 汉字30\n    n31[\"藏文 བོད་ཡིག་ 31\"] --> 汉字31\n    n32[\"藏文 བོད་ཡིག་ 32\"] --> 汉字32\n    n33[\"藏文 བོད་ཡིག་ 33\"] --> 汉字33\n    n34[\"藏文 བོད་ཡིག་ 34\"] --> 汉字34\n    n35[\"藏文 བོད་ཡིག་ 35\"] --> 汉字35\n    n36[\"藏文 བོད་ཡིག་ 36\"] --> 汉字36\n    n37[\"藏文 བོད་ཡིག་ 37\"] --> 汉字37\n    n38[\"藏文 བོད་ཡིག་ 38\"] --> 汉字38\n    n39[\"藏文 བོད་ཡིག་ 39\"] --> 汉字39",
+      "expected": {
+        "fit": 25,
+        "kept_lines": 18,
+        "omitted": 23,
+        "text": "flowchart LR\n    n0[\"藏文 བོད་ཡིག་ 0\"] --> 汉字0\n    n1[\"藏文 བོད་ཡིག་ 1\"] --> 汉字1\n    n2[\"藏文 བོད་ཡིག་ 2\"] --> 汉字2\n    n3[\"藏文 བོད་ཡིག་ 3\"] --> 汉字3\n    n4[\"藏文 བོད་ཡིག་ 4\"] --> 汉字4\n    n5[\"藏文 བོད་ཡིག་ 5\"] --> 汉字5\n    n6[\"藏文 བོད་ཡིག་ 6\"] --> 汉字6\n    n7[\"藏文 བོད་ཡིག་ 7\"] --> 汉字7\n    n8[\"藏文 བོད་ཡིག་ 8\"] --> 汉字8\n    n9[\"藏文 བོད་ཡིག་ 9\"] --> 汉字9\n    n10[\"藏文 བོད་ཡིག་ 10\"] --> 汉字10\n    n11[\"藏文 བོད་ཡིག་ 11\"] --> 汉字11\n    n12[\"藏文 བོད་ཡིག་ 12\"] --> 汉字12\n    n13[\"藏文 བོད་ཡིག་ 13\"] --> 汉字13\n    n14[\"藏文 བོད་ཡིག་ 14\"] --> 汉字14\n    n15[\"藏文 བོད་ཡིག་ 15\"] --> 汉字15\n    n16[\"藏文 བོད་ཡིག་ 16\"] --> 汉字16\n…",
+        "rows": 19,
+        "height_mm": 79.763
+      }
+    }
+  ],
+  "lines": [
+    {
+      "style": "title",
+      "text": "Titolo su una riga",
+      "estimated": 1
+    },
+    {
+      "style": "title",
+      "text": "Sistemi distribuiti e modelli di consistenza: replica, partizionamento e tolleranza ai guasti",
+      "estimated": 3
+    },
+    {
+      "style": "title",
+      "text": "Introduzione alle architetture a microservizi: decomposizione del dominio, comunicazione asincrona, osservabilita del sistema e strategie di migrazione dal monolite",
+      "estimated": 5
+    },
+    {
+      "style": "title",
+      "text": "ARCHITETTURE DISTRIBUITE E SISTEMI CONCORRENTI",
+      "estimated": 2
+    },
+    {
+      "style": "title",
+      "text": "Sistemi Distribuiti: Modelli di Consistenza e Replica",
+      "estimated": 2
+    },
+    {
+      "style": "title",
+      "text": "分散システムにおける一貫性モデルとレプリケーション戦略の比較と評価について解説",
+      "estimated": 2
+    },
+    {
+      "style": "title",
+      "text": "Pneumonoultramicroscopicsilicovolcanoconiosisxxxxxxxxxxxxxxx",
+      "estimated": 2
+    },
+    {
+      "style": "title",
+      "text": "SOSTENIBILITA' AMBIENTALE E TRANSIZIONE ENERGETICA NELL'INDUSTRIA MANIFATTURIERA EUROPEA",
+      "estimated": 4
+    },
+    {
+      "style": "title",
+      "text": "Programmazione dinamica",
+      "estimated": 1
+    },
+    {
+      "style": "title",
+      "text": "Reti neurali convoluzionali per la classificazione di immagini mediche",
+      "estimated": 2
+    },
+    {
+      "style": "title",
+      "text": "Il teorema di Bayes e l'inferenza probabilistica",
+      "estimated": 2
+    },
+    {
+      "style": "title",
+      "text": "Machine Learning: dalla regressione lineare alle reti profonde",
+      "estimated": 2
+    },
+    {
+      "style": "title",
+      "text": "Analisi Matematica II - Integrali doppi e tripli",
+      "estimated": 2
+    },
+    {
+      "style": "title",
+      "text": "Qualita dell'aria urbana: monitoraggio, modelli e politiche",
+      "estimated": 2
+    },
+    {
+      "style": "title",
+      "text": "Blockchain e contratti intelligenti",
+      "estimated": 1
+    },
+    {
+      "style": "title",
+      "text": "Diritto dell'Unione Europea: fonti, istituzioni e procedure legislative ordinarie",
+      "estimated": 3
+    },
+    {
+      "style": "title",
+      "text": "Termodinamica dei processi irreversibili",
+      "estimated": 1
+    },
+    {
+      "style": "title",
+      "text": "Crittografia a chiave pubblica: RSA, curve ellittiche e scambio di chiavi Diffie-Hellman",
+      "estimated": 3
+    },
+    {
+      "style": "title",
+      "text": "Storia dell'arte contemporanea: dalle avanguardie storiche al postmoderno",
+      "estimated": 2
+    },
+    {
+      "style": "title",
+      "text": "Metodi numerici per equazioni differenziali alle derivate parziali: differenze finite",
+      "estimated": 2
+    },
+    {
+      "style": "title",
+      "text": "@@@@@@@@@@ %%%%%%%%%% @@@@@@@@@@ %%%%%%%%%% @@@@@@@@@@",
+      "estimated": 3
+    },
+    {
+      "style": "title",
+      "text": "Crescita del 50 % → 75 % — «Indici» & «Margini» ± 3 % sul 2025",
+      "estimated": 2
+    },
+    {
+      "style": "bullet",
+      "text": "Punto 1: enunciato compiuto su una riga sola",
+      "estimated": 1
+    },
+    {
+      "style": "bullet",
+      "text": "La consistenza eventuale garantisce che, in assenza di nuovi aggiornamenti, tutte le repliche convergano allo stesso stato entro un tempo finito, accettando letture obsolete nel frattempo per privilegiare disponibilita e tolleranza alle partizioni",
+      "estimated": 3
+    },
+    {
+      "style": "bullet",
+      "text": "Il protocollo Raft elegge un leader per termine e replica il log ai follower con conferme",
+      "estimated": 1
+    },
+    {
+      "style": "bullet",
+      "text": "Complessita O(n log n) nel caso medio, O(n^2) nel caso peggiore per pivot degeneri",
+      "estimated": 1
+    },
+    {
+      "style": "bullet",
+      "text": "",
+      "estimated": 0
+    },
+    {
+      "style": "bullet",
+      "text": "Disuguaglianze: a ≤ b, b ≥ c, a ≠ c, x → ∞, √2 × 3 ÷ 4 = 2,12 ± 0,01; Disuguaglianze: a ≤ b, b ≥ c, a ≠ c, x → ∞, √2 × 3 ÷ 4 = 2,12 ± 0,01; Disuguaglianze: a ≤ b, b ≥ c, a ≠ c, x → ∞, √2 × 3 ÷ 4 = 2,12 ± 0,01; ",
+      "estimated": 2
+    },
+    {
+      "style": "body",
+      "text": "Il diagramma mostra il flusso del protocollo di consenso fra il leader e i follower: la proposta viene replicata, confermata dalla maggioranza dei nodi e infine applicata; un timeout sul follower avvia una nuova elezione con termine incrementato.",
+      "estimated": 4
+    },
+    {
+      "style": "body",
+      "text": "Prosa di una riga.",
+      "estimated": 1
+    },
+    {
+      "style": "body",
+      "text": "Questa slide introduce il concetto di consistenza causale, che ordina soltanto le operazioni legate da una relazione di dipendenza.",
+      "estimated": 2
+    },
+    {
+      "style": "body",
+      "text": "Costo totale: 1.200 € + 15 % IVA = 1.380 € (≈ 1.380 $) — vedi «Tabella» & note… Costo totale: 1.200 € + 15 % IVA = 1.380 € (≈ 1.380 $) — vedi «Tabella» & note… ",
+      "estimated": 3
+    },
+    {
+      "style": "caption",
+      "text": "Figura. Schema",
+      "estimated": 1
+    },
+    {
+      "style": "caption",
+      "text": "Figura. Diagramma di flusso del protocollo di consenso: il leader riceve la proposta, la replica ai follower, attende la maggioranza degli acknowledgement e infine applica il commit; in caso di timeout il follower avvia una nuova elezione con termine incrementato. Il diagramma di flusso del protocollo di consenso mostra che il leader riceve la proposta, la replica ai follower, attende la maggioranza degli acknowledgement e infine applica il commit; in caso di timeout il follower avvia una nuova elezione con termine incrementato e il ciclo riparte da capo.",
+      "estimated": 4
+    },
+    {
+      "style": "caption",
+      "text": "Figura. Diagramma di flusso del protocollo di consenso: il leader riceve la proposta, la replica ai follower, attende la maggioranza degli acknowledgement e infine applica il commit; in caso di timeout il follower avvia una nuova elezione con termine incrementato. Il diagramma di flusso del protocollo di consenso mostra che il leader riceve la proposta, la replica ai follower, attende la maggioranza degli acknowledgement e infine applica il commit; in caso di timeout il follower avvia una nuova elezione con termine incrementato e il ciclo riparte da capo. Zeri in x = -1, 1. Minimo in x = 0 con f(0) = -1. Intervallo di crescita: (0, 3]. Intervallo di decrescita: [-3, 0). Nessun asintoto. Integrale su [-3, 3] = 12.",
+      "estimated": 5
+    },
+    {
+      "style": "caption",
+      "text": "——————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————",
+      "estimated": 2
+    }
+  ],
+  "pre_sources": [
+    {
+      "name": "stimatore a capo: riga DOT reale da 176 caratteri con 22 spazi",
+      "text": "    \"Analisi dei requisiti del sottosistema 07\" -> \"Progettazione della architettura 07\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];",
+      "repeat": 1,
+      "rows": 1
+    },
+    {
+      "name": "stimatore a capo: parole brevi con spazi, 200 colonne",
+      "text": "a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a ",
+      "repeat": 1,
+      "rows": 1
+    },
+    {
+      "name": "stimatore a capo: 170 spazi iniziali",
+      "text": "                                                                                                                                                                          a",
+      "repeat": 1,
+      "rows": 1
+    },
+    {
+      "name": "stimatore a capo: 400 spazi che pendono",
+      "text": "                                                                                                                                                                                                                                                                                                                                                                                                                ",
+      "repeat": 1,
+      "rows": 1
+    },
+    {
+      "name": "stimatore a capo: 22 tab iniziali",
+      "text": "\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga",
+      "repeat": 1,
+      "rows": 1
+    },
+    {
+      "name": "stimatore a capo: 20 tab e 7 caratteri, 167 colonne",
+      "text": "\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\triga 59",
+      "repeat": 1,
+      "rows": 1
+    },
+    {
+      "name": "stimatore a capo: 9 tab dopo 100 caratteri",
+      "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\t\t\t\t\t\t\t\t\tyyyyy",
+      "repeat": 1,
+      "rows": 1
+    },
+    {
+      "name": "stimatore a capo: tre parole da 100 colonne",
+      "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "repeat": 1,
+      "rows": 1
+    },
+    {
+      "name": "stimatore a capo: 167 colonne con spazi",
+      "text": "ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab az",
+      "repeat": 1,
+      "rows": 1
+    },
+    {
+      "name": "stimatore a capo: 168 colonne con spazi",
+      "text": "ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab abz",
+      "repeat": 1,
+      "rows": 1
+    },
+    {
+      "name": "stimatore a capo: spec Vega-Lite su una riga",
+      "text": "{\"data\": {\"values\": [{\"categoria\": \"voce numero 0\", \"valore\": 0}, {\"categoria\": \"voce numero 1\", \"valore\": 3}, {\"categoria\": \"voce numero 2\", \"valore\": 6}, {\"categoria\": \"voce numero 3\", \"valore\": 9}, {\"categoria\": \"voce numero 4\", \"valore\": 12}, {\"categoria\": \"voce numero 5\", \"valore\": 15}, {\"categoria\": \"voce numero 6\", \"valore\": 1}, {\"categoria\": \"voce numero 7\", \"valore\": 4}, {\"categoria\": \"voce numero 8\", \"valore\": 7}, {\"categoria\": \"voce numero 9\", \"valore\": 10}, {\"categoria\": \"voce numero 10\", \"valore\": 13}, {\"categoria\": \"voce numero 11\", \"valore\": 16}, {\"categoria\": \"voce numero 12\", \"valore\": 2}, {\"categoria\": \"voce numero 13\", \"valore\": 5}, {\"categoria\": \"voce numero 14\", \"valore\": 8}, {\"categoria\": \"voce numero 15\", \"valore\": 11}, {\"categoria\": \"voce numero 16\", \"valore\": 14}, {\"categoria\": \"voce numero 17\", \"valore\": 0}, {\"categoria\": \"voce numero 18\", \"valore\": 3}, {\"categoria\": \"voce numero 19\", \"valore\": 6}, {\"categoria\": \"voce numero 20\", \"valore\": 9}, {\"categoria\": \"voce numero 21\", \"valore\": 12}, {\"categoria\": \"voce numero 22\", \"valore\": 15}, {\"categoria\": \"voce numero 23\", \"valore\": 1}, {\"categoria\": \"voce numero 24\", \"valore\": 4}, {\"categoria\": \"voce numero 25\", \"valore\": 7}, {\"categoria\": \"voce numero 26\", \"valore\": 10}, {\"categoria\": \"voce numero 27\", \"valore\": 13}, {\"categoria\": \"voce numero 28\", \"valore\": 16}, {\"categoria\": \"voce numero 29\", \"valore\": 2}, {\"categoria\": \"voce numero 30\", \"valore\": 5}, {\"categoria\": \"voce numero 31\", \"valore\": 8}, {\"categoria\": \"voce numero 32\", \"valore\": 11}, {\"categoria\": \"voce numero 33\", \"valore\": 14}, {\"categoria\": \"voce numero 34\", \"valore\": 0}, {\"categoria\": \"voce numero 35\", \"valore\": 3}, {\"categoria\": \"voce numero 36\", \"valore\": 6}, {\"categoria\": \"voce numero 37\", \"valore\": 9}, {\"categoria\": \"voce numero 38\", \"valore\": 12}, {\"categoria\": \"voce numero 39\", \"valore\": 15}, {\"categoria\": \"voce numero 40\", \"valore\": 1}, {\"categoria\": \"voce numero 41\", \"valore\": 4}, {\"categoria\": \"voce numero 42\", \"valore\": 7}, {\"categoria\": \"voce numero 43\", \"valore\": 10}, {\"categoria\": \"voce numero 44\", \"valore\": 13}, {\"categoria\": \"voce numero 45\", \"valore\": 16}, {\"categoria\": \"voce numero 46\", \"valore\": 2}, {\"categoria\": \"voce numero 47\", \"valore\": 5}, {\"categoria\": \"voce numero 48\", \"valore\": 8}, {\"categoria\": \"voce numero 49\", \"valore\": 11}, {\"categoria\": \"voce numero 50\", \"valore\": 14}, {\"categoria\": \"voce numero 51\", \"valore\": 0}, {\"categoria\": \"voce numero 52\", \"valore\": 3}, {\"categoria\": \"voce numero 53\", \"valore\": 6}, {\"categoria\": \"voce numero 54\", \"valore\": 9}, {\"categoria\": \"voce numero 55\", \"valore\": 12}, {\"categoria\": \"voce numero 56\", \"valore\": 15}, {\"categoria\": \"voce numero 57\", \"valore\": 1}, {\"categoria\": \"voce numero 58\", \"valore\": 4}, {\"categoria\": \"voce numero 59\", \"valore\": 7}]}, \"mark\": {\"type\": \"bar\", \"tooltip\": true}, \"encoding\": {\"x\": {\"field\": \"categoria\", \"type\": \"nominal\", \"sort\": \"-y\"}, \"y\": {\"field\": \"valore\", \"type\": \"quantitative\"}}}",
+      "repeat": 1,
+      "rows": 1
+    },
+    {
+      "name": "stimatore a capo: indentazione e label ripetuta",
+      "text": "        nodo_12 [label=\"Stato intermedio della macchina a stati finiti\", shape=box, style=\"rounded,filled\", fillcolor=\"#eef\"];nodo_12 [label=\"Stato intermedio della macchina a stati finiti\", shape=box, style=\"rounded,filled\", fillcolor=\"#eef\"];",
+      "repeat": 1,
+      "rows": 1
+    },
+    {
+      "name": "stimatore a capo: CJK con spazi",
+      "text": "节点 分布式系统的一致性协议分布式系统的一致性协议分布式系统的一致性协议分布式系统的一致性协议分布式系统的一致性协议分布式系统的一致性协议分布式系统的一致性协议分布式系统的一致性协议分布式系统的一致性协议分布式系统的一致性协议分布式系统的一致性协议分布式系统的一致性协议 end",
+      "repeat": 1,
+      "rows": 1
+    },
+    {
+      "name": "stimatore a capo: CJK senza spazi",
+      "text": "分散システム分散システム分散システム分散システム分散システム分散システム分散システム分散システム分散システム分散システム分散システム分散システム分散システム分散システム分散システム分散システム分散システム分散システム分散システム分散システム分散システム分散システム分散システム分散システム分散システム分散システム分散システム分散システム分散システム分散システム",
+      "repeat": 1,
+      "rows": 1
+    },
+    {
+      "name": "stimatore a capo: token senza spazi da 600 caratteri",
+      "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "repeat": 1,
+      "rows": 1
+    },
+    {
+      "name": "stimatore a capo: token con due trattini a 160 e 320",
+      "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-cccccccccc",
+      "repeat": 1,
+      "rows": 1
+    },
+    {
+      "name": "stimatore a capo: URL con barre",
+      "text": "https://example.org/segmento0/segmento1/segmento2/segmento3/segmento4/segmento5/segmento6/segmento7/segmento8/segmento9/segmento10/segmento11/segmento12/segmento13/segmento14/segmento15/segmento16/segmento17/segmento18/segmento19/segmento20/segmento21/segmento22/segmento23/segmento24/segmento25/segmento26/segmento27/segmento28/segmento29/segmento30/segmento31/segmento32/segmento33/segmento34/segmento35/segmento36/segmento37/segmento38/segmento39",
+      "repeat": 1,
+      "rows": 1
+    },
+    {
+      "name": "stimatore a capo: token con un trattino ogni 20 caratteri",
+      "text": "abcdefghijklmnopqrs-abcdefghijklmnopqrs-abcdefghijklmnopqrs-abcdefghijklmnopqrs-abcdefghijklmnopqrs-abcdefghijklmnopqrs-abcdefghijklmnopqrs-abcdefghijklmnopqrs-abcdefghijklmnopqrs-abcdefghijklmnopqrs-abcdefghijklmnopqrs-abcdefghijklmnopqrs-abcdefghijklmnopqrs-abcdefghijklmnopqrs-abcdefghijklmnopqrs-abcdefghijklmnopqrs-abcdefghijklmnopqrs-abcdefghijklmnopqrs-abcdefghijklmnopqrs-abcdefghijklmnopqrs-",
+      "repeat": 1,
+      "rows": 1
+    },
+    {
+      "name": "stimatore a capo: U+2028 e U+2029 dentro la riga",
+      "text": "abx x x x x",
+      "repeat": 1,
+      "rows": 5
+    },
+    {
+      "name": "stimatore a capo: emoji e simboli fuori dall'insieme base",
+      "text": "✅ ⚠ 🚀 ∢ ⌘ ‖ Ѡ ✅ ⚠ 🚀 ∢ ⌘ ‖ Ѡ ✅ ⚠ 🚀 ∢ ⌘ ‖ Ѡ ✅ ⚠ 🚀 ∢ ⌘ ‖ Ѡ ✅ ⚠ 🚀 ∢ ⌘ ‖ Ѡ ✅ ⚠ 🚀 ∢ ⌘ ‖ Ѡ ✅ ⚠ 🚀 ∢ ⌘ ‖ Ѡ ✅ ⚠ 🚀 ∢ ⌘ ‖ Ѡ ✅ ⚠ 🚀 ∢ ⌘ ‖ Ѡ ✅ ⚠ 🚀 ∢ ⌘ ‖ Ѡ ✅ ⚠ 🚀 ∢ ⌘ ‖ Ѡ ✅ ⚠ 🚀 ∢ ⌘ ‖ Ѡ",
+      "repeat": 1,
+      "rows": 1
+    },
+    {
+      "name": "stimatore a capo: riga DOT da 176 caratteri in lingua ja",
+      "text": "    \"Analisi dei requisiti del sottosistema 07\" -> \"Progettazione della architettura 07\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];",
+      "repeat": 1,
+      "rows": 1
+    },
+    {
+      "name": "stimatore a capo: riga DOT da 176 caratteri in lingua kn",
+      "text": "    \"Analisi dei requisiti del sottosistema 07\" -> \"Progettazione della architettura 07\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];",
+      "repeat": 1,
+      "rows": 1
+    },
+    {
+      "name": "stimatore a capo: etichette devanagari in lingua hi",
+      "text": "A[\"संवेदक भौतिक मात्रा\"] --> B[\"विद्युत संकेत\"] A[\"संवेदक भौतिक मात्रा\"] --> B[\"विद्युत संकेत\"] A[\"संवेदक भौतिक मात्रा\"] --> B[\"विद्युत संकेत\"] A[\"संवेदक भौतिक मात्रा\"] --> B[\"विद्युत संकेत\"] A[\"संवेदक भौतिक मात्रा\"] --> B[\"विद्युत संकेत\"]",
+      "repeat": 1,
+      "rows": 1
+    },
+    {
+      "name": "stimatore a capo: katakana, kanji e ASCII in lingua ja",
+      "text": "S1[\"センサー入力\"] -->|\"変換\"| S2[\"増幅回路\"] S1[\"センサー入力\"] -->|\"変換\"| S2[\"増幅回路\"] S1[\"センサー入力\"] -->|\"変換\"| S2[\"増幅回路\"] S1[\"センサー入力\"] -->|\"変換\"| S2[\"増幅回路\"] S1[\"センサー入力\"] -->|\"変換\"| S2[\"増幅回路\"] S1[\"センサー入力\"] -->|\"変換\"| S2[\"増幅回路\"]",
+      "repeat": 1,
+      "rows": 1
+    },
+    {
+      "name": "stimatore a capo: lettere tamil, malayalam, sinhala e myanmar larghe",
+      "text": "ணஹ ஹண ஊண ആന ഈണം ഝഞണ අආ ဪ ணஹ ஹண ஊண ആന ഈണം ഝഞണ අආ ဪ ணஹ ஹண ஊண ആന ഈണം ഝഞണ අආ ဪ ணஹ ஹண ஊண ആന ഈണം ഝഞണ අආ ဪ ணஹ ஹண ஊண ആന ഈണം ഝഞണ අආ ဪ ணஹ ஹண ஊண ആന ഈണം ഝഞണ අආ ဪ",
+      "repeat": 1,
+      "rows": 1
+    },
+    {
+      "name": "UAX #14: trattini lunghi dopo uno spazio",
+      "text": "a — — — — — — — — — — — — — — — — — — — — — — — — — — — — — — — — — — — — — — — — — — ",
+      "repeat": 10,
+      "rows": 1
+    },
+    {
+      "name": "UAX #14: spazi dopo la parentesi aperta",
+      "text": "(   xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx ",
+      "repeat": 10,
+      "rows": 1
+    },
+    {
+      "name": "UAX #14: virgolette e parentesi quadra",
+      "text": "\"   [yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy ",
+      "repeat": 10,
+      "rows": 1
+    },
+    {
+      "name": "UAX #14: parentesi chiusa e punto esclamativo",
+      "text": ")   !zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz ",
+      "repeat": 10,
+      "rows": 1
+    },
+    {
+      "name": "UAX #14: attributi DOT fra parentesi",
+      "text": "n1 -> n2 [   label=\"etichettaetichettaetichettaetichettaetichettaetichettaetichettaetichetta\" ",
+      "repeat": 10,
+      "rows": 1
+    },
+    {
+      "name": "UAX #14: puntini di guida su una riga (lead_48)",
+      "text": "voce . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . ",
+      "repeat": 48,
+      "rows": 1
+    },
+    {
+      "name": "UAX #14: punti e virgola (semi_48)",
+      "text": "x ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ",
+      "repeat": 48,
+      "rows": 1
+    },
+    {
+      "name": "UAX #14: trattini lunghi su una riga (b2_48)",
+      "text": "a — — — — — — — — — — — — — — — — — — — — — — — — — — — — — — — — — — — — — — — — — — ",
+      "repeat": 48,
+      "rows": 1
+    },
+    {
+      "name": "UAX #14: graffe chiuse",
+      "text": "a } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } ",
+      "repeat": 10,
+      "rows": 1
+    },
+    {
+      "name": "UAX #14: barre",
+      "text": "p / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / ",
+      "repeat": 10,
+      "rows": 1
+    },
+    {
+      "name": "UAX #14: parentesi aperte",
+      "text": "( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( q ",
+      "repeat": 10,
+      "rows": 1
+    },
+    {
+      "name": "UAX #14: commento con trattini lunghi",
+      "text": "// — — — — — — — — — — — — — — — — — — — — — — — — — — — — — — fine sezione — — — — — — — — — — — — — — — — — — — — — — — — — — — — — — ",
+      "repeat": 10,
+      "rows": 1
+    },
+    {
+      "name": "commento DOT con puntini di guida (leaders)",
+      "text": "    // voce 1.0 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce 1.1 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce 1.2 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . voce 1.3 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . \n    v1 -> v2;\n",
+      "repeat": 30,
+      "rows": 61
+    },
+    {
+      "name": "codice con parentesi annidate (code_paren)",
+      "text": "y = f( g( h( x ) ) ) ; f( g( h( x ) ) ) ; f( g( h( x ) ) ) ; f( g( h( x ) ) ) ; f( g( h( x ) ) ) ; f( g( h( x ) ) ) ; f( g( h( x ) ) ) ; f( g( h( x ) ) ) ; f( g( h( x ) ) ) ; f( g( h( x ) ) ) ; f( g( h( x ) ) ) ; f( g( h( x ) ) ) ; f( g( h( x ) ) ) ; f( g( h( x ) ) ) ; f( g( h( x ) ) ) ; f( g( h( x ) ) ) ; f( g( h( x ) ) ) ; \n",
+      "repeat": 30,
+      "rows": 31
+    },
+    {
+      "name": "Hangul e filetti (ko_box)",
+      "text": "    %% 구조 ├──┤ ├──┤ ├──┤ ├──┤ ├──┤ ├──┤ ├──┤ ├──┤ ├──┤ ├──┤ ├──┤ ├──┤ ├──┤ ├──┤ ├──┤ ├──┤ ├──┤ ├──┤ ├──┤ ├──┤ ├──┤ ├──┤ ├──┤ ├──┤ ├──┤ ├──┤ \n    A[\"단계\"] --> B\n",
+      "repeat": 30,
+      "rows": 61
+    },
+    {
+      "name": "Hangul e trattini lunghi (ko_dash)",
+      "text": "    %% 설명 —— —— —— —— —— —— —— —— —— —— —— —— —— —— —— —— —— —— —— —— —— —— —— —— —— —— —— —— —— —— —— —— —— —— —— —— —— —— —— —— —— —— —— —— —— \n",
+      "repeat": 40,
+      "rows": 41
+    },
+    {
+      "name": "ebraico e simboli (he_sym_dense)",
+      "text": "א ©©©©©©©©© ©©©©©©©©© ©©©©©©©©© ©©©©©©©©© ©©©©©©©©© ©©©©©©©©© ©©©©©©©©© ©©©©©©©©© ©©©©©©©©© ©©©©©©©©© ©©©©©©©©© ©©©©©©©©© ©©©©©©©©© ©©©©©©©©© ©©©©©©©©© ©©©©©©©©© \n",
+      "repeat": 30,
+      "rows": 31
+    },
+    {
+      "name": "sillabario canadese e per mille",
+      "text": "ᐁ ‰‰‰‰‰‰‰‰‰ ‰‰‰‰‰‰‰‰‰ ‰‰‰‰‰‰‰‰‰ ‰‰‰‰‰‰‰‰‰ ‰‰‰‰‰‰‰‰‰ ‰‰‰‰‰‰‰‰‰ ‰‰‰‰‰‰‰‰‰ ‰‰‰‰‰‰‰‰‰ ‰‰‰‰‰‰‰‰‰ ‰‰‰‰‰‰‰‰‰ ‰‰‰‰‰‰‰‰‰ ‰‰‰‰‰‰‰‰‰ ‰‰‰‰‰‰‰‰‰ ‰‰‰‰‰‰‰‰‰ ‰‰‰‰‰‰‰‰‰ ‰‰‰‰‰‰‰‰‰ \n",
+      "repeat": 30,
+      "rows": 31
+    },
+    {
+      "name": "tab misti",
+      "text": "xxxxxxx\t     \t\ta -> b\t[label=\"tab tab tab tab tab tab tab tab tab tab tab tab tab tab tab tab tab tab tab tab \"]\t;\t\t\n",
+      "repeat": 40,
+      "rows": 41
+    },
+    {
+      "name": "spazi iniziali e finali",
+      "text": "                                                                                                                                                                          N[\"nodo\"] --> M                                        \n",
+      "repeat": 30,
+      "rows": 31
+    },
+    {
+      "name": "righe vuote, di soli spazi e di soli tab",
+      "text": "dato dato dato dato dato dato dato dato dato dato dato dato dato dato dato dato dato dato dato dato \n\n   \n\t\t\n",
+      "repeat": 20,
+      "rows": 81
+    },
+    {
+      "name": "riga vuota iniziale e righe vuote finali",
+      "text": "\nx -> y;\nx -> y;\nx -> y;\nx -> y;\nx -> y;\n\n\n",
+      "repeat": 1,
+      "rows": 9
+    },
+    {
+      "name": "una riga da 25.000 caratteri",
+      "text": "01234567890123456789abcd ",
+      "repeat": 1000,
+      "rows": 1
+    },
+    {
+      "name": "JSON minificato su una riga",
+      "text": "{\"x\":1,\"y\":2.5,\"etichetta\":\"voce numero\",\"note\":[1,2,3]},",
+      "repeat": 600,
+      "rows": 1
+    },
+    {
+      "name": "200 righe corte",
+      "text": "A1-->A2\n",
+      "repeat": 200,
+      "rows": 201
+    },
+    {
+      "name": "ideogrammi con spazi e punteggiatura piena",
+      "text": "    节点[\"传感器 将 物理量 转换为 电信号，然后 经过 放大、滤波 和 模数转换。\"] --> 节点2\n",
+      "repeat": 50,
+      "rows": 51
+    },
+    {
+      "name": "kana e kanji",
+      "text": "    ノード[\"センサーは 物理量を 電気信号に 変換し、増幅と フィルタリングを 経て デジタル化 されます\"] -->|\"変換\"| ノード2\n",
+      "repeat": 40,
+      "rows": 41
+    },
+    {
+      "name": "ebraico con simboli dell'insieme base",
+      "text": "    n1[\"חיישן\"] ←→ ערך ± 0,5 °C … ≤ 100 € ⇒ «תוצאה» — ©® ≠ ≈ × ÷ ½ ¼ ¾ ∈ ⊂ ⊆ ⇔ ↔ → ← ≥ ≤\n",
+      "repeat": 40,
+      "rows": 41
+    },
+    {
+      "name": "arabo con simboli dell'insieme base",
+      "text": "    n1[\"المستشعر\"] ←→ القيمة ± 0,5 °C … ≤ 100 € ⇒ «النتيجة» — ©® ≠ ≈ × ÷ ½ ∈ ⊂ ⇔ ↔ → ← ≥\n",
+      "repeat": 40,
+      "rows": 41
+    },
+    {
+      "name": "devanagari",
+      "text": "    n1[\"संवेदक संकेत को डिजिटल में बदलता है\"] --> n2[\"संकेत\"]\n",
+      "repeat": 40,
+      "rows": 41
+    },
+    {
+      "name": "kannada",
+      "text": "    n1[\"ಸಂವೇದಕ ಸಂಕೇತವನ್ನು ಡಿಜಿಟಲ್ ಆಗಿ ಪರಿವರ್ತಿಸುತ್ತದೆ\"] --> n2\n",
+      "repeat": 40,
+      "rows": 41
+    },
+    {
+      "name": "tibetano",
+      "text": "    n1[\"བོད་ཡིག་གི་ཚིག་རྐང་། ལག་ལེན།\"] --> n2\n",
+      "repeat": 40,
+      "rows": 41
+    },
+    {
+      "name": "mongolo tradizionale",
+      "text": "    n1[\"ᠮᠣᠩᠭᠣᠯ ᠪᠢᠴᠢᠭ ᠦᠰᠦᠭ\"] --> n2\n",
+      "repeat": 40,
+      "rows": 41
+    },
+    {
+      "name": "thai",
+      "text": "    n1[\"เซ็นเซอร์แปลงสัญญาณเป็นดิจิทัล\"] --> n2\n",
+      "repeat": 40,
+      "rows": 41
+    },
+    {
+      "name": "cirillico e greco",
+      "text": "    n1[\"датчик Ω α β γ δ сигнал\"] --> n2 ∏ ∑ ∫ ⇐ ⇒ ⇔ ∅\n",
+      "repeat": 40,
+      "rows": 41
+    },
+    {
+      "name": "ebraico e arabo su una riga",
+      "text": "חיישן ערך ± 0,5 °C المستشعر القيمة ← ",
+      "repeat": 40,
+      "rows": 1
+    },
+    {
+      "name": "emoji e pittogrammi",
+      "text": "    n1[\"✅ 🚀 📊 ⚠️ 🔥 🧪 ⏱\"] --> n2\n",
+      "repeat": 40,
+      "rows": 41
+    },
+    {
+      "name": "tutti gli script su una riga",
+      "text": "ASCII 分 한 カ ಕ བོད ᠮᠣᠩ א ع ह ไทย ✅ ‰ ─ ",
+      "repeat": 120,
+      "rows": 1
+    },
+    {
+      "name": "separatori e controlli",
+      "text": "a b cd\fe\u000bf\rg\r\nh\u0000i\n",
+      "repeat": 20,
+      "rows": 101
+    },
+    {
+      "name": "NUL in testa e riga di soli NUL",
+      "text": "\u0000\nx\n\u0000\u0000\ny",
+      "repeat": 1,
+      "rows": 4
+    },
+    {
+      "name": "riga DOT reale ripetuta",
+      "text": "    \"Analisi dei requisiti del sottosistema 07\" -> \"Progettazione della architettura 07\" [label=\"deriva dal documento di specifica\", color=\"gray40\", fontsize=10, penwidth=1.5];\n",
+      "repeat": 58,
+      "rows": 59
+    },
+    {
+      "name": "V7-1: ideogrammi in testa e tibetano (cjk_tib)",
+      "text": "flowchart LR\n    藏文0[\"བོད་ཡིག་ 0\"] --> 汉字0\n    藏文1[\"བོད་ཡིག་ 1\"] --> 汉字1\n    藏文2[\"བོད་ཡིག་ 2\"] --> 汉字2\n    藏文3[\"བོད་ཡིག་ 3\"] --> 汉字3\n    藏文4[\"བོད་ཡིག་ 4\"] --> 汉字4\n    藏文5[\"བོད་ཡིག་ 5\"] --> 汉字5\n    藏文6[\"བོད་ཡིག་ 6\"] --> 汉字6\n    藏文7[\"བོད་ཡིག་ 7\"] --> 汉字7\n    藏文8[\"བོད་ཡིག་ 8\"] --> 汉字8\n    藏文9[\"བོད་ཡིག་ 9\"] --> 汉字9\n    藏文10[\"བོད་ཡིག་ 10\"] --> 汉字10\n    藏文11[\"བོད་ཡིག་ 11\"] --> 汉字11\n    藏文12[\"བོད་ཡིག་ 12\"] --> 汉字12\n    藏文13[\"བོད་ཡིག་ 13\"] --> 汉字13\n    藏文14[\"བོད་ཡིག་ 14\"] --> 汉字14\n    藏文15[\"བོད་ཡིག་ 15\"] --> 汉字15\n    藏文16[\"བོད་ཡིག་ 16\"] --> 汉字16\n    藏文17[\"བོད་ཡིག་ 17\"] --> 汉字17\n    藏文18[\"བོད་ཡིག་ 18\"] --> 汉字18\n    藏文19[\"བོད་ཡིག་ 19\"] --> 汉字19\n    藏文20[\"བོད་ཡིག་ 20\"] --> 汉字20\n    藏文21[\"བོད་ཡིག་ 21\"] --> 汉字21\n    藏文22[\"བོད་ཡིག་ 22\"] --> 汉字22\n    藏文23[\"བོད་ཡིག་ 23\"] --> 汉字23\n    藏文24[\"བོད་ཡིག་ 24\"] --> 汉字24\n    藏文25[\"བོད་ཡིག་ 25\"] --> 汉字25\n    藏文26[\"བོད་ཡིག་ 26\"] --> 汉字26\n    藏文27[\"བོད་ཡིག་ 27\"] --> 汉字27\n    藏文28[\"བོད་ཡིག་ 28\"] --> 汉字28\n    藏文29[\"བོད་ཡིག་ 29\"] --> 汉字29\n    藏文30[\"བོད་ཡིག་ 30\"] --> 汉字30\n    藏文31[\"བོད་ཡིག་ 31\"] --> 汉字31\n    藏文32[\"བོད་ཡིག་ 32\"] --> 汉字32\n    藏文33[\"བོད་ཡིག་ 33\"] --> 汉字33\n    藏文34[\"བོད་ཡིག་ 34\"] --> 汉字34\n    藏文35[\"བོད་ཡིག་ 35\"] --> 汉字35\n    藏文36[\"བོད་ཡིག་ 36\"] --> 汉字36\n    藏文37[\"བོད་ཡིག་ 37\"] --> 汉字37\n    藏文38[\"བོད་ཡིག་ 38\"] --> 汉字38\n    藏文39[\"བོད་ཡིག་ 39\"] --> 汉字39",
+      "repeat": 1,
+      "rows": 41
+    },
+    {
+      "name": "V7-1: ideogrammi in testa ed emoji (cjk_emoji)",
+      "text": "flowchart LR\n    分析0[\"🚀 结果 ✅\"] --> 结论0\n    分析1[\"🚀 结果 ✅\"] --> 结论1\n    分析2[\"🚀 结果 ✅\"] --> 结论2\n    分析3[\"🚀 结果 ✅\"] --> 结论3\n    分析4[\"🚀 结果 ✅\"] --> 结论4\n    分析5[\"🚀 结果 ✅\"] --> 结论5\n    分析6[\"🚀 结果 ✅\"] --> 结论6\n    分析7[\"🚀 结果 ✅\"] --> 结论7\n    分析8[\"🚀 结果 ✅\"] --> 结论8\n    分析9[\"🚀 结果 ✅\"] --> 结论9\n    分析10[\"🚀 结果 ✅\"] --> 结论10\n    分析11[\"🚀 结果 ✅\"] --> 结论11\n    分析12[\"🚀 结果 ✅\"] --> 结论12\n    分析13[\"🚀 结果 ✅\"] --> 结论13\n    分析14[\"🚀 结果 ✅\"] --> 结论14\n    分析15[\"🚀 结果 ✅\"] --> 结论15\n    分析16[\"🚀 结果 ✅\"] --> 结论16\n    分析17[\"🚀 结果 ✅\"] --> 结论17\n    分析18[\"🚀 结果 ✅\"] --> 结论18\n    分析19[\"🚀 结果 ✅\"] --> 结论19\n    分析20[\"🚀 结果 ✅\"] --> 结论20\n    分析21[\"🚀 结果 ✅\"] --> 结论21\n    分析22[\"🚀 结果 ✅\"] --> 结论22\n    分析23[\"🚀 结果 ✅\"] --> 结论23\n    分析24[\"🚀 结果 ✅\"] --> 结论24\n    分析25[\"🚀 结果 ✅\"] --> 结论25\n    分析26[\"🚀 结果 ✅\"] --> 结论26\n    分析27[\"🚀 结果 ✅\"] --> 结论27\n    分析28[\"🚀 结果 ✅\"] --> 结论28\n    分析29[\"🚀 结果 ✅\"] --> 结论29\n    分析30[\"🚀 结果 ✅\"] --> 结论30\n    分析31[\"🚀 结果 ✅\"] --> 结论31\n    分析32[\"🚀 结果 ✅\"] --> 结论32\n    分析33[\"🚀 结果 ✅\"] --> 结论33\n    分析34[\"🚀 结果 ✅\"] --> 结论34\n    分析35[\"🚀 结果 ✅\"] --> 结论35\n    分析36[\"🚀 结果 ✅\"] --> 结论36\n    分析37[\"🚀 结果 ✅\"] --> 结论37\n    分析38[\"🚀 结果 ✅\"] --> 结论38\n    分析39[\"🚀 结果 ✅\"] --> 结论39",
+      "repeat": 1,
+      "rows": 41
+    },
+    {
+      "name": "V7-1: katakana in testa e birmano (kana_my)",
+      "text": "flowchart LR\n    ノード0[\"မြန်မာ 0\"] --> ノード1\n    ノード1[\"မြန်မာ 1\"] --> ノード2\n    ノード2[\"မြန်မာ 2\"] --> ノード3\n    ノード3[\"မြန်မာ 3\"] --> ノード4\n    ノード4[\"မြန်မာ 4\"] --> ノード5\n    ノード5[\"မြန်မာ 5\"] --> ノード6\n    ノード6[\"မြန်မာ 6\"] --> ノード7\n    ノード7[\"မြန်မာ 7\"] --> ノード8\n    ノード8[\"မြန်မာ 8\"] --> ノード9\n    ノード9[\"မြန်မာ 9\"] --> ノード10\n    ノード10[\"မြန်မာ 10\"] --> ノード11\n    ノード11[\"မြန်မာ 11\"] --> ノード12\n    ノード12[\"မြန်မာ 12\"] --> ノード13\n    ノード13[\"မြန်မာ 13\"] --> ノード14\n    ノード14[\"မြန်မာ 14\"] --> ノード15\n    ノード15[\"မြန်မာ 15\"] --> ノード16\n    ノード16[\"မြန်မာ 16\"] --> ノード17\n    ノード17[\"မြန်မာ 17\"] --> ノード18\n    ノード18[\"မြန်မာ 18\"] --> ノード19\n    ノード19[\"မြန်မာ 19\"] --> ノード20\n    ノード20[\"မြန်မာ 20\"] --> ノード21\n    ノード21[\"မြန်မာ 21\"] --> ノード22\n    ノード22[\"မြန်မာ 22\"] --> ノード23\n    ノード23[\"မြန်မာ 23\"] --> ノード24\n    ノード24[\"မြန်မာ 24\"] --> ノード25\n    ノード25[\"မြန်မာ 25\"] --> ノード26\n    ノード26[\"မြန်မာ 26\"] --> ノード27\n    ノード27[\"မြန်မာ 27\"] --> ノード28\n    ノード28[\"မြန်မာ 28\"] --> ノード29\n    ノード29[\"မြန်မာ 29\"] --> ノード30\n    ノード30[\"မြန်မာ 30\"] --> ノード31\n    ノード31[\"မြန်မာ 31\"] --> ノード32\n    ノード32[\"မြန်မာ 32\"] --> ノード33\n    ノード33[\"မြန်မာ 33\"] --> ノード34\n    ノード34[\"မြန်မာ 34\"] --> ノード35\n    ノード35[\"မြန်မာ 35\"] --> ノード36\n    ノード36[\"မြန်မာ 36\"] --> ノード37\n    ノード37[\"မြန်မာ 37\"] --> ノード38\n    ノード38[\"မြန်မာ 38\"] --> ノード39\n    ノード39[\"မြန်မာ 39\"] --> ノード40",
+      "repeat": 1,
+      "rows": 41
+    },
+    {
+      "name": "V7-1: Hangul in testa e PUA (hangul_pua)",
+      "text": "flowchart LR\n    단계0[\" 아이콘 0\"] --> 단계1\n    단계1[\" 아이콘 1\"] --> 단계2\n    단계2[\" 아이콘 2\"] --> 단계3\n    단계3[\" 아이콘 3\"] --> 단계4\n    단계4[\" 아이콘 4\"] --> 단계5\n    단계5[\" 아이콘 5\"] --> 단계6\n    단계6[\" 아이콘 6\"] --> 단계7\n    단계7[\" 아이콘 7\"] --> 단계8\n    단계8[\" 아이콘 8\"] --> 단계9\n    단계9[\" 아이콘 9\"] --> 단계10\n    단계10[\" 아이콘 10\"] --> 단계11\n    단계11[\" 아이콘 11\"] --> 단계12\n    단계12[\" 아이콘 12\"] --> 단계13\n    단계13[\" 아이콘 13\"] --> 단계14\n    단계14[\" 아이콘 14\"] --> 단계15\n    단계15[\" 아이콘 15\"] --> 단계16\n    단계16[\" 아이콘 16\"] --> 단계17\n    단계17[\" 아이콘 17\"] --> 단계18\n    단계18[\" 아이콘 18\"] --> 단계19\n    단계19[\" 아이콘 19\"] --> 단계20\n    단계20[\" 아이콘 20\"] --> 단계21\n    단계21[\" 아이콘 21\"] --> 단계22\n    단계22[\" 아이콘 22\"] --> 단계23\n    단계23[\" 아이콘 23\"] --> 단계24\n    단계24[\" 아이콘 24\"] --> 단계25\n    단계25[\" 아이콘 25\"] --> 단계26\n    단계26[\" 아이콘 26\"] --> 단계27\n    단계27[\" 아이콘 27\"] --> 단계28\n    단계28[\" 아이콘 28\"] --> 단계29\n    단계29[\" 아이콘 29\"] --> 단계30\n    단계30[\" 아이콘 30\"] --> 단계31\n    단계31[\" 아이콘 31\"] --> 단계32\n    단계32[\" 아이콘 32\"] --> 단계33\n    단계33[\" 아이콘 33\"] --> 단계34\n    단계34[\" 아이콘 34\"] --> 단계35\n    단계35[\" 아이콘 35\"] --> 단계36\n    단계36[\" 아이콘 36\"] --> 단계37\n    단계37[\" 아이콘 37\"] --> 단계38\n    단계38[\" 아이콘 38\"] --> 단계39\n    단계39[\" 아이콘 39\"] --> 단계40",
+      "repeat": 1,
+      "rows": 41
+    },
+    {
+      "name": "V7-1: controllo, id ASCII in testa e tibetano (ascii_tib)",
+      "text": "flowchart LR\n    n0[\"藏文 བོད་ཡིག་ 0\"] --> 汉字0\n    n1[\"藏文 བོད་ཡིག་ 1\"] --> 汉字1\n    n2[\"藏文 བོད་ཡིག་ 2\"] --> 汉字2\n    n3[\"藏文 བོད་ཡིག་ 3\"] --> 汉字3\n    n4[\"藏文 བོད་ཡིག་ 4\"] --> 汉字4\n    n5[\"藏文 བོད་ཡིག་ 5\"] --> 汉字5\n    n6[\"藏文 བོད་ཡིག་ 6\"] --> 汉字6\n    n7[\"藏文 བོད་ཡིག་ 7\"] --> 汉字7\n    n8[\"藏文 བོད་ཡིག་ 8\"] --> 汉字8\n    n9[\"藏文 བོད་ཡིག་ 9\"] --> 汉字9\n    n10[\"藏文 བོད་ཡིག་ 10\"] --> 汉字10\n    n11[\"藏文 བོད་ཡིག་ 11\"] --> 汉字11\n    n12[\"藏文 བོད་ཡིག་ 12\"] --> 汉字12\n    n13[\"藏文 བོད་ཡིག་ 13\"] --> 汉字13\n    n14[\"藏文 བོད་ཡིག་ 14\"] --> 汉字14\n    n15[\"藏文 བོད་ཡིག་ 15\"] --> 汉字15\n    n16[\"藏文 བོད་ཡིག་ 16\"] --> 汉字16\n    n17[\"藏文 བོད་ཡིག་ 17\"] --> 汉字17\n    n18[\"藏文 བོད་ཡིག་ 18\"] --> 汉字18\n    n19[\"藏文 བོད་ཡིག་ 19\"] --> 汉字19\n    n20[\"藏文 བོད་ཡིག་ 20\"] --> 汉字20\n    n21[\"藏文 བོད་ཡིག་ 21\"] --> 汉字21\n    n22[\"藏文 བོད་ཡིག་ 22\"] --> 汉字22\n    n23[\"藏文 བོད་ཡིག་ 23\"] --> 汉字23\n    n24[\"藏文 བོད་ཡིག་ 24\"] --> 汉字24\n    n25[\"藏文 བོད་ཡིག་ 25\"] --> 汉字25\n    n26[\"藏文 བོད་ཡིག་ 26\"] --> 汉字26\n    n27[\"藏文 བོད་ཡིག་ 27\"] --> 汉字27\n    n28[\"藏文 བོད་ཡིག་ 28\"] --> 汉字28\n    n29[\"藏文 བོད་ཡིག་ 29\"] --> 汉字29\n    n30[\"藏文 བོད་ཡིག་ 30\"] --> 汉字30\n    n31[\"藏文 བོད་ཡིག་ 31\"] --> 汉字31\n    n32[\"藏文 བོད་ཡིག་ 32\"] --> 汉字32\n    n33[\"藏文 བོད་ཡིག་ 33\"] --> 汉字33\n    n34[\"藏文 བོད་ཡིག་ 34\"] --> 汉字34\n    n35[\"藏文 བོད་ཡིག་ 35\"] --> 汉字35\n    n36[\"藏文 བོད་ཡིག་ 36\"] --> 汉字36\n    n37[\"藏文 བོད་ཡིག་ 37\"] --> 汉字37\n    n38[\"藏文 བོད་ཡིག་ 38\"] --> 汉字38\n    n39[\"藏文 བོད་ཡིག་ 39\"] --> 汉字39",
+      "repeat": 1,
+      "rows": 41
+    }
+  ]
+}

@@ -14,7 +14,7 @@ Tutte usano lo stesso stack di base (Jinja2 + WeasyPrint) ma differiscono
 per layout (A4 portrait / 16:9 / per-slide grouping), input dati
 (`content_raw` / `slides_raw` + `content_raw` / `speech_raw` +
 `slides_raw`) e necessità di pre-render delle figure — Mermaid, Vega-Lite,
-DOT, `function` via `figure_render_service.render_svg_map` (sì per
+DOT, `function` via `figure_render_service.render_figure_map` (sì per
 testo+slide, no per discorso che è prosa pura).
 
 **Reset PDF su rigenerazione AI a monte**: quando l'utente rigenera il
@@ -265,8 +265,8 @@ pre-renderizzato in un blocco HTML e iniettato sulla riga propria
 
 | Tipo | Output |
 |---|---|
-| `FIG` (visual_assets) con `format="mermaid"` | `<figure class="visual figure figure--lesson figure--mermaid" data-asset-id="…"><div class="figure-body"><div class="mermaid-svg">{svg_pre_renderizzato}</div></div><figcaption class="figure-caption"><span class="figure-label">Figura N.</span> {caption}</figcaption></figure>` (SVG inline; il body `<div class="mermaid-svg">` è byte-identico a prima del branch, cambia solo il wrapper — A11-L3) |
-| `FIG` con `format="vegalite"` / `"dot"` / `"function"` | stesso partial (`figure--vegalite` …) con body `<img class="figure-svg" src="data:image/svg+xml;base64,…" alt="{alt_text}">` (SVG normalizzato da `svg_normalize`); per `function` la didascalia riceve la coda calcolata («Zeri in x = −1, 1. …») |
+| `FIG` (visual_assets) con `format="mermaid"` | `<figure class="visual figure figure--lesson figure--mermaid" data-asset-id="…"><div class="figure-body"><div class="mermaid-svg">{svg_pre_renderizzato}</div></div><figcaption class="figure-caption"><span class="figure-label">Figura N.</span> {caption}</figcaption></figure>` (SVG inline byte-identico a prima del branch — A11-L3; il `<div class="mermaid-svg">` porta come ultimo attributo `style="width:Wmm"` dalla banda di leggibilità, D10) |
+| `FIG` con `format="vegalite"` / `"dot"` / `"function"` | stesso partial (`figure--vegalite` …) con body `<img class="figure-svg" src="data:image/svg+xml;base64,…" alt="{alt_text}" style="width:Wmm">` (SVG normalizzato da `svg_normalize`, larghezza dalla banda D10); per `function` la didascalia riceve la coda calcolata («Zeri in x = −1, 1. …») |
 | `FIG` (visual_assets) con `format="image"` | stesso partial con body `<img class="uploaded-image" src="data:{mime};base64,..." />` — file su filesystem letto via `_resolve_template_asset_url` e embeddato come data URL (no fetch HTTP da Playwright/WeasyPrint) |
 | `FIG` legacy (`image_prompt|image_search_query|description`) | stesso partial con body `<div class="placeholder-image">{content}</div>` — testo italico, senza grafica |
 | `FIG` renderizzabile senza SVG (render fallito, timeout, `dot` assente) | stesso partial con `<pre class="figure-fallback">{sorgente}</pre>` e `log.error("figure_render_fallback", lesson_code, asset_id, format, reason)` (A23) |
@@ -383,9 +383,13 @@ rimovibile).
 
 `_prerender_visual_assets_for_lesson(content, *, language)` (alias
 storico `_prerender_mermaid_for_lesson`) delega a
-`figure_render_service.render_svg_map(assets, language=…)`: raggruppa gli
-asset con `format` in `RENDERABLE_FORMATS` per formato e chiama **una**
-`render_svg_batch` per formato, sotto semaforo
+`figure_render_service.render_figure_map(assets, language=…)`, l'unico
+punto dell'export con `asyncio.to_thread`, `asyncio.wait_for` e semaforo
+(`render_svg_map` ne è la proiezione `{asset_id: svg}`): raggruppa gli
+asset con `format` in `RENDERABLE_FORMATS` per formato e chiama **un**
+batch per formato (`_render_batch`: `render_figure_batch` se il renderer
+lo espone, cioè Mermaid con le metriche misurate, altrimenti
+`render_svg_batch` del protocollo), sotto semaforo
 (`FIGURE_RENDER_MAX_WORKERS`) e `asyncio.wait_for`
 (`FIGURE_RENDER_TIMEOUT_SECONDS`; il batch Mermaid ha un tetto proprio di
 almeno 60 s per il costo fisso di Chromium + CDN), con cache LRU degli SVG
@@ -393,13 +397,21 @@ almeno 60 s per il costo fisso di Chromium + CDN), con cache LRU degli SVG
 negativa di 60 s per i render falliti. Non solleva mai: le chiavi assenti
 attivano il fallback del partial.
 
-- Mermaid: `mermaid_prerender._prerender_mermaid_to_svg_batch_sync`
-  (nomi storici re-esportati da `course_lesson_pdf_service`) apre UNA
+- Mermaid: `MermaidRenderer.render_figure_batch` →
+  `mermaid_prerender._prerender_mermaid_batch_sync` (la proiezione `.svg`
+  `_prerender_mermaid_to_svg_batch_sync` e gli altri nomi storici restano
+  re-esportati da `course_lesson_pdf_service`) apre UNA
   sessione Playwright headless per lezione, carica
   `mermaid@{settings.mermaid_cdn_version}` (default `11.17.2`) con
   l'inizializzazione di `figure_theme` (`htmlLabels: false` al livello
-  top, tema D3), espone `window.__renderMermaid(id, code)` e itera sui
-  sorgenti. Mermaid 11.17.2 emette ancora `style="max-width: <px>px;"`
+  top, tema D3), espone `window.__renderMermaid(id, code)` (stringa) e
+  `window.__renderMermaidMeasured(id, code)` e itera sui sorgenti con UNA
+  `page.evaluate` per figura: ne tornano l'SVG e il corpo dei testi
+  misurato nella stessa pagina (`MEASURE_SVG_FONT_PX_JS`: `getComputedStyle`
+  su `text`/`tspan` con testo proprio, host fuori schermo, filtro solo su
+  `display:none`), cioè `MermaidPrerender(svg, metrics)`; una misura
+  fallita lascia `metrics=None` con `mermaid_font_measure_failed` e la
+  figura resta valida. Mermaid 11.17.2 emette ancora `style="max-width: <px>px;"`
   sull'SVG: `_strip_mermaid_max_width` resta in vigore (fixture
   `tests/fixtures/mermaid11_flowchart.svg`). Costo tipico: ~1 s di
   startup browser + ~50-200 ms per diagramma. Se la lezione non ha
@@ -415,7 +427,11 @@ attivano il fallback del partial.
   `<script>`/`<foreignObject>`/`<image>`/href esterni, radice riscritta
   in px).
 
-Il dict `{asset_id → svg_string}` è poi passato a `render_lesson_html`
+La mappa `{asset_id → RenderedFigure(svg, metrics)}` di
+`render_figure_map` (le metriche del testo stanno accanto all'SVG, che non
+viene mai riscritto; `render_svg_map` ne è la proiezione `.svg`, e una
+stringa nella mappa vale `RenderedFigure.from_svg`, metriche lette da
+`svg_normalize.svg_base_font_px`) è poi passata a `render_lesson_html`
 (`visual_svg_map`; `mermaid_svg_map` resta accettato e fuso) e da lì a
 `_build_asset_html_map` → `_render_visual_asset_block` →
 `figure_markup.render_figure_html`, che produce il blocco `<figure
@@ -423,6 +439,101 @@ class="visual figure …">` con il body del formato e la didascalia
 «Figura N.». Se il rendering fallisce (rete, sintassi, timeout, `dot`
 assente), il partial emette `<pre class="figure-fallback">` con il
 sorgente e `log.error("figure_render_fallback", …)` (A23).
+
+**Larghezza delle figure dalla banda di leggibilità (D10, D11).** Il
+corpo del testo più piccolo di ogni figura deve cadere fra 8 e 11 pt nella
+dispensa (e nel web) e fra 10 e 14 pt nelle slide e nei frame video
+(`figure_scale.READABILITY_BANDS_PT`). `_render_visual_asset_block` calcola
+con `figure_scale.fit_figure_width_mm` la larghezza a cui renderla e la
+scrive come ULTIMO attributo `style="width:Wmm"` del corpo della figura
+(`<div class="mermaid-svg">` nella dispensa, `<img class="figure-svg">` o
+`<img class="mermaid-svg">` altrove): l'SVG resta byte-identico (golden
+della catena Mermaid in `test_lesson_pdf_figures.py`), la figura sta nei
+margini del testo, niente pagina dedicata, niente landscape.
+
+- **Box.** Dispensa: `_compute_template_margins_cm` (chiamata PRIMA di
+  `_build_asset_html_map`) dà `figure_box_w_mm` (larghezza del contenuto:
+  170 mm su A4 con margine 20, Letter e A3 seguono il foglio) e
+  `figure_box_h_mm = max_figure_height_cm · 10` (242 mm sul template di
+  default, sotto i 248,7 mm di SVG che entrano in una pagina intera
+  misurati con WeasyPrint); per Mermaid si sottraggono i 2 mm di padding del wrapper (168
+  mm). Slide: il `FigureBox` della pagina resa (D12, sotto), 255 mm per
+  l'altezza che la pagina lascia.
+- **Politica.** Gli SVG fluidi (Mermaid, `width="100%"`) riempiono il box
+  e scendono al tetto della banda; gli `<img>` con dimensione intrinseca
+  (Vega-Lite, DOT, `function` normalizzati) partono da scala 1 e crescono
+  solo fino al fondo della banda; mai oltre il box (larghezza per difetto
+  al centesimo); senza testo scala naturale. Il flowchart della fixture
+  v11, che prima di D10 usciva a 13,3 pt in dispensa e a 19,9 pt nelle
+  slide, va a 140,76 mm e 11 pt in dispensa e a 179,15 mm e 14 pt nelle
+  slide.
+- **Corpo del testo.** Mermaid: misurato in Chromium accanto all'SVG
+  (`font_source="measured"`); Vega-Lite, DOT e `function`: letto dagli
+  attributi (`parsed`) o dal `<style>` (`root_rule`) con
+  `svg_base_font_px`, che serve anche da ripiego per Mermaid quando la
+  misura manca. Una lettura `unresolved` (dichiarazione fuori grammatica,
+  valore che dipende dal contesto: `rem`, `var()`, `calc()`, parole
+  chiave, `em`/`%` senza antenati) o metriche assenti usano la costante
+  di formato (`FALLBACK_BASE_FONT_PX`: Mermaid 14, Vega-Lite 11, DOT
+  40/3, `function` 12 px) con `font_source="constant"`.
+- **Log e report.** Ogni fit produce `figure_fit` (info) e una
+  `FigureFitEntry` nel `fit_report` di `render_lesson_html` /
+  `render_slides_html`; `figure_fit_out_of_band` (warning,
+  `in_band=False`) quando la banda è irraggiungibile nel box (la figura
+  prende la larghezza del box); `figure_font_fallback` (warning) per ogni
+  figura calcolata sulla costante e per un Mermaid non misurato;
+  `figure_fit_skipped` senza viewBox o con box degenere. A fine lezione
+  `figure_fit_report` (info) riassume totale, in banda, l'elenco fuori
+  banda con corpo e provenienza del font e `font_fallback` (figure il cui
+  `in_band` è un'ipotesi): è l'input del gate editoriale D13.
+- **Salti pagina nella dispensa.** La crescita degli `<img>` fino al
+  fondo della banda rende più alte le figure che a scala 1 hanno testo
+  sotto 8 pt: il blocco di un DOT con archi a 5 pt (`dot_tiny`) passa da
+  79,7 a 123,7 mm, quello di un Vega-Lite con etichette a 4,5 pt
+  (`vl_mixed_small`) da 84,6 a 128,7 mm. Se la figura più alta non entra
+  nello spazio rimasto, WeasyPrint la porta prima alla pagina seguente e
+  la dispensa può guadagnare una pagina. Misura del 17 settembre 2026
+  contro `df7af78` (prima di WP3): su 31 figure in 3 posizioni del testo
+  (93 dispense) il branch ha una pagina in meno in 24 casi e una in più
+  in nessuno, senza figure frammentate o fuori dal content-box; in una
+  scansione mirata (5 figure in 16 posizioni, 80 dispense) `dot_tiny` e
+  `vl_mixed_small` aggiungono una pagina in 3 posizioni ciascuna (6 casi
+  su 80, sempre da 2 a 3 pagine), gli altri 74 restano uguali. È il costo
+  accettato della banda D11. La crescita massima (fondo della banda /
+  corpo naturale, mai oltre il box) è pinnata da
+  `test_figure_scale.py::test_intrinsic_img_below_the_band_grows_at_most_to_the_band_floor`
+  e, sul PDF reso, da
+  `test_lesson_pdf_figure_text_size.py::test_intrinsic_img_grows_at_most_to_the_band_floor`.
+- **Modelli degli editor fuori banda.** Misura del 17 settembre 2026 sui
+  57 modelli degli editor (`test_frontend_figure_templates.py`: 18 DOT,
+  24 Vega-Lite, 15 Mermaid) resi dal registro e passati a
+  `fit_figure_width_mm` con il box della dispensa (170 × 242 mm, 168 per
+  Mermaid) e con quello della pagina asset-only delle slide (255 ×
+  86,6 mm, titolo e didascalia su una riga); il corpo coincide con quello
+  misurato nel PDF di WeasyPrint. Tutti hanno `in_band=False`,
+  `figure_fit_out_of_band` e la voce nel `figure_fit_report`.
+
+  | Formato | Modelli | Fuori banda in dispensa (8-11 pt) | Fuori banda nelle slide (10-14 pt) |
+  | --- | --- | --- | --- |
+  | DOT | 18 | 2: pipeline 7,7, network 7,17 | 1: layers 9,75 |
+  | Vega-Lite | 24 | 0 | 22: violin 7,28; barsHorizontal, bubble, heatmap, barsRanked, lollipop 9,44; gli altri 16 a 9,25 |
+  | Mermaid | 15 | 4: timeline 5,6, treemap 4,78, radar 6,08, gantt 3,72 | 12: flowchart 7,79, state 9,04, er 7,74, mindmap 9,3, timeline 5,75, treemap 6,62, pie 9,27, xychart 6,87, radar 4,21, sankey 8,59, gantt 5,65, quadrant 5,89 |
+
+  In dispensa il vincolo è sempre la larghezza: sono diagrammi larghi
+  (gantt 1280 × 172, timeline 1190 × 598, treemap 996 × 371, radar
+  940 × 700, i DOT pipeline 626 × 104 e network 739 × 187) che a 168-170 mm
+  scendono sotto 8 pt. Nelle slide il vincolo è l'altezza in 34 casi su
+  35 (solo gantt è limitato dalla larghezza): il box di pagina è alto
+  86,6 mm, quindi i diagrammi verticali (state 104 × 380, flowchart
+  347 × 441, er 372 × 444) e quelli già alti a scala 1 non possono
+  crescere fino a 10 pt. Un Vega-Lite alto 292 px (77,3 mm) con etichette
+  a 8,25 pt dovrebbe arrivare a 93,6 mm per portarle a 10 pt; quadrant
+  (500 × 500) e radar (940 × 700) sono nella stessa condizione. Fuori dai
+  modelli, la figura `function` di prova di
+  `test_lesson_pdf_figure_text_size.py` esce nelle slide a 8,52 pt per la
+  stessa ragione. Nessuna correzione del tema né del template: i modelli
+  restano come sono e il report li consegna al gate editoriale D13 (WP5),
+  che li deve riconoscere come fuori banda noti e non come regressioni.
 
 **LaTeX pre-rendering (MathJax → SVG)**
 
@@ -553,8 +664,9 @@ versioning).
    l'`Organization` + il docente (`course.assignee_user_id` →
    `User.full_name`) per la copertina/footer;
 2. `_prerender_visual_assets_for_lesson(content_raw, language=…)` →
-   `{asset_id: svg}` via `render_svg_map` (una sessione Playwright per
-   lezione solo se ci sono Mermaid; Vega-Lite, DOT e `function` offline);
+   `{asset_id: RenderedFigure(svg, metrics)}` via `render_figure_map`
+   (una sessione Playwright per lezione solo se ci sono Mermaid;
+   Vega-Lite, DOT e `function` offline);
 3. `_prerender_math_for_lesson(content_raw)` → `{(latex, display): svg}`
    (una sessione Playwright MathJax `tex-svg`, solo se la lezione
    contiene formule);
@@ -932,7 +1044,7 @@ pre-render mermaid **e** LaTeX → SVG (MathJax), più il registro
 `figure_render_service` per Vega-Lite, DOT e `function`
 (`_prerender_mermaid_for_slides`, nome storico, oggi tutti i formati:
 fonde gli asset di Fase 3 e i `new_assets` di Fase 4 e delega a
-`render_svg_map`). Differenze principali:
+`render_figure_map`). Differenze principali:
 - Layout: A4 **portrait single-column block-flow** (mantenuto dal feedback utente: niente layout 16:9 landscape — il PDF deve essere comodo da stampare e leggere)
 - Template: `slide_templates` (16:9 originariamente per avatar video, ora unificato anche per il PDF slide via migration 0022 con campi aggiunti `margin_mm` + `background_opacity_pct`)
 - Asset rendering: stesso pattern di Fase 3 (visual/table/equation/example) + supporto a `new_assets` di Fase 4
@@ -948,24 +1060,34 @@ fonde gli asset di Fase 3 e i `new_assets` di Fase 4 e delega a
 
 ### Slide split (bullet+asset → 2 pagine)
 
-Il template `lesson_slides_pdf.html.j2` espande visualmente le slide
-con `references_assets ≠ []` AND (`bullets ≠ []` OR `body ≠ ''`) in
-**due pagine consecutive** con lo stesso titolo:
+`render_slides_html` espande le slide con `references_assets ≠ []` AND
+`bullets ≠ []` (solo i bullet fanno splittare: la prosa resta con la
+figura, come nella slide dedicata di Fase 4) in **due pagine consecutive**
+con lo stesso titolo:
 
 - **pagina N**: tag "Lezione X" + titolo + body + bullet (niente asset)
 - **pagina N+1**: stesso titolo + asset isolato (niente bullet, niente body)
 
 Vantaggio: gli asset (specialmente Mermaid) hanno l'intero body a
-disposizione per il rendering, niente competizione verticale, niente
-workaround di scaling SVG. La numerazione pagina viene ricalcolata
-sulla sequenza espansa.
+disposizione per il rendering, niente competizione verticale. La
+numerazione pagina viene ricalcolata sulla sequenza espansa.
 
 Le slide pure-bullet (no asset) o pure-asset (no bullet) restano
-single-page.
+single-page. Il rendering procede in due passi per slide: risoluzione
+degli asset e decisione di split, poi — per ogni pagina resa — il budget
+verticale della figura calcolato da `slide_geometry.page_figure_budget`
+sul contenuto reale della pagina (D12, sotto), e solo allora il rendering
+dei blocchi.
 
 ### Rendering delle figure nelle slide
 
-Tutte le figure (Mermaid, Vega-Lite, DOT, `function`) vengono incapsulate in `<img>` con **data-URI base64** anziché inserite come SVG inline (A8). Motivo: nel contesto slide PDF, un SVG inline con attributi `width="X" height="Y"` espliciti emessi da Mermaid (10.9.x come 11.x) ignora il vincolo CSS `max-height` e sborda dal body. Un `<img>` invece è un replaced element con aspect ratio intrinseca, e `max-width + max-height` gli applicano scaling proporzionale corretto. La regola unica `.slide-asset .figure-svg, .slide-asset .mermaid-svg, .slide-asset .uploaded-image { max-height: 80mm; … }` vale anche per le immagini caricate (prima tagliate da `overflow: hidden` oltre 80 mm). Ogni figura passa dal partial `partials/figure.html.j2` con `variant="slide"`: etichetta «Figura.» **senza numero** (A2), didascalia a 8pt, fallback `<pre class="figure-fallback">` con CSS dedicato.
+Tutte le figure (Mermaid, Vega-Lite, DOT, `function`) vengono incapsulate in `<img>` con **data-URI base64** anziché inserite come SVG inline (A8). Motivo: nel contesto slide PDF, un SVG inline con attributi `width="X" height="Y"` espliciti emessi da Mermaid (10.9.x come 11.x) ignora il vincolo CSS `max-height` e sborda dal body. Un `<img>` invece è un replaced element con aspect ratio intrinseca, e `max-width + max-height` gli applicano scaling proporzionale corretto. La regola unica `.slide-asset .figure-svg, .slide-asset .mermaid-svg, .slide-asset .uploaded-image { max-height: var(--figure-h); … }` vale anche per le immagini caricate (prima tagliate da `overflow: hidden` oltre 80 mm). Ogni figura passa dal partial `partials/figure.html.j2` con `variant="slide"`: etichetta «Figura.» **senza numero** (A2), didascalia a 8pt, fallback `<pre class="figure-fallback">` con CSS dedicato.
+
+**Box della figura per pagina (D12, 16 settembre 2026).** Il cap fisso di 80 mm non vale più per le figure: `slide_geometry.page_figure_budget(title, body, bullets, n_blocks)` sottrae ai 120 mm del `.slide-body` tag (budget 1,5 × 9 pt), titolo (10,37 mm per riga stimata), prosa (6,65 mm per riga), bullet (5,24 mm per riga + 2,5 mm), margini degli asset (4 + 2 mm) e 3 mm di safety, e divide il resto in parti uguali fra i blocchi asset della pagina resa; `_render_visual_asset_block(figure_budget=)` ne ricava il box dell'immagine con `image_box` (didascalia stimata sul testo reale: etichetta, didascalia dell'autore, coda calcolata di `function`), lo emette come `style="--figure-w: 255.0mm; --figure-h: Hmm"` sul `<figure>` (dopo `aria-label`) e dentro quel box applica la banda di leggibilità 10-14 pt (D10, `style="width:Wmm"` sull'`<img>`). Il template legge il box con `var()`: `.slide-asset .figure-body { width: var(--figure-w) }`, `max-height: var(--figure-h)` sulle immagini e sul `<pre>` di fallback. Equazioni ed esempi non ricevono box: la regola generica `.slide-asset svg, .slide-asset img` porta `max-height: var(--figure-h, 80mm)`, quindi un SVG MathJax fuori da un blocco figura resta al cap di 80 mm di prima (un `aligned` di 8 righe con frazioni è alto 107 mm, una `pmatrix` di 20 righe 132 mm: senza cap sbordavano o, con i bullet nel video, sparivano dalla pagina); le formule dei teoremi mantengono il loro cap di 40 mm. Righe stimate da `estimate_lines`, limite superiore per classi di carattere (calibrato `real ≤ stima ≤ real + 1` sui `LineBox` di WeasyPrint per sei famiglie). Pagina asset-only con titolo su una riga: 86,6 mm di immagine (era 80); slide dedicata di Fase 4 (titolo + prosa su 3 righe): 61,3 mm senza taglio; pavimento 25 mm con `slide_figure_box_exhausted` quando il testo da solo supera il body (la pagina sborda per i bullet, non per la figura); più blocchi nella stessa pagina (solo legacy) dividono il budget, `slide_figure_box_shared`. Il sorgente del fallback `<pre>` è troncato in Python alle righe che entrano (`truncate_fallback_source`, marcatore «…», log `figure_fallback_truncated`) perché WeasyPrint ignora `max-height` sui blocchi frammentati dal fondo pagina. Il costo di una riga sorgente è l'altezza della sua riga resa: dal settimo giro il `<pre>` delle slide non va a capo (paragrafo seguente), quindi una riga sorgente è una riga resa. Prima il costo era il numero di righe rese in `white-space: pre-wrap`, stimato prima con gli spazi collassati a 0,30 em (una riga DOT da 176 caratteri con 22 spazi valeva 1 riga contro 2, il sorgente troncato a 25 righe ne rendeva 46 e il `<pre>` sbordava di 55 mm in WeasyPrint, con la didascalia fuori pagina, e di 272 px nel frame video), poi, dal terzo al sesto giro, a colonne da 0,605 em con spazi e tab conservati, token lunghi a `ceil(2 · w / riga)` e larghezze per lingua e per script. **Altezza delle righe e lingua del corso (quinto giro, 17 settembre 2026).** Nel container (WeasyPrint 69, `fonts-noto-core` e `fonts-noto-cjk`) la riga del `<pre>` non è sempre 1,3 × 7 pt = 3,210 mm: WeasyPrint allinea sulla riga base del font scelto per la lingua di `<html lang>` (`fc-match monospace:lang=xx`) e la riga cresce a 1,3 em + |ΔA−D|/2 quando i glifi vengono da un font con ascendente meno discendente diverso (DejaVu Sans Mono 0,692, Noto Sans CJK 0,872, Noto Serif Kannada 0,200, Noto Serif Tibetan 0,117). Con un corso zh-cn, ja o ko anche un sorgente tutto ASCII rendeva righe da 3,432 mm, e con ideogrammi o Hangul in qualunque lingua: 25 righe non entravano negli 82,3 mm utili, il «…» finiva a cavallo del bordo (+1,49 mm) o spariva dal PDF (+2,33 mm con due bullet; 34 marcatori tagliati nella matrice lingue × contenuti). Misure su 44 lingue × 31 script: fino a 3,818 mm con kn, 3,921 con bo, 4,142 (1,6775 em) con ja e tibetano. Ora `truncate_fallback_source(source, box, language)` somma altezze, non righe: 1,3 em per riga solo quando la riga sorgente è tutta nell'insieme base (`_MONO_BASE_RE`: ASCII, Latin-1, Latin Extended-A, greco e cirillico di base, punteggiatura, frecce, operatori e filetti d'uso comune; 669 caratteri verificati uno per uno a 3,210 mm nel container e in locale) e la lingua è neutra; altrimenti `fallback_tall_line_budget` = 1,70 em (4,198 mm: 1,3 + (0,917 − 0,117)/2, ogni combinazione di font fra Noto Serif Tibetan e Noto Sans Symbols). Profili di lingua (`_mono_profile`): neutra dove `fc-match` dà DejaVu Sans Mono (it, en, ru, ar, el, …) e per vi (Noto Sans Mono: righe da 3,210 mm sull'insieme base salvo greco, cirillico, ∏, ∑ e ∫, che in una riga pura passano a DejaVu Sans Mono con righe da 3,314 mm, `_MONO_VI_NOT_BASE_RE`), «altra» per i 39 sottotag primari di `_MONO_TALL_LANGS` (fra cui ja, ko, zh, hi, kn, th, he, lo, bo e sh, Noto Mono con 154 caratteri base su righe da 3,324 mm), per i tag con regione ber-ma, ku-iq, ku-ir, mn-cn, pa-pk, ps-af, ps-pk, ti-er, ti-et e per i codici di tre lettere. Le lingue che nella matrice di 302 lingue × 75 campioni superavano 1,70 em hanno la loro riga (`_MONO_TALL_LINE_EM`, sesto giro): mn-cn 1,83 em (riga base in Noto Sans Mongolian, 4,50 mm con il tibetano), tcy 1,76 em (4,317 mm con gli ideogrammi); ogni riga con mongolo tradizionale vale 1,83 em in ogni corso. Anche il marcatore paga la riga alta. Effetto: la pagina asset-only tiene 24 righe più «…» in italiano e 18 più «…» con ja, zh-cn, ko, hi. Limiti dichiarati: script con A−D fuori banda accanto a font all'altro estremo sulla stessa riga (Nastaliq 1,308 o mongolo 1,164 accanto a Siddham −0,030 o Myanmar Serif −0,021). Nessun cambio di font, `line-height`, `72ch` o margini: le slide già in DB rendono uguali salvo l'altezza delle figure e il fallback. I frame video ricevono lo stesso HTML (`enable_split=False`: senza split bullet e figura si dividono i 120 mm senza tagli). Oracoli in `tests/test_slide_figure_geometry.py`.
+
+**Fallback senza a capo (settimo giro, 17 settembre 2026).** Decisione del settimo giro di verifica e deviazione dichiarata dal piano del branch, che prevedeva la troncatura su una stima delle righe a capo: nelle slide e nei frame video il `<pre>` di fallback è in `white-space: pre` e non più in `pre-wrap`; una riga di sorgente è una riga resa e `overflow: hidden` taglia a destra le righe più larghe dei 255 mm del box; `max-height: var(--figure-h)` resta come cintura. Perché: la troncatura in Python ha bisogno delle righe rese, e sei giri di verifica hanno battuto ognuno la stima delle righe a capo in `pre-wrap` con un caso nuovo di Pango (WeasyPrint) o di Chromium: spazi collassati, spazi e tab conservati, U+2028 e U+2029 (a capo in Pango, non in Chromium), profili di lingua con righe più alte, ASCII e simboli larghi per lingua e accanto a un altro script (V6-2: dopo Hangul, kana, ebraico o sillabario canadese «—», «…», «‰» e i filetti escono dal font mono fino a 1,342 em; nel container 37 righe sottostimate su 590 per it e vi, `WP_RIGHE_OLTRE_CLIP` fino a +41,7 mm e «…» invisibile) e infine le regole UAX #14 di Pango (V6-1: niente a capo prima di `) ] } ! ? , . : ; /` né dopo `( [ {`, anche con spazi in mezzo; 22 sottostime su 36 casi in italiano, «voce . . . .» ripetuto su una riga stimato 25 righe e reso in 46, `<pre>` fuori dal body di 55 mm e didascalia sparita dal PDF). Ogni correzione aggiungeva una tabella di larghezze di un motore di testo; senza a capo il conteggio è esatto nei due motori e non dipende da font, larghezza o lingua. Costo: nel solo fallback delle slide, cioè nel percorso d'errore di una figura non resa (log `figure_render_fallback`), le righe più larghe del box si leggono fino al bordo destro; la dispensa resta in `pre-wrap` nel flusso di pagina. A capo misurati su tutti i caratteri Cc, Cf, Zs, Zl e Zp e sull'intero BMP (riga «a<carattere>b» nel `<pre>` del template, nel container e in locale) e sui piani 1 e 2 (nel container): `\n`, `\r\n` e `\r` in entrambi i motori (l'HTML normalizza CR), U+2028 e U+2029 solo in WeasyPrint, NEL, FF e VT in nessuno dei due. La divergenza si risolve contando la riga come spezzata e riscrivendo CRLF, CR, U+2028 e U+2029 come `\n` nel testo del `<pre>` (`truncate_fallback_source`, anche quando tutto entra), così i due motori rendono le stesse righe; i NUL, che il parser HTML scarta (in testa al `<pre>` insieme all'a capo che li segue), sono tolti prima di contare. Rimossi da `slide_geometry` lo stimatore mono (`estimate_lines(mono=True)`, `_mono_rows`, `_mono_char_em`), le tabelle di larghezza per lingua e per script (`_MONO_WIDE_ASCII_*`, `_WIDE_ASCII_*`, `_MONO_ASCII_CROSS`, `_MONO_WIDE_SCRIPT_RE`, `_MONO_CJK_FULL_RE`, le costanti di colonna e di tab), il profilo CJK (ja, ko e zh sono «altra», come già per l'altezza) e `SlideGeometry.fallback_w_mm`; `estimate_lines` resta per titoli, prosa, bullet e didascalie con la calibrazione di prima; ⇐, ⇒, ⇔ e ∅ tornano nell'insieme base di vi (erano esclusi solo per la larghezza, 1,2 em, e hanno righe da 3,210 mm). Effetto: la slide da 60 righe corte resta a 24 righe più «…»; le righe DOT da 176 caratteri, le parole brevi da 200 colonne e le righe con 170 spazi o 22 tab iniziali passano da 12 a 24 righe più «…»; nel container le slide dei casi V6-1 e V6-2 rendono in WeasyPrint esattamente le righe del testo troncato, senza righe sotto il clip, con didascalia e «…» visibili. Oracoli in `tests/test_slide_figure_geometry.py`: corpus avversario di 66 casi (`pre_sources` della fixture) in 12 lingue (it, vi, hi, th, he, ar, ru, ja, zh-cn, ko, kn, bo) con righe ESATTE nei `LineBox` di WeasyPrint e nelle righe di Chromium e altezza stimata non inferiore a quella resa; le stesse sorgenti nelle slide senza sbordi, con didascalia e con «…» reso e visibile dove il sorgente è troncato; nessun inchiostro oltre il bordo destro del body nel PDF e nel frame video; controprove con la regola `pre-wrap` di prima (più di 40 righe e didascalia persa sui casi V6-1) e senza `overflow: hidden` (testo oltre il bordo in entrambi i motori).
+
+**Prima run ideografica (ottavo giro, 17 settembre 2026).** Il conteggio delle righe era esatto, l'altezza no: in WeasyPrint una riga del `<pre>` dipendeva anche dall'ordine degli script. Con gli stessi caratteri «分བོད» era alta 2,006 em in un corso it e 2,293 in bo, «x分བོད» 1,588 e 1,300; il sorgente troncato su 1,70 em per riga lasciava fino a 11,3 mm (it) e 19,8 mm (bo) di righe sotto il clip del `<pre>` e il «…» fuori dal PDF (V7-1: `cjk_tib` in 14 lingue su 14, `cjk_emoji`, `hangul_pua`, `kana_my` in bo e my). Meccanismo: Pango 1.56 (`apply_baseline_shift`, uguale in 1.58) allinea le run di font diversi sulla baseline dello script della prima run della riga, cioè del primo carattere con script reale (Common, Inherited e Unknown prendono lo script che segue; Pango itemizza fra due a capo, quindi decide la riga da sola). Per Han, Hangul, Hiragana, Katakana, Bopomofo, Tangut, Nüshu e Khitan HarfBuzz usa la baseline ideografica e, senza tabella BASE, la sintetizza dal discendente: la run di Noto Serif Tibetan (−1,068) sale di 0,994 em rispetto a Noto Sans CJK (−0,074). WeasyPrint prende altezza e baseline della riga Pango e le allinea alla strut del `<pre>`: riga = 1,3 em + |c_strut − c_testo|, con c = (alto − basso)/2 dei rettangoli logici spostati. Con la baseline romana o sospesa non c'è spostamento (HarfBuzz dà 0 e 0,6 em a ogni font senza BASE, e le BASE del container hanno gli stessi valori), per questo le righe con un id ASCII in testa restavano nel budget. Correzione in `slide_geometry`: `_ideographic_lead(line)` trova il primo carattere che decide (`_IDEO_SCRIPT_RE`, blocchi che coprono gli script ideografici di Unicode 15, 16 e 17; una lettera con script reale fuori da `_NOT_REAL_LETTER_RE` decide per la baseline romana) e quelle righe costano `SlideGeometry.fallback_ideo_line_budget` = 2,46 em (6,075 mm), anche in mn-cn e tcy. Il valore è un limite analitico: c_testo di un insieme di run sta fra i valori delle coppie (prima run, altra run); sulle coppie delle 321 facce del container (BASE e ripieghi di HarfBuzz 10.2) arriva a 1,1405 e la strut di qualunque font scende a −0,015, quindi la riga resta sotto 2,4555 em; la prova di carico (2.702 righe per lingua in it, bo, dz, my, kn, ja, mn-cn, tcy, te) arriva a 2,2935. Costo, solo nel fallback delle slide: le righe con un ideogramma, un kana o un Hangul in testa valgono 2,46 em invece di 1,70 (la slide asset-only in bo tiene 12 righe `藏文…` più intestazione e «…», 17 con l'id ASCII in testa; il caso zh-cn della fixture passa da 47 a 51 righe omesse). Nel container, dopo la correzione, le slide `cjk_tib` (it) e `cjk_emoji`, `hangul_pua` (bo) non hanno righe sotto il clip, con didascalia e «…» visibili. Restano i limiti dichiarati per gli script con A−D fuori banda (per esempio i geroglifici egizi, A−D 0,998, a 1,74 em in un corso bo o dz). Oracoli in `tests/test_slide_figure_geometry.py`: corpus `pre_sources` di 71 casi (i cinque V7-1, con il controllo `ascii_tib`) in 13 lingue (aggiunta my), con l'altezza controllata riga per riga in WeasyPrint e nelle slide; classificatore contro gli script di GLib, la tabella che usa Pango, su tutto Unicode; controprova con il modello di prima (katakana in testa e birmano in bo: righe oltre la stima e ultima riga sotto il clip, anche in locale).
 
 ```python
 # svg_normalize.svg_to_data_uri — re-esportata da course_lesson_slides_pdf_service
@@ -1006,7 +1128,7 @@ Tab "Slide" (`CourseLessonSlidesView.tsx`) ha bottoni primary "Esporta PDF" / "S
 ### File rilevanti
 
 ```
-backend/app/services/course_lesson_slides_pdf_service.py   # render + materialize + slide split + pre-render delle figure (render_svg_map)
+backend/app/services/course_lesson_slides_pdf_service.py   # render + materialize + slide split + pre-render delle figure (render_figure_map)
 backend/app/services/figure_render_service.py              # registro dei renderer (doc 17): Mermaid, Vega-Lite, DOT, function
 backend/app/services/figure_markup.py                      # partial unico delle figure + didascalia «Figura N.» / «Figura.»
 backend/app/templates/partials/figure.html.j2              # partial D4 condiviso da dispensa, slide e frame video

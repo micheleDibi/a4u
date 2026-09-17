@@ -8,7 +8,9 @@
 - invarianti property-based del fit: mai oltre il box (larghezza per
   difetto al centesimo), mai sopra il tetto della banda, ingrandimento
   solo per i fluidi o per raggiungere il fondo della banda, fuori banda
-  solo quando il box è il vincolo attivo;
+  solo quando il box è il vincolo attivo; crescita massima di un `<img>`
+  sotto banda pari a fondo / corpo naturale (il costo, documentato, è
+  qualche salto pagina anticipato nella dispensa);
 - costanti di fallback derivate dal tema (`THEME_VERSION` invariato).
 """
 
@@ -191,6 +193,50 @@ def test_fit_invariants_property_based() -> None:
         if not fit.in_band:
             assert math.isfinite(s_box)
             assert fit.scale == pytest.approx(s_box, abs=5e-5 + 1e-9)
+
+
+def test_intrinsic_img_below_the_band_grows_at_most_to_the_band_floor() -> None:
+    """Un `<img>` intrinseco con il testo sotto il fondo della banda cresce
+    solo fino al fondo (8 pt in dispensa, 10 pt nelle slide): scala al più
+    `lo / corpo naturale`, larghezza al più quella che ne deriva, mai oltre
+    il box; se il box non ferma la crescita il corpo arriva esattamente al
+    fondo, altrimenti la figura riempie il box e resta fuori banda. È la
+    crescita che nella dispensa può anticipare un salto pagina (09 §banda,
+    17 §12)."""
+    rng = random.Random(20260917)
+    for _ in range(2000):
+        variant = rng.choice(["lesson", "slide"])
+        lo, _hi = fs.READABILITY_BANDS_PT[variant]
+        natural_pt = rng.uniform(1.0, lo - 0.01)
+        intrinsic = rng.uniform(20, 2000)
+        vb_w = rng.uniform(1, 3000)
+        vb_h = rng.uniform(1, 3000)
+        box_w = rng.uniform(5, 400)
+        box_h = None if rng.random() < 0.3 else rng.uniform(5, 400)
+        fit = fs.fit_figure_width_mm(
+            vb_w=vb_w,
+            vb_h=vb_h,
+            base_font_px=natural_pt / fs.PT_PER_PX,
+            box_w_mm=box_w,
+            box_h_mm=box_h,
+            variant=variant,
+            intrinsic_w_px=intrinsic,
+        )
+        assert fit is not None
+        growth = lo / natural_pt
+        ref_w = intrinsic * fs.MM_PER_PX
+        s_box = box_w / ref_w
+        if box_h is not None:
+            s_box = min(s_box, box_h / (ref_w * vb_h / vb_w))
+        assert fit.scale <= growth + 5e-5
+        assert fit.text_pt <= lo + 0.005
+        assert fit.width_mm <= min(box_w, ref_w * growth) + 1e-9
+        if box_h is not None:
+            assert fit.width_mm * vb_h / vb_w <= box_h + 1e-9
+        if s_box >= growth:
+            assert fit.in_band and fit.text_pt == pytest.approx(lo, abs=0.005)
+        else:
+            assert not fit.in_band and fit.scale == pytest.approx(s_box, abs=5e-5)
 
 
 # ---------------------------------------------------------------------------

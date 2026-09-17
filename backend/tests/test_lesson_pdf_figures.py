@@ -48,7 +48,7 @@ from app.models.course_lesson import CourseLesson
 from app.services import course_lesson_pdf_service as pdf
 from app.services import course_lesson_slides_pdf_service as slides_pdf
 from app.services import figure_function_service as ffs
-from app.services import figure_markup
+from app.services import figure_markup, slide_geometry
 from app.services import figure_render_service as frs
 from app.services import mermaid_prerender as mp
 from app.services.figure_scale import FigureFitEntry, SvgMetrics, fit_figure_width_mm
@@ -1357,6 +1357,37 @@ def test_render_figure_html_sanitizes_format_class_and_uses_unnumbered_label() -
     assert '<span class="figure-label">Figure.</span> c. extra coda</figcaption>' in html
 
 
+def test_render_figure_html_box_goes_on_the_figure_after_aria_label() -> None:
+    """Il box delle slide (D12) è uno `style` sul `<figure>` DOPO
+    `aria-label`, sulla stessa riga e senza righe vuote: `_FIGURE_RE`
+    continua a riconoscere il blocco; senza box il markup è identico a
+    prima."""
+    kwargs: dict[str, Any] = {
+        "body_html": Markup('<img class="mermaid-svg" src="x" alt="" />'),
+        "caption": "Schema",
+        "alt_text": "alt",
+        "asset_id": "A",
+        "fmt": "mermaid",
+        "number": None,
+        "labels": figure_labels("it"),
+        "variant": "slide",
+    }
+    with_box = figure_markup.render_figure_html(**kwargs, box=figure_markup.FigureBox(255, 70))
+    style = 'style="--figure-w: 255.0mm; --figure-h: 70.0mm"'
+    assert f'aria-label="alt" {style}>\n<div class="figure-body">' in with_box
+    assert "\n\n" not in with_box
+    assert [f["id"] for f in _figures(with_box)] == ["A"]
+    without = figure_markup.render_figure_html(**kwargs)
+    assert without == figure_markup.render_figure_html(**kwargs, box=None)
+    assert "style=" not in without and 'aria-label="alt">\n<div class="figure-body">' in without
+    assert with_box.replace(f" {style}", "") == without
+    # `FigureBox`: al decimo, strettamente positivo.
+    assert figure_markup.FigureBox(255, 86.633).style == "--figure-w: 255.0mm; --figure-h: 86.6mm"
+    for w, h in ((0, 10), (255, -1), (255, 0.04)):
+        with pytest.raises(ValueError):
+            figure_markup.FigureBox(w, h)
+
+
 def test_figure_label_interpolates_number() -> None:
     assert figure_markup.figure_label(figure_labels("it"), 12) == "Figura 12."
     assert figure_markup.figure_label(figure_labels("en"), None) == "Figure."
@@ -1404,16 +1435,40 @@ def test_lesson_template_css_for_figures() -> None:
 
 
 def test_slides_template_css_for_figures() -> None:
+    """Il cap fisso di 80 mm non vale più per le figure (D12): il loro tetto
+    è `var(--figure-h)` dal box della pagina, la larghezza del wrapper è
+    `var(--figure-w)`; la regola generica ripiega sugli 80 mm solo dove la
+    variabile manca (equazioni ed esempi, che non ricevono box); gli unici
+    `max-height` in mm restano i loghi dell'header (14 mm) e le formule del
+    teorema (40 mm); nessun cambio tipografico sulla didascalia. Il
+    fallback delle slide è in `white-space: pre` con `overflow: hidden`,
+    quello della dispensa resta in `pre-wrap`."""
     raw = (_TEMPLATES / "lesson_slides_pdf.html.j2").read_text(encoding="utf-8")
     css = re.sub(r"/\*.*?\*/", "", raw, flags=re.S)  # solo regole, senza commenti
     caption_rule = css.split(".slide-asset figcaption {", 1)[1].split("}", 1)[0]
     assert "font-size: 8pt" in caption_rule and "font-style: normal" in caption_rule
     assert ".slide-asset .figure-label {" in css
+    assert re.findall(r"(?<![\d.])80mm", css) == ["80mm"]
+    assert "max-height: 100%" not in css
     unified = css.split(".slide-asset .figure-svg,", 1)[1].split("}", 1)[0]
     assert ".slide-asset .mermaid-svg," in unified and ".slide-asset .uploaded-image {" in unified
-    assert "max-height: 80mm" in unified
-    assert "max-height: 100%" not in css
-    assert ".slide-asset .figure-fallback," in css
+    assert "max-height: var(--figure-h)" in unified and "max-width: 100%" in unified
+    generic = css.split(".slide-asset svg,", 1)[1].split("}", 1)[0]
+    assert ".slide-asset img {" in generic
+    assert re.findall(r"max-height:[^;]*;", generic) == ["max-height: var(--figure-h, 80mm);"]
+    body_rule = css.split(".slide-asset .figure-body {", 1)[1].split("}", 1)[0]
+    assert "width: var(--figure-w)" in body_rule
+    fallback = css.split(".slide-asset .figure-fallback,", 1)[1].split("}", 1)[0]
+    assert "max-height: var(--figure-h)" in fallback
+    # Il fallback delle slide non va a capo (D12, settimo giro): una riga
+    # sorgente è una riga resa, le righe lunghe sono tagliate a destra.
+    assert re.findall(r"white-space:\s*([\w-]+);", fallback) == ["pre"]
+    assert re.findall(r"overflow:\s*([\w-]+);", fallback) == ["hidden"]
+    # La dispensa resta in `pre-wrap` nel flusso di pagina.
+    lesson_css = (_TEMPLATES / "lesson_pdf.html.j2").read_text(encoding="utf-8")
+    lesson_fallback = lesson_css.split(".mermaid-fallback, .figure-fallback {", 1)[1]
+    assert re.findall(r"white-space:\s*([\w-]+);", lesson_fallback.split("}", 1)[0]) == ["pre-wrap"]
+    assert sorted(re.findall(r"max-height:\s*(\d+)mm", css)) == ["14", "40"]
     assert ".slide-asset .missing-asset," in css
 
 
@@ -1574,8 +1629,8 @@ def _one_slide_lesson(content: dict[str, Any], asset_id: str = "A") -> CourseLes
 def test_production_map_with_measured_metrics_pins_the_fit() -> None:
     """Golden del percorso misurato: il flowchart v11 (507,8×158, 14 px) va a
     140,76 mm in dispensa (tetto 11 pt del box 168×242) e a 179,15 mm nelle
-    slide (tetto 14 pt del box 255×80); l'SVG dentro il wrapper è
-    byte-identico e nessun fallback del font viene loggato."""
+    slide (tetto 14 pt del box di pagina 255×86,6, D12); l'SVG dentro il
+    wrapper è byte-identico e nessun fallback del font viene loggato."""
     svg, fig = _v11_figure()
     report: list[FigureFitEntry] = []
     with structlog.testing.capture_logs() as logs:
@@ -1686,12 +1741,21 @@ def test_out_of_band_figure_is_logged_and_reported() -> None:
 
 
 def test_figure_fit_report_summary_lists_the_out_of_band_figures() -> None:
+    """Il summary elenca le figure fuori banda e, a parte, quelle calcolate
+    sulla costante di formato (il loro `in_band` è un'ipotesi)."""
     entry = FigureFitEntry(
         "G", "mermaid", "lesson", 168.0, 0.4961, 3.72, (8.0, 11.0), False, "measured", 17
     )
     ok = FigureFitEntry("A", "dot", "lesson", 29.28, 1.0, 10.0, (8.0, 11.0), True, "parsed", 4)
+    assumed = FigureFitEntry(
+        "V", "vegalite", "slide", 80.0, 1.2, 9.9, (10.0, 14.0), False, "constant", 2
+    )
+    guessed = FigureFitEntry(
+        "F", "function", "lesson", 90.0, 1.0, 9.0, (8.0, 11.0), True, "constant", 2
+    )
     with structlog.testing.capture_logs() as logs:
         pdf._log_figure_fit_report(lesson_code="M1.L1", fit_report=[entry, ok])
+        pdf._log_figure_fit_report(lesson_code="M1.L2", fit_report=[ok, assumed, guessed])
     assert logs == [
         {
             "event": "figure_fit_report",
@@ -1700,8 +1764,62 @@ def test_figure_fit_report_summary_lists_the_out_of_band_figures() -> None:
             "total": 2,
             "in_band": 1,
             "out_of_band": [("G", "mermaid", 3.72, "measured")],
-        }
+            "font_fallback": [],
+        },
+        {
+            "event": "figure_fit_report",
+            "log_level": "info",
+            "lesson_code": "M1.L2",
+            "total": 3,
+            "in_band": 2,
+            "out_of_band": [("V", "vegalite", 9.9, "constant")],
+            "font_fallback": [("V", "vegalite"), ("F", "function")],
+        },
     ]
+
+
+@pytest.mark.parametrize("fmt", ["dot", "vegalite", "function"])
+def test_constant_font_source_is_logged_for_every_format(fmt: str) -> None:
+    """Lettura irrisolta (un `em` senza antenati, un `rem`) su un formato
+    non Mermaid: il fit usa la costante di formato e lo dice con
+    `figure_font_fallback`, non solo con l'info `figure_fit`; una lettura
+    esatta non produce l'avviso."""
+    em_without_parent = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="100%" viewBox="0 0 600 200">'
+        '<text x="5" y="40" font-size="0.6em">relativo</text>'
+        '<text x="5" y="80" font-size="14">voce</text></svg>'
+    )
+    rem = em_without_parent.replace('font-size="0.6em"', 'style="font-size:0.5rem"')
+    exact = em_without_parent.replace('font-size="0.6em"', 'font-size="12"')
+    content = {
+        "introduction": "[FIG:E] [FIG:R] [FIG:X]",
+        "sections": [],
+        "summary": "",
+        "visual_assets": [
+            _asset("E", fmt, "x", "Relativo"),
+            _asset("R", fmt, "x", "Rem"),
+            _asset("X", fmt, "x", "Esatto"),
+        ],
+    }
+    report: list[FigureFitEntry] = []
+    with structlog.testing.capture_logs() as logs:
+        _render(
+            content,
+            visual_svg_map={"E": em_without_parent, "R": rem, "X": exact},
+            fit_report=report,
+        )
+    assert [(e.asset_id, e.font_source) for e in report] == [
+        ("E", "constant"),
+        ("R", "constant"),
+        ("X", "parsed"),
+    ]
+    fallback = [
+        (e["asset_id"], e["format"], e["font_source"])
+        for e in logs
+        if e["event"] == "figure_font_fallback"
+    ]
+    assert fallback == [("E", fmt, "constant"), ("R", fmt, "constant")]
+    assert all(e["log_level"] == "warning" for e in logs if e["event"] == "figure_font_fallback")
 
 
 def test_figure_box_comes_from_the_template_geometry() -> None:
@@ -1755,7 +1873,8 @@ def test_weasyprint_applies_the_fitted_width() -> None:
     """WeasyPrint rende il wrapper Mermaid alla larghezza del fit (140,76 mm,
     altezza proporzionale) e l'`<img>` DOT alla sua larghezza intrinseca;
     nelle slide l'`<img>` Vega-Lite reale ha la larghezza del fit e non
-    supera mai gli 80 mm del tetto (letterbox con `object-fit`)."""
+    supera mai il box della pagina (86,6 mm con titolo su una riga, D12;
+    `max-height: var(--figure-h)` come cintura)."""
     weasyprint = _weasyprint()
     _svg, fig = _v11_figure()
     html = _render(_one_mermaid_content(), visual_svg_map={"A": fig})
@@ -1819,5 +1938,9 @@ def test_weasyprint_applies_the_fitted_width() -> None:
         )
         ((w, h),) = _rendered_boxes(weasyprint, slides, "img", "figure-svg")
         assert w == pytest.approx(report[0].width_mm, abs=0.02)
-        assert h <= 80.0 + 0.02
+        budget = slide_geometry.page_figure_budget(title="Titolo", body="", bullets=[], n_blocks=1)
+        box, _squeezed = slide_geometry.image_box(budget, caption_text="Figura. Barre")
+        assert box.h_mm == 86.6
+        assert h <= box.h_mm + 0.02
+        assert f'style="{box.style}"' in slides
         assert report[0].in_band is False  # Vega-Lite resta fuori banda nelle slide (D13)

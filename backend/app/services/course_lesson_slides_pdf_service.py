@@ -45,6 +45,7 @@ from app.services import course_lesson_slides_service, remote_storage
 from app.services.figure_render_service import RenderedFigure, VisualSvgMap
 from app.services.figure_scale import FigureFitEntry
 from app.services.figure_theme import figure_labels
+from app.services.slide_geometry import PageFigureBudget, page_figure_budget
 from app.services.svg_normalize import svg_to_data_uri
 
 log = get_logger("app.course_lesson_slides_pdf.service")
@@ -151,14 +152,6 @@ def _slide_type_label(language: str, slide_type: str) -> str:
 # condivisa da PDF dispensa, PDF slide e frame video): re-export, non copia.
 _svg_to_data_uri = svg_to_data_uri
 
-# Box `(larghezza, altezza)` in mm dell'immagine di una figura nelle slide
-# per la banda di leggibilità (D10): 255 mm è la larghezza di `.slide-body`
-# (297 − 18 − 24, `lesson_slides_pdf.html.j2`), 80 mm il `max-height` del
-# template. SEGNAPOSTO di WP3a: sostituito da WP3b, in cui il box viene dal
-# budget della pagina effettiva (`slide_geometry.page_figure_budget` →
-# `image_box`, D12) e questa costante sparisce.
-_SLIDE_FIGURE_BOX_MM: tuple[float, float] = (255.0, 80.0)
-
 
 def _build_slide_asset_html(
     asset: dict[str, Any],
@@ -169,7 +162,7 @@ def _build_slide_asset_html(
     language: str = "it",
     labels: Mapping[str, str] | None = None,
     lesson_code: str | None = None,
-    figure_box_mm: tuple[float, float] | None = None,
+    figure_budget: PageFigureBudget | None = None,
     fit_report: list[FigureFitEntry] | None = None,
 ) -> str:
     """Costruisce il blocco HTML per un asset referenziato da una slide.
@@ -188,13 +181,15 @@ def _build_slide_asset_html(
 
     `visual_svg_map` è `{asset_id → svg | RenderedFigure}` di
     `_prerender_mermaid_for_slides` (tutti i formati); `labels` la mappa
-    di `figure_labels(language)`; `figure_box_mm` il box dell'immagine per
-    la banda di leggibilità (D10, `variant="slide"` seleziona la banda
-    10-14 pt) e `fit_report` il collettore delle voci del fit.
-    Gli altri asset (table/equation/example) usano gli helper del PDF
+    di `figure_labels(language)`; `figure_budget` il budget del blocco
+    sulla pagina resa (D12, `slide_geometry.page_figure_budget`): il blocco
+    figura ne ricava il box dell'immagine (`--figure-w`/`--figure-h` sul
+    `<figure>`) e dentro quel box applica la banda di leggibilità 10-14 pt
+    (D10, `variant="slide"`); `fit_report` è il collettore delle voci del
+    fit. Gli altri asset (table/equation/example) usano gli helper del PDF
     lezione testo con `number=None`: etichetta non numerata («Tabella.»,
     «Equazione.», «Esempio.», D5) e, per i teoremi, la sola parola del kind
-    come prima; non hanno il problema dello scaling SVG.
+    come prima; non hanno il problema dello scaling SVG e non ricevono box.
     """
     figure_i18n = labels if labels is not None else figure_labels(language)
     if kind == "visual" or kind == "new_visual":
@@ -207,7 +202,7 @@ def _build_slide_asset_html(
             variant="slide",
             language=language,
             lesson_code=lesson_code,
-            figure_box_mm=figure_box_mm,
+            figure_budget=figure_budget,
             fit_report=fit_report,
         )
     if kind == "table":
@@ -455,8 +450,19 @@ def render_slides_html(
     formati renderizzabili; `mermaid_svg_map` è il nome storico dello stesso
     argomento (le due mappe sono fuse, `visual_svg_map` prevale). Le figure
     portano l'etichetta «Figura.» senza numero (A2) e la larghezza dalla
-    banda di leggibilità 10-14 pt (D10) entro il box `_SLIDE_FIGURE_BOX_MM`;
+    banda di leggibilità 10-14 pt (D10) entro il box della pagina;
     `fit_report`, se dato, raccoglie una `FigureFitEntry` per figura.
+
+    Ogni pagina riceve il box figura calcolato da `slide_geometry` sul
+    contenuto della pagina EFFETTIVA (dopo la decisione di split, D12):
+    `page_figure_budget` sottrae ai 120 mm del body tag, titolo, prosa,
+    bullet, margini e safety, e divide il resto in parti uguali fra i
+    blocchi asset della pagina; il blocco figura lo converte nel box
+    dell'immagine tenendo conto della didascalia reale. Nel video, senza
+    split, bullet e figura si dividono così i 120 mm senza tagli, salvo le
+    pagine impossibili (testo da solo oltre il body), che ricevono il
+    pavimento e un `slide_figure_box_exhausted` nel log; una pagina con più
+    blocchi (solo legacy) è segnalata con `slide_figure_box_shared`.
 
     `enable_split` (default True): per il PDF cartaceo, una slide con
     bullet+asset viene splittata su 2 pagine consecutive (pattern visivo
@@ -497,9 +503,11 @@ def render_slides_html(
     #   - pagina N+1: tag "Lezione X" + titolo (stesso) + asset (niente
     #     bullet)
     # Vantaggio: gli asset hanno sempre l'intero body a disposizione
-    # per il rendering — niente competizione verticale, niente
-    # workaround di scaling SVG. La numerazione `slide_number` viene
-    # ricalcolata sulla sequenza di pagine effettive.
+    # per il rendering — niente competizione verticale. La numerazione
+    # `slide_number` viene ricalcolata sulla sequenza di pagine effettive.
+    # Due passi per slide: (1) risoluzione degli asset e decisione di split,
+    # (2) per ogni pagina resa il budget della figura sul suo contenuto
+    # reale (D12) e solo allora il rendering dei blocchi.
     rendered_slides: list[dict[str, Any]] = []
     for s in slides_raw.get("slides") or []:
         if not isinstance(s, dict):
@@ -510,7 +518,7 @@ def render_slides_html(
         body_text = (s.get("body") or "").strip()
         bullets = list(s.get("bullets") or [])
 
-        assets_html: list[str] = []
+        resolved_assets: list[tuple[str, dict[str, Any]]] = []
         for aid in s.get("references_assets") or []:
             resolved = _resolve_asset_for_slide(
                 aid,
@@ -520,22 +528,8 @@ def render_slides_html(
                 new_equations=new_equations,
                 new_examples=new_examples,
             )
-            if resolved is None:
-                continue
-            kind, payload = resolved
-            html = _build_slide_asset_html(
-                payload,
-                kind=kind,
-                visual_svg_map=svg_map,
-                math_svg_map=math_svg_map,
-                language=language,
-                labels=figure_i18n,
-                lesson_code=lesson.lesson_code,
-                figure_box_mm=_SLIDE_FIGURE_BOX_MM,
-                fit_report=fit_report,
-            )
-            if html:
-                assets_html.append(html)
+            if resolved is not None:
+                resolved_assets.append(resolved)
 
         base_entry = {
             "slide_id": s.get("slide_id"),
@@ -553,20 +547,66 @@ def render_slides_html(
         # PDF e video rendono identici (1 slide JSON → 1 pagina). Lo
         # split resta solo come fallback per i corsi generati prima di
         # quella regola. Una slide dedicata a un asset NON va mai
-        # separata dal suo titolo.
+        # separata dal suo titolo. Solo i bullet fanno splittare: la prosa
+        # resta con la figura (`_resolve_asset_for_slide` ritorna solo kind
+        # che `_build_slide_asset_html` rende sempre, quindi «asset risolti»
+        # equivale ad «asset resi»).
         # Disabilitato del tutto con `enable_split=False` (pipeline video).
-        if enable_split and assets_html and bullets:
-            rendered_slides.append({**base_entry, "bullets": bullets, "assets_html": []})
+        pages: list[tuple[list[Any], str, list[tuple[str, dict[str, Any]]]]]
+        if enable_split and resolved_assets and bullets:
+            # Niente prosa nella pagina asset-only.
+            pages = [(bullets, body_text, []), ([], "", resolved_assets)]
+        else:
+            pages = [(bullets, body_text, resolved_assets)]
+
+        for page_bullets, page_body, page_assets in pages:
+            assets_html: list[str] = []
+            if page_assets:
+                budget = page_figure_budget(
+                    title=str(title or ""),
+                    body=page_body,
+                    bullets=[str(b) for b in page_bullets],
+                    n_blocks=len(page_assets),
+                )
+                if budget.clamped:
+                    log.warning(
+                        "slide_figure_box_exhausted",
+                        lesson_code=lesson.lesson_code,
+                        slide_id=s.get("slide_id"),
+                        available_mm=budget.available_mm,
+                        deficit_mm=round(budget.block_h_mm - budget.available_mm, 1),
+                        n_blocks=budget.n_blocks,
+                    )
+                if len(page_assets) > 1:
+                    log.info(
+                        "slide_figure_box_shared",
+                        lesson_code=lesson.lesson_code,
+                        slide_id=s.get("slide_id"),
+                        n_blocks=budget.n_blocks,
+                        block_h_mm=budget.block_h_mm,
+                    )
+                for kind, payload in page_assets:
+                    html = _build_slide_asset_html(
+                        payload,
+                        kind=kind,
+                        visual_svg_map=svg_map,
+                        math_svg_map=math_svg_map,
+                        language=language,
+                        labels=figure_i18n,
+                        lesson_code=lesson.lesson_code,
+                        figure_budget=budget,
+                        fit_report=fit_report,
+                    )
+                    if html:
+                        assets_html.append(html)
             rendered_slides.append(
                 {
                     **base_entry,
-                    "body": "",  # niente prosa nella pagina asset-only
-                    "bullets": [],
+                    "body": page_body,
+                    "bullets": page_bullets,
                     "assets_html": assets_html,
                 }
             )
-        else:
-            rendered_slides.append({**base_entry, "bullets": bullets, "assets_html": assets_html})
 
     # Riassegna slide_number / total in base alla sequenza espansa.
     total_slides = len(rendered_slides)
