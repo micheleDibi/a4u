@@ -377,7 +377,7 @@ matematici (equazioni / teoremi con dimostrazione) e gli schemi della
 
 ### `VisualAssetFormat = Literal["mermaid", "vegalite", "dot", "function", "image", "image_prompt", "image_search_query", "description"]`
 
-Alias dei formati degli asset visivi (`:47`), importato anche da
+Alias dei formati degli asset visivi (`:86`), importato anche da
 `course_lesson_slides.py` per i `new_assets` di Fase 4. Contratto
 (docstring): le prime quattro voci sono le famiglie di **figure** con
 sorgente testuale, renderizzate dal registro `figure_render_service`
@@ -391,7 +391,7 @@ senza `function` (A1). Il frontend ne tiene la copia
 
 ### `class LessonContentVisualAsset(BaseModel)`
 
-Asset visivo della Fase 3 (`:75`; referenziato nel testo come `[FIG:..]`).
+Asset visivo della Fase 3 (`:114`; referenziato nel testo come `[FIG:..]`).
 `extra="ignore"` (i record JSONB precedenti al commit `92d5f37` possono
 ancora contenere `asset_type`, ignorato in lettura).
 - `asset_id: str` (1..50),
@@ -410,6 +410,36 @@ fix AI per kind), al PATCH manuale `figure_render_service.
 validate_visual_assets_or_raise` sui soli asset con `(format, content)`
 cambiati (`422 lesson_content_invalid_visual_asset` con
 `meta.errors[{loc, asset_id, format, msg, type}]`).
+
+### Tetto di risorsa sul sorgente di un asset visivo (A1, WP5)
+
+`VISUAL_ASSET_CONTENT_MAX_CHARS = 12_000` (`:74`) è la lunghezza più alta
+ammessa da un renderer con i default: `settings.figure_dot_max_chars`
+(12.000), Vega-Lite 4.000, soglia editoriale Mermaid 3.000
+(`figure_compute.graph_rules.MAX_MERMAID_SOURCE_CHARS`). È un tetto di
+**risorsa**, non una soglia editoriale: le soglie per formato restano nei
+renderer, perché un errore Pydantic scarta la lezione intera senza passare
+dal fix degli asset, mentre `validate` del registro lascia al fix la
+possibilità di semplificare. Un `FIGURE_DOT_MAX_CHARS` più alto di questo
+valore non ha effetto oltre il tetto.
+
+- `cap_visual_asset_content[AssetT: _HasContent](asset) -> AssetT` (`:140`)
+  — after-validator generico: oltre il tetto un `value_error` con `loc`
+  sull'elemento della lista;
+- `GeneratedVisualAsset = Annotated[LessonContentVisualAsset,
+  AfterValidator(cap_visual_asset_content)]` (`:152`), usato da
+  `LessonContentOutput.visual_assets`;
+- `LessonSlidesOutput.new_assets` in `course_lesson_slides.py` (`:118`)
+  applica lo stesso validatore a `LessonSlideNewAsset` con lo stesso
+  `Annotated`.
+
+Il tetto vale sugli asset **generati** (output AI di Fase 3 e 4) e, nel
+PATCH, solo sugli asset **cambiati**
+(`figure_render_service.validate_visual_assets_or_raise`). I modelli
+condivisi `LessonContentVisualAsset` e `LessonSlideNewAsset` non hanno
+tetto: l'editor invia sempre tutti gli asset e un Mermaid storico più
+lungo (nessun tetto prima di WP5, nessun backfill) renderebbe impossibile
+correggere un refuso in un altro campo.
 
 ### `class ProofStep(BaseModel)`
 

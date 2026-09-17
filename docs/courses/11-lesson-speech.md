@@ -269,6 +269,16 @@ sanificate (nel PDF passano comunque dall'escape, vedi sotto).
 - **Template.** Colori, numeri e page-size `|safe`; `font_family` e
   l'URL dello sfondo con `|css_string`; i loghi in `src` all'escape HTML
   dell'attributo.
+- **Fallback delle formule.** `_log_math_fallbacks` chiude ogni render con
+  un `lesson_pdf_math_fallbacks` per lezione (livello `error`) quando
+  qualche formula è ricaduta sul MathML: `count`, `requested`, `rendered` e
+  un campione delle chiavi mancanti. WeasyPrint stampa il MathML piatto, ed
+  è il modo in cui il gap si misura invece di restare invisibile.
+- **Risorse di rete.** Il PDF del discorso passa dallo stesso
+  `_pdf_url_fetcher` dei tre PDF (data URL e host dei media; tutto il resto,
+  `file://` compreso, è `pdf_resource_blocked`); la pagina headless di
+  MathJax carica il CDN alla versione pinnata (`MATHJAX_CDN_VERSION`) con
+  `block_external_requests` prima di `set_content`.
 
 ## Frontend — `CourseLessonSpeechView.tsx`
 

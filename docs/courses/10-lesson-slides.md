@@ -239,6 +239,127 @@ stale-detection downstream (PDF slide e Fase 5 si segnaleranno stale).
 Nel PDF slide e nei frame video le figure sono rese con l'etichetta
 «Figura.» senza numero (A2).
 
+## Larghezza e box della figura (WP3, 16 settembre 2026)
+
+### Larghezza dalla banda di leggibilità
+
+La larghezza di una figura nelle slide e nei frame video non è più una
+percentuale fissa: `figure_scale.fit_figure_width_mm` la calcola perché il
+corpo di testo più piccolo dell'SVG cada nella banda della superficie
+(`READABILITY_BANDS_PT`, `figure_scale.py:42-45`).
+
+| Superficie | Banda | Variante |
+|---|---|---|
+| Dispensa e vista web | 8-11 pt | `lesson` |
+| Slide e frame video | 10-14 pt | `slide` |
+
+Il corpo di partenza è misurato, non assunto: per Mermaid lo misura
+Chromium nella pagina del pre-render, per DOT, Vega-Lite e `function` lo
+legge Python dagli attributi e dal foglio di stile dell'SVG; se non è
+risolvibile si usa la costante del formato
+(`figure_scale.FALLBACK_BASE_FONT_PX`) e la figura entra nel report con
+`font_source="constant"` (il suo `in_band` è un'ipotesi). La larghezza va
+sul contenitore come ultimo attributo `style="width:Wmm"`: **l'SVG non è
+riscritto** e `THEME_VERSION` resta invariato.
+
+Ogni figura è loggata con `figure_fit`; fuori banda aggiunge
+`figure_fit_out_of_band` e ogni lezione chiude con un `figure_fit_report`
+(totale, in banda, fuori banda con corpo e provenienza del font, figure
+sulla costante, difetti di geometria, misure saltate). Quel report è
+l'input del gate editoriale D13.
+
+Misura di riferimento su un flowchart Mermaid v11: il testo passa da 13,1
+a 11,0 pt in dispensa, da 19,9 a 14,0 pt nelle slide e da 18,3 a 11 pt a
+schermo. Sui 57 modelli degli editor restano sotto i 10 pt nelle slide
+12/15 Mermaid, 22/24 Vega-Lite e 1/18 DOT: sono accettati e segnalati dal
+`figure_fit_report`, perché portarli in banda richiederebbe un corpo per
+superficie, cioè un cambio di `THEME_VERSION`.
+
+### Box della figura per pagina
+
+Il cap fisso `max-height: 80mm` del template non esiste più. Il modulo
+puro `slide_geometry.py` (specchio delle costanti CSS del template, ogni
+campo con il riferimento alla riga e un test a regex che li tiene
+allineati) calcola il box su **ogni pagina resa**, dopo la decisione di
+split:
+
+- `page_figure_budget` parte dai 120 mm di `.slide-body` (255 × 120 mm,
+  `overflow: hidden`) e sottrae tag, titolo (almeno una riga), prosa se
+  non vuota, tutti i bullet, i margini degli asset e 3 mm di safety, poi
+  divide il resto in parti uguali fra i blocchi asset della pagina. Sotto
+  il pavimento del blocco (25 mm di immagine più margine e una riga di
+  didascalia) il budget è portato al pavimento e la pagina è dichiarata
+  impossibile con `slide_figure_box_exhausted` (a sbordare è il testo, non
+  la figura); una pagina con più blocchi, caso solo legacy, è segnalata con
+  `slide_figure_box_shared`.
+- `image_box` ne ricava il box dell'immagine sottraendo la didascalia
+  stimata sul testo reale (etichetta, didascalia dell'autore, coda
+  calcolata di `function`), arrotondato per difetto al decimo di mm; se
+  scende sotto i 25 mm con un budget non clampato lo segnala
+  `slide_figure_caption_squeezed`.
+- Il box esce come `--figure-w`/`--figure-h` nello `style` del
+  `<figure>`: il wrapper `.figure-body` prende `width: var(--figure-w)` e
+  le figure `max-height: var(--figure-h)`; il fit D10 usa quel box al posto
+  della costante. Equazioni ed esempi non ricevono box e nella regola
+  generica ripiegano sul cap di prima (`var(--figure-h, 80mm)`), così come
+  le tabelle degradano ad `auto` sulla larghezza. Nessun cambio
+  tipografico.
+
+Con titolo su una riga l'immagine passa da 80 a 86,6 mm. Le pagine che
+prima sbordavano (slide dedicata di Fase 4 con titolo e prosa su tre
+righe, +9,7 mm; cinque bullet, +25,9 mm; due figure, +15,3 mm) rientrano,
+verificate in WeasyPrint e in Chromium da
+`tests/test_slide_figure_geometry.py`.
+
+Lo stimatore delle righe (`estimate_lines`) è un **limite superiore**
+calibrato `reale ≤ stima ≤ reale + 1` sui `LineBox` di WeasyPrint per sei
+famiglie di font: larghezze per classe di carattere, non una media. Limite
+dichiarato: una sequenza artificiale di sole `m`/`w`/`W` può restare
+sottostimata di una riga.
+
+I frame video ereditano lo stesso HTML e quindi lo stesso box: nessun
+codice proprio (vedi [12 — Lesson video](12-lesson-video.md)).
+
+### Fallback della figura non resa
+
+Quando l'SVG manca il blocco mostra il sorgente in un `<pre>`. Deviazione
+dichiarata rispetto al progetto B6: il `<pre>` è a `white-space: pre` e
+non va a capo, `overflow: hidden` taglia a destra le righe lunghe. Sei
+giri di revisione della stima delle righe a capo di `pre-wrap` sono stati
+battuti ogni volta da un caso nuovo (spazi, tabulazioni, U+2028, profili
+di lingua, regole UAX #14 di Pango); senza a capo una riga sorgente è una
+riga resa, esatta in WeasyPrint e in Chromium e indipendente dal font.
+
+Resta l'altezza della riga, che dipende dalla lingua del corso e dagli
+script presenti:
+
+| Riga resa | Budget |
+|---|---|
+| Solo insieme base (`_MONO_BASE_RE`) con lingua neutra | 1,30 em |
+| Fuori dall'insieme base o lingua non neutra | 1,70 em |
+| Prima run con baseline ideografica | 2,46 em |
+
+Fanno eccezione due lingue del corso, la cui riga base è più alta del
+budget generale: `mn-cn` 1,83 em (anche una riga con mongolo tradizionale,
+in qualunque corso) e `tcy` 1,76 em.
+
+`truncate_fallback_source` taglia il sorgente alle righe che entrano nel
+box (WeasyPrint ignora `max-height` sul `<pre>` frammentato dal fondo
+pagina), normalizza CRLF, CR, U+2028 e U+2029 a `\n` perché i due motori
+rendano le stesse righe, chiude con «…» visibile e logga
+`figure_fallback_truncated` con il numero di righe omesse.
+
+### PDF già materializzati
+
+Nessuna di queste regole tocca i PDF slide già esportati: restano sui
+byte di prima finché qualcuno non li rigenera a mano. La rigenerazione è
+la stessa di sempre, per lezione — «Rigenera PDF» nel kebab della riga
+(`POST /lessons/{lesson_id}/slides-pdf/export`, ammesso con
+`slides_pdf_status` ∈ `empty | ready | failed`) o «Esporta PDF tutto»
+(`POST /lessons-slides-pdf/export-all`). Nessun backfill e nessuna
+invalidazione automatica: `THEME_VERSION` è invariato, quindi neppure la
+cache degli SVG si svuota.
+
 ## Rendering di titolo, prosa, bullet e riferimenti (WP4)
 
 - **Autoescape.** L'env Jinja del PDF slide
@@ -317,6 +438,8 @@ backend/app/services/openai_lesson_slides_service.py   # OpenAI call + JSON sche
 backend/app/services/course_lesson_slides_worker.py    # worker async + auto-retry + atomic claim _inflight
 backend/app/services/course_lesson_slides_service.py   # orchestrazione + materialize + 8 validazioni §7.4
 backend/app/services/course_lesson_slides_crud.py      # PATCH manuale + validazioni allentate
+backend/app/services/slide_geometry.py                 # box della figura per pagina + stima righe + troncatura del fallback
+backend/app/services/figure_scale.py                   # fit della larghezza dalla banda 10-14 pt (slide) e 8-11 pt (dispensa)
 backend/app/schemas/course_lesson_slides.py            # LessonSlidesOutput + LessonSlideItem + LessonSlideNewAsset
 backend/app/api/v1/courses.py                          # 7 endpoint Fase 4 (generate / generate-all / generate-missing / cancel-all / approve / approve-all / patch)
 frontend/src/api/courses.ts                            # coursesApi.lessonSlides + tipi

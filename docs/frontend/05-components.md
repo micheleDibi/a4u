@@ -1329,9 +1329,23 @@ un'eccezione che rompa la pagina.
   `mermaidConfig`, `VEGALITE_THEME_CONFIG`, `DOT_DEFAULTS`,
   `dotDefaultsPrelude`), da mantenere allineata a `figure_theme.py`
   (test di parità nel backend);
-- `figureNumbering.ts` — `FIG_REF_RE`, `citedFigureIds`,
-  `appendUncitedFigureRefs`, `computeFigureNumbers`, `stripFigurePrefix`
-  (copia di `figure_numbering.py`, fixture condivisa);
+- `figureNumbering.ts` — numerazione editoriale dei quattro kind:
+  `ASSET_KINDS`, `ASSET_REF_RE` / `FIG_REF_RE`, `citedAssetIds`,
+  `appendUncitedAssetRefs`, `computeAssetNumbers`, `assetNumbersByKind`,
+  `equationLabelFamily` / `nonEmptyProofSteps` (ramo teorema),
+  `stripFigurePrefix`, più le proiezioni storiche sulle sole figure
+  (`citedFigureIds`, `appendUncitedFigureRefs`, `computeFigureNumbers`);
+  copia di `figure_numbering.py`, fixture condivisa
+  `tests/fixtures/figure_numbering_cases.json`;
+- `assetRefNormalize.ts` — `normalizeAssetRefs` (rimandi in linea, ancora
+  unica dopo il blocco della prima citazione) e `citeAssetRefs` (soli
+  rimandi, per punti chiave e riferimenti), copia di
+  `asset_ref_normalize.py` con fixture condivisa
+  `tests/fixtures/asset_ref_normalize_cases.json`;
+- `inlineMath.ts` — `splitInlineMath`, grammatica del math dei campi
+  inline (specchio dell'istanza `zero` del PDF), usata da `InlineMath`;
+- `slides.ts` — `resolveAsset`, `assetRefKey` (`trim().toLowerCase()`,
+  stessa chiave del CRUD e del PDF delle slide) e `uniqueAssetRefs`;
 - `figureFormats.ts` — `VISUAL_FORMATS` / `RENDERABLE_FORMATS` /
   `LEGACY_FORMATS`, `formatLabel(format, t)`, `stripFenceAndControl`,
   `parseJsonObject`, `FigureParseError` (codici tradotti dal componente),
@@ -1369,3 +1383,21 @@ entrambi leggono `CourseRefContext` per
 `FunctionFigure`. `[FIG:]` dentro esempi e tabelle (`ExampleBlock` usa
 `ReactMarkdown` direttamente) non è risolvibile né numerabile: limite
 dichiarato.
+
+In `LessonSlidesView` titolo, prosa e bullet della slide passano da
+`InlineMath` (parità con `render_markdown_inline` nel PDF delle slide) e
+l'elenco dei riferimenti da `uniqueAssetRefs`: un asset citato due volte
+dalla stessa slide è reso una volta, come nel PDF e nei frame video.
+`LessonSlidesEditDialog` usa la stessa chiave (`assetRefKey`) nella
+multi-select, così la lista salvata non ha ripetizioni e togliere un asset
+ne toglie ogni grafia.
+
+Le stringhe nuove delle etichette (`courses.figures.table.*`,
+`equation.*`, `example.*`, `theorem.*`, `ref`) esistono **solo** in
+`it.json` e `en.json`. Le altre 22 lingue del bundle non hanno il
+sottoalbero `courses.figures` e ricadono sul `fallbackLng: "it"` di
+`src/i18n/index.ts`: un corso in tedesco mostra «Figura 2», non una chiave
+grezza. Lo specchio backend ↔ frontend
+(`backend/tests/test_figure_i18n_mirrors_frontend.py`) confronta solo `it`
+e `en` e **fallisce**, non salta, se il sottoalbero è vuoto o parziale; le
+altre 22 lingue sono dichiarate fuori perimetro.

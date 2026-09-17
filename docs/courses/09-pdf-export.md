@@ -17,10 +17,74 @@ per layout (A4 portrait / 16:9 / per-slide grouping), input dati
 DOT, `function` via `figure_render_service.render_figure_map` (sì per
 testo+slide, no per discorso che è prosa pura).
 
-**Reset PDF su rigenerazione AI a monte**: quando l'utente rigenera il
-content / le slide / il discorso, lo status del PDF a valle viene
-resettato a `empty` per impedire il download di un PDF stale (vedi
-`request_lesson_*_generation` in service file).
+**Reset PDF su rigenerazione AI a monte**: quando l'utente rigenera le
+slide o il discorso, lo status del PDF a valle passa da `ready`/`failed`
+a `empty` per impedire il download di un PDF stale
+(`course_lesson_slides_service.request_lesson_slides_generation` e il
+batch, `_reset_speech_pdf_if_needed` in `course_lesson_speech_service`).
+La dispensa **non** ha il gemello: né `course_lesson_content_service` né
+`course_lesson_content_crud` scrivono `pdf_status`, quindi una
+rigenerazione o un salvataggio di Fase 3 lasciano scaricabile il PDF
+vecchio; a segnalarlo è solo il badge di staleness del frontend
+(`isPdfStale`, sotto).
+
+### I PDF già materializzati non si invalidano da soli
+
+Vale per tutto quello che questo branch cambia nell'output (rimandi
+testuali e ancore, grammatica del math, larghezza delle figure, box di
+pagina delle slide, autoescape): **nessun backfill e nessuna
+invalidazione automatica**. Un PDF già scritto resta il file che è, sullo
+stesso path (`{generated_pdfs_dir}/{org}/{course}/{lesson}.pdf` e i
+suffissi `_slides` / `_speech`), finché un nuovo export non lo
+sovrascrive; non c'è versioning.
+
+Perché non scatta nulla da solo:
+
+- **`THEME_VERSION`** (`figure_theme.py`, `"2026.09.4"`, invariato sul
+  branch) non versiona gli artefatti: entra solo nella chiave della cache
+  LRU degli SVG in processo (`figure_render_service`, `(formato,
+  sha256(sorgente), THEME_VERSION)`; `figure_function_service` con
+  l'hash della spec). Nessuna riga di DB e nessun PDF lo registra, quindi
+  nessun confronto è possibile a posteriori.
+- **Nessun hash del contenuto reso** è persistito: di una generazione
+  restano `pdf_generated_at`, `pdf_path` e `pdf_template_id` (snapshot
+  del solo template grafico).
+- **Il segnale di stale è temporale e riguarda i dati, non il codice**:
+  `frontend/src/lib/staleness.ts` (`isPdfStale`, `isSlidesPdfStale`,
+  `isSpeechPdfStale`) confronta i `*_generated_at` dei worker AI con i
+  `*_modified_at` del CRUD manuale, e solo su un PDF `ready`. Un deploy
+  non sposta nessun timestamp: dopo l'aggiornamento il badge non compare,
+  lo status resta `ready` e il download continua a servire il file
+  vecchio.
+
+Il ri-export è quindi **manuale, per lezione e per superficie**. Percorsi
+che esistono davvero nel codice (permesso `course:generate`, risposta
+202, prefisso `/api/v1/orgs/{org_id}/courses/{course_id}`):
+
+| Superficie | Endpoint | Batch | UI |
+|---|---|---|---|
+| Dispensa | `POST /lessons/{lid}/pdf/export` | `POST /lessons-pdf/export-all` (con `only_missing=false` rigenera anche le lezioni già `ready`) | tab Dispense, kebab «Rigenera PDF» (`courses.lessonsPdf.lesson.regenerate`) |
+| Slide | `POST /lessons/{lid}/slides-pdf/export` | `POST /lessons-slides-pdf/export-all` | tab Slide, «Aggiorna PDF» / kebab «Rigenera PDF» (`courses.lessonsSlidesPdf.lesson.regenerate`) |
+| Discorso | `POST /lessons/{lid}/speech-pdf/export` | `POST /lessons-speech-pdf/export-all` | tab Discorso, kebab «Rigenera PDF» (`courses.lessonsSpeechPdf.lesson.regenerate`) |
+| Video | `POST /lessons/{lid}/video/generate` | `POST /lessons-video/generate-batch` | tab Video (`CourseLessonVideoView.tsx`) |
+
+Vincoli di stato (già documentati in [§ Vincoli di stato](#vincoli-di-stato)):
+l'export della dispensa vuole `content_status ∈ ready/approved` e
+`pdf_status ∈ empty/ready/failed` (un `ready` si ri-esporta senza passi
+intermedi, `pending`/`processing` danno `409 pdf_already_in_progress`);
+la generazione del video vuole discorso e slide `approved` e
+`video_status ∈ empty/ready/failed/cancelled`, e rende i frame PNG da
+capo (`render_slides_to_png`), quindi raccoglie il box di pagina e la
+banda di leggibilità nuovi senza altri passaggi.
+
+**Cancellare il file materializzato non è un percorso supportato**:
+nessun endpoint lo elimina e la cancellazione dallo storage non tocca
+`pdf_status`, che resta `ready`. Il download smette di funzionare
+(`404 pdf_file_missing` da `_stored_pdf_download`, dove la `404
+pdf_not_ready` copre solo lo status) e la lezione torna scaricabile solo
+con un nuovo export, che riscrive lo stesso path. Un file rimosso a mano
+non forza quindi nessuna rigenerazione: serve comunque l'azione
+sull'endpoint o sul pulsante.
 
 ---
 
@@ -477,7 +541,7 @@ margini del testo, niente pagina dedicata, niente landscape.
   (Vega-Lite, DOT, `function` normalizzati) partono da scala 1 e crescono
   solo fino al fondo della banda; mai oltre il box (larghezza per difetto
   al centesimo); senza testo scala naturale. Il flowchart della fixture
-  v11, che prima di D10 usciva a 13,3 pt in dispensa e a 19,9 pt nelle
+  v11, che prima di D10 usciva a 13,1 pt in dispensa (168 mm di box) e a 19,9 pt nelle
   slide, va a 140,76 mm e 11 pt in dispensa e a 179,15 mm e 14 pt nelle
   slide.
 - **Corpo del testo.** Mermaid: misurato in Chromium accanto all'SVG
@@ -1098,6 +1162,7 @@ dependencies = [
   "latex2mathml>=3.77",       # fallback offline: LaTeX → MathML
   "jinja2>=3.1.4",
   "markdown-it-py[plugins]>=3.0.0",
+  "mdit-py-plugins<1",        # WP0: niente major, vedi il rischio qui sotto
   # Figure accademiche (doc 17)
   "vl-convert-python>=1.9",   # Vega-Lite → SVG senza browser
   "altair>=6,<7",             # solo per il file JSON dello schema Vega-Lite v6
@@ -1106,6 +1171,24 @@ dependencies = [
   "matplotlib>=3.9",          # disegno delle figure `function`
 ]
 ```
+
+**Rischio dichiarato: il range di `mdit-py-plugins` resta aperto verso il
+basso.** Il PDF dipende da tre contratti impliciti del plugin dollarmath
+— i nomi dei token (`math_inline`, `math_inline_double`, `math_block`,
+`math_block_label`), la semantica di `allow_space`/`allow_digits` e la
+firma delle rule di render — nessuno dei quali è parte dell'API
+dichiarata. `backend/pyproject.toml` porta `mdit-py-plugins<1` (WP0):
+taglia i major, ma il pavimento lo mette l'extra
+(`markdown-it-py[plugins]` richiede `mdit-py-plugins>=0.5.0`), quindi il
+range effettivo è `>=0.5.0,<1` e dentro lo 0.x qualunque minor è
+ammesso; in `backend/` non c'è un lock. Installata oggi: 0.6.1. Anche
+`markdown-it-py[plugins]>=3.0.0` resta senza limite superiore.
+L'unico tripwire sono i test strutturali (`test_lesson_pdf_math.py`:
+quattro rule su entrambe le istanze, flag, ordine delle core rule e delle
+rule inline, fixture `math_grammar_cases.json` caso per caso): un
+aggiornamento che cambiasse un nome di token o un flag fa fallire la
+suite invece di far uscire MathML piatto in silenzio. Chi aggiorna la
+dipendenza legge quei test prima.
 
 ## Cosa NON fa questa iterazione (out of scope)
 
@@ -1246,7 +1329,7 @@ Mirror della logica frontend `lib/slides.resolveAsset()`.
 
 ### Frontend
 
-Tab "Slide" (`CourseLessonSlidesView.tsx`) ha bottoni primary "Esporta PDF" / "Scarica PDF" / "Aggiorna PDF" (con stale logic via `isSlidesPdfStale`) e kebab "Rigenera PDF". Dialog `LessonSpeechPdfExportDialog`... wait, refuso — dialog è `LessonSlidesPdfExportDialog.tsx` che usa `slideTemplatesApi.list(orgId)` (template avatar+slide).
+Tab "Slide" (`CourseLessonSlidesView.tsx`) ha bottoni primary "Esporta PDF" / "Scarica PDF" / "Aggiorna PDF" (con stale logic via `isSlidesPdfStale`) e kebab "Rigenera PDF". Il dialog è `LessonSlidesPdfExportDialog.tsx`, che usa `slideTemplatesApi.list(orgId)` (template avatar+slide).
 
 ### File rilevanti
 

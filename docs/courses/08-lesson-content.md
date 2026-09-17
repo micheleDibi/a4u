@@ -648,7 +648,7 @@ per lezione del ~40%, qualità leggermente inferiore. Vedi
 `course_lesson_content_worker.py` — speculare al worker Fase 2 ma
 scoped a livello LEZIONE:
 - `_inflight: set[UUID]` su `lesson_id` (claim atomico in `_tick`,
-  vedi [02 — Architecture](../02-architecture.md#pattern-batch-parallelo-lesson_structure-lesson_content-lesson_pdf))
+  vedi [02 — Architecture](../02-architecture.md#pattern-batch-parallelo-lesson_structure-lesson_content-lesson_slides-lesson_speech-lesson_pdf-lesson_slides_pdf-lesson_speech_pdf-lesson_video-lesson_avatar_video))
 - `_semaphore = asyncio.Semaphore(course_lesson_content_max_concurrency)`
   (default `3`, output 5x più grande di Fase 2)
 - Polling: `course_lesson_content_poll_interval_seconds` (default `4`)
@@ -1027,6 +1027,17 @@ Locali aggiornati: solo IT/EN canonici (le altre 22 lingue saranno
 completate via "Completa con AI" in app). Namespace
 `courses.lessonsContent.*` e `courses.glossary.*`.
 
+Vale anche per le 12 chiavi di etichetta dei quattro kind aggiunte da
+D5 sotto `courses.figures.*` (rimando, tabella, equazione, esempio,
+teorema): sono in `it.json` e `en.json` e in nessuno degli altri 22
+locali. Non è un buco visibile perché **entrambi i lati ricadono
+sull'italiano**: il frontend con `fallbackLng: "it"` (`src/i18n/index.ts`)
+e il backend con `figure_theme.figure_labels`, che normalizza il
+sottotag (`en-GB` → `en`) e per ogni altra lingua ritorna il dizionario
+`FIGURE_I18N_FALLBACK = "it"` (36 chiavi per `it` e per `en`). Un corso
+in una terza lingua vede quindi «Figura 1.» e «Tabella 1.» in italiano
+nella vista e nel PDF, non una chiave grezza.
+
 ## Configurazione
 
 ```env
@@ -1041,7 +1052,11 @@ OPENAI_LESSON_CONTENT_MAX_TOKENS=32000
 OPENAI_LESSON_CONTENT_REASONING_EFFORT=high   # [minimal, low, medium, high]
 COURSE_LESSON_CONTENT_POLL_INTERVAL_SECONDS=4
 COURSE_LESSON_CONTENT_MAX_CONCURRENCY=3
-COURSE_LESSON_CONTENT_DOCUMENTS_CONTEXT_MAX_CHARS=20000
+# Selezione per lezione degli estratti documentali (vedi «--grounding»
+# in fondo): budget totale, budget per documento, kill-switch.
+COURSE_LESSON_CONTENT_DOCUMENTS_CONTEXT_MAX_CHARS=40000
+COURSE_LESSON_CONTENT_DOCUMENTS_PER_DOC_MAX_CHARS=12000
+COURSE_LESSON_CONTENT_DOCUMENTS_SELECTION_ENABLED=true
 # Numero massimo di retry automatici prima di transitare a `failed`.
 # La UI vede la lezione come "in elaborazione" durante i retry.
 COURSE_LESSON_CONTENT_AUTO_RETRY_MAX=5
@@ -1053,6 +1068,7 @@ OPENAI_FIGURE_REVIEW_MODEL=gpt-4o-mini
 OPENAI_FIGURE_REVIEW_REASONING_EFFORT=
 OPENAI_FIGURE_REVIEW_MAX_TOKENS=4000
 FIGURE_REVIEW_MAX_ATTEMPTS=2
+FIGURE_REVIEW_MAX_PARALLEL=4
 FIGURE_REVIEW_ENABLED=true
 ```
 

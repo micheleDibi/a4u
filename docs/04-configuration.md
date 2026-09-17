@@ -251,6 +251,18 @@ descrive sempre i quattro formati (A19).
 | `FIGURE_DOT_MAX_CHARS` | `12000` | Limite del sorgente DOT accettato dal validatore. Un valore più alto non ha effetto oltre 12.000: è anche il tetto di `content` degli asset visivi generati dall'AI e di quelli cambiati nel PATCH (`VISUAL_ASSET_CONTENT_MAX_CHARS`). |
 | `GRAPHVIZ_DOT_PATH` | _(vuoto)_ | Percorso del binario `dot`; vuoto = ricerca nel `PATH`. Senza `dot` il formato è assente da `available_formats()` e `log.error("graphviz_dot_missing")` compare una volta all'avvio dei worker. |
 
+Le soglie **editoriali** dei grafi (D13) non sono variabili d'ambiente: sono
+costanti di `backend/app/services/figure_compute/graph_rules.py`
+(`MAX_GRAPH_NODES` 30, `MAX_GRAPH_EDGES` 45, `MAX_LABEL_CHARS` 64,
+`MAX_TITLE_CHARS` 110, `MAX_MERMAID_SOURCE_CHARS` 3.000, `MAX_GRAPH_LINES`
+120, `MAX_EDGE_CROSSINGS` 4 — quest'ultima solo diagnostica). Sono
+**provvisorie**, calibrate sui 57 modelli degli editor con margine ≥ 1,4×
+sul massimo osservato, da riconfermare sull'export reale del docente con
+`backend/scripts/measure_asset_refs.py --figures`: se il p90 reale supera
+il 60 % di una soglia, la soglia si alza. Un tetto di risorsa (le variabili
+qui sopra) protegge il server; una soglia editoriale dice che la figura,
+così com'è, non si legge.
+
 ### OpenAI — parallelismo + auto-retry worker corso
 
 I worker batch del pipeline corso (Fase 2, Fase 3, Fase 4, Fase 5, e i tre
@@ -270,7 +282,9 @@ rate-limit OpenAI con tier free/1.
 | `COURSE_LESSON_STRUCTURE_AUTO_RETRY_MAX` | `5` | Numero massimo di retry trasparenti prima di transitare a `failed`. |
 | `COURSE_LESSON_CONTENT_POLL_INTERVAL_SECONDS` | `4` | Polling worker Fase 3. |
 | `COURSE_LESSON_CONTENT_MAX_CONCURRENCY` | `3` | Cap lezioni parallele Fase 3 (output 5x più grande di Fase 2 → cap più basso). |
-| `COURSE_LESSON_CONTENT_DOCUMENTS_CONTEXT_MAX_CHARS` | `20000` | Budget summary nel prompt Fase 3. |
+| `COURSE_LESSON_CONTENT_DOCUMENTS_CONTEXT_MAX_CHARS` | `40000` | Budget totale degli estratti documentali nel prompt Fase 3 (~11,5k token). |
+| `COURSE_LESSON_CONTENT_DOCUMENTS_PER_DOC_MAX_CHARS` | `12000` | Tetto per singolo documento rilevante; con un solo documento rilevante vale l'intero budget residuo. |
+| `COURSE_LESSON_CONTENT_DOCUMENTS_SELECTION_ENABLED` | `true` | Kill-switch del grounding Fase 3: `false` = comportamento storico (nessuna selezione per lezione, esempi e formule non serializzati). |
 | `COURSE_LESSON_CONTENT_AUTO_RETRY_MAX` | `5` | Vedi sopra. |
 | `COURSE_LESSON_SLIDES_POLL_INTERVAL_SECONDS` | `4` | Polling worker Fase 4. |
 | `COURSE_LESSON_SLIDES_MAX_CONCURRENCY` | `3` | Cap lezioni parallele Fase 4 (input ~8-18k token = content_raw, output ~4-8k). |

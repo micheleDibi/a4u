@@ -660,6 +660,15 @@ Layout:
   esempi); per le lezioni di **verifica** (`is_assessment`) via
   `LessonAssessmentView`. Il branch è guidato dal type-guard
   `isAssessmentRaw(content_raw)`.
+  `LessonContentView` normalizza i rimandi prima di rendere: numera i
+  quattro kind con `computeAssetNumbers` (tag orfani accodati), poi
+  `normalizeAssetRefs` (`lib/assetRefNormalize.ts`) riscrive ogni citazione
+  in linea nel rimando testuale («Figura 2», «Tabella 1», «Lemma 2») e
+  lascia una sola ancora per asset dopo il blocco della prima citazione;
+  punti chiave e riferimenti passano da `citeAssetRefs` (solo rimandi, mai
+  blocchi). Il `content_raw` non è toccato: la trasformazione vive solo a
+  render, in parità con il PDF (mirror Python/TypeScript con fixture
+  condivisa).
 - **Lezioni di verifica** (`is_assessment`): la pipeline PDF è
   disattivata (niente `LessonPdfStatusBadge`, niente CTA PDF, escluse dal
   conteggio "tutti i PDF pronti" e da "Esporta tutti i PDF"). Al loro
@@ -800,11 +809,26 @@ Lista verticale di card per slide. Per ciascuna slide:
 - Body: prosa breve (`body`), bullets (`<ul>`), asset referenziati renderizzati via `resolveAsset()` di `lib/slides.ts` (figure → `FigureFrame` con `variant="slide"` ed etichetta «Figura.» senza numero, A2: Mermaid → `<MermaidDiagram>` lazy, Vega-Lite → `<VegaLiteDiagram>`, DOT → `<DotDiagram>`, `function` → `<FunctionFigure>`, `image` → `<img>`, legacy → placeholder con `content`; table markdown → `<MarkdownRenderer>`, equation LaTeX → `$$...$$`, example card). Le etichette delle multi-select passano da `formatLabel` (`lib/figureFormats.ts`), nessuna stringa hard-coded.
 - Asset orfano (riferimento senza definizione): box destructive con messaggio
 
+Titolo, prosa e bullet passano da `InlineMath` (solo testo e formule, come
+`render_markdown_inline` nel PDF delle slide): un titolo con `$\frac{p}{q}$`
+non compare più come LaTeX grezzo. Un asset citato più volte dalla stessa
+slide è mostrato una volta: la lista passa da `uniqueAssetRefs` e il
+confronto è `assetRefKey` (`trim().toLowerCase()`, `lib/slides.ts`), la
+stessa chiave del CRUD, del lookup del PDF e del percorso AI.
+
 ### `LessonSlidesEditDialog.tsx`
 
 Editor del `slides_raw`. Layout: lista slide collassabili con titolo + type select + body textarea + bullets list editabile + references_assets multi-select (popolato dall'unione `contentRaw + new_assets`) + source_section_id select (sezioni di Fase 3). Sezione separata per `new_assets` (Fase 4-only).
 
-Validazione client-side allentata; il backend applica le validazioni complete.
+La multi-select confronta per `assetRefKey`: la spunta è accesa anche se
+l'asset è referenziato con un'altra grafia, toglierlo toglie ogni sua
+grafia e la lista salvata esce da `uniqueAssetRefs`, quindi senza
+ripetizioni.
+
+Validazione client-side allentata; il backend applica le validazioni
+complete: oltre ai 422 di struttura, il PATCH può tornare
+`409 lesson_slides_multiple_visual_assets` quando la slide toccata avrebbe
+più di una figura o tabella (vedi [10 — Lesson slides](10-lesson-slides.md)).
 
 ### `LessonSlidesGenerateDialog.tsx`
 

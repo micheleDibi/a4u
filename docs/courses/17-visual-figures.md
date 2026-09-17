@@ -16,8 +16,14 @@ del branch (WP6): stato dei WP, correzioni emerse nelle verifiche
 indipendenti, esiti reali delle misure (Docker, bundle, rivalidazione,
 prove nel container), checklist di smoke del frontend, decisioni prese e
 alternative scartate, limiti e lavori futuri. Gli esiti della revisione
-avversariale di Fase D (workflow separato, successivo a WP6) sono
-l'unico segnaposto rimasto (sezione 14.3).
+avversariale di Fase D del branch `feat/academic-figures` sono nelle
+sezioni 14.4-14.11. I capitoli **16-19** sono le richieste successive del
+docente sui cataloghi dei modelli; il capitolo **20** è il branch
+`fix/asset-refs-math-figure-scale` (16-17 settembre 2026), che affronta i
+quattro difetti visti sul PDF consegnato — asset duplicato con la frase
+spezzata, LaTeX crudo, testo delle figure fuori scala, diagrammi densi non
+misurati — e ha come solo segnaposto rimasto gli esiti della sua Fase D
+(sezione 20.8).
 
 Documenti correlati: [08 — Lesson content (Fase 3)](08-lesson-content.md)
 (generazione, validazione asset, editor), [09 — PDF export](09-pdf-export.md)
@@ -37,7 +43,10 @@ del branch `feat/academic-figures` (HEAD al momento della v1) e non sono
 stati riallineati riga per riga: i moduli citati esistono tutti e i
 nomi dei simboli sono quelli del codice; per la posizione esatta fa fede
 il codice (`git grep`). Le sezioni 1, 12, 13, 14 e 15 sono aggiornate
-alla chiusura del branch (7 settembre 2026).
+alla chiusura del branch `feat/academic-figures` (7 settembre 2026) e, per
+le parti toccate dal branch `fix/asset-refs-math-figure-scale`, al
+17 settembre 2026; i riferimenti a file e righe del capitolo 20 e dei
+riallineamenti di §6.4, §12, §13 e §15 sono verificati su quel branch.
 
 ## 1. Perimetro e stato di avanzamento
 
@@ -1471,18 +1480,33 @@ chiavi pienamente qualificate** di `it.json`/`en.json`:
 `missing`, `formats.{mermaid,vegalite,dot,function,image}`,
 `function.{zeros,zero_intervals,critical_points,inflection_points,
 asymptote_vertical,asymptote_horizontal,asymptote_oblique,integral,tangent,
-levels,none,truncated}` (24 chiavi per lingua; `zero_intervals` è la frase
-dei plateau su cui la funzione si annulla, `truncated` quella delle
-categorie troncate al tetto di `MAX_NOTABLE_POINTS`). `figure_labels(language)` (`:644-649`) ritorna una
+levels,none,truncated}` (24 chiavi per lingua nella v1; `zero_intervals` è
+la frase dei plateau su cui la funzione si annulla, `truncated` quella
+delle categorie troncate al tetto di `MAX_NOTABLE_POINTS`). Con le
+etichette dei quattro kind (capitolo 20, decisione B2) se ne aggiungono
+**12 per lingua** sotto lo stesso prefisso — `ref`, `table.{label,
+labelUnnumbered,ref}`, `equation.{…}`, `example.{…}`, `theorem.{label,ref}`
+— per un totale di **36 chiavi `courses.figures.*` per lingua**, il numero
+che `it.json` ed `en.json` portano oggi (contate con `jq '.courses.figures
+| [paths(scalars)] | length'`) e che il backend ripete in `FIGURE_I18N`.
+`figure_labels(language)` (`:722-728`) ritorna una
 copia con fallback `it` (`de`, `None`, `ja` → it; `en-GB` → en), coerente
-con `_labels_for` del PDF (`course_lesson_pdf_service.py:1097-1132`) e
+con `_labels_for` del PDF (`course_lesson_pdf_service.py:1946-1983`) e
 con `fallbackLng: "it"` del frontend. `_interpolate` gestisce `{{n}}` e
 `{{ n }}`. Le altre 22 lingue ricevono le etichette in italiano nel PDF
 (come «Sintesi» oggi) e nel frontend finché l'amministratore non lancia
-l'auto-translate. Niente lookup nel DB delle traduzioni: il seed ha 226
+l'auto-translate. Il meccanismo nel frontend è il fallback di i18next:
+`i18n.init({ resources: bundledResources, fallbackLng: "it",
+nonExplicitSupportedLngs: true, … })`
+(`frontend/src/i18n/index.ts:113`); i 22 locale non it/en non hanno
+nessuna chiave sotto `courses.figures` (verificato: 36 in `it.json` e
+`en.json`, 0 negli altri 22), quindi ogni `t("courses.figures.…")` cade
+sull'italiano. Niente lookup nel DB delle traduzioni: il seed ha 226
 chiavi e nessuna `courses.*` (in produzione sarebbe sempre vuoto). Test di
-specchio `test_figure_i18n_mirrors_frontend` (flatten del JSON annidato;
-skip esplicito finché `courses.figures` manca da `it.json`, arriva in WP5).
+specchio `test_figure_i18n_mirrors_frontend` (flatten del JSON annidato):
+un sottoalbero `courses.figures` vuoto, parziale o di cardinalità diversa
+da `FIGURE_I18N` **fallisce**, non salta; lo skip resta solo per l'albero
+`frontend/` assente, come nei test fratelli.
 
 Due precisazioni emerse in Fase D.
 
@@ -2910,6 +2934,31 @@ Decisioni prese in Fase B (A1-A16) e nella ripresa del 7 settembre
   non toccare quella lezione: il costo resta nei log,
   `lesson_content_cancelled_post_assets` e
   `lesson_content_assets_cost_discarded`).
+- **Rimando testuale in linea e ancora dopo il blocco** (B1, D1-D2-D4;
+  branch `fix/asset-refs-math-figure-scale`). Scelto: la citazione in
+  linea diventa «Figura N» e l'ancora è inserita una sola volta dopo il
+  blocco della prima citazione. Scartata la promozione della prima
+  citazione a blocco: con 0 asset su 17 citati due volte nelle dispense
+  reali e senza backfill avrebbe lasciato la frase spezzata su tutto il
+  contenuto esistente. Motivazioni complete e altre cinque alternative
+  scartate nella sezione 20.2.
+- **Etichette dei quattro kind sotto `courses.figures.*`** (B2, D3-D5).
+  Scelto: 12 chiavi nuove per lingua sotto l'unico prefisso già
+  presidiato, composizione in un solo punto (`asset_label`/`asset_ref`),
+  ramo teorema sul contatore delle equazioni. Scartati i sottoalberi
+  separati, il rimando derivato a runtime, `theorem.labelUnnumbered` e lo
+  strip del prefisso numerico (lossy): sezione 20.2.
+- **Una sola grammatica per il math del PDF** (B3, D6-D8). Scelto: le rule
+  di markdown-it, condivise da renderer e collector, con la guardia
+  anti-currency come core rule. Scartati le due grammatiche allineate a
+  mano, il pre-processing testuale fence-aware e il renderer inline
+  commonmark: sezione 20.2.
+- **Autoescape e math nella prosa di slide e discorso** (D19). Scelto:
+  `select_autoescape(enabled_extensions=("html","xml","j2"))` sui tre env,
+  filtro `css_string` per i `tpl.*` in contesto CSS, escape HTML
+  dell'attributo (non `|safe`) per gli URL dei loghi, prosa e titoli dal
+  collector math. Contesto e deviazioni nella
+  sezione 20.5.
 
 ## 13. Rischi residui
 
@@ -3139,6 +3188,36 @@ Decisioni prese in Fase B (A1-A16) e nella ripresa del 7 settembre
   `lesson_content_duplicate_asset_refs` e il renderer tiene una sola
   ancora; «Figura [FIG:a]» scritto nonostante il divieto dà ancora «Figura
   Figura 1» (limite pinnato in WP1, da misurare sul dump).
+- **Range di versione aperto delle dipendenze markdown**: `mdit-py-plugins`
+  ha l'upper bound `<1` (`backend/pyproject.toml:34`) perché i nomi dei
+  token dollarmath e la semantica di `allow_space`/`allow_digits` sono
+  contratti impliciti del PDF, ma `markdown-it-py[plugins]` resta a
+  `>=3.0.0` senza tetto. L'unico allarme sono i test strutturali
+  (`test_all_four_dollarmath_rules_are_ours`,
+  `test_math_grammar_flags_and_rulers_are_pinned`): un major che rinomina
+  un token li fa fallire in suite, non in produzione. Chi aggiorna deve
+  leggere quel rosso come un cambio di contratto, non come un test da
+  adattare (sezione 20.6).
+- **I font di produzione non sono nel container**: il default di
+  `font_family` dei template è `"Roboto"` (`app/models/pdf_template.py:31`,
+  `app/models/slide_template.py:42`) e lo stack ripiega su `"Inter"` e
+  `"Helvetica"`, anch'essi assenti (in dispensa e nel discorso lo stack
+  prosegue con `"DejaVu Sans"` e `"Liberation Sans"`, installati); l'immagine installa `fonts-dejavu-core`,
+  `fonts-liberation`, `fonts-noto-core` e `fonts-noto-cjk`
+  (`backend/Dockerfile:44`), nessuna delle due. La sostituzione è
+  silenziosa: nessun errore, nessun log, e il PDF non ha la tipografia che
+  il template dichiara. Le stime di `slide_geometry` sono calibrate sulle
+  famiglie realmente presenti, quindi il modello geometrico regge; a
+  cambiare sarebbe la resa se qualcuno installasse i font veri.
+- **Buco di copertura della CI sui commit a un solo albero**:
+  `.github/workflows/backend-ci.yml` gira sui path `backend/**`,
+  `frontend-ci.yml` su `frontend/**`. Un commit che tocca **solo
+  `frontend/`** non esegue la suite Python, cioè proprio i test che
+  tengono allineati i mirror (parità Node delle fixture condivise,
+  specchio delle chiavi i18n, inventario delle chiavi letterali); un
+  commit che tocca **solo `docs/`** non esegue nessun workflow, quindi
+  `check_prompts_md` non confronta `PROMPTS.md` con il codice. La rottura
+  resta invisibile fino al primo commit che tocca `backend/`.
 
 ## 14. Verifiche e consegna
 
@@ -4326,6 +4405,36 @@ rilievo che li ha resi espliciti.
   il placeholder «[immagine mancante: …]» del PDF resta italiano in ogni
   lingua e il fix AI comprime la lingua del corso a it/en (A4). Tutte e tre
   sono identiche su `main`.
+- **I PDF già materializzati non si invalidano da soli** (vincolo del
+  committente, branch `fix/asset-refs-math-figure-scale`): un PDF esportato
+  prima del branch continua a mostrare la frase spezzata, il LaTeX
+  appiattito e le figure fuori scala finché il docente non ri-esporta la
+  lezione, dal pulsante «Rigenera PDF» dell'editor o dall'endpoint
+  `POST /orgs/{org_id}/courses/{course_id}/lessons/{lesson_id}/pdf/export`
+  (e i gemelli slide e discorso, più le tre varianti `export-all`).
+  `request_lesson_pdf` accetta il ri-export di una lezione già esportata
+  (`pdf_status` ∈ `empty`/`ready`/`failed`); non esiste un endpoint che
+  cancelli il file materializzato né un percorso di invalidazione in massa.
+  Nessun backfill del `content_raw`: la normalizzazione delle liste e i
+  rimandi si applicano a render, e lo storico si riscrive solo con una
+  rigenerazione o con il primo salvataggio dall'editor (sezione 20.1).
+- **La crescita delle figure sotto banda può spostare i salti pagina**: un
+  `<img>` intrinseco che cresce fino al fondo della banda è più alto.
+  Misura del verificatore su 93 dispense (31 figure in 3 posizioni): il
+  branch toglie una pagina in 24 casi e non ne aggiunge in nessuno; in una
+  scansione mirata su 80 dispense, le due figure con testo a 4,5-5 pt ne
+  aggiungono una in 3 posizioni ciascuna (sezione 20.6).
+- **Tre divergenze dichiarate fra PDF e vista web** (sezione 20.7): `$ x_0 $`
+  resta prosa nel PDF (`allow_space=False`) ed è math nel frontend; `$$…$$`
+  in frase è display style nel PDF e in linea nel frontend; la vista
+  conserva il pre-processing testuale dei delimitatori
+  (`normalizeMathDelimiters` in `MarkdownRenderer.tsx:70`) che il PDF ha
+  eliminato. Tutte e tre sono accettate e rinviate a un ticket separato.
+- **Guardia «parola-etichetta» e soglie dei grafi in attesa di dati reali**
+  (sezione 20.3): «Nella Figura [FIG:a]» dà ancora «Nella Figura Figura 1»
+  e le costanti di `graph_rules.py` sono calibrate sui 57 modelli degli
+  editor. Entrambe si chiudono con la misura sull'export del docente, non
+  con una riscrittura.
 
 ## 16. Catalogo dei modelli degli editor (8 settembre 2026)
 
@@ -4690,3 +4799,519 @@ l'uguaglianza fra gli identificativi dei diciotto modelli e i termini che
 il paragrafo nomina, così un modello nuovo nell'editor obbliga ad
 aggiornare il prompt e viceversa. `docs/PROMPTS.md` è riallineato con
 `backend/scripts/check_prompts_md.py` (9/9 blocchi identici al codice).
+
+## 20. Riferimenti, LaTeX e leggibilità delle figure (16-17 settembre 2026)
+
+Branch `fix/asset-refs-math-figure-scale`, otto commit su `main`. Il punto
+di partenza non è una misura interna: sono **quattro difetti che il
+docente vede sul prodotto finito**, tutti nel tratto `content_raw` → PDF.
+Un asset citato più volte nel testo veniva reso più volte e la frase che
+lo citava usciva spezzata in due paragrafi; il LaTeX della prosa arrivava
+nel PDF crudo o appiattito; il testo delle stesse figure era a 19,8 pt in
+dispensa e a 3,2 pt nelle slide; diagrammi densi o con archi incrociati
+passavano tutte le validazioni perché nessuna misura li guardava.
+
+Criterio di riuscita fissato prima di scrivere codice: **per ogni
+patologia esiste un test che fallisce se torna**. Vincoli del committente
+non ridiscutibili, riportati qui in chiaro perché governano tutto il
+capitolo: nessun backfill del `content_raw`; figure entro i margini; il
+revisore AI figura ↔ testo si fa, con il costo contabilizzato;
+`THEME_VERSION` invariato (`figure_theme.py:37`, `2026.09.4`) e nessun SVG
+riscritto — la larghezza va sul wrapper, mai dentro l'SVG; stringhe UI
+solo in `it.json` ed `en.json`; **i PDF già materializzati non si
+invalidano da soli**.
+
+**I PDF già materializzati restano come sono.** Nessuna delle otto
+modifiche tocca i file PDF esistenti: un PDF ha il testo e le figure del
+momento in cui è stato reso e continua ad averli finché non viene
+ri-esportato a mano. Le vie di ri-export verificate sul codice sono due,
+ed è la stessa: il pulsante «Rigenera PDF» dell'editor
+(`courses.lessonsPdf.lesson.regenerate` in `it.json`) e l'endpoint che
+chiama,
+`POST /api/v1/orgs/{org_id}/courses/{course_id}/lessons/{lesson_id}/pdf/export`
+(`app/api/v1/courses.py:2282`), con i gemelli `…/slides-pdf/export`,
+`…/speech-pdf/export` e le tre varianti `export-all` di corso.
+`request_lesson_pdf` accetta `pdf_status` ∈ `empty`/`ready`/`failed`, cioè
+il ri-export di una lezione già esportata è ammesso e riparte dal worker;
+rifiuta solo `pending`/`processing`. **Non esiste** un endpoint che
+cancelli il file materializzato né un percorso che invalidi i PDF in
+massa: l'aggiornamento è per lezione, su richiesta del docente.
+
+### 20.1 I quattro difetti e la garanzia che li tiene fuori
+
+| # | Che cosa vedeva il docente | Garanzia | Test che fallisce se il difetto torna |
+| --- | --- | --- | --- |
+| 1 | Asset citato N volte reso N volte, con la frase spezzata in due paragrafi | La citazione in linea diventa il rimando testuale «Figura N»; l'ancora è inserita una sola volta dopo il blocco della prima citazione | `tests/test_lesson_pdf_figures.py::test_inline_citation_keeps_the_sentence_and_anchors_the_figure_after_the_paragraph` (frase intera, un solo `<figure>`, nessun `[FIG:A]` nell'HTML); parità della fixture in `tests/test_asset_ref_normalize.py::test_every_handled_id_has_exactly_one_anchor_and_no_inline_tag` |
+| 2 | LaTeX grezzo o appiattito nel PDF | La grammatica del math è solo la catena di rule di markdown-it, condivisa da renderer e collector; nessun pre-processing testuale | `tests/test_lesson_pdf_math.py::test_math_corpus_pdf_text_has_no_latex_residue` (testo estratto dal PDF senza `\comando`, `$$`, `{,}`, `^{`, `_{`), con `::test_all_four_dollarmath_rules_are_ours`, `::test_no_textual_math_preprocessing_remains` e `::test_weasyprint_non_rende_mathml` |
+| 3 | Testo delle figure fuori scala (19,8 pt in dispensa, 3,2 pt in slide per lo stesso diagramma) | La larghezza viene dal corpo del testo più piccolo dell'SVG e dalla banda di leggibilità: 8-11 pt dispensa e web, 10-14 pt slide e video | `tests/test_lesson_pdf_figure_text_size.py::test_figure_text_size_in_the_lesson_pdf` e `::test_figure_text_size_in_the_slides_pdf` (WeasyPrint `.render()`, corpo misurato sui box reali), controprova `::test_the_oracle_sees_the_pre_d10_geometry` |
+| 4 | Diagrammi densi o con archi incrociati senza nessuna misura che lo rilevi | Gate editoriale sul sorgente (nodi, archi, etichetta, titolo, righe, caratteri) e misura geometrica degli incroci e dei difetti di lettura sulla resa | `tests/test_graph_rules.py::test_the_failing_oracle_is_now_rejected` e `tests/test_figure_geometry.py::test_dot_templates_have_no_python_defects_and_hashtable_has_one_crossing` (parità Python/Chromium sui 18 DOT) |
+
+Alla stessa famiglia appartiene la garanzia del box delle slide, che non
+nasce da un difetto segnalato ma dalla misura: il cap fisso di 80 mm
+tagliava le figure. L'oracolo è
+`tests/test_slide_figure_geometry.py::test_rendered_slides_never_overflow_the_body`
+con la controprova `::test_the_oracle_catches_the_old_80mm_constant`, che
+rimette la costante e **deve** vedere lo sbordo.
+
+### 20.2 Le sei decisioni (B1-B6)
+
+Sei questioni, ciascuna con due proponenti a lente diversa (coerenza col
+repo, robustezza e testabilità), tre revisori (architettura, avversario,
+regressione) e un sintetizzatore; B1-B5 vengono dal brief, **B6 è stata
+aggiunta** dopo le misure di §3(e) ed è la prima deviazione dichiarata dal
+perimetro iniziale. Ogni sintesi ha eseguito prototipi sulla catena reale
+(markdown-it 4.2.0, react-markdown 10.1.0, WeasyPrint 69, Chromium): i
+valori attesi delle fixture sono calcolati, non stimati.
+
+**B1 — rimando testuale in linea, ancora dopo il blocco** (D1, D2, D4;
+3/3 per l'ibrida). Per un id numerato con sole citazioni in linea, il
+normalizzatore converte ogni citazione nel rimando testuale («Figura 1»,
+senza punto, lingua del corso) e inserisce **una** ancora `[FIG:id]` su
+riga propria subito dopo il blocco che contiene la prima citazione. Il
+blocco sono le righe contigue non vuote; i fence e i blocchi `$$…$$`
+chiusi sono unità opache (`dollarmath` ha `allow_blank_lines=True`, quindi
+una riga vuota interna non li chiude); se la prima riga è un item di
+lista, il blocco si estende all'intera lista. Superficie: modulo puro
+`asset_ref_normalize.py`, mirror `frontend/src/lib/assetRefNormalize.ts`,
+fixture condivisa `asset_ref_normalize_cases.json`.
+
+*Alternative scartate.* (a) Promuovere la prima citazione a blocco «come
+oggi» (alternativa b del brief): con 0 asset su 17 citati due volte nelle
+due dispense reali e 8 tag su 8 in linea nella lezione e2e, e senza
+backfill, avrebbe lasciato la frase spezzata su **tutto** il contenuto
+esistente; l'ancora dopo il blocco ripara le dispense già generate senza
+toccarle. (b) Lasciare i tag byte-identici dentro fence e code span:
+`_substitute_asset_refs` e `preprocessAssetRefs` sono sostituzioni
+globali, quindi il tag sarebbe diventato comunque un secondo `<figure>` o
+markup escapato nel `<pre>` (provato su markdown-it e react-markdown);
+«Figura N» nel codice è il male minore, e i tag sono convenzione interna
+che il lettore non deve vedere. (c) Regola pura «prima riga vuota» senza
+l'estensione alla lista: spezza la lista in due `<ul>`/`<ol start="2">` su
+entrambi i parser. (d) Regola dedicata agli heading: una regex in meno da
+specchiare, caso pinnato in fixture. (e) Template `{{n}}` passato al
+modulo puro invece della callable `reference(kind, id, n)`: duplicava
+`_interpolate` di `figure_theme` e nel frontend avrebbe richiesto
+`t(key, { n: "{{n}}" })`, che regge solo per il default `skipOnVariables`
+di i18next. (f) Guardia «parola-etichetta» («Nella Figura [FIG:a]» →
+«Nella Figura Figura 1»): 0 occorrenze misurabili, nessun `content_raw`
+reale in locale; **esclusa dal primo rilascio**, limite pinnato, variante
+con confine di parola già specificata e attivabile se la misura sul dump
+la conta > 0.
+
+**B2 — le etichette nuove sotto un prefisso già presidiato** (D3, D5;
+3/3 per l'ibrida su base A). Tutte le chiavi nuove stanno sotto
+`courses.figures.`, come sotto-oggetti per famiglia: 12 per lingua
+(24 → 36), specchiate in `figure_theme.FIGURE_I18N` it/en e in
+`it.json`/`en.json`. La composizione avviene in un solo punto
+(`figure_theme.asset_label` / `asset_ref`); il ramo teorema è la famiglia
+`THM` sul contatore `EQ`, decisa da `equation_label_family`.
+
+| chiave | it | en |
+| --- | --- | --- |
+| `courses.figures.ref` | `Figura {{n}}` | `Figure {{n}}` |
+| `courses.figures.table.{label,labelUnnumbered,ref}` | `Tabella {{n}}.` · `Tabella.` · `Tabella {{n}}` | `Table …` |
+| `courses.figures.equation.{label,labelUnnumbered,ref}` | `Equazione {{n}}.` · `Equazione.` · `Equazione {{n}}` | `Equation …` |
+| `courses.figures.example.{label,labelUnnumbered,ref}` | `Esempio {{n}}.` · `Esempio.` · `Esempio {{n}}` | `Example …` |
+| `courses.figures.theorem.{label,ref}` | `{{kind}} {{n}}.` · `{{kind}} {{n}}` | idem |
+
+*Alternative scartate.* (a) Sottoalberi separati `courses.tables.*`,
+`courses.equations.*`, `courses.examples.*`: il perimetro presidiato è un
+prefisso unico (`_PREFIX = "courses.figures."` nel test di specchio);
+tre prefissi avrebbero moltiplicato `FIGURE_I18N`, il test e le
+asserzioni, e per il teorema avrebbero chiesto un quarto sottoalbero
+`courses.theorem.*` già occupato da chiavi di `_labels_for`; stesso costo
+in chiavi (36), robustezza minore. (b) Rimando derivato a runtime da
+`label.rstrip(".")`: una derivazione invisibile al traduttore e al test di
+parità dei segnaposto; il rimando è una chiave esplicita e la coerenza
+«`ref` + "." == `label`» è un oracolo di test. (c)
+`theorem.labelUnnumbered = "{{kind}}."`: avrebbe prodotto «Teorema. di
+Pitagora» in ogni slide, frame video e vista slide; senza numero resta la
+sola parola del kind e le slide sono byte-identiche. (d) Stringhe in
+`_labels_for` o nel servizio slide: vietato da D5 e senza test di
+specchio. (e) Chiavi i18n composte nel frontend (`t(assetLabelKey(…))`):
+sfuggono alla guardia `test_literal_t_keys_resolve_in_locale`; le chiavi
+restano letterali nei componenti. (f) Sostituire `MarkdownRenderer` con
+`TableBlock`/`ExampleBlock` nelle slide: perderebbe
+`normalizeMathDelimiters` e i `\(…\)` nelle celle. (g) **Strip del
+prefisso numerico per kind** («Tabella 1: Confronto» → «Confronto»):
+provato **lossy** — «ES6: arrow functions» → «arrow functions»,
+«Formula 1: la corsa» → «la corsa», «Definizione 2: Limite» → «Limite»;
+rinviato, variante stretta disponibile come questione separata.
+
+**B3 — una sola grammatica per il math del PDF** (D6, D7, D8; 3/3 per
+l'ibrida con struttura A). La grammatica è **solo** la catena di rule di
+markdown-it, condivisa da renderer e collector: `dollarmath` con
+`allow_labels=False`, `double_inline=True`, `allow_space=False`,
+`allow_digits=True`
+(`course_lesson_pdf_service.py:372-377`); una core rule
+`math_currency_guard` prima di `text_join` declassa a testo gli importi;
+quattro `add_render_rule` legate a un unico `_render_math_token`;
+`math_inline_double` ha sempre chiave `(sorgente, "block")` — un solo SVG
+per formula — e markup deciso dalla forma (span a blocco con i
+delimitatori su righe proprie, span in linea altrimenti), mai un `<div>`
+dentro `<p>`/`<td>`/`<h2>`. In WP2 la rule inline `math_bsdelim` sostituisce
+`_normalize_math_delimiters`, eliminata.
+
+*Alternative scartate.* (a) Due grammatiche allineate a mano (D8-B): la
+guardia «niente lettere» del validatore esclude la notazione decimale
+italiana (`$15{,}9$`, `$0{,}866$`) e le potenze numeriche (`$2^{10}$`), e
+avrebbe imposto una seconda regex nel servizio PDF, cioè due grammatiche
+da tenere uguali a ogni release del plugin. (b) Pre-processing testuale
+«fence-aware» per `\(..\)` e `\[..\]`: sul corpo assemblato l'HTML degli
+esempi (`<pre><code>`) e il fallback delle figure non sono fence e
+verrebbero riscritti (`a\[0\]` → `a$$0$$`, misurato); i limiti di distanza
+sarebbero costanti magiche. Una rule inline limitata al paragrafo non
+vede né fence né code span né HTML block, e rifiuta `\[1\]` e `\[FIG:x\]`.
+(c) Guardia anti-currency dentro la rule di render con predicato di solo
+contenuto: andrebbe replicata nel collector e non vede i vicini del token
+(`US$50 e US$70` diventava math «50 e US», con perdita di testo). Il
+predicato adottato è l'**unione** di «importo + separatore» e «cifra
+adiacente fuori dai delimitatori»: la sola regex di A lasciava passare
+`US$50 e US$70`, la sola adiacenza di B lasciava `5$, 10$`. (d)
+`math_inline_double` sempre a blocco: spezza `Sia $$E$$ la relazione.`,
+che il frontend tiene in linea; sempre inline: due SVG per la stessa
+formula e disallineamento dal collector. (e) Renderer inline su preset
+commonmark: markdown-it escapa `"` come `&quot;` (i golden usano `&#34;`) e
+introduce enfasi, link e code nelle didascalie che il frontend rende
+letterali; adottato il preset `zero` più la grammatica math e una rule
+`text` markupsafe, byte-identica a `markupsafe.escape` senza math. (f)
+`allow_digits=False`: perde `la base 2$^{10}$` e `2$\pi$`, e i falsi
+positivi che toglie sono già coperti dalla core rule.
+
+**B4 — `base_font_px` si misura, non si assume** (D10, D11; 2 A + 1
+ibrida → opzione iii). Per Mermaid il corpo del testo lo misura Chromium
+nella **stessa pagina** del pre-render (`__renderMermaidMeasured`, una
+sola `page.evaluate`); per DOT, Vega-Lite e `function` lo legge Python
+dagli attributi e dal foglio di stile (`svg_base_font_px`, con provenienza
+`measured` / `parsed` / `root_rule` / `constant`). Le metriche viaggiano
+accanto all'SVG in `RenderedFigure`, valore della cache LRU; la larghezza
+è l'ultimo attributo `style="width:Wmm"` del corpo della figura.
+
+*Alternative scartate.* (a) Regola radice dello `<style>` più una
+costante: falsa in 8 tipi su 15 — Mermaid scrive `#mmd-N{font-size:14px}`
+per tutti e poi dimensiona `sequence` a 16 px con `style` inline,
+`gantt`/`quadrant`/`xychart` con l'attributo, `treemap` da 10 a 38 px,
+`timeline` con `4ex`, e `pie` (17/25) e `radar` (12/14) con regole di
+classe che nessuna regex sul tag vede. Gli 8 sono il complemento della
+2(c), dove la radice predice il font reale in 7 tipi su 15; il conteggio
+più basso che circolava nelle sintesi (6) misura un'altra cosa, cioè i
+tipi in cui la costante sbaglia il font **minimo** dell'SVG, e non è il
+numero che serve qui perché la banda di leggibilità va garantita su tutti
+i testi della figura. Tenuta come **secondo** canale, marcata
+`source="root_rule"`. (b) Pin per tipo misurato una volta: una
+tabella da rimisurare a ogni bump di `mermaid_cdn_version`, cieca ai testi
+di dimensione mista nello stesso SVG, e comunque da accompagnare a un
+parser per gli altri formati. (c) Scala naturale anche per gli SVG
+fluidi: porta il flowchart D8 a 10,5 pt quando 11 e 14 sono disponibili.
+Adottato «riempi il box, poi riduci al tetto della banda» per i fluidi e
+«scala 1, cresci solo fino al fondo della banda» per gli `<img>`
+intrinseci. (d) Cambiare il ritorno di `window.__renderMermaid` in
+`{svg, metrics}`: rompe due test che lo chiamano direttamente e si
+aspettano una stringa. (e) Metodo nuovo nel `Protocol FigureRenderer`:
+obbligherebbe i quattro fake dei test e ogni renderer registrato;
+dispatch con `getattr`. (f) Kill-switch `figure_fit_enabled`: un setting da
+documentare per un comportamento che deve essere unico. (g) `clientWidth`
+via ref nel frontend: vale 0 nei pannelli chiusi dell'editor e non reagisce
+al resize; adottato `width: min(100%, Wpx)` su un wrapper interno senza
+padding. (h) Font per superficie nel tema, per portare Vega-Lite in banda
+nelle slide: cambierebbe `THEME_VERSION`. (i) Riscrivere l'SVG con
+`width`/`height` in mm sulla radice: vietato dal committente; la larghezza
+sta sul wrapper e la catena Mermaid resta byte-identica.
+
+**B5 — nessuna dedup in lettura** (D18; A, B e ibrida convergono sul
+codice di A). `key_takeaways` e `references` si normalizzano al solo
+confine di **scrittura**, in un solo file
+(`app/schemas/course_lesson_content.py`): trim, voci vuote scartate, dedup
+`lower()` con ordine e grafia della prima occorrenza, references a parità
+di `source`; quattro validatori in mode **after** su `LessonContentOutput`
+(output AI) e `LessonContentUpdateInput` (PATCH del docente). Lo storico si
+normalizza al primo salvataggio dall'editor — che invia sempre entrambe le
+liste — o alla rigenerazione. Nessun backfill.
+
+*Alternative scartate.* (a) Dedup in lettura (PDF, vista, editor): tre
+copie dello stesso algoritmo (Python, TS, e un modulo TS puro per il
+runner Node), una divergenza permanente fra ciò che l'editor mostra e ciò
+che il PDF stampa, e un normalizzatore costretto a tollerare le
+references-stringa dei golden. La divergenza fra editor e PDF resta
+**temporale**, non spaziale: in ogni istante le tre superfici leggono lo
+stesso `content_raw`. (b) Mode «before»: `['A','a',' A ']` scenderebbe
+sotto `min_length=3` e farebbe rigenerare l'intera lezione per un difetto
+cosmetico; in after-mode i vincoli contano l'elenco grezzo e la lista
+persistita può degradare a 1-2 voci. (c) `uniqueItems` nello schema strict
+OpenAI: fuori dal sottoinsieme verificabile e cieco al case-insensitive e
+al trim. (d) Backfill del `content_raw`: vincolo del committente, e le due
+dispense reali non mostrano duplicati. (e) Validatore sul solo output AI:
+lascerebbe il PATCH come via di reintroduzione. (f) `raise` su `[]` nel
+PATCH: l'editor invia `[]` quando il docente svuota l'elenco, ed è un
+azzeramento legittimo. (g) Fixture JSON condivisa: `tests/fixtures/` è
+riservata ai casi con mirror TS, e qui il TS non partecipa.
+
+**B6 — box della figura per pagina effettiva** (D12; 3/3 per l'ibrida,
+modello B e superficie A). Questione **aggiunta al brief** dopo le misure:
+il cap fisso `max-height: 80mm` del template slide tagliava le figure.
+Nuovo modulo puro `slide_geometry.py`, con le costanti CSS del template
+citate per riga e pinnate da un test a regex: `page_figure_budget` calcola
+per ogni pagina **resa** (dopo la decisione di split) il budget verticale
+di ogni blocco asset, `image_box` ne ricava il box dell'immagine al netto
+della didascalia stimata sul testo reale, il fit di B4 lavora dentro quel
+box. Con titolo su una riga l'immagine passa da 80 a **86,6 mm**.
+
+*Alternative scartate.* (a) Costante derivata dallo spazio libero della
+pagina asset-only, misurato sul template reale invece che preso dai
+commenti del CSS: applicata a tutte le pagine,
+nel video — dove `render_slides_html(enable_split=False)` non separa
+bullet e figura — avrebbe tagliato ogni slide legacy con bullet e perfino
+la slide dedicata di Fase 4; sposta il cap senza toglierne la natura
+arbitraria, e il taglio è silenzioso (`overflow: hidden`). (c) Split anche
+nel video: rompe il contratto «1 slide JSON → 1 frame» del mapping
+audio ↔ frame, ed è fuori brief. (d) Stimatore delle righe a larghezza
+media 0,5 em: sottostima i titoli in maiuscolo sui font del container
+(5-6 casi su 28, una riga da 28 pt vale 10,37 mm, più della safety);
+sostituito dallo stimatore per classi di carattere, con 0 sottostime e al
+più una riga di sovrastima sui `LineBox` reali. (e) Budget fisso per la
+didascalia: la didascalia ammette 600 caratteri e la coda calcolata di
+`function` concatena fino a 12 valori per categoria. (f) Parametrizzare il
+CSS con la geometria e i `line-height` espliciti: renderebbe i due motori
+concordi al centesimo, ma cambierebbe la resa di **tutte** le slide già in
+DB per guadagnare ~3 mm di figura.
+
+**Deviazione dichiarata: il fallback delle slide non va a capo.** Il
+progetto B6 prevedeva di troncare il `<pre>` del sorgente stimando le
+righe a capo di `white-space: pre-wrap`. Sei giri di revisione hanno
+trovato ogni volta un caso nuovo in cui la stima era battuta da Pango o da
+Chromium: spazi collassati, spazi e tab conservati, U+2028 e U+2029 (a
+capo in Pango, non in Chromium), profili di lingua e di script, e infine
+le regole UAX #14 (niente a capo prima di `) ] } ! ? , . : ; /` né dopo
+`( [ {`). Il `<pre>` delle slide e dei frame video è quindi in
+`white-space: pre` (`lesson_slides_pdf.html.j2:276`): una riga di sorgente
+è una riga resa, `overflow: hidden` taglia a destra le righe più larghe
+del box, e il conteggio è esatto nei due motori. Resta il costo
+dell'altezza di riga, che dipende da lingua e script e non dal ritorno a
+capo: riga base **1,30 em**, riga alta **1,70 em**, riga con prima run
+ideografica **2,46 em** (`slide_geometry.py:392`, `:395`, `:398`). La
+dispensa non cambia: resta in `pre-wrap` nel flusso di pagina. Il costo si
+paga solo nel percorso d'errore di una figura non resa.
+
+### 20.3 Le sei misure e la decisione che ne discende
+
+| Misura | Stato | Esito | Decisione che ne discende |
+| --- | --- | --- | --- |
+| (a) grep dei log di produzione (eventi di setup, fallback e timeout) | **Da eseguire sul server** | — | Se `mathjax_renderer_setup_failed` > 0 negli ultimi 30 giorni, al pin `mathjax_cdn_version` e alla guardia di rete si aggiunge un **retry del launch**; se = 0, restano pin e guardia. In ogni caso il sintomo «a volte sì a volte no» è spiegato dai difetti riprodotti, non dal CDN |
+| (b) ordine citazione/ancora su lezioni reali | **Da eseguire sull'export del docente** | Dato disponibile: 2 dispense PDF di produzione, **0 asset su 17 citati più di una volta**; lezione e2e sintetica, 8 tag tutti in linea, 0 ancore | La regola di B1 non dipende dalla frequenza; la misura dimensiona e decide la **guardia parola-etichetta** (si attiva se il grep di «Figura [FIG:» sull'export conta > 0: conteggio a parte, non fra le colonne di `measure_asset_refs.py`) |
+| (c) font base per tipo Mermaid | **Eseguita** (tabella 2(c)) | La radice predice il font reale in 7 tipi su 15; tre canali (regola CSS, `style` inline, attributo) e un'unità relativa (`4ex`) | Né lettura dalla regola radice né pin per tipo: si misura nella pagina Chromium già aperta dal pre-render e si legge in Python per gli altri formati (B4) |
+| (d) distribuzione su figure reali | **Proxy eseguito** sui 57 modelli degli editor; **dump reale mancante** | Massimi osservati molto sotto le soglie candidate (margine ≥ 1,4×) | Soglie di `graph_rules.py` **provvisorie**; regola di ricalibrazione: se il p90 reale supera il 60 % di una soglia, la soglia si **alza** (mai si boccia il contenuto) |
+| (e) page-break senza tetto d'altezza | **Eseguita** (WeasyPrint 69, template reale) | Senza `max-height` un SVG 300×1600 viene **tagliato** (sbordo +650,7 mm); il buco tipografico prima di una figura a pagina intera c'è in ogni configurazione | `fit_figure_width_mm` riceve `box_h_mm` = altezza utile − 8,3 mm di chrome della figura (≈ 248,7 mm su A4); **nessun two-pass** sul residuo di pagina (guadagna una pagina ma produce figure larghe 16-26 mm); il buco è accettato e documentato |
+| (f) costo di `__measureSvg` nel batch | **Eseguita** (15 modelli, 3 ripetizioni, Chromium) | Batch reale 1.867/1.965 ms → 2.224/2.289 ms con la misura; sola misura 355-359 ms per batch, 23,7 ms per figura, dominata dal campionamento | Passo 2 px e confronto O(n²) **entro il budget**, con tetto per figura e cumulativo per batch e uscita anticipata; il selettore deve includere `line` e `polyline` e filtrare per classe degli archi (senza filtro `sequence` conta 314 falsi incroci) |
+
+I due comandi che restano da eseguire sul server, con i nomi degli eventi
+e delle colonne verificati a HEAD:
+
+```bash
+docker logs --since 720h <container-backend> 2>&1 \
+  | grep -oE '"event": "(mathjax_renderer_setup_failed|mermaid_renderer_setup_failed|figure_render_fallback|asset_validator_timeout|math_convert_failed|lesson_content_unused_assets|lesson_content_dangling_asset_refs)"' \
+  | sort | uniq -c
+```
+
+```sql
+SELECT json_agg(t) FROM (
+  SELECT l.id::text AS id, l.lesson_code, c.title AS course_title, c.language_code,
+         l.content_raw, l.slides_raw
+  FROM course_lesson l JOIN course c ON c.id = l.course_id
+  WHERE l.content_raw::text LIKE '%[FIG:%'
+  ORDER BY jsonb_array_length(COALESCE(l.content_raw->'visual_assets','[]'::jsonb)) DESC
+  LIMIT 4) t;
+```
+
+L'export si dà in pasto a `backend/scripts/measure_asset_refs.py` (sola
+lettura di un JSON, nessun accesso al DB), che riporta ordine
+citazione/ancora (`in linea` / `ancora`), id ripetuti, citazioni per kind,
+asset non citati e tag orfani, e per ogni occorrenza zona (`corpo` /
+`coda`) e campo — quindi anche le citazioni dentro esempi
+(`examples[i].content`) e tabelle (`tables[i].markdown`); con `--figures`
+rende ogni figura con i renderer reali e misura nodi, archi, etichette e
+incroci, cioè i numeri che ricalibrano le soglie di WP5.
+
+Un dato che lo script **non** produce è il conteggio della parola-etichetta
+davanti al tag, cioè della forma «Figura [FIG:», da cui dipende la guardia
+di B1: nessuna colonna del report lo riporta. Va misurato a parte sullo
+stesso export:
+
+```bash
+grep -oiE '(figura|tabella|equazione|esempio) \[(FIG|TAB|EQ|EX):' export.json \
+  | sort | uniq -c
+```
+
+### 20.4 I quattro censimenti
+
+**2(a) — copie del pattern `[KIND:id]`.** Quindici sedi più tre
+produttori, non «una copia viva».
+
+| Esito del censimento | Sedi | Nota |
+| --- | --- | --- |
+| Canonica, invariata | 1 (`_ASSET_REF_RE` del servizio PDF) | `\[(FIG\|TAB\|EQ\|EX):([^\]\n]+)\]`, id normalizzato a valle con `.strip().lower()` |
+| Invariate o generalizzate per kind | 8 (numerazione BE e FE, renderer e editor del frontend, script di rivalidazione) | Devono restare speculari a due a due |
+| Allineata | 1 (`course_lesson_content_service`, classe `[^\]]+` che attraversava il newline) | Un tag spezzato risultava «citato» per i warning ma nessun renderer lo sostituiva |
+| Rimossa | 1 (copia morta nel CRUD del contenuto) | Sola definizione, nessun chiamante |
+| Lasciate, perché filtri e non parser | 4 (stripper di rumore, gate anti-allucinazione, gate i18n, guardia dei delimitatori math BE e FE) | Deliberatamente più larghe del parser: documentato |
+
+Su `[FIG: X ]` tutte le forme con classe di id matchano e normalizzano a
+valle: nessuna regex andava toccata per gli spazi.
+
+**2(b) — stringhe d'autore che raggiungono un template senza renderer.**
+Il censimento ha trovato la causa del difetto 2 fuori dalla dispensa.
+
+| Superficie | Autoescape prima | Campi d'autore senza math | Esito |
+| --- | --- | --- | --- |
+| Dispensa (`lesson_pdf.html.j2`) | ON | punti chiave, citazioni dei riferimenti, didascalie, etichette di equazione, titoli degli esempi, didascalie di tabella | Resi con `render_markdown_inline` (solo math, testo byte-identico a `markupsafe.escape`) |
+| Slide (`lesson_slides_pdf.html.j2`) | **OFF** (`select_autoescape(["html","xml"])` non riconosce `.j2`) | titolo, prosa e bullet | Autoescape acceso con `enabled_extensions=("html","xml","j2")`; prosa e titoli dal collector math |
+| Discorso (`lesson_speech_pdf.html.j2`) | **OFF** | testo, note di regia, titolo di slide | Come sopra, più un escape **CSS-string** dedicato per il piè di pagina: un `"` nel titolo del corso lo faceva sparire |
+
+Gli `|safe` esistenti prima del branch erano due in tutto: uno nella
+dispensa (`{{ body_html | safe }}`, `lesson_pdf.html.j2:438` su `main`),
+uno nelle slide (`{{ asset_html|safe }}`, `lesson_slides_pdf.html.j2:390`
+su `main`), nessuno nel discorso. I `tpl.*` in contesto CSS e URL sono
+stati trattati come CSS, non come HTML.
+
+**2(c) — quindici tipi Mermaid, font della radice e font effettivi**
+(misurati con la catena reale **prima** del branch, cioè con la larghezza
+piena e senza il fit di B4). Numeri chiave: radice identica per tutti
+(`width="100%"`, nessun `height`, `#mmd-N{font-size:14px}`); **in banda in
+dispensa 2 tipi su 15, in banda nelle slide 3 su 15, nessun tipo in banda
+su entrambe le superfici**; la radice predice il font reale in **7 tipi su
+15**; il testo effettivo arriva per tre canali diversi più un'unità
+relativa (`timeline`: 14 px più `4ex`, cioè 29,3 px); `treemap` mescola
+cinque dimensioni nello stesso SVG (10, 12, 14, 23, 38 px). Estremi
+misurati: `state` 24,8 pt in dispensa contro `gantt` 3,7 pt; `block` 25,9
+pt nelle slide contro `radar` 3,9 pt. Conclusione: la leva non è il font,
+è la larghezza del viewBox (pt ≈ 6670 / `vb_w`).
+
+**2(d) — i 57 modelli degli editor.** Numeri chiave per formato, sempre
+allo stato **precedente** al branch (la colonna «resa» è il corpo del
+testo con la geometria di allora, non con il fit di B4).
+
+| Formato | Modelli | Distribuzione (min/mediana/p90/max) | Resa | Incroci |
+| --- | --- | --- | --- | --- |
+| Mermaid | 15 | nodi 2/4/7/10, archi 0/2/5,6/6, etichetta 6/19/35,6/55 caratteri | vedi 2(c) | non misurabili sul sorgente |
+| DOT | 18 | nodi 3/5/8/9, archi 2/5/7,3/8, etichetta resa 1/12,5/22/23 | in banda in dispensa 16/18 (fuori: `pipeline` 7,70 pt, `network` 7,17), in banda nelle slide 15/18 | **1 su 18**: `hashTable` |
+| Vega-Lite | 24 | record dati 3/7,5/12/15, etichette ≤ 28, titoli ≤ 73, righe ≤ 39 | font 11-13 px, scala 1,00 su entrambe le superfici → **8,25 pt** in dispensa (23/24 in banda) e **8,25 pt nelle slide (0/24 in banda)** | 0 |
+
+Nessuno dei 18 modelli DOT usa la forma a blocco `graph [`, e l'unico
+modello con un incrocio (`hashTable`) passava già l'oracolo di
+leggibilità: da qui la decisione, in WP5, di tenere gli incroci **fra i
+diagnostici** e non fra i motivi di rifiuto.
+
+La misura del 17 settembre 2026 sui 57 modelli resi e passati a
+`fit_figure_width_mm` con i box reali — 6 fuori banda in dispensa, 35
+nelle slide — sta nella tabella di [09 § Larghezza delle
+figure](09-pdf-export.md) ed è l'elenco dei fuori banda **noti** che il
+gate editoriale deve riconoscere come tali e non come regressioni.
+
+### 20.5 I work package e i commit
+
+Otto commit, `git log --format='%h %s' main..HEAD` in ordine di lavoro.
+
+| WP | Commit | Che cosa cambia |
+| --- | --- | --- |
+| WP0 | `b82dbc6` `fix(pdf): la regola di render che mancava — quattro token dollarmath, guardia anti-currency, fallback loggato` | `_install_math_grammar` come unica grammatica del math; `math_inline_double` e `math_block_label` non restano più alla rule di default del plugin (che emetteva `<div class="math inline">` senza consultare la mappa SVG); guardia anti-currency; `MathSvgMap` con `requested`/`misses` e `math_render_fallback` con `reason`; `span.math-block` nei due template; upper bound `mdit-py-plugins<1` |
+| WP1 | `1ce8c3d` `feat(pdf): rimandi testuali, ancora dopo il blocco, etichette dei quattro kind` | `asset_ref_normalize` con mirror TS e fixture condivisa; `compute_asset_numbers` con contatore indipendente per FIG/TAB/EQ/EX sul corpo **non** normalizzato (la numerazione delle figure esistenti non cambia); `append_uncited_asset_refs` accoda anche tabelle, equazioni ed esempi mai citati; 12 chiavi i18n nuove per lingua; regex morta rimossa dal CRUD; `scripts/measure_asset_refs.py` |
+| WP2 | `df7af78` `fix(pdf): il resto della catena LaTeX — grammatica unica, collector per parse, math nei campi inline` | rule inline `math_bsdelim` al posto del pre-processing testuale, eliminato; collector che **parsa** lo stesso testo del renderer con le stesse istanze; `render_markdown_inline` su didascalie, etichette, titoli, punti chiave e riferimenti; `inlineMath.ts` e `InlineMath.tsx` nel frontend; pin `mathjax_cdn_version` e guardia di rete sulla pagina MathJax |
+| WP3a | `0bb4865` `feat(figures): larghezza delle figure dalla banda di leggibilità` | misura del corpo del testo (Chromium per Mermaid, Python per gli altri), `RenderedFigure` nella cache, `figure_scale.fit_figure_width_mm`, `figure_fit_out_of_band` e `figure_fit_report`; mirror frontend; oracoli sullo stato precedente: flowchart v11 **13,1 → 11,0 pt** in dispensa (13,3 con i 170 mm di `main`, prima che il branch togliesse i margini negativi del wrapper Mermaid), **19,9 → 14,0 pt** nelle slide, **18,3 → 11 pt** a schermo |
+| WP3b | `c0ad70f` `feat(figures): box della figura per pagina nelle slide e nei frame video` | `slide_geometry.py`, budget per pagina resa, `--figure-w`/`--figure-h` sul `<figure>`, il template passa a `var(--figure-h)`; immagine asset-only da 80 a 86,6 mm; fallback `<pre>` in `white-space: pre` con troncatura |
+| WP4 | `f397a9f` `fix(pdf): autoescape, math nelle slide e nel discorso, duplicati di slide, guardia di rete nel video` | autoescape sui tre env con `.j2`, filtro `css_string`, piè di pagina del discorso; math nella prosa di slide e discorso e nelle due viste; una sola chiave per i riferimenti (asset citato due volte dalla stessa slide reso una volta); regola max-1-visivo solo sulle slide toccate dal PATCH; `block_external_requests` prima di `set_content` nei frame video |
+| WP5 | `5d96199` `feat(figures): gate editoriali, incroci, prompt di Fase 3, dedup delle liste` | `graph_rules.py` con le costanti provvisorie e i messaggi `graph_too_dense:`; `figure_geometry.py` (incroci arco × arco e quattro difetti di lettura, parità Python/Chromium sui 18 DOT); tetto A1 sul `content` degli asset; `_count_asset_refs` con `Counter`; dedup di punti chiave e riferimenti in scrittura; regola di posizione dei tag nel prompt di Fase 3 |
+| WP6 | `bb48622` `feat(figures): revisore AI figura↔testo con costo contabilizzato` | `openai_figure_review_service` innestato fra fix e localizzazione, verdetto `coerente`/`correggi` con controlli deterministici e resa speculativa; un rifiuto lascia l'originale **byte-identico**; kill-switch `figure_review_enabled` e triade di setting (`config.py:295-300`); fix e localizzazione passano a `build_usage_dict`, il worker fonde l'usage in `content_tokens.assets` e `assets_cost_usd` |
+| WP7 | questo capitolo | documentazione e riallineamento; nessun file di codice |
+
+Deviazioni dichiarate rispetto al piano approvato: **WP3 in due commit**
+(3a scala, 3b box slide) per la revisionabilità; **B6 aggiunta al brief**;
+il fallback delle slide senza ritorno a capo (sopra); gli **incroci oltre
+la soglia sono diagnostici** anche nella validazione profonda DOT, perché
+un percettrone 3-4-2 ne ha 16 e finiva in rigenerazione; i loghi in `src`
+restano all'escape HTML dell'attributo invece del `|safe` previsto, perché
+è la codifica corretta per WeasyPrint.
+
+### 20.6 Limiti dichiarati e rischi residui del branch
+
+- **Dati reali del docente non ancora disponibili.** Il grep dei log e
+  l'export pgAdmin di §20.3 non sono stati eseguiti. Conseguenze: le
+  soglie di `graph_rules.py` sono calibrate sui **57 modelli degli
+  editor**, non su figure reali, e la guardia «parola-etichetta» resta
+  **esclusa**. Entrambe le cose si chiudono con una misura, non con una
+  riscrittura.
+- **Crescita degli `<img>` sotto banda.** Una figura che cresce fino al
+  fondo della banda è più alta e può anticipare un salto pagina nella
+  dispensa. Misura del verificatore su 93 dispense (31 figure in 3
+  posizioni): il branch toglie una pagina in **24 casi** e non ne aggiunge
+  in nessuno; in una scansione mirata su 80 dispense, le due figure con
+  testo a 4,5-5 pt aggiungono una pagina in 3 posizioni ciascuna.
+- **Range di versione aperto delle dipendenze markdown.** `mdit-py-plugins`
+  ha ora l'upper bound `<1` (`backend/pyproject.toml:34`) perché i nomi dei
+  token e la semantica di `allow_space`/`allow_digits` sono contratti
+  impliciti del PDF; `markdown-it-py[plugins]` resta a `>=3.0.0` senza
+  tetto. Il tripwire sono i **test strutturali**
+  (`test_all_four_dollarmath_rules_are_ours`,
+  `test_math_grammar_flags_and_rulers_are_pinned`): un major che rinomina
+  un token li fa fallire prima del rilascio, non in produzione.
+- **Font di produzione assenti dal container.** Il default di
+  `font_family` è `"Roboto"` (`app/models/pdf_template.py:31`,
+  `app/models/slide_template.py:42`) e lo stack ripiega su `"Inter"` e
+  `"Helvetica"`, anch'essi assenti; in dispensa e nel discorso lo stack
+  prosegue con `"DejaVu Sans"` e `"Liberation Sans"`, che ci sono, nelle
+  slide no; l'immagine installa `fonts-dejavu-core`,
+  `fonts-liberation`, `fonts-noto-core` e `fonts-noto-cjk`
+  (`backend/Dockerfile:44`) e nessuna delle due famiglie richieste. La
+  sostituzione è **silenziosa**: le stime di `slide_geometry` sono
+  calibrate sulle sei famiglie realmente presenti, quindi il modello
+  regge, ma il PDF non è tipograficamente quello che il template dichiara.
+- **Buco di copertura della CI.** `backend-ci.yml` gira solo sui path
+  `backend/**`, `frontend-ci.yml` solo su `frontend/**`. Un commit che
+  tocca **solo `frontend/`** non esegue la suite Python, cioè proprio i
+  test che tengono allineati i mirror (parità Node delle fixture
+  condivise, specchio delle chiavi i18n, inventario delle chiavi
+  letterali); un commit che tocca **solo `docs/`** non esegue nessun
+  workflow, quindi `check_prompts_md` non verifica `PROMPTS.md`. I mirror
+  si rompono in silenzio finché non arriva un commit che tocca `backend/`.
+- **Stringhe UI nelle sole it/en.** Le 12 chiavi nuove esistono solo in
+  `it.json` ed `en.json`; le altre 22 lingue ricadono sul fallback
+  `fallbackLng: "it"` di i18next (`frontend/src/i18n/index.ts:113`) e
+  vedono le etichette in italiano finché l'amministratore non lancia
+  l'auto-translate. Il backend fa la stessa cosa con `figure_labels`.
+- **Costo del revisore AI.** Il costo di fix, revisione e localizzazione
+  è in `content_tokens.assets` con il `cost_usd` per chiamata, sommato in
+  `assets_cost_usd`; il kill-switch `figure_review_enabled` spegne la fase
+  senza toccare il resto. Resta fuori dal conteggio il costo delle
+  chiamate di una generazione poi annullata o rigenerata, che finisce nei
+  soli log.
+- **PDF storici.** Ribadito perché è la domanda che il docente farà per
+  prima: nessun PDF già materializzato cambia da solo. Finché la lezione
+  non viene ri-esportata, il PDF mostra la frase spezzata, il LaTeX
+  appiattito e le figure fuori scala di prima.
+
+### 20.7 Lavori futuri
+
+- **Retry del launch di MathJax** (§20.3(a)): deciso, ma solo se il grep
+  dei log conta almeno un `mathjax_renderer_setup_failed` negli ultimi 30
+  giorni. Pin del CDN e guardia di rete sono già dentro.
+- **Soglie di `graph_rules.py` da calibrare sul dump reale**
+  (§20.3(d)), con la regola «p90 > 60 % della soglia → la soglia si alza».
+- **Guardia «parola-etichetta»** (B1): specificata, non attivata; si
+  accende se il grep di «Figura [FIG:» sull'export conta > 0 — conteggio
+  da fare a parte, `measure_asset_refs.py` non lo produce (§20.3).
+- **Strip del prefisso numerico** per tabelle, equazioni ed esempi (B2):
+  la forma larga è lossy; resta disponibile una variante stretta,
+  verificata su 23 casi, come questione separata.
+- **`$ x_0 $` nella prosa del PDF resta prosa** (`allow_space=False`)
+  mentre il frontend lo rende come math: divergenza accettata e coerente
+  con il validatore, da chiudere scegliendo un solo comportamento.
+- **`$$…$$` in frase** ha chiave `block` e quindi display style nel PDF,
+  in linea nel frontend: seconda divergenza accettata.
+- **L4 nella vista lezione**: il frontend conserva il pre-processing
+  testuale dei delimitatori (`normalizeMathDelimiters` in
+  `MarkdownRenderer.tsx:70`, applicato a `:110`), che il PDF ha eliminato;
+  ticket separato, fuori perimetro.
+- **C12**, `segment_id` ripetuto nella mappa del discorso: limite pinnato
+  in `tests/test_pdf_templates_autoescape.py`, non corretto.
+
+### 20.8 Revisione avversariale (Fase D)
+
+Esiti in aggiunta dopo la Fase D.

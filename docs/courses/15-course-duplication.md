@@ -395,6 +395,40 @@ DOT, spec `function`), `detected_language` (codice ISO), numeri, booleani.
 > è obbligato a translitterare o a far scartare — e l'ID si
 > corromperebbe. Vedi [Courses 08](08-lesson-content.md).
 
+### I duplicati storici migrano nelle copie così come sono
+
+La duplicazione lavora sul **dict**, non sullo schema:
+`_clone_course_structure` copia `content_raw`, `slides_raw` e
+`speech_raw` con `_deepcopy_json` e `_translate_jsonb_inplace` riscrive
+solo le foglie testuali dichiarate nei path. Nessun
+`LessonContentOutput.model_validate` e nessun passaggio dal CRUD: le
+normalizzazioni che il branch
+`fix/asset-refs-math-figure-scale` ha aggiunto **non** girano su una
+copia, perché vivono tutte al confine di scrittura o a render.
+
+| Difetto nel corso sorgente | Dove si normalizza | Nella copia |
+|---|---|---|
+| `key_takeaways` / `references` con doppioni | schema, in scrittura (`LessonContentOutput`, `LessonContentUpdateInput` — B5/D18) | resta, tradotto voce per voce |
+| Stesso `[KIND:id]` citato più volte nel testo | a render (una sola ancora, le altre diventano rimandi) | resta nel `content_raw` |
+| Slide con due asset visivi | CRUD delle slide, solo sulle slide toccate dal PATCH | resta e resta editabile |
+
+La copia si normalizza quando si normalizza un corso qualunque: alla
+rigenerazione della lezione o al primo salvataggio dall'editor, che
+manda sempre le due liste. Un effetto collaterale della traduzione voce
+per voce: due punti chiave distinti nella lingua sorgente possono
+diventare la stessa stringa nella lingua target, e nessuno li fonde,
+perché la dedup non passa di lì.
+
+Quello che la copia **non** eredita sono gli artefatti materializzati:
+`_clone_course_structure` azzera tutti e cinque gli stati —
+`pdf_status`, `slides_pdf_status`, `speech_pdf_status`, `video_status`,
+`avatar_video_status` — e i rispettivi path (`empty` / `None`,
+conservando i soli `*_template_id`). Il primo export della copia è quindi
+prodotto dal codice corrente e ha già i rimandi testuali, le formule e la
+larghezza delle figure di questo branch, mentre il corso sorgente tiene
+il suo PDF vecchio finché non lo si ri-esporta a mano (vedi
+[09 — § I PDF già materializzati non si invalidano da soli](09-pdf-export.md#i-pdf-già-materializzati-non-si-invalidano-da-soli)).
+
 ## Client OpenAI condiviso
 
 **Critical**: `backend/app/services/openai_client.py` espone un

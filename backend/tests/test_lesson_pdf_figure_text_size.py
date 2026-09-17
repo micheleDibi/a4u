@@ -367,8 +367,10 @@ def _slide_box(fig: frs.RenderedFigure, report: list[FigureFitEntry]) -> FigureB
 
 def test_the_oracle_sees_the_pre_d10_geometry() -> None:
     """Controprova: la larghezza piena di prima (168 mm in dispensa, 255 mm
-    nelle slide) porta il flowchart v11 a 13,3 e 19,9 pt, fuori banda su
-    entrambe le superfici. Dimostra che l'oracolo vede la patologia."""
+    nelle slide) porta il flowchart v11 a 13,1 e 19,9 pt, fuori banda su
+    entrambe le superfici (il 13,3 del brief vale con i 170 mm di `main`,
+    dove il wrapper Mermaid annullava il padding di 1 mm con un margine
+    negativo). Dimostra che l'oracolo vede la patologia."""
     fig = frs.RenderedFigure(_v11_svg(), SvgMetrics(14.0, 14.0, 6, "measured"))
     box = svg_intrinsic_box(fig.svg)
     assert box is not None

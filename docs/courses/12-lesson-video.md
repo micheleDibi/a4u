@@ -267,6 +267,13 @@ Titolo, prosa e bullet con formule entrano nel budget della figura
 (10-lesson-slides, «Rendering di titolo, prosa, bullet e riferimenti»),
 verificato anche nei frame Chromium.
 
+I frame ereditano dall'HTML anche il resto della catena delle figure
+(10-lesson-slides, «Larghezza e box della figura»): la larghezza dalla
+banda 10-14 pt della variante `slide`, la didascalia «Figura.» senza
+numero, il troncamento del sorgente nel fallback di una figura non resa
+(`figure_fallback_truncated`) e il riferimento ripetuto reso una volta
+sola. Nessuna di queste regole ha codice proprio nel servizio video.
+
 ## 7. Composizione ffmpeg
 
 `backend/app/services/lesson_video_compose_service.py` —

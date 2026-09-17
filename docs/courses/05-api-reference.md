@@ -495,6 +495,23 @@ Errori:
   valore rigenerabile.
 - `404 lesson_not_found`.
 
+**Costo esposto.** `CourseLessonOut.content_tokens` (JSONB libero,
+`dict[str, Any] | None`) porta, oltre ai campi storici della chiamata di Fase 3
+(`model`, `prompt`, `completion`, `total`, `reasoning_effort`,
+`reasoning_tokens`, `cached_tokens`, `duration_ms`, `cost_usd`), due chiavi
+nuove scritte dal worker con `merge_assets_usage`:
+
+- `assets`: una voce per chiamata AI sugli asset, `{phase, asset_id,
+  <campi di build_usage_dict>}`, con `phase` ∈ `fix | review | localize`
+  (`asset_id` è lo slot, `null` per la localizzazione che copre più campi);
+- `assets_cost_usd`: somma dei `cost_usd` noti di quelle voci (un modello
+  fuori listino vale `None` e non entra). `cost_usd` resta il costo della
+  sola chiamata principale.
+
+Nessuna colonna nuova e nessun backfill: le lezioni generate prima non
+hanno le due chiavi. La dashboard admin somma `assets_cost_usd` nella fase
+`content`.
+
 ### `POST /orgs/{org_id}/courses/{course_id}/lessons-content/generate-all`
 
 `course:generate`. Body `{regeneration_hint: string | null}`. 202 →
@@ -532,11 +549,15 @@ content)` diversi da quelli già in DB sono validati dal renderer del
 formato (`validate(deep=False)`: gate statico D8 per Mermaid, schema +
 regole D5 per Vega-Lite, gate statico per DOT, Pydantic + AST per
 `function`); un edit del testo non rivalida diagrammi legacy già salvati.
-`key_takeaways` (al massimo 12 voci inviate) e `references` presenti nel
-body sono normalizzati dallo schema: trim, voci vuote scartate, dedup
-case-insensitive con ordine conservato, references a parità di `source`;
-`[]` azzera la lista, un campo assente non la tocca. Una `citation` vuota
-dà `422 string_too_short`.
+`key_takeaways` (`max_length` 12, allineato all'output AI: prima era 10 e
+una lezione con 11-12 punti chiave non era salvabile; il limite conta
+l'elenco **grezzo**, prima della dedup, e oltre 12 voci è un
+`422 too_long`) e `references` presenti nel body sono normalizzati dallo
+schema: trim, voci vuote scartate, dedup case-insensitive con ordine e
+grafia della prima occorrenza, references a parità di `source`; `[]` azzera
+la lista, un campo assente non la tocca. Una `citation` vuota dà
+`422 string_too_short`. Nessuna dedup in lettura e nessun backfill: una
+lezione storica si ripulisce al primo salvataggio.
 
 200 → `CourseOut` (con le liste normalizzate).
 
@@ -557,8 +578,25 @@ Errori:
 
   `type` ∈ `figure_invalid | figure_format_unavailable |
   mermaid_type_not_allowed | vegalite_use_function_format |
-  function_spec_invalid`; `msg` ≤ 600 caratteri; per `function` la `loc`
-  prosegue dentro la spec (`["visual_assets", i, "content", "expressions", 0, "expr"]`).
+  function_spec_invalid | graph_too_dense`; `msg` ≤ 600 caratteri; per
+  `function` la `loc` prosegue dentro la spec
+  (`["visual_assets", i, "content", "expressions", 0, "expr"]`).
+
+  `graph_too_dense` (D13) è la soglia **editoriale** dei grafi Mermaid e
+  DOT, distinta dai tetti di risorsa: il messaggio ha la forma
+  `graph_too_dense: <cosa> <n> > <max> — <che cosa ridurre>` (nodi 30,
+  archi 45, etichetta 64 caratteri, titolo 110, sorgente Mermaid 3.000,
+  righe 120). Le costanti di `figure_compute/graph_rules.py` sono
+  provvisorie, calibrate sui 57 modelli degli editor, e nessuno di quei
+  modelli è rifiutato.
+
+  Il tetto di risorsa A1 sul contenuto di un asset visivo
+  (`VISUAL_ASSET_CONTENT_MAX_CHARS`, 12.000 caratteri) è applicato dal
+  PATCH **solo agli asset cambiati**, con `type: figure_invalid` e
+  `msg: "contenuto oltre 12000 caratteri (N)"`: un asset storico più lungo
+  e invariato resta salvabile. Sugli asset generati da Fase 3 e Fase 4 lo
+  stesso tetto vive nello schema (l'output AI è scartato e la lezione
+  rigenerata).
 
 ### `PATCH /orgs/{org_id}/courses/{course_id}/lessons/{lesson_id}/assessment`
 
@@ -676,7 +714,16 @@ Errori:
 - `422` su validazione (slide_id duplicati, slide_number non sequenziali, references_assets verso ID inesistenti).
 - `422 lesson_slides_invalid_new_asset` — un `new_asset` non valido;
   stesso payload `meta.errors[]` del PATCH dei contenuti con `loc` che
-  inizia per `new_assets`.
+  inizia per `new_assets` (stessi `type`, compresi `graph_too_dense` e il
+  tetto A1 sui soli asset cambiati).
+- `409 lesson_slides_multiple_visual_assets` — una slide con più di un
+  asset visivo o tabella (equazioni ed esempi esclusi). La regola è
+  applicata **solo alle slide toccate dal PATCH**: una slide nuova con due
+  o più visivi, oppure una slide salvata il cui nuovo insieme ne ha più di
+  uno e contiene un riferimento che la versione salvata non aveva
+  (confronto `strip().lower()`). Le slide storiche con due figure restano
+  editabili e si riducono un passo alla volta: togliere una figura passa,
+  sostituirla o aggiungerne una no. Nessun backfill.
 
 ## Discorso temporizzato (Fase 5)
 
@@ -1257,8 +1304,9 @@ Errori:
 | `avatar_not_found` | 404 | `PATCH /me/avatar/musetalk-params` quando l'utente corrente non ha un avatar |
 | `openalex_error` | 502 | `POST /papers/search`: errore del provider OpenAlex (vedi [16 — Paper search](16-paper-search.md)) |
 | `openai_error` | 502 | `POST /papers/ai-summary`: errore lato OpenAI nella generazione del riassunto AI del paper (vedi [16 — Paper search](16-paper-search.md)) |
-| `lesson_content_invalid_visual_asset` | 422 | `PATCH /lessons/{id}/content`: uno o più `visual_assets` con `(format, content)` cambiati non superano il validatore del formato; `meta.errors[{loc, asset_id, format, msg, type}]` con `type` ∈ `figure_invalid | figure_format_unavailable | mermaid_type_not_allowed | vegalite_use_function_format | function_spec_invalid` (vedi [17 — Figure accademiche](17-visual-figures.md)) |
+| `lesson_content_invalid_visual_asset` | 422 | `PATCH /lessons/{id}/content`: uno o più `visual_assets` con `(format, content)` cambiati non superano il validatore del formato; `meta.errors[{loc, asset_id, format, msg, type}]` con `type` ∈ `figure_invalid | figure_format_unavailable | mermaid_type_not_allowed | vegalite_use_function_format | function_spec_invalid | graph_too_dense` (vedi [17 — Figure accademiche](17-visual-figures.md)) |
 | `lesson_slides_invalid_new_asset` | 422 | `PATCH /lessons/{id}/slides`: stesso gate sui `new_assets` cambiati, `loc` a partire da `new_assets` |
+| `lesson_slides_multiple_visual_assets` | 409 | `PATCH /lessons/{id}/slides`: una slide toccata dal PATCH avrebbe più di un asset visivo o tabella (equazioni ed esempi esclusi); le slide storiche non toccate restano come sono e si possono solo ridurre |
 | `function_spec_invalid` | 422 | `POST /lesson-assets/render-function`: spec strutturalmente valida ma incoerente (`check_function_spec`): `meta.errors[{loc, msg, type}]` per campo (`spec_invalid`, `expr_syntax`, `expr_forbidden`, `expr_symbol`, `expr_limit`) |
 | `function_render_failed` | 422 | `render-function`: calcolo numerico o disegno matplotlib non riusciti |
 | `function_render_timeout` | 422 | `render-function`: superato `FIGURE_RENDER_TIMEOUT_SECONDS` (il solo timeout simbolico non è un errore: 200 con `approximate=true`) |

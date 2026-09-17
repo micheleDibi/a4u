@@ -32,7 +32,7 @@ from typing import Any, Literal, TypeGuard
 # Versione, font, palette
 # ---------------------------------------------------------------------------
 
-# Entra nella chiave di cache `(fmt, sha256(content), THEME_VERSION, language)`
+# Entra nella chiave di cache `(fmt, sha256(content), THEME_VERSION)`
 # di `figure_render_service`: un tema diverso invalida gli SVG in cache.
 THEME_VERSION = "2026.09.4"
 
