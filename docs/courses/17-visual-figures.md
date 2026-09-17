@@ -1960,20 +1960,23 @@ Decisioni prese in Fase B (A1-A16) e nella ripresa del 7 settembre
   (`load/sanitize/http/file` rifiutano): il loader di default eseguirebbe
   davvero il fetch di un `data.url` dal browser del docente durante
   l'anteprima dell'editor, prima che il gate del PATCH lo rifiuti.
-- **Tetto d'altezza dei Mermaid solo per i diagrammi orizzontali**
-  (`MermaidDiagram` + `fullWidthSvgMaxHeightPx` in `lib/figureFormats.ts`).
-  L'SVG Mermaid è reso a larghezza piena (`width: 100% !important`, come su
-  `main`); un `max-height` incondizionato unito a `width: 100%` fa scalare
-  in `meet` i diagrammi verticali (sequence, flowchart TD, class, state)
-  fino a testo di 7 px. Il tetto vale quindi solo quando il `viewBox` ha
-  larghezza ≥ altezza ed è `max(28rem, altezza naturale)`: una torta
-  524×450 non si dilata a tutta colonna (scala 1, testo 17 px), un ER
-  orizzontale 647×365 resta a 448 px (scala 1,23), un sequence 650×907 tiene
-  la geometria di `main` (scala 1,23 in una colonna di 802 px, testo 19,7
-  px). Scartato il tetto incondizionato a 28rem (regressione sui verticali,
-  giro 2 della verifica) e scartata la riduzione globale della scala
-  (`max-width = k × larghezza naturale`): cambierebbe la resa di tutti i
-  Mermaid già in DB. Prova in `tests/test_frontend_figure_layout.py`.
+- **Larghezza dei Mermaid a schermo dalla banda di leggibilità** (D10/D11;
+  supera il «tetto d'altezza solo per i diagrammi orizzontali» del giro 2).
+  `MermaidDiagram` misura nel DOM il corpo del testo più piccolo
+  (`measureSvgFontPx`, stesso JS di `MEASURE_SVG_FONT_PX_JS` del
+  pre-render), calcola con `fitFigureWidthMm` (mirror di
+  `figure_scale.py`, senza box) la larghezza a cui quel testo cade fra 8 e
+  11 pt e la applica come `width: min(100%, Wpx)` su un wrapper interno
+  senza padding, con l'SVG a `width: 100%` dentro: il flowchart D8 passa
+  dalla larghezza piena (18,3 pt in una colonna di 900 px) a 532 px e 11 pt,
+  un verticale 300×1000 da scala 3 (31 pt) a 314 px, e in una colonna
+  stretta l'SVG riempie il 100 %. Nessun tetto d'altezza, nessun
+  `clientWidth`/`ResizeObserver` (vale 0 nei pannelli chiusi dell'editor):
+  la colonna la applica il browser a ogni resize. Vega-Lite, DOT e
+  `function` restano alla dimensione intrinseca (a scala 1 sono già in
+  banda). Prova in `tests/test_frontend_figure_layout.py` (geometria in
+  Chromium con il modulo vero, parità del JS di misura sui 15 tipi D8) e
+  `tests/test_figure_scale.py` (fixture condivisa eseguita con Node).
 - **`.lesson-prose .figure img { margin: 0 auto }`** invece del `margin: 0`
   scritto in Q2: la regola ha specificità (0,2,1) e annulla `mx-auto`
   (0,1,0) sull'`<img>` di `FunctionFigure` e del ramo `image`; con

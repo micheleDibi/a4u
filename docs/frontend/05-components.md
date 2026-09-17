@@ -1165,9 +1165,17 @@ un'eccezione che rompa la pagina.
   top-level, `securityLevel: "strict"`), `mermaid.parse` con
   `suppressErrors` prima del render (errore → `FigureErrorBox`),
   `sanitizeMermaidCode` (fence, righe `mermaid`/`all`), `max-width`
-  inline rimosso, `width: 100%`; tetto d'altezza
-  (`fullWidthSvgMaxHeightPx`) solo per i diagrammi orizzontali, mai
-  sotto l'altezza naturale (`tests/test_frontend_figure_layout.py`).
+  inline rimosso; larghezza dalla banda di leggibilità del web (D10/D11,
+  8-11 pt): il corpo del testo più piccolo è misurato nel DOM
+  (`measureSvgFontPx`, stesso JS del pre-render backend), il fit
+  (`fitFigureWidthMm`, mirror di `figure_scale.py`, senza box) dà la
+  larghezza `W` e il wrapper interno senza padding porta
+  `width: min(100%, Wpx)` con l'SVG a `width: 100%` dentro: nessun tetto
+  d'altezza, nessun `clientWidth`/`ResizeObserver`, la colonna la applica
+  il browser. Misura fallita → `MERMAID_FALLBACK_FONT_PX` (14); senza
+  testo → scala naturale. Geometria, parità del JS di misura e fixture
+  condivisa in `tests/test_frontend_figure_layout.py` e
+  `tests/test_figure_scale.py`.
 
 ### `VegaLiteDiagram.tsx`
 
@@ -1327,8 +1335,12 @@ un'eccezione che rompa la pagina.
 - `figureFormats.ts` — `VISUAL_FORMATS` / `RENDERABLE_FORMATS` /
   `LEGACY_FORMATS`, `formatLabel(format, t)`, `stripFenceAndControl`,
   `parseJsonObject`, `FigureParseError` (codici tradotti dal componente),
-  `sanitizeSvgElement`, `svgDataUri`, `svgIntrinsicSize`,
-  `fullWidthSvgMaxHeightPx`;
+  `sanitizeSvgElement`, `svgDataUri`, `svgIntrinsicBox` (con
+  `svgIntrinsicSize` come proiezione), `fitFigureWidthMm`, `formatMm`,
+  `measureSvgFontPx`, `READABILITY_BANDS_PT`, `MM_PER_PX`, `PT_PER_PX`,
+  `MERMAID_FALLBACK_FONT_PX` (mirror di `figure_scale.py` e di
+  `svg_normalize.svg_intrinsic_box`, fixture condivisa
+  `tests/fixtures/figure_scale_cases.json`);
 - `functionSpec.ts` — costanti e helper della spec `function` condivisi da
   vista ed editor;
 - `errors.ts` — `extractApiError` con `meta.errors[]` tipizzati

@@ -1,11 +1,14 @@
-import { memo, useEffect, useRef, useState, type CSSProperties } from "react";
+import { memo, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
-  fullWidthSvgMaxHeightPx,
+  fitFigureWidthMm,
+  measureSvgFontPx,
+  MERMAID_FALLBACK_FONT_PX,
+  MM_PER_PX,
   renderMermaidSvg,
   sanitizeMermaidSvg,
-  svgIntrinsicSize,
+  svgIntrinsicBox,
 } from "@/lib/figureFormats";
 import { mermaidConfig } from "@/lib/figureTheme";
 import { cn } from "@/lib/utils";
@@ -58,16 +61,41 @@ type MermaidFailure = { kind: "syntax" } | { kind: "render"; detail: string };
 
 interface RenderedSvg {
   html: string;
-  /** Tetto d'altezza dell'SVG a larghezza piena (`fullWidthSvgMaxHeightPx`):
-   *  solo per i diagrammi orizzontali, `null` per quelli verticali. */
-  maxHeightPx: number | null;
+  /** Larghezza del wrapper (px CSS) a cui il testo più piccolo del
+   *  diagramma cade nella banda di leggibilità del web (8-11 pt, D11);
+   *  `null` se il viewBox non è determinabile (nessun vincolo). */
+  widthPx: number | null;
+}
+
+/**
+ * Larghezza in px a cui rendere l'SVG (mirror di `_figure_width_style` del
+ * PDF, senza box: la colonna la applica il CSS `min(100%, …)`). Il corpo
+ * del testo è misurato nel DOM con lo stesso JS del pre-render backend;
+ * misura fallita → fallback del tema (14 px); nessun testo → scala
+ * naturale. Per difetto al centesimo di px, come i mm del PDF.
+ */
+function fittedWidthPx(svg: string): number | null {
+  const box = svgIntrinsicBox(svg);
+  if (!box) return null;
+  const m = measureSvgFontPx(svg);
+  const baseFontPx =
+    m === null ? MERMAID_FALLBACK_FONT_PX : m.count === 0 ? null : m.min;
+  const fit = fitFigureWidthMm({
+    vbW: box.vbW,
+    vbH: box.vbH,
+    baseFontPx,
+    boxWMm: null,
+    boxHMm: null,
+    variant: "lesson",
+    intrinsicWPx: box.widthPx,
+  });
+  return fit ? Math.floor((fit.widthMm / MM_PER_PX) * 100) / 100 : null;
 }
 
 function MermaidDiagramImpl({ code, className }: MermaidDiagramProps) {
   const { t } = useTranslation();
   const [svg, setSvg] = useState<RenderedSvg | null>(null);
   const [failure, setFailure] = useState<MermaidFailure | null>(null);
-  const containerRef = useRef<HTMLDivElement | null>(null);
 
   const cleanCode = sanitizeMermaidCode(code);
 
@@ -118,19 +146,16 @@ function MermaidDiagramImpl({ code, className }: MermaidDiagramProps) {
           return;
         }
         if (!cancelled) {
-          // Mermaid imposta `style="max-width: <natural_px>"` sull'SVG.
-          // Questo impedisce al diagramma di crescere oltre la sua
-          // dimensione naturale (~300-400px), anche se il container è
-          // molto più largo — risultato: testo illeggibile.
-          // Strippiamo quel max-width così l'SVG riempie tutto il
-          // container disponibile.
+          // Mermaid imposta `style="max-width: <natural_px>"` sull'SVG:
+          // lo togliamo, perché la larghezza la decide la banda di
+          // leggibilità (sotto), non la dimensione naturale del
+          // diagramma. Il wrapper interno porta `min(100%, Wpx)` e l'SVG
+          // lo riempie (`width: 100%`).
           const cleaned = safe.replace(/max-width\s*:\s*[\d.]+px\s*;?/gi, "");
-          // Il tetto d'altezza dipende dall'orientamento letto dal viewBox
-          // (vedi le classi del contenitore sotto).
-          setSvg({
-            html: cleaned,
-            maxHeightPx: fullWidthSvgMaxHeightPx(svgIntrinsicSize(cleaned)),
-          });
+          // La misura avviene sull'SVG già sanificato: `<style>` (tema e
+          // corpi dei testi) sopravvive alla sanificazione, quindi il
+          // `font-size` calcolato è quello che il lettore vedrà.
+          setSvg({ html: cleaned, widthPx: fittedWidthPx(cleaned) });
         }
       } catch (exc) {
         if (!cancelled) {
@@ -167,36 +192,39 @@ function MermaidDiagramImpl({ code, className }: MermaidDiagramProps) {
     return <FigureLoading />;
   }
 
-  const style =
-    svg.maxHeightPx != null
-      ? ({ "--mermaid-max-h": `${svg.maxHeightPx}px` } as CSSProperties)
-      : undefined;
-
   return (
     <div
-      ref={containerRef}
-      style={style}
       className={cn(
-        // Diagramma a tutta larghezza: l'SVG riempie il container così
-        // i nodi e le label restano leggibili anche su flowchart densi.
-        // overflow-x-auto come fallback se qualche diagramma ha una
-        // larghezza minima > container (mai dovrebbe accadere ora che
-        // il max-width inline è strippato, ma resta come safety net).
-        // Fondo chiaro e fisso come le altre figure: gli archi e le
-        // frecce del tema (COLOR_AXIS) sul fondo scuro del tema dark
-        // resterebbero sotto il rapporto di contrasto minimo.
-        "overflow-x-auto rounded bg-white p-2 [&_svg]:!w-full [&_svg]:!max-w-none [&_svg]:h-auto",
-        // Tetto d'altezza SOLO per i diagrammi orizzontali (torta, flowchart
-        // LR): max(28rem, altezza naturale), così un diagramma compatto non
-        // si dilata a tutta colonna e uno grande non è mai rimpicciolito.
-        // Un tetto unito a `width: 100%` farebbe scalare in `meet` i
-        // diagrammi verticali (sequence, flowchart TD, class) fino a testo
-        // illeggibile: per quelli nessun tetto, geometria a larghezza piena.
-        svg.maxHeightPx != null && "[&_svg]:max-h-[var(--mermaid-max-h)]",
+        // Contenitore esterno: scorrimento orizzontale di sicurezza (il
+        // wrapper interno non supera mai il 100%), fondo chiaro e fisso
+        // come le altre figure: gli archi e le frecce del tema
+        // (COLOR_AXIS) sul fondo scuro del tema dark resterebbero sotto
+        // il rapporto di contrasto minimo.
+        "overflow-x-auto rounded bg-white p-2",
         className,
       )}
-      dangerouslySetInnerHTML={{ __html: svg.html }}
-    />
+    >
+      {/*
+        Wrapper interno senza padding: la larghezza viene dalla banda di
+        leggibilità (D10/D11), `min(100%, Wpx)`, così il testo più piccolo
+        del diagramma cade fra 8 e 11 pt (il flowchart D8 passa dalla
+        larghezza piena a 532 px in una colonna di 900) e in una colonna
+        stretta l'SVG riempie il 100% senza scorrere: nessun tetto
+        d'altezza, nessun `clientWidth` né `ResizeObserver` (vale 0 nei
+        pannelli chiusi dell'editor), il vincolo di colonna lo applica il
+        browser a ogni resize. L'SVG riempie il wrapper (`width: 100%`)
+        e conserva le proporzioni (`height: auto`). Stessa politica del
+        PDF (`_figure_width_style`), senza box: sul web la colonna è il
+        solo limite.
+      */}
+      <div
+        className="mx-auto [&_svg]:!w-full [&_svg]:!max-w-none [&_svg]:h-auto"
+        style={{
+          width: svg.widthPx != null ? `min(100%, ${svg.widthPx}px)` : undefined,
+        }}
+        dangerouslySetInnerHTML={{ __html: svg.html }}
+      />
+    </div>
   );
 }
 

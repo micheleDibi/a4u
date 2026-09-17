@@ -108,7 +108,14 @@ from app.services.figure_numbering import (
     equation_label_family,
     proof_steps,
 )
-from app.services.figure_render_service import RENDERABLE_FORMATS
+from app.services.figure_render_service import RENDERABLE_FORMATS, RenderedFigure, VisualSvgMap
+from app.services.figure_scale import (
+    READABILITY_BANDS_PT,
+    FigureFitEntry,
+    fit_figure_width_mm,
+    format_mm,
+    resolve_base_font_px,
+)
 from app.services.figure_theme import asset_label, asset_ref, figure_labels
 from app.services.mermaid_prerender import (  # noqa: F401
     _MERMAID_JUNK_LINE_RE,
@@ -119,7 +126,7 @@ from app.services.mermaid_prerender import (  # noqa: F401
     _sanitize_mermaid_code,
     _strip_mermaid_max_width,
 )
-from app.services.svg_normalize import svg_to_data_uri
+from app.services.svg_normalize import svg_intrinsic_box, svg_to_data_uri
 
 log = get_logger("app.course_lesson_pdf.service")
 
@@ -680,27 +687,138 @@ _LEGACY_PLACEHOLDER_FORMATS: frozenset[str] = frozenset(
     {"image_prompt", "image_search_query", "description"}
 )
 
+# Padding orizzontale totale del wrapper Mermaid nella dispensa
+# (`figure.visual:has(.mermaid-svg) .figure-body { padding: 1mm }` in
+# `lesson_pdf.html.j2`): il box di 170 mm diventa 168 mm per l'SVG inline.
+_MERMAID_BODY_PADDING_MM: Final = 2.0
+
+
+def _figure_entry(svg_map: VisualSvgMap, asset_id: str) -> RenderedFigure | None:
+    """Record della figura dalla mappa: una stringa vale
+    `RenderedFigure.from_svg` (metriche lette dagli attributi); assente o
+    vuota → `None` (fallback del partial)."""
+    value = svg_map.get(asset_id) if asset_id else None
+    if isinstance(value, RenderedFigure):
+        return value if value.svg else None
+    if isinstance(value, str) and value:
+        return RenderedFigure.from_svg(value)
+    return None
+
+
+def _figure_width_style(
+    fig: RenderedFigure,
+    *,
+    fmt: str,
+    variant: FigureVariant,
+    box: tuple[float, float | None] | None,
+    body_padding_mm: float = 0.0,
+    expect_measured: bool = False,
+    asset_id: str,
+    lesson_code: str | None,
+    fit_report: list[FigureFitEntry] | None,
+) -> str:
+    """Attributo ` style="width:Wmm"` (ultimo del tag) dalla banda di
+    leggibilità (D10, `figure_scale.fit_figure_width_mm`), oppure `""`
+    senza box (chiamanti senza geometria) o senza viewBox. `box` è
+    `(larghezza, altezza | None)` in mm del contenuto della figura;
+    `body_padding_mm` è il padding del wrapper da sottrarre;
+    `expect_measured` segnala nei log un fallback dalle metriche misurate
+    (`figure_font_fallback`). Ogni fit è loggato (`figure_fit`); una banda
+    irraggiungibile produce `figure_fit_out_of_band` e la voce del
+    `fit_report` porta `in_band=False` (gate D13). L'SVG non è mai toccato."""
+    if box is None:
+        return ""
+    sbox = svg_intrinsic_box(fig.svg)
+    if sbox is None:
+        log.warning(
+            "figure_fit_skipped",
+            lesson_code=lesson_code,
+            asset_id=asset_id,
+            format=fmt,
+            reason="no_viewbox",
+        )
+        return ""
+    box_w = box[0] - body_padding_mm
+    box_h = box[1]
+    base, source = resolve_base_font_px(fmt, fig.metrics)
+    fit = fit_figure_width_mm(
+        vb_w=sbox.vb_w,
+        vb_h=sbox.vb_h,
+        base_font_px=base,
+        box_w_mm=box_w,
+        box_h_mm=box_h,
+        variant=variant,
+        intrinsic_w_px=sbox.width_px,
+    )
+    if fit is None:
+        log.warning(
+            "figure_fit_skipped",
+            lesson_code=lesson_code,
+            asset_id=asset_id,
+            format=fmt,
+            reason="degenerate_box",
+        )
+        return ""
+    band = READABILITY_BANDS_PT[variant]
+    text_count = fig.metrics.text_count if fig.metrics is not None else 0
+    fields: dict[str, Any] = {
+        "lesson_code": lesson_code,
+        "asset_id": asset_id,
+        "format": fmt,
+        "variant": variant,
+        "width_mm": fit.width_mm,
+        "scale": fit.scale,
+        "text_pt": fit.text_pt,
+        "band": band,
+        "in_band": fit.in_band,
+        "font_source": source,
+        "text_count": text_count,
+    }
+    log.info("figure_fit", **fields)
+    if expect_measured and source != "measured":
+        log.warning("figure_font_fallback", **fields)
+    if not fit.in_band:
+        log.warning("figure_fit_out_of_band", **fields)
+    if fit_report is not None:
+        fit_report.append(
+            FigureFitEntry(
+                asset_id=asset_id,
+                fmt=fmt,
+                variant=variant,
+                width_mm=fit.width_mm,
+                scale=fit.scale,
+                text_pt=fit.text_pt,
+                band=band,
+                in_band=fit.in_band,
+                font_source=source,
+                text_count=text_count,
+            )
+        )
+    return f' style="width:{format_mm(fit.width_mm)}mm"'
+
 
 def _render_visual_asset_block(
     asset: dict[str, Any],
     *,
-    visual_svg_map: dict[str, str] | None = None,
+    visual_svg_map: VisualSvgMap | None = None,
     math_svg_map: dict | None = None,
     number: int | None = None,
     labels: Mapping[str, str] | None = None,
     variant: FigureVariant = "lesson",
     language: str | None = None,
     lesson_code: str | None = None,
+    figure_box_mm: tuple[float, float | None] | None = None,
+    fit_report: list[FigureFitEntry] | None = None,
 ) -> str:
     """Blocco HTML di un asset visivo, per ogni formato, attraverso il
     partial unico `render_figure_html` (D4).
 
-    `visual_svg_map` è `{asset_id → svg}` prodotto da
-    `_prerender_visual_assets_for_lesson` (registro dei renderer);
-    `math_svg_map` serve alla didascalia, che riceve il math inline via
-    `render_markdown_inline` (D9) dopo `strip_figure_prefix` e prima
-    dell'etichetta «Figura N.», che resta fuori dal renderer. Corpo per
-    formato:
+    `visual_svg_map` è `{asset_id → svg | RenderedFigure}` prodotto da
+    `_prerender_visual_assets_for_lesson` (registro dei renderer; una
+    stringa vale `RenderedFigure.from_svg`); `math_svg_map` serve alla
+    didascalia, che riceve il math inline via `render_markdown_inline`
+    (D9) dopo `strip_figure_prefix` e prima dell'etichetta «Figura N.»,
+    che resta fuori dal renderer. Corpo per formato:
       - `mermaid`: SVG inline `<div class="mermaid-svg">` nella dispensa
         (byte-identico alla catena precedente, A11-L3), `<img
         class="mermaid-svg">` con data URI nelle slide (`variant="slide"`);
@@ -714,6 +832,12 @@ def _render_visual_asset_block(
         contenuto in chiaro nel corpo; per i formati renderizzabili è un
         errore visibile nei log (`figure_render_fallback`, A23).
 
+    `figure_box_mm` (D10) è il box `(larghezza, altezza | None)` in mm del
+    contenuto della figura: con esso i tre corpi SVG ricevono come ULTIMO
+    attributo `style="width:Wmm"` dalla banda di leggibilità
+    (`_figure_width_style`); `None` = nessuna larghezza (chiamanti senza
+    geometria). `fit_report` raccoglie una `FigureFitEntry` per figura.
+
     `number` è il numero editoriale («Figura N.») o `None` («Figura.», slide
     e frame video, A2); `labels` è la mappa di `figure_labels(language)`.
     """
@@ -722,7 +846,7 @@ def _render_visual_asset_block(
     content = asset.get("content", "") or ""
     caption = asset.get("caption", "") or ""
     alt_text = asset.get("alt_text") or ""
-    svg_map = visual_svg_map or {}
+    svg_map: VisualSvgMap = visual_svg_map or {}
 
     body: Markup | None = None
     fallback_source: str | None = None
@@ -733,21 +857,44 @@ def _render_visual_asset_block(
         # WeasyPrint NON esegue JS — il rendering Mermaid avviene server-side
         # via Playwright (registro dei renderer). Qui inseriamo l'SVG già
         # renderizzato: inline nella dispensa, `<img>` nelle slide.
-        svg = svg_map.get(asset_id) if asset_id else None
-        if svg:
+        fig = _figure_entry(svg_map, asset_id)
+        if fig is not None:
+            svg = fig.svg
+            style = _figure_width_style(
+                fig,
+                fmt=fmt,
+                variant=variant,
+                box=figure_box_mm,
+                body_padding_mm=_MERMAID_BODY_PADDING_MM if variant == "lesson" else 0.0,
+                expect_measured=True,
+                asset_id=asset_id,
+                lesson_code=lesson_code,
+                fit_report=fit_report,
+            )
             if variant == "slide":
-                body = Markup(f'<img class="mermaid-svg" src="{svg_to_data_uri(svg)}" alt="" />')
+                body = Markup(
+                    f'<img class="mermaid-svg" src="{svg_to_data_uri(svg)}" alt=""{style} />'
+                )
             else:
-                body = Markup(f'<div class="mermaid-svg">{svg}</div>')
+                body = Markup(f'<div class="mermaid-svg"{style}>{svg}</div>')
         else:
             fallback_source, fallback_reason = content, "svg_missing"
     elif fmt in RENDERABLE_FORMATS:
         # vegalite | dot | function: SVG normalizzato del registro.
-        svg = svg_map.get(asset_id) if asset_id else None
-        if svg:
+        fig = _figure_entry(svg_map, asset_id)
+        if fig is not None:
+            style = _figure_width_style(
+                fig,
+                fmt=fmt,
+                variant=variant,
+                box=figure_box_mm,
+                asset_id=asset_id,
+                lesson_code=lesson_code,
+                fit_report=fit_report,
+            )
             body = Markup(
-                f'<img class="figure-svg" src="{svg_to_data_uri(svg)}" '
-                f'alt="{_html_escape_text(alt_text)}" />'
+                f'<img class="figure-svg" src="{svg_to_data_uri(fig.svg)}" '
+                f'alt="{_html_escape_text(alt_text)}"{style} />'
             )
             if fmt == "function":
                 extra_caption = figure_render_service.function_computed_caption(
@@ -969,12 +1116,14 @@ def _asset_key(asset_id: object) -> str:
 def _build_asset_html_map(
     content: dict[str, Any],
     *,
-    visual_svg_map: dict[str, str] | None = None,
+    visual_svg_map: VisualSvgMap | None = None,
     math_svg_map: dict | None = None,
     language: str = "it",
     asset_numbers: Mapping[tuple[str, str], int] | None = None,
     labels: Mapping[str, str] | None = None,
     lesson_code: str | None = None,
+    figure_box_mm: tuple[float, float] | None = None,
+    fit_report: list[FigureFitEntry] | None = None,
 ) -> dict[tuple[str, str], str]:
     """Pre-renderizza ogni asset una sola volta. Chiavi: (KIND, id).
 
@@ -985,13 +1134,16 @@ def _build_asset_html_map(
     `_substitute_asset_refs` e `compute_asset_numbers` normalizzano nello
     stesso modo.
 
-    `visual_svg_map` è il dict {asset_id → svg} prodotto da
+    `visual_svg_map` è il dict {asset_id → svg | RenderedFigure} prodotto da
     `_prerender_visual_assets_for_lesson` (tutti i formati renderizzabili).
     Se omesso, le figure vanno in fallback testuale. `asset_numbers` è la
     mappa `{(KIND, id_lower) → N}` di `compute_asset_numbers` (contatore
     per kind; l'ordine dell'array qui non conta: il numero è legato
     all'id) e `labels` la mappa di `figure_labels(language)`; senza numero
-    il blocco porta la forma non numerata («Tabella.», A2)."""
+    il blocco porta la forma non numerata («Tabella.», A2).
+    `figure_box_mm` è il box `(larghezza, altezza)` in mm del contenuto
+    della pagina (`_compute_template_margins_cm`) per la banda di
+    leggibilità (D10); `fit_report` raccoglie le voci del fit."""
     numbers = asset_numbers or {}
     figure_i18n = labels if labels is not None else figure_labels(language)
     out: dict[tuple[str, str], str] = {}
@@ -1006,6 +1158,8 @@ def _build_asset_html_map(
             variant="lesson",
             language=language,
             lesson_code=lesson_code,
+            figure_box_mm=figure_box_mm,
+            fit_report=fit_report,
         )
     for table in content.get("tables") or []:
         key = _asset_key(table.get("table_id"))
@@ -1098,16 +1252,17 @@ async def _prerender_visual_assets_for_lesson(
     content: dict[str, Any],
     *,
     language: str = "it",
-) -> dict[str, str]:
+) -> dict[str, RenderedFigure]:
     """Pre-renderizza in batch tutti gli asset visivi renderizzabili della
-    lezione attraverso il registro (`render_svg_map`: un batch per formato,
-    cache LRU, semaforo e timeout). Ritorna {asset_id → svg}; chiavi
-    assenti indicano rendering fallito o formato non disponibile (fallback
-    del partial). Non solleva mai: i worker non vedono eccezioni nuove."""
+    lezione attraverso il registro (`render_figure_map`: un batch per
+    formato, cache LRU, semaforo e timeout). Ritorna {asset_id →
+    RenderedFigure} (SVG e metriche del testo, D10); chiavi assenti
+    indicano rendering fallito o formato non disponibile (fallback del
+    partial). Non solleva mai: i worker non vedono eccezioni nuove."""
     assets = [a for a in content.get("visual_assets") or [] if isinstance(a, dict)]
     if not assets:
         return {}
-    return await figure_render_service.render_svg_map(assets, language=language)
+    return await figure_render_service.render_figure_map(assets, language=language)
 
 
 # Alias del nome storico (i chiamanti esterni e la documentazione lo citano):
@@ -1621,17 +1776,25 @@ def _default_template_dict(*, language: str) -> dict[str, Any]:
     }
 
 
-# Altezza fisica del foglio in cm per ciascuna page-size supportata.
-# Usata da `_compute_template_margins_cm` per derivare l'altezza utile
-# del content-area (paper - top - bottom margin) e quindi il
-# `max-height` di figure mermaid alte (TD flowchart con molti nodi)
-# che altrimenti vengono tagliate dal page-break.
+# Altezza e larghezza fisiche del foglio in cm per ciascuna page-size
+# supportata. Usate da `_compute_template_margins_cm` per derivare l'area
+# utile del content-area (paper - margini): l'altezza dà il `max-height`
+# delle figure (cintura contro il taglio dal page-break) e, con la
+# larghezza, il box entro cui `figure_scale` sceglie la larghezza dalla
+# banda di leggibilità (D10).
 _PAGE_HEIGHTS_CM: dict[str, float] = {
     "A4": 29.7,
     "A3": 42.0,
     "Letter": 27.94,
     "letter": 27.94,
     "LETTER": 27.94,
+}
+_PAGE_WIDTHS_CM: dict[str, float] = {
+    "A4": 21.0,
+    "A3": 29.7,
+    "Letter": 21.59,
+    "letter": 21.59,
+    "LETTER": 21.59,
 }
 
 
@@ -1648,9 +1811,12 @@ def _compute_template_margins_cm(tpl_dict: dict[str, Any]) -> dict[str, float]:
 
     Calcola anche `max_figure_height_cm` = altezza utile del content
     area meno una safety di ~1.5cm (per padding figure + caption +
-    breathing room). Le figure mermaid usano questo valore come
-    `max-height` per scalarsi automaticamente entro la pagina invece
-    di farsi tagliare dal page-break.
+    breathing room): è il `max-height` delle figure, cintura contro il
+    taglio dal page-break (misurato: su A4 di default l'SVG che entra in
+    una pagina intera è alto al più 248,7 mm; il valore 242 mm sta sotto).
+    Il box della banda di leggibilità (D10) è `figure_box_w_mm` (larghezza
+    del contenuto: 170 mm su A4 con margine 20) × `figure_box_h_mm`
+    (`max_figure_height_cm·10`).
     """
     margin_mm = max(5, int(tpl_dict.get("margin_mm", 20)))
     header_h_mm = int(tpl_dict.get("header_height_mm", 0))
@@ -1662,15 +1828,20 @@ def _compute_template_margins_cm(tpl_dict: dict[str, Any]) -> dict[str, float]:
     # footer_height_mm > 0, lasciamo almeno `margin_mm` di spazio.
     bottom_mm = max(margin_mm, footer_h_mm + 5) if footer_h_mm > 0 else margin_mm
 
-    paper_h_cm = _PAGE_HEIGHTS_CM.get(tpl_dict.get("page_size", "A4"), 29.7)
+    page_size = tpl_dict.get("page_size", "A4")
+    paper_h_cm = _PAGE_HEIGHTS_CM.get(page_size, 29.7)
+    paper_w_cm = _PAGE_WIDTHS_CM.get(page_size, 21.0)
     content_h_cm = paper_h_cm - (top_mm / 10.0) - (bottom_mm / 10.0)
     max_figure_height_cm = max(5.0, round(content_h_cm - 1.5, 2))
+    figure_box_w_mm = max(10.0, round(paper_w_cm * 10.0 - 2 * margin_mm, 2))
 
     return {
         "margin_top_cm": round(top_mm / 10.0, 3),
         "margin_side_cm": round(margin_mm / 10.0, 3),
         "margin_bottom_cm": round(bottom_mm / 10.0, 3),
         "max_figure_height_cm": max_figure_height_cm,
+        "figure_box_w_mm": figure_box_w_mm,
+        "figure_box_h_mm": round(max_figure_height_cm * 10.0, 2),
     }
 
 
@@ -1729,16 +1900,18 @@ def render_lesson_html(
     organization: Organization | None,
     pdf_template: PdfTemplate | None,
     public_base_url: str | None = None,
-    mermaid_svg_map: dict[str, str] | None = None,
+    mermaid_svg_map: VisualSvgMap | None = None,
     math_svg_map: dict | None = None,
     teacher_name: str | None = None,
-    visual_svg_map: dict[str, str] | None = None,
+    visual_svg_map: VisualSvgMap | None = None,
+    fit_report: list[FigureFitEntry] | None = None,
 ) -> str:
     """Pure-function: produce l'HTML completo della lezione, pronto per
     WeasyPrint.
 
-    `visual_svg_map` è `{asset_id → svg}` per tutti i formati renderizzabili
-    (Mermaid, Vega-Lite, DOT, function); `mermaid_svg_map` è il nome storico
+    `visual_svg_map` è `{asset_id → svg | RenderedFigure}` per tutti i
+    formati renderizzabili (Mermaid, Vega-Lite, DOT, function; una stringa
+    vale `RenderedFigure.from_svg`); `mermaid_svg_map` è il nome storico
     dello stesso argomento, mantenuto per i chiamanti esistenti: le due
     mappe sono fuse (`visual_svg_map` prevale). Se una figura manca dalla
     mappa, il partial emette il fallback `<pre class="figure-fallback">` e
@@ -1746,6 +1919,12 @@ def render_lesson_html(
     produzione (`materialize_lesson_pdf`) la mappa è riempita da
     `_prerender_visual_assets_for_lesson`. Indipendente dal DB e dal
     worker: testabile in isolamento.
+
+    Larghezza delle figure (D10): il box del contenuto viene dal template
+    (`_compute_template_margins_cm`, calcolato PRIMA della mappa degli
+    asset) e ogni figura riceve `style="width:Wmm"` dalla banda di
+    leggibilità; `fit_report`, se dato, raccoglie una `FigureFitEntry` per
+    figura (`figure_fit_report` in `materialize_lesson_pdf`).
 
     Numerazione D3/D4 e rimandi D1/D2: il corpo (introduzione → sezioni →
     sintesi) riceve in coda i tag `[KIND:id]` degli asset mai citati
@@ -1774,7 +1953,19 @@ def render_lesson_html(
     language = (course.language_code or "it").lower()
     labels = _labels_for(language)
     figure_i18n = figure_labels(language)
-    svg_map = {**(mermaid_svg_map or {}), **(visual_svg_map or {})}
+    svg_map: dict[str, str | RenderedFigure] = {
+        **(mermaid_svg_map or {}),
+        **(visual_svg_map or {}),
+    }
+
+    tpl_dict: dict[str, Any]
+    if pdf_template is not None:
+        tpl_dict = _format_pdf_template_for_render(pdf_template, public_base_url=public_base_url)
+    else:
+        tpl_dict = _default_template_dict(language=language)
+
+    # Prima della mappa degli asset: il box delle figure viene da qui (D10).
+    margins_cm = _compute_template_margins_cm(tpl_dict)
 
     prepared = _prepare_lesson_body(raw, language=language)
     asset_map = _build_asset_html_map(
@@ -1785,6 +1976,8 @@ def render_lesson_html(
         asset_numbers=prepared.asset_numbers,
         labels=figure_i18n,
         lesson_code=lesson.lesson_code,
+        figure_box_mm=(margins_cm["figure_box_w_mm"], margins_cm["figure_box_h_mm"]),
+        fit_report=fit_report,
     )
     body_md = _substitute_asset_refs(prepared.markdown, asset_map)
     body_html = render_markdown(body_md, math_svg_map)
@@ -1797,14 +1990,6 @@ def render_lesson_html(
         {**(ref if isinstance(ref, dict) else {}), "citation": _tail(_citation_text(ref))}
         for ref in raw.get("references") or []
     ]
-
-    tpl_dict: dict[str, Any]
-    if pdf_template is not None:
-        tpl_dict = _format_pdf_template_for_render(pdf_template, public_base_url=public_base_url)
-    else:
-        tpl_dict = _default_template_dict(language=language)
-
-    margins_cm = _compute_template_margins_cm(tpl_dict)
 
     template = _jinja_env.get_template("lesson_pdf.html.j2")
     html = template.render(
@@ -1836,6 +2021,24 @@ def render_lesson_html(
 # ---------------------------------------------------------------------------
 # WeasyPrint — HTML → PDF bytes
 # ---------------------------------------------------------------------------
+
+
+def _log_figure_fit_report(
+    *, lesson_code: str | None, fit_report: Sequence[FigureFitEntry]
+) -> None:
+    """Summary per lezione del fit delle figure (D10): totale, in banda e
+    l'elenco delle figure fuori banda con corpo e provenienza del font
+    (input del gate editoriale D13). Condiviso da dispensa e slide."""
+    out_of_band = [
+        (e.asset_id, e.fmt, e.text_pt, e.font_source) for e in fit_report if not e.in_band
+    ]
+    log.info(
+        "figure_fit_report",
+        lesson_code=lesson_code,
+        total=len(fit_report),
+        in_band=len(fit_report) - len(out_of_band),
+        out_of_band=out_of_band,
+    )
 
 
 def _render_with_weasyprint_sync(html: str, *, base_url: str | None = None) -> bytes:
@@ -1917,6 +2120,7 @@ async def materialize_lesson_pdf(
     # Pre-render LaTeX → SVG (MathJax): WeasyPrint non rende il MathML.
     math_svg_map = await _prerender_math_for_lesson(raw_content, language=language)
 
+    fit_report: list[FigureFitEntry] = []
     html = await asyncio.to_thread(
         render_lesson_html,
         course=course,
@@ -1927,9 +2131,12 @@ async def materialize_lesson_pdf(
         visual_svg_map=visual_svg_map,
         math_svg_map=math_svg_map,
         teacher_name=teacher_name,
+        fit_report=fit_report,
     )
     # Un evento per lezione se qualche formula è ricaduta sul MathML.
     _log_math_fallbacks(lesson_code=lesson.lesson_code, svg_map=math_svg_map)
+    # Un evento per lezione con l'esito del fit delle figure (input del gate D13).
+    _log_figure_fit_report(lesson_code=lesson.lesson_code, fit_report=fit_report)
 
     pdf_bytes = await generate_pdf_bytes(html=html)
 

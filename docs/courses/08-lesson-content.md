@@ -459,11 +459,16 @@ lifespan `app/main.py`.
   collassabili). Senza la pre-validazione, `mermaid.render()` su syntax
   invalida inietta nel DOM una grossa SVG bomb-icon che rompe il layout
   della pagina. Strip programmaticamente l'attributo `max-width` inline
-  dell'SVG generato e applica `width: 100%`; il tetto d'altezza
-  (`fullWidthSvgMaxHeightPx` in `lib/figureFormats.ts`) vale solo per i
-  diagrammi orizzontali (`viewBox` con larghezza ≥ altezza), mai sotto
-  l'altezza naturale: un tetto incondizionato faceva scalare i diagrammi
-  verticali (sequence, flowchart TD) fino a testo di 7 px.
+  dell'SVG generato; la larghezza viene dalla banda di leggibilità del
+  web (D10/D11, 8-11 pt): `measureSvgFontPx` misura nel DOM il corpo del
+  testo più piccolo (stesso JS del pre-render backend), `fitFigureWidthMm`
+  (`lib/figureFormats.ts`, mirror di `figure_scale.py`) dà la larghezza
+  `W` e un wrapper interno senza padding porta `width: min(100%, Wpx)`
+  con l'SVG a `width: 100%`. Nessun tetto d'altezza (il vecchio tetto
+  «solo per i diagrammi orizzontali» è superato: un tetto unito a
+  `width: 100%` scalava i verticali fino a testo di 7 px, mentre la
+  larghezza piena portava un flowchart LR a 18 pt in una colonna di
+  900 px).
 - `VegaLiteDiagram.tsx` — import dinamico di `vega` / `vega-lite` /
   `vega-embed` (`actions: false`, `config` = `VEGALITE_THEME_CONFIG`,
   `loader` inerte che rifiuta `load/http/file`: un `data.url` non viene

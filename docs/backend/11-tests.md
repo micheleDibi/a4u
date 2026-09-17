@@ -456,12 +456,20 @@ italiana hard-coded nei file dell'inventario (lessico di parole di
 interfaccia, template literal esclusi), ogni chiave `t("…")` risolta in
 `it.json` e `en.json`. Salta senza `../frontend`.
 
-### `tests/test_frontend_figure_layout.py` (7)
+### `tests/test_frontend_figure_layout.py` (14)
 
-Geometria delle figure nel frontend misurata in Chromium (Playwright):
-`.lesson-prose .figure img { margin: 0 auto }`, tetto d'altezza dei
-Mermaid solo per i diagrammi orizzontali (`fullWidthSvgMaxHeightPx`
-eseguita con Node). Salta senza Playwright/Chromium.
+Geometria delle figure nel frontend: `.lesson-prose .figure img
+{ margin: 0 auto }` (Chromium, Playwright); `MermaidDiagram` misura e
+applica la banda di leggibilità (pin di sorgente: `fitFigureWidthMm(`,
+`measureSvgFontPx(`, `min(100%,`, nessun `clientWidth`/`ResizeObserver`
+né tetto d'altezza); la copia frontend eseguita con Node sulla fixture
+`figure_scale_cases.json` (larghezze web in px, costanti pinnate sul
+Python); parità nel DOM fra `measureSvgFontPx` (bundle esbuild) e
+`window.__measureSvgFontPx` del pre-render sui 15 campioni D8 e sulla
+fixture v11 (Chromium + CDN); geometria del wrapper `min(100%, Wpx)`
+calcolata dal modulo vero in Chromium: flowchart v11 a 532 px e testo
+11 pt in una colonna di 900, 100 % in una di 400, verticale 300×1000 a
+314 px. Salta solo se `chromium.launch()` fallisce.
 
 ### `tests/test_frontend_inline_math.py` (8)
 

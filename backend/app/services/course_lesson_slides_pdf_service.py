@@ -42,6 +42,8 @@ from app.models.slide_template import SlideTemplate
 from app.models.user import User
 from app.services import course_lesson_pdf_service as base_pdf
 from app.services import course_lesson_slides_service, remote_storage
+from app.services.figure_render_service import RenderedFigure, VisualSvgMap
+from app.services.figure_scale import FigureFitEntry
 from app.services.figure_theme import figure_labels
 from app.services.svg_normalize import svg_to_data_uri
 
@@ -149,16 +151,26 @@ def _slide_type_label(language: str, slide_type: str) -> str:
 # condivisa da PDF dispensa, PDF slide e frame video): re-export, non copia.
 _svg_to_data_uri = svg_to_data_uri
 
+# Box `(larghezza, altezza)` in mm dell'immagine di una figura nelle slide
+# per la banda di leggibilità (D10): 255 mm è la larghezza di `.slide-body`
+# (297 − 18 − 24, `lesson_slides_pdf.html.j2`), 80 mm il `max-height` del
+# template. SEGNAPOSTO di WP3a: sostituito da WP3b, in cui il box viene dal
+# budget della pagina effettiva (`slide_geometry.page_figure_budget` →
+# `image_box`, D12) e questa costante sparisce.
+_SLIDE_FIGURE_BOX_MM: tuple[float, float] = (255.0, 80.0)
+
 
 def _build_slide_asset_html(
     asset: dict[str, Any],
     *,
     kind: str,
-    visual_svg_map: dict[str, str] | None = None,
+    visual_svg_map: VisualSvgMap | None = None,
     math_svg_map: dict | None = None,
     language: str = "it",
     labels: Mapping[str, str] | None = None,
     lesson_code: str | None = None,
+    figure_box_mm: tuple[float, float] | None = None,
+    fit_report: list[FigureFitEntry] | None = None,
 ) -> str:
     """Costruisce il blocco HTML per un asset referenziato da una slide.
 
@@ -174,8 +186,11 @@ def _build_slide_asset_html(
     un replaced element con aspect ratio intrinseca: max-width e
     max-height combinati gli applicano scaling proporzionale.
 
-    `visual_svg_map` è `{asset_id → svg}` di `_prerender_mermaid_for_slides`
-    (tutti i formati); `labels` la mappa di `figure_labels(language)`.
+    `visual_svg_map` è `{asset_id → svg | RenderedFigure}` di
+    `_prerender_mermaid_for_slides` (tutti i formati); `labels` la mappa
+    di `figure_labels(language)`; `figure_box_mm` il box dell'immagine per
+    la banda di leggibilità (D10, `variant="slide"` seleziona la banda
+    10-14 pt) e `fit_report` il collettore delle voci del fit.
     Gli altri asset (table/equation/example) usano gli helper del PDF
     lezione testo con `number=None`: etichetta non numerata («Tabella.»,
     «Equazione.», «Esempio.», D5) e, per i teoremi, la sola parola del kind
@@ -192,6 +207,8 @@ def _build_slide_asset_html(
             variant="slide",
             language=language,
             lesson_code=lesson_code,
+            figure_box_mm=figure_box_mm,
+            fit_report=fit_report,
         )
     if kind == "table":
         return base_pdf._render_table_block(
@@ -266,13 +283,13 @@ async def _prerender_mermaid_for_slides(
     new_assets: list[dict[str, Any]],
     *,
     language: str = "it",
-) -> dict[str, str]:
+) -> dict[str, RenderedFigure]:
     """Pre-renderizza tutti gli asset visivi renderizzabili (Fase 3 +
     `new_assets` di Fase 4) attraverso il registro dei renderer: per
     Mermaid una singola sessione Playwright, per Vega-Lite/DOT/function i
-    renderer offline. Ritorna {asset_id: svg}. Il nome storico è
-    mantenuto: il PDF slide e il video (`lesson_slides_video_render_service`)
-    lo chiamano.
+    renderer offline. Ritorna {asset_id: RenderedFigure} (SVG e metriche
+    del testo, D10). Il nome storico è mantenuto: il PDF slide e il video
+    (`lesson_slides_video_render_service`) lo chiamano.
     """
     # Costruisce un dict-like content con tutti gli asset visivi:
     # base_pdf._prerender_visual_assets_for_lesson legge `visual_assets`.
@@ -425,18 +442,21 @@ def render_slides_html(
     organization: Organization | None,
     slide_template: SlideTemplate | None,
     public_base_url: str | None = None,
-    mermaid_svg_map: dict[str, str] | None = None,
+    mermaid_svg_map: VisualSvgMap | None = None,
     math_svg_map: dict | None = None,
     enable_split: bool = True,
     teacher_name: str | None = None,
-    visual_svg_map: dict[str, str] | None = None,
+    visual_svg_map: VisualSvgMap | None = None,
+    fit_report: list[FigureFitEntry] | None = None,
 ) -> str:
     """Pure-function: HTML completo delle slide pronto per WeasyPrint.
 
-    `visual_svg_map` è `{asset_id → svg}` per tutti i formati renderizzabili;
-    `mermaid_svg_map` è il nome storico dello stesso argomento (le due mappe
-    sono fuse, `visual_svg_map` prevale). Le figure portano l'etichetta
-    «Figura.» senza numero (A2).
+    `visual_svg_map` è `{asset_id → svg | RenderedFigure}` per tutti i
+    formati renderizzabili; `mermaid_svg_map` è il nome storico dello stesso
+    argomento (le due mappe sono fuse, `visual_svg_map` prevale). Le figure
+    portano l'etichetta «Figura.» senza numero (A2) e la larghezza dalla
+    banda di leggibilità 10-14 pt (D10) entro il box `_SLIDE_FIGURE_BOX_MM`;
+    `fit_report`, se dato, raccoglie una `FigureFitEntry` per figura.
 
     `enable_split` (default True): per il PDF cartaceo, una slide con
     bullet+asset viene splittata su 2 pagine consecutive (pattern visivo
@@ -466,7 +486,10 @@ def render_slides_html(
     else:
         tpl_dict = _default_slide_template_dict()
 
-    svg_map = {**(mermaid_svg_map or {}), **(visual_svg_map or {})}
+    svg_map: dict[str, str | RenderedFigure] = {
+        **(mermaid_svg_map or {}),
+        **(visual_svg_map or {}),
+    }
     figure_i18n = figure_labels(language)
     # Espansione: se una slide ha sia bullet sia asset, viene divisa in
     # due pagine consecutive con lo stesso titolo:
@@ -508,6 +531,8 @@ def render_slides_html(
                 language=language,
                 labels=figure_i18n,
                 lesson_code=lesson.lesson_code,
+                figure_box_mm=_SLIDE_FIGURE_BOX_MM,
+                fit_report=fit_report,
             )
             if html:
                 assets_html.append(html)
@@ -613,6 +638,7 @@ async def materialize_lesson_slides_pdf(
     # Pre-render LaTeX → SVG (MathJax): WeasyPrint non rende il MathML.
     math_svg_map = await _prerender_math_for_slides(lesson.content_raw, slides_raw)
 
+    fit_report: list[FigureFitEntry] = []
     html = await asyncio.to_thread(
         render_slides_html,
         course=course,
@@ -623,9 +649,12 @@ async def materialize_lesson_slides_pdf(
         visual_svg_map=visual_svg_map,
         math_svg_map=math_svg_map,
         teacher_name=teacher_name,
+        fit_report=fit_report,
     )
     # Un evento per lezione se qualche formula è ricaduta sul MathML.
     base_pdf._log_math_fallbacks(lesson_code=lesson.lesson_code, svg_map=math_svg_map)
+    # Un evento per lezione con l'esito del fit delle figure (gate D13).
+    base_pdf._log_figure_fit_report(lesson_code=lesson.lesson_code, fit_report=fit_report)
 
     pdf_bytes = await base_pdf.generate_pdf_bytes(html=html)
 

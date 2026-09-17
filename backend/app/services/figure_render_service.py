@@ -13,11 +13,12 @@ Tre punti di ingresso:
 - `available_formats()`: i formati offerti al modello e accettati dal
   validatore (kill-switch del setting E dipendenza presente), calcolati
   una volta per processo;
-- `render_svg_map(assets, *, language)`: l'UNICO punto in cui compaiono
-  `asyncio.to_thread`, `asyncio.wait_for` e il semaforo dei render
-  CPU-bound; raggruppa per formato, una `render_svg_batch` per formato,
-  cache LRU degli SVG e cache negativa dei render falliti; non solleva
-  mai (le chiavi assenti attivano il fallback del partial);
+- `render_figure_map(assets, *, language)` (e la proiezione
+  `render_svg_map`): l'UNICO punto in cui compaiono `asyncio.to_thread`,
+  `asyncio.wait_for` e il semaforo dei render CPU-bound; raggruppa per
+  formato, un batch per formato, cache LRU degli SVG e cache negativa dei
+  render falliti; non solleva mai (le chiavi assenti attivano il fallback
+  del partial);
 - `validate_visual_assets_or_raise(...)`: gate offline del PATCH manuale
   (A15) che valida SOLO gli asset con `(format, content)` cambiati e
   solleva `ValidationAppError` 422 con `meta.errors` per asset.
@@ -32,6 +33,13 @@ così l'SVG prodotto dalla validazione profonda del worker
 Gli SVG di Vega-Lite, DOT e `function` passano da
 `svg_normalize.normalize_svg`; quelli Mermaid no (catena byte-identica,
 A11). Progettazione: `docs/courses/17-visual-figures.md`.
+
+Metriche di leggibilità accanto all'SVG (D10): il valore della cache e
+della mappa di resa è `RenderedFigure(svg, metrics)`, dove `metrics` è
+misurato in Chromium per Mermaid (`MermaidRenderer.render_figure_batch`) e
+letto dagli attributi per gli altri formati (`RenderedFigure.from_svg`).
+L'SVG resta byte-identico e `THEME_VERSION` invariato perché il tema non
+cambia; `render_svg_map` e `render_svg_batch` sono proiezioni `.svg`.
 """
 
 from __future__ import annotations
@@ -50,6 +58,7 @@ import time
 import weakref
 from collections import OrderedDict
 from collections.abc import Iterable, Iterator, Mapping, Sequence
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Protocol
@@ -74,6 +83,7 @@ from app.services.figure_function_service import (
     FunctionRenderError,
     FunctionRenderResult,
 )
+from app.services.figure_scale import SvgMetrics
 from app.services.figure_theme import (
     MERMAID_ALLOWED_TYPES,
     THEME_VERSION,
@@ -82,8 +92,9 @@ from app.services.figure_theme import (
 )
 from app.services.json_spans import replace_strings as replace_json_strings
 from app.services.mermaid_prerender import (
+    MermaidPrerender,
     _join_mermaid_text_newlines,
-    _prerender_mermaid_to_svg_batch_sync,
+    _prerender_mermaid_batch_sync,
     _sanitize_mermaid_code,
     _strip_mermaid_max_width,
 )
@@ -92,6 +103,8 @@ from app.services.svg_normalize import (
     iter_style_bodies,
     iter_tag_contents,
     normalize_svg,
+    svg_base_font_px,
+    svg_intrinsic_box,
 )
 
 log = get_logger("app.figure_render")
@@ -188,13 +201,33 @@ class FigureRenderer(Protocol):
     def apply_translations(self, content: str, tr: Mapping[str, str]) -> str: ...
 
 
+@dataclass(frozen=True)
+class RenderedFigure:
+    """SVG di una figura con le metriche del testo accanto (D10). `metrics`
+    è `None` solo per i record costruiti a mano; `from_svg` le legge dagli
+    attributi (`svg_base_font_px`), `MermaidRenderer` le misura in
+    Chromium. L'SVG non è mai modificato."""
+
+    svg: str
+    metrics: SvgMetrics | None = None
+
+    @classmethod
+    def from_svg(cls, svg: str) -> RenderedFigure:
+        return cls(svg=svg, metrics=svg_base_font_px(svg))
+
+
+# Mappa `{asset_id → svg | RenderedFigure}` accettata dai renderer del PDF:
+# una stringa vale `RenderedFigure.from_svg` (metriche parsate).
+VisualSvgMap = Mapping[str, str | RenderedFigure]
+
+
 # ---------------------------------------------------------------------------
 # Cache LRU degli SVG + cache negativa
 # ---------------------------------------------------------------------------
 
 CacheKey = tuple[str, str, str]
 
-_svg_cache: OrderedDict[CacheKey, str] = OrderedDict()
+_svg_cache: OrderedDict[CacheKey, RenderedFigure] = OrderedDict()
 _negative_cache: dict[CacheKey, float] = {}
 _cache_lock = threading.Lock()
 
@@ -204,18 +237,27 @@ def cache_key(fmt: str, sanitized: str) -> CacheKey:
     return (fmt, digest, THEME_VERSION)
 
 
-def _cache_get(key: CacheKey) -> str | None:
+def _cache_get_figure(key: CacheKey) -> RenderedFigure | None:
     with _cache_lock:
-        svg = _svg_cache.get(key)
-        if svg is not None:
+        fig = _svg_cache.get(key)
+        if fig is not None:
             _svg_cache.move_to_end(key)
-        return svg
+        return fig
 
 
-def _cache_put(key: CacheKey, svg: str) -> None:
+def _cache_get(key: CacheKey) -> str | None:
+    """Proiezione `.svg` della cache (contratto storico dei chiamanti)."""
+    fig = _cache_get_figure(key)
+    return fig.svg if fig is not None else None
+
+
+def _cache_put(key: CacheKey, value: str | RenderedFigure) -> None:
+    """Una stringa entra come `RenderedFigure.from_svg` (metriche parsate
+    al put: la validazione profonda e i `render_svg` non cambiano)."""
+    fig = value if isinstance(value, RenderedFigure) else RenderedFigure.from_svg(value)
     size = max(1, int(get_settings().figure_svg_cache_size))
     with _cache_lock:
-        _svg_cache[key] = svg
+        _svg_cache[key] = fig
         _svg_cache.move_to_end(key)
         while len(_svg_cache) > size:
             _svg_cache.popitem(last=False)
@@ -922,22 +964,54 @@ class MermaidRenderer:
         return self.render_svg_batch([content], asset_ids=[asset_id])[0]
 
     def render_svg_batch(self, contents: list[str], *, asset_ids: list[str]) -> list[str | None]:
+        """Proiezione `.svg` di `render_figure_batch`."""
+        return [
+            fig.svg if fig is not None else None
+            for fig in self.render_figure_batch(contents, asset_ids=asset_ids)
+        ]
+
+    def render_figure_batch(
+        self, contents: list[str], *, asset_ids: list[str]
+    ) -> list[RenderedFigure | None]:
+        """Batch con le metriche misurate nella pagina del pre-render
+        (`_prerender_mermaid_batch_sync`, simbolo di modulo patchabile).
+        Se la misura manca, le metriche vengono dagli attributi/regola
+        radice con un warning: mai un fallback silenzioso."""
         codes = [self.sanitize(c) for c in contents]
-        svgs = _prerender_mermaid_to_svg_batch_sync(codes)
-        out: list[str | None] = []
-        for svg, asset_id in zip(svgs, asset_ids, strict=True):
-            if not svg:
+        rendered: list[MermaidPrerender | None] = _prerender_mermaid_batch_sync(codes)
+        out: list[RenderedFigure | None] = []
+        for item, asset_id in zip(rendered, asset_ids, strict=True):
+            if item is None or not item.svg:
                 out.append(None)
                 continue
             # Il post-processing è già applicato dal pre-render ed è
             # idempotente: qui rende esplicito il contratto del registro.
-            svg = _join_mermaid_text_newlines(_strip_mermaid_max_width(svg))
+            svg = _join_mermaid_text_newlines(_strip_mermaid_max_width(item.svg))
             ref = _svg_external_ref(svg)
             if ref is not None:
                 _render_failed(self.fmt, asset_id, f"risorsa esterna nell'SVG: {ref}")
                 out.append(None)
                 continue
-            out.append(svg)
+            metrics = item.metrics
+            if metrics is None:
+                metrics = svg_base_font_px(svg)
+                log.warning(
+                    "mermaid_font_measure_missing", asset_id=asset_id, source=metrics.source
+                )
+            elif metrics.font_px_min is not None:
+                # `getComputedStyle` misura in unità utente: px naturali
+                # solo attraverso `px_per_unit` (1.0 con radice `width="100%"`).
+                box = svg_intrinsic_box(svg)
+                ppu = box.px_per_unit if box is not None else 1.0
+                if ppu != 1.0:
+                    median = metrics.font_px_median
+                    metrics = SvgMetrics(
+                        metrics.font_px_min * ppu,
+                        median * ppu if median is not None else None,
+                        metrics.text_count,
+                        metrics.source,
+                    )
+            out.append(RenderedFigure(svg=svg, metrics=metrics))
         return out
 
     def extract_translatable(self, content: str) -> dict[str, str]:
@@ -1870,23 +1944,52 @@ def _iter_renderable(assets: Sequence[Mapping[str, Any]]) -> Iterator[tuple[str,
             yield fmt, asset_id, content
 
 
+def _render_batch(renderer: FigureRenderer, contents: list[str], asset_ids: list[str]) -> Any:
+    """Dispatch del batch: `render_figure_batch` se il renderer lo espone
+    (Mermaid, metriche misurate), altrimenti `render_svg_batch` del
+    protocollo. Nessun metodo nuovo nel `Protocol`: i renderer registrati
+    dall'esterno e i fake dei test non cambiano. Ritorna la lista grezza:
+    la guardia di lunghezza e il wrapping stanno in `render_figure_map`."""
+    batch = getattr(renderer, "render_figure_batch", None)
+    if callable(batch):
+        return batch(contents, asset_ids=asset_ids)
+    return renderer.render_svg_batch(contents, asset_ids=asset_ids)
+
+
+def _as_figure(item: object) -> RenderedFigure | None:
+    if isinstance(item, RenderedFigure):
+        return item if item.svg else None
+    if isinstance(item, str) and item:
+        return RenderedFigure.from_svg(item)
+    return None
+
+
 async def render_svg_map(assets: Sequence[Mapping[str, Any]], *, language: str) -> dict[str, str]:
-    """`{asset_id: svg}` per gli asset renderizzabili di una lezione.
+    """`{asset_id: svg}`: proiezione `.svg` di `render_figure_map`."""
+    figures = await render_figure_map(assets, language=language)
+    return {asset_id: fig.svg for asset_id, fig in figures.items()}
+
+
+async def render_figure_map(
+    assets: Sequence[Mapping[str, Any]], *, language: str
+) -> dict[str, RenderedFigure]:
+    """`{asset_id: RenderedFigure}` per gli asset renderizzabili di una
+    lezione (SVG e metriche del testo, D10).
 
     Unico punto di `asyncio.to_thread` + `asyncio.wait_for` + semaforo
     (tenuto dal chiamante async, rilasciato anche su timeout). Raggruppa
-    per formato e chiama UNA `render_svg_batch` per formato; serve dalla
-    cache LRU (per `function` solo se anche il risultato del motore è in
-    cache: `_svg_cache_hit_complete`) e salta le chiavi in cache negativa
-    (render fallito negli ultimi 60 s). Non solleva mai: timeout ed
-    eccezioni producono `figure_render_failed` e la chiave resta assente
-    (fallback del partial). `language` è solo contesto di log (vedi la
-    docstring del modulo sulla chiave di cache).
+    per formato e chiama UN batch per formato (`_render_batch`); serve
+    dalla cache LRU (per `function` solo se anche il risultato del motore
+    è in cache: `_svg_cache_hit_complete`) e salta le chiavi in cache
+    negativa (render fallito negli ultimi 60 s). Non solleva mai: timeout
+    ed eccezioni producono `figure_render_failed` e la chiave resta
+    assente (fallback del partial). `language` è solo contesto di log
+    (vedi la docstring del modulo sulla chiave di cache).
     """
     settings = get_settings()
     timeout = float(settings.figure_render_timeout_seconds)
     formats = available_formats()
-    result: dict[str, str] = {}
+    result: dict[str, RenderedFigure] = {}
     pending: dict[str, list[tuple[str, str, CacheKey]]] = {}
 
     for fmt, asset_id, content in _iter_renderable(assets):
@@ -1896,7 +1999,7 @@ async def render_svg_map(assets: Sequence[Mapping[str, Any]], *, language: str) 
             continue
         sanitized = renderer.sanitize(content)
         key = cache_key(fmt, sanitized)
-        hit = _cache_get(key)
+        hit = _cache_get_figure(key)
         if hit is not None and _svg_cache_hit_complete(renderer, sanitized):
             result[asset_id] = hit
             continue
@@ -1920,7 +2023,7 @@ async def render_svg_map(assets: Sequence[Mapping[str, Any]], *, language: str) 
         async with sem:
             try:
                 svgs = await asyncio.wait_for(
-                    asyncio.to_thread(renderer.render_svg_batch, contents, asset_ids=ids),
+                    asyncio.to_thread(_render_batch, renderer, contents, ids),
                     timeout=fmt_timeout,
                 )
             except TimeoutError:
@@ -1946,10 +2049,11 @@ async def render_svg_map(assets: Sequence[Mapping[str, Any]], *, language: str) 
                 got=len(svgs),
             )
             svgs = (svgs + [None] * len(items))[: len(items)]
-        for (aid, _s, key), svg in zip(items, svgs, strict=True):
-            if svg:
-                _cache_put(key, svg)
-                result[aid] = svg
+        for (aid, _s, key), item in zip(items, svgs, strict=True):
+            fig = _as_figure(item)
+            if fig is not None:
+                _cache_put(key, fig)
+                result[aid] = fig
             else:
                 _cache_negative(key)
     log.info(
@@ -2047,7 +2151,9 @@ __all__ = [
     "FunctionRenderResult",
     "FunctionRenderer",
     "MermaidRenderer",
+    "RenderedFigure",
     "VegaLiteRenderer",
+    "VisualSvgMap",
     "available_formats",
     "cache_key",
     "clear_svg_cache",
@@ -2057,6 +2163,7 @@ __all__ = [
     "mermaid_first_meaningful_line",
     "mermaid_static_gate",
     "register_renderer",
+    "render_figure_map",
     "render_function",
     "render_svg_map",
     "validate_visual_assets_or_raise",

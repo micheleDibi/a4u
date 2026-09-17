@@ -26,10 +26,12 @@ import asyncio
 import contextlib
 import re
 import sys
+from dataclasses import dataclass
 from typing import Any
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
+from app.services.figure_scale import SvgMetrics
 from app.services.figure_theme import MERMAID_FONT_FAMILY, mermaid_initialize_js
 
 log = get_logger("app.mermaid_prerender")
@@ -79,11 +81,52 @@ def _join_mermaid_text_newlines(svg: str) -> str:
 # Pagina headless di rendering
 # ---------------------------------------------------------------------------
 
+# Misura del corpo dei testi di un SVG nella pagina già aperta (D10): host
+# fuori schermo (mai `visibility:hidden`, che azzera i testi), un solo
+# `getComputedStyle` per elemento `text`/`tspan` con nodo di testo proprio
+# non vuoto, filtro SOLO su `display:none` (come `_MISURA_JS` del test dei
+# template frontend), host rimosso in `finally`. `fontSize` calcolato è in
+# unità utente, indipendente da viewBox e larghezza resa (`font-size="10"`
+# → 10, `"11pt"` → 14.667, `"4ex"` → 29.29). Ritorna `{min, median, count}`
+# (`{null, null, 0}` senza testi). Il sorgente è specchiato byte per byte in
+# `frontend/src/lib/figureFormats.ts` (`measureSvgFontPx`).
+MEASURE_SVG_FONT_PX_JS = """(svg) => {
+  const host = document.createElement("div");
+  host.style.cssText = "position:absolute;left:-100000px;top:0;width:1000px";
+  host.innerHTML = svg;
+  document.body.appendChild(host);
+  try {
+    const sizes = [];
+    for (const el of host.querySelectorAll("text, tspan")) {
+      const own = Array.from(el.childNodes).some(
+        (n) => n.nodeType === 3 && n.textContent.trim() !== "",
+      );
+      if (!own) continue;
+      const cs = getComputedStyle(el);
+      if (cs.display === "none") continue;
+      const px = parseFloat(cs.fontSize);
+      if (Number.isFinite(px) && px > 0) sizes.push(px);
+    }
+    if (sizes.length === 0) return { min: null, median: null, count: 0 };
+    sizes.sort((a, b) => a - b);
+    const mid = sizes.length >> 1;
+    const median = sizes.length % 2 === 1 ? sizes[mid] : (sizes[mid - 1] + sizes[mid]) / 2;
+    return { min: sizes[0], median, count: sizes.length };
+  } finally {
+    host.remove();
+  }
+}"""
+
 # HTML mini-doc che carica mermaid.esm da CDN ed espone una funzione
-# globale `__renderMermaid(id, code)` che ritorna SVG (o null se errore).
-# Segnaposto sostituiti da `build_mermaid_renderer_html`: la versione
-# (`settings.mermaid_cdn_version`) e l'istruzione `mermaid.initialize(...)`
-# prodotta da `figure_theme` (le graffe del JS impediscono `str.format`).
+# globale `__renderMermaid(id, code)` che ritorna SVG (o null se errore) e
+# `__renderMermaidMeasured(id, code)` che ritorna `{svg, metrics}` con le
+# metriche del testo misurate da `__measureSvgFontPx` nella stessa pagina
+# (una sola `page.evaluate` per figura). `__renderMermaid` resta una
+# stringa: i test del sanitizer e dei `<foreignObject>` lo chiamano
+# direttamente. Segnaposto sostituiti da `build_mermaid_renderer_html`: la
+# versione (`settings.mermaid_cdn_version`), l'istruzione
+# `mermaid.initialize(...)` prodotta da `figure_theme` e la funzione di
+# misura (le graffe del JS impediscono `str.format`).
 _MERMAID_RENDERER_HTML_TEMPLATE = """<!doctype html>
 <html><head><meta charset="utf-8">
 <style>body{margin:0;padding:0;font-family:__MERMAID_FONT_FAMILY__;}</style></head>
@@ -105,6 +148,18 @@ window.__renderMermaid = async (id, code) => {
   } catch (e) {
     return null;
   }
+};
+window.__measureSvgFontPx = __MERMAID_MEASURE__;
+window.__renderMermaidMeasured = async (id, code) => {
+  const svg = await window.__renderMermaid(id, code);
+  if (typeof svg !== "string" || !svg) return null;
+  let metrics = null;
+  try {
+    metrics = window.__measureSvgFontPx(svg);
+  } catch (e) {
+    metrics = null;
+  }
+  return { svg, metrics };
 };
 window.__mermaidReady = true;
 </script>
@@ -162,6 +217,7 @@ def build_mermaid_renderer_html(*, version: str | None = None) -> str:
         _MERMAID_RENDERER_HTML_TEMPLATE.replace("__MERMAID_VERSION__", pin)
         .replace("__MERMAID_FONT_FAMILY__", MERMAID_FONT_FAMILY)
         .replace("__MERMAID_INITIALIZE__", mermaid_initialize_js(use_max_width=True))
+        .replace("__MERMAID_MEASURE__", MEASURE_SVG_FONT_PX_JS)
     )
 
 
@@ -174,9 +230,40 @@ def __getattr__(name: str) -> str:
     raise AttributeError(name)
 
 
-async def _prerender_mermaid_to_svg_batch_async(
+@dataclass(frozen=True)
+class MermaidPrerender:
+    """SVG post-processato e metriche del testo misurate nella stessa pagina
+    (`None` se la misura è fallita: la figura resta valida)."""
+
+    svg: str
+    metrics: SvgMetrics | None
+
+
+def _metrics_from_page(raw: object, *, preview: str) -> SvgMetrics | None:
+    """`SvgMetrics` dal dizionario `{min, median, count}` della pagina;
+    `None` (con warning) se assente o malformato: una misura fallita NON
+    degrada la figura."""
+    if isinstance(raw, dict):
+        count = raw.get("count")
+        minimum = raw.get("min")
+        median = raw.get("median")
+        if count == 0:
+            return SvgMetrics(None, None, 0, "no_text")
+        if (
+            isinstance(count, int)
+            and count > 0
+            and isinstance(minimum, int | float)
+            and minimum > 0
+            and isinstance(median, int | float)
+        ):
+            return SvgMetrics(float(minimum), float(median), count, "measured")
+    log.warning("mermaid_font_measure_failed", preview=preview)
+    return None
+
+
+async def _prerender_mermaid_batch_async(
     codes: list[str],
-) -> list[str | None]:
+) -> list[MermaidPrerender | None]:
     """Implementazione async del pre-render. NON va chiamata direttamente
     dal worker uvicorn — Playwright richiede `subprocess_exec`, che su
     Windows è supportato SOLO da `ProactorEventLoop` (non dal
@@ -186,15 +273,17 @@ async def _prerender_mermaid_to_svg_batch_async(
 
     Renderizza una lista di sorgenti mermaid a SVG con UNA sola
     sessione Playwright headless (~1s startup + ~50-200ms per
-    diagramma). Ritorna lista parallela; ogni elemento è la stringa
-    SVG o `None` se il rendering ha fallito.
+    diagramma) e misura nella stessa pagina il corpo dei testi
+    (`__renderMermaidMeasured`, una `page.evaluate` per figura). Ritorna
+    lista parallela; ogni elemento è `MermaidPrerender(svg, metrics)` o
+    `None` se il rendering ha fallito.
     """
     if not codes:
         return []
 
     from playwright.async_api import async_playwright
 
-    results: list[str | None] = []
+    results: list[MermaidPrerender | None] = []
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(args=["--no-sandbox"])
         try:
@@ -213,12 +302,20 @@ async def _prerender_mermaid_to_svg_batch_async(
                     results.append(None)
                     continue
                 try:
-                    svg = await page.evaluate(
-                        "([id, code]) => window.__renderMermaid(id, code)",
+                    rendered = await page.evaluate(
+                        "([id, code]) => window.__renderMermaidMeasured(id, code)",
                         [f"mmd-{i}", code],
                     )
+                    svg = rendered.get("svg") if isinstance(rendered, dict) else None
                     if isinstance(svg, str) and svg.strip():
-                        results.append(_join_mermaid_text_newlines(_strip_mermaid_max_width(svg)))
+                        results.append(
+                            MermaidPrerender(
+                                svg=_join_mermaid_text_newlines(_strip_mermaid_max_width(svg)),
+                                metrics=_metrics_from_page(
+                                    rendered.get("metrics"), preview=code[:80]
+                                ),
+                            )
+                        )
                     else:
                         log.warning(
                             "mermaid_render_returned_empty",
@@ -237,9 +334,9 @@ async def _prerender_mermaid_to_svg_batch_async(
     return results
 
 
-def _prerender_mermaid_to_svg_batch_sync(
+def _prerender_mermaid_batch_sync(
     codes: list[str],
-) -> list[str | None]:
+) -> list[MermaidPrerender | None]:
     """Sync wrapper: crea un loop asyncio NUOVO e dedicato (su Windows
     forza `ProactorEventLoop`, l'unico che supporta `subprocess_exec`
     necessario al transport di Playwright). Va chiamato da un thread
@@ -251,10 +348,29 @@ def _prerender_mermaid_to_svg_batch_sync(
         loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
-        return loop.run_until_complete(_prerender_mermaid_to_svg_batch_async(codes))
+        return loop.run_until_complete(_prerender_mermaid_batch_async(codes))
     finally:
         with contextlib.suppress(Exception):
             loop.close()
+
+
+def _project_svgs(rendered: list[MermaidPrerender | None]) -> list[str | None]:
+    return [r.svg if r is not None else None for r in rendered]
+
+
+async def _prerender_mermaid_to_svg_batch_async(
+    codes: list[str],
+) -> list[str | None]:
+    """Nome storico: proiezione `.svg` di `_prerender_mermaid_batch_async`."""
+    return _project_svgs(await _prerender_mermaid_batch_async(codes))
+
+
+def _prerender_mermaid_to_svg_batch_sync(
+    codes: list[str],
+) -> list[str | None]:
+    """Nome storico: proiezione `.svg` di `_prerender_mermaid_batch_sync`
+    (script di rivalidazione, re-export di `course_lesson_pdf_service`)."""
+    return _project_svgs(_prerender_mermaid_batch_sync(codes))
 
 
 async def _prerender_mermaid_to_svg_batch(

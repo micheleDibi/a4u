@@ -16,6 +16,8 @@ from app.services.svg_normalize import (
     NormalizedSvg,
     SvgRejectedError,
     normalize_svg,
+    svg_base_font_px,
+    svg_intrinsic_box,
     svg_to_data_uri,
 )
 
@@ -221,3 +223,58 @@ def test_svg_to_data_uri_is_base64():
     uri = svg_to_data_uri(svg)
     assert uri.startswith("data:image/svg+xml;base64,")
     assert base64.b64decode(uri.split(",", 1)[1]).decode("utf-8") == svg
+
+
+# ---------------------------------------------------------------------------
+# Letture per la banda di leggibilità (D10): `svg_intrinsic_box`, `svg_base_font_px`
+# ---------------------------------------------------------------------------
+
+
+def test_intrinsic_box_of_a_normalized_svg_matches_the_normalizer():
+    """`px_per_unit` è la scala fra le unità utente (pt per DOT e matplotlib)
+    e i px riscritti da `normalize_svg`; le due letture non toccano l'SVG."""
+    raw = (
+        '<svg width="83pt" height="213pt" viewBox="0 0 83 213">'
+        '<text font-size="10.00">a</text></svg>'
+    )
+    normalized = normalize_svg(raw, max_bytes=10_000)
+    box = svg_intrinsic_box(normalized.svg)
+    assert box is not None
+    # La radice riscritta porta i px arrotondati al centesimo (`_fmt`).
+    assert box.width_px == pytest.approx(normalized.width_px, abs=0.01)
+    assert box.height_px == pytest.approx(normalized.height_px, abs=0.01)
+    assert box.px_per_unit == pytest.approx(4 / 3, abs=1e-3)
+    metrics = svg_base_font_px(normalized.svg)
+    assert metrics.font_px_min == pytest.approx(10 * box.px_per_unit)
+    assert metrics.source == "parsed"
+    assert normalize_svg(normalized.svg, max_bytes=10_000).svg == normalized.svg  # idempotente
+
+
+def test_root_rule_must_be_exact_and_data_attributes_are_ignored():
+    # `#m svg{…}` non è la regola radice: senza `#m{…}` il testo resta irrisolto.
+    only_descendant = '<svg id="m"><style>#m svg{font-size:20px}</style><text>x</text></svg>'
+    assert svg_base_font_px(only_descendant).source == "unresolved"
+    # `#mm{…}` non è `#m{…}`; `#m{…}` preceduto da `}` sì.
+    longer_id = (
+        '<svg id="m"><style>#mm{font-size:9px}.a{}#m{font-size:14px}</style><text>x</text></svg>'
+    )
+    assert svg_base_font_px(longer_id).font_px_min == 14.0
+    assert (
+        svg_base_font_px('<svg><text data-font-size="99" font-size="10">a</text></svg>').font_px_min
+        == 10.0
+    )
+    # Con lo `style` presente ma relativo, l'attributo non fa da ripiego (precedenza CSS).
+    relative = '<svg><text style="font-size:1.2em" font-size="10">a</text></svg>'
+    assert svg_base_font_px(relative).source == "unresolved"
+    # Il minimo viene dal valore proprio anche a parità con la radice.
+    tie = (
+        '<svg id="m"><style>#m{font-size:14px}</style>'
+        '<text font-size="14">a</text><text>b</text></svg>'
+    )
+    assert svg_base_font_px(tie).source == "parsed"
+
+
+def test_exports_include_the_readers():
+    from app.services import svg_normalize
+
+    assert {"SvgBox", "svg_intrinsic_box", "svg_base_font_px"} <= set(svg_normalize.__all__)

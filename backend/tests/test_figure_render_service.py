@@ -34,16 +34,20 @@ from collections.abc import Iterator, Mapping
 from typing import Any
 
 import pytest
+import structlog.testing
 
 from app.core import config
 from app.core.errors import ValidationAppError
 from app.services import figure_render_service as frs
 from app.services import figure_theme as theme
+from app.services import mermaid_prerender as mp
 from app.services.figure_compute.isolated import (
     FigureComputeError,
     FigureTimeoutError,
     run_isolated,
 )
+from app.services.figure_scale import SvgMetrics
+from app.services.svg_normalize import svg_base_font_px, svg_intrinsic_box
 
 _VL_AVAILABLE = frs.REGISTRY["vegalite"].available()
 _DOT_AVAILABLE = shutil.which("dot") is not None
@@ -848,7 +852,11 @@ def test_mermaid_render_batch_refuses_an_svg_with_an_external_resource(
         "<svg><style>@import url(https://interno/z.css);</style><g>x</g></svg>",
         "<svg><g>ok</g></svg>",
     ]
-    monkeypatch.setattr(frs, "_prerender_mermaid_to_svg_batch_sync", lambda codes: list(svgs))
+    monkeypatch.setattr(
+        frs,
+        "_prerender_mermaid_batch_sync",
+        lambda codes: [mp.MermaidPrerender(s, None) for s in svgs],
+    )
     out = frs.REGISTRY["mermaid"].render_svg_batch(
         ["a", "b", "c", "d"], asset_ids=["A", "B", "C", "D"]
     )
@@ -892,9 +900,75 @@ def test_mermaid_render_batch_keeps_labels_that_talk_about_css(
         "<svg><text><tspan>background: url(https://cdn/x.png)</tspan></text></svg>",
         '<svg><g aria-label="url(https://cdn/x.png)"><text>ok</text></g></svg>',
     ]
-    monkeypatch.setattr(frs, "_prerender_mermaid_to_svg_batch_sync", lambda codes: list(svgs))
+    monkeypatch.setattr(
+        frs,
+        "_prerender_mermaid_batch_sync",
+        lambda codes: [mp.MermaidPrerender(s, None) for s in svgs],
+    )
     out = frs.REGISTRY["mermaid"].render_svg_batch(["a", "b", "c"], asset_ids=["A", "B", "C"])
     assert out == svgs
+
+
+def test_mermaid_figure_batch_keeps_measured_metrics_or_falls_back_with_a_warning(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """`render_figure_batch` porta le metriche misurate nella pagina accanto
+    all'SVG (D10); senza misura le legge dagli attributi/regola radice e lo
+    dice (`mermaid_font_measure_missing`); `render_svg_batch` è la
+    proiezione `.svg`."""
+    root = '<svg id="m" width="100%" viewBox="0 0 10 10"><style>#m{font-size:14px}</style>'
+    svgs = [root + "<text>a</text></svg>", "<svg><text>b</text></svg>"]
+    measured = SvgMetrics(16.0, 16.0, 3, "measured")
+    monkeypatch.setattr(
+        frs,
+        "_prerender_mermaid_batch_sync",
+        lambda codes: [mp.MermaidPrerender(svgs[0], measured), mp.MermaidPrerender(svgs[1], None)],
+    )
+    with structlog.testing.capture_logs() as logs:
+        out = frs.REGISTRY["mermaid"].render_figure_batch(["a", "b"], asset_ids=["A", "B"])
+    assert out[0] == frs.RenderedFigure(svgs[0], measured)
+    assert out[1] is not None and out[1].svg == svgs[1]
+    assert out[1].metrics == SvgMetrics(None, None, 1, "unresolved")
+    missing = [e for e in logs if e["event"] == "mermaid_font_measure_missing"]
+    assert [(e["asset_id"], e["source"]) for e in missing] == [("B", "unresolved")]
+    assert frs.REGISTRY["mermaid"].render_svg_batch(["a", "b"], asset_ids=["A", "B"]) == svgs
+
+
+@needs_dot
+@needs_vl
+def test_registry_svgs_expose_the_theme_font():
+    """Sentinella sui renderer reali: il corpo del testo si legge dagli
+    attributi degli SVG normalizzati (DOT 10 uu = pt × 4/3, Vega-Lite 11 px,
+    matplotlib 9 pt → 12 px). Un cambio di canale del tema o del
+    normalizzatore cadrebbe in `unresolved` e farebbe fallire il test."""
+    dot = frs.REGISTRY["dot"].render_svg('digraph { a -> b; b -> c [label="arco"] }')
+    assert dot
+    box = svg_intrinsic_box(dot)
+    metrics = svg_base_font_px(dot)
+    assert box is not None and box.px_per_unit == pytest.approx(4 / 3, abs=1e-3)
+    assert metrics.source == "parsed" and metrics.text_count >= 4
+    assert metrics.font_px_min == pytest.approx(10 * box.px_per_unit)  # etichetta d'arco
+    vl = frs.REGISTRY["vegalite"].render_svg(_BAR_JSON)
+    assert vl
+    box = svg_intrinsic_box(vl)
+    metrics = svg_base_font_px(vl)
+    assert box is not None and box.px_per_unit == 1.0
+    assert (metrics.font_px_min, metrics.source) == (11.0, "parsed")
+    spec = json.dumps(
+        {
+            "kind": "function_study",
+            "expressions": [{"expr": "x**2 - 1"}],
+            "domain": [-3, 3],
+            "show": ["zeros"],
+        }
+    )
+    fn = frs.REGISTRY["function"].render_svg(spec)
+    assert fn
+    box = svg_intrinsic_box(fn)
+    metrics = svg_base_font_px(fn)
+    assert box is not None and box.px_per_unit == pytest.approx(4 / 3)
+    assert metrics.source == "parsed"
+    assert metrics.font_px_min == pytest.approx(12.0)  # 9 uu × 4/3: mai 8
 
 
 def test_mermaid_html_gate_suggests_tilde_generics_for_class_diagrams():
@@ -1600,12 +1674,68 @@ async def test_render_svg_map_skips_sources_emptied_by_sanitize(
     CDN per nulla (REG-4)."""
     calls: list[list[str]] = []
 
-    def _never(codes: list[str]) -> list[str | None]:
+    def _never(codes: list[str]) -> list[mp.MermaidPrerender | None]:
         calls.append(list(codes))
         return [None] * len(codes)
 
-    monkeypatch.setattr(frs, "_prerender_mermaid_to_svg_batch_sync", _never)
+    monkeypatch.setattr(frs, "_prerender_mermaid_batch_sync", _never)
     frs.available_formats.cache_clear()
     assets = [{"asset_id": "M1", "format": "mermaid", "content": "```mermaid\n```"}]
     assert await frs.render_svg_map(assets, language="it") == {}
     assert calls == []
+
+
+class _MeasuredRenderer(_FakeRenderer):
+    """Renderer che espone `render_figure_batch` (metriche accanto all'SVG)."""
+
+    def render_figure_batch(
+        self, contents: list[str], *, asset_ids: list[str]
+    ) -> list[frs.RenderedFigure | None]:
+        self.batches.append(list(contents))
+        return [
+            frs.RenderedFigure(f"<svg>{self.fmt}:{c}</svg>", SvgMetrics(16.0, 16.0, 2, "measured"))
+            for c in contents
+        ]
+
+
+async def test_render_figure_map_keeps_metrics_and_render_svg_map_projects(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Dispatch con `getattr`: un renderer senza `render_figure_batch` passa
+    per `RenderedFigure.from_svg` (metriche parsate), uno che lo espone
+    consegna il record tale e quale; la cache tiene il record
+    (`_cache_get_figure`) e `_cache_get` resta la stringa; `render_svg_map`
+    è la proiezione `.svg` e il secondo giro viene dalla cache."""
+    plain = _FakeRenderer("dot")
+    measured = _MeasuredRenderer("vegalite")
+    monkeypatch.setitem(frs.REGISTRY, "dot", plain)
+    monkeypatch.setitem(frs.REGISTRY, "vegalite", measured)
+    frs.available_formats.cache_clear()
+    text = '<text font-size="9">x</text>'
+    assets = [
+        {"asset_id": "D1", "format": "dot", "content": text},
+        {"asset_id": "V1", "format": "vegalite", "content": "s1"},
+    ]
+    figs = await frs.render_figure_map(assets, language="it")
+    assert set(figs) == {"D1", "V1"}
+    assert figs["D1"].svg == f"<svg>dot:{text}</svg>"
+    assert figs["D1"].metrics == SvgMetrics(9.0, 9.0, 1, "parsed")
+    assert figs["V1"] == frs.RenderedFigure(
+        "<svg>vegalite:s1</svg>", SvgMetrics(16.0, 16.0, 2, "measured")
+    )
+    key_v = frs.cache_key("vegalite", "s1")
+    cached = frs._cache_get_figure(key_v)
+    assert cached is not None and cached.metrics is not None
+    assert cached.metrics.source == "measured"
+    assert frs._cache_get(key_v) == "<svg>vegalite:s1</svg>"
+    key_d = frs.cache_key("dot", text)
+    cached_d = frs._cache_get_figure(key_d)
+    assert cached_d is not None and cached_d.metrics is not None
+    assert cached_d.metrics.source == "parsed"
+    assert await frs.render_svg_map(assets, language="it") == {k: v.svg for k, v in figs.items()}
+    assert plain.batches == [[text]] and measured.batches == [["s1"]]  # dalla cache
+    # Una stringa messa in cache a mano continua a funzionare (contratto storico).
+    frs._cache_put(key_d, "1")
+    assert frs._cache_get(key_d) == "1"
+    one = frs._cache_get_figure(key_d)
+    assert one is not None and one.metrics == SvgMetrics(None, None, 0, "no_text")

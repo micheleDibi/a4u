@@ -32,14 +32,24 @@ Regole:
    grafo DOT a tre nodi resta piccolo), `preserveAspectRatio="xMidYMid
    meet"`, `max-width` rimosso dallo `style`, `xmlns` garantito. Nessun
    namespacing degli id: ogni `<img>` è un documento isolato.
+
+Due letture pure per la banda di leggibilità (D10, `figure_scale`), valide
+anche per gli SVG Mermaid perché non li modificano: `svg_intrinsic_box`
+(viewBox, dimensione intrinseca e `px_per_unit` della radice) e
+`svg_base_font_px` (corpo minimo dei testi di contenuto dagli attributi
+`font-size`/`style` dei `<text>`/`<tspan>` e dalla regola radice
+`#id{font-size}`).
 """
 
 from __future__ import annotations
 
 import base64
 import re
+import statistics
 from collections.abc import Iterator
 from dataclasses import dataclass
+
+from app.services.figure_scale import MetricsSource, SvgMetrics
 
 SVG_NS = "http://www.w3.org/2000/svg"
 XLINK_NS = "http://www.w3.org/1999/xlink"
@@ -207,6 +217,144 @@ def _attr_string(attrs: list[tuple[str, str]]) -> str:
     return "".join(f' {k}="{v}"' for k, v in attrs)
 
 
+# --- letture per la banda di leggibilità (D10) ----------------------------
+
+
+@dataclass(frozen=True)
+class SvgBox:
+    """Geometria della radice: viewBox in unità utente, dimensione
+    intrinseca in px se la radice la dichiara (`None` per `width="100%"`) e
+    `px_per_unit = width_px / vb_w` (1.0 per gli SVG fluidi; 4/3 per DOT e
+    matplotlib, le cui unità utente sono pt)."""
+
+    vb_w: float
+    vb_h: float
+    width_px: float | None
+    height_px: float | None
+    px_per_unit: float
+
+
+def _root_attrs(svg: str) -> dict[str, str] | None:
+    """Attributi del tag radice, con i nomi in minuscolo; `None` senza `<svg>`."""
+    root = _ROOT_RE.search(svg or "")
+    if root is None:
+        return None
+    out: dict[str, str] = {}
+    for m in _ATTR_RE.finditer(root.group(1)):
+        value = m.group(2) if m.group(2) is not None else (m.group(3) or "")
+        out[m.group(1).lower()] = value
+    return out
+
+
+def svg_intrinsic_box(svg: str) -> SvgBox | None:
+    """`SvgBox` della radice (stessa regola di `normalize_svg`: senza
+    `viewBox` valgono `width`/`height` numerici); `None` se non
+    determinabile (nessuna radice, viewBox degenere, sola larghezza in
+    percentuale). Mirror di `svgIntrinsicBox` nel frontend."""
+    attrs = _root_attrs(svg)
+    if attrs is None:
+        return None
+    width_px = _length_px(attrs.get("width"))
+    height_px = _length_px(attrs.get("height"))
+    viewbox = _parse_viewbox(attrs.get("viewbox"))
+    if viewbox is None and width_px is not None and height_px is not None:
+        viewbox = (0.0, 0.0, width_px, height_px)
+    if viewbox is None:
+        return None
+    _x, _y, vb_w, vb_h = viewbox
+    px_per_unit = width_px / vb_w if width_px is not None else 1.0
+    return SvgBox(
+        vb_w=vb_w, vb_h=vb_h, width_px=width_px, height_px=height_px, px_per_unit=px_per_unit
+    )
+
+
+# Tag `<text>`/`<tspan>` con lo stesso trattamento delle virgolette di
+# `_TAG_RE`; il gruppo 3 è il testo proprio fino al tag successivo, quindi
+# in `<text><tspan>x</tspan></text>` conta lo `tspan`, non il `text`.
+_TEXT_TAG_RE = re.compile(
+    r"<(text|tspan)\b((?:[^>\"']|\"[^\"]*\"|'[^']*')*)>([^<]*)", re.IGNORECASE
+)
+_FONT_SIZE_ATTR_RE = re.compile(
+    r"(?<![\w-])font-size\s*=\s*(?:\"([^\"]*)\"|'([^']*)')", re.IGNORECASE
+)
+_STYLE_ATTR_RE = re.compile(r"(?<![\w-])style\s*=\s*(?:\"([^\"]*)\"|'([^']*)')", re.IGNORECASE)
+_FONT_SIZE_DECL_RE = re.compile(r"(?:^|;)\s*font-size\s*:\s*([^;!]+)", re.IGNORECASE)
+
+
+def _attr_value(pattern: re.Pattern[str], tag_attrs: str) -> str | None:
+    m = pattern.search(tag_attrs)
+    if m is None:
+        return None
+    return m.group(1) if m.group(1) is not None else (m.group(2) or "")
+
+
+def _own_font_px(tag_attrs: str) -> float | None:
+    """Corpo proprio del tag in unità utente: `font-size:` dentro `style`
+    vince sull'attributo (precedenza CSS); `em`/`ex`/`%` non sono
+    risolvibili e valgono «nessun valore proprio»."""
+    style = _attr_value(_STYLE_ATTR_RE, tag_attrs)
+    if style is not None:
+        decl = _FONT_SIZE_DECL_RE.search(style)
+        if decl is not None:
+            return _length_px(decl.group(1))
+    return _length_px(_attr_value(_FONT_SIZE_ATTR_RE, tag_attrs))
+
+
+def _root_rule_font_px(svg: str, root_id: str | None) -> float | None:
+    """`font-size` della regola il cui selettore è ESATTAMENTE `#<id>` (non
+    `#<id> svg`, non `#<id> .x`) nei blocchi `<style>`; l'ultima vince."""
+    if not root_id:
+        return None
+    rule_re = re.compile(r"(?<![\w#.-])#" + re.escape(root_id) + r"\s*\{([^}]*)\}")
+    found: float | None = None
+    for css in iter_style_bodies(svg):
+        for rule in rule_re.finditer(css):
+            decl = _FONT_SIZE_DECL_RE.search(rule.group(1))
+            if decl is not None:
+                value = _length_px(decl.group(1))
+                if value is not None:
+                    found = value
+    return found
+
+
+def svg_base_font_px(svg: str) -> SvgMetrics:
+    """Metriche del testo di contenuto lette dagli attributi (Vega-Lite,
+    DOT, matplotlib) e, come secondo canale, dalla regola radice `#id{…}`
+    (Mermaid). Conta solo i tag con testo proprio non vuoto; un tag senza
+    valore proprio eredita la regola radice se esiste. Valori in px CSS
+    alla dimensione naturale (`× px_per_unit`).
+
+    Per Mermaid la regola radice è SBAGLIATA su `pie` (17) e `radar` (12,
+    classi nello `<style>` invisibili a una regex): è solo il fallback
+    della misura in Chromium e viaggia con `source="root_rule"`. Non
+    esclude `<defs>`/`<symbol>`/`<clipPath>`: nessun renderer nostro vi
+    mette testo. Non tocca l'SVG."""
+    attrs = _root_attrs(svg)
+    root_px = _root_rule_font_px(svg, attrs.get("id") if attrs else None)
+    box = svg_intrinsic_box(svg)
+    ppu = box.px_per_unit if box is not None else 1.0
+
+    values: list[tuple[float, bool]] = []  # (uu, dal tag)
+    count = 0
+    for m in _TEXT_TAG_RE.finditer(svg or ""):
+        if not m.group(3).strip():
+            continue
+        count += 1
+        own = _own_font_px(m.group(2))
+        if own is not None:
+            values.append((own, True))
+        elif root_px is not None:
+            values.append((root_px, False))
+    if count == 0:
+        return SvgMetrics(None, None, 0, "no_text")
+    if not values:
+        return SvgMetrics(None, None, count, "unresolved")
+    minimum = min(values, key=lambda v: (v[0], not v[1]))
+    median = statistics.median(v for v, _own in values)
+    source: MetricsSource = "parsed" if minimum[1] else "root_rule"
+    return SvgMetrics(minimum[0] * ppu, median * ppu, count, source)
+
+
 def normalize_svg(svg: str, *, max_bytes: int) -> NormalizedSvg:
     """Normalizza l'SVG di un renderer nostro. Solleva `SvgRejectedError`
     con il motivo; non tenta mai una sanificazione parziale."""
@@ -290,4 +438,12 @@ def svg_to_data_uri(svg: str) -> str:
     return f"data:image/svg+xml;base64,{payload}"
 
 
-__all__ = ["NormalizedSvg", "SvgRejectedError", "normalize_svg", "svg_to_data_uri"]
+__all__ = [
+    "NormalizedSvg",
+    "SvgBox",
+    "SvgRejectedError",
+    "normalize_svg",
+    "svg_base_font_px",
+    "svg_intrinsic_box",
+    "svg_to_data_uri",
+]

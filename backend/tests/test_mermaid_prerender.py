@@ -14,9 +14,11 @@ from __future__ import annotations
 
 import json
 import re
+import socket
 from pathlib import Path
 
 import pytest
+import structlog.testing
 
 from app.core.config import get_settings
 from app.services import asset_validation_service as avs
@@ -24,6 +26,8 @@ from app.services import figure_theme as theme
 from app.services import mermaid_prerender as mp
 from app.services import openai_asset_fix_service as fix
 from app.services import openai_image_to_mermaid_service as i2m
+from app.services.figure_scale import SvgMetrics
+from app.services.svg_normalize import svg_base_font_px
 
 _FIXTURES = Path(__file__).parent / "fixtures"
 _INIT_RE = re.compile(r"mermaid\.initialize\((\{.*?\})\);", re.S)
@@ -118,6 +122,46 @@ def test_build_renderer_html_accepts_explicit_version():
     assert "mermaid@10.9.4/dist/mermaid.esm.min.mjs" in html
     assert "window.__renderMermaid" in html and "window.__mermaidReady" in html
     assert "suppressErrors: true" in html
+    # Misura del corpo dei testi nella stessa pagina (D10): la funzione di
+    # misura è inserita per intero e `__renderMermaid` resta invariato.
+    assert "window.__renderMermaidMeasured" in html and "__measureSvgFontPx" in html
+    assert mp.MEASURE_SVG_FONT_PX_JS in html and "__MERMAID_MEASURE__" not in html
+    assert "left:-100000px" in html and "visibility" not in mp.MEASURE_SVG_FONT_PX_JS
+    assert 'cs.display === "none"' in mp.MEASURE_SVG_FONT_PX_JS
+
+
+def test_v11_fixture_font_comes_from_the_root_rule():
+    """Sentinella sul formato dell'SVG: Mermaid 11 dimensiona i testi con la
+    regola radice `#mmd-N{font-size:14px}` (nessun `font-size` sui tag);
+    il parser statico lo legge come `root_rule` e conta i sei tag con
+    testo proprio. Un cambio di formato lo farebbe cadere in
+    `unresolved` (→ costante) e il test lo segnala."""
+    svg = (_FIXTURES / "mermaid11_flowchart.svg").read_text(encoding="utf-8")
+    metrics = svg_base_font_px(svg)
+    assert (metrics.font_px_min, metrics.source, metrics.text_count) == (14.0, "root_rule", 6)
+    assert svg_base_font_px(mp._strip_mermaid_max_width(svg)) == metrics
+
+
+def test_legacy_batch_names_are_projections_of_the_measured_core(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    rendered = [mp.MermaidPrerender("<svg/>", SvgMetrics(14.0, 14.0, 1, "measured")), None]
+    monkeypatch.setattr(mp, "_prerender_mermaid_batch_sync", lambda codes: rendered[: len(codes)])
+    assert mp._prerender_mermaid_to_svg_batch_sync(["a", "b"]) == ["<svg/>", None]
+    assert mp._prerender_mermaid_to_svg_batch_sync([]) == []
+
+
+def test_metrics_from_page_handles_missing_and_malformed_results():
+    ok = mp._metrics_from_page({"min": 14, "median": 14.5, "count": 6}, preview="x")
+    assert ok == SvgMetrics(14.0, 14.5, 6, "measured")
+    assert mp._metrics_from_page({"min": None, "median": None, "count": 0}, preview="x") == (
+        SvgMetrics(None, None, 0, "no_text")
+    )
+    with structlog.testing.capture_logs() as logs:
+        assert mp._metrics_from_page(None, preview="flowchart LR") is None
+        assert mp._metrics_from_page({"count": 3, "min": "x", "median": 1}, preview="p") is None
+        assert mp._metrics_from_page({"count": 2, "min": 0, "median": 0}, preview="p") is None
+    assert [e["event"] for e in logs] == ["mermaid_font_measure_failed"] * 3
 
 
 def test_pdf_service_reexports_the_old_names():
@@ -286,3 +330,111 @@ def test_image_to_mermaid_prompt_lists_allowed_types_and_label_rules():
     assert "Mai " + ", ".join(theme.MERMAID_EXCLUDED_TYPES) in prompt
     assert "%%{init: ...}%%" in prompt
     assert "italiano" in prompt and "inglese" in i2m._system_prompt("en-US")
+
+
+# ---------------------------------------------------------------------------
+# Misura del corpo dei testi nella pagina di pre-render (Chromium + CDN, D10)
+# ---------------------------------------------------------------------------
+
+# Corpo minimo (px, unità utente) misurato in Chromium sui 15 campioni D8 di
+# Mermaid 11.17.2: la regola radice (14) è giusta solo su 9 tipi.
+_EXPECTED_MIN_PX: dict[str, float] = {
+    "flowchart": 14,
+    "sequenceDiagram": 16,
+    "classDiagram": 14,
+    "stateDiagram-v2": 14,
+    "erDiagram": 14,
+    "mindmap": 14,
+    "timeline": 14,
+    "pie": 17,
+    "xychart-beta": 14,
+    "quadrantChart": 12,
+    "sankey-beta": 14,
+    "block-beta": 14,
+    "gantt": 10,
+    "radar-beta": 12,
+    "treemap-beta": 10,
+}
+
+
+def _require_cdn() -> None:
+    try:
+        socket.create_connection(("cdn.jsdelivr.net", 443), timeout=3).close()
+    except OSError:
+        pytest.skip("cdn.jsdelivr.net non raggiungibile")
+
+
+@pytest.fixture(scope="module")
+def measured_batch() -> dict[str, mp.MermaidPrerender | None]:
+    pytest.importorskip("playwright.sync_api")
+    _require_cdn()
+    kinds = list(theme.MERMAID_D8_SAMPLES)
+    try:
+        rendered = mp._prerender_mermaid_batch_sync(list(theme.MERMAID_D8_SAMPLES.values()))
+    except Exception as exc:  # launch o rete: verifica locale, non gate CI
+        pytest.skip(f"Chromium o CDN non disponibili: {exc!r}"[:300])
+    if all(r is None for r in rendered):
+        pytest.skip("pagina di rendering non pronta (__mermaidReady) o CDN non caricata")
+    return dict(zip(kinds, rendered, strict=True))
+
+
+def test_measured_batch_returns_metrics_next_to_the_svg(
+    measured_batch: dict[str, mp.MermaidPrerender | None],
+) -> None:
+    """Ogni campione D8 esce con le metriche `measured` accanto all'SVG
+    post-processato (nessun `max-width: <px>`): il minimo per tipo è quello
+    della tabella 2(c) del piano, mai un fallback."""
+    assert set(measured_batch) == set(_EXPECTED_MIN_PX)
+    for kind, item in measured_batch.items():
+        assert item is not None, kind
+        assert item.svg.startswith("<svg") and mp._MERMAID_MAX_WIDTH_RE.search(item.svg) is None
+        assert item.metrics is not None, kind
+        assert item.metrics.source == "measured", kind
+        assert item.metrics.font_px_min == pytest.approx(_EXPECTED_MIN_PX[kind], abs=0.01), kind
+        assert item.metrics.text_count > 0 and item.metrics.font_px_median is not None, kind
+        assert item.metrics.font_px_median >= item.metrics.font_px_min, kind
+
+
+def test_render_mermaid_stays_a_string_and_a_failed_measure_keeps_the_svg(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`window.__renderMermaid` resta una stringa (due test lo chiamano
+    direttamente); `__measureSvgFontPx` sulla fixture v11 dà min 14 e sei
+    testi; una misura che lancia produce `metrics=None` con
+    `mermaid_font_measure_failed` e l'SVG è comunque accettato."""
+    sync_api = pytest.importorskip("playwright.sync_api")
+    _require_cdn()
+    code = theme.MERMAID_D8_SAMPLES["flowchart"]
+    fixture = (_FIXTURES / "mermaid11_flowchart.svg").read_text(encoding="utf-8")
+    with sync_api.sync_playwright() as p:
+        try:
+            browser = p.chromium.launch(args=["--no-sandbox"])
+        except Exception as exc:  # launch di Chromium: verifica locale, non gate CI
+            pytest.skip(f"Chromium non disponibile: {exc!r}"[:300])
+        try:
+            page = browser.new_page()
+            page.set_content(mp.build_mermaid_renderer_html(), wait_until="domcontentloaded")
+            page.wait_for_function("window.__mermaidReady === true", timeout=20_000)
+            svg = page.evaluate("([id, c]) => window.__renderMermaid(id, c)", ["mmd-0", code])
+            assert isinstance(svg, str) and svg.startswith("<svg")
+            measured = page.evaluate("(svg) => window.__measureSvgFontPx(svg)", fixture)
+            assert measured == {"min": 14, "median": 14, "count": 6}
+            # Il DOM misurato coincide con il parser statico sulla fixture.
+            parsed = svg_base_font_px(fixture)
+            assert (parsed.font_px_min, parsed.text_count) == (14.0, 6)
+            both = page.evaluate(
+                "([id, c]) => window.__renderMermaidMeasured(id, c)", ["m-1", code]
+            )
+            assert isinstance(both["svg"], str) and both["metrics"]["min"] == 14
+            assert page.evaluate("() => document.body.children.length") == 1  # host rimosso
+        finally:
+            browser.close()
+    # Misura che lancia: la figura resta, le metriche no, e il log lo dice.
+    monkeypatch.setattr(mp, "MEASURE_SVG_FONT_PX_JS", "() => { throw new Error('boom'); }")
+    with structlog.testing.capture_logs() as logs:
+        rendered = mp._prerender_mermaid_batch_sync([code])
+    assert rendered[0] is not None and rendered[0].svg.startswith("<svg")
+    assert rendered[0].metrics is None
+    assert [e["event"] for e in logs if e["event"].startswith("mermaid_font")] == [
+        "mermaid_font_measure_failed"
+    ]
