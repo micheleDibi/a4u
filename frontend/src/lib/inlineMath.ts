@@ -13,7 +13,8 @@
  * - un `$..$` singolo è un importo, non una formula, se il contenuto è
  *   «importo + separatore» / «separatore + importo» (`$50/$70`, `5$, 10$`)
  *   o se una cifra tocca il delimitatore dall'esterno con contenuto
- *   numerico (`US$50 e US$70`, `50$-70$`): `_is_currency_math`.
+ *   numerico (`US$50 e US$70`, `50$-70$`): `_is_currency_math`. Vale anche
+ *   per `$$..$$` in frase (`$$50/$$70`), dove decide il contenuto.
  *
  * Nessun import: `backend/tests/test_frontend_inline_math.py` esegue questo
  * modulo con Node (`--experimental-strip-types`) e confronta i segmenti con
@@ -27,7 +28,8 @@ export type InlineMathSegment =
 interface MathMatch {
   latex: string;
   display: boolean;
-  /** Delimitatore di apertura: solo `$` è soggetto alla guardia currency. */
+  /** Delimitatore di apertura: `$` e `$$` sono soggetti alla guardia
+   *  currency, `\\(` e `\\[` no. */
   markup: "$" | "$$" | "\\(" | "\\[";
   end: number;
 }
@@ -114,10 +116,12 @@ interface RawSegment {
   markup: MathMatch["markup"] | "";
 }
 
-/** `_is_currency_math`: il segmento `i` (un `$..$` singolo) è un importo. */
+/** `_is_currency_math`: il segmento `i` (aperto da `$` o da `$$`) è un
+ *  importo. Decide il CONTENUTO, quindi `Sia $$E$$ la relazione` resta math. */
 function isCurrencyMath(segments: RawSegment[], i: number): boolean {
   const seg = segments[i];
-  if (seg.kind !== "math" || seg.markup !== "$") return false;
+  if (seg.kind !== "math") return false;
+  if (seg.markup !== "$" && seg.markup !== "$$") return false;
   const content = seg.text;
   if (CURRENCY_CONTENT_RE.test(content.trim())) return true;
   const prev = i > 0 ? segments[i - 1] : null;
@@ -158,11 +162,18 @@ export function splitInlineMath(text: string): InlineMathSegment[] {
   }
   flush();
 
-  // Guardia currency (core rule prima di `text_join`): il `$..$` declassato
-  // torna testo col delimitatore originale e pesa come testo per i vicini.
+  // Guardia currency (core rule prima di `text_join`): il math declassato
+  // torna testo coi delimitatori originali (`$` o `$$`) e pesa come testo
+  // per i vicini.
   for (let i = 0; i < raw.length; i += 1) {
     if (isCurrencyMath(raw, i)) {
-      raw[i] = { kind: "text", text: `$${raw[i].text}$`, display: false, markup: "" };
+      const markup = raw[i].markup;
+      raw[i] = {
+        kind: "text",
+        text: `${markup}${raw[i].text}${markup}`,
+        display: false,
+        markup: "",
+      };
     }
   }
 

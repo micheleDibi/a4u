@@ -15,7 +15,6 @@ from __future__ import annotations
 import inspect
 import json
 import re
-import socket
 from pathlib import Path
 
 import pytest
@@ -29,6 +28,7 @@ from app.services import openai_asset_fix_service as fix
 from app.services import openai_image_to_mermaid_service as i2m
 from app.services.figure_scale import SvgMetrics
 from app.services.svg_normalize import svg_base_font_px
+from tests.chromium_guard import render_batch_or_fail, require_cdn, require_chromium
 
 _FIXTURES = Path(__file__).parent / "fixtures"
 _INIT_RE = re.compile(r"mermaid\.initialize\((\{.*?\})\);", re.S)
@@ -450,24 +450,14 @@ _EXPECTED_MIN_PX: dict[str, float] = {
 }
 
 
-def _require_cdn() -> None:
-    try:
-        socket.create_connection(("cdn.jsdelivr.net", 443), timeout=3).close()
-    except OSError:
-        pytest.skip("cdn.jsdelivr.net non raggiungibile")
-
-
 @pytest.fixture(scope="module")
 def measured_batch() -> dict[str, mp.MermaidPrerender | None]:
-    pytest.importorskip("playwright.sync_api")
-    _require_cdn()
+    require_cdn()
+    require_chromium()
     kinds = list(theme.MERMAID_D8_SAMPLES)
-    try:
-        rendered = mp._prerender_mermaid_batch_sync(list(theme.MERMAID_D8_SAMPLES.values()))
-    except Exception as exc:  # launch o rete: verifica locale, non gate CI
-        pytest.skip(f"Chromium o CDN non disponibili: {exc!r}"[:300])
-    if all(r is None for r in rendered):
-        pytest.skip("pagina di rendering non pronta (__mermaidReady) o CDN non caricata")
+    rendered = render_batch_or_fail(
+        lambda: mp._prerender_mermaid_batch_sync(list(theme.MERMAID_D8_SAMPLES.values()))
+    )
     return dict(zip(kinds, rendered, strict=True))
 
 
@@ -511,7 +501,7 @@ def test_render_mermaid_stays_a_string_and_a_failed_measure_keeps_the_svg(
     testi; una misura che lancia produce `metrics=None` con
     `mermaid_font_measure_failed` e l'SVG è comunque accettato."""
     sync_api = pytest.importorskip("playwright.sync_api")
-    _require_cdn()
+    require_cdn()
     code = theme.MERMAID_D8_SAMPLES["flowchart"]
     fixture = (_FIXTURES / "mermaid11_flowchart.svg").read_text(encoding="utf-8")
     with sync_api.sync_playwright() as p:

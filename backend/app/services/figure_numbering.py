@@ -21,7 +21,8 @@ Regole:
   `_ASSET_REF_RE` del PDF e `ASSET_REF_RE` del frontend: un `[fig:x]` non
   viene sostituito da nessun renderer e numerarlo produrrebbe un numero
   fantasma; il tag non attraversa la riga (`[^\\]\\n]+`); l'id è
-  confrontato con `.strip().lower()`;
+  confrontato con `_trim(...).lower()` (`.strip()` e `.trim()` non
+  tolgono gli stessi caratteri: vedi `_WS`);
 - `strip_figure_prefix` toglie un prefisso «Figura 3.», «Fig. 2:», «Figure
   4 –» già presente nella didascalia (cifra obbligatoria: «Figurativo» e
   «Fig. X» restano intatti; separatore obbligatorio dopo il numero, o fine
@@ -52,8 +53,26 @@ _FIGURE_PREFIX_RE = re.compile(
 )
 
 
+# `str.strip()` e `String.trim()` non tolgono gli stessi caratteri:
+# `\x1c-\x1f` e `\x85` solo in Python, `\ufeff` (BOM) solo in JavaScript.
+# La classe esplicita è l'unione dei due insiemi, così id, coda degli asset
+# non citati e famiglia dell'equazione coincidono nei due mirror; `\A`/`\Z`
+# perché in Python `$` accetta anche la posizione prima di un `\n` finale.
+_WS = (
+    r" \t\n\v\f\r\x1c-\x1f\x85\xa0\u1680\u2000-\u200a"
+    r"\u2028\u2029\u202f\u205f\u3000\ufeff"
+)
+_TRIM_RE = re.compile(rf"\A[{_WS}]+|[{_WS}]+\Z")
+
+
+def _trim(value: object) -> str:
+    """`str(value).strip()` con la stessa classe del `trim()` del mirror
+    TypeScript (`figureNumbering.ts`)."""
+    return _TRIM_RE.sub("", str(value or ""))
+
+
 def _norm(asset_id: object) -> str:
-    return str(asset_id or "").strip().lower()
+    return _trim(asset_id).lower()
 
 
 def cited_asset_ids(markdown: str) -> list[tuple[str, str]]:
@@ -95,7 +114,7 @@ def append_uncited_asset_refs(markdown: str, ids_by_kind: Mapping[str, Iterable[
     cited = set(cited_asset_ids(out))
     for kind in ASSET_KINDS:
         for asset_id in ids_by_kind.get(kind) or ():
-            raw = str(asset_id or "").strip()
+            raw = _trim(asset_id)
             key = (kind, raw.lower())
             if not key[1] or key in cited or not _round_trips(kind, raw):
                 continue
@@ -146,8 +165,7 @@ def proof_steps(eq: Mapping[str, Any]) -> list[dict[str, Any]]:
     return [
         s
         for s in eq.get("proof") or []
-        if isinstance(s, dict)
-        and (str(s.get("latex") or "").strip() or str(s.get("text") or "").strip())
+        if isinstance(s, dict) and (_trim(s.get("latex")) or _trim(s.get("text")))
     ]
 
 
@@ -156,7 +174,7 @@ def equation_label_family(eq: Mapping[str, Any]) -> Literal["EQ", "THM"]:
     vuoto: il blocco è reso come teorema («Lemma 2.») e il rimando usa la
     parola del kind; altrimenti `EQ` («Equazione 2.»). Il campo `kind` da
     solo non decide la famiglia."""
-    if str(eq.get("statement") or "").strip() or proof_steps(eq):
+    if _trim(eq.get("statement")) or proof_steps(eq):
         return "THM"
     return "EQ"
 

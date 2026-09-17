@@ -1645,6 +1645,22 @@ async def _review_figures(
         )
         for a, key in zip(assets, keys, strict=True)
     ]
+    graphs = [it for it in items if it.fmt in GRAPH_FORMATS]
+    if graphs and not any(it.measure.rendered for it in graphs):
+        # Niente chiamate sterili: se NESSUN grafo del lotto è stato reso
+        # la resa non è disponibile (Chromium o `dot` assenti, batch in
+        # timeout) e `review_acceptance` respingerà ogni riscrittura con
+        # `measure_unavailable`. Un fallimento di resa della singola figura
+        # resta in revisione: lì una riscrittura può davvero ripararla.
+        log.info(
+            "figure_review_skipped",
+            reason="render_unavailable",
+            figures=len(graphs),
+            formats=sorted({it.fmt for it in graphs}),
+        )
+        items = [it for it in items if it.fmt not in GRAPH_FORMATS]
+    if not items:
+        return 0
     accepted: dict[str, str] = {}
     pending = items
     for attempt in range(1, max_attempts + 1):

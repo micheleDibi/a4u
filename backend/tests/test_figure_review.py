@@ -60,6 +60,8 @@ from app.services import openai_figure_review_service as review
 from app.services import openai_lesson_content_service as openai_svc
 from app.services.figure_compute.graph_rules import GRAPH_FORMATS, graph_source_metrics
 from app.services.figure_compute.vegalite_rules import vegalite_data_metrics
+from app.services.figure_scale import SvgMetrics
+from app.services.mermaid_prerender import MermaidPrerender
 from app.services.openai_pricing import build_usage_dict, estimate_cost_usd
 from scripts.check_prompts_md import _RENDERERS
 from tests.course_builders import build_course, build_lesson_content_output, find_lesson
@@ -725,15 +727,25 @@ def test_acceptance_rule(
     assert avs.review_acceptance(fmt, original, candidate) == expected
 
 
-async def test_mermaid_rewrite_without_chromium_is_rejected(
+def _prerendered(_code: str) -> MermaidPrerender:
+    """Pre-render finto ma RESO: SVG minimo e metriche note, senza
+    Chromium. Serve ai test che provano le guardie deterministiche del
+    revisore, non la disponibilità della resa."""
+    svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 60" font-size="14px"></svg>'
+    metrics = SvgMetrics(font_px_min=14.0, font_px_median=14.0, text_count=1, source="measured")
+    return MermaidPrerender(svg=svg, metrics=metrics)
+
+
+async def test_without_a_rendered_graph_the_review_does_not_call_the_model(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Chromium assente a runtime: il parse degrada a pass-through, ma la
-    riscrittura non ha misura e non è mai accettata."""
+    """Chromium assente a runtime: il parse degrada a pass-through, ma
+    nessuna riscrittura potrebbe essere accettata (`measure_unavailable`),
+    quindi la revisione dei grafi è saltata PRIMA di spendere."""
     original = "flowchart LR\n  A --> B\n  B --> C"
     candidate = "flowchart LR\n  A --> C\n  B --> C"
-    _settings(monkeypatch, figure_review_max_attempts=1)
-    _review_client(monkeypatch, _fix(candidate))
+    _settings(monkeypatch, figure_review_max_attempts=2)
+    fake = _review_client(monkeypatch, _fix(candidate))
 
     async def _no_js(items: list[tuple[str, str]]) -> None:
         return None
@@ -744,11 +756,14 @@ async def test_mermaid_rewrite_without_chromium_is_rejected(
     monkeypatch.setattr(avs, "_validate_js_batch", _no_js)
     monkeypatch.setattr(frs, "_prerender_mermaid_batch_sync", _no_chromium)
     with structlog.testing.capture_logs() as logs:
-        out, _usage = await avs.validate_and_fix_content_assets(
+        out, usage = await avs.validate_and_fix_content_assets(
             _output(original, fmt="mermaid"), language_code="it"
         )
     assert out.visual_assets[0].content == original
-    assert [e["reason"] for e in _events(logs, "figure_review_rejected")] == ["measure_unavailable"]
+    assert fake.bodies == []
+    assert avs.assets_cost_usd(usage) == 0.0
+    assert [e["reason"] for e in _events(logs, "figure_review_skipped")] == ["render_unavailable"]
+    assert _events(logs, "figure_review_rejected") == []
 
 
 async def test_mermaid_type_change_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -763,7 +778,7 @@ async def test_mermaid_type_change_is_rejected(monkeypatch: pytest.MonkeyPatch) 
 
     def _fake_batch(codes: list[str]) -> list[Any]:
         rendered.append(list(codes))
-        return [None for _ in codes]
+        return [_prerendered(c) for c in codes]
 
     monkeypatch.setattr(avs, "_validate_js_batch", _ok_js)
     monkeypatch.setattr(frs, "_prerender_mermaid_batch_sync", _fake_batch)

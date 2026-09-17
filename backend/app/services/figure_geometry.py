@@ -58,8 +58,15 @@ Incroci arco × arco
   anche senza scala (K5,5 ortogonale: Python 42, Chromium 34), perché
   Python tiene gli angoli dei percorsi come vertici e conta i contatti a T
   sui canali condivisi, Chromium campiona per lunghezza e taglia gli
-  angoli. In produzione i DOT si misurano solo in Python e la misura è
-  diagnostica.
+  angoli. Terzo limite dichiarato: dove la parametrizzazione è molto
+  disuniforme (cappi, gomiti stretti) il campionamento per parametro può
+  produrre corde più lunghe del passo e perdere un incrocio a piccolo
+  angolo vicino all'attacco di un arco, dove Chromium lo trova; caso
+  misurato, un digraph di 10 nodi e 22 archi senza attributi: Python 4
+  incroci, Chromium 5, con il conteggio che converge a 5 già a passo 1,5.
+  Portare il passo sotto 2 costerebbe circa il 50 % di segmenti in più
+  contro i tetti dichiarati, quindi il passo resta 2. In produzione i DOT
+  si misurano solo in Python e la misura è diagnostica.
 - Test di intersezione con i quattro prodotti vettoriali, estremi inclusi
   (un incrocio che cade esattamente su un vertice del campionamento non va
   perso), segmenti collineari esclusi (un fascio parallelo vale 0); solo

@@ -8,7 +8,7 @@
  * `--experimental-strip-types`).
  *
  * Un tag `[KIND:id]` (`FIG`, `TAB`, `EQ`, `EX`) è «gestito» quando il kind
- * compare in `numbers` e l'id normalizzato (`trim().toLowerCase()`) vi ha un
+ * compare in `numbers` e l'id normalizzato (`trim(...).toLowerCase()`) vi ha un
  * numero: dopo `appendUncitedAssetRefs` + `computeAssetNumbers` ogni asset
  * dichiarato ne ha uno, quindi «gestito» coincide con «risolvibile». Un tag
  * non gestito (id irrisolto, `[fig:x]`, kind assente dalla mappa) resta
@@ -28,9 +28,10 @@
  *   su riga propria subito dopo il blocco che contiene la prima citazione:
  *   blocco = righe contigue non vuote; i fence (``` / ~~~) chiusi e i
  *   blocchi `$$…$$` chiusi (anche con righe vuote interne) sono unità
- *   opache; se la prima riga del blocco è un item di lista o una
- *   continuazione indentata, il blocco si estende sull'intera lista
- *   (altrimenti `<ol start="2">`);
+ *   opache; se il blocco entra in una lista (prima riga item o
+ *   continuazione indentata, oppure lista che interrompe un paragrafo
+ *   attaccato), il blocco si estende sull'intera lista (altrimenti la
+ *   lista sciolta viene spezzata in due, con `<ol start="2">`);
  * - dentro fence, code span e math i tag sono citazioni (riscritte), mai
  *   ancore: lasciarli intatti produrrebbe un secondo blocco o markup
  *   escapato nel `<pre>` (`preprocessAssetRefs` è una sostituzione
@@ -43,7 +44,9 @@
  * I numeri sono dati (calcolati PRIMA, sul corpo non normalizzato), mai
  * ricalcolati; il testo fuori dai tag è byte-identico; la funzione è
  * idempotente. Regex con classi esplicite (`[ \t]`, `[0-9]`, `[^ \t\r\n]`),
- * mai `\s`/`\d`, senza flag `m`/`u`/`i`: stesso esito JavaScript/Python.
+ * mai `\s`/`\d`, senza flag `m`/`u`/`i`, e `trim` al posto di
+ * `String.trim()`/`str.strip()` (classi diverse: vedi `WS`): stesso esito
+ * JavaScript/Python.
  *
  * Limiti dichiarati (gli stessi del backend): blocchi indentati di 4 spazi
  * non riconosciuti come codice; fence con prefisso (`> `, item con 4+
@@ -78,9 +81,27 @@ const BLANK_RE = /^[ \t]*\r?$/;
 const FENCE_OPEN_RE = /^ {0,3}(`{3,}|~{3,})/;
 const MATH_OPEN_RE = /^ {0,3}\$\$/;
 const LIST_ITEM_RE = /^[ \t]*(?:[-+*]|[0-9]{1,9}[.)])(?:[ \t]|\r?$)/;
+// Marcatore che può INTERROMPERE un paragrafo attaccato: puntato, oppure
+// ordinato che comincia da 1 (CommonMark 5.2); `2. due` dopo una riga di
+// prosa è continuazione, non lista.
+const LIST_START_RE = /^[ \t]*(?:[-+*]|1[.)])(?:[ \t]|\r?$)/;
 const INDENTED_RE = /^(?: {2,}|\t)[^ \t\r\n]/;
 
 const NO_REGION = -1;
+
+// `String.trim()` e `str.strip()` non tolgono gli stessi caratteri:
+// `\ufeff` (BOM) solo in JavaScript, `\x1c-\x1f` e `\x85` solo in Python.
+// La classe esplicita è l'unione dei due insiemi, così i due lati leggono
+// id, righe e tag allo stesso modo.
+const WS =
+  " \\t\\n\\v\\f\\r\\x1c-\\x1f\\x85\\xa0\\u1680\\u2000-\\u200a" +
+  "\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff";
+const TRIM_RE = new RegExp(`^[${WS}]+|[${WS}]+$`, "g");
+
+/** `String.trim()` con la stessa classe dello `strip()` del mirror Python. */
+function trim(text: string): string {
+  return text.replace(TRIM_RE, "");
+}
 
 /** `[idLower, n]` se il tag è gestito, altrimenti `null`. */
 function handled(
@@ -90,7 +111,7 @@ function handled(
 ): [string, number] | null {
   const byId = numbers[kind];
   if (!byId || byId.size === 0) return null;
-  const key = rawId.trim().toLowerCase();
+  const key = trim(rawId).toLowerCase();
   const n = byId.get(key);
   if (n === undefined) return null;
   return [key, n];
@@ -146,12 +167,12 @@ function opaqueRegions(lines: string[]): [number[], number[]] {
         }
       }
     } else if (MATH_OPEN_RE.test(line)) {
-      const stripped = line.trim();
+      const stripped = trim(line);
       if (stripped.length > 3 && stripped.endsWith("$$")) {
         close = i;
       } else {
         for (let j = i + 1; j < n; j += 1) {
-          if (lines[j].trim().endsWith("$$")) {
+          if (trim(lines[j]).endsWith("$$")) {
             close = j;
             break;
           }
@@ -176,8 +197,11 @@ function isListBlock(line: string): boolean {
 }
 
 /** Indice della riga vuota (o `lines.length`) che chiude il blocco della
- *  riga `i`; se il blocco inizia con un item di lista o una continuazione
- *  indentata, il confine salta le righe vuote interne alla lista. */
+ *  riga `i`; se il blocco ENTRA in una lista — perché comincia con un item
+ *  o una continuazione indentata, oppure perché una lista interrompe un
+ *  paragrafo attaccato — il confine salta le righe vuote interne alla
+ *  lista. Una lista interrompe un paragrafo solo se comincia con un
+ *  marcatore puntato o con `1.`/`1)`. */
 function blockBounds(
   i: number,
   lines: string[],
@@ -191,10 +215,11 @@ function blockBounds(
     const prev = first - 1;
     first = rstart[prev] !== NO_REGION ? rstart[prev] : prev;
   }
-  const listBlock = isListBlock(lines[first]);
-  let j = rend[i] !== NO_REGION ? rend[i] + 1 : i;
+  let listBlock = isListBlock(lines[first]);
+  let j = first;
   for (;;) {
     while (j < n && !isBlank[j]) {
+      if (!listBlock && LIST_START_RE.test(lines[j])) listBlock = true;
       j = rend[j] !== NO_REGION ? rend[j] + 1 : j + 1;
     }
     if (j >= n || !listBlock) return j;
@@ -241,7 +266,7 @@ export function normalizeAssetRefs(
       const h = handled(numbers, kind, m[2]);
       if (h === null) continue;
       const key = `${kind}:${h[0]}`;
-      if (!firstCite.has(key)) firstCite.set(key, [i, `[${kind}:${m[2].trim()}]`]);
+      if (!firstCite.has(key)) firstCite.set(key, [i, `[${kind}:${trim(m[2])}]`]);
     }
   }
 

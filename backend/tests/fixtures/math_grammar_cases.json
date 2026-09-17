@@ -534,5 +534,33 @@
     "expected": [],
     "html": "costa \\$5 e \\\\(x\\\\)",
     "note": "preset zero senza escape: byte-identico a markupsafe.escape"
+  },
+  {
+    "markdown": "Scrivi $$5 per raddoppiare $$10.",
+    "mode": "inline",
+    "expected": [],
+    "html": "Scrivi $$5 per raddoppiare $$10.",
+    "note": "guardia currency anche su math_inline_double: cifra dopo la chiusura e contenuto che inizia per cifra"
+  },
+  {
+    "markdown": "$$50/$$70",
+    "mode": "inline",
+    "expected": [],
+    "html": "$$50/$$70",
+    "note": "importo scritto col doppio dollaro: contenuto «importo + separatore»"
+  },
+  {
+    "markdown": "Sia $$E$$ la relazione.",
+    "mode": "inline",
+    "expected": [
+      [
+        "math_inline_double",
+        [
+          "E",
+          "block"
+        ]
+      ]
+    ],
+    "note": "B3(d): il doppio dollaro in frase resta math, la guardia decide dal contenuto"
   }
 ]

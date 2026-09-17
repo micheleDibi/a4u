@@ -565,6 +565,76 @@
         "lem": "Lemma"
       },
       "normalized": "See Table 2, Equation 1, Example 1 and Lemma 2.\n\n[TAB:t2]\n\n[EQ:e]\n\n[EX:x]\n\n[EQ:lem]"
+    },
+    {
+      "name": "id con BOM (U+FEFF): stessa risoluzione su Python e JavaScript",
+      "markdown": "Vedi [FIG:\ufeffa] qui.\n\nDopo.",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "Vedi Figura 1 qui.\n\n[FIG:a]\n\nDopo."
+    },
+    {
+      "name": "id con NEL (U+0085): stessa risoluzione su Python e JavaScript",
+      "markdown": "Vedi [FIG:a\u0085] qui.\n\nDopo.",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "Vedi Figura 1 qui.\n\n[FIG:a]\n\nDopo."
+    },
+    {
+      "name": "chiusura $$ seguita da BOM: regione opaca su entrambi i lati",
+      "markdown": "$$\n[FIG:a]\n$$\ufeff\n\nfine",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "$$\nFigura 1\n$$\ufeff\n\n[FIG:a]\n\nfine"
+    },
+    {
+      "name": "chiusura $$ seguita da NEL: regione opaca su entrambi i lati",
+      "markdown": "$$\n[FIG:a]\n$$\u0085\n\nfine",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "$$\nFigura 1\n$$\u0085\n\n[FIG:a]\n\nfine"
+    },
+    {
+      "name": "lista sciolta attaccata al paragrafo: l'ancora segue l'intera lista",
+      "markdown": "Elenco dei passaggi:\n- primo passaggio, vedi [FIG:a]\n\n- secondo passaggio\n\nDopo.",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "Elenco dei passaggi:\n- primo passaggio, vedi Figura 1\n\n- secondo passaggio\n\n[FIG:a]\n\nDopo."
+    },
+    {
+      "name": "lista ordinata sciolta attaccata al paragrafo: nessun <ol start=\"2\">",
+      "markdown": "Come mostrato in [FIG:a] il sistema converge.\n1. uno\n\n2. due\n\nDopo.",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "Come mostrato in Figura 1 il sistema converge.\n1. uno\n\n2. due\n\n[FIG:a]\n\nDopo."
+    },
+    {
+      "name": "marcatore ordinato che non apre la lista (2.): resta paragrafo",
+      "markdown": "Testo attaccato [FIG:a].\n2. due\n\n3. tre\n\nDopo.",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "Testo attaccato Figura 1.\n2. due\n\n[FIG:a]\n\n3. tre\n\nDopo."
     }
   ],
   "cite": [
@@ -623,6 +693,16 @@
         "lem": "Lemma"
       },
       "cited": "Vedi Tabella 1 e Lemma 2"
+    },
+    {
+      "name": "coda: id con BOM risolto come su JavaScript",
+      "text": "Vedi [FIG:a\ufeff]",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "cited": "Vedi Figura 1"
     }
   ]
 }

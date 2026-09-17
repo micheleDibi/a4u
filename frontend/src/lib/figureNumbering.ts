@@ -22,7 +22,8 @@
  * `ASSET_REF_RE` di `MarkdownRenderer` e `RichTextEditor`): un `[fig:x]`
  * non viene sostituito da nessun renderer e numerarlo produrrebbe un numero
  * fantasma. Il tag non attraversa la riga (`[^\]\n]+`). L'id è confrontato
- * con `trim().toLowerCase()`.
+ * con `trim(...).toLowerCase()` (`String.trim()` e `str.strip()` non
+ * tolgono gli stessi caratteri: vedi `WS`).
  */
 
 export type AssetKind = "FIG" | "TAB" | "EQ" | "EX";
@@ -49,10 +50,23 @@ export type AssetIdsByKind = Partial<Record<AssetKind, Iterable<string>>>;
 const FIGURE_PREFIX_RE =
   /^\s*(?:figura|figure|fig\.?|abb\.?)\s*\p{Nd}+(?:\.\p{Nd}+)*[a-zıİ]?\s*(?:[.:\-–—)](?!\p{Nd})\s*|$)/iu;
 
+// `String.trim()` e `str.strip()` non tolgono gli stessi caratteri:
+// `\ufeff` (BOM) solo in JavaScript, `\x1c-\x1f` e `\x85` solo in Python.
+// La classe esplicita è l'unione dei due insiemi, così id, coda degli asset
+// non citati e famiglia dell'equazione coincidono nei due mirror.
+const WS =
+  " \\t\\n\\v\\f\\r\\x1c-\\x1f\\x85\\xa0\\u1680\\u2000-\\u200a" +
+  "\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff";
+const TRIM_RE = new RegExp(`^[${WS}]+|[${WS}]+$`, "g");
+
+/** `String.trim()` con la stessa classe dello `strip()` del mirror Python
+ *  (`figure_numbering._trim`). */
+function trim(value: unknown): string {
+  return String(value ?? "").replace(TRIM_RE, "");
+}
+
 function norm(assetId: unknown): string {
-  return String(assetId ?? "")
-    .trim()
-    .toLowerCase();
+  return trim(assetId).toLowerCase();
 }
 
 /** Coppie `[KIND, id_lower]` citate nel markdown, nell'ordine della prima
@@ -101,7 +115,7 @@ export function appendUncitedAssetRefs(
   const cited = new Set(citedAssetIds(out).map(([kind, id]) => `${kind}:${id}`));
   for (const kind of ASSET_KINDS) {
     for (const assetId of idsByKind[kind] ?? []) {
-      const raw = String(assetId ?? "").trim();
+      const raw = trim(assetId);
       const key = `${kind}:${raw.toLowerCase()}`;
       if (!raw || cited.has(key) || !roundTrips(kind, raw)) continue;
       cited.add(key);
@@ -198,7 +212,7 @@ export function nonEmptyProofSteps<T extends ProofStepLike>(
   const out: T[] = [];
   for (const step of proof ?? []) {
     if (step === null || step === undefined || typeof step !== "object") continue;
-    if (String(step.latex ?? "").trim() || String(step.text ?? "").trim()) {
+    if (trim(step.latex) || trim(step.text)) {
       out.push(step);
     }
   }
@@ -210,7 +224,7 @@ export function nonEmptyProofSteps<T extends ProofStepLike>(
  *  parola del kind; altrimenti `EQ` («Equazione 2.»). Il campo `kind` da
  *  solo non decide la famiglia. */
 export function equationLabelFamily(eq: EquationLike): "EQ" | "THM" {
-  if (String(eq.statement ?? "").trim() || nonEmptyProofSteps(eq.proof).length > 0) {
+  if (trim(eq.statement) || nonEmptyProofSteps(eq.proof).length > 0) {
     return "THM";
   }
   return "EQ";

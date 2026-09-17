@@ -356,6 +356,13 @@ def _chromium_geometry(svgs: dict[str, str], *, texts: bool = False) -> dict[str
 
 
 _TOOLTIP_DOT = 'digraph G { a -> x [tooltip="t"]; b -> y [tooltip="u"]; a -> y; b -> x; }'
+# Con `splines=curved` Graphviz emette il self-loop come tracciato degenere
+# (`M116,-18C116,-18 116,-18 116,-18`, `getTotalLength()` 0): resta un arco
+# e va contato da entrambi i lati.
+_DEGENERATE_LOOP_DOT = (
+    "digraph { splines=curved; v0 -> v1; v1 -> v2; v2 -> v0; "
+    "v0 -> v2; v2 -> v0; v2 -> v2; v1 -> v2; }"
+)
 # K4,4 portato a 40 pollici (`scale(≈11)` sul gruppo del grafo): V3-N1.
 _SCALED_DOT = (
     'digraph { graph [size="40,40!"]; '
@@ -372,8 +379,10 @@ def test_python_count_matches_chromium_on_dot_templates_and_synthetic(
         **{k: v[0] for k, v in SYNTHETIC.items()},
         "tooltip": _dot_svg(_TOOLTIP_DOT),
         "k44_scalato": _dot_svg(_SCALED_DOT),
+        "cappio_degenere": _dot_svg(_DEGENERATE_LOOP_DOT),
     }
     assert 'transform="scale(1 1) ' not in svgs["k44_scalato"]
+    assert "C116,-18 116,-18 116,-18" in svgs["cappio_degenere"]
     js = _chromium_geometry(svgs)
     python = {name: fg.measure_svg(svg) for name, svg in svgs.items()}
     assert {n: (r["crossings"], r["pairs"]) for n, r in js.items()} == {

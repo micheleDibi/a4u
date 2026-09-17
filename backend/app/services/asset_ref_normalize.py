@@ -1,7 +1,7 @@
 """Rimandi testuali e ancore degli asset (D1, D2, D4): modulo puro.
 
 Un tag `[KIND:id]` (`FIG`, `TAB`, `EQ`, `EX`) è **gestito** quando il kind
-compare in `numbers` e l'id normalizzato (`.strip().lower()`) vi ha un
+compare in `numbers` e l'id normalizzato (`_trim(...).lower()`) vi ha un
 numero: dopo `append_uncited_asset_refs` + `compute_asset_numbers` ogni
 asset dichiarato ne ha uno, quindi «gestito» coincide con «risolvibile».
 Un tag non gestito (id irrisolto, `[fig:x]`, kind assente dalla mappa)
@@ -22,9 +22,10 @@ visibile o il blocco di oggi.
   citazione: blocco = righe contigue non vuote; i fence (``` / ~~~) chiusi
   e i blocchi `$$…$$` chiusi (anche con righe vuote interne: `dollarmath`
   ha `allow_blank_lines=True` e remark-math le accetta) sono unità opache;
-  se la prima riga del blocco è un item di lista o una continuazione
-  indentata, il blocco si estende sull'intera lista (altrimenti
-  `<ol start="2">` su entrambi i parser);
+  se il blocco entra in una lista (prima riga item o continuazione
+  indentata, oppure lista che interrompe un paragrafo attaccato), il
+  blocco si estende sull'intera lista (altrimenti la lista sciolta viene
+  spezzata in due, con `<ol start="2">` su entrambi i parser);
 - dentro fence, code span e math i tag sono **citazioni** (riscritte),
   mai ancore: lasciarli intatti produrrebbe a valle un secondo blocco o
   markup escapato nel `<pre>` (`_substitute_asset_refs` e
@@ -38,7 +39,8 @@ per la coda (punti chiave, riferimenti) che non rende blocchi (C9).
 I numeri sono dati (calcolati PRIMA, sul corpo non normalizzato), mai
 ricalcolati; il testo fuori dai tag è byte-identico; la funzione è
 idempotente. Regex con classi esplicite (`[ \\t]`, `[0-9]`, `[^ \\t\\r\\n]`),
-mai `\\s`/`\\d`, e `.lower()` senza `IGNORECASE`: stesso esito Python/JS.
+mai `\\s`/`\\d`, `.lower()` senza `IGNORECASE` e `_trim` al posto di
+`.strip()`/`.trim()` (classi diverse: vedi `_WS`): stesso esito Python/JS.
 
 Limiti dichiarati: blocchi indentati di 4 spazi non riconosciuti come
 codice (ambigui con la continuazione di item); fence con prefisso (`> `,
@@ -68,6 +70,10 @@ _BLANK_RE = re.compile(r"^[ \t]*\r?$")
 _FENCE_OPEN_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 _MATH_OPEN_RE = re.compile(r"^ {0,3}\$\$")
 _LIST_ITEM_RE = re.compile(r"^[ \t]*(?:[-+*]|[0-9]{1,9}[.)])(?:[ \t]|\r?$)")
+# Marcatore che può INTERROMPERE un paragrafo attaccato: puntato, oppure
+# ordinato che comincia da 1 (CommonMark 5.2, «lists can interrupt a
+# paragraph only if …»); `2. due` dopo una riga di prosa è continuazione.
+_LIST_START_RE = re.compile(r"^[ \t]*(?:[-+*]|1[.)])(?:[ \t]|\r?$)")
 _INDENTED_RE = re.compile(r"^(?: {2,}|\t)[^ \t\r\n]")
 
 AssetNumbers = Mapping[str, Mapping[str, int]]
@@ -75,13 +81,29 @@ Reference = Callable[[str, str, int], str]
 
 _NO_REGION = -1
 
+# `str.strip()` e `String.trim()` non tolgono gli stessi caratteri:
+# `\x1c-\x1f` e `\x85` solo in Python, `\ufeff` (BOM) solo in JavaScript.
+# La classe esplicita è l'unione dei due insiemi, così i due lati leggono
+# id, righe e tag allo stesso modo; `\A`/`\Z` perché in Python `$` accetta
+# anche la posizione prima di un `\n` finale, in JavaScript no.
+_WS = (
+    r" \t\n\v\f\r\x1c-\x1f\x85\xa0\u1680\u2000-\u200a"
+    r"\u2028\u2029\u202f\u205f\u3000\ufeff"
+)
+_TRIM_RE = re.compile(rf"\A[{_WS}]+|[{_WS}]+\Z")
+
+
+def _trim(text: str) -> str:
+    """`strip()` con la stessa classe del `trim()` del mirror TypeScript."""
+    return _TRIM_RE.sub("", text)
+
 
 def _handled(numbers: AssetNumbers, kind: str, raw_id: str) -> tuple[str, int] | None:
     """`(id_lower, n)` se il tag è gestito, altrimenti `None`."""
     by_id = numbers.get(kind)
     if not by_id:
         return None
-    key = raw_id.strip().lower()
+    key = _trim(raw_id).lower()
     n = by_id.get(key)
     if n is None:
         return None
@@ -128,12 +150,12 @@ def _opaque_regions(lines: list[str]) -> tuple[list[int], list[int]]:
                     close = j
                     break
         elif _MATH_OPEN_RE.match(line):
-            stripped = line.strip()
+            stripped = _trim(line)
             if len(stripped) > 3 and stripped.endswith("$$"):
                 close = i
             else:
                 for j in range(i + 1, n):
-                    if lines[j].strip().endswith("$$"):
+                    if _trim(lines[j]).endswith("$$"):
                         close = j
                         break
         if close == _NO_REGION:
@@ -154,17 +176,23 @@ def _block_bounds(
     i: int, lines: list[str], is_blank: list[bool], rstart: list[int], rend: list[int]
 ) -> int:
     """Indice della riga vuota (o `len(lines)`) che chiude il blocco della
-    riga `i`; se il blocco inizia con un item di lista o una continuazione
-    indentata, il confine salta le righe vuote interne alla lista."""
+    riga `i`; se il blocco ENTRA in una lista — perché comincia con un item
+    o una continuazione indentata, oppure perché una lista interrompe un
+    paragrafo attaccato — il confine salta le righe vuote interne alla
+    lista. Una lista interrompe un paragrafo solo se comincia con un
+    marcatore puntato o con `1.`/`1)` (CommonMark): dopo il primo item
+    qualunque marcatore prosegue la lista."""
     n = len(lines)
     first = rstart[i] if rstart[i] != _NO_REGION else i
     while first > 0 and not is_blank[first - 1]:
         prev = first - 1
         first = rstart[prev] if rstart[prev] != _NO_REGION else prev
     list_block = _is_list_block(lines[first])
-    j = rend[i] + 1 if rend[i] != _NO_REGION else i
+    j = first
     while True:
         while j < n and not is_blank[j]:
+            if not list_block and _LIST_START_RE.match(lines[j]):
+                list_block = True
             j = rend[j] + 1 if rend[j] != _NO_REGION else j + 1
         if j >= n or not list_block:
             return j
@@ -207,7 +235,7 @@ def normalize_asset_refs(markdown: str, *, numbers: AssetNumbers, reference: Ref
                 continue
             key = (m.group(1), handled[0])
             if key not in first_cite:
-                first_cite[key] = (i, f"[{m.group(1)}:{m.group(2).strip()}]")
+                first_cite[key] = (i, f"[{m.group(1)}:{_trim(m.group(2))}]")
 
     inserts: dict[int, list[str]] = {}
     for key, (i, tag) in first_cite.items():

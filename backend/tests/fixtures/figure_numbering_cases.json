@@ -457,6 +457,32 @@
         "EQ:e": 1,
         "EX:x": 1
       }
+    },
+    {
+      "name": "id con BOM: già citato, nessuna coda (parità Python/JavaScript)",
+      "markdown": "[FIG:a]",
+      "ids_by_kind": {
+        "FIG": [
+          "a\ufeff"
+        ]
+      },
+      "appended": "[FIG:a]",
+      "numbers": {
+        "FIG:a": 1
+      }
+    },
+    {
+      "name": "id con NEL: già citato, nessuna coda (parità Python/JavaScript)",
+      "markdown": "[FIG:a]",
+      "ids_by_kind": {
+        "FIG": [
+          "\u0085a"
+        ]
+      },
+      "appended": "[FIG:a]",
+      "numbers": {
+        "FIG:a": 1
+      }
     }
   ],
   "equation_label_family": [
@@ -533,6 +559,35 @@
       "equation": {
         "statement": "   ",
         "proof": []
+      },
+      "family": "EQ"
+    },
+    {
+      "name": "enunciato di solo BOM: vuoto su entrambi i lati",
+      "equation": {
+        "statement": "\ufeff",
+        "proof": []
+      },
+      "family": "EQ"
+    },
+    {
+      "name": "enunciato di solo NEL: vuoto su entrambi i lati",
+      "equation": {
+        "statement": "\u0085",
+        "proof": []
+      },
+      "family": "EQ"
+    },
+    {
+      "name": "passo di dimostrazione di solo BOM: vuoto su entrambi i lati",
+      "equation": {
+        "statement": "",
+        "proof": [
+          {
+            "latex": "\ufeff",
+            "text": ""
+          }
+        ]
       },
       "family": "EQ"
     }

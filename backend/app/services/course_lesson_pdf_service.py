@@ -390,6 +390,10 @@ _MATH_TOKEN_DISPLAY: Final[dict[str, str]] = {
     "math_block_label": "block",
 }
 
+# Token math nati da un delimitatore `$`: gli unici su cui la guardia
+# currency può intervenire (`\(..\)` e `\[..\]` non sono mai importi).
+_MATH_DOLLAR_TYPES: Final[frozenset[str]] = frozenset({"math_inline", "math_inline_double"})
+
 # Contenuto di un `$..$` che è un importo, non una formula: «importo +
 # separatore» (`$50/$70` → `50/`, `$5-$10` → `5-`) o «separatore +
 # importo» (`5$, 10$` → `, 10`, `5$/10$` → `/10`). Trattini en/em come
@@ -408,9 +412,11 @@ def _is_currency_math(children: Sequence[Token], i: int) -> bool:
     inizia con cifra (`$2$3`, `US$50 e US$70`); oppure subito PRIMA del `$`
     di apertura c'è una cifra e il contenuto inizia con cifra/segno
     (`50$-70$`, `5$-10$`). `$5$`, `$-1$`, `$0{,}866$`, `$x$2`, `2$^{10}$`
-    restano math. Solo `math_inline` con markup `$` (mai `$$`)."""
+    restano math. Vale anche per `$$..$$` in frase (`$$50/$$70`, il `$$`
+    del PID di shell): decide il CONTENUTO, quindi `Sia $$E$$ la relazione`
+    resta math in linea, come deciso in B3(d)."""
     tok = children[i]
-    if tok.type != "math_inline" or tok.markup != "$":
+    if tok.type not in _MATH_DOLLAR_TYPES or tok.markup not in ("$", "$$"):
         return False
     content = tok.content
     if _CURRENCY_CONTENT_RE.match(content.strip()):
@@ -426,15 +432,17 @@ def _is_currency_math(children: Sequence[Token], i: int) -> bool:
 
 def _math_currency_guard(state: StateCore) -> None:
     """Core rule prima di `text_join` (attiva in `parse` E `parseInline`):
-    declassa i token currency a `text` col `$..$` originale; `text_join`
-    rifonde i frammenti. Collector e renderer non possono divergere."""
+    declassa i token currency a `text` con i delimitatori originali (`$` o
+    `$$`); `text_join` rifonde i frammenti. Collector e renderer non
+    possono divergere."""
     for tok in state.tokens:
         if tok.type != "inline" or not tok.children:
             continue
         for i, child in enumerate(tok.children):
             if _is_currency_math(tok.children, i):
+                markup = child.markup
                 child.type, child.tag, child.markup = "text", "", ""
-                child.content = f"${child.content}$"
+                child.content = f"{markup}{child.content}{markup}"
 
 
 def _token_math_key(tok: Token) -> tuple[str, str] | None:
@@ -666,7 +674,16 @@ def render_markdown_inline(text: str, math_svg_map: dict | None = None) -> str:
     `\\(..\\)`, `\\[..\\]`), senza `<p>` avvolgente e senza markdown ricco.
     Senza math ritorna `str(markupsafe.escape(text))`, salvo la
     normalizzazione d'ingresso di markdown-it (core rule `normalize`:
-    CRLF/CR → LF, NUL → U+FFFD)."""
+    CRLF/CR → LF, NUL → U+FFFD).
+
+    Limite dichiarato (Fase D): il preset `zero` non ha né `code` né
+    `escape`, quindi una COPPIA di `$` in testo non matematico diventa una
+    formula anche dentro i backtick e non c'è via di fuga (`\\$` resta
+    `\\$`): «Il percorso e' $HOME/$USER/bin» rende «HOME/USER/bin» in
+    corsivo. La guardia currency copre i soli importi. Nel CORPO il code
+    span protegge, come su main; la vista web di didascalie, slide e
+    discorso usa la stessa grammatica (`lib/inlineMath.ts`), quindi
+    l'autore vede in app la formula che finirà nel PDF."""
     if not text:
         return ""
     return _md_inline_renderer.renderInline(text, {"math_svg": math_svg_map})

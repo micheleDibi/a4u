@@ -219,9 +219,14 @@ MEASURE_SVG_GEOMETRY_JS = """(svg, opts) => {
       } else {
         continue;
       }
+      // L'unità è registrata PRIMA del controllo di lunghezza: un arco il
+      // cui unico tracciato è degenere resta un arco e Python lo conta
+      // (`splines=curved` emette i self-loop come `M116,-18C116,-18
+      // 116,-18 116,-18`, `getTotalLength()` 0). Un tracciato di lunghezza
+      // zero non produce comunque segmenti né incroci.
+      if (!units.has(unit)) units.set(unit, units.size);
       const length = el.getTotalLength();
       if (!(length > 0)) continue;
-      if (!units.has(unit)) units.set(unit, units.size);
       const m = toRoot(el);
       const k = Math.round(stretch(m) * 1e9) / 1e9;
       const n = Math.max(1, Math.ceil((length * k) / o.step));

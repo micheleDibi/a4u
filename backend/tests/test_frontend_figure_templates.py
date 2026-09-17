@@ -39,7 +39,6 @@ from __future__ import annotations
 import json
 import math
 import re
-import socket
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -49,6 +48,7 @@ import pytest
 from app.services import figure_theme as theme
 from app.services import openai_lesson_content_service as content
 from app.services.figure_render_service import REGISTRY, mermaid_static_gate
+from tests.chromium_guard import render_batch_or_fail, require_cdn, require_chromium
 
 _FRONTEND = Path(__file__).resolve().parents[2] / "frontend" / "src"
 _SHARED = _FRONTEND / "components" / "shared"
@@ -733,16 +733,11 @@ def test_mermaid_template_passes_the_static_gate(tpl: Template) -> None:
 def mermaid_rendered() -> dict[str, str | None]:
     from app.services import mermaid_prerender as mp
 
-    try:
-        socket.create_connection(("cdn.jsdelivr.net", 443), timeout=3).close()
-    except OSError:  # pragma: no cover - verifica locale, non gate CI
-        pytest.skip("cdn.jsdelivr.net non raggiungibile")
-    try:
-        svgs = mp._prerender_mermaid_to_svg_batch_sync([tpl.code for tpl in MERMAID])
-    except Exception as exc:  # pragma: no cover - launch o rete
-        pytest.skip(f"Chromium o CDN non disponibili: {exc!r}"[:300])
-    if all(svg is None for svg in svgs):  # pragma: no cover - pagina non pronta
-        pytest.skip("pagina di rendering non pronta (__mermaidReady) o CDN non caricata")
+    require_cdn()
+    require_chromium()
+    svgs = render_batch_or_fail(
+        lambda: mp._prerender_mermaid_to_svg_batch_sync([tpl.code for tpl in MERMAID])
+    )
     return {tpl.id: svg for tpl, svg in zip(MERMAID, svgs, strict=True)}
 
 
@@ -837,16 +832,21 @@ def mermaid_overflow(mermaid_rendered: dict[str, str | None]) -> dict[str, list[
     """Per ogni modello: i testi che escono dal viewBox e di quanto."""
     sync_playwright = pytest.importorskip("playwright.sync_api").sync_playwright
     out: dict[str, list[dict[str, Any]]] = {}
-    try:
-        with sync_playwright() as p:
+    # Il `try` copre SOLO l'avvio del browser, come in `_dot_defects`: un
+    # errore del JS dell'oracolo deve FAR FALLIRE i quindici controlli e la
+    # loro controprova, non farli saltare in silenzio.
+    with sync_playwright() as p:
+        try:
             browser = p.chromium.launch()
+        except Exception as exc:  # pragma: no cover - launch di Chromium
+            pytest.skip(f"Chromium non disponibile per la misura: {exc!r}"[:200])
+        try:
             page = browser.new_page()
             page.set_content("<html><body></body></html>")
             for name, svg in mermaid_rendered.items():
                 out[name] = page.evaluate(_MISURA_JS, svg) if svg else []
+        finally:
             browser.close()
-    except Exception as exc:  # pragma: no cover - launch di Chromium
-        pytest.skip(f"Chromium non disponibile per la misura: {exc!r}"[:200])
     return out
 
 

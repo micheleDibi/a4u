@@ -117,7 +117,7 @@ def test_cite_fixture_case(case: dict) -> None:
 def _handled_key(
     numbers: Mapping[str, Mapping[str, int]], m: re.Match[str]
 ) -> tuple[str, str] | None:
-    key = m.group(2).strip().lower()
+    key = arn._trim(m.group(2)).lower()
     if key in (numbers.get(m.group(1)) or {}):
         return (m.group(1), key)
     return None
