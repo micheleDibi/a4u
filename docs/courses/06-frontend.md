@@ -710,7 +710,7 @@ dialog dal container (`onError` della mutation → `meta.errors` → prop
 `asset_id`/`loc` (pattern `LatexEditor`).
 | `tables[].markdown` | `TableEditor` |
 | `equations[].latex` | `LatexEditor` |
-| `key_takeaways[]` / `references[]` | `<Input>` lista |
+| `key_takeaways[]` / `references[]` | `<Input>` lista; il salvataggio invia sempre le due liste senza le righe vuote e riceve dal backend le liste normalizzate (trim + dedup); lo storico è mostrato com'è fino al primo salvataggio |
 
 Per ogni asset (FIG/TAB/EQ/EX) il dialog mostra **`RefIdField`**: chip readable
 dell'ID canonico con pulsante copy + input rinominabile. La rinomina invoca

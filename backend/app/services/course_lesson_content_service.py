@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -812,10 +813,14 @@ async def cancel_all_lessons_generation(
 _ASSET_REF_RE = re.compile(r"\[(FIG|TAB|EQ|EX):([^\]\n]+)\]")
 
 
-def _collect_asset_refs(text: str) -> set[tuple[str, str]]:
-    """Estrae i tag `[FIG:..]` / `[TAB:..]` / `[EQ:..]` / `[EX:..]` dal testo
-    (kind maiuscolo, id senza `]` né a capo)."""
-    return {(kind.upper(), aid.strip()) for kind, aid in _ASSET_REF_RE.findall(text or "")}
+def _count_asset_refs(text: str) -> Counter[tuple[str, str]]:
+    """Occorrenze dei tag `[FIG:..]` / `[TAB:..]` / `[EQ:..]` / `[EX:..]` nel
+    testo, per `(kind, id minuscolo)` (kind maiuscolo, id senza `]` né a
+    capo). Il confronto con gli id dichiarati è case-insensitive: i ref nel
+    testo e gli id sono generati dall'AI con maiuscole non sempre coerenti."""
+    return Counter(
+        (kind.upper(), aid.strip().lower()) for kind, aid in _ASSET_REF_RE.findall(text or "")
+    )
 
 
 @dataclass
@@ -1033,21 +1038,35 @@ async def materialize_lesson_content(
         )
 
     # 7. Asset referenziati nel testo: warning soft (non blocca).
-    text_corpus = (
-        (output.introduction or "")
-        + "\n"
-        + "\n".join(s.content for s in output.sections)
-        + "\n"
-        + (output.summary or "")
+    # Il corpus comprende anche `examples[].content` e `tables[].markdown`:
+    # un tag scritto lì è un uso dichiarato dal modello (niente falso
+    # «unused») e un id inesistente lì va segnalato. Il PDF però NON
+    # sostituisce i tag in quei campi (li rende come markdown del blocco):
+    # l'asset citato solo lì è accodato al corpo come mai citato (D3).
+    text_corpus = "\n".join(
+        [
+            output.introduction or "",
+            *(s.content for s in output.sections),
+            output.summary or "",
+            *(ex.content for ex in output.examples),
+            *(t.markdown for t in output.tables),
+        ]
     )
-    # Confronto case-insensitive: i ref nel testo e gli id dichiarati sono
-    # generati dall'AI con case non sempre coerente; senza normalizzare, i
-    # warning di asset inutilizzati / ref pendenti sarebbero falsi positivi.
-    refs = _collect_asset_refs(text_corpus)
-    fig_refs = {aid.lower() for kind, aid in refs if kind == "FIG"}
-    tab_refs = {aid.lower() for kind, aid in refs if kind == "TAB"}
-    eq_refs = {aid.lower() for kind, aid in refs if kind == "EQ"}
-    ex_refs = {aid.lower() for kind, aid in refs if kind == "EX"}
+    refs = _count_asset_refs(text_corpus)
+    # Un tag ripetuto non fa fallire la materializzazione: il prompt chiede
+    # UNA occorrenza per asset e il PDF normalizza le ripetizioni (una sola
+    # ancora, le altre citazioni diventano rimandi testuali).
+    duplicated = {f"{kind}:{aid}": n for (kind, aid), n in sorted(refs.items()) if n > 1}
+    if duplicated:
+        log.warning(
+            "lesson_content_duplicate_asset_refs",
+            lesson_code=lesson.lesson_code,
+            duplicated=duplicated,
+        )
+    fig_refs = {aid for kind, aid in refs if kind == "FIG"}
+    tab_refs = {aid for kind, aid in refs if kind == "TAB"}
+    eq_refs = {aid for kind, aid in refs if kind == "EQ"}
+    ex_refs = {aid for kind, aid in refs if kind == "EX"}
 
     visual_ids_norm = {v.lower() for v in visual_ids}
     table_ids_norm = {t.lower() for t in table_ids}

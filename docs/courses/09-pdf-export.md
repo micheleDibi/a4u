@@ -32,6 +32,19 @@ markdown renderizzato (tabelle, formule LaTeX live, diagrammi Mermaid live,
 esempi, key takeaways, references). Il template (colori, font, page size,
 margini, header/footer, loghi, background) è applicato in fase di rendering.
 
+Punti chiave e riferimenti sono resi **come stanno in `content_raw`**:
+nessuna dedup in lettura (B5 / D18). La normalizzazione (trim, dedup
+case-insensitive) avviene solo in scrittura, nello schema dell'output AI
+e del PATCH ([08 — § Punti chiave e riferimenti](08-lesson-content.md#punti-chiave-e-riferimenti-normalizzazione-in-scrittura-b5--d18));
+un PDF di una lezione storica mai rigenerata né salvata dall'editor può
+quindi ripetere una voce. La coda pre-resa (`_tail` in
+`render_lesson_html`) itera la lista grezza e conserva il numero di voci
+(test `test_pdf_renders_historical_duplicates_verbatim`, 3+3 `<li>`;
+contenuto nuovo `test_pdf_lists_one_li_per_unique_entry_for_new_content`,
+2+1). Il prompt di Fase 3 chiede il tag di ogni asset una volta, su riga
+propria fra righe vuote (D17): è la forma che il renderer usa come ancora
+del blocco senza riscrivere la frase.
+
 L'esportazione è scoped **per lezione** — niente PDF aggregato del corso in
 MVP. Lo stato `pdf_status` è indipendente da `content_status`: si può
 modificare il contenuto e poi rigenerare il PDF.
@@ -486,6 +499,45 @@ margini del testo, niente pagina dedicata, niente landscape.
   `figure_fit_report` (info) riassume totale, in banda, l'elenco fuori
   banda con corpo e provenienza del font e `font_fallback` (figure il cui
   `in_band` è un'ipotesi): è l'input del gate editoriale D13.
+- **Geometria delle figure (D14).** Ogni `RenderedFigure` porta in
+  `metrics.crossings` gli incroci arco × arco della figura resa e in
+  `metrics.defects` le voci `codice: dettaglio` dei difetti di lettura:
+  per Mermaid li misura `window.__measureSvg` nella stessa
+  `page.evaluate` del pre-render (incroci e testo fuori dalla tela; l'SVG
+  non è riscritto), per DOT `figure_geometry.measure_dot_svg` in Python
+  (incroci e i quattro difetti: testo fuori dalla tela o dal proprio
+  nodo/cluster, etichette sovrapposte, arco che attraversa un'etichetta);
+  Vega-Lite e `function` non hanno archi (`crossings=None`). Incroci oltre
+  `MAX_EDGE_CROSSINGS` (4) aggiungono ai difetti la voce
+  `graph_too_dense: incroci fra archi N > 4 — …` (con il consiglio nella
+  sintassi del formato) e, come ogni difetto, producono
+  `figure_geometry_defects` (warning, con `asset_id`, formato, incroci ed
+  elenco): la figura è resa comunque, e nemmeno la validazione del worker
+  la rifiuta (per DOT la misura avviene già in `validate(deep=True)` e la
+  figura arriva all'export dalla cache con la sua voce). Tetti di
+  lavoro: 50.000 segmenti per figura e, nella pagina del pre-render,
+  150.000 per batch, letti prima del campionamento; per la misura Python
+  dei DOT, che gira dentro il timeout del batch, anche 1.000.000 di unità
+  di lavoro (celle della griglia, coppie candidate, controlli del
+  raggruppamento) per figura e 2.000.000 per batch, contate prima di
+  eseguirle (un DOT storico da 256 archi costava 7 s di misura, un nodo
+  con `fontsize=8000` 7,7 s e 1,3 GB, e facevano scadere il batch con
+  tutte le figure della lezione); nella pagina del pre-render gli stessi
+  conteggi con 10.000.000 e 20.000.000 (costo limitato per costruzione,
+  doc 17 §12). Oltre un tetto la misura è saltata con
+  `figure_measure_skipped` (warning: `reason` `figure_segment_cap`,
+  `batch_segment_cap`, `figure_work_cap`, `batch_work_cap` o
+  `geometry_out_of_range`, `segments`, `edges`, `work`) e
+  `crossings=None`, mai
+  la figura; una misura fallita nella pagina è
+  `mermaid_geometry_measure_failed`. Il testo DOT è stimato con la
+  tabella della sua famiglia (Noto Sans, Times-Roman, Courier; le altre
+  famiglie non sono controllate) e un margine del 2 % per lato; gli archi
+  con `tooltip` (`g#a_edgeN > a`) sono contati come gli altri. Ogni `figure_fit` riporta
+  `crossings`; ogni `FigureFitEntry` porta `crossings` e `defects`; il
+  `figure_fit_report` aggiunge `geometry_defects` (`asset_id`, formato,
+  incroci, difetti delle figure con almeno un difetto) e
+  `measure_skipped` (Mermaid e DOT senza conteggio degli incroci).
 - **Salti pagina nella dispensa.** La crescita degli `<img>` fino al
   fondo della banda rende più alte le figure che a scala 1 hanno testo
   sotto 8 pt: il blocco di un DOT con archi a 5 pt (`dot_tiny`) passa da

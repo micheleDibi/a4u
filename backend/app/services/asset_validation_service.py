@@ -61,6 +61,7 @@ from app.services.figure_render_service import (
     REGISTRY,
     RENDERABLE_FORMATS,
     available_formats,
+    figure_asset_context,
 )
 from app.services.figure_theme import mermaid_initialize_js
 from app.services.mermaid_prerender import block_external_requests
@@ -635,12 +636,14 @@ async def _validate_slots(slots: list[_Slot]) -> list[AssetCheck]:
                 continue
             # Stesso tetto dell'endpoint `render-function`: una spec costosa
             # (o un renderer lento) non deve bloccare la validazione della
-            # lezione oltre `figure_render_timeout_seconds`.
+            # lezione oltre `figure_render_timeout_seconds`. Il contesto dà
+            # l'`asset_id` ai log della misura geometrica nel thread.
             try:
-                ok, err = await asyncio.wait_for(
-                    asyncio.to_thread(renderer.validate, slot.current, deep=True),
-                    timeout=render_timeout,
-                )
+                with figure_asset_context(slot.id.split(":", 1)[-1]):
+                    ok, err = await asyncio.wait_for(
+                        asyncio.to_thread(renderer.validate, slot.current, deep=True),
+                        timeout=render_timeout,
+                    )
             except TimeoutError:
                 ok, err = False, f"{slot.kind}: validazione oltre {render_timeout:g} s"
             checks.append(AssetCheck(slot.id, slot.kind, ok, "" if ok else err))

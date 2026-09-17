@@ -24,6 +24,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
+import math
 import re
 import sys
 from collections.abc import Sequence
@@ -32,6 +34,8 @@ from typing import Any
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
+from app.services import figure_geometry
+from app.services.figure_geometry import GeometryReport
 from app.services.figure_scale import SvgMetrics
 from app.services.figure_theme import MERMAID_FONT_FAMILY, mermaid_initialize_js
 
@@ -122,16 +126,343 @@ MEASURE_SVG_FONT_PX_JS = """(svg) => {
   }
 }"""
 
+# Geometria di un SVG nella pagina già aperta (D14): incroci arco × arco e
+# testo fuori dalla tela. Gemello di `figure_geometry.measure_svg`, di cui
+# specchia la selezione degli archi (`g.edge > path`, `g.edgePath > path`,
+# anche attraverso gli involucri `<a>` / `g#a_…` dei collegamenti di
+# Graphviz, classi `edge-thickness-*` e `messageLine*`, `flowchart-link`,
+# `transition`, `relation`, `relationshipLine`), il passo di campionamento,
+# il test d'intersezione con estremi inclusi e collineari esclusi, lo
+# scarto a meno di `endpointTol` dagli estremi dei due tracciati e il
+# raggruppamento a `clusterRadius`; la parità è provata sui diciotto modelli
+# DOT (`tests/test_figure_geometry.py`). Il campionamento usa
+# `getPointAtLength` trasformato nel sistema della radice, con passo locale
+# `step / k` (`k`: allungamento massimo della trasformazione, 1 senza
+# scala), così i segmenti misurano al più un passo della radice come in
+# Python (giro 3, V3-N1); ogni salto fra sotto-tracciati dentro un
+# intervallo è trovato per bisezione e mai tracciato. Costo limitato per
+# costruzione, con lo schema del docstring di `figure_geometry` (giro 3,
+# V3-F1: un arco scalato 5000 volte enumerava milioni di celle, «Map
+# maximum size exceeded» dopo 8 s e 2,5 GB; un intervallo con due salti
+# tracciava un segmento fantasma di un milione di unità, oltre 60 s):
+# lunghezze lette PRIMA di campionare (oltre `maxSegments` o il residuo
+# `budget` la misura è saltata), tela dal viewBox (o riquadro unione),
+# passo della griglia adattivo, impronte ritagliate e celle contate prima
+# di enumerarle, coppie candidate contate prima di confrontarle (ciascuna
+# provata una volta nella cella d'angolo, senza insieme dei visti), costo
+# del raggruppamento contato prima; oltre `maxWork` o il residuo
+# `workBudget` la misura è saltata. `work` è il lavoro contato, `spent`
+# quello eseguito (la pagina lo sottrae al residuo del batch). Taratura del
+# 17 settembre 2026 (Chromium di Playwright, macchina di sviluppo): 9-54 ns
+# per unità di lavoro (54 su un reticolo da 0,65 milioni, dove pesano i
+# costi fissi, 31 su uno da 7,3 milioni, 9 su un fascio di archi
+# coincidenti), contro 0,33-0,35 µs di Python sugli stessi SVG; i modelli
+# Mermaid dell'editor valgono meno di 1.300 unità, il bipartito 5×9 (45
+# archi, il massimo editoriale) 0,34 milioni. Da qui
+# `figure_geometry.MAX_BROWSER_MEASURE_WORK`. Il controllo del testo
+# (`texts: true`) è quello di `_MISURA_JS` dei test del frontend, con la
+# tolleranza `textTol`; gli altri tre difetti DOT non valgono per Mermaid
+# (le etichette degli archi stanno sull'arco per costruzione). L'SVG è
+# misurato in un host fuori schermo e non è mai riscritto; l'host è rimosso
+# in `finally`.
+MEASURE_SVG_GEOMETRY_JS = """(svg, opts) => {
+  const o = Object.assign({ step: 2, endpointTol: 2, clusterRadius: 3, textTol: 4,
+                            maxSegments: 50000, budget: Infinity, texts: true,
+                            maxDefects: 20, cell: 16, maxCells: 250000,
+                            maxWork: 10000000, workBudget: Infinity }, opts || {});
+  const none = (skipped, edges, segments, work = 0, spent = 0) =>
+    ({ crossings: null, pairs: null, edges, segments, defects: [], skipped, work, spent });
+  const RANGE = "geometry_out_of_range";
+  const host = document.createElement("div");
+  host.style.cssText = "position:absolute;left:-100000px;top:0;width:1000px";
+  host.innerHTML = svg;
+  document.body.appendChild(host);
+  try {
+    const root = host.querySelector("svg");
+    const rootCtm = root ? root.getScreenCTM() : null;
+    if (!rootCtm) return none("no_svg", 0, 0);
+    const inv = rootCtm.inverse();
+    const toRoot = (el) => inv.multiply(el.getScreenCTM());
+    // Allungamento massimo (valore singolare maggiore) della parte lineare.
+    const stretch = (m) => {
+      const t = m.a * m.a + m.b * m.b + m.c * m.c + m.d * m.d;
+      const det = m.a * m.d - m.b * m.c;
+      return Math.sqrt((t + Math.sqrt(Math.max(0, t * t - 4 * det * det))) / 2);
+    };
+    const PREFIXES = ["edge-thickness-", "messageLine"];
+    const NAMES = new Set(["flowchart-link", "transition", "relation", "relationshipLine"]);
+    const GROUPS = ["edge", "edgePath"];
+    const isEdgeClass = (c) => NAMES.has(c) || PREFIXES.some((p) => c.startsWith(p));
+    const isAnchorWrapper = (el) => {
+      const tag = el.tagName.toLowerCase();
+      return tag === "a" || (tag === "g" && !(el.getAttribute("class") || "").trim() &&
+                             (el.getAttribute("id") || "").startsWith("a_"));
+    };
+    const owner = (el) => {
+      let p = el.parentElement;
+      while (p && p !== root && isAnchorWrapper(p)) p = p.parentElement;
+      return p;
+    };
+    const units = new Map();
+    const items = [];
+    let estimate = 0;
+    for (const el of root.querySelectorAll("path, line, polyline")) {
+      const tag = el.tagName.toLowerCase();
+      const parent = owner(el);
+      let unit = null;
+      if (parent && parent.tagName.toLowerCase() === "g" &&
+          GROUPS.some((g) => parent.classList.contains(g))) {
+        if (tag !== "path") continue;
+        unit = parent;
+      } else if ([...el.classList].some(isEdgeClass)) {
+        unit = el;
+      } else {
+        continue;
+      }
+      const length = el.getTotalLength();
+      if (!(length > 0)) continue;
+      if (!units.has(unit)) units.set(unit, units.size);
+      const m = toRoot(el);
+      const k = Math.round(stretch(m) * 1e9) / 1e9;
+      const n = Math.max(1, Math.ceil((length * k) / o.step));
+      if (!Number.isFinite(n)) return none(RANGE, units.size, 0);
+      estimate += n;
+      items.push({ el, unit: units.get(unit), length, m, n });
+    }
+    if (estimate > o.maxSegments) return none("figure_segment_cap", units.size, estimate);
+    if (estimate > o.budget) return none("batch_segment_cap", units.size, estimate);
+    const segs = [];
+    const ends = [];
+    // Due punti dello stesso sotto-tracciato distano al più la lunghezza
+    // percorsa fra loro: oltre, fra i due c'è un `M` intermedio (salto).
+    const joined = (a, pa, b, pb) =>
+      Math.hypot(pb.x - pa.x, pb.y - pa.y) <= (b - a) * 1.01 + 1e-3;
+    for (let t = 0; t < items.length; t++) {
+      const { el, unit, length, m, n } = items[t];
+      const raw = (d) => el.getPointAtLength(d);
+      let prevD = 0;
+      let prevRaw = raw(0);
+      let prev = prevRaw.matrixTransform(m);
+      const first = prev;
+      for (let i = 1; i <= n; i++) {
+        const d = Math.min(length, (length * i) / n);
+        const curRaw = raw(d);
+        const cur = curRaw.matrixTransform(m);
+        if (!Number.isFinite(cur.x) || !Number.isFinite(cur.y)) {
+          return none(RANGE, units.size, estimate);
+        }
+        // Ogni salto dell'intervallo è cercato per bisezione e saltato;
+        // un segmento unisce solo punti contigui dello stesso tratto.
+        let fromD = prevD, fromRaw = prevRaw, from = prev;
+        while (!joined(fromD, fromRaw, d, curRaw)) {
+          let lo = fromD, hi = d;
+          for (let q = 0; q < 40 && hi - lo > 1e-4; q++) {
+            const mid = (lo + hi) / 2;
+            if (joined(fromD, fromRaw, mid, raw(mid))) lo = mid; else hi = mid;
+          }
+          const tail = raw(lo).matrixTransform(m);
+          segs.push([from.x, from.y, tail.x, tail.y, unit, t]);
+          if (segs.length > o.maxSegments) {
+            return none("figure_segment_cap", units.size, segs.length);
+          }
+          fromD = hi;
+          fromRaw = raw(hi);
+          from = fromRaw.matrixTransform(m);
+        }
+        segs.push([from.x, from.y, cur.x, cur.y, unit, t]);
+        prevD = d;
+        prevRaw = curRaw;
+        prev = cur;
+      }
+      ends.push([first, prev]);
+    }
+    // Tela, passo e impronte ritagliate (docstring di `figure_geometry`).
+    let X0 = 0, Y0 = 0, X1 = 0, Y1 = 0;
+    const vb = root.viewBox ? root.viewBox.baseVal : null;
+    if (vb && vb.width > 0 && vb.height > 0) {
+      X0 = vb.x; Y0 = vb.y; X1 = vb.x + vb.width; Y1 = vb.y + vb.height;
+    } else if (segs.length) {
+      X0 = Infinity; Y0 = Infinity; X1 = -Infinity; Y1 = -Infinity;
+      for (const s of segs) {
+        X0 = Math.min(X0, s[0], s[2]); Y0 = Math.min(Y0, s[1], s[3]);
+        X1 = Math.max(X1, s[0], s[2]); Y1 = Math.max(Y1, s[1], s[3]);
+      }
+    }
+    if (![X0, Y0, X1, Y1, (X1 - X0) + (Y1 - Y0)].every(Number.isFinite)) {
+      return none(RANGE, units.size, segs.length);
+    }
+    const side = Math.floor(Math.sqrt(o.maxCells));
+    const size = Math.max(o.cell, ((X1 - X0) + (Y1 - Y0)) / (2 * (side - 2)));
+    const rows = Math.floor((Y1 - Y0) / size) + 1;
+    const col = (x) => Math.floor((Math.min(Math.max(x, X0), X1) - X0) / size);
+    const row = (y) => Math.floor((Math.min(Math.max(y, Y0), Y1) - Y0) / size);
+    const spans = segs.map((s) => [col(Math.min(s[0], s[2])), row(Math.min(s[1], s[3])),
+                                   col(Math.max(s[0], s[2])), row(Math.max(s[1], s[3]))]);
+    const over = (w) =>
+      (w > o.maxWork ? "figure_work_cap" : w > o.workBudget ? "batch_work_cap" : null);
+    let work = 0;
+    for (const p of spans) work += (p[2] - p[0] + 1) * (p[3] - p[1] + 1);
+    if (over(work)) return none(over(work), units.size, segs.length, work, 0);
+    const grid = new Map();
+    spans.forEach((p, i) => {
+      for (let gx = p[0]; gx <= p[2]; gx++) {
+        for (let gy = p[1]; gy <= p[3]; gy++) {
+          const key = gx * rows + gy;
+          let cell = grid.get(key);
+          if (!cell) grid.set(key, (cell = []));
+          cell.push(i);
+        }
+      }
+    });
+    let spent = work;
+    let pairWork = 0;
+    for (const members of grid.values()) pairWork += (members.length * (members.length - 1)) / 2;
+    work += pairWork;
+    if (over(work)) return none(over(work), units.size, segs.length, work, spent);
+    const EPS = 1e-9;
+    const orient = (ax, ay, bx, by, cx, cy) => {
+      const v = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+      return Math.abs(v) < EPS ? 0 : v;
+    };
+    const near = (x, y, pair) =>
+      pair.some((p) => Math.hypot(p.x - x, p.y - y) < o.endpointTol);
+    const hits = [];
+    for (const [key, members] of grid) {
+      const gy = key % rows;
+      const gx = (key - gy) / rows;
+      for (let a = 0; a < members.length; a++) {
+        const i = members[a];
+        const s = segs[i];
+        const si = spans[i];
+        for (let b = a + 1; b < members.length; b++) {
+          const j = members[b];
+          const r = segs[j];
+          if (s[4] === r[4]) continue;
+          const sj = spans[j];
+          // Una coppia è provata solo nella cella d'angolo delle due impronte.
+          if (Math.max(si[0], sj[0]) !== gx || Math.max(si[1], sj[1]) !== gy) continue;
+          const d1 = orient(r[0], r[1], r[2], r[3], s[0], s[1]);
+          const d2 = orient(r[0], r[1], r[2], r[3], s[2], s[3]);
+          if ((d1 > 0 && d2 > 0) || (d1 < 0 && d2 < 0) || (d1 === 0 && d2 === 0)) continue;
+          const d3 = orient(s[0], s[1], s[2], s[3], r[0], r[1]);
+          const d4 = orient(s[0], s[1], s[2], s[3], r[2], r[3]);
+          if ((d3 > 0 && d4 > 0) || (d3 < 0 && d4 < 0)) continue;
+          const k = d1 / (d1 - d2);
+          const x = s[0] + k * (s[2] - s[0]);
+          const y = s[1] + k * (s[3] - s[1]);
+          if (near(x, y, ends[s[5]]) || near(x, y, ends[r[5]])) continue;
+          hits.push([x, y, Math.min(s[4], r[4]), Math.max(s[4], r[4])]);
+        }
+      }
+    }
+    spent += pairWork;
+    // Raggruppamento a piano (`figure_geometry._cluster_plan`): celle di
+    // lato appena sotto R/√2, coppie di celle vicine decise dai riquadri,
+    // confronti solo per le coppie incerte, costo contato prima.
+    const R = o.clusterRadius;
+    const cside = (R / Math.SQRT2) * (1 - 1e-9);
+    const cmap = new Map();
+    hits.forEach((h, i) => {
+      const cx = Math.floor(h[0] / cside), cy = Math.floor(h[1] / cside);
+      const key = cx + "," + cy;
+      let c = cmap.get(key);
+      if (!c) cmap.set(key, (c = { cx, cy, items: [], x0: h[0], y0: h[1], x1: h[0], y1: h[1] }));
+      c.items.push(i);
+      c.x0 = Math.min(c.x0, h[0]); c.y0 = Math.min(c.y0, h[1]);
+      c.x1 = Math.max(c.x1, h[0]); c.y1 = Math.max(c.y1, h[1]);
+    });
+    const OFFSETS = [[0, 1], [0, 2], [1, -2], [1, -1], [1, 0], [1, 1], [1, 2],
+                     [2, -2], [2, -1], [2, 0], [2, 1], [2, 2]];
+    const linked = [];
+    const unsure = [];
+    let checks = 0;
+    for (const c of cmap.values()) {
+      for (const [dx, dy] of OFFSETS) {
+        const e = cmap.get((c.cx + dx) + "," + (c.cy + dy));
+        if (!e) continue;
+        const gap = Math.hypot(Math.max(0, e.x0 - c.x1, c.x0 - e.x1),
+                               Math.max(0, e.y0 - c.y1, c.y0 - e.y1));
+        if (gap > R * (1 + 1e-9)) continue;
+        const far = Math.hypot(Math.max(c.x1 - e.x0, e.x1 - c.x0),
+                               Math.max(c.y1 - e.y0, e.y1 - c.y0));
+        if (far <= R * (1 - 1e-9)) {
+          linked.push([c, e]);
+        } else {
+          unsure.push([c, e]);
+          checks += c.items.length * e.items.length;
+        }
+      }
+    }
+    work += 2 * hits.length + OFFSETS.length * cmap.size + checks;
+    if (over(work)) return none(over(work), units.size, segs.length, work, spent);
+    const parent = hits.map((_, i) => i);
+    const find = (i) => {
+      while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; }
+      return i;
+    };
+    for (const c of cmap.values()) {
+      for (const i of c.items) parent[find(i)] = find(c.items[0]);
+    }
+    for (const [c, e] of linked) parent[find(c.items[0])] = find(e.items[0]);
+    for (const [c, e] of unsure) {
+      if (find(c.items[0]) === find(e.items[0])) continue;
+      const close = c.items.some((i) => e.items.some((j) =>
+        Math.hypot(hits[i][0] - hits[j][0], hits[i][1] - hits[j][1]) <= R));
+      if (close) parent[find(c.items[0])] = find(e.items[0]);
+    }
+    const clusters = new Map();
+    hits.forEach((h, i) => {
+      const c = find(i);
+      if (!clusters.has(c)) clusters.set(c, new Set());
+      clusters.get(c).add(h[2] + ":" + h[3]);
+    });
+    let pairs = 0;
+    for (const set of clusters.values()) pairs += set.size;
+    const defects = [];
+    if (o.texts) {
+      const vb = root.viewBox.baseVal;
+      for (const t of root.querySelectorAll("text")) {
+        if (getComputedStyle(t).display === "none") continue;
+        const text = (t.textContent || "").trim();
+        if (!text) continue;
+        const b = t.getBBox();
+        const m = toRoot(t);
+        const pt = (x, y) => {
+          const p = root.createSVGPoint(); p.x = x; p.y = y;
+          return p.matrixTransform(m);
+        };
+        const c = [pt(b.x, b.y), pt(b.x + b.width, b.y),
+                   pt(b.x, b.y + b.height), pt(b.x + b.width, b.y + b.height)];
+        const xs = c.map((p) => p.x), ys = c.map((p) => p.y);
+        const over = Math.max(vb.x - Math.min(...xs), Math.max(...xs) - (vb.x + vb.width),
+                              vb.y - Math.min(...ys), Math.max(...ys) - (vb.y + vb.height));
+        if (over > o.textTol) {
+          const short = text.length <= 40 ? text : text.slice(0, 39) + "\\u2026";
+          defects.push(`text_outside_canvas: «${short}» fuori dalla tela di ${over.toFixed(1)}`);
+        }
+      }
+    }
+    return { crossings: clusters.size, pairs, edges: units.size, segments: segs.length,
+             defects: [...new Set(defects)].slice(0, o.maxDefects), skipped: null,
+             work, spent: work };
+  } finally {
+    host.remove();
+  }
+}"""
+
 # HTML mini-doc che carica mermaid.esm da CDN ed espone una funzione
 # globale `__renderMermaid(id, code)` che ritorna SVG (o null se errore) e
-# `__renderMermaidMeasured(id, code)` che ritorna `{svg, metrics}` con le
-# metriche del testo misurate da `__measureSvgFontPx` nella stessa pagina
-# (una sola `page.evaluate` per figura). `__renderMermaid` resta una
-# stringa: i test del sanitizer e dei `<foreignObject>` lo chiamano
+# `__renderMermaidMeasured(id, code)` che ritorna `{svg, metrics, geometry}`
+# con le metriche del testo misurate da `__measureSvgFontPx` e la geometria
+# da `__measureSvg` nella stessa pagina (una sola `page.evaluate` per
+# figura; i residui dei tetti del batch vivono in `__measureBudget`,
+# segmenti delle misure complete, e `__measureWorkBudget`, lavoro eseguito
+# anche dalle misure saltate; una pagina per batch). `__renderMermaid`
+# resta una stringa: i test del sanitizer e dei `<foreignObject>` lo chiamano
 # direttamente. Segnaposto sostituiti da `build_mermaid_renderer_html`: la
 # versione (`settings.mermaid_cdn_version`), l'istruzione
-# `mermaid.initialize(...)` prodotta da `figure_theme` e la funzione di
-# misura (le graffe del JS impediscono `str.format`).
+# `mermaid.initialize(...)` prodotta da `figure_theme`, le due funzioni di
+# misura e le loro opzioni (le graffe del JS impediscono `str.format`).
 _MERMAID_RENDERER_HTML_TEMPLATE = """<!doctype html>
 <html><head><meta charset="utf-8">
 <style>body{margin:0;padding:0;font-family:__MERMAID_FONT_FAMILY__;}</style></head>
@@ -155,6 +486,10 @@ window.__renderMermaid = async (id, code) => {
   }
 };
 window.__measureSvgFontPx = __MERMAID_MEASURE__;
+window.__measureSvg = __MERMAID_GEOMETRY__;
+window.__measureOptions = __MERMAID_GEOMETRY_OPTIONS__;
+window.__measureBudget = window.__measureOptions.batchSegments;
+window.__measureWorkBudget = window.__measureOptions.batchWork;
 window.__renderMermaidMeasured = async (id, code) => {
   const svg = await window.__renderMermaid(id, code);
   if (typeof svg !== "string" || !svg) return null;
@@ -164,7 +499,16 @@ window.__renderMermaidMeasured = async (id, code) => {
   } catch (e) {
     metrics = null;
   }
-  return { svg, metrics };
+  let geometry = null;
+  try {
+    geometry = window.__measureSvg(svg, Object.assign({}, window.__measureOptions, {
+      budget: window.__measureBudget, workBudget: window.__measureWorkBudget }));
+    if (geometry && geometry.skipped === null) window.__measureBudget -= geometry.segments;
+    if (geometry) window.__measureWorkBudget -= geometry.spent || 0;
+  } catch (e) {
+    geometry = null;
+  }
+  return { svg, metrics, geometry };
 };
 window.__mermaidReady = true;
 </script>
@@ -263,7 +607,28 @@ def build_mermaid_renderer_html(*, version: str | None = None) -> str:
         .replace("__MERMAID_FONT_FAMILY__", MERMAID_FONT_FAMILY)
         .replace("__MERMAID_INITIALIZE__", mermaid_initialize_js(use_max_width=True))
         .replace("__MERMAID_MEASURE__", MEASURE_SVG_FONT_PX_JS)
+        .replace("__MERMAID_GEOMETRY_OPTIONS__", json.dumps(geometry_measure_options()))
+        .replace("__MERMAID_GEOMETRY__", MEASURE_SVG_GEOMETRY_JS)
     )
+
+
+def geometry_measure_options(*, texts: bool = True) -> dict[str, Any]:
+    """Opzioni di `window.__measureSvg` dalle costanti di `figure_geometry`
+    (unico punto dei valori: passo, tolleranze, tetti)."""
+    return {
+        "step": figure_geometry.SAMPLE_STEP,
+        "endpointTol": figure_geometry.ENDPOINT_TOLERANCE,
+        "clusterRadius": figure_geometry.CLUSTER_RADIUS,
+        "textTol": figure_geometry.MERMAID_TEXT_TOLERANCE,
+        "maxSegments": figure_geometry.MAX_MEASURE_SEGMENTS,
+        "batchSegments": figure_geometry.MAX_BATCH_MEASURE_SEGMENTS,
+        "cell": figure_geometry.GRID_CELL,
+        "maxCells": figure_geometry.MAX_GRID_CELLS,
+        "maxWork": figure_geometry.MAX_BROWSER_MEASURE_WORK,
+        "batchWork": figure_geometry.MAX_BATCH_BROWSER_MEASURE_WORK,
+        "maxDefects": figure_geometry.MAX_DEFECTS,
+        "texts": texts,
+    }
 
 
 def __getattr__(name: str) -> str:
@@ -277,11 +642,12 @@ def __getattr__(name: str) -> str:
 
 @dataclass(frozen=True)
 class MermaidPrerender:
-    """SVG post-processato e metriche del testo misurate nella stessa pagina
-    (`None` se la misura è fallita: la figura resta valida)."""
+    """SVG post-processato, metriche del testo e geometria misurate nella
+    stessa pagina (`None` se la misura è fallita: la figura resta valida)."""
 
     svg: str
     metrics: SvgMetrics | None
+    geometry: GeometryReport | None = None
 
 
 def _metrics_from_page(raw: object, *, preview: str) -> SvgMetrics | None:
@@ -306,6 +672,56 @@ def _metrics_from_page(raw: object, *, preview: str) -> SvgMetrics | None:
     return None
 
 
+def _int_or_none(value: object) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
+def _work_or_zero(value: object) -> int:
+    """Lavoro riportato dalla pagina (facoltativo, solo diagnostica): un
+    numero finito non negativo, altrimenti 0."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return 0
+    return int(value) if math.isfinite(value) and value >= 0 else 0
+
+
+def _geometry_from_page(raw: object, *, preview: str) -> GeometryReport | None:
+    """`GeometryReport` dal dizionario di `window.__measureSvg`; `None` (con
+    warning) se assente o malformato: una misura fallita NON degrada la
+    figura. Un salto per tetto (`skipped`) è un report valido con
+    `crossings=None`, loggato dal registro che conosce l'`asset_id`."""
+    if isinstance(raw, dict):
+        edges = _int_or_none(raw.get("edges"))
+        segments = _int_or_none(raw.get("segments"))
+        skipped = raw.get("skipped")
+        defects = raw.get("defects")
+        crossings = _int_or_none(raw.get("crossings"))
+        pairs = _int_or_none(raw.get("pairs"))
+        shape_ok = (
+            edges is not None
+            and segments is not None
+            and isinstance(defects, list)
+            and all(isinstance(d, str) for d in defects)
+        )
+        work = _work_or_zero(raw.get("work"))
+        spent = _work_or_zero(raw.get("spent"))
+        if shape_ok and isinstance(skipped, str) and skipped:
+            return GeometryReport(
+                None, None, edges or 0, segments or 0, skipped=skipped, work=work, spent=spent
+            )
+        if shape_ok and skipped is None and crossings is not None and pairs is not None:
+            return GeometryReport(
+                crossings=crossings,
+                crossing_pairs=pairs,
+                edges=edges or 0,
+                segments=segments or 0,
+                defects=tuple(str(d) for d in (defects or [])),
+                work=work,
+                spent=spent,
+            )
+    log.warning("mermaid_geometry_measure_failed", preview=preview)
+    return None
+
+
 async def _prerender_mermaid_batch_async(
     codes: list[str],
 ) -> list[MermaidPrerender | None]:
@@ -318,10 +734,11 @@ async def _prerender_mermaid_batch_async(
 
     Renderizza una lista di sorgenti mermaid a SVG con UNA sola
     sessione Playwright headless (~1s startup + ~50-200ms per
-    diagramma) e misura nella stessa pagina il corpo dei testi
-    (`__renderMermaidMeasured`, una `page.evaluate` per figura). Ritorna
-    lista parallela; ogni elemento è `MermaidPrerender(svg, metrics)` o
-    `None` se il rendering ha fallito.
+    diagramma) e misura nella stessa pagina il corpo dei testi e la
+    geometria (`__renderMermaidMeasured`, una `page.evaluate` per figura;
+    tetto cumulativo dei segmenti per batch nella pagina). Ritorna lista
+    parallela; ogni elemento è `MermaidPrerender(svg, metrics, geometry)`
+    o `None` se il rendering ha fallito.
     """
     if not codes:
         return []
@@ -358,6 +775,9 @@ async def _prerender_mermaid_batch_async(
                                 svg=_join_mermaid_text_newlines(_strip_mermaid_max_width(svg)),
                                 metrics=_metrics_from_page(
                                     rendered.get("metrics"), preview=code[:80]
+                                ),
+                                geometry=_geometry_from_page(
+                                    rendered.get("geometry"), preview=code[:80]
                                 ),
                             )
                         )

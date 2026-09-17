@@ -440,6 +440,41 @@ Asset equazione/teorema della Fase 3. `extra="forbid"`.
 - `proof: list[ProofStep] = Field(default_factory=list)` — dimostrazione
   a passaggi; vuota quando non applicabile.
 
+### Normalizzazione di `key_takeaways` e `references` (questione B5, decisione D18)
+
+Costanti `KEY_TAKEAWAYS_MIN = 3` e `KEY_TAKEAWAYS_MAX = 12`, usate da
+`LessonContentOutput.key_takeaways` (`min_length`/`max_length`), da
+`LessonContentUpdateInput.key_takeaways` (`max_length`, 12 e non più 10:
+domanda aperta 14) e dal warning del worker. Due helper privati di
+modulo:
+- `_clean_key_takeaways(v: list[str]) -> list[str]` — trim, voci vuote
+  scartate (`str.strip()`), dedup `str.lower()` con ordine e grafia della
+  prima occorrenza. Stesso algoritmo di `_clean_argomenti`
+  (`course_objectives_generation.py`) e di `_clean_keywords` (sotto), senza
+  tetto di lunghezza e senza il ramo `isinstance`;
+- `_clean_references(v: list[LessonContentReference]) ->
+  list[LessonContentReference]` — trim della `citation`, citation vuote
+  scartate, dedup per `(source, citation.lower())`; `model_copy(update=)`
+  senza rivalidazione (il trim può solo accorciare), istanze già pulite
+  restituite così come sono.
+
+Quattro `field_validator` in mode "after" (precedente:
+`course_lesson_structure.py`, validatori su output AI e input del PATCH):
+- `LessonContentOutput._dedup_key_takeaways` — `ValueError("key_takeaways:
+  lista vuota dopo cleanup")` se restano zero voci;
+  `LessonContentOutput._dedup_references`;
+- `LessonContentUpdateInput._dedup_key_takeaways` /
+  `._dedup_references` — `None` resta `None` (campo non toccato), `[]` è
+  ammesso (azzeramento), nessun `ValueError`.
+
+`min_length`/`max_length` contano l'elenco grezzo: la lista persistita può
+avere 1-2 punti chiave. Nessuna dedup in lettura (PDF, vista web ed editor
+leggono `content_raw` com'è). Invariante: `content_raw` non viene mai
+ri-validato con `LessonContentOutput.model_validate` (unico call-site
+`openai_lesson_content_service.generate_lesson_content`); un round-trip su
+una lezione degradata fallirebbe con `too_short`. La duplicazione del corso
+(`course_duplication_service`) opera sul dict e non deve introdurlo.
+
 ### `class AssessmentMCOption(BaseModel)`
 
 Una opzione di una domanda a scelta multipla. `extra="forbid"`.

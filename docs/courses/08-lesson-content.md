@@ -28,7 +28,10 @@ Per ogni lezione approvata in Fase 2 (con `learning_objectives`,
 > originale è stato rimosso (vedi prompt §6 — "NON GENERARE ESERCIZI").
 > Lo schema `content_raw` espone `examples` ma non `exercises`.
 
-L'output è validato (10 validazioni di §6.4, di cui 5 tolleranti o
+L'output passa prima dallo schema `LessonContentOutput`, che normalizza
+`key_takeaways` e `references` (vedi
+[§ Punti chiave e riferimenti](#punti-chiave-e-riferimenti-normalizzazione-in-scrittura-b5--d18)),
+poi è validato (10 validazioni di §6.4, di cui 5 tolleranti o
 derivate — vedi sotto) e materializzato come JSONB `content_raw` su
 `course_lesson`. La UI rende live le figure (Mermaid, Vega-Lite, DOT,
 `function`) con la cornice «Figura N.», KaTeX e tabelle.
@@ -145,9 +148,15 @@ falsi positivi.
 - **Backend** (`course_lesson_content_service`): `_ASSET_REF_RE =
   r"\[(FIG|TAB|EQ|EX):([^\]\n]+)\]"` (stessa forma del PDF e di
   `figure_numbering.ASSET_REF_RE`: un tag a cavallo di riga non è un tag
-  per nessun renderer), `_collect_asset_refs` fa `kind.upper()` +
-  `aid.strip()`; le validazioni soft sugli asset (9 e 10 di §6.4)
-  confrontano i set di ref e di id entrambi `.lower()`.
+  per nessun renderer), `_count_asset_refs` conta le occorrenze per
+  `(kind.upper(), id.strip().lower())` (un `Counter`, non più un
+  insieme); le validazioni soft sugli asset (9-11 di §6.4) confrontano
+  ref e id entrambi in minuscolo. Il corpus dei ref comprende
+  introduzione, sezioni, sintesi, `examples[].content` e
+  `tables[].markdown`: un tag scritto in un esempio conta come uso e un id
+  inesistente in una tabella è segnalato. Il PDF però non sostituisce i
+  tag in quei due campi (li rende come markdown del blocco): un asset
+  citato solo lì è accodato al corpo come mai citato.
 - **Rimandi e ancore a render** (`asset_ref_normalize`, mirror
   `lib/assetRefNormalize.ts`): nella dispensa e nel PDF una citazione in
   linea `[KIND:id]` diventa il rimando testuale «Figura N» / «Tabella N» /
@@ -163,6 +172,50 @@ falsi positivi.
   chiavi `asset_id.toLowerCase()` e `renderAssetBlock` cerca con
   `id.toLowerCase()`. Solo se il lookup fallisce mostra
   "Asset non trovato: `[KIND:id]`" (con l'id originale).
+
+## Punti chiave e riferimenti: normalizzazione in scrittura (B5 / D18)
+
+Questione B5 del piano della dispensa, decisione D18. `key_takeaways` e
+`references` sono normalizzati **dallo schema**, al solo confine di
+scrittura (`app/schemas/course_lesson_content.py`): due helper privati,
+`_clean_key_takeaways` e `_clean_references`, e quattro `field_validator`
+in mode "after" su `LessonContentOutput` (output AI, unico ingresso
+`openai_lesson_content_service.generate_lesson_content`) e su
+`LessonContentUpdateInput` (PATCH del docente).
+
+- Trim, voci vuote scartate (vuoto = `str.strip()`: U+00A0 cade, U+200B
+  no), dedup case-insensitive (`str.lower()`, come `_clean_argomenti` e
+  `_clean_keywords`) con ordine e grafia della prima occorrenza. Nessun
+  collasso degli spazi interni né della punteggiatura finale.
+- References: chiave `(source, citation.lower())` sulla citation
+  trimmata. La stessa citazione come `documento_caricato` e come
+  `suggerimento_generale` resta doppia. Una `citation=""` è respinta
+  dall'item (`string_too_short`, come prima); una di soli spazi supera
+  l'item ed è scartata dalla lista.
+- `min_length=KEY_TAKEAWAYS_MIN` (3) e `max_length=KEY_TAKEAWAYS_MAX`
+  (12) contano l'elenco **grezzo**. La lista persistita può quindi
+  scendere a 1-2 punti chiave senza rigenerare la lezione (in mode
+  "before" `['A', 'a', ' A ']` darebbe `too_short` e una generazione
+  intera per un difetto cosmetico). Il worker lo segnala con il warning
+  `lesson_content_key_takeaways_below_min` (`key_takeaways`, `minimum`).
+  `ValueError` solo se l'output AI resta vuoto dopo il cleanup (sole voci
+  bianche), con retry recuperabile.
+- PATCH: `None` = campo non toccato, `[]` = azzeramento ammesso (nessun
+  errore). Il tetto è 12 come per l'output AI (domanda aperta 14: con 10
+  una lezione da 11-12 punti chiave non era salvabile dall'editor).
+- **Nessuna dedup in lettura, nessun backfill.** PDF
+  (`render_lesson_html`, coda pre-resa con `_tail` sulla lista grezza),
+  vista web (`LessonContentView`) ed editor mostrano `content_raw` com'è.
+  Una lezione storica si normalizza alla rigenerazione o al primo
+  salvataggio dall'editor, che invia SEMPRE le due liste (righe vuote
+  scartate prima dell'invio). Un PATCH che non porta le liste le lascia
+  com'erano. La divergenza fra editor e PDF è temporale, non spaziale: in
+  ogni istante le superfici leggono lo stesso `content_raw`.
+- Invariante: `content_raw` non viene mai ri-validato con
+  `LessonContentOutput.model_validate` (fallirebbe con `too_short` su una
+  lezione degradata). La duplicazione e la traduzione del corso
+  (`course_duplication_service`) lavorano sul dict senza schema: i
+  duplicati storici passano nelle copie così come sono.
 
 ## Riferimenti agli obiettivi: codici nel prompt + risoluzione tollerante
 
@@ -225,7 +278,8 @@ video / preview FE):
   RENDERABLE_FORMATS` (`mermaid`, `vegalite`, `dot`, `function`), ciascuna
   validata dal renderer del registro (vedi
   [17 — Figure accademiche](17-visual-figures.md)):
-  - `mermaid`: gate statico D8 + parse con **Mermaid 11.x**, pin unico
+  - `mermaid`: gate statico D8, soglie editoriali sul sorgente
+    (`figure_compute.graph_rules`, sotto) + parse con **Mermaid 11.x**, pin unico
     `settings.mermaid_cdn_version` (default `11.17.2`), lo stesso del
     pre-render PDF/video (`mermaid_prerender`) e del lock npm del frontend,
     con la stessa inizializzazione `figure_theme.mermaid_initialize_js`
@@ -238,10 +292,41 @@ video / preview FE):
     niente `data.url`/interattività/`config`, `clip` e `scale.domain`) ed
     euristica del criterio 10 (funzioni matematiche → `function`), poi
     render offline con vl-convert;
-  - `dot`: gate statico (header, attributi che leggono file, numero di
-    archi) e render con il binario `dot`;
+  - `dot`: gate statico (header, attributi che leggono file, tetto di
+    risorsa di 600 archi), soglie editoriali sul sorgente e render con il
+    binario `dot`; gli incroci fra archi misurati sull'SVG reso oltre
+    `MAX_EDGE_CROSSINGS` sono un warning e una voce del report, mai un
+    rifiuto;
   - `function`: `FunctionFigureSpec` (struttura Pydantic + controlli
     semantici) e render con sympy/matplotlib.
+
+  **Soglie editoriali dei grafi (D13, D14).** Una figura Mermaid o DOT
+  valida ma illeggibile è rifiutata con un messaggio che comincia per
+  `graph_too_dense:` e dice che cosa ridurre (`nodi 42 > 30`, `archi 60 >
+  45`, `caratteri dell'etichetta 80 > 64`, `caratteri del titolo 130 >
+  110`, `righe 130 > 120`, `caratteri del sorgente 3500 > 3000` solo
+  Mermaid), seguito una volta dalla clausola «qui semplificare è la correzione
+  richiesta: mantieni tipo e significato», perché il system prompt del fix
+  vieta di togliere contenuti. Il messaggio arriva al fix AI come ogni altro
+  errore; nel PATCH manuale è il `type` `graph_too_dense` del 422 per
+  asset. Le soglie sono provvisorie (calibrate sui 57 modelli degli
+  editor) e tarate perché nessuna figura normale le superi: un errore qui
+  costa, a fix esauriti, la rigenerazione della lezione. Per questo, dove
+  Mermaid manda a capo da sé (forme e collegamenti del flowchart, state,
+  mindmap, timeline, relazioni e note di class ed ER, blocchi della
+  sequence), la soglia dell'etichetta vale per la parola più lunga e non
+  per la riga: un evento di timeline descrittivo è una figura normale. Gli incroci fra
+  archi non rifiutano mai una figura: un percettrone multistrato 3-4-2 ne
+  ha 16 per costruzione e il fix non potrebbe toglierli; oltre
+  `MAX_EDGE_CROSSINGS` diventano la voce `graph_too_dense: incroci fra
+  archi …` fra i difetti della figura e il warning
+  `figure_geometry_defects` (DOT già alla validazione profonda, Mermaid
+  all'export). Il tetto di risorsa sul sorgente
+  (`VISUAL_ASSET_CONTENT_MAX_CHARS`, 12.000 caratteri) vale sugli asset
+  generati e, nel PATCH, sui soli asset cambiati: una lezione storica con
+  un Mermaid più lungo resta modificabile nel testo. Dettagli e regole di
+  conteggio per tipo in
+  [17 — Figure accademiche](17-visual-figures.md), sezione 12.
 
   Il prompt di Fase 3 (PROMPT 3 in `docs/PROMPTS.md`, blocco «FORMATI
   DELLE FIGURE») descrive sempre i quattro formati; lo schema strict
@@ -313,9 +398,44 @@ fasi interne**, eseguite in un **unico call** OpenAI:
 
 Nell'output JSON il modello inserisce **solo il risultato della Fase
 2**; la prima stesura non compare mai. Contenuti, formule, tabelle e
-tag asset (`[FIG:]`, `[EQ:]`, `[TAB:]`) restano invariati tra le due
-fasi — non è un doppio call, è un'istruzione di processo dentro lo
-stesso prompt.
+tag asset (`[FIG:]`, `[EQ:]`, `[TAB:]`, `[EX:]`) restano invariati tra
+le due fasi — non è un doppio call, è un'istruzione di processo dentro
+lo stesso prompt.
+
+#### Posizione dei tag (D17)
+
+Il blocco `POSIZIONE DEI TAG — REGOLA RIGIDA` (al posto del vecchio
+paragrafo «Per ogni asset») nomina i quattro tag con il campo id del
+proprio array (`[FIG:asset_id]`, `[TAB:table_id]`, `[EQ:equation_id]`,
+`[EX:example_id]`), quindi vale per figure, tabelle, equazioni ed
+esempi, e chiede:
+
+- UN tag per asset, da solo su una riga propria fra due righe vuote,
+  dopo il paragrafo che introduce l'asset (il renderer lo sostituisce con
+  l'asset numerato);
+- nel testo il richiamo a parole («come mostra la figura», «nella tabella
+  seguente»), senza ripetere il tag e senza «Figura»/«Tabella»/
+  «Equazione»/«Esempio» davanti al tag;
+- mai un tag in codice, formule, `caption`, `key_takeaways`,
+  `references`, `examples[].content` o `tables[].markdown` (negli ultimi
+  due il PDF non sostituisce i tag).
+
+È la forma che il renderer tratta come ancora del blocco senza toccare la
+frase (test `test_the_layout_taught_by_the_phase3_prompt_leaves_the_prose_alone`).
+La vecchia formula «referenziato almeno una volta» ammetteva le
+ripetizioni, che `_count_asset_refs` ora segnala
+(`lesson_content_duplicate_asset_refs`); le citazioni in linea dei
+contenuti storici restano gestite come rimandi «Figura N». Il blocco
+DIVIETI vieta la numerazione a mano e rimanda alla regola (la regola
+sulle didascalie sta solo lì); `REGENERATION_SUFFIX` chiede di riscrivere
+secondo la regola i tag ripetuti o dentro le frasi. Budget misurato:
+27.923 caratteri nella variante più lunga (+373) e 28.819 con il
+suffisso di rigenerazione (+445), entrambi sotto `MAX_SYSTEM_P3 = 28_900`
+invariato (`tests/test_prompt_register.py`, che controlla anche la
+variante di rigenerazione); la regola non entra in Fase 4, il cui
+margine è di 300 caratteri. Testo verbatim in
+[PROMPTS.md — PROMPT 3](../PROMPTS.md), verificato da
+`scripts/check_prompts_md.py`.
 
 Entrambi inseriscono `reasoning_effort` nel body via
 `apply_reasoning_effort()` (`openai_client.py`) — solo per modelli
@@ -346,6 +466,11 @@ per lezione del ~40%, qualità leggermente inferiore. Vedi
     (`lesson_structure_is_ready`); regressione esplicita
     `course.status='content_pending'`.
   - `materialize_lesson_content` — applica le **10 validazioni §6.4**:
+    0. (schema, prima della materializzazione) `key_takeaways` e
+       `references` già normalizzati da `LessonContentOutput`: trim,
+       vuoti scartati, dedup case-insensitive con ordine conservato,
+       references a parità di `source`; `min_length=3` conta il grezzo,
+       la lista persistita può degradare a 1-2 voci
     1. `lesson_id` ↔ `lesson_code` match (hard)
     2. `section_id` univoci (hard)
     3. `asset_id` univoci per tipo (visual_assets, tables, equations, examples) (hard)
@@ -360,7 +485,13 @@ per lezione del ~40%, qualità leggermente inferiore. Vedi
     7. `coverage_check.objectives_covered` **derivato** dalle sections
     8. `coverage_check.topics_covered` **derivato** dalle sections
     9. Asset orfani (referenziati ma non definiti) → warning soft
+       `lesson_content_dangling_asset_refs`
     10. Asset non referenziati nel testo → warning soft
+       `lesson_content_unused_assets`
+    11. Tag ripetuti (stesso `(kind, id)` più di una volta nel corpus) →
+       warning soft `lesson_content_duplicate_asset_refs` con
+       `duplicated={"FIG:a": 3}`; la materializzazione prosegue (il PDF
+       tiene una sola ancora e trasforma le altre citazioni in rimandi)
   - `approve_lesson_content` / `approve_all_lessons_content` —
     l'approve-all è **tollerante** (come quelli di slide/discorso): ignora
     le lezioni `empty` (non ancora generate — normali nel flusso
@@ -371,7 +502,10 @@ per lezione del ~40%, qualità leggermente inferiore. Vedi
   - `_recompute_course_content_status`
 - `course_lesson_content_crud.py` — edit manuale di `content_raw`
   (richiede status `ready`/`approved`). Validazioni allentate (solo
-  unicità ID, no coverage hard).
+  unicità ID, no coverage hard). Il PATCH normalizza `key_takeaways` e
+  `references` che porta (schema `LessonContentUpdateInput`); i campi
+  assenti non vengono riscritti; il conteggio di audit `fields.*` è
+  post-normalizzazione.
 
 ### Worker parallelo
 
@@ -392,6 +526,11 @@ scoped a livello LEZIONE:
   `course_glossary_service.ensure_glossary_ready` (~10-20s).
 - Ticker progress: ease-out 15→85% in ~90s (lezione più lunga di
   Fase 2 → ticker più lento).
+- **Punti chiave degradati** (D18): dopo la materializzazione,
+  `_warn_on_degraded_key_takeaways` emette
+  `lesson_content_key_takeaways_below_min` se la dedup dello schema ha
+  lasciato meno di `KEY_TAKEAWAYS_MIN` voci. La lezione resta `ready`:
+  nessun retry.
 - **Auto-retry trasparente** — `_apply_failure(lesson, *,
   recoverable, auto_retry_max)` è invocato in tutti i 4 percorsi di
   errore (glossary_gate, openai_call, materialize). Se `recoverable`
@@ -588,7 +727,12 @@ spec JSON `function`) — schema e renderer di vista condivisi con il PDF.
   - Tabelle → `TableEditor`
   - Formule → `LatexEditor` (latex) + `RichTextEditor` (explanation)
   - Esempi → `RichTextEditor`
-  - Key takeaways / References → `<Input>`
+  - Key takeaways / References → `<Input>`. `handleSubmit` invia sempre
+    entrambe le liste, scartando le righe vuote (per le references: le
+    citation vuote, che darebbero 422); il backend le restituisce
+    normalizzate (trim + dedup): la vista si aggiorna dalla risposta
+    (`setCache`), il dialog si chiude e alla riapertura mostra le liste
+    normalizzate.
   - **`RefIdField`**: per ogni asset (FIG/TAB/EQ/EX) mostra l'ID
     canonico (es. `[FIG:fig_pipeline]`) con pulsante **copy** e
     **input rinominabile**. Etichetta + chip readable in i18n

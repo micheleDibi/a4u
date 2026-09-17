@@ -58,6 +58,15 @@ MAX_BLOCK_REDUCED = 6_400
 # caratteri, +281 in P3. Con la guardia a 27.700 il margine scendeva a 150
 # caratteri (0,5%), troppo poco per la prossima riga: sale a 28.900, cioè
 # la misura reale + ~5%.
+#
+# Misure del 17 settembre 2026, dopo la regola POSIZIONE DEI TAG (D17: un
+# tag per asset su riga propria, richiamo a parole, divieto di numerare a
+# mano, `[EX:]` nel processo in due fasi): P3 27.890 con grounding, 26.471
+# senza, 27.923 con ruolo/stile/EQF interpolati (+373 sulla variante più
+# lunga); `REGENERATION_SUFFIX` da 824 a 896. La guardia resta a 28.900 e
+# vale anche per la variante di rigenerazione (prompt + suffisso, 28.819:
+# prima di D17 era 28.374), che è quella davvero più lunga. P4 e P5 non
+# sono toccati (la regola sta solo in Fase 3).
 MAX_SYSTEM_P3 = 28_900
 MAX_SYSTEM_P4 = 15_400
 MAX_SYSTEM_P5 = 12_500
@@ -218,6 +227,17 @@ def test_p3_regeneration_suffix_carries_register_note():
     assert "Mantieni stile, lessico e registro coerenti" not in suffix
     composed = _p3() + suffix
     assert composed.index(reg.REGISTER_HEADER) < composed.index("stai RIGENERANDO")
+
+
+def test_p3_regeneration_variant_stays_under_guard():
+    """Il prompt di una rigenerazione (`_system_prompt` + suffisso) è il
+    più lungo di Fase 3: la guardia vale anche per lui, in entrambe le
+    varianti del grounding."""
+    suffix = content.REGENERATION_SUFFIX
+    assert len(_p3() + suffix) <= MAX_SYSTEM_P3
+    for grounding in (True, False):
+        prompt = content._system_prompt("it", grounding_enabled=grounding)
+        assert len(prompt + suffix) <= MAX_SYSTEM_P3
 
 
 def test_assessment_prompt_is_untouched():

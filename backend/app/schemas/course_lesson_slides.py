@@ -21,9 +21,9 @@ Validazione (§7.4) è in `course_lesson_slides_service.materialize_lesson_slide
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
 from app.schemas.common import ORMModel
 from app.schemas.course_lesson_content import (
@@ -31,6 +31,7 @@ from app.schemas.course_lesson_content import (
     LessonContentExample,
     LessonContentTable,
     VisualAssetFormat,
+    cap_visual_asset_content,
 )
 
 # ---------------------------------------------------------------------------
@@ -94,7 +95,9 @@ class LessonSlideNewAsset(BaseModel):
     `asset_type` presente nei record antecedenti. Lo schema strict di
     Fase 4 offre al modello solo `mermaid|vegalite|dot` (A1): `function`
     resta accettato qui perché il docente può aggiungerlo a mano e il
-    renderer lo serve.
+    renderer lo serve. Stesso tetto di risorsa sul `content` degli asset
+    generati (`cap_visual_asset_content` su `LessonSlidesOutput.new_assets`,
+    A1); nel PATCH vale solo per gli asset cambiati.
     """
 
     model_config = ConfigDict(extra="ignore")
@@ -112,7 +115,9 @@ class LessonSlidesOutput(BaseModel):
     lesson_id: str
     total_slides: int = Field(ge=1)
     slides: list[LessonSlideItem] = Field(min_length=1)
-    new_assets: list[LessonSlideNewAsset] = Field(default_factory=list)
+    new_assets: list[Annotated[LessonSlideNewAsset, AfterValidator(cap_visual_asset_content)]] = (
+        Field(default_factory=list)
+    )
     # Asset NUOVI non visivi creati in Fase 4 (parità con le Dispense):
     # stessi modelli di LessonContent*. Default vuoti per retro-compat.
     new_tables: list[LessonContentTable] = Field(default_factory=list)

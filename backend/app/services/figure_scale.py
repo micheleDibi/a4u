@@ -64,12 +64,20 @@ MetricsSource = Literal["measured", "parsed", "root_rule", "unresolved", "no_tex
 class SvgMetrics:
     """Metriche del testo di un SVG: `font_px_min` è l'unico valore che entra
     nel fit; mediana e conteggio sono diagnostici; `source` dice da dove
-    viene il valore, così un fallback non è mai silenzioso."""
+    viene il valore, così un fallback non è mai silenzioso.
+
+    Geometria (D14, `figure_geometry`): `crossings` sono gli incroci arco ×
+    arco della figura resa (`None` se non misurati: formato senza archi,
+    misura saltata o fallita); `defects` le voci `codice: dettaglio` dei
+    difetti di lettura e delle soglie editoriali superate sulla figura resa
+    (tupla immutabile: il record vive nella cache condivisa)."""
 
     font_px_min: float | None
     font_px_median: float | None
     text_count: int
     source: MetricsSource
+    crossings: int | None = None
+    defects: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -94,6 +102,8 @@ class FigureFitEntry:
     in_band: bool
     font_source: str
     text_count: int
+    crossings: int | None = None
+    defects: tuple[str, ...] = ()
 
 
 def _half_up(value: float, digits: int) -> float:

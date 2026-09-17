@@ -426,6 +426,7 @@ In rigenerazione: `## Versione attuale del modulo (DA RIVEDERE)` + `## Indicazio
 **SCOPO**
 - File: `backend/app/services/openai_lesson_content_service.py` — `_system_prompt(language_code, *, ruolo_docente, stile_insegnamento, livello_eqf, grounding_enabled)`, chiamata da `generate_lesson_content()`.
 - Modello: `settings.openai_lesson_content_model` (default `gpt-5.5`, reasoning `high`, max 32000 token — il task più complesso della pipeline).
+- Posizione dei tag (D17): il blocco `POSIZIONE DEI TAG — REGOLA RIGIDA` (al posto del paragrafo «Per ogni asset») chiede, per figure, tabelle, equazioni ed esempi, UN tag per asset (`[FIG:asset_id]`, `[TAB:table_id]`, `[EQ:equation_id]`, `[EX:example_id]`) da solo su una riga propria fra righe vuote, dopo il paragrafo che introduce l'asset; nel testo l'asset si richiama a parole («come mostra la figura»), senza ripetere il tag, senza «Figura»/«Tabella» davanti al tag e mai dentro codice, formule, `caption`, `key_takeaways`, `references`, `examples[].content` o `tables[].markdown` (negli ultimi due il PDF non sostituisce i tag). È la forma che il renderer (PDF e web) tratta come ancora del blocco senza toccare la frase; le citazioni in linea di un contenuto storico restano gestite come rimandi testuali («Figura N»). Il blocco DIVIETI vieta la numerazione a mano e rimanda alla regola; la regola sulle didascalie resta solo in DIVIETI. Budget: P3 27.923 caratteri con ruolo/stile/EQF interpolati (+373) e 28.819 con il suffisso di rigenerazione (+445), entrambi sotto la guardia `MAX_SYSTEM_P3` invariata a 28.900; P4 non è toccato.
 - Ruolo: scrive il testo completo Markdown della lezione (sezioni, figure nei quattro formati `mermaid`/`vegalite`/`dot`/`function` — blocco «FORMATI DELLE FIGURE»: tabella «contenuto → formato → tipo di diagramma» (D8) che nomina TUTTI e quindici i tipi Mermaid con il proprio caso d'uso, tipi Mermaid ammessi ed esclusi, regole D5 sui dati e vincoli del validatore, CATALOGO Vega-Lite per famiglia d'uso (confronto fra categorie, parte sul tutto, distribuzione, andamento nel tempo, correlazione, matrice, incertezza, graduatoria) con il criterio professionale della torta, stile D3, esempi minimi Vega-Lite/DOT, schema compatto ed esempio di `FunctionFigureSpec` (D9) —, formule LaTeX, tabelle, equazioni con enunciato/dimostrazione, esempi, riferimenti, coverage_check). Il testo è statico (A19): i quattro formati sono sempre descritti; solo l'`enum` dello schema strict segue `figure_render_service.available_formats()`. Gli elenchi dei tipi Mermaid e delle funzioni ammesse sono interpolati a import da `figure_theme.MERMAID_D8_TYPES`/`MERMAID_EXCLUDED_TYPES` e `function_parse.FUNCTIONS`: il testo sotto è il risultato con i valori correnti.
 - Interpolazione: `ruolo_docente`, `stile_insegnamento` e `livello_eqf` entrano nel tono del testo, entro il REGISTRO; `{register_block}` è il blocco condiviso di `prompt_register.academic_register_block("content", language_code)` (vedi sezione «Blocco condiviso — Registro accademico»). Resta un solo campione di prosa umana (registro didattico), da imitare per costruzione, non per contenuto; il Campione A (ritmo) è stato rimosso perché induceva frasi-sentenza e antitesi a effetto.
 - Grounding sui documenti (`_system_prompt(..., grounding_enabled=True)`, da `Settings.course_lesson_content_documents_selection_enabled`): il blocco `FONTI E ANCORAGGIO — REGOLA FORTE` (subito dopo il ruolo) sostituisce il vecchio `RIFERIMENTI`; nel messaggio user il blocco documenti è selezionato PER LEZIONE da `lesson_document_selection` (definizioni, formule, concetti, esempi e struttura dei riassunti, scelti per sovrapposizione lessicale con titolo/temi/scaletta/obiettivi; budget `COURSE_LESSON_CONTENT_DOCUMENTS_CONTEXT_MAX_CHARS`, default 40k) e sta dopo `## Lezione da generare`, prima di `## Compito`. Con il kill-switch a `false` torna il comportamento storico (blocco `RIFERIMENTI`, `_build_documents_context`, vecchio ordine).
@@ -696,7 +697,8 @@ spezzare periodi, non accorciare spiegazioni.
 
 Nell'output JSON inserisci SOLO il risultato della Fase 2. La prima
 stesura non deve mai comparire. Contenuti, formule, tabelle e tag
-asset ([FIG:], [EQ:], [TAB:]) devono restare invariati tra le due fasi.
+asset ([FIG:], [EQ:], [TAB:], [EX:]) devono restare invariati tra le due
+fasi.
 
 DELIMITATORI MATH — REGOLA RIGIDA
 - Per math INLINE nel testo Markdown usa SEMPRE `$...$` (es. `$\varphi$`,
@@ -719,6 +721,7 @@ DIVIETI ASSOLUTI NEL TESTO VISIBILE
   descrizioni semantiche; NON includere codici come "[A1]" o
   "Figura M1.L2.01", né iniziare con "Figura 1"/"Fig. 1": il numero
   lo mette il renderer.
+- NON numerare gli asset ("Figura 2"): vedi POSIZIONE DEI TAG.
 
 CASO SPECIALE — LEZIONE INTRODUTTIVA (is_introductory=true):
 - Nessun caso studio o dimostrazione tecnica complessa
@@ -749,11 +752,17 @@ REQUISITI — ASSET VISIVI
 - tabelle quando devi confrontare alternative o riassumere
   classificazioni
 
-Per ogni asset: `asset_id` stabile (uso interno), referenziato almeno
-una volta nel testo tramite `[FIG:asset_id]`, `[TAB:asset_id]`,
-`[EQ:asset_id]` (questi tag verranno sostituiti dal renderer con
-l'asset rendering — non devono apparire al lettore finale, ma servono
-al parser). La `caption` è una breve descrizione semantica leggibile.
+POSIZIONE DEI TAG — REGOLA RIGIDA
+- Per ogni asset: id stabile e UN tag nel testo, `[FIG:asset_id]`,
+  `[TAB:table_id]`, `[EQ:equation_id]` o `[EX:example_id]`, che il
+  renderer sostituisce con l'asset numerato.
+- Il tag compare UNA sola volta, da solo su una riga propria fra due
+  righe vuote, dopo il paragrafo che introduce l'asset.
+- Nel testo richiami l'asset a parole ("come mostra la figura", "nella
+  tabella seguente"), senza ripetere il tag e senza "Figura",
+  "Tabella", "Equazione" o "Esempio" davanti al tag.
+- Mai tag in codice, formule, `caption`, `key_takeaways`,
+  `references`, `examples[].content` o `tables[].markdown`.
 
 FORMATI DELLE FIGURE (`visual_assets[].format`; `content` è sempre una
 stringa: codice, sorgente o spec JSON serializzata). Dal contenuto al
@@ -1193,7 +1202,7 @@ con entrambi gli argomenti vuoti ritorna la costante per identità:
 }
 ```
 
-**Varianti/note**: suffisso di rigenerazione `REGENERATION_SUFFIX` (`openai_lesson_content_service.py`), appeso solo se la lezione ha già un `content_raw` (`course_lesson_content_service.is_regeneration_for_lesson`); l'hint da solo non lo attiva.
+**Varianti/note**: suffisso di rigenerazione `REGENERATION_SUFFIX` (`openai_lesson_content_service.py`), appeso solo se la lezione ha già un `content_raw` (`course_lesson_content_service.is_regeneration_for_lesson`); l'hint da solo non lo attiva. Il suffisso chiede anche di riscrivere secondo `POSIZIONE DEI TAG` i tag ripetuti o messi dentro le frasi della versione precedente (la versione attuale entra nel messaggio user con i suoi tag); la guardia `MAX_SYSTEM_P3` vale anche per prompt + suffisso. L'output passa da `LessonContentOutput`, che normalizza `key_takeaways` e `references` (trim, vuoti scartati, dedup case-insensitive; references a parità di `source`: D18).
 
 ---
 

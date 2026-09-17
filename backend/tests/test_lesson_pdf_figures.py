@@ -11,6 +11,10 @@ slide_template=None, enable_split=False)`.
   («Come mostrato in Figura 1, …»), il blocco segue il paragrafo, una
   figura per asset anche con citazioni ripetute, code span/liste/fence
   intatti; la coda (punti chiave, riferimenti) riceve rimandi, mai blocchi;
+  la forma insegnata dal prompt di Fase 3 (tag su riga propria, richiamo a
+  parole) lascia la frase intatta (WP5, D17);
+- punti chiave e riferimenti storici resi verbatim (3+3 `<li>`), contenuto
+  nuovo deduplicato dallo schema (2+1): nessuna dedup in lettura (B5/D18);
 - tabelle, equazioni ed esempi numerati per kind (D3, D5): «Tabella N.»,
   «Equazione N.», «Esempio N.», teorema «Lemma N.» sul contatore EQ,
   etichetta sempre presente, orfani accodati FIG → TAB → EQ → EX, forme
@@ -54,6 +58,7 @@ from app.services import mermaid_prerender as mp
 from app.services.figure_scale import FigureFitEntry, SvgMetrics, fit_figure_width_mm
 from app.services.figure_theme import figure_labels
 from app.services.svg_normalize import normalize_svg, svg_intrinsic_box, svg_to_data_uri
+from tests.course_builders import build_lesson_content_output
 
 _FIXTURES = Path(__file__).parent / "fixtures"
 _TEMPLATES = Path(__file__).resolve().parents[1] / "app" / "templates"
@@ -373,6 +378,72 @@ def test_reference_label_follows_course_language(
         _one_figure_content(introduction), language=language, visual_svg_map={"A": SVG_A}
     )
     assert expected in html
+
+
+def test_the_layout_taught_by_the_phase3_prompt_leaves_the_prose_alone() -> None:
+    """D17: la forma che il prompt di Fase 3 chiede (richiamo a parole, tag
+    una volta su riga propria fra righe vuote) dà un solo blocco dopo il
+    paragrafo e nessun rimando «Figura N» dentro la frase."""
+    html = _render(
+        _one_figure_content(
+            "Il ciclo ha tre stati, come mostra la figura.\n\n[FIG:A]\n\n"
+            "Il terzo stato chiude il ciclo."
+        ),
+        visual_svg_map={"A": SVG_A},
+    )
+    assert "<p>Il ciclo ha tre stati, come mostra la figura.</p>" in html
+    assert "<p>Il terzo stato chiude il ciclo.</p>" in html
+    assert [(f["id"], _label(f)) for f in _figures(html)] == [("A", "Figura 1.")]
+    assert html.count("Figura 1") == 1  # solo l'etichetta della didascalia
+    first, block, second = (
+        html.index("come mostra la figura.</p>"),
+        html.index('data-asset-id="A"'),
+        html.index("<p>Il terzo stato"),
+    )
+    assert first < block < second
+
+
+# ---------------------------------------------------------------------------
+# Punti chiave e riferimenti: nessuna dedup in lettura (B5/D18)
+# ---------------------------------------------------------------------------
+
+_TAKEAWAYS_UL_RE = re.compile(r'<section class="key-takeaways pb-avoid">.*?<ul>(.*?)</ul>', re.S)
+_REFERENCES_OL_RE = re.compile(r'<ol class="references-list">(.*?)</ol>', re.S)
+
+
+def _tail_counts(html: str) -> tuple[int, int]:
+    takeaways = _TAKEAWAYS_UL_RE.search(html)
+    references = _REFERENCES_OL_RE.search(html)
+    assert takeaways and references
+    return takeaways.group(1).count("<li>"), references.group(1).count("<li>")
+
+
+_SAME_REFERENCE = {"citation": "Rossi 2020", "source": "suggerimento_generale"}
+
+
+def test_pdf_renders_historical_duplicates_verbatim() -> None:
+    """Un `content_raw` scritto prima di WP5 è reso com'è: la normalizzazione
+    sta solo al confine di scrittura (schema), mai in lettura. Il pre-render
+    inline della coda (`_tail`) deve iterare la lista grezza e conservare il
+    numero di voci."""
+    content = {
+        "introduction": "Testo.",
+        "sections": [],
+        "summary": "",
+        "key_takeaways": ["Uno", "uno", "Uno "],
+        "references": [dict(_SAME_REFERENCE) for _ in range(3)],
+    }
+    assert _tail_counts(_render(content)) == (3, 3)
+
+
+def test_pdf_lists_one_li_per_unique_entry_for_new_content() -> None:
+    """Contenuto nuovo: schema → `model_dump()` → template, senza altra
+    dedup a valle. Prima di WP5 dava 3 e 3."""
+    out = build_lesson_content_output(
+        key_takeaways=["Uno", "uno", "Due"],
+        references=[dict(_SAME_REFERENCE) for _ in range(3)],
+    )
+    assert _tail_counts(_render(out.model_dump())) == (2, 1)
 
 
 # ---------------------------------------------------------------------------
@@ -1742,20 +1813,39 @@ def test_out_of_band_figure_is_logged_and_reported() -> None:
 
 def test_figure_fit_report_summary_lists_the_out_of_band_figures() -> None:
     """Il summary elenca le figure fuori banda e, a parte, quelle calcolate
-    sulla costante di formato (il loro `in_band` è un'ipotesi)."""
+    sulla costante di formato (il loro `in_band` è un'ipotesi); per la
+    geometria (D14) i grafi con difetti o incroci oltre soglia e quelli
+    senza misura degli incroci (Vega-Lite e `function` non sono grafi)."""
     entry = FigureFitEntry(
         "G", "mermaid", "lesson", 168.0, 0.4961, 3.72, (8.0, 11.0), False, "measured", 17
     )
-    ok = FigureFitEntry("A", "dot", "lesson", 29.28, 1.0, 10.0, (8.0, 11.0), True, "parsed", 4)
+    ok = FigureFitEntry(
+        "A", "dot", "lesson", 29.28, 1.0, 10.0, (8.0, 11.0), True, "parsed", 4, crossings=0
+    )
     assumed = FigureFitEntry(
         "V", "vegalite", "slide", 80.0, 1.2, 9.9, (10.0, 14.0), False, "constant", 2
     )
     guessed = FigureFitEntry(
         "F", "function", "lesson", 90.0, 1.0, 9.0, (8.0, 11.0), True, "constant", 2
     )
+    dense_defect = "graph_too_dense: incroci fra archi 6 > 4 — riordina i nodi"
+    dense = FigureFitEntry(
+        "D",
+        "dot",
+        "lesson",
+        120.0,
+        0.8,
+        8.0,
+        (8.0, 11.0),
+        True,
+        "parsed",
+        9,
+        crossings=6,
+        defects=(dense_defect,),
+    )
     with structlog.testing.capture_logs() as logs:
         pdf._log_figure_fit_report(lesson_code="M1.L1", fit_report=[entry, ok])
-        pdf._log_figure_fit_report(lesson_code="M1.L2", fit_report=[ok, assumed, guessed])
+        pdf._log_figure_fit_report(lesson_code="M1.L2", fit_report=[ok, assumed, guessed, dense])
     assert logs == [
         {
             "event": "figure_fit_report",
@@ -1765,15 +1855,19 @@ def test_figure_fit_report_summary_lists_the_out_of_band_figures() -> None:
             "in_band": 1,
             "out_of_band": [("G", "mermaid", 3.72, "measured")],
             "font_fallback": [],
+            "geometry_defects": [],
+            "measure_skipped": [("G", "mermaid")],
         },
         {
             "event": "figure_fit_report",
             "log_level": "info",
             "lesson_code": "M1.L2",
-            "total": 3,
-            "in_band": 2,
+            "total": 4,
+            "in_band": 3,
             "out_of_band": [("V", "vegalite", 9.9, "constant")],
             "font_fallback": [("V", "vegalite"), ("F", "function")],
+            "geometry_defects": [("D", "dot", 6, [dense_defect])],
+            "measure_skipped": [],
         },
     ]
 

@@ -17,14 +17,27 @@ Validazione (§6.4) è in `course_lesson_content_service.materialize_lesson_cont
 - coverage completa (unione su sections copre tutti gli obiettivi/temi):
   è l'unico controllo di contabilità rimasto bloccante
 - coverage_check è DERIVATO dalle sections, non più confrontato
+
+Normalizzazione delle liste (questione B5, decisione D18): `key_takeaways`
+e `references` sono normalizzati DALLO SCHEMA con validatori in mode
+"after": trim, voci vuote scartate (vuoto = `str.strip()`: U+200B non è
+rimosso), dedup case-insensitive (`str.lower()`) con ordine e grafia della
+prima occorrenza; le references si deduplicano a parità di `source`. Vale
+per l'output AI (`LessonContentOutput`) e per il PATCH del docente
+(`LessonContentUpdateInput`), MAI in lettura: PDF, vista web ed editor
+mostrano `content_raw` com'è finché la lezione non viene rigenerata o
+salvata dall'editor (nessun backfill). `min_length`/`max_length` contano
+l'elenco grezzo, quindi la lista persistita può avere 1-2 punti chiave:
+nessun round-trip `LessonContentOutput.model_validate(content_raw)` va
+introdotto (fallirebbe con `too_short` su una lezione degradata).
 """
 
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal, Protocol
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator
 
 from app.schemas.common import ORMModel
 
@@ -44,6 +57,32 @@ from app.schemas.common import ORMModel
 # Il render di ogni formato passa da `figure_render_service.REGISTRY`; lo
 # schema strict OpenAI offre al modello solo i formati abilitati e
 # disponibili (`available_formats()`), mai i legacy.
+# Tetto di RISORSA sul sorgente di un asset visivo (A1): la lunghezza più
+# alta ammessa da un renderer con i default (`settings.figure_dot_max_chars`,
+# 12.000; Vega-Lite 4.000, soglia editoriale Mermaid 3.000 in
+# `figure_compute.graph_rules`). Le soglie per formato stanno nei renderer,
+# non qui: sull'output AI un errore Pydantic scarta la lezione intera senza
+# passare dal fix degli asset, mentre `validate` del registro lascia al fix
+# la possibilità di semplificare. Un `FIGURE_DOT_MAX_CHARS` più alto di
+# questo valore non ha effetto oltre il tetto.
+# Vale sugli asset GENERATI (`cap_visual_asset_content` negli output AI di
+# Fase 3 e 4) e, nel PATCH, solo sugli asset cambiati
+# (`figure_render_service.validate_visual_assets_or_raise`): il modello
+# condiviso `LessonContentVisualAsset` non ha tetto, perché l'editor invia
+# sempre tutti gli asset e un Mermaid storico più lungo (nessun tetto prima
+# di WP5, nessun backfill) renderebbe impossibile correggere un refuso.
+VISUAL_ASSET_CONTENT_MAX_CHARS = 12_000
+
+# Numero di punti chiave (`key_takeaways`) per lezione. La spec §6.4 chiede
+# 3-7 come linea guida; il modello può sforare di qualche unità in domini
+# ricchi, quindi il tetto è 12 per l'output AI e per il PATCH del docente
+# (domanda aperta 14: con 10 una lezione da 11-12 punti non era salvabile
+# dall'editor). Entrambi i vincoli contano l'elenco GREZZO (vedi
+# `_clean_key_takeaways`): dopo la dedup la lista può scendere sotto il
+# minimo, e il worker lo segnala con `lesson_content_key_takeaways_below_min`.
+KEY_TAKEAWAYS_MIN = 3
+KEY_TAKEAWAYS_MAX = 12
+
 VisualAssetFormat = Literal[
     "mermaid",
     "vegalite",
@@ -94,6 +133,25 @@ class LessonContentVisualAsset(BaseModel):
     alt_text: str = Field(default="", max_length=400)
 
 
+class _HasContent(Protocol):
+    content: str
+
+
+def cap_visual_asset_content[AssetT: _HasContent](asset: AssetT) -> AssetT:
+    """Tetto di risorsa A1 su un asset visivo generato: oltre
+    `VISUAL_ASSET_CONTENT_MAX_CHARS` un `value_error` con `loc`
+    sull'elemento della lista (l'output AI è scartato e la lezione
+    rigenerata, come per ogni altro errore di schema)."""
+    size = len(asset.content)
+    if size > VISUAL_ASSET_CONTENT_MAX_CHARS:
+        cap = VISUAL_ASSET_CONTENT_MAX_CHARS
+        raise ValueError(f"content oltre {cap} caratteri ({size}, tetto di risorsa A1)")
+    return asset
+
+
+GeneratedVisualAsset = Annotated[LessonContentVisualAsset, AfterValidator(cap_visual_asset_content)]
+
+
 class LessonContentTable(BaseModel):
     model_config = ConfigDict(extra="forbid")
     table_id: str = Field(min_length=1, max_length=50)
@@ -142,6 +200,56 @@ class LessonContentReference(BaseModel):
     source: Literal["documento_caricato", "suggerimento_generale"]
 
 
+def _clean_key_takeaways(v: list[str]) -> list[str]:
+    """Trim, scarto dei vuoti, dedup case-insensitive con ordine e grafia
+    della prima occorrenza.
+
+    Stesso algoritmo di `_clean_argomenti` (course_objectives_generation.py)
+    senza il tetto di 80 caratteri (un punto chiave è una frase) e senza il
+    ramo `isinstance`: è un after-validator su `list[str]`, Pydantic ha già
+    rifiutato i non-str. «Vuoto» è `str.strip()`: U+00A0 cade, U+200B no.
+    Chiave `str.lower()` e non `casefold()`, come negli altri normalizzatori.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    for raw in v:
+        s = raw.strip()
+        if not s:
+            continue
+        key = s.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(s)
+    return out
+
+
+def _clean_references(v: list[LessonContentReference]) -> list[LessonContentReference]:
+    """Trim della `citation`, scarto delle citation vuote dopo il trim, dedup
+    per chiave `(source, citation.lower())`.
+
+    La stessa citazione come `documento_caricato` e come
+    `suggerimento_generale` resta doppia. Gli item sono già validati
+    (`min_length=1`, `Literal`): il trim può solo accorciare, quindi
+    `model_copy(update=...)` senza rivalidazione è sicuro; le istanze già
+    pulite sono restituite così come sono.
+    """
+    seen: set[tuple[str, str]] = set()
+    out: list[LessonContentReference] = []
+    for ref in v:
+        citation = ref.citation.strip()
+        if not citation:
+            continue
+        key = (ref.source, citation.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(
+            ref if citation == ref.citation else ref.model_copy(update={"citation": citation})
+        )
+    return out
+
+
 class LessonContentObjectiveCovered(BaseModel):
     model_config = ConfigDict(extra="forbid")
     objective: str = Field(min_length=1)
@@ -171,15 +279,32 @@ class LessonContentOutput(BaseModel):
     introduction: str = Field(min_length=1)
     sections: list[LessonContentSection] = Field(min_length=1)
     summary: str = Field(min_length=1)
-    # Spec §6.4 chiede 3-7 come linea guida; il modello può sforare di
-    # qualche unità in domini ricchi → cap a 12 per evitare reject inutili.
-    key_takeaways: list[str] = Field(min_length=3, max_length=12)
-    visual_assets: list[LessonContentVisualAsset] = Field(default_factory=list)
+    # Limiti sull'elenco grezzo: vedi `KEY_TAKEAWAYS_MIN`/`KEY_TAKEAWAYS_MAX`.
+    key_takeaways: list[str] = Field(min_length=KEY_TAKEAWAYS_MIN, max_length=KEY_TAKEAWAYS_MAX)
+    visual_assets: list[GeneratedVisualAsset] = Field(default_factory=list)
     tables: list[LessonContentTable] = Field(default_factory=list)
     equations: list[LessonContentEquation] = Field(default_factory=list)
     examples: list[LessonContentExample] = Field(default_factory=list)
     references: list[LessonContentReference] = Field(default_factory=list)
     coverage_check: LessonContentCoverageCheck
+
+    @field_validator("key_takeaways")
+    @classmethod
+    def _dedup_key_takeaways(cls, v: list[str]) -> list[str]:
+        # After-validator: `min_length`/`max_length` sono già stati
+        # verificati sull'elenco grezzo. La dedup può scendere sotto il
+        # minimo: la lezione degrada a 1-2 punti chiave, non viene
+        # rigenerata. Vuota dopo il cleanup (solo voci bianche): rifiuto →
+        # `OpenAILessonContentError` → retry recuperabile del worker.
+        out = _clean_key_takeaways(v)
+        if not out:
+            raise ValueError("key_takeaways: lista vuota dopo cleanup")
+        return out
+
+    @field_validator("references")
+    @classmethod
+    def _dedup_references(cls, v: list[LessonContentReference]) -> list[LessonContentReference]:
+        return _clean_references(v)
 
 
 # ---------------------------------------------------------------------------
@@ -247,6 +372,9 @@ class LessonContentUpdateInput(BaseModel):
 
     Tutti i campi sono opzionali. Edit non degrada lo status (`approved`
     resta `approved`). Validazione di consistenza in service.
+    `key_takeaways` e `references`, quando presenti, sono normalizzati
+    come nell'output AI (trim, vuoti scartati, dedup case-insensitive);
+    `[]` è un azzeramento ammesso.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -254,13 +382,28 @@ class LessonContentUpdateInput(BaseModel):
     introduction: str | None = None
     sections: list[LessonContentSection] | None = None
     summary: str | None = None
-    key_takeaways: list[str] | None = Field(default=None, max_length=10)
+    key_takeaways: list[str] | None = Field(default=None, max_length=KEY_TAKEAWAYS_MAX)
     visual_assets: list[LessonContentVisualAsset] | None = None
     tables: list[LessonContentTable] | None = None
     equations: list[LessonContentEquation] | None = None
     examples: list[LessonContentExample] | None = None
     references: list[LessonContentReference] | None = None
     coverage_check: LessonContentCoverageCheck | None = None
+
+    @field_validator("key_takeaways")
+    @classmethod
+    def _dedup_key_takeaways(cls, v: list[str] | None) -> list[str] | None:
+        # None = campo assente nel PATCH (il CRUD non lo riscrive: usa
+        # `is not None`); [] = il docente ha svuotato l'elenco, ammesso
+        # senza ValueError (l'editor invia [] filtrando le righe vuote).
+        return None if v is None else _clean_key_takeaways(v)
+
+    @field_validator("references")
+    @classmethod
+    def _dedup_references(
+        cls, v: list[LessonContentReference] | None
+    ) -> list[LessonContentReference] | None:
+        return None if v is None else _clean_references(v)
 
 
 class LessonAssessmentUpdateInput(BaseModel):

@@ -160,3 +160,124 @@ def test_report_summary_counts_all_kinds_and_structure_lists_only_figures(
         ["b", "dot"],
         ["v", "vegalite"],
     ]
+
+
+def test_figures_option_renders_and_reports_the_thresholds(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`--figures` rende con il registro di produzione (Chromium per
+    Mermaid, `dot`, vl-convert), riporta gli incroci (`hashTable` = 1) e la
+    percentuale oltre ogni soglia di `graph_rules` con la regola di
+    calibrazione."""
+    from tests.test_frontend_figure_templates import DOT, MERMAID
+
+    hash_table = next(t.code for t in DOT if t.id == "hashTable")
+    dense = "flowchart TD\n" + "\n".join(f"  N{i} --> N{i + 1}" for i in range(39))
+    content = {
+        "introduction": "x",
+        "sections": [],
+        "summary": "",
+        "visual_assets": [
+            {"asset_id": "M", "format": "mermaid", "content": MERMAID[0].code},
+            {"asset_id": "D", "format": "dot", "content": hash_table},
+            {"asset_id": "G", "format": "mermaid", "content": dense},
+            {"asset_id": "V", "format": "vegalite", "content": '{"title": "Titolo"}'},
+            {"asset_id": "F", "format": "function", "content": "{}"},
+        ],
+    }
+    path = tmp_path / "export.json"
+    path.write_text(json.dumps([{"id": "9", "lesson_code": "M9.L9", "content_raw": content}]))
+    assert mar.main([str(path), "--figures"]) == 0
+    out = capsys.readouterr().out
+    figures = out.split("## (e) Figure rese")[1].split("## (e) Soglie")[0]
+    rows = {ln.split(" | ")[1]: ln.split(" | ") for ln in figures.splitlines() if "M9.L9" in ln}
+    assert set(rows) == {"M", "D", "G", "V"}  # `function` non è una figura da misurare
+    assert rows["D"][4:7] == ["si", "5", "4"] and rows["D"][11] == "1"
+    assert rows["M"][11] == "0" and rows["G"][5] == "40"
+    assert rows["V"][11] == "-"  # Vega-Lite: nessun arco, nessun incrocio
+    thresholds = out.split("## (e) Soglie")[1]
+    assert "| nodi | 30 | 3 | 5 | 5 | 33.0 | 40 | 33.3 % | alzare la soglia |" in thresholds
+    assert "| incroci | 4 | 3 | 0 | 0 | 0.8 | 1 | 0.0 % | ok |" in thresholds
+    assert "incroci non misurati: 0 su 3 grafi resi" in thresholds
+
+
+class _GroupRecorder:
+    """Renderer Mermaid finto: registra la dimensione di ogni batch e non
+    misura gli incroci della figura `M1.L7`."""
+
+    fmt = "mermaid"
+
+    def __init__(self) -> None:
+        self.sizes: list[int] = []
+
+    def render_figure_batch(self, contents: list[str], *, asset_ids: list[str]) -> list[object]:
+        from app.services.figure_render_service import RenderedFigure
+        from app.services.figure_scale import SvgMetrics
+
+        self.sizes.append(len(contents))
+        return [
+            RenderedFigure(
+                "<svg/>",
+                SvgMetrics(10.0, 10.0, 1, "measured", crossings=None if "L7" in aid else 2),
+            )
+            for aid in asset_ids
+        ]
+
+
+def test_figures_option_measures_every_mermaid_figure_in_budget_safe_groups(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """V1-F3: l'intero export in un solo batch esauriva il tetto di
+    segmenti della pagina e le ultime figure restavano senza incroci, in
+    silenzio. Ora i Mermaid vanno a gruppi di `batch // figura` (3) e le
+    misure mancanti sono contate sotto la tabella delle soglie."""
+    from app.services import figure_geometry
+    from app.services import figure_render_service as frs
+
+    assert mar.measure_group_size() == (
+        figure_geometry.MAX_BATCH_MEASURE_SEGMENTS // figure_geometry.MAX_MEASURE_SEGMENTS
+    )
+    assert mar.measure_group_size() == 3
+    # DOT (giro 2, V2-F1): tetto di lavoro per batch, gruppi di 2 figure.
+    assert mar.measure_group_size("dot") == (
+        figure_geometry.MAX_BATCH_MEASURE_WORK // figure_geometry.MAX_MEASURE_WORK
+    )
+    assert mar.measure_group_size("dot") == 2
+    assert mar.measure_group_size("vegalite") is None
+    recorder = _GroupRecorder()
+    monkeypatch.setitem(frs.REGISTRY, "mermaid", recorder)
+    rows = [
+        {
+            "id": str(i),
+            "lesson_code": f"M1.L{i}",
+            "content_raw": {
+                "visual_assets": [
+                    {"asset_id": "f", "format": "mermaid", "content": "flowchart LR\n a --> b"}
+                ]
+            },
+        }
+        for i in range(8)
+    ]
+    path = tmp_path / "export.json"
+    path.write_text(json.dumps(rows))
+    assert mar.main([str(path), "--figures"]) == 0
+    assert recorder.sizes == [3, 3, 2]
+    out = capsys.readouterr().out
+    thresholds = out.split("## (e) Soglie")[1]
+    assert "| incroci | 4 | 7 | 2 | 2 | 2.0 | 2 | 0.0 % | ok |" in thresholds
+    assert "incroci non misurati: 1 su 8 grafi resi" in thresholds
+    monkeypatch.setattr(figure_geometry, "MAX_BATCH_MEASURE_SEGMENTS", 10)
+    assert mar.measure_group_size() == 1
+    dot_recorder = _GroupRecorder()
+    monkeypatch.setitem(frs.REGISTRY, "dot", dot_recorder)
+    for row in rows[:5]:
+        row["content_raw"]["visual_assets"][0].update(format="dot", content="digraph { a -> b }")
+    path.write_text(json.dumps(rows[:5]))
+    assert mar.main([str(path), "--figures"]) == 0
+    assert dot_recorder.sizes == [2, 2, 1]
+
+
+def test_default_mode_uses_the_gate_counters() -> None:
+    met = mar.asset_metrics({"format": "dot", "content": "digraph { a -> b -> c }"})
+    assert (met["nodi"], met["archi"], met["incroci"]) == (3, 2, None)
+    assert mar.asset_metrics({"format": "function", "content": "{}"})["nodi"] is None

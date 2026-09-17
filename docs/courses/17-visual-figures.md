@@ -1806,7 +1806,7 @@ replicato in `.env.example` e `docker-compose.prod.yml` (WP2a). Vedi anche
 | `figure_render_max_workers` | `FIGURE_RENDER_MAX_WORKERS` | `2` | render CPU-bound concorrenti dell'**export** e delle anteprime `render-function`; NON copre `validate(deep=True)` dei worker di Fase 3/4, limitata da `course_lesson_{content,slides}_max_concurrency` (sezione 2.2, Fase D COR-5); 2 per la VM a 2 core |
 | `figure_svg_cache_size` | `FIGURE_SVG_CACHE_SIZE` | `256` | cache LRU in memoria degli SVG (chiave: formato, hash del sorgente sanificato, `THEME_VERSION`; la lingua non entra nella chiave, sezione 2.2) e, con la stessa dimensione, dei risultati del motore `function` |
 | `figure_svg_max_bytes` | `FIGURE_SVG_MAX_BYTES` | `1_500_000` | oltre, l'SVG prodotto è rifiutato (fallback) |
-| `figure_dot_max_chars` | `FIGURE_DOT_MAX_CHARS` | `12_000` | limite del sorgente DOT accettato dal validatore |
+| `figure_dot_max_chars` | `FIGURE_DOT_MAX_CHARS` | `12_000` | limite del sorgente DOT accettato dal validatore (oltre 12.000 vale il tetto di risorsa degli asset generati e di quelli cambiati nel PATCH, `VISUAL_ASSET_CONTENT_MAX_CHARS`) |
 | `graphviz_dot_path` | `GRAPHVIZ_DOT_PATH` | `None` | percorso del binario `dot`; `None` = ricerca nel `PATH` |
 
 Un formato è offerto al modello solo se abilitato **e** la dipendenza è
@@ -2342,6 +2342,398 @@ Decisioni prese in Fase B (A1-A16) e nella ripresa del 7 settembre
   misurata (probe montata in `/tmp`), invece che dedotte dai wheel: metriche
   dei font di vl-convert, `spawn` sotto uvicorn su Linux, fontconfig per
   WeasyPrint (sezione 14.3).
+- **Gate editoriale dei grafi sul sorgente** (WP5, D13;
+  `figure_compute/graph_rules.py`, gemello formale di `vegalite_rules`):
+  costanti pubbliche `MAX_GRAPH_NODES` 30, `MAX_GRAPH_EDGES` 45,
+  `MAX_LABEL_CHARS` 64, `MAX_TITLE_CHARS` 110, `MAX_MERMAID_SOURCE_CHARS`
+  3.000, `MAX_GRAPH_LINES` 120, `MAX_EDGE_CROSSINGS` 4 e
+  `check_graph_rules(kind, source, *, metrics=None) -> list[str]`. Soglie
+  PROVVISORIE, calibrate sui 57 modelli degli editor (massimi osservati 9
+  nodi, 8 archi, 31 caratteri di etichetta, 55 di titolo, 29 righe, 388
+  caratteri Mermaid, 1 incrocio): il dump del docente non è stato fornito,
+  quindi la regola «p90 reale oltre il 60 % della soglia → la soglia si
+  alza, mai si boccia il contenuto» resta da applicare con
+  `scripts/measure_asset_refs.py --figures`, che rende ogni figura con il
+  registro di produzione e stampa distribuzione, percentuale oltre soglia
+  ed esito per metrica. Conteggi per tipo sul sorgente (regole nel
+  docstring del modulo; i conteggi DOT coincidono con i gruppi `node` ed
+  `edge` dell'SVG reso sui 18 modelli e, dopo il giro 1 della verifica
+  (V1-F5), anche sugli operandi sottografo e sui grafi `strict`: `a ->
+  {b c}` vale 2 archi e non 1, una catena `{a b} -> {c d} -> e` vale 6,
+  una coppia ripetuta in `strict` vale 1, così un «hub» da 15 × 15 nodi
+  scritto con un solo operatore non passa più come un arco; il tetto di
+  risorsa `DOT_MAX_EDGES` continua a contare gli operatori); lo xychart conta le categorie
+  dell'asse x e non i punti della serie (una serie mensile di cinque anni
+  è una figura normale), deviazione dichiarata dalla tabella 2(d) del
+  piano. Etichetta e titolo hanno soglie distinte: con una soglia unica a
+  64 il titolo di 55 caratteri dello xychart starebbe al limite, con una a
+  110 un'etichetta di nodo da 100 caratteri passerebbe. Agganci: in
+  `MermaidRenderer.validate` DOPO il gate statico (non in
+  `_mermaid_gate_once`, che gira sulle due viste del sorgente) e in
+  `DotRenderer.validate` DOPO `DOT_MAX_EDGES`, che resta il tetto di
+  risorsa con il suo messaggio («troppi archi (601 > 600)», tipo
+  `figure_invalid`). Il messaggio editoriale è `graph_too_dense: <cosa>
+  <n> > <max> — <che cosa ridurre>`, più violazioni separate da `; ` e la
+  clausola «qui semplificare è la correzione richiesta: mantieni tipo e
+  significato» una sola volta in coda, perché il system prompt del fix AI
+  (PROMPT 12, invariato) vieta di togliere contenuti; `graph_too_dense` è
+  un prefisso tipizzato di `error_type_for` (il 422 del PATCH porta
+  `type="graph_too_dense"`). Scartati: le soglie nello schema Pydantic
+  (un errore sull'output AI scarta la lezione intera senza passare dal
+  fix) e il gate dentro `_mermaid_gate_once` (due viste, due messaggi).
+- **A1 con un tetto generale sugli asset generati e su quelli cambiati**:
+  `VISUAL_ASSET_CONTENT_MAX_CHARS = 12_000` sul `content` degli asset
+  visivi degli output AI (`GeneratedVisualAsset` in
+  `LessonContentOutput.visual_assets`, lo stesso validatore
+  `cap_visual_asset_content` su `LessonSlidesOutput.new_assets`,
+  `value_error` sull'elemento) e, nel PATCH di Fase 3 e 4, sui soli
+  asset con `(format, content)` cambiati
+  (`validate_visual_assets_or_raise`, per ogni formato, `type`
+  `figure_invalid`). È il più alto dei tetti per formato con i default
+  (`figure_dot_max_chars` 12.000, `VEGALITE_MAX_CHARS` 4.000, soglia
+  Mermaid 3.000): protegge il server da un sorgente arbitrariamente
+  grande, le soglie per formato restano nei renderer dove il fix AI può
+  ancora agire. Scartati: `max_length=3000` sul solo Mermaid (un
+  validatore per formato nello schema, e sull'output AI un sorgente da
+  3.001 caratteri rigenererebbe la lezione invece di passare dal fix); il
+  `max_length` sul modello condiviso `LessonContentVisualAsset` /
+  `LessonSlideNewAsset`, com'era nella prima stesura di WP5 (giro 1 della
+  verifica, V1-F2): l'editor invia sempre tutti gli asset e il gate del
+  CRUD rivalida di proposito solo quelli cambiati, quindi una lezione
+  storica con un Mermaid da 14.470 caratteri (nessun tetto prima di WP5,
+  nessun backfill) dava 422 `string_too_long` anche alla correzione di un
+  refuso nell'introduzione. Un `FIGURE_DOT_MAX_CHARS` più alto di 12.000
+  non ha effetto oltre il tetto (04-configuration).
+- **Incroci arco × arco con lo stesso algoritmo in Python e in Chromium**
+  (WP5, D14; `figure_geometry.py` e `mermaid_prerender.
+  MEASURE_SVG_GEOMETRY_JS`): tracciati degli archi (`g.edge > path` per
+  DOT, con il gruppo come unità; per Mermaid gli elementi con classe
+  `edge-thickness-*`, `messageLine*`, `flowchart-link`, `transition`,
+  `relation`, `relationshipLine` e i `path` di `g.edgePath`), campionati a
+  passo 2 nel sistema della radice, intersezione con estremi inclusi e
+  collineari esclusi, scarto a meno di 2 unità da un estremo di uno dei due
+  tracciati, punti entro 3 unità fusi in un incrocio; `crossings` conta i
+  punti, `crossing_pairs` le coppie incidenti (punto triplo: 1 e 3). Il
+  confronto fra le coppie di segmenti passa da una griglia di 16 unità
+  (passo adattivo sulle tele grandi dal giro 3, voce «Costo della misura
+  limitato per costruzione») invece dell'O(n²) misurato in Fase A: stessa
+  risposta, lavoro proporzionale alle coppie vicine. Parità provata sui 18 modelli DOT
+  (`hashTable` 1, gli altri 0) e su undici SVG sintetici; sui flowchart
+  sintetici da 40 e 150 archi il JS e Python danno 12 e 48. Il giro 1
+  della verifica (V1-F4) ha trovato due casi fuori parità, assenti dai
+  modelli: un tracciato con un `M` intermedio (il JS, che percorre il
+  tracciato con `getPointAtLength`, contava il salto come segmento) e
+  l'arco ellittico `A` (Python usava la corda). Ora il JS riconosce il
+  salto (distanza fra due campioni oltre la lunghezza percorsa) e ne
+  cerca il confine per bisezione, Python converte l'arco in cubiche di al
+  più 90° (SVG 1.1, F.6.5); i tre casi sono nella controprova. Tetti:
+  50.000 segmenti per figura e 150.000 per batch (residuo in
+  `window.__measureBudget`, una pagina per batch), stimati dalla lunghezza
+  PRIMA di campionare; oltre, `skipped` e warning `figure_measure_skipped`
+  (in Python vale in più il tetto di lavoro del giro 2, voce più sotto).
+  Il pre-render dei 15 modelli più i due flowchart sintetici (45.000
+  segmenti il maggiore) ha impiegato 2,85 s contro il pavimento di 60 s.
+  Esclusi per scelta i `<line>` del quadrant e del gantt (griglia e assi:
+  le due mediane del quadrant si incrociano per costruzione), i link del
+  sankey, le curve del radar e le serie dello xychart. Applicazione:
+  diagnostica per entrambi i formati (voce seguente): oltre
+  `MAX_EDGE_CROSSINGS` la voce `graph_too_dense: incroci fra archi …`
+  entra fra i difetti della figura, con il consiglio nella sintassi del
+  formato (`rank=same`/`rankdir` per DOT, ordine delle dichiarazioni e
+  direzione `LR`/`TD` per Mermaid), e produce `figure_geometry_defects`;
+  per DOT la misura avviene già in `validate(deep=True)` e la figura va in
+  cache con la voce, per Mermaid nella pagina del pre-render. Soglia 4 e
+  non 0: un modello ufficiale ne ha uno.
+- **Gli incroci non rifiutano mai una figura** (giro 1 della verifica,
+  V1-F1). La prima stesura di WP5 rifiutava in
+  `DotRenderer.validate(deep=True)` oltre 4 incroci: un percettrone
+  multistrato 3-3-2 (8 nodi, 15 archi) ne ha 8, un 3-4-2 16 (17 con
+  Graphviz 2.42.4 nell'immagine `a4u-backend-figures`), un 4-5-3 45, K3,3
+  7 anche con `rank=same`, un grafo casuale da 30 nodi e 45 archi 8. Il
+  prompt manda a DOT reti e bipartiti, il fix AI non può togliere archi e
+  il worker, a fix esauriti, rigenerava la lezione fino a
+  `course_lesson_content_auto_retry_max`: la soglia effettiva dei grafi
+  non alberi era quella degli incroci, contro il vincolo di non bocciare
+  figure normali. Scelto: incroci come warning e voce del report in ogni
+  percorso, rifiuti solo sulle soglie del sorgente. Scartati: una soglia
+  relativa al minimo del disegno a strati (il numero minimo di incroci è
+  NP-difficile in generale; per due strati completi vale C(m,2)·C(n,2),
+  già 30 per K4,5, quindi ogni soglia assoluta boccia un MLP normale
+  entro i 45 archi); una soglia molto più alta senza dati reali su cui
+  tararla. La decisione di un rifiuto resta legata alla distribuzione
+  degli incroci sul dump del docente (`measure_asset_refs.py --figures`,
+  riga «incroci»).
+- **Difetti di lettura DOT misurati in Python con un riquadro stimato**:
+  i quattro controlli di `_DOT_GEOMETRIA_JS` (testo fuori dalla tela,
+  fuori dal proprio nodo o cluster, etichette sovrapposte, arco che
+  attraversa un'etichetta) girano su coordinate esplicite con larghezze di
+  avanzamento di Noto Sans (tabella dei caratteri 32-126, accentate come
+  la base, ideogrammi a un em; dal giro 2 anche Times-Roman e Courier,
+  voce più sotto), ascent 0,9 em e descent 0,25 em (sotto il
+  passo di riga di Graphviz, 1,2 em). Zero difetti sui 18 modelli e
+  l'attraversamento del vecchio `layers` rilevato, come l'oracolo JS.
+  Scartati un Chromium per ogni validazione DOT (un browser in più nel
+  worker) e le metriche di matplotlib (DejaVu, non il font del tema). I
+  difetti vanno nel report, non bocciano: il riquadro è una stima.
+- **`measure(svg) -> GeometryReport`** come metodo facoltativo del
+  protocollo, letto con `getattr` come `render_figure_batch`: il brief
+  indicava `-> list[str]`, ma una lista di stringhe perde il conteggio
+  degli incroci che serve a `RenderedFigure.metrics`; la lista è
+  `report.defects`. `SvgMetrics` guadagna `crossings: int | None` e
+  `defects: tuple[str, ...]` (tupla e non lista: il record vive nella
+  cache LRU condivisa), `FigureFitEntry` gli stessi due campi,
+  `figure_fit_report` le chiavi `geometry_defects` e `measure_skipped`.
+  `DotRenderer` espone `render_figure` / `render_figure_batch`: la
+  geometria è misurata una volta al primo render e servita dalla cache.
+- **Tag ripetuti contati, non collassati** (WP5):
+  `course_lesson_content_service._count_asset_refs` restituisce un
+  `Counter` per `(kind, id minuscolo)` al posto dell'insieme di
+  `_collect_asset_refs`; un tag presente più di una volta produce
+  `lesson_content_duplicate_asset_refs` (warning, `duplicated={"FIG:a":
+  3}`) senza far fallire la materializzazione, perché il PDF normalizza
+  già le ripetizioni. Il corpus dei warning unused/dangling comprende
+  anche `examples[].content` e `tables[].markdown`, con la nota che il PDF
+  non sostituisce i tag in quei campi.
+- **Regola di posizione dei tag nel prompt di Fase 3** (WP5, D17). Scelto:
+  il blocco `POSIZIONE DEI TAG — REGOLA RIGIDA` sostituisce il paragrafo
+  «Per ogni asset» di P3, nomina i quattro tag con il campo id del proprio
+  array (la regola vale quindi per figure, tabelle, equazioni ed esempi) e
+  chiede un tag per asset, da solo su una riga propria fra righe vuote,
+  dopo il paragrafo che introduce l'asset; nel testo il richiamo a parole
+  («come mostra la figura»), senza ripetere il tag, senza «Figura» davanti
+  al tag, mai dentro codice, formule, `caption`, `key_takeaways`,
+  `references`, `examples[].content` o `tables[].markdown` (negli ultimi
+  due il PDF non sostituisce i tag: giro 1, V1-F6c); DIVIETI vieta la
+  numerazione a mano e `REGENERATION_SUFFIX` chiede di riscrivere i tag
+  ripetuti o dentro le frasi. La regola sulle didascalie resta una sola,
+  in DIVIETI. È la forma che `asset_ref_normalize` tratta come ancora
+  senza toccare la frase. Scartati: lasciare «referenziato almeno una
+  volta» e affidarsi solo ai rimandi di WP1 (il modello continuerebbe a
+  scrivere «come mostra [FIG:a]» e, peggio, «nella Figura [FIG:a]», che
+  diventa «nella Figura Figura 1»); portare la regola anche in P4 (il
+  margine della guardia di Fase 4 è di 300 caratteri e le slide non hanno
+  prosa con tag); alzare `MAX_SYSTEM_P3`. La prima stesura costava 692
+  caratteri in P3 e 144 nel suffisso: prompt + suffisso di una
+  rigenerazione arrivava a 29.210 caratteri, oltre la guardia (giro 1,
+  V1-F6b; prima di D17 era 28.374). Il testo compatto costa 373 caratteri
+  in P3 (27.923 nella variante più lunga) e 72 nel suffisso: la
+  rigenerazione sta a 28.819, e `test_p3_regeneration_variant_stays_under_guard`
+  applica la guardia anche a lei. Costo accettato: la regola vale per le
+  lezioni generate o rigenerate da ora; lo storico resta com'è (nessun
+  backfill) e i rimandi di WP1 lo coprono.
+- **`measure_asset_refs.py --figures` misura ogni figura** (giro 1,
+  V1-F3). La prima stesura rendeva tutti i Mermaid dell'export in un solo
+  batch: il tetto di 150.000 segmenti della pagina si esauriva e le figure
+  successive restavano senza incroci, escluse in silenzio dalla
+  distribuzione (8 flowchart K12 da 27.801 segmenti: tre senza misura).
+  Ora i Mermaid vanno a gruppi di `MAX_BATCH_MEASURE_SEGMENTS //
+  MAX_MEASURE_SEGMENTS` figure (3), che non esauriscono mai il residuo
+  prima del tetto per figura, e sotto la tabella delle soglie la riga
+  «incroci non misurati: k su n grafi resi» conta i salti per tetto di
+  figura o misura fallita. Scartata una pagina per figura (un avvio di
+  Chromium per figura, tre volte il tempo); scartato alzare il tetto di
+  batch nello script (lo script non riprodurrebbe più il registro di
+  produzione).
+- **Tetto di lavoro della misura Python** (giro 2 della verifica, V2-F1).
+  La misura DOT gira nello stesso thread del render, dentro i 20 s di
+  `figure_render_timeout_seconds` del batch, e il suo costo segue le
+  coppie candidate della griglia (0,4-0,6 µs l'una), non i segmenti: gli
+  archi che convergono sugli stessi nodi le fanno crescere col quadrato.
+  Un bipartito 16×16 (256 archi, sotto `DOT_MAX_EDGES`, 49.216 segmenti,
+  sotto il tetto Chromium) ne ha 12,5 milioni e costava 7,4 s; una
+  lezione storica con tre figure così e una banale perdeva tutte e
+  quattro all'export (timeout del batch, cache negativa, fallback nel
+  PDF, nelle slide e nei frame video), mentre sul codice prima di WP5 lo
+  stesso batch durava 0,4 s. Il gate editoriale non lo vede: vale solo in
+  validazione e sugli asset cambiati del PATCH, e non c'è backfill.
+  Scelto: `measure_svg` conta il lavoro (coppie segmento × segmento,
+  etichetta × etichetta, etichetta × segmento) PRIMA di ogni confronto e
+  lo riporta in `GeometryReport.work`; oltre `MAX_MEASURE_WORK`
+  (1.000.000) la misura è saltata con `figure_work_cap`, oltre il residuo
+  del batch (`MAX_BATCH_MEASURE_WORK`, 2.000.000, tenuto da
+  `DotRenderer.render_figure_batch` e passato a `measure(svg,
+  work_left=…)`) con `batch_work_cap`; con il residuo esaurito non si
+  parsa nemmeno l'SVG. Le sovrapposizioni fra etichette passano da una
+  griglia invece della scansione per ascissa, quadratica per una colonna
+  di etichette (a parità di risultato e di ordine: test contro la
+  scansione su 300 riquadri casuali). Misure del 17 settembre: i 18
+  modelli stanno sotto 1.200 coppie, il grafo più costoso entro le soglie
+  editoriali (45 archi, etichette da 60 caratteri) a 727.443 (0,30 s); il
+  bipartito 16×16 è saltato in 0,07 s e il batch di prima torna a 0,4 s
+  con le quattro figure rese; un batch di sei figure da 727.443 coppie,
+  tre bipartiti e una banale dura 1,5 s (due misurate, quattro saltate
+  per il batch, tre per figura, la banale misurata). Tetto
+  deterministico e non a tempo: lo stesso SVG ha lo stesso esito su ogni
+  macchina; con i valori scelti la misura costa al più circa 1,2 s per
+  batch sulla macchina della misura, entro il timeout anche su un server
+  tre volte più lento. `measure_asset_refs.py --figures` rende i DOT a
+  gruppi di `MAX_BATCH_MEASURE_WORK // MAX_MEASURE_WORK` (2), come i
+  Mermaid. Scartati: la misura fuori dal `wait_for` del batch (l'export
+  si allungherebbe di secondi per figura senza tetto); saltare la misura
+  quando il sorgente supera le soglie editoriali (il costo dipende dal
+  layout, non dal conteggio: 45 archi possono valere 0,3 s); un tetto di
+  segmenti più basso (non distingue un albero lungo, economico, da un
+  fascio denso).
+- **Costo della misura limitato per costruzione** (giro 3 della verifica,
+  V3-F1 e V3-N1). Il tetto di lavoro del giro 2 contava le coppie, ma la
+  misura Python dei DOT enumerava PRIMA, e tre volte, tutte le celle da 16
+  unità del riquadro stimato di ogni etichetta: un'etichetta enorme
+  valeva zero coppie e milioni di celle. Misure a 3d71f85 in processi
+  figli con tetto (17 settembre 2026): `validate(deep=True)` con
+  `fontsize=4000` 1,8 s e 371 MB, con `fontsize=8000` 7,7 s e 1,3 GB, con
+  trenta etichette a `fontsize=1500` 5,5 s e 968 MB; `fontsize=1000000`,
+  `size="3000,3000!"` con un solo nodo e un arco scalato con etichetta
+  oltre 2 GB in 4-6 s (processi fermati); all'export, con il timeout del
+  batch ridotto a 5 s, `[BAD, GOOD]` perdeva entrambe le figure (la
+  verifica: 20 s e 4,4 GB con il timeout di produzione). Lo stesso
+  difetto, meno esposto, stava in altri punti: il riquadro delle forme
+  dei nodi era campionato a passo 2 (un riquadro arrotondato da un
+  milione di punti: 1,5 s e 613 MB per la sola forma); il raggruppamento
+  confrontava ogni punto d'incrocio con i vicini già visti (cento archi
+  neato per un punto solo: 2,6 s con 816.706 unità contate, sotto il
+  tetto); nel JS i segmenti
+  erano campionati in unità locali e poi scalati (un arco scalato 5000
+  volte: «Map maximum size exceeded» dopo 8 s e 2,5 GB di Chromium) e un
+  intervallo con due salti tracciava un segmento fantasma da un milione
+  di unità (oltre 60 s). V3-N1: con `scale(10)` una gobba stretta tagliata
+  due volte valeva 0 incroci in Chromium e 2 in Python.
+  Scelto il limite per costruzione descritto nel docstring di
+  `figure_geometry` («Costo limitato per costruzione»): tela uguale al
+  viewBox (riquadro unione se manca); passo della griglia
+  `max(16, (L + H) / (2 · (√MAX_GRID_CELLS − 2)))` con `MAX_GRID_CELLS`
+  250.000, quindi al più 250.000 celle su qualunque tela e passo 16 sotto
+  15.936 unità di semiperimetro (tutti i modelli); riquadri ritagliati
+  alla tela, con indici relativi all'origine, e celle contate in
+  aritmetica e sommate al lavoro prima di enumerarle; una sola griglia
+  delle etichette per sovrapposizioni, lavoro e attraversamenti; coppie
+  contate prima dei confronti e provate una volta sola, nella cella
+  d'angolo delle due impronte (niente insieme dei visti: sul fascio la
+  memoria scende da 187 a 75 MB); raggruppamento a piano (celle di lato
+  appena sotto R/√2, coppie di celle vicine decise dai riquadri dei loro
+  punti, confronti solo per le coppie incerte, costo contato prima;
+  stesso risultato del riferimento quadratico su 300 insiemi casuali);
+  riquadro esatto delle Bézier dalle radici della derivata; geometria non
+  finita saltata con `geometry_out_of_range` (prima `OverflowError`,
+  assorbito solo dal registro). `GeometryReport.spent` è il lavoro
+  eseguito, che `DotRenderer.render_figure_batch` sottrae al residuo anche
+  quando la misura è saltata (prima una figura saltata dopo aver
+  costruito la griglia non pesava sul batch). Il JS segue lo stesso
+  schema: passo locale `step / k` con `k` l'allungamento massimo della
+  trasformazione (V3-N1, stesso conteggio e stessi segmenti sulla gobba),
+  ogni salto di un intervallo trovato per bisezione e saltato, tela,
+  passo, ritaglio, conteggi delle celle, delle coppie e del
+  raggruppamento come in Python, tetti propri tarati sulla sua velocità
+  (9-54 ns per unità contro 0,3-0,6 µs; `MAX_BROWSER_MEASURE_WORK`
+  10.000.000 e `MAX_BATCH_BROWSER_MEASURE_WORK` 20.000.000, residuo in
+  `window.__measureWorkBudget`; i modelli Mermaid valgono meno di 1.300
+  unità, il bipartito 5×9 entro le soglie 0,34 milioni). Esiti: i sei
+  casi e la forma enorme in 0,07-0,15 s e sotto 115 MB, entrambe le
+  figure rese all'export; il fascio da cento archi misurato (un incrocio)
+  in 0,29 s; stessi incroci di prima sui 37 DOT della taratura del giro 2
+  (modelli, bipartiti, percettroni, catene, colonne); lavoro dei modelli
+  sotto 1.600 unità (ora conta anche le celle), il grafo più costoso
+  entro le soglie a 764.856 (0,24 s); l'arco scalato con etichetta
+  saltato per lavoro in 0,04 s. `tests/test_figure_geometry_cost.py`
+  ripete i casi in processi figli (sotto 2 s e 300 MB) e sul codice di
+  3d71f85 fallisce. Scartati: un tetto sul corpo del font o su `size` nel
+  gate (il costo segue l'area in unità della radice, raggiungibile anche
+  con molte etichette medie o con la sola scala, e gli storici non
+  passano dal gate); il ritaglio alla tela con passo fisso (una tela da
+  216.000 × 66.725 unità ha 56 milioni di celle); il passo sulla sola
+  area (colonne illimitate su una tela lunga e bassa); un tetto a tempo
+  (esito diverso da macchina a macchina); `9 · Σ n²` come costo del
+  raggruppamento di prima (saltava un fascio di 45 archi, entro le
+  soglie, misurato in 0,17 s).
+- **Etichette che Mermaid manda a capo da sé** (giro 2, V2-F2).
+  `MAX_LABEL_CHARS` misurava la riga del sorgente anche dove Mermaid 11
+  spezza il testo sulla larghezza: un evento di timeline da 85 caratteri,
+  resa su più righe, andava al fix AI tre volte e la lezione tornava
+  `pending` (rigenerazione). Taratura in Chromium con la versione
+  pinnata, etichetta di 84-92 caratteri: vanno a capo il testo delle
+  forme e dei collegamenti del flowchart (anche fra virgolette, markdown,
+  `@{ label }`, in `TD` e `LR`), tutte le etichette dello state
+  (descrizioni, alias, transizioni, note), i nodi della mindmap, sezioni,
+  periodi ed eventi della timeline, testo delle relazioni e note del
+  class, testo delle relazioni dell'ER, etichette dei blocchi della
+  sequence (`loop`, `alt`, `else`, `opt`, `par`, `and`, `critical`,
+  `option`, `break`); restano su una riga i titoli dei subgraph,
+  block-beta, messaggi, note, alias e `box` della sequence, membri e nomi
+  delle classi, attributi e nomi delle entità ER, treemap, gantt, pie,
+  quadrant, radar, xychart, sankey e tutto il DOT. Scelto: nei contesti
+  che vanno a capo la soglia vale per la PAROLA più lunga (una parola da
+  65 caratteri non va a capo e resta un rifiuto), negli altri per la
+  riga, come prima; il messaggio cita la parola. Il test
+  `test_mermaid_really_wraps_only_the_exempted_contexts` rifà la taratura
+  a ogni run: un aggiornamento di Mermaid che smettesse di andare a capo
+  lo fa fallire. Scartati: togliere `MAX_LABEL_CHARS` in quei contesti
+  (una parola lunga resta illeggibile); una soglia di riga più alta per
+  tutti (un messaggio di sequence da 70 caratteri resta su una riga, lì
+  la soglia è una scelta editoriale).
+- **Archi DOT con `tooltip`** (giro 2, V2-F3). Con `tooltip`,
+  `edgetooltip`, `labeltooltip` o `URL` Graphviz avvolge il tracciato in
+  `<g id="a_edgeN"><a …>`: il genitore diretto non era più `g.edge` e né
+  Python né il JS lo contavano (2 archi su 4 nel caso di prova, parità
+  conservata ma conteggio incompleto). Ora entrambi risalgono gli
+  involucri (`<a>` e `<g>` senza classe con id `a_…`) fino al gruppo; in
+  Python lo stesso vale per testi e forme dei nodi e dei cluster. Il caso
+  è nella controprova Chromium (4 archi, 1 incrocio).
+- **Stima del testo per famiglia, con margine** (giro 2, V2-F4). Quando il
+  sorgente dichiara un proprio blocco `node [...]` il tema non inietta
+  `fontname` e Graphviz rende in `Times,serif`, come le etichette
+  HTML-like; la stima con Noto Sans, più larga, dava falsi
+  `text_outside_owner` (6,5 / 0,8 / 8,8 / 3,5 su un'entità ER in
+  tabella, dove Chromium misura al più 0,9 reali). Scelto: la tabella
+  segue il primo nome del `font-family` (Noto Sans o assente; Times-Roman
+  AFM per `Times…`/`serif`, uguale al Times di Chromium carattere per
+  carattere; 600 millesimi per `Courier…`/`monospace`; nessuna stima,
+  quindi nessun controllo, per le altre famiglie) e il riquadro stimato è
+  ristretto del 2 % della larghezza per lato (`ESTIMATE_SLACK`): assorbe
+  crenatura, versione del font e sostituzione del font sulla macchina che
+  rende (in locale, senza Noto Sans, Graphviz dimensiona i nodi su un
+  altro font: falsi 5,0 sulle etichette da 60 caratteri). Scartati: una
+  tolleranza assoluta più alta (inutile sulle etichette lunghe, troppo
+  larga sulle corte); saltare i controlli per ogni testo fuori tema
+  (Times è il caso comune).
+- **`asset_id` nei log della validazione** (giro 2, V2-N2).
+  `DotRenderer.validate(deep=True)` non riceve l'asset (firma del
+  protocollo) e il warning `figure_geometry_defects` usciva con
+  `asset_id` vuoto; all'export la figura arriva dalla cache e il warning
+  non è riemesso. Ora `asset_validation_service` apre
+  `figure_asset_context(<asset_id>)` attorno alla chiamata e il renderer
+  legge il `ContextVar`, che `asyncio.to_thread` copia nel thread. Una
+  chiamata diretta fuori dal servizio resta senza id. Scartato un
+  parametro in più nel protocollo (i renderer esterni e i fake dei test
+  cambierebbero).
+- **Punti chiave e riferimenti: normalizzazione solo in scrittura, storico
+  reso verbatim** (questione B5, decisione D18). Scelto: due coppie di
+  `field_validator` in mode "after" su `LessonContentOutput` e
+  `LessonContentUpdateInput` (`app/schemas/course_lesson_content.py`),
+  helper privati `_clean_key_takeaways` / `_clean_references` sul modello
+  di `_clean_argomenti` e `_clean_keywords` (trim, vuoti scartati, dedup
+  `lower()` con ordine e grafia della prima occorrenza; references a
+  parità di `source`); `content_raw` è normalizzato dall'AI alla
+  generazione e dal docente al primo salvataggio dall'editor, che invia
+  sempre entrambe le liste; le lezioni mai riaperte restano com'erano.
+  `LessonContentUpdateInput.key_takeaways` passa da 10 a 12
+  (`KEY_TAKEAWAYS_MAX`, domanda aperta 14); l'editor scarta le righe
+  reference vuote prima dell'invio (domanda 13); il worker logga
+  `lesson_content_key_takeaways_below_min` quando la dedup lascia meno di
+  tre voci. Scartate: la **dedup in lettura** (render PDF,
+  `LessonContentView`, editor: tre copie dello stesso algoritmo, una
+  divergenza permanente fra ciò che l'editor mostra e ciò che il PDF
+  stampa, e un normalizzatore che dovrebbe tollerare le references-stringa
+  dei test); il **mode "before"** (con `['A', 'a', ' A ']` la lista scende
+  sotto `min_length=3` e la lezione verrebbe rigenerata per intero per un
+  difetto cosmetico); **`uniqueItems` nello schema strict OpenAI** (fuori
+  dal sottoinsieme verificabile, non copre maiuscole né trim); il
+  **backfill** (vincolo del committente); il **validatore solo
+  sull'output AI** (il PATCH resterebbe una via di reintroduzione e lo
+  storico non si normalizzerebbe mai); il **raise su `[]` nel PATCH**
+  (l'editor invia `[]` quando il docente svuota l'elenco); il collasso
+  degli spazi interni e della punteggiatura finale (D18 letterale). Costo
+  accettato: lo storico duplicato resta visibile su PDF, web ed editor
+  finché non viene rigenerato o salvato, e il docente vede tre voci prima
+  del salvataggio e una dopo, senza messaggio.
 
 ## 13. Rischi residui
 
@@ -2442,6 +2834,107 @@ Decisioni prese in Fase B (A1-A16) e nella ripresa del 7 settembre
   `log.warning("figure_caption_missing", …)` e una didascalia senza coda,
   mai silenziosa. Un cambio di lingua del corso fra due export non è un
   problema: la coda è composta a render nella lingua richiesta.
+- **Soglie editoriali non ancora confermate su figure reali** (WP5): sono
+  calibrate sui modelli degli editor, didattici e piccoli per costruzione.
+  Un contenuto reale più denso ma leggibile verrebbe rifiutato e, a fix
+  esauriti, la lezione rigenerata per intero. Mitigazione: margine ≥ 1,4×
+  sui massimi dei modelli, test di calibrazione (massimo dei modelli sotto
+  il 60 % di ogni soglia) e `measure_asset_refs.py --figures` da eseguire
+  sul dump del docente prima di considerarle definitive. Nei contesti che
+  Mermaid manda a capo `MAX_LABEL_CHARS` vale per la parola (giro 2): se
+  una versione futura di Mermaid smettesse di andare a capo, il test di
+  taratura in Chromium fallisce.
+- **Clausola di semplificazione solo nel messaggio**: il PROMPT 12 del fix
+  AI dice ancora «correggi solo la sintassi, non togliere contenuti»; il
+  messaggio `graph_too_dense` dichiara l'eccezione, ma un modello che
+  segue il system prompt alla lettera non riduce la figura e l'asset resta
+  invalido e la lezione è rigenerata. Da osservare nel log
+  `lesson_content_auto_retry` (`phase="asset_validation"`, `error` con
+  «graph_too_dense») e, a tentativi esauriti, in `content_error` e
+  nell'audit `course.lesson.content.failed`;
+  il revisore di WP6 o una riga nel PROMPT 12 sono le vie di correzione.
+- **Incroci DOT dipendenti dal layout dell'ambiente**: il conteggio è
+  esatto sull'SVG reso, ma il layout cambia con la versione di Graphviz e
+  con i font. Misurato il 17 settembre 2026: `hashTable` ha 1 incrocio e
+  gli altri 17 modelli 0 sia in locale (Graphviz 15.1.1) sia
+  nell'immagine `a4u-backend-figures` (Graphviz 2.42.4); il 3-4-2 ne ha 16
+  e 17. Il test fissa di proposito `hashTable == 1`: un aggiornamento di
+  Graphviz o dei font che sposta il layout lo fa fallire e va ricontrollato
+  (la parità Python/Chromium sullo stesso SVG resta valida comunque).
+- **Grafi densi di incroci salvabili** (Mermaid e DOT): gli incroci sono
+  solo diagnostica, quindi una figura da 50 incroci con nodi e archi sotto
+  soglia va in dispensa. Visibile in `figure_geometry_defects` e in
+  `geometry_defects` del `figure_fit_report`; un rifiuto richiederebbe
+  una soglia tarata sul dump reale e un fix capace di riordinare i nodi.
+- **Asset storico oltre il tetto A1 salvabile solo invariato**: il PATCH
+  non rivalida un asset con `(format, content)` identici al salvato, ma se
+  il docente lo modifica (anche di un carattere) il tetto di 12.000
+  caratteri, e per Mermaid la soglia editoriale di 3.000, lo rifiutano
+  finché non è ridotto.
+- **Operandi DOT per rimando**: `subgraph s` senza corpo (rimando a un
+  sottografo già definito) vale zero nodi nel conteggio degli archi, dove
+  Graphviz usa i nodi del sottografo; un sorgente che lo usa per un hub
+  resta sotto il conteggio reale (lo cattura solo il tetto di risorsa sugli
+  operatori).
+- **Riquadro del testo stimato** nei difetti DOT: crenatura assente,
+  sostituzioni di font del sistema e caratteri fuori tabella (larghezza
+  media) possono produrre falsi difetti o mancarne; il margine del 2 % per
+  lato ne assorbe una parte e un testo in una famiglia senza tabella
+  (`Helvetica`, `Arial`, …) non è controllato affatto. Per questo i
+  difetti sono solo diagnostica. Una chiamata diretta a
+  `validate(deep=True)` fuori da `asset_validation_service` logga
+  `figure_geometry_defects` con `asset_id` vuoto.
+- **Punti ciechi della misura**: due incroci distinti a meno di 3 unità
+  contano come uno; i flag di un arco ellittico scritti senza separatore
+  (`A5 5 0 015 5`) interrompono il tracciato in Python; un salto fra
+  sotto-tracciati quasi contigui, che non porta la distanza fra due
+  campioni oltre la lunghezza percorsa (+1 %), non è riconosciuto dal JS,
+  che traccia un segmento fantasma lungo al più un passo;
+  i tipi Mermaid senza archi valgono 0 incroci per definizione; il JS
+  salta la misura quando il residuo del batch è esaurito, quindi le ultime
+  figure di una lezione molto densa possono restare senza conteggio
+  (`measure_skipped` nel report; lo script `--figures` misura a gruppi e
+  conta le misure mancanti). In Python, oltre un milione di unità di
+  lavoro (celle, coppie candidate, controlli del raggruppamento) per
+  figura o due milioni per batch DOT la misura è saltata
+  (`figure_work_cap`, `batch_work_cap`), in Chromium oltre dieci e venti
+  milioni: i grafi storici molto densi (oltre le soglie editoriali,
+  nessun backfill) e le ultime figure di un batch pesante restano senza
+  incroci, e una figura saltata per il batch resta così finché è in
+  cache. Su una tela molto grande (testo enorme, `size="N,N!"`) il passo
+  della griglia cresce e le celle si affollano: anche un grafo semplice
+  può finire in `figure_work_cap` (l'arco scalato di prova vale 3,2
+  milioni di unità). Una geometria non finita salta la misura
+  (`geometry_out_of_range`) e un testo o una forma non finiti non sono
+  controllati. Con una scala non uniforme il JS campiona con
+  l'allungamento massimo e Python con la lunghezza vera del pezzo: i
+  segmenti differiscono e i conteggi possono divergere (Graphviz scala in
+  modo uniforme, Mermaid non scala). Un incrocio a distanza esattamente
+  pari alla tolleranza degli estremi (2 unità) è deciso
+  dall'arrotondamento, diverso nelle due misure (reticolo sintetico
+  60 × 60: 3.596 in Python, 3.584 in Chromium, come prima del giro 3).
+  Gli involucri dei collegamenti sono riconosciuti solo con la
+  convenzione di Graphviz (`<a>`, `g#a_…`).
+- **Punti chiave degradati a 1-2 voci** (D18): la dedup dello schema non
+  fa rigenerare la lezione, quindi una dispensa può chiudere con meno dei
+  tre punti chiave chiesti dal prompt. Visibile solo nel log
+  `lesson_content_key_takeaways_below_min`; la correzione è una
+  rigenerazione o un'aggiunta dall'editor.
+- **Chiave di dedup letterale**: spazi interni diversi («Legge  di Ohm» e
+  «Legge di Ohm»), punteggiatura finale, `ß`/`ss` (`lower()` e non
+  `casefold()`) e caratteri invisibili come U+200B lasciano due voci
+  distinte. Le references con lo stesso testo e `source` diversi restano
+  entrambe per scelta.
+- **Storico e copie del corso**: i duplicati scritti prima di WP5 restano
+  finché la lezione non viene rigenerata o salvata dall'editor; la
+  duplicazione e la traduzione del corso (`course_duplication_service`)
+  copiano il dict senza schema, e due citazioni distinte possono
+  coincidere dopo la traduzione senza essere deduplicate.
+- **La regola di posizione è un'istruzione, non un vincolo**: nessuno
+  schema la impone. Un modello che ripete i tag lascia traccia in
+  `lesson_content_duplicate_asset_refs` e il renderer tiene una sola
+  ancora; «Figura [FIG:a]» scritto nonostante il divieto dà ancora «Figura
+  Figura 1» (limite pinnato in WP1, da misurare sul dump).
 
 ## 14. Verifiche e consegna
 

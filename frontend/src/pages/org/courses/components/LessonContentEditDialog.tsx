@@ -343,6 +343,10 @@ export function LessonContentEditDialog({
     );
 
   const handleSubmit = () => {
+    // Le due liste partono SEMPRE, anche se non toccate: il backend le
+    // normalizza (trim, dedup case-insensitive) e così una lezione storica
+    // si ripulisce al primo salvataggio. Le righe vuote aggiunte e non
+    // compilate si scartano qui: una citation vuota darebbe 422.
     const payload: LessonContentUpdateInput = {
       introduction,
       summary,
@@ -352,7 +356,7 @@ export function LessonContentEditDialog({
       tables,
       equations,
       examples,
-      references,
+      references: references.filter((ref) => ref.citation.trim().length > 0),
     };
     onSubmit(payload);
   };

@@ -267,7 +267,8 @@ spezzare periodi, non accorciare spiegazioni.
 
 Nell'output JSON inserisci SOLO il risultato della Fase 2. La prima
 stesura non deve mai comparire. Contenuti, formule, tabelle e tag
-asset ([FIG:], [EQ:], [TAB:]) devono restare invariati tra le due fasi.
+asset ([FIG:], [EQ:], [TAB:], [EX:]) devono restare invariati tra le due
+fasi.
 
 DELIMITATORI MATH — REGOLA RIGIDA
 - Per math INLINE nel testo Markdown usa SEMPRE `$...$` (es. `$\\varphi$`,
@@ -290,6 +291,7 @@ DIVIETI ASSOLUTI NEL TESTO VISIBILE
   descrizioni semantiche; NON includere codici come "[A1]" o
   "Figura M1.L2.01", né iniziare con "Figura 1"/"Fig. 1": il numero
   lo mette il renderer.
+- NON numerare gli asset ("Figura 2"): vedi POSIZIONE DEI TAG.
 
 CASO SPECIALE — LEZIONE INTRODUTTIVA (is_introductory=true):
 - Nessun caso studio o dimostrazione tecnica complessa
@@ -320,11 +322,17 @@ REQUISITI — ASSET VISIVI
 - tabelle quando devi confrontare alternative o riassumere
   classificazioni
 
-Per ogni asset: `asset_id` stabile (uso interno), referenziato almeno
-una volta nel testo tramite `[FIG:asset_id]`, `[TAB:asset_id]`,
-`[EQ:asset_id]` (questi tag verranno sostituiti dal renderer con
-l'asset rendering — non devono apparire al lettore finale, ma servono
-al parser). La `caption` è una breve descrizione semantica leggibile.
+POSIZIONE DEI TAG — REGOLA RIGIDA
+- Per ogni asset: id stabile e UN tag nel testo, `[FIG:asset_id]`,
+  `[TAB:table_id]`, `[EQ:equation_id]` o `[EX:example_id]`, che il
+  renderer sostituisce con l'asset numerato.
+- Il tag compare UNA sola volta, da solo su una riga propria fra due
+  righe vuote, dopo il paragrafo che introduce l'asset.
+- Nel testo richiami l'asset a parole ("come mostra la figura", "nella
+  tabella seguente"), senza ripetere il tag e senza "Figura",
+  "Tabella", "Equazione" o "Esempio" davanti al tag.
+- Mai tag in codice, formule, `caption`, `key_takeaways`,
+  `references`, `examples[].content` o `tables[].markdown`.
 
 FORMATI DELLE FIGURE (`visual_assets[].format`; `content` è sempre una
 stringa: codice, sorgente o spec JSON serializzata). Dal contenuto al
@@ -518,6 +526,7 @@ considerazione la versione precedente e il feedback del docente.
   pertinenti, mantenendo gli stessi asset_id.
 - Se il feedback chiede di rimuovere/sostituire un asset, fallo e
   documenta il cambiamento.
+- Tag ripetuti o dentro le frasi: riscrivili secondo POSIZIONE DEI TAG.
 - Mantieni lessico e terminologia coerenti con il resto del corso.
 """
     + REGENERATION_REGISTER_NOTE

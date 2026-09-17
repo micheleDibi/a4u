@@ -13,7 +13,10 @@ dei moduli delle figure toccati da WP3 (`test_slide_figure_geometry`,
 `test_frontend_figure_layout`) sono rigenerati con
 `python3 -m pytest --collect-only -q` il 17 settembre 2026, come quelli
 toccati da WP4 (`test_pdf_templates_autoescape`, `test_mermaid_prerender`,
-`test_slide_figure_geometry`, `test_lesson_pdf_math`); gli altri
+`test_slide_figure_geometry`, `test_lesson_pdf_math`) e da WP5 per la
+dedup e il prompt (`test_lesson_content_dedup`, `test_lesson_pdf_figures`,
+`test_prompt_figures`, `test_prompt_register`) e per la geometria delle
+figure (`test_figure_geometry`, `test_figure_geometry_cost`); gli altri
 moduli non sono stati reinventariati.
 
 ---
@@ -232,6 +235,29 @@ di produzione riprodotto che ora materializza `ready`, `coverage_check`
 derivato, output perfetto persistito byte-identico, reset di
 `content_attempts`.
 
+### `tests/test_lesson_content_dedup.py` (24)
+
+Normalizzazione di `key_takeaways` e `references` al solo confine di
+scrittura (WP5, questione B5 / decisione D18). Schema puro con casi
+inline parametrizzati (nessuna fixture JSON: il TypeScript non
+partecipa): trim, vuoti, dedup case-insensitive con prima grafia,
+`lower()` e non `casefold()`, degrado sotto tre voci che pinna il mode
+"after", `too_short`/`too_long`/lista vuota sul grezzo, references a
+parità di `source` con `model_copy` che conserva la classe e le istanze
+già pulite; PATCH con `None` = non toccato, `[]` ammesso e tetto 12
+(`KEY_TAKEAWAYS_MAX`, domanda aperta 14); idempotenza Output → Update.
+Primo test del CRUD `update_lesson_content` (`seeded_db`): un PATCH senza
+liste lascia lo storico, quello dell'editor lo normalizza e l'audit conta
+le voci dopo la dedup. Ispezione del blocco `payload` di `handleSubmit`
+(le due liste partono sempre, righe vuote scartate). **Pattern nuovo**:
+`monkeypatch` di `openai_lesson_content_service.get_client` con una
+risposta preconfezionata, per esercitare il call-site di produzione senza
+rete né API key. Il worker: `_warn_on_degraded_key_takeaways` e un giro
+completo di `_process_one` con `async_session_factory` sul test engine,
+chiamata OpenAI e fix degli asset sostituiti (lezione `ready`, lista
+deduplicata in `content_raw`, warning `lesson_content_key_takeaways_below_min`
+solo quando serve).
+
 ### `tests/test_course_status_model.py` (2)
 
 `COURSE_STATUSES` 1:1 con `COURSE_STATUS_RANK` e CHECK `ck_course_status_valid`
@@ -275,13 +301,15 @@ split delle frasi, indicatori del registro, report). L'import
 
 ## Prompt (registro accademico e figure)
 
-### `tests/test_prompt_register.py` (20)
+### `tests/test_prompt_register.py` (21)
 
 Blocco condiviso `prompt_register` nei prompt di Fase 3/4/5: composizione,
 ordine dei sette marcatori (LINGUA ultima), stringhe obbligatorie
 («DELIMITATORI MATH», «DIVIETI ASSOLUTI», `coverage_check`, …), guardie di
-lunghezza `MAX_SYSTEM_P3` (22.500) / `P4` (14.500) / `P5` (12.500) anche
-sulle varianti con i default, determinismo (`_p3() == _p3()`), nessun tic
+lunghezza `MAX_SYSTEM_P3` (28.900; 27.923 misurati dopo la regola di
+posizione dei tag di WP5, 28.819 con il suffisso di rigenerazione, anche
+lui sotto guardia) / `P4` (15.400) / `P5` (12.500) anche sulle
+varianti con i default, determinismo (`_p3() == _p3()`), nessun tic
 del corpus. Il testo dei prompt è statico (A19).
 
 ### `tests/test_prompt_composition_bugs.py` (14)
@@ -292,14 +320,18 @@ renderizzato, `_format_current_lesson_phase3` che serializza gli asset
 come `- {asset_id} [{format}]: {caption}` (parametrizzato su
 mermaid/vegalite/dot/function) con la guardia `"(?)" not in text`.
 
-### `tests/test_prompt_figures.py` (13)
+### `tests/test_prompt_figures.py` (31)
 
 Le quattro famiglie di figure nei prompt (WP3): il blocco «FORMATI DELLE
 FIGURE» di P3 elenca i tipi Mermaid ammessi ed esclusi (D8), le regole
 D5, lo schema compatto di `FunctionFigureSpec` (D9) e tre esempi minimi
 (Vega-Lite, DOT, `function`) che devono superare i **validatori reali**
 del registro; P4 rinvia a Fase 3 senza graffe; P5 vieta la lettura a voce
-delle sorgenti.
+delle sorgenti. WP5 (D17): il blocco `POSIZIONE DEI TAG — REGOLA RIGIDA`
+(un tag per asset su riga propria, richiamo a parole, nessuna etichetta
+davanti al tag, mai in codice, formule, esempi o tabelle), i quattro tag
+con il proprio campo id dentro la regola, i rimandi da DIVIETI e da
+`REGENERATION_SUFFIX`, l'assenza della regola da P4.
 
 ---
 
@@ -408,6 +440,46 @@ corpo naturale, corpo esattamente al fondo quando il box non la ferma,
 mai oltre il box: il costo documentato è qualche salto pagina anticipato
 nella dispensa); costanti di ripiego derivate dal tema.
 
+### `tests/test_figure_geometry.py` (46)
+
+Geometria delle figure rese (D14, WP5): incroci noti su SVG sintetici
+(due archi, stella, fascio parallelo, punto triplo, estremi condivisi,
+curve, sotto-tracciati, archi ellittici, involucri dei collegamenti,
+gobba stretta sotto `scale(10)`), trasformazioni, classi degli archi
+Mermaid e punti ciechi, tetto dei segmenti, input malformati; i quattro
+difetti di lettura DOT in Python (nessuno sui diciotto modelli, arco
+sull'etichetta del vecchio `layers`, coordinate esplicite, famiglie del
+font, involucri); controprova Chromium (`MEASURE_SVG_GEOMETRY_JS`) sui
+diciotto modelli DOT, sui sintetici, sul DOT con `tooltip` e sul K4,4
+scalato (stessi incroci e coppie, stessi segmenti sulla gobba scalata);
+pre-render Mermaid con la misura nella stessa pagina e residuo del
+batch; dal renderer al report (`with_geometry`, `measure` facoltativo,
+misura rotta che non costa la figura, `FigureFitEntry`); tetto di lavoro
+per figura e per batch, bipartito 16×16 e batch storico all'export,
+sovrapposizioni su griglia contro la scansione a coppie, `asset_id` nei
+log della validazione. Serve il binario `dot`; i casi Mermaid vogliono la
+CDN.
+
+### `tests/test_figure_geometry_cost.py` (27)
+
+Costo della misura limitato per costruzione (giro 3 di WP5, V3-F1):
+sei DOT patologici (`fontsize` 4.000, 8.000 e 1.000.000,
+`size="3000,3000!"`, trenta etichette medie, arco scalato con etichetta)
+in processi figli fermati oltre 30 s o 1,5 GB, con `validate(deep=True)`
+e `render_figure_map([BAD, GOOD])` sotto 2 s e 300 MB ed entrambe le
+figure rese; forma di nodo enorme (riquadro esatto delle Bézier) e fascio
+di 100 archi per un punto (raggruppamento a piano); la misura JS in
+Chromium su un arco scalato 5000 volte (saltato per segmenti in unità
+della radice) e su intervalli con due salti; griglia mai oltre
+`MAX_GRID_CELLS` e passo 16 sui diciotto modelli, celle contate uguali
+a quelle enumerate, coppie una volta sola, riquadri esatti delle curve,
+raggruppamento uguale al riferimento quadratico, geometria non finita
+saltata senza eccezioni, lavoro eseguito sottratto al batch DOT anche per
+una misura saltata, opzioni e residuo di lavoro della pagina Mermaid. Sul
+codice di 3d71f85 i casi di costo falliscono (349 MB, 7,8 s, 5,9 s,
+2,6 s, figli fermati oltre 1,5 GB, albero Chromium oltre 2 GB, doppio
+salto oltre 30 s).
+
 ### `tests/test_vegalite_rules.py` (55)
 
 Regole D5 ed euristica del criterio 10 (puro): `data.url` anche in
@@ -473,7 +545,7 @@ crescente, citazioni ripetute → stesso N, id senza asset senza numero,
 `FIG` case-sensitive, orfane in coda, `strip_figure_prefix` mai «lossy»;
 parità con `lib/figureNumbering.ts` eseguita con Node.
 
-### `tests/test_lesson_pdf_figures.py` (84)
+### `tests/test_lesson_pdf_figures.py` (87)
 
 Rendering delle figure nei PDF (WP4), puro su oggetti non persistiti:
 didascalie «Figura N.» in ordine di citazione, orfano in coda dopo la
@@ -493,7 +565,10 @@ formato su DOT, Vega-Lite e `function` e voce `font_fallback` del summary
 dopo `aria-label`, `_FIGURE_RE` intatta, senza box markup identico; CSS
 del template slide con `var(--figure-h)` sulle figure, l'unico `80mm`
 come ripiego della regola generica (`var(--figure-h, 80mm)`) e i residui
-`max-height` 14 e 40 mm.
+`max-height` 14 e 40 mm. WP5: la forma insegnata dal prompt di Fase 3 (tag
+su riga propria, richiamo a parole) dà un blocco e lascia la frase
+intatta; punti chiave e riferimenti storici resi verbatim (3+3 `<li>`),
+contenuto nuovo deduplicato dallo schema (2+1).
 `importorskip` su weasyprint/pypdf/matplotlib, `skipif` su `dot`.
 
 ### `tests/test_lesson_pdf_figure_text_size.py` (26)

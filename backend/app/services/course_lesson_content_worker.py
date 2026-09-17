@@ -30,9 +30,11 @@ fa polling su `GET /courses/{id}` mentre almeno una lezione è in
 `pending|processing` (o `course.glossary_status='processing'`) e mostra
 una progress bar live + aggregate progress in header.
 """
+
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 import uuid
 
@@ -44,6 +46,7 @@ from app.core.course_phase_order import lesson_structure_is_ready
 from app.core.logging import get_logger
 from app.db.session import async_session_factory
 from app.models.course_lesson import CourseLesson
+from app.schemas.course_lesson_content import KEY_TAKEAWAYS_MIN, LessonContentOutput
 from app.services import (
     asset_validation_service,
     course_glossary_service,
@@ -123,13 +126,39 @@ def _apply_failure(
 
 
 # ---------------------------------------------------------------------------
+# Punti chiave degradati dalla dedup
+# ---------------------------------------------------------------------------
+
+
+def _warn_on_degraded_key_takeaways(lesson: CourseLesson, output: object) -> None:
+    """Warning quando la dedup dello schema (D18) porta i punti chiave sotto
+    `KEY_TAKEAWAYS_MIN`.
+
+    `LessonContentOutput` conta il minimo sull'elenco grezzo del modello:
+    una lista validata più corta è quindi effetto della sola dedup. La
+    lezione resta valida e non viene rigenerata (un difetto cosmetico non
+    vale una generazione intera); il warning rende visibile il degrado. Le
+    verifiche delle competenze non hanno punti chiave e sono ignorate.
+    """
+    if not isinstance(output, LessonContentOutput):
+        return
+    count = len(output.key_takeaways)
+    if count < KEY_TAKEAWAYS_MIN:
+        log.warning(
+            "lesson_content_key_takeaways_below_min",
+            lesson_id=str(lesson.id),
+            lesson_code=lesson.lesson_code,
+            key_takeaways=count,
+            minimum=KEY_TAKEAWAYS_MIN,
+        )
+
+
+# ---------------------------------------------------------------------------
 # Progress helpers
 # ---------------------------------------------------------------------------
 
 
-async def _set_progress(
-    lesson_id: uuid.UUID, *, pct: int, phase: str | None
-) -> None:
+async def _set_progress(lesson_id: uuid.UUID, *, pct: int, phase: str | None) -> None:
     """Aggiorna `content_progress` + phase su una sessione propria."""
     async with async_session_factory() as tdb:
         row = await tdb.get(CourseLesson, lesson_id)
@@ -199,9 +228,7 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
             return
         course_id = bare.course_id
 
-        course_full = await course_lesson_content_service.load_course_full(
-            db, course_id=course_id
-        )
+        course_full = await course_lesson_content_service.load_course_full(db, course_id=course_id)
         if course_full is None:
             log.warning(
                 "lesson_content_course_not_found",
@@ -236,9 +263,7 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                 recoverable=False,
                 auto_retry_max=settings.course_lesson_content_auto_retry_max,
             )
-            course_lesson_content_service._recompute_course_content_status(
-                course_full
-            )
+            course_lesson_content_service._recompute_course_content_status(course_full)
             await write_audit(
                 db,
                 action="course.lesson.content.failed",
@@ -289,9 +314,7 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                     auto_retry_max=settings.course_lesson_content_auto_retry_max,
                 )
                 if terminal:
-                    course_lesson_content_service._recompute_course_content_status(
-                        course_full
-                    )
+                    course_lesson_content_service._recompute_course_content_status(course_full)
                     await write_audit(
                         db,
                         action="course.lesson.content.failed",
@@ -312,15 +335,11 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
 
         regen = course_lesson_content_service.is_regeneration_for_lesson(lesson)
         if lesson.is_assessment:
-            user_prompt = (
-                course_lesson_content_service.build_assessment_user_prompt(
-                    course_full, lesson
-                )
-            )
-        else:
-            user_prompt = course_lesson_content_service.build_user_prompt(
+            user_prompt = course_lesson_content_service.build_assessment_user_prompt(
                 course_full, lesson
             )
+        else:
+            user_prompt = course_lesson_content_service.build_user_prompt(course_full, lesson)
 
         # Aggiorna progresso → calling_openai e avvia ticker
         lesson.content_progress = 15
@@ -329,39 +348,37 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
 
         # Ticker ease-out più lento di Fase 2: lezione completa ~60-120s.
         ticker_task = asyncio.create_task(
-            _progress_ticker(
-                lesson.id, start_pct=15, end_pct=85, duration_sec=90.0
-            )
+            _progress_ticker(lesson.id, start_pct=15, end_pct=85, duration_sec=90.0)
         )
 
         try:
             try:
                 if lesson.is_assessment:
-                    content_output, usage = (
-                        await openai_lesson_content_service.generate_lesson_assessment(
-                            user_prompt=user_prompt,
-                            language_code=course_full.language_code,
-                            is_regeneration=regen,
-                        )
+                    (
+                        content_output,
+                        usage,
+                    ) = await openai_lesson_content_service.generate_lesson_assessment(
+                        user_prompt=user_prompt,
+                        language_code=course_full.language_code,
+                        is_regeneration=regen,
                     )
                 else:
-                    style = course_lesson_content_service.didactic_style_labels(
-                        course_full
-                    )
-                    content_output, usage = (
-                        await openai_lesson_content_service.generate_lesson_content(
-                            user_prompt=user_prompt,
-                            language_code=course_full.language_code,
-                            is_regeneration=regen,
-                            ruolo_docente=style["ruolo_docente"],
-                            stile_insegnamento=style["stile_insegnamento"],
-                            livello_eqf=style["livello_eqf"],
-                            # Vincolo strutturale sui riferimenti agli
-                            # obiettivi: stessi codici mostrati nel prompt.
-                            objective_ids=course_lesson_content_service.objective_ids_for_lesson(
-                                lesson
-                            ),
-                        )
+                    style = course_lesson_content_service.didactic_style_labels(course_full)
+                    (
+                        content_output,
+                        usage,
+                    ) = await openai_lesson_content_service.generate_lesson_content(
+                        user_prompt=user_prompt,
+                        language_code=course_full.language_code,
+                        is_regeneration=regen,
+                        ruolo_docente=style["ruolo_docente"],
+                        stile_insegnamento=style["stile_insegnamento"],
+                        livello_eqf=style["livello_eqf"],
+                        # Vincolo strutturale sui riferimenti agli
+                        # obiettivi: stessi codici mostrati nel prompt.
+                        objective_ids=course_lesson_content_service.objective_ids_for_lesson(
+                            lesson
+                        ),
                     )
             except OpenAINotConfiguredError:
                 # NON recuperabile (config issue) → terminal subito.
@@ -376,9 +393,7 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                     recoverable=False,
                     auto_retry_max=settings.course_lesson_content_auto_retry_max,
                 )
-                course_lesson_content_service._recompute_course_content_status(
-                    course_full
-                )
+                course_lesson_content_service._recompute_course_content_status(course_full)
                 await write_audit(
                     db,
                     action="course.lesson.content.failed",
@@ -396,9 +411,7 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                 )
                 await db.commit()
                 return
-            except (
-                openai_lesson_content_service.OpenAILessonContentError
-            ) as exc:
+            except openai_lesson_content_service.OpenAILessonContentError as exc:
                 settings = get_settings()
                 terminal = not _apply_failure(
                     lesson,
@@ -408,9 +421,7 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                     auto_retry_max=settings.course_lesson_content_auto_retry_max,
                 )
                 if terminal:
-                    course_lesson_content_service._recompute_course_content_status(
-                        course_full
-                    )
+                    course_lesson_content_service._recompute_course_content_status(course_full)
                     await write_audit(
                         db,
                         action="course.lesson.content.failed",
@@ -430,10 +441,8 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                 return
         finally:
             ticker_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError, Exception):
                 await ticker_task
-            except (asyncio.CancelledError, Exception):
-                pass
 
         # Cancel-check: se nel frattempo l'utente ha annullato la
         # generazione, lo status DB è stato spostato a `failed`. Scarta
@@ -457,16 +466,14 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
             lesson.content_progress_phase = "validating_assets"
             await db.commit()
             try:
-                content_output = (
-                    await asset_validation_service.validate_and_fix_content_assets(
-                        content_output, language_code=course_full.language_code
-                    )
+                content_output = await asset_validation_service.validate_and_fix_content_assets(
+                    content_output, language_code=course_full.language_code
                 )
             # Cattura ampia (incl. AssetFixUnresolvedError): qualunque errore
             # in validazione/fix e' recuperabile -> auto-retry rigenera la
             # lezione. Cosi' un asset rotto non raggiunge mai `ready` e
             # l'utente non vede errori intermedi.
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 settings = get_settings()
                 terminal = not _apply_failure(
                     lesson,
@@ -476,9 +483,7 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                     auto_retry_max=settings.course_lesson_content_auto_retry_max,
                 )
                 if terminal:
-                    course_lesson_content_service._recompute_course_content_status(
-                        course_full
-                    )
+                    course_lesson_content_service._recompute_course_content_status(course_full)
                     await write_audit(
                         db,
                         action="course.lesson.content.failed",
@@ -506,17 +511,16 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                 list(course_full.documents)
             )
             if reserved_index:
-                kept_refs, dropped_refs = (
-                    document_citation_guard.filter_reference_items(
-                        [r.model_dump() for r in content_output.references],
-                        reserved_index,
-                    )
+                kept_refs, dropped_refs = document_citation_guard.filter_reference_items(
+                    [r.model_dump() for r in content_output.references],
+                    reserved_index,
                 )
                 if dropped_refs:
-                    content_output.references = [
-                        type(content_output.references[0])(**r)
-                        for r in kept_refs
-                    ] if kept_refs else []
+                    content_output.references = (
+                        [type(content_output.references[0])(**r) for r in kept_refs]
+                        if kept_refs
+                        else []
+                    )
                     await write_audit(
                         db,
                         action="course.lesson.content.references_filtered",
@@ -527,9 +531,7 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                         metadata={
                             "course_id": str(course_full.id),
                             "lesson_code": lesson.lesson_code,
-                            "dropped": [
-                                r.get("citation") for r in dropped_refs
-                            ],
+                            "dropped": [r.get("citation") for r in dropped_refs],
                         },
                     )
                 prose = "\n".join(
@@ -537,9 +539,7 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                     + [s.content or "" for s in content_output.sections]
                     + [content_output.summary or ""]
                 )
-                leaks = document_citation_guard.scan_text_for_leaks(
-                    prose, reserved_index
-                )
+                leaks = document_citation_guard.scan_text_for_leaks(prose, reserved_index)
                 if leaks:
                     log.warning(
                         "lesson_content_reserved_leak_in_prose",
@@ -595,9 +595,7 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                 auto_retry_max=settings.course_lesson_content_auto_retry_max,
             )
             if terminal:
-                course_lesson_content_service._recompute_course_content_status(
-                    course_full
-                )
+                course_lesson_content_service._recompute_course_content_status(course_full)
                 await write_audit(
                     db,
                     action="course.lesson.content.failed",
@@ -615,6 +613,8 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                 )
             await db.commit()
             return
+
+        _warn_on_degraded_key_takeaways(lesson, content_output)
 
         if lesson.is_assessment:
             phase_metadata: dict = {
@@ -700,15 +700,11 @@ async def _tick() -> None:
     async with async_session_factory() as db:
         try:
             res = await db.execute(
-                select(CourseLesson.id).where(
-                    CourseLesson.content_status == "pending"
-                )
+                select(CourseLesson.id).where(CourseLesson.content_status == "pending")
             )
             lesson_ids = [row[0] for row in res.all()]
         except Exception as exc:  # pragma: no cover
-            log.warning(
-                "lesson_content_worker_tick_failed", error=str(exc)
-            )
+            log.warning("lesson_content_worker_tick_failed", error=str(exc))
             return
 
     if not lesson_ids:
@@ -750,10 +746,8 @@ async def _run_loop() -> None:
     assert _stop_event is not None
     while not _stop_event.is_set():
         await _tick()
-        try:
+        with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(_stop_event.wait(), timeout=interval)
-        except asyncio.TimeoutError:
-            pass
     log.info("course_lesson_content_worker_stopped")
 
 
@@ -763,12 +757,8 @@ def start_worker() -> None:
         return
     settings = get_settings()
     _stop_event = asyncio.Event()
-    _semaphore = asyncio.Semaphore(
-        max(1, int(settings.course_lesson_content_max_concurrency))
-    )
-    _worker_task = asyncio.create_task(
-        _run_loop(), name="course_lesson_content_worker"
-    )
+    _semaphore = asyncio.Semaphore(max(1, int(settings.course_lesson_content_max_concurrency)))
+    _worker_task = asyncio.create_task(_run_loop(), name="course_lesson_content_worker")
 
 
 async def stop_worker() -> None:
@@ -778,7 +768,7 @@ async def stop_worker() -> None:
     if _worker_task is not None:
         try:
             await asyncio.wait_for(_worker_task, timeout=15)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             _worker_task.cancel()
             await asyncio.gather(_worker_task, return_exceptions=True)
     if _active_tasks:

@@ -1,4 +1,4 @@
-"""Calcolo «leaf» delle figure accademiche (Vega-Lite, `function`).
+"""Calcolo «leaf» delle figure accademiche (Vega-Lite, `function`, grafi).
 
 Ogni modulo di questo package è importabile dal processo figlio `spawn`
 di `isolated.run_isolated` senza `app.core.config`, SQLAlchemy o altre
@@ -10,6 +10,9 @@ nelle funzioni.
   timeout e `kill()` (l'unica cosa uccidibile in Python 3.12, A13);
 - `vegalite_rules`: regole D5 e euristica del criterio 10 sulle spec
   Vega-Lite (puro, senza rete né librerie);
+- `graph_rules`: soglie editoriali dei grafi Mermaid e DOT contate sul
+  sorgente (D13) e voce diagnostica degli incroci (D14); puro, gemello
+  formale di `vegalite_rules`;
 - `vegalite_render`: bersaglio del figlio per `vl_convert.vegalite_to_svg`;
 - `function_parse`: passo 1 del parsing delle espressioni (AST con
   whitelist, senza sympy, solo libreria standard);

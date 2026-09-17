@@ -242,7 +242,7 @@ descrive sempre i quattro formati (A19).
 | `FIGURE_RENDER_MAX_WORKERS` | `2` | Render CPU-bound concorrenti (worker PDF/video + anteprime `render-function` dell'editor); 2 per la VM a 2 core. |
 | `FIGURE_SVG_CACHE_SIZE` | `256` | Cache LRU in memoria degli SVG (chiave: formato, hash del sorgente, `THEME_VERSION`) e dei risultati `function`. |
 | `FIGURE_SVG_MAX_BYTES` | `1500000` | Oltre, l'SVG prodotto è rifiutato (fallback). |
-| `FIGURE_DOT_MAX_CHARS` | `12000` | Limite del sorgente DOT accettato dal validatore. |
+| `FIGURE_DOT_MAX_CHARS` | `12000` | Limite del sorgente DOT accettato dal validatore. Un valore più alto non ha effetto oltre 12.000: è anche il tetto di `content` degli asset visivi generati dall'AI e di quelli cambiati nel PATCH (`VISUAL_ASSET_CONTENT_MAX_CHARS`). |
 | `GRAPHVIZ_DOT_PATH` | _(vuoto)_ | Percorso del binario `dot`; vuoto = ricerca nel `PATH`. Senza `dot` il formato è assente da `available_formats()` e `log.error("graphviz_dot_missing")` compare una volta all'avvio dei worker. |
 
 ### OpenAI — parallelismo + auto-retry worker corso

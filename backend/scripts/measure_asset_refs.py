@@ -29,16 +29,39 @@ Produce tabelle markdown:
       «tag senza asset»: coppie (kind, id) citate (corpo o coda) ma non
               dichiarate (blocco missing-asset nel PDF);
   (d) per ogni visual_asset di formato mermaid/dot/vegalite: nodi, archi,
-      label (parsing testuale semplice, euristico). Gli INCROCI non sono
-      implementati: la colonna resta un segnaposto (`-`).
+      etichetta più lunga, righe e caratteri contati sul sorgente con gli
+      stessi contatori del gate editoriale
+      (`figure_compute.graph_rules.graph_source_metrics`; per Vega-Lite i
+      record di `data.values`); gli incroci solo con `--figures`;
+  (e) con `--figures`: ogni figura mermaid/dot/vegalite è RESA con il
+      registro di produzione (`figure_render_service.REGISTRY`: Chromium e
+      CDN per Mermaid, binario `dot`, vl-convert) e la tabella riporta
+      nodi, archi, etichetta, titolo, righe, caratteri, incroci arco × arco
+      (`figure_geometry`: nella pagina del pre-render per Mermaid, in Python
+      per DOT) e difetti di lettura; segue la distribuzione per metrica sui
+      grafi (Mermaid e DOT: min, mediana, p90, max) con la percentuale che
+      supererebbe ciascuna soglia di `graph_rules` e l'esito della regola
+      di calibrazione: se il p90 supera il 60 % della soglia, la soglia si
+      alza (mai si boccia il contenuto). I Mermaid sono resi a gruppi di
+      `MAX_BATCH_MEASURE_SEGMENTS // MAX_MEASURE_SEGMENTS` figure (una
+      pagina per gruppo), i DOT a gruppi di `MAX_BATCH_MEASURE_WORK //
+      MAX_MEASURE_WORK`: il tetto del batch non salta mai una misura, vale
+      solo quello per figura. Le misure degli incroci mancanti
+      (tetto per figura, misura fallita) sono contate in una riga
+      «incroci non misurati» sotto la tabella delle soglie, perché la riga
+      «incroci» ha allora un `n` minore delle altre.
 
-Sola lettura: nessun accesso al DB, nessuna scrittura. Solo stdlib.
+Sola lettura: nessun accesso al DB, nessuna scrittura. Senza `--figures`
+bastano la libreria standard e `graph_rules` (modulo puro); con
+`--figures` serve l'ambiente del backend (`JWT_SECRET`, dipendenze delle
+figure, `DYLD_FALLBACK_LIBRARY_PATH` su macOS per WeasyPrint).
 
 Uso (dalla cartella `backend/`)
 -------------------------------
 
     python -m scripts.measure_asset_refs lessons_export.json
     python -m scripts.measure_asset_refs lessons_export.json --per-occorrenza
+    python -m scripts.measure_asset_refs lessons_export.json --figures
 """
 
 from __future__ import annotations
@@ -46,6 +69,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import statistics
 import sys
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping, Sequence
@@ -53,7 +77,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-SCRIPT_VERSION = "1"
+from app.services.figure_compute import graph_rules
+
+SCRIPT_VERSION = "2"
 
 # Allineato a `course_lesson_pdf_service._ASSET_REF_RE` (case-sensitive sul
 # kind, il tag non attraversa la riga).
@@ -203,102 +229,27 @@ def occurrences(content: dict[str, Any]) -> list[Occurrence]:
 # (d) metriche strutturali dei sorgenti figura (euristiche testuali)
 # ---------------------------------------------------------------------------
 
-MM_EDGE = re.compile(r"-{2,3}>|-{3,}|-\.-+>|={2,}>|--[ox]|<--")
-MM_EDGE_LABEL = re.compile(r"(-{2,3}|-\.-|={2,})\s*[^\-=>|\n]+?\s*(-{2,3}>|-\.->|={2,}>)")
-MM_PIPE_LABEL = re.compile(r"\|[^|\n]*\|")
-MM_SHAPE = re.compile(r"\[[^\]]+\]|\([^)]+\)|\{[^}]+\}")
-MM_KEYWORDS = {"subgraph", "end", "style", "classdef", "class", "direction", "linkstyle"}
-MM_OPAQUE_TYPES = (
-    "statediagram-v2",
-    "statediagram",
-    "classdiagram",
-    "erdiagram",
-    "gantt",
-    "mindmap",
-    "timeline",
-)
-SEQ_KEYWORDS = ("participant", "actor", "note", "loop", "alt", "else", "end")
+FIGURE_FORMATS = ("mermaid", "dot", "vegalite")
 
 
 def _empty_metrics(kind: str) -> dict[str, Any]:
     return {"tipo": kind, "nodi": None, "archi": None, "label": None}
 
 
-def metrics_mermaid(src: str) -> dict[str, Any]:
-    lines = [
-        ln.strip() for ln in src.splitlines() if ln.strip() and not ln.strip().startswith("%%")
-    ]
-    head = lines[0].lower() if lines else ""
-    kind = head.split()[0] if head else "?"
-    if kind in ("flowchart", "graph"):
-        nodes: set[str] = set()
-        edges = 0
-        labels = 0
-        for ln in lines[1:]:
-            labels += len(MM_SHAPE.findall(ln)) + len(MM_PIPE_LABEL.findall(ln))
-            clean = MM_PIPE_LABEL.sub(" ", MM_EDGE_LABEL.sub(r"\2", ln))
-            edges += len(MM_EDGE.findall(clean))
-            bare = MM_SHAPE.sub("", clean)
-            for seg in MM_EDGE.split(bare):
-                toks = seg.strip().split()
-                if toks and toks[0].lower() not in MM_KEYWORDS:
-                    nodes.add(toks[0])
-        return {"tipo": kind, "nodi": len(nodes), "archi": edges, "label": labels}
-    if kind == "sequencediagram":
-        actors = [ln for ln in lines[1:] if ln.lower().startswith(("participant", "actor"))]
-        msgs = [
-            ln
-            for ln in lines[1:]
-            if re.search(r"-{1,2}>>?|-{1,2}x|--?\)", ln) and not ln.lower().startswith(SEQ_KEYWORDS)
-        ]
-        return {
-            "tipo": "sequenceDiagram",
-            "nodi": len(actors),
-            "archi": len(msgs),
-            "label": len(msgs),
-        }
-    if kind == "pie":
-        slices = [ln for ln in lines[1:] if ":" in ln]
-        return {"tipo": "pie", "nodi": len(slices), "archi": 0, "label": len(slices)}
-    if kind in MM_OPAQUE_TYPES:
-        return {
-            "tipo": kind,
-            "nodi": None,
-            "archi": len(MM_EDGE.findall(src)) or None,
-            "label": None,
-        }
-    return _empty_metrics(kind)
-
-
-DOT_KEYWORDS = {
-    "digraph",
-    "graph",
-    "subgraph",
-    "node",
-    "edge",
-    "rankdir",
-    "strict",
-    "label",
-    "shape",
-}
-DOT_STMT_PREFIXES = ("digraph", "graph", "subgraph", "}", "{", "node", "edge", "rankdir")
-
-
-def metrics_dot(src: str) -> dict[str, Any]:
-    body = re.sub(r"//.*|/\*.*?\*/|#.*", "", src, flags=re.S)
-    edges = len(re.findall(r"->|--", body))
-    labels = len(re.findall(r'label\s*=\s*("(?:[^"\\]|\\.)*"|[\w.]+)', body))
-    nodes: set[str] = set()
-    for stmt in re.split(r"[;\n]", body):
-        s = stmt.strip()
-        if not s or s.startswith(DOT_STMT_PREFIXES):
-            continue
-        s = re.sub(r"\[[^\]]*\]", "", s)
-        for tok in re.findall(r'"(?:[^"\\]|\\.)*"|[A-Za-z_][\w]*', s):
-            name = tok.strip('"')
-            if name and name.lower() not in DOT_KEYWORDS:
-                nodes.add(name)
-    return {"tipo": "dot", "nodi": len(nodes), "archi": edges, "label": labels}
+def metrics_graph(fmt: str, src: str) -> dict[str, Any]:
+    """Contatori del gate editoriale (`graph_rules`) su un sorgente
+    Mermaid o DOT."""
+    met = graph_rules.graph_source_metrics(fmt, src.strip())
+    if met is None:
+        return _empty_metrics(fmt)
+    return {
+        "tipo": met.kind,
+        "nodi": met.nodes,
+        "archi": met.edges,
+        "label": met.label_chars,
+        "titolo": met.title_chars,
+        "righe": met.lines,
+    }
 
 
 def _data_values(spec: dict[str, Any]) -> list[Any]:
@@ -336,18 +287,262 @@ def asset_metrics(asset: dict[str, Any]) -> dict[str, Any]:
     src = asset.get("content") or ""
     if not isinstance(src, str):
         src = json.dumps(src, ensure_ascii=False)
-    if fmt == "mermaid":
-        met = metrics_mermaid(src)
-    elif fmt == "dot":
-        met = metrics_dot(src)
+    if fmt in graph_rules.GRAPH_FORMATS:
+        met = metrics_graph(fmt, src)
     elif fmt == "vegalite":
         met = metrics_vegalite(src)
     else:  # function, image, formati legacy: non sono grafi
         met = _empty_metrics(fmt or "?")
     met["formato"] = fmt
     met["len_sorgente"] = len(src)
-    met["incroci"] = None  # SEGNAPOSTO: non implementato (serve il layout, non il testo)
+    met["incroci"] = None  # solo con `--figures` (serve la figura resa)
     return met
+
+
+# ---------------------------------------------------------------------------
+# (e) figure rese con il registro di produzione (`--figures`)
+# ---------------------------------------------------------------------------
+
+# (metrica, colonna, soglia) su cui si applica la regola di calibrazione.
+THRESHOLDS: tuple[tuple[str, str, int], ...] = (
+    ("nodi", "nodes", graph_rules.MAX_GRAPH_NODES),
+    ("archi", "edges", graph_rules.MAX_GRAPH_EDGES),
+    ("etichetta (caratteri)", "label_chars", graph_rules.MAX_LABEL_CHARS),
+    ("titolo (caratteri)", "title_chars", graph_rules.MAX_TITLE_CHARS),
+    ("righe", "lines", graph_rules.MAX_GRAPH_LINES),
+    ("sorgente Mermaid (caratteri)", "chars", graph_rules.MAX_MERMAID_SOURCE_CHARS),
+    ("incroci", "crossings", graph_rules.MAX_EDGE_CROSSINGS),
+)
+CALIBRATION_SHARE = 0.6
+
+
+@dataclass
+class FigureRow:
+    lesson: str
+    asset_id: str
+    fmt: str
+    kind: str
+    nodes: int | None
+    edges: int | None
+    label_chars: int | None
+    title_chars: int | None
+    lines: int
+    chars: int
+    rendered: bool = False
+    crossings: int | None = None
+    defects: tuple[str, ...] = ()
+
+
+def _vegalite_row(lesson: str, asset_id: str, src: str) -> FigureRow:
+    met = metrics_vegalite(src)
+    try:
+        spec = json.loads(src)
+    except (TypeError, ValueError):
+        spec = {}
+    title = spec.get("title") if isinstance(spec, dict) else None
+    return FigureRow(
+        lesson=lesson,
+        asset_id=asset_id,
+        fmt="vegalite",
+        kind="vegalite",
+        nodes=met["nodi"],
+        edges=None,
+        label_chars=None,
+        title_chars=len(title) if isinstance(title, str) else 0,
+        lines=sum(1 for line in src.splitlines() if line.strip()),
+        chars=len(src),
+    )
+
+
+def figure_rows(rows: Sequence[dict[str, Any]]) -> list[FigureRow]:
+    """Una riga per visual_asset mermaid/dot/vegalite, con le misure del
+    sorgente (nessun render)."""
+    out: list[FigureRow] = []
+    for row in rows:
+        content = row.get("content_raw") or {}
+        lesson = row.get("lesson_code") or str(row.get("id", ""))[:8]
+        for asset in content.get("visual_assets") or []:
+            if not isinstance(asset, dict) or asset.get("format") not in FIGURE_FORMATS:
+                continue
+            fmt = str(asset["format"])
+            src = asset.get("content") or ""
+            if not isinstance(src, str):
+                src = json.dumps(src, ensure_ascii=False)
+            asset_id = str(asset.get("asset_id") or "")
+            if fmt == "vegalite":
+                out.append(_vegalite_row(lesson, asset_id, src))
+                continue
+            met = graph_rules.graph_source_metrics(fmt, src.strip())
+            if met is None:
+                continue
+            out.append(
+                FigureRow(
+                    lesson=lesson,
+                    asset_id=asset_id,
+                    fmt=fmt,
+                    kind=met.kind,
+                    nodes=met.nodes,
+                    edges=met.edges,
+                    label_chars=met.label_chars,
+                    title_chars=met.title_chars,
+                    lines=met.lines,
+                    chars=met.chars,
+                )
+            )
+    return out
+
+
+def measure_group_size(fmt: str = "mermaid") -> int | None:
+    """Figure per batch di misura: con al più `batch // figura` figure il
+    residuo del batch non scende mai sotto il tetto di una figura, quindi
+    nessuna misura è saltata per il tetto del batch (`batch_segment_cap`
+    nella pagina Mermaid, `batch_work_cap` per DOT). `None` per i formati
+    senza tetto di batch (un batch unico)."""
+    from app.services import figure_geometry
+
+    caps = {
+        "mermaid": (
+            figure_geometry.MAX_BATCH_MEASURE_SEGMENTS,
+            figure_geometry.MAX_MEASURE_SEGMENTS,
+        ),
+        "dot": (figure_geometry.MAX_BATCH_MEASURE_WORK, figure_geometry.MAX_MEASURE_WORK),
+    }
+    if fmt not in caps:
+        return None
+    batch, per_figure = caps[fmt]
+    return max(1, batch // per_figure)
+
+
+def render_figures(rows: list[FigureRow], sources: dict[tuple[str, str], str]) -> None:
+    """Rende le figure con il registro di produzione e riporta incroci e
+    difetti nelle righe. Vega-Lite in un batch; Mermaid e DOT a gruppi di
+    `measure_group_size(fmt)` figure, perché l'export ha un tetto di
+    lavoro per batch e qui serve la misura di OGNI figura."""
+    from app.services.figure_render_service import REGISTRY
+
+    for fmt in FIGURE_FORMATS:
+        todo = [r for r in rows if r.fmt == fmt]
+        if not todo:
+            continue
+        renderer = REGISTRY[fmt]
+        size = measure_group_size(fmt) or len(todo)
+        for start in range(0, len(todo), size):
+            group = todo[start : start + size]
+            contents = [sources[(r.lesson, r.asset_id)] for r in group]
+            ids = [f"{r.lesson}/{r.asset_id}" for r in group]
+            batch = getattr(renderer, "render_figure_batch", None)
+            if callable(batch):
+                figures = batch(contents, asset_ids=ids)
+                for row, fig in zip(group, figures, strict=True):
+                    row.rendered = fig is not None
+                    if fig is not None and fig.metrics is not None:
+                        row.crossings = fig.metrics.crossings
+                        row.defects = fig.metrics.defects
+            else:
+                svgs = renderer.render_svg_batch(contents, asset_ids=ids)
+                for row, svg in zip(group, svgs, strict=True):
+                    row.rendered = svg is not None
+
+
+def unmeasured_crossings(rows: Sequence[FigureRow]) -> tuple[int, int]:
+    """`(grafi resi senza incroci misurati, grafi resi)`: tetto di segmenti
+    o di lavoro per figura o misura fallita (vedi i warning
+    `figure_measure_skipped` e `mermaid_geometry_measure_failed`)."""
+    rendered = [r for r in rows if r.fmt in graph_rules.GRAPH_FORMATS and r.rendered]
+    return sum(1 for r in rendered if r.crossings is None), len(rendered)
+
+
+def _percentile_90(values: Sequence[int]) -> float:
+    if len(values) == 1:
+        return float(values[0])
+    return statistics.quantiles(values, n=10, method="inclusive")[8]
+
+
+def threshold_rows(rows: Sequence[FigureRow]) -> list[list[Any]]:
+    """Distribuzione per metrica sui grafi (Mermaid, DOT) e percentuale oltre
+    ciascuna soglia, con l'esito della regola di calibrazione."""
+    graphs = [r for r in rows if r.fmt in graph_rules.GRAPH_FORMATS]
+    out: list[list[Any]] = []
+    for label, attr, limit in THRESHOLDS:
+        pool = [r for r in graphs if attr != "chars" or r.fmt == "mermaid"]
+        values = [v for v in (getattr(r, attr) for r in pool) if isinstance(v, int)]
+        if not values:
+            out.append([label, limit, 0, "-", "-", "-", "-", "-", "-"])
+            continue
+        p90 = _percentile_90(values)
+        over = sum(1 for v in values if v > limit)
+        verdict = "alzare la soglia" if p90 > CALIBRATION_SHARE * limit else "ok"
+        out.append(
+            [
+                label,
+                limit,
+                len(values),
+                min(values),
+                statistics.median(values),
+                round(p90, 1),
+                max(values),
+                f"{100 * over / len(values):.1f} %",
+                verdict,
+            ]
+        )
+    return out
+
+
+def print_figures_report(rows: Sequence[FigureRow]) -> None:
+    print("\n## (e) Figure rese con il registro di produzione (--figures)")
+    print(
+        md_table(
+            [
+                "lezione",
+                "asset",
+                "formato",
+                "tipo",
+                "resa",
+                "nodi",
+                "archi",
+                "etichetta",
+                "titolo",
+                "righe",
+                "caratteri",
+                "incroci",
+                "difetti",
+            ],
+            [
+                [
+                    r.lesson,
+                    r.asset_id,
+                    r.fmt,
+                    r.kind,
+                    "si" if r.rendered else "no",
+                    r.nodes,
+                    r.edges,
+                    r.label_chars,
+                    r.title_chars,
+                    r.lines,
+                    r.chars,
+                    r.crossings,
+                    "; ".join(r.defects) or "-",
+                ]
+                for r in rows
+            ],
+        )
+    )
+    print(
+        "\n## (e) Soglie di graph_rules sui grafi (Mermaid, DOT): regola di calibrazione "
+        f"p90 > {int(CALIBRATION_SHARE * 100)} % della soglia → alzare la soglia"
+    )
+    print(
+        md_table(
+            ["metrica", "soglia", "n", "min", "mediana", "p90", "max", "oltre soglia", "esito"],
+            threshold_rows(rows),
+        )
+    )
+    missing, rendered = unmeasured_crossings(rows)
+    print(
+        f"\nincroci non misurati: {missing} su {rendered} grafi resi "
+        "(tetto di segmenti o di lavoro per figura o misura fallita; "
+        "esclusi dalla riga «incroci»)"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -396,6 +591,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--per-occorrenza",
         action="store_true",
         help="Stampa anche ogni singola occorrenza (zona, campo, riga, colonna).",
+    )
+    parser.add_argument(
+        "--figures",
+        action="store_true",
+        help=(
+            "Rende mermaid/dot/vegalite con il registro di produzione e riporta incroci, "
+            "difetti e la percentuale oltre ciascuna soglia di graph_rules."
+        ),
     )
     return parser
 
@@ -556,7 +759,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             ],
         )
     )
-    print("\n## (d) Struttura delle figure (incroci: NON implementato)")
+    print("\n## (d) Struttura delle figure (incroci: solo con --figures)")
     print(
         md_table(
             [
@@ -574,6 +777,20 @@ def main(argv: Sequence[str] | None = None) -> int:
             d_rows,
         )
     )
+    if args.figures:
+        frows = figure_rows(rows)
+        sources = {
+            (row.get("lesson_code") or str(row.get("id", ""))[:8], str(a.get("asset_id") or "")): (
+                a.get("content")
+                if isinstance(a.get("content"), str)
+                else json.dumps(a.get("content"), ensure_ascii=False)
+            )
+            for row in rows
+            for a in ((row.get("content_raw") or {}).get("visual_assets") or [])
+            if isinstance(a, dict)
+        }
+        render_figures(frows, sources)
+        print_figures_report(frows)
     return 0
 
 

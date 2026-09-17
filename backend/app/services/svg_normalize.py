@@ -44,6 +44,7 @@ CSS minima: attributi e `style` dei `<text>`/`<tspan>`, regole del
 from __future__ import annotations
 
 import base64
+import contextlib
 import html
 import re
 import statistics
@@ -359,6 +360,17 @@ class _Node:
     has_text: bool = False
 
 
+def _unescape(text: str) -> str:
+    """`html.unescape` che non solleva (gemello di quello di `graph_rules`):
+    `&#` seguito da più cifre del limite di conversione degli interi
+    (4.300) dà `ValueError`, e il testo resta com'è. Graphviz ricopia il
+    riferimento tale e quale in `id` e `class`: la lettura non deve
+    costare la figura, né le altre del batch."""
+    with contextlib.suppress(ValueError):
+        return html.unescape(text)
+    return text
+
+
 def _tag_attrs(raw: str) -> dict[str, str]:
     """Attributi di un tag in scansione sequenziale (un `font-size=` dentro
     il valore di un `aria-label` resta valore), nomi in minuscolo, valori
@@ -366,7 +378,7 @@ def _tag_attrs(raw: str) -> dict[str, str]:
     out: dict[str, str] = {}
     for m in _ATTR_RE.finditer(raw):
         value = m.group(2) if m.group(2) is not None else (m.group(3) or "")
-        out.setdefault(m.group(1).lower(), html.unescape(value))
+        out.setdefault(m.group(1).lower(), _unescape(value))
     return out
 
 
@@ -624,7 +636,7 @@ def svg_base_font_px(svg: str) -> SvgMetrics:
         pos = m.end()
         text = m.group("text") if m.group("cdata") is None else m.group("cdata")
         if text is not None:
-            if stack and stack[-1].tag in ("text", "tspan") and html.unescape(text).strip():
+            if stack and stack[-1].tag in ("text", "tspan") and _unescape(text).strip():
                 stack[-1].has_text = True
             continue
         name = m.group("name")

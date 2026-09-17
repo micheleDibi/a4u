@@ -532,8 +532,13 @@ content)` diversi da quelli già in DB sono validati dal renderer del
 formato (`validate(deep=False)`: gate statico D8 per Mermaid, schema +
 regole D5 per Vega-Lite, gate statico per DOT, Pydantic + AST per
 `function`); un edit del testo non rivalida diagrammi legacy già salvati.
+`key_takeaways` (al massimo 12 voci inviate) e `references` presenti nel
+body sono normalizzati dallo schema: trim, voci vuote scartate, dedup
+case-insensitive con ordine conservato, references a parità di `source`;
+`[]` azzera la lista, un campo assente non la tocca. Una `citation` vuota
+dà `422 string_too_short`.
 
-200 → `CourseOut`.
+200 → `CourseOut` (con le liste normalizzate).
 
 Errori:
 - `409 lesson_content_not_editable` se status non in `ready/approved`.

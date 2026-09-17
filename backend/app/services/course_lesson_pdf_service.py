@@ -101,6 +101,7 @@ from app.models.user import User
 from app.services import figure_render_service, remote_storage, slide_geometry
 from app.services import mermaid_prerender as _mermaid_prerender
 from app.services.asset_ref_normalize import cite_asset_refs, normalize_asset_refs
+from app.services.figure_compute.graph_rules import GRAPH_FORMATS
 from app.services.figure_markup import (
     FigureBox,
     FigureVariant,
@@ -801,6 +802,8 @@ def _figure_width_style(
         return ""
     band = READABILITY_BANDS_PT[variant]
     text_count = fig.metrics.text_count if fig.metrics is not None else 0
+    crossings = fig.metrics.crossings if fig.metrics is not None else None
+    defects = fig.metrics.defects if fig.metrics is not None else ()
     fields: dict[str, Any] = {
         "lesson_code": lesson_code,
         "asset_id": asset_id,
@@ -813,6 +816,7 @@ def _figure_width_style(
         "in_band": fit.in_band,
         "font_source": source,
         "text_count": text_count,
+        "crossings": crossings,
     }
     log.info("figure_fit", **fields)
     if source == "constant" or (expect_measured and source != "measured"):
@@ -832,6 +836,8 @@ def _figure_width_style(
                 in_band=fit.in_band,
                 font_source=source,
                 text_count=text_count,
+                crossings=crossings,
+                defects=defects,
             )
         )
     return f' style="width:{format_mm(fit.width_mm)}mm"'
@@ -2121,8 +2127,11 @@ def _log_figure_fit_report(
     """Summary per lezione del fit delle figure (D10): totale, in banda,
     l'elenco delle figure fuori banda con corpo e provenienza del font e
     quello delle figure calcolate sulla costante di formato, il cui
-    `in_band` è un'ipotesi (input del gate editoriale D13). Condiviso da
-    dispensa e slide."""
+    `in_band` è un'ipotesi (input del gate editoriale D13). Geometria (D14):
+    `geometry_defects` elenca `(asset_id, formato, incroci, difetti)` delle
+    figure con difetti di lettura o incroci oltre soglia, `measure_skipped`
+    i grafi (`GRAPH_FORMATS`: Mermaid, DOT) senza misura degli incroci
+    (tetto di segmenti o misura fallita). Condiviso da dispensa e slide."""
     out_of_band = [
         (e.asset_id, e.fmt, e.text_pt, e.font_source) for e in fit_report if not e.in_band
     ]
@@ -2133,6 +2142,14 @@ def _log_figure_fit_report(
         in_band=len(fit_report) - len(out_of_band),
         out_of_band=out_of_band,
         font_fallback=[(e.asset_id, e.fmt) for e in fit_report if e.font_source == "constant"],
+        geometry_defects=[
+            (e.asset_id, e.fmt, e.crossings, list(e.defects)) for e in fit_report if e.defects
+        ],
+        measure_skipped=[
+            (e.asset_id, e.fmt)
+            for e in fit_report
+            if e.crossings is None and e.fmt in GRAPH_FORMATS
+        ],
     )
 
 
