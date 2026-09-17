@@ -5,6 +5,7 @@ import type {
   LessonSpeechSegment,
   LessonSlidesRaw,
 } from "@/api/courses";
+import { InlineMath } from "@/components/shared/InlineMath";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 
@@ -24,6 +25,10 @@ interface Props {
  * segmenti precedenti — non ci affidiamo al campo
  * `slide_total_duration_seconds` salvato perché il rendering deve
  * mostrare il tempo cumulativo di ciascun segmento, non il totale slide.
+ *
+ * Titolo della slide, testo e note passano da `InlineMath` (solo testo e
+ * formule, come `render_markdown_inline` nel PDF del discorso e come la
+ * vista delle slide): un `$..$` nel titolo non resta LaTeX grezzo.
  */
 export function LessonSpeechView({ speech, slides }: Props) {
   const { t } = useTranslation();
@@ -93,7 +98,7 @@ export function LessonSpeechView({ speech, slides }: Props) {
                           {slideMeta.number}
                         </Badge>
                         <h4 className="text-base font-semibold">
-                          {slideMeta.title}
+                          <InlineMath text={slideMeta.title} />
                         </h4>
                       </>
                     ) : (
@@ -166,13 +171,15 @@ function SegmentBlock({
           })}
         </span>
       </div>
-      <p className="text-sm leading-relaxed">{segment.text}</p>
+      <p className="text-sm leading-relaxed">
+        <InlineMath text={segment.text} />
+      </p>
       {segment.delivery_notes && (
         <p className="text-xs italic text-muted-foreground">
           <span className="font-medium not-italic">
             {t("courses.lessonsSpeech.render.deliveryNotes")}:
           </span>{" "}
-          {segment.delivery_notes}
+          <InlineMath text={segment.delivery_notes} />
         </p>
       )}
     </div>

@@ -837,6 +837,9 @@ Lista verticale **raggruppata per slide** (mirror del PDF). Helper `formatMmSs(s
   - testo segmento (paragrafo con leading-relaxed)
   - delivery notes in italic (se non vuote)
 
+Titolo di slide, testo e note sono resi con `InlineMath` (solo testo e
+formule), in parità con il PDF del discorso e con `LessonSlidesView`.
+
 ### `LessonSpeechEditDialog.tsx`
 
 Editor del `speech_raw`. Lista slide (lookup da `slides_raw`) con segmenti raggruppati. Per ciascun segmento:

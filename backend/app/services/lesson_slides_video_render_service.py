@@ -38,6 +38,7 @@ from app.models.course_lesson import CourseLesson
 from app.models.slide_template import SlideTemplate
 from app.services import course_lesson_pdf_service as base_pdf
 from app.services import course_lesson_slides_pdf_service as slides_pdf
+from app.services.mermaid_prerender import block_external_requests, media_url_prefixes
 
 log = get_logger("app.lesson_slides_video_render")
 
@@ -86,6 +87,14 @@ _VIDEO_OVERRIDE_CSS = f"""
 """
 
 
+def _media_prefixes() -> tuple[str, ...]:
+    """Origini in più per la guardia di rete dei frame: l'host pubblico dei
+    media quando lo storage è remoto (`mermaid_prerender.media_url_prefixes`,
+    la stessa regola del fetcher di WeasyPrint dei tre PDF). Il backend
+    locale (`public_base_url`) non è mai ammesso."""
+    return media_url_prefixes()
+
+
 async def _screenshot_slides_async(html: str, output_dir: Path) -> list[Path]:
     """Playwright headless: viewport 1980×1400, screenshot per ogni .slide.
 
@@ -93,6 +102,18 @@ async def _screenshot_slides_async(html: str, output_dir: Path) -> list[Path]:
     landscape). Il viewport 1980×1400 ha la stessa proporzione: la
     slide viene scalata per riempirlo esattamente, senza bande bianche
     e senza distorsione. Contenuto identico al PDF.
+
+    La pagina carica HTML costruito da contenuti d'autore, e non tutto è
+    testo escapato: `asset_html` porta il markdown di esempi, equazioni e
+    tabelle (`render_markdown`, HTML ammesso come nella dispensa). Il
+    contesto gira quindi con JavaScript spento (`java_script_enabled=False`):
+    `<script>` e gestori `on*` d'autore non partono, mentre `page.evaluate`
+    di Playwright (attesa dei font, cambio di `display`) resta disponibile.
+    Prima di caricarlo, inoltre, ogni richiesta passa dalla guardia di rete
+    del pre-render (`block_external_requests`: CDN, data/blob/about e l'host
+    dei media, `_media_prefixes`; WebSocket chiusi), come le pagine di
+    Mermaid e MathJax. Il template non ha script propri: figure e formule
+    arrivano già rese.
     """
     from playwright.async_api import async_playwright  # type: ignore
 
@@ -105,8 +126,10 @@ async def _screenshot_slides_async(html: str, output_dir: Path) -> list[Path]:
             ctx = await browser.new_context(
                 viewport={"width": VIDEO_WIDTH, "height": VIDEO_HEIGHT},
                 device_scale_factor=1,
+                java_script_enabled=False,
             )
             page = await ctx.new_page()
+            await block_external_requests(page, allowed_prefixes=_media_prefixes())
             await page.set_content(html, wait_until="networkidle")
             # Aspetta che i font del template (Inter, ecc.) siano
             # caricati prima dello screenshot.

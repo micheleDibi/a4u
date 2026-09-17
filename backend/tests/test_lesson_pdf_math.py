@@ -988,6 +988,7 @@ def test_slides_collect_captions_and_pass_math_map_to_figures() -> None:
         "tables": [],
         "examples": [],
         "visual_assets": [],
+        "inline_texts": [],
     }
     rec = RecordingMap()
     html = slides_pdf._build_slide_asset_html(

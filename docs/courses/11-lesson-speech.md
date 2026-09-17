@@ -125,7 +125,34 @@ Implementate in `course_lesson_speech_service.materialize_lesson_speech`:
    - **Abbreviazioni proibite** (case-insensitive con word boundary): `es.`, `etc.`, `ca.`, `p.es.`, `i.e.`, `e.g.`
    - **Pattern LaTeX**: `\frac`, `\sum`, `\int`, `\cdot`, `\alpha`, `\beta`, `\gamma`, `\delta`, `\sqrt`, `\infty`, `\partial`, `\nabla`, `\leq`, `\geq`, `\approx`, ecc. (lista completa nel sorgente)
    
+   Prima della validazione `sanitize_tts_text` toglie comandi LaTeX e
+   caratteri proibiti (le abbreviazioni restano hard error). **Stessa
+   politica per `delivery_notes`** (WP4, L9): note sanificate e validate
+   come il testo; una violazione residua (un'abbreviazione) è
+   `lesson_speech_tts_unsafe` con `(delivery_notes)` nel messaggio. Il
+   worker la tratta come errore recuperabile, quindi una sola «ca.» nelle
+   note costa una rigenerazione completa: per questo la regola è scritta
+   anche nel prompt (`REGOLE — VINCOLI DI VALIDAZIONE`: `delivery_notes`
+   rispetta le stesse regole TTS-friendly di `text`, con «es.», «etc.»,
+   «ca.» citate) e nella `description` di `delivery_notes` dello schema
+   strict («Stesse regole di `text`: niente abbreviazioni, niente
+   caratteri speciali, niente markdown, niente formule LaTeX»).
    Hard error con elenco delle violazioni e il `segment_id` colpito.
+
+**Limite dichiarato (C12): `segment_id` ripetuti nella mappa.** La
+validazione controlla l'unicità di `speech_segments[].segment_id`, non
+quella dei `segment_ids` di una voce di `slide_to_segments_map`:
+`listed_segment_ids` è un insieme (l'orfano non vede il doppione) e la
+somma per slide conta ogni occorrenza, quindi una voce `["SEG1", "SEG1"]`
+con `slide_total_duration_seconds` già raddoppiato passa, sul percorso AI
+come su quello CRUD (`course_lesson_speech_crud`, stessa struttura). Il PDF
+del discorso rende il segmento due volte e la timeline avanza due volte
+(`format_timeline`). Non si corregge in `format_timeline`: il totale per
+slide stampato nell'intestazione non tornerebbe più con i segmenti
+mostrati; sul percorso AI `_normalize_speech_durations` può anche
+assorbire lo scarto del totale. Il comportamento è pinnato da
+`test_repeated_segment_ids_in_the_map_are_a_declared_limit`
+(`test_pdf_templates_autoescape.py`).
 
 ## OpenAI service — `openai_lesson_speech_service.py`
 
@@ -216,7 +243,32 @@ caller lascia `estimated_total_word_count` obsoleto (lo derivia da
 `text` dei segmenti e applica wpm).
 
 `PATCH /lessons/{id}/speech` setta `speech_modified_at = now()` per
-stale-detection del PDF discorso downstream.
+stale-detection del PDF discorso downstream. Il CRUD valida la
+TTS-safety del solo `text`: le `delivery_notes` scritte a mano non sono
+sanificate (nel PDF passano comunque dall'escape, vedi sotto).
+
+## PDF del discorso — `course_lesson_speech_pdf_service.py` (WP4)
+
+- **Autoescape.** `select_autoescape(enabled_extensions=("html", "xml",
+  "j2"))`, come la dispensa (prima `["html", "xml"]` non riconosceva
+  `.j2`): titoli, docente, codice e `slide_id` escono escapati.
+- **Campi inline.** `seg.text`, `seg.delivery_notes` e il titolo di slide
+  dell'intestazione passano da `render_markdown_inline` (testo escapato
+  più formule SVG, niente markdown ricco). `materialize_lesson_speech_pdf`
+  pre-renderizza le formule con MathJax (`_prerender_math_for_speech`: il
+  collector della dispensa su `inline_texts` = gli stessi campi della
+  timeline) e chiude con `_log_math_fallbacks`; prima il discorso non
+  aveva MathJax e il LaTeX arrivava grezzo al PDF. Il LaTeX senza
+  delimitatori resta testo.
+- **Piè di pagina.** `@bottom-center` è una stringa CSS: il servizio
+  passa `footer_title_css` (`course.title · lesson.title · ` con
+  `css_string`: backslash davanti a `"`, `'` e `\`, `<`/`>` come escape
+  esadecimali, a capo come spazio). Prima un `"` nel titolo invalidava la
+  regola e il piè di pagina spariva; con il solo autoescape sarebbe
+  rimasto `&#34;` letterale.
+- **Template.** Colori, numeri e page-size `|safe`; `font_family` e
+  l'URL dello sfondo con `|css_string`; i loghi in `src` all'escape HTML
+  dell'attributo.
 
 ## Frontend — `CourseLessonSpeechView.tsx`
 
@@ -247,6 +299,18 @@ ciascuna entry di `slide_to_segments_map`:
   - Durata segmento `Ns`
   - Testo segmento (paragrafo, font serif per leggibilità)
   - Note al docente (italic, accent, se non vuote)
+
+Titolo di slide, testo e note passano da `InlineMath` (solo testo e
+formule KaTeX, niente markdown ricco), come `render_markdown_inline` nel
+PDF del discorso e come `LessonSlidesView`: un titolo di slide con
+`$\frac{p}{q}$` non compare più come LaTeX grezzo. Il testo non contiene
+formule (la TTS-safety toglie `$` e `\`); le note scritte a mano (il CRUD
+valida solo `text`) e i titoli di slide possono contenerne.
+
+Come il PDF, la vista rende la mappa così com'è: un `segment_id` ripetuto
+in una voce compare due volte (limite C12, sopra), ma con la stessa
+posizione nella timeline (`cumulativeStart` conserva l'ultima), mentre il
+PDF la fa avanzare a ogni occorrenza.
 
 Helper `formatMmSs(seconds: number): string` per conversione `123 → "02:03"`.
 

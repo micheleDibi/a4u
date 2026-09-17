@@ -627,7 +627,7 @@ evitare overflow di pagina. Lo stesso pattern è replicato in
 
 ```python
 def _render_with_weasyprint_sync(html, *, base_url=None) -> bytes:
-    return WeasyHTML(string=html, base_url=base_url).write_pdf()
+    return HTML(string=html, base_url=base_url, url_fetcher=_pdf_url_fetcher()).write_pdf()
 
 
 async def generate_pdf_bytes(*, html, base_url=None) -> bytes:
@@ -642,6 +642,24 @@ JS-dependent è già stata espansa server-side prima di arrivare qui
 inline). Niente `window.__renderingDone`, niente CDN da attendere in
 fase di rendering finale (le CDN MathJax/Mermaid sono usate solo nello
 step di pre-render Playwright a monte).
+
+**Fetcher con allowlist.** WeasyPrint legge le risorse (immagini, anche
+quelle dentro un SVG) da `_pdf_url_fetcher`, uno per render, uguale per
+dispensa, slide e discorso: passano le data URL e, solo con lo storage
+remoto (`ovh_ftp`/`ovh_sftp`), l'host pubblico dei media
+(`mermaid_prerender.media_url_prefixes`, la stessa origine in più dei
+frame video); ogni altra risorsa è rifiutata (`PdfResourceBlockedError`,
+`log.warning("pdf_resource_blocked", url)`) e WeasyPrint la salta come
+un'immagine mancante. Il motivo è il markdown d'autore, che ammette HTML
+(titoli di sezione, prosa, esempi, tabelle), e l'asset `image`, il cui
+`content` può essere un URL assoluto: con il fetcher di default un
+`<img src="http://…">` faceva partire dal server una GET verso l'host
+scelto dall'autore (rete interna compresa) e un `file:///…` leggeva il
+filesystem. Figure, formule, loghi e sfondo sono data URL, quindi il
+flusso normale non cambia; è la stessa politica della pagina
+dell'applicazione (`img-src` della CSP). L'HTML crudo nei titoli di
+sezione resta una scelta di progetto (`## {title}` passa dal markdown con
+HTML ammesso): WeasyPrint non esegue script e il fetcher non esce.
 
 > **Windows local-dev**: WeasyPrint richiede GTK3 runtime. Installalo
 > una volta sola con `winget install tschoonj.GTKForWindows`. Su Linux
@@ -714,6 +732,52 @@ LEZIONE:
   errore. Solo dopo `auto_retry_max` esauriti `→ failed` (terminale).
 
 Registrato in `app/main.py` lifespan.
+
+### Autoescape dei tre template (WP4, D19)
+
+I tre env Jinja dei PDF (`course_lesson_pdf_service`,
+`course_lesson_slides_pdf_service`, `course_lesson_speech_pdf_service`)
+usano `select_autoescape(enabled_extensions=("html", "xml", "j2"))`: i
+template si chiamano `lesson_*.html.j2` e la vecchia
+`select_autoescape(["html", "xml"])` di slide e discorso non riconosceva
+`.j2` (autoescape spento, campi d'autore crudi). Regole per chi tocca i
+template:
+
+- **Campi d'autore** (titoli, docente, codice, `slide_id`, prosa):
+  escapati dall'autoescape; quelli che portano formule arrivano già come
+  `Markup` da `render_markdown_inline` (dispensa: punti chiave e
+  citazioni; slide: titolo, prosa, bullet; discorso: testo, note, titolo
+  di slide). Mai `|safe` su un campo d'autore.
+- **HTML già costruito**: `{{ body_html | safe }}` (dispensa) e
+  `{{ asset_html|safe }}` (slide), invariati; il box della figura
+  (`style="--figure-w: …; --figure-h: …"` sul `<figure>`) esce intatto.
+  Non è tutto testo escapato: didascalie, attributi e URL sì (anche lo
+  `src` di un asset `image`, che dal resolver torna così com'è quando è un
+  URL assoluto), ma il markdown di esempi, spiegazioni delle equazioni,
+  enunciati e celle delle tabelle ammette HTML come la prosa della
+  dispensa. Lo contengono il fetcher con allowlist (sopra) e, nei frame
+  video, il JavaScript spento (12-lesson-video).
+- **`tpl.*` nel CSS**: colori (hex validati da `schemas/template.py`),
+  numeri, page-size → `|safe` nei template di slide e discorso (nella
+  dispensa l'escape è l'identità su questi valori); `font_family` e l'URL
+  dentro `url("…")` → filtro `css_string` in tutti e tre, perché dentro
+  `<style>` le entità HTML non sono decodificate (prima un URL con `&`
+  diventava `&amp;` nella dispensa, latente: in produzione loghi e sfondo
+  sono data URL).
+- **`css_string`** (`course_lesson_pdf_service.css_string`, registrato
+  come filtro sui tre env): backslash davanti a `"`, `'` e `\`, `<` e `>`
+  come escape esadecimali (`\3c `: un `</style>` nel testo non chiude
+  l'elemento), CR, LF e FF come spazio, NUL rimosso; ritorna `Markup`. Lo
+  usa anche il piè di pagina del discorso (`footer_title_css`).
+- **Loghi in `src`**: restano all'escape HTML dell'attributo, la codifica
+  corretta (il parser la toglie: WeasyPrint chiede l'URL originale, `&`
+  compreso); `|safe` lì aprirebbe l'attributo a un `"`.
+
+`tests/test_pdf_templates_autoescape.py` pinna i tre env, rende le tre
+superfici con un template che ha URL con query e font con virgolette e
+controlla l'HTML, gli URL chiesti a WeasyPrint e la famiglia calcolata;
+con un server HTTP locale verifica anche il fetcher (nessuna GET verso un
+host d'autore, `file:` rifiutato, data URL e host dei media letti).
 
 ### Template default fallback
 
@@ -1051,8 +1115,15 @@ fonde gli asset di Fase 3 e i `new_assets` di Fase 4 e delega a
 - Math: riusa il pre-render MathJax di `course_lesson_pdf_service` via
   `_prerender_math_for_slides`, che fonde le equazioni/tabelle/esempi
   delle Dispense (`content_raw`) con i nuovi asset di Fase 4
-  (`slides_raw.new_equations|new_tables|new_examples`) e delega a
+  (`slides_raw.new_equations|new_tables|new_examples`) e, da WP4, con
+  titolo, prosa e bullet delle slide (`inline_texts`), e delega a
   `base_pdf._prerender_math_for_lesson`. Fallback MathML identico.
+- Prosa e riferimenti (WP4): titolo, prosa e bullet passano da
+  `render_markdown_inline` con autoescape acceso; le formule della prosa
+  entrano nel budget della figura (`_prose_for_budget` →
+  `slide_geometry.prose_extent`); un asset citato più volte dalla stessa
+  slide è reso una volta con `slide_duplicate_asset_ref` (dettagli in
+  [10 — Lesson slides](10-lesson-slides.md)).
 - Copertina: `lesson_label` = `base_pdf._format_lesson_code_label(...)`
   ("Modulo X - lezione Y" localizzato), badge `cfu_label`
   (`CFU`/`ECTS`), `course.cfu`, `teacher` (`User.full_name`
@@ -1149,10 +1220,17 @@ suffisso `_speech.pdf`.
 
 ### Stack
 
-Solo **WeasyPrint** + **Jinja2** — niente pre-render di figure (il
-discorso è prosa pura, niente asset visivi). Template `pdf_templates`
-(stesso del PDF lezione testo, perché il discorso è anch'esso testo
-single-column block-flow A4 portrait).
+**WeasyPrint** + **Jinja2**, niente pre-render di figure (il discorso è
+prosa pura, niente asset visivi) ma, da WP4, il pre-render MathJax delle
+formule di testo, note e titoli di slide (`_prerender_math_for_speech`,
+collector della dispensa su `inline_texts`, `_log_math_fallbacks` dopo
+il render): i tre campi passano da `render_markdown_inline`. Template
+`pdf_templates` (stesso del PDF lezione testo, perché il discorso è
+anch'esso testo single-column block-flow A4 portrait). Il piè di pagina
+(`@bottom-center`, stringa CSS) riceve `footer_title_css`, i titoli con
+`css_string`: un `"` nel titolo non lo cancella più. Un `segment_id`
+ripetuto in una voce della mappa è reso due volte (limite dichiarato C12,
+[11 — Lesson speech](11-lesson-speech.md)).
 
 ### Layout per-slide grouping
 

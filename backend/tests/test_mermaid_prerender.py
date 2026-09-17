@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 import re
 import socket
@@ -97,24 +98,115 @@ def test_prerender_network_isolation_allows_only_the_cdn(url: str, allowed: bool
 
 
 def test_all_headless_pages_install_the_network_guard():
-    """Il pre-render Mermaid, il validatore e il pre-render MathJax
-    (`course_lesson_pdf_service`) instradano le richieste PRIMA di
-    caricare il contenuto della pagina."""
+    """Il pre-render Mermaid, il validatore, il pre-render MathJax
+    (`course_lesson_pdf_service`) e i frame video delle slide
+    (`lesson_slides_video_render_service`, WP4) instradano le richieste
+    PRIMA di caricare il contenuto della pagina; i frame video, che
+    caricano HTML d'autore, girano con JavaScript spento."""
     pytest.importorskip("weasyprint")
     from app.services import course_lesson_pdf_service as pdf
+    from app.services import lesson_slides_video_render_service as video
 
     for source in (
         Path(mp.__file__).read_text(encoding="utf-8"),
         Path(avs.__file__).read_text(encoding="utf-8"),
         Path(pdf.__file__).read_text(encoding="utf-8"),
+        Path(video.__file__).read_text(encoding="utf-8"),
     ):
-        guard = source.index("block_external_requests(page)")
-        assert guard < source.index("await page.set_content(")
+        guard = source.index("block_external_requests(page")
+        assert guard < source.index("await page.set_content("), source[:80]
+    video_source = Path(video.__file__).read_text(encoding="utf-8")
+    assert video_source.count("await page.set_content(") == 1
+    assert "block_external_requests(page, allowed_prefixes=_media_prefixes())" in video_source
+    # I frame video caricano HTML d'autore: contesto con JavaScript spento.
+    assert video_source.count("java_script_enabled=False,") == 1
+    assert "java_script_enabled=True" not in video_source
+    # La guardia instrada anche i WebSocket e ricarica la pagina, perché
+    # quell'instradamento vale per i documenti caricati dopo.
+    guard_source = inspect.getsource(mp.block_external_requests)
+    ws_route = guard_source.index("await page.route_web_socket(")
+    assert guard_source.index('await page.route("**/*"') < ws_route
+    assert ws_route < guard_source.index('await page.goto("about:blank")')
     # Se un giorno le pagine cambiassero CDN, la guardia le bloccherebbe:
     # ogni URL che caricano deve stare sotto il prefisso ammesso.
     for html in (mp._MERMAID_RENDERER_HTML, avs._VALIDATOR_HTML, pdf._MATHJAX_RENDERER_HTML):
         for url in re.findall(r"https?://[^'\"\s]+", html):
             assert mp.allows_prerender_url(url), url
+
+
+def test_extra_prefixes_extend_the_allowlist_only_for_their_origin():
+    """`allowed_prefixes` (frame video) aggiunge solo l'origine indicata, con la
+    barra finale; senza il parametro la regola è quella di prima."""
+    extra = ("https://media.example/m/",)
+    logo = "https://media.example/m/uploads/logo.png"
+    assert mp.allows_prerender_url(logo, allowed_prefixes=extra)
+    assert mp.allows_prerender_url("HTTPS://MEDIA.EXAMPLE/m/x.png", allowed_prefixes=extra)
+    for blocked in (
+        "https://media.example/other/x.png",
+        "https://media.example.evil/m/x.png",
+        "http://127.0.0.1:8000/uploads/x.png",
+        "file:///etc/hosts",
+    ):
+        assert not mp.allows_prerender_url(blocked, allowed_prefixes=extra), blocked
+    assert not mp.allows_prerender_url("https://media.example/m/x.png")
+    assert not mp.allows_prerender_url("http://127.0.0.1/x", allowed_prefixes=("", "  "))
+    assert mp.allows_prerender_url("https://cdn.jsdelivr.net/npm/x.js", allowed_prefixes=extra)
+
+
+def test_video_frames_allow_only_the_remote_media_host(monkeypatch: pytest.MonkeyPatch):
+    """L'origine in più dei frame video è l'host pubblico dei media, solo
+    con lo storage remoto e mai il backend locale (`public_base_url`)."""
+    from app.services import lesson_slides_video_render_service as video
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "public_base_url", "http://127.0.0.1:8000")
+    monkeypatch.setattr(settings, "ovh_public_base_url", "https://media.example/m/")
+    monkeypatch.setattr(settings, "storage_backend", "local")
+    assert video._media_prefixes() == ()
+    for backend in ("ovh_ftp", "ovh_sftp"):
+        monkeypatch.setattr(settings, "storage_backend", backend)
+        assert video._media_prefixes() == ("https://media.example/m/",)
+    for base in (None, "", "ftp://media.example", "media.example"):
+        monkeypatch.setattr(settings, "ovh_public_base_url", base)
+        assert video._media_prefixes() == ()
+
+
+def _chromium_or_skip() -> None:
+    sync_api = pytest.importorskip("playwright.sync_api")
+    with sync_api.sync_playwright() as p:
+        try:
+            browser = p.chromium.launch(args=["--no-sandbox"])
+        except Exception as exc:  # launch di Chromium: verifica locale, non gate CI
+            pytest.skip(f"Chromium non disponibile: {exc!r}"[:300])
+        browser.close()
+
+
+def test_video_frames_block_author_urls_before_loading(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """Frame video reali (Chromium): un `<img>` verso un host qualunque
+    dentro una slide è annullato dalla guardia prima della GET; l'host dei
+    media ammesso passa (e fallisce per conto suo, senza blocco)."""
+    from app.services import lesson_slides_video_render_service as video
+
+    _chromium_or_skip()
+    probe = "http://127.0.0.1:9/probe.png"
+    html = (
+        "<html><head></head><body>"
+        f'<div class="slide" style="width:297mm;height:210mm"><img src="{probe}"></div>'
+        "</body></html>"
+    )
+    monkeypatch.setattr(video, "_media_prefixes", lambda: ())
+    with structlog.testing.capture_logs() as logs:
+        frames = video._screenshot_slides_sync(html, tmp_path / "a")
+    assert len(frames) == 1
+    blocked = [e["url"] for e in logs if e["event"] == "prerender_request_blocked"]
+    assert blocked == [probe]
+    monkeypatch.setattr(video, "_media_prefixes", lambda: ("http://127.0.0.1:9/",))
+    with structlog.testing.capture_logs() as logs:
+        frames = video._screenshot_slides_sync(html, tmp_path / "b")
+    assert len(frames) == 1
+    assert not [e for e in logs if e["event"] == "prerender_request_blocked"]
 
 
 def test_build_renderer_html_accepts_explicit_version():

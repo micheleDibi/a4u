@@ -46,7 +46,11 @@ import { RichTextEditor } from "@/components/shared/RichTextEditor";
 import { TableEditor } from "@/components/shared/TableEditor";
 import { VisualAssetEditor } from "@/components/shared/VisualAssetEditor";
 import { isLegacyFormat } from "@/lib/figureFormats";
-import { listAvailableAssets } from "@/lib/slides";
+import {
+  assetRefKey,
+  listAvailableAssets,
+  uniqueAssetRefs,
+} from "@/lib/slides";
 
 const SLIDE_TYPES: SlideType[] = [
   "title",
@@ -220,12 +224,16 @@ export function LessonSlidesEditDialog({
     });
   };
 
+  // Confronto per `assetRefKey` (maiuscole e spazi ai bordi non contano,
+  // come nel CRUD e nel PDF): togliere un asset toglie ogni sua grafia,
+  // aggiungerlo non lo duplica, e la lista salvata resta senza ripetizioni.
   const toggleAssetRef = (slideIdx: number, assetId: string) => {
     const current = slides[slideIdx].references_assets;
-    const next = current.includes(assetId)
-      ? current.filter((a) => a !== assetId)
+    const key = assetRefKey(assetId);
+    const next = current.some((a) => assetRefKey(a) === key)
+      ? current.filter((a) => assetRefKey(a) !== key)
       : [...current, assetId];
-    updateSlide(slideIdx, { references_assets: next });
+    updateSlide(slideIdx, { references_assets: uniqueAssetRefs(next) });
   };
 
   const nextNewAssetId = () => {
@@ -866,7 +874,9 @@ function SlideEditCard({
                 <p className="text-xs text-muted-foreground">—</p>
               ) : (
                 availableAssets.map((opt) => {
-                  const checked = slide.references_assets.includes(opt.id);
+                  const checked = slide.references_assets.some(
+                    (a) => assetRefKey(a) === assetRefKey(opt.id),
+                  );
                   return (
                     <label
                       key={opt.id}

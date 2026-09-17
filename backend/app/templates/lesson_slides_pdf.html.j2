@@ -8,9 +8,9 @@
     *, *::before, *::after { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; }
     body {
-      font-family: "{{ tpl.font_family }}", "Inter", "Helvetica",
+      font-family: "{{ tpl.font_family|css_string }}", "Inter", "Helvetica",
                     "Arial", "Noto Sans CJK JP", "Noto Sans", sans-serif;
-      color: {{ tpl.text_color }};
+      color: {{ tpl.text_color|safe }};
     }
 
     /* Pagina: full-bleed A4 landscape (297×210 mm). Nessun margine
@@ -37,11 +37,11 @@
     .slide-bg {
       position: absolute;
       top: 0; left: 0; right: 0; bottom: 0;
-      background-image: url("{{ tpl.background_image_url }}");
+      background-image: url("{{ tpl.background_image_url|css_string }}");
       background-size: cover;
       background-position: center center;
       background-repeat: no-repeat;
-      opacity: {{ ((tpl.background_opacity_pct or 100) / 100.0) | round(3) }};
+      opacity: {{ ((tpl.background_opacity_pct or 100) / 100.0) | round(3) | safe }};
       z-index: 0;
     }
     {% else %}
@@ -51,8 +51,8 @@
       background:
         linear-gradient(135deg,
           #ffffff 0%,
-          {{ tpl.primary_color }}0c 55%,
-          {{ tpl.secondary_color }}18 100%);
+          {{ tpl.primary_color|safe }}0c 55%,
+          {{ tpl.secondary_color|safe }}18 100%);
       background-color: #fafafa;
       z-index: 0;
     }
@@ -115,7 +115,7 @@
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.22em;
-      color: {{ tpl.primary_color }};
+      color: {{ tpl.primary_color|safe }};
     }
     .slide-title {
       margin: 3mm 0 0;
@@ -123,7 +123,7 @@
       font-weight: 700;
       line-height: 1.05;
       letter-spacing: -0.01em;
-      color: {{ tpl.text_color }};
+      color: {{ tpl.text_color|safe }};
     }
 
     /* Prosa di accompagnamento (subtitle / descrizione discorsiva).
@@ -134,7 +134,7 @@
       line-height: 1.45;
       font-weight: 400;
       opacity: 0.78;
-      color: {{ tpl.text_color }};
+      color: {{ tpl.text_color|safe }};
       max-width: 72ch;
     }
 
@@ -152,7 +152,7 @@
       line-height: 1.35;
       margin: 0 0 2.5mm;
       opacity: 0.88;
-      color: {{ tpl.text_color }};
+      color: {{ tpl.text_color|safe }};
     }
     .slide-bullets li::before {
       content: "";
@@ -162,8 +162,8 @@
       margin-top: 1.3mm;
       border-radius: 50%;
       background: linear-gradient(135deg,
-        {{ tpl.primary_color }},
-        {{ tpl.secondary_color }});
+        {{ tpl.primary_color|safe }},
+        {{ tpl.secondary_color|safe }});
     }
 
     /* Asset: lo spazio verticale della figura è 120mm − tag − titolo
@@ -311,13 +311,13 @@
     .slide-footer .author-line {
       width: 42mm;
       height: 0.3mm;
-      background: {{ tpl.text_color }};
+      background: {{ tpl.text_color|safe }};
       opacity: 0.3;
     }
     .slide-footer .author-meta {
       margin-top: 2.5mm;
       font-size: 9pt;
-      color: {{ tpl.text_color }};
+      color: {{ tpl.text_color|safe }};
     }
     .slide-footer .author-meta .org {
       font-weight: 600;
@@ -337,7 +337,7 @@
     .slide-footer .author-credit {
       margin-top: 1mm;
       font-size: 7.5pt;
-      color: {{ tpl.text_color }};
+      color: {{ tpl.text_color|safe }};
       opacity: 0.5;
     }
     .slide-footer .page-counter {
@@ -346,14 +346,17 @@
       letter-spacing: 0.06em;
       opacity: 0.55;
       white-space: nowrap;
-      color: {{ tpl.text_color }};
+      color: {{ tpl.text_color|safe }};
     }
 
     math { font-size: 11pt; }
     /* Formule come SVG pre-renderizzato (MathJax); WeasyPrint non rende
        il MathML. Le equazioni-blocco sono già vincolate da `.slide-asset
-       svg`; qui garantiamo che il math INLINE (celle tabella, esempi)
-       resti in linea e non venga forzato a blocco centrato. */
+       svg`; qui garantiamo che il math INLINE (celle tabella, esempi,
+       titolo, prosa e bullet della slide) resti in linea e non venga
+       forzato a blocco centrato. L'altezza di riga che una formula alta
+       aggiunge alla prosa entra nel budget della figura
+       (`slide_geometry.page_figure_budget`, WP4). */
     .math-block svg { display: block; margin: 0 auto; max-width: 100%; height: auto; }
     .slide-asset .math-inline svg, .math-inline svg {
       display: inline; margin: 0; max-height: none; max-width: 100%;
@@ -363,7 +366,7 @@
        dimostrazione compatta (le slide hanno spazio verticale limitato). */
     .slide-asset figure.theorem { text-align: left; }
     .slide-asset figure.theorem .theorem-head {
-      font-weight: 700; color: {{ tpl.primary_color }}; margin-bottom: 1mm;
+      font-weight: 700; color: {{ tpl.primary_color|safe }}; margin-bottom: 1mm;
     }
     .slide-asset figure.theorem .math-block svg {
       /* Cap per singola formula dei passaggi: il blocco equazione non
@@ -381,6 +384,19 @@
     .slide-asset figure.theorem .proof-qed { text-align: right; }
   </style>
 </head>
+{#
+  Autoescape acceso (select_autoescape con «j2», come la dispensa): i campi
+  d'autore escono escapati. Titolo, prosa e bullet arrivano come Markup da
+  `render_markdown_inline` (testo escapato + formule SVG). `asset_html` è
+  HTML costruito a monte (`|safe`): didascalie, attributi e URL escapati,
+  ma il markdown di esempi, spiegazioni delle equazioni, enunciati e celle
+  delle tabelle passa da `render_markdown`, che ammette HTML come nella
+  dispensa. WeasyPrint non esegue script e legge solo data URL e l'host dei
+  media; i frame video girano con JavaScript spento. I `tpl.*` nel CSS sono
+  colori hex validati e numeri (`|safe`) o stringhe CSS (`|css_string`); i
+  loghi in `src` restano all'escape HTML, la codifica giusta per un
+  attributo.
+#}
 <body>
   {% for slide in slides %}
   <div class="slide">

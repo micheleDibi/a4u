@@ -11,7 +11,9 @@ dei moduli delle figure toccati da WP3 (`test_slide_figure_geometry`,
 `test_svg_normalize`, `test_mermaid_prerender`,
 `test_figure_render_service`, `test_lesson_pdf_figures`,
 `test_frontend_figure_layout`) sono rigenerati con
-`python3 -m pytest --collect-only -q` il 17 settembre 2026; gli altri
+`python3 -m pytest --collect-only -q` il 17 settembre 2026, come quelli
+toccati da WP4 (`test_pdf_templates_autoescape`, `test_mermaid_prerender`,
+`test_slide_figure_geometry`, `test_lesson_pdf_math`); gli altri
 moduli non sono stati reinventariati.
 
 ---
@@ -317,7 +319,7 @@ Specchio fra `figure_theme.FIGURE_I18N` e i locale `it.json`/`en.json`
 (JSON annidato appiattito): chiavi coincidenti in entrambe le direzioni;
 salta se manca `../frontend`.
 
-### `tests/test_mermaid_prerender.py` (41)
+### `tests/test_mermaid_prerender.py` (44)
 
 Mermaid 11 (WP1), offline: pin unico `settings.mermaid_cdn_version` nella
 pagina di pre-render e in quella del validatore, `htmlLabels: false`
@@ -327,14 +329,19 @@ byte-identico sulla fixture 10.9.4; la fixture 11.17.2 porta ancora
 `max-width`), `_sanitize_mermaid_code`, tipi ammessi in
 `openai_image_to_mermaid_service`, vincoli 11.x nei prompt di fix e
 conversione. La guardia di rete (`block_external_requests` prima di
-`set_content`, solo URL del CDN) è verificata sulle tre pagine headless:
-pre-render Mermaid, validatore e pre-render MathJax del PDF. Misura del
+`set_content`, solo URL del CDN) è verificata sulle quattro pagine
+headless: pre-render Mermaid, validatore, pre-render MathJax del PDF e
+frame video delle slide (WP4); `allowed_prefixes` ammette solo l'origine
+indicata (con la barra finale), i frame video solo l'host pubblico dei
+media con lo storage remoto (`_media_prefixes`, mai `public_base_url`), e
+in Chromium un `<img>` verso un host qualunque dentro una slide è
+annullato prima della GET mentre l'host ammesso passa. Misura del
 corpo dei testi (D10, Chromium e CDN): minimo per tipo sui 15 campioni
 D8, misura fallita che conserva l'SVG, e parità del ripiego statico
 (`svg_base_font_px`) con la misura su tutti i 15 tipi, pie, radar e
 sequence compresi.
 
-### `tests/test_lesson_pdf_math.py`
+### `tests/test_lesson_pdf_math.py` (102)
 
 Grammatica unica del math del PDF (B3): le quattro rule dollarmath sono
 nostre su entrambe le istanze (`_md_renderer`, `_md_inline_renderer`),
@@ -348,8 +355,9 @@ modalità `block` e `inline`), rule `math_bsdelim` su fence, code span,
 citazioni `\[1\]`, tag `\[FIG:x\]` e link, nessun pre-processing testuale
 (L11 sul corpo assemblato), `render_markdown_inline` == `markupsafe.escape`
 senza math, campi inline con math ed escape (D9), esempio con fence e riga
-vuota reiniettato come UN html block, `_math_content_for_slides`, pin
-`settings.mathjax_cdn_version` e guardia di rete della pagina MathJax.
+vuota reiniettato come UN html block, `_math_content_for_slides` (con
+`inline_texts` da WP4), pin `settings.mathjax_cdn_version` e guardia di
+rete della pagina MathJax.
 
 ### `tests/test_mermaid_no_foreignobject.py` (20)
 
@@ -503,7 +511,7 @@ fermato dal box di 242 mm (fuori banda, mai oltre il box), testo a 9 pt
 che resta a scala 1. Controprova: la geometria di prima di D10 porta il
 flowchart v11 a 13,3 e 19,9 pt.
 
-### `tests/test_slide_figure_geometry.py` (192)
+### `tests/test_slide_figure_geometry.py` (202)
 
 Box della figura per pagina nelle slide e nei frame video (D12):
 fixture `slide_figure_box_cases.json` (budget per pagina a 3 decimali,
@@ -582,8 +590,53 @@ blocchi; didascalia lunga e coda `function` reale che abbassano il box,
 clampato; equazioni alte (attributi esterni di SVG MathJax reali:
 `aligned` di 8 righe, `pmatrix` di 20) al cap di 80 mm del ripiego
 `var(--figure-h, 80mm)` in WeasyPrint e nel frame Chromium, con la
-controprova che senza ripiego sbordano o spariscono. `importorskip` su
-weasyprint e playwright.
+controprova che senza ripiego sbordano o spariscono. Formule nella prosa
+(WP4): `prose_extent` copre l'altezza resa di titoli, prose e bullet con
+undici SVG MathJax reali (in linea alti, ripetuti su più righe, tutti in
+una frase, a blocco) per le sei famiglie, con una sovrastima limitata, e
+la controprova (senza crescita di riga o con un ex a 0,45 em) sottostima
+più di dieci casi; senza formule il campo resta una stringa e la stima è
+quella di prima; tre pagine con figura alta e formule alte nel titolo,
+nella prosa e nei bullet restano nel body in WeasyPrint e nei frame
+Chromium, mentre con il budget di prima le prime due sbordano di oltre
+5 mm. `importorskip` su weasyprint e playwright.
+
+### `tests/test_pdf_templates_autoescape.py` (42)
+
+Autoescape e campi d'autore dei tre PDF (WP4, D19): i tre env escapano
+`lesson_*.html.j2` (e il partial figura) e registrano `css_string`;
+titolo, prosa e bullet delle slide e testo, note e titolo di slide del
+discorso escono escapati, senza markdown ricco; le loro formule sono
+raccolte dal collector (`_math_content_for_slides`,
+`_math_content_for_speech`) con parità per uguaglianza e arrivano al PDF
+del discorso come SVG (testo estratto senza residui LaTeX, nessun warning
+di WeasyPrint); `materialize_lesson_speech_pdf` pre-rende con una batch e
+chiude con `_log_math_fallbacks`; su dispensa, slide e discorso con un
+template reale (URL con query, font con virgolette e backslash)
+`url("…&b=2")` è letterale, i loghi in `src` hanno l'escape
+dell'attributo, WeasyPrint chiede esattamente i tre URL originali e il
+`body` riceve la famiglia esatta; `css_string` (virgolette, backslash,
+a capo, `</style>`) contro il parser di tinycss2; piè di pagina del
+discorso con `"`, `\` e `<` nel titolo presente su ogni pagina del PDF;
+`references_assets` duplicati per maiuscole → un blocco e
+`slide_duplicate_asset_ref`; box della figura sul `<figure>` con
+l'autoescape; regola max-1-visivo del CRUD solo sulle slide toccate
+(409 `lesson_slides_multiple_visual_assets` per una seconda figura,
+tabella o nuovo asset, per una figura storica sostituita, per una slide
+nuova con due figure e per un'equazione ridichiarata come visivo con lo
+stesso id, anche senza `slides` nel payload; la slide storica con due figure resta editabile per
+titolo, equazioni ed esempi, riordino, grafie ripetute, e una storica a tre
+visivi scende a due e poi a uno), anche su una lezione salvata
+(`update_lesson_slides`, `seeded_db`); `delivery_notes` sanificate e
+validate come il testo in `materialize_lesson_speech`, con la stessa
+regola dichiarata nel prompt e nella `description` dello schema strict;
+C12 pinnato come limite dichiarato; editor e vista delle slide con
+`assetRefKey`, `uniqueAssetRefs` e `InlineMath`, vista del discorso con
+`InlineMath` su titolo di slide, testo e note (ispezione dei sorgenti);
+contenuti d'autore nei motori: URL di un asset `image` dentro `src`,
+frame video senza JavaScript d'autore, WebSocket chiusi dalla guardia di
+rete, fetcher di WeasyPrint limitato a data URL e host dei media,
+riferimenti con spazi ai bordi e visivi distinti contati come nel CRUD.
 
 ### `tests/test_frontend_figure_i18n.py` (20)
 

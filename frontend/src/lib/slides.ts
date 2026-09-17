@@ -40,50 +40,79 @@ export function resolveAsset(
   newEquations: LessonContentEquation[] = [],
   newExamples: LessonContentExample[] = [],
 ): ResolvedAsset | null {
-  // Match case-insensitive: il riferimento della slide e l'id dichiarato
-  // dell'asset sono generati dall'AI con case non sempre coerente (es.
-  // asset `TAB_x` referenziato come `tab_x`).
-  const target = (assetId || "").toLowerCase();
+  // Confronto per `assetRefKey` (maiuscole e spazi ai bordi non contano),
+  // come `_resolve_asset_for_slide` nel PDF: il riferimento della slide e
+  // l'id dichiarato dell'asset sono generati dall'AI con case non sempre
+  // coerente (es. asset `TAB_x` referenziato come `tab_x`), e il CRUD
+  // accetta un riferimento con spazi ai bordi.
+  const target = assetRefKey(assetId);
   if (contentRaw) {
     const visual = contentRaw.visual_assets.find(
-      (a) => a.asset_id.toLowerCase() === target,
+      (a) => assetRefKey(a.asset_id) === target,
     );
     if (visual) return { kind: "visual", payload: visual };
 
     const table = contentRaw.tables.find(
-      (t) => t.table_id.toLowerCase() === target,
+      (t) => assetRefKey(t.table_id) === target,
     );
     if (table) return { kind: "table", payload: table };
 
     const equation = contentRaw.equations.find(
-      (e) => e.equation_id.toLowerCase() === target,
+      (e) => assetRefKey(e.equation_id) === target,
     );
     if (equation) return { kind: "equation", payload: equation };
 
     const example = contentRaw.examples.find(
-      (e) => e.example_id.toLowerCase() === target,
+      (e) => assetRefKey(e.example_id) === target,
     );
     if (example) return { kind: "example", payload: example };
   }
 
-  const newAsset = newAssets.find((a) => a.asset_id.toLowerCase() === target);
+  const newAsset = newAssets.find((a) => assetRefKey(a.asset_id) === target);
   if (newAsset) return { kind: "new_visual", payload: newAsset };
 
   // Nuovi asset non visivi creati in Fase 4 (parità con le Dispense).
-  const newTable = newTables.find((t) => t.table_id.toLowerCase() === target);
+  const newTable = newTables.find((t) => assetRefKey(t.table_id) === target);
   if (newTable) return { kind: "table", payload: newTable };
 
   const newEquation = newEquations.find(
-    (e) => e.equation_id.toLowerCase() === target,
+    (e) => assetRefKey(e.equation_id) === target,
   );
   if (newEquation) return { kind: "equation", payload: newEquation };
 
   const newExample = newExamples.find(
-    (e) => e.example_id.toLowerCase() === target,
+    (e) => assetRefKey(e.example_id) === target,
   );
   if (newExample) return { kind: "example", payload: newExample };
 
   return null;
+}
+
+/**
+ * Chiave di confronto di un riferimento di `references_assets`: senza
+ * spazi ai bordi e in minuscolo, come il CRUD delle slide
+ * (`course_lesson_slides_crud`), `resolveAsset` e il PDF delle slide
+ * (`_asset_ref_key`).
+ */
+export function assetRefKey(assetId: string): string {
+  return (assetId || "").trim().toLowerCase();
+}
+
+/**
+ * Riferimenti senza ripetizioni (confronto per `assetRefKey`, resta la
+ * prima grafia nell'ordine): un asset citato due volte dalla stessa slide
+ * è mostrato una volta sola, come nel PDF delle slide e nei frame video.
+ */
+export function uniqueAssetRefs(refs: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const ref of refs) {
+    const key = assetRefKey(ref);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(ref);
+  }
+  return out;
 }
 
 /**

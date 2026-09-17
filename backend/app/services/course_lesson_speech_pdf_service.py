@@ -10,7 +10,9 @@ Lo stato è scoped a livello LEZIONE (`course_lesson.speech_pdf_status`)
 e distinto dal `pdf_status` (lezione testo) e dal `slides_pdf_status`
 (slide). Il discorso è prosa pura — NIENTE Mermaid pre-render, niente
 asset rendering: una sezione per ciascuna slide con timeline cumulativa
-e testo dei segmenti.
+e testo dei segmenti. Testo, note e titolo di slide sono campi inline
+(`render_markdown_inline`: testo escapato e formule), con le formule
+pre-renderizzate da MathJax come nelle slide (WP4).
 
 FK al `pdf_templates` (kind=lesson, stesso del PDF lezione testo): A4
 portrait, single-column block-flow, perfetto per prosa.
@@ -20,7 +22,10 @@ Riusa massivamente gli helper di `course_lesson_pdf_service` per:
 - `_format_pdf_template_for_render` / `_default_template_dict`
 - `_compute_template_margins_cm`
 - `generate_pdf_bytes` / `pdf_absolute_path` / `_get_organization`
+- `render_markdown_inline` / `_prerender_math_for_lesson` / `_log_math_fallbacks`
+- `css_string` (piè di pagina in `@bottom-center`)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -31,6 +36,7 @@ from pathlib import Path
 from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+from markupsafe import Markup
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
@@ -42,8 +48,7 @@ from app.models.organization import Organization
 from app.models.pdf_template import PdfTemplate
 from app.models.user import User
 from app.services import course_lesson_pdf_service as base_pdf
-from app.services import course_lesson_speech_service
-from app.services import remote_storage
+from app.services import course_lesson_speech_service, remote_storage
 
 log = get_logger("app.course_lesson_speech_pdf.service")
 
@@ -68,28 +73,28 @@ def speech_pdf_relative_path(
     return f"{organization_id}/{course_id}/{lesson_id}_speech.pdf"
 
 
-def speech_pdf_filename_for_download(
-    course_title: str, lesson: CourseLesson
-) -> str:
+def speech_pdf_filename_for_download(course_title: str, lesson: CourseLesson) -> str:
     """Nome file user-friendly."""
     safe_lesson = re.sub(r"[^\w\-. ]+", "_", lesson.title)[:80].strip("_ ")
     safe_course = re.sub(r"[^\w\-. ]+", "_", course_title)[:60].strip("_ ")
-    return (
-        f"{safe_course} — {lesson.lesson_code} {safe_lesson} (discorso).pdf"
-    )
+    return f"{safe_course} — {lesson.lesson_code} {safe_lesson} (discorso).pdf"
 
 
 # ---------------------------------------------------------------------------
 # Jinja env (template dedicato discorso)
 # ---------------------------------------------------------------------------
 
+# Autoescape come la dispensa (`select_autoescape(["html", "xml"])` non
+# riconosceva `.j2`): i campi d'autore escono escapati, i `tpl.*` nel CSS
+# sono `|safe` o `|css_string`, il piè di pagina è `footer_title_css`.
 _TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 _jinja_env = Environment(
     loader=FileSystemLoader(_TEMPLATES_DIR),
-    autoescape=select_autoescape(["html", "xml"]),
+    autoescape=select_autoescape(enabled_extensions=("html", "xml", "j2")),
     trim_blocks=False,
     lstrip_blocks=False,
 )
+_jinja_env.filters["css_string"] = base_pdf.css_string
 
 
 # ---------------------------------------------------------------------------
@@ -188,6 +193,66 @@ def _labels_for(language: str) -> dict[str, str]:
     }
 
 
+def _prose_text(value: object) -> str:
+    """Testo di un campo inline del discorso (`None` → stringa vuota)."""
+    return "" if value is None else str(value)
+
+
+def _speech_timeline(
+    speech_raw: dict[str, Any], slides_raw: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Timeline di `format_timeline` con i metadati di slide per
+    l'intestazione di ogni sezione (numero, titolo sorgente, slide
+    mancante). Unica per il render e per il collector del math."""
+    slide_meta_by_id: dict[str, dict[str, Any]] = {}
+    for s in slides_raw.get("slides") or []:
+        if isinstance(s, dict) and s.get("slide_id"):
+            slide_meta_by_id[str(s["slide_id"])] = {
+                "slide_number": s.get("slide_number"),
+                "title": s.get("title", ""),
+            }
+
+    seg_by_id: dict[str, dict[str, Any]] = {
+        s["segment_id"]: s
+        for s in (speech_raw.get("speech_segments") or [])
+        if isinstance(s, dict) and s.get("segment_id")
+    }
+
+    timeline = format_timeline(speech_raw.get("slide_to_segments_map") or [], seg_by_id)
+    for entry in timeline:
+        meta = slide_meta_by_id.get(entry["slide_id"]) or {}
+        entry["slide_number"] = meta.get("slide_number")
+        entry["slide_title"] = _prose_text(meta.get("title") or "")
+        entry["slide_missing"] = entry["slide_id"] not in slide_meta_by_id
+    return timeline
+
+
+def _speech_inline_texts(timeline: list[dict[str, Any]]) -> list[str]:
+    """I campi che `render_speech_html` passa a `render_markdown_inline`,
+    con lo stesso pre-trattamento: titolo di slide, testo e note di ogni
+    segmento reso."""
+    texts: list[str] = []
+    for entry in timeline:
+        texts.append(entry["slide_title"])
+        for seg in entry["segments"]:
+            texts.append(_prose_text(seg.get("text")))
+            texts.append(_prose_text(seg.get("delivery_notes")))
+    return texts
+
+
+def _math_content_for_speech(lesson: CourseLesson) -> dict[str, Any]:
+    """Contenuto su cui il collector del PDF raccoglie il math del discorso
+    (`inline_texts`, vedi `base_pdf._iter_math_sources`). Helper puro."""
+    timeline = _speech_timeline(lesson.speech_raw or {}, lesson.slides_raw or {})
+    return {"inline_texts": _speech_inline_texts(timeline)}
+
+
+async def _prerender_math_for_speech(lesson: CourseLesson) -> base_pdf.MathSvgMap:
+    """Pre-render LaTeX → SVG (MathJax) delle formule del discorso, con il
+    collector e la batch della dispensa. WeasyPrint non rende il MathML."""
+    return await base_pdf._prerender_math_for_lesson(_math_content_for_speech(lesson))
+
+
 def render_speech_html(
     *,
     course: Course,
@@ -196,13 +261,19 @@ def render_speech_html(
     pdf_template: PdfTemplate | None,
     public_base_url: str | None = None,
     teacher_name: str | None = None,
+    math_svg_map: dict | None = None,
 ) -> str:
-    """Pure-function: HTML completo del discorso pronto per WeasyPrint."""
+    """Pure-function: HTML completo del discorso pronto per WeasyPrint.
+
+    Testo e note dei segmenti e titolo di ogni slide passano da
+    `render_markdown_inline` (testo escapato più formule SVG da
+    `math_svg_map`; senza mappa ricadono sul MathML, loggato). Il piè di
+    pagina è una stringa CSS: `footer_title_css` porta i titoli con
+    `css_string`."""
     speech_raw = lesson.speech_raw or {}
     if not speech_raw:
         raise ConflictError(
-            f"Lezione {lesson.lesson_code} senza speech_raw — "
-            f"impossibile esportare.",
+            f"Lezione {lesson.lesson_code} senza speech_raw — impossibile esportare.",
             code="lesson_speech_missing",
         )
     slides_raw = lesson.slides_raw or {}
@@ -219,45 +290,23 @@ def render_speech_html(
 
     margins_cm = base_pdf._compute_template_margins_cm(tpl_dict)
 
-    # Index slide per titolo + numero
-    slide_meta_by_id: dict[str, dict[str, Any]] = {}
-    for s in slides_raw.get("slides") or []:
-        if isinstance(s, dict) and s.get("slide_id"):
-            slide_meta_by_id[str(s["slide_id"])] = {
-                "slide_number": s.get("slide_number"),
-                "title": s.get("title", ""),
-            }
+    def _inline(text: str) -> Markup:
+        return Markup(base_pdf.render_markdown_inline(text, math_svg_map))
 
-    seg_by_id: dict[str, dict[str, Any]] = {
-        s["segment_id"]: s
-        for s in (speech_raw.get("speech_segments") or [])
-        if isinstance(s, dict) and s.get("segment_id")
-    }
-
-    timeline = format_timeline(
-        speech_raw.get("slide_to_segments_map") or [], seg_by_id
-    )
-
-    # Iniezione metadati slide nel timeline (titoli, numero) per
-    # l'header di ciascuna sezione.
+    timeline = _speech_timeline(speech_raw, slides_raw)
     for entry in timeline:
-        meta = slide_meta_by_id.get(entry["slide_id"]) or {}
-        entry["slide_number"] = meta.get("slide_number")
-        entry["slide_title"] = meta.get("title") or ""
-        entry["slide_missing"] = entry["slide_id"] not in slide_meta_by_id
+        entry["slide_title"] = _inline(entry["slide_title"])
+        for seg in entry["segments"]:
+            seg["text"] = _inline(_prose_text(seg.get("text")))
+            seg["delivery_notes"] = _inline(_prose_text(seg.get("delivery_notes")))
 
     # Etichetta lezione "Modulo X - lezione Y" (localizzata), come le dispense.
     base_labels = base_pdf._labels_for(language)
-    code_label = base_pdf._format_lesson_code_label(
-        lesson.lesson_code, base_labels
-    )
+    code_label = base_pdf._format_lesson_code_label(lesson.lesson_code, base_labels)
 
-    total_duration_seconds = int(
-        speech_raw.get("estimated_total_duration_seconds") or 0
-    )
-    total_word_count = int(
-        speech_raw.get("estimated_total_word_count") or 0
-    )
+    total_duration_seconds = int(speech_raw.get("estimated_total_duration_seconds") or 0)
+    total_word_count = int(speech_raw.get("estimated_total_word_count") or 0)
+    footer_title = f"{_prose_text(course.title)} · {_prose_text(lesson.title)} · "
 
     template = _jinja_env.get_template("lesson_speech_pdf.html.j2")
     html = template.render(
@@ -274,6 +323,7 @@ def render_speech_html(
             "lesson_code": lesson.lesson_code,
             "code_label": code_label,
         },
+        footer_title_css=base_pdf.css_string(footer_title),
         teacher_label=base_labels["teacher"],
         cfu_label=base_labels["cfu"],
         tpl=tpl_dict,
@@ -327,6 +377,8 @@ async def materialize_lesson_speech_pdf(
             db, organization_id=course.organization_id
         )
 
+    # Pre-render LaTeX → SVG (MathJax) di testo, note e titoli di slide.
+    math_svg_map = await _prerender_math_for_speech(lesson)
     html = await asyncio.to_thread(
         render_speech_html,
         course=course,
@@ -335,7 +387,10 @@ async def materialize_lesson_speech_pdf(
         pdf_template=pdf_template,
         public_base_url=public_base_url,
         teacher_name=teacher_name,
+        math_svg_map=math_svg_map,
     )
+    # Un evento per lezione se qualche formula è ricaduta sul MathML.
+    base_pdf._log_math_fallbacks(lesson_code=lesson.lesson_code, svg_map=math_svg_map)
 
     pdf_bytes = await base_pdf.generate_pdf_bytes(html=html)
 
@@ -351,9 +406,7 @@ async def materialize_lesson_speech_pdf(
     )
 
     lesson.speech_pdf_path = rel
-    lesson.speech_pdf_template_id = (
-        pdf_template.id if pdf_template else None
-    )
+    lesson.speech_pdf_template_id = pdf_template.id if pdf_template else None
     lesson.speech_pdf_generated_at = datetime.now(UTC)
     return rel
 
@@ -411,9 +464,7 @@ async def request_lesson_speech_pdf(
         metadata={
             "course_id": str(course.id),
             "lesson_code": lesson.lesson_code,
-            "pdf_template_id": (
-                str(pdf_template_id) if pdf_template_id else None
-            ),
+            "pdf_template_id": (str(pdf_template_id) if pdf_template_id else None),
         },
     )
     await db.commit()
@@ -475,9 +526,7 @@ async def request_all_lessons_speech_pdf(
         target_id=str(course.id),
         metadata={
             "lessons_count": len(eligible),
-            "pdf_template_id": (
-                str(pdf_template_id) if pdf_template_id else None
-            ),
+            "pdf_template_id": (str(pdf_template_id) if pdf_template_id else None),
         },
     )
     await db.commit()
@@ -510,7 +559,7 @@ async def cancel_all_speech_pdf_exports(
             target_type="course",
             target_id=str(course.id),
             metadata={
-                "cancelled_lesson_codes": [l.lesson_code for l in affected],
+                "cancelled_lesson_codes": [les.lesson_code for les in affected],
             },
         )
     await db.commit()

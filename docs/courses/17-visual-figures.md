@@ -431,7 +431,9 @@ regge.** I controlli che reggono sono quattro, indipendenti fra loro:
 
 1. **isolamento di rete del pre-render** (`mermaid_prerender.block_external_requests`):
    il Chromium del server instrada ogni richiesta e annulla quelle fuori
-   da `PRERENDER_ALLOWED_PREFIX`. È questa — non il gate — che impedisce
+   da `PRERENDER_ALLOWED_PREFIX` (i WebSocket, che `page.route` non vede,
+   sono instradati a parte e chiusi prima dell'handshake). È questa — non
+   il gate — che impedisce
    l'SSRF dal server; il verificatore del giro 2 ha misurato 0 GET su 18
    vettori con la guardia attiva, quello del giro 6 le stesse 0 GET sui
    vettori nuovi e il giro 7 le stesse 0 GET sui suoi 19;

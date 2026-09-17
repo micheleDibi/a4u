@@ -26,9 +26,11 @@ import uuid
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+from markdown_it.token import Token
+from markupsafe import Markup
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -45,7 +47,13 @@ from app.services import course_lesson_slides_service, remote_storage
 from app.services.figure_render_service import RenderedFigure, VisualSvgMap
 from app.services.figure_scale import FigureFitEntry
 from app.services.figure_theme import figure_labels
-from app.services.slide_geometry import PageFigureBudget, page_figure_budget
+from app.services.slide_geometry import (
+    PageFigureBudget,
+    Prose,
+    ProseMath,
+    ProsePiece,
+    page_figure_budget,
+)
 from app.services.svg_normalize import svg_to_data_uri
 
 log = get_logger("app.course_lesson_slides_pdf.service")
@@ -87,13 +95,18 @@ def slides_pdf_filename_for_download(course_title: str, lesson: CourseLesson) ->
 # Jinja env (template dedicato slide)
 # ---------------------------------------------------------------------------
 
+# Autoescape come la dispensa: `select_autoescape(["html", "xml"])` non
+# riconosceva l'estensione reale `.j2` e i campi d'autore uscivano crudi
+# (anche nei frame video, dove Chromium esegue la pagina). I `tpl.*` nel CSS
+# sono `|safe` o `|css_string` (vedi il template).
 _TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 _jinja_env = Environment(
     loader=FileSystemLoader(_TEMPLATES_DIR),
-    autoescape=select_autoescape(["html", "xml"]),
+    autoescape=select_autoescape(enabled_extensions=("html", "xml", "j2")),
     trim_blocks=True,
     lstrip_blocks=True,
 )
+_jinja_env.filters["css_string"] = base_pdf.css_string
 
 
 # ---------------------------------------------------------------------------
@@ -220,6 +233,13 @@ def _build_slide_asset_html(
     return ""
 
 
+def _asset_ref_key(asset_id: object) -> str:
+    """Chiave di confronto di un id d'asset: senza spazi ai bordi e in
+    minuscolo (`assetRefKey` nel frontend, `_slide_visual_refs` nel CRUD).
+    `None` dà la stringa vuota."""
+    return str(asset_id or "").strip().lower()
+
+
 def _resolve_asset_for_slide(
     asset_id: str,
     content_raw: dict[str, Any] | None,
@@ -235,35 +255,37 @@ def _resolve_asset_for_slide(
 
     Mirror della logica frontend (`lib/slides.resolveAsset`).
 
-    Match case-insensitive sull'id: il riferimento della slide e l'id
-    dichiarato dell'asset sono generati dall'AI con case non sempre
-    coerente (es. asset `TAB_x` referenziato come `tab_x`).
+    Confronto per `_asset_ref_key` (maiuscole e spazi ai bordi non
+    contano): il riferimento della slide e l'id dichiarato dell'asset sono
+    generati dall'AI con case non sempre coerente (es. asset `TAB_x`
+    referenziato come `tab_x`), e il CRUD e l'editor accettano un
+    riferimento con spazi ai bordi (`assetRefKey`).
     """
-    aid = str(asset_id or "").lower()
+    aid = _asset_ref_key(asset_id)
     if content_raw:
         for a in content_raw.get("visual_assets") or []:
-            if isinstance(a, dict) and str(a.get("asset_id", "")).lower() == aid:
+            if isinstance(a, dict) and _asset_ref_key(a.get("asset_id")) == aid:
                 return "visual", a
         for t in content_raw.get("tables") or []:
-            if isinstance(t, dict) and str(t.get("table_id", "")).lower() == aid:
+            if isinstance(t, dict) and _asset_ref_key(t.get("table_id")) == aid:
                 return "table", t
         for e in content_raw.get("equations") or []:
-            if isinstance(e, dict) and str(e.get("equation_id", "")).lower() == aid:
+            if isinstance(e, dict) and _asset_ref_key(e.get("equation_id")) == aid:
                 return "equation", e
         for ex in content_raw.get("examples") or []:
-            if isinstance(ex, dict) and str(ex.get("example_id", "")).lower() == aid:
+            if isinstance(ex, dict) and _asset_ref_key(ex.get("example_id")) == aid:
                 return "example", ex
     for na in new_assets or []:
-        if isinstance(na, dict) and str(na.get("asset_id", "")).lower() == aid:
+        if isinstance(na, dict) and _asset_ref_key(na.get("asset_id")) == aid:
             return "new_visual", na
     for t in new_tables or []:
-        if isinstance(t, dict) and str(t.get("table_id", "")).lower() == aid:
+        if isinstance(t, dict) and _asset_ref_key(t.get("table_id")) == aid:
             return "table", t
     for e in new_equations or []:
-        if isinstance(e, dict) and str(e.get("equation_id", "")).lower() == aid:
+        if isinstance(e, dict) and _asset_ref_key(e.get("equation_id")) == aid:
             return "equation", e
     for ex in new_examples or []:
-        if isinstance(ex, dict) and str(ex.get("example_id", "")).lower() == aid:
+        if isinstance(ex, dict) and _asset_ref_key(ex.get("example_id")) == aid:
             return "example", ex
     return None
 
@@ -294,14 +316,14 @@ async def _prerender_mermaid_for_slides(
         for a in content_raw.get("visual_assets") or []:
             if isinstance(a, dict):
                 merged_visual_assets.append(a)
-                seen.add(str(a.get("asset_id", "")).lower())
+                seen.add(_asset_ref_key(a.get("asset_id")))
     for na in new_assets or []:
         # La mappa è indicizzata per `asset_id`: un nuovo asset con l'id di
         # una figura delle Dispense ne sovrascriverebbe l'SVG, e siccome
         # `_resolve_asset_for_slide` risolve prima le Dispense la slide
         # mostrerebbe la didascalia di una figura e il disegno dell'altra.
         # L'id di Fase 4 è già irraggiungibile: qui si salta il render.
-        if isinstance(na, dict) and str(na.get("asset_id", "")).lower() not in seen:
+        if isinstance(na, dict) and _asset_ref_key(na.get("asset_id")) not in seen:
             merged_visual_assets.append(na)
     return await base_pdf._prerender_visual_assets_for_lesson(
         {"visual_assets": merged_visual_assets}, language=language
@@ -311,13 +333,49 @@ async def _prerender_mermaid_for_slides(
 _prerender_visual_assets_for_slides = _prerender_mermaid_for_slides
 
 
+def _prose_text(value: object) -> str:
+    """Testo di un campo di prosa della slide (`None` → stringa vuota)."""
+    return "" if value is None else str(value)
+
+
+class _SlideProse(NamedTuple):
+    """Titolo, prosa e bullet di una slide come testo sorgente: lo stesso
+    per il collector del math, per il budget della figura e per
+    `render_markdown_inline` (che ne fa il `Markup` del template)."""
+
+    title: str
+    body: str
+    bullets: list[str]
+
+
+def _slide_prose(slide: Mapping[str, Any]) -> _SlideProse:
+    return _SlideProse(
+        title=_prose_text(slide.get("title")),
+        body=_prose_text(slide.get("body")).strip(),
+        bullets=[_prose_text(b) for b in slide.get("bullets") or []],
+    )
+
+
+def _slide_prose_texts(slides_raw: Mapping[str, Any] | None) -> list[str]:
+    """I campi inline che `render_slides_html` passa a
+    `render_markdown_inline`, nello stesso ordine e con lo stesso
+    pre-trattamento: titolo, prosa e bullet di ogni slide."""
+    texts: list[str] = []
+    for slide in (slides_raw or {}).get("slides") or []:
+        if isinstance(slide, dict):
+            prose = _slide_prose(slide)
+            texts.extend([prose.title, prose.body, *prose.bullets])
+    return texts
+
+
 def _math_content_for_slides(
     content_raw: dict[str, Any] | None,
     slides_raw: dict[str, Any] | None,
 ) -> dict[str, Any]:
     """Contenuto «fuso» su cui il collector del PDF raccoglie il math delle
     slide: equazioni, tabelle, esempi e figure delle Dispense
-    (`content_raw`) più i nuovi asset di Fase 4 (`slides_raw.new_*`). Le
+    (`content_raw`) più i nuovi asset di Fase 4 (`slides_raw.new_*`), e
+    titolo, prosa e bullet delle slide come `inline_texts` (WP4). Le
     figure servono per le didascalie (D9). Helper puro, senza I/O."""
     cr = content_raw or {}
     sr = slides_raw or {}
@@ -326,7 +384,52 @@ def _math_content_for_slides(
         "tables": list(cr.get("tables") or []) + list(sr.get("new_tables") or []),
         "examples": list(cr.get("examples") or []) + list(sr.get("new_examples") or []),
         "visual_assets": list(cr.get("visual_assets") or []) + list(sr.get("new_assets") or []),
+        "inline_texts": _slide_prose_texts(sr),
     }
+
+
+# Delimitatore di chiusura per il markup di apertura dei token math.
+_MATH_CLOSERS: dict[str, str] = {"$": "$", "$$": "$$", "\\(": "\\)", "\\[": "\\]"}
+
+
+def _math_source(tok: Token) -> str:
+    return f"{tok.markup}{tok.content}{_MATH_CLOSERS.get(tok.markup, tok.markup)}"
+
+
+def _prose_for_budget(text: str, math_svg_map: Mapping[Any, Any] | None) -> Prose:
+    """Il campo come lo misura `slide_geometry`: la stringa se non ha
+    formule (stima identica a prima), altrimenti i pezzi nell'ordine del
+    parse inline (stessa grammatica del renderer): testo e `ProseMath` con
+    l'SVG della mappa (`None` se manca: il renderer ricade sul MathML) e la
+    forma (`span.math-block` → blocco). Il lookup è un `get` semplice: i
+    miss sono contati solo dal renderer."""
+    if not text:
+        return text
+    children = [
+        child
+        for tok in base_pdf._md_inline_renderer.parseInline(text, {})
+        for child in tok.children or []
+    ]
+    if not any(child.type in base_pdf._MATH_TOKEN_DISPLAY for child in children):
+        return text
+    pieces: list[ProsePiece] = []
+    for child in children:
+        if child.type not in base_pdf._MATH_TOKEN_DISPLAY:
+            pieces.append(child.content)
+            continue
+        key = base_pdf._token_math_key(child)
+        if key is None:  # formula vuota: il renderer non emette nulla
+            continue
+        svg = math_svg_map.get(key) if math_svg_map else None
+        _tag, cls = base_pdf._math_markup(child)
+        pieces.append(
+            ProseMath(
+                source=_math_source(child),
+                svg=svg if isinstance(svg, str) and svg else None,
+                block=cls == "math-block",
+            )
+        )
+    return tuple(pieces)
 
 
 async def _prerender_math_for_slides(
@@ -430,6 +533,18 @@ def _default_slide_template_dict() -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+class _PageProse(NamedTuple):
+    """Prosa e bullet di una pagina resa: sorgente (budget) e Markup."""
+
+    body: str
+    body_html: Markup
+    bullets: list[str]
+    bullets_html: list[Markup]
+
+
+_EMPTY_PAGE_PROSE = _PageProse("", Markup(""), [], [])
+
+
 def render_slides_html(
     *,
     course: Course,
@@ -463,6 +578,12 @@ def render_slides_html(
     pagine impossibili (testo da solo oltre il body), che ricevono il
     pavimento e un `slide_figure_box_exhausted` nel log; una pagina con più
     blocchi (solo legacy) è segnalata con `slide_figure_box_shared`.
+
+    Titolo, prosa e bullet passano da `render_markdown_inline` (testo
+    escapato e formule SVG, niente markdown ricco: WP4); il budget li misura
+    sul sorgente con gli SVG delle formule (`_prose_for_budget`). Un asset
+    citato più volte dalla stessa slide è reso una volta, con un
+    `slide_duplicate_asset_ref` per ogni ripetizione.
 
     `enable_split` (default True): per il PDF cartaceo, una slide con
     bullet+asset viene splittata su 2 pagine consecutive (pattern visivo
@@ -509,16 +630,27 @@ def render_slides_html(
     # (2) per ogni pagina resa il budget della figura sul suo contenuto
     # reale (D12) e solo allora il rendering dei blocchi.
     rendered_slides: list[dict[str, Any]] = []
+
+    def _inline(text: str) -> Markup:
+        return Markup(base_pdf.render_markdown_inline(text, math_svg_map))
+
     for s in slides_raw.get("slides") or []:
         if not isinstance(s, dict):
             continue
         slide_type = s.get("type", "concept")
-        title = s.get("title", "")
         type_label = _slide_type_label(language, slide_type)
-        body_text = (s.get("body") or "").strip()
-        bullets = list(s.get("bullets") or [])
+        # Titolo, prosa e bullet: testo escapato più formule (WP4), come i
+        # campi inline della dispensa; il sorgente resta per il budget.
+        prose = _slide_prose(s)
+        title_html = _inline(prose.title)
+        body_html = _inline(prose.body)
+        bullets_html = [_inline(b) for b in prose.bullets]
 
+        # Un asset citato più volte (anche con maiuscole o spazi ai bordi
+        # diversi: il lookup usa `_asset_ref_key` e ritorna lo stesso
+        # payload) è reso una volta sola; i ripetuti sono loggati (C10).
         resolved_assets: list[tuple[str, dict[str, Any]]] = []
+        rendered_payloads: set[int] = set()
         for aid in s.get("references_assets") or []:
             resolved = _resolve_asset_for_slide(
                 aid,
@@ -528,16 +660,26 @@ def render_slides_html(
                 new_equations=new_equations,
                 new_examples=new_examples,
             )
-            if resolved is not None:
-                resolved_assets.append(resolved)
+            if resolved is None:
+                continue
+            if id(resolved[1]) in rendered_payloads:
+                log.warning(
+                    "slide_duplicate_asset_ref",
+                    lesson_code=lesson.lesson_code,
+                    slide_id=s.get("slide_id"),
+                    asset_id=aid,
+                )
+                continue
+            rendered_payloads.add(id(resolved[1]))
+            resolved_assets.append(resolved)
 
         base_entry = {
             "slide_id": s.get("slide_id"),
             "type": slide_type,
             "type_label": type_label,
-            "title": title,
-            "body": body_text,
+            "title": title_html,
         }
+        full_page = _PageProse(prose.body, body_html, prose.bullets, bullets_html)
 
         # Split: una slide LEGACY con bullet E asset → 2 pagine, asset
         # isolato. Dalla regola Fase 4 "un asset visivo/tabella per
@@ -552,20 +694,22 @@ def render_slides_html(
         # che `_build_slide_asset_html` rende sempre, quindi «asset risolti»
         # equivale ad «asset resi»).
         # Disabilitato del tutto con `enable_split=False` (pipeline video).
-        pages: list[tuple[list[Any], str, list[tuple[str, dict[str, Any]]]]]
-        if enable_split and resolved_assets and bullets:
+        pages: list[tuple[_PageProse, list[tuple[str, dict[str, Any]]]]]
+        if enable_split and resolved_assets and prose.bullets:
             # Niente prosa nella pagina asset-only.
-            pages = [(bullets, body_text, []), ([], "", resolved_assets)]
+            pages = [(full_page, []), (_EMPTY_PAGE_PROSE, resolved_assets)]
         else:
-            pages = [(bullets, body_text, resolved_assets)]
+            pages = [(full_page, resolved_assets)]
 
-        for page_bullets, page_body, page_assets in pages:
+        for page_prose, page_assets in pages:
             assets_html: list[str] = []
             if page_assets:
+                # Il budget misura il sorgente: con le formule, i pezzi con
+                # gli SVG (larghezza e altezza di riga, `slide_geometry`).
                 budget = page_figure_budget(
-                    title=str(title or ""),
-                    body=page_body,
-                    bullets=[str(b) for b in page_bullets],
+                    title=_prose_for_budget(prose.title, math_svg_map),
+                    body=_prose_for_budget(page_prose.body, math_svg_map),
+                    bullets=[_prose_for_budget(b, math_svg_map) for b in page_prose.bullets],
                     n_blocks=len(page_assets),
                 )
                 if budget.clamped:
@@ -602,8 +746,8 @@ def render_slides_html(
             rendered_slides.append(
                 {
                     **base_entry,
-                    "body": page_body,
-                    "bullets": page_bullets,
+                    "body": page_prose.body_html,
+                    "bullets": page_prose.bullets_html,
                     "assets_html": assets_html,
                 }
             )

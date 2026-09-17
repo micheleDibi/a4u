@@ -1954,6 +1954,10 @@ REGOLE — VINCOLI DI VALIDAZIONE (rispetta sempre)
   fornite (Fase 4)
 - ogni slide di Fase 4 ha almeno un segmento di parlato
 - `segment_id` univoci a livello di lezione (es. "SEG001", "SEG002", ...)
+- `delivery_notes` rispetta le stesse REGOLE — TTS-FRIENDLY di `text`
+  (niente abbreviazioni come "es.", "etc.", "ca.", niente caratteri
+  speciali, niente markdown, niente formule LaTeX): una sola
+  abbreviazione nelle note invalida l'intero discorso
 - somma di `estimated_duration_seconds` ∈ [target × 0.95, target × 1.05]
   con target = {minuti_per_lezione} * 60 = {secondi} secondi
 - `slide_to_segments_map` coerente con `speech_segments`:
@@ -2040,7 +2044,8 @@ In rigenerazione: `## Versione attuale del discorso (DA RIVEDERE)` (solo se esis
                             "type": "string",
                             "description": (
                                 "Annotazione opzionale per il docente su tono, ritmo, pause. "
-                                "Una frase breve."
+                                "Una frase breve. Stesse regole di `text`: niente abbreviazioni, "
+                                "niente caratteri speciali, niente markdown, niente formule LaTeX."
                             ),
                         },
                     },

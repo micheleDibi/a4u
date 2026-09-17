@@ -2276,3 +2276,333 @@ def test_video_frame_keeps_the_80mm_fallback_for_equations() -> None:
             browser.close()
     assert frame["svgH"] / scale == pytest.approx(80.0, abs=0.1)
     assert frame["svgBottom"] <= frame["bodyBottom"] + 0.5 * scale, frame
+
+
+# ---------------------------------------------------------------------------
+# Formule nella prosa (WP4): il budget resta un limite superiore
+# ---------------------------------------------------------------------------
+
+# Attributi esterni di SVG MathJax 3 reali (`_prerender_math_to_svg_batch`):
+# `width`, `height`, `viewBox`, `vertical-align`. Il corpo è un rettangolo:
+# la geometria resa dipende solo da questi.
+_PROSE_MATH_HEADS: dict[tuple[str, str], tuple[str, str, str, str]] = {
+    ("x", "inline"): ("1.294ex", "1.025ex", "0 -442 572 453", "-0.025ex"),
+    ("G = 2^{10}", "inline"): ("7.714ex", "2.072ex", "0 -833.9 3409.7 915.9", "-0.186ex"),
+    ("\\frac{a}{b}", "inline"): ("1.842ex", "2.395ex", "0 -705.8 814.1 1058.6", "-0.798ex"),
+    ("\\sum_{i=1}^{n} i", "inline"): ("6.331ex", "2.563ex", "0 -789.6 2798.3 1132.9", "-0.777ex"),
+    ("\\int_0^1 \\frac{x^2}{\\sqrt{1+x}}\\,dx", "inline"): (
+        "11.042ex",
+        "3.604ex",
+        "0 -1003.5 4880.4 1593",
+        "-1.334ex",
+    ),
+    ("\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}", "inline"): (
+        "7.966ex",
+        "5.43ex",
+        "0 -1450 3521 2400",
+        "-2.149ex",
+    ),
+    ("\\left(\\sum_{k=0}^{\\infty} \\frac{x^k}{k!}\\right)", "inline"): (
+        "11.166ex",
+        "4.07ex",
+        "0 -1149.5 4935.4 1799",
+        "-1.469ex",
+    ),
+    ("\\begin{cases} a & x>0 \\\\ b & x=0 \\\\ c & x<0 \\end{cases}", "inline"): (
+        "10.913ex",
+        "7.692ex",
+        "0 -1950 4823.6 3400",
+        "-3.281ex",
+    ),
+    ("x^{2^{2^{2}}}_{i_{j_{k}}}", "inline"): (
+        "3.64ex",
+        "3.847ex",
+        "0 -1163.4 1608.7 1700.3",
+        "-1.215ex",
+    ),
+    ("\\sum_{i=1}^{n} i", "block"): ("4.425ex", "6.354ex", "0 -1562.5 1955.7 2808.5", "-2.819ex"),
+    ("\\int_{-\\infty}^{\\infty} e^{-x^2}\\,dx = \\sqrt{\\pi}", "block"): (
+        "17.852ex",
+        "5.328ex",
+        "0 -1400.6 7890.7 2354.9",
+        "-2.159ex",
+    ),
+}
+_INLINE_KEYS = [k for k in _PROSE_MATH_HEADS if k[1] == "inline"]
+_BLOCK_KEYS = [k for k in _PROSE_MATH_HEADS if k[1] == "block"]
+
+
+def _prose_svg(key: tuple[str, str]) -> str:
+    width, height, view_box, align = _PROSE_MATH_HEADS[key]
+    x, y, w, h = view_box.split()
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
+        f'role="img" focusable="false" viewBox="{view_box}" aria-hidden="true" '
+        f'style="vertical-align: {align};"><rect x="{x}" y="{y}" width="{w}" height="{h}"/></svg>'
+    )
+
+
+_PROSE_SVG_MAP = {key: _prose_svg(key) for key in _PROSE_MATH_HEADS}
+
+
+def _inline_math(key: tuple[str, str]) -> str:
+    return f"${key[0]}$"
+
+
+def _block_math(key: tuple[str, str]) -> str:
+    return f"$$\n{key[0]}\n$$"
+
+
+def _prose_cases() -> list[tuple[str, str]]:
+    """(stile, testo): ogni formula in linea da sola, ripetuta fino a più
+    righe e in una frase con tutte le altre; le formule a blocco fra due
+    frasi e in testa."""
+    cases: list[tuple[str, str]] = []
+    everything = " e ".join(_inline_math(k) for k in _INLINE_KEYS)
+    for style in ("title", "body", "bullet"):
+        for key in _INLINE_KEYS:
+            cases.append((style, f"Sia {_inline_math(key)} la grandezza"))
+            cases.append((style, " ".join(f"passo {_inline_math(key)}," for _ in range(9))))
+        cases.append((style, f"Tutte insieme: {everything} e basta"))
+        for key in _BLOCK_KEYS:
+            cases.append((style, f"Vale\n{_block_math(key)}\nper ogni n."))
+            cases.append((style, f"{_block_math(key)}\ne {_inline_math(_INLINE_KEYS[5])} dopo"))
+    return cases
+
+
+_PROSE_STYLE_GEOMETRY = {
+    # stile: (corpo pt, altezza di riga, larghezza mm, grassetto)
+    "title": (_G.title_pt, _G.title_line_height, _G.body_w_mm, True),
+    "body": (_G.body_text_pt, _G.body_text_line_height, _G.text_w_mm, False),
+    "bullet": (_G.bullet_pt, _G.bullet_line_height, _G.bullet_w_mm, False),
+}
+_PROSE_MATH_CSS = (
+    ".math-inline svg { display: inline; margin: 0; max-height: none; max-width: 100%; } "
+    "span.math-block { display: block; } "
+    ".math-block svg { display: block; margin: 0 auto; max-width: 100%; height: auto; }"
+)
+
+
+def _prose_estimate_mm(style: str, text: str) -> float:
+    pt, line_height, width_mm, bold = _PROSE_STYLE_GEOMETRY[style]
+    prose = slides_pdf._prose_for_budget(text, _PROSE_SVG_MAP)
+    assert not isinstance(prose, str), text
+    rows, extra_em = sg.prose_extent(
+        prose, font_pt=pt, width_mm=width_mm, line_height=line_height, bold=bold
+    )
+    return rows * pt * line_height * sg.MM_PER_PT + extra_em * pt * sg.MM_PER_PT
+
+
+def _prose_real_heights(weasyprint: Any, family: str, cases: list[tuple[str, str]]) -> list[float]:
+    """Altezza resa (mm) di ogni campo, nello stile del template e con
+    l'HTML di `render_markdown_inline`, in un solo documento su una pagina
+    molto alta: un campo spezzato dal fondo pagina riceverebbe lo spazio
+    bianco residuo (`weasyprint/layout/block.py`)."""
+    probes = "".join(
+        f'<div id="p{i}" class="t-{style}">{pdf.render_markdown_inline(text, _PROSE_SVG_MAP)}</div>'
+        for i, (style, text) in enumerate(cases)
+    )
+    styles = " ".join(f".t-{name} {{ {css} }}" for name, css in _STYLE_CSS.items())
+    html = (
+        "<html><head><style>@page { size: 297mm 20000mm; margin: 0 } "
+        f'body {{ margin: 0; font-family: "{family}"; }} {styles} {_PROSE_MATH_CSS}'
+        f"</style></head><body>{probes}</body></html>"
+    )
+    heights: dict[int, float] = {}
+    for page in weasyprint.HTML(string=html).render().pages:
+        # Solo i figli diretti del body: i blocchi anonimi dentro un campo
+        # (formula a blocco) portano lo stesso elemento del campo.
+        body = next(b for b in _walk(page._page_box) if b.element_tag == "body")
+        for box in body.children:
+            probe = int(box.element.get("id")[1:])
+            heights[probe] = heights.get(probe, 0.0) + box.height / _MM
+    assert sorted(heights) == list(range(len(cases)))
+    return [heights[i] for i in range(len(cases))]
+
+
+@pytest.mark.parametrize("family", _FAMILIES)
+def test_prose_math_extent_is_an_upper_bound(family: str) -> None:
+    """Righe e altezza extra di `prose_extent` coprono l'altezza resa dei
+    campi con formule reali (in linea alte, ripetute su più righe, a
+    blocco) nei tre stili delle slide, per le sei famiglie; la sovrastima
+    resta sotto le due righe più 1,5 em per formula."""
+    weasyprint = _weasyprint()
+    cases = _prose_cases()
+    real = _prose_real_heights(weasyprint, family, cases)
+    for (style, text), real_mm in zip(cases, real, strict=True):
+        est_mm = _prose_estimate_mm(style, text)
+        assert real_mm <= est_mm + _TOL, (family, style, text[:60], real_mm, est_mm)
+        pt, line_height, _w, _b = _PROSE_STYLE_GEOMETRY[style]
+        formulas = text.count("$$") // 2 + (text.count("$") - 2 * text.count("$$")) // 2
+        slack = (2 * line_height + 1.5 * formulas) * pt * sg.MM_PER_PT
+        assert est_mm <= real_mm + slack, (family, style, text[:60], real_mm, est_mm)
+
+
+def test_the_prose_oracle_catches_the_missing_row_growth(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Controprova: senza la crescita di riga delle formule in linea, o con
+    un ex più piccolo di quello dei font del template, la stima scende
+    sotto l'altezza resa in più casi del corpus."""
+    weasyprint = _weasyprint()
+    cases = _prose_cases()
+    real = _prose_real_heights(weasyprint, "Helvetica", cases)
+
+    def under() -> int:
+        return sum(
+            1
+            for (style, text), real_mm in zip(cases, real, strict=True)
+            if real_mm > _prose_estimate_mm(style, text) + _TOL
+        )
+
+    assert under() == 0
+    with monkeypatch.context() as m:
+        m.setattr(sg, "_inline_math_overhang_em", lambda box, *, line_height: (0.0, 0.0))
+        assert under() > 10
+    with monkeypatch.context() as m:
+        m.setattr(sg, "_EX_EM_MAX", 0.45)
+        assert under() > 10
+
+
+def test_prose_extent_without_math_is_the_old_estimate() -> None:
+    """Senza formule il campo resta una stringa e la stima è quella di
+    prima (la fixture dei budget non cambia); senza SVG la formula vale il
+    suo sorgente come parola unica; un SVG illeggibile vale una riga."""
+    assert slides_pdf._prose_for_budget("Costo $50 e $70", _PROSE_SVG_MAP) == "Costo $50 e $70"
+    assert slides_pdf._prose_for_budget("", _PROSE_SVG_MAP) == ""
+    for case in _CASES["lines"]:
+        pt, line_height, width_mm, bold = _PROSE_STYLE_GEOMETRY.get(
+            case["style"], (_G.caption_pt, 1.0, _G.body_w_mm, False)
+        )
+        if case["style"] not in _PROSE_STYLE_GEOMETRY:
+            continue
+        rows, extra = sg.prose_extent(
+            case["text"], font_pt=pt, width_mm=width_mm, line_height=line_height, bold=bold
+        )
+        assert (rows, extra) == (
+            sg.estimate_lines(case["text"], font_pt=pt, width_mm=width_mm, bold=bold),
+            0.0,
+        )
+    no_svg = slides_pdf._prose_for_budget("Sia $a + b$ fine", {})
+    assert no_svg == ("Sia ", sg.ProseMath("$a + b$"), " fine")
+    rows, extra = sg.prose_extent(no_svg, font_pt=13, width_mm=100, line_height=1.45)
+    assert (rows, extra) == (1, 0.0)
+    odd = ("Sia ", sg.ProseMath("$x$", svg='<svg width="100%"></svg>'), " fine")
+    rows, extra = sg.prose_extent(odd, font_pt=13, width_mm=100, line_height=1.45)
+    assert (rows, extra) == (1, 1.45)
+    box = sg.svg_inline_box(_PROSE_SVG_MAP[("\\frac{a}{b}", "inline")], font_pt=13)
+    assert box == sg.SvgInlineBox(
+        w_em=pytest.approx(1.842 * 0.58),
+        h_em=pytest.approx(2.395 * 0.58),
+        depth_em=pytest.approx(0.798 * 0.58),
+    )
+    assert sg.svg_inline_box('<svg stroke-width="3" height="12pt" width="24px">', font_pt=12) == (
+        sg.SvgInlineBox(w_em=pytest.approx(1.5), h_em=pytest.approx(1.0), depth_em=0.0)
+    )
+
+
+def _math_prose_lesson() -> tuple[CourseLesson, dict[str, Any], dict[str, str]]:
+    """Tre pagine con figura alta e formule alte nella prosa, rese senza
+    split come nel video: slide dedicata di Fase 4 (titolo con formula,
+    prosa con formule in linea e a blocco), slide legacy con tre bullet di
+    formule alte, titolo su due righe con frazioni."""
+    k = _INLINE_KEYS
+    body = (
+        f"Con {_inline_math(k[7])} e {_inline_math(k[5])} si ottiene\n"
+        f"{_block_math(_BLOCK_KEYS[1])}\ncome {_inline_math(k[6])}."
+    )
+    bullets = [
+        f"Il caso {_inline_math(k[7])} e {_inline_math(k[5])}",
+        f"La somma {_inline_math(k[6])} converge",
+        f"Gli indici {_inline_math(k[8])} e l'integrale {_inline_math(k[4])}",
+    ]
+    title_long = " ".join(f"Rapporto {_inline_math(k[2])}" for _ in range(8))
+    content_raw = {
+        "introduction": "[FIG:T]",
+        "sections": [],
+        "summary": "",
+        "visual_assets": [_asset("T", "mermaid", "flowchart TD\n A --> B", "Sequenza alta")],
+    }
+    slides_raw = {
+        "slides": [
+            _slide("m1", f"Serie {_inline_math(k[3])}", ["T"], body=body),
+            _slide("m2", _T1, ["T"], bullets=bullets),
+            _slide("m3", title_long, ["T"]),
+        ]
+    }
+    lesson = CourseLesson(
+        lesson_code="M1.L1", title="Lezione", content_raw=content_raw, slides_raw=slides_raw
+    )
+    return lesson, {"T": _fluid_svg(650, 907)}, dict(_PROSE_SVG_MAP)
+
+
+def _render_math_prose(math_map: dict[str, str]) -> tuple[str, list[dict[str, Any]]]:
+    lesson, svg_map, _ = _math_prose_lesson()
+    with structlog.testing.capture_logs() as logs:
+        html = slides_pdf.render_slides_html(
+            course=Course(title="Corso", language_code="it", cfu=6),
+            lesson=lesson,
+            organization=None,
+            slide_template=None,
+            enable_split=False,
+            visual_svg_map=svg_map,
+            math_svg_map=math_map,
+        )
+    return html, logs
+
+
+def test_tall_prose_formulas_keep_the_figure_inside_the_body() -> None:
+    """Con formule alte nel titolo, nella prosa e nei bullet la figura resta
+    sopra il fondo del `.slide-body` e dentro `--figure-h` in WeasyPrint;
+    tutte le formule sono SVG (nessun ripiego) e il box è sul `<figure>`.
+    Controprova: con il budget di prima (sorgente come testo, nessuna
+    altezza di riga in più) le tre pagine sbordano."""
+    weasyprint = _weasyprint()
+    lesson, _svg_map, math_map = _math_prose_lesson()
+    collected = set(
+        pdf._collect_math_from_content(
+            slides_pdf._math_content_for_slides(lesson.content_raw, lesson.slides_raw)
+        )
+    )
+    assert collected <= set(math_map)
+    math_svg_map = pdf.MathSvgMap(math_map, requested=len(collected))
+    html, logs = _render_math_prose(math_svg_map)
+    assert math_svg_map.misses == []
+    assert "<math" not in html
+    assert len(re.findall(r'<figure class="visual[^>]*style="--figure-w: 255\.0mm; ', html)) == 3
+    pages = _page_geometry(weasyprint, html)
+    assert len(pages) == 3
+    for number, info in enumerate(pages, start=1):
+        (bottom,) = info["assets"]
+        assert bottom <= info["body_bottom"] + _TOL, (number, bottom, info["body_bottom"])
+        for height, cap in info["images"]:
+            assert cap is not None and height <= cap + _TOL, (number, height, cap)
+    assert not [e for e in logs if e["event"] == "slide_figure_box_exhausted"]
+
+    def old_budget(text: str, _map: Any) -> str:
+        return text
+
+    with pytest.MonkeyPatch.context() as mp_ctx:
+        mp_ctx.setattr(slides_pdf, "_prose_for_budget", old_budget)
+        old_html, _old_logs = _render_math_prose(pdf.MathSvgMap(math_map))
+    old_pages = _page_geometry(weasyprint, old_html)
+    overflow = [max(p["assets"]) - p["body_bottom"] for p in old_pages]
+    assert overflow[0] > 5 and overflow[1] > 5, overflow
+    # Il titolo della terza pagina misurato sugli SVG (più stretti del
+    # sorgente) sta su meno righe: la figura guadagna altezza.
+    new_h = [float(h) for h in _FIGURE_H_RE.findall(html)]
+    old_h = [float(h) for h in _FIGURE_H_RE.findall(old_html)]
+    assert new_h[0] < old_h[0] and new_h[1] < old_h[1] and new_h[2] > old_h[2], (new_h, old_h)
+
+
+def test_tall_prose_formulas_keep_the_figure_inside_the_video_frame() -> None:
+    """Stesso HTML nei frame video (Chromium con `_VIDEO_OVERRIDE_CSS`):
+    ogni `.slide-asset` (più il margine) sta sopra il fondo del
+    `.slide-body` e ogni immagine dentro `--figure-h`."""
+    html, _logs = _render_math_prose(pdf.MathSvgMap(_PROSE_SVG_MAP))
+    scale = video._VIDEO_SLIDE_SCALE * _MM
+    frames = _video_frames(html, 3)
+    for number, frame in enumerate(frames, start=1):
+        (bottom,) = frame["assets"]
+        worst = (bottom + _G.asset_margin_mm * scale - frame["bodyBottom"]) / scale
+        assert worst <= 0.5, (number, worst)
+        for height_px, cap in frame["images"]:
+            assert height_px / scale <= float(cap[:-2]) + 0.1, (number, height_px / scale, cap)

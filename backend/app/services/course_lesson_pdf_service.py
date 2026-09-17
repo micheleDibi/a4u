@@ -60,6 +60,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import importlib
 import re
 import sys
 import uuid
@@ -688,6 +689,37 @@ def _html_escape_text(text: str) -> str:
     )
 
 
+# Escape del contenuto di una stringa CSS fra virgolette (`"…"`) dentro
+# `<style>`: backslash e virgolette con il backslash; `<` e `>` come escape
+# esadecimali (un `</style>` nel testo chiuderebbe l'elemento per il parser
+# HTML, che dentro `<style>` non decodifica le entità); a capo, ritorno
+# carrello e form feed diventano uno spazio (una stringa CSS non può
+# contenerli); NUL rimosso.
+_CSS_STRING_ESCAPES: Final[dict[int, str]] = {
+    ord("\\"): "\\\\",
+    ord('"'): '\\"',
+    ord("'"): "\\'",
+    ord("<"): "\\3c ",
+    ord(">"): "\\3e ",
+    ord("\n"): " ",
+    ord("\r"): " ",
+    ord("\f"): " ",
+    0: "",
+}
+
+
+def css_string(value: object) -> Markup:
+    """Testo pronto per l'interno di una stringa CSS (`"{{ x|css_string }}"`):
+    l'escape HTML dell'autoescape è sbagliato in quel contesto (`&#34;`
+    resta letterale, un `"` crudo chiude la stringa e invalida la regola).
+    Registrato come filtro `css_string` sui tre env dei PDF; usato per
+    `tpl.font_family`, per gli URL dentro `url("…")` e per il piè di pagina
+    del discorso. Il risultato è `Markup`: l'autoescape non lo ritocca.
+    `None` diventa la stringa vuota."""
+    text = "" if value is None else str(value)
+    return Markup(text.translate(_CSS_STRING_ESCAPES))
+
+
 # Formati legacy di Fase 3/4 (solo in lettura): placeholder testuale.
 _LEGACY_PLACEHOLDER_FORMATS: frozenset[str] = frozenset(
     {"image_prompt", "image_search_query", "description"}
@@ -937,11 +969,14 @@ def _render_visual_asset_block(
         # Asset immagine caricato dall'utente (path relativo `lesson_assets/...`).
         # Riusiamo il resolver dei template asset: legge dallo storage e
         # produce una data URL base64 — WeasyPrint-friendly senza dipendenze
-        # di rete.
+        # di rete. Un URL assoluto torna così com'è ed è testo d'autore
+        # (PATCH delle slide): nell'attributo va escapato, altrimenti un `"`
+        # chiude `src` e apre attributi nuovi (`onerror=…`).
         alt = _html_escape_text(alt_text)
         data_url = _resolve_template_asset_url(content)
         if data_url:
-            body = Markup(f'<img class="uploaded-image" src="{data_url}" alt="{alt}" />')
+            src = _html_escape_text(data_url)
+            body = Markup(f'<img class="uploaded-image" src="{src}" alt="{alt}" />')
         else:
             body = Markup(
                 f'<div class="placeholder-image">[immagine mancante: '
@@ -1489,7 +1524,13 @@ def _iter_math_sources(
     (`key_takeaways`, `references[].citation`) passa da `cite_asset_refs`
     come in `render_lesson_html` (`$a [FIG:x] b$` → `a Figura 1 b` su
     entrambi i lati). Ogni nuovo campo reso va aggiunto QUI: il test di
-    parità collector/renderer fallisce altrimenti."""
+    parità collector/renderer fallisce altrimenti.
+
+    `inline_texts` non esiste in `content_raw`: è la chiave con cui slide
+    (`_math_content_for_slides`: titolo, prosa, bullet) e discorso
+    (`_math_content_for_speech`: testo, note, titolo di slide) passano i
+    loro campi inline, resi con `render_markdown_inline` sullo stesso
+    testo."""
     prepared = _prepare_lesson_body(content, language=language)
     placeholders = dict.fromkeys(prepared.asset_numbers, _ASSET_ANCHOR_PLACEHOLDER_HTML)
     yield _substitute_asset_refs(prepared.markdown, placeholders), "block"
@@ -1511,6 +1552,8 @@ def _iter_math_sources(
         yield prepared.cite(kt), "inline"
     for ref in content.get("references") or []:
         yield prepared.cite(_citation_text(ref)), "inline"
+    for text in content.get("inline_texts") or []:
+        yield text, "inline"
 
 
 def _collect_math_from_content(
@@ -1778,6 +1821,7 @@ _jinja_env = Environment(
     trim_blocks=False,
     lstrip_blocks=False,
 )
+_jinja_env.filters["css_string"] = css_string
 
 
 def _format_pdf_template_for_render(
@@ -2092,6 +2136,51 @@ def _log_figure_fit_report(
     )
 
 
+class PdfResourceBlockedError(ValueError):
+    """Risorsa esterna rifiutata dal fetcher di WeasyPrint: WeasyPrint la
+    tratta come un'immagine mancante e prosegue."""
+
+
+def allows_pdf_resource_url(url: str, *, allowed_prefixes: Sequence[str] = ()) -> bool:
+    """`True` se WeasyPrint può leggere la risorsa: le data URL (figure,
+    formule, loghi e sfondo embeddati) e, se dati, i prefissi in più di
+    `allowed_prefixes` (confronto senza maiuscole; un prefisso vuoto non
+    ammette nulla). Niente `file:`, niente host scelti dall'autore."""
+    lowered = (url or "").strip().lower()
+    extra = tuple(p.strip().lower() for p in allowed_prefixes if p and p.strip())
+    return lowered.startswith(("data:", *extra))
+
+
+def _pdf_url_fetcher() -> Callable[[str], Any]:
+    """Fetcher di WeasyPrint con una allowlist: data URL e l'host pubblico dei
+    media (`media_url_prefixes`, la stessa origine in più dei frame video).
+
+    Il markdown d'autore ammette HTML (titoli di sezione, prosa, esempi,
+    tabelle) e un asset `image` può portare un URL assoluto: con il fetcher
+    di default un `<img src="http://…">` farebbe partire dal server una GET
+    verso l'host scelto dall'autore (rete interna compresa) e un
+    `file:///…` leggerebbe il filesystem. Una risorsa rifiutata è loggata
+    (`pdf_resource_blocked`) e WeasyPrint la salta come un'immagine
+    mancante. Un fetcher nuovo per render: `URLFetcher` conserva stato
+    fra `open` e `fetch` e i render girano in thread diversi."""
+    urls = importlib.import_module("weasyprint.urls")
+    # WeasyPrint recente: classe `URLFetcher` (il fetcher a funzione è
+    # deprecato); le versioni precedenti hanno solo `default_url_fetcher`.
+    fetcher_cls = getattr(urls, "URLFetcher", None)
+    fetch: Callable[[str], Any] = (
+        fetcher_cls() if fetcher_cls is not None else urls.default_url_fetcher
+    )
+    prefixes = _mermaid_prerender.media_url_prefixes()
+
+    def _fetch(url: str) -> Any:
+        if not allows_pdf_resource_url(url, allowed_prefixes=prefixes):
+            log.warning("pdf_resource_blocked", url=url[:200])
+            raise PdfResourceBlockedError(f"risorsa non ammessa nel PDF: {url[:200]}")
+        return fetch(url)
+
+    return _fetch
+
+
 def _render_with_weasyprint_sync(html: str, *, base_url: str | None = None) -> bytes:
     """Render sincrono HTML → PDF via WeasyPrint.
 
@@ -2103,9 +2192,10 @@ def _render_with_weasyprint_sync(html: str, *, base_url: str | None = None) -> b
 
     `base_url` è opzionale e serve solo se il template usa percorsi
     relativi per immagini (loghi/sfondo). Nel flusso normale gli asset
-    sono embedded come data: URL e `base_url=None` va bene.
+    sono embedded come data: URL e `base_url=None` va bene. Le risorse
+    passano dal fetcher con allowlist (`_pdf_url_fetcher`).
     """
-    return HTML(string=html, base_url=base_url).write_pdf()
+    return HTML(string=html, base_url=base_url, url_fetcher=_pdf_url_fetcher()).write_pdf()
 
 
 async def generate_pdf_bytes(

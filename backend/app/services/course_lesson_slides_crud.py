@@ -7,8 +7,9 @@ in stato `ready` o `approved`.
 Edit non degrada lo stato (resta `approved` se era `approved`): è una
 scelta esplicita del docente. La validazione di consistenza qui è
 allentata rispetto a `materialize_lesson_slides` (che valida l'output
-fresh dell'AI): hard fail solo per duplicati di ID e per ref orfani
-(che renderebbero la slide inutilizzabile a render).
+fresh dell'AI): hard fail per duplicati di ID, per ref orfani (che
+renderebbero la slide inutilizzabile a render) e per una seconda
+figura/tabella sulle sole slide che il PATCH modifica (WP4).
 """
 
 from __future__ import annotations
@@ -50,6 +51,34 @@ def _dump_models(items: list[Any] | None) -> list[dict[str, Any]] | None:
     return [i.model_dump() if hasattr(i, "model_dump") else i for i in items]
 
 
+def _visual_or_table_ids(
+    content_raw: dict[str, Any] | None,
+    *,
+    new_assets: list[dict[str, Any]],
+    new_tables: list[dict[str, Any]],
+) -> set[str]:
+    """Id (minuscoli) soggetti al limite di un asset per slide: figure e
+    tabelle delle Dispense, nuovi asset visivi e nuove tabelle di Fase 4."""
+    ids: set[str] = set()
+    cr = content_raw or {}
+    for key, id_key in (("visual_assets", "asset_id"), ("tables", "table_id")):
+        for a in cr.get(key) or []:
+            if isinstance(a, dict) and a.get(id_key):
+                ids.add(str(a[id_key]).strip().lower())
+    for items, id_key in ((new_assets, "asset_id"), (new_tables, "table_id")):
+        for a in items:
+            if isinstance(a, dict) and a.get(id_key):
+                ids.add(str(a[id_key]).strip().lower())
+    return ids
+
+
+def _slide_visual_refs(slide: dict[str, Any], visual_ids: set[str]) -> frozenset[str]:
+    """Insieme dei visivi/tabelle citati dalla slide (id minuscoli: un
+    riferimento ripetuto con un'altra grafia conta una volta)."""
+    refs = (str(aid).strip().lower() for aid in slide.get("references_assets") or [])
+    return frozenset(ref for ref in refs if ref in visual_ids)
+
+
 def _validate_consistency(
     *,
     payload: LessonSlidesUpdateInput,
@@ -60,7 +89,10 @@ def _validate_consistency(
 
     Hard fail per: slide_id duplicati, slide_number non sequenziali,
     new_assets asset_id duplicati, references_assets verso ID
-    inesistenti (non risolvibili in content_raw + new_assets effettivi).
+    inesistenti (non risolvibili in content_raw + new_assets effettivi),
+    più di un asset visivo o tabella su una slide nuova o che riceve un
+    visivo non salvato in `current_raw`
+    (`lesson_slides_multiple_visual_assets`, 409).
     """
     slides = (
         _dump_models(payload.slides)
@@ -173,6 +205,47 @@ def _validate_consistency(
                     f"`{aid}` non presente nelle Dispense né tra i nuovi asset.",
                     code="lesson_slides_unknown_asset_ref",
                 )
+
+    # 4b. Al massimo un asset visivo o una tabella per slide, come nel
+    #     percorso AI (`course_lesson_slides_service`, punto 6b; equazioni ed
+    #     esempi esclusi), ma SOLO sulle slide a cui il PATCH aggiunge un
+    #     visivo: una slide nuova o con un visivo/tabella che la versione
+    #     salvata non aveva (anche una sostituzione). Un sottoinsieme di
+    #     quanto salvato passa: le lezioni storiche con due o più figure
+    #     sulla stessa slide restano editabili nel resto e si possono
+    #     ridurre un passo alla volta (3 -> 2 -> 1). Nessun backfill.
+    #     L'insieme salvato si calcola con i tipi SALVATI: un'equazione che
+    #     il PATCH trasforma in visivo con lo stesso id è un visivo nuovo,
+    #     anche se `slides` non è nel payload.
+    if (
+        payload.slides is not None
+        or payload.new_assets is not None
+        or payload.new_tables is not None
+    ):
+        visual_ids = _visual_or_table_ids(content_raw, new_assets=new_assets, new_tables=new_tables)
+        saved_visual_ids = _visual_or_table_ids(
+            content_raw,
+            new_assets=[a for a in current_raw.get("new_assets") or [] if isinstance(a, dict)],
+            new_tables=[t for t in current_raw.get("new_tables") or [] if isinstance(t, dict)],
+        )
+        current_visuals = {
+            str(s.get("slide_id")): _slide_visual_refs(s, saved_visual_ids)
+            for s in current_raw.get("slides") or []
+            if isinstance(s, dict)
+        }
+        for s in slides:
+            if not isinstance(s, dict):
+                continue
+            refs = _slide_visual_refs(s, visual_ids)
+            saved = current_visuals.get(str(s.get("slide_id")), frozenset())
+            if len(refs) <= 1 or refs <= saved:
+                continue
+            raise ConflictError(
+                f"Slide {s.get('slide_id')}: referenzia {len(refs)} asset "
+                f"visivi/tabelle ({', '.join(sorted(refs))}); ammesso al massimo "
+                f"1 per slide.",
+                code="lesson_slides_multiple_visual_assets",
+            )
 
     # 5. source_section_id (se non vuoto) deve referenziare una sezione
     valid_section_ids: set[str] = set()

@@ -26,6 +26,7 @@ import asyncio
 import contextlib
 import re
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -187,28 +188,68 @@ PRERENDER_ALLOWED_PREFIX = "https://cdn.jsdelivr.net/"
 _PRERENDER_INERT_SCHEMES = ("about:", "data:", "blob:")
 
 
-def allows_prerender_url(url: str) -> bool:
-    """`True` se la pagina headless può eseguire la richiesta."""
+def allows_prerender_url(url: str, *, allowed_prefixes: Sequence[str] = ()) -> bool:
+    """`True` se la pagina headless può eseguire la richiesta: il CDN, gli
+    schemi inerti e, se dati, i prefissi in più di `allowed_prefixes`
+    (confronto senza maiuscole; un prefisso vuoto non ammette nulla)."""
     lowered = (url or "").strip().lower()
-    return lowered.startswith(PRERENDER_ALLOWED_PREFIX) or lowered.startswith(
-        _PRERENDER_INERT_SCHEMES
-    )
+    extra = tuple(p.strip().lower() for p in allowed_prefixes if p and p.strip())
+    return lowered.startswith((PRERENDER_ALLOWED_PREFIX, *_PRERENDER_INERT_SCHEMES, *extra))
 
 
-async def block_external_requests(page: Any) -> None:
+def media_url_prefixes() -> tuple[str, ...]:
+    """Origini in più per i motori che rendono contenuti d'autore (frame
+    video in Chromium, WeasyPrint dei tre PDF): l'host pubblico dei media
+    (`ovh_public_base_url`, con la barra finale) quando lo storage è remoto.
+    Figure e formule sono data URL e i loghi e lo sfondo del template
+    caricati dall'app arrivano come data URL (`_resolve_template_asset_url`):
+    l'host dei media serve solo a un path assoluto già salvato in quella
+    forma. Il backend locale (`public_base_url`) non è mai ammesso."""
+    settings = get_settings()
+    if settings.storage_backend not in ("ovh_ftp", "ovh_sftp"):
+        return ()
+    base = (settings.ovh_public_base_url or "").strip().rstrip("/")
+    return (f"{base}/",) if base.startswith(("https://", "http://")) else ()
+
+
+# Qualunque WebSocket: `page.route` vede solo le richieste HTTP(S), non gli
+# upgrade `ws://`/`wss://`, che hanno un instradamento a parte.
+_ANY_WEBSOCKET = re.compile(r".*")
+
+
+async def block_external_requests(page: Any, *, allowed_prefixes: Sequence[str] = ()) -> None:
     """Instrada TUTTE le richieste della pagina e annulla quelle che
     `allows_prerender_url` non ammette (isolamento di rete del pre-render,
-    difesa in profondità di SEC-1)."""
+    difesa in profondità di SEC-1). `allowed_prefixes` aggiunge origini
+    esplicite (i frame video, `lesson_slides_video_render_service`: l'host
+    dei media); il default lascia la regola invariata.
+
+    I WebSocket non passano da `page.route`: sono instradati a parte
+    (`page.route_web_socket`) e chiusi tutti prima dell'handshake (nessuna
+    pagina headless ne usa). Quell'instradamento vale per i documenti
+    caricati dopo: per questo la pagina è riportata su `about:blank` prima
+    di tornare, e il chiamante carica il contenuto con `set_content`.
+    Restano fuori i canali che Playwright non instrada (WebRTC,
+    WebTransport) e, da un Worker, l'apertura TCP verso l'host del
+    WebSocket (l'handshake non parte): per questo la pagina dei frame
+    video, l'unica che carica HTML d'autore, gira con JavaScript spento."""
+    prefixes = tuple(allowed_prefixes)
 
     async def _guard(route: Any) -> None:
         url = route.request.url
-        if allows_prerender_url(url):
+        if allows_prerender_url(url, allowed_prefixes=prefixes):
             await route.continue_()
             return
         log.warning("prerender_request_blocked", url=url[:200])
         await route.abort()
 
+    async def _close_websocket(ws: Any) -> None:
+        log.warning("prerender_websocket_blocked", url=str(ws.url)[:200])
+        await ws.close()
+
     await page.route("**/*", _guard)
+    await page.route_web_socket(_ANY_WEBSOCKET, _close_websocket)
+    await page.goto("about:blank")
 
 
 def build_mermaid_renderer_html(*, version: str | None = None) -> str:

@@ -15,7 +15,7 @@ import {
   MarkdownRenderer,
   VisualAssetBody,
 } from "@/components/shared/MarkdownRenderer";
-import { resolveAsset } from "@/lib/slides";
+import { assetRefKey, resolveAsset, uniqueAssetRefs } from "@/lib/slides";
 
 interface Props {
   slides: LessonSlidesRaw;
@@ -35,6 +35,10 @@ interface Props {
  * Figure: `FigureFrame` con `variant="slide"` e senza numero («Figura.»,
  * A2), come nel PDF delle slide e nei frame video; i renderer (Mermaid,
  * Vega-Lite, DOT) sono caricati in modo pigro da `VisualAssetBody`.
+ *
+ * Titolo, prosa e bullet passano da `InlineMath` (solo testo e formule,
+ * come `render_markdown_inline` nel PDF delle slide, WP4); un asset citato
+ * più volte dalla stessa slide è mostrato una volta.
  */
 export function LessonSlidesView({ slides, contentRaw }: Props) {
   const { t } = useTranslation();
@@ -90,7 +94,9 @@ function SlideCard({
             <Badge variant="secondary" className="text-[11px]">
               {typeLabel}
             </Badge>
-            <h4 className="text-base font-semibold">{slide.title}</h4>
+            <h4 className="text-base font-semibold">
+              <InlineMath text={slide.title} />
+            </h4>
           </div>
           {slide.source_section_id && (
             <Badge
@@ -108,7 +114,7 @@ function SlideCard({
         {/* Body (prosa breve / sottotitolo) */}
         {slide.body && (
           <p className="text-sm leading-relaxed text-muted-foreground">
-            {slide.body}
+            <InlineMath text={slide.body} />
           </p>
         )}
 
@@ -116,7 +122,9 @@ function SlideCard({
         {slide.bullets.length > 0 ? (
           <ul className="list-disc space-y-1 pl-5 text-sm">
             {slide.bullets.map((b, idx) => (
-              <li key={idx}>{b}</li>
+              <li key={idx}>
+                <InlineMath text={b} />
+              </li>
             ))}
           </ul>
         ) : !slide.body ? (
@@ -125,12 +133,13 @@ function SlideCard({
           </p>
         ) : null}
 
-        {/* Assets referenziati */}
+        {/* Assets referenziati: una volta sola anche se citati più volte
+            (confronto per `assetRefKey`), come nel PDF delle slide. */}
         {slide.references_assets.length > 0 && (
           <div className="space-y-3">
-            {slide.references_assets.map((aid) => (
+            {uniqueAssetRefs(slide.references_assets).map((aid) => (
               <SlideAssetRender
-                key={aid}
+                key={assetRefKey(aid)}
                 assetId={aid}
                 contentRaw={contentRaw}
                 newAssets={newAssets}

@@ -20,6 +20,15 @@ numero di righe che entrano nel box, perché WeasyPrint ignora
 (`weasyprint/layout/block.py`, ramo «fill the blank space at the bottom of
 the page»).
 
+Titolo, prosa e bullet possono contenere formule (WP4): il chiamante li
+passa come sequenza di testo e `ProseMath` (sorgente, SVG MathJax, blocco
+o in linea) e il budget resta un limite superiore. Nella stima delle righe
+una formula in linea è una parola indivisibile larga quanto il suo SVG
+(o quanto il sorgente, senza SVG); l'altezza che un SVG alto aggiunge alla
+sua riga (`inline_math_excess_em`) e l'altezza di una formula a blocco si
+sommano alle righe. I limiti sulle metriche del font sono in
+`_EX_EM_MAX` e `_STRUT_A_MINUS_D_*`.
+
 `estimate_lines` è un LIMITE SUPERIORE delle righe rese sul testo delle
 slide, indipendente dal font: larghezze per classe di carattere
 (maiuscola, minuscola, cifra, spazio, CJK) invece di una media a 0,5 em,
@@ -111,7 +120,7 @@ import functools
 import math
 import re
 import unicodedata
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
 from app.services.figure_markup import FigureBox
@@ -240,6 +249,108 @@ _EM_SYMBOLS: dict[str, tuple[float, float]] = {
 
 # Marcatore della troncatura del fallback (U+2026): nessuna stringa UI.
 TRUNCATION_MARK = "…"
+
+# Formule nella prosa (WP4): limiti sulle metriche dei font del template
+# (Helvetica, Arial, Verdana, Noto Sans, Liberation Sans, DejaVu Sans),
+# misurati in WeasyPrint 69 e sui file dei font.
+# - Un `ex` vale al più 0,58 em: la «x» con l'overshoot misura 0,519-0,548
+#   em. WeasyPrint risolve `width`/`height` dell'SVG a 0,5 em per ex e il
+#   `vertical-align` con l'ex del font, Chromium usa l'altezza della x in
+#   entrambi i casi. Fuori modello i font con la x più alta (Impact 0,648).
+# - La strut della riga sta per metà della riga più (A − D)/2 sopra la
+#   baseline e per metà meno (A − D)/2 sotto, con A − D (ascendente meno
+#   discendente del primo font) fra 0,54 (Helvetica) e 0,796 (Verdana);
+#   Noto Sans 0,776, Noto Sans CJK 0,872: banda [0,5; 0,9].
+_EX_EM_MAX = 0.58
+_STRUT_A_MINUS_D_MIN = 0.5
+_STRUT_A_MINUS_D_MAX = 0.9
+# Radice dell'SVG e lunghezze che la dimensionano (unità assente = px).
+_SVG_ROOT_RE = re.compile(r"<svg\b[^>]*>", re.IGNORECASE)
+_SVG_NUMBER = r"([+-]?(?:\d+(?:\.\d*)?|\.\d+))"
+_SVG_UNIT = r"(ex|em|px|pt|mm)?"
+_SVG_WIDTH_RE = re.compile(rf"(?<![\w-])width\s*=\s*[\"']\s*{_SVG_NUMBER}\s*{_SVG_UNIT}\s*[\"']")
+_SVG_HEIGHT_RE = re.compile(rf"(?<![\w-])height\s*=\s*[\"']\s*{_SVG_NUMBER}\s*{_SVG_UNIT}\s*[\"']")
+_SVG_VALIGN_RE = re.compile(rf"vertical-align\s*:\s*{_SVG_NUMBER}\s*{_SVG_UNIT}")
+_MM_PER_PX = 25.4 / 96
+
+
+@dataclass(frozen=True)
+class ProseMath:
+    """Una formula del titolo, della prosa o di un bullet come la rende il
+    template: sorgente con i delimitatori, SVG MathJax (`None`: ripiego
+    MathML, che WeasyPrint stampa come testo piatto) e forma (`block`:
+    `span.math-block`, a blocco; altrimenti in linea)."""
+
+    source: str
+    svg: str | None = None
+    block: bool = False
+
+
+ProsePiece = str | ProseMath
+# Un campo di testo della slide: la stringa (nessuna formula) o i suoi
+# pezzi in ordine.
+Prose = str | Sequence[ProsePiece]
+
+
+@dataclass(frozen=True)
+class SvgInlineBox:
+    """Box di una formula SVG in em del corpo del testo, come limiti
+    superiori: larghezza, altezza e profondità sotto la baseline (il
+    `vertical-align` negativo di MathJax, positiva verso il basso)."""
+
+    w_em: float
+    h_em: float
+    depth_em: float
+
+
+def _svg_length_em(value: str, unit: str | None, *, font_pt: float) -> float:
+    number = float(value)
+    if unit == "ex":
+        return number * _EX_EM_MAX
+    if unit == "em":
+        return number
+    if unit == "pt":
+        return number / font_pt
+    if unit == "mm":
+        return number / (font_pt * MM_PER_PT)
+    return number * _MM_PER_PX / (font_pt * MM_PER_PT)  # px o senza unità
+
+
+def svg_inline_box(svg: str, *, font_pt: float) -> SvgInlineBox | None:
+    """Box della formula dalla radice dell'SVG (`width`, `height`,
+    `vertical-align`) nel corpo `font_pt`; `None` se larghezza o altezza
+    mancano o non sono in ex, em, px, pt o mm."""
+    root = _SVG_ROOT_RE.search(svg or "")
+    if root is None:
+        return None
+    tag = root.group(0)
+    width = _SVG_WIDTH_RE.search(tag)
+    height = _SVG_HEIGHT_RE.search(tag)
+    if width is None or height is None:
+        return None
+    valign = _SVG_VALIGN_RE.search(tag)
+    depth = -_svg_length_em(*valign.groups(), font_pt=font_pt) if valign else 0.0
+    return SvgInlineBox(
+        w_em=_svg_length_em(*width.groups(), font_pt=font_pt),
+        h_em=_svg_length_em(*height.groups(), font_pt=font_pt),
+        depth_em=depth,
+    )
+
+
+def _inline_math_overhang_em(box: SvgInlineBox, *, line_height: float) -> tuple[float, float]:
+    """(sopra, sotto): quanto l'SVG sporge oltre la strut della riga, al
+    più. La strut vale `(line_height ± (A − D)) / 2` sopra e sotto la
+    baseline, presa al minimo della banda di `_STRUT_A_MINUS_D_*`."""
+    above = (line_height + _STRUT_A_MINUS_D_MIN) / 2
+    below = (line_height - _STRUT_A_MINUS_D_MAX) / 2
+    top = box.h_em - box.depth_em
+    return max(0.0, top - above), max(0.0, box.depth_em - below)
+
+
+def inline_math_excess_em(box: SvgInlineBox, *, line_height: float) -> float:
+    """Altezza (em) che la formula in linea aggiunge alla sua riga, al più:
+    quanto l'SVG sporge sopra la strut più quanto scende sotto."""
+    return sum(_inline_math_overhang_em(box, line_height=line_height))
 
 
 @dataclass(frozen=True)
@@ -449,15 +560,27 @@ def estimate_lines(text: str, *, font_pt: float, width_mm: float, bold: bool = F
     titoli, prosa, bullet e didascalie; il `<pre>` di fallback non va a
     capo e non passa di qui (`fallback_source_rows`)."""
     budget = width_mm / (font_pt * MM_PER_PT)  # em per riga
-    words = text.split()
-    if not words:
+    return _wrap_rows(_word_widths(text, bold=bold), budget)
+
+
+def _text_em(text: str, *, bold: bool) -> float:
+    return sum(_char_em(ch, bold=bold) for ch in text)
+
+
+def _word_widths(text: str, *, bold: bool) -> list[float]:
+    return [_text_em(word, bold=bold) for word in text.split()]
+
+
+def _wrap_rows(widths: Sequence[float], budget: float) -> int:
+    """Word-wrap greedy di parole già misurate (em) in righe da `budget`
+    em (vedi `estimate_lines`)."""
+    if not widths:
         return 0
     if budget <= 0:
-        return len(words)
+        return len(widths)
     lines = 1
     used = 0.0
-    for word in words:
-        w = sum(_char_em(ch, bold=bold) for ch in word)
+    for w in widths:
         if used > 0:
             if used + _EM_SPACE + w <= budget:
                 used += _EM_SPACE + w
@@ -471,6 +594,122 @@ def estimate_lines(text: str, *, font_pt: float, width_mm: float, bold: bool = F
             lines += spans - 1
             used = w - (spans - 1) * budget
     return lines
+
+
+def _source_em(source: str, *, bold: bool) -> float:
+    """Larghezza del sorgente di una formula come parola unica (gli spazi
+    interni contano, ma non spezzano)."""
+    return sum(_EM_SPACE if ch.isspace() else _char_em(ch, bold=bold) for ch in source)
+
+
+class _ProseSegment:
+    """Tratto di un campo fra due formule a blocco: parole (em) e sporgenze
+    (sopra, sotto) delle formule in linea."""
+
+    def __init__(self, widths: list[float] | None = None) -> None:
+        self.widths: list[float] = widths or []
+        self.overhangs: list[tuple[float, float]] = []
+
+    def rows_and_extra(self, budget: float) -> tuple[int, float]:
+        """Righe del tratto e altezza aggiunta dalle formule: la somma delle
+        sporgenze, ma mai più di righe × (sporgenza massima sopra +
+        sporgenza massima sotto), perché ogni riga cresce al più di tanto
+        comunque siano distribuite le formule."""
+        rows = _wrap_rows(self.widths, budget)
+        if not self.overhangs:
+            return rows, 0.0
+        total = sum(a + b for a, b in self.overhangs)
+        per_row = max(a for a, _b in self.overhangs) + max(b for _a, b in self.overhangs)
+        return rows, min(total, max(1, rows) * per_row)
+
+
+def prose_extent(
+    prose: Prose, *, font_pt: float, width_mm: float, line_height: float, bold: bool = False
+) -> tuple[int, float]:
+    """`(righe, altezza extra in em)` di un campo della slide, limite
+    superiore. Una stringa è testo semplice: `(estimate_lines, 0)`. In una
+    sequenza di pezzi il testo va a capo come in `estimate_lines`; una
+    formula in linea è una parola indivisibile (fusa con il testo che la
+    tocca senza spazi) larga quanto l'SVG (senza SVG: quanto il sorgente)
+    e fa crescere la sua riga al più di `inline_math_excess_em` (per tratto
+    la crescita è limitata dalle righe, `_ProseSegment`); una formula a
+    blocco chiude la riga, aggiunge la sua altezza (senza SVG: le righe del
+    sorgente) e il testo che segue riparte da capo. Un SVG di dimensioni
+    illeggibili vale una riga in più."""
+    if isinstance(prose, str):
+        return estimate_lines(prose, font_pt=font_pt, width_mm=width_mm, bold=bold), 0.0
+    budget = width_mm / (font_pt * MM_PER_PT)
+    segments: list[_ProseSegment] = [_ProseSegment()]
+    extra = 0.0
+    word: float | None = None
+
+    def close_word() -> None:
+        nonlocal word
+        if word is not None:
+            segments[-1].widths.append(word)
+            word = None
+
+    for piece in prose:
+        if isinstance(piece, str):
+            for ch in piece:
+                if ch.isspace():
+                    close_word()
+                else:
+                    word = (word or 0.0) + _char_em(ch, bold=bold)
+            continue
+        box = svg_inline_box(piece.svg, font_pt=font_pt) if piece.svg else None
+        if piece.block:
+            close_word()
+            if box is not None:
+                extra += box.h_em
+            else:
+                segments.append(_ProseSegment(_word_widths(piece.source, bold=bold)))
+                extra += line_height if piece.svg else 0.0
+            segments.append(_ProseSegment())
+            continue
+        if box is not None:
+            width = box.w_em
+            segments[-1].overhangs.append(_inline_math_overhang_em(box, line_height=line_height))
+        else:
+            width = _source_em(piece.source, bold=bold)
+            if piece.svg:
+                segments[-1].overhangs.append((line_height, 0.0))
+        word = (word or 0.0) + width
+    close_word()
+    rows = 0
+    for segment in segments:
+        seg_rows, seg_extra = segment.rows_and_extra(budget)
+        rows += seg_rows
+        extra += seg_extra
+    return rows, extra
+
+
+def _prose_has_content(prose: Prose) -> bool:
+    if isinstance(prose, str):
+        return bool(prose.strip())
+    return any(not isinstance(p, str) or p.strip() for p in prose)
+
+
+def _prose_height_mm(
+    prose: Prose,
+    *,
+    font_pt: float,
+    line_mm: float,
+    line_height: float,
+    width_mm: float,
+    bold: bool = False,
+    min_rows: int = 0,
+) -> float:
+    rows, extra_em = prose_extent(
+        prose, font_pt=font_pt, width_mm=width_mm, line_height=line_height, bold=bold
+    )
+    return line_mm * max(min_rows, rows) + extra_em * font_pt * MM_PER_PT
+
+
+def _as_prose(value: Prose | None) -> Prose:
+    if value is None:
+        return ""
+    return value if isinstance(value, str) else tuple(value)
 
 
 @dataclass(frozen=True)
@@ -489,9 +728,9 @@ class PageFigureBudget:
 
 def page_figure_budget(
     *,
-    title: str,
-    body: str,
-    bullets: Sequence[str],
+    title: Prose | None,
+    body: Prose | None,
+    bullets: Iterable[Prose],
     n_blocks: int,
     geometry: SlideGeometry = DEFAULT_GEOMETRY,
 ) -> PageFigureBudget:
@@ -499,24 +738,45 @@ def page_figure_budget(
     una riga: l'`<h1>` vuoto occupa comunque la sua riga), prosa (solo se
     non vuota), bullet (TUTTI, anche vuoti: il template rende ogni `<li>`
     con il punto), margini degli asset e safety, diviso in parti uguali fra
-    i blocchi. Sotto `min_block_h_mm` il budget è portato al pavimento e
-    `clamped=True` (la pagina sborda per il testo, non per la figura)."""
+    i blocchi. Titolo, prosa e bullet sono testo o pezzi con formule
+    (`prose_extent`). Sotto `min_block_h_mm` il budget è portato al
+    pavimento e `clamped=True` (la pagina sborda per il testo, non per la
+    figura)."""
     g = geometry
-    title_lines = max(
-        1, estimate_lines(str(title or ""), font_pt=g.title_pt, width_mm=g.body_w_mm, bold=True)
-    )
-    used = g.tag_h_mm + g.title_margin_top_mm + g.title_line_mm * title_lines
-    body_text = str(body or "")
-    if body_text.strip():
-        used += g.body_text_margin_top_mm + g.text_line_mm * estimate_lines(
-            body_text, font_pt=g.body_text_pt, width_mm=g.text_w_mm
+    used = (
+        g.tag_h_mm
+        + g.title_margin_top_mm
+        + _prose_height_mm(
+            _as_prose(title),
+            font_pt=g.title_pt,
+            line_mm=g.title_line_mm,
+            line_height=g.title_line_height,
+            width_mm=g.body_w_mm,
+            bold=True,
+            min_rows=1,
         )
-    items = [str(b) for b in bullets]
+    )
+    body_prose = _as_prose(body)
+    if _prose_has_content(body_prose):
+        used += g.body_text_margin_top_mm + _prose_height_mm(
+            body_prose,
+            font_pt=g.body_text_pt,
+            line_mm=g.text_line_mm,
+            line_height=g.body_text_line_height,
+            width_mm=g.text_w_mm,
+        )
+    items = [_as_prose(b) for b in bullets]
     if items:
         used += g.bullets_margin_top_mm
         for item in items:
-            rows = max(1, estimate_lines(item, font_pt=g.bullet_pt, width_mm=g.bullet_w_mm))
-            used += g.bullet_line_mm * rows
+            used += _prose_height_mm(
+                item,
+                font_pt=g.bullet_pt,
+                line_mm=g.bullet_line_mm,
+                line_height=g.bullet_line_height,
+                width_mm=g.bullet_w_mm,
+                min_rows=1,
+            )
         used += g.bullet_margin_bottom_mm * (len(items) - 1)
     n = max(1, int(n_blocks))
     used += g.assets_margin_top_mm + g.asset_margin_mm * (n - 1) + g.asset_margin_mm + g.safety_mm
@@ -656,11 +916,18 @@ __all__ = [
     "MM_PER_PT",
     "TRUNCATION_MARK",
     "PageFigureBudget",
+    "Prose",
+    "ProseMath",
+    "ProsePiece",
     "SlideGeometry",
+    "SvgInlineBox",
     "estimate_lines",
     "fallback_lines_that_fit",
     "fallback_source_rows",
     "image_box",
+    "inline_math_excess_em",
     "page_figure_budget",
+    "prose_extent",
+    "svg_inline_box",
     "truncate_fallback_source",
 ]

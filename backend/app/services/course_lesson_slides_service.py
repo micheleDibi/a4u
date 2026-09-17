@@ -11,6 +11,7 @@ Step 2 — questa versione esporta SOLO i helper richiesti dal worker:
 Le funzioni di orchestrazione lato API (`request_lesson_slides_generation`,
 `approve_lesson_slides`, ecc.) vivono in Step 3.
 """
+
 from __future__ import annotations
 
 import json
@@ -27,13 +28,13 @@ from app.core.course_phase_order import (
     advance_course_status,
     ensure_course_not_terminal,
 )
-from app.services import document_citation_guard
 from app.core.errors import ConflictError, NotFoundError
 from app.core.logging import get_logger
 from app.models.course import Course
 from app.models.course_lesson import CourseLesson
 from app.models.course_module import CourseModule
 from app.schemas.course_lesson_slides import LessonSlidesOutput
+from app.services import document_citation_guard
 from app.services.course_architecture_service import _term_label
 
 log = get_logger("app.course_lesson_slides")
@@ -95,17 +96,13 @@ async def _refresh_full(db: AsyncSession, course: Course) -> Course:
 # ---------------------------------------------------------------------------
 
 
-def _format_recommended_bibliography(
-    course: Course, lesson: CourseLesson
-) -> str:
+def _format_recommended_bibliography(course: Course, lesson: CourseLesson) -> str:
     """Bibliografia consigliata della lezione introduttiva (rilevante
     per slide tipo `bibliography`). Le voci che matchano documenti a
     fonte riservata sono filtrate in lettura."""
     if not lesson.is_introductory or not lesson.recommended_bibliography:
         return "(non applicabile)"
-    items = document_citation_guard.reserved_filtered_bibliography(
-        course, lesson
-    )
+    items = document_citation_guard.reserved_filtered_bibliography(course, lesson)
     lines: list[str] = []
     for b in items:
         if not isinstance(b, dict):
@@ -237,8 +234,8 @@ def _expected_slide_range(minutes: int) -> tuple[int, int]:
     """
     if minutes <= 0:
         return (1, 1)
-    base_low = max(6, round(minutes * 0.36))   # floor 6 strutturali
-    base_high = max(10, round(minutes * 0.50)) # floor 10 (6 strutt. + ~4 contenuto)
+    base_low = max(6, round(minutes * 0.36))  # floor 6 strutturali
+    base_high = max(10, round(minutes * 0.50))  # floor 10 (6 strutt. + ~4 contenuto)
     # Tolleranza ±20%
     low = max(1, round(base_low * 0.80))
     high = max(low + 1, round(base_high * 1.20))
@@ -263,8 +260,7 @@ async def materialize_lesson_slides(
     # 1. Match lesson_id ↔ lesson_code
     if output.lesson_id != lesson.lesson_code:
         raise ConflictError(
-            f"L'AI ha prodotto lesson_id `{output.lesson_id}`, "
-            f"atteso `{lesson.lesson_code}`.",
+            f"L'AI ha prodotto lesson_id `{output.lesson_id}`, atteso `{lesson.lesson_code}`.",
             code="lesson_slides_id_mismatch",
         )
 
@@ -335,19 +331,19 @@ async def materialize_lesson_slides(
             if isinstance(a, dict):
                 # Asset_id può essere asset_id, table_id, equation_id, example_id.
                 for id_key in ("asset_id", "table_id", "equation_id", "example_id"):
-                    if id_key in a and a[id_key]:
+                    if a.get(id_key):
                         # Id normalizzati a minuscolo: i riferimenti delle
                         # slide e gli id dichiarati sono generati dall'AI con
                         # case non sempre coerente (es. `TAB_x` vs `tab_x`).
-                        aid = str(a[id_key]).lower()
+                        aid = str(a[id_key]).strip().lower()
                         valid_asset_ids.add(aid)
                         if key in ("visual_assets", "tables"):
                             visual_or_table_ids.add(aid)
     for na in output.new_assets:
-        valid_asset_ids.add(na.asset_id.lower())
+        valid_asset_ids.add(na.asset_id.strip().lower())
         # I new_assets di Fase 4 sono sempre visivi (diagram/schema/
         # image/illustration/chart) → contano come asset visivo.
-        visual_or_table_ids.add(na.asset_id.lower())
+        visual_or_table_ids.add(na.asset_id.strip().lower())
 
     # asset_id in new_assets devono essere univoci
     new_asset_ids = [na.asset_id for na in output.new_assets]
@@ -359,7 +355,7 @@ async def materialize_lesson_slides(
 
     for s in output.slides:
         for aid in s.references_assets:
-            if aid.lower() not in valid_asset_ids:
+            if aid.strip().lower() not in valid_asset_ids:
                 raise ConflictError(
                     f"Slide {s.slide_id}: references_assets contiene "
                     f"`{aid}` non presente in Fase 3 né in new_assets.",
@@ -368,11 +364,15 @@ async def materialize_lesson_slides(
 
     # 6b. Max 1 asset visivo o tabella per slide: ogni asset visivo/
     # tabella va su una slide dedicata propria (§7.1 punto 2).
-    # Equazioni ed esempi non rientrano nel limite.
+    # Equazioni ed esempi non rientrano nel limite. Si contano gli asset
+    # distinti, con la chiave del CRUD (`_slide_visual_refs`: minuscolo,
+    # senza spazi ai bordi): un riferimento ripetuto con un'altra grafia è
+    # lo stesso asset, e il PDF lo rende una volta. Le nuove tabelle non
+    # entrano: lo schema strict di Fase 4 ammette solo `new_assets`.
     for s in output.slides:
-        visual_refs = [
-            aid for aid in s.references_assets if aid.lower() in visual_or_table_ids
-        ]
+        visual_refs = sorted(
+            {aid.strip().lower() for aid in s.references_assets} & visual_or_table_ids
+        )
         if len(visual_refs) > 1:
             raise ConflictError(
                 f"Slide {s.slide_id}: referenzia {len(visual_refs)} "
@@ -396,9 +396,7 @@ async def materialize_lesson_slides(
             )
 
     # 8. Ogni section deve essere referenziata da almeno una slide (soft)
-    referenced_sections = {
-        s.source_section_id for s in output.slides if s.source_section_id
-    }
+    referenced_sections = {s.source_section_id for s in output.slides if s.source_section_id}
     unreferenced = valid_section_ids - referenced_sections
     if unreferenced:
         log.warning(
@@ -454,9 +452,7 @@ def _recompute_course_slides_status(course: Course) -> None:
         advance_course_status(course, "slides_approved")
         return
 
-    if all(s in ("ready", "approved") for s in statuses) and any(
-        s == "ready" for s in statuses
-    ):
+    if all(s in ("ready", "approved") for s in statuses) and any(s == "ready" for s in statuses):
         advance_course_status(course, "slides_ready")
         return
 
@@ -466,13 +462,9 @@ def _recompute_course_slides_status(course: Course) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def load_course_full(
-    db: AsyncSession, *, course_id: uuid.UUID
-) -> Course | None:
+async def load_course_full(db: AsyncSession, *, course_id: uuid.UUID) -> Course | None:
     res = await db.execute(
-        select(Course)
-        .where(Course.id == course_id)
-        .options(*_eager_full_options())
+        select(Course).where(Course.id == course_id).options(*_eager_full_options())
     )
     return res.scalar_one_or_none()
 
@@ -508,8 +500,7 @@ async def request_lesson_slides_generation(
     parallelo. Pre-condizione per-unità: `lesson.content_status == approved`."""
     if lesson.is_assessment:
         raise ConflictError(
-            f"La lezione {lesson.lesson_code} è una verifica delle "
-            f"competenze: non genera slide.",
+            f"La lezione {lesson.lesson_code} è una verifica delle competenze: non genera slide.",
             code="lesson_is_assessment_not_eligible",
         )
     ensure_course_not_terminal(course)
@@ -522,8 +513,7 @@ async def request_lesson_slides_generation(
         )
     if lesson.slides_status not in VALID_LESSON_SLIDES_GENERATE_FROM_STATUSES:
         raise ConflictError(
-            f"Lezione {lesson.lesson_code}: stato slide non valido: "
-            f"{lesson.slides_status}",
+            f"Lezione {lesson.lesson_code}: stato slide non valido: {lesson.slides_status}",
             code="invalid_lesson_slides_status",
         )
 
@@ -531,9 +521,7 @@ async def request_lesson_slides_generation(
     lesson.slides_error = None
     lesson.slides_progress = 0
     lesson.slides_progress_phase = None
-    lesson.slides_regeneration_hint = (
-        regeneration_hint.strip() if regeneration_hint else None
-    )
+    lesson.slides_regeneration_hint = regeneration_hint.strip() if regeneration_hint else None
     # Il PDF slide diventa obsoleto: i nuovi slides_raw potrebbero
     # avere titoli, bullet, body, asset diversi. Resettare lo status
     # PDF a `empty` impedisce all'utente di scaricare il PDF vecchio
@@ -558,9 +546,7 @@ async def request_lesson_slides_generation(
             "lesson_code": lesson.lesson_code,
             "is_regeneration": is_regeneration_for_lesson(lesson),
             "hint": (
-                lesson.slides_regeneration_hint[:200]
-                if lesson.slides_regeneration_hint
-                else None
+                lesson.slides_regeneration_hint[:200] if lesson.slides_regeneration_hint else None
             ),
         },
     )
@@ -584,13 +570,11 @@ async def request_all_lessons_slides_generation(
         lesson
         for m in course.modules
         for lesson in m.lessons
-        if lesson.content_status == "approved"
-        and not lesson.is_assessment
+        if lesson.content_status == "approved" and not lesson.is_assessment
     ]
     if not eligible:
         raise ConflictError(
-            "Nessuna lezione con dispensa approvata. Approva prima le "
-            "dispense della Fase 3.",
+            "Nessuna lezione con dispensa approvata. Approva prima le dispense della Fase 3.",
             code="no_lessons_with_content",
         )
 
@@ -649,8 +633,7 @@ async def request_missing_lessons_slides_generation(
     ]
     if not missing:
         raise ConflictError(
-            "Nessuna lezione mancante: tutte hanno già slide o non hanno "
-            "una dispensa approvata.",
+            "Nessuna lezione mancante: tutte hanno già slide o non hanno una dispensa approvata.",
             code="no_missing_slides_lessons",
         )
 
@@ -688,9 +671,7 @@ async def cancel_all_lessons_slides_generation(
     subito, le processing finiscono l'I/O OpenAI ma il worker scarta
     il risultato (vedi `_process_one`).
     """
-    all_lessons: list[CourseLesson] = [
-        lesson for m in course.modules for lesson in m.lessons
-    ]
+    all_lessons: list[CourseLesson] = [lesson for m in course.modules for lesson in m.lessons]
     cancelled = 0
     for lesson in all_lessons:
         if lesson.slides_status in ("pending", "processing"):
@@ -771,31 +752,25 @@ async def approve_all_lessons_slides(
     lezioni che hanno slide siano `ready` o già `approved`. Idempotente:
     se sono già tutte `approved` (o se l'utente clicca due volte) ritorna
     success senza errore."""
-    all_lessons: list[CourseLesson] = [
-        lesson for m in course.modules for lesson in m.lessons
-    ]
+    all_lessons: list[CourseLesson] = [lesson for m in course.modules for lesson in m.lessons]
     not_ready = [
-        l for l in all_lessons
-        if l.slides_status not in ("ready", "approved", "empty")
+        les for les in all_lessons if les.slides_status not in ("ready", "approved", "empty")
     ]
     if not_ready:
         raise ConflictError(
             f"Non tutte le lezioni hanno slide pronte. In attesa: "
-            f"{', '.join(l.lesson_code for l in not_ready)}.",
+            f"{', '.join(les.lesson_code for les in not_ready)}.",
             code="not_all_lessons_slides_ready",
         )
 
-    with_slides = [
-        l for l in all_lessons
-        if l.slides_status in ("ready", "approved")
-    ]
+    with_slides = [les for les in all_lessons if les.slides_status in ("ready", "approved")]
     if not with_slides:
         raise ConflictError(
             "Nessuna lezione ha slide generate. Genera prima le slide.",
             code="no_slides_to_approve",
         )
 
-    eligible = [l for l in all_lessons if l.slides_status == "ready"]
+    eligible = [les for les in all_lessons if les.slides_status == "ready"]
     # Idempotente: se sono già tutte approved, no-op success.
     if not eligible:
         return await _refresh_full(db, course)
