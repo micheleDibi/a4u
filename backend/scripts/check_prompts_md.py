@@ -3,7 +3,7 @@
 `docs/PROMPTS.md` riporta «verbatim» i system prompt delle fasi AI. Il testo
 è scritto a mano e può divergere dal codice a ogni modifica dei prompt:
 questo script estrae, per ogni sezione «# PROMPT n» pertinente, il blocco
-```text del system prompt (e, per il PROMPT 12, le varianti dichiarate
+```text del system prompt (e, per i PROMPT 12 e 17, le varianti dichiarate
 «verbatim») e lo confronta carattere per carattere con l'output della
 funzione `_system_prompt(...)` del servizio corrispondente.
 
@@ -23,8 +23,9 @@ sono normalizzate qui, nello stesso modo in cui il documento le riporta:
 Perimetro: PROMPT 3 (dispense, con grounding), 4 (verifica), 5 (slide),
 6 (discorso), 11 (immagine → Mermaid), 12 (fix degli asset: variante
 principale Mermaid IT e le varianti Vega-Lite / DOT / `function` IT
-dichiarate verbatim). I messaggi user e gli schemi JSON non sono
-confrontati (sono template descrittivi, non stringhe del codice).
+dichiarate verbatim), 17 (revisore figura ↔ testo: prompt IT e variante
+EN). I messaggi user e gli schemi JSON non sono confrontati (sono template
+descrittivi, non stringhe del codice).
 
 Uso (dalla cartella `backend/`; nessun DB, nessuna rete; `JWT_SECRET` in
 ambiente se manca `.env`, come per ogni comando che importa i servizi):
@@ -49,6 +50,7 @@ from pathlib import Path
 from typing import cast
 
 from app.services import openai_asset_fix_service as fix_service
+from app.services import openai_figure_review_service as review_service
 from app.services import openai_image_to_mermaid_service as image_service
 from app.services import openai_lesson_content_service as content_service
 from app.services import openai_lesson_slides_service as slides_service
@@ -59,7 +61,7 @@ DEFAULT_DOCS = Path(__file__).resolve().parents[2] / "docs" / "PROMPTS.md"
 _HEADER_RE = re.compile(r"^# PROMPT (\d+)\b")
 _TEXT_FENCE_RE = re.compile(r"```text\n(.*?)\n```", re.DOTALL)
 _VARIANT_RE = re.compile(
-    r"\*\*Variante `(_SYSTEM_[A-Z]+_IT)`\*\* \(verbatim\):\s*\n\s*\n```text\n(.*?)\n```",
+    r"\*\*Variante `(_SYSTEM_[A-Z]+_(?:IT|EN))`\*\* \(verbatim\):\s*\n\s*\n```text\n(.*?)\n```",
     re.DOTALL,
 )
 
@@ -113,7 +115,7 @@ def system_block(section: str) -> str | None:
 
 
 def variant_blocks(section: str) -> dict[str, str]:
-    """Le varianti «verbatim» del PROMPT 12, per nome della costante."""
+    """Le varianti «verbatim» dei PROMPT 12 e 17, per nome della costante."""
     return dict(_VARIANT_RE.findall(section))
 
 
@@ -190,6 +192,10 @@ def render_fix(kind: str) -> str:
     return italian
 
 
+def render_review(language: str) -> str:
+    return review_service._system_prompt(language)
+
+
 _RENDERERS: tuple[tuple[str, int, str | None, Callable[[], str]], ...] = (
     ("PROMPT 3 — dispense (grounding)", 3, None, render_content),
     ("PROMPT 4 — verifica", 4, None, render_assessment),
@@ -200,6 +206,13 @@ _RENDERERS: tuple[tuple[str, int, str | None, Callable[[], str]], ...] = (
     ("PROMPT 12 — fix Vega-Lite IT", 12, "_SYSTEM_VEGALITE_IT", lambda: render_fix("vegalite")),
     ("PROMPT 12 — fix DOT IT", 12, "_SYSTEM_DOT_IT", lambda: render_fix("dot")),
     ("PROMPT 12 — fix function IT", 12, "_SYSTEM_FUNCTION_IT", lambda: render_fix("function")),
+    ("PROMPT 17 — revisore figura ↔ testo IT", 17, None, lambda: render_review("it")),
+    (
+        "PROMPT 17 — revisore figura ↔ testo EN",
+        17,
+        "_SYSTEM_REVIEW_EN",
+        lambda: render_review("en"),
+    ),
 )
 
 

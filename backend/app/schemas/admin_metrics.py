@@ -7,6 +7,7 @@ restano localizzate e il bucketing è cambiabile senza migrazione backend.
 
 Snapshot cached server-side TTL 60s in `admin_metrics_service`.
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -56,7 +57,9 @@ class CostByPhase(BaseModel):
 
     Nota: `glossary_tokens` usa lo schema vecchio (`{model, prompt,
     completion, total}` senza `cost_usd`), quindi non compare in
-    `by_phase`.
+    `by_phase`. `content` comprende il costo degli asset di Fase 3
+    (`content_tokens.assets_cost_usd`: fix, revisione figura ↔ testo,
+    localizzazione).
     """
 
     phase: str  # architecture | structure | content | slides | speech

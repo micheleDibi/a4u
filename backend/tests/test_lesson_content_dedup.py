@@ -456,8 +456,10 @@ async def test_worker_persists_the_deduplicated_lesson_and_warns(
     async def _generate(**_kwargs: Any) -> tuple[LessonContentOutput, dict[str, Any]]:
         return output, usage
 
-    async def _no_fix(content: LessonContentOutput, *, language_code: str) -> LessonContentOutput:
-        return content
+    async def _no_fix(
+        content: LessonContentOutput, *, language_code: str
+    ) -> tuple[LessonContentOutput, list[dict[str, Any]]]:
+        return content, []
 
     monkeypatch.setattr(
         worker, "async_session_factory", async_sessionmaker(_engine, expire_on_commit=False)

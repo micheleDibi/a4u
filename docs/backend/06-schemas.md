@@ -857,7 +857,9 @@ Costo OpenAI cumulato per una fase: `phase: str` (architecture |
 structure | content | slides | speech), `cost_usd: float`.
 
 Nota: `Course.glossary_tokens` usa lo schema vecchio senza `cost_usd` e
-NON compare in `by_phase`.
+NON compare in `by_phase`. `content` comprende il costo degli asset di
+Fase 3 (`content_tokens.assets_cost_usd`: fix, revisione figura ↔ testo,
+localizzazione).
 
 ### `class CostMetrics(BaseModel)`
 

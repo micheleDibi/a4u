@@ -143,6 +143,16 @@ services:
       OPENAI_ASSET_LOCALIZE_MODEL: ${OPENAI_ASSET_LOCALIZE_MODEL:-gpt-4o-mini}
       OPENAI_ASSET_LOCALIZE_MAX_TOKENS: ${OPENAI_ASSET_LOCALIZE_MAX_TOKENS:-8000}
       ASSET_LOCALIZE_ENABLED: ${ASSET_LOCALIZE_ENABLED:-true}
+      # Revisore AI figura <-> testo (Fase 3): verdetto predefinito
+      # `coerente`, riscrittura accettata solo se valida e non peggiora la
+      # misura; costo in content_tokens.assets. Kill-switch, tetto delle
+      # chiamate per figura e tetto di quelle in volo per processo.
+      OPENAI_FIGURE_REVIEW_MODEL: ${OPENAI_FIGURE_REVIEW_MODEL:-gpt-4o-mini}
+      OPENAI_FIGURE_REVIEW_REASONING_EFFORT: ${OPENAI_FIGURE_REVIEW_REASONING_EFFORT:-}
+      OPENAI_FIGURE_REVIEW_MAX_TOKENS: ${OPENAI_FIGURE_REVIEW_MAX_TOKENS:-4000}
+      FIGURE_REVIEW_MAX_ATTEMPTS: ${FIGURE_REVIEW_MAX_ATTEMPTS:-2}
+      FIGURE_REVIEW_MAX_PARALLEL: ${FIGURE_REVIEW_MAX_PARALLEL:-4}
+      FIGURE_REVIEW_ENABLED: ${FIGURE_REVIEW_ENABLED:-true}
       # Figure accademiche (Fase 3/4): kill-switch per formato (Mermaid
       # sempre attivo), pin Mermaid, tetti di render/calcolo, cache SVG,
       # limite DOT e percorso del binario `dot` (vuoto = PATH).

@@ -15,6 +15,7 @@ Usato sia da `openai_translate_service` (traduzione UI / tassonomie) sia
 dal nuovo `openai_summarize_service` (riassunto strutturato dei documenti
 di corso).
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -22,7 +23,6 @@ from typing import Any
 import httpx
 
 from app.core.config import get_settings
-
 
 # Modelli reasoning OpenAI: prefissi che identificano la famiglia.
 # `o1`, `o3`, `o4` sono la serie "thinking"; `gpt-5*` ha reasoning
@@ -39,9 +39,7 @@ def _is_reasoning_model(model: str) -> bool:
     return name.startswith(_REASONING_MODEL_PREFIXES)
 
 
-def apply_reasoning_effort(
-    body: dict[str, Any], model: str, effort: str | None
-) -> dict[str, Any]:
+def apply_reasoning_effort(body: dict[str, Any], model: str, effort: str | None) -> dict[str, Any]:
     """Aggiunge `reasoning_effort` a `body` se il modello lo supporta.
 
     No-op se il modello non è reasoning, o se `effort` è None / vuoto.
@@ -61,15 +59,28 @@ def apply_reasoning_effort(
 
 
 class OpenAIError(Exception):
-    """Errore generico di chiamata a OpenAI (HTTP error, malformed JSON, ecc.)."""
+    """Errore generico di chiamata a OpenAI (HTTP error, malformed JSON, ecc.).
+
+    `usage` porta il blocco `usage` già convertito (`openai_pricing.
+    build_usage_dict`, con `cost_usd`) quando OpenAI ha risposto 200 e la
+    risposta è inutilizzabile lo stesso (JSON troncato da
+    `max_completion_tokens`, schema fuori contratto): i token sono pagati e
+    il chiamante li contabilizza invece di perderli. `None` quando la
+    risposta non porta alcun conteggio (errore HTTP, corpo non JSON)."""
 
     def __init__(
-        self, status: int | None, message: str, *, payload: Any = None
+        self,
+        status: int | None,
+        message: str,
+        *,
+        payload: Any = None,
+        usage: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(message)
         self.status = status
         self.message = message
         self.payload = payload
+        self.usage = usage
 
     def __str__(self) -> str:
         return f"[OpenAI {self.status}] {self.message}"

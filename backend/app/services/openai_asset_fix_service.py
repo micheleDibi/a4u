@@ -30,6 +30,7 @@ Vega-Lite sono piu' lunghi di quelli di KaTeX).
 from __future__ import annotations
 
 import json
+import time
 from typing import Any, Literal
 
 import httpx
@@ -45,6 +46,7 @@ from app.services.openai_client import (
     apply_reasoning_effort,
     get_client,
 )
+from app.services.openai_pricing import build_usage_dict
 
 log = get_logger("app.openai_asset_fix")
 
@@ -72,7 +74,8 @@ _MERMAID_URL_STMT = ", ".join(
 
 
 class OpenAIAssetFixError(OpenAIError):
-    """Errore specifico dell'auto-fix di un asset."""
+    """Errore specifico dell'auto-fix di un asset (con l'eventuale `usage`
+    della chiamata già pagata: vedi `OpenAIError`)."""
 
 
 class AssetFixOut(BaseModel):
@@ -364,8 +367,13 @@ async def fix_asset(
     renderer del registro), troncato a `_ERROR_CAP`.
     `context`: opzionale — caption/label/explanation per orientare il fix.
 
-    Ritorna `(output, usage)`. Solleva `OpenAIAssetFixError` su errore
-    HTTP/parse/schema; `OpenAINotConfiguredError` se manca la API key.
+    Ritorna `(output, usage)`, con `usage` di
+    `openai_pricing.build_usage_dict` (`cost_usd`, `duration_ms`). Solleva
+    `OpenAIAssetFixError` su errore HTTP/parse/schema;
+    `OpenAINotConfiguredError` se manca la API key. Se la risposta 200 è
+    inutilizzabile ma porta il conteggio dei token, l'eccezione lo porta in
+    `usage` (vedi `OpenAIError`): il chiamante contabilizza la chiamata
+    pagata invece di perderla.
     """
     settings = get_settings()
     lang = "it" if _is_it(language_code) else "en"
@@ -406,6 +414,7 @@ async def fix_asset(
         model=settings.openai_asset_fix_model,
         source_chars=len(source or ""),
     )
+    started = time.monotonic()
     try:
         async with get_client(timeout=90.0) as client:
             resp = await client.post("/chat/completions", json=body, timeout=90.0)
@@ -414,6 +423,7 @@ async def fix_asset(
     except httpx.HTTPError as exc:
         log.error("openai_asset_fix_http_error", error=str(exc))
         raise OpenAIAssetFixError(status=None, message=f"Errore HTTP verso OpenAI: {exc}") from exc
+    duration_ms = int((time.monotonic() - started) * 1000)
 
     if resp.status_code >= 400:
         try:
@@ -433,6 +443,20 @@ async def fix_asset(
         )
 
     data = resp.json()
+    # Usage uniforme alle fasi della pipeline (D16): con `cost_usd` e
+    # `duration_ms`, raccolto da `asset_validation_service` in
+    # `content_tokens.assets`. Calcolato PRIMA di leggere il contenuto: una
+    # risposta 200 inutilizzabile (JSON troncato da `max_tokens`, schema
+    # fuori contratto) è comunque pagata, e l'eccezione porta l'usage.
+    raw_usage = data.get("usage") if isinstance(data, dict) else None
+    usage = build_usage_dict(
+        model=settings.openai_asset_fix_model,
+        reasoning_effort_setting=settings.openai_asset_fix_reasoning_effort,
+        openai_usage=raw_usage if isinstance(raw_usage, dict) else {},
+        duration_ms=duration_ms,
+    )
+    billed = usage if isinstance(raw_usage, dict) and raw_usage else None
+
     try:
         content = data["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError) as exc:
@@ -441,6 +465,7 @@ async def fix_asset(
             status=resp.status_code,
             message="Risposta OpenAI in formato inatteso.",
             payload=data,
+            usage=billed,
         ) from exc
 
     try:
@@ -450,6 +475,7 @@ async def fix_asset(
         raise OpenAIAssetFixError(
             status=resp.status_code,
             message=f"OpenAI non ha restituito JSON valido: {exc}",
+            usage=billed,
         ) from exc
 
     try:
@@ -460,16 +486,12 @@ async def fix_asset(
             status=resp.status_code,
             message=f"Output OpenAI non conforme allo schema: {exc}",
             payload=parsed,
+            usage=billed,
         ) from exc
 
-    usage_raw = data.get("usage") or {}
-    usage = {
-        "prompt": int(usage_raw.get("prompt_tokens") or 0),
-        "completion": int(usage_raw.get("completion_tokens") or 0),
-        "total": int(usage_raw.get("total_tokens") or 0),
-        "model": settings.openai_asset_fix_model,
-    }
-    log.info("openai_asset_fix_response", kind=kind, tokens=usage["total"])
+    log.info(
+        "openai_asset_fix_response", kind=kind, tokens=usage["total"], cost_usd=usage["cost_usd"]
+    )
     return output, usage
 
 

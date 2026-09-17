@@ -30,6 +30,50 @@ validato; quelli invalidi vengono riparati con una chiamata AI mirata
 `AssetFixUnresolvedError` (recuperabile) → il worker rigenera l'intera lezione
 via auto-retry. Cosi' nessun asset rotto raggiunge lo stato `ready`/output.
 
+Fase 3, ordine fix → revisione → localizzazione (D15):
+1. fix degli asset invalidi (sopra);
+2. revisione figura ↔ testo (`_review_figures`,
+   `openai_figure_review_service.review_figure`, kill-switch
+   `figure_review_enabled`, al più `figure_review_max_attempts` chiamate per
+   figura): ogni figura valida è confrontata con il testo integrale della
+   prima sezione che la cita (`FIG_REF_RE` su introduzione, sezioni e
+   sintesi; il corpo intero, con un tetto, se non è citata) e con la misura
+   di WP5 dell'originale, resa una volta con `render_figure_map`. Il
+   verdetto predefinito è `coerente`. Una riscrittura (`correggi`) passa da
+   `_sanitize`, dai controlli deterministici (placeholder, stesso tipo
+   Mermaid, nodi e archi non in aumento, tutti i nodi dell'originale con
+   gli stessi id, nessun nodo collegato lasciato senza archi), dalla
+   stessa `_validate_slots` del fix e dalla misura: originale e
+   riscrittura sono letti dalla stessa `render_figure_map` (l'originale è
+   un hit della cache), e la regola di `review_acceptance` vuole la
+   riscrittura misurata, con incroci non superiori e nessun difetto nuovo.
+   Vega-Lite e `function` non hanno archi né misura geometrica: al loro
+   posto vale la conservazione dei dati di `_DATA_GUARDS` (righe di
+   `data.values` e campi dell'encoding, espressioni e dominio), così
+   nessun formato può perdere il contenuto della figura per una
+   riscrittura. Una riscrittura respinta lascia l'originale byte-identico
+   (nessuna scrittura in `content`, voce di cache dell'originale intatta)
+   e il motivo torna al modello nel tentativo successivo. Nessun esito
+   della revisione fa fallire la lezione: ogni errore di una chiamata
+   (anche fuori da `OpenAIError`) è un tentativo perso di quella figura
+   (`figure_review_call_failed`) e non tocca le chiamate sorelle del giro;
+   un guasto imprevisto fuori dalle chiamate diventa `figure_review_failed`
+   con gli originali intatti. Le chiamate in volo hanno un tetto per
+   processo (`figure_review_max_parallel`, semaforo per loop) e le rese
+   della revisione sono speculative (`cache_failures=False`): un loro
+   guasto non mette in cache negativa le figure originali;
+3. localizzazione dei campi rimasti in un'altra lingua, con rivalidazione
+   non fatale dei kind strutturali.
+Ogni chiamata AI dei tre passi lascia una voce in `assets_usage`
+(`phase` fra `fix`, `review`, `localize`, `asset_id` dello slot e i campi
+di `openai_pricing.build_usage_dict`, con `cost_usd`), che
+`validate_and_fix_content_assets` ritorna accanto all'output e il worker
+fonde in `content_tokens` (`merge_assets_usage`). Anche una chiamata
+pagata che non produce nulla di usabile (200 con JSON troncato o schema
+fuori contratto) lascia la sua voce: l'usage arriva con l'eccezione
+(`OpenAIError.usage`). In Fase 4 lo stesso usage è solo loggato
+(`slides_assets_usage`).
+
 Playwright gira in un thread con loop dedicato (ProactorEventLoop su Windows),
 stesso pattern del pre-render Mermaid in `course_lesson_pdf_service`. Se le
 librerie CDN non sono raggiungibili, il LaTeX resta validato offline da
@@ -42,8 +86,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import re
 import sys
+import time
+import weakref
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -56,15 +103,32 @@ from app.core.i18n_scripts import has_target_script_chars, primary_script
 from app.core.logging import get_logger
 from app.schemas.course_lesson_content import LessonContentOutput
 from app.schemas.course_lesson_slides import LessonSlidesOutput
-from app.services import openai_asset_fix_service, openai_asset_localize_service
+from app.schemas.figure_function import parse_function_spec
+from app.services import (
+    openai_asset_fix_service,
+    openai_asset_localize_service,
+    openai_figure_review_service,
+)
+from app.services.figure_compute.graph_rules import GRAPH_FORMATS, graph_source_metrics
+from app.services.figure_compute.vegalite_rules import (
+    VegaLiteDataMetrics,
+    vegalite_data_metrics,
+)
+from app.services.figure_numbering import FIG_REF_RE
 from app.services.figure_render_service import (
     REGISTRY,
     RENDERABLE_FORMATS,
+    RenderedFigure,
     available_formats,
     figure_asset_context,
+    render_figure_map,
 )
+from app.services.figure_scale import fit_figure_width_mm, resolve_base_font_px
 from app.services.figure_theme import mermaid_initialize_js
 from app.services.mermaid_prerender import block_external_requests
+from app.services.openai_client import OpenAIError
+from app.services.openai_figure_review_service import FigureMeasure, ReviewContext
+from app.services.svg_normalize import svg_intrinsic_box
 
 log = get_logger("app.asset_validation")
 
@@ -72,7 +136,14 @@ log = get_logger("app.asset_validation")
 class AssetFixUnresolvedError(Exception):
     """Un asset fragile e' rimasto invalido dopo `asset_fix_max_attempts`.
 
-    Recuperabile: il worker la mappa su auto-retry (rigenera la lezione)."""
+    Recuperabile: il worker la mappa su auto-retry (rigenera la lezione).
+    `assets_usage` porta le chiamate degli asset gia' pagate nel tentativo
+    fallito: nulla si materializza (la lezione viene rigenerata), ma il
+    costo resta visibile nei log del worker invece di sparire."""
+
+    def __init__(self, message: str, *, assets_usage: list[dict[str, Any]] | None = None) -> None:
+        super().__init__(message)
+        self.assets_usage: list[dict[str, Any]] = list(assets_usage or [])
 
 
 @dataclass(frozen=True)
@@ -654,11 +725,18 @@ def _unresolved_details(invalid: list[AssetCheck]) -> str:
     return "; ".join(f"{c.id} [{c.kind}]: {c.error_message}" for c in invalid[:5])
 
 
-def _raise_if_unfixable(invalid: list[AssetCheck]) -> None:
+def _raise_if_unfixable(
+    invalid: list[AssetCheck], usage_sink: list[dict[str, Any]] | None = None
+) -> None:
     """Solleva subito se un check invalido non e' riparabile dal fix AI."""
     blocked = [c for c in invalid if not c.fixable]
     if blocked:
-        raise AssetFixUnresolvedError(_unresolved_details(blocked))
+        raise AssetFixUnresolvedError(_unresolved_details(blocked), assets_usage=usage_sink)
+
+
+def _usage_entry(phase: str, asset_id: str | None, usage: dict[str, Any]) -> dict[str, Any]:
+    """Voce di `assets_usage`: fase, slot e i campi di `build_usage_dict`."""
+    return {"phase": phase, "asset_id": asset_id, **usage}
 
 
 async def _validate_and_fix(
@@ -666,12 +744,14 @@ async def _validate_and_fix(
     inline_fields: list[_InlineField],
     *,
     language_code: str,
+    usage_sink: list[dict[str, Any]] | None = None,
 ) -> int:
     """Valida gli slot e ripara SOLO quelli invalidi. Gli asset gia' validi
     NON vengono toccati: nessun clean, nessun commit, restano byte-identici.
     Ritorna il numero di asset effettivamente modificati. Solleva
     `AssetFixUnresolvedError` (recuperabile) se uno resta invalido dopo i
-    tentativi."""
+    tentativi. Ogni chiamata di fix riuscita aggiunge a `usage_sink` una
+    voce `phase="fix"` con l'id dello slot."""
     if not slots:
         return 0
 
@@ -705,18 +785,18 @@ async def _validate_and_fix(
 
     # Un check non fixable (formato non disponibile sul server) non va al fix
     # AI: nessun token speso, escalation immediata alla rigenerazione.
-    _raise_if_unfixable(invalid)
+    _raise_if_unfixable(invalid, usage_sink)
 
     # Fix AI iterativo, SOLO sugli asset ancora invalidi.
     remaining = max_attempts
     while invalid:
         if remaining <= 0:
-            raise AssetFixUnresolvedError(_unresolved_details(invalid))
+            raise AssetFixUnresolvedError(_unresolved_details(invalid), assets_usage=usage_sink)
         remaining -= 1
         for c in invalid:
             slot = by_id[c.id]
             try:
-                out, _usage = await openai_asset_fix_service.fix_asset(
+                out, usage = await openai_asset_fix_service.fix_asset(
                     kind=cast(openai_asset_fix_service.AssetKind, slot.kind),
                     source=slot.current,
                     error_message=c.error_message,
@@ -726,15 +806,25 @@ async def _validate_and_fix(
             except openai_asset_fix_service.OpenAIAssetFixError as exc:
                 # Fix transitoriamente fallito: lascia il sorgente invariato,
                 # ri-fallira' e (se non si risolve) escalera' a re-gen lezione.
-                log.warning("asset_fix_call_failed", asset_id=slot.id, error=str(exc))
+                # Se la chiamata e' stata pagata lo stesso (200 inutilizzabile)
+                # il suo usage entra comunque in `usage_sink` (D16).
+                cost: Any = None
+                if usage_sink is not None and isinstance(exc.usage, dict):
+                    usage_sink.append(_usage_entry("fix", slot.id, exc.usage))
+                    cost = exc.usage.get("cost_usd")
+                log.warning(
+                    "asset_fix_call_failed", asset_id=slot.id, error=str(exc), cost_usd=cost
+                )
                 continue
+            if usage_sink is not None:
+                usage_sink.append(_usage_entry("fix", slot.id, usage))
             candidate = _sanitize(slot.kind, out.fixed_content)
             if not candidate or _looks_corrupted(slot.kind, candidate):
                 continue
             slot.current = candidate
         checks = await _validate_slots(slots)
         invalid = [c for c in checks if not c.ok]
-        _raise_if_unfixable(invalid)
+        _raise_if_unfixable(invalid, usage_sink)
 
     # Commit CHIRURGICO: solo gli slot davvero cambiati (riparati). Gli asset
     # gia' validi non vengono ne' committati ne' riscritti; i campi inline
@@ -882,11 +972,18 @@ def _collect_slides_loc_fields(output: LessonSlidesOutput) -> list[_LocField]:
     return fields
 
 
-async def _localize_fields(fields: list[_LocField], *, language_code: str) -> bool:
+async def _localize_fields(
+    fields: list[_LocField],
+    *,
+    language_code: str,
+    usage_sink: list[dict[str, Any]] | None = None,
+) -> bool:
     """Localizza i campi rimasti in lingua sbagliata. Best-effort: ogni errore
     diventa un warning e non blocca la generazione. Ritorna True se è cambiato
     un asset STRUTTURALE (ogni kind diverso da `text`: tabella o figura) → il
-    chiamante ri-valida la sintassi offline.
+    chiamante ri-valida la sintassi offline. La chiamata riuscita aggiunge a
+    `usage_sink` una voce `phase="localize"` (una chiamata copre più campi:
+    `asset_id` è `None` e `fields` ne dà il numero).
     """
     settings = get_settings()
     if not settings.asset_localize_enabled:
@@ -900,12 +997,14 @@ async def _localize_fields(fields: list[_LocField], *, language_code: str) -> bo
         return False
     items = {f.key: f.text for f in suspect}
     try:
-        localized, _usage = await openai_asset_localize_service.localize_texts(
+        localized, usage = await openai_asset_localize_service.localize_texts(
             items=items, language_code=language_code
         )
     except Exception as exc:
         log.warning("asset_localize_call_failed", error=str(exc), fields=len(items))
         return False
+    if usage_sink is not None and usage:
+        usage_sink.append({**_usage_entry("localize", None, usage), "fields": len(items)})
 
     structural_changed = False
     changed = 0
@@ -926,28 +1025,706 @@ async def _localize_fields(fields: list[_LocField], *, language_code: str) -> bo
 
 
 # ---------------------------------------------------------------------------
+# Revisione figura ↔ testo (D15)
+# ---------------------------------------------------------------------------
+
+# Box del fit nella misura inviata al revisore: la dispensa A4 del template
+# di default (`course_lesson_pdf_service._compute_template_margins_cm({})`,
+# 170 × 242 mm) meno il padding del wrapper per formato (solo Mermaid);
+# valori pinnati da un test contro le costanti del PDF (qui niente import
+# del servizio PDF, che carica WeasyPrint). Tabella e non confronto
+# letterale sul formato (D2, doc 17 § 9).
+_REVIEW_FIT_BOX_MM: tuple[float, float] = (170.0, 242.0)
+_REVIEW_BODY_PADDING_MM: dict[str, float] = {"mermaid": 2.0}
+# Suffisso della chiave della riscrittura nella validazione e nella mappa di
+# resa: l'originale è `asset:<id>`, la riscrittura `asset:<id>#review`.
+_REVIEW_SUFFIX = "#review"
+_LOG_CAP = 300
+# Id elencati nel motivo di `nodes_removed` / `nodes_isolated` (il motivo
+# torna al modello e finisce nei log: basta un campione ordinato).
+_REVIEW_IDS_SHOWN = 8
+
+# Chiamate del revisore in volo per processo (`figure_review_max_parallel`):
+# un giro ne lancia una per figura in attesa e le lezioni corrono in
+# parallelo (`course_lesson_content_max_concurrency`), quindi senza tetto le
+# chiamate simultanee sarebbero figure × lezioni. Un semaforo per loop, come
+# `figure_render_service._render_semaphore` (uvicorn e test usano loop
+# diversi); il valore è letto alla prima chiamata del loop.
+_review_semaphores: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore] = (
+    weakref.WeakKeyDictionary()
+)
+
+OUTCOME_COHERENT = "coherent"
+OUTCOME_UNCHANGED = "unchanged"
+OUTCOME_ACCEPTED = "accepted"
+OUTCOME_REJECTED = "rejected"
+
+
+@dataclass
+class _ReviewItem:
+    """Una figura in revisione: l'originale non cambia fino al commit."""
+
+    asset: Any
+    key: str
+    fmt: str
+    original: str
+    context: ReviewContext
+    measure: FigureMeasure
+    feedback: str = ""
+
+
+@dataclass(frozen=True)
+class _Judgement:
+    ok: bool
+    reason: str
+    crossings_before: int | None
+    crossings_after: int | None
+
+
+def _review_semaphore() -> asyncio.Semaphore:
+    """Semaforo delle chiamate del revisore del loop corrente."""
+    loop = asyncio.get_running_loop()
+    sem = _review_semaphores.get(loop)
+    if sem is None:
+        sem = asyncio.Semaphore(max(1, int(get_settings().figure_review_max_parallel)))
+        _review_semaphores[loop] = sem
+    return sem
+
+
+def _review_context(output: LessonContentOutput, asset_id: str) -> ReviewContext:
+    """Testo del primo blocco che cita la figura (introduzione, sezioni,
+    sintesi: l'ordine della numerazione; poi esempi e tabelle, dove il tag
+    è un rimando ma non una posizione di inserimento), id confrontato con
+    `.strip().lower()`; se nessuno la cita, il corpo intero (il tetto lo
+    applica il servizio del revisore)."""
+    target = asset_id.strip().lower()
+    blocks: list[tuple[str, str]] = [("Introduzione", output.introduction or "")]
+    blocks.extend((s.title, s.content or "") for s in output.sections)
+    blocks.append(("Sintesi", output.summary or ""))
+    # Stesso corpus dei warning di Fase 3 (course_lesson_content_service):
+    # una figura citata solo in un esempio o in una tabella è comunque
+    # citata, e il revisore deve vedere quella frase.
+    extra: list[tuple[str, str]] = [
+        (ex.title or "Esempio", ex.content or "") for ex in output.examples
+    ]
+    extra.extend((t.caption or "Tabella", t.markdown or "") for t in output.tables)
+    for title, text in [*blocks, *extra]:
+        if any(m.group(1).strip().lower() == target for m in FIG_REF_RE.finditer(text)):
+            return ReviewContext(title=title, text=text, cited=True)
+    body = "\n\n".join(text.strip() for _title, text in blocks if text.strip())
+    return ReviewContext(title="", text=body, cited=False)
+
+
+def _figure_measure(fmt: str, source: str, fig: RenderedFigure | None) -> FigureMeasure:
+    """Misura di WP5 di una figura: nodi e archi dal sorgente sanificato
+    (solo grafi), geometria e corpo del testo dalla resa (se c'è)."""
+    renderer = REGISTRY.get(fmt)
+    sanitized = renderer.sanitize(source) if renderer is not None else source
+    counts = graph_source_metrics(fmt, sanitized)
+    nodes = counts.nodes if counts is not None else None
+    edges = counts.edges if counts is not None else None
+    if fig is None:
+        return FigureMeasure(nodes=nodes, edges=edges)
+    metrics = fig.metrics
+    text_pt: float | None = None
+    in_band: bool | None = None
+    box = svg_intrinsic_box(fig.svg)
+    base, _font_source = resolve_base_font_px(fmt, metrics)
+    if box is not None and base is not None:
+        padding = _REVIEW_BODY_PADDING_MM.get(fmt, 0.0)
+        fit = fit_figure_width_mm(
+            vb_w=box.vb_w,
+            vb_h=box.vb_h,
+            base_font_px=base,
+            box_w_mm=_REVIEW_FIT_BOX_MM[0] - padding,
+            box_h_mm=_REVIEW_FIT_BOX_MM[1],
+            variant="lesson",
+            intrinsic_w_px=box.width_px,
+        )
+        if fit is not None:
+            text_pt, in_band = fit.text_pt, fit.in_band
+    return FigureMeasure(
+        nodes=nodes,
+        edges=edges,
+        rendered=True,
+        crossings=metrics.crossings if metrics is not None else None,
+        defects=metrics.defects if metrics is not None else (),
+        text_pt=text_pt,
+        in_band=in_band,
+    )
+
+
+def _defect_codes(defects: tuple[str, ...]) -> Counter[str]:
+    """Difetti contati per codice (`codice: dettaglio`): il dettaglio cita le
+    etichette, che una riscrittura legittima può cambiare."""
+    return Counter(d.split(":", 1)[0].strip() for d in defects)
+
+
+def review_acceptance(
+    fmt: str, original: FigureMeasure | None, candidate: FigureMeasure | None
+) -> tuple[bool, str]:
+    """Regola di accettazione della misura per una riscrittura già valida.
+
+    - Vega-Lite e `function` non hanno misura geometrica: decide la sola
+      validazione (`(True, "")`).
+    - Mermaid e DOT: la riscrittura deve essere resa (`measure_unavailable`,
+      per esempio Chromium assente) e misurata (`measure_skipped`: tetto di
+      lavoro o geometria fuori scala). Una riscrittura saltata è respinta
+      anche quando è saltato l'originale: mai un'accettazione senza misura.
+    - Originale misurato: incroci non superiori (`crossings: n > m`) e,
+      per ogni codice di difetto, non più occorrenze dell'originale
+      (`new_defects: …`).
+    - Originale non reso o non misurato: la misura della riscrittura è la
+      prova, e deve essere senza difetti.
+    """
+    if fmt not in GRAPH_FORMATS:
+        return True, ""
+    if candidate is None or not candidate.rendered:
+        return False, "measure_unavailable"
+    after = candidate.crossings
+    if after is None:
+        return False, "measure_skipped"
+    new_codes = _defect_codes(candidate.defects)
+    before = original.crossings if original is not None and original.rendered else None
+    if original is not None and before is not None:
+        if after > before:
+            return False, f"crossings: {after} > {before}"
+        new_codes -= _defect_codes(original.defects)
+    if new_codes:
+        return False, "new_defects: " + ", ".join(sorted(new_codes))
+    return True, ""
+
+
+def _ids_shown(ids: frozenset[str]) -> str:
+    shown = sorted(ids)
+    tail = ", …" if len(shown) > _REVIEW_IDS_SHOWN else ""
+    return ", ".join(shown[:_REVIEW_IDS_SHOWN]) + tail
+
+
+def _vegalite_data(source: str) -> VegaLiteDataMetrics | None:
+    """Misura dei dati di una spec Vega-Lite, `None` se il sorgente non è un
+    oggetto JSON (`RecursionError`: il decoder C cade oltre ~1.000 livelli,
+    come in `figure_render_service._parse_vegalite`)."""
+    try:
+        spec = json.loads(source)
+    except (ValueError, RecursionError):
+        return None
+    if not isinstance(spec, dict):
+        return None
+    return vegalite_data_metrics(spec)
+
+
+def _vegalite_guard(before_src: str, after_src: str) -> tuple[str, str]:
+    """Conservazione dei dati di una spec Vega-Lite: la riscrittura non
+    toglie righe inline (`data.values`, `datasets`), non toglie blocchi
+    `data.sequence` e cita ancora tutti i campi dell'originale. Correggere
+    un valore sbagliato resta ammesso (il confronto è sui conteggi e sui
+    campi, non sul contenuto delle righe); cancellare i dati o sostituirli
+    con altri no. Un sorgente che non è JSON non ha misura: decide la
+    validazione."""
+    before = _vegalite_data(before_src)
+    after = _vegalite_data(after_src)
+    if before is None or after is None:
+        return "", ""
+    if after.rows < before.rows:
+        return OUTCOME_REJECTED, f"rows_removed: righe {before.rows} → {after.rows}"
+    if after.sequences < before.sequences:
+        return (
+            OUTCOME_REJECTED,
+            f"sequence_removed: sequenze {before.sequences} → {after.sequences}",
+        )
+    missing = before.fields - after.fields
+    if missing:
+        return OUTCOME_REJECTED, f"fields_removed: campi {_ids_shown(missing)}"
+    return "", ""
+
+
+@dataclass(frozen=True)
+class _FunctionData:
+    """Contenuto di una spec `function`: espressioni (senza spazi) e dominio."""
+
+    expressions: frozenset[str]
+    domain: tuple[float, float]
+
+
+def _function_data(source: str) -> _FunctionData | None:
+    """Misura di una spec `function`, `None` se non passa il parse."""
+    spec, _issues = parse_function_spec(source)
+    if spec is None:
+        return None
+    exprs = frozenset("".join(e.expr.split()) for e in spec.expressions)
+    return _FunctionData(expressions=exprs, domain=spec.domain)
+
+
+def _function_guard(before_src: str, after_src: str) -> tuple[str, str]:
+    """Conservazione del contenuto di una spec `function`: le espressioni
+    dell'originale restano tutte e il dominio non si restringe. La
+    matematica è il dato della figura: la riscrittura cambia etichette,
+    `show` e disegno, non la funzione tracciata."""
+    before = _function_data(before_src)
+    after = _function_data(after_src)
+    if before is None or after is None:
+        return "", ""
+    missing = before.expressions - after.expressions
+    if missing:
+        return OUTCOME_REJECTED, f"expressions_changed: espressioni {_ids_shown(missing)}"
+    (lo, hi), (lo2, hi2) = before.domain, after.domain
+    if lo2 > lo or hi2 < hi:
+        return (
+            OUTCOME_REJECTED,
+            f"domain_reduced: dominio [{lo:g}, {hi:g}] → [{lo2:g}, {hi2:g}]",
+        )
+    return "", ""
+
+
+# Conservazione dei dati per i formati senza misura geometrica: tabella per
+# formato e non confronto letterale (D2, doc 17 § 9).
+_DATA_GUARDS: dict[str, Callable[[str, str], tuple[str, str]]] = {
+    "vegalite": _vegalite_guard,
+    "function": _function_guard,
+}
+
+
+def _review_guard(item: _ReviewItem, candidate: str) -> tuple[str, str]:
+    """Controlli deterministici prima della validazione: `(esito, motivo)`
+    con esito `unchanged`, `rejected` o `""` (la riscrittura prosegue).
+
+    Per i grafi (`graph_source_metrics`) la riscrittura ha lo stesso tipo,
+    non più nodi né archi (`density_increased`), tutti i nodi
+    dell'originale con gli stessi id e, per i tipi senza id, lo stesso
+    numero di nodi (`nodes_removed`), e nessun nodo che nell'originale era
+    estremo di un arco resta senza archi (`nodes_isolated`). Togliere archi
+    resta ammesso: è il modo dichiarato di ridurre gli incroci, e i due
+    controlli sui nodi impediscono che la riduzione cancelli contenuto.
+    Vega-Lite e `function` non hanno né archi né misura geometrica: al loro
+    posto vale la conservazione dei dati di `_DATA_GUARDS` (righe, campi,
+    espressioni, dominio), così nemmeno per loro una riscrittura può
+    cancellare o sostituire il contenuto della figura."""
+    if not candidate:
+        return OUTCOME_REJECTED, "missing_source"
+    renderer = REGISTRY.get(item.fmt)
+    if renderer is None:
+        return OUTCOME_REJECTED, f"{item.fmt}_unavailable"
+    before_src = renderer.sanitize(item.original)
+    after_src = renderer.sanitize(candidate)
+    if after_src == before_src:
+        return OUTCOME_UNCHANGED, OUTCOME_UNCHANGED
+    if _looks_corrupted(item.fmt, candidate):
+        return OUTCOME_REJECTED, "placeholder"
+    before = graph_source_metrics(item.fmt, before_src)
+    after = graph_source_metrics(item.fmt, after_src)
+    if before is not None and after is not None:
+        if before.kind != after.kind:
+            return OUTCOME_REJECTED, f"type_changed: {before.kind} → {after.kind}"
+        if after.nodes > before.nodes or after.edges > before.edges:
+            return (
+                OUTCOME_REJECTED,
+                f"density_increased: nodi {before.nodes} → {after.nodes}, "
+                f"archi {before.edges} → {after.edges}",
+            )
+        missing = before.node_ids - after.node_ids
+        if missing or after.nodes < before.nodes:
+            detail = f" (mancanti: {_ids_shown(missing)})" if missing else ""
+            return (
+                OUTCOME_REJECTED,
+                f"nodes_removed: nodi {before.nodes} → {after.nodes}{detail}",
+            )
+        isolated = before.linked_ids - after.linked_ids
+        if isolated:
+            return OUTCOME_REJECTED, f"nodes_isolated: senza archi {_ids_shown(isolated)}"
+    guard = _DATA_GUARDS.get(item.fmt)
+    if guard is not None:
+        return guard(before_src, after_src)
+    return "", ""
+
+
+def _discard(_value: str) -> None:
+    """Commit nullo degli slot di prova: la riscrittura si applica solo
+    alla fine della revisione."""
+
+
+def _log_verdict(
+    item: _ReviewItem,
+    *,
+    attempt: int,
+    review: openai_figure_review_service.FigureReviewOut,
+    cost_usd: Any,
+    outcome: str,
+    rejection: str = "",
+) -> None:
+    log.info(
+        "figure_review_verdict",
+        asset_id=item.key,
+        format=item.fmt,
+        attempt=attempt,
+        verdict=review.verdict,
+        accepted=outcome == OUTCOME_ACCEPTED,
+        outcome=outcome,
+        reason=review.reason[:_LOG_CAP],
+        rejection=rejection[:_LOG_CAP] or None,
+        cost_usd=cost_usd,
+    )
+
+
+def _reject(
+    item: _ReviewItem,
+    *,
+    attempt: int,
+    review: openai_figure_review_service.FigureReviewOut,
+    cost_usd: Any,
+    reason: str,
+    crossings_before: int | None,
+    crossings_after: int | None,
+) -> None:
+    """Riscrittura respinta: l'originale resta, il motivo torna al modello."""
+    _log_verdict(
+        item,
+        attempt=attempt,
+        review=review,
+        cost_usd=cost_usd,
+        outcome=OUTCOME_REJECTED,
+        rejection=reason,
+    )
+    log.warning(
+        "figure_review_rejected",
+        asset_id=item.key,
+        format=item.fmt,
+        attempt=attempt,
+        reason=reason[:_LOG_CAP],
+        crossings_before=crossings_before,
+        crossings_after=crossings_after,
+    )
+    item.feedback = reason
+
+
+async def _ask_review(
+    item: _ReviewItem,
+    *,
+    attempt: int,
+    language_code: str,
+    usage_sink: list[dict[str, Any]],
+) -> tuple[openai_figure_review_service.FigureReviewOut, dict[str, Any]] | None:
+    """Una chiamata del revisore (sotto `_review_semaphore`); ogni errore è
+    un tentativo perso.
+
+    La cattura è ampia di proposito: le chiamate di un giro corrono in
+    `asyncio.gather`, e un'eccezione propagata da una sola chiamata
+    chiuderebbe il giro lasciando in volo le altre (già pagate, con l'usage
+    perso) e scarterebbe le loro riscritture. Un tentativo perso su una
+    risposta comunque pagata (200 con JSON troncato o schema fuori
+    contratto) lascia la sua voce di usage: il costo è contabilizzato anche
+    senza verdetto (D16)."""
+    try:
+        async with _review_semaphore():
+            return await openai_figure_review_service.review_figure(
+                fmt=cast(openai_figure_review_service.ReviewFormat, item.fmt),
+                source=item.original,
+                caption=item.asset.caption or "",
+                alt_text=item.asset.alt_text or "",
+                context=item.context,
+                measure=item.measure,
+                language_code=language_code,
+                feedback=item.feedback,
+            )
+    except OpenAIError as exc:
+        cost: Any = None
+        if isinstance(exc.usage, dict):
+            usage_sink.append(_usage_entry("review", item.key, exc.usage))
+            cost = exc.usage.get("cost_usd")
+        log.warning(
+            "figure_review_call_failed",
+            asset_id=item.key,
+            attempt=attempt,
+            error=str(exc)[:_LOG_CAP],
+            cost_usd=cost,
+        )
+        return None
+    except Exception as exc:
+        log.warning(
+            "figure_review_call_failed",
+            asset_id=item.key,
+            attempt=attempt,
+            error=f"{type(exc).__name__}: {exc}"[:_LOG_CAP],
+            cost_usd=None,
+        )
+        return None
+
+
+async def _judge_candidates(
+    candidates: list[tuple[_ReviewItem, str]], *, language_code: str
+) -> list[_Judgement]:
+    """Validazione e misura delle riscritture di un giro.
+
+    Una sola `_validate_slots` per tutte (un Chromium per il parse dei
+    Mermaid, `validate(deep=True)` per gli altri formati, come nel fix),
+    poi una sola `render_figure_map` con originale e riscrittura di ogni
+    grafo valido: l'originale è di norma un hit della cache (resa per il
+    prompt), la riscrittura DOT è già in cache dalla validazione profonda,
+    quella Mermaid è resa e misurata nella pagina del pre-render."""
+    slots = [
+        _Slot(
+            id=f"{item.key}{_REVIEW_SUFFIX}",
+            kind=item.fmt,
+            current=candidate,
+            context="",
+            commit=_discard,
+        )
+        for item, candidate in candidates
+    ]
+    checks = {c.id: c for c in await _validate_slots(slots)}
+    results: dict[int, _Judgement] = {}
+    graphs: list[int] = []
+    for i, ((item, _candidate), slot) in enumerate(zip(candidates, slots, strict=True)):
+        check = checks[slot.id]
+        if not check.ok:
+            reason = f"invalid: {check.error_message}"
+            results[i] = _Judgement(False, reason, item.measure.crossings, None)
+        elif item.fmt in GRAPH_FORMATS:
+            graphs.append(i)
+        else:
+            ok, reason = review_acceptance(item.fmt, item.measure, None)
+            results[i] = _Judgement(ok, reason, None, None)
+    if graphs:
+        entries: list[dict[str, str]] = []
+        for i in graphs:
+            item, candidate = candidates[i]
+            entries.append({"format": item.fmt, "asset_id": item.key, "content": item.original})
+            entries.append(
+                {"format": item.fmt, "asset_id": item.key + _REVIEW_SUFFIX, "content": candidate}
+            )
+        started = time.monotonic()
+        figures = await render_figure_map(entries, language=language_code, cache_failures=False)
+        log.info(
+            "figure_review_measured",
+            stage="candidates",
+            figures=len(entries),
+            rendered=len(figures),
+            duration_ms=int((time.monotonic() - started) * 1000),
+        )
+        for i in graphs:
+            item, candidate = candidates[i]
+            original_fig = figures.get(item.key)
+            candidate_fig = figures.get(item.key + _REVIEW_SUFFIX)
+            before = _figure_measure(item.fmt, item.original, original_fig)
+            after = _figure_measure(item.fmt, candidate, candidate_fig)
+            ok, reason = review_acceptance(
+                item.fmt,
+                before if original_fig is not None else None,
+                after if candidate_fig is not None else None,
+            )
+            results[i] = _Judgement(ok, reason, before.crossings, after.crossings)
+    return [results[i] for i in range(len(candidates))]
+
+
+async def _review_round(
+    pending: list[_ReviewItem],
+    *,
+    attempt: int,
+    language_code: str,
+    usage_sink: list[dict[str, Any]],
+    accepted: dict[str, str],
+) -> list[_ReviewItem]:
+    """Un giro di revisione (chiamate concorrenti, una per figura in
+    attesa); ritorna le figure da riproporre al giro successivo."""
+    calls = await asyncio.gather(
+        *(
+            _ask_review(item, attempt=attempt, language_code=language_code, usage_sink=usage_sink)
+            for item in pending
+        )
+    )
+    retry: list[_ReviewItem] = []
+    candidates: list[tuple[_ReviewItem, str]] = []
+    reviews: list[tuple[openai_figure_review_service.FigureReviewOut, Any]] = []
+    for item, result in zip(pending, calls, strict=True):
+        if result is None:
+            retry.append(item)
+            continue
+        review, usage = result
+        usage_sink.append(_usage_entry("review", item.key, usage))
+        cost = usage.get("cost_usd")
+        if review.verdict == openai_figure_review_service.VERDICT_COHERENT:
+            _log_verdict(
+                item, attempt=attempt, review=review, cost_usd=cost, outcome=OUTCOME_COHERENT
+            )
+            continue
+        candidate = _sanitize(item.fmt, review.source or "")
+        outcome, reason = _review_guard(item, candidate)
+        if outcome == OUTCOME_UNCHANGED:
+            _log_verdict(
+                item, attempt=attempt, review=review, cost_usd=cost, outcome=OUTCOME_UNCHANGED
+            )
+        elif outcome == OUTCOME_REJECTED:
+            _reject(
+                item,
+                attempt=attempt,
+                review=review,
+                cost_usd=cost,
+                reason=reason,
+                crossings_before=item.measure.crossings,
+                crossings_after=None,
+            )
+            retry.append(item)
+        else:
+            candidates.append((item, candidate))
+            reviews.append((review, cost))
+    if not candidates:
+        return retry
+    judgements = await _judge_candidates(candidates, language_code=language_code)
+    for (item, candidate), (review, cost), verdict in zip(
+        candidates, reviews, judgements, strict=True
+    ):
+        if verdict.ok:
+            accepted[item.key] = candidate
+            _log_verdict(
+                item, attempt=attempt, review=review, cost_usd=cost, outcome=OUTCOME_ACCEPTED
+            )
+            continue
+        _reject(
+            item,
+            attempt=attempt,
+            review=review,
+            cost_usd=cost,
+            reason=verdict.reason,
+            crossings_before=verdict.crossings_before,
+            crossings_after=verdict.crossings_after,
+        )
+        retry.append(item)
+    return retry
+
+
+async def _review_figures(
+    output: LessonContentOutput,
+    *,
+    language_code: str,
+    usage_sink: list[dict[str, Any]],
+) -> int:
+    """Revisione figura ↔ testo delle figure valide di Fase 3 (docstring del
+    modulo). Ritorna il numero di riscritture applicate; le scrive in
+    `content` solo alla fine, tutte insieme."""
+    settings = get_settings()
+    if not settings.figure_review_enabled:
+        return 0
+    max_attempts = max(0, int(settings.figure_review_max_attempts))
+    assets = [
+        a
+        for a in output.visual_assets
+        if a.format in RENDERABLE_FORMATS and (a.content or "").strip()
+    ]
+    if max_attempts == 0 or not assets:
+        return 0
+    if not settings.openai_api_key:
+        # Niente resa a vuoto: senza chiave nessuna chiamata può partire.
+        log.info("figure_review_skipped", reason="openai_not_configured", figures=len(assets))
+        return 0
+
+    keys = [f"asset:{a.asset_id}" for a in assets]
+    started = time.monotonic()
+    rendered = await render_figure_map(
+        [
+            {"format": a.format, "asset_id": key, "content": a.content}
+            for a, key in zip(assets, keys, strict=True)
+        ],
+        language=language_code,
+        cache_failures=False,
+    )
+    log.info(
+        "figure_review_measured",
+        stage="original",
+        figures=len(assets),
+        rendered=len(rendered),
+        duration_ms=int((time.monotonic() - started) * 1000),
+    )
+    items = [
+        _ReviewItem(
+            asset=a,
+            key=key,
+            fmt=a.format,
+            original=a.content,
+            context=_review_context(output, a.asset_id),
+            measure=_figure_measure(a.format, a.content, rendered.get(key)),
+        )
+        for a, key in zip(assets, keys, strict=True)
+    ]
+    accepted: dict[str, str] = {}
+    pending = items
+    for attempt in range(1, max_attempts + 1):
+        if not pending:
+            break
+        pending = await _review_round(
+            pending,
+            attempt=attempt,
+            language_code=language_code,
+            usage_sink=usage_sink,
+            accepted=accepted,
+        )
+    for item in items:
+        if item.key in accepted:
+            item.asset.content = accepted[item.key]
+    if accepted:
+        log.info("figure_review_applied", accepted=len(accepted), figures=len(items))
+    return len(accepted)
+
+
+def assets_cost_usd(assets: list[dict[str, Any]]) -> float:
+    """Somma dei `cost_usd` noti delle chiamate degli asset (un modello
+    fuori listino vale `None` e non entra)."""
+    return float(
+        sum(
+            float(a["cost_usd"])
+            for a in assets
+            if isinstance(a.get("cost_usd"), int | float) and not isinstance(a["cost_usd"], bool)
+        )
+    )
+
+
+def merge_assets_usage(usage: dict[str, Any], assets: list[dict[str, Any]]) -> dict[str, Any]:
+    """Usage della chiamata di Fase 3 con le chiamate degli asset accanto:
+    `assets` (le voci di `validate_and_fix_content_assets`) e
+    `assets_cost_usd` (somma dei `cost_usd` noti; un modello fuori listino
+    vale `None` e non entra). `cost_usd` resta quello della chiamata
+    principale. Non muta `usage`."""
+    return {
+        **usage,
+        "assets": [dict(a) for a in assets],
+        "assets_cost_usd": assets_cost_usd(assets),
+    }
+
+
+# ---------------------------------------------------------------------------
 # API pubblica
 # ---------------------------------------------------------------------------
 
 
 async def validate_and_fix_content_assets(
     output: LessonContentOutput, *, language_code: str
-) -> LessonContentOutput:
-    """Valida e auto-corregge gli asset fragili dell'output di Fase 3, poi
-    localizza (rete di sicurezza i18n) i campi testuali rimasti in lingua
-    sbagliata. Muta e ritorna lo stesso `output`. Solleva
-    `AssetFixUnresolvedError` (recuperabile) se un asset resta invalido."""
+) -> tuple[LessonContentOutput, list[dict[str, Any]]]:
+    """Valida e auto-corregge gli asset fragili dell'output di Fase 3,
+    revisiona le figure contro il testo, poi localizza (rete di sicurezza
+    i18n) i campi testuali rimasti in lingua sbagliata. Muta `output` e lo
+    ritorna con l'usage delle chiamate AI degli asset (`phase` fra `fix`,
+    `review`, `localize`). Solleva `AssetFixUnresolvedError` (recuperabile)
+    se un asset resta invalido; la revisione non solleva mai."""
+    usage: list[dict[str, Any]] = []
     slots, inline_fields = _collect_content_slots(output)
     if slots:
-        fixed = await _validate_and_fix(slots, inline_fields, language_code=language_code)
+        fixed = await _validate_and_fix(
+            slots, inline_fields, language_code=language_code, usage_sink=usage
+        )
         log.info(
             "content_assets_validated",
             total=len(slots),
             fixed=fixed,
             kinds=dict(Counter(s.kind for s in slots)),
         )
+    # La revisione non deve mai costare una rigenerazione: il worker tratta
+    # ogni eccezione come recuperabile. Le riscritture si applicano solo a
+    # fine revisione, quindi un guasto lascia gli originali intatti.
+    try:
+        await _review_figures(output, language_code=language_code, usage_sink=usage)
+    except Exception as exc:
+        log.warning("figure_review_failed", error=f"{type(exc).__name__}: {exc}"[:500])
     structural_changed = await _localize_fields(
-        _collect_content_loc_fields(output), language_code=language_code
+        _collect_content_loc_fields(output), language_code=language_code, usage_sink=usage
     )
     if structural_changed:
         # La traduzione può aver toccato label Mermaid / celle tabella: ri-valida
@@ -956,10 +1733,12 @@ async def validate_and_fix_content_assets(
         slots2, inline2 = _collect_content_slots(output)
         if slots2:
             try:
-                await _validate_and_fix(slots2, inline2, language_code=language_code)
+                await _validate_and_fix(
+                    slots2, inline2, language_code=language_code, usage_sink=usage
+                )
             except AssetFixUnresolvedError as exc:
                 log.warning("asset_localize_revalidate_failed", error=str(exc))
-    return output
+    return output, usage
 
 
 async def validate_and_fix_slides_assets(
@@ -968,10 +1747,14 @@ async def validate_and_fix_slides_assets(
     """Valida e auto-corregge gli asset fragili dell'output di Fase 4
     (new_assets Mermaid + math inline nelle slide), poi localizza (rete di
     sicurezza i18n) i campi testuali dei nuovi asset rimasti in lingua
-    sbagliata. Muta e ritorna `output`."""
+    sbagliata. Muta e ritorna `output`. L'usage delle chiamate AI è solo
+    loggato (`slides_assets_usage`): `slides_tokens` non lo raccoglie."""
+    usage: list[dict[str, Any]] = []
     slots, inline_fields = _collect_slides_slots(output)
     if slots:
-        fixed = await _validate_and_fix(slots, inline_fields, language_code=language_code)
+        fixed = await _validate_and_fix(
+            slots, inline_fields, language_code=language_code, usage_sink=usage
+        )
         log.info(
             "slides_assets_validated",
             total=len(slots),
@@ -979,21 +1762,32 @@ async def validate_and_fix_slides_assets(
             kinds=dict(Counter(s.kind for s in slots)),
         )
     structural_changed = await _localize_fields(
-        _collect_slides_loc_fields(output), language_code=language_code
+        _collect_slides_loc_fields(output), language_code=language_code, usage_sink=usage
     )
     if structural_changed:
         slots2, inline2 = _collect_slides_slots(output)
         if slots2:
             try:
-                await _validate_and_fix(slots2, inline2, language_code=language_code)
+                await _validate_and_fix(
+                    slots2, inline2, language_code=language_code, usage_sink=usage
+                )
             except AssetFixUnresolvedError as exc:
                 log.warning("asset_localize_revalidate_failed", error=str(exc))
+    if usage:
+        log.info(
+            "slides_assets_usage",
+            calls=len(usage),
+            phases=dict(Counter(u["phase"] for u in usage)),
+            cost_usd=merge_assets_usage({}, usage)["assets_cost_usd"],
+        )
     return output
 
 
 __all__ = [
     "AssetCheck",
     "AssetFixUnresolvedError",
+    "merge_assets_usage",
+    "review_acceptance",
     "validate_and_fix_content_assets",
     "validate_and_fix_slides_assets",
     "validate_assets_for_test",

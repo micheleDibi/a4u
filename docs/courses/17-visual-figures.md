@@ -1758,6 +1758,121 @@ centrato, `.figure-label` in grassetto, `.figure-svg` con `max-height:
 `.missing-asset` (prima testo nudo). `_VIDEO_OVERRIDE_CSS` non tocca
 `.slide-asset`: i frame video ereditano tutto.
 
+### 8.6 Revisione figura ↔ testo e costo degli asset (D15, D16; WP6, 17 settembre 2026)
+
+In Fase 3 `validate_and_fix_content_assets` esegue **fix → revisione →
+localizzazione** e ritorna `(output, assets_usage)`.
+
+- **Servizio**: `openai_figure_review_service.review_figure` (PROMPT 17,
+  IT/EN in `_SYSTEM_PROMPTS`, `response_format` json_schema strict
+  `{verdict, reason, source}` con `source` annullabile, nessuna
+  persistenza; `gpt-4o-mini`, `max_completion_tokens` 4.000). Ingresso:
+  formato, sorgente, didascalia e testo alternativo, testo integrale del
+  primo blocco che cita la figura (`FIG_REF_RE` su introduzione, sezioni,
+  sintesi, poi esempi e tabelle; tetto 24.000 caratteri)
+  o il corpo della lezione troncato a 12.000, misura dell'originale (nodi e
+  archi di `graph_rules`, incroci e difetti di `figure_geometry`, corpo
+  del testo nella dispensa A4 di default da `fit_figure_width_mm`), lingua
+  ed eventuale motivo del rifiuto precedente. `coerente` è il predefinito
+  del prompt e dello schema Pydantic.
+- **Orchestrazione** (`asset_validation_service._review_figures`, come la
+  localizzazione: riscrittura del sorgente e rivalidazione): una
+  `render_figure_map` sugli originali per la misura del prompt; chiamate
+  concorrenti per giro, al più `figure_review_max_attempts` (2) e con al
+  più `figure_review_max_parallel` (4) in volo per processo (semaforo per
+  loop: il tetto vale anche fra lezioni concorrenti); per ogni
+  `correggi`: `_sanitize` → controlli deterministici (`missing_source`,
+  sorgente identico, `placeholder`, `type_changed`, `density_increased`,
+  `nodes_removed`, `nodes_isolated`, e per i formati senza archi
+  `rows_removed`, `sequence_removed`, `fields_removed`,
+  `expressions_changed`, `domain_reduced`) → `_validate_slots` (la stessa del fix: parse Mermaid 11 in Chromium,
+  `validate(deep=True)` per DOT, Vega-Lite e `function`) → per Mermaid e
+  DOT una sola `render_figure_map` con originale (hit della cache) e
+  riscrittura (DOT in cache dalla validazione profonda, Mermaid resa e
+  misurata nella pagina del pre-render) → `review_acceptance`. Le rese
+  della revisione sono **speculative** (`cache_failures=False`): servono a
+  misurare, non a pubblicare, e un loro guasto non mette in cache negativa
+  le chiavi delle figure originali (che l'export dei 60 s successivi
+  salterebbe).
+- **Conservazione dei nodi** (giro 1 della verifica): dai conteggi di
+  `graph_rules`, che espongono anche `node_ids` (id dei nodi nominati) e
+  `linked_ids` (id estremi di almeno un arco), la riscrittura deve
+  contenere tutti gli id dell'originale e, per i tipi contati senza id
+  (mindmap, treemap, timeline, pie, quadrant, radar, xychart, gantt), lo
+  stesso numero di nodi (`nodes_removed: nodi n → m (mancanti: …)`);
+  nessun nodo che nell'originale era estremo di un arco può restarne
+  senza (`nodes_isolated: senza archi …`). Togliere archi resta ammesso:
+  un K4,4 riscritto come abbinamento (16 → 4 archi, tutti i nodi ancora
+  collegati) è accettato. Il prompt dice lo stesso: tutti i nodi con i
+  loro id, il testo di un nodo si corregge cambiando l'etichetta.
+- **Regola di accettazione** (WP5 lascia gli incroci diagnostici e la
+  misura saltabile): riscrittura resa (`measure_unavailable` altrimenti,
+  Chromium assente compreso) e misurata (`measure_skipped`); originale
+  misurato → incroci non superiori e nessun codice di difetto in più;
+  originale saltato o non reso → la riscrittura deve essere senza
+  difetti. Con entrambe le misure saltate la riscrittura è respinta:
+  «accetta solo con misura» esclude la decisione della sola validazione.
+  Il revisore gira anche sulle figure con la misura dell'originale saltata:
+  può proporre una versione meno densa, che entra solo se misurabile e
+  senza difetti.
+- **Conservazione dei dati senza archi** (giro 2 della verifica): Vega-Lite
+  e `function` non hanno né archi né geometria, e la sola validazione
+  accetterebbe qualunque spec valida — anche una che cancella i dati.
+  `_DATA_GUARDS` (tabella per formato, D2) li misura nel sorgente prima
+  della validazione: per Vega-Lite `vegalite_data_metrics` conta le righe
+  inline (`data.values` e `datasets`, a ogni livello della composizione),
+  i blocchi `data.sequence` e i campi citati (`field`), e la riscrittura
+  non può ridurli (`rows_removed: righe 4 → 1`, `sequence_removed`,
+  `fields_removed: campi a, b`); per `function` `parse_function_spec` dà
+  espressioni (confrontate senza spazi) e dominio, e la riscrittura deve
+  conservarle tutte (`expressions_changed`) senza restringere il dominio
+  (`domain_reduced`). Il confronto è sui conteggi e sui campi, non
+  sull'identità delle righe: correggere un valore sbagliato o le etichette
+  resta ammesso, cancellare o sostituire i dati no. Il prompt dice lo
+  stesso (PROMPT 17: «conserva tutte le righe di `data.values` e i campi
+  dell'encoding», «conserva le espressioni e il dominio»).
+- **Esiti**: accettazione applicata a fine revisione; rifiuto →
+  originale byte-identico, voce di cache dell'originale intatta (la
+  riscrittura respinta resta in cache sotto la propria chiave),
+  `figure_review_rejected` e motivo al tentativo successivo; ogni
+  chiamata → `figure_review_verdict` (`asset_id`, `verdict`, `accepted`,
+  `outcome`, `reason`, `cost_usd`); `figure_review_measured` con
+  `stage` e `duration_ms`. La revisione non solleva mai
+  (`figure_review_call_failed`, `figure_review_failed`): il worker
+  tratta ogni eccezione come rigenerazione della lezione. Ogni errore di
+  una singola chiamata (HTTP, corpo 200 non JSON, schema, eccezione del
+  client fuori da `OpenAIError`) è un tentativo perso di quella figura:
+  `_ask_review` lo cattura, così `asyncio.gather` non chiude il giro con
+  chiamate sorelle ancora in volo, le loro riscritture restano valutate e
+  il loro usage è contato. Una chiamata pagata che non produce un verdetto
+  (200 con JSON troncato dal tetto dei token, schema fuori contratto) non
+  perde il costo: il servizio costruisce l'usage prima di leggere la
+  risposta e lo consegna con l'eccezione (`OpenAIError.usage`), così la
+  voce entra in `content_tokens.assets` e `cost_usd` compare anche nel log
+  del tentativo perso. Vale anche per il gemello del fix, il cui usage
+  viaggia con `AssetFixUnresolvedError` fino al log del worker.
+- **Costo in tempo** (macOS, 17 settembre 2026, Chromium e CDN reali,
+  client OpenAI finto, quindi senza la latenza del modello; tre giri per
+  esito): con `coerente` la revisione di un flowchart Mermaid costa la
+  sola resa dell'originale, 0,84-1,75 s (un Chromium per lezione con
+  figure Mermaid, cache calda per l'export); con `correggi` accettato
+  2,82-3,27 s in tutto, cioè 1,83-2,12 s in più per il parse e la resa
+  della riscrittura (0,94-1,13 s la sola misura); DOT, Vega-Lite e
+  `function` sono hit della cache della validazione profonda.
+- **Costo in denaro** (D16): fix, localizzazione e revisione usano
+  `openai_pricing.build_usage_dict`; le voci (`phase`, `asset_id`, campi
+  dell'usage con `cost_usd`) finiscono in `content_tokens.assets` con la
+  somma `assets_cost_usd` (`merge_assets_usage` nel worker, prima di
+  `materialize_lesson_content`); `cost_usd` resta la chiamata principale.
+  La dashboard admin (`admin_metrics_service._cost`) somma nella fase
+  `content` `cost_usd` e `assets_cost_usd` di ogni riga, con una chiave
+  assente che vale 0. Dopo la validazione il worker rilegge
+  `content_status` (`lesson_content_cancelled_post_assets`): un
+  annullamento arrivato durante fix, revisione o localizzazione scarta il
+  risultato come dopo la chiamata di Fase 3. Stima con il listino corrente: 0,00063
+  USD per 3.000 + 300 token su `gpt-4o-mini`. Nessuna colonna, nessuna
+  migrazione, nessun backfill.
+
 ## 9. Siti `== "mermaid"` e decisione per ciascuno (D2)
 
 Undici confronti letterali con il formato esistono a HEAD; il test
@@ -1808,6 +1923,12 @@ replicato in `.env.example` e `docker-compose.prod.yml` (WP2a). Vedi anche
 | `figure_svg_max_bytes` | `FIGURE_SVG_MAX_BYTES` | `1_500_000` | oltre, l'SVG prodotto è rifiutato (fallback) |
 | `figure_dot_max_chars` | `FIGURE_DOT_MAX_CHARS` | `12_000` | limite del sorgente DOT accettato dal validatore (oltre 12.000 vale il tetto di risorsa degli asset generati e di quelli cambiati nel PATCH, `VISUAL_ASSET_CONTENT_MAX_CHARS`) |
 | `graphviz_dot_path` | `GRAPHVIZ_DOT_PATH` | `None` | percorso del binario `dot`; `None` = ricerca nel `PATH` |
+| `openai_figure_review_model` | `OPENAI_FIGURE_REVIEW_MODEL` | `"gpt-4o-mini"` | modello del revisore figura ↔ testo (sezione 8.6, PROMPT 17) |
+| `openai_figure_review_reasoning_effort` | `OPENAI_FIGURE_REVIEW_REASONING_EFFORT` | `None` | reasoning del revisore, inviato solo ai modelli reasoning |
+| `openai_figure_review_max_tokens` | `OPENAI_FIGURE_REVIEW_MAX_TOKENS` | `4_000` | `max_completion_tokens` del revisore |
+| `figure_review_max_attempts` | `FIGURE_REVIEW_MAX_ATTEMPTS` | `2` | chiamate per figura; `0` = nessuna |
+| `figure_review_max_parallel` | `FIGURE_REVIEW_MAX_PARALLEL` | `4` | chiamate del revisore in volo per processo (semaforo per loop), anche fra lezioni concorrenti |
+| `figure_review_enabled` | `FIGURE_REVIEW_ENABLED` | `True` | kill-switch: `False` = nessuna chiamata HTTP e nessuna resa |
 
 Un formato è offerto al modello solo se abilitato **e** la dipendenza è
 presente (`available_formats()`); le guardie di lunghezza dei prompt sono
@@ -2735,6 +2856,61 @@ Decisioni prese in Fase B (A1-A16) e nella ripresa del 7 settembre
   finché non viene rigenerato o salvato, e il docente vede tre voci prima
   del salvataggio e una dopo, senza messaggio.
 
+- **Revisore figura ↔ testo** (WP6, D15). Scelto: una chiamata per
+  figura valida, dopo il fix e prima della localizzazione, con il testo
+  integrale della prima sezione che la cita invece di `caption or
+  alt_text` (il contesto del fix, tagliato a 600 caratteri, non dice che
+  cosa la figura deve mostrare); `coerente` predefinito; riscrittura
+  accettata solo dopo la stessa validazione del fix e la misura di WP5 su
+  originale e riscrittura lette dalla stessa `render_figure_map`; rifiuto
+  senza rigenerazione della lezione; kill-switch con il pattern di
+  `figure_vegalite_enabled` e default acceso su `gpt-4o-mini` (0,00063 USD
+  per 3.000 + 300 token, come i gemelli fix e localizzazione). Controlli
+  deterministici in più rispetto al piano: stesso tipo Mermaid (un
+  flowchart riscritto in mindmap avrebbe 0 incroci per definizione) e
+  nodi e archi non in aumento (la riscrittura riduce la densità, mai
+  aggiunge); dal giro 1 della verifica anche tutti i nodi dell'originale
+  per id e nessun nodo collegato lasciato isolato (senza, 4 nodi e 4
+  archi riscritti come 2 nodi e 1 arco passavano). Scartata per i nodi
+  una soglia fissa sugli archi: togliere archi ridondanti è il modo
+  dichiarato di ridurre gli incroci, e una soglia alla metà avrebbe
+  respinto l'abbinamento ricavato da un K4,4. Scartate: il revisore anche sulle figure invalide (è il
+  compito del fix, e il suo PROMPT 12 vieta di togliere contenuti); una
+  riscrittura accettata per sola validazione quando la misura manca
+  (Chromium assente, tetto di lavoro): un grafo non misurato può essere
+  peggiore; il confronto dei difetti per testo completo (il dettaglio
+  cita le etichette, che una riscrittura legittima cambia: si confrontano
+  i codici); il ricorso a `course_lesson_pdf_service` per il box del fit
+  (importa WeasyPrint a livello di modulo: costanti pinnate da un test); la somma di `assets_cost_usd` dentro `cost_usd` (cambierebbe il
+  significato storico del campo). La dashboard admin, lasciata fuori nel
+  primo giro, somma `assets_cost_usd` nella fase `content` dal giro 1
+  della verifica: senza, la spesa AI mostrata agli operatori era
+  sottostimata; il file è stato allineato a `ruff format` nello stesso
+  commit. Dal giro 2: la conservazione dei dati per i formati senza archi
+  (`_DATA_GUARDS`), perché la sola validazione accettava una riscrittura
+  Vega-Lite che riduceva `data.values` da quattro righe a una, o che ne
+  sostituiva campi e valori, senza alcun segnale nei log; la guardia è sul
+  numero di righe e sui campi dell'encoding (per `function` sulle
+  espressioni e sul dominio) e non sull'identità delle righe, così
+  correggere un valore sbagliato resta una riscrittura legittima.
+  Sempre dal giro 2: l'usage di una chiamata pagata senza risultato
+  usabile (200 con JSON troncato dal tetto dei token) viaggia con
+  l'eccezione invece di sparire — 0,00285 USD per chiamata con 3.000 +
+  4.000 token, moltiplicati per i tentativi e per le figure — e lo stesso
+  vale per il gemello del fix, il cui costo esce con
+  `AssetFixUnresolvedError` fino al log del worker; il tetto delle
+  chiamate in volo (`FIGURE_REVIEW_MAX_PARALLEL`, semaforo per loop),
+  perché senza di esso le chiamate simultanee erano figure × lezioni; le
+  rese della revisione dichiarate speculative (`cache_failures=False`),
+  perché un timeout del loro batch metteva in cache negativa (60 s) anche
+  le chiavi delle figure originali di DOT, Vega-Lite e `function`, che un
+  export avviato subito dopo avrebbe saltato. Scartata al giro 2: la
+  contabilizzazione del costo di una lezione annullata o rigenerata (non
+  c'è riga in `content_tokens` da scrivere e il cancel-check esiste per
+  non toccare quella lezione: il costo resta nei log,
+  `lesson_content_cancelled_post_assets` e
+  `lesson_content_assets_cost_discarded`).
+
 ## 13. Rischi residui
 
 - Mermaid resta su CDN a runtime (validatore e pre-render): offline degrada
@@ -2852,7 +3028,8 @@ Decisioni prese in Fase B (A1-A16) e nella ripresa del 7 settembre
   `lesson_content_auto_retry` (`phase="asset_validation"`, `error` con
   «graph_too_dense») e, a tentativi esauriti, in `content_error` e
   nell'audit `course.lesson.content.failed`;
-  il revisore di WP6 o una riga nel PROMPT 12 sono le vie di correzione.
+  il revisore di WP6 non interviene qui (vede solo figure già valide): la
+  via di correzione resta una riga nel PROMPT 12.
 - **Incroci DOT dipendenti dal layout dell'ambiente**: il conteggio è
   esatto sull'SVG reso, ma il layout cambia con la versione di Graphviz e
   con i font. Misurato il 17 settembre 2026: `hashTable` ha 1 incrocio e
@@ -2930,6 +3107,33 @@ Decisioni prese in Fase B (A1-A16) e nella ripresa del 7 settembre
   duplicazione e la traduzione del corso (`course_duplication_service`)
   copiano il dict senza schema, e due citazioni distinte possono
   coincidere dopo la traduzione senza essere deduplicate.
+- **Revisore figura ↔ testo** (WP6): il giudizio di coerenza è del
+  modello e nessun controllo deterministico lo verifica; i vincoli
+  meccanici sono validazione, tipo Mermaid, nodi e archi non in aumento,
+  nodi dell'originale conservati per id, nessun nodo collegato isolato,
+  incroci e codici di difetto. Una riscrittura può quindi cambiare
+  etichette o relazioni, o togliere archi, restando entro quei vincoli:
+  visibile in `figure_review_verdict` (`outcome=accepted`, `reason`). La
+  conservazione per id vale per i tipi che nominano i nodi; per mindmap,
+  timeline, pie e simili si confronta solo il numero; per Vega-Lite e
+  `function` la guardia dei dati conserva righe, campi, espressioni e
+  dominio, **non i valori**: una riscrittura può cambiare i numeri di una
+  colonna o le etichette di una curva restando entro il vincolo, perché
+  correggere un valore sbagliato è una riscrittura legittima (il divieto
+  di inventare dati assenti dal testo resta nel prompt). Un nodo
+  il cui testo è l'id (DOT senza `label`, flowchart senza forma) si
+  corregge solo aggiungendo un'etichetta. Il revisore
+  non vede tabelle, esempi e formule della lezione, solo la sezione che
+  cita la figura. Una figura giudicata incoerente e senza riscrittura
+  accettabile resta com'è (`figure_review_rejected`). Le rese della
+  revisione non scrivono in cache negativa (`cache_failures=False`):
+  un loro guasto non toglie le figure all'export del minuto successivo,
+  ma le riscritture respinte occupano posti della cache LRU degli SVG.
+  Costo non registrato in `content_tokens`: le chiamate di una
+  generazione poi annullata o rigenerata (restano nei log
+  `lesson_content_cancelled_post_assets` e
+  `lesson_content_assets_cost_discarded`); in Fase 4 l'usage di fix e
+  localizzazione è solo loggato (`slides_assets_usage`).
 - **La regola di posizione è un'istruzione, non un vincolo**: nessuno
   schema la impone. Un modello che ripete i tag lascia traccia in
   `lesson_content_duplicate_asset_refs` e il renderer tiene una sola

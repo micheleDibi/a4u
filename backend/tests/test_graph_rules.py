@@ -34,6 +34,7 @@ from itertools import pairwise
 import pytest
 import structlog
 
+from app.core.config import get_settings
 from app.core.errors import ValidationAppError
 from app.services import asset_validation_service as avs
 from app.services import figure_render_service as frs
@@ -84,6 +85,13 @@ def _measure(kind: str, source: str) -> gr.GraphSourceMetrics:
     metrics = graph_source_metrics(kind, source)
     assert metrics is not None
     return metrics
+
+
+def _without_figure_review(monkeypatch: pytest.MonkeyPatch) -> None:
+    """I test del percorso del worker guardano il fix: il revisore di WP6
+    resta spento, anche con una chiave OpenAI nell'ambiente."""
+    settings = get_settings().model_copy(update={"figure_review_enabled": False})
+    monkeypatch.setattr(avs, "get_settings", lambda: settings)
 
 
 def _too_dense(errors: list[str], what: str) -> list[str]:
@@ -477,13 +485,14 @@ async def test_a_layered_network_never_reaches_the_asset_fix(
         raise AssertionError(f"fix chiamato: {kwargs.get('error_message')}")
 
     monkeypatch.setattr(fix_service, "fix_asset", _no_fix)
+    _without_figure_review(monkeypatch)
     frs.clear_svg_cache()
     output = build_lesson_content_output(
         visual_assets=[
             {"asset_id": "mlp", "format": "dot", "content": _layers(3, 4, 2), "caption": "c"}
         ]
     )
-    out = await avs.validate_and_fix_content_assets(output, language_code="it")
+    out, _usage = await avs.validate_and_fix_content_assets(output, language_code="it")
     assert out.visual_assets[0].content == _layers(3, 4, 2)
 
 
@@ -727,6 +736,7 @@ async def test_a_descriptive_timeline_never_reaches_the_asset_fix(
         raise AssertionError(f"fix chiamato: {kwargs.get('error_message')}")
 
     monkeypatch.setattr(fix_service, "fix_asset", _no_fix)
+    _without_figure_review(monkeypatch)
     timeline = (
         "timeline\n    title Storia delle reti neurali\n"
         "    1958 : Rosenblatt presenta il percettrone, primo modello addestrabile di "
@@ -736,7 +746,7 @@ async def test_a_descriptive_timeline_never_reaches_the_asset_fix(
     output = build_lesson_content_output(
         visual_assets=[{"asset_id": "t", "format": "mermaid", "content": timeline, "caption": "c"}]
     )
-    out = await avs.validate_and_fix_content_assets(output, language_code="it")
+    out, _usage = await avs.validate_and_fix_content_assets(output, language_code="it")
     assert out.visual_assets[0].content == timeline
 
 
@@ -827,7 +837,8 @@ async def test_a_sankey_with_a_carriage_return_passes_the_worker_gate(
         raise AssertionError(f"fix chiamato: {kwargs.get('error_message')}")
 
     monkeypatch.setattr(fix_service, "fix_asset", _no_fix)
+    _without_figure_review(monkeypatch)
     asset = {"asset_id": "s", "format": "mermaid", "content": _SANKEY_CR, "caption": "c"}
     output = build_lesson_content_output(visual_assets=[asset])
-    out = await avs.validate_and_fix_content_assets(output, language_code="it")
+    out, _usage = await avs.validate_and_fix_content_assets(output, language_code="it")
     assert out.visual_assets[0].content == _SANKEY_CR

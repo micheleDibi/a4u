@@ -277,6 +277,28 @@ class Settings(BaseSettings):
     openai_asset_localize_max_tokens: int = 8_000
     asset_localize_enabled: bool = True
 
+    # Revisore AI figura ↔ testo (Fase 3, D15). Dopo il fix, ogni figura
+    # valida è confrontata con il testo integrale della sezione che la cita e
+    # con la sua misura (nodi, archi, incroci, difetti, corpo del testo): il
+    # verdetto predefinito è `coerente` (nessuna riscrittura); `correggi`
+    # porta un sorgente nuovo, accettato solo se supera la validazione e non
+    # peggiora la misura, altrimenti resta l'originale byte-identico.
+    # gpt-4o-mini come il fix e la localizzazione: circa 0,0006 USD a figura
+    # con 3.000 token in ingresso e 300 in uscita (listino di
+    # `openai_pricing`); il costo entra in `content_tokens.assets`. Un
+    # rifiuto non fa rigenerare la lezione: `figure_review_max_attempts`
+    # limita le chiamate per figura (0 = nessuna), `figure_review_enabled=
+    # False` spegne la fase senza alcuna chiamata HTTP né resa.
+    # `figure_review_max_parallel`: chiamate del revisore in volo per
+    # processo (un giro ne lancia una per figura e le lezioni corrono in
+    # parallelo: senza tetto sarebbero figure × lezioni).
+    openai_figure_review_model: str = "gpt-4o-mini"
+    openai_figure_review_reasoning_effort: str | None = None
+    openai_figure_review_max_tokens: int = 4_000
+    figure_review_max_attempts: int = 2
+    figure_review_max_parallel: int = 4
+    figure_review_enabled: bool = True
+
     # --- Figure accademiche (Fase 3/4) ---
     # Quattro famiglie di asset visivi renderizzati dal registro
     # `figure_render_service`: Mermaid (sempre attivo), Vega-Lite

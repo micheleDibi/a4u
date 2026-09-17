@@ -1321,8 +1321,9 @@ riassunti anche in [Courses 05](../courses/05-api-reference.md).
 | `lesson_coverage_resolver.py` | [Courses 08](../courses/08-lesson-content.md) | Modulo puro: risolve i riferimenti di contabilità di Fase 3 (`O1`/testo/varianti tipografiche → obiettivo canonico, `topic_id` case-insensitive). Cascata deterministica, nessun fuzzy |
 | `openai_glossary_service.py` | [Courses 08](../courses/08-lesson-content.md) | Wrapper OpenAI glossario (10-30 termini) |
 | `asset_validation_service.py` | [Courses 08 § Validazione asset](../courses/08-lesson-content.md#validazione-asset-latexmermaid--auto-fix-ai-a-generazione) | Validazione + auto-fix degli asset «fragili» a generazione (Fase 3 `validate_and_fix_content_assets`, Fase 4 `validate_and_fix_slides_assets`): formule LaTeX con `latex2mathml` E KaTeX (batch Playwright con Mermaid 11, pin `mermaid_cdn_version`); figure con `format` in `RENDERABLE_FORMATS` validate dal renderer del registro (`_validate_slots` con rimappatura `js_pos`: nel batch JS entrano solo `latex` e `mermaid`, gli altri kind in `to_thread` con `validate(deep=True)`, mai pass-through; `AssetCheck.fixable=False` per un formato non disponibile → `AssetFixUnresolvedError` senza fix AI); step deterministico (caratteri di controllo) → fix AI fino a `asset_fix_max_attempts`; rete di sicurezza i18n (`_LocField` per ogni kind con `extract_translatable`/`apply_translations` del renderer, rivalidazione offline dopo la traduzione). Scheda dettagliata più sotto |
-| `openai_asset_fix_service.py` | [PROMPTS 12](../PROMPTS.md) | `fix_asset(kind, source, error, …)`: correzione della sola sintassi di un asset invalido; `AssetKind = Literal["latex","mermaid","vegalite","dot","function"]`, prompt per kind × IT/EN (`_SYSTEM_PROMPTS`), kind ignoto → `ValueError` (A20); `_ERROR_CAP = 1600`, contesto ≤ 600, `max_tokens` 4.000 (A16); output JSON `AssetFixOut{fixed_content, notes}` |
-| `openai_asset_localize_service.py` | [Courses 08](../courses/08-lesson-content.md) | `localize_texts(items, language_code)`: ritraduce i campi testuali degli asset rimasti in un'altra lingua (rete di sicurezza per script non latini, kill-switch `asset_localize_enabled`), preservando LaTeX, sintassi Mermaid, chiavi/`field`/`datum.*` di Vega-Lite, id e `->`/`--` di DOT, placeholder `[FIG:..]`; `response_format=json_object` |
+| `openai_asset_fix_service.py` | [PROMPTS 12](../PROMPTS.md) | `fix_asset(kind, source, error, …)`: correzione della sola sintassi di un asset invalido; `AssetKind = Literal["latex","mermaid","vegalite","dot","function"]`, prompt per kind × IT/EN (`_SYSTEM_PROMPTS`), kind ignoto → `ValueError` (A20); `_ERROR_CAP = 1600`, contesto ≤ 600, `max_tokens` 4.000 (A16); output JSON `AssetFixOut{fixed_content, notes}`; usage di `openai_pricing.build_usage_dict` (con `cost_usd` e `duration_ms`, D16), consegnato anche con l'eccezione quando una risposta 200 è pagata ma inutilizzabile |
+| `openai_figure_review_service.py` | [PROMPTS 17](../PROMPTS.md), [Courses 08 § Pipeline di validazione di Fase 3](../courses/08-lesson-content.md#pipeline-di-validazione-di-fase-3-fix--revisione--localizzazione) | Revisore figura ↔ testo (D15). Scheda dettagliata più sotto |
+| `openai_asset_localize_service.py` | [Courses 08](../courses/08-lesson-content.md) | `localize_texts(items, language_code)`: ritraduce i campi testuali degli asset rimasti in un'altra lingua (rete di sicurezza per script non latini, kill-switch `asset_localize_enabled`), preservando LaTeX, sintassi Mermaid, chiavi/`field`/`datum.*` di Vega-Lite, id e `->`/`--` di DOT, placeholder `[FIG:..]`; `response_format=json_object`; usage di `openai_pricing.build_usage_dict` (D16) |
 | `openai_image_to_mermaid_service.py` | [Courses 05 § lesson-assets](../courses/05-api-reference.md#lesson-assets-upload-immagini--imagemermaid--anteprima-function), [PROMPTS 11](../PROMPTS.md) | `convert_image_to_mermaid(image_bytes, …)`: Vision (`openai_image_to_mermaid_model`, default `gpt-4o`) → codice Mermaid 11 dei soli tipi `MERMAID_ALLOWED_TYPES` (label in testo semplice, niente `%%{init}%%`), `UNRECOGNIZED` → `OpenAIImageToMermaidError`; `_extract_mermaid_code` ripulisce i fence, `_is_valid_mermaid_keyword` controlla il tipo dichiarato |
 
 > Verifica delle competenze (`is_assessment`): vedi
@@ -1405,14 +1406,16 @@ processo figlio `spawn` e dai test puri.
 | `figure_scale.py` | [Courses 17 § 12](../courses/17-visual-figures.md), [Courses 09](../courses/09-pdf-export.md) | Modulo leaf (D10, D11), specchiato da `lib/figureFormats.ts` (`fitFigureWidthMm`) con la fixture `tests/fixtures/figure_scale_cases.json`: `READABILITY_BANDS_PT` (dispensa e web 8-11 pt, slide e video 10-14 pt), `fit_figure_width_mm(vb_w, vb_h, base_font_px, box_w_mm, box_h_mm, variant, intrinsic_w_px) -> FigureFit(width_mm, scale, text_pt, in_band)` (fluidi: riempiono il box e scendono al tetto della banda; `<img>` intrinseci: da scala 1 salgono solo al fondo della banda; mai oltre il box, larghezza per difetto al centesimo; banda irraggiungibile → larghezza del box e `in_band=False`; senza testo scala naturale), `SvgMetrics`, `resolve_base_font_px` (metriche risolte oppure `FALLBACK_BASE_FONT_PX` per formato con `source="constant"`: Mermaid 14, Vega-Lite 11, DOT 40/3, `function` 12 px), `FigureFitEntry` (voce del `fit_report`, input del gate D13), `format_mm`. Box del fit: dispensa `figure_box_w_mm` × `figure_box_h_mm` da `course_lesson_pdf_service._compute_template_margins_cm` (170 × 242 mm sul template di default, 168 per Mermaid col padding del wrapper), slide il `FigureBox` della pagina (`slide_geometry.image_box`). La larghezza va come ultimo attributo `style="width:Wmm"` sul corpo della figura (`<div class="mermaid-svg">` o `<img>`), mai dentro l'SVG |
 | `slide_geometry.py` | [Courses 09 § Rendering delle figure nelle slide](../courses/09-pdf-export.md) | Modulo puro (D12): `SlideGeometry` mirror delle costanti CSS di `lesson_slides_pdf.html.j2` (riga citata per campo, pinnata da un test a regex), `estimate_lines` (limite superiore per classi di carattere per titoli, prosa, bullet e didascalie, calibrato `real ≤ stima ≤ real + 1` sui `LineBox` di WeasyPrint; il `<pre>` di fallback non passa di qui: dal settimo giro è in `white-space: pre`, una riga sorgente è una riga resa e le righe lunghe sono tagliate a destra, e lo stimatore mono con le tabelle di larghezza per lingua e per script è stato rimosso), `page_figure_budget(title, body, bullets, n_blocks)` (budget per blocco della pagina resa, pavimento 25 mm con `clamped`; da WP4 titolo, prosa e bullet sono testo o pezzi con `ProseMath`: `prose_extent` misura le formule della prosa, in linea come parola larga quanto l'SVG più la crescita di riga, a blocco con la loro altezza, e `svg_inline_box` legge le dimensioni della radice MathJax), `image_box(budget, caption_text)` (box dell'immagine meno la didascalia reale, al decimo per difetto), `fallback_source_rows(source, language)` (righe rese ESATTE, una per riga sorgente con a capo su `\n`, CRLF, CR, U+2028 e U+2029 e NUL scartati, e altezza stimata: 1,3 em per riga dell'insieme base con lingua neutra (`_mono_lang`: profili neutra/altra, vi neutra senza greco, cirillico, ∏, ∑ e ∫), `fallback_tall_line_budget` 1,70 em per le altre, 1,83 em con mn-cn e con il mongolo tradizionale, 1,76 con tcy, `fallback_ideo_line_budget` 2,46 em quando il primo carattere con script reale è un ideogramma, un kana o un Hangul (`_ideographic_lead`, ottavo giro: Pango allinea le altre run sulla baseline ideografica della prima e in WeasyPrint la riga arriva a 2,293 em; limite analitico 2,4555 su tutte le coppie di font del container)), `truncate_fallback_source(source, box, language)` (righe del `<pre>` che entrano in altezza, marcatore «…», a capo riscritti come `\n` così WeasyPrint e Chromium rendono le stesse righe); consumato da `course_lesson_slides_pdf_service.render_slides_html` (due passi: split, poi budget per pagina) e da `_render_visual_asset_block(figure_budget=)` |
 | `scripts/revalidate_mermaid_assets.py` | [Courses 09 § Settings comuni](../courses/09-pdf-export.md) | Dry-run L5 (A11): gate statico D8 + render Mermaid 11 + conteggio `<foreignObject>` sugli asset Mermaid in DB, lezioni con asset non citati (A12); `--skip-render`, `--course`, `--lesson`, `--sample`, `--format csv`, `--show-ok` |
-| `scripts/check_prompts_md.py` | [Backend 11 — Tests](11-tests.md) | Verifica meccanica di `docs/PROMPTS.md`: i blocchi ```text dei PROMPT 3, 4, 5, 6, 11 e 12 (con le varianti verbatim) confrontati con i `_system_prompt(...)` reali resi con i segnaposto documentati; exit 1 con diff se divergono |
+| `scripts/check_prompts_md.py` | [Backend 11 — Tests](11-tests.md) | Verifica meccanica di `docs/PROMPTS.md`: i blocchi ```text dei PROMPT 3, 4, 5, 6, 11, 12 e 17 (con le varianti verbatim, `_SYSTEM_*_IT` e `_SYSTEM_*_EN`) confrontati con i `_system_prompt(...)` reali resi con i segnaposto documentati; exit 1 con diff se divergono |
 
 #### `app/services/asset_validation_service.py` — scheda
 
 **Scopo**: nessun asset «fragile» raggiunge `ready` rotto. Entrata:
-`validate_and_fix_content_assets(output: LessonContentOutput, *, language_code, …)`
-(Fase 3, progress `validating_assets` a 88%) e
-`validate_and_fix_slides_assets(output: LessonSlidesOutput, …)` (Fase 4).
+`validate_and_fix_content_assets(output: LessonContentOutput, *, language_code)
+-> (output, assets_usage)` (Fase 3, progress `validating_assets` a 88%; ordine
+fix → revisione → localizzazione) e
+`validate_and_fix_slides_assets(output: LessonSlidesOutput, …) -> output`
+(Fase 4, fix → localizzazione, usage solo loggato in `slides_assets_usage`).
 
 - **Slot** (`_Slot(id, kind, current, …)`): `_collect_content_slots` /
   `_collect_slides_slots` raccolgono `equations[].latex`, `proof[].latex`, il
@@ -1443,7 +1446,87 @@ processo figlio `spawn` e dai test puri.
   `_needs_localization` (script non latino, `asset_localize_enabled`) →
   `openai_asset_localize_service.localize_texts` → `apply_translations` e
   rivalidazione offline dei kind strutturali.
+- **Revisione figura ↔ testo (D15)**: `_review_figures` (fra fix e
+  localizzazione; kill-switch `figure_review_enabled`, al più
+  `figure_review_max_attempts` chiamate per figura, saltata senza
+  `openai_api_key`). `_review_context` (primo blocco che cita la figura
+  con `FIG_REF_RE`: introduzione, sezioni, sintesi, poi esempi e tabelle,
+  lo stesso corpus dei warning di Fase 3; altrimenti il corpo), `_figure_measure` (nodi/archi di
+  `graph_rules`, incroci/difetti della resa, corpo del testo sul box
+  `_REVIEW_FIT_BOX_MM` 170 × 242 mm), `render_figure_map` sugli originali;
+  per giro `_review_round` (chiamate concorrenti sotto `_review_semaphore`,
+  `figure_review_max_parallel` per loop) → `_review_guard`
+  (`missing_source`, `unchanged`, `placeholder`, `type_changed`,
+  `density_increased`, `nodes_removed` e `nodes_isolated` da
+  `GraphSourceMetrics.node_ids`/`linked_ids`; per i formati senza archi
+  `_DATA_GUARDS`: `_vegalite_guard` su `vegalite_data_metrics`
+  (`rows_removed`, `sequence_removed`, `fields_removed`) e
+  `_function_guard` su `parse_function_spec` (`expressions_changed`,
+  `domain_reduced`), così nemmeno Vega-Lite e `function` possono perdere i
+  dati) → `_judge_candidates`
+  (`_validate_slots` sugli slot `asset:<id>#review`, poi una
+  `render_figure_map` con originale e riscrittura dei grafi) → `review_acceptance(fmt, original, candidate)`
+  (pubblica: riscrittura resa e misurata, incroci non superiori, nessun
+  codice di difetto nuovo; Vega-Lite e `function` decisi dalla guardia dei
+  dati e dalla validazione). Le rese della revisione sono speculative
+  (`render_figure_map(..., cache_failures=False)`): niente cache negativa
+  sulle chiavi degli originali.
+  Commit delle riscritture accettate a fine revisione; log
+  `figure_review_verdict`, `figure_review_rejected`,
+  `figure_review_measured`, `figure_review_applied`; nessuna eccezione
+  esce: `_ask_review` cattura ogni errore della singola chiamata
+  (`figure_review_call_failed`, le chiamate sorelle del `gather`
+  finiscono e restano contate), il resto diventa `figure_review_failed`.
+- **Usage (D16)**: `_validate_and_fix` e `_localize_fields` accettano
+  `usage_sink`; ogni chiamata AI aggiunge
+  `{phase, asset_id, **build_usage_dict}` (`phase` fra `fix`, `review`,
+  `localize`; la localizzazione ha `asset_id=None` e `fields`), anche
+  quando è pagata senza risultato usabile (l'usage arriva con
+  `OpenAIError.usage`). `assets_cost_usd(assets)` somma i `cost_usd` noti e
+  `merge_assets_usage(usage, assets)` (pubbliche, usate dal worker di Fase
+  3) aggiunge `assets` e `assets_cost_usd` senza toccare `cost_usd`;
+  `AssetFixUnresolvedError.assets_usage` porta le chiamate già pagate di un
+  tentativo che finisce in rigenerazione.
 - `validate_assets_for_test` resta l'hook dei test.
+
+#### `app/services/openai_figure_review_service.py` — scheda
+
+**Scopo**: verdetto AI sulla coerenza fra una figura già valida e il testo
+che la cita (D15, PROMPT 17). Speculare a `openai_asset_fix_service`:
+httpx con `get_client`, `response_format` json_schema strict
+`FIGURE_REVIEW_JSON_SCHEMA` (`verdict` ∈ {`coerente`, `correggi`},
+`reason`, `source` stringa o `null`), nessuna persistenza.
+
+- `review_figure(*, fmt, source, caption, alt_text, context, measure,
+  language_code, feedback="") -> (FigureReviewOut, usage)`: modello
+  `openai_figure_review_model` (default `gpt-4o-mini`),
+  `max_completion_tokens` `openai_figure_review_max_tokens` (4.000),
+  reasoning `openai_figure_review_reasoning_effort` con
+  `apply_reasoning_effort`, timeout 90 s; usage di `build_usage_dict`.
+  Errori: `OpenAIFigureReviewError` (HTTP, corpo non JSON, formato,
+  JSON del contenuto, schema), `OpenAINotConfiguredError`; un `usage`
+  che non è un oggetto vale vuoto. L'usage è costruito prima di leggere il
+  verdetto: una risposta 200 inutilizzabile (JSON troncato dal tetto dei
+  token, schema fuori contratto) lo consegna al chiamante con l'eccezione
+  (`OpenAIError.usage`), che lo contabilizza lo stesso.
+- `FigureReviewOut` (`extra="ignore"`, ogni campo mancante vale
+  `coerente`), `FigureMeasure` (`nodes`, `edges`, `rendered`,
+  `crossings`, `defects`, `text_pt`, `in_band`; `measured` = resa e
+  incroci contati), `ReviewContext` (`title`, `text`, `cited`).
+- `build_user_message(...)`: etichette in italiano; tetti dichiarati
+  `SECTION_MAX_CHARS` 24.000 (sezione citante), `BODY_MAX_CHARS` 12.000
+  (corpo per una figura non citata), 600 per didascalia, testo
+  alternativo e motivo del rifiuto precedente; troncamento marcato con
+  «[…]».
+- `_SYSTEM_PROMPTS = {"it": _SYSTEM_REVIEW_IT, "en": _SYSTEM_REVIEW_EN}`:
+  `coerente` predefinito e in caso di dubbio, nessuna riscrittura di una
+  figura che corrisponde al testo, tutti i nodi conservati con i loro
+  id (il testo di un nodo si corregge con l'etichetta), densità ridotta
+  solo sugli archi senza isolare nodi, incroci solo in diminuzione, righe
+  di `data.values` e campi dell'encoding conservati in Vega-Lite,
+  espressioni e dominio conservati in `function`, nessun contenuto assente
+  dal
+  testo, registro accademico, niente placeholder né `graph [...]` in DOT.
 
 ### Pattern condivisi (tutti i worker AI)
 
@@ -1452,7 +1535,7 @@ processo figlio `spawn` e dai test puri.
 - I worker delle **Fasi 6 e 6b** (`course_lesson_video_worker`, `course_lesson_avatar_video_worker`) condividono lo stesso scheletro (semaphore + `_inflight` + claim atomico + auto-retry + cancel-check tra fasi) pur non chiamando OpenAI; il loro `_apply_failure` ha `auto_retry_max` default 3.
 - **Atomic claim** (anti-double-dispatch): `_inflight: set[UUID]` + `_inflight_lock: asyncio.Lock` con claim **PRIMA** del semaforo (pattern fix `87fbf70`). Evita che task in coda dietro al semaforo vengano ri-dispatched dal tick successivo.
 - **Auto-retry trasparente**: helper `_apply_failure(lesson, *, error, recoverable, auto_retry_max)`. Errori recuperabili (rate-limit OpenAI, validazione, materializzazione) tornano a `pending` finché `attempts < auto_retry_max` (default 5). La UI vede solo "in elaborazione" finché passa.
-- **Cancel-check post-OpenAI**: dopo la chiamata OpenAI/render PDF, refresh dello status dal DB; se `!= 'processing'` (utente ha cancellato), scarta il risultato senza scrivere.
+- **Cancel-check post-OpenAI**: dopo la chiamata OpenAI/render PDF, refresh dello status dal DB; se `!= 'processing'` (utente ha cancellato), scarta il risultato senza scrivere. Il worker di Fase 3 ripete il controllo dopo la validazione degli asset, che con la revisione figura ↔ testo può durare minuti (`lesson_content_cancelled_post_assets`).
 - **JSON schema strict**: tutte le chiamate OpenAI usano `response_format: {type: 'json_schema', json_schema: {strict: true, schema: {...}}}`. Validazione Pydantic post-call per ulteriore safety.
 - **Audit log** per ogni azione mutating: `course.created`, `course.document.summary.ready`, `course.architecture.generated`, `course.lesson.content.generated`, `course.lesson.slides.generated`, `course.lesson.speech.generated`, `course.lesson.{slides,speech}_pdf.generated`, ecc.
 - **Stale-detection setter**: i CRUD manuali settano `*_modified_at = now()` per la cascata staleness; i worker AI non lo toccano.
@@ -1488,7 +1571,11 @@ accettabile e risparmia decine di query a ogni refresh del browser.
   `CourseLesson.content_tokens` / `.slides_tokens` / `.speech_tokens`).
   Glossary escluso (schema vecchio senza `cost_usd`). Totale + ultimi 7
   giorni + ultimi 30 giorni, filtrato per `*_generated_at` con
-  `func.case((generated_at >= cutoff, cost), else_=None)`.
+  `func.case((generated_at >= cutoff, cost), else_=None)`. Per `content`
+  `_sum_cost(..., extra_keys=("assets_cost_usd",))` somma per riga il
+  `cost_usd` della chiamata di Fase 3 e il costo delle chiamate degli
+  asset (D16), ciascuno con `coalesce(…, 0)`: il costo degli asset conta
+  anche se `cost_usd` manca (verificato da `tests/test_figure_review.py`).
 - **Login activity 7g**: bucket per-giorno UTC con zero-fill su 7 entry.
 
 ---

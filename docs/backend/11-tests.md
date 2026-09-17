@@ -258,6 +258,46 @@ chiamata OpenAI e fix degli asset sostituiti (lezione `ready`, lista
 deduplicata in `content_raw`, warning `lesson_content_key_takeaways_below_min`
 solo quando serve).
 
+### `tests/test_figure_review.py` (70)
+
+Revisore figura ↔ testo e costo degli asset (WP6, D15, D16), inventario
+del 17 settembre 2026. Client OpenAI dei tre servizi sostituiti da un
+`get_client` finto che registra i corpi inviati (nessuna rete) e
+`Settings` copiato con una chiave finta per il validatore e il revisore.
+Kill-switch spento, `figure_review_max_attempts=0` e chiave assente:
+nessuna chiamata HTTP e nessuna `render_figure_map`. Verdetto `coerente`:
+output identico, nessun `figure_review_rejected`, misura di WP5 nel
+prompt, voce `review` con `cost_usd`. Riscritture respinte con
+l'originale byte-identico e la voce di cache intatta: invalida (due
+tentativi, il secondo riceve il motivo), con più incroci (due DOT reali
+con la stessa densità, 0 e 1 incroci misurati nel test), guardie
+deterministiche (`missing_source`, `placeholder`, `density_increased`,
+`nodes_removed` per una riduzione drastica e per un nodo rinominato,
+`nodes_isolated`, `type_changed`; flowchart, sequence, ER, sankey e pie
+controllati direttamente su `_review_guard`, l'abbinamento ricavato da un
+K4,4 ammesso; `node_ids` e `linked_ids` di `graph_rules` letti per DOT,
+flowchart, block-beta, sequence, state, class, ER, sankey, mindmap e
+gantt), Mermaid senza Chromium (`measure_unavailable`); una
+riscrittura che non peggiora è accettata dopo `_validate_slots`. Tabella
+di `review_acceptance` (13 casi). Percorso Mermaid reale (Chromium e
+CDN): originale reso una volta, poi originale e riscrittura nella stessa
+`render_figure_map`. Contesto: prima sezione citante per intero (oltre
+600 caratteri), corpo troncato per una figura non citata, tetto della
+sezione. Errori di chiamata e guasti imprevisti contenuti: un corpo 200
+non JSON (`OpenAIFigureReviewError` dal servizio, tentativo perso della
+sola figura, riscrittura dell'altra accettata e contata) e un'eccezione
+del client fuori da `OpenAIError` (la chiamata sorella, più lenta, è
+finita al ritorno della validazione e il suo usage è contato). D16: usage di
+fix e localizzazione da `build_usage_dict`, raccolta nella validazione,
+`merge_assets_usage`, giro completo di `_process_one` (`seeded_db`) con
+`content_tokens.assets` e `assets_cost_usd` e la dashboard admin che somma
+chiamata principale e asset nella fase `content` (anche con `cost_usd`
+assente, e nelle finestre a 7 e 30 giorni); un annullamento durante la
+validazione degli asset non è sovrascritto (`materialize_lesson_content`
+mai chiamata, status `failed`). Prompt IT/EN, schema strict, PROMPT 17 nel
+controllo di `docs/PROMPTS.md`, setting e superfici di deploy, box del fit
+pinnato contro il template di default.
+
 ### `tests/test_course_status_model.py` (2)
 
 `COURSE_STATUSES` 1:1 con `COURSE_STATUS_RANK` e CHECK `ck_course_status_valid`
@@ -774,7 +814,8 @@ commit). Lo script resta il modo di LEGGERE il diff e di riallineare.
 `backend/scripts/check_prompts_md.py` estrae il primo blocco ```text di
 ogni sezione «# PROMPT n» pertinente (3 dispense con grounding, 4
 verifica, 5 slide, 6 discorso, 11 immagine → Mermaid, 12 fix degli asset
-con le varianti Vega-Lite/DOT/`function` dichiarate verbatim) e lo
+con le varianti Vega-Lite/DOT/`function` dichiarate verbatim, 17 revisore
+figura ↔ testo con la variante `_SYSTEM_REVIEW_EN`) e lo
 confronta carattere per carattere con l'output dei `_system_prompt(...)`
 resi con i segnaposto documentati (`{language_code}`, `{ruolo_docente}`,
 …; il PROMPT 6 normalizza `N * 60 = M` in `{minuti_per_lezione} * 60 =
@@ -784,7 +825,7 @@ resi con i segnaposto documentati (`{language_code}`, `{ruolo_docente}`,
 ```bash
 cd backend
 JWT_SECRET=$(printf 'x%.0s' $(seq 1 40)) python3 -m scripts.check_prompts_md
-# [OK] PROMPT 3 — dispense (grounding) (24222 caratteri) … 9/9 blocchi identici al codice
+# [OK] PROMPT 3 — dispense (grounding) (27990 caratteri) … 11/11 blocchi identici al codice
 ```
 
 Exit 0 se ogni blocco coincide, 1 con un diff unificato per blocco

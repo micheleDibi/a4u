@@ -256,7 +256,8 @@ Errori:
 Permesso: `is_platform_admin`. Restituisce uno snapshot di metriche
 **platform-wide** per la dashboard admin: utenti, organizzazioni, corsi
 e lezioni per status, costo AI cumulato dalle 5 fasi pipeline corsi
-(totale + ultimi 7g + ultimi 30g), login activity 7g. Cache server-side
+(totale + ultimi 7g + ultimi 30g; la fase `content` comprende le chiamate
+degli asset di Fase 3), login activity 7g. Cache server-side
 TTL 60s.
 
 Risposta: `AdminMetricsOut` — vedi

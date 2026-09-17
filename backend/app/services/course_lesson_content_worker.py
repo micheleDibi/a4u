@@ -457,16 +457,23 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
             )
             return
 
-        # Validazione + auto-fix degli asset "fragili" (formule LaTeX +
-        # diagrammi Mermaid) PRIMA di materializzare: ripara con AI ogni
-        # asset invalido cosi' che nessuno raggiunga `ready` rotto. Solo
-        # per le lezioni di contenuto (l'assessment ha schema MC/open).
+        # Validazione + auto-fix degli asset "fragili" (formule LaTeX e
+        # figure) PRIMA di materializzare: ripara con AI ogni asset invalido
+        # cosi' che nessuno raggiunga `ready` rotto, poi revisione figura ↔
+        # testo e localizzazione. Solo per le lezioni di contenuto
+        # (l'assessment ha schema MC/open). Collocazione rispetto ai tre
+        # stadi: qui, prima del filtro delle fonti riservate (che tocca solo
+        # `references`) e di `materialize_lesson_content`, che riceve
+        # l'usage con le chiamate degli asset (`content_tokens.assets`).
         if not lesson.is_assessment:
             lesson.content_progress = 88
             lesson.content_progress_phase = "validating_assets"
             await db.commit()
             try:
-                content_output = await asset_validation_service.validate_and_fix_content_assets(
+                (
+                    content_output,
+                    assets_usage,
+                ) = await asset_validation_service.validate_and_fix_content_assets(
                     content_output, language_code=course_full.language_code
                 )
             # Cattura ampia (incl. AssetFixUnresolvedError): qualunque errore
@@ -474,6 +481,19 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
             # lezione. Cosi' un asset rotto non raggiunge mai `ready` e
             # l'utente non vede errori intermedi.
             except Exception as exc:
+                # Il costo gia' speso nei tentativi di fix non si
+                # materializza (la lezione viene rigenerata): resta almeno
+                # visibile nei log, come quello scartato dal cancel-check.
+                spent = getattr(exc, "assets_usage", [])
+                if spent:
+                    log.warning(
+                        "lesson_content_assets_cost_discarded",
+                        lesson_id=str(lesson.id),
+                        lesson_code=lesson.lesson_code,
+                        reason="asset_validation_failed",
+                        calls=len(spent),
+                        assets_cost_usd=asset_validation_service.assets_cost_usd(spent),
+                    )
                 settings = get_settings()
                 terminal = not _apply_failure(
                     lesson,
@@ -500,6 +520,30 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                         },
                     )
                 await db.commit()
+                return
+            # Costo degli asset (fix, revisione, localizzazione) accanto a
+            # quello della chiamata di Fase 3: `cost_usd` resta il suo.
+            usage = asset_validation_service.merge_assets_usage(usage, assets_usage)
+
+            # Secondo cancel-check: fix, revisione figura ↔ testo e
+            # localizzazione possono durare minuti (fino a
+            # `figure_review_max_attempts` chiamate per figura più la resa),
+            # e un annullamento arrivato nel frattempo non va sovrascritto da
+            # `ready` né dal progress di materializzazione. Come dopo la
+            # chiamata di Fase 3, il risultato (e il suo usage) è scartato:
+            # niente riga in `content_tokens` per una lezione annullata, ma
+            # il costo già speso resta nel log dell'annullamento.
+            await db.refresh(lesson, ["content_status"])
+            if lesson.content_status != "processing":
+                log.info(
+                    "lesson_content_cancelled_post_assets",
+                    lesson_id=str(lesson.id),
+                    lesson_code=lesson.lesson_code,
+                    current_status=lesson.content_status,
+                    cost_usd=usage.get("cost_usd"),
+                    assets_calls=len(assets_usage),
+                    assets_cost_usd=usage.get("assets_cost_usd"),
+                )
                 return
 
         # Visibilità delle fonti: filtro hard delle references che

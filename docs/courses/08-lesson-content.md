@@ -59,7 +59,7 @@ sostituisce la vecchia allow-set enumerata, che ometteva stati validi.
 |---|---|---|
 | `content_status` | VARCHAR(40) | CHECK ∈ (empty, pending, processing, ready, approved, failed) |
 | `content_raw` | JSONB | output AI completo (verbatim §6.3) |
-| `content_tokens` | JSONB | `{prompt, completion, total, model}` |
+| `content_tokens` | JSONB | `{model, prompt, completion, total, …, cost_usd, assets, assets_cost_usd}` (sotto, «Costo degli asset») |
 | `content_attempts` | SMALLINT | counter retry, azzerato a ogni richiesta dell'utente su lezione `failed`/`empty` |
 | `content_error` | TEXT | messaggio errore |
 | `content_generated_at` | TIMESTAMPTZ | |
@@ -264,7 +264,8 @@ duplicazione, dove un `"O1"` verrebbe translitterato o scartato. Forma di
 
 Prima di materializzare la lezione, il worker valida e ripara gli asset
 "fragili" (`asset_validation_service.validate_and_fix_content_assets`,
-fase di progress `validating_assets` a 88%). Un asset è "fragile" se può
+fase di progress `validating_assets` a 88%), poi revisiona le figure
+contro il testo e localizza (sotto, «Pipeline di validazione di Fase 3»). Un asset è "fragile" se può
 essere sintatticamente invalido e finire rotto nell'output (PDF / frame
 video / preview FE):
 
@@ -364,6 +365,135 @@ stesso servizio valida anche gli asset di Fase 4
 (`validate_and_fix_slides_assets`: `new_assets` Mermaid + math inline
 nelle slide).
 
+### Pipeline di validazione di Fase 3: fix → revisione → localizzazione
+
+`validate_and_fix_content_assets(output, *, language_code)` ritorna
+`(output, assets_usage)` ed esegue tre passi nell'ordine:
+
+1. **fix** degli asset invalidi (sopra);
+2. **revisione figura ↔ testo** (D15,
+   `openai_figure_review_service.review_figure`, PROMPT 17 in
+   `docs/PROMPTS.md`; kill-switch `FIGURE_REVIEW_ENABLED`, al più
+   `FIGURE_REVIEW_MAX_ATTEMPTS` chiamate per figura, default 2; saltata
+   prima di ogni resa se manca `OPENAI_API_KEY`). Ogni figura valida
+   (`visual_assets[]` con formato renderizzabile) è inviata al modello con
+   didascalia e testo alternativo, il **testo integrale della prima
+   sezione che la cita** (`FIG_REF_RE` su introduzione → sezioni →
+   sintesi, id confrontato con `.strip().lower()`; tetto di sicurezza
+   24.000 caratteri) oppure, se non è citata, il corpo della lezione
+   troncato a 12.000 caratteri, e la **misura di WP5** dell'originale:
+   nodi e archi dal sorgente (`graph_rules`), incroci e difetti di lettura
+   dalla figura resa, corpo minimo del testo nella dispensa A4 di default
+   (170 × 242 mm, banda 8-11 pt). Gli originali sono resi una volta con
+   `render_figure_map` (DOT, Vega-Lite e `function` sono hit della cache
+   della validazione profonda; i Mermaid costano un Chromium per lezione,
+   0,8-1,8 s misurati il 17 settembre 2026; rese **speculative**,
+   `cache_failures=False`: un loro guasto non mette in cache negativa le
+   figure dell'export). Le chiamate di un giro partono in parallelo, ma in
+   volo non ne sta mai più di `FIGURE_REVIEW_MAX_PARALLEL` (default 4,
+   semaforo per processo: il tetto vale anche fra lezioni concorrenti). Il
+   verdetto predefinito è **`coerente`**: nessuna riscrittura. Con **`correggi`** il sorgente proposto passa da
+   `_sanitize` e da controlli deterministici (`missing_source`, sorgente
+   identico = nessuna riscrittura, `placeholder`, `type_changed` per un
+   tipo Mermaid diverso, `density_increased` se nodi o archi aumentano,
+   `nodes_removed` se manca un nodo dell'originale, per id o, nei tipi
+   senza id, per numero, `nodes_isolated` se un nodo che aveva archi
+   resta senza; togliere archi è ammesso),
+   poi dalla stessa `_validate_slots` del fix e, per Mermaid e DOT, dalla
+   misura: originale e riscrittura sono letti dalla stessa
+   `render_figure_map` (l'originale è un hit della cache, la riscrittura
+   DOT è in cache dalla validazione profonda, quella Mermaid è resa e
+   misurata nella pagina del pre-render: circa 2 s in più fra parse e
+   misura). Regola di accettazione (`review_acceptance`): la riscrittura
+   deve essere resa (`measure_unavailable`, per esempio Chromium assente)
+   e misurata (`measure_skipped`, anche quando è saltata la misura
+   dell'originale: mai un'accettazione senza misura); con l'originale
+   misurato gli incroci non aumentano (`crossings: n > m`) e nessun codice
+   di difetto compare più volte che nell'originale (`new_defects: …`);
+   con l'originale non misurato la riscrittura deve essere senza difetti.
+   Vega-Lite e `function` non hanno archi né misura geometrica: al loro
+   posto vale la **conservazione dei dati** (`_DATA_GUARDS`), che entra fra
+   i controlli deterministici: per Vega-Lite le righe inline
+   (`data.values`, `datasets`, a ogni livello della composizione) non
+   diminuiscono (`rows_removed`), i blocchi `data.sequence` restano
+   (`sequence_removed`) e i campi citati dall'encoding ci sono ancora
+   (`fields_removed`); per `function` restano tutte le espressioni
+   (`expressions_changed`, confronto senza spazi) e il dominio non si
+   restringe (`domain_reduced`). Il confronto è sui conteggi e sui campi,
+   non sull'identità delle righe: correggere un valore sbagliato resta una
+   riscrittura legittima, cancellare o sostituire i dati no. Una
+   riscrittura respinta lascia l'originale
+   **byte-identico** (nessuna scrittura in `content`, voce di cache
+   dell'originale intatta), logga `figure_review_rejected` (`reason`,
+   `crossings_before`, `crossings_after`) e il motivo torna al modello nel
+   tentativo successivo; le riscritture accettate si applicano tutte
+   insieme a fine revisione. Ogni chiamata logga `figure_review_verdict`
+   (`asset_id`, `verdict`, `accepted`, `outcome`, `reason`, `cost_usd`).
+   La revisione **non fa mai fallire la lezione**: ogni errore di una
+   chiamata (HTTP, corpo 200 non JSON, schema, eccezione imprevista del
+   client) è un tentativo perso di quella figura
+   (`figure_review_call_failed`) e non tocca le chiamate sorelle del giro,
+   che finiscono e restano contate; un guasto imprevisto fuori dalle
+   chiamate diventa `figure_review_failed` con gli originali intatti. Una
+   chiamata comunque pagata (200 con JSON troncato da
+   `OPENAI_FIGURE_REVIEW_MAX_TOKENS` o schema fuori contratto) porta il suo
+   usage nell'eccezione (`OpenAIError.usage`) e resta contabilizzata, con
+   `cost_usd` anche nel log del tentativo perso;
+3. **localizzazione** dei campi rimasti in un'altra lingua, con
+   rivalidazione non fatale dei kind strutturali.
+
+Dopo i tre passi il worker rilegge `content_status` (secondo
+cancel-check, `lesson_content_cancelled_post_assets`): un annullamento
+arrivato mentre gli asset erano in validazione scarta il risultato, come
+dopo la chiamata di Fase 3, e non viene sovrascritto da `ready`. Una
+lezione annullata non ha una riga in `content_tokens`, quindi il costo
+già speso non è contabilizzato: resta nel log dell'annullamento
+(`cost_usd`, `assets_calls`, `assets_cost_usd`). Lo stesso vale per un
+fix che non si risolve: `AssetFixUnresolvedError` porta con sé le
+chiamate già pagate e il worker le logga
+(`lesson_content_assets_cost_discarded`) prima di far rigenerare la
+lezione.
+
+**Costo degli asset in `content_tokens` (D16).** Fix, revisione e
+localizzazione producono l'usage di `openai_pricing.build_usage_dict`
+(`model`, `prompt`, `completion`, `total`, `reasoning_effort`,
+`reasoning_tokens`, `cached_tokens`, `duration_ms`, `cost_usd`). Ogni
+chiamata è una voce di `assets_usage` con `phase` (`fix`, `review`,
+`localize`) e `asset_id` (l'id dello slot: `asset:<id>`, `eq:<id>`,
+`sec0.content#1`…; `None` per la localizzazione, che copre più campi e
+porta `fields`). Il worker lo fonde con
+`asset_validation_service.merge_assets_usage` prima di
+`materialize_lesson_content`. Esempio reso da `merge_assets_usage` con i
+valori del test del worker (`tests/test_figure_review.py`: Fase 3 con 1.000
++ 2.000 token su `gpt-5.5`, un fix e una revisione con 3.000 + 300 token su
+`gpt-4o-mini`; campi `reasoning_*`, `cached_tokens` e `duration_ms` delle
+voci omessi qui):
+
+```json
+{
+  "model": "gpt-5.5", "prompt": 1000, "completion": 2000, "total": 3000,
+  "reasoning_effort": "high", "cost_usd": 0.045,
+  "assets": [
+    {"phase": "fix", "asset_id": "asset:g9", "model": "gpt-4o-mini",
+     "prompt": 3000, "completion": 300, "total": 3300, "cost_usd": 0.00063},
+    {"phase": "review", "asset_id": "asset:g9", "model": "gpt-4o-mini",
+     "prompt": 3000, "completion": 300, "total": 3300, "cost_usd": 0.00063}
+  ],
+  "assets_cost_usd": 0.00126
+}
+```
+
+`cost_usd` resta quello della chiamata principale. La dashboard admin
+(`admin_metrics_service`) somma nella fase `content` `cost_usd` e
+`assets_cost_usd` di ogni riga (una chiave assente vale 0), anche nelle
+finestre a 7 e 30 giorni. Nessuna colonna
+nuova e nessuna migrazione (`content_tokens` è JSONB). Limiti: le
+chiamate di una generazione poi fallita (lezione rimessa in coda) non
+sono registrate, come la chiamata principale; una risposta pagata ma
+illeggibile (JSON o schema non validi) non ha usage; in Fase 4 lo stesso
+usage è solo loggato (`slides_assets_usage`), `slides_tokens` non lo
+raccoglie.
+
 ## Architettura backend
 
 ### Servizi OpenAI
@@ -382,6 +512,12 @@ nelle slide).
   `generate_lesson_assessment()` per le lezioni `is_assessment`
   (verifica delle competenze, schema MC/aperte distinto). Vedi
   [PROMPTS.md — PROMPT 3](../PROMPTS.md).
+- `openai_asset_fix_service.py`, `openai_figure_review_service.py`,
+  `openai_asset_localize_service.py` — i tre servizi ausiliari degli asset
+  chiamati da `asset_validation_service` (fix → revisione →
+  localizzazione, sezione «Pipeline di validazione di Fase 3»): PROMPT 12,
+  PROMPT 17 e il prompt di localizzazione; usage di `build_usage_dict`
+  raccolto in `content_tokens.assets`.
 
 #### Prompt "v4" — due fasi interne in un solo call
 
@@ -526,6 +662,11 @@ scoped a livello LEZIONE:
   `course_glossary_service.ensure_glossary_ready` (~10-20s).
 - Ticker progress: ease-out 15→85% in ~90s (lezione più lunga di
   Fase 2 → ticker più lento).
+- **Costo degli asset** (D16): dopo `validate_and_fix_content_assets`
+  l'usage della chiamata di Fase 3 riceve `assets` e `assets_cost_usd`
+  (`merge_assets_usage`), prima del filtro delle fonti riservate e di
+  `materialize_lesson_content`; `cost_usd` resta quello della chiamata
+  principale.
 - **Punti chiave degradati** (D18): dopo la materializzazione,
   `_warn_on_degraded_key_takeaways` emette
   `lesson_content_key_takeaways_below_min` se la dedup dello schema ha
@@ -905,6 +1046,14 @@ COURSE_LESSON_CONTENT_DOCUMENTS_CONTEXT_MAX_CHARS=20000
 # La UI vede la lezione come "in elaborazione" durante i retry.
 COURSE_LESSON_CONTENT_AUTO_RETRY_MAX=5
 COURSE_LESSON_STRUCTURE_AUTO_RETRY_MAX=5
+
+# Revisore figura ↔ testo (D15): verdetto predefinito `coerente`,
+# riscrittura accettata solo se valida e non peggiora la misura.
+OPENAI_FIGURE_REVIEW_MODEL=gpt-4o-mini
+OPENAI_FIGURE_REVIEW_REASONING_EFFORT=
+OPENAI_FIGURE_REVIEW_MAX_TOKENS=4000
+FIGURE_REVIEW_MAX_ATTEMPTS=2
+FIGURE_REVIEW_ENABLED=true
 ```
 
 `OPENAI_LESSON_CONTENT_MAX_TOKENS=32000` è calibrato per output

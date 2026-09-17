@@ -68,6 +68,12 @@ Conteggi sul SORGENTE, regole per tipo
   `label` del grafo al primo livello. Punto cieco: `subgraph s` senza
   corpo (rimando a un sottografo già definito) vale zero nodi. Il tetto di
   risorsa del registro (`DOT_MAX_EDGES`) conta invece gli operatori.
+Identificativi (`node_ids`, `linked_ids`): per i tipi che nominano i nodi
+(flowchart, block-beta, sequence, state, class, ER, sankey, DOT) gli id
+distinti e, fra questi, gli estremi di almeno un arco; vuoti per i tipi
+che contano elementi senza id (mindmap, treemap, timeline, pie, quadrant,
+radar, xychart, gantt). Servono al revisore figura ↔ testo per dire se una
+riscrittura conserva i nodi dell'originale e non ne isola nessuno.
 Per ogni etichetta conta la riga più lunga (`\\n`, `\\l`, `\\r`, a capo
 reali); il titolo (`title`, frontmatter, `label` del grafo) ha una soglia
 propria. Righe = righe non vuote; caratteri = lunghezza del sorgente
@@ -157,7 +163,9 @@ class GraphSourceMetrics:
     """Misure di un sorgente. `kind` è il tipo Mermaid canonico (`flowchart`,
     `sequenceDiagram`, …) o `dot`; `longest_label` è la riga d'etichetta più
     lunga, o la parola più lunga dove il renderer va a capo da solo (per il
-    messaggio); `label_chars` è la sua lunghezza."""
+    messaggio); `label_chars` è la sua lunghezza. `node_ids` e
+    `linked_ids` sono gli id dei nodi nominati e quelli estremi di almeno
+    un arco (docstring del modulo, «Identificativi»)."""
 
     kind: str
     nodes: int
@@ -167,11 +175,15 @@ class GraphSourceMetrics:
     title_chars: int
     lines: int
     chars: int
+    node_ids: frozenset[str] = frozenset()
+    linked_ids: frozenset[str] = frozenset()
 
 
 @dataclass
 class _Acc:
     nodes: dict[str, None] = field(default_factory=dict)
+    # Id estremi di almeno un arco (sottoinsieme di `nodes`).
+    linked: dict[str, None] = field(default_factory=dict)
     edges: int = 0
     labels: list[str] = field(default_factory=list)
     titles: list[str] = field(default_factory=list)
@@ -183,6 +195,13 @@ class _Acc:
         name = name.strip()
         if name:
             self.nodes.setdefault(name, None)
+
+    def link(self, *names: str) -> None:
+        """Estremi di un arco, con la stessa normalizzazione di `node`."""
+        for name in names:
+            name = name.strip()
+            if name:
+                self.linked.setdefault(name, None)
 
     def label(self, text: str, *, wrap: bool = False) -> None:
         text = text.strip()
@@ -240,6 +259,8 @@ def _metrics(kind: str, acc: _Acc, source: str) -> GraphSourceMetrics:
         title_chars=len(title),
         lines=sum(1 for line in source.splitlines() if line.strip()),
         chars=len(source),
+        node_ids=frozenset(acc.nodes),
+        linked_ids=frozenset(acc.linked),
     )
 
 
@@ -466,6 +487,8 @@ def _flowchart(body: list[str], *, block: bool = False) -> _Acc:
                         shaped.add(name)
             for left, right in pairwise(groups):
                 acc.edges += max(1, len(left)) * max(1, len(right))
+                if left and right:
+                    acc.link(*(name for name, _ in left), *(name for name, _ in right))
     acc.labels.extend(name for name in acc.nodes if name not in shaped)
     return acc
 
@@ -530,6 +553,7 @@ def _sequence(body: list[str]) -> _Acc:
             sender, receiver, text = message
             acc.node(sender)
             acc.node(receiver)
+            acc.link(sender, receiver)
             acc.edges += 1
             acc.label(text)
         elif (head := low.split()[0]) in _SEQ_BLOCKS:
@@ -570,6 +594,7 @@ def _state(body: list[str]) -> _Acc:
             target, _, text = right.partition(":")
             acc.node(left)
             acc.node(target)
+            acc.link(left, target)
             acc.edges += 1
             acc.label(text, wrap=True)
         elif (m := _STATE_AS_RE.match(line)) is not None:
@@ -727,6 +752,7 @@ def _class(body: list[str]) -> _Acc:
             left, right, text = relation
             acc.node(left)
             acc.node(right)
+            acc.link(left, right)
             acc.edges += 1
             acc.label(text or "", wrap=True)
         elif (m := _CLASS_MEMBER_RE.match(line)) is not None:
@@ -764,6 +790,7 @@ def _er(body: list[str]) -> _Acc:
         elif (m := _ER_REL_RE.match(line)) is not None:
             acc.node(m.group(1))
             acc.node(m.group(3))
+            acc.link(m.group(1), m.group(3))
             acc.edges += 1
             acc.label(m.group(4), wrap=True)
         elif (m := _ER_BLOCK_RE.match(line)) is not None:
@@ -928,6 +955,7 @@ def _sankey(body: list[str]) -> _Acc:
                 continue
             acc.node(row[0])
             acc.node(row[1])
+            acc.link(row[0], row[1])
             acc.edges += 1
     acc.labels.extend(acc.nodes)
     return acc
@@ -1216,6 +1244,8 @@ class _DotParser:
         """Archi fra due operandi adiacenti: il prodotto, deduplicato per
         coppia in un grafo `strict`."""
         product = len(tails) * len(heads)
+        if product:
+            self.acc.link(*tails, *heads)
         if not self.strict or len(self.pairs) + product > _MAX_STRICT_PAIRS:
             self.counted += product
             return

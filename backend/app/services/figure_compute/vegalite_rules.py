@@ -65,6 +65,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any, TypeGuard
 
 MAX_VALUES_ROWS = 200
@@ -357,6 +358,48 @@ def _walk(
             )
 
 
+@dataclass(frozen=True)
+class VegaLiteDataMetrics:
+    """Dati dichiarati da una spec: righe inline (`data.values` e
+    `datasets`, a ogni livello della composizione), blocchi `data.sequence`
+    e campi citati (`field`, in encoding, `sort`, `transform`, ...)."""
+
+    rows: int
+    sequences: int
+    fields: frozenset[str]
+
+
+def vegalite_data_metrics(spec: Mapping[str, Any]) -> VegaLiteDataMetrics:
+    """Misura dei DATI di una spec già parsata: nessuna regola, nessun
+    errore, solo conteggi confrontabili fra due spec (una riscrittura non
+    deve perdere righe né campi). Visita iterativa come `nesting_depth`:
+    non dipende dal limite di ricorsione dell'interprete."""
+    rows = 0
+    sequences = 0
+    fields: set[str] = set()
+    stack: list[Any] = [spec]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, Mapping):
+            for key, value in node.items():
+                if key == "field" and isinstance(value, str) and value:
+                    fields.add(value)
+                    continue
+                if key == "data" and _is_mapping(value):
+                    # Il blocco `data` non contiene viste: si conta e non si
+                    # percorre (le righe dei dati non portano campi).
+                    rows += _rows(value.get("values")) or 0
+                    sequences += 1 if _is_mapping(value.get("sequence")) else 0
+                    continue
+                if key == "datasets" and _is_mapping(value):
+                    rows += sum(_rows(ds) or 0 for ds in value.values())
+                    continue
+                stack.append(value)
+        elif isinstance(node, list):
+            stack.extend(node)
+    return VegaLiteDataMetrics(rows=rows, sequences=sequences, fields=frozenset(fields))
+
+
 def check_vegalite_rules(spec: Mapping[str, Any]) -> list[str]:
     """Lista di violazioni (vuota = conforme). L'eventuale rifiuto del
     criterio 10 è messo in testa con il prefisso
@@ -387,7 +430,9 @@ def check_vegalite_rules(spec: Mapping[str, Any]) -> list[str]:
 __all__ = [
     "MAX_NESTING",
     "USE_FUNCTION_FORMAT",
+    "VegaLiteDataMetrics",
     "check_vegalite_rules",
     "nesting_depth",
     "nesting_violation",
+    "vegalite_data_metrics",
 ]

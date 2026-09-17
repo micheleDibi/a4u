@@ -218,6 +218,12 @@ fase ha il suo modello + cap di token configurabile a parte.
 | `OPENAI_ASSET_LOCALIZE_MODEL` | `gpt-4o-mini` | Modello della **localizzazione degli asset** (`openai_asset_localize_service`: campi testuali rimasti in un'altra lingua, rete di sicurezza per script non latini). |
 | `OPENAI_ASSET_LOCALIZE_MAX_TOKENS` | `8000` | `max_completion_tokens` della localizzazione. |
 | `ASSET_LOCALIZE_ENABLED` | `true` | Kill-switch della localizzazione degli asset. |
+| `OPENAI_FIGURE_REVIEW_MODEL` | `gpt-4o-mini` | Modello del **revisore figura ↔ testo** (`openai_figure_review_service`, PROMPT 17): dopo il fix, ogni figura valida di Fase 3 è confrontata con il testo integrale della sezione che la cita e con la sua misura (nodi, archi, incroci, difetti, corpo del testo). Circa 0,0006 USD a figura con 3.000 token in ingresso e 300 in uscita; il costo è in `content_tokens.assets`. |
+| `OPENAI_FIGURE_REVIEW_REASONING_EFFORT` | _(vuoto)_ | Reasoning effort del revisore (non inviato se vuoto o su un modello non reasoning). |
+| `OPENAI_FIGURE_REVIEW_MAX_TOKENS` | `4000` | `max_completion_tokens` del revisore (la risposta può contenere la figura riscritta). Se il tetto tronca la risposta il verdetto è perso, ma i token pagati entrano lo stesso in `content_tokens.assets`. |
+| `FIGURE_REVIEW_MAX_ATTEMPTS` | `2` | Chiamate del revisore per figura: una riscrittura respinta dalla validazione o dalla misura torna al modello con il motivo finché restano tentativi; poi resta l'originale, senza rigenerare la lezione. `0` = nessuna chiamata. |
+| `FIGURE_REVIEW_MAX_PARALLEL` | `4` | Chiamate del revisore in volo per processo (semaforo per loop). Un giro ne lancia una per figura e le lezioni corrono in parallelo (`COURSE_LESSON_CONTENT_MAX_CONCURRENCY`): questo è il tetto di spesa e di pressione su OpenAI di Fase 3. |
+| `FIGURE_REVIEW_ENABLED` | `true` | Kill-switch del revisore: `false` non fa alcuna chiamata HTTP né alcuna resa. Senza `OPENAI_API_KEY` la fase è saltata prima della resa. |
 
 ### Figure accademiche (Fase 3/4)
 
@@ -492,7 +498,7 @@ secret); valorizzare `R2_ENDPOINT`, `R2_BUCKET`, `R2_ACCESS_KEY_ID`,
 
 Il dominio Corsi usa lo stesso `OPENAI_API_KEY` per **sei** pipeline AI
 principali, con un setting `model` + `max_tokens` separato per ognuna, più
-tre servizi ausiliari degli asset visivi (tabella successiva):
+quattro servizi ausiliari degli asset visivi (tabella successiva):
 
 | Pipeline | Servizio | Endpoint | Sync/Async |
 |---|---|---|---|
@@ -507,6 +513,7 @@ tre servizi ausiliari degli asset visivi (tabella successiva):
 |---|---|---|
 | **Fix degli asset** (`OPENAI_ASSET_FIX_*`) | `openai_asset_fix_service` | a generazione, dentro `asset_validation_service`, solo sugli asset invalidi (LaTeX, Mermaid, Vega-Lite, DOT, `function`), fino a `ASSET_FIX_MAX_ATTEMPTS` |
 | **Localizzazione degli asset** (`OPENAI_ASSET_LOCALIZE_*`) | `openai_asset_localize_service` | a generazione, per lingue a script non latino, sui campi testuali rimasti in un'altra lingua (kill-switch `ASSET_LOCALIZE_ENABLED`) |
+| **Revisore figura ↔ testo** (`OPENAI_FIGURE_REVIEW_*`) | `openai_figure_review_service` | a generazione di Fase 3, dentro `asset_validation_service` fra il fix e la localizzazione, su ogni figura valida, fino a `FIGURE_REVIEW_MAX_ATTEMPTS` chiamate per figura (kill-switch `FIGURE_REVIEW_ENABLED`) |
 | **Immagine → Mermaid** (`OPENAI_IMAGE_TO_MERMAID_*`) | `openai_image_to_mermaid_service` | on-demand dall'editor lezione («Digitalizza in Mermaid»), sincrono |
 
 Le figure Vega-Lite, DOT e `function` non usano OpenAI a render: sono

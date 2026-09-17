@@ -2200,7 +2200,7 @@ async def render_svg_map(assets: Sequence[Mapping[str, Any]], *, language: str) 
 
 
 async def render_figure_map(
-    assets: Sequence[Mapping[str, Any]], *, language: str
+    assets: Sequence[Mapping[str, Any]], *, language: str, cache_failures: bool = True
 ) -> dict[str, RenderedFigure]:
     """`{asset_id: RenderedFigure}` per gli asset renderizzabili di una
     lezione (SVG e metriche del testo, D10).
@@ -2214,6 +2214,13 @@ async def render_figure_map(
     ed eccezioni producono `figure_render_failed` e la chiave resta
     assente (fallback del partial). `language` è solo contesto di log
     (vedi la docstring del modulo sulla chiave di cache).
+
+    `cache_failures=False`: i fallimenti di questa chiamata non entrano in
+    cache negativa. Lo usa chi rende per MISURARE e non per pubblicare (la
+    revisione figura ↔ testo di `asset_validation_service`, che mette
+    originale e riscrittura nello stesso batch): un timeout del batch non
+    deve togliere le figure ORIGINALI all'export dei 60 s successivi. La
+    cache positiva resta scritta in ogni caso.
     """
     settings = get_settings()
     timeout = float(settings.figure_render_timeout_seconds)
@@ -2257,13 +2264,14 @@ async def render_figure_map(
                 )
             except TimeoutError:
                 for aid, _s, key in items:
-                    if fmt not in _NO_NEGATIVE_CACHE_ON_BATCH_TIMEOUT:
+                    if cache_failures and fmt not in _NO_NEGATIVE_CACHE_ON_BATCH_TIMEOUT:
                         _cache_negative(key)
                     _render_failed(fmt, aid, f"timeout dopo {fmt_timeout:g} s")
                 continue
             except Exception as exc:  # il renderer non deve sollevare; difesa in profondità
                 for aid, _s, key in items:
-                    _cache_negative(key)
+                    if cache_failures:
+                        _cache_negative(key)
                     _render_failed(fmt, aid, f"{type(exc).__name__}: {exc}")
                 continue
         # Il contratto vuole una lista parallela agli item: un renderer
@@ -2283,7 +2291,7 @@ async def render_figure_map(
             if fig is not None:
                 _cache_put(key, fig)
                 result[aid] = fig
-            else:
+            elif cache_failures:
                 _cache_negative(key)
     log.info(
         "figure_render_map",
