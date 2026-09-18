@@ -5,14 +5,14 @@ usano `httpx.AsyncClient` con `ASGITransport(app)` e una sessione SQLAlchemy
 isolata per fixture; i test «puri» (moduli leaf delle figure, prompt, script)
 non toccano il DB. Inventario rigenerato **per intero** da
 `python3 -m pytest --collect-only -q` sul branch
-`fix/asset-refs-math-figure-scale` (17 settembre 2026, WP7): **58 moduli,
-2.564 item** (zero saltati nell'ultima esecuzione completa in locale, WP6);
-il conteggio degli
+`fix/asset-refs-math-figure-scale` (18 settembre 2026, WP8): **60 moduli,
+2.624 item** (zero falliti e zero saltati nell'ultima esecuzione completa
+in locale, WP8); il conteggio degli
 item per modulo è indicato fra parentesi ed è quello di questa
 rigenerazione, non più un misto di inventari parziali (la revisione di WP3,
 finding V8-2, aveva trovato otto conteggi rimasti a inventari precedenti).
-Sul branch i moduli nuovi sono quindici: dieci hanno ricevuto la scheda
-con il proprio work package, i cinque restanti la ricevono qui. Restano
+Sul branch i moduli nuovi sono sedici: dieci hanno ricevuto la scheda
+con il proprio work package, i sei restanti la ricevono qui. Restano
 senza scheda sei moduli anteriori, citati solo dove servono:
 `test_frontend_csp_header` (19), `test_frontend_figure_templates` (136),
 `test_frontend_mermaid_render_cleanup` (4),
@@ -473,7 +473,7 @@ D8, misura fallita che conserva l'SVG, e parità del ripiego statico
 (`svg_base_font_px`) con la misura su tutti i 15 tipi, pie, radar e
 sequence compresi.
 
-### `tests/test_lesson_pdf_math.py` (102)
+### `tests/test_lesson_pdf_math.py` (105)
 
 Grammatica unica del math del PDF (B3): le quattro rule dollarmath sono
 nostre su entrambe le istanze (`_md_renderer`, `_md_inline_renderer`),
@@ -685,14 +685,14 @@ formula dentro il viewBox, timeout reale con `slow_target`), registro
 PATCH, endpoint `render-function` (200, 422 semantico, 422 Pydantic, 403,
 rate limit). Skip se mancano numpy/matplotlib/sympy.
 
-### `tests/test_figure_numbering.py` (85)
+### `tests/test_figure_numbering.py` (90)
 
 `figure_numbering` (D4, Q2) con la fixture condivisa: prima citazione → N
 crescente, citazioni ripetute → stesso N, id senza asset senza numero,
 `FIG` case-sensitive, orfane in coda, `strip_figure_prefix` mai «lossy»;
 parità con `lib/figureNumbering.ts` eseguita con Node.
 
-### `tests/test_asset_ref_normalize.py` (220)
+### `tests/test_asset_ref_normalize.py` (249)
 
 `asset_ref_normalize` (D1, D2, D4): fixture condivisa
 `fixtures/asset_ref_normalize_cases.json` (blocchi `cases` e `cite`,
@@ -877,7 +877,7 @@ frame video senza JavaScript d'autore, WebSocket chiusi dalla guardia di
 rete, fetcher di WeasyPrint limitato a data URL e host dei media,
 riferimenti con spazi ai bordi e visivi distinti contati come nel CRUD.
 
-### `tests/test_frontend_figure_i18n.py` (25)
+### `tests/test_frontend_figure_i18n.py` (26)
 
 Guardia i18n sui componenti frontend delle figure: nessuna stringa
 italiana hard-coded nei file dell'inventario (lessico di parole di
@@ -914,6 +914,34 @@ react-i18next stubbata) montata in Chromium rende la didascalia senza
 math con il markup storico byte-identico e quella con math con
 `span.katex` in linea, senza `<p>` né `katex-display`. Salta senza
 Node/esbuild/Playwright.
+
+### `tests/test_slide_speech_asset_refs.py` (22)
+
+WP8 — il rimando testuale nella prosa di slide e discorso. PDF slide e
+PDF discorso VERI (WeasyPrint + pypdf): «Figura 1» nel testo estratto e
+zero `[FIG:`/`[TAB:`/`[EQ:` residui, dove prima il docente leggeva il tag
+grezzo (`asset_tags_left = 1` nella prova di consegna); parità dei numeri
+fra dispensa e slide per lo stesso asset, con i numeri presi una volta
+sola da `lesson_asset_refs`; un tag verso un id inesistente — e verso un
+asset dichiarato solo in Fase 4 — resta letterale e produce UN
+`slide_asset_ref_unresolved` / `speech_asset_ref_unresolved` per slide,
+con l'elenco dei tag; didascalie in una riga citate in entrambe le
+superfici e ordine `strip_figure_prefix` → `cite` pinnato; parità
+collector/renderer con una formula a cavallo di un rimando; lingua del
+corso (`Figure 1` in en); limite pinnato del TTS (`sanitize_tts_text`
+lascia il tag); parità con `lib/lessonAssetRefs.ts` compilato con
+l'esbuild del frontend ed eseguito con Node, su numeri, rimandi e tag
+irrisolti; wiring delle tre viste e del contenitore del discorso. Salta
+solo senza Node/esbuild.
+
+Dal giro di correzione del 18 settembre 2026, cinque casi in più:
+l'**accessible name** del blocco figura (`aria-label`) dice la didascalia
+CITATA e non il tag, in dispensa e nelle slide, mentre `alt_text` resta
+testo d'autore mai citato (i due lati della parità con
+`FigureFrame.tsx`, che cita già); e un `content_raw` che il corpo della
+dispensa non sa concatenare — assente, di lezione-verifica, con una voce
+di `sections` che non è un oggetto — non fa più fallire slide e discorso,
+che da WP8 quel corpo lo leggono per averne i numeri.
 
 ### `tests/test_asset_localization_gate.py` (4)
 

@@ -21,6 +21,7 @@ import {
 
 import {
   coursesApi,
+  isAssessmentRaw,
   type CourseLessonOut,
   type CourseModuleOut,
   type CourseOut,
@@ -1268,6 +1269,9 @@ function LessonSpeechRow({
           <LessonSpeechView
             speech={lesson.speech_raw}
             slides={lesson.slides_raw}
+            contentRaw={
+              isAssessmentRaw(lesson.content_raw) ? null : lesson.content_raw
+            }
           />
         </div>
       )}

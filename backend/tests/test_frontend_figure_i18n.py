@@ -27,9 +27,10 @@ _LOCALES = _FRONTEND / "i18n" / "locales"
 
 # Inventario WP5: componenti nuovi, componenti migrati a i18n e moduli lib
 # che producono messaggi mostrati nel `FigureErrorBox`; esteso (WP1 dei
-# rimandi) con la vista lezione, che chiude la callable del rimando su
-# chiavi `t()` letterali, e con il normalizzatore, che non deve avere
-# stringhe di interfaccia (le regole stanno nei commenti).
+# rimandi) con la vista lezione e (WP8) con `lib/lessonAssetRefs.ts`, che
+# chiude la callable del rimando su chiavi `t()` letterali per tutte e tre
+# le viste, e con il normalizzatore, che non deve avere stringhe di
+# interfaccia (le regole stanno nei commenti).
 _INVENTORY = [
     "components/shared/FigureFrame.tsx",
     "components/shared/VegaLiteDiagram.tsx",
@@ -49,6 +50,7 @@ _INVENTORY = [
     "lib/figureFormats.ts",
     "lib/figureNumbering.ts",
     "lib/assetRefNormalize.ts",
+    "lib/lessonAssetRefs.ts",
 ]
 
 # Lessico: parole italiane che in questi file possono comparire solo in una

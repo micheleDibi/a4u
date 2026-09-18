@@ -35,6 +35,8 @@ export interface FunctionFigureProps {
   altText?: string;
   number?: number | null;
   variant?: "lesson" | "slide";
+  /** Rimando testuale degli asset per la didascalia (vedi `FigureFrame`). */
+  cite?: (text: string) => string;
   className?: string;
 }
 
@@ -45,6 +47,7 @@ export function FunctionFigure({
   altText,
   number,
   variant = "lesson",
+  cite,
   className,
 }: FunctionFigureProps) {
   const { t } = useTranslation();
@@ -115,6 +118,7 @@ export function FunctionFigure({
       number={number}
       variant={variant}
       extraCaption={extraCaption}
+      cite={cite}
       className={className}
     >
       {body}

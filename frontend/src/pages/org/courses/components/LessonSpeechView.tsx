@@ -1,6 +1,8 @@
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
+  LessonContentRaw,
   LessonSpeechRaw,
   LessonSpeechSegment,
   LessonSlidesRaw,
@@ -8,10 +10,12 @@ import type {
 import { InlineMath } from "@/components/shared/InlineMath";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { lessonAssetRefs, type AssetRefs } from "@/lib/lessonAssetRefs";
 
 interface Props {
   speech: LessonSpeechRaw;
   slides: LessonSlidesRaw | null;
+  contentRaw: LessonContentRaw | null;
 }
 
 /**
@@ -26,12 +30,15 @@ interface Props {
  * `slide_total_duration_seconds` salvato perché il rendering deve
  * mostrare il tempo cumulativo di ciascun segmento, non il totale slide.
  *
- * Titolo della slide, testo e note passano da `InlineMath` (solo testo e
- * formule, come `render_markdown_inline` nel PDF del discorso e come la
- * vista delle slide): un `$..$` nel titolo non resta LaTeX grezzo.
+ * Titolo della slide, testo e note passano PRIMA dal rimando testuale
+ * degli asset (`lessonAssetRefs` su `contentRaw`: un `[FIG:x]` lasciato
+ * dal modello diventa «Figura 1», con i NUMERI DELLA DISPENSA, come nel
+ * PDF del discorso) e poi da `InlineMath` (solo testo e formule, come
+ * `render_markdown_inline`): un `$..$` nel titolo non resta LaTeX grezzo.
  */
-export function LessonSpeechView({ speech, slides }: Props) {
+export function LessonSpeechView({ speech, slides, contentRaw }: Props) {
   const { t } = useTranslation();
+  const refs = useMemo(() => lessonAssetRefs(contentRaw, t), [contentRaw, t]);
 
   // Index per lookup veloce.
   const segById = new Map<string, LessonSpeechSegment>();
@@ -98,7 +105,7 @@ export function LessonSpeechView({ speech, slides }: Props) {
                           {slideMeta.number}
                         </Badge>
                         <h4 className="text-base font-semibold">
-                          <InlineMath text={slideMeta.title} />
+                          <InlineMath text={refs.cite(slideMeta.title)} />
                         </h4>
                       </>
                     ) : (
@@ -131,6 +138,7 @@ export function LessonSpeechView({ speech, slides }: Props) {
                         segment={seg}
                         timelineStart={start}
                         timelineEnd={end}
+                        refs={refs}
                       />
                     );
                   })
@@ -148,12 +156,14 @@ interface SegmentBlockProps {
   segment: LessonSpeechSegment;
   timelineStart: number;
   timelineEnd: number;
+  refs: AssetRefs;
 }
 
 function SegmentBlock({
   segment,
   timelineStart,
   timelineEnd,
+  refs,
 }: SegmentBlockProps) {
   const { t } = useTranslation();
   return (
@@ -172,14 +182,14 @@ function SegmentBlock({
         </span>
       </div>
       <p className="text-sm leading-relaxed">
-        <InlineMath text={segment.text} />
+        <InlineMath text={refs.cite(segment.text)} />
       </p>
       {segment.delivery_notes && (
         <p className="text-xs italic text-muted-foreground">
           <span className="font-medium not-italic">
             {t("courses.lessonsSpeech.render.deliveryNotes")}:
           </span>{" "}
-          <InlineMath text={segment.delivery_notes} />
+          <InlineMath text={refs.cite(segment.delivery_notes)} />
         </p>
       )}
     </div>

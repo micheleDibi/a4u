@@ -240,17 +240,29 @@ def _speech_inline_texts(timeline: list[dict[str, Any]]) -> list[str]:
     return texts
 
 
-def _math_content_for_speech(lesson: CourseLesson) -> dict[str, Any]:
+def _math_content_for_speech(lesson: CourseLesson, *, language: str = "it") -> dict[str, Any]:
     """Contenuto su cui il collector del PDF raccoglie il math del discorso
-    (`inline_texts`, vedi `base_pdf._iter_math_sources`). Helper puro."""
+    (`inline_texts`, vedi `base_pdf._iter_math_sources`). Helper puro.
+
+    `asset_refs` porta al collector i numeri della DISPENSA
+    (`base_pdf.lesson_asset_refs` su `content_raw`), gli stessi che il
+    renderer applica ai campi inline: senza, una formula a cavallo di un
+    rimando avrebbe chiavi diverse nelle due letture."""
     timeline = _speech_timeline(lesson.speech_raw or {}, lesson.slides_raw or {})
-    return {"inline_texts": _speech_inline_texts(timeline)}
+    return {
+        "inline_texts": _speech_inline_texts(timeline),
+        "asset_refs": base_pdf.lesson_asset_refs(lesson.content_raw, language=language),
+    }
 
 
-async def _prerender_math_for_speech(lesson: CourseLesson) -> base_pdf.MathSvgMap:
+async def _prerender_math_for_speech(
+    lesson: CourseLesson, *, language: str = "it"
+) -> base_pdf.MathSvgMap:
     """Pre-render LaTeX → SVG (MathJax) delle formule del discorso, con il
     collector e la batch della dispensa. WeasyPrint non rende il MathML."""
-    return await base_pdf._prerender_math_for_lesson(_math_content_for_speech(lesson))
+    return await base_pdf._prerender_math_for_lesson(
+        _math_content_for_speech(lesson, language=language)
+    )
 
 
 def render_speech_html(
@@ -265,11 +277,15 @@ def render_speech_html(
 ) -> str:
     """Pure-function: HTML completo del discorso pronto per WeasyPrint.
 
-    Testo e note dei segmenti e titolo di ogni slide passano da
+    Testo e note dei segmenti e titolo di ogni slide passano PRIMA da
+    `AssetRefs.cite` (un `[FIG:x]` lasciato dal modello diventa il rimando
+    «Figura 1», con i numeri della DISPENSA: la stessa figura si chiama
+    così anche nella dispensa e sulla slide) e poi da
     `render_markdown_inline` (testo escapato più formule SVG da
-    `math_svg_map`; senza mappa ricadono sul MathML, loggato). Il piè di
-    pagina è una stringa CSS: `footer_title_css` porta i titoli con
-    `css_string`."""
+    `math_svg_map`; senza mappa ricadono sul MathML, loggato). Un tag che
+    nessun numero risolve resta com'è e la sezione produce uno
+    `speech_asset_ref_unresolved`. Il piè di pagina è una stringa CSS:
+    `footer_title_css` porta i titoli con `css_string`."""
     speech_raw = lesson.speech_raw or {}
     if not speech_raw:
         raise ConflictError(
@@ -293,12 +309,27 @@ def render_speech_html(
     def _inline(text: str) -> Markup:
         return Markup(base_pdf.render_markdown_inline(text, math_svg_map))
 
+    # Numeri e rimando testuale della DISPENSA (stessa funzione, stesso
+    # `content_raw` del PDF lezione e del PDF slide).
+    refs = base_pdf.lesson_asset_refs(lesson.content_raw, language=language)
     timeline = _speech_timeline(speech_raw, slides_raw)
     for entry in timeline:
-        entry["slide_title"] = _inline(entry["slide_title"])
+        texts = [entry["slide_title"]]
         for seg in entry["segments"]:
-            seg["text"] = _inline(_prose_text(seg.get("text")))
-            seg["delivery_notes"] = _inline(_prose_text(seg.get("delivery_notes")))
+            texts.append(_prose_text(seg.get("text")))
+            texts.append(_prose_text(seg.get("delivery_notes")))
+        unresolved = refs.unresolved(*texts)
+        if unresolved:
+            log.warning(
+                "speech_asset_ref_unresolved",
+                lesson_code=lesson.lesson_code,
+                slide_id=entry["slide_id"],
+                tags=unresolved,
+            )
+        entry["slide_title"] = _inline(refs.cite(entry["slide_title"]))
+        for seg in entry["segments"]:
+            seg["text"] = _inline(refs.cite(_prose_text(seg.get("text"))))
+            seg["delivery_notes"] = _inline(refs.cite(_prose_text(seg.get("delivery_notes"))))
 
     # Etichetta lezione "Modulo X - lezione Y" (localizzata), come le dispense.
     base_labels = base_pdf._labels_for(language)
@@ -378,7 +409,9 @@ async def materialize_lesson_speech_pdf(
         )
 
     # Pre-render LaTeX → SVG (MathJax) di testo, note e titoli di slide.
-    math_svg_map = await _prerender_math_for_speech(lesson)
+    math_svg_map = await _prerender_math_for_speech(
+        lesson, language=(course.language_code or "it").lower()
+    )
     html = await asyncio.to_thread(
         render_speech_html,
         course=course,

@@ -44,6 +44,8 @@ _FRONTEND_MODULE = _FRONTEND_SRC / "lib" / "assetRefNormalize.ts"
 _FRONTEND_VIEW = (
     _FRONTEND_SRC / "pages" / "org" / "courses" / "components" / "LessonContentView.tsx"
 )
+# Numerazione e rimando condivisi dalle tre viste (WP8).
+_FRONTEND_REFS = _FRONTEND_SRC / "lib" / "lessonAssetRefs.ts"
 _LOCALES = _FRONTEND_SRC / "i18n" / "locales"
 
 ASSET_REF_PATTERN = r"\[(FIG|TAB|EQ|EX):([^\]\n]+)\]"
@@ -265,19 +267,30 @@ def test_reference_label_has_no_trailing_punctuation_and_values_mirror_locale() 
     assert asset_ref(it, "THM", 2, kind_word="Lemma") == "Lemma 2"
 
 
+def _strip_comments(path: Path) -> str:
+    source = re.sub(r"/\*.*?\*/", " ", path.read_text(encoding="utf-8"), flags=re.S)
+    return re.sub(r"(?<![:\"'])//[^\n]*", " ", source)
+
+
 def test_frontend_view_wires_the_normalizer() -> None:
     """La vista lezione normalizza il corpo DOPO aver numerato il corpo non
-    normalizzato, cita la coda e chiude la callable su chiavi `t()`
-    letterali; senza, C2/C9 tornerebbero solo a video o i numeri
-    cambierebbero nel caso «più id nello stesso paragrafo»."""
+    normalizzato e cita la coda; senza, C2/C9 tornerebbero solo a video o i
+    numeri cambierebbero nel caso «più id nello stesso paragrafo». Da WP8
+    numeri e callable vengono da `lib/lessonAssetRefs.ts`, condiviso con le
+    viste slide e discorso: è lì che vive l'ordine numerazione → rimandi e
+    le chiavi `t()` letterali."""
     assert _FRONTEND_VIEW.is_file(), f"vista frontend assente: {_FRONTEND_VIEW}"
-    source = re.sub(r"/\*.*?\*/", " ", _FRONTEND_VIEW.read_text(encoding="utf-8"), flags=re.S)
-    source = re.sub(r"(?<![:\"'])//[^\n]*", " ", source)
+    source = _strip_comments(_FRONTEND_VIEW)
     assert "@/lib/assetRefNormalize" in source
-    numbers_at = source.index("computeAssetNumbers(body")
-    normalize_at = source.index("normalizeAssetRefs(body")
-    assert numbers_at < normalize_at, "la numerazione va calcolata sul corpo NON normalizzato"
+    assert "@/lib/lessonAssetRefs" in source
+    assert "normalizeAssetRefs(body" in source
     assert "citeAssetRefs(tail" in source
+
+    assert _FRONTEND_REFS.is_file(), f"modulo dei rimandi assente: {_FRONTEND_REFS}"
+    refs = _strip_comments(_FRONTEND_REFS)
+    numbers_at = refs.index("computeAssetNumbers(body")
+    cite_at = refs.index("citeAssetRefs(text")
+    assert numbers_at < cite_at, "la numerazione va calcolata sul corpo NON normalizzato"
     for key in (
         "courses.figures.ref",
         "courses.figures.table.ref",
@@ -285,7 +298,7 @@ def test_frontend_view_wires_the_normalizer() -> None:
         "courses.figures.example.ref",
         "courses.figures.theorem.ref",
     ):
-        assert f't("{key}"' in source, key
+        assert f't("{key}"' in refs, key
 
 
 def test_fixture_covers_the_required_scenarios() -> None:

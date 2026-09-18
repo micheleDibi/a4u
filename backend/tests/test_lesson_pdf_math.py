@@ -983,13 +983,19 @@ def test_slides_collect_captions_and_pass_math_map_to_figures() -> None:
     assert merged["visual_assets"] == [a, b]
     assert merged["equations"] == [{"equation_id": "e"}, {"equation_id": "n"}]
     assert merged["tables"] == [{"table_id": "t"}] and merged["examples"] == []
-    assert slides_pdf._math_content_for_slides(None, None) == {
+    empty = slides_pdf._math_content_for_slides(None, None)
+    refs = empty.pop("asset_refs")
+    assert empty == {
         "equations": [],
         "tables": [],
         "examples": [],
         "visual_assets": [],
         "inline_texts": [],
     }
+    # `asset_refs` (WP8) porta al collector i numeri della dispensa: senza
+    # `content_raw` la mappa è vuota e `cite` è l'identità.
+    assert isinstance(refs, pdf.AssetRefs) and refs.asset_numbers == {}
+    assert refs.cite("Vedi [FIG:a].") == "Vedi [FIG:a]."
     rec = RecordingMap()
     html = slides_pdf._build_slide_asset_html(
         _asset("A", "Angolo $30^\\circ$"),

@@ -4386,8 +4386,11 @@ rilievo che li ha resi espliciti.
 - **L'etichetta «Figura N.» nella vista segue la lingua dell'interfaccia**
   (I18N-2), come «Summary» e «Key takeaways» del corpo, mentre PDF, slide,
   frame e coda calcolata seguono la lingua del corso: con UI e corso in
-  lingue diverse la didascalia della vista è mista. Da decidere per
-  l'intera vista, non per la sola figura.
+  lingue diverse la didascalia della vista è mista. Vale anche per il
+  rimando in linea nella prosa della vista slide e della vista discorso,
+  aggiunto insieme al rimando delle due superfici PDF: il numero è lo
+  stesso ovunque, la parola («Figura», «Figure») segue l'interfaccia solo
+  a schermo. Da decidere per l'intera vista, non per la sola figura.
 - **I messaggi del 422 delle figure sono in italiano** (I18N-7) come tutti
   i `ValidationAppError` del prodotto, e si mescolano a quelli inglesi di
   jsonschema e vl-convert. Il `type` è stabile: la traduzione lato client è
@@ -5208,7 +5211,7 @@ gate editoriale deve riconoscere come tali e non come regressioni.
 
 ### 20.5 I work package e i commit
 
-Otto commit, `git log --format='%h %s' main..HEAD` in ordine di lavoro.
+Undici commit, `git log --format='%h %s' main..HEAD` in ordine di lavoro.
 
 | WP | Commit | Che cosa cambia |
 | --- | --- | --- |
@@ -5220,7 +5223,9 @@ Otto commit, `git log --format='%h %s' main..HEAD` in ordine di lavoro.
 | WP4 | `f397a9f` `fix(pdf): autoescape, math nelle slide e nel discorso, duplicati di slide, guardia di rete nel video` | autoescape sui tre env con `.j2`, filtro `css_string`, piè di pagina del discorso; math nella prosa di slide e discorso e nelle due viste; una sola chiave per i riferimenti (asset citato due volte dalla stessa slide reso una volta); regola max-1-visivo solo sulle slide toccate dal PATCH; `block_external_requests` prima di `set_content` nei frame video |
 | WP5 | `5d96199` `feat(figures): gate editoriali, incroci, prompt di Fase 3, dedup delle liste` | `graph_rules.py` con le costanti provvisorie e i messaggi `graph_too_dense:`; `figure_geometry.py` (incroci arco × arco e quattro difetti di lettura, parità Python/Chromium sui 18 DOT); tetto A1 sul `content` degli asset; `_count_asset_refs` con `Counter`; dedup di punti chiave e riferimenti in scrittura; regola di posizione dei tag nel prompt di Fase 3 |
 | WP6 | `bb48622` `feat(figures): revisore AI figura↔testo con costo contabilizzato` | `openai_figure_review_service` innestato fra fix e localizzazione, verdetto `coerente`/`correggi` con controlli deterministici e resa speculativa; un rifiuto lascia l'originale **byte-identico**; kill-switch `figure_review_enabled` e triade di setting (`config.py:295-300`); fix e localizzazione passano a `build_usage_dict`, il worker fonde l'usage in `content_tokens.assets` e `assets_cost_usd` |
-| WP7 | questo capitolo | documentazione e riallineamento; nessun file di codice |
+| WP7 | `3de554f` `docs: capitolo 20 di 17-visual-figures e riallineamento al codice del branch` | questo capitolo e i riallineamenti di §6, §12, §13, §15 e dei venti documenti del piano; nessun file di codice, salvo due commenti stantii corretti |
+| Fase D | `e026ae8` `fix(pdf): revisione avversariale — dieci correzioni e gli esiti nel capitolo 20` | parità Python/JS dei mirror (`strip` contro `trim`), ancora che non spezza più una lista attaccata, guardia anti-currency sui `$$..$$` in frase, arco degenere contato anche da Chromium, nessuna chiamata sterile del revisore senza la resa, guardia unica degli oracoli Chromium; esiti in §20.8 |
+| WP8 | `07a7e31` `fix(pdf): il rimando testuale vale anche nella prosa delle slide e del discorso` | `AssetRefs` + `lesson_asset_refs` come UNICO contratto della numerazione (i numeri nascono dal corpo della dispensa, chi non lo rende li riusa); `cite` su titolo, prosa e bullet delle slide, su `seg.text`/`seg.delivery_notes`/titolo di slide del discorso e sulle didascalie in una riga dei quattro blocchi; `slide_asset_ref_unresolved` / `speech_asset_ref_unresolved` per i tag che nessun numero risolve; mirror `lib/lessonAssetRefs.ts` condiviso dalle tre viste; `asset_refs` come chiave sintetica del collector del math. Oracolo della prova di consegna rimisurato sulle stesse tre lezioni: `asset_tags_left` nei PDF slide **1 → 0** su tutte e tre (L1, L2, L3), con «Figura 1» al posto di «[FIG:iter]» |
 
 Deviazioni dichiarate rispetto al piano approvato: **WP3 in due commit**
 (3a scala, 3b box slide) per la revisionabilità; **B6 aggiunta al brief**;
@@ -5232,6 +5237,38 @@ restano all'escape HTML dell'attributo invece del `|safe` previsto, perché
 
 ### 20.6 Limiti dichiarati e rischi residui del branch
 
+- **Il blocco teorema sborda dalla slide, senza log (B6).** Il budget
+  D12 (§20.2, WP3b) nasce per il box della FIGURA: un `figure.equation` in
+  famiglia teorema — enunciato più passi di dimostrazione — non ci passa,
+  ricade sul cap CSS `var(--figure-h, 80mm)` e, quando il contenuto è più
+  alto, esce dai 120 mm di `.slide-body`. La prova di consegna lo ha
+  misurato con WeasyPrint sulle tre lezioni rappresentative, **identico
+  prima e dopo il branch**: L1 pagina 3 **+12,12 mm**, L2 pagina 3
+  **+19,30 mm**, L3 pagina 3 **+12,39 mm**. È l'unico sbordo che il branch
+  non intercetta, e siccome `.slide-body` ha `overflow: hidden` il
+  contenuto in eccesso — di norma la fine della dimostrazione — **sparisce
+  in silenzio**, senza nemmeno un `slide_figure_box_exhausted`. NON
+  corretto: B6 tiene il cap del teorema invariato; il rimedio è estendere
+  il budget a un blocco di TESTO, cosa che cambia l'impaginazione di ogni
+  slide di teorema già prodotta e va misurata prima. Vedi
+  [10 — § Rendering](10-lesson-slides.md#rendering-di-titolo-prosa-bullet-e-riferimenti-wp4).
+- **Il testo letto dalla voce conserva il tag (WP8).**
+  `sanitize_tts_text` non tocca le parentesi quadre: un `[FIG:iter]` nel
+  `speech_segments[].text` sopravvive e la voce lo legge, mentre il PDF
+  del discorso e la vista ora mostrano «Figura 1». La scelta è
+  deliberata — il rimando è una normalizzazione di render, il testo del
+  parlato è contenuto persistito — ed è pinnata da un test; vedi
+  [11 — § PDF del discorso](11-lesson-speech.md#pdf-del-discorso--course_lesson_speech_pdf_servicepy-wp4).
+  La divergenza non resta fra due artefatti separati: il frame video passa
+  dallo stesso `render_slides_html`, quindi DENTRO lo stesso video la
+  slide scrive «Figura 1» mentre la voce legge il tag. Conseguenza attesa
+  della scelta, non un difetto in più.
+- **I nuovi asset di Fase 4 non hanno numero (WP8).** La numerazione è
+  quella della dispensa; un asset dichiarato solo in `slides_raw.new_*`
+  non ne riceve uno, perché assegnarglielo lo farebbe collidere con i
+  numeri del corpo. Un tag che lo cita resta letterale e produce
+  `slide_asset_ref_unresolved`: sulla slide il blocco c'è comunque, con
+  l'etichetta non numerata «Figura.» (A2).
 - **Dati reali del docente non ancora disponibili.** Il grep dei log e
   l'export pgAdmin di §20.3 non sono stati eseguiti. Conseguenze: le
   soglie di `graph_rules.py` sono calibrate sui **57 modelli degli
@@ -5387,3 +5424,25 @@ esattamente la misura di partenza; `mypy app` **205 errori in 32 file su
 con `-rs` **2.608 passed, 0 failed, 0 skipped** (nessuna riga `SKIPPED` nel
 riepilogo); `npm run lint` **4 errori e 23 avvisi**, la baseline nota;
 `npm run type-check` e `npm run build` puliti.
+
+I 4 errori di `npm run lint` stanno **fuori** dai file del branch e sono
+gli stessi di `main`: `src/components/shared/LatexEditor.tsx:283`
+(`react/no-danger`, regola non definita nella configurazione) e
+`src/i18n/scripts.ts:64/66/68` (`no-irregular-whitespace` e due
+`no-misleading-character-class`). Vale la pena scriverne i nomi: sono i
+soli quattro, e attribuirli ai file toccati farebbe credere a una
+regressione che non c'è.
+
+### 20.9 Correzione della prova di consegna (18 settembre 2026)
+
+Cinque rilievi dalla verifica di WP8, su HEAD `0c77846`. Due erano
+difetti di codice, due frasi di documentazione troppo larghe, uno un
+errore del rapporto.
+
+| rilievo | esito |
+| --- | --- |
+| **`aria-label` non citato** (minore). Nel partial l'accessible name nasceva da `caption_text(caption)` PRIMA del `caption_renderer`, che era il solo punto in cui passava `cite`: con `alt_text` vuoto — default dello schema, quindi raggiungibile — il PDF usciva con `aria-label="Dipendenze di [FIG:iter]"` accanto a un `<figcaption>` che diceva «Dipendenze di Figura 1». Il mirror `FigureFrame.tsx` faceva già il contrario (`aria-label={altText \|\| text}` con `text = cite(stripped)`) | **corretto**: `cite` è un parametro di `render_figure_html` e si applica subito dopo `caption_text`, quindi vale per la didascalia e per l'accessible name insieme; `alt_text` resta testo d'autore, mai citato, come nel mirror. Due test nuovi, uno rosso prima (`['ciclo', 'Dipendenze di [FIG:iter]']`) e uno a guardia dell'eccesso di zelo |
+| **Perimetro dell'avviso** (nota). `slide_asset_ref_unresolved` elenca i tag dei soli campi di prosa (`refs.unresolved(title, body, *bullets)`): un tag irrisolto in una didascalia resta letterale senza alcun evento, e la doc non lo diceva | **dichiarato**: la frase è stretta in [10 — § Rendering](10-lesson-slides.md) e in [09 — § Rimandi](09-pdf-export.md). Non è una rottura di parità — la dispensa non emette alcun evento — e portare le didascalie dentro l'elenco vorrebbe dire duplicare fuori dai renderer di blocco la mappa kind → campo della didascalia |
+| **Corpo della dispensa malformato** (nota). Da WP8 slide e discorso leggono `content_raw` per averne i numeri: una voce di `sections` che non è un oggetto li faceva fallire con `AttributeError` dove prima non toccavano quel corpo | **corretto**: `_build_lesson_body_markdown` salta le voci non-oggetto, come già `_asset_ids_by_kind`. Tre casi nuovi (assente, lezione-verifica, sezione non-oggetto), il terzo rosso prima |
+| **Frame video e voce** (nota). Il limite del TTS era dichiarato, ma nessun punto diceva che dopo WP8 la divergenza si vede DENTRO lo stesso video: il frame passa da `render_slides_html` e scrive «Figura 1», la voce legge il tag | **dichiarato** in §20.6 e in [11 — § Limite dichiarato](11-lesson-speech.md). Nessuna correzione: il parlato è contenuto persistito e non c'è backfill |
+| **Localizzazione della baseline di lint** (nota). Il rapporto di WP8 attribuiva i 4 errori a `MarkdownRenderer.tsx` e `assetRefNormalize.ts`, cioè a due file del commit | **corretto nel testo**: i nomi giusti sono qui sopra, misurati con `npm run lint`; il conteggio (4 errori, 23 avvisi) era ed è quello |

@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -177,8 +177,14 @@ def _build_slide_asset_html(
     lesson_code: str | None = None,
     figure_budget: PageFigureBudget | None = None,
     fit_report: list[FigureFitEntry] | None = None,
+    cite: Callable[[str], str] = base_pdf._identity,
 ) -> str:
     """Costruisce il blocco HTML per un asset referenziato da una slide.
+
+    `cite` è il rimando testuale degli asset (`base_pdf.AssetRefs.cite`,
+    numeri della dispensa) applicato alle didascalie in una riga, come
+    nella dispensa: un `[FIG:x]` nella didascalia della tabella diventa
+    «Figura 1» anche qui.
 
     Gli asset visivi (Fase 3 e `new_assets` di Fase 4) passano dal blocco
     figura del PDF dispensa con `variant="slide"` e `number=None`: stessa
@@ -217,18 +223,34 @@ def _build_slide_asset_html(
             lesson_code=lesson_code,
             figure_budget=figure_budget,
             fit_report=fit_report,
+            cite=cite,
         )
     if kind == "table":
         return base_pdf._render_table_block(
-            asset, math_svg_map=math_svg_map, number=None, labels=figure_i18n, language=language
+            asset,
+            math_svg_map=math_svg_map,
+            number=None,
+            labels=figure_i18n,
+            language=language,
+            cite=cite,
         )
     if kind == "equation":
         return base_pdf._render_equation_block(
-            asset, math_svg_map=math_svg_map, language=language, number=None, labels=figure_i18n
+            asset,
+            math_svg_map=math_svg_map,
+            language=language,
+            number=None,
+            labels=figure_i18n,
+            cite=cite,
         )
     if kind == "example":
         return base_pdf._render_example_block(
-            asset, math_svg_map=math_svg_map, number=None, labels=figure_i18n, language=language
+            asset,
+            math_svg_map=math_svg_map,
+            number=None,
+            labels=figure_i18n,
+            language=language,
+            cite=cite,
         )
     return ""
 
@@ -347,6 +369,12 @@ class _SlideProse(NamedTuple):
     body: str
     bullets: list[str]
 
+    def cited(self, cite: Callable[[str], str]) -> _SlideProse:
+        """Gli stessi campi con i tag `[KIND:id]` riscritti nel rimando
+        testuale della dispensa: è il testo che finisce sulla slide, quindi
+        anche quello che il budget misura e che il collector raccoglie."""
+        return _SlideProse(cite(self.title), cite(self.body), [cite(b) for b in self.bullets])
+
 
 def _slide_prose(slide: Mapping[str, Any]) -> _SlideProse:
     return _SlideProse(
@@ -371,12 +399,20 @@ def _slide_prose_texts(slides_raw: Mapping[str, Any] | None) -> list[str]:
 def _math_content_for_slides(
     content_raw: dict[str, Any] | None,
     slides_raw: dict[str, Any] | None,
+    *,
+    language: str = "it",
 ) -> dict[str, Any]:
     """Contenuto «fuso» su cui il collector del PDF raccoglie il math delle
     slide: equazioni, tabelle, esempi e figure delle Dispense
     (`content_raw`) più i nuovi asset di Fase 4 (`slides_raw.new_*`), e
     titolo, prosa e bullet delle slide come `inline_texts` (WP4). Le
-    figure servono per le didascalie (D9). Helper puro, senza I/O."""
+    figure servono per le didascalie (D9). Helper puro, senza I/O.
+
+    `asset_refs` porta al collector i numeri della DISPENSA
+    (`base_pdf.lesson_asset_refs` su `content_raw`): senza, il collector
+    li ricalcolerebbe sul contenuto fuso — che non ha corpo e comprende i
+    nuovi asset di Fase 4 — e una formula a cavallo di un rimando avrebbe
+    chiavi diverse da quelle del renderer."""
     cr = content_raw or {}
     sr = slides_raw or {}
     return {
@@ -385,6 +421,7 @@ def _math_content_for_slides(
         "examples": list(cr.get("examples") or []) + list(sr.get("new_examples") or []),
         "visual_assets": list(cr.get("visual_assets") or []) + list(sr.get("new_assets") or []),
         "inline_texts": _slide_prose_texts(sr),
+        "asset_refs": base_pdf.lesson_asset_refs(cr, language=language),
     }
 
 
@@ -435,13 +472,15 @@ def _prose_for_budget(text: str, math_svg_map: Mapping[Any, Any] | None) -> Pros
 async def _prerender_math_for_slides(
     content_raw: dict[str, Any] | None,
     slides_raw: dict[str, Any] | None,
+    *,
+    language: str = "it",
 ) -> base_pdf.MathSvgMap:
     """Pre-render LaTeX → SVG per le slide sul contenuto di
     `_math_content_for_slides`. Riusa il collector + batch MathJax del PDF
-    lezione (`base_pdf`); la lingua del corso non serve: il contenuto fuso
-    non ha corpo né coda, quindi nessun rimando riscritto."""
+    lezione (`base_pdf`); la lingua del corso decide il testo dei rimandi
+    riscritti, che può finire dentro una formula."""
     return await base_pdf._prerender_math_for_lesson(
-        _math_content_for_slides(content_raw, slides_raw)
+        _math_content_for_slides(content_raw, slides_raw, language=language)
     )
 
 
@@ -579,11 +618,19 @@ def render_slides_html(
     pavimento e un `slide_figure_box_exhausted` nel log; una pagina con più
     blocchi (solo legacy) è segnalata con `slide_figure_box_shared`.
 
-    Titolo, prosa e bullet passano da `render_markdown_inline` (testo
-    escapato e formule SVG, niente markdown ricco: WP4); il budget li misura
-    sul sorgente con gli SVG delle formule (`_prose_for_budget`). Un asset
-    citato più volte dalla stessa slide è reso una volta, con un
-    `slide_duplicate_asset_ref` per ogni ripetizione.
+    Titolo, prosa e bullet passano PRIMA da `AssetRefs.cite` (i tag
+    `[KIND:id]` lasciati dal modello nella prosa diventano il rimando
+    testuale «Figura 1», con i numeri della DISPENSA e mai un blocco
+    figura: la figura sulla slide arriva da `references_assets`) e poi da
+    `render_markdown_inline` (testo escapato e formule SVG, niente markdown
+    ricco: WP4); il budget li misura sul sorgente citato con gli SVG delle
+    formule (`_prose_for_budget`). Le didascalie in una riga degli asset
+    ricevono lo stesso trattamento. Un tag che nessun numero risolve — id
+    inesistente, o asset dichiarato solo in Fase 4, che la dispensa non
+    numera — resta com'è, senza rimando inventato, e la slide produce un
+    `slide_asset_ref_unresolved`. Un asset citato più volte dalla stessa
+    slide è reso una volta, con un `slide_duplicate_asset_ref` per ogni
+    ripetizione.
 
     `enable_split` (default True): per il PDF cartaceo, una slide con
     bullet+asset viene splittata su 2 pagine consecutive (pattern visivo
@@ -598,7 +645,9 @@ def render_slides_html(
             f"Lezione {lesson.lesson_code} senza slides_raw — impossibile esportare.",
             code="lesson_slides_missing",
         )
-    content_raw = lesson.content_raw or {}
+    # Contenuto d'archivio che non è un oggetto: lezione senza asset (stessa
+    # coercizione di `_prepare_lesson_body`, un solo punto per superficie).
+    content_raw = lesson.content_raw if isinstance(lesson.content_raw, dict) else {}
     new_assets = slides_raw.get("new_assets") or []
     new_tables = slides_raw.get("new_tables") or []
     new_equations = slides_raw.get("new_equations") or []
@@ -618,6 +667,9 @@ def render_slides_html(
         **(visual_svg_map or {}),
     }
     figure_i18n = figure_labels(language)
+    # Numeri e rimando testuale della DISPENSA (stessa funzione, stesso
+    # `content_raw`): «Figura 1» è la stessa figura nelle due superfici.
+    refs = base_pdf.lesson_asset_refs(content_raw, language=language)
     # Espansione: se una slide ha sia bullet sia asset, viene divisa in
     # due pagine consecutive con lo stesso titolo:
     #   - pagina N: tag "Lezione X" + titolo + bullet (niente asset)
@@ -639,9 +691,18 @@ def render_slides_html(
             continue
         slide_type = s.get("type", "concept")
         type_label = _slide_type_label(language, slide_type)
-        # Titolo, prosa e bullet: testo escapato più formule (WP4), come i
-        # campi inline della dispensa; il sorgente resta per il budget.
-        prose = _slide_prose(s)
+        # Titolo, prosa e bullet: prima il rimando testuale, poi il testo
+        # escapato più le formule (WP4), come i campi inline della
+        # dispensa; il sorgente citato resta per il budget.
+        prose = _slide_prose(s).cited(refs.cite)
+        unresolved = refs.unresolved(prose.title, prose.body, *prose.bullets)
+        if unresolved:
+            log.warning(
+                "slide_asset_ref_unresolved",
+                lesson_code=lesson.lesson_code,
+                slide_id=s.get("slide_id"),
+                tags=unresolved,
+            )
         title_html = _inline(prose.title)
         body_html = _inline(prose.body)
         bullets_html = [_inline(b) for b in prose.bullets]
@@ -740,6 +801,7 @@ def render_slides_html(
                         lesson_code=lesson.lesson_code,
                         figure_budget=budget,
                         fit_report=fit_report,
+                        cite=refs.cite,
                     )
                     if html:
                         assets_html.append(html)
@@ -820,7 +882,9 @@ async def materialize_lesson_slides_pdf(
         lesson.content_raw, new_assets, language=language
     )
     # Pre-render LaTeX → SVG (MathJax): WeasyPrint non rende il MathML.
-    math_svg_map = await _prerender_math_for_slides(lesson.content_raw, slides_raw)
+    math_svg_map = await _prerender_math_for_slides(
+        lesson.content_raw, slides_raw, language=language
+    )
 
     fit_report: list[FigureFitEntry] = []
     html = await asyncio.to_thread(

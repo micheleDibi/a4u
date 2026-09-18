@@ -252,14 +252,42 @@ sanificate (nel PDF passano comunque dall'escape, vedi sotto).
 - **Autoescape.** `select_autoescape(enabled_extensions=("html", "xml",
   "j2"))`, come la dispensa (prima `["html", "xml"]` non riconosceva
   `.j2`): titoli, docente, codice e `slide_id` escono escapati.
-- **Campi inline.** `seg.text`, `seg.delivery_notes` e il titolo di slide
-  dell'intestazione passano da `render_markdown_inline` (testo escapato
-  più formule SVG, niente markdown ricco). `materialize_lesson_speech_pdf`
-  pre-renderizza le formule con MathJax (`_prerender_math_for_speech`: il
-  collector della dispensa su `inline_texts` = gli stessi campi della
-  timeline) e chiude con `_log_math_fallbacks`; prima il discorso non
-  aveva MathJax e il LaTeX arrivava grezzo al PDF. Il LaTeX senza
-  delimitatori resta testo.
+- **Rimandi agli asset (WP8).** `seg.text`, `seg.delivery_notes` e il
+  titolo di slide dell'intestazione passano PRIMA da `AssetRefs.cite`: un
+  `[FIG:iter]` lasciato dal modello diventa «Figura 1», con i numeri della
+  DISPENSA (`base_pdf.lesson_asset_refs(lesson.content_raw, language=…)`),
+  gli stessi del PDF lezione e del PDF slide. Un tag che nessun numero
+  risolve resta com'è e la sezione emette
+  `log.warning("speech_asset_ref_unresolved", lesson_code, slide_id,
+  tags=[…])` una volta per slide.
+- **Campi inline.** Dopo il rimando, gli stessi tre campi passano da
+  `render_markdown_inline` (testo escapato più formule SVG, niente
+  markdown ricco). `materialize_lesson_speech_pdf` pre-renderizza le
+  formule con MathJax (`_prerender_math_for_speech(lesson, language=…)`:
+  il collector della dispensa su `inline_texts` = gli stessi campi della
+  timeline, con `asset_refs` a portare la numerazione, così le chiavi sono
+  quelle del testo citato) e chiude con `_log_math_fallbacks`; prima il
+  discorso non aveva MathJax e il LaTeX arrivava grezzo al PDF. Il LaTeX
+  senza delimitatori resta testo.
+- **Limite dichiarato: il testo letto dalla voce conserva il tag.**
+  `sanitize_tts_text` sostituisce con uno spazio i soli caratteri proibiti
+  (`*`, `_`, `` ` ``, `#`, `\`, `$`) e toglie i comandi LaTeX: le
+  parentesi quadre non sono nell'elenco, quindi un `[FIG:iter]` nel
+  `speech_segments[].text` **sopravvive** e la voce lo legge. Non è
+  corretto in questo giro, e la scelta è deliberata: il rimando è una
+  normalizzazione di RENDER, mentre il testo del parlato è contenuto
+  PERSISTITO (la sanificazione muta i segmenti in materializzazione). Farne
+  una mutazione in scrittura darebbe due comportamenti diversi a seconda di
+  quando la lezione è stata generata, e nessun backfill è previsto. Il
+  comportamento di oggi è pinnato da
+  `test_tts_sanitizer_leaves_the_tag_in_the_spoken_text`.
+  **Dove si vede.** Non solo nei due artefatti separati: il frame video
+  passa dallo stesso `render_slides_html`
+  (`lesson_slides_video_render_service.render_slides_to_png`), quindi
+  DENTRO lo stesso video la slide scrive «Figura 1» mentre la voce legge
+  «FIG due punti iter» sullo stesso rimando. È la conseguenza attesa della
+  scelta qui sopra, non un difetto a parte: si chiude il giorno in cui il
+  parlato viene rigenerato o normalizzato in scrittura.
 - **Piè di pagina.** `@bottom-center` è una stringa CSS: il servizio
   passa `footer_title_css` (`course.title · lesson.title · ` con
   `css_string`: backslash davanti a `"`, `'` e `\`, `<`/`>` come escape
@@ -294,9 +322,11 @@ Componenti:
   `courses.lessonsSpeech.slidesNotReady`: "Approva prima le slide…")
 - **Module card** per ciascun modulo
 - **Lesson row** espandibile con primary CTA + kebab + stale alert
-- **Expanded**: `<LessonSpeechView speech={speech_raw} slides={slides_raw} />`
-  raggruppato per slide con timeline cumulativa `[mm:ss — mm:ss]` e
-  delivery notes (vedi sotto)
+- **Expanded**: `<LessonSpeechView speech={speech_raw} slides={slides_raw}
+  contentRaw={…} />` raggruppato per slide con timeline cumulativa
+  `[mm:ss — mm:ss]` e delivery notes (vedi sotto). `contentRaw` serve ai
+  rimandi: è da lì che vengono i numeri degli asset (`null` per la
+  lezione-verifica, che non ha asset)
 
 ### `LessonSpeechView.tsx` — viewer read-only
 
@@ -310,10 +340,13 @@ ciascuna entry di `slide_to_segments_map`:
   - Testo segmento (paragrafo, font serif per leggibilità)
   - Note al docente (italic, accent, se non vuote)
 
-Titolo di slide, testo e note passano da `InlineMath` (solo testo e
-formule KaTeX, niente markdown ricco), come `render_markdown_inline` nel
-PDF del discorso e come `LessonSlidesView`: un titolo di slide con
-`$\frac{p}{q}$` non compare più come LaTeX grezzo. Il testo non contiene
+Titolo di slide, testo e note passano prima da `AssetRefs.cite`
+(`lib/lessonAssetRefs.ts`, mirror di `lesson_asset_refs`: «Figura 1» con
+i numeri della dispensa, come nel PDF del discorso) e poi da `InlineMath`
+(solo testo e formule KaTeX, niente markdown ricco), come
+`cite_asset_refs` + `render_markdown_inline` nel PDF del discorso e come
+`LessonSlidesView`: un titolo di slide con `$\frac{p}{q}$` non compare più
+come LaTeX grezzo, e un `[FIG:iter]` non compare più come tag. Il testo non contiene
 formule (la TTS-safety toglie `$` e `\`); le note scritte a mano (il CRUD
 valida solo `text`) e i titoli di slide possono contenerne.
 

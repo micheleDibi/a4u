@@ -151,7 +151,7 @@ Niente derivazione su `course.status`: la pipeline è indipendente.
 | Grafi DOT → SVG | binario `dot` (apt `graphviz`) in `subprocess` con timeout | Tema `DOT_DEFAULTS` iniettato, `normalize_svg` → `<img data:svg>` |
 | Figure `function` → SVG | numpy + matplotlib in thread, sympy in processo figlio | `figure_function_service`: rami, punti notevoli, forme esatte, didascalia calcolata; `<img data:svg>` |
 | Cornice e numerazione «Figura N.» | `figure_numbering` + `figure_markup` (partial `partials/figure.html.j2`) | Numero dalla prima citazione `[KIND:id]`, contatore per kind (figure, tabelle, equazioni, esempi; teorema «Lemma N.» sul contatore EQ), orfani in coda (A12, D3); «Figura.»/«Tabella.» senza numero nelle slide (A2) |
-| Rimandi testuali e ancore | `asset_ref_normalize` (mirror `lib/assetRefNormalize.ts`) | Citazione in linea → «Figura N» (senza punto, lingua del corso), UNA ancora `[KIND:id]` dopo il blocco della prima citazione; coda (punti chiave, riferimenti) con soli rimandi via `cite_asset_refs` |
+| Rimandi testuali e ancore | `asset_ref_normalize` (mirror `lib/assetRefNormalize.ts`) | Citazione in linea → «Figura N» (senza punto, lingua del corso), UNA ancora `[KIND:id]` dopo il blocco della prima citazione; coda (punti chiave, riferimenti), didascalie in una riga e prosa di slide e discorso con soli rimandi via `cite_asset_refs` |
 | Template HTML | `Jinja2` | `backend/app/templates/lesson_pdf.html.j2` |
 | HTML → PDF | `WeasyPrint` 68+ | CSS Paged Media completo (background edge-to-edge, running header, page counter) |
 
@@ -284,8 +284,8 @@ _md_inline_renderer = _install_math_grammar(MarkdownIt("zero"))  # + rule `text`
 > `<div></div>`, così una formula a cavallo di un'ancora è spezzata dal
 > blocco come nel renderer), sulle tabelle, sugli esempi, sugli enunciati
 > e sui passaggi; `parseInline` sui campi inline (didascalie via
-> `figure_markup.caption_text`, titoli, label, punti chiave e citazioni
-> dopo `cite_asset_refs`). La chiave nasce da `_token_math_key`, la stessa
+> `figure_markup.caption_text`, titoli, label, punti chiave, citazioni e
+> campi inline di slide e discorso, tutti dopo `cite_asset_refs`). La chiave nasce da `_token_math_key`, la stessa
 > della rule di render: collector e renderer non possono divergere
 > (`test_collector_and_renderer_see_the_same_formulas`, uguaglianza;
 > `$a [FIG:x] b$` è la chiave `a Figura 1 b` su entrambi i lati,
@@ -303,9 +303,51 @@ N», una sola ancora per asset); poi il renderer fa
 righe vuote dei `<pre>` e rimuove le altre, così ogni blocco resta UN
 solo HTML block di markdown-it) → `render_markdown`. `key_takeaways` e
 `references[].citation` passano da `cite_asset_refs` (rimandi testuali,
-mai blocchi; `_PreparedBody.cite`) e poi da `render_markdown_inline`
+mai blocchi; `AssetRefs.cite`) e poi da `render_markdown_inline`
 (math inline, D9), in questo ordine; il risultato è `Markup` per
 l'autoescape del template.
+
+Le **didascalie in una riga** (didascalia della figura e della tabella,
+label dell'equazione, titolo dell'esempio) ricevono lo stesso rimando: i
+quattro renderer di blocco prendono un `cite` (default: identità) e lo
+applicano DOPO `figure_markup.caption_text` — quindi dopo
+`strip_figure_prefix` — e prima di `render_markdown_inline`. L'ordine non
+è indifferente: citando prima, «[FIG:a]. Ciclo» diventerebbe «Figura 1.
+Ciclo» e lo strip del prefisso d'autore mangerebbe il rimando appena
+scritto (`test_the_reference_is_written_after_the_author_prefix_is_stripped`).
+I corpi markdown degli asset (`tables[].markdown`,
+`equations[].statement/explanation/proof`, `examples[].content`) NON sono
+toccati: `cite_asset_refs` è una sostituzione globale e trasformerebbe
+un'ancora su riga propria in testo, al posto del blocco.
+
+### Una sola numerazione per la lezione (`AssetRefs`, WP8)
+
+`AssetRefs` (numeri per kind + callable del rimando + `cite` +
+`unresolved`) è il contratto che dispensa, slide, discorso e le tre viste
+condividono. I numeri nascono SEMPRE dal corpo della dispensa: chi non lo
+rende chiama `lesson_asset_refs(content_raw, language=…)`, che è
+`_prepare_lesson_body(...).refs`, cioè letteralmente la stessa funzione
+con gli stessi input. Per costruzione «Figura 1» è la stessa figura nei
+tre PDF, nelle tre viste e nei frame video
+(`test_lesson_and_slides_pdf_agree_on_every_asset_number`).
+
+Gli asset dichiarati SOLO in Fase 4 (`slides_raw.new_*`) non entrano
+nella numerazione — la dispensa non li conosce e un numero assegnato lì
+andrebbe in collisione con quelli del corpo. Un tag che li cita, come un
+tag verso un id inesistente, resta letterale: nessun rimando inventato, e
+la superficie emette un evento (`slide_asset_ref_unresolved`,
+`speech_asset_ref_unresolved`) una volta per slide, con l'elenco dei tag
+dei campi di PROSA (titolo, corpo e bullet della slide; `seg.text`,
+`seg.delivery_notes` e il titolo di slide del discorso). Le didascalie in
+una riga sono citate dentro i renderer di blocco condivisi con la
+dispensa: un tag irrisolto lì resta letterale ma non entra nell'evento,
+come non entra in dispensa.
+
+Il collector del math riceve la stessa mappa attraverso la chiave
+sintetica `content["asset_refs"]` (come `inline_texts`): senza, slide e
+discorso la ricalcolerebbero sul loro contenuto fuso — che non ha corpo e
+comprende i nuovi asset di Fase 4 — e una formula a cavallo di un rimando
+avrebbe chiavi diverse da quelle del renderer.
 
 `_normalize_math_source(latex)` rimuove i delimitatori residui (`$$`,
 `$`, `\[`, `\]`) e **ribilancia** gli ambienti malformati emessi a volte

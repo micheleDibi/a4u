@@ -63,20 +63,24 @@ def test_inline_fields_pass_through_inline_math_and_labels_stay_outside() -> Non
     assert "aria-label={altText || text || label}" in frame
     assert '{extra ? ` ${extra}` : ""}' in frame, "la coda calcolata resta testo"
 
+    # Le didascalie in una riga passano prima dal rimando testuale degli
+    # asset (`cited`, WP8) e poi da `InlineMath`: il campo d'autore non
+    # raggiunge mai il renderer col tag grezzo.
     renderer = _read(_RENDERER)
-    assert "<InlineMath text={` ${table.caption}`} />" in renderer
-    assert renderer.count("<InlineMath text={` ${equation.label}`} />") == 2, (
+    assert "<InlineMath text={` ${cited(table.caption, cite)}`} />" in renderer
+    assert 'const label = cited(equation.label || "", cite);' in renderer
+    assert renderer.count("<InlineMath text={` ${label}`} />") == 2, (
         "la label passa dal renderer in ENTRAMBI i rami (EQ e THM)"
     )
-    assert "<InlineMath text={` ${example.title}`} />" in renderer
-    for leftover in ("` ${table.caption}` : ", "` ${equation.label}` : ", "` ${example.title}` : "):
+    assert "<InlineMath text={` ${cited(example.title, cite)}`} />" in renderer
+    for leftover in ("` ${table.caption}`", "` ${equation.label}`", "` ${example.title}`"):
         assert leftover not in renderer, leftover
 
     slides = _read(_SLIDES_VIEW)
-    assert "<InlineMath text={` ${resolved.payload.caption}`} />" in slides
-    assert "<InlineMath text={` ${ex.title}`} />" in slides
-    assert "` ${resolved.payload.caption}` : " not in slides
-    assert "` ${ex.title}` : " not in slides
+    assert "<InlineMath text={` ${cite(resolved.payload.caption)}`} />" in slides
+    assert "<InlineMath text={` ${cite(ex.title)}`} />" in slides
+    assert "` ${resolved.payload.caption}`" not in slides
+    assert "` ${ex.title}`" not in slides
 
 
 def test_inline_math_component_uses_katex_render_without_injected_html() -> None:

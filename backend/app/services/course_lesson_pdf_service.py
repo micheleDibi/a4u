@@ -697,6 +697,12 @@ def render_markdown_inline(text: str, math_svg_map: dict | None = None) -> str:
 _ASSET_REF_RE = re.compile(r"\[(FIG|TAB|EQ|EX):([^\]\n]+)\]")
 
 
+def _identity(text: str) -> str:
+    """`cite` di default dei blocchi asset: nessun rimando riscritto (i
+    chiamanti senza numerazione, per esempio i test dei singoli blocchi)."""
+    return text
+
+
 def _html_escape_text(text: str) -> str:
     return (
         text.replace("&", "&amp;")
@@ -873,9 +879,20 @@ def _render_visual_asset_block(
     figure_box_mm: tuple[float, float | None] | None = None,
     fit_report: list[FigureFitEntry] | None = None,
     figure_budget: slide_geometry.PageFigureBudget | None = None,
+    cite: Callable[[str], str] = _identity,
 ) -> str:
     """Blocco HTML di un asset visivo, per ogni formato, attraverso il
     partial unico `render_figure_html` (D4).
+
+    `cite` è il rimando testuale degli asset (`AssetRefs.cite`) passato al
+    partial, che lo applica alla didascalia DOPO `caption_text` (quindi
+    dopo `strip_figure_prefix`: citare prima trasformerebbe `[FIG:a].
+    Ciclo` in «Figura 1. Ciclo», che lo strip del prefisso mangerebbe) e
+    PRIMA di `render_markdown_inline`, come nel collector del math. Sta
+    nel partial e non nel `caption_renderer` perché l'accessible name
+    (`aria-label`, che il renderer non attraversa) deve dire quello che
+    dice la didascalia visibile, come in `FigureFrame.tsx`; il default è
+    l'identità.
 
     `visual_svg_map` è `{asset_id → svg | RenderedFigure}` prodotto da
     `_prerender_visual_assets_for_lesson` (registro dei renderer; una
@@ -1055,6 +1072,7 @@ def _render_visual_asset_block(
         variant=variant,
         fallback_source=str(fallback_source) if fallback_source is not None else None,
         extra_caption=extra_caption,
+        cite=cite,
         caption_renderer=lambda text: Markup(render_markdown_inline(text, math_svg_map)),
         box=box,
     )
@@ -1075,13 +1093,15 @@ def _render_table_block(
     number: int | None = None,
     labels: Mapping[str, str] | None = None,
     language: str = "it",
+    cite: Callable[[str], str] = _identity,
 ) -> str:
     """Blocco tabella con la didascalia «Tabella N.» (`number` None →
     «Tabella.», slide e frame video); `labels` è la mappa di
-    `figure_labels(language)`."""
+    `figure_labels(language)`. `cite` riscrive i tag della didascalia nel
+    rimando testuale (mai il markdown del corpo: vedi `AssetRefs`)."""
     labels = labels if labels is not None else figure_labels(language)
     md = (table.get("markdown") or "").strip()
-    caption = table.get("caption") or ""
+    caption = cite(table.get("caption") or "")
     table_html = render_markdown(md, math_svg_map) if md else ""
     # Didascalia con il math inline (D9), etichetta fuori dal renderer.
     caption_inner = f" {render_markdown_inline(caption, math_svg_map)}" if caption else ""
@@ -1106,16 +1126,19 @@ def _render_equation_block(
     language: str = "it",
     number: int | None = None,
     labels: Mapping[str, str] | None = None,
+    cite: Callable[[str], str] = _identity,
 ) -> str:
     """Blocco equazione: formula nuda con «Equazione N.» (famiglia `EQ`)
     oppure teorema con «Lemma N.» (famiglia `THM`, `equation_label_family`);
     `number` None → «Equazione.» / sola parola del kind (slide e frame
     video, byte-identico a prima per i teoremi). `labels` è la mappa di
     `figure_labels(language)`; le parole dei kind vengono da
-    `_labels_for(language)` (`pdf_labels`)."""
+    `_labels_for(language)` (`pdf_labels`). `cite` riscrive i tag della
+    label nel rimando testuale (mai enunciato, spiegazione o passi della
+    dimostrazione: vedi `AssetRefs`)."""
     labels = labels if labels is not None else figure_labels(language)
     latex = (eq.get("latex") or "").strip()
-    label = (eq.get("label") or "").strip()
+    label = cite((eq.get("label") or "").strip())
     explanation = (eq.get("explanation") or "").strip()
     kind = (eq.get("kind") or "formula").strip().lower()
     statement = (eq.get("statement") or "").strip()
@@ -1198,12 +1221,14 @@ def _render_example_block(
     number: int | None = None,
     labels: Mapping[str, str] | None = None,
     language: str = "it",
+    cite: Callable[[str], str] = _identity,
 ) -> str:
     """Blocco esempio con la barra del titolo «Esempio N.» sempre presente
     (`number` None → «Esempio.», slide e frame video); `labels` è la mappa
-    di `figure_labels(language)`."""
+    di `figure_labels(language)`. `cite` riscrive i tag del titolo nel
+    rimando testuale (mai il corpo dell'esempio: vedi `AssetRefs`)."""
     labels = labels if labels is not None else figure_labels(language)
-    title = (example.get("title") or "").strip()
+    title = cite((example.get("title") or "").strip())
     content = (example.get("content") or "").strip()
     inner_html = render_markdown(content, math_svg_map) if content else ""
     # Titolo dell'autore con il math inline (D9), etichetta fuori dal renderer.
@@ -1230,6 +1255,7 @@ def _build_asset_html_map(
     lesson_code: str | None = None,
     figure_box_mm: tuple[float, float] | None = None,
     fit_report: list[FigureFitEntry] | None = None,
+    cite: Callable[[str], str] = _identity,
 ) -> dict[tuple[str, str], str]:
     """Pre-renderizza ogni asset una sola volta. Chiavi: (KIND, id).
 
@@ -1249,7 +1275,8 @@ def _build_asset_html_map(
     il blocco porta la forma non numerata («Tabella.», A2).
     `figure_box_mm` è il box `(larghezza, altezza)` in mm del contenuto
     della pagina (`_compute_template_margins_cm`) per la banda di
-    leggibilità (D10); `fit_report` raccoglie le voci del fit."""
+    leggibilità (D10); `fit_report` raccoglie le voci del fit; `cite` è il
+    rimando testuale applicato alle didascalie (`AssetRefs.cite`)."""
     numbers = asset_numbers or {}
     figure_i18n = labels if labels is not None else figure_labels(language)
     out: dict[tuple[str, str], str] = {}
@@ -1266,6 +1293,7 @@ def _build_asset_html_map(
             lesson_code=lesson_code,
             figure_box_mm=figure_box_mm,
             fit_report=fit_report,
+            cite=cite,
         )
     for table in content.get("tables") or []:
         key = _asset_key(table.get("table_id"))
@@ -1275,6 +1303,7 @@ def _build_asset_html_map(
             number=numbers.get(("TAB", key)),
             labels=figure_i18n,
             language=language,
+            cite=cite,
         )
     for eq in content.get("equations") or []:
         key = _asset_key(eq.get("equation_id"))
@@ -1284,6 +1313,7 @@ def _build_asset_html_map(
             language=language,
             number=numbers.get(("EQ", key)),
             labels=figure_i18n,
+            cite=cite,
         )
     for ex in content.get("examples") or []:
         key = _asset_key(ex.get("example_id"))
@@ -1293,14 +1323,22 @@ def _build_asset_html_map(
             number=numbers.get(("EX", key)),
             labels=figure_i18n,
             language=language,
+            cite=cite,
         )
     return out
+
+
+def _as_list(value: Any) -> list[Any]:
+    """Campo d'archivio letto come elenco: solo `list` è un elenco."""
+    return value if isinstance(value, list) else []
 
 
 def _asset_ids_by_kind(content: dict[str, Any]) -> dict[str, list[str]]:
     """Id dichiarati per kind, nell'ordine degli array (`visual_assets`,
     `tables`, `equations`, `examples`): input di `append_uncited_asset_refs`
-    e `compute_asset_numbers`."""
+    e `compute_asset_numbers`. Un campo che non è una lista vale nessun id:
+    da WP8 questa funzione legge anche per slide e discorso, superfici che
+    prima non toccavano il corpo della dispensa."""
     fields = {
         "FIG": ("visual_assets", "asset_id"),
         "TAB": ("tables", "table_id"),
@@ -1310,7 +1348,7 @@ def _asset_ids_by_kind(content: dict[str, Any]) -> dict[str, list[str]]:
     return {
         kind: [
             str(item.get(id_field) or "")
-            for item in content.get(field) or []
+            for item in _as_list(content.get(field))
             if isinstance(item, dict)
         ]
         for kind, (field, id_field) in fields.items()
@@ -1328,7 +1366,7 @@ def _asset_reference_fn(
     kind («Lemma 2», stessa di `_render_equation_block`)."""
     theorem_words = {
         _asset_key(eq.get("equation_id")): _theorem_kind_word(eq, pdf_labels)
-        for eq in content.get("equations") or []
+        for eq in _as_list(content.get("equations"))
         if isinstance(eq, dict) and equation_label_family(eq) == "THM"
     }
 
@@ -1555,28 +1593,29 @@ def _iter_math_sources(
     loro campi inline, resi con `render_markdown_inline` sullo stesso
     testo."""
     prepared = _prepare_lesson_body(content, language=language)
-    placeholders = dict.fromkeys(prepared.asset_numbers, _ASSET_ANCHOR_PLACEHOLDER_HTML)
+    cite = prepared.refs.cite
+    placeholders = dict.fromkeys(prepared.refs.asset_numbers, _ASSET_ANCHOR_PLACEHOLDER_HTML)
     yield _substitute_asset_refs(prepared.markdown, placeholders), "block"
     for table in _dicts(content.get("tables")):
         yield (table.get("markdown") or "").strip(), "block"
-        yield table.get("caption") or "", "inline"
+        yield cite(table.get("caption") or ""), "inline"
     for ex in _dicts(content.get("examples")):
         yield (ex.get("content") or "").strip(), "block"
-        yield (ex.get("title") or "").strip(), "inline"
+        yield cite((ex.get("title") or "").strip()), "inline"
     for eq in _dicts(content.get("equations")):
         yield (eq.get("statement") or "").strip(), "block"
         yield (eq.get("explanation") or "").strip(), "block"
-        yield (eq.get("label") or "").strip(), "inline"
+        yield cite((eq.get("label") or "").strip()), "inline"
         for step in proof_steps(eq):
             yield (step.get("text") or "").strip(), "block"
     for asset in _dicts(content.get("visual_assets")):
-        yield caption_text(str(asset.get("caption") or "")), "inline"
+        yield cite(caption_text(str(asset.get("caption") or ""))), "inline"
     for kt in content.get("key_takeaways") or []:
-        yield prepared.cite(kt), "inline"
+        yield cite(kt), "inline"
     for ref in content.get("references") or []:
-        yield prepared.cite(_citation_text(ref)), "inline"
+        yield cite(_citation_text(ref)), "inline"
     for text in content.get("inline_texts") or []:
-        yield text, "inline"
+        yield cite(text), "inline"
 
 
 def _collect_math_from_content(
@@ -1701,21 +1740,35 @@ def _substitute_asset_refs(md_source: str, asset_html_map: dict[tuple[str, str],
     return _ASSET_REF_RE.sub(_sub, md_source)
 
 
+def _as_text(value: Any) -> str:
+    """Campo d'archivio letto come testo: solo `str` è testo, il resto
+    (numeri, liste, `None`) vale stringa vuota."""
+    return value if isinstance(value, str) else ""
+
+
 def _build_lesson_body_markdown(content: dict[str, Any]) -> str:
     """Concatena introduction + sections (con `## title`) + summary in un
-    unico documento markdown, analogamente a `LessonContentView` lato FE."""
+    unico documento markdown, analogamente a `LessonContentView` lato FE.
+
+    Ogni campo che non ha il tipo atteso è saltato, come in
+    `_asset_ids_by_kind`: `LessonContentOutput` lo impedisce, ma da WP8
+    questo corpo è anche la sorgente dei numeri di slide e discorso
+    (`lesson_asset_refs`), e un `content_raw` malformato in archivio
+    romperebbe superfici che prima non lo leggevano affatto."""
     parts: list[str] = []
-    intro = (content.get("introduction") or "").strip()
+    intro = _as_text(content.get("introduction")).strip()
     if intro:
         parts.append(intro)
-    for section in content.get("sections") or []:
-        title = (section.get("title") or "").strip()
-        body = (section.get("content") or "").strip()
+    for section in _as_list(content.get("sections")):
+        if not isinstance(section, dict):
+            continue
+        title = _as_text(section.get("title")).strip()
+        body = _as_text(section.get("content")).strip()
         if title:
             parts.append(f"## {title}")
         if body:
             parts.append(body)
-    summary = (content.get("summary") or "").strip()
+    summary = _as_text(content.get("summary")).strip()
     if summary:
         # Etichetta della sezione "Sintesi" (lingua corso applicata fuori).
         parts.append("## __SUMMARY_HEADING__")
@@ -1727,6 +1780,52 @@ def _replace_summary_heading(md: str, summary_label: str) -> str:
     return md.replace("__SUMMARY_HEADING__", summary_label)
 
 
+class AssetRefs(NamedTuple):
+    """Numerazione per kind e rimando testuale degli asset di UNA lezione
+    (D3, D4): il contratto che dispensa, slide e discorso condividono.
+
+    I numeri nascono sempre dal corpo della dispensa (`content_raw`:
+    introduzione → sezioni → sintesi, esteso con i tag degli asset mai
+    citati), mai dalla superficie che li usa: così «Figura 1» è la stessa
+    figura nella dispensa, sulla slide, nel discorso e nella vista. Chi non
+    rende il corpo (slide, discorso) prende la mappa da
+    `lesson_asset_refs` e chiama `cite`, che sostituisce le sole citazioni
+    (mai un blocco figura: sulla slide la figura arriva da
+    `references_assets`).
+
+    Gli asset dichiarati SOLO in Fase 4 (`slides_raw.new_*`) non entrano
+    nella numerazione: la dispensa non li conosce e un numero assegnato qui
+    andrebbe in collisione con quelli del corpo. Un tag che li cita resta
+    quindi letterale come un id inesistente, ed è `unresolved` a elencarli.
+
+    `cite` vale per i campi di prosa e per le didascalie in una riga
+    (didascalia di figura e tabella, label dell'equazione, titolo
+    dell'esempio); i corpi markdown degli asset (`tables[].markdown`,
+    `equations[].statement/explanation/proof`, `examples[].content`) non
+    sono toccati, come nella dispensa di oggi."""
+
+    asset_numbers: dict[tuple[str, str], int]
+    numbers: dict[str, dict[str, int]]
+    reference: Callable[[str, str, int], str]
+
+    def cite(self, text: object) -> str:
+        """Rimandi testuali (`cite_asset_refs`): mai blocchi, mai ancore."""
+        return cite_asset_refs(str(text or ""), numbers=self.numbers, reference=self.reference)
+
+    def unresolved(self, *texts: object) -> list[str]:
+        """I tag `[KIND:id]` che `cite` NON sa risolvere e che restano
+        quindi letterali sulla superficie, nell'ordine di prima occorrenza
+        e senza duplicati. Sono definiti come ciò che sopravvive alla
+        sostituzione: la regola è quella del normalizzatore, non una copia
+        del suo predicato."""
+        out: list[str] = []
+        for text in texts:
+            for m in _ASSET_REF_RE.finditer(self.cite(text)):
+                if m.group(0) not in out:
+                    out.append(m.group(0))
+        return out
+
+
 class _PreparedBody(NamedTuple):
     """Corpo della dispensa dopo numerazione e rimandi (D1-D4) e PRIMA
     della sostituzione delle ancore con l'HTML degli asset: è il testo che
@@ -1734,16 +1833,10 @@ class _PreparedBody(NamedTuple):
     parsano, con le stesse citazioni riscritte."""
 
     markdown: str
-    asset_numbers: dict[tuple[str, str], int]
-    numbers: dict[str, dict[str, int]]
-    reference: Callable[[str, str, int], str]
-
-    def cite(self, text: object) -> str:
-        """Rimandi testuali della coda (`cite_asset_refs`): mai blocchi."""
-        return cite_asset_refs(str(text or ""), numbers=self.numbers, reference=self.reference)
+    refs: AssetRefs
 
 
-def _prepare_lesson_body(content: dict[str, Any], *, language: str) -> _PreparedBody:
+def _prepare_lesson_body(content: Any, *, language: str) -> _PreparedBody:
     """Pipeline D3/D4 + D1/D2 del corpo, unica per renderer e collector:
     introduzione → sezioni → sintesi, tag degli asset mai citati in coda
     (`append_uncited_asset_refs`), numeri per kind sul corpo NON ancora
@@ -1751,20 +1844,45 @@ def _prepare_lesson_body(content: dict[str, Any], *, language: str) -> _Prepared
     lingua del corso, poi `normalize_asset_refs` (citazioni in linea →
     «Figura N», una sola ancora per asset). Le ancore restano da
     sostituire: con l'HTML vero nel renderer, con un segnaposto nel
-    collector."""
+    collector.
+
+    `content["asset_refs"]`, se è un `AssetRefs`, sostituisce la
+    numerazione calcolata qui: è la chiave sintetica (come `inline_texts`)
+    con cui slide e discorso passano al collector i numeri della dispensa
+    invece di quelli del loro contenuto fuso, che non ha corpo."""
+    # Un `content_raw` d'archivio che non è un oggetto vale lezione vuota:
+    # la coercizione sta QUI, all'unico ingresso della pipeline, invece che
+    # a ogni accesso (da WP8 la leggono anche slide e discorso).
+    content = content if isinstance(content, dict) else {}
     labels = _labels_for(language)
-    figure_i18n = figure_labels(language)
     ids_by_kind = _asset_ids_by_kind(content)
     body_md = _build_lesson_body_markdown(content)
     body_md = append_uncited_asset_refs(body_md, ids_by_kind)
-    asset_numbers = compute_asset_numbers(body_md, ids_by_kind)
-    numbers: dict[str, dict[str, int]] = {kind: {} for kind in ASSET_KINDS}
-    for (kind, asset_id), n in asset_numbers.items():
-        numbers[kind][asset_id] = n
-    reference = _asset_reference_fn(content, figure_i18n=figure_i18n, pdf_labels=labels)
+    given = content.get("asset_refs")
+    if isinstance(given, AssetRefs):
+        refs = given
+    else:
+        asset_numbers = compute_asset_numbers(body_md, ids_by_kind)
+        numbers: dict[str, dict[str, int]] = {kind: {} for kind in ASSET_KINDS}
+        for (kind, asset_id), n in asset_numbers.items():
+            numbers[kind][asset_id] = n
+        refs = AssetRefs(
+            asset_numbers,
+            numbers,
+            _asset_reference_fn(content, figure_i18n=figure_labels(language), pdf_labels=labels),
+        )
     body_md = _replace_summary_heading(body_md, labels["summary"])
-    body_md = normalize_asset_refs(body_md, numbers=numbers, reference=reference)
-    return _PreparedBody(body_md, asset_numbers, numbers, reference)
+    body_md = normalize_asset_refs(body_md, numbers=refs.numbers, reference=refs.reference)
+    return _PreparedBody(body_md, refs)
+
+
+def lesson_asset_refs(content: dict[str, Any] | None, *, language: str) -> AssetRefs:
+    """Numeri e rimando testuale della lezione, dal SOLO `content_raw`.
+
+    È letteralmente la numerazione della dispensa (stessa funzione, stessi
+    input): slide, discorso e le viste non la ricalcolano, la riusano, e i
+    numeri non possono divergere per costruzione."""
+    return _prepare_lesson_body(content or {}, language=language).refs
 
 
 # ---------------------------------------------------------------------------
@@ -2088,17 +2206,18 @@ def render_lesson_html(
         visual_svg_map=svg_map,
         math_svg_map=math_svg_map,
         language=language,
-        asset_numbers=prepared.asset_numbers,
+        asset_numbers=prepared.refs.asset_numbers,
         labels=figure_i18n,
         lesson_code=lesson.lesson_code,
         figure_box_mm=(margins_cm["figure_box_w_mm"], margins_cm["figure_box_h_mm"]),
         fit_report=fit_report,
+        cite=prepared.refs.cite,
     )
     body_md = _substitute_asset_refs(prepared.markdown, asset_map)
     body_html = render_markdown(body_md, math_svg_map)
 
     def _tail(text: object) -> Markup:
-        return Markup(render_markdown_inline(prepared.cite(text), math_svg_map))
+        return Markup(render_markdown_inline(prepared.refs.cite(text), math_svg_map))
 
     key_takeaways = [_tail(kt) for kt in raw.get("key_takeaways") or []]
     references = [

@@ -42,6 +42,15 @@ interface MarkdownRendererProps {
    * «Equazione.», «Esempio.»; il teorema resta la sola parola del kind).
    */
   assetNumbers?: Map<string, number>;
+  /**
+   * Rimando testuale degli asset (`AssetRefs.cite` di
+   * `lib/lessonAssetRefs.ts`) applicato alle didascalie in una riga dei
+   * blocchi (figura, tabella, label dell'equazione, titolo dell'esempio),
+   * come il `cite` dei blocchi nel backend: un `[FIG:x]` scritto in una
+   * didascalia diventa «Figura 1». Il markdown dei corpi non è toccato.
+   * Senza, le didascalie restano com'erano.
+   */
+  cite?: (text: string) => string;
   className?: string;
 }
 
@@ -104,6 +113,7 @@ export function MarkdownRenderer({
   equations = [],
   examples = [],
   assetNumbers,
+  cite,
   className,
 }: MarkdownRendererProps) {
   const { preprocessed } = useMemo(
@@ -154,13 +164,14 @@ export function MarkdownRenderer({
               equationMap,
               exampleMap,
               assetNumbers,
+              cite,
             });
           }
         }
         return <p {...rest}>{children}</p>;
       },
     }),
-    [visualMap, tableMap, equationMap, exampleMap, assetNumbers],
+    [visualMap, tableMap, equationMap, exampleMap, assetNumbers, cite],
   );
 
   return (
@@ -182,6 +193,13 @@ interface AssetMaps {
   equationMap: Map<string, LessonContentEquation>;
   exampleMap: Map<string, LessonContentExample>;
   assetNumbers?: Map<string, number>;
+  cite?: (text: string) => string;
+}
+
+/** Campo d'autore col rimando testuale degli asset applicato; senza
+ *  `cite` è l'identità (il renderer è montato anche su frammenti). */
+function cited(text: string, cite?: (t: string) => string): string {
+  return cite ? cite(text) : text;
 }
 
 function renderAssetBlock(
@@ -200,28 +218,28 @@ function renderAssetBlock(
       if (!asset) {
         return <MissingAssetBlock kind={kind} id={id} />;
       }
-      return <VisualAssetBlock asset={asset} number={number} />;
+      return <VisualAssetBlock asset={asset} number={number} cite={maps.cite} />;
     }
     case "TAB": {
       const table = maps.tableMap.get(key);
       if (!table) {
         return <MissingAssetBlock kind={kind} id={id} />;
       }
-      return <TableBlock table={table} number={number} />;
+      return <TableBlock table={table} number={number} cite={maps.cite} />;
     }
     case "EQ": {
       const eq = maps.equationMap.get(key);
       if (!eq) {
         return <MissingAssetBlock kind={kind} id={id} />;
       }
-      return <EquationBlock equation={eq} number={number} />;
+      return <EquationBlock equation={eq} number={number} cite={maps.cite} />;
     }
     case "EX": {
       const ex = maps.exampleMap.get(key);
       if (!ex) {
         return <MissingAssetBlock kind={kind} id={id} />;
       }
-      return <ExampleBlock example={ex} number={number} />;
+      return <ExampleBlock example={ex} number={number} cite={maps.cite} />;
     }
   }
 }
@@ -282,9 +300,11 @@ export function VisualAssetBody({
 function VisualAssetBlock({
   asset,
   number,
+  cite,
 }: {
   asset: LessonContentVisualAsset;
   number?: number;
+  cite?: (text: string) => string;
 }) {
   if (asset.format === "function") {
     return (
@@ -294,6 +314,7 @@ function VisualAssetBlock({
         caption={asset.caption}
         altText={asset.alt_text}
         number={number}
+        cite={cite}
       />
     );
   }
@@ -304,6 +325,7 @@ function VisualAssetBlock({
       caption={asset.caption}
       altText={asset.alt_text}
       number={number}
+      cite={cite}
     >
       <VisualAssetBody asset={asset} imageClassName="max-h-[28rem]" />
     </FigureFrame>
@@ -316,9 +338,11 @@ function VisualAssetBlock({
 function TableBlock({
   table,
   number,
+  cite,
 }: {
   table: LessonContentTable;
   number?: number;
+  cite?: (text: string) => string;
 }) {
   const { t } = useTranslation();
   const label =
@@ -340,7 +364,9 @@ function TableBlock({
       </div>
       <figcaption className="border-t border-border bg-muted/20 px-4 py-2 text-xs italic text-muted-foreground">
         <span className="figure-label font-semibold not-italic">{label}</span>
-        {table.caption ? <InlineMath text={` ${table.caption}`} /> : null}
+        {table.caption ? (
+          <InlineMath text={` ${cited(table.caption, cite)}`} />
+        ) : null}
       </figcaption>
     </figure>
   );
@@ -413,11 +439,14 @@ function ProseMarkdown({ source }: { source: string }) {
 export function EquationBlock({
   equation,
   number,
+  cite,
 }: {
   equation: LessonContentEquation;
   number?: number;
+  cite?: (text: string) => string;
 }) {
   const { t } = useTranslation();
+  const label = cited(equation.label || "", cite);
   const statement = (equation.statement || "").trim();
   const steps = nonEmptyProofSteps(equation.proof);
   const hasProof = steps.length > 0;
@@ -425,7 +454,7 @@ export function EquationBlock({
   // Caso semplice (retro-compatibile): formula nuda → figure + caption,
   // con l'etichetta sempre presente e la label dell'autore accanto.
   if (equationLabelFamily(equation) === "EQ") {
-    const label =
+    const equationLabel =
       number != null
         ? t("courses.figures.equation.label", { n: number })
         : t("courses.figures.equation.labelUnnumbered");
@@ -436,8 +465,8 @@ export function EquationBlock({
         </div>
         <figcaption className="border-t border-border bg-muted/30 px-4 py-2 text-xs text-muted-foreground">
           <div className="font-semibold not-italic">
-            <span className="figure-label">{label}</span>
-            {equation.label ? <InlineMath text={` ${equation.label}`} /> : null}
+            <span className="figure-label">{equationLabel}</span>
+            {label ? <InlineMath text={` ${label}`} /> : null}
           </div>
           {(equation.explanation || "").trim() && (
             <div className="italic [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
@@ -461,7 +490,7 @@ export function EquationBlock({
     <figure className="my-6 overflow-hidden rounded-lg border border-border bg-card">
       <div className="border-b border-border bg-muted/30 px-4 py-2 text-sm font-semibold text-primary">
         {head}
-        {equation.label ? <InlineMath text={` ${equation.label}`} /> : null}
+        {label ? <InlineMath text={` ${label}`} /> : null}
       </div>
       <div className="space-y-2 p-4">
         {statement && <ProseMarkdown source={statement} />}
@@ -498,9 +527,11 @@ export function EquationBlock({
 function ExampleBlock({
   example,
   number,
+  cite,
 }: {
   example: LessonContentExample;
   number?: number;
+  cite?: (text: string) => string;
 }) {
   const { t } = useTranslation();
   const label =
@@ -511,7 +542,9 @@ function ExampleBlock({
     <aside className="my-6 overflow-hidden rounded-lg border-l-4 border-primary bg-primary/5">
       <div className="border-b border-primary/20 bg-primary/10 px-4 py-2 text-sm font-semibold text-primary">
         <span className="figure-label">{label}</span>
-        {example.title ? <InlineMath text={` ${example.title}`} /> : null}
+        {example.title ? (
+          <InlineMath text={` ${cited(example.title, cite)}`} />
+        ) : null}
       </div>
       <div className="lesson-prose px-4 py-3">
         <ReactMarkdown

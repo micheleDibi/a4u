@@ -234,7 +234,9 @@ async def render_slides_to_png(
         lesson.content_raw, new_assets, language=language
     )
     # Pre-render LaTeX → SVG (MathJax), coerente col PDF slide.
-    math_svg_map = await slides_pdf._prerender_math_for_slides(lesson.content_raw, slides_raw)
+    math_svg_map = await slides_pdf._prerender_math_for_slides(
+        lesson.content_raw, slides_raw, language=language
+    )
 
     html_pdf = slides_pdf.render_slides_html(
         course=course,

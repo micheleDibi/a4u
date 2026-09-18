@@ -834,8 +834,10 @@ def test_slide_editor_and_view_compare_asset_refs_like_the_pdf() -> None:
     view = (components / "LessonSlidesView.tsx").read_text(encoding="utf-8")
     assert "uniqueAssetRefs(slide.references_assets).map((aid) => (" in view
     assert "key={assetRefKey(aid)}" in view
+    # WP8: il campo passa prima dal rimando testuale degli asset e poi da
+    # `InlineMath`, come `cite` + `render_markdown_inline` nel PDF.
     for field in ("slide.title", "slide.body", "b"):
-        assert f"<InlineMath text={{{field}}} />" in view, field
+        assert f"<InlineMath text={{refs.cite({field})}} />" in view, field
 
 
 def test_speech_view_renders_math_like_the_speech_pdf() -> None:
@@ -846,9 +848,10 @@ def test_speech_view_renders_math_like_the_speech_pdf() -> None:
     view = (components / "LessonSpeechView.tsx").read_text(encoding="utf-8")
     assert 'import { InlineMath } from "@/components/shared/InlineMath";' in view
     for field in ("slideMeta.title", "segment.text", "segment.delivery_notes"):
-        # Ogni interpolazione del campo è quella di `InlineMath`.
-        assert view.count(f"<InlineMath text={{{field}}} />") == 1, field
-        assert view.count(f"{{{field}}}") == 1, field
+        # Ogni interpolazione del campo è quella di `InlineMath`, col
+        # rimando testuale degli asset applicato prima (WP8).
+        assert view.count(f"<InlineMath text={{refs.cite({field})}} />") == 1, field
+        assert view.count(f"{{refs.cite({field})}}") == 1, field
 
 
 # ---------------------------------------------------------------------------

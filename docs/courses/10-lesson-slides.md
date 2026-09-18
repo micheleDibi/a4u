@@ -371,14 +371,39 @@ cache degli SVG si svuota.
   markdown di esempi, equazioni e tabelle ammette HTML come nella
   dispensa, e nei frame video lo neutralizza il JavaScript spento
   (12-lesson-video, «Guardia di rete»).
-- **Math nella prosa.** `title`, `body` e ogni `bullets[]` passano da
-  `render_markdown_inline` (testo escapato più formule `$..$`, `$$..$$`,
-  `\(..\)`, `\[..\]` come SVG MathJax; nessun markdown ricco: un
-  `**grassetto**` resta letterale, come nel preset zero dei campi inline).
-  Il collector delle slide (`_math_content_for_slides`) raccoglie gli
-  stessi testi come `inline_texts`, quindi PDF e video pre-renderizzano
-  anche queste formule. La vista (`LessonSlidesView`) rende i tre campi con
-  `InlineMath`.
+- **Rimandi agli asset nella prosa (WP8).** `title`, `body` e ogni
+  `bullets[]` passano PRIMA da `AssetRefs.cite`: un `[FIG:iter]` lasciato
+  dal modello nella prosa diventa «Figura 1» invece di restare letterale
+  sulla slide. I numeri sono quelli della DISPENSA
+  (`base_pdf.lesson_asset_refs(content_raw, language=…)`, la stessa
+  funzione che prepara il corpo del PDF lezione): sulla stessa figura, le
+  due superfici dicono lo stesso numero. Il rimando è solo testuale — mai
+  un blocco figura: la figura sulla slide arriva da `references_assets`.
+  Lo stesso vale per le didascalie in una riga degli asset resi sulla
+  slide (didascalia di figura e tabella, label dell'equazione, titolo
+  dell'esempio), che ricevono il `cite` dentro i renderer di blocco
+  condivisi con la dispensa. Un tag che nessun numero risolve — id
+  inesistente, oppure asset dichiarato solo in Fase 4, che la dispensa non
+  numera — resta com'è, senza rimando inventato, e la slide emette
+  `log.warning("slide_asset_ref_unresolved", lesson_code, slide_id,
+  tags=[…])` UNA volta. L'elenco `tags` è quello dei soli campi di PROSA
+  (`refs.unresolved(title, body, *bullets)`): un tag irrisolto in una
+  didascalia resta letterale allo stesso modo ma NON compare nell'evento,
+  perché le didascalie sono citate dentro i renderer di blocco condivisi
+  con la dispensa, che non emette alcun evento. Il perimetro
+  dell'avviso è quindi quello della prosa, non della slide intera.
+- **Math nella prosa.** Dopo il rimando, `title`, `body` e ogni
+  `bullets[]` passano da `render_markdown_inline` (testo escapato più
+  formule `$..$`, `$$..$$`, `\(..\)`, `\[..\]` come SVG MathJax; nessun
+  markdown ricco: un `**grassetto**` resta letterale, come nel preset zero
+  dei campi inline). Il collector delle slide
+  (`_math_content_for_slides(content_raw, slides_raw, language=…)`)
+  raccoglie gli stessi testi come `inline_texts` e riceve la numerazione
+  della dispensa in `asset_refs`, quindi vede le chiavi del testo CITATO
+  come il renderer (`$a [FIG:iter] b$` → `a Figura 1 b` su entrambi i
+  lati); PDF e video pre-renderizzano anche queste formule. La vista
+  (`LessonSlidesView`) cita con lo stesso mirror TypeScript
+  (`lib/lessonAssetRefs.ts`) e poi rende i tre campi con `InlineMath`.
 - **Budget della figura.** Con formule nella prosa `page_figure_budget`
   riceve i pezzi del campo (`_prose_for_budget`: testo e
   `slide_geometry.ProseMath` con l'SVG): una formula in linea conta come
@@ -398,6 +423,21 @@ cache degli SVG si svuota.
   (`resolveAsset`, editor e vista). Un riferimento che il PATCH accetta,
   come `" fig_1 "`, è quindi anche reso. Editor e vista mostrano/salvano la
   lista senza ripetizioni (`uniqueAssetRefs`).
+- **Limite dichiarato: il blocco teorema sborda (B6).** Il budget D12
+  nasce per il box della FIGURA. Un `figure.equation` in famiglia teorema
+  — enunciato più passi di dimostrazione — non passa da
+  `slide_geometry.page_figure_budget`: ricade sul cap CSS
+  `var(--figure-h, 80mm)` e, quando il contenuto è più alto, esce dai
+  120 mm di `.slide-body`, che ha `overflow: hidden`. La prova di consegna
+  lo ha misurato su tutte e tre le lezioni rappresentative, **identico
+  prima e dopo il branch e senza alcun log**: pagina 3 di L1 **+12,12 mm**,
+  pagina 3 di L2 **+19,30 mm**, pagina 3 di L3 **+12,39 mm** oltre i
+  120 mm. Con l'overflow nascosto il contenuto in eccesso — tipicamente la
+  fine della dimostrazione — sparisce in silenzio. NON è corretto qui: B6
+  tiene il cap del teorema invariato, e cambiarlo significa rifare il
+  budget per un blocco di testo (non per un'immagine), con effetti su ogni
+  slide di teorema già impaginata. Vedi anche
+  [17 — § 20.6](17-visual-figures.md#206-limiti-dichiarati-e-rischi-residui-del-branch).
 - **Asset `image` con URL assoluto.** Il resolver lo restituisce così com'è
   e il blocco lo scrive in `src` con l'escape HTML dell'attributo: un `"`
   nel `content` (testo libero del PATCH) non apre attributi nuovi.

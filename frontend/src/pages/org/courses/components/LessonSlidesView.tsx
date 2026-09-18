@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
@@ -15,6 +16,7 @@ import {
   MarkdownRenderer,
   VisualAssetBody,
 } from "@/components/shared/MarkdownRenderer";
+import { lessonAssetRefs, type AssetRefs } from "@/lib/lessonAssetRefs";
 import { assetRefKey, resolveAsset, uniqueAssetRefs } from "@/lib/slides";
 
 interface Props {
@@ -36,12 +38,19 @@ interface Props {
  * A2), come nel PDF delle slide e nei frame video; i renderer (Mermaid,
  * Vega-Lite, DOT) sono caricati in modo pigro da `VisualAssetBody`.
  *
- * Titolo, prosa e bullet passano da `InlineMath` (solo testo e formule,
- * come `render_markdown_inline` nel PDF delle slide, WP4); un asset citato
- * più volte dalla stessa slide è mostrato una volta.
+ * Titolo, prosa e bullet passano PRIMA dal rimando testuale degli asset
+ * (`lessonAssetRefs` su `contentRaw`: un `[FIG:x]` lasciato dal modello
+ * diventa «Figura 1», con i NUMERI DELLA DISPENSA e mai un blocco figura
+ * — la figura sulla slide arriva da `references_assets`) e poi da
+ * `InlineMath` (solo testo e formule, come `citeAssetRefs` +
+ * `render_markdown_inline` nel PDF delle slide, WP4/WP8). Un tag che
+ * nessun numero risolve — id inesistente, o asset dichiarato solo in
+ * Fase 4, che la dispensa non numera — resta com'è. Un asset citato più
+ * volte dalla stessa slide è mostrato una volta.
  */
 export function LessonSlidesView({ slides, contentRaw }: Props) {
   const { t } = useTranslation();
+  const refs = useMemo(() => lessonAssetRefs(contentRaw, t), [contentRaw, t]);
   return (
     <div className="space-y-3">
       {slides.slides.map((slide) => (
@@ -53,6 +62,7 @@ export function LessonSlidesView({ slides, contentRaw }: Props) {
           newTables={slides.new_tables ?? []}
           newEquations={slides.new_equations ?? []}
           newExamples={slides.new_examples ?? []}
+          refs={refs}
           t={t}
         />
       ))}
@@ -67,6 +77,7 @@ interface SlideCardProps {
   newTables: NonNullable<LessonSlidesRaw["new_tables"]>;
   newEquations: NonNullable<LessonSlidesRaw["new_equations"]>;
   newExamples: NonNullable<LessonSlidesRaw["new_examples"]>;
+  refs: AssetRefs;
   t: ReturnType<typeof useTranslation>["t"];
 }
 
@@ -77,6 +88,7 @@ function SlideCard({
   newTables,
   newEquations,
   newExamples,
+  refs,
   t,
 }: SlideCardProps) {
   const typeLabel = t(
@@ -95,7 +107,7 @@ function SlideCard({
               {typeLabel}
             </Badge>
             <h4 className="text-base font-semibold">
-              <InlineMath text={slide.title} />
+              <InlineMath text={refs.cite(slide.title)} />
             </h4>
           </div>
           {slide.source_section_id && (
@@ -114,7 +126,7 @@ function SlideCard({
         {/* Body (prosa breve / sottotitolo) */}
         {slide.body && (
           <p className="text-sm leading-relaxed text-muted-foreground">
-            <InlineMath text={slide.body} />
+            <InlineMath text={refs.cite(slide.body)} />
           </p>
         )}
 
@@ -123,7 +135,7 @@ function SlideCard({
           <ul className="list-disc space-y-1 pl-5 text-sm">
             {slide.bullets.map((b, idx) => (
               <li key={idx}>
-                <InlineMath text={b} />
+                <InlineMath text={refs.cite(b)} />
               </li>
             ))}
           </ul>
@@ -146,6 +158,7 @@ function SlideCard({
                 newTables={newTables}
                 newEquations={newEquations}
                 newExamples={newExamples}
+                cite={refs.cite}
               />
             ))}
           </div>
@@ -163,6 +176,7 @@ interface SlideAssetRenderProps {
   newTables: NonNullable<LessonSlidesRaw["new_tables"]>;
   newEquations: NonNullable<LessonSlidesRaw["new_equations"]>;
   newExamples: NonNullable<LessonSlidesRaw["new_examples"]>;
+  cite: (text: string) => string;
 }
 
 function SlideAssetRender({
@@ -172,6 +186,7 @@ function SlideAssetRender({
   newTables,
   newEquations,
   newExamples,
+  cite,
 }: SlideAssetRenderProps) {
   const { t } = useTranslation();
   const resolved = resolveAsset(
@@ -201,6 +216,7 @@ function SlideAssetRender({
           caption={a.caption}
           altText={a.alt_text}
           variant="slide"
+          cite={cite}
         />
       );
     }
@@ -211,6 +227,7 @@ function SlideAssetRender({
         caption={a.caption}
         altText={a.alt_text}
         variant="slide"
+        cite={cite}
       >
         <VisualAssetBody asset={a} imageClassName="max-h-[24rem]" />
       </FigureFrame>
@@ -231,7 +248,7 @@ function SlideAssetRender({
             {t("courses.figures.table.labelUnnumbered")}
           </span>
           {resolved.payload.caption ? (
-            <InlineMath text={` ${resolved.payload.caption}`} />
+            <InlineMath text={` ${cite(resolved.payload.caption)}`} />
           ) : null}
         </figcaption>
       </figure>
@@ -241,7 +258,7 @@ function SlideAssetRender({
   if (resolved.kind === "equation") {
     // Renderer unificato: formula nuda o blocco teorema (enunciato +
     // dimostrazione a passaggi), identico alle Dispense ma senza numero.
-    return <EquationBlock equation={resolved.payload} />;
+    return <EquationBlock equation={resolved.payload} cite={cite} />;
   }
 
   if (resolved.kind === "example") {
@@ -252,7 +269,7 @@ function SlideAssetRender({
           <span className="figure-label">
             {t("courses.figures.example.labelUnnumbered")}
           </span>
-          {ex.title ? <InlineMath text={` ${ex.title}`} /> : null}
+          {ex.title ? <InlineMath text={` ${cite(ex.title)}`} /> : null}
         </h5>
         <MarkdownRenderer source={ex.content} />
       </div>

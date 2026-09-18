@@ -18,6 +18,13 @@ Contratto:
   `number` è `None` (slide e frame video, A2); con `caption_renderer` il
   testo già pre-trattato è reso da un renderer esterno (math inline del
   PDF, D9) che ritorna `Markup`; senza, l'output è byte-identico a prima;
+- `cite` (rimando testuale degli asset, `AssetRefs.cite`, D4) è applicato
+  al testo della didascalia SUBITO dopo `caption_text` e prima di
+  qualunque altro passo, quindi vale anche per l'accessible name: un
+  `[FIG:a]` nella didascalia diventa «Figura 1» sia nel `<figcaption>`
+  sia in `aria-label`, come nel mirror `FigureFrame.tsx` (`const text =
+  cite ? cite(stripped) : stripped` e `aria-label={altText || text}`).
+  `alt_text` resta testo d'autore e non è mai citato, su entrambi i lati;
 - `extra_caption` (coda calcolata di `function`, D9) è omessa quando la
   didascalia dell'autore termina già con lo stesso testo (guardia
   anti-doppia coda di Q4: `if caption.rstrip().endswith(tail): tail = ""`,
@@ -146,19 +153,26 @@ def render_figure_html(
     variant: FigureVariant,
     fallback_source: str | None = None,
     extra_caption: str = "",
+    cite: Callable[[str], str] | None = None,
     caption_renderer: Callable[[str], Markup] | None = None,
     box: FigureBox | None = None,
 ) -> str:
     """Rende il partial `partials/figure.html.j2` (vedi la docstring del
     modulo). `labels` è la mappa di `figure_labels(language)`; `None`
-    equivale alla lingua di fallback (it). `caption_renderer` riceve il
-    testo della didascalia DOPO `strip_figure_prefix` e la guardia della
-    coda calcolata (che lavorano sul testo, non sul markup) e ritorna
-    `Markup`; l'etichetta, `aria_label` e la coda restano testo. `box`
-    (slide, D12) mette `--figure-w`/`--figure-h` sul `<figure>`; è
-    facoltativo per ogni variante: senza box il markup non cambia."""
+    equivale alla lingua di fallback (it). `cite` riscrive i tag degli
+    asset della didascalia nel rimando testuale, subito dopo
+    `strip_figure_prefix`: è l'UNICO punto in cui la didascalia cambia
+    testo, così il `<figcaption>` e l'`aria-label` dicono la stessa cosa.
+    `caption_renderer` riceve il testo della didascalia DOPO
+    `strip_figure_prefix`, `cite` e la guardia della coda calcolata (che
+    lavorano sul testo, non sul markup) e ritorna `Markup`; l'etichetta,
+    `aria_label` e la coda restano testo. `box` (slide, D12) mette
+    `--figure-w`/`--figure-h` sul `<figure>`; è facoltativo per ogni
+    variante: senza box il markup non cambia."""
     labels = labels if labels is not None else figure_labels(None)
     text = caption_text(caption)
+    if cite is not None:
+        text = cite(text)
     alt = _one_line(alt_text)
     extra = _one_line(extra_caption)
     if extra and text.rstrip().endswith(extra.rstrip()):

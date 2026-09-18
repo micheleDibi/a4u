@@ -1118,7 +1118,7 @@ un'eccezione che rompa la pagina.
 ### `FigureFrame.tsx`
 
 - **Props**: `{ assetId, format, caption, altText, number?, variant?:
-  "lesson" | "slide", extraCaption?, className?, children }`.
+  "lesson" | "slide", extraCaption?, cite?, className?, children }`.
 - **Comportamento**: `<figure role="figure" aria-label=… className="figure
   figure--{variant} figure--{format}">` + `<figcaption>` con
   `t("courses.figures.label", { n })` («Figura N.») oppure
@@ -1129,7 +1129,11 @@ un'eccezione che rompa la pagina.
   termina già con lo stesso testo. La didascalia (con il punto di
   chiusura) passa da `InlineMath`: solo il math `$..$` / `\(..\)` è reso,
   il resto è letterale; l'etichetta, la coda calcolata e l'`aria-label`
-  restano testo. Stesso markup del partial backend
+  restano testo. `cite` (rimando testuale degli asset, `lessonAssetRefs`)
+  è applicato subito dopo `stripFigurePrefix`, quindi la didascalia
+  visibile e l'`aria-label` dicono la stessa cosa; `altText`, che ha la
+  precedenza sull'`aria-label`, resta testo d'autore e non è mai citato.
+  Stesso markup e stesso ordine del partial backend
   `partials/figure.html.j2`. Niente card: la figura è un elemento
   tipografico del testo. Esporta anche `FigureLoading` (segnaposto
   `courses.figures.loading`) e `FigureErrorBox` (titolo del formato,

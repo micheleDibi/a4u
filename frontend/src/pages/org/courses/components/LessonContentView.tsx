@@ -3,23 +3,17 @@ import { useTranslation } from "react-i18next";
 
 import type { LessonContentRaw } from "@/api/courses";
 import { MarkdownRenderer } from "@/components/shared/MarkdownRenderer";
+import { citeAssetRefs, normalizeAssetRefs } from "@/lib/assetRefNormalize";
+import { appendUncitedAssetRefs } from "@/lib/figureNumbering";
 import {
-  citeAssetRefs,
-  normalizeAssetRefs,
-  type ReferenceFn,
-} from "@/lib/assetRefNormalize";
-import {
-  appendUncitedAssetRefs,
-  assetNumbersByKind,
-  computeAssetNumbers,
-  equationLabelFamily,
-} from "@/lib/figureNumbering";
+  buildBodyMarkdown,
+  lessonAssetRefs,
+  assetIdsByKind,
+} from "@/lib/lessonAssetRefs";
 
 interface Props {
   content: LessonContentRaw;
 }
-
-type Translate = ReturnType<typeof useTranslation>["t"];
 
 /**
  * Render "foglio bianco": tutto il contenuto della lezione fluisce come
@@ -52,35 +46,26 @@ function LessonContentViewImpl({ content }: Props) {
   const { t } = useTranslation();
 
   // Corpo (con gli asset orfani accodati), numerazione, rimandi e coda.
-  const { fullMarkdown, assetNumbers } = useMemo(() => {
-    const idsByKind = {
-      FIG: (content.visual_assets ?? []).map((a) => a.asset_id),
-      TAB: (content.tables ?? []).map((tb) => tb.table_id),
-      EQ: (content.equations ?? []).map((eq) => eq.equation_id),
-      EX: (content.examples ?? []).map((ex) => ex.example_id),
-    };
+  const { fullMarkdown, assetNumbers, cite } = useMemo(() => {
+    // Numeri e rimando vengono da `lessonAssetRefs` (la stessa mappa che
+    // usano le viste slide e discorso): il corpo che li produce porta il
+    // segnaposto della sintesi, mai l'etichetta tradotta.
+    const refs = lessonAssetRefs(content, t);
     const body = appendUncitedAssetRefs(
-      buildBodyMarkdown(content, {
-        summaryHeading: t("courses.lessonsContent.render.summary"),
-      }),
-      idsByKind,
+      buildBodyMarkdown(content, t("courses.lessonsContent.render.summary")),
+      assetIdsByKind(content),
     );
     const tail = buildTailMarkdown(content, {
       keyTakeawaysHeading: t("courses.lessonsContent.render.keyTakeaways"),
       referencesHeading: t("courses.lessonsContent.render.references"),
     });
-    // I numeri sono calcolati sul corpo NON normalizzato: il normalizzatore
-    // riscrive le citazioni e sposta le ancore, i numeri sono un dato.
-    const numbers = computeAssetNumbers(body, idsByKind);
-    const opts = {
-      numbers: assetNumbersByKind(numbers),
-      reference: makeReference(content, t),
-    };
+    const opts = { numbers: refs.numbers, reference: refs.reference };
     return {
       fullMarkdown: [normalizeAssetRefs(body, opts), citeAssetRefs(tail, opts)]
         .filter((p) => p.trim())
         .join("\n\n"),
-      assetNumbers: numbers,
+      assetNumbers: refs.assetNumbers,
+      cite: refs.cite,
     };
   }, [content, t]);
 
@@ -93,6 +78,7 @@ function LessonContentViewImpl({ content }: Props) {
         equations={content.equations}
         examples={content.examples}
         assetNumbers={assetNumbers}
+        cite={cite}
       />
     </article>
   );
@@ -107,81 +93,9 @@ export const LessonContentView = memo(
     JSON.stringify(prev.content) === JSON.stringify(next.content),
 );
 
-/**
- * Rimando testuale per kind, con chiavi `t()` letterali (guardia i18n di
- * `test_frontend_figure_i18n.py`). Per un `[EQ:id]` in famiglia teorema
- * (`equationLabelFamily` → `THM`) il rimando usa la parola del kind
- * («Lemma 2»), come l'intestazione del blocco e il PDF.
- */
-function makeReference(content: LessonContentRaw, t: Translate): ReferenceFn {
-  const theoremKinds = new Map<string, string>();
-  for (const eq of content.equations ?? []) {
-    if (equationLabelFamily(eq) === "THM") {
-      theoremKinds.set(
-        String(eq.equation_id ?? "").trim().toLowerCase(),
-        (eq.kind || "theorem").toLowerCase(),
-      );
-    }
-  }
-  return (kind, idLower, n) => {
-    switch (kind) {
-      case "FIG":
-        return t("courses.figures.ref", { n });
-      case "TAB":
-        return t("courses.figures.table.ref", { n });
-      case "EX":
-        return t("courses.figures.example.ref", { n });
-      case "EQ": {
-        const theoremKind = theoremKinds.get(idLower);
-        if (theoremKind === undefined) {
-          return t("courses.figures.equation.ref", { n });
-        }
-        const kindWord = t(`courses.theorem.kind.${theoremKind}`, {
-          defaultValue: t("courses.theorem.kind.theorem"),
-        });
-        return t("courses.figures.theorem.ref", { kind: kindWord, n });
-      }
-    }
-  };
-}
-
-interface BodyOpts {
-  summaryHeading: string;
-}
-
 interface TailOpts {
   keyTakeawaysHeading: string;
   referencesHeading: string;
-}
-
-/** Introduzione → sezioni → sintesi: il corpus in cui gli asset sono
- *  citati e numerati (stesso perimetro di `_build_lesson_body_markdown`
- *  nel backend). */
-function buildBodyMarkdown(content: LessonContentRaw, opts: BodyOpts): string {
-  const parts: string[] = [];
-
-  // Introduction (no heading — è l'incipit)
-  if (content.introduction?.trim()) {
-    parts.push(content.introduction.trim());
-  }
-
-  // Sections — solo titolo come h2, no badge/section_id
-  for (const section of content.sections) {
-    if (section.title?.trim()) {
-      parts.push(`## ${section.title.trim()}`);
-    }
-    if (section.content?.trim()) {
-      parts.push(section.content.trim());
-    }
-  }
-
-  // Summary
-  if (content.summary?.trim()) {
-    parts.push(`## ${opts.summaryHeading}`);
-    parts.push(content.summary.trim());
-  }
-
-  return parts.join("\n\n");
 }
 
 /** Punti chiave e riferimenti: dopo gli asset orfani, senza numerazione

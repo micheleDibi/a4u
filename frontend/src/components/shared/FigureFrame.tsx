@@ -36,6 +36,11 @@ export interface FigureFrameProps {
   number?: number | null;
   variant?: "lesson" | "slide";
   extraCaption?: string;
+  /** Rimando testuale degli asset (`AssetRefs.cite`) applicato alla
+   *  didascalia DOPO `stripFigurePrefix` e prima di `InlineMath`, come il
+   *  `caption_renderer` del partial nel backend: un `[FIG:x]` nella
+   *  didascalia diventa «Figura 1». Default: identità. */
+  cite?: (text: string) => string;
   className?: string;
   children: ReactNode;
 }
@@ -60,6 +65,7 @@ export function FigureFrame({
   number,
   variant = "lesson",
   extraCaption,
+  cite,
   className,
   children,
 }: FigureFrameProps) {
@@ -68,7 +74,8 @@ export function FigureFrame({
     number != null
       ? t("courses.figures.label", { n: number })
       : t("courses.figures.labelUnnumbered");
-  const text = stripFigurePrefix(caption || "").trim();
+  const stripped = stripFigurePrefix(caption || "").trim();
+  const text = cite ? cite(stripped) : stripped;
   let extra = (extraCaption || "").trim();
   if (extra && text.endsWith(extra)) extra = "";
   // La coda calcolata è un periodo a sé («Zeri in x = -1, 1.»): senza il
