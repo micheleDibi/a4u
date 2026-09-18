@@ -5099,15 +5099,19 @@ paga solo nel percorso d'errore di una figura non resa.
 
 | Misura | Stato | Esito | Decisione che ne discende |
 | --- | --- | --- | --- |
-| (a) grep dei log di produzione (eventi di setup, fallback e timeout) | **Da eseguire sul server** | — | Se `mathjax_renderer_setup_failed` > 0 negli ultimi 30 giorni, al pin `mathjax_cdn_version` e alla guardia di rete si aggiunge un **retry del launch**; se = 0, restano pin e guardia. In ogni caso il sintomo «a volte sì a volte no» è spiegato dai difetti riprodotti, non dal CDN |
+| (a) grep dei log di produzione (eventi di setup, fallback e timeout) | **Eseguita il 18 settembre 2026**, ma su una finestra di poche ore: il container `a4u-backend-1` era stato ricreato quel mattino e i log precedenti non esistono più (nessun container più vecchio dello stesso progetto) | Zero occorrenze dei sette eventi su 273 righe; nella stessa finestra 32 `lesson_content_request` e 6 `lesson_content_generated`, quindi la finestra contiene generazione vera. Campione piccolo: da ripetere quando il container avrà accumulato storia | Se `mathjax_renderer_setup_failed` > 0 negli ultimi 30 giorni, al pin `mathjax_cdn_version` e alla guardia di rete si aggiunge un **retry del launch**; se = 0, restano pin e guardia. In ogni caso il sintomo «a volte sì a volte no» è spiegato dai difetti riprodotti, non dal CDN |
 | (b) ordine citazione/ancora su lezioni reali | **Da eseguire sull'export del docente** | Dato disponibile: 2 dispense PDF di produzione, **0 asset su 17 citati più di una volta**; lezione e2e sintetica, 8 tag tutti in linea, 0 ancore | La regola di B1 non dipende dalla frequenza; la misura dimensiona e decide la **guardia parola-etichetta** (si attiva se il grep di «Figura [FIG:» sull'export conta > 0: conteggio a parte, non fra le colonne di `measure_asset_refs.py`) |
 | (c) font base per tipo Mermaid | **Eseguita** (tabella 2(c)) | La radice predice il font reale in 7 tipi su 15; tre canali (regola CSS, `style` inline, attributo) e un'unità relativa (`4ex`) | Né lettura dalla regola radice né pin per tipo: si misura nella pagina Chromium già aperta dal pre-render e si legge in Python per gli altri formati (B4) |
 | (d) distribuzione su figure reali | **Proxy eseguito** sui 57 modelli degli editor; **dump reale mancante** | Massimi osservati molto sotto le soglie candidate (margine ≥ 1,4×) | Soglie di `graph_rules.py` **provvisorie**; regola di ricalibrazione: se il p90 reale supera il 60 % di una soglia, la soglia si **alza** (mai si boccia il contenuto) |
 | (e) page-break senza tetto d'altezza | **Eseguita** (WeasyPrint 69, template reale) | Senza `max-height` un SVG 300×1600 viene **tagliato** (sbordo +650,7 mm); il buco tipografico prima di una figura a pagina intera c'è in ogni configurazione | `fit_figure_width_mm` riceve `box_h_mm` = altezza utile − 8,3 mm di chrome della figura (≈ 248,7 mm su A4); **nessun two-pass** sul residuo di pagina (guadagna una pagina ma produce figure larghe 16-26 mm); il buco è accettato e documentato |
 | (f) costo di `__measureSvg` nel batch | **Eseguita** (15 modelli, 3 ripetizioni, Chromium) | Batch reale 1.867/1.965 ms → 2.224/2.289 ms con la misura; sola misura 355-359 ms per batch, 23,7 ms per figura, dominata dal campionamento | Passo 2 px e confronto O(n²) **entro il budget**, con tetto per figura e cumulativo per batch e uscita anticipata; il selettore deve includere `line` e `polyline` e filtrare per classe degli archi (senza filtro `sequence` conta 314 falsi incroci) |
 
-I due comandi che restano da eseguire sul server, con i nomi degli eventi
-e delle colonne verificati a HEAD:
+I due comandi da eseguire sul server, con i nomi degli eventi e delle
+colonne verificati a HEAD (il primo è stato eseguito il 18 settembre 2026
+con l'esito di §20.3(a); il secondo resta da fare). Il nome del container
+si ricava con `docker ps --format '{{.Names}}'`, e conviene togliere il
+prefisso `"event": ` dal filtro, che funziona così sia con i log in JSON
+sia con quelli leggibili:
 
 ```bash
 docker logs --since 720h <container-backend> 2>&1 \
@@ -5352,7 +5356,10 @@ restano all'escape HTML dell'attributo invece del `|safe` previsto, perché
 
 - **Retry del launch di MathJax** (§20.3(a)): deciso, ma solo se il grep
   dei log conta almeno un `mathjax_renderer_setup_failed` negli ultimi 30
-  giorni. Pin del CDN e guardia di rete sono già dentro.
+  giorni. Pin del CDN e guardia di rete sono già dentro. Prima lettura del
+  18 settembre 2026: zero occorrenze, su una finestra di poche ore e sei
+  lezioni generate — priorità bassa finché il conteggio su trenta giorni
+  non dice altro.
 - **Soglie di `graph_rules.py` da calibrare sul dump reale**
   (§20.3(d)), con la regola «p90 > 60 % della soglia → la soglia si alza».
 - **Guardia «parola-etichetta»** (B1): specificata, non attivata; si
