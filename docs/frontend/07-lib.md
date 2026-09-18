@@ -145,17 +145,32 @@ citeAssetRefs(text: string, opts: NormalizeOptions): string
   inserisce una su riga propria dopo il blocco della prima citazione.
   Fence e blocchi `$$…$$` chiusi sono unità opache; dentro codice e math i
   tag sono citazioni, mai ancore; un tag non gestito resta byte-identico.
+- Guardia «parola-etichetta»: se la parola dell'etichetta precede già il
+  tag sulla stessa riga, a meno di spazi e su parola intera, il rimando
+  emette il solo numero («La figura [FIG:x]» → «La figura 1»). La parola è
+  il testo che `reference` stessa mette prima del numero, cioè la chiave
+  i18n del rimando: vale in italiano e in inglese senza elenchi a parte.
 - `citeAssetRefs` fa la sola sostituzione, senza inserire né rimuovere
   ancore: serve alla coda (punti chiave, riferimenti), che non rende
-  blocchi.
+  blocchi; la guardia vale anche lì.
 - I numeri sono un **dato** calcolato prima, sul corpo non normalizzato;
   la funzione è idempotente e il testo fuori dai tag è byte-identico. Le
   regex usano classi esplicite (`[ \t]`, `[0-9]`), mai `\s`/`\d`, per
   avere lo stesso esito in JavaScript e in Python.
 - Limiti dichiarati (gli stessi del backend, pinnati in fixture): blocchi
   indentati di 4 spazi non riconosciuti come codice, fence con prefisso e
-  code span multi-riga non riconosciuti, nessuna guardia
-  «parola-etichetta» («Nella Figura [FIG:a]» → «Nella Figura Figura 1»).
+  code span multi-riga non riconosciuti, guardia «parola-etichetta» sulla
+  parola completa, quindi il plurale non corrisponde («Le figure [FIG:a]»
+  → «Le figure Figura 1») e nemmeno la parola separata dal tag da un segno
+  di punteggiatura («La figura, [FIG:a]»); «a meno di spazi» è il solo
+  `[ \t]`, non la classe larga `WS`, quindi uno spazio unificatore
+  (U+00A0) fra parola e tag disattiva la guardia e la ripetizione
+  sopravvive; la regola è lessicale e non distingue il verbo omografo dal
+  sostantivo («Il ciclo completo figura [FIG:a]» → «… figura 1», unico
+  caso in cui il rimando perde l'etichetta); con la parola incollata al
+  tag («La figura[FIG:a]») la cifra resta incollata alla parola («La
+  figura1»). Gli ultimi tre hanno 0 occorrenze nell'export reale
+  (doc `courses/17-visual-figures.md` §20.3).
 
 Pipeline reale in `LessonContentView`: `appendUncitedAssetRefs` →
 `computeAssetNumbers` → `normalizeAssetRefs` sul corpo e `citeAssetRefs`

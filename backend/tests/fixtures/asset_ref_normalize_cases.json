@@ -384,14 +384,140 @@
       "normalized": "Vedi (Figura 1) e Figura 1; poi Figura 1!\n\n[FIG:a]"
     },
     {
-      "name": "parola «Figura» gia' presente: limite dichiarato, nessuna guardia",
+      "name": "parola «Figura» gia' presente: la guardia emette il solo numero",
       "markdown": "Nella Figura [FIG:a] si vede.",
       "numbers": {
         "FIG": {
           "a": 1
         }
       },
-      "normalized": "Nella Figura Figura 1 si vede.\n\n[FIG:a]"
+      "normalized": "Nella Figura 1 si vede.\n\n[FIG:a]"
+    },
+    {
+      "name": "guardia: «La figura [FIG:x]» reale (M2.L2)",
+      "markdown": "La figura [FIG:fig_avvicinamenti_sequenziali] rappresenta il ruolo delle successioni.",
+      "numbers": {
+        "FIG": {
+          "fig_avvicinamenti_sequenziali": 13
+        }
+      },
+      "normalized": "La figura 13 rappresenta il ruolo delle successioni.\n\n[FIG:fig_avvicinamenti_sequenziali]"
+    },
+    {
+      "name": "guardia: «La tabella [TAB:x]» reale (M12.L7)",
+      "markdown": "La tabella [TAB:tab_theorem_comparison] raccoglie le differenze operative.",
+      "numbers": {
+        "TAB": {
+          "tab_theorem_comparison": 1
+        }
+      },
+      "normalized": "La tabella 1 raccoglie le differenze operative.\n\n[TAB:tab_theorem_comparison]"
+    },
+    {
+      "name": "guardia in inglese: la parola viene dalla stessa chiave i18n",
+      "markdown": "The figure [FIG:a] shows the trend.",
+      "numbers": {
+        "FIG": {
+          "a": 2
+        }
+      },
+      "references": {
+        "FIG": "Figure {{n}}"
+      },
+      "normalized": "The figure 2 shows the trend.\n\n[FIG:a]"
+    },
+    {
+      "name": "guardia: famiglia teorema, «il lemma [EQ:x]»",
+      "markdown": "Come dice il lemma [EQ:eq_x], la serie converge.",
+      "numbers": {
+        "EQ": {
+          "eq_x": 2
+        }
+      },
+      "theorem_kinds": {
+        "eq_x": "Lemma"
+      },
+      "normalized": "Come dice il lemma 2, la serie converge.\n\n[EQ:eq_x]"
+    },
+    {
+      "name": "guardia: senza la parola davanti il rimando resta intero",
+      "markdown": "Come mostrato in [FIG:a], il sistema converge.",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "Come mostrato in Figura 1, il sistema converge.\n\n[FIG:a]"
+    },
+    {
+      "name": "guardia: il plurale non corrisponde (limite dichiarato)",
+      "markdown": "Le figure [FIG:a] e le altre.",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "Le figure Figura 1 e le altre.\n\n[FIG:a]"
+    },
+    {
+      "name": "guardia: parola con maiuscola a inizio frase",
+      "markdown": "Figura [FIG:a] mostra il ciclo.",
+      "numbers": {
+        "FIG": {
+          "a": 3
+        }
+      },
+      "normalized": "Figura 3 mostra il ciclo.\n\n[FIG:a]"
+    },
+    {
+      "name": "guardia: punteggiatura fra parola e tag, non scatta",
+      "markdown": "La figura, [FIG:a], converge.",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "La figura, Figura 1, converge.\n\n[FIG:a]"
+    },
+    {
+      "name": "guardia: spazio unificatore fra parola e tag, non scatta (limite dichiarato)",
+      "markdown": "La figura\u00a0[FIG:a] converge.",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "La figura\u00a0Figura 1 converge.\n\n[FIG:a]"
+    },
+    {
+      "name": "guardia: verbo omografo, il rimando resta la sola cifra (limite dichiarato)",
+      "markdown": "Il ciclo completo figura [FIG:a] a pagina seguente.",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "Il ciclo completo figura 1 a pagina seguente.\n\n[FIG:a]"
+    },
+    {
+      "name": "guardia: parola incollata al tag, cifra incollata alla parola (limite dichiarato)",
+      "markdown": "La figura[FIG:a] converge.",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "La figura1 converge.\n\n[FIG:a]"
+    },
+    {
+      "name": "guardia: confine di parola, «si configura» non e' «figura»",
+      "markdown": "Il sistema si configura [FIG:a] come indicato.",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "Il sistema si configura Figura 1 come indicato.\n\n[FIG:a]"
     },
     {
       "name": "numero preso come dato, mai ricalcolato",
@@ -693,6 +819,26 @@
         "lem": "Lemma"
       },
       "cited": "Vedi Tabella 1 e Lemma 2"
+    },
+    {
+      "name": "coda: guardia «parola-etichetta» anche nei rimandi della coda",
+      "text": "La tabella [TAB:t1] riassume, ma le tabelle [TAB:t1] no.",
+      "numbers": {
+        "TAB": {
+          "t1": 1
+        }
+      },
+      "cited": "La tabella 1 riassume, ma le tabelle Tabella 1 no."
+    },
+    {
+      "name": "coda: guardia su piu' righe, la parola vale solo sulla sua riga",
+      "text": "La figura\n[FIG:a] e poi la figura [FIG:a].",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "cited": "La figura\nFigura 1 e poi la figura 1."
     },
     {
       "name": "coda: id con BOM risolto come su JavaScript",

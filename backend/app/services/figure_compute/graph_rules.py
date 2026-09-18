@@ -16,13 +16,17 @@ Il worker tratta ogni errore della validazione come recuperabile e
 rigenera la lezione intera: per questo le soglie sono tarate perché nessuna
 figura normale le superi.
 
-Soglie PROVVISORIE, calibrate il 16 settembre 2026 sui 57 modelli degli
-editor (15 Mermaid, 18 DOT, 24 Vega-Lite; tabella 2(d) del piano), con
-margine ≥ 1,4× sul massimo osservato: nodi 10 → 30, archi 8 → 45, etichetta
-31 → 64, titolo 73 → 110, sorgente Mermaid 388 → 3.000, righe 39 → 120,
-incroci 1 (`hashTable`) → 4. Da riconfermare su figure reali con
-`scripts/measure_asset_refs.py --figures`; se il p90 reale supera il 60 %
-di una soglia, la soglia si alza, mai si boccia il contenuto.
+Soglie calibrate il 16 settembre 2026 sui 57 modelli degli editor (15
+Mermaid, 18 DOT, 24 Vega-Lite; tabella 2(d) del piano), con margine ≥ 1,4×
+sul massimo osservato: nodi 10 → 30, archi 8 → 45, etichetta 31 → 64,
+titolo 73 → 110, sorgente Mermaid 388 → 3.000, righe 39 → 120, incroci 1
+(`hashTable`) → 4. **Confermate il 18 settembre 2026** su 20 grafi reali
+(export di quattro lezioni del docente, `scripts/measure_asset_refs.py
+--figures`): nessuna metrica oltre soglia e nessun p90 oltre il 60 %
+(nodi 9,5, archi 9,1, etichetta 20,4, titolo 25,1, righe 12,4, sorgente
+391,9, incroci 0 con massimo 1). La regola resta per il prossimo dump: se
+il p90 reale supera il 60 % di una soglia, la soglia si alza, mai si
+boccia il contenuto.
 
 `MAX_EDGE_CROSSINGS` è una soglia DIAGNOSTICA, non un rifiuto, per entrambi
 i formati: gli incroci misurati sulla figura resa (`figure_geometry`)

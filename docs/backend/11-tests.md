@@ -692,7 +692,7 @@ crescente, citazioni ripetute → stesso N, id senza asset senza numero,
 `FIG` case-sensitive, orfane in coda, `strip_figure_prefix` mai «lossy»;
 parità con `lib/figureNumbering.ts` eseguita con Node.
 
-### `tests/test_asset_ref_normalize.py` (249)
+### `tests/test_asset_ref_normalize.py` (310)
 
 `asset_ref_normalize` (D1, D2, D4): fixture condivisa
 `fixtures/asset_ref_normalize_cases.json` (blocchi `cases` e `cite`,
@@ -705,9 +705,17 @@ intere, fence e `$$` chiusi come unità opache); dentro fence, code span e
 math i tag sono citazioni, mai ancore; la coda (`cite_asset_refs`) riceve
 solo rimandi, mai blocchi (C9); tag non gestiti byte-identici;
 idempotenza, identità senza numeri gestiti, rimando senza punteggiatura
-finale e valori speculari ai locale. I test che leggono
-`frontend/src/lib/assetRefNormalize.ts` e la vista **falliscono, non
-saltano**, finché la copia frontend non esiste: la parità è un gate.
+finale e valori speculari ai locale. Guardia «parola-etichetta» con le
+etichette vere dei locale (le due frasi reali dell'export del docente,
+inglese, famiglia teorema, parola assente, plurale, maiuscola a inizio
+frase, punteggiatura fra parola e tag, confine di parola) e prova che la
+parola confrontata viene dalla callable del rimando, non da un elenco; i
+tre limiti dichiarati della guardia (spazio unificatore, verbo omografo,
+parola incollata al tag) sono pinnati in fixture, e il confine di parola
+è fissato nella forma con gli escape, identica sui due lati. I test che
+leggono `frontend/src/lib/assetRefNormalize.ts` e la vista
+**falliscono, non saltano**, finché la copia frontend non esiste: la
+parità è un gate.
 
 ### `tests/test_lesson_pdf_figures.py` (87)
 

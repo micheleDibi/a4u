@@ -151,7 +151,7 @@ Niente derivazione su `course.status`: la pipeline è indipendente.
 | Grafi DOT → SVG | binario `dot` (apt `graphviz`) in `subprocess` con timeout | Tema `DOT_DEFAULTS` iniettato, `normalize_svg` → `<img data:svg>` |
 | Figure `function` → SVG | numpy + matplotlib in thread, sympy in processo figlio | `figure_function_service`: rami, punti notevoli, forme esatte, didascalia calcolata; `<img data:svg>` |
 | Cornice e numerazione «Figura N.» | `figure_numbering` + `figure_markup` (partial `partials/figure.html.j2`) | Numero dalla prima citazione `[KIND:id]`, contatore per kind (figure, tabelle, equazioni, esempi; teorema «Lemma N.» sul contatore EQ), orfani in coda (A12, D3); «Figura.»/«Tabella.» senza numero nelle slide (A2) |
-| Rimandi testuali e ancore | `asset_ref_normalize` (mirror `lib/assetRefNormalize.ts`) | Citazione in linea → «Figura N» (senza punto, lingua del corso), UNA ancora `[KIND:id]` dopo il blocco della prima citazione; coda (punti chiave, riferimenti), didascalie in una riga e prosa di slide e discorso con soli rimandi via `cite_asset_refs` |
+| Rimandi testuali e ancore | `asset_ref_normalize` (mirror `lib/assetRefNormalize.ts`) | Citazione in linea → «Figura N» (senza punto, lingua del corso), UNA ancora `[KIND:id]` dopo il blocco della prima citazione; guardia «parola-etichetta»: se la parola del kind precede già il tag a meno di spazi, il rimando emette il solo numero («La figura [FIG:x]» → «La figura 1»), su parola intera (il plurale resta fuori); coda (punti chiave, riferimenti), didascalie in una riga e prosa di slide e discorso con soli rimandi via `cite_asset_refs` |
 | Template HTML | `Jinja2` | `backend/app/templates/lesson_pdf.html.j2` |
 | HTML → PDF | `WeasyPrint` 68+ | CSS Paged Media completo (background edge-to-edge, running header, page counter) |
 
@@ -296,8 +296,9 @@ _md_inline_renderer = _install_math_grammar(MarkdownIt("zero"))  # + rule `text`
 `append_uncited_asset_refs` (orfani FIG → TAB → EQ → EX dopo la sintesi)
 → `compute_asset_numbers` (sul corpo NON normalizzato) → etichetta della
 sintesi → `normalize_asset_refs` (citazioni in linea → rimandi «Figura
-N», una sola ancora per asset); poi il renderer fa
-`_build_asset_html_map(asset_numbers=…)` → `_substitute_asset_refs`
+N», solo «N» se la parola dell'etichetta precede già il tag, una sola
+ancora per asset); poi il renderer fa `_build_asset_html_map(asset_numbers=…)`
+→ `_substitute_asset_refs`
 (sostituisce le sole ancore con i blocchi, senza righe vuote interne:
 `_neutralize_blank_lines` normalizza CRLF/CR a LF, mette U+00A0 nelle
 righe vuote dei `<pre>` e rimuove le altre, così ogni blocco resta UN

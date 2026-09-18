@@ -12,6 +12,13 @@ visibile o il blocco di oggi.
 - ogni citazione in linea di un tag gestito diventa il rimando testuale
   `reference(kind, id_lower, n)` («Figura 2», «Tabella 1», «Lemma 2»:
   senza punto, la punteggiatura dell'autore resta);
+- **guardia «parola-etichetta»**: se la parola dell'etichetta precede già
+  il tag sulla stessa riga, a meno di spazi e su parola intera, il
+  rimando emette il solo numero, così «La figura [FIG:x]» diventa «La
+  figura 1» e non «La figura Figura 1». La parola non è un elenco scritto
+  a mano: è il testo che `reference` stesso mette prima del numero, cioè
+  la chiave i18n del rimando (vale quindi per IT e EN, e per la famiglia
+  teorema è la parola del teorema);
 - una riga fatta del solo tag (`ANCHOR_LINE_RE`, spazi e `\\r` tollerati)
   è un'**ancora** e resta byte-identica: è il punto in cui il renderer a
   valle inserisce il blocco; la prima ancora per chiave `(KIND, id_lower)`
@@ -48,8 +55,20 @@ item con 4+ spazi) e code span multi-riga non riconosciuti; `\\[ … \\]`
 LaTeX display non opaco (convertito in `$$` solo a valle); una riga-tag
 da sola dentro un HTML block è ancora (blocco dentro l'HTML, come oggi);
 fence e `$$` non chiusi non sono regioni (i parser divergono già a
-valle); nessuna guardia «parola-etichetta» («Nella Figura [FIG:a]» →
-«Nella Figura Figura 1», pinnato in fixture). Un heading con citazione
+valle). La guardia «parola-etichetta» ha quattro limiti, tutti pinnati in
+fixture: confronta la parola INTERA, quindi il plurale non corrisponde
+(«Le figure [FIG:a]» → «Le figure Figura 1») e nemmeno la parola separata
+dal tag da un segno di punteggiatura («La figura, [FIG:a]»); «a meno di
+spazi» è il solo `[ \\t]`, quindi uno spazio unificatore (U+00A0) fra
+parola e tag la disattiva (la ripetizione sopravvive: «La figura Figura
+1»), a differenza del resto del modulo che usa la classe larga `_WS`; la
+regola è lessicale e non distingue il sostantivo dal verbo omografo,
+quindi «il ciclo completo figura [FIG:a]» diventa «… figura 1», unico
+caso in cui il rimando perde l'etichetta invece di guadagnarne una di
+troppo; con la parola incollata al tag («La figura[FIG:a]») la cifra
+resta incollata alla parola («La figura1»), malformata quanto l'ingresso.
+Gli ultimi tre hanno 0 occorrenze nell'export reale di §20.3 di
+`docs/courses/17-visual-figures.md`. Un heading con citazione
 (`## T [FIG:a]` seguito da un paragrafo attaccato) riceve l'ancora dopo
 il paragrafo: nessuna regola dedicata agli heading.
 
@@ -92,6 +111,19 @@ _WS = (
 )
 _TRIM_RE = re.compile(rf"\A[{_WS}]+|[{_WS}]+\Z")
 
+_TRAILING_SPACES_RE = re.compile(r"[ \t]+\Z")
+# Confine di parola della guardia «parola-etichetta»: classe esplicita
+# perché `\w` è unicode in Python e solo ASCII in JavaScript. Copre le
+# lettere latine accentate (senza `\xd7` e `\xf7`, che sono segni), cioè
+# le lingue del rimando. Una lettera fuori dalla classe (un alfabeto non
+# latino) vale quindi come confine e la guardia SCATTA: oggi non è
+# raggiungibile, perché la parola confrontata esce dalla chiave i18n del
+# rimando, presente nei soli `it.json` e `en.json`, ed è sempre latina.
+# Scritta con gli escape, come il gemello TypeScript e come `_WS`: la
+# classe è la stessa riga su entrambi i lati, quindi una deriva si vede
+# (`test_regexes_are_pinned_in_python` la fissa su entrambi).
+_WORD_CHAR_RE = re.compile(r"[0-9A-Za-z_\u00c0-\u00d6\u00d8-\u00f6\u00f8-\u024f]")
+
 
 def _trim(text: str) -> str:
     """`strip()` con la stessa classe del `trim()` del mirror TypeScript."""
@@ -110,9 +142,35 @@ def _handled(numbers: AssetNumbers, kind: str, raw_id: str) -> tuple[str, int] |
     return key, n
 
 
+def _label_repeated(prefix: str, word: str) -> bool:
+    """Vero se `prefix` (il testo che precede il tag) finisce con `word`
+    sulla stessa riga, a meno di spazi e su parola INTERA: è la condizione
+    della guardia «parola-etichetta»."""
+    head = _TRAILING_SPACES_RE.sub("", prefix[prefix.rfind("\n") + 1 :])
+    cut = len(head) - len(word)
+    if cut < 0 or head[cut:].lower() != word.lower():
+        return False
+    return cut == 0 or not _WORD_CHAR_RE.match(head[cut - 1])
+
+
+def _reference_text(prefix: str, rendered: str, n: int) -> str:
+    """Il rimando da scrivere davvero: il solo numero quando la parola
+    dell'etichetta precede già il tag («La figura [FIG:x]» → «La figura
+    1»), altrimenti il rimando intero. La parola è il testo che `reference`
+    mette prima del numero, quindi viene dalla chiave i18n del rimando e
+    non da un elenco a parte."""
+    at = rendered.rfind(str(n))
+    if at <= 0:
+        return rendered
+    word = _trim(rendered[:at])
+    if not word or not _label_repeated(prefix, word):
+        return rendered
+    return rendered[at:]
+
+
 def _rewrite_line(line: str, numbers: AssetNumbers, reference: Reference) -> str:
-    """Sostituisce in posizione ogni tag gestito con il rimando; i tag non
-    gestiti restano byte-identici."""
+    """Sostituisce in posizione ogni tag gestito con il rimando (guardia
+    «parola-etichetta» compresa); i tag non gestiti restano byte-identici."""
     out: list[str] = []
     pos = 0
     for m in ASSET_REF_RE.finditer(line):
@@ -120,7 +178,8 @@ def _rewrite_line(line: str, numbers: AssetNumbers, reference: Reference) -> str
         if handled is None:
             continue
         out.append(line[pos : m.start()])
-        out.append(reference(m.group(1), handled[0], handled[1]))
+        rendered = reference(m.group(1), handled[0], handled[1])
+        out.append(_reference_text(line[: m.start()], rendered, handled[1]))
         pos = m.end()
     out.append(line[pos:])
     return "".join(out)

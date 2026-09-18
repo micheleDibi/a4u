@@ -5,6 +5,9 @@ entrambi i lati e wiring della vista lezione.
 
 - citazione in linea → rimando «Figura N» / «Tabella N» / «Lemma N» senza
   punto; ancora `[KIND:id]` su riga propria conservata, duplicati rimossi;
+- guardia «parola-etichetta»: se la parola dell'etichetta precede già il
+  tag, il rimando emette il solo numero («La figura [FIG:x]» → «La figura
+  1»); confronto su parola intera, quindi il plurale resta fuori;
 - chiave gestita senza ancora → UNA ancora inserita dopo il blocco della
   prima citazione (liste intere, fence e `$$` chiusi come unità opache);
 - dentro fence, code span e math i tag sono citazioni, mai ancore;
@@ -50,6 +53,10 @@ _LOCALES = _FRONTEND_SRC / "i18n" / "locales"
 
 ASSET_REF_PATTERN = r"\[(FIG|TAB|EQ|EX):([^\]\n]+)\]"
 ANCHOR_LINE_PATTERN = r"^[ \t]*\[(FIG|TAB|EQ|EX):([^\]\n]+)\][ \t]*\r?$"
+# Confine di parola della guardia «parola-etichetta»: unica regola del
+# modulo che `\w` non può esprimere allo stesso modo nei due linguaggi,
+# quindi è scritta con gli escape e fissata qui su entrambi i lati.
+WORD_CHAR_PATTERN = r"[0-9A-Za-z_\u00c0-\u00d6\u00d8-\u00f6\u00f8-\u024f]"
 
 # Esegue la copia frontend sulla stessa fixture (pattern di
 # `test_figure_numbering.py`): `assetRefNormalize.ts` non ha import a
@@ -177,7 +184,9 @@ def test_identity_without_handled_numbers(case: dict) -> None:
 
 def test_regexes_are_pinned_in_python() -> None:
     """Stessa regex del PDF e di `figure_numbering`: un tag è un tag per
-    tutti o per nessuno (non attraversa la riga, kind maiuscolo)."""
+    tutti o per nessuno (non attraversa la riga, kind maiuscolo). Il
+    confine della guardia «parola-etichetta» è fissato nella forma con gli
+    escape, la sola che Python e JavaScript scrivono identica."""
     assert arn.ASSET_REF_RE.pattern == ASSET_REF_PATTERN
     assert pdf._ASSET_REF_RE.pattern == ASSET_REF_PATTERN
     assert fn.ASSET_REF_RE.pattern == ASSET_REF_PATTERN
@@ -185,7 +194,8 @@ def test_regexes_are_pinned_in_python() -> None:
     assert arn.ANCHOR_LINE_RE.match("  [FIG:a]  \r")
     assert arn.ANCHOR_LINE_RE.match("- [FIG:a]") is None
     assert arn.ANCHOR_LINE_RE.match("[FIG:a] testo") is None
-    for pattern in (ASSET_REF_PATTERN, ANCHOR_LINE_PATTERN):
+    assert arn._WORD_CHAR_RE.pattern == WORD_CHAR_PATTERN
+    for pattern in (ASSET_REF_PATTERN, ANCHOR_LINE_PATTERN, WORD_CHAR_PATTERN):
         assert "\\s" not in pattern and "\\d" not in pattern
 
 
@@ -196,6 +206,8 @@ def test_frontend_module_pins_the_same_regexes_and_has_no_runtime_imports() -> N
     source = _FRONTEND_MODULE.read_text(encoding="utf-8")
     assert "/\\[(FIG|TAB|EQ|EX):([^\\]\\n]+)\\]/g" in source
     assert "/^[ \\t]*\\[(FIG|TAB|EQ|EX):([^\\]\\n]+)\\][ \\t]*\\r?$/" in source
+    # Confine della guardia: stessa riga sui due lati, escape compresi.
+    assert f"/{WORD_CHAR_PATTERN}/" in source
     runtime_imports = [
         line
         for line in source.splitlines()
@@ -332,9 +344,135 @@ def test_fixture_covers_the_required_scenarios() -> None:
         "quattro kind",
         "kind senza numeri",
         "«Figura» gia' presente",
+        "guardia: «La figura [FIG:x]» reale",
+        "guardia: «La tabella [TAB:x]» reale",
+        "guardia in inglese",
+        "famiglia teorema",
+        "il plurale non corrisponde",
+        "punteggiatura fra parola e tag",
+        "confine di parola",
+        "coda: guardia",
     ):
         assert needle in names, needle
-    assert len(_CASES) >= 46 and len(_CITE) >= 4
+    assert len(_CASES) >= 55 and len(_CITE) >= 6
+
+
+def _real_reference(language: str, theorem_word: str | None = None) -> arn.Reference:
+    """La callable vera del PDF: etichette dai locale, ramo THM per le
+    equazioni in famiglia teorema (`_asset_reference_fn`)."""
+    labels = figure_labels(language)
+
+    def reference(kind: str, id_lower: str, n: int) -> str:
+        if theorem_word is not None and kind == "EQ":
+            return asset_ref(labels, "THM", n, kind_word=theorem_word)
+        return asset_ref(labels, kind, n)
+
+    return reference
+
+
+# (testo, numeri, callable, prima riga attesa): le prime due frasi sono
+# quelle dell'export del docente (M2.L2 e M12.L7), dove il rimando dava
+# «La figura Figura 13» e «La tabella Tabella 1».
+_GUARD_CASES = [
+    (
+        "La figura [FIG:fig_avvicinamenti_sequenziali] rappresenta le successioni.",
+        {"FIG": {"fig_avvicinamenti_sequenziali": 13}},
+        _real_reference("it"),
+        "La figura 13 rappresenta le successioni.",
+    ),
+    (
+        "La tabella [TAB:tab_theorem_comparison] raccoglie le differenze.",
+        {"TAB": {"tab_theorem_comparison": 1}},
+        _real_reference("it"),
+        "La tabella 1 raccoglie le differenze.",
+    ),
+    (
+        "The figure [FIG:a] shows the trend.",
+        {"FIG": {"a": 2}},
+        _real_reference("en"),
+        "The figure 2 shows the trend.",
+    ),
+    (
+        "The table [TAB:t] compares the three theorems.",
+        {"TAB": {"t": 1}},
+        _real_reference("en"),
+        "The table 1 compares the three theorems.",
+    ),
+    (
+        "Come dice il lemma [EQ:eq_x], la serie converge.",
+        {"EQ": {"eq_x": 2}},
+        _real_reference("it", "Lemma"),
+        "Come dice il lemma 2, la serie converge.",
+    ),
+    (
+        "Come mostrato in [FIG:a], il sistema converge.",
+        {"FIG": {"a": 1}},
+        _real_reference("it"),
+        "Come mostrato in Figura 1, il sistema converge.",
+    ),
+    (
+        "Le figure [FIG:a] e le altre.",
+        {"FIG": {"a": 1}},
+        _real_reference("it"),
+        "Le figure Figura 1 e le altre.",
+    ),
+    (
+        "Figura [FIG:a] mostra il ciclo.",
+        {"FIG": {"a": 3}},
+        _real_reference("it"),
+        "Figura 3 mostra il ciclo.",
+    ),
+    (
+        "La figura, [FIG:a], converge.",
+        {"FIG": {"a": 1}},
+        _real_reference("it"),
+        "La figura, Figura 1, converge.",
+    ),
+    (
+        "Il sistema si configura [FIG:a] come indicato.",
+        {"FIG": {"a": 1}},
+        _real_reference("it"),
+        "Il sistema si configura Figura 1 come indicato.",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("text", "numbers", "reference", "expected"), _GUARD_CASES, ids=range(len(_GUARD_CASES))
+)
+def test_the_label_word_before_the_tag_is_not_repeated(
+    text: str,
+    numbers: Mapping[str, Mapping[str, int]],
+    reference: arn.Reference,
+    expected: str,
+) -> None:
+    """Guardia «parola-etichetta» con le etichette vere dei locale: quando
+    la parola del kind precede il tag a meno di spazi, il rimando emette il
+    solo numero. Il confronto è su parola INTERA (il plurale e «configura»
+    non corrispondono) e la punteggiatura fra parola e tag lo annulla.
+    Stesso esito nelle due funzioni, cioè nel corpo e nella coda."""
+    assert arn.cite_asset_refs(text, numbers=numbers, reference=reference) == expected
+    normalized = arn.normalize_asset_refs(text, numbers=numbers, reference=reference)
+    assert normalized.split("\n")[0] == expected
+
+
+def test_the_label_word_comes_from_the_reference_not_from_a_word_list() -> None:
+    """La parola confrontata è quella che la callable stessa mette prima del
+    numero: con un rimando inventato la guardia segue quello, non un elenco
+    italiano scritto nel modulo."""
+
+    def reference(kind: str, id_lower: str, n: int) -> str:
+        return f"Schizzo {n}"
+
+    numbers = {"FIG": {"a": 4}}
+    assert (
+        arn.cite_asset_refs("Lo schizzo [FIG:a] chiarisce.", numbers=numbers, reference=reference)
+        == "Lo schizzo 4 chiarisce."
+    )
+    assert (
+        arn.cite_asset_refs("La figura [FIG:a] chiarisce.", numbers=numbers, reference=reference)
+        == "La figura Schizzo 4 chiarisce."
+    )
 
 
 def test_reference_callable_receives_kind_id_and_number() -> None:

@@ -163,7 +163,12 @@ falsi positivi.
   «Equazione N» / «Esempio N» (teorema: «Lemma N», chiavi
   `courses.figures.*.ref`, senza punto) e il blocco è inserito UNA volta
   su riga propria dopo il blocco della prima citazione; una riga fatta del
-  solo tag è l'ancora del blocco. I numeri sono per kind
+  solo tag è l'ancora del blocco. Se la parola dell'etichetta precede già
+  il tag sulla stessa riga, a meno di spazi e su parola intera, il rimando
+  emette il solo numero («La figura [FIG:x]» → «La figura 1», mai «La
+  figura Figura 1»); la parola è quella della chiave i18n del rimando,
+  quindi la guardia vale in italiano e in inglese, ma il plurale («Le
+  figure [FIG:x]») non corrisponde. I numeri sono per kind
   (`compute_asset_numbers`, prima citazione nell'ordine del documento,
   calcolati PRIMA della normalizzazione); gli asset mai citati di ogni
   kind sono accodati dopo la sintesi (FIG → TAB → EQ → EX). Punti chiave e

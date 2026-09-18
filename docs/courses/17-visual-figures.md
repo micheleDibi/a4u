@@ -2493,14 +2493,16 @@ Decisioni prese in Fase B (A1-A16) e nella ripresa del 7 settembre
   `MAX_LABEL_CHARS` 64, `MAX_TITLE_CHARS` 110, `MAX_MERMAID_SOURCE_CHARS`
   3.000, `MAX_GRAPH_LINES` 120, `MAX_EDGE_CROSSINGS` 4 e
   `check_graph_rules(kind, source, *, metrics=None) -> list[str]`. Soglie
-  PROVVISORIE, calibrate sui 57 modelli degli editor (massimi osservati 9
-  nodi, 8 archi, 31 caratteri di etichetta, 55 di titolo, 29 righe, 388
-  caratteri Mermaid, 1 incrocio): il dump del docente non è stato fornito,
-  quindi la regola «p90 reale oltre il 60 % della soglia → la soglia si
-  alza, mai si boccia il contenuto» resta da applicare con
-  `scripts/measure_asset_refs.py --figures`, che rende ogni figura con il
-  registro di produzione e stampa distribuzione, percentuale oltre soglia
-  ed esito per metrica. Conteggi per tipo sul sorgente (regole nel
+  calibrate sui 57 modelli degli editor (massimi osservati 9 nodi, 8
+  archi, 31 caratteri di etichetta, 55 di titolo, 29 righe, 388 caratteri
+  Mermaid, 1 incrocio) e **confermate il 18 settembre 2026** sull'export
+  del docente con `scripts/measure_asset_refs.py --figures`, che rende
+  ogni figura con il registro di produzione e stampa distribuzione,
+  percentuale oltre soglia ed esito per metrica: su 20 grafi reali nessuna
+  metrica oltre soglia e nessun p90 oltre il 60 %, quindi la regola «p90
+  reale oltre il 60 % della soglia → la soglia si alza, mai si boccia il
+  contenuto» non ha alzato nulla e resta per il prossimo dump.
+  Conteggi per tipo sul sorgente (regole nel
   docstring del modulo; i conteggi DOT coincidono con i gruppi `node` ed
   `edge` dell'SVG reso sui 18 modelli e, dopo il giro 1 della verifica
   (V1-F5), anche sugli operandi sottografo e sui grafi `strict`: `a ->
@@ -2654,8 +2656,9 @@ Decisioni prese in Fase B (A1-A16) e nella ripresa del 7 settembre
   in DIVIETI. È la forma che `asset_ref_normalize` tratta come ancora
   senza toccare la frase. Scartati: lasciare «referenziato almeno una
   volta» e affidarsi solo ai rimandi di WP1 (il modello continuerebbe a
-  scrivere «come mostra [FIG:a]» e, peggio, «nella Figura [FIG:a]», che
-  diventa «nella Figura Figura 1»); portare la regola anche in P4 (il
+  scrivere «come mostra [FIG:a]» e, peggio, «nelle figure [FIG:a]», che il
+  plurale tiene fuori dalla guardia parola-etichetta e diventa «nelle
+  figure Figura 1»); portare la regola anche in P4 (il
   margine della guardia di Fase 4 è di 300 caratteri e le slide non hanno
   prosa con tag); alzare `MAX_SYSTEM_P3`. La prima stesura costava 692
   caratteri in P3 e 144 nel suffisso: prompt + suffisso di una
@@ -4433,11 +4436,13 @@ rilievo che li ha resi espliciti.
   conserva il pre-processing testuale dei delimitatori
   (`normalizeMathDelimiters` in `MarkdownRenderer.tsx:70`) che il PDF ha
   eliminato. Tutte e tre sono accettate e rinviate a un ticket separato.
-- **Guardia «parola-etichetta» e soglie dei grafi in attesa di dati reali**
-  (sezione 20.3): «Nella Figura [FIG:a]» dà ancora «Nella Figura Figura 1»
-  e le costanti di `graph_rules.py` sono calibrate sui 57 modelli degli
-  editor. Entrambe si chiudono con la misura sull'export del docente, non
-  con una riscrittura.
+- **Guardia «parola-etichetta» e soglie dei grafi: misurate il 18
+  settembre 2026** (sezione 20.3). «Nella Figura [FIG:a]» dà «Nella Figura
+  1»: la guardia è attiva perché l'export del docente conta 8 occorrenze
+  su 46 tag. Le costanti di `graph_rules.py` restano quelle calibrate sui
+  57 modelli degli editor, ora confermate anche sui 20 grafi reali
+  dell'export. Residuo: il plurale («Le figure [FIG:a]») non attiva la
+  guardia.
 
 ## 16. Catalogo dei modelli degli editor (8 settembre 2026)
 
@@ -4896,10 +4901,46 @@ modulo puro invece della callable `reference(kind, id, n)`: duplicava
 `_interpolate` di `figure_theme` e nel frontend avrebbe richiesto
 `t(key, { n: "{{n}}" })`, che regge solo per il default `skipOnVariables`
 di i18next. (f) Guardia «parola-etichetta» («Nella Figura [FIG:a]» →
-«Nella Figura Figura 1»): 0 occorrenze misurabili, nessun `content_raw`
-reale in locale; **esclusa dal primo rilascio**, limite pinnato, variante
-con confine di parola già specificata e attivabile se la misura sul dump
-la conta > 0.
+«Nella Figura Figura 1»): esclusa dal primo rilascio con 0 occorrenze
+misurabili e nessun `content_raw` reale in locale, **attivata il 18
+settembre 2026** sull'export del docente, che la conta 8 volte su 46 tag
+(§20.3(b)); vedi il capoverso qui sotto.
+
+**La guardia «parola-etichetta» (18 settembre 2026).** Quando la parola
+dell'etichetta precede già il tag sulla stessa riga, a meno di spazi e su
+parola intera, il rimando emette il **solo numero**: «La figura
+[FIG:x] rappresenta…» diventa «La figura 1 rappresenta…» e non «La figura
+Figura 1 rappresenta…». La parola non è un elenco italiano scritto a
+mano: è il testo che la callable `reference` stessa mette prima del
+numero, cioè la chiave i18n del rimando (`courses.figures.*.ref`), quindi
+la regola vale identica in italiano e in inglese e, per la famiglia
+teorema, usa la parola del teorema («il lemma [EQ:x]» → «il lemma 2»). Il
+confronto ignora le maiuscole e ha un confine di parola a sinistra
+(classe esplicita, perché `\w` è unicode in Python e solo ASCII in
+JavaScript): «Il sistema si configura [FIG:a]» resta «si configura Figura
+1». La guardia vive in `_reference_text` del modulo puro, quindi vale
+ovunque il rimando in linea sia prodotto — `normalize_asset_refs` e
+`cite_asset_refs`, cioè dispensa, slide, discorso e le tre viste — ed è
+specchiata in `assetRefNormalize.ts` e pinnata nella fixture condivisa,
+che entrambi i lati eseguono. Limiti dichiarati, quattro, tutti pinnati
+in fixture: (1) il confronto è sulla parola **completa**, quindi il
+plurale non corrisponde («Le figure [FIG:a]» → «Le figure Figura 1»); (2)
+un segno di punteggiatura fra la parola e il tag annulla la guardia («La
+figura, [FIG:a]»); (3) «a meno di spazi» è il solo `[ \t]` — non la
+classe larga `_WS` usata altrove nel modulo — quindi uno spazio
+unificatore (U+00A0) fra parola e tag disattiva la guardia e la
+ripetizione sopravvive («La figura Figura 1»); (4) la regola è lessicale
+e non distingue il sostantivo dal verbo omografo, quindi «Il ciclo
+completo figura [FIG:a] a pagina seguente» diventa «… figura 1 a pagina
+seguente»: è l'unico caso in cui la guardia rende l'uscita meno
+informativa di prima, perché il rimando degenera in una cifra senza
+etichetta. Aggiunta a (4), la parola incollata al tag («La figura[FIG:a]»)
+dà «La figura1», malformata quanto l'ingresso. Frequenza dei limiti (3) e
+(4) e della parola incollata nell'export del docente: **0 occorrenze** per
+ciascuno (§20.3(b)), misurate con `re.findall` su `content_raw` — U+00A0
+davanti a un tag 0, `(figura|tabella|equazione|esempio)[KIND:` 0, e tutte
+e 8 le occorrenze della parola-etichetta hanno l'articolo davanti («La
+figura», «La tabella»), mai il verbo.
 
 **B2 — le etichette nuove sotto un prefisso già presidiato** (D3, D5;
 3/3 per l'ibrida su base A). Tutte le chiavi nuove stanno sotto
@@ -5100,16 +5141,17 @@ paga solo nel percorso d'errore di una figura non resa.
 | Misura | Stato | Esito | Decisione che ne discende |
 | --- | --- | --- | --- |
 | (a) grep dei log di produzione (eventi di setup, fallback e timeout) | **Eseguita il 18 settembre 2026**, ma su una finestra di poche ore: il container `a4u-backend-1` era stato ricreato quel mattino e i log precedenti non esistono più (nessun container più vecchio dello stesso progetto) | Zero occorrenze dei sette eventi su 273 righe; nella stessa finestra 32 `lesson_content_request` e 6 `lesson_content_generated`, quindi la finestra contiene generazione vera. Campione piccolo: da ripetere quando il container avrà accumulato storia | Se `mathjax_renderer_setup_failed` > 0 negli ultimi 30 giorni, al pin `mathjax_cdn_version` e alla guardia di rete si aggiunge un **retry del launch**; se = 0, restano pin e guardia. In ogni caso il sintomo «a volte sì a volte no» è spiegato dai difetti riprodotti, non dal CDN |
-| (b) ordine citazione/ancora su lezioni reali | **Da eseguire sull'export del docente** | Dato disponibile: 2 dispense PDF di produzione, **0 asset su 17 citati più di una volta**; lezione e2e sintetica, 8 tag tutti in linea, 0 ancore | La regola di B1 non dipende dalla frequenza; la misura dimensiona e decide la **guardia parola-etichetta** (si attiva se il grep di «Figura [FIG:» sull'export conta > 0: conteggio a parte, non fra le colonne di `measure_asset_refs.py`) |
+| (b) ordine citazione/ancora su lezioni reali | **Eseguita il 18 settembre 2026** sull'export pgAdmin di 4 lezioni (M2.L2 e M12.L7 di Analisi Matematica, M4.L1 di Economia degli intermediari finanziari, M4.L3 di Misure Meccaniche e Termiche) | 46 tag, 46 id distinti, **0 id citati più di una volta**: la duplicazione che il docente vedeva non compare in queste quattro lezioni e il fix resta preventivo. **35 occorrenze su 46 sono in linea** dentro una frase (11 su riga propria): prima del branch ognuna di quelle 35 spezzava la frase in due paragrafi. Nessun asset non citato, nessun tag orfano. Conteggio della parola-etichetta: **8 su 46**, in due lezioni su quattro (M2.L2 4, M12.L7 4), tutte della forma «La figura [FIG:…]» / «La tabella [TAB:…]» | La regola di B1 non dipende dalla frequenza, ed è confermata: senza rimando in linea, 35 frasi su 46 uscivano spezzate. Il conteggio > 0 **attiva la guardia parola-etichetta** (regola decisa in B1: si attiva se la misura è > 0) |
 | (c) font base per tipo Mermaid | **Eseguita** (tabella 2(c)) | La radice predice il font reale in 7 tipi su 15; tre canali (regola CSS, `style` inline, attributo) e un'unità relativa (`4ex`) | Né lettura dalla regola radice né pin per tipo: si misura nella pagina Chromium già aperta dal pre-render e si legge in Python per gli altri formati (B4) |
-| (d) distribuzione su figure reali | **Proxy eseguito** sui 57 modelli degli editor; **dump reale mancante** | Massimi osservati molto sotto le soglie candidate (margine ≥ 1,4×) | Soglie di `graph_rules.py` **provvisorie**; regola di ricalibrazione: se il p90 reale supera il 60 % di una soglia, la soglia si **alza** (mai si boccia il contenuto) |
+| (d) distribuzione su figure reali | **Eseguita il 18 settembre 2026** con `--figures` sull'export del docente: 26 figure dichiarate (18 Mermaid, 5 Vega-Lite, 2 DOT, 1 `function`), 25 rese con i renderer di produzione, 20 grafi misurati | Nessuna metrica oltre soglia e nessun p90 oltre il 60 % previsto dalla regola: nodi p90 9,5 (soglia 30), archi 9,1 (45), etichetta 20,4 (64), titolo 25,1 (110), righe 12,4 (120), sorgente Mermaid 391,9 (3000), incroci p90 0 e massimo 1 (4); 0 incroci non misurati su 20 grafi | Le soglie di `graph_rules.py` **non si toccano**, ma smettono di essere provvisorie sui 57 modelli degli editor: sono confermate anche sui 20 grafi reali di quattro corsi. La regola di ricalibrazione resta in piedi per il prossimo dump (p90 > 60 % della soglia → la soglia si alza, mai si boccia il contenuto) |
 | (e) page-break senza tetto d'altezza | **Eseguita** (WeasyPrint 69, template reale) | Senza `max-height` un SVG 300×1600 viene **tagliato** (sbordo +650,7 mm); il buco tipografico prima di una figura a pagina intera c'è in ogni configurazione | `fit_figure_width_mm` riceve `box_h_mm` = altezza utile − 8,3 mm di chrome della figura (≈ 248,7 mm su A4); **nessun two-pass** sul residuo di pagina (guadagna una pagina ma produce figure larghe 16-26 mm); il buco è accettato e documentato |
 | (f) costo di `__measureSvg` nel batch | **Eseguita** (15 modelli, 3 ripetizioni, Chromium) | Batch reale 1.867/1.965 ms → 2.224/2.289 ms con la misura; sola misura 355-359 ms per batch, 23,7 ms per figura, dominata dal campionamento | Passo 2 px e confronto O(n²) **entro il budget**, con tetto per figura e cumulativo per batch e uscita anticipata; il selettore deve includere `line` e `polyline` e filtrare per classe degli archi (senza filtro `sequence` conta 314 falsi incroci) |
 
 I due comandi da eseguire sul server, con i nomi degli eventi e delle
 colonne verificati a HEAD (il primo è stato eseguito il 18 settembre 2026
-con l'esito di §20.3(a); il secondo resta da fare). Il nome del container
-si ricava con `docker ps --format '{{.Names}}'`, e conviene togliere il
+con l'esito di §20.3(a); il secondo lo stesso giorno, con l'esito di
+§20.3(b) e (d)). Il nome del container si ricava con
+`docker ps --format '{{.Names}}'`, e conviene togliere il
 prefisso `"event": ` dal filtro, che funziona così sia con i log in JSON
 sia con quelli leggibili:
 
@@ -5147,6 +5189,20 @@ stesso export:
 grep -oiE '(figura|tabella|equazione|esempio) \[(FIG|TAB|EQ|EX):' export.json \
   | sort | uniq -c
 ```
+
+Sull'export del 18 settembre 2026 il conteggio è **8 su 46 tag**
+(`5 figura [FIG:` e `3 tabella [TAB:`), distribuite in due lezioni su
+quattro (M2.L2 4 = 2 figura + 2 tabella, M12.L7 4 = 3 figura + 1
+tabella): sopra lo zero che teneva la guardia fuori dal primo rilascio,
+quindi la guardia è stata attivata (§20.2, B1).
+
+Attenzione a non contare di più con una regex più larga: prendendo la
+parola *qualsiasi* attaccata al tag le occorrenze diventano 21 — fra
+queste «La mappa [FIG:fig_course_synthesis_map]», che qualcuno conta come
+nona occorrenza della guardia. Non lo è: la guardia confronta il tag con
+la parola della **sua** etichetta (`courses.figures.*.ref`), e «mappa»
+non è quella parola, quindi il rimando resta intero («La mappa Figura
+N»), come deve. Il conteggio che decide la regola di B1 è il primo, 8.
 
 ### 20.4 I quattro censimenti
 
@@ -5273,12 +5329,14 @@ restano all'escape HTML dell'attributo invece del `|safe` previsto, perché
   numeri del corpo. Un tag che lo cita resta letterale e produce
   `slide_asset_ref_unresolved`: sulla slide il blocco c'è comunque, con
   l'etichetta non numerata «Figura.» (A2).
-- **Dati reali del docente non ancora disponibili.** Il grep dei log e
-  l'export pgAdmin di §20.3 non sono stati eseguiti. Conseguenze: le
-  soglie di `graph_rules.py` sono calibrate sui **57 modelli degli
-  editor**, non su figure reali, e la guardia «parola-etichetta» resta
-  **esclusa**. Entrambe le cose si chiudono con una misura, non con una
-  riscrittura.
+- **Dati reali del docente: arrivati il 18 settembre 2026** (export
+  pgAdmin di 4 lezioni, §20.3(b) e (d)). Le due conseguenze che pendevano
+  sono chiuse: le soglie di `graph_rules.py`, calibrate sui 57 modelli
+  degli editor, restano invariate ma sono ora confermate sui 20 grafi
+  reali di quattro corsi (nessun p90 oltre il 60 % della soglia), e la
+  guardia «parola-etichetta» è **attiva** (8 occorrenze su 46 tag). Resta
+  un campione di quattro lezioni: la regola di ricalibrazione vale per il
+  prossimo dump.
 - **Crescita degli `<img>` sotto banda.** Una figura che cresce fino al
   fondo della banda è più alta e può anticipare un salto pagina nella
   dispensa. Misura del verificatore su 93 dispense (31 figure in 3
@@ -5360,11 +5418,16 @@ restano all'escape HTML dell'attributo invece del `|safe` previsto, perché
   18 settembre 2026: zero occorrenze, su una finestra di poche ore e sei
   lezioni generate — priorità bassa finché il conteggio su trenta giorni
   non dice altro.
-- **Soglie di `graph_rules.py` da calibrare sul dump reale**
-  (§20.3(d)), con la regola «p90 > 60 % della soglia → la soglia si alza».
-- **Guardia «parola-etichetta»** (B1): specificata, non attivata; si
-  accende se il grep di «Figura [FIG:» sull'export conta > 0 — conteggio
-  da fare a parte, `measure_asset_refs.py` non lo produce (§20.3).
+- **Soglie di `graph_rules.py` sul prossimo dump** (§20.3(d)): il primo
+  export (20 grafi reali) le conferma senza toccarle; la regola «p90 >
+  60 % della soglia → la soglia si alza» resta in piedi per un campione
+  più largo di quattro lezioni.
+- **Plurale davanti al tag** (B1): la guardia «parola-etichetta» è attiva
+  dal 18 settembre 2026, ma confronta la parola completa, quindi «Le
+  figure [FIG:a]» dà ancora «Le figure Figura 1» (0 occorrenze
+  nell'export; limite pinnato in fixture). Si chiuderebbe con una lista di
+  plurali per lingua, cioè con altre chiavi i18n: non vale il prezzo
+  finché la misura resta a zero.
 - **Strip del prefisso numerico** per tabelle, equazioni ed esempi (B2):
   la forma larga è lossy; resta disponibile una variante stretta,
   verificata su 23 casi, come questione separata.
@@ -5453,3 +5516,49 @@ errore del rapporto.
 | **Corpo della dispensa malformato** (nota). Da WP8 slide e discorso leggono `content_raw` per averne i numeri: una voce di `sections` che non è un oggetto li faceva fallire con `AttributeError` dove prima non toccavano quel corpo | **corretto**: `_build_lesson_body_markdown` salta le voci non-oggetto, come già `_asset_ids_by_kind`. Tre casi nuovi (assente, lezione-verifica, sezione non-oggetto), il terzo rosso prima |
 | **Frame video e voce** (nota). Il limite del TTS era dichiarato, ma nessun punto diceva che dopo WP8 la divergenza si vede DENTRO lo stesso video: il frame passa da `render_slides_html` e scrive «Figura 1», la voce legge il tag | **dichiarato** in §20.6 e in [11 — § Limite dichiarato](11-lesson-speech.md). Nessuna correzione: il parlato è contenuto persistito e non c'è backfill |
 | **Localizzazione della baseline di lint** (nota). Il rapporto di WP8 attribuiva i 4 errori a `MarkdownRenderer.tsx` e `assetRefNormalize.ts`, cioè a due file del commit | **corretto nel testo**: i nomi giusti sono qui sopra, misurati con `npm run lint`; il conteggio (4 errori, 23 avvisi) era ed è quello |
+
+### 20.10 Prima e dopo su quattro lezioni reali (18 settembre 2026)
+
+Il confronto chiesto dalla consegna, rifatto sull'export del docente al
+posto delle lezioni costruite: M2.L2 e M12.L7 di Analisi Matematica,
+M4.L1 di Economia degli intermediari finanziari, M4.L3 di Misure
+Meccaniche e Termiche. Ventuno PDF resi con la catena vera in tre stati:
+`7446432` (prima della campagna), `b34d1bb` (campagna senza la guardia
+parola-etichetta) e `004e287` (con la guardia). Gli SVG delle 26 figure
+sono byte-identici fra gli stati, quindi ogni differenza viene dalla
+geometria e dal testo, non dal disegno; zero `figure_render_failed` e
+zero `figure_render_fallback` nei tre stati. L'oracolo WeasyPrint e il
+`figure_fit_report` di produzione coincidono entro 0,005 pt su 37 istanze.
+
+| misura | prima | dopo |
+| --- | --- | --- |
+| Frasi spezzate dal blocco della figura | 18 (le citazioni in linea con testo su entrambi i lati; le altre 17 chiudevano il periodo o stavano nell'introduzione degenere di M2.L2) | 0 |
+| Residui LaTeX nel testo estratto | 112 (dispensa M2.L2 18, slide M4.L3 30, slide M12.L7 64) | 0 |
+| Etichette numerate nelle dispense | 26 (solo «Figura N.») | 57 (Figura 26, Tabella 6, Equazione 19, Definizione 4, Teorema o Lemma 2) |
+| «La figura Figura 1» nel corpo reso | 8 senza la guardia (M2.L2 4, M12.L7 4) | 0 |
+| Figure fuori banda in dispensa | 14 su 26 | 10 su 26 |
+| Figure fuori banda nelle slide | 9 su 11 | 11 su 11 |
+| Sbordo dalla colonna di testo della dispensa | 1,00 mm su 14 pagine (wrapper Mermaid a 170 mm dentro 170 mm) | 0 |
+| Sbordo dentro il corpo della slide | 7 pagine su 53, fino a 16,97 mm | 0 |
+| Pagine della dispensa | M2.L2 20, le altre invariate | M2.L2 19 |
+
+Due esiti vanno letti insieme, perché sono il prezzo dichiarato del box
+per pagina (D12). Nelle slide il budget reale di una pagina con titolo,
+prosa e didascalia lascia alla figura 61,6-68,3 mm invece degli 80 mm del
+vecchio tetto fisso: lo sbordo sparisce, ma il corpo del testo scende e
+due figure che stavano in banda ne escono (`fig_liquidity_dimensions`
+12,49 → 8,59 pt, `fig_capacitivo_geometrie` 11,15 → 9,52 pt). Le altre
+nove erano già sotto i 10 pt prima, e non per il fit: quei grafi hanno
+20-40 etichette e resterebbero sotto i 10 pt anche a piena larghezza. In
+dispensa il bilancio è invece positivo in entrambe le direzioni: nessuna
+figura esce dalla banda e quattro ci rientrano. Tutte le voci fuori banda
+sono elencate nel `figure_fit_report`, che è l'input del gate editoriale.
+
+Due cose viste sul contenuto reale e non imputabili alla campagna: la
+tabella a sette colonne di M4.L3 (`tab_confronto_trasduttori`, 195,9 mm)
+sborda di 29,06 mm dalla colonna di testo, identica prima e dopo;
+l'introduzione di M2.L2 contiene dodici tag su una riga sola con sei
+apici inversi spaiati, e nove dei dodici rimandi finiscono in
+monospaziato — la resa migliora comunque (prima due apici nudi e due code
+span vuoti fra i blocchi, ora una riga di dodici rimandi numerati da
+Figura 1 a Figura 12 e nessun apice nel testo estratto).

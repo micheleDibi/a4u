@@ -19,6 +19,12 @@
  * - ogni citazione in linea di un tag gestito diventa il rimando testuale
  *   `reference(kind, idLower, n)` («Figura 2», «Tabella 1», «Lemma 2»:
  *   senza punto, la punteggiatura dell'autore resta);
+ * - guardia «parola-etichetta»: se la parola dell'etichetta precede già il
+ *   tag sulla stessa riga, a meno di spazi e su parola intera, il rimando
+ *   emette il solo numero («La figura [FIG:x]» → «La figura 1», mai «La
+ *   figura Figura 1»). La parola non è un elenco scritto a mano: è il
+ *   testo che `reference` stesso mette prima del numero, cioè la chiave
+ *   i18n del rimando;
  * - una riga fatta del solo tag (`ANCHOR_LINE_RE`, spazi e `\r` tollerati)
  *   è un'ancora e resta byte-identica: è il punto in cui `MarkdownRenderer`
  *   inserisce il blocco; la prima ancora per chiave `KIND:id_lower` è
@@ -53,8 +59,21 @@
  * spazi) e code span multi-riga non riconosciuti; `\[ … \]` LaTeX display
  * non opaco (convertito in `$$` solo a valle da `normalizeMathDelimiters`);
  * una riga-tag da sola dentro un HTML block è ancora; fence e `$$` non
- * chiusi non sono regioni; nessuna guardia «parola-etichetta» («Nella
- * Figura [FIG:a]» → «Nella Figura Figura 1», pinnato in fixture).
+ * chiusi non sono regioni. La guardia «parola-etichetta» ha quattro
+ * limiti, tutti pinnati in fixture: confronta la parola INTERA, quindi il
+ * plurale non corrisponde («Le figure [FIG:a]» → «Le figure Figura 1») e
+ * nemmeno la parola separata dal tag da un segno di punteggiatura («La
+ * figura, [FIG:a]»); «a meno di spazi» è il solo `[ \t]`, quindi uno
+ * spazio unificatore (U+00A0) fra parola e tag la disattiva (la
+ * ripetizione sopravvive: «La figura Figura 1»), a differenza del resto
+ * del modulo che usa la classe larga `WS`; la regola è lessicale e non
+ * distingue il sostantivo dal verbo omografo, quindi «il ciclo completo
+ * figura [FIG:a]» diventa «… figura 1», unico caso in cui il rimando
+ * perde l'etichetta invece di guadagnarne una di troppo; con la parola
+ * incollata al tag («La figura[FIG:a]») la cifra resta incollata alla
+ * parola («La figura1»), malformata quanto l'ingresso. Gli ultimi tre
+ * hanno 0 occorrenze nell'export reale di §20.3 di
+ * `docs/courses/17-visual-figures.md`.
  */
 
 export type AssetKind = "FIG" | "TAB" | "EQ" | "EX";
@@ -98,6 +117,16 @@ const WS =
   "\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff";
 const TRIM_RE = new RegExp(`^[${WS}]+|[${WS}]+$`, "g");
 
+const TRAILING_SPACES_RE = /[ \t]+$/;
+// Confine di parola della guardia «parola-etichetta»: classe esplicita
+// perché `\w` è solo ASCII in JavaScript e unicode in Python. Copre le
+// lettere latine accentate (senza `\xd7` e `\xf7`, che sono segni), cioè
+// le lingue del rimando. Una lettera fuori dalla classe (un alfabeto non
+// latino) vale quindi come confine e la guardia SCATTA: oggi non è
+// raggiungibile, perché la parola confrontata esce dalla chiave i18n del
+// rimando, presente nei soli `it.json` e `en.json`, ed è sempre latina.
+const WORD_CHAR_RE = /[0-9A-Za-z_\u00c0-\u00d6\u00d8-\u00f6\u00f8-\u024f]/;
+
 /** `String.trim()` con la stessa classe dello `strip()` del mirror Python. */
 function trim(text: string): string {
   return text.replace(TRIM_RE, "");
@@ -117,9 +146,36 @@ function handled(
   return [key, n];
 }
 
-/** Sostituisce in posizione ogni tag gestito con il rimando; i tag non
- *  gestiti restano byte-identici. Costruito per slice (mai
- *  `String.replace` con pattern: il rimando potrebbe contenere `$`). */
+/** Vero se `prefix` (il testo che precede il tag) finisce con `word` sulla
+ *  stessa riga, a meno di spazi e su parola INTERA: è la condizione della
+ *  guardia «parola-etichetta». */
+function labelRepeated(prefix: string, word: string): boolean {
+  const line = prefix.slice(prefix.lastIndexOf("\n") + 1);
+  const head = line.replace(TRAILING_SPACES_RE, "");
+  const cut = head.length - word.length;
+  if (cut < 0 || head.slice(cut).toLowerCase() !== word.toLowerCase()) {
+    return false;
+  }
+  return cut === 0 || !WORD_CHAR_RE.test(head[cut - 1]);
+}
+
+/** Il rimando da scrivere davvero: il solo numero quando la parola
+ *  dell'etichetta precede già il tag («La figura [FIG:x]» → «La figura
+ *  1»), altrimenti il rimando intero. La parola è il testo che `reference`
+ *  mette prima del numero, quindi viene dalla chiave i18n del rimando e
+ *  non da un elenco a parte. */
+function referenceText(prefix: string, rendered: string, n: number): string {
+  const at = rendered.lastIndexOf(String(n));
+  if (at <= 0) return rendered;
+  const word = trim(rendered.slice(0, at));
+  if (!word || !labelRepeated(prefix, word)) return rendered;
+  return rendered.slice(at);
+}
+
+/** Sostituisce in posizione ogni tag gestito con il rimando (guardia
+ *  «parola-etichetta» compresa); i tag non gestiti restano byte-identici.
+ *  Costruito per slice (mai `String.replace` con pattern: il rimando
+ *  potrebbe contenere `$`). */
 function rewriteLine(
   line: string,
   numbers: AssetNumbers,
@@ -133,7 +189,7 @@ function rewriteLine(
     if (h === null) continue;
     const start = m.index ?? 0;
     out.push(line.slice(pos, start));
-    out.push(reference(kind, h[0], h[1]));
+    out.push(referenceText(line.slice(0, start), reference(kind, h[0], h[1]), h[1]));
     pos = start + m[0].length;
   }
   out.push(line.slice(pos));
