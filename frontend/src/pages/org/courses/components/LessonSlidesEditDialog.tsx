@@ -441,6 +441,7 @@ export function LessonSlidesEditDialog({
             </h5>
             {newAssets.map((asset, idx) => (
               <VisualAssetEditor
+                variant="slide"
                 key={asset.asset_id + ":" + idx}
                 orgId={orgId}
                 courseId={courseId}

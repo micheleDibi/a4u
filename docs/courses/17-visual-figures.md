@@ -1928,6 +1928,14 @@ prescritto da Q1 — Mermaid è l'unico formato con il parse nel batch
 Playwright — non confronti di formato. Il test grep li dichiara con il
 numero massimo di occorrenze per file.
 
+Il 18 settembre 2026 si aggiunge il sito 12,
+`figure_render_service.render_chain_variants` (D15, §21): **resta
+letterale**, perché la direzione di un grafo è una nozione del solo
+Mermaid — `chain_layout` legge la sintassi di `flowchart`, e DOT ha il
+suo `rankdir`, Vega-Lite e `function` non hanno direzione. Non è un
+dispatch mancato: non esiste un metodo del `FigureRenderer` da chiamare
+al suo posto.
+
 ## 10. Configurazione
 
 Blocco «Figure accademiche (Fase 3/4)» di `backend/app/core/config.py:280-315`,
@@ -5562,3 +5570,188 @@ apici inversi spaiati, e nove dei dodici rimandi finiscono in
 monospaziato — la resa migliora comunque (prima due apici nudi e due code
 span vuoti fra i blocchi, ora una riga di dodici rimandi numerati da
 Figura 1 a Figura 12 e nessun apice nel testo estratto).
+
+## 21. La direzione delle catene lineari (18 settembre 2026)
+
+Il difetto arriva come i quattro del capitolo 20: **tre schermate del PDF
+di produzione**. Un flowchart che è una catena lineare di passi,
+dichiarato `flowchart LR`, esce dalla dispensa largo e basso, con le
+etichette a 2-3 pt. Lo stesso contenuto dichiarato `flowchart TB` si
+legge. Il docente indica come buono un caso `TB` da sette nodi e come
+illeggibili due casi `LR` da otto e dodici nodi.
+
+### 21.1 La misura
+
+Le figure sono state rese con il motore di produzione (Mermaid 11 in
+Chromium, pin `settings.mermaid_cdn_version`) e misurate nel box della
+dispensa — 168 × 242 mm, cioè la larghezza del contenuto su A4 con
+margine di 20 mm meno i 2 mm di padding del wrapper Mermaid, per
+l'altezza utile di una pagina intera. Corpo di base del tema 14 px.
+
+| catena | dichiarata | viewBox (uu) | box reso | corpo |
+| --- | --- | --- | --- | --- |
+| 8 nodi | `LR` | 1922 × 77 | 168,0 × 6,8 mm | **3,47 pt** |
+| 8 nodi | `TB` | 275 × 750 | 76,3 × 207,8 mm | **11,00 pt** |
+| 12 nodi | `LR` | 2923 × 62 | 168,0 × 3,6 mm | **2,28 pt** |
+| 12 nodi | `TB` | 260 × 1118 | 56,4 × 242,0 mm | **8,59 pt** |
+
+La banda della dispensa è 8-11 pt (D11): le due `LR` sono fuori banda di
+un fattore 3-4, le due `TB` ci stanno (la catena di 8 nodi arriva al
+tetto e viene riportata a 11,00).
+
+**La serpentina non è una strada.** L'alternativa naturale — spezzare la
+catena in righe con dei `subgraph` e un `direction LR` dentro — è stata
+provata e scartata: quando ci sono archi che attraversano il gruppo,
+Mermaid ignora il `direction` del sottografo. Due colonne da sei danno
+3023 × 132 uu, cioè **2,21 pt**, peggio del `TB`. L'unica leva è la
+direzione del grafo.
+
+### 21.2 La regola: si misura, non si indovina
+
+Il sorgente salvato **non cambia** (vincolo del committente: nessun
+backfill, la scelta della disposizione vive nella resa). La catena di
+decisione è:
+
+1. `figure_compute/chain_layout.vertical_chain_variant(source)` — funzione
+   PURA, gemella di `graph_rules`: riconosce una catena lineare dichiarata
+   in orizzontale e ritorna il sorgente con il **solo** token di direzione
+   cambiato (`LR` → `TB`, `RL` → `BT`), byte per byte identico altrove;
+   `None` in ogni altro caso. Riconoscimento conservativo: intestazione
+   `flowchart|graph LR|RL` come prima riga utile, con il `;` finale
+   facoltativo come nel corpo (frontmatter e commenti `%%` prima sono
+   ammessi, una direttiva `%%{…}%%` no), nessun
+   `subgraph`/`end`/`direction`, archi solo semplici (`-->`, `---`),
+   grado entrante e uscente al più 1, un solo componente connesso, almeno
+   tre nodi.
+   **Che cosa è uno spazio.** `str.strip()` e `String.prototype.trim()`
+   non hanno lo stesso insieme: il primo toglie anche U+001C-U+001F e
+   U+0085, il secondo anche U+FEFF. Le due parti sceglievano due
+   direzioni diverse per lo stesso sorgente (misurato: 4 divergenze su 8
+   casi avversari). Il riconoscimento usa l'**intersezione** dei due
+   insiemi, scritta carattere per carattere in `_SPACE_CLASS` e nella
+   costante `SPACE` del mirror: un BOM o un separatore di file non è uno
+   spazio, è un carattere qualunque, e ferma il riconoscimento da tutte e
+   due le parti.
+2. `figure_render_service.render_chain_variants(...)` — dopo il
+   pre-render, per le sole figure Mermaid che nel box di quella superficie
+   escono **sotto** la banda e il cui sorgente è una catena orizzontale,
+   rende anche la variante, in un unico batch. La variante viaggia accanto
+   all'originale in `RenderedFigure.chain_variant` e non entra mai nella
+   cache al posto suo: ha una chiave propria, `(mermaid, sha256 del
+   sorgente variante, THEME_VERSION)`.
+   Il riconoscimento legge il sorgente **sanificato**, cioè quello che il
+   renderer disegna (`MermaidRenderer.sanitize`: fence markdown residui,
+   righe-segnaposto `mermaid`/`all`, caratteri di controllo). Sul grezzo
+   una sola riga spuria — di quelle che l'AI emette e che il gate D8 del
+   salvataggio accetta — faceva perdere la catena: la pagina disegnava la
+   catena orizzontale e la variante non veniva nemmeno tentata, mentre la
+   vista, che sanifica prima di misurare, la ribaltava.
+3. `course_lesson_pdf_service._figure_width_style` — **misura** le due
+   varianti nel box vero della figura e tiene quella con il corpo più
+   grande. Se la variante non migliora, resta l'originale. La scelta
+   emette `figure_direction_flipped` con `asset_id`, `text_pt_before` e
+   `text_pt_after`, e la voce del `figure_fit_report` porta
+   `direction_flipped=True`.
+
+Il punto 3 è il cuore: nessuna soglia di «quanti nodi sono troppi»,
+nessuna euristica sul contenuto. Si rende, si misura, si sceglie. Un
+falso positivo del riconoscimento non può alterare il disegno — la
+variante differisce dall'originale per due caratteri — e al massimo costa
+una resa che la misura poi scarta.
+
+Box per superficie: la dispensa usa il box **vero** del template
+(`lesson_mermaid_box_mm`), quindi la decisione del pre-render coincide con
+quella della resa. Le slide usano la slide di **riferimento**
+(`reference_slide_figure_box_mm`, 255 × 86,6 mm: un blocco, titolo e
+didascalia di una riga, lo stesso caso dell'oracolo D12), perché il box
+vero nasce per pagina dal testo reale; su una slide più densa il box è più
+basso, e lì la misura decide comunque fra le varianti disponibili. Sulla
+slide, che è larga e bassa, la variante verticale di norma **perde**: la
+catena di 12 nodi dà 3,46 pt in `LR` e 3,07 pt in `TB`, e resta `LR`.
+
+### 21.3 Il costo
+
+Una resa in più **solo** per le figure fuori banda che sono catene
+orizzontali. Misurato sull'export di quattro lezioni reali del docente
+(26 asset, 18 Mermaid):
+
+| lezione | asset | Mermaid | catene orizzontali | pre-render | varianti | seconda volta |
+| --- | --- | --- | --- | --- | --- | --- |
+| M2.L2 | 14 | 6 | 0 | 4,21 s | **0,00 s** | 0,000 s |
+| M4.L1 | 4 | 4 | 0 | 0,71 s | **0,00 s** | 0,000 s |
+| M4.L3 | 4 | 4 | 0 | 0,69 s | **0,00 s** | 0,000 s |
+| M12.L7 | 4 | 4 | 0 | 0,77 s | **0,00 s** | 0,000 s |
+| M2.L2 + catena da 12 nodi | 15 | 7 | 1 | 2,27 s | **0,63 s** | 0,001 s |
+
+Sulle quattro lezioni reali il costo è **esattamente zero**: nessuna delle
+18 figure Mermaid è una catena orizzontale, quindi non parte nessun
+Chromium in più. Aggiungendo la catena del docente il costo è una pagina
+Chromium, 0,63 s a cache fredda e 0,001 s dalla seconda volta. La chiave
+di cache della variante è la stessa per le due superfici: una pipeline che
+esporta dispensa e slide la paga una volta sola.
+
+**Due effetti da conoscere.** Sulla superficie delle slide la variante
+viene resa e poi **sempre** scartata per le catene (misurato su tre: 8
+nodi 6,09 contro 4,68 pt, 12 nodi 4,01 contro 3,07, 40 nodi 1,17 contro
+0,90): su un box largo e basso il verticale non può vincere, quindi lì la
+resa in più è costo senza beneficio, ammortizzato dalla cache solo quando
+si esportano anche le dispense. Resta comunque una misura e non una
+regola: è il prezzo di non indovinare. E per una catena molto lunga il
+ribaltamento migliora senza risolvere: 40 nodi nella dispensa vanno da
+0,77 a 2,52 pt con `direction_flipped=True`, ma la variante è un nastro
+largo 11,8 mm su 168 e la voce resta in `figure_fit_out_of_band`. Nessuna
+delle due disposizioni si legge: quel caso lo chiude il prompt (§21.5),
+non la resa.
+
+### 21.4 Nella vista
+
+`MermaidDiagram.tsx` applica la stessa regola a schermo: se il diagramma
+reso esce sotto la banda nel **box di riferimento della sua superficie** e
+il sorgente è una catena orizzontale, rende anche la variante e tiene
+quella con il corpo più grande. La vista non conosce il template del
+docente: usa il box di riferimento proprio perché la disposizione che si
+vede a schermo sia quella che arriverà nel documento esportato. Il
+componente riceve la superficie dal chiamante (`variant`, `lesson` per
+difetto): la dispensa misura su `LESSON_REFERENCE_BOX_MM` (168 × 242 mm),
+la vista delle slide su `SLIDE_REFERENCE_BOX_MM` (255 × 86,6 mm, mirror di
+`reference_slide_figure_box_mm`), ciascuna con la propria banda. Decidere
+sempre con il box della dispensa faceva dire il contrario all'anteprima e
+all'export: per la catena di 12 nodi la dispensa ribalta (2,64 → 8,59 pt)
+e la slide no (4,01 pt in `LR` contro 3,07 in `TB`). La larghezza **resa**
+resta quella di sempre (`fittedWidthPx`, senza box e con la banda del web:
+sul web il limite è la colonna).
+
+Prima di misurare, la vista sanifica come il backend: le righe spurie e
+in più i caratteri di controllo di `_CONTROL_CHARS_RE` (`isControlChar`,
+scritto come intervallo di codici perché `no-control-regex` vieta il
+letterale). Così le due parti partono dagli stessi byte.
+
+Il mirror della funzione pura è `frontend/src/lib/chainLayout.ts`, con
+parità provata dalla fixture condivisa
+`backend/tests/fixtures/chain_layout_cases.json`, eseguita dai due lati
+come `figure_scale_cases.json`.
+
+### 21.5 Nei prompt
+
+Il catalogo dei tipi di Fase 3 e di Fase 4 porta la regola, entro il
+budget dei prompt esistente (`MAX_SYSTEM_P3` 28.900, `MAX_SYSTEM_P4`
+15.400, invariati): «Catena lineare oltre quattro passi: `flowchart TB`;
+`LR` se corta o ramificata.» Il testo è riportato verbatim in
+[PROMPTS](../PROMPTS.md) e `scripts/check_prompts_md.py` lo verifica.
+
+La regola nel prompt e la regola nella resa sono complementari: il prompt
+riduce i casi, la resa li chiude comunque, perché il contenuto già
+generato non si tocca.
+
+### 21.6 Gli oracoli
+
+| che cosa | test |
+| --- | --- |
+| Le due catene reali del docente: pt prima e dopo sul PDF vero | `tests/test_lesson_pdf_chain_direction.py::test_the_lesson_pdf_measures_both_and_keeps_the_bigger` (WeasyPrint `.render()`, corpo letto dai box reali) |
+| Nessun ribaltamento per il grafo con diramazioni (`fig_market_structure`, 7 nodi e 9 archi), per un sorgente già `TB`, per una catena già in banda, per un sorgente con `subgraph` | stesso file, `::test_only_the_horizontal_chains_get_a_variant` |
+| Il sorgente salvato non cambia, e la variante differisce per il solo token di direzione | `::test_the_saved_source_never_changes` e `tests/test_chain_layout.py::test_only_the_direction_token_changes` |
+| Le figure non interessate conservano lo stesso identico SVG; i 15 modelli Mermaid degli editor non sono catene | `::test_the_untouched_figures_keep_the_very_same_svg`, `::test_no_editor_template_is_a_horizontal_chain` |
+| Parità Python ↔ TypeScript sui 36 casi della fixture, compresa la classe avversaria degli spazi (BOM, U+001C, U+0085, U+00A0, U+2028, U+3000) | `tests/test_frontend_figure_layout.py::test_frontend_chain_layout_matches_the_shared_fixture` |
+| Il candidato si decide sul sorgente sanificato: fence in coda, riga `all`, carattere di controllo | `tests/test_figure_render_service.py::test_the_chain_is_recognised_on_the_source_the_renderer_draws` |
+| La vista toglie gli stessi caratteri di controllo del backend, e decide la direzione sul box della propria superficie | `tests/test_frontend_figure_layout.py::test_the_view_strips_the_control_chars_the_backend_strips`, `::test_the_view_decides_the_direction_on_the_box_of_its_own_surface` |
+| La voce entra nel `figure_fit_report` | `tests/test_lesson_pdf_figures.py::test_figure_fit_report_summary_lists_the_out_of_band_figures` |

@@ -797,6 +797,7 @@ Esclusi: journey, gitGraph, kanban, packet-beta, architecture-beta.
 Label in testo semplice (niente HTML né markdown), tra virgolette
 doppie se contengono caratteri speciali; nessuna direttiva
 `%%{init}%%` né frontmatter: il tema lo impone il renderer.
+Catena lineare oltre quattro passi: `flowchart TB`; `LR` se corta o ramificata.
 
 VEGA-LITE (spec JSON v6, ≤ 4000 caratteri) SOLO per dati dei documenti
 del corso, dati illustrativi (vale la regola di onestà sopra) o rette e
@@ -1525,7 +1526,9 @@ PRINCIPI
    senza, Vega-Lite le mette in ordine alfabetico. Per `mermaid`, oltre
    ai diagrammi di struttura e di processo, sono ammessi gantt,
    quadrantChart, sankey-beta, block-beta, radar-beta, treemap-beta,
-   pie e xychart-beta; esclusi journey, gitGraph, kanban, packet-beta, architecture-beta.
+   pie e xychart-beta; esclusi journey, gitGraph, kanban, packet-beta, architecture-beta. Catena
+   lineare oltre quattro passi: `flowchart TB`; `LR` se corta o
+   ramificata.
    Per evitare collisioni di ID, prefissa con `*_new_*` (es.
    `fig_new_1`, `tab_new_2`). Anche i `new_assets` seguono il punto 2:
    una slide dedicata ciascuno.

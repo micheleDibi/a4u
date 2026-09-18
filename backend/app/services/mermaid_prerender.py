@@ -35,6 +35,7 @@ from typing import Any
 from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.services import figure_geometry
+from app.services.figure_compute.chain_layout import SANITIZE_TRIM_CHARS
 from app.services.figure_geometry import GeometryReport
 from app.services.figure_scale import SvgMetrics
 from app.services.figure_theme import MERMAID_FONT_FAMILY, mermaid_initialize_js
@@ -870,7 +871,15 @@ _MERMAID_JUNK_LINE_RE = re.compile(r"^(?:```.*|mermaid|all)\s*:?\s*$", re.IGNORE
 
 
 def _sanitize_mermaid_code(code: str) -> str:
+    """Sorgente ripulito, identico a quello della vista: stessa classe di
+    spazi dei due linguaggi più il BOM, che `String.trim()` toglieva già e
+    `str.strip()` no. Senza questa parità la pagina e lo schermo partivano
+    da byte diversi e potevano scegliere due direzioni diverse."""
     if not code:
         return code
-    lines = [ln for ln in code.split("\n") if not _MERMAID_JUNK_LINE_RE.match(ln.strip())]
-    return "\n".join(lines).strip()
+    lines = [
+        ln
+        for ln in code.split("\n")
+        if not _MERMAID_JUNK_LINE_RE.match(ln.strip(SANITIZE_TRIM_CHARS))
+    ]
+    return "\n".join(lines).strip(SANITIZE_TRIM_CHARS)

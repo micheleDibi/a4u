@@ -15,7 +15,7 @@ import type {
   LessonContentTable,
   LessonContentVisualAsset,
 } from "@/api/courses";
-import { isLegacyFormat } from "@/lib/figureFormats";
+import { type FigureVariant, isLegacyFormat } from "@/lib/figureFormats";
 import { equationLabelFamily, nonEmptyProofSteps } from "@/lib/figureNumbering";
 import { cn } from "@/lib/utils";
 
@@ -255,13 +255,18 @@ function renderAssetBlock(
 export function VisualAssetBody({
   asset,
   imageClassName,
+  variant = "lesson",
 }: {
   asset: LessonContentVisualAsset;
   imageClassName?: string;
+  /** Superficie del chiamante: la dispensa o la slide. Per Mermaid decide
+   *  il box di riferimento su cui si sceglie la direzione di una catena
+   *  (D15), che sulle due superfici non è la stessa. */
+  variant?: FigureVariant;
 }) {
   const { t } = useTranslation();
   if (asset.format === "mermaid") {
-    return <MermaidDiagram code={asset.content} />;
+    return <MermaidDiagram code={asset.content} variant={variant} />;
   }
   if (asset.format === "vegalite") {
     return <VegaLiteDiagram spec={asset.content} />;

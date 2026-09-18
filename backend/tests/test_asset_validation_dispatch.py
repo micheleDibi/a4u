@@ -366,10 +366,15 @@ def test_asset_check_is_frozen_with_fixable_default():
 # da Q1, Mermaid ha il parse JS nel batch), non sul formato.
 # I due servizi PDF restano letterali per il body byte-identico (A11-L3);
 # `course_lesson_pdf_service:641` sparisce con `render_svg_map` (WP4).
+# `figure_render_service.render_chain_variants` (D15, §21): la direzione di
+# un grafo è una nozione del solo Mermaid — `chain_layout` legge la sintassi
+# di `flowchart`, DOT ha il suo `rankdir`, Vega-Lite e `function` non hanno
+# direzione. Non c'è un metodo del protocollo da chiamare al suo posto.
 _ALLOWED_MERMAID_LITERALS: dict[str, int] = {
     "services/asset_validation_service.py": 2,
     "services/course_lesson_pdf_service.py": 2,
     "services/course_lesson_slides_pdf_service.py": 1,
+    "services/figure_render_service.py": 1,
 }
 _MERMAID_LITERAL_RE = re.compile(r'[=!]=\s*"mermaid"')
 

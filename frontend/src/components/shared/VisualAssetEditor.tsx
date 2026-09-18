@@ -1,4 +1,5 @@
 import { Loader2, Sparkles, Trash2 } from "lucide-react";
+import type { FigureVariant } from "@/lib/figureFormats";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -38,6 +39,9 @@ export interface VisualAssetEditorLabels {
 }
 
 export interface VisualAssetEditorProps {
+  /** Superficie di destinazione dell'asset: decide il box con cui
+   * l'anteprima sceglie la direzione della catena. */
+  variant?: FigureVariant;
   orgId: string;
   courseId: string;
   asset: LessonContentVisualAsset;
@@ -51,6 +55,7 @@ export interface VisualAssetEditorProps {
 }
 
 export function VisualAssetEditor({
+  variant = "lesson",
   orgId,
   courseId,
   asset,
@@ -118,6 +123,7 @@ export function VisualAssetEditor({
           value={asset.content}
           onChange={(code) => onChange({ content: code })}
           disabled={disabled}
+          variant={variant}
         />
       )}
 

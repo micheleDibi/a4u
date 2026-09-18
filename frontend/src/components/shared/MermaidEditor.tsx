@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import type { FigureVariant } from "@/lib/figureFormats";
 import { useTranslation } from "react-i18next";
 
 import { Textarea } from "@/components/ui/textarea";
@@ -43,6 +44,9 @@ interface MermaidEditorProps {
   disabled?: boolean;
   className?: string;
   rows?: number;
+  /** Superficie di destinazione: l'anteprima decide la direzione della
+   * catena sul box di quella superficie, come poi fara' l'export. */
+  variant?: FigureVariant;
 }
 
 const PREFIX = "courses.lessonsContent.editorUI.mermaid";
@@ -251,6 +255,7 @@ export function MermaidEditor({
   disabled = false,
   className,
   rows = 8,
+  variant = "lesson",
 }: MermaidEditorProps) {
   const { t } = useTranslation();
   const [debouncedCode, setDebouncedCode] = useState(value);
@@ -310,7 +315,7 @@ export function MermaidEditor({
           <div className="px-1 text-xs font-medium text-muted-foreground">
             {t("courses.lessonsContent.editorUI.mermaid.preview")}
           </div>
-          <MermaidPreview code={debouncedCode} />
+          <MermaidPreview code={debouncedCode} variant={variant} />
         </div>
       </div>
     </div>
@@ -319,9 +324,10 @@ export function MermaidEditor({
 
 interface MermaidPreviewProps {
   code: string;
+  variant: FigureVariant;
 }
 
-function MermaidPreview({ code }: MermaidPreviewProps) {
+function MermaidPreview({ code, variant }: MermaidPreviewProps) {
   const { t } = useTranslation();
   if (!code.trim()) {
     return (
@@ -339,7 +345,7 @@ function MermaidPreview({ code }: MermaidPreviewProps) {
           </div>
         }
       >
-        <MermaidDiagram code={code} />
+        <MermaidDiagram code={code} variant={variant} />
       </Suspense>
     </div>
   );

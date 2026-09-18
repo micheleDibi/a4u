@@ -366,6 +366,7 @@ Esclusi: {_MERMAID_EXCLUDED_TEXT}.
 Label in testo semplice (niente HTML né markdown), tra virgolette
 doppie se contengono caratteri speciali; nessuna direttiva
 `%%{{init}}%%` né frontmatter: il tema lo impone il renderer.
+Catena lineare oltre quattro passi: `flowchart TB`; `LR` se corta o ramificata.
 
 VEGA-LITE (spec JSON v6, ≤ 4000 caratteri) SOLO per dati dei documenti
 del corso, dati illustrativi (vale la regola di onestà sopra) o rette e

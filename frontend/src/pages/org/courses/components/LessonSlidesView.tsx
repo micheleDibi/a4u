@@ -229,7 +229,11 @@ function SlideAssetRender({
         variant="slide"
         cite={cite}
       >
-        <VisualAssetBody asset={a} imageClassName="max-h-[24rem]" />
+        <VisualAssetBody
+          asset={a}
+          imageClassName="max-h-[24rem]"
+          variant="slide"
+        />
       </FigureFrame>
     );
   }

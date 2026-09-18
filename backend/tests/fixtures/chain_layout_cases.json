@@ -1,0 +1,198 @@
+{
+  "_comment": [
+    "Fixture CONDIVISA della direzione delle catene (D15): eseguita da",
+    "`backend/app/services/figure_compute/chain_layout.py` e dal mirror",
+    "`frontend/src/lib/chainLayout.ts`. `variant` è il sorgente atteso",
+    "(byte per byte) oppure null quando il riconoscimento deve rinunciare.",
+    "I casi `catena reale ...` sono i due sorgenti del docente misurati il",
+    "18 settembre 2026; `fig_market_structure` viene dall'export di quattro",
+    "lezioni reali. Gli ultimi casi sono la classe avversaria degli spazi:",
+    "BOM, U+001C e U+0085 NON sono spazi per il riconoscimento (fermano la",
+    "lettura), U+00A0, U+2028 e U+3000 sì; `str.strip()` e `String.trim()`",
+    "li trattavano in modo diverso e le due parti sceglievano due direzioni."
+  ],
+  "min_chain_nodes": 3,
+  "vertical_of": { "LR": "TB", "RL": "BT" },
+  "cases": [
+    {
+      "name": "catena reale di 8 nodi (docente)",
+      "source": "flowchart LR\n    N0[\"Sorgente laser\"]\n    N1[\"Fascio verso il bersaglio\"]\n    N2[\"Superficie vibrante\"]\n    N3[\"Luce riflessa o diffusa\"]\n    N4[\"Interferometro e riferimento ottico\"]\n    N5[\"Demodulazione\"]\n    N6[\"Segnale di velocità\"]\n    N7[\"Analisi nel tempo e in frequenza\"]\n    N0 --> N1\n    N1 --> N2\n    N2 --> N3\n    N3 --> N4\n    N4 --> N5\n    N5 --> N6\n    N6 --> N7",
+      "variant": "flowchart TB\n    N0[\"Sorgente laser\"]\n    N1[\"Fascio verso il bersaglio\"]\n    N2[\"Superficie vibrante\"]\n    N3[\"Luce riflessa o diffusa\"]\n    N4[\"Interferometro e riferimento ottico\"]\n    N5[\"Demodulazione\"]\n    N6[\"Segnale di velocità\"]\n    N7[\"Analisi nel tempo e in frequenza\"]\n    N0 --> N1\n    N1 --> N2\n    N2 --> N3\n    N3 --> N4\n    N4 --> N5\n    N5 --> N6\n    N6 --> N7"
+    },
+    {
+      "name": "catena reale di 12 nodi (docente)",
+      "source": "flowchart LR\n    N0[\"Luce interferometrica\"]\n    N1[\"Fotodetettore\"]\n    N2[\"Corrente foto-generata\"]\n    N3[\"Amplificatore transimpedenza\"]\n    N4[\"Tensione condizionata\"]\n    N5[\"Filtro e adattamento di livello\"]\n    N6[\"Acquisizione digitale\"]\n    N7[\"Demodulazione Doppler\"]\n    N8[\"Velocità vibratoria\"]\n    N9[\"Integrazione controllata\"]\n    N10[\"Spostamento ricostruito\"]\n    N11[\"Analisi spettrale\"]\n    N0 --> N1\n    N1 --> N2\n    N2 --> N3\n    N3 --> N4\n    N4 --> N5\n    N5 --> N6\n    N6 --> N7\n    N7 --> N8\n    N8 --> N9\n    N9 --> N10\n    N10 --> N11",
+      "variant": "flowchart TB\n    N0[\"Luce interferometrica\"]\n    N1[\"Fotodetettore\"]\n    N2[\"Corrente foto-generata\"]\n    N3[\"Amplificatore transimpedenza\"]\n    N4[\"Tensione condizionata\"]\n    N5[\"Filtro e adattamento di livello\"]\n    N6[\"Acquisizione digitale\"]\n    N7[\"Demodulazione Doppler\"]\n    N8[\"Velocità vibratoria\"]\n    N9[\"Integrazione controllata\"]\n    N10[\"Spostamento ricostruito\"]\n    N11[\"Analisi spettrale\"]\n    N0 --> N1\n    N1 --> N2\n    N2 --> N3\n    N3 --> N4\n    N4 --> N5\n    N5 --> N6\n    N6 --> N7\n    N7 --> N8\n    N8 --> N9\n    N9 --> N10\n    N10 --> N11"
+    },
+    {
+      "name": "fig_market_structure (7 nodi, 9 archi, diramazioni)",
+      "source": "flowchart LR\n    A[Strumenti finanziari] --> B[Luogo fisico di scambio]\n    A --> C[Circuito organizzato]\n    A --> D[Piattaforma elettronica]\n    A --> E[Mercato OTC]\n    B --> F[Domanda e offerta]\n    C --> F\n    D --> F\n    E --> F\n    F --> G[Prezzi e transazioni]",
+      "variant": null
+    },
+    {
+      "name": "catena minima di tre nodi",
+      "source": "flowchart LR\n    A[Uno] --> B[Due]\n    B --> C[Tre]\n",
+      "variant": "flowchart TB\n    A[Uno] --> B[Due]\n    B --> C[Tre]\n"
+    },
+    {
+      "name": "catena su una riga sola",
+      "source": "graph LR\n  A --> B --> C --> D\n",
+      "variant": "graph TB\n  A --> B --> C --> D\n"
+    },
+    {
+      "name": "catena RL diventa BT",
+      "source": "flowchart RL\n  A --> B\n  B --> C\n",
+      "variant": "flowchart BT\n  A --> B\n  B --> C\n"
+    },
+    {
+      "name": "frontmatter e commenti prima dell'intestazione",
+      "source": "---\ntitle: Catena\n---\n%% commento\n\nflowchart LR\n    A[\"x\"] --> B\n    B --> C\n    C --> D\n",
+      "variant": "---\ntitle: Catena\n---\n%% commento\n\nflowchart TB\n    A[\"x\"] --> B\n    B --> C\n    C --> D\n"
+    },
+    {
+      "name": "terminatori CRLF",
+      "source": "flowchart LR\r\n    A --> B\r\n    B --> C\r\n",
+      "variant": "flowchart TB\r\n    A --> B\r\n    B --> C\r\n"
+    },
+    {
+      "name": "classDef e class non impediscono la variante",
+      "source": "flowchart LR\n    A --> B\n    B --> C\n    classDef ok fill:#eee\n    class A,B ok\n",
+      "variant": "flowchart TB\n    A --> B\n    B --> C\n    classDef ok fill:#eee\n    class A,B ok\n"
+    },
+    {
+      "name": "punto e virgola in coda alle istruzioni",
+      "source": "flowchart LR;\n    A --> B;\n    B --> C;\n",
+      "variant": "flowchart TB;\n    A --> B;\n    B --> C;\n"
+    },
+    {
+      "name": "intestazione con punto e virgola",
+      "source": "graph LR;\n  A --> B;\n  B --> C;\n",
+      "variant": "graph TB;\n  A --> B;\n  B --> C;\n"
+    },
+    {
+      "name": "forme diverse e virgolette con parentesi",
+      "source": "flowchart LR\n    A([Inizio]) --> B{\"Scelta [a]\"}\n    B --> C[[Fine]]\n",
+      "variant": "flowchart TB\n    A([Inizio]) --> B{\"Scelta [a]\"}\n    B --> C[[Fine]]\n"
+    },
+    {
+      "name": "linea aperta --- fra i nodi",
+      "source": "flowchart LR\n    A --- B\n    B --- C\n",
+      "variant": "flowchart TB\n    A --- B\n    B --- C\n"
+    },
+    {
+      "name": "gia dichiarata TB",
+      "source": "flowchart TB\n    A --> B\n    B --> C\n",
+      "variant": null
+    },
+    {
+      "name": "gia dichiarata TD",
+      "source": "flowchart TD\n    A --> B\n    B --> C\n",
+      "variant": null
+    },
+    {
+      "name": "due soli nodi",
+      "source": "flowchart LR\n    A[Uno] --> B[Due]\n",
+      "variant": null
+    },
+    {
+      "name": "subgraph",
+      "source": "flowchart LR\n    subgraph G [\" \"]\n    direction LR\n    A --> B\n    end\n    B --> C\n    C --> D\n",
+      "variant": null
+    },
+    {
+      "name": "arco etichettato",
+      "source": "flowchart LR\n    A -->|misura| B\n    B --> C\n",
+      "variant": null
+    },
+    {
+      "name": "arco punteggiato",
+      "source": "flowchart LR\n    A -.-> B\n    B --> C\n",
+      "variant": null
+    },
+    {
+      "name": "arco spesso",
+      "source": "flowchart LR\n    A ==> B\n    B --> C\n",
+      "variant": null
+    },
+    {
+      "name": "operandi multipli con &",
+      "source": "flowchart LR\n    A --> B & C\n    B --> D\n",
+      "variant": null
+    },
+    {
+      "name": "ciclo chiuso",
+      "source": "flowchart LR\n    A --> B\n    B --> C\n    C --> A\n",
+      "variant": null
+    },
+    {
+      "name": "due componenti separati",
+      "source": "flowchart LR\n    A --> B\n    C --> D\n    D --> E\n",
+      "variant": null
+    },
+    {
+      "name": "nodo isolato fuori dalla catena",
+      "source": "flowchart LR\n    A --> B\n    B --> C\n    Z[Isolato]\n",
+      "variant": null
+    },
+    {
+      "name": "cappio su se stesso",
+      "source": "flowchart LR\n    A --> A\n    A --> B\n    B --> C\n",
+      "variant": null
+    },
+    {
+      "name": "sequenceDiagram",
+      "source": "sequenceDiagram\n    A->>B: messaggio\n    B->>C: risposta\n",
+      "variant": null
+    },
+    {
+      "name": "direttiva init prima dell'intestazione",
+      "source": "%%{init: {'theme':'base'}}%%\nflowchart LR\n    A --> B\n    B --> C\n",
+      "variant": null
+    },
+    {
+      "name": "sorgente vuoto",
+      "source": "",
+      "variant": null
+    },
+    {
+      "name": "click sui nodi",
+      "source": "flowchart LR\n    A --> B\n    B --> C\n    click A href \"https://example.org\"\n",
+      "variant": null
+    },
+    {
+      "name": "BOM su una riga a sé",
+      "source": "flowchart LR\n    A --> B\n    B --> C\n    C --> D\n\ufeff\n",
+      "variant": null
+    },
+    {
+      "name": "BOM davanti a classDef",
+      "source": "flowchart LR\n    A --> B\n    B --> C\n    C --> D\n\ufeffclassDef ok fill:#eee\n",
+      "variant": null
+    },
+    {
+      "name": "separatore di file U+001C davanti a classDef",
+      "source": "flowchart LR\n    A --> B\n    B --> C\n    C --> D\n\u001cclassDef ok fill:#eee\n",
+      "variant": null
+    },
+    {
+      "name": "interruzione di riga U+0085 davanti a classDef",
+      "source": "flowchart LR\n    A --> B\n    B --> C\n    C --> D\n\u0085classDef ok fill:#eee\n",
+      "variant": null
+    },
+    {
+      "name": "spazio unificatore U+00A0 come rientro",
+      "source": "flowchart LR\n    A --> B\n    B --> C\n    C --> D\n\u00a0classDef ok fill:#eee\n",
+      "variant": "flowchart TB\n    A --> B\n    B --> C\n    C --> D\n\u00a0classDef ok fill:#eee\n"
+    },
+    {
+      "name": "separatore di riga U+2028 come rientro",
+      "source": "flowchart LR\n    A --> B\n    B --> C\n    C --> D\n\u2028classDef ok fill:#eee\n",
+      "variant": "flowchart TB\n    A --> B\n    B --> C\n    C --> D\n\u2028classDef ok fill:#eee\n"
+    },
+    {
+      "name": "spazio ideografico U+3000 come rientro",
+      "source": "flowchart LR\n    A --> B\n    B --> C\n    C --> D\n\u3000classDef ok fill:#eee\n",
+      "variant": "flowchart TB\n    A --> B\n    B --> C\n    C --> D\n\u3000classDef ok fill:#eee\n"
+    }
+  ]
+}

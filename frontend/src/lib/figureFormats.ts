@@ -418,6 +418,34 @@ const BAND_EPS = 1e-9;
  *  `figure_scale.FALLBACK_BASE_FONT_PX["mermaid"]`. */
 export const MERMAID_FALLBACK_FONT_PX = 14;
 
+/** Box di RIFERIMENTO della dispensa in mm (D15), mirror di
+ *  `figure_scale.LESSON_REFERENCE_BOX_MM`: il box del contenuto su A4 con
+ *  margine di 20 mm, meno il padding del wrapper Mermaid, per l'altezza
+ *  utile di una pagina intera. Serve SOLO a decidere la direzione di una
+ *  catena quando il box vero non è noto (la vista non conosce il template
+ *  del docente); non è mai una larghezza di resa. */
+export const LESSON_REFERENCE_BOX_MM: readonly [number, number] = [168, 242];
+
+/** Box di RIFERIMENTO della slide in mm (D15), mirror di
+ *  `course_lesson_slides_pdf_service.reference_slide_figure_box_mm()`: la
+ *  slide con un solo blocco, titolo di una riga, nessuna prosa e didascalia
+ *  di una riga. Serve alla stessa cosa del box della dispensa, sulla
+ *  superficie delle slide: lì la figura è larga e bassa, e una catena
+ *  verticale di norma PERDE. Decidere con il box della dispensa faceva
+ *  vedere in anteprima una disposizione che la slide esportata non
+ *  avrebbe avuto. */
+export const SLIDE_REFERENCE_BOX_MM: readonly [number, number] = [255, 86.6];
+
+/** Box di riferimento per superficie (D15): la vista non conosce il
+ *  template del docente e decide la direzione di una catena come deciderà
+ *  la resa su quella superficie. */
+export const REFERENCE_BOX_MM: Readonly<
+  Record<FigureVariant, readonly [number, number]>
+> = {
+  lesson: LESSON_REFERENCE_BOX_MM,
+  slide: SLIDE_REFERENCE_BOX_MM,
+};
+
 export interface SvgBox {
   /** viewBox in unità utente. */
   vbW: number;

@@ -1739,3 +1739,61 @@ async def test_render_figure_map_keeps_metrics_and_render_svg_map_projects(
     assert frs._cache_get(key_d) == "1"
     one = frs._cache_get_figure(key_d)
     assert one is not None and one.metrics == SvgMetrics(None, None, 0, "no_text")
+
+
+# ---------------------------------------------------------------------------
+# D15: il riconoscimento della catena legge il sorgente SANIFICATO
+# ---------------------------------------------------------------------------
+
+# Catena orizzontale di dodici nodi, lo stesso caso del docente ridotto ai
+# soli id: il riconoscimento non guarda le etichette.
+_CHAIN_LR = "flowchart LR\n" + "\n".join(f"    N{i} --> N{i + 1}" for i in range(11))
+# SVG largo e basso come quello che il motore dà per quella catena
+# (2923 × 62 uu): nel box della dispensa il corpo cade a 2,28 pt, sotto il
+# pavimento della banda, quindi la figura è candidata alla variante.
+_WIDE_SVG = (
+    '<svg viewBox="0 0 2923 62" width="2923" height="62"><text font-size="14">x</text></svg>'
+)
+
+
+@pytest.mark.asyncio
+async def test_the_chain_is_recognised_on_the_source_the_renderer_draws(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Il candidato alla variante si decide sul sorgente SANIFICATO, cioè
+    quello che `render_figure_map` rende davvero.
+
+    Le tre righe spurie qui sotto passano il gate statico del salvataggio
+    (`mermaid_static_gate` → `("", "")`) e la sanificazione le toglie: sul
+    grezzo il riconoscimento le leggeva come nodi e rinunciava, così la
+    pagina teneva la catena orizzontale illeggibile mentre la vista web,
+    che sanifica prima, ribaltava."""
+    sources = {
+        "pulita": _CHAIN_LR,
+        "fence": _CHAIN_LR + "\n```",
+        "segnaposto": _CHAIN_LR.replace("    N0 --> N1", "    all\n    N0 --> N1", 1),
+        "controllo": _CHAIN_LR.replace("    N0 --> N1", "    N0 --> N1\x01", 1),
+    }
+    renderer = frs.REGISTRY["mermaid"]
+    for name, source in sources.items():
+        assert frs.mermaid_static_gate(renderer.sanitize(source)) == ("", ""), name
+    assets = [{"asset_id": k, "format": "mermaid", "content": v} for k, v in sources.items()]
+    figures = {k: frs.RenderedFigure.from_svg(_WIDE_SVG) for k in sources}
+
+    seen: list[list[Mapping[str, Any]]] = []
+
+    async def _fake_map(items: Any, *, language: str) -> dict[str, frs.RenderedFigure]:
+        seen.append(list(items))
+        return {}
+
+    monkeypatch.setattr(frs, "render_figure_map", _fake_map)
+    await frs.render_chain_variants(
+        assets, figures, box_mm=(168.0, 242.0), variant="lesson", language="it"
+    )
+    assert len(seen) == 1
+    assert [c["asset_id"] for c in seen[0]] == list(sources)
+    # Tutte e quattro danno la STESSA variante verticale: la sanificazione
+    # le riporta allo stesso sorgente, quindi la resa in più si paga una
+    # volta sola (una chiave di cache sola).
+    flipped = "flowchart TB\n" + "\n".join(f"    N{i} --> N{i + 1}" for i in range(11))
+    assert {c["content"] for c in seen[0]} == {flipped}

@@ -43,15 +43,16 @@ from app.models.organization import Organization
 from app.models.slide_template import SlideTemplate
 from app.models.user import User
 from app.services import course_lesson_pdf_service as base_pdf
-from app.services import course_lesson_slides_service, remote_storage
+from app.services import course_lesson_slides_service, figure_render_service, remote_storage
 from app.services.figure_render_service import RenderedFigure, VisualSvgMap
-from app.services.figure_scale import FigureFitEntry
+from app.services.figure_scale import FigureBoxMm, FigureFitEntry
 from app.services.figure_theme import figure_labels
 from app.services.slide_geometry import (
     PageFigureBudget,
     Prose,
     ProseMath,
     ProsePiece,
+    image_box,
     page_figure_budget,
 )
 from app.services.svg_normalize import svg_to_data_uri
@@ -347,9 +348,38 @@ async def _prerender_mermaid_for_slides(
         # L'id di Fase 4 è già irraggiungibile: qui si salta il render.
         if isinstance(na, dict) and _asset_ref_key(na.get("asset_id")) not in seen:
             merged_visual_assets.append(na)
-    return await base_pdf._prerender_visual_assets_for_lesson(
+    figures = await base_pdf._prerender_visual_assets_for_lesson(
         {"visual_assets": merged_visual_assets}, language=language
     )
+    # Direzione delle catene (D15): stessa regola della dispensa, sul box
+    # della slide di riferimento. La variante ha la stessa chiave di cache
+    # di quella resa per la dispensa (il sorgente variante è lo stesso),
+    # quindi in una pipeline che esporta entrambe la resa in più si paga
+    # una volta sola.
+    return await figure_render_service.render_chain_variants(
+        merged_visual_assets,
+        figures,
+        box_mm=reference_slide_figure_box_mm(),
+        variant="slide",
+        language=language,
+    )
+
+
+def reference_slide_figure_box_mm() -> FigureBoxMm:
+    """Box `(larghezza, altezza)` in mm della figura nella slide di
+    RIFERIMENTO: un solo blocco, titolo di una riga, nessuna prosa e
+    nessun bullet, didascalia di una riga (255 × 86,6 mm, lo stesso caso
+    che l'oracolo D12 documenta).
+
+    Serve solo a decidere se VALE LA PENA rendere la variante verticale di
+    una catena (D15): il box vero della pagina lo calcola `image_box` sul
+    testo reale di ogni slide, e su quello la misura del fit sceglie fra le
+    varianti disponibili. Una slide più densa ha un box più basso: lì una
+    catena orizzontale sta ancora peggio, ma anche la verticale, e la
+    misura lo constata."""
+    budget = page_figure_budget(title="T", body=None, bullets=(), n_blocks=1)
+    box, _squeezed = image_box(budget, caption_text="Figura.")
+    return box.w_mm, box.h_mm
 
 
 _prerender_visual_assets_for_slides = _prerender_mermaid_for_slides

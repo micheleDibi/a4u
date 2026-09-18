@@ -1163,7 +1163,10 @@ un'eccezione che rompa la pagina.
 
 ### `MermaidDiagram.tsx`
 
-- **Props**: `{ code, className? }`.
+- **Props**: `{ code, className?, variant? }`. `variant` (`"lesson"` per
+  difetto, `"slide"` dalla vista delle slide via `VisualAssetBody`) è la
+  superficie su cui la figura finirà: serve alla sola scelta della
+  direzione (D15).
 - Import dinamico di `mermaid` (11.17.2), `initialize` con
   `mermaidConfig` di `lib/figureTheme.ts` (tema D3, `htmlLabels: false`
   top-level, `securityLevel: "strict"`), `mermaid.parse` con
@@ -1180,6 +1183,28 @@ un'eccezione che rompa la pagina.
   testo → scala naturale. Geometria, parità del JS di misura e fixture
   condivisa in `tests/test_frontend_figure_layout.py` e
   `tests/test_figure_scale.py`.
+- **Direzione delle catene (D15).** Se il diagramma reso esce SOTTO la
+  banda nel box di RIFERIMENTO della SUA superficie
+  (`REFERENCE_BOX_MM[variant]`: dispensa 168 × 242 mm, slide 255 × 86,6
+  mm) e il sorgente è una catena lineare dichiarata in orizzontale
+  (`lib/chainLayout.ts::verticalChainVariant`), il componente rende anche
+  la variante verticale (`renderCleanSvg`, seconda `mermaid.render`
+  sanificata come la prima) e tiene quella con il corpo più grande. Il box
+  di riferimento serve SOLO a decidere — la vista non conosce il template
+  del docente, e così a schermo si vede la disposizione che arriverà nel
+  documento esportato: con il box della dispensa per tutti, l'anteprima
+  della slide ribaltava una catena che la slide esportata teneva
+  orizzontale (12 nodi: dispensa 2,64 → 8,59 pt, slide 4,01 contro 3,07).
+  La larghezza RESA resta quella di `fittedWidthPx`, senza box. Il
+  sorgente non viene mai riscritto. Stessa regola del PDF,
+  [Courses 17 § 21](../courses/17-visual-figures.md).
+- **`sanitizeMermaidCode`** toglie le righe spurie dell'AI (fence
+  markdown, segnaposto `mermaid`/`all`) e i caratteri di controllo
+  (`isControlChar`: C0 senza `\t\n\r`, DEL e C1, la classe di
+  `figure_render_service._CONTROL_CHARS_RE`, scritta come intervallo
+  perché `no-control-regex` vieta il letterale). Serve a partire dagli
+  STESSI byte del pre-render: la direzione si decide sul sorgente che
+  verrà disegnato, non su quello grezzo.
 
 ### `VegaLiteDiagram.tsx`
 

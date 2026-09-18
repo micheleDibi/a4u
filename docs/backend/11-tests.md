@@ -636,7 +636,7 @@ ereditarietà dei campi `sequence` alla radice e nei figli
 `layer`/`vconcat`/`concat`/`hconcat`/`spec`, alias `calculate`,
 `nesting_depth`.
 
-### `tests/test_figure_render_service.py` (360)
+### `tests/test_figure_render_service.py` (361)
 
 Registro dei renderer e `run_isolated` (checklist del brief §7):
 Vega-Lite (spec valida; `data.url` annidato, > 4.000 caratteri, `mark
@@ -650,7 +650,10 @@ timeout reale entro la scadenza senza figli vivi, risultato da 2 MB,
 eccezione del figlio → `FigureComputeError`); `render_figure_map` e la
 proiezione `render_svg_map` (un batch per formato, cache LRU, cache
 negativa, timeout senza eccezioni, tetto del batch Mermaid); `validate_visual_assets_or_raise` (solo asset
-cambiati, payload 422). `skipif` per i casi che eseguono vl-convert o
+cambiati, payload 422); `render_chain_variants` che riconosce la catena
+sul sorgente SANIFICATO (fence in coda, riga `all`, carattere di
+controllo: tre sorgenti che il gate D8 accetta e che sul grezzo facevano
+perdere la catena). `skipif` per i casi che eseguono vl-convert o
 `dot`.
 
 ### `tests/test_asset_validation_dispatch.py` (13)
@@ -892,7 +895,40 @@ italiana hard-coded nei file dell'inventario (lessico di parole di
 interfaccia, template literal esclusi), ogni chiave `t("…")` risolta in
 `it.json` e `en.json`. Salta senza `../frontend`.
 
-### `tests/test_frontend_figure_layout.py` (14)
+### `tests/test_chain_layout.py` (54)
+
+Direzione delle catene lineari Mermaid (D15), funzione pura: i 36 casi
+della fixture condivisa `chain_layout_cases.json` (le due catene reali
+del docente da 8 e 12 nodi, `fig_market_structure` con le sue
+diramazioni, catena minima, catena su una riga sola, `RL` → `BT`,
+frontmatter e commenti, CRLF, `classDef`/`class`, forme con parentesi e
+virgolette, linea aperta `---`, punto e virgola nel corpo e
+nell'intestazione, U+00A0, U+2028 e U+3000 come rientro; e i rifiuti: già
+`TB` o `TD`, due nodi, `subgraph`, arco etichettato, punteggiato o
+spesso, `&`, ciclo, due componenti, nodo isolato, cappio,
+`sequenceDiagram`, direttiva `%%{init}%%`, `click`, sorgente vuoto, BOM,
+U+001C e U+0085 — i tre caratteri su cui `str.strip()` e `String.trim()`
+non vanno d'accordo); l'invariante di forma (sorgente e variante
+differiscono in UN tratto lungo due caratteri, e quel tratto è la
+direzione); la variante non si ribalta a sua volta; `is_linear_chain` sui
+gradi.
+
+### `tests/test_lesson_pdf_chain_direction.py` (18)
+
+Oracolo end-to-end della direzione (D15), con Chromium e WeasyPrint: sei
+figure rese una volta sola e misurate nel box vero della dispensa
+(168 × 242 mm). Le due catene del docente ribaltano e il corpo LETTO dai
+box di WeasyPrint sale da 3,47 a 11,00 pt (8 nodi) e da 2,28 a 8,59 pt
+(12 nodi), con `direction_flipped=True` nel `fit_report`; non ribaltano
+il grafo con diramazioni (7,33 pt), il sorgente già `TB` (8,59), la
+catena corta già in banda (11,00) e la catena dentro un `subgraph` con
+`direction LR` proprio (3,98). Il sorgente salvato non cambia; le figure
+non interessate conservano lo STESSO oggetto della mappa del pre-render;
+nessuno dei 15 modelli Mermaid degli editor è una catena orizzontale.
+Sulla slide di riferimento (255 × 86,6 mm) la variante verticale perde
+(3,46 contro 3,07 pt) e la misura lascia l'orizzontale.
+
+### `tests/test_frontend_figure_layout.py` (17)
 
 Geometria delle figure nel frontend: `.lesson-prose .figure img
 { margin: 0 auto }` (Chromium, Playwright); `MermaidDiagram` misura e
@@ -905,7 +941,16 @@ Python); parità nel DOM fra `measureSvgFontPx` (bundle esbuild) e
 fixture v11 (Chromium + CDN); geometria del wrapper `min(100%, Wpx)`
 calcolata dal modulo vero in Chromium: flowchart v11 a 532 px e testo
 11 pt in una colonna di 900, 100 % in una di 400, verticale 300×1000 a
-314 px. Salta solo se `chromium.launch()` fallisce.
+314 px. Parità del mirror `lib/chainLayout.ts` con
+`figure_compute/chain_layout.py` sui 36 casi di `chain_layout_cases.json`
+eseguiti con Node, e pin di sorgente della direzione nel componente
+(`verticalChainVariant(`, `REFERENCE_BOX_MM[variant]`,
+`after.textPt > before.textPt`). Due pin nuovi: la vista toglie gli
+stessi caratteri di controllo del backend (gli intervalli di
+`isControlChar` confrontati con `_CONTROL_CHARS_RE`) e decide la
+direzione sul box della propria superficie (`SLIDE_REFERENCE_BOX_MM` =
+`reference_slide_figure_box_mm()`, `variant="slide"` da
+`LessonSlidesView`). Salta solo se `chromium.launch()` fallisce.
 
 ### `tests/test_frontend_inline_math.py` (8)
 

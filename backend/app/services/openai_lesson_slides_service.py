@@ -147,7 +147,9 @@ PRINCIPI
    senza, Vega-Lite le mette in ordine alfabetico. Per `mermaid`, oltre
    ai diagrammi di struttura e di processo, sono ammessi gantt,
    quadrantChart, sankey-beta, block-beta, radar-beta, treemap-beta,
-   pie e xychart-beta; esclusi {_MERMAID_EXCLUDED_TEXT}.
+   pie e xychart-beta; esclusi {_MERMAID_EXCLUDED_TEXT}. Catena
+   lineare oltre quattro passi: `flowchart TB`; `LR` se corta o
+   ramificata.
    Per evitare collisioni di ID, prefissa con `*_new_*` (es.
    `fig_new_1`, `tab_new_2`). Anche i `new_assets` seguono il punto 2:
    una slide dedicata ciascuno.

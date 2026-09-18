@@ -1828,6 +1828,20 @@ def test_figure_fit_report_summary_lists_the_out_of_band_figures() -> None:
     guessed = FigureFitEntry(
         "F", "function", "lesson", 90.0, 1.0, 9.0, (8.0, 11.0), True, "constant", 2
     )
+    flipped = FigureFitEntry(
+        "C",
+        "mermaid",
+        "lesson",
+        56.35,
+        0.8179,
+        8.59,
+        (8.0, 11.0),
+        True,
+        "measured",
+        26,
+        crossings=0,
+        direction_flipped=True,
+    )
     dense_defect = "graph_too_dense: incroci fra archi 6 > 4 — riordina i nodi"
     dense = FigureFitEntry(
         "D",
@@ -1845,7 +1859,9 @@ def test_figure_fit_report_summary_lists_the_out_of_band_figures() -> None:
     )
     with structlog.testing.capture_logs() as logs:
         pdf._log_figure_fit_report(lesson_code="M1.L1", fit_report=[entry, ok])
-        pdf._log_figure_fit_report(lesson_code="M1.L2", fit_report=[ok, assumed, guessed, dense])
+        pdf._log_figure_fit_report(
+            lesson_code="M1.L2", fit_report=[ok, assumed, guessed, dense, flipped]
+        )
     assert logs == [
         {
             "event": "figure_fit_report",
@@ -1857,17 +1873,19 @@ def test_figure_fit_report_summary_lists_the_out_of_band_figures() -> None:
             "font_fallback": [],
             "geometry_defects": [],
             "measure_skipped": [("G", "mermaid")],
+            "direction_flipped": [],
         },
         {
             "event": "figure_fit_report",
             "log_level": "info",
             "lesson_code": "M1.L2",
-            "total": 4,
-            "in_band": 3,
+            "total": 5,
+            "in_band": 4,
             "out_of_band": [("V", "vegalite", 9.9, "constant")],
             "font_fallback": [("V", "vegalite"), ("F", "function")],
             "geometry_defects": [("D", "dot", 6, [dense_defect])],
             "measure_skipped": [],
+            "direction_flipped": [("C", 8.59)],
         },
     ]
 

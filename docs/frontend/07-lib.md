@@ -120,6 +120,7 @@ la fixture è il contratto.
 | `lib/figureNumbering.ts` | `services/figure_numbering.py` | `backend/tests/fixtures/figure_numbering_cases.json` |
 | `lib/inlineMath.ts` | `render_markdown_inline` (istanza `zero` del PDF) | parità di token in `backend/tests/test_frontend_inline_math.py` |
 | `lib/figureFormats.ts` (parte «scala») | `services/figure_scale.py`, `svg_normalize` | `backend/tests/fixtures/figure_scale_cases.json` |
+| `lib/chainLayout.ts` | `services/figure_compute/chain_layout.py` | `backend/tests/fixtures/chain_layout_cases.json` |
 
 ---
 
@@ -279,3 +280,50 @@ intrinsicWPx? }` e `FigureFit` è `{ widthMm, scale, textPt, inBand }`.
 
 Consumatore principale: `MermaidDiagram`, che mette
 `width: min(100%, Wpx)` su un wrapper senza padding.
+
+`LESSON_REFERENCE_BOX_MM` (`[168, 242]`, mirror di
+`figure_scale.LESSON_REFERENCE_BOX_MM`) è il box della dispensa su A4 con
+margine di 20 mm meno il padding del wrapper Mermaid;
+`SLIDE_REFERENCE_BOX_MM` (`[255, 86.6]`, mirror di
+`course_lesson_slides_pdf_service.reference_slide_figure_box_mm`) è quello
+della slide di riferimento, e `REFERENCE_BOX_MM` li indicizza per
+`FigureVariant`. Servono SOLO a decidere la direzione di una catena
+quando il box vero non è noto (D15), ciascuno sulla propria superficie,
+mai come larghezza di resa.
+
+---
+
+## `src/lib/chainLayout.ts` — direzione delle catene lineari
+
+Mirror di `services/figure_compute/chain_layout.py` (D15).
+
+```ts
+const MIN_CHAIN_NODES = 3;
+const VERTICAL_OF = { LR: "TB", RL: "BT" };
+
+verticalChainVariant(source: string): string | null
+isLinearChain(nodes: string[], edges: [string, string][]): boolean
+```
+
+`verticalChainVariant` ritorna il sorgente Mermaid con il SOLO token di
+direzione cambiato quando il sorgente è una catena lineare dichiarata in
+orizzontale, `null` altrimenti: nessun altro byte si muove, nemmeno
+spaziatura, terminatori di riga o commenti. Il riconoscimento è
+conservativo — intestazione `flowchart|graph LR|RL` come prima riga utile,
+con il `;` finale facoltativo come nel corpo (frontmatter YAML e commenti
+`%%` prima sono ammessi, una direttiva `%%{…}%%` no), nessun
+`subgraph`/`end`/`direction`, archi solo semplici
+(`-->`, `---`), grado entrante e uscente al più 1, un solo componente
+connesso, almeno tre nodi — perché la variante costa una resa e nel dubbio
+non vale la pena: nel dubbio `null`.
+
+`SPACE` è la classe degli spazi, l'INTERSEZIONE fra quelli di JavaScript e
+quelli di Python: `String.trim()` toglie anche U+FEFF e `str.strip()`
+anche U+001C-U+001F e U+0085, quindi senza una classe esplicita i due lati
+sceglievano direzioni diverse. Qui `strip`, `rstrip` e `firstWord`
+sostituiscono `trim()`, `trimEnd()` e `split(/\s+/)`.
+
+Consumatore: `MermaidDiagram`, che rende la variante e tiene quella con il
+corpo più grande. Parità con il Python sui 36 casi di
+`chain_layout_cases.json`, eseguiti dai due lati
+(`backend/tests/test_frontend_figure_layout.py::test_frontend_chain_layout_matches_the_shared_fixture`).

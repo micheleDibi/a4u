@@ -1,11 +1,14 @@
 import { memo, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { sanitizeTrim, verticalChainVariant } from "@/lib/chainLayout";
 import {
+  type FigureVariant,
   fitFigureWidthMm,
   measureSvgFontPx,
   MERMAID_FALLBACK_FONT_PX,
   MM_PER_PX,
+  REFERENCE_BOX_MM,
   renderMermaidSvg,
   sanitizeMermaidSvg,
   svgIntrinsicBox,
@@ -18,6 +21,10 @@ import { FigureErrorBox, FigureLoading } from "./FigureFrame";
 interface MermaidDiagramProps {
   code: string;
   className?: string;
+  /** Superficie su cui la figura finirà: decide il box di riferimento e la
+   *  banda con cui si sceglie la direzione di una catena (D15). Le slide
+   *  hanno un box largo e basso, dove il verticale di norma perde. */
+  variant?: FigureVariant;
 }
 
 let mermaidInitialized = false;
@@ -31,13 +38,35 @@ let renderCounter = 0;
 // (non tocchiamo archi/nodi reali tipo `A --> all` o `all[Etichetta]`).
 const MERMAID_JUNK_LINE_RE = /^(?:```.*|mermaid|all)\s*:?\s*$/i;
 
+/**
+ * Caratteri di controllo tolti prima di tutto il resto: C0 senza `\t`,
+ * `\n` e `\r`, DEL e C1. È la classe di
+ * `figure_render_service._CONTROL_CHARS_RE`, che il backend toglie in
+ * `MermaidRenderer.sanitize` prima di rendere: senza questo passaggio la
+ * vista partiva da byte diversi da quelli della pagina e poteva scegliere
+ * una direzione diversa per la stessa catena. Scritta come intervallo di
+ * codici e non come classe di regex perché `no-control-regex` vieta il
+ * letterale.
+ */
+function isControlChar(code: number): boolean {
+  return (
+    code <= 0x08 ||
+    code === 0x0b ||
+    code === 0x0c ||
+    (code >= 0x0e && code <= 0x1f) ||
+    (code >= 0x7f && code <= 0x9f)
+  );
+}
+
 export function sanitizeMermaidCode(raw: string): string {
   if (!raw) return raw;
-  return raw
+  const joined = [...raw]
+    .filter((ch) => !isControlChar(ch.codePointAt(0) ?? 0))
+    .join("")
     .split("\n")
-    .filter((line) => !MERMAID_JUNK_LINE_RE.test(line.trim()))
-    .join("\n")
-    .trim();
+    .filter((line) => !MERMAID_JUNK_LINE_RE.test(sanitizeTrim(line)))
+    .join("\n");
+  return sanitizeTrim(joined);
 }
 
 async function ensureMermaid() {
@@ -92,7 +121,77 @@ function fittedWidthPx(svg: string): number | null {
   return fit ? Math.floor((fit.widthMm / MM_PER_PX) * 100) / 100 : null;
 }
 
-function MermaidDiagramImpl({ code, className }: MermaidDiagramProps) {
+/**
+ * Fit dell'SVG nel box di RIFERIMENTO della superficie su cui la figura
+ * finirà (`null` se il viewBox non è determinabile). La vista non conosce
+ * il template del docente, quindi per DECIDERE la direzione di una catena
+ * (D15) usa lo stesso box che la resa userà sul template di default: la
+ * dispensa 168 × 242 mm (`LESSON_REFERENCE_BOX_MM`), la slide 255 × 86,6
+ * mm (`SLIDE_REFERENCE_BOX_MM`), ciascuna con la propria banda. Decidere
+ * sempre con il box della dispensa mostrava in anteprima una disposizione
+ * che la slide esportata non avrebbe avuto: misurata la catena di 12 nodi,
+ * nella dispensa il verticale vince (2,64 → 8,59 pt) e nella slide perde
+ * (4,01 contro 3,07 pt). La larghezza RESA resta quella di
+ * `fittedWidthPx`, senza box: sul web il limite è la colonna.
+ */
+function referenceFit(
+  svg: string,
+  variant: FigureVariant,
+): { textPt: number; inBand: boolean } | null {
+  const box = svgIntrinsicBox(svg);
+  if (!box) return null;
+  const m = measureSvgFontPx(svg);
+  const baseFontPx =
+    m === null ? MERMAID_FALLBACK_FONT_PX : m.count === 0 ? null : m.min;
+  const referenceBox = REFERENCE_BOX_MM[variant];
+  const fit = fitFigureWidthMm({
+    vbW: box.vbW,
+    vbH: box.vbH,
+    baseFontPx,
+    boxWMm: referenceBox[0],
+    boxHMm: referenceBox[1],
+    variant,
+    intrinsicWPx: box.widthPx,
+  });
+  return fit ? { textPt: fit.textPt, inBand: fit.inBand } : null;
+}
+
+// Mermaid imposta `style="max-width: <natural_px>"` sull'SVG: lo togliamo,
+// perché la larghezza la decide la banda di leggibilità, non la dimensione
+// naturale del diagramma.
+const MERMAID_MAX_WIDTH_RE = /max-width\s*:\s*[\d.]+px\s*;?/gi;
+
+/**
+ * SVG reso, sanificato e ripulito dal `max-width`, oppure `null` se il
+ * render fallisce o il markup non contiene un `<svg>`.
+ *
+ * Sanificazione PRIMA di toccare il documento vivo: il diagramma è reso
+ * nel browser di chi guarda, non dal backend, quindi un `<image
+ * href="http://…">` uscito da una shape che il gate statico non ha
+ * riconosciuto farebbe partire la richiesta da qui (SEC-1, giro 5).
+ * `securityLevel: "strict"` di Mermaid sanifica le LABEL, non gli
+ * attributi che il renderer stesso emette.
+ */
+async function renderCleanSvg(
+  mermaid: Awaited<ReturnType<typeof ensureMermaid>>,
+  id: string,
+  code: string,
+): Promise<string | null> {
+  // `renderMermaidSvg` e non `mermaid.render`: quando il render fallisce
+  // Mermaid lascia nel `<body>` il `<div id="d<id>">` con cui ha misurato
+  // il diagramma, e in produzione fallisce sempre per una shape `img:`
+  // esterna (la politica della pagina blocca l'immagine, `EncodingError`).
+  // Senza la rimozione l'editor impilava una copia visibile del diagramma
+  // a ogni battuta.
+  const safe = sanitizeMermaidSvg(await renderMermaidSvg(mermaid, id, code));
+  return safe ? safe.replace(MERMAID_MAX_WIDTH_RE, "") : null;
+}
+
+function MermaidDiagramImpl({
+  code,
+  className,
+  variant = "lesson",
+}: MermaidDiagramProps) {
   const { t } = useTranslation();
   const [svg, setSvg] = useState<RenderedSvg | null>(null);
   const [failure, setFailure] = useState<MermaidFailure | null>(null);
@@ -125,37 +224,44 @@ function MermaidDiagramImpl({ code, className }: MermaidDiagramProps) {
 
         renderCounter += 1;
         const id = `mermaid-${renderCounter}-${Date.now()}`;
-        // `renderMermaidSvg` e non `mermaid.render`: quando il render
-        // fallisce Mermaid lascia nel `<body>` il `<div id="d<id>">` con
-        // cui ha misurato il diagramma, e in produzione fallisce sempre
-        // per una shape `img:` esterna (la politica della pagina blocca
-        // l'immagine, `EncodingError`). Senza la rimozione l'editor
-        // impilava una copia visibile del diagramma a ogni battuta.
-        const rendered = await renderMermaidSvg(mermaid, id, cleanCode);
-        // Sanificazione PRIMA di toccare il documento vivo: il diagramma
-        // è reso nel browser di chi guarda, non dal backend, quindi un
-        // `<image href="http://…">` uscito da una shape che il gate
-        // statico non ha riconosciuto farebbe partire la richiesta da qui
-        // (SEC-1, giro 5). `securityLevel: "strict"` di Mermaid sanifica
-        // le LABEL, non gli attributi che il renderer stesso emette.
-        const safe = sanitizeMermaidSvg(rendered);
+        const cleaned = await renderCleanSvg(mermaid, id, cleanCode);
         // Markup senza `<svg>`: nessun dettaglio tecnico da mostrare, il
         // box usa la frase localizzata di ripiego («render fallito»).
-        if (!safe) {
+        if (!cleaned) {
           if (!cancelled) setFailure({ kind: "render", detail: "" });
           return;
         }
+        // Direzione della catena (D15): se il diagramma esce SOTTO la
+        // banda nel box di riferimento della SUA superficie (dispensa o
+        // slide) e il sorgente è una catena dichiarata in orizzontale, si
+        // rende anche la variante verticale e si tiene quella che dà il
+        // corpo più grande. Il sorgente salvato non cambia: la scelta vive
+        // nella resa, qui come nel PDF. La misura avviene sull'SVG già
+        // sanificato: `<style>` (tema e corpi dei testi) sopravvive alla
+        // sanificazione, quindi il `font-size` calcolato è quello che il
+        // lettore vedrà.
+        let chosen = cleaned;
+        const before = referenceFit(cleaned, variant);
+        const flippedCode =
+          before && !before.inBand ? verticalChainVariant(cleanCode) : null;
+        if (before && flippedCode) {
+          // La variante è un di più: se la sua resa fallisce resta
+          // l'originale, che è già valido. Un `throw` qui manderebbe il
+          // diagramma buono nel box d'errore.
+          const flipped = await renderCleanSvg(
+            mermaid,
+            `${id}-v`,
+            flippedCode,
+          ).catch(() => null);
+          const after = flipped ? referenceFit(flipped, variant) : null;
+          if (flipped && after && after.textPt > before.textPt) {
+            chosen = flipped;
+          }
+        }
         if (!cancelled) {
-          // Mermaid imposta `style="max-width: <natural_px>"` sull'SVG:
-          // lo togliamo, perché la larghezza la decide la banda di
-          // leggibilità (sotto), non la dimensione naturale del
-          // diagramma. Il wrapper interno porta `min(100%, Wpx)` e l'SVG
-          // lo riempie (`width: 100%`).
-          const cleaned = safe.replace(/max-width\s*:\s*[\d.]+px\s*;?/gi, "");
-          // La misura avviene sull'SVG già sanificato: `<style>` (tema e
-          // corpi dei testi) sopravvive alla sanificazione, quindi il
-          // `font-size` calcolato è quello che il lettore vedrà.
-          setSvg({ html: cleaned, widthPx: fittedWidthPx(cleaned) });
+          // Il wrapper interno porta `min(100%, Wpx)` e l'SVG lo riempie
+          // (`width: 100%`).
+          setSvg({ html: chosen, widthPx: fittedWidthPx(chosen) });
         }
       } catch (exc) {
         if (!cancelled) {
@@ -170,7 +276,7 @@ function MermaidDiagramImpl({ code, className }: MermaidDiagramProps) {
     return () => {
       cancelled = true;
     };
-  }, [cleanCode]);
+  }, [cleanCode, variant]);
 
   if (failure) {
     return (

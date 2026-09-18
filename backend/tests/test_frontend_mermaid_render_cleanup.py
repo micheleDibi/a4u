@@ -66,9 +66,17 @@ def _read(path: Path) -> str:
 
 def test_the_component_renders_through_the_cleaning_wrapper() -> None:
     """Il componente non chiama più `mermaid.render` direttamente: se
-    qualcuno ce lo rimette, il nodo residuo torna e questo test lo vede."""
+    qualcuno ce lo rimette, il nodo residuo torna e questo test lo vede.
+
+    Da D15 il componente rende DUE volte (originale e variante verticale
+    della catena): entrambe passano da `renderCleanSvg`, che è l'unico
+    punto in cui compare `renderMermaidSvg`."""
     src = _read(_MERMAID_DIAGRAM)
-    assert re.search(r"const\s+rendered\s*=\s*await\s+renderMermaidSvg\(", src), src[:600]
+    assert re.search(r"const\s+safe\s*=\s*sanitizeMermaidSvg\(await renderMermaidSvg\(", src), src[
+        :600
+    ]
+    assert src.count("renderMermaidSvg(") == 1, "resa Mermaid fuori da renderCleanSvg"
+    assert src.count("await renderCleanSvg(") == 2, "le due rese non passano dal wrapper"
     assert "mermaid.render(" not in src, "torna il render nudo: il nodo di misura resta"
 
 

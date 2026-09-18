@@ -59,6 +59,18 @@ FALLBACK_BASE_FONT_PX: dict[str, float] = {
 
 MetricsSource = Literal["measured", "parsed", "root_rule", "unresolved", "no_text"]
 
+# Box del contenuto di una figura: `(larghezza, altezza | None)` in mm,
+# `None` sull'altezza = nessun vincolo verticale.
+FigureBoxMm = tuple[float, float | None]
+
+# Box di RIFERIMENTO della dispensa (D15), usato SOLO per decidere la
+# direzione di una catena quando il box vero non è noto: la vista del
+# frontend non conosce il template, e deve decidere come deciderà il PDF.
+# È il box di `_compute_template_margins_cm` su A4 con margine di 20 mm
+# (170 mm di contenuto meno i 2 mm di padding del wrapper Mermaid) e
+# l'altezza utile di una pagina intera. Mai una larghezza di resa.
+LESSON_REFERENCE_BOX_MM: FigureBoxMm = (168.0, 242.0)
+
 
 @dataclass(frozen=True)
 class SvgMetrics:
@@ -104,6 +116,10 @@ class FigureFitEntry:
     text_count: int
     crossings: int | None = None
     defects: tuple[str, ...] = ()
+    # D15: la figura è stata resa con la direzione verticale della catena
+    # perché l'orizzontale usciva sotto la banda; `text_pt` è già quello
+    # della variante scelta.
+    direction_flipped: bool = False
 
 
 def _half_up(value: float, digits: int) -> float:
@@ -208,9 +224,11 @@ def format_mm(value: float) -> str:
 
 __all__ = [
     "FALLBACK_BASE_FONT_PX",
+    "LESSON_REFERENCE_BOX_MM",
     "MM_PER_PX",
     "PT_PER_PX",
     "READABILITY_BANDS_PT",
+    "FigureBoxMm",
     "FigureFit",
     "FigureFitEntry",
     "FigureVariant",

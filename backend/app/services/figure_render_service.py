@@ -71,6 +71,7 @@ from app.core.logging import get_logger
 from app.schemas.course_lesson_content import VISUAL_ASSET_CONTENT_MAX_CHARS
 from app.schemas.figure_function import FunctionFigureSpec, format_issues, parse_function_spec
 from app.services import figure_function_service, figure_geometry
+from app.services.figure_compute.chain_layout import vertical_chain_variant
 from app.services.figure_compute.graph_rules import (
     GRAPH_TOO_DENSE,
     check_graph_rules,
@@ -93,7 +94,13 @@ from app.services.figure_function_service import (
     FunctionRenderResult,
 )
 from app.services.figure_geometry import GeometryReport
-from app.services.figure_scale import SvgMetrics
+from app.services.figure_scale import (
+    FigureBoxMm,
+    FigureVariant,
+    SvgMetrics,
+    fit_figure_width_mm,
+    resolve_base_font_px,
+)
 from app.services.figure_theme import (
     MERMAID_ALLOWED_TYPES,
     THEME_VERSION,
@@ -229,10 +236,18 @@ class RenderedFigure:
     Chromium. `metrics.crossings` / `metrics.defects` portano la geometria
     (D14): misurata nella pagina del pre-render per Mermaid, in Python per
     DOT (`DotRenderer.measure`), assente (`None`, `()`) per gli altri
-    formati. L'SVG non è mai modificato."""
+    formati. L'SVG non è mai modificato.
+
+    `chain_variant` (D15) è la stessa figura resa con la direzione
+    verticale, quando il sorgente è una catena orizzontale che a questa
+    superficie esce sotto la banda (`render_chain_variants`): la resa
+    sceglie fra le due MISURANDOLE (`_figure_width_style`). È `None`
+    ovunque altrove, non entra mai nella cache degli SVG (la variante ha
+    una chiave propria) e il sorgente salvato non cambia."""
 
     svg: str
     metrics: SvgMetrics | None = None
+    chain_variant: RenderedFigure | None = None
 
     @classmethod
     def from_svg(cls, svg: str) -> RenderedFigure:
@@ -2302,6 +2317,94 @@ async def render_figure_map(
     return result
 
 
+def _out_of_band(fig: RenderedFigure, *, box_mm: FigureBoxMm, variant: FigureVariant) -> bool:
+    """La figura, resa in questo box, porta il testo SOTTO il pavimento
+    della banda della superficie (stesso fit della resa, `figure_scale`).
+    Una geometria non leggibile o un box degenere valgono «in banda»: non
+    si tenta nulla."""
+    box = svg_intrinsic_box(fig.svg)
+    if box is None:
+        return False
+    base, _source = resolve_base_font_px("mermaid", fig.metrics)
+    fit = fit_figure_width_mm(
+        vb_w=box.vb_w,
+        vb_h=box.vb_h,
+        base_font_px=base,
+        box_w_mm=box_mm[0],
+        box_h_mm=box_mm[1],
+        variant=variant,
+        intrinsic_w_px=box.width_px,
+    )
+    return fit is not None and not fit.in_band
+
+
+async def render_chain_variants(
+    assets: Sequence[Mapping[str, Any]],
+    figures: Mapping[str, RenderedFigure],
+    *,
+    box_mm: FigureBoxMm,
+    variant: FigureVariant,
+    language: str,
+    lesson_code: str | None = None,
+) -> dict[str, RenderedFigure]:
+    """La mappa di resa con la variante verticale accanto alle figure che
+    la meritano (D15).
+
+    Merita la variante la figura Mermaid che in questo box esce SOTTO la
+    banda della superficie e il cui sorgente è una catena lineare
+    dichiarata in orizzontale (`chain_layout.vertical_chain_variant`).
+    Solo quelle: le figure in banda e i grafi con diramazioni non costano
+    nemmeno una misura in più. Le varianti sono rese in UN batch da
+    `render_figure_map`, quindi con la cache, il semaforo e il timeout
+    consueti; la chiave di cache della variante è la sua
+    (`fmt`, sha256 del sorgente variante, `THEME_VERSION`), così dalla
+    seconda volta la resa in più è gratis.
+
+    Il riconoscimento legge il sorgente SANIFICATO, cioè quello che
+    `render_figure_map` rende davvero (`MermaidRenderer.sanitize`: via i
+    fence markdown residui, le righe-segnaposto `mermaid`/`all` e i
+    caratteri di controllo). Sul grezzo una sola riga spuria — di quelle
+    che l'AI emette e che il gate del salvataggio accetta — bastava a far
+    perdere la catena: la pagina disegnava una catena orizzontale e la
+    variante non veniva nemmeno tentata.
+
+    Non sceglie: appende la variante e lascia decidere alla misura del fit
+    (`_figure_width_style`, log `figure_direction_flipped`). Non solleva
+    mai e non tocca il sorgente salvato."""
+    renderer = REGISTRY.get("mermaid")
+    if renderer is None:
+        return dict(figures)
+    candidates: list[dict[str, str]] = []
+    for fmt, asset_id, content in _iter_renderable(assets):
+        if fmt != "mermaid":
+            continue
+        fig = figures.get(asset_id)
+        if fig is None or fig.chain_variant is not None:
+            continue
+        if not _out_of_band(fig, box_mm=box_mm, variant=variant):
+            continue
+        flipped = vertical_chain_variant(renderer.sanitize(content))
+        if flipped is None:
+            continue
+        candidates.append({"asset_id": asset_id, "format": "mermaid", "content": flipped})
+    if not candidates:
+        return dict(figures)
+    started = time.monotonic()
+    rendered = await render_figure_map(candidates, language=language)
+    log.info(
+        "figure_chain_variants",
+        lesson_code=lesson_code,
+        variant=variant,
+        candidates=[c["asset_id"] for c in candidates],
+        rendered=len(rendered),
+        elapsed_s=round(time.monotonic() - started, 3),
+    )
+    return {
+        aid: replace(fig, chain_variant=rendered[aid]) if aid in rendered else fig
+        for aid, fig in figures.items()
+    }
+
+
 def _changed_assets(
     assets: Sequence[Mapping[str, Any]], previous: Sequence[Mapping[str, Any]] | None
 ) -> list[tuple[int, Mapping[str, Any]]]:
@@ -2414,6 +2517,7 @@ __all__ = [
     "mermaid_first_meaningful_line",
     "mermaid_static_gate",
     "register_renderer",
+    "render_chain_variants",
     "render_figure_map",
     "render_function",
     "render_svg_map",

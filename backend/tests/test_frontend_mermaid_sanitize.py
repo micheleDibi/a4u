@@ -77,10 +77,17 @@ def test_the_mermaid_component_sanitizes_before_touching_the_document() -> None:
     da `sanitizeMermaidSvg`."""
     src = _read(_MERMAID_DIAGRAM)
     assert "sanitizeMermaidSvg" in src, "il componente non sanifica l'SVG di Mermaid"
-    assert re.search(r"const\s+safe\s*=\s*sanitizeMermaidSvg\(rendered\)", src), src[:400]
+    # Ogni resa (originale e variante verticale della catena, D15) passa da
+    # `renderCleanSvg`, che sanifica prima di togliere il `max-width`.
+    assert re.search(r"const\s+safe\s*=\s*sanitizeMermaidSvg\(await renderMermaidSvg\(", src), src[
+        :400
+    ]
+    assert src.count("renderMermaidSvg(") == 1, "resa Mermaid fuori da renderCleanSvg"
+    assert "renderCleanSvg(mermaid, id, cleanCode)" in src
+    assert "flippedCode,\n          ).catch(() => null)" in src, "la variante non è isolata"
     # Il markup grezzo di `mermaid.render` non deve più finire nello stato.
     assert "rendered.replace(" not in src
-    assert "html: cleaned" in src
+    assert "html: chosen" in src
 
 
 def test_the_mermaid_sanitizer_keeps_the_theme_and_removes_what_fetches() -> None:

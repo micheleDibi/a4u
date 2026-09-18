@@ -119,6 +119,8 @@ from app.services.figure_numbering import (
 from app.services.figure_render_service import RENDERABLE_FORMATS, RenderedFigure, VisualSvgMap
 from app.services.figure_scale import (
     READABILITY_BANDS_PT,
+    FigureBoxMm,
+    FigureFit,
     FigureFitEntry,
     fit_figure_width_mm,
     format_mm,
@@ -767,6 +769,40 @@ def _figure_entry(svg_map: VisualSvgMap, asset_id: str) -> RenderedFigure | None
     return None
 
 
+class _FittedFigure(NamedTuple):
+    """Esito del fit: l'attributo di larghezza e la figura scelta (la
+    variante verticale della catena quando vince, D15)."""
+
+    style: str
+    fig: RenderedFigure
+
+
+def _fit_in_box(
+    fig: RenderedFigure,
+    *,
+    fmt: str,
+    variant: FigureVariant,
+    box_w: float,
+    box_h: float | None,
+) -> tuple[FigureFit | None, str, str]:
+    """`(fit, font_source, motivo)` della figura in questo box; il fit è
+    `None` con `motivo` `"no_viewbox"` o `"degenerate_box"`."""
+    sbox = svg_intrinsic_box(fig.svg)
+    base, source = resolve_base_font_px(fmt, fig.metrics)
+    if sbox is None:
+        return None, source, "no_viewbox"
+    fit = fit_figure_width_mm(
+        vb_w=sbox.vb_w,
+        vb_h=sbox.vb_h,
+        base_font_px=base,
+        box_w_mm=box_w,
+        box_h_mm=box_h,
+        variant=variant,
+        intrinsic_w_px=sbox.width_px,
+    )
+    return fit, source, "" if fit is not None else "degenerate_box"
+
+
 def _figure_width_style(
     fig: RenderedFigure,
     *,
@@ -778,51 +814,57 @@ def _figure_width_style(
     asset_id: str,
     lesson_code: str | None,
     fit_report: list[FigureFitEntry] | None,
-) -> str:
+) -> _FittedFigure:
     """Attributo ` style="width:Wmm"` (ultimo del tag) dalla banda di
-    leggibilità (D10, `figure_scale.fit_figure_width_mm`), oppure `""`
-    senza box (chiamanti senza geometria) o senza viewBox. `box` è
-    `(larghezza, altezza | None)` in mm del contenuto della figura;
-    `body_padding_mm` è il padding del wrapper da sottrarre;
+    leggibilità (D10, `figure_scale.fit_figure_width_mm`) e figura da
+    disegnare, oppure `""` senza box (chiamanti senza geometria) o senza
+    viewBox. `box` è `(larghezza, altezza | None)` in mm del contenuto
+    della figura; `body_padding_mm` è il padding del wrapper da sottrarre;
     `expect_measured` segnala nei log un fallback dalle metriche misurate
     (`figure_font_fallback`); la costante di formato (lettura irrisolta o
     metriche assenti) è segnalata così per ogni formato, perché il suo
     `in_band` è un'ipotesi. Ogni fit è loggato (`figure_fit`); una banda
     irraggiungibile produce `figure_fit_out_of_band` e la voce del
-    `fit_report` porta `in_band=False` (gate D13). L'SVG non è mai toccato."""
+    `fit_report` porta `in_band=False` (gate D13). L'SVG non è mai toccato.
+
+    Direzione della catena (D15): se il fit esce sotto la banda e la figura
+    porta con sé la variante verticale (`render_chain_variants`), anche la
+    variante viene MISURATA in questo box e vince quella con il corpo più
+    grande. La scelta è loggata come `figure_direction_flipped` con i pt
+    prima e dopo e la voce del `fit_report` porta `direction_flipped=True`;
+    se la variante non migliora, resta l'originale."""
     if box is None:
-        return ""
-    sbox = svg_intrinsic_box(fig.svg)
-    if sbox is None:
-        log.warning(
-            "figure_fit_skipped",
-            lesson_code=lesson_code,
-            asset_id=asset_id,
-            format=fmt,
-            reason="no_viewbox",
-        )
-        return ""
+        return _FittedFigure("", fig)
     box_w = box[0] - body_padding_mm
     box_h = box[1]
-    base, source = resolve_base_font_px(fmt, fig.metrics)
-    fit = fit_figure_width_mm(
-        vb_w=sbox.vb_w,
-        vb_h=sbox.vb_h,
-        base_font_px=base,
-        box_w_mm=box_w,
-        box_h_mm=box_h,
-        variant=variant,
-        intrinsic_w_px=sbox.width_px,
-    )
+    fit, source, reason = _fit_in_box(fig, fmt=fmt, variant=variant, box_w=box_w, box_h=box_h)
     if fit is None:
         log.warning(
             "figure_fit_skipped",
             lesson_code=lesson_code,
             asset_id=asset_id,
             format=fmt,
-            reason="degenerate_box",
+            reason=reason,
         )
-        return ""
+        return _FittedFigure("", fig)
+    direction_flipped = False
+    if not fit.in_band and fig.chain_variant is not None:
+        flipped_fit, flipped_source, _reason = _fit_in_box(
+            fig.chain_variant, fmt=fmt, variant=variant, box_w=box_w, box_h=box_h
+        )
+        if flipped_fit is not None and flipped_fit.text_pt > fit.text_pt:
+            log.info(
+                "figure_direction_flipped",
+                lesson_code=lesson_code,
+                asset_id=asset_id,
+                format=fmt,
+                variant=variant,
+                text_pt_before=fit.text_pt,
+                text_pt_after=flipped_fit.text_pt,
+            )
+            fig = fig.chain_variant
+            fit, source = flipped_fit, flipped_source
+            direction_flipped = True
     band = READABILITY_BANDS_PT[variant]
     text_count = fig.metrics.text_count if fig.metrics is not None else 0
     crossings = fig.metrics.crossings if fig.metrics is not None else None
@@ -840,6 +882,7 @@ def _figure_width_style(
         "font_source": source,
         "text_count": text_count,
         "crossings": crossings,
+        "direction_flipped": direction_flipped,
     }
     log.info("figure_fit", **fields)
     if source == "constant" or (expect_measured and source != "measured"):
@@ -861,9 +904,10 @@ def _figure_width_style(
                 text_count=text_count,
                 crossings=crossings,
                 defects=defects,
+                direction_flipped=direction_flipped,
             )
         )
-    return f' style="width:{format_mm(fit.width_mm)}mm"'
+    return _FittedFigure(f' style="width:{format_mm(fit.width_mm)}mm"', fig)
 
 
 def _render_visual_asset_block(
@@ -981,7 +1025,10 @@ def _render_visual_asset_block(
     fit_box = (box.w_mm, box.h_mm) if box is not None else figure_box_mm
 
     if fig is not None:
-        style = _figure_width_style(
+        # La misura può scegliere la variante verticale della catena (D15):
+        # da qui in poi `fig` è la figura scelta, e il suo SVG è quello che
+        # entra nella pagina.
+        style, fig = _figure_width_style(
             fig,
             fmt=fmt,
             variant=variant,
@@ -1412,6 +1459,31 @@ async def _prerender_visual_assets_for_lesson(
 # Alias del nome storico (i chiamanti esterni e la documentazione lo citano):
 # oggi pre-renderizza tutti i formati, non solo Mermaid.
 _prerender_mermaid_for_lesson = _prerender_visual_assets_for_lesson
+
+
+def lesson_mermaid_box_mm(
+    pdf_template: PdfTemplate | None,
+    *,
+    language: str,
+    public_base_url: str | None = None,
+) -> FigureBoxMm:
+    """Box `(larghezza, altezza)` in mm entro cui la dispensa misura un SVG
+    Mermaid inline: il box del contenuto della pagina
+    (`_compute_template_margins_cm`) meno il padding del wrapper.
+
+    È lo STESSO box che `_figure_width_style` userà: per questo la scelta
+    della direzione di una catena (D15) fatta nel pre-render coincide con
+    quella della resa, senza rendere varianti che la misura scarterebbe."""
+    tpl_dict = (
+        _format_pdf_template_for_render(pdf_template, public_base_url=public_base_url)
+        if pdf_template is not None
+        else _default_template_dict(language=language)
+    )
+    margins = _compute_template_margins_cm(tpl_dict)
+    return (
+        margins["figure_box_w_mm"] - _MERMAID_BODY_PADDING_MM,
+        margins["figure_box_h_mm"],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -2286,6 +2358,7 @@ def _log_figure_fit_report(
             for e in fit_report
             if e.crossings is None and e.fmt in GRAPH_FORMATS
         ],
+        direction_flipped=[(e.asset_id, e.text_pt) for e in fit_report if e.direction_flipped],
     )
 
 
@@ -2411,6 +2484,19 @@ async def materialize_lesson_pdf(
     raw_content = lesson.content_raw or {}
     language = (course.language_code or "it").lower()
     visual_svg_map = await _prerender_visual_assets_for_lesson(raw_content, language=language)
+    # Direzione delle catene (D15): per le sole figure Mermaid che escono
+    # sotto la banda e il cui sorgente è una catena orizzontale si rende
+    # anche la variante verticale; la misura del fit sceglie fra le due.
+    visual_svg_map = await figure_render_service.render_chain_variants(
+        [a for a in raw_content.get("visual_assets") or [] if isinstance(a, dict)],
+        visual_svg_map,
+        box_mm=lesson_mermaid_box_mm(
+            pdf_template, language=language, public_base_url=public_base_url
+        ),
+        variant="lesson",
+        language=language,
+        lesson_code=lesson.lesson_code,
+    )
     # Pre-render LaTeX → SVG (MathJax): WeasyPrint non rende il MathML.
     math_svg_map = await _prerender_math_for_lesson(raw_content, language=language)
 

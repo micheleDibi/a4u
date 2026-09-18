@@ -37,8 +37,11 @@ from typing import Any
 
 import pytest
 
+from app.services import course_lesson_slides_pdf_service as slides_pdf
+from app.services import figure_render_service as frs
 from app.services import figure_scale as fs
 from app.services import figure_theme as theme
+from app.services.figure_compute import chain_layout
 from app.services.mermaid_prerender import PRERENDER_ALLOWED_PREFIX, build_mermaid_renderer_html
 from app.services.svg_normalize import svg_base_font_px
 
@@ -46,8 +49,12 @@ _FRONTEND = Path(__file__).resolve().parents[2] / "frontend" / "src"
 _INDEX_CSS = _FRONTEND / "index.css"
 _FIGURE_FORMATS = _FRONTEND / "lib" / "figureFormats.ts"
 _MERMAID_DIAGRAM = _FRONTEND / "components" / "shared" / "MermaidDiagram.tsx"
+_MARKDOWN_RENDERER = _FRONTEND / "components" / "shared" / "MarkdownRenderer.tsx"
+_SLIDES_VIEW = _FRONTEND / "pages" / "org" / "courses" / "components" / "LessonSlidesView.tsx"
+_CHAIN_LAYOUT = _FRONTEND / "lib" / "chainLayout.ts"
 _FIXTURES = Path(__file__).parent / "fixtures"
 _SCALE_CASES = _FIXTURES / "figure_scale_cases.json"
+_CHAIN_CASES = _FIXTURES / "chain_layout_cases.json"
 _FLOWCHART_V11 = _FIXTURES / "mermaid11_flowchart.svg"
 
 _FIGURE_IMG_RULE_RE = re.compile(r"\.lesson-prose \.figure img\s*\{([^}]*)\}")
@@ -109,7 +116,17 @@ def test_mermaid_component_uses_the_readability_fit() -> None:
         "boxWMm: null",
         "boxHMm: null",
         "min(100%,",
-        "html: cleaned",  # pin di test_frontend_mermaid_sanitize
+        "html: chosen",  # pin di test_frontend_mermaid_sanitize
+        # Direzione della catena (D15): decisa sul box di riferimento della
+        # SUPERFICIE della figura, non sulla larghezza resa.
+        "verticalChainVariant(",
+        "REFERENCE_BOX_MM[variant]",
+        "referenceFit(cleaned, variant)",
+        "referenceFit(flipped, variant)",
+        "after.textPt > before.textPt",
+        # Stessi byte del backend prima di rendere: i caratteri di
+        # controllo di `_CONTROL_CHARS_RE` tolti dalla sanificazione.
+        "isControlChar(",
         "[&_svg]:!w-full",
         _INNER_WRAPPER_CLASSES,
         "bg-white",
@@ -135,6 +152,55 @@ def test_mermaid_component_uses_the_readability_fit() -> None:
     assert "p-" not in _INNER_WRAPPER_CLASSES
 
 
+# Intervalli di `isControlChar` (MermaidDiagram.tsx), gli stessi che il
+# backend toglie in `MermaidRenderer.sanitize`.
+_TS_CONTROL_RANGES = ((0x00, 0x08), (0x0B, 0x0C), (0x0E, 0x1F), (0x7F, 0x9F))
+
+
+def test_the_view_strips_the_control_chars_the_backend_strips() -> None:
+    """La vista parte dagli STESSI byte del pre-render: senza questo passo
+    una riga con un carattere di controllo faceva leggere alla vista un
+    sorgente diverso da quello reso nella pagina, e la stessa catena poteva
+    prendere due direzioni."""
+    code = _code_only(_read(_MERMAID_DIAGRAM))
+    for needle in (
+        "code <= 0x08",
+        "code === 0x0b",
+        "code === 0x0c",
+        "code >= 0x0e && code <= 0x1f",
+        "code >= 0x7f && code <= 0x9f",
+    ):
+        assert needle in code, needle
+    declared = {c for lo, hi in _TS_CONTROL_RANGES for c in range(lo, hi + 1)}
+    python_side = {c for c in range(0x100) if frs._CONTROL_CHARS_RE.match(chr(c))}
+    assert declared == python_side
+
+
+def test_the_view_decides_the_direction_on_the_box_of_its_own_surface() -> None:
+    """La direzione di una catena (D15) si decide sul box di RIFERIMENTO
+    della superficie della figura, non sempre su quello della dispensa: la
+    slide è larga e bassa (255 × 86,6 mm) e lì il verticale di norma perde
+    (catena di 12 nodi: 4,01 pt in `LR` contro 3,07 in `TB`), mentre nella
+    dispensa vince (2,64 → 8,59). Con il box della dispensa per tutti,
+    l'anteprima della slide mostrava una disposizione che la slide
+    esportata non avrebbe avuto."""
+    formats = _read(_FIGURE_FORMATS)
+    for needle in (
+        "export const LESSON_REFERENCE_BOX_MM: readonly [number, number] = [168, 242]",
+        "export const SLIDE_REFERENCE_BOX_MM: readonly [number, number] = [255, 86.6]",
+        "export const REFERENCE_BOX_MM",
+    ):
+        assert needle in formats, needle
+    # I due box del mirror sono quelli che la resa usa davvero.
+    assert fs.LESSON_REFERENCE_BOX_MM == (168.0, 242.0)
+    assert slides_pdf.reference_slide_figure_box_mm() == (255.0, 86.6)
+    # La superficie arriva dal chiamante fino al diagramma.
+    body = re.search(r"<MermaidDiagram[^>]*>", _read(_MARKDOWN_RENDERER))
+    assert body and "variant={variant}" in body.group(0), "la superficie non arriva a Mermaid"
+    slides = re.search(r"<VisualAssetBody[^>]*>", _read(_SLIDES_VIEW))
+    assert slides and 'variant="slide"' in slides.group(0), slides
+
+
 def test_figure_formats_exposes_the_fit_and_the_measure() -> None:
     src = _read(_FIGURE_FORMATS)
     for needle in (
@@ -146,6 +212,7 @@ def test_figure_formats_exposes_the_fit_and_the_measure() -> None:
         "export const MERMAID_FALLBACK_FONT_PX = 14",
         "export const MM_PER_PX = 25.4 / 96",
         "export const PT_PER_PX = 0.75",
+        "export const LESSON_REFERENCE_BOX_MM: readonly [number, number] = [168, 242]",
     ):
         assert needle in src, needle
     assert "fullWidthSvgMaxHeightPx" not in src and "FULL_WIDTH_SVG_CAP_PX" not in src
@@ -267,6 +334,47 @@ def test_frontend_fit_on_the_web_via_node() -> None:
         "pxPerUnit": 1,
     }
     assert got["unknownVariant"] == "threw"
+
+
+_CHAIN_RUNNER = """
+import * as cl from {module!r};
+import {{ readFileSync }} from "node:fs";
+const data = JSON.parse(readFileSync({fixture!r}, "utf8"));
+process.stdout.write(JSON.stringify({{
+  variants: data.cases.map((c) => cl.verticalChainVariant(c.source)),
+  minNodes: cl.MIN_CHAIN_NODES,
+  verticalOf: cl.VERTICAL_OF,
+}}));
+"""
+
+
+def test_frontend_chain_layout_matches_the_shared_fixture() -> None:
+    """Il mirror TypeScript della direzione delle catene (D15) dà, sulla
+    fixture condivisa, esattamente i sorgenti che dà il Python: stessa
+    variante byte per byte, stesso `null` dove il riconoscimento rinuncia."""
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node non disponibile: copia frontend non eseguibile")
+    if not _CHAIN_LAYOUT.is_file():
+        pytest.skip(f"modulo frontend assente: {_CHAIN_LAYOUT}")
+    script = _CHAIN_RUNNER.format(module=str(_CHAIN_LAYOUT), fixture=str(_CHAIN_CASES))
+    proc = subprocess.run(
+        [node, "--no-warnings", "--experimental-strip-types", "--input-type=module", "-e", script],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
+    got = json.loads(proc.stdout)
+    data = json.loads(_CHAIN_CASES.read_text(encoding="utf-8"))
+    cases = data["cases"]
+    assert got["minNodes"] == chain_layout.MIN_CHAIN_NODES
+    assert got["verticalOf"] == chain_layout.VERTICAL_OF
+    assert len(got["variants"]) == len(cases)
+    for case, from_ts in zip(cases, got["variants"], strict=True):
+        assert from_ts == case["variant"], case["name"]
+        assert chain_layout.vertical_chain_variant(case["source"]) == from_ts, case["name"]
 
 
 # --- Chromium: bundle del modulo vero ----------------------------------------

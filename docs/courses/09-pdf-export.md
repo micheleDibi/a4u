@@ -596,6 +596,32 @@ margini del testo, niente pagina dedicata, niente landscape.
   chiave, `em`/`%` senza antenati) o metriche assenti usano la costante
   di formato (`FALLBACK_BASE_FONT_PX`: Mermaid 14, Vega-Lite 11, DOT
   40/3, `function` 12 px) con `font_source="constant"`.
+- **Direzione delle catene (D15).** Un flowchart che è una CATENA
+  LINEARE dichiarata `flowchart LR` cresce solo in larghezza: nel box
+  della dispensa la catena di 12 nodi del docente esce a **2,28 pt**
+  (viewBox 2923 × 62 uu, box reso 168,0 × 3,6 mm), la stessa dichiarata
+  `TB` a **8,59 pt**; quella di 8 nodi 3,47 contro 11,00 pt. Quando il fit
+  cade sotto il pavimento della banda e il sorgente SANIFICATO — quello
+  che il renderer disegna, senza fence residui, righe-segnaposto e
+  caratteri di controllo — è una catena orizzontale
+  (`figure_compute.chain_layout.vertical_chain_variant`, pura
+  e conservativa), `figure_render_service.render_chain_variants` rende
+  ANCHE la variante verticale — il sorgente con il solo token di
+  direzione cambiato — e `_figure_width_style` misura le due nel box vero
+  e tiene quella con il corpo più grande. Il sorgente salvato non cambia
+  (nessun backfill: la scelta vive nella resa) e l'SVG non è mai
+  riscritto. La scelta emette `figure_direction_flipped` (`asset_id`,
+  `text_pt_before`, `text_pt_after`) e la voce del `fit_report` porta
+  `direction_flipped=True`. Costo: una resa in più per le sole catene
+  orizzontali fuori banda (sull'export di quattro lezioni reali: zero),
+  con chiave di cache propria (`mermaid`, sha256 del sorgente variante,
+  `THEME_VERSION`), quindi gratis dalla seconda volta e condivisa fra
+  dispensa e slide. Sulla slide, larga e bassa, la verticale di norma
+  perde (3,46 contro 3,07 pt) e la misura lascia l'orizzontale. Box della
+  decisione: quello vero del template per la dispensa
+  (`lesson_mermaid_box_mm`), la slide di riferimento 255 × 86,6 mm per le
+  slide (`reference_slide_figure_box_mm`). Dettagli e oracoli in
+  [Courses 17 § 21](17-visual-figures.md).
 - **Log e report.** Ogni fit produce `figure_fit` (info) e una
   `FigureFitEntry` nel `fit_report` di `render_lesson_html` /
   `render_slides_html`; `figure_fit_out_of_band` (warning,
@@ -604,8 +630,9 @@ margini del testo, niente pagina dedicata, niente landscape.
   figura calcolata sulla costante e per un Mermaid non misurato;
   `figure_fit_skipped` senza viewBox o con box degenere. A fine lezione
   `figure_fit_report` (info) riassume totale, in banda, l'elenco fuori
-  banda con corpo e provenienza del font e `font_fallback` (figure il cui
-  `in_band` è un'ipotesi): è l'input del gate editoriale D13.
+  banda con corpo e provenienza del font, `font_fallback` (figure il cui
+  `in_band` è un'ipotesi) e `direction_flipped` (le catene ribaltate, con
+  il corpo dopo la scelta): è l'input del gate editoriale D13.
 - **Geometria delle figure (D14).** Ogni `RenderedFigure` porta in
   `metrics.crossings` gli incroci arco × arco della figura resa e in
   `metrics.defects` le voci `codice: dettaglio` dei difetti di lettura:

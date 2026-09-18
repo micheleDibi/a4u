@@ -121,9 +121,10 @@ from app.services.figure_render_service import (
     RenderedFigure,
     available_formats,
     figure_asset_context,
+    render_chain_variants,
     render_figure_map,
 )
-from app.services.figure_scale import fit_figure_width_mm, resolve_base_font_px
+from app.services.figure_scale import FigureFit, fit_figure_width_mm, resolve_base_font_px
 from app.services.figure_theme import mermaid_initialize_js
 from app.services.mermaid_prerender import block_external_requests
 from app.services.openai_client import OpenAIError
@@ -1036,6 +1037,12 @@ async def _localize_fields(
 # letterale sul formato (D2, doc 17 § 9).
 _REVIEW_FIT_BOX_MM: tuple[float, float] = (170.0, 242.0)
 _REVIEW_BODY_PADDING_MM: dict[str, float] = {"mermaid": 2.0}
+# Box del ribaltamento della catena: il box del revisore al netto del
+# padding di Mermaid, cioè quello con cui la dispensa decide (D15).
+_REVIEW_CHAIN_BOX_MM: tuple[float, float] = (
+    _REVIEW_FIT_BOX_MM[0] - _REVIEW_BODY_PADDING_MM["mermaid"],
+    _REVIEW_FIT_BOX_MM[1],
+)
 # Suffisso della chiave della riscrittura nella validazione e nella mappa di
 # resa: l'originale è `asset:<id>`, la riscrittura `asset:<id>#review`.
 _REVIEW_SUFFIX = "#review"
@@ -1115,6 +1122,24 @@ def _review_context(output: LessonContentOutput, asset_id: str) -> ReviewContext
     return ReviewContext(title="", text=body, cited=False)
 
 
+def _fit_for_review(fmt: str, fig: RenderedFigure) -> FigureFit | None:
+    """Fit della figura nel box del revisore (lo stesso della dispensa)."""
+    box = svg_intrinsic_box(fig.svg)
+    base, _font_source = resolve_base_font_px(fmt, fig.metrics)
+    if box is None or base is None:
+        return None
+    padding = _REVIEW_BODY_PADDING_MM.get(fmt, 0.0)
+    return fit_figure_width_mm(
+        vb_w=box.vb_w,
+        vb_h=box.vb_h,
+        base_font_px=base,
+        box_w_mm=_REVIEW_FIT_BOX_MM[0] - padding,
+        box_h_mm=_REVIEW_FIT_BOX_MM[1],
+        variant="lesson",
+        intrinsic_w_px=box.width_px,
+    )
+
+
 def _figure_measure(fmt: str, source: str, fig: RenderedFigure | None) -> FigureMeasure:
     """Misura di WP5 di una figura: nodi e archi dal sorgente sanificato
     (solo grafi), geometria e corpo del testo dalla resa (se c'è)."""
@@ -1128,21 +1153,18 @@ def _figure_measure(fmt: str, source: str, fig: RenderedFigure | None) -> Figure
     metrics = fig.metrics
     text_pt: float | None = None
     in_band: bool | None = None
-    box = svg_intrinsic_box(fig.svg)
-    base, _font_source = resolve_base_font_px(fmt, metrics)
-    if box is not None and base is not None:
-        padding = _REVIEW_BODY_PADDING_MM.get(fmt, 0.0)
-        fit = fit_figure_width_mm(
-            vb_w=box.vb_w,
-            vb_h=box.vb_h,
-            base_font_px=base,
-            box_w_mm=_REVIEW_FIT_BOX_MM[0] - padding,
-            box_h_mm=_REVIEW_FIT_BOX_MM[1],
-            variant="lesson",
-            intrinsic_w_px=box.width_px,
-        )
-        if fit is not None:
-            text_pt, in_band = fit.text_pt, fit.in_band
+    fit = _fit_for_review(fmt, fig)
+    if fit is not None:
+        text_pt, in_band = fit.text_pt, fit.in_band
+        # Stessa scelta dell'export (D15): sotto la banda vince la variante
+        # verticale, se c'è e se migliora. Senza questo il revisore
+        # leggerebbe «fuori banda» su una catena che la dispensa stampa in
+        # banda.
+        if not fit.in_band and fig.chain_variant is not None:
+            flipped = _fit_for_review(fmt, fig.chain_variant)
+            if flipped is not None and flipped.text_pt > fit.text_pt:
+                metrics = fig.chain_variant.metrics
+                text_pt, in_band = flipped.text_pt, flipped.in_band
     return FigureMeasure(
         nodes=nodes,
         edges=edges,
@@ -1494,6 +1516,13 @@ async def _judge_candidates(
             )
         started = time.monotonic()
         figures = await render_figure_map(entries, language=language_code, cache_failures=False)
+        figures = await render_chain_variants(
+            entries,
+            figures,
+            box_mm=_REVIEW_CHAIN_BOX_MM,
+            variant="lesson",
+            language=language_code,
+        )
         log.info(
             "figure_review_measured",
             stage="candidates",
@@ -1619,13 +1648,21 @@ async def _review_figures(
 
     keys = [f"asset:{a.asset_id}" for a in assets]
     started = time.monotonic()
+    originals = [
+        {"format": a.format, "asset_id": key, "content": a.content}
+        for a, key in zip(assets, keys, strict=True)
+    ]
     rendered = await render_figure_map(
-        [
-            {"format": a.format, "asset_id": key, "content": a.content}
-            for a, key in zip(assets, keys, strict=True)
-        ],
+        originals,
         language=language_code,
         cache_failures=False,
+    )
+    rendered = await render_chain_variants(
+        originals,
+        rendered,
+        box_mm=_REVIEW_CHAIN_BOX_MM,
+        variant="lesson",
+        language=language_code,
     )
     log.info(
         "figure_review_measured",
