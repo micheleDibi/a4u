@@ -146,7 +146,7 @@ def clear_result_cache() -> None:
 def cached_result(spec: FunctionFigureSpec, *, language: str | None) -> FunctionRenderResult | None:
     """Risultato già calcolato per la spec (con la didascalia nella lingua
     richiesta) oppure `None`. Non calcola mai: serve al render dei PDF, che
-    legge la coda della didascalia dopo `render_svg_map` senza rieseguire
+    legge la coda della didascalia dopo `render_figure_map` senza rieseguire
     il motore nel thread di composizione dell'HTML."""
     hit = _cache_get(result_key(spec))
     return _with_caption(hit, language) if hit is not None else None

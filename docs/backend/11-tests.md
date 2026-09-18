@@ -3,9 +3,36 @@
 Test pytest (pytest 9, `pytest-asyncio` con loop di sessione). I test HTTP
 usano `httpx.AsyncClient` con `ASGITransport(app)` e una sessione SQLAlchemy
 isolata per fixture; i test «puri» (moduli leaf delle figure, prompt, script)
-non toccano il DB. Inventario rigenerato da `pytest --collect-only -q` sul
-branch `feat/academic-figures` (7 settembre 2026): **37 moduli, 877 item**;
-il conteggio degli item per modulo è indicato fra parentesi.
+non toccano il DB. Inventario rigenerato **per intero** da
+`python3 -m pytest --collect-only -q` sul branch
+`fix/asset-refs-math-figure-scale` (18 settembre 2026, WP8): **60 moduli,
+2.624 item** (zero falliti e zero saltati nell'ultima esecuzione completa
+in locale, WP8); il conteggio degli
+item per modulo è indicato fra parentesi ed è quello di questa
+rigenerazione, non più un misto di inventari parziali (la revisione di WP3,
+finding V8-2, aveva trovato otto conteggi rimasti a inventari precedenti).
+Sul branch i moduli nuovi sono sedici: dieci hanno ricevuto la scheda
+con il proprio work package, i sei restanti la ricevono qui. Restano
+senza scheda sei moduli anteriori, citati solo dove servono:
+`test_frontend_csp_header` (19), `test_frontend_figure_templates` (136),
+`test_frontend_mermaid_render_cleanup` (4),
+`test_frontend_mermaid_sanitize` (8), `test_json_spans` (13) e
+`test_prompts_md_matches_code` (2, descritto in fondo fra le verifiche
+fuori dalla suite).
+
+> **Buco di CI.** `.github/workflows/backend-ci.yml` gira solo sui path
+> `backend/**` e sul workflow stesso, `frontend-ci.yml` solo su
+> `frontend/**`. Un commit che tocca **solo** `frontend/` non esegue la
+> suite backend, che però contiene i test di specchio sul frontend
+> (`test_frontend_figure_i18n`, `test_figure_i18n_mirrors_frontend`,
+> `test_frontend_inline_math`, `test_frontend_figure_layout`,
+> `test_asset_ref_normalize`, `test_figure_scale`, `test_figure_numbering`:
+> parità Node e chiavi dei locale); un commit che tocca **solo** `docs/`
+> non esegue nessuno dei due, e `test_prompts_md_matches_code` confronta
+> proprio `docs/PROMPTS.md` con il codice. In entrambi i casi la rottura si
+> vede solo alla prima PR che tocca `backend/`: finché i `paths` non
+> cambiano, la suite backend va eseguita a mano prima di un commit di soli
+> file frontend o di sola documentazione.
 
 ---
 
@@ -132,7 +159,19 @@ reimporta il modulo e un monkeypatch nel padre non lo raggiunge.
 
 - `figure_numbering_cases.json` — casi condivisi fra `figure_numbering.py`
   e `lib/figureNumbering.ts` (duplicati, id mancante, case diverso,
-  `[fig:x]` ignorato, non citati in coda, prefissi «Figura N.»);
+  `[fig:x]` ignorato, non citati in coda, prefissi «Figura N.»), estesa dal
+  branch dei rimandi ai quattro kind;
+- `asset_ref_normalize_cases.json` — casi condivisi fra
+  `asset_ref_normalize.py` e `lib/assetRefNormalize.ts` (chiavi `cases` e
+  `cite`: rimandi in linea, ancore, blocchi opachi, liste, tag non
+  gestiti);
+- `figure_scale_cases.json` — casi condivisi fra `figure_scale.py` e
+  `lib/figureFormats.ts` (`fit`, `svg_box`, `svg_font`, `format_mm`);
+- `math_grammar_cases.json` — token e chiavi attesi della grammatica math
+  del PDF, letti dal collector, dal renderer e dalla copia
+  `lib/inlineMath.ts`;
+- `slide_figure_box_cases.json` — budget per pagina, box dell'immagine,
+  troncatura del fallback e stime di righe di `slide_geometry.py`;
 - `mermaid_v10_sample.svg` / `mermaid_v10_sample.stripped.svg` — SVG di
   Mermaid 10.9.4 preso da un asset esistente e la sua versione senza
   `max-width` (livello L2 della regressione zero, byte-identico);
@@ -223,6 +262,86 @@ di produzione riprodotto che ora materializza `ready`, `coverage_check`
 derivato, output perfetto persistito byte-identico, reset di
 `content_attempts`.
 
+### `tests/test_lesson_content_asset_refs.py` (11)
+
+Riferimenti agli asset in materializzazione di Fase 3 e tetto di risorsa
+A1 (WP5), puro salvo il gate del PATCH. `_count_asset_refs` conta le
+occorrenze per `(kind, id)` con un `Counter` al posto dell'insieme di
+`_collect_asset_refs`: un tag ripetuto produce
+`lesson_content_duplicate_asset_refs` e la lezione resta materializzata,
+un tag singolo non avvisa; il corpus dei warning unused/dangling comprende
+`examples[].content` e `tables[].markdown`. A1: `VISUAL_ASSET_CONTENT_MAX_CHARS`
+coerente con i tetti di ogni formato, applicato agli asset generati
+(`LessonContentOutput`, `LessonSlidesOutput.new_assets`) ma non ai modelli
+condivisi, e nel PATCH solo agli asset cambiati — un Mermaid storico più
+lungo e invariato non blocca la correzione di un refuso (giro 1 della
+verifica, V1-F2) e un sorgente sotto il tetto arriva al gate del renderer.
+Oracolo che falliva prima di WP5: `[FIG:a]` ripetuto tre volte non
+lasciava traccia nei log.
+
+### `tests/test_lesson_content_dedup.py` (24)
+
+Normalizzazione di `key_takeaways` e `references` al solo confine di
+scrittura (WP5, questione B5 / decisione D18). Schema puro con casi
+inline parametrizzati (nessuna fixture JSON: il TypeScript non
+partecipa): trim, vuoti, dedup case-insensitive con prima grafia,
+`lower()` e non `casefold()`, degrado sotto tre voci che pinna il mode
+"after", `too_short`/`too_long`/lista vuota sul grezzo, references a
+parità di `source` con `model_copy` che conserva la classe e le istanze
+già pulite; PATCH con `None` = non toccato, `[]` ammesso e tetto 12
+(`KEY_TAKEAWAYS_MAX`, domanda aperta 14); idempotenza Output → Update.
+Primo test del CRUD `update_lesson_content` (`seeded_db`): un PATCH senza
+liste lascia lo storico, quello dell'editor lo normalizza e l'audit conta
+le voci dopo la dedup. Ispezione del blocco `payload` di `handleSubmit`
+(le due liste partono sempre, righe vuote scartate). **Pattern nuovo**:
+`monkeypatch` di `openai_lesson_content_service.get_client` con una
+risposta preconfezionata, per esercitare il call-site di produzione senza
+rete né API key. Il worker: `_warn_on_degraded_key_takeaways` e un giro
+completo di `_process_one` con `async_session_factory` sul test engine,
+chiamata OpenAI e fix degli asset sostituiti (lezione `ready`, lista
+deduplicata in `content_raw`, warning `lesson_content_key_takeaways_below_min`
+solo quando serve).
+
+### `tests/test_figure_review.py` (70)
+
+Revisore figura ↔ testo e costo degli asset (WP6, D15, D16), inventario
+del 17 settembre 2026. Client OpenAI dei tre servizi sostituiti da un
+`get_client` finto che registra i corpi inviati (nessuna rete) e
+`Settings` copiato con una chiave finta per il validatore e il revisore.
+Kill-switch spento, `figure_review_max_attempts=0` e chiave assente:
+nessuna chiamata HTTP e nessuna `render_figure_map`. Verdetto `coerente`:
+output identico, nessun `figure_review_rejected`, misura di WP5 nel
+prompt, voce `review` con `cost_usd`. Riscritture respinte con
+l'originale byte-identico e la voce di cache intatta: invalida (due
+tentativi, il secondo riceve il motivo), con più incroci (due DOT reali
+con la stessa densità, 0 e 1 incroci misurati nel test), guardie
+deterministiche (`missing_source`, `placeholder`, `density_increased`,
+`nodes_removed` per una riduzione drastica e per un nodo rinominato,
+`nodes_isolated`, `type_changed`; flowchart, sequence, ER, sankey e pie
+controllati direttamente su `_review_guard`, l'abbinamento ricavato da un
+K4,4 ammesso; `node_ids` e `linked_ids` di `graph_rules` letti per DOT,
+flowchart, block-beta, sequence, state, class, ER, sankey, mindmap e
+gantt), Mermaid senza Chromium (`measure_unavailable`); una
+riscrittura che non peggiora è accettata dopo `_validate_slots`. Tabella
+di `review_acceptance` (13 casi). Percorso Mermaid reale (Chromium e
+CDN): originale reso una volta, poi originale e riscrittura nella stessa
+`render_figure_map`. Contesto: prima sezione citante per intero (oltre
+600 caratteri), corpo troncato per una figura non citata, tetto della
+sezione. Errori di chiamata e guasti imprevisti contenuti: un corpo 200
+non JSON (`OpenAIFigureReviewError` dal servizio, tentativo perso della
+sola figura, riscrittura dell'altra accettata e contata) e un'eccezione
+del client fuori da `OpenAIError` (la chiamata sorella, più lenta, è
+finita al ritorno della validazione e il suo usage è contato). D16: usage di
+fix e localizzazione da `build_usage_dict`, raccolta nella validazione,
+`merge_assets_usage`, giro completo di `_process_one` (`seeded_db`) con
+`content_tokens.assets` e `assets_cost_usd` e la dashboard admin che somma
+chiamata principale e asset nella fase `content` (anche con `cost_usd`
+assente, e nelle finestre a 7 e 30 giorni); un annullamento durante la
+validazione degli asset non è sovrascritto (`materialize_lesson_content`
+mai chiamata, status `failed`). Prompt IT/EN, schema strict, PROMPT 17 nel
+controllo di `docs/PROMPTS.md`, setting e superfici di deploy, box del fit
+pinnato contro il template di default.
+
 ### `tests/test_course_status_model.py` (2)
 
 `COURSE_STATUSES` 1:1 con `COURSE_STATUS_RANK` e CHECK `ck_course_status_valid`
@@ -262,17 +381,35 @@ split delle frasi, indicatori del registro, report). L'import
 `from scripts.… import` funziona perché `backend/` è in `sys.path`
 (rootdir) e `scripts/` è un namespace package.
 
+### `tests/test_measure_asset_refs.py` (13)
+
+Test puri (senza DB) di `scripts/measure_asset_refs.py`, lo script
+diagnostico che legge un export JSON e conta gli asset per kind. Pinnano
+che le definizioni dello script restino allineate a quelle di produzione:
+regex dei tag uguale a `figure_numbering.ASSET_REF_RE`, id dichiarati per
+kind speculari a `course_lesson_pdf_service._asset_ids_by_kind` (id vuoti
+e voci non-dict saltati), famiglia del teorema uguale a
+`equation_label_family`, ordine di accodamento D3; tabelle, equazioni ed
+esempi dichiarati non sono più contati come «tag senza asset», il riepilogo
+conta tutti i kind mentre l'elenco strutturale resta alle sole figure.
+`--figures` rende le figure e riporta le soglie di `graph_rules`,
+misurando ogni figura Mermaid in gruppi entro il budget; la modalità
+predefinita usa i contatori del gate. Stesso import namespace di
+`test_measure_register.py`.
+
 ---
 
 ## Prompt (registro accademico e figure)
 
-### `tests/test_prompt_register.py` (20)
+### `tests/test_prompt_register.py` (21)
 
 Blocco condiviso `prompt_register` nei prompt di Fase 3/4/5: composizione,
 ordine dei sette marcatori (LINGUA ultima), stringhe obbligatorie
 («DELIMITATORI MATH», «DIVIETI ASSOLUTI», `coverage_check`, …), guardie di
-lunghezza `MAX_SYSTEM_P3` (22.500) / `P4` (14.500) / `P5` (12.500) anche
-sulle varianti con i default, determinismo (`_p3() == _p3()`), nessun tic
+lunghezza `MAX_SYSTEM_P3` (28.900; 27.923 misurati dopo la regola di
+posizione dei tag di WP5, 28.819 con il suffisso di rigenerazione, anche
+lui sotto guardia) / `P4` (15.400) / `P5` (12.500) anche sulle
+varianti con i default, determinismo (`_p3() == _p3()`), nessun tic
 del corpus. Il testo dei prompt è statico (A19).
 
 ### `tests/test_prompt_composition_bugs.py` (14)
@@ -283,20 +420,24 @@ renderizzato, `_format_current_lesson_phase3` che serializza gli asset
 come `- {asset_id} [{format}]: {caption}` (parametrizzato su
 mermaid/vegalite/dot/function) con la guardia `"(?)" not in text`.
 
-### `tests/test_prompt_figures.py` (13)
+### `tests/test_prompt_figures.py` (31)
 
 Le quattro famiglie di figure nei prompt (WP3): il blocco «FORMATI DELLE
 FIGURE» di P3 elenca i tipi Mermaid ammessi ed esclusi (D8), le regole
 D5, lo schema compatto di `FunctionFigureSpec` (D9) e tre esempi minimi
 (Vega-Lite, DOT, `function`) che devono superare i **validatori reali**
 del registro; P4 rinvia a Fase 3 senza graffe; P5 vieta la lettura a voce
-delle sorgenti.
+delle sorgenti. WP5 (D17): il blocco `POSIZIONE DEI TAG — REGOLA RIGIDA`
+(un tag per asset su riga propria, richiamo a parole, nessuna etichetta
+davanti al tag, mai in codice, formule, esempi o tabelle), i quattro tag
+con il proprio campo id dentro la regola, i rimandi da DIVIETI e da
+`REGENERATION_SUFFIX`, l'assenza della regola da P4.
 
 ---
 
 ## Figure accademiche (doc 17)
 
-### `tests/test_figure_theme.py` (57)
+### `tests/test_figure_theme.py` (60)
 
 Tema D3 e fondamenta (WP2a), puro: chiavi i18n pienamente qualificate
 `courses.figures.*`, `figure_labels` con fallback it, `format_number`,
@@ -304,13 +445,13 @@ alias `VisualAssetFormat`, parità con `frontend/src/lib/figureTheme.ts`
 (costanti, palette, config Mermaid, `THEME_VERSION`), 34 casi
 `latex_to_unicode`, `function_caption`.
 
-### `tests/test_figure_i18n_mirrors_frontend.py` (5)
+### `tests/test_figure_i18n_mirrors_frontend.py` (7)
 
 Specchio fra `figure_theme.FIGURE_I18N` e i locale `it.json`/`en.json`
 (JSON annidato appiattito): chiavi coincidenti in entrambe le direzioni;
 salta se manca `../frontend`.
 
-### `tests/test_mermaid_prerender.py` (17)
+### `tests/test_mermaid_prerender.py` (44)
 
 Mermaid 11 (WP1), offline: pin unico `settings.mermaid_cdn_version` nella
 pagina di pre-render e in quella del validatore, `htmlLabels: false`
@@ -319,16 +460,45 @@ top-level in entrambe, re-export dei nomi storici da
 byte-identico sulla fixture 10.9.4; la fixture 11.17.2 porta ancora
 `max-width`), `_sanitize_mermaid_code`, tipi ammessi in
 `openai_image_to_mermaid_service`, vincoli 11.x nei prompt di fix e
-conversione.
+conversione. La guardia di rete (`block_external_requests` prima di
+`set_content`, solo URL del CDN) è verificata sulle quattro pagine
+headless: pre-render Mermaid, validatore, pre-render MathJax del PDF e
+frame video delle slide (WP4); `allowed_prefixes` ammette solo l'origine
+indicata (con la barra finale), i frame video solo l'host pubblico dei
+media con lo storage remoto (`_media_prefixes`, mai `public_base_url`), e
+in Chromium un `<img>` verso un host qualunque dentro una slide è
+annullato prima della GET mentre l'host ammesso passa. Misura del
+corpo dei testi (D10, Chromium e CDN): minimo per tipo sui 15 campioni
+D8, misura fallita che conserva l'SVG, e parità del ripiego statico
+(`svg_base_font_px`) con la misura su tutti i 15 tipi, pie, radar e
+sequence compresi.
 
-### `tests/test_mermaid_no_foreignobject.py` (20)
+### `tests/test_lesson_pdf_math.py` (105)
+
+Grammatica unica del math del PDF (B3): le quattro rule dollarmath sono
+nostre su entrambe le istanze (`_md_renderer`, `_md_inline_renderer`),
+flag e ordine delle rule pinnati, corpus currency (prosa byte-identica)
+e corpus math numerico, `math_inline_double` mai `<div>` in un `<p>`,
+fallback MathML loggato con `reason` e contato, WeasyPrint non rende il
+MathML, frase currency e `$$..$$` in frase nel testo del PDF; parità
+collector/renderer per uguaglianza (`RecordingMap`) su dispensa e slide,
+fixture `fixtures/math_grammar_cases.json` (token e chiavi per caso, in
+modalità `block` e `inline`), rule `math_bsdelim` su fence, code span,
+citazioni `\[1\]`, tag `\[FIG:x\]` e link, nessun pre-processing testuale
+(L11 sul corpo assemblato), `render_markdown_inline` == `markupsafe.escape`
+senza math, campi inline con math ed escape (D9), esempio con fence e riga
+vuota reiniettato come UN html block, `_math_content_for_slides` (con
+`inline_texts` da WP4), pin `settings.mathjax_cdn_version` e guardia di
+rete della pagina MathJax.
+
+### `tests/test_mermaid_no_foreignobject.py` (81)
 
 D8 sull'output reale: i 15 campioni `MERMAID_D8_SAMPLES` resi con la
 pagina di produzione producono `<text>` e nessun `<foreignObject>`;
 `journey` ne emette e il gate statico lo rifiuta. Richiede Chromium e
 `cdn.jsdelivr.net` (skip esplicito in CI).
 
-### `tests/test_mermaid_theme_palette.py` (37)
+### `tests/test_mermaid_theme_palette.py` (38)
 
 La palette arriva ai riempimenti e ai bordi dei tipi D8 nell'output reale
 di Mermaid 11 (il tema `neutral` non deriva le variabili da
@@ -343,13 +513,119 @@ HTML nelle label, frecce e annotazioni ammesse), estrazione degli asset
 dai JSONB, asset non citati, valutazione con un renderer finto, righe del
 report.
 
-### `tests/test_svg_normalize.py` (37)
+### `tests/test_svg_normalize.py` (44)
 
 `normalize_svg` (Q3): prologo rimosso, rifiuti (`<script>`,
 `<foreignObject>`, `<image>`, SMIL, `href` esterni quotati e non, `on*=`,
 `url()` non-frammento, anche con prefisso di namespace e dentro
 `<style>`), label «vedi url(x)» e attributi `aria-*` accettati, radice
-riscritta in px (pt/mm/in), `max_bytes`, `svg_to_data_uri`.
+riscritta in px (pt/mm/in), `max_bytes`, `svg_to_data_uri`. Letture per
+la banda (D10): `svg_intrinsic_box` e la cascata minima di
+`svg_base_font_px` (figlio diretto, specificità, ordine, `#id svg` solo
+annidato, `<style>` con `>`, commenti e CDATA; dichiarazioni di corpo
+fuori grammatica → `unresolved`; testo proprio come nel DOM).
+
+### `tests/test_figure_scale.py` (71)
+
+`figure_scale` (D10, D11): casi della fixture condivisa
+`figure_scale_cases.json` (`fit`, `svg_box`, `svg_font` — compresi i
+relativi `em`/`%` senza antenati, irrisolti —, `format_mm`) in Python e,
+con Node (`--experimental-strip-types`), sulla copia
+`lib/figureFormats.ts`; variant ignota, base non finita = senza testo,
+provenienze di `resolve_base_font_px`; invarianti property-based del fit
+(mai oltre il box, mai sopra il tetto, ingrandimento solo per i fluidi o
+fino al fondo della banda, fuori banda solo con il box come vincolo
+attivo); crescita massima di un `<img>` sotto banda (scala al più fondo /
+corpo naturale, corpo esattamente al fondo quando il box non la ferma,
+mai oltre il box: il costo documentato è qualche salto pagina anticipato
+nella dispensa); costanti di ripiego derivate dal tema.
+
+### `tests/test_figure_geometry.py` (46)
+
+Geometria delle figure rese (D14, WP5): incroci noti su SVG sintetici
+(due archi, stella, fascio parallelo, punto triplo, estremi condivisi,
+curve, sotto-tracciati, archi ellittici, involucri dei collegamenti,
+gobba stretta sotto `scale(10)`), trasformazioni, classi degli archi
+Mermaid e punti ciechi, tetto dei segmenti, input malformati; i quattro
+difetti di lettura DOT in Python (nessuno sui diciotto modelli, arco
+sull'etichetta del vecchio `layers`, coordinate esplicite, famiglie del
+font, involucri); controprova Chromium (`MEASURE_SVG_GEOMETRY_JS`) sui
+diciotto modelli DOT, sui sintetici, sul DOT con `tooltip` e sul K4,4
+scalato (stessi incroci e coppie, stessi segmenti sulla gobba scalata);
+pre-render Mermaid con la misura nella stessa pagina e residuo del
+batch; dal renderer al report (`with_geometry`, `measure` facoltativo,
+misura rotta che non costa la figura, `FigureFitEntry`); tetto di lavoro
+per figura e per batch, bipartito 16×16 e batch storico all'export,
+sovrapposizioni su griglia contro la scansione a coppie, `asset_id` nei
+log della validazione. Serve il binario `dot`; i casi Mermaid vogliono la
+CDN.
+
+### `tests/test_figure_geometry_cost.py` (31)
+
+Costo della misura limitato per costruzione (giro 3 di WP5, V3-F1):
+sei DOT patologici (`fontsize` 4.000, 8.000 e 1.000.000,
+`size="3000,3000!"`, trenta etichette medie, arco scalato con etichetta)
+in processi figli fermati oltre 30 s o 1,5 GB, con `validate(deep=True)`
+e `render_figure_map([BAD, GOOD])` sotto 2 s e 300 MB ed entrambe le
+figure rese; forma di nodo enorme (riquadro esatto delle Bézier) e fascio
+di 100 archi per un punto (raggruppamento a piano); la misura JS in
+Chromium su un arco scalato 5000 volte (saltato per segmenti in unità
+della radice) e su intervalli con due salti; griglia mai oltre
+`MAX_GRID_CELLS` e passo 16 sui diciotto modelli, celle contate uguali
+a quelle enumerate, coppie una volta sola, riquadri esatti delle curve,
+raggruppamento uguale al riferimento quadratico, geometria non finita
+saltata senza eccezioni, lavoro eseguito sottratto al batch DOT anche per
+una misura saltata, opzioni e residuo di lavoro della pagina Mermaid. Sul
+codice di 3d71f85 i casi di costo falliscono (349 MB, 7,8 s, 5,9 s,
+2,6 s, figli fermati oltre 1,5 GB, albero Chromium oltre 2 GB, doppio
+salto oltre 30 s).
+
+### `tests/test_graph_rules.py` (128)
+
+Soglie editoriali dei grafi (D13, D14) di `figure_compute.graph_rules`,
+sul modello di `test_vegalite_rules.py`: per ogni costante un caso alla
+soglia che passa e la controprova appena sopra che fallisce; conteggi per
+tipo sui modelli degli editor (i 15 Mermaid e i 18 DOT passano con il
+margine di calibrazione, e i conteggi DOT coincidono con i nodi e gli archi
+dell'SVG reso); ogni tipo Mermaid ammesso ha una regola di conteggio;
+varianti di sintassi di flowchart e DOT; messaggio editoriale tipizzato e
+distinto dai tetti di risorsa; aggancio dopo il gate statico in
+`MermaidRenderer.validate` e nel `validate` DOT, 422 tipizzato nel PATCH,
+messaggi entro i tetti del payload e del fix. Oracolo che falliva prima di
+WP5: un flowchart da 150 archi passava `MermaidRenderer.validate`. Giro 1
+della verifica: gli incroci misurati NON rifiutano più la figura in
+`validate(deep=True)` (un percettrone 3-4-2 finiva al fix e la lezione era
+rigenerata) e il conteggio DOT espande gli operandi sottografo
+deduplicando le coppie di `strict`. Giro 2 (V2-F2): dove Mermaid manda a
+capo da solo (forme e collegamenti del flowchart, state, mindmap,
+timeline, relazioni e note di class ed ER, blocchi della sequence)
+`MAX_LABEL_CHARS` vale per la parola più lunga — prima un evento di
+timeline da 85 caratteri andava al fix tre volte. Sorgenti patologici che
+non sollevano mai, `\r` isolato compreso. I casi che verificano davvero
+dove Mermaid 11 va a capo usano Chromium e la CDN.
+
+### `tests/test_graph_rules_cost.py` (43)
+
+Costo dei gate dei grafi limitato per costruzione (WP5). Oracoli misurati
+in processi figli sul codice precedente: `erDiagram` con una riga `A[`
+seguita da spazi durava 5,3 s a 2.400 caratteri e 42 s a 4.800 (regex del
+blocco ER cubica, sotto il tetto A1 di 12.000), `flowchart TD` con 12.000
+spazi 4,4 s, `classDiagram` con una corsa di `-` 3,2 s, note e
+partecipanti della sequence 1,4-1,9 s, `<a ` ripetuto fino a 1,2 s,
+12.000 caratteri di `\"` in un DOT 0,42 s, un'etichetta `&#` seguita da
+4.400 cifre sollevava `ValueError`. Il gate gira sincrono sull'event loop
+del worker e in un thread senza timeout nel PATCH: un sorgente ammesso
+dallo schema teneva occupati per minuti l'uno o l'altro. Ora: ogni
+sorgente dei finding sotto 0,25 s e l'insieme sotto 300 MB; una scansione
+per tipo × inizio di riga × carattere ripetuto senza casi oltre 0,25 s;
+le letture riscritte danno gli stessi risultati di quelle con il
+backtracking (confronto su input corti casuali ed esaustivi); la lettura
+Mermaid si ferma a `MAX_MERMAID_MEASURED_CHARS`, uguale al tetto A1.
+Giro 1 della coda (V1-F1): un `\r` dentro una riga di un `sankey-beta`
+faceva sollevare `csv.Error` a `validate` (500 nel PATCH, lezione
+rigenerata); ora `\r` è fra i caratteri ripetuti delle scansioni, il
+sankey fra i tipi del `validate` e sorgenti corti casuali su tutti i tipi
+non sollevano mai.
 
 ### `tests/test_vegalite_rules.py` (55)
 
@@ -360,7 +636,7 @@ ereditarietà dei campi `sequence` alla radice e nei figli
 `layer`/`vconcat`/`concat`/`hconcat`/`spec`, alias `calculate`,
 `nesting_depth`.
 
-### `tests/test_figure_render_service.py` (100)
+### `tests/test_figure_render_service.py` (360)
 
 Registro dei renderer e `run_isolated` (checklist del brief §7):
 Vega-Lite (spec valida; `data.url` annidato, > 4.000 caratteri, `mark
@@ -371,9 +647,9 @@ mancante con `monkeypatch` di `shutil.which` → `(False, "dot_unavailable")`,
 mai pass-through); Mermaid (gate statico: tipi, `%%{init`/`initialize`,
 frontmatter, HTML nelle label); `run_isolated` (`slow_target`:
 timeout reale entro la scadenza senza figli vivi, risultato da 2 MB,
-eccezione del figlio → `FigureComputeError`); `render_svg_map` (un batch
-per formato, cache LRU, cache negativa, timeout senza eccezioni, tetto
-del batch Mermaid); `validate_visual_assets_or_raise` (solo asset
+eccezione del figlio → `FigureComputeError`); `render_figure_map` e la
+proiezione `render_svg_map` (un batch per formato, cache LRU, cache
+negativa, timeout senza eccezioni, tetto del batch Mermaid); `validate_visual_assets_or_raise` (solo asset
 cambiati, payload 422). `skipif` per i casi che eseguono vl-convert o
 `dot`.
 
@@ -394,7 +670,7 @@ letterali `== "mermaid"`** fuori dai siti dichiarati in doc 17 § 9.
 `clip-path`, `vector-effect`, …) sono filtrate; gli altri warning e gli
 altri logger passano.
 
-### `tests/test_function_figure_service.py` (117)
+### `tests/test_function_figure_service.py` (129)
 
 Formato `function` (WP7, Q4): parser (passo 1: rifiuti con i messaggi per
 il docente, accettazioni, limiti), schema (`parse_function_spec` con
@@ -409,14 +685,31 @@ formula dentro il viewBox, timeout reale con `slow_target`), registro
 PATCH, endpoint `render-function` (200, 422 semantico, 422 Pydantic, 403,
 rate limit). Skip se mancano numpy/matplotlib/sympy.
 
-### `tests/test_figure_numbering.py` (58)
+### `tests/test_figure_numbering.py` (90)
 
 `figure_numbering` (D4, Q2) con la fixture condivisa: prima citazione → N
 crescente, citazioni ripetute → stesso N, id senza asset senza numero,
 `FIG` case-sensitive, orfane in coda, `strip_figure_prefix` mai «lossy»;
 parità con `lib/figureNumbering.ts` eseguita con Node.
 
-### `tests/test_lesson_pdf_figures.py` (50)
+### `tests/test_asset_ref_normalize.py` (249)
+
+`asset_ref_normalize` (D1, D2, D4): fixture condivisa
+`fixtures/asset_ref_normalize_cases.json` (blocchi `cases` e `cite`,
+specchio di `lib/assetRefNormalize.ts`), invarianti del modulo, pin delle
+regex sui due lati e wiring della vista lezione. Citazione in linea →
+rimando «Figura N» / «Tabella N» / «Lemma N» senza punto; ancora
+`[KIND:id]` su riga propria conservata e duplicati rimossi; chiave gestita
+senza ancora → UNA ancora dopo il blocco della prima citazione (liste
+intere, fence e `$$` chiusi come unità opache); dentro fence, code span e
+math i tag sono citazioni, mai ancore; la coda (`cite_asset_refs`) riceve
+solo rimandi, mai blocchi (C9); tag non gestiti byte-identici;
+idempotenza, identità senza numeri gestiti, rimando senza punteggiatura
+finale e valori speculari ai locale. I test che leggono
+`frontend/src/lib/assetRefNormalize.ts` e la vista **falliscono, non
+saltano**, finché la copia frontend non esiste: la parità è un gate.
+
+### `tests/test_lesson_pdf_figures.py` (87)
 
 Rendering delle figure nei PDF (WP4), puro su oggetti non persistiti:
 didascalie «Figura N.» in ordine di citazione, orfano in coda dopo la
@@ -427,22 +720,228 @@ Mermaid/image/legacy nel wrapper (A11-L3), slide con «Figura.» e `<img
 class="figure-svg">`, coda `function` sopravvissuta all'eviction della
 cache; WeasyPrint 69 rende le label degli SVG Mermaid 11 e degli `<img
 data:svg>` matplotlib/dot (testo estratto con pypdf, nessun warning oltre
-il filtro). `importorskip` su weasyprint/pypdf/matplotlib, `skipif` su
-`dot`.
+il filtro); banda di leggibilità (D10): golden del percorso misurato
+(v11 a 140,76 mm in dispensa e 179,15 nelle slide), figure fuori banda
+loggate e nel `fit_report`, box dalla geometria del template, larghezza
+applicata da WeasyPrint; `figure_font_fallback` per la costante di
+formato su DOT, Vega-Lite e `function` e voce `font_fallback` del summary
+`figure_fit_report`; partial con `box` (D12): `style` sul `<figure>`
+dopo `aria-label`, `_FIGURE_RE` intatta, senza box markup identico; CSS
+del template slide con `var(--figure-h)` sulle figure, l'unico `80mm`
+come ripiego della regola generica (`var(--figure-h, 80mm)`) e i residui
+`max-height` 14 e 40 mm. WP5: la forma insegnata dal prompt di Fase 3 (tag
+su riga propria, richiamo a parole) dà un blocco e lascia la frase
+intatta; punti chiave e riferimenti storici resi verbatim (3+3 `<li>`),
+contenuto nuovo deduplicato dallo schema (2+1).
+`importorskip` su weasyprint/pypdf/matplotlib, `skipif` su `dot`.
 
-### `tests/test_frontend_figure_i18n.py` (20)
+### `tests/test_lesson_pdf_figure_text_size.py` (26)
+
+Corpo del testo delle figure nel PDF (D10, D11), senza Chromium: per
+ogni caso (SVG fluidi 340×158, 507,8×158, 1200×420, 650×907, 300×1600,
+flowchart v11 misurato, DOT, Vega-Lite e `function` reali, ripieghi pie e
+radar letti dal `<style>`) dispensa e slide rese con
+`weasyprint.HTML(...).render()`, camminata sui box, scala `min(box_w/vb_w,
+box_h/vb_h)` e corpo `base × 0,75 × scala` fra 8 e 11 pt in dispensa e
+fra 10 e 14 pt nelle slide; i casi dichiarati fuori banda devono esserlo
+davvero, con `in_band=False` nel report. Tre `<img>` intrinseci in
+dispensa: testo a 4,5 pt che cresce esattamente fino a 8 pt, lo stesso
+fermato dal box di 242 mm (fuori banda, mai oltre il box), testo a 9 pt
+che resta a scala 1. Controprova: la geometria di prima di D10 porta il
+flowchart v11 a 13,3 e 19,9 pt.
+
+### `tests/test_slide_figure_geometry.py` (202)
+
+Box della figura per pagina nelle slide e nei frame video (D12):
+fixture `slide_figure_box_cases.json` (budget per pagina a 3 decimali,
+box al decimo, troncatura del fallback con gli a capo riscritti come
+`\n`, stime di righe pinnate); calibrazione dello stimatore sui
+`LineBox` reali di WeasyPrint per Helvetica, Arial, Verdana, Noto Sans,
+Liberation Sans, DejaVu Sans (`real ≤ stima ≤ real + 1` su 36 testi,
+simboli larghi compresi); `<pre>` di fallback senza a capo
+(`white-space: pre`, settimo giro): profili di lingua (35 codici:
+neutra o altra), riga alta di mn-cn, tcy e del mongolo tradizionale,
+esclusioni di vi, insieme base e righe alte a 1,70 em, righe con prima
+run ideografica a 2,46 em (ottavo giro: ideogrammi, kana, Hangul,
+Bopomofo, Tangut, Nüshu e Khitan in testa anche dopo spazi, cifre,
+parentesi, emoji, PUA, segni combinanti, modificatori e alfanumerici
+matematici; lettere latine, greche, cirilliche, arabe, devanagari,
+tibetane e a larghezza piena decidono per la baseline romana; costo
+indipendente dalle righe vicine; troncatura in bo a 12 righe contro 17
+con l'id ASCII in testa), classificatore contro gli script di GLib su
+tutto Unicode (ogni carattere a baseline ideografica è in
+`_IDEO_SCRIPT_RE`, ogni lettera che decide per la baseline romana ha uno
+script reale), una riga sorgente per riga resa qualunque sia la
+lunghezza, separatori (CRLF,
+CR, U+2028 e U+2029 a capo e riscritti come `\n`; NEL, FF e VT dentro la
+riga; NUL tolti), assenza della macchina delle larghezze mono rimossa
+(`estimate_lines(mono=True)` rifiutato); corpus avversario `pre_sources`
+(71 casi: i 25 testi dello stimatore `pre-wrap` rimosso, regole UAX #14
+dei giri 6 e 7, tab, spazi iniziali e finali, righe vuote, una riga da
+25.000 caratteri, JSON minificato, 200 righe corte, CJK, kana, Hangul,
+ebraico, arabo, devanagari, kannada, tibetano, mongolo, thai, emoji,
+separatori e controlli, riga DOT reale, i cinque casi V7-1 con
+ideogrammi, katakana e Hangul in testa e il controllo con l'id ASCII in
+testa) con le righe attese contate dagli a capo e reso nel `<pre>` del
+percorso reale in 13 lingue (it, vi, hi, th, he, ar, ru, ja, zh-cn, ko,
+kn, bo, my): `LineBox` di WeasyPrint e righe di Chromium UGUALI alla
+stima, altezza resa non oltre la stima, in WeasyPrint anche riga per
+riga;
+controprova con la regola `pre-wrap` di prima (più di 40 righe sui casi
+del sesto giro, righe in più su almeno 30 casi in entrambi i motori); i
+669 caratteri dell'insieme base su righe da 3,210 mm con DejaVu Sans
+Mono e con la pila del template; riga base più alta emulata con
+STIXNonUni (3,464 mm per riga): con `language="ja"` il marcatore resta
+nel `<pre>` e nel testo del PDF, con il profilo neutro l'ultima riga
+esce dal padding (controprova);
+mirror a regex delle costanti sul template (`white-space: pre` e
+`overflow: hidden` compresi) e dei numeri di riga citati in
+`slide_geometry.py`; modello
+additivo contro la geometria resa (`.slide-body` 255 × 120 a y 35, riga
+del titolo 10,37, figura a 35 + tag + 3 + 10,372 + 4); lezione da 14
+pagine resa senza split (titoli da 1/2/3 righe, prosa, bullet, SVG
+fluido alto, SVG intrinseco, PNG caricata, fallback da 60 righe, due
+figure, figura + tabella, didascalia da 559 caratteri, pagina
+impossibile): nessun `.slide-asset` sotto il body salvo la pagina
+impossibile loggata, immagini entro `--figure-h`, `<pre>` entro le righe
+che entrano, log di condivisione e troncatura; controprova con il cap 80
+mm monkeypatchato che DEVE sbordare; frame Chromium con
+`_VIDEO_OVERRIDE_CSS` (skip solo su `chromium.launch()`); dieci slide di
+fallback a righe lunghe, con U+2028/U+2029 o del sesto giro con le righe
+esatte, senza asset né didascalia sotto il body in WeasyPrint e nel
+frame video, `<pre>` senza pixel nascosti; il corpus nelle slide delle
+13 lingue, asset-only e con due bullet: righe esatte nei due motori,
+nessuna riga più alta della sua stima, nessuna riga sotto il clip, nessuno sbordo, una didascalia per slide,
+«…» reso e visibile dove il sorgente è troncato; nessun pixel scuro a
+destra del body nel PDF rasterizzato (pypdfium2) e nello screenshot del
+frame per otto righe larghe in it, he, ar e ja, con la controprova senza
+`overflow: hidden`; controprove della regola `pre-wrap` (didascalia persa
+e `<pre>` oltre il body di più di 40 mm sui casi del sesto giro) e dei
+separatori Unicode non contati (sbordano di oltre 40 mm) e del modello
+del settimo giro sulle righe con prima run ideografica (katakana in
+testa e birmano in un corso bo: righe oltre la stima e ultima riga sotto
+il clip; il controllo con l'id ASCII in testa resta pulito); slide di un
+corso in giapponese troncata a 18 righe più «…» (72 omesse contro 66
+in italiano); 1 slide JSON →
+1 pagina senza split; split con budget per pagina; budget diviso fra più
+blocchi; didascalia lunga e coda `function` reale che abbassano il box,
+`slide_figure_caption_squeezed` solo al pavimento con budget non
+clampato; equazioni alte (attributi esterni di SVG MathJax reali:
+`aligned` di 8 righe, `pmatrix` di 20) al cap di 80 mm del ripiego
+`var(--figure-h, 80mm)` in WeasyPrint e nel frame Chromium, con la
+controprova che senza ripiego sbordano o spariscono. Formule nella prosa
+(WP4): `prose_extent` copre l'altezza resa di titoli, prose e bullet con
+undici SVG MathJax reali (in linea alti, ripetuti su più righe, tutti in
+una frase, a blocco) per le sei famiglie, con una sovrastima limitata, e
+la controprova (senza crescita di riga o con un ex a 0,45 em) sottostima
+più di dieci casi; senza formule il campo resta una stringa e la stima è
+quella di prima; tre pagine con figura alta e formule alte nel titolo,
+nella prosa e nei bullet restano nel body in WeasyPrint e nei frame
+Chromium, mentre con il budget di prima le prime due sbordano di oltre
+5 mm. `importorskip` su weasyprint e playwright.
+
+### `tests/test_pdf_templates_autoescape.py` (42)
+
+Autoescape e campi d'autore dei tre PDF (WP4, D19): i tre env escapano
+`lesson_*.html.j2` (e il partial figura) e registrano `css_string`;
+titolo, prosa e bullet delle slide e testo, note e titolo di slide del
+discorso escono escapati, senza markdown ricco; le loro formule sono
+raccolte dal collector (`_math_content_for_slides`,
+`_math_content_for_speech`) con parità per uguaglianza e arrivano al PDF
+del discorso come SVG (testo estratto senza residui LaTeX, nessun warning
+di WeasyPrint); `materialize_lesson_speech_pdf` pre-rende con una batch e
+chiude con `_log_math_fallbacks`; su dispensa, slide e discorso con un
+template reale (URL con query, font con virgolette e backslash)
+`url("…&b=2")` è letterale, i loghi in `src` hanno l'escape
+dell'attributo, WeasyPrint chiede esattamente i tre URL originali e il
+`body` riceve la famiglia esatta; `css_string` (virgolette, backslash,
+a capo, `</style>`) contro il parser di tinycss2; piè di pagina del
+discorso con `"`, `\` e `<` nel titolo presente su ogni pagina del PDF;
+`references_assets` duplicati per maiuscole → un blocco e
+`slide_duplicate_asset_ref`; box della figura sul `<figure>` con
+l'autoescape; regola max-1-visivo del CRUD solo sulle slide toccate
+(409 `lesson_slides_multiple_visual_assets` per una seconda figura,
+tabella o nuovo asset, per una figura storica sostituita, per una slide
+nuova con due figure e per un'equazione ridichiarata come visivo con lo
+stesso id, anche senza `slides` nel payload; la slide storica con due figure resta editabile per
+titolo, equazioni ed esempi, riordino, grafie ripetute, e una storica a tre
+visivi scende a due e poi a uno), anche su una lezione salvata
+(`update_lesson_slides`, `seeded_db`); `delivery_notes` sanificate e
+validate come il testo in `materialize_lesson_speech`, con la stessa
+regola dichiarata nel prompt e nella `description` dello schema strict;
+C12 pinnato come limite dichiarato; editor e vista delle slide con
+`assetRefKey`, `uniqueAssetRefs` e `InlineMath`, vista del discorso con
+`InlineMath` su titolo di slide, testo e note (ispezione dei sorgenti);
+contenuti d'autore nei motori: URL di un asset `image` dentro `src`,
+frame video senza JavaScript d'autore, WebSocket chiusi dalla guardia di
+rete, fetcher di WeasyPrint limitato a data URL e host dei media,
+riferimenti con spazi ai bordi e visivi distinti contati come nel CRUD.
+
+### `tests/test_frontend_figure_i18n.py` (26)
 
 Guardia i18n sui componenti frontend delle figure: nessuna stringa
 italiana hard-coded nei file dell'inventario (lessico di parole di
 interfaccia, template literal esclusi), ogni chiave `t("…")` risolta in
 `it.json` e `en.json`. Salta senza `../frontend`.
 
-### `tests/test_frontend_figure_layout.py` (7)
+### `tests/test_frontend_figure_layout.py` (14)
 
-Geometria delle figure nel frontend misurata in Chromium (Playwright):
-`.lesson-prose .figure img { margin: 0 auto }`, tetto d'altezza dei
-Mermaid solo per i diagrammi orizzontali (`fullWidthSvgMaxHeightPx`
-eseguita con Node). Salta senza Playwright/Chromium.
+Geometria delle figure nel frontend: `.lesson-prose .figure img
+{ margin: 0 auto }` (Chromium, Playwright); `MermaidDiagram` misura e
+applica la banda di leggibilità (pin di sorgente: `fitFigureWidthMm(`,
+`measureSvgFontPx(`, `min(100%,`, nessun `clientWidth`/`ResizeObserver`
+né tetto d'altezza); la copia frontend eseguita con Node sulla fixture
+`figure_scale_cases.json` (larghezze web in px, costanti pinnate sul
+Python); parità nel DOM fra `measureSvgFontPx` (bundle esbuild) e
+`window.__measureSvgFontPx` del pre-render sui 15 campioni D8 e sulla
+fixture v11 (Chromium + CDN); geometria del wrapper `min(100%, Wpx)`
+calcolata dal modulo vero in Chromium: flowchart v11 a 532 px e testo
+11 pt in una colonna di 900, 100 % in una di 400, verticale 300×1000 a
+314 px. Salta solo se `chromium.launch()` fallisce.
+
+### `tests/test_frontend_inline_math.py` (8)
+
+Math inline nei campi dei blocchi del frontend (WP2, D9): i sei siti
+(`FigureFrame`, `TableBlock`, i due rami di `EquationBlock`,
+`ExampleBlock`, `LessonSlidesView`) passano da `InlineMath` (nessun
+`dangerouslySetInnerHTML`, `katex.render` con `throwOnError: false`,
+`trust: false`, `displayMode: false`); `lib/inlineMath.ts` eseguita con
+Node (`--experimental-strip-types`) produce, su un corpus di importi,
+decimali, escape, `\[FIG:x\]`/`\[1\]` e sui casi inline di
+`fixtures/math_grammar_cases.json`, gli stessi segmenti dei token
+dell'istanza zero del PDF; la `FigureFrame` vera (esbuild del frontend,
+react-i18next stubbata) montata in Chromium rende la didascalia senza
+math con il markup storico byte-identico e quella con math con
+`span.katex` in linea, senza `<p>` né `katex-display`. Salta senza
+Node/esbuild/Playwright.
+
+### `tests/test_slide_speech_asset_refs.py` (22)
+
+WP8 — il rimando testuale nella prosa di slide e discorso. PDF slide e
+PDF discorso VERI (WeasyPrint + pypdf): «Figura 1» nel testo estratto e
+zero `[FIG:`/`[TAB:`/`[EQ:` residui, dove prima il docente leggeva il tag
+grezzo (`asset_tags_left = 1` nella prova di consegna); parità dei numeri
+fra dispensa e slide per lo stesso asset, con i numeri presi una volta
+sola da `lesson_asset_refs`; un tag verso un id inesistente — e verso un
+asset dichiarato solo in Fase 4 — resta letterale e produce UN
+`slide_asset_ref_unresolved` / `speech_asset_ref_unresolved` per slide,
+con l'elenco dei tag; didascalie in una riga citate in entrambe le
+superfici e ordine `strip_figure_prefix` → `cite` pinnato; parità
+collector/renderer con una formula a cavallo di un rimando; lingua del
+corso (`Figure 1` in en); limite pinnato del TTS (`sanitize_tts_text`
+lascia il tag); parità con `lib/lessonAssetRefs.ts` compilato con
+l'esbuild del frontend ed eseguito con Node, su numeri, rimandi e tag
+irrisolti; wiring delle tre viste e del contenitore del discorso. Salta
+solo senza Node/esbuild.
+
+Dal giro di correzione del 18 settembre 2026, cinque casi in più:
+l'**accessible name** del blocco figura (`aria-label`) dice la didascalia
+CITATA e non il tag, in dispensa e nelle slide, mentre `alt_text` resta
+testo d'autore mai citato (i due lati della parità con
+`FigureFrame.tsx`, che cita già); e un `content_raw` che il corpo della
+dispensa non sa concatenare — assente, di lezione-verifica, con una voce
+di `sections` che non è un oggetto — non fa più fallire slide e discorso,
+che da WP8 quel corpo lo leggono per averne i numeri.
 
 ### `tests/test_asset_localization_gate.py` (4)
 
@@ -467,7 +966,8 @@ commit). Lo script resta il modo di LEGGERE il diff e di riallineare.
 `backend/scripts/check_prompts_md.py` estrae il primo blocco ```text di
 ogni sezione «# PROMPT n» pertinente (3 dispense con grounding, 4
 verifica, 5 slide, 6 discorso, 11 immagine → Mermaid, 12 fix degli asset
-con le varianti Vega-Lite/DOT/`function` dichiarate verbatim) e lo
+con le varianti Vega-Lite/DOT/`function` dichiarate verbatim, 17 revisore
+figura ↔ testo con la variante `_SYSTEM_REVIEW_EN`) e lo
 confronta carattere per carattere con l'output dei `_system_prompt(...)`
 resi con i segnaposto documentati (`{language_code}`, `{ruolo_docente}`,
 …; il PROMPT 6 normalizza `N * 60 = M` in `{minuti_per_lezione} * 60 =
@@ -477,7 +977,7 @@ resi con i segnaposto documentati (`{language_code}`, `{ruolo_docente}`,
 ```bash
 cd backend
 JWT_SECRET=$(printf 'x%.0s' $(seq 1 40)) python3 -m scripts.check_prompts_md
-# [OK] PROMPT 3 — dispense (grounding) (24222 caratteri) … 9/9 blocchi identici al codice
+# [OK] PROMPT 3 — dispense (grounding) (27990 caratteri) … 11/11 blocchi identici al codice
 ```
 
 Exit 0 se ogni blocco coincide, 1 con un diff unificato per blocco

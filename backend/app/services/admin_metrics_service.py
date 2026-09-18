@@ -8,15 +8,20 @@ refresh del browser.
 Costi (`*_tokens.cost_usd`): aggregati dalle 5 fasi AI corsi che usano lo
 schema arricchito (`build_usage_dict` in `openai_pricing.py`). Il glossario
 (`Course.glossary_tokens`) usa lo schema vecchio senza `cost_usd` ed è
-escluso dalla somma per non mostrare sempre "Glossary: $0".
+escluso dalla somma per non mostrare sempre "Glossary: $0". La fase
+`content` somma anche `content_tokens.assets_cost_usd`, il costo delle
+chiamate degli asset (fix, revisione figura ↔ testo, localizzazione: D16)
+che il worker fonde accanto al `cost_usd` della chiamata di Fase 3.
 """
+
 from __future__ import annotations
 
 import asyncio
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
-from sqlalchemy import Float, case, cast, func, select
+from sqlalchemy import ColumnElement, Float, case, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.course import Course
@@ -38,7 +43,6 @@ from app.schemas.admin_metrics import (
     StatusCount,
     UsersMetrics,
 )
-
 
 _CACHE_TTL_S = 60.0
 _cache: tuple[float, AdminMetricsOut] | None = None
@@ -69,7 +73,7 @@ def invalidate_cache() -> None:
 
 
 async def _compute(db: AsyncSession) -> AdminMetricsOut:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     cutoff_7d = now - timedelta(days=7)
     cutoff_30d = now - timedelta(days=30)
 
@@ -99,9 +103,7 @@ async def _compute(db: AsyncSession) -> AdminMetricsOut:
 async def _users(db: AsyncSession, *, cutoff_30d: datetime) -> UsersMetrics:
     total = (await db.execute(select(func.count(User.id)))).scalar_one()
     active = (
-        await db.execute(
-            select(func.count(User.id)).where(User.is_active.is_(True))
-        )
+        await db.execute(select(func.count(User.id)).where(User.is_active.is_(True)))
     ).scalar_one()
     active_30d = (
         await db.execute(
@@ -111,17 +113,13 @@ async def _users(db: AsyncSession, *, cutoff_30d: datetime) -> UsersMetrics:
             )
         )
     ).scalar_one()
-    return UsersMetrics(
-        total=int(total), active=int(active), active_last_30d=int(active_30d)
-    )
+    return UsersMetrics(total=int(total), active=int(active), active_last_30d=int(active_30d))
 
 
 async def _orgs(db: AsyncSession) -> OrgsMetrics:
     total = (
         await db.execute(
-            select(func.count(Organization.id)).where(
-                Organization.deleted_at.is_(None)
-            )
+            select(func.count(Organization.id)).where(Organization.deleted_at.is_(None))
         )
     ).scalar_one()
     return OrgsMetrics(total=int(total))
@@ -130,9 +128,7 @@ async def _orgs(db: AsyncSession) -> OrgsMetrics:
 async def _courses(db: AsyncSession) -> CoursesMetrics:
     total = (await db.execute(select(func.count(Course.id)))).scalar_one()
     rows = (
-        await db.execute(
-            select(Course.status, func.count(Course.id)).group_by(Course.status)
-        )
+        await db.execute(select(Course.status, func.count(Course.id)).group_by(Course.status))
     ).all()
     return CoursesMetrics(
         total=int(total),
@@ -141,11 +137,7 @@ async def _courses(db: AsyncSession) -> CoursesMetrics:
 
 
 async def _by_lesson_status(db: AsyncSession, col) -> list[StatusCount]:
-    rows = (
-        await db.execute(
-            select(col, func.count(CourseLesson.id)).group_by(col)
-        )
-    ).all()
+    rows = (await db.execute(select(col, func.count(CourseLesson.id)).group_by(col))).all()
     return [StatusCount(status=s, count=int(c)) for s, c in rows]
 
 
@@ -156,9 +148,7 @@ async def _lessons(db: AsyncSession) -> LessonsMetrics:
         slides=await _by_lesson_status(db, CourseLesson.slides_status),
         speech=await _by_lesson_status(db, CourseLesson.speech_status),
         video=await _by_lesson_status(db, CourseLesson.video_status),
-        avatar_video=await _by_lesson_status(
-            db, CourseLesson.avatar_video_status
-        ),
+        avatar_video=await _by_lesson_status(db, CourseLesson.avatar_video_status),
     )
     return LessonsMetrics(total=int(total), phases=phases)
 
@@ -170,13 +160,22 @@ async def _sum_cost(
     generated_at_col,
     cutoff_7d: datetime,
     cutoff_30d: datetime,
+    extra_keys: tuple[str, ...] = (),
 ) -> tuple[float, float, float]:
     """Restituisce `(total, last_7d, last_30d)` di
     `(jsonb_col->>'cost_usd')::float` sulla tabella implicita di
     `jsonb_col`. Le finestre sono filtrate via `generated_at_col`.
     Record con `cost_usd` NULL/mancante non contribuiscono.
+
+    `extra_keys` sono altre chiavi di costo dello stesso JSONB sommate
+    per riga (`content_tokens.assets_cost_usd`): ogni chiave assente vale
+    0, così il costo degli asset conta anche se `cost_usd` manca.
     """
-    cost_expr = cast(jsonb_col["cost_usd"].astext, Float)
+    cost_expr: ColumnElement[Any] = cast(jsonb_col["cost_usd"].astext, Float)
+    if extra_keys:
+        cost_expr = func.coalesce(cost_expr, 0.0)
+        for key in extra_keys:
+            cost_expr = cost_expr + func.coalesce(cast(jsonb_col[key].astext, Float), 0.0)
     total_expr = func.coalesce(func.sum(cost_expr), 0.0)
     last_7d_expr = func.coalesce(
         func.sum(case((generated_at_col >= cutoff_7d, cost_expr), else_=None)),
@@ -186,38 +185,42 @@ async def _sum_cost(
         func.sum(case((generated_at_col >= cutoff_30d, cost_expr), else_=None)),
         0.0,
     )
-    row = (
-        await db.execute(select(total_expr, last_7d_expr, last_30d_expr))
-    ).one()
+    row = (await db.execute(select(total_expr, last_7d_expr, last_30d_expr))).one()
     return float(row[0]), float(row[1]), float(row[2])
 
 
-async def _cost(
-    db: AsyncSession, *, cutoff_7d: datetime, cutoff_30d: datetime
-) -> CostMetrics:
-    # 5 sorgenti di costo (Glossary usa schema vecchio senza cost_usd).
-    sources: list[tuple[str, object, object]] = [
-        ("architecture", Course.architecture_tokens, Course.architecture_generated_at),
+async def _cost(db: AsyncSession, *, cutoff_7d: datetime, cutoff_30d: datetime) -> CostMetrics:
+    # 5 sorgenti di costo (Glossary usa schema vecchio senza cost_usd);
+    # `content` somma anche il costo degli asset (D16).
+    sources: list[tuple[str, object, object, tuple[str, ...]]] = [
+        ("architecture", Course.architecture_tokens, Course.architecture_generated_at, ()),
         (
             "structure",
             CourseModule.lessons_structure_tokens,
             CourseModule.lessons_structure_generated_at,
+            (),
         ),
-        ("content", CourseLesson.content_tokens, CourseLesson.content_generated_at),
-        ("slides", CourseLesson.slides_tokens, CourseLesson.slides_generated_at),
-        ("speech", CourseLesson.speech_tokens, CourseLesson.speech_generated_at),
+        (
+            "content",
+            CourseLesson.content_tokens,
+            CourseLesson.content_generated_at,
+            ("assets_cost_usd",),
+        ),
+        ("slides", CourseLesson.slides_tokens, CourseLesson.slides_generated_at, ()),
+        ("speech", CourseLesson.speech_tokens, CourseLesson.speech_generated_at, ()),
     ]
     by_phase: list[CostByPhase] = []
     total_usd = 0.0
     last_7d_usd = 0.0
     last_30d_usd = 0.0
-    for phase, jsonb_col, gen_at_col in sources:
+    for phase, jsonb_col, gen_at_col, extra_keys in sources:
         t, d7, d30 = await _sum_cost(
             db,
             jsonb_col=jsonb_col,
             generated_at_col=gen_at_col,
             cutoff_7d=cutoff_7d,
             cutoff_30d=cutoff_30d,
+            extra_keys=extra_keys,
         )
         by_phase.append(CostByPhase(phase=phase, cost_usd=t))
         total_usd += t
@@ -231,9 +234,7 @@ async def _cost(
     )
 
 
-async def _login_activity(
-    db: AsyncSession, *, cutoff_7d: datetime
-) -> LoginActivityMetrics:
+async def _login_activity(db: AsyncSession, *, cutoff_7d: datetime) -> LoginActivityMetrics:
     """Bucket per giorno UTC, sempre 7 entries (zero-fill)."""
     day = func.date_trunc("day", LoginAttempt.created_at).label("day")
     rows = (
@@ -245,7 +246,7 @@ async def _login_activity(
         )
     ).all()
 
-    today_utc = datetime.now(timezone.utc).date()
+    today_utc = datetime.now(UTC).date()
     grid: dict[str, dict[str, int]] = {}
     for i in range(7):
         d = (today_utc - timedelta(days=6 - i)).isoformat()
@@ -263,8 +264,7 @@ async def _login_activity(
             slot["failure"] += int(count)
 
     last_7d = [
-        LoginDayMetric(date=k, success=v["success"], failure=v["failure"])
-        for k, v in grid.items()
+        LoginDayMetric(date=k, success=v["success"], failure=v["failure"]) for k, v in grid.items()
     ]
     return LoginActivityMetrics(
         last_7d=last_7d,

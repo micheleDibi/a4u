@@ -1669,6 +1669,7 @@
     "figures": {
       "label": "Figure {{n}}.",
       "labelUnnumbered": "Figure.",
+      "ref": "Figure {{n}}",
       "illustrativeData": "Illustrative data, not experimental.",
       "approxValues": "Approximate values.",
       "renderError": "The figure could not be rendered.",
@@ -1694,6 +1695,25 @@
         "levels": "Level curves for z = {{values}}.",
         "none": "No notable points in the considered domain.",
         "truncated": "List truncated to the first {{n}} points per category."
+      },
+      "table": {
+        "label": "Table {{n}}.",
+        "labelUnnumbered": "Table.",
+        "ref": "Table {{n}}"
+      },
+      "equation": {
+        "label": "Equation {{n}}.",
+        "labelUnnumbered": "Equation.",
+        "ref": "Equation {{n}}"
+      },
+      "example": {
+        "label": "Example {{n}}.",
+        "labelUnnumbered": "Example.",
+        "ref": "Example {{n}}"
+      },
+      "theorem": {
+        "label": "{{kind}} {{n}}.",
+        "ref": "{{kind}} {{n}}"
       }
     },
     "theorem": {

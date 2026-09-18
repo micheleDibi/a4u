@@ -20,6 +20,7 @@ Fonte autorevole: `backend/app/core/config.py` (classe `Settings`). Override via
 | `openai_image_to_mermaid_model` | `gpt-4o` | `None` | 4000 | Immagine → Mermaid (PROMPT 11) |
 | `openai_asset_fix_model` | `gpt-4o-mini` | `None` | 4000 | Fix asset LaTeX/Mermaid/Vega-Lite/DOT/function (PROMPT 12) |
 | `openai_asset_localize_model` | `gpt-4o-mini` | — | 8000 | Localizzazione dei campi testuali degli asset (`openai_asset_localize_service`, kill-switch `asset_localize_enabled`) |
+| `openai_figure_review_model` | `gpt-4o-mini` | `None` | 4000 | Revisore figura ↔ testo (PROMPT 17; kill-switch `figure_review_enabled`, `figure_review_max_attempts` = 2) |
 | `openai_nova_model` | `gpt-4o-mini` | — | 512 (`temperature 0.7`) | Nova chat + welcome (PROMPT 15, 16) |
 | `minimax_video_model` | `MiniMax-Hailuo-02` | — | — | Clip avatar (Nota A) |
 | XTTS-v2 (RunPod) | hardcoded nel handler (`XTTS/handler.py`) | — | — | Sintesi vocale lezione (Nota C) |
@@ -426,6 +427,7 @@ In rigenerazione: `## Versione attuale del modulo (DA RIVEDERE)` + `## Indicazio
 **SCOPO**
 - File: `backend/app/services/openai_lesson_content_service.py` — `_system_prompt(language_code, *, ruolo_docente, stile_insegnamento, livello_eqf, grounding_enabled)`, chiamata da `generate_lesson_content()`.
 - Modello: `settings.openai_lesson_content_model` (default `gpt-5.5`, reasoning `high`, max 32000 token — il task più complesso della pipeline).
+- Posizione dei tag (D17): il blocco `POSIZIONE DEI TAG — REGOLA RIGIDA` (al posto del paragrafo «Per ogni asset») chiede, per figure, tabelle, equazioni ed esempi, UN tag per asset (`[FIG:asset_id]`, `[TAB:table_id]`, `[EQ:equation_id]`, `[EX:example_id]`) da solo su una riga propria fra righe vuote, dopo il paragrafo che introduce l'asset; nel testo l'asset si richiama a parole («come mostra la figura»), senza ripetere il tag, senza «Figura»/«Tabella» davanti al tag e mai dentro codice, formule, `caption`, `key_takeaways`, `references`, `examples[].content` o `tables[].markdown` (negli ultimi due il PDF non sostituisce i tag). È la forma che il renderer (PDF e web) tratta come ancora del blocco senza toccare la frase; le citazioni in linea di un contenuto storico restano gestite come rimandi testuali («Figura N»). Il blocco DIVIETI vieta la numerazione a mano e rimanda alla regola; la regola sulle didascalie resta solo in DIVIETI. Budget: P3 27.923 caratteri con ruolo/stile/EQF interpolati (+373) e 28.819 con il suffisso di rigenerazione (+445), entrambi sotto la guardia `MAX_SYSTEM_P3` invariata a 28.900; P4 non è toccato.
 - Ruolo: scrive il testo completo Markdown della lezione (sezioni, figure nei quattro formati `mermaid`/`vegalite`/`dot`/`function` — blocco «FORMATI DELLE FIGURE»: tabella «contenuto → formato → tipo di diagramma» (D8) che nomina TUTTI e quindici i tipi Mermaid con il proprio caso d'uso, tipi Mermaid ammessi ed esclusi, regole D5 sui dati e vincoli del validatore, CATALOGO Vega-Lite per famiglia d'uso (confronto fra categorie, parte sul tutto, distribuzione, andamento nel tempo, correlazione, matrice, incertezza, graduatoria) con il criterio professionale della torta, stile D3, esempi minimi Vega-Lite/DOT, schema compatto ed esempio di `FunctionFigureSpec` (D9) —, formule LaTeX, tabelle, equazioni con enunciato/dimostrazione, esempi, riferimenti, coverage_check). Il testo è statico (A19): i quattro formati sono sempre descritti; solo l'`enum` dello schema strict segue `figure_render_service.available_formats()`. Gli elenchi dei tipi Mermaid e delle funzioni ammesse sono interpolati a import da `figure_theme.MERMAID_D8_TYPES`/`MERMAID_EXCLUDED_TYPES` e `function_parse.FUNCTIONS`: il testo sotto è il risultato con i valori correnti.
 - Interpolazione: `ruolo_docente`, `stile_insegnamento` e `livello_eqf` entrano nel tono del testo, entro il REGISTRO; `{register_block}` è il blocco condiviso di `prompt_register.academic_register_block("content", language_code)` (vedi sezione «Blocco condiviso — Registro accademico»). Resta un solo campione di prosa umana (registro didattico), da imitare per costruzione, non per contenuto; il Campione A (ritmo) è stato rimosso perché induceva frasi-sentenza e antitesi a effetto.
 - Grounding sui documenti (`_system_prompt(..., grounding_enabled=True)`, da `Settings.course_lesson_content_documents_selection_enabled`): il blocco `FONTI E ANCORAGGIO — REGOLA FORTE` (subito dopo il ruolo) sostituisce il vecchio `RIFERIMENTI`; nel messaggio user il blocco documenti è selezionato PER LEZIONE da `lesson_document_selection` (definizioni, formule, concetti, esempi e struttura dei riassunti, scelti per sovrapposizione lessicale con titolo/temi/scaletta/obiettivi; budget `COURSE_LESSON_CONTENT_DOCUMENTS_CONTEXT_MAX_CHARS`, default 40k) e sta dopo `## Lezione da generare`, prima di `## Compito`. Con il kill-switch a `false` torna il comportamento storico (blocco `RIFERIMENTI`, `_build_documents_context`, vecchio ordine).
@@ -696,7 +698,8 @@ spezzare periodi, non accorciare spiegazioni.
 
 Nell'output JSON inserisci SOLO il risultato della Fase 2. La prima
 stesura non deve mai comparire. Contenuti, formule, tabelle e tag
-asset ([FIG:], [EQ:], [TAB:]) devono restare invariati tra le due fasi.
+asset ([FIG:], [EQ:], [TAB:], [EX:]) devono restare invariati tra le due
+fasi.
 
 DELIMITATORI MATH — REGOLA RIGIDA
 - Per math INLINE nel testo Markdown usa SEMPRE `$...$` (es. `$\varphi$`,
@@ -719,6 +722,7 @@ DIVIETI ASSOLUTI NEL TESTO VISIBILE
   descrizioni semantiche; NON includere codici come "[A1]" o
   "Figura M1.L2.01", né iniziare con "Figura 1"/"Fig. 1": il numero
   lo mette il renderer.
+- NON numerare gli asset ("Figura 2"): vedi POSIZIONE DEI TAG.
 
 CASO SPECIALE — LEZIONE INTRODUTTIVA (is_introductory=true):
 - Nessun caso studio o dimostrazione tecnica complessa
@@ -749,11 +753,17 @@ REQUISITI — ASSET VISIVI
 - tabelle quando devi confrontare alternative o riassumere
   classificazioni
 
-Per ogni asset: `asset_id` stabile (uso interno), referenziato almeno
-una volta nel testo tramite `[FIG:asset_id]`, `[TAB:asset_id]`,
-`[EQ:asset_id]` (questi tag verranno sostituiti dal renderer con
-l'asset rendering — non devono apparire al lettore finale, ma servono
-al parser). La `caption` è una breve descrizione semantica leggibile.
+POSIZIONE DEI TAG — REGOLA RIGIDA
+- Per ogni asset: id stabile e UN tag nel testo, `[FIG:asset_id]`,
+  `[TAB:table_id]`, `[EQ:equation_id]` o `[EX:example_id]`, che il
+  renderer sostituisce con l'asset numerato.
+- Il tag compare UNA sola volta, da solo su una riga propria fra due
+  righe vuote, dopo il paragrafo che introduce l'asset.
+- Nel testo richiami l'asset a parole ("come mostra la figura", "nella
+  tabella seguente"), senza ripetere il tag e senza "Figura",
+  "Tabella", "Equazione" o "Esempio" davanti al tag.
+- Mai tag in codice, formule, `caption`, `key_takeaways`,
+  `references`, `examples[].content` o `tables[].markdown`.
 
 FORMATI DELLE FIGURE (`visual_assets[].format`; `content` è sempre una
 stringa: codice, sorgente o spec JSON serializzata). Dal contenuto al
@@ -1193,7 +1203,7 @@ con entrambi gli argomenti vuoti ritorna la costante per identità:
 }
 ```
 
-**Varianti/note**: suffisso di rigenerazione `REGENERATION_SUFFIX` (`openai_lesson_content_service.py`), appeso solo se la lezione ha già un `content_raw` (`course_lesson_content_service.is_regeneration_for_lesson`); l'hint da solo non lo attiva.
+**Varianti/note**: suffisso di rigenerazione `REGENERATION_SUFFIX` (`openai_lesson_content_service.py`), appeso solo se la lezione ha già un `content_raw` (`course_lesson_content_service.is_regeneration_for_lesson`); l'hint da solo non lo attiva. Il suffisso chiede anche di riscrivere secondo `POSIZIONE DEI TAG` i tag ripetuti o messi dentro le frasi della versione precedente (la versione attuale entra nel messaggio user con i suoi tag); la guardia `MAX_SYSTEM_P3` vale anche per prompt + suffisso. L'output passa da `LessonContentOutput`, che normalizza `key_takeaways` e `references` (trim, vuoti scartati, dedup case-insensitive; references a parità di `source`: D18).
 
 ---
 
@@ -1954,6 +1964,10 @@ REGOLE — VINCOLI DI VALIDAZIONE (rispetta sempre)
   fornite (Fase 4)
 - ogni slide di Fase 4 ha almeno un segmento di parlato
 - `segment_id` univoci a livello di lezione (es. "SEG001", "SEG002", ...)
+- `delivery_notes` rispetta le stesse REGOLE — TTS-FRIENDLY di `text`
+  (niente abbreviazioni come "es.", "etc.", "ca.", niente caratteri
+  speciali, niente markdown, niente formule LaTeX): una sola
+  abbreviazione nelle note invalida l'intero discorso
 - somma di `estimated_duration_seconds` ∈ [target × 0.95, target × 1.05]
   con target = {minuti_per_lezione} * 60 = {secondi} secondi
 - `slide_to_segments_map` coerente con `speech_segments`:
@@ -2040,7 +2054,8 @@ In rigenerazione: `## Versione attuale del discorso (DA RIVEDERE)` (solo se esis
                             "type": "string",
                             "description": (
                                 "Annotazione opzionale per il docente su tono, ritmo, pause. "
-                                "Una frase breve."
+                                "Una frase breve. Stesse regole di `text`: niente abbreviazioni, "
+                                "niente caratteri speciali, niente markdown, niente formule LaTeX."
                             ),
                         },
                     },
@@ -2997,6 +3012,146 @@ Stile: amichevole, asciutto, niente emoji, niente preamboli. Vai dritto al punto
 **Messaggio user**: directive fissa `[Genera saluto per pagina {page!r}]` (non input reale dell'utente).
 
 **Varianti/note**: fallback `_default_welcome` (saluto generico) in it/en/es/fr/de/pt se OpenAI non è configurato o in errore (`nova_service.py:278-293`).
+
+---
+
+# PROMPT 17 — Revisore figura ↔ testo (Fase 3)
+
+**SCOPO**
+- File: `backend/app/services/openai_figure_review_service.py` — `_system_prompt(language_code)` che sceglie fra le due varianti di `_SYSTEM_PROMPTS = {"it": _SYSTEM_REVIEW_IT, "en": _SYSTEM_REVIEW_EN}` (`it` per i corsi in italiano, `en` per ogni altra lingua), chiamata da `review_figure()`.
+- Modello: `settings.openai_figure_review_model` (default `gpt-4o-mini`, reasoning `openai_figure_review_reasoning_effort` non inviato se vuoto, `max_completion_tokens` = `openai_figure_review_max_tokens`, default 4000), al più `figure_review_max_attempts` (2) chiamate per figura; kill-switch `figure_review_enabled` (nessuna chiamata HTTP e nessuna resa se `false`).
+- Ruolo: a generazione di Fase 3, dopo il fix degli asset invalidi e prima della localizzazione, dice se una figura GIÀ VALIDA corrisponde al testo che la cita. Il verdetto predefinito è `coerente` (nessuna riscrittura); con `correggi` propone la figura riscritta, che il chiamante accetta solo se supera le validazioni deterministiche e non peggiora la misura.
+
+**PROMPT** (system — `_SYSTEM_REVIEW_IT`)
+
+```text
+Sei un revisore editoriale delle figure di una dispensa universitaria.
+Ricevi una figura GIA' VALIDA (sorgente Mermaid, Graphviz DOT, spec
+Vega-Lite o spec `function`), la sua didascalia, il testo integrale della
+sezione della lezione che la cita e la misura della figura resa (nodi,
+archi, incroci fra archi, difetti di lettura, corpo del testo nella
+dispensa). Decidi se la figura corrisponde al testo.
+
+VERDETTO:
+- `coerente` e' la risposta predefinita: usala quando la figura rappresenta
+  cio' che il testo spiega, anche se la disegneresti in un altro modo, e in
+  ogni caso di dubbio. Con `coerente` il campo `source` e' null: NON
+  riscrivere una figura che corrisponde al testo.
+- `correggi` solo se la figura contraddice il testo (nodi, relazioni, verso
+  delle frecce, valori o etichette diversi da quelli che il testo espone)
+  oppure se la misura la dichiara illeggibile (incroci fra archi, etichette
+  sovrapposte, testo fuori dalla figura). Con `correggi` il campo `source`
+  contiene la figura riscritta per intero.
+
+VINCOLI DELLA RISCRITTURA:
+- Stesso formato e stesso tipo di diagramma dell'originale. Restituisci
+  SOLO il sorgente grezzo: niente backtick, niente code fence, nessun testo
+  prima o dopo.
+- Conserva TUTTI i nodi dell'originale con i loro identificativi e le
+  etichette che il testo usa: per correggere il testo di un nodo cambia la
+  sua etichetta, non l'identificativo. Non scrivere mai riferimenti come
+  `[FIG:...]`, `[TAB:...]`, `[EQ:...]`, `[EX:...]` ne' l'identificativo
+  dell'asset.
+- La riscrittura riduce la densita' solo sugli archi: gli stessi nodi, al
+  piu' gli archi dell'originale e meno incroci (riordina le dichiarazioni
+  dei nodi, cambia la direzione del diagramma, togli gli archi ridondanti),
+  mai di piu'. Ogni nodo che nell'originale ha archi ne conserva almeno
+  uno.
+- In Vega-Lite conserva tutte le righe di `data.values` e i campi
+  dell'encoding dell'originale; nel formato `function` conserva le
+  espressioni e il dominio: cambia le etichette, l'ordine e le scelte di
+  disegno, mai i dati.
+- NON aggiungere contenuti assenti dal testo della sezione: nessun nodo,
+  valore, etichetta o relazione che il testo non nomini.
+- Etichette in testo semplice, nella lingua del corso e nel registro
+  accademico del testo. Niente HTML ne' direttive `%%{init: ...}%%` in
+  Mermaid; in DOT niente font, colori o attributi che leggono file, e gli
+  attributi del grafo nella forma nuda (`rankdir=LR;`), non nel blocco
+  `graph [...]`; in Vega-Lite niente `config` e dati solo in `data.values`.
+- `reason`: una frase che motiva il verdetto (resta nei log).
+
+Output: SOLO JSON valido conforme allo schema.
+```
+
+**Variante `_SYSTEM_REVIEW_EN`** (verbatim):
+
+```text
+You are an editorial reviewer of the figures of a university course
+handout. You receive an ALREADY VALID figure (Mermaid source, Graphviz DOT,
+Vega-Lite spec or `function` spec), its caption, the full text of the
+lesson section that cites it and the measure of the rendered figure (nodes,
+edges, edge crossings, reading defects, text size in the handout). Decide
+whether the figure matches the text.
+
+VERDICT:
+- `coerente` is the default answer: use it when the figure shows what the
+  text explains, even if you would draw it differently, and whenever in
+  doubt. With `coerente` the `source` field is null: do NOT rewrite a figure
+  that matches the text.
+- `correggi` only if the figure contradicts the text (nodes, relations,
+  arrow directions, values or labels other than those the text sets out) or
+  if the measure reports it as unreadable (edge crossings, overlapping
+  labels, text outside the figure). With `correggi` the `source` field holds
+  the whole rewritten figure.
+
+REWRITE CONSTRAINTS:
+- Same format and same diagram type as the original. Return ONLY the raw
+  source: no backticks, no code fences, no text before or after.
+- Keep ALL the nodes of the original with their identifiers and the
+  labels the text uses: to correct the text of a node change its label,
+  not its identifier. Never write references such as `[FIG:...]`,
+  `[TAB:...]`, `[EQ:...]`, `[EX:...]` or the asset identifier.
+- The rewrite reduces density only on the edges: the same nodes, at most
+  the edges of the original and fewer crossings (reorder the node
+  declarations, change the diagram direction, drop redundant edges), never
+  more. Every node that has edges in the original keeps at least one.
+- In Vega-Lite keep every row of `data.values` and the encoding fields of
+  the original; in the `function` format keep the expressions and the
+  domain: change labels, order and drawing choices, never the data.
+- Do NOT add content missing from the section text: no node, value, label
+  or relation the text does not name.
+- Plain-text labels, in the course language and in the academic register of
+  the text. No HTML and no `%%{init: ...}%%` directives in Mermaid; in DOT no
+  fonts, colours or attributes that read files, and graph attributes in the
+  bare form (`rankdir=LR;`), not in a `graph [...]` block; in Vega-Lite no
+  `config` and data only in `data.values`.
+- `reason`: one sentence explaining the verdict (kept in the logs).
+
+Output: ONLY valid JSON conforming to the schema.
+```
+
+**Messaggio user** — assemblato in `build_user_message()` (etichette in italiano per entrambe le lingue, come il fix). Template:
+
+```
+FORMATO: {mermaid|vegalite|dot|function}
+LINGUA DEL CORSO: {it|en}
+DIDASCALIA: {caption, al più 600 caratteri | (assente)}
+TESTO ALTERNATIVO: {alt_text, al più 600 caratteri | (assente)}
+
+MISURA DELLA FIGURA RESA:
+- nodi: {n}; archi: {m}                                   (solo Mermaid e DOT, dal sorgente)
+- incroci fra archi: {k} | non misurati (figura non resa o misura saltata)   (solo Mermaid e DOT)
+- difetti di lettura: {codice: dettaglio; …} | nessuno        (se la figura è resa)
+- corpo minimo del testo nella dispensa: {t} pt (banda 8-11 pt: dentro|fuori)
+
+SEZIONE CHE CITA LA FIGURA: {titolo}
+{testo integrale della prima sezione che cita [FIG:id], al più 24000 caratteri}
+  — oppure, se la figura non è citata —
+LA FIGURA NON E' CITATA NEL TESTO. CORPO DELLA LEZIONE (al piu' 12000 caratteri):
+{introduzione, sezioni e sintesi, troncati}
+
+RISCRITTURA PRECEDENTE RESPINTA DALLA VALIDAZIONE:      (solo dal secondo tentativo)
+{motivo, al più 600 caratteri}
+
+FIGURA DA REVISIONARE:
+{sorgente dell'originale}
+```
+
+La sezione è la prima che contiene `[FIG:id]` (`figure_numbering.FIG_REF_RE`, id confrontato con `.strip().lower()`) nell'ordine introduzione → sezioni → sintesi; il corpo del testo nella dispensa è calcolato con `figure_scale.fit_figure_width_mm` sul box del template di default (170 × 242 mm, 168 mm per Mermaid).
+
+**Output** — `response_format` json_schema strict `figure_review`: `{"verdict": "coerente" | "correggi", "reason": string, "source": string | null}`, validato da `FigureReviewOut` (ogni campo mancante vale `coerente`). Usage: `openai_pricing.build_usage_dict` (con `cost_usd`), voce `phase="review"` di `content_tokens.assets`.
+
+**Flusso lato chiamante** (`asset_validation_service._review_figures`): le figure valide sono rese una volta con `render_figure_map` per la misura del prompt; le chiamate di un giro partono in parallelo. Un `correggi` passa da `_sanitize`, dai controlli deterministici (sorgente assente → `missing_source`; sorgente uguale all'originale → nessuna riscrittura; placeholder `[FIG:..]` → `placeholder`; tipo Mermaid diverso → `type_changed`; nodi o archi in aumento → `density_increased`; un nodo dell'originale assente o rinominato, o meno nodi per i tipi senza id → `nodes_removed`; un nodo che nell'originale aveva archi e non ne ha più → `nodes_isolated`, da `graph_rules.GraphSourceMetrics.node_ids`/`linked_ids`), dalla stessa `_validate_slots` del fix e, per Mermaid e DOT, dalla misura letta con una sola `render_figure_map` su originale e riscrittura (`review_acceptance`: riscrittura resa e misurata, incroci non superiori, nessun codice di difetto nuovo; per Vega-Lite e `function`, senza archi, decidono la conservazione dei dati — righe di `data.values`, campi dell'encoding, espressioni e dominio — e la validazione). Una riscrittura respinta lascia l'originale byte-identico, logga `figure_review_rejected` e il motivo torna al modello nel tentativo successivo; ogni chiamata logga `figure_review_verdict` (`asset_id`, `verdict`, `accepted`, `reason`, `cost_usd`). Nessun esito fa fallire la lezione: ogni errore di una chiamata, anche un corpo 200 non JSON o un'eccezione fuori da `OpenAIError`, è un tentativo perso di quella figura (`figure_review_call_failed`) e non tocca le chiamate sorelle del giro. Dettagli in [08 — Lesson content § Validazione asset](courses/08-lesson-content.md).
 
 ---
 

@@ -12,11 +12,13 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 import re
 from pathlib import Path
 
 import pytest
+import structlog.testing
 
 from app.core.config import get_settings
 from app.services import asset_validation_service as avs
@@ -24,6 +26,9 @@ from app.services import figure_theme as theme
 from app.services import mermaid_prerender as mp
 from app.services import openai_asset_fix_service as fix
 from app.services import openai_image_to_mermaid_service as i2m
+from app.services.figure_scale import SvgMetrics
+from app.services.svg_normalize import svg_base_font_px
+from tests.chromium_guard import render_batch_or_fail, require_cdn, require_chromium
 
 _FIXTURES = Path(__file__).parent / "fixtures"
 _INIT_RE = re.compile(r"mermaid\.initialize\((\{.*?\})\);", re.S)
@@ -92,20 +97,116 @@ def test_prerender_network_isolation_allows_only_the_cdn(url: str, allowed: bool
     assert mp.allows_prerender_url(url) is allowed
 
 
-def test_both_headless_pages_install_the_network_guard():
-    """Il pre-render e il validatore instradano le richieste PRIMA di
-    caricare il contenuto della pagina."""
+def test_all_headless_pages_install_the_network_guard():
+    """Il pre-render Mermaid, il validatore, il pre-render MathJax
+    (`course_lesson_pdf_service`) e i frame video delle slide
+    (`lesson_slides_video_render_service`, WP4) instradano le richieste
+    PRIMA di caricare il contenuto della pagina; i frame video, che
+    caricano HTML d'autore, girano con JavaScript spento."""
+    pytest.importorskip("weasyprint")
+    from app.services import course_lesson_pdf_service as pdf
+    from app.services import lesson_slides_video_render_service as video
+
     for source in (
         Path(mp.__file__).read_text(encoding="utf-8"),
         Path(avs.__file__).read_text(encoding="utf-8"),
+        Path(pdf.__file__).read_text(encoding="utf-8"),
+        Path(video.__file__).read_text(encoding="utf-8"),
     ):
-        guard = source.index("await block_external_requests(page)")
-        assert guard < source.index("await page.set_content(")
+        guard = source.index("block_external_requests(page")
+        assert guard < source.index("await page.set_content("), source[:80]
+    video_source = Path(video.__file__).read_text(encoding="utf-8")
+    assert video_source.count("await page.set_content(") == 1
+    assert "block_external_requests(page, allowed_prefixes=_media_prefixes())" in video_source
+    # I frame video caricano HTML d'autore: contesto con JavaScript spento.
+    assert video_source.count("java_script_enabled=False,") == 1
+    assert "java_script_enabled=True" not in video_source
+    # La guardia instrada anche i WebSocket e ricarica la pagina, perché
+    # quell'instradamento vale per i documenti caricati dopo.
+    guard_source = inspect.getsource(mp.block_external_requests)
+    ws_route = guard_source.index("await page.route_web_socket(")
+    assert guard_source.index('await page.route("**/*"') < ws_route
+    assert ws_route < guard_source.index('await page.goto("about:blank")')
     # Se un giorno le pagine cambiassero CDN, la guardia le bloccherebbe:
     # ogni URL che caricano deve stare sotto il prefisso ammesso.
-    for html in (mp._MERMAID_RENDERER_HTML, avs._VALIDATOR_HTML):
+    for html in (mp._MERMAID_RENDERER_HTML, avs._VALIDATOR_HTML, pdf._MATHJAX_RENDERER_HTML):
         for url in re.findall(r"https?://[^'\"\s]+", html):
             assert mp.allows_prerender_url(url), url
+
+
+def test_extra_prefixes_extend_the_allowlist_only_for_their_origin():
+    """`allowed_prefixes` (frame video) aggiunge solo l'origine indicata, con la
+    barra finale; senza il parametro la regola è quella di prima."""
+    extra = ("https://media.example/m/",)
+    logo = "https://media.example/m/uploads/logo.png"
+    assert mp.allows_prerender_url(logo, allowed_prefixes=extra)
+    assert mp.allows_prerender_url("HTTPS://MEDIA.EXAMPLE/m/x.png", allowed_prefixes=extra)
+    for blocked in (
+        "https://media.example/other/x.png",
+        "https://media.example.evil/m/x.png",
+        "http://127.0.0.1:8000/uploads/x.png",
+        "file:///etc/hosts",
+    ):
+        assert not mp.allows_prerender_url(blocked, allowed_prefixes=extra), blocked
+    assert not mp.allows_prerender_url("https://media.example/m/x.png")
+    assert not mp.allows_prerender_url("http://127.0.0.1/x", allowed_prefixes=("", "  "))
+    assert mp.allows_prerender_url("https://cdn.jsdelivr.net/npm/x.js", allowed_prefixes=extra)
+
+
+def test_video_frames_allow_only_the_remote_media_host(monkeypatch: pytest.MonkeyPatch):
+    """L'origine in più dei frame video è l'host pubblico dei media, solo
+    con lo storage remoto e mai il backend locale (`public_base_url`)."""
+    from app.services import lesson_slides_video_render_service as video
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "public_base_url", "http://127.0.0.1:8000")
+    monkeypatch.setattr(settings, "ovh_public_base_url", "https://media.example/m/")
+    monkeypatch.setattr(settings, "storage_backend", "local")
+    assert video._media_prefixes() == ()
+    for backend in ("ovh_ftp", "ovh_sftp"):
+        monkeypatch.setattr(settings, "storage_backend", backend)
+        assert video._media_prefixes() == ("https://media.example/m/",)
+    for base in (None, "", "ftp://media.example", "media.example"):
+        monkeypatch.setattr(settings, "ovh_public_base_url", base)
+        assert video._media_prefixes() == ()
+
+
+def _chromium_or_skip() -> None:
+    sync_api = pytest.importorskip("playwright.sync_api")
+    with sync_api.sync_playwright() as p:
+        try:
+            browser = p.chromium.launch(args=["--no-sandbox"])
+        except Exception as exc:  # launch di Chromium: verifica locale, non gate CI
+            pytest.skip(f"Chromium non disponibile: {exc!r}"[:300])
+        browser.close()
+
+
+def test_video_frames_block_author_urls_before_loading(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """Frame video reali (Chromium): un `<img>` verso un host qualunque
+    dentro una slide è annullato dalla guardia prima della GET; l'host dei
+    media ammesso passa (e fallisce per conto suo, senza blocco)."""
+    from app.services import lesson_slides_video_render_service as video
+
+    _chromium_or_skip()
+    probe = "http://127.0.0.1:9/probe.png"
+    html = (
+        "<html><head></head><body>"
+        f'<div class="slide" style="width:297mm;height:210mm"><img src="{probe}"></div>'
+        "</body></html>"
+    )
+    monkeypatch.setattr(video, "_media_prefixes", lambda: ())
+    with structlog.testing.capture_logs() as logs:
+        frames = video._screenshot_slides_sync(html, tmp_path / "a")
+    assert len(frames) == 1
+    blocked = [e["url"] for e in logs if e["event"] == "prerender_request_blocked"]
+    assert blocked == [probe]
+    monkeypatch.setattr(video, "_media_prefixes", lambda: ("http://127.0.0.1:9/",))
+    with structlog.testing.capture_logs() as logs:
+        frames = video._screenshot_slides_sync(html, tmp_path / "b")
+    assert len(frames) == 1
+    assert not [e for e in logs if e["event"] == "prerender_request_blocked"]
 
 
 def test_build_renderer_html_accepts_explicit_version():
@@ -113,6 +214,46 @@ def test_build_renderer_html_accepts_explicit_version():
     assert "mermaid@10.9.4/dist/mermaid.esm.min.mjs" in html
     assert "window.__renderMermaid" in html and "window.__mermaidReady" in html
     assert "suppressErrors: true" in html
+    # Misura del corpo dei testi nella stessa pagina (D10): la funzione di
+    # misura è inserita per intero e `__renderMermaid` resta invariato.
+    assert "window.__renderMermaidMeasured" in html and "__measureSvgFontPx" in html
+    assert mp.MEASURE_SVG_FONT_PX_JS in html and "__MERMAID_MEASURE__" not in html
+    assert "left:-100000px" in html and "visibility" not in mp.MEASURE_SVG_FONT_PX_JS
+    assert 'cs.display === "none"' in mp.MEASURE_SVG_FONT_PX_JS
+
+
+def test_v11_fixture_font_comes_from_the_root_rule():
+    """Sentinella sul formato dell'SVG: Mermaid 11 dimensiona i testi con la
+    regola radice `#mmd-N{font-size:14px}` (nessun `font-size` sui tag);
+    il parser statico lo legge come `root_rule` e conta i sei tag con
+    testo proprio. Un cambio di formato lo farebbe cadere in
+    `unresolved` (→ costante) e il test lo segnala."""
+    svg = (_FIXTURES / "mermaid11_flowchart.svg").read_text(encoding="utf-8")
+    metrics = svg_base_font_px(svg)
+    assert (metrics.font_px_min, metrics.source, metrics.text_count) == (14.0, "root_rule", 6)
+    assert svg_base_font_px(mp._strip_mermaid_max_width(svg)) == metrics
+
+
+def test_legacy_batch_names_are_projections_of_the_measured_core(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    rendered = [mp.MermaidPrerender("<svg/>", SvgMetrics(14.0, 14.0, 1, "measured")), None]
+    monkeypatch.setattr(mp, "_prerender_mermaid_batch_sync", lambda codes: rendered[: len(codes)])
+    assert mp._prerender_mermaid_to_svg_batch_sync(["a", "b"]) == ["<svg/>", None]
+    assert mp._prerender_mermaid_to_svg_batch_sync([]) == []
+
+
+def test_metrics_from_page_handles_missing_and_malformed_results():
+    ok = mp._metrics_from_page({"min": 14, "median": 14.5, "count": 6}, preview="x")
+    assert ok == SvgMetrics(14.0, 14.5, 6, "measured")
+    assert mp._metrics_from_page({"min": None, "median": None, "count": 0}, preview="x") == (
+        SvgMetrics(None, None, 0, "no_text")
+    )
+    with structlog.testing.capture_logs() as logs:
+        assert mp._metrics_from_page(None, preview="flowchart LR") is None
+        assert mp._metrics_from_page({"count": 3, "min": "x", "median": 1}, preview="p") is None
+        assert mp._metrics_from_page({"count": 2, "min": 0, "median": 0}, preview="p") is None
+    assert [e["event"] for e in logs] == ["mermaid_font_measure_failed"] * 3
 
 
 def test_pdf_service_reexports_the_old_names():
@@ -281,3 +422,117 @@ def test_image_to_mermaid_prompt_lists_allowed_types_and_label_rules():
     assert "Mai " + ", ".join(theme.MERMAID_EXCLUDED_TYPES) in prompt
     assert "%%{init: ...}%%" in prompt
     assert "italiano" in prompt and "inglese" in i2m._system_prompt("en-US")
+
+
+# ---------------------------------------------------------------------------
+# Misura del corpo dei testi nella pagina di pre-render (Chromium + CDN, D10)
+# ---------------------------------------------------------------------------
+
+# Corpo minimo (px, unità utente) misurato in Chromium sui 15 campioni D8 di
+# Mermaid 11.17.2: la sola regola radice (14) è giusta su 9 tipi (la
+# cascata del ripiego statico li risolve tutti, vedi sotto).
+_EXPECTED_MIN_PX: dict[str, float] = {
+    "flowchart": 14,
+    "sequenceDiagram": 16,
+    "classDiagram": 14,
+    "stateDiagram-v2": 14,
+    "erDiagram": 14,
+    "mindmap": 14,
+    "timeline": 14,
+    "pie": 17,
+    "xychart-beta": 14,
+    "quadrantChart": 12,
+    "sankey-beta": 14,
+    "block-beta": 14,
+    "gantt": 10,
+    "radar-beta": 12,
+    "treemap-beta": 10,
+}
+
+
+@pytest.fixture(scope="module")
+def measured_batch() -> dict[str, mp.MermaidPrerender | None]:
+    require_cdn()
+    require_chromium()
+    kinds = list(theme.MERMAID_D8_SAMPLES)
+    rendered = render_batch_or_fail(
+        lambda: mp._prerender_mermaid_batch_sync(list(theme.MERMAID_D8_SAMPLES.values()))
+    )
+    return dict(zip(kinds, rendered, strict=True))
+
+
+def test_measured_batch_returns_metrics_next_to_the_svg(
+    measured_batch: dict[str, mp.MermaidPrerender | None],
+) -> None:
+    """Ogni campione D8 esce con le metriche `measured` accanto all'SVG
+    post-processato (nessun `max-width: <px>`): il minimo per tipo è quello
+    della tabella 2(c) del piano, mai un fallback."""
+    assert set(measured_batch) == set(_EXPECTED_MIN_PX)
+    for kind, item in measured_batch.items():
+        assert item is not None, kind
+        assert item.svg.startswith("<svg") and mp._MERMAID_MAX_WIDTH_RE.search(item.svg) is None
+        assert item.metrics is not None, kind
+        assert item.metrics.source == "measured", kind
+        assert item.metrics.font_px_min == pytest.approx(_EXPECTED_MIN_PX[kind], abs=0.01), kind
+        assert item.metrics.text_count > 0 and item.metrics.font_px_median is not None, kind
+        assert item.metrics.font_px_median >= item.metrics.font_px_min, kind
+
+
+def test_static_fallback_matches_the_measure_on_every_d8_type(
+    measured_batch: dict[str, mp.MermaidPrerender | None],
+) -> None:
+    """Il ripiego di una misura fallita (`svg_base_font_px`, cascata minima
+    del `<style>`) dà lo stesso minimo di Chromium su tutti i 15 tipi, pie
+    (17, classi `.slice`/`.legend text`), radar (12) e sequence (16, `style`
+    del `<text>` ereditato dai `tspan`) compresi: prima della correzione il
+    pie in dispensa usciva a 13,36 pt con `in_band=True`."""
+    for kind, item in measured_batch.items():
+        assert item is not None and item.metrics is not None, kind
+        parsed = svg_base_font_px(item.svg)
+        assert parsed.source in ("parsed", "root_rule"), kind
+        assert parsed.font_px_min == pytest.approx(item.metrics.font_px_min, abs=0.01), kind
+
+
+def test_render_mermaid_stays_a_string_and_a_failed_measure_keeps_the_svg(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`window.__renderMermaid` resta una stringa (due test lo chiamano
+    direttamente); `__measureSvgFontPx` sulla fixture v11 dà min 14 e sei
+    testi; una misura che lancia produce `metrics=None` con
+    `mermaid_font_measure_failed` e l'SVG è comunque accettato."""
+    sync_api = pytest.importorskip("playwright.sync_api")
+    require_cdn()
+    code = theme.MERMAID_D8_SAMPLES["flowchart"]
+    fixture = (_FIXTURES / "mermaid11_flowchart.svg").read_text(encoding="utf-8")
+    with sync_api.sync_playwright() as p:
+        try:
+            browser = p.chromium.launch(args=["--no-sandbox"])
+        except Exception as exc:  # launch di Chromium: verifica locale, non gate CI
+            pytest.skip(f"Chromium non disponibile: {exc!r}"[:300])
+        try:
+            page = browser.new_page()
+            page.set_content(mp.build_mermaid_renderer_html(), wait_until="domcontentloaded")
+            page.wait_for_function("window.__mermaidReady === true", timeout=20_000)
+            svg = page.evaluate("([id, c]) => window.__renderMermaid(id, c)", ["mmd-0", code])
+            assert isinstance(svg, str) and svg.startswith("<svg")
+            measured = page.evaluate("(svg) => window.__measureSvgFontPx(svg)", fixture)
+            assert measured == {"min": 14, "median": 14, "count": 6}
+            # Il DOM misurato coincide con il parser statico sulla fixture.
+            parsed = svg_base_font_px(fixture)
+            assert (parsed.font_px_min, parsed.text_count) == (14.0, 6)
+            both = page.evaluate(
+                "([id, c]) => window.__renderMermaidMeasured(id, c)", ["m-1", code]
+            )
+            assert isinstance(both["svg"], str) and both["metrics"]["min"] == 14
+            assert page.evaluate("() => document.body.children.length") == 1  # host rimosso
+        finally:
+            browser.close()
+    # Misura che lancia: la figura resta, le metriche no, e il log lo dice.
+    monkeypatch.setattr(mp, "MEASURE_SVG_FONT_PX_JS", "() => { throw new Error('boom'); }")
+    with structlog.testing.capture_logs() as logs:
+        rendered = mp._prerender_mermaid_batch_sync([code])
+    assert rendered[0] is not None and rendered[0].svg.startswith("<svg")
+    assert rendered[0].metrics is None
+    assert [e["event"] for e in logs if e["event"].startswith("mermaid_font")] == [
+        "mermaid_font_measure_failed"
+    ]

@@ -293,8 +293,10 @@ BACKEND_PORT=9001
 - Chromium di Playwright in `/ms-playwright` (path condiviso, env
   `PLAYWRIGHT_BROWSERS_PATH`). Usato per la validazione e il pre-render
   Mermaid → SVG (Mermaid 11.x caricato da jsdelivr con il pin
-  `MERMAID_CDN_VERSION`, default `11.17.2`: il worker deve raggiungere la
-  CDN; il PDF finale è prodotto da WeasyPrint, vedi
+  `MERMAID_CDN_VERSION`, default `11.17.2`) e MathJax → SVG delle formule
+  (pin `MATHJAX_CDN_VERSION`, default `3.2.2`): il worker deve raggiungere
+  la CDN, unica origine ammessa dalla guardia di rete delle pagine
+  headless; il PDF finale è prodotto da WeasyPrint, vedi
   [09 — PDF export](courses/09-pdf-export.md)) e per il rendering delle
   slide a PNG nella generazione video (Fase 6).
 - Le altre figure sono renderizzate **offline** dentro il container

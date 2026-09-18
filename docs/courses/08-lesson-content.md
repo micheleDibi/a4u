@@ -28,7 +28,10 @@ Per ogni lezione approvata in Fase 2 (con `learning_objectives`,
 > originale è stato rimosso (vedi prompt §6 — "NON GENERARE ESERCIZI").
 > Lo schema `content_raw` espone `examples` ma non `exercises`.
 
-L'output è validato (10 validazioni di §6.4, di cui 5 tolleranti o
+L'output passa prima dallo schema `LessonContentOutput`, che normalizza
+`key_takeaways` e `references` (vedi
+[§ Punti chiave e riferimenti](#punti-chiave-e-riferimenti-normalizzazione-in-scrittura-b5--d18)),
+poi è validato (10 validazioni di §6.4, di cui 5 tolleranti o
 derivate — vedi sotto) e materializzato come JSONB `content_raw` su
 `course_lesson`. La UI rende live le figure (Mermaid, Vega-Lite, DOT,
 `function`) con la cornice «Figura N.», KaTeX e tabelle.
@@ -56,7 +59,7 @@ sostituisce la vecchia allow-set enumerata, che ometteva stati validi.
 |---|---|---|
 | `content_status` | VARCHAR(40) | CHECK ∈ (empty, pending, processing, ready, approved, failed) |
 | `content_raw` | JSONB | output AI completo (verbatim §6.3) |
-| `content_tokens` | JSONB | `{prompt, completion, total, model}` |
+| `content_tokens` | JSONB | `{model, prompt, completion, total, …, cost_usd, assets, assets_cost_usd}` (sotto, «Costo degli asset») |
 | `content_attempts` | SMALLINT | counter retry, azzerato a ogni richiesta dell'utente su lezione `failed`/`empty` |
 | `content_error` | TEXT | messaggio errore |
 | `content_generated_at` | TIMESTAMPTZ | |
@@ -143,13 +146,76 @@ fallirebbero e i warning di asset orfani/non referenziati sarebbero
 falsi positivi.
 
 - **Backend** (`course_lesson_content_service`): `_ASSET_REF_RE =
-  r"\[(FIG|TAB|EQ|EX):([^\]]+)\]"`, `_collect_asset_refs` fa
-  `kind.upper()` + `aid.strip()`; le validazioni soft sugli asset (9 e 10
-  di §6.4) confrontano i set di ref e di id entrambi `.lower()`.
+  r"\[(FIG|TAB|EQ|EX):([^\]\n]+)\]"` (stessa forma del PDF e di
+  `figure_numbering.ASSET_REF_RE`: un tag a cavallo di riga non è un tag
+  per nessun renderer), `_count_asset_refs` conta le occorrenze per
+  `(kind.upper(), id.strip().lower())` (un `Counter`, non più un
+  insieme); le validazioni soft sugli asset (9-11 di §6.4) confrontano
+  ref e id entrambi in minuscolo. Il corpus dei ref comprende
+  introduzione, sezioni, sintesi, `examples[].content` e
+  `tables[].markdown`: un tag scritto in un esempio conta come uso e un id
+  inesistente in una tabella è segnalato. Il PDF però non sostituisce i
+  tag in quei due campi (li rende come markdown del blocco): un asset
+  citato solo lì è accodato al corpo come mai citato.
+- **Rimandi e ancore a render** (`asset_ref_normalize`, mirror
+  `lib/assetRefNormalize.ts`): nella dispensa e nel PDF una citazione in
+  linea `[KIND:id]` diventa il rimando testuale «Figura N» / «Tabella N» /
+  «Equazione N» / «Esempio N» (teorema: «Lemma N», chiavi
+  `courses.figures.*.ref`, senza punto) e il blocco è inserito UNA volta
+  su riga propria dopo il blocco della prima citazione; una riga fatta del
+  solo tag è l'ancora del blocco. I numeri sono per kind
+  (`compute_asset_numbers`, prima citazione nell'ordine del documento,
+  calcolati PRIMA della normalizzazione); gli asset mai citati di ogni
+  kind sono accodati dopo la sintesi (FIG → TAB → EQ → EX). Punti chiave e
+  riferimenti ricevono solo rimandi, mai blocchi. Nulla è persistito.
 - **Frontend** (`MarkdownRenderer.tsx`): le `Map` degli asset hanno
   chiavi `asset_id.toLowerCase()` e `renderAssetBlock` cerca con
   `id.toLowerCase()`. Solo se il lookup fallisce mostra
   "Asset non trovato: `[KIND:id]`" (con l'id originale).
+
+## Punti chiave e riferimenti: normalizzazione in scrittura (B5 / D18)
+
+Questione B5 del piano della dispensa, decisione D18. `key_takeaways` e
+`references` sono normalizzati **dallo schema**, al solo confine di
+scrittura (`app/schemas/course_lesson_content.py`): due helper privati,
+`_clean_key_takeaways` e `_clean_references`, e quattro `field_validator`
+in mode "after" su `LessonContentOutput` (output AI, unico ingresso
+`openai_lesson_content_service.generate_lesson_content`) e su
+`LessonContentUpdateInput` (PATCH del docente).
+
+- Trim, voci vuote scartate (vuoto = `str.strip()`: U+00A0 cade, U+200B
+  no), dedup case-insensitive (`str.lower()`, come `_clean_argomenti` e
+  `_clean_keywords`) con ordine e grafia della prima occorrenza. Nessun
+  collasso degli spazi interni né della punteggiatura finale.
+- References: chiave `(source, citation.lower())` sulla citation
+  trimmata. La stessa citazione come `documento_caricato` e come
+  `suggerimento_generale` resta doppia. Una `citation=""` è respinta
+  dall'item (`string_too_short`, come prima); una di soli spazi supera
+  l'item ed è scartata dalla lista.
+- `min_length=KEY_TAKEAWAYS_MIN` (3) e `max_length=KEY_TAKEAWAYS_MAX`
+  (12) contano l'elenco **grezzo**. La lista persistita può quindi
+  scendere a 1-2 punti chiave senza rigenerare la lezione (in mode
+  "before" `['A', 'a', ' A ']` darebbe `too_short` e una generazione
+  intera per un difetto cosmetico). Il worker lo segnala con il warning
+  `lesson_content_key_takeaways_below_min` (`key_takeaways`, `minimum`).
+  `ValueError` solo se l'output AI resta vuoto dopo il cleanup (sole voci
+  bianche), con retry recuperabile.
+- PATCH: `None` = campo non toccato, `[]` = azzeramento ammesso (nessun
+  errore). Il tetto è 12 come per l'output AI (domanda aperta 14: con 10
+  una lezione da 11-12 punti chiave non era salvabile dall'editor).
+- **Nessuna dedup in lettura, nessun backfill.** PDF
+  (`render_lesson_html`, coda pre-resa con `_tail` sulla lista grezza),
+  vista web (`LessonContentView`) ed editor mostrano `content_raw` com'è.
+  Una lezione storica si normalizza alla rigenerazione o al primo
+  salvataggio dall'editor, che invia SEMPRE le due liste (righe vuote
+  scartate prima dell'invio). Un PATCH che non porta le liste le lascia
+  com'erano. La divergenza fra editor e PDF è temporale, non spaziale: in
+  ogni istante le superfici leggono lo stesso `content_raw`.
+- Invariante: `content_raw` non viene mai ri-validato con
+  `LessonContentOutput.model_validate` (fallirebbe con `too_short` su una
+  lezione degradata). La duplicazione e la traduzione del corso
+  (`course_duplication_service`) lavorano sul dict senza schema: i
+  duplicati storici passano nelle copie così come sono.
 
 ## Riferimenti agli obiettivi: codici nel prompt + risoluzione tollerante
 
@@ -198,7 +264,8 @@ duplicazione, dove un `"O1"` verrebbe translitterato o scartato. Forma di
 
 Prima di materializzare la lezione, il worker valida e ripara gli asset
 "fragili" (`asset_validation_service.validate_and_fix_content_assets`,
-fase di progress `validating_assets` a 88%). Un asset è "fragile" se può
+fase di progress `validating_assets` a 88%), poi revisiona le figure
+contro il testo e localizza (sotto, «Pipeline di validazione di Fase 3»). Un asset è "fragile" se può
 essere sintatticamente invalido e finire rotto nell'output (PDF / frame
 video / preview FE):
 
@@ -212,7 +279,8 @@ video / preview FE):
   RENDERABLE_FORMATS` (`mermaid`, `vegalite`, `dot`, `function`), ciascuna
   validata dal renderer del registro (vedi
   [17 — Figure accademiche](17-visual-figures.md)):
-  - `mermaid`: gate statico D8 + parse con **Mermaid 11.x**, pin unico
+  - `mermaid`: gate statico D8, soglie editoriali sul sorgente
+    (`figure_compute.graph_rules`, sotto) + parse con **Mermaid 11.x**, pin unico
     `settings.mermaid_cdn_version` (default `11.17.2`), lo stesso del
     pre-render PDF/video (`mermaid_prerender`) e del lock npm del frontend,
     con la stessa inizializzazione `figure_theme.mermaid_initialize_js`
@@ -225,10 +293,41 @@ video / preview FE):
     niente `data.url`/interattività/`config`, `clip` e `scale.domain`) ed
     euristica del criterio 10 (funzioni matematiche → `function`), poi
     render offline con vl-convert;
-  - `dot`: gate statico (header, attributi che leggono file, numero di
-    archi) e render con il binario `dot`;
+  - `dot`: gate statico (header, attributi che leggono file, tetto di
+    risorsa di 600 archi), soglie editoriali sul sorgente e render con il
+    binario `dot`; gli incroci fra archi misurati sull'SVG reso oltre
+    `MAX_EDGE_CROSSINGS` sono un warning e una voce del report, mai un
+    rifiuto;
   - `function`: `FunctionFigureSpec` (struttura Pydantic + controlli
     semantici) e render con sympy/matplotlib.
+
+  **Soglie editoriali dei grafi (D13, D14).** Una figura Mermaid o DOT
+  valida ma illeggibile è rifiutata con un messaggio che comincia per
+  `graph_too_dense:` e dice che cosa ridurre (`nodi 42 > 30`, `archi 60 >
+  45`, `caratteri dell'etichetta 80 > 64`, `caratteri del titolo 130 >
+  110`, `righe 130 > 120`, `caratteri del sorgente 3500 > 3000` solo
+  Mermaid), seguito una volta dalla clausola «qui semplificare è la correzione
+  richiesta: mantieni tipo e significato», perché il system prompt del fix
+  vieta di togliere contenuti. Il messaggio arriva al fix AI come ogni altro
+  errore; nel PATCH manuale è il `type` `graph_too_dense` del 422 per
+  asset. Le soglie sono provvisorie (calibrate sui 57 modelli degli
+  editor) e tarate perché nessuna figura normale le superi: un errore qui
+  costa, a fix esauriti, la rigenerazione della lezione. Per questo, dove
+  Mermaid manda a capo da sé (forme e collegamenti del flowchart, state,
+  mindmap, timeline, relazioni e note di class ed ER, blocchi della
+  sequence), la soglia dell'etichetta vale per la parola più lunga e non
+  per la riga: un evento di timeline descrittivo è una figura normale. Gli incroci fra
+  archi non rifiutano mai una figura: un percettrone multistrato 3-4-2 ne
+  ha 16 per costruzione e il fix non potrebbe toglierli; oltre
+  `MAX_EDGE_CROSSINGS` diventano la voce `graph_too_dense: incroci fra
+  archi …` fra i difetti della figura e il warning
+  `figure_geometry_defects` (DOT già alla validazione profonda, Mermaid
+  all'export). Il tetto di risorsa sul sorgente
+  (`VISUAL_ASSET_CONTENT_MAX_CHARS`, 12.000 caratteri) vale sugli asset
+  generati e, nel PATCH, sui soli asset cambiati: una lezione storica con
+  un Mermaid più lungo resta modificabile nel testo. Dettagli e regole di
+  conteggio per tipo in
+  [17 — Figure accademiche](17-visual-figures.md), sezione 12.
 
   Il prompt di Fase 3 (PROMPT 3 in `docs/PROMPTS.md`, blocco «FORMATI
   DELLE FIGURE») descrive sempre i quattro formati; lo schema strict
@@ -266,6 +365,135 @@ stesso servizio valida anche gli asset di Fase 4
 (`validate_and_fix_slides_assets`: `new_assets` Mermaid + math inline
 nelle slide).
 
+### Pipeline di validazione di Fase 3: fix → revisione → localizzazione
+
+`validate_and_fix_content_assets(output, *, language_code)` ritorna
+`(output, assets_usage)` ed esegue tre passi nell'ordine:
+
+1. **fix** degli asset invalidi (sopra);
+2. **revisione figura ↔ testo** (D15,
+   `openai_figure_review_service.review_figure`, PROMPT 17 in
+   `docs/PROMPTS.md`; kill-switch `FIGURE_REVIEW_ENABLED`, al più
+   `FIGURE_REVIEW_MAX_ATTEMPTS` chiamate per figura, default 2; saltata
+   prima di ogni resa se manca `OPENAI_API_KEY`). Ogni figura valida
+   (`visual_assets[]` con formato renderizzabile) è inviata al modello con
+   didascalia e testo alternativo, il **testo integrale della prima
+   sezione che la cita** (`FIG_REF_RE` su introduzione → sezioni →
+   sintesi, id confrontato con `.strip().lower()`; tetto di sicurezza
+   24.000 caratteri) oppure, se non è citata, il corpo della lezione
+   troncato a 12.000 caratteri, e la **misura di WP5** dell'originale:
+   nodi e archi dal sorgente (`graph_rules`), incroci e difetti di lettura
+   dalla figura resa, corpo minimo del testo nella dispensa A4 di default
+   (170 × 242 mm, banda 8-11 pt). Gli originali sono resi una volta con
+   `render_figure_map` (DOT, Vega-Lite e `function` sono hit della cache
+   della validazione profonda; i Mermaid costano un Chromium per lezione,
+   0,8-1,8 s misurati il 17 settembre 2026; rese **speculative**,
+   `cache_failures=False`: un loro guasto non mette in cache negativa le
+   figure dell'export). Le chiamate di un giro partono in parallelo, ma in
+   volo non ne sta mai più di `FIGURE_REVIEW_MAX_PARALLEL` (default 4,
+   semaforo per processo: il tetto vale anche fra lezioni concorrenti). Il
+   verdetto predefinito è **`coerente`**: nessuna riscrittura. Con **`correggi`** il sorgente proposto passa da
+   `_sanitize` e da controlli deterministici (`missing_source`, sorgente
+   identico = nessuna riscrittura, `placeholder`, `type_changed` per un
+   tipo Mermaid diverso, `density_increased` se nodi o archi aumentano,
+   `nodes_removed` se manca un nodo dell'originale, per id o, nei tipi
+   senza id, per numero, `nodes_isolated` se un nodo che aveva archi
+   resta senza; togliere archi è ammesso),
+   poi dalla stessa `_validate_slots` del fix e, per Mermaid e DOT, dalla
+   misura: originale e riscrittura sono letti dalla stessa
+   `render_figure_map` (l'originale è un hit della cache, la riscrittura
+   DOT è in cache dalla validazione profonda, quella Mermaid è resa e
+   misurata nella pagina del pre-render: circa 2 s in più fra parse e
+   misura). Regola di accettazione (`review_acceptance`): la riscrittura
+   deve essere resa (`measure_unavailable`, per esempio Chromium assente)
+   e misurata (`measure_skipped`, anche quando è saltata la misura
+   dell'originale: mai un'accettazione senza misura); con l'originale
+   misurato gli incroci non aumentano (`crossings: n > m`) e nessun codice
+   di difetto compare più volte che nell'originale (`new_defects: …`);
+   con l'originale non misurato la riscrittura deve essere senza difetti.
+   Vega-Lite e `function` non hanno archi né misura geometrica: al loro
+   posto vale la **conservazione dei dati** (`_DATA_GUARDS`), che entra fra
+   i controlli deterministici: per Vega-Lite le righe inline
+   (`data.values`, `datasets`, a ogni livello della composizione) non
+   diminuiscono (`rows_removed`), i blocchi `data.sequence` restano
+   (`sequence_removed`) e i campi citati dall'encoding ci sono ancora
+   (`fields_removed`); per `function` restano tutte le espressioni
+   (`expressions_changed`, confronto senza spazi) e il dominio non si
+   restringe (`domain_reduced`). Il confronto è sui conteggi e sui campi,
+   non sull'identità delle righe: correggere un valore sbagliato resta una
+   riscrittura legittima, cancellare o sostituire i dati no. Una
+   riscrittura respinta lascia l'originale
+   **byte-identico** (nessuna scrittura in `content`, voce di cache
+   dell'originale intatta), logga `figure_review_rejected` (`reason`,
+   `crossings_before`, `crossings_after`) e il motivo torna al modello nel
+   tentativo successivo; le riscritture accettate si applicano tutte
+   insieme a fine revisione. Ogni chiamata logga `figure_review_verdict`
+   (`asset_id`, `verdict`, `accepted`, `outcome`, `reason`, `cost_usd`).
+   La revisione **non fa mai fallire la lezione**: ogni errore di una
+   chiamata (HTTP, corpo 200 non JSON, schema, eccezione imprevista del
+   client) è un tentativo perso di quella figura
+   (`figure_review_call_failed`) e non tocca le chiamate sorelle del giro,
+   che finiscono e restano contate; un guasto imprevisto fuori dalle
+   chiamate diventa `figure_review_failed` con gli originali intatti. Una
+   chiamata comunque pagata (200 con JSON troncato da
+   `OPENAI_FIGURE_REVIEW_MAX_TOKENS` o schema fuori contratto) porta il suo
+   usage nell'eccezione (`OpenAIError.usage`) e resta contabilizzata, con
+   `cost_usd` anche nel log del tentativo perso;
+3. **localizzazione** dei campi rimasti in un'altra lingua, con
+   rivalidazione non fatale dei kind strutturali.
+
+Dopo i tre passi il worker rilegge `content_status` (secondo
+cancel-check, `lesson_content_cancelled_post_assets`): un annullamento
+arrivato mentre gli asset erano in validazione scarta il risultato, come
+dopo la chiamata di Fase 3, e non viene sovrascritto da `ready`. Una
+lezione annullata non ha una riga in `content_tokens`, quindi il costo
+già speso non è contabilizzato: resta nel log dell'annullamento
+(`cost_usd`, `assets_calls`, `assets_cost_usd`). Lo stesso vale per un
+fix che non si risolve: `AssetFixUnresolvedError` porta con sé le
+chiamate già pagate e il worker le logga
+(`lesson_content_assets_cost_discarded`) prima di far rigenerare la
+lezione.
+
+**Costo degli asset in `content_tokens` (D16).** Fix, revisione e
+localizzazione producono l'usage di `openai_pricing.build_usage_dict`
+(`model`, `prompt`, `completion`, `total`, `reasoning_effort`,
+`reasoning_tokens`, `cached_tokens`, `duration_ms`, `cost_usd`). Ogni
+chiamata è una voce di `assets_usage` con `phase` (`fix`, `review`,
+`localize`) e `asset_id` (l'id dello slot: `asset:<id>`, `eq:<id>`,
+`sec0.content#1`…; `None` per la localizzazione, che copre più campi e
+porta `fields`). Il worker lo fonde con
+`asset_validation_service.merge_assets_usage` prima di
+`materialize_lesson_content`. Esempio reso da `merge_assets_usage` con i
+valori del test del worker (`tests/test_figure_review.py`: Fase 3 con 1.000
++ 2.000 token su `gpt-5.5`, un fix e una revisione con 3.000 + 300 token su
+`gpt-4o-mini`; campi `reasoning_*`, `cached_tokens` e `duration_ms` delle
+voci omessi qui):
+
+```json
+{
+  "model": "gpt-5.5", "prompt": 1000, "completion": 2000, "total": 3000,
+  "reasoning_effort": "high", "cost_usd": 0.045,
+  "assets": [
+    {"phase": "fix", "asset_id": "asset:g9", "model": "gpt-4o-mini",
+     "prompt": 3000, "completion": 300, "total": 3300, "cost_usd": 0.00063},
+    {"phase": "review", "asset_id": "asset:g9", "model": "gpt-4o-mini",
+     "prompt": 3000, "completion": 300, "total": 3300, "cost_usd": 0.00063}
+  ],
+  "assets_cost_usd": 0.00126
+}
+```
+
+`cost_usd` resta quello della chiamata principale. La dashboard admin
+(`admin_metrics_service`) somma nella fase `content` `cost_usd` e
+`assets_cost_usd` di ogni riga (una chiave assente vale 0), anche nelle
+finestre a 7 e 30 giorni. Nessuna colonna
+nuova e nessuna migrazione (`content_tokens` è JSONB). Limiti: le
+chiamate di una generazione poi fallita (lezione rimessa in coda) non
+sono registrate, come la chiamata principale; una risposta pagata ma
+illeggibile (JSON o schema non validi) non ha usage; in Fase 4 lo stesso
+usage è solo loggato (`slides_assets_usage`), `slides_tokens` non lo
+raccoglie.
+
 ## Architettura backend
 
 ### Servizi OpenAI
@@ -284,6 +512,12 @@ nelle slide).
   `generate_lesson_assessment()` per le lezioni `is_assessment`
   (verifica delle competenze, schema MC/aperte distinto). Vedi
   [PROMPTS.md — PROMPT 3](../PROMPTS.md).
+- `openai_asset_fix_service.py`, `openai_figure_review_service.py`,
+  `openai_asset_localize_service.py` — i tre servizi ausiliari degli asset
+  chiamati da `asset_validation_service` (fix → revisione →
+  localizzazione, sezione «Pipeline di validazione di Fase 3»): PROMPT 12,
+  PROMPT 17 e il prompt di localizzazione; usage di `build_usage_dict`
+  raccolto in `content_tokens.assets`.
 
 #### Prompt "v4" — due fasi interne in un solo call
 
@@ -300,9 +534,44 @@ fasi interne**, eseguite in un **unico call** OpenAI:
 
 Nell'output JSON il modello inserisce **solo il risultato della Fase
 2**; la prima stesura non compare mai. Contenuti, formule, tabelle e
-tag asset (`[FIG:]`, `[EQ:]`, `[TAB:]`) restano invariati tra le due
-fasi — non è un doppio call, è un'istruzione di processo dentro lo
-stesso prompt.
+tag asset (`[FIG:]`, `[EQ:]`, `[TAB:]`, `[EX:]`) restano invariati tra
+le due fasi — non è un doppio call, è un'istruzione di processo dentro
+lo stesso prompt.
+
+#### Posizione dei tag (D17)
+
+Il blocco `POSIZIONE DEI TAG — REGOLA RIGIDA` (al posto del vecchio
+paragrafo «Per ogni asset») nomina i quattro tag con il campo id del
+proprio array (`[FIG:asset_id]`, `[TAB:table_id]`, `[EQ:equation_id]`,
+`[EX:example_id]`), quindi vale per figure, tabelle, equazioni ed
+esempi, e chiede:
+
+- UN tag per asset, da solo su una riga propria fra due righe vuote,
+  dopo il paragrafo che introduce l'asset (il renderer lo sostituisce con
+  l'asset numerato);
+- nel testo il richiamo a parole («come mostra la figura», «nella tabella
+  seguente»), senza ripetere il tag e senza «Figura»/«Tabella»/
+  «Equazione»/«Esempio» davanti al tag;
+- mai un tag in codice, formule, `caption`, `key_takeaways`,
+  `references`, `examples[].content` o `tables[].markdown` (negli ultimi
+  due il PDF non sostituisce i tag).
+
+È la forma che il renderer tratta come ancora del blocco senza toccare la
+frase (test `test_the_layout_taught_by_the_phase3_prompt_leaves_the_prose_alone`).
+La vecchia formula «referenziato almeno una volta» ammetteva le
+ripetizioni, che `_count_asset_refs` ora segnala
+(`lesson_content_duplicate_asset_refs`); le citazioni in linea dei
+contenuti storici restano gestite come rimandi «Figura N». Il blocco
+DIVIETI vieta la numerazione a mano e rimanda alla regola (la regola
+sulle didascalie sta solo lì); `REGENERATION_SUFFIX` chiede di riscrivere
+secondo la regola i tag ripetuti o dentro le frasi. Budget misurato:
+27.923 caratteri nella variante più lunga (+373) e 28.819 con il
+suffisso di rigenerazione (+445), entrambi sotto `MAX_SYSTEM_P3 = 28_900`
+invariato (`tests/test_prompt_register.py`, che controlla anche la
+variante di rigenerazione); la regola non entra in Fase 4, il cui
+margine è di 300 caratteri. Testo verbatim in
+[PROMPTS.md — PROMPT 3](../PROMPTS.md), verificato da
+`scripts/check_prompts_md.py`.
 
 Entrambi inseriscono `reasoning_effort` nel body via
 `apply_reasoning_effort()` (`openai_client.py`) — solo per modelli
@@ -333,6 +602,11 @@ per lezione del ~40%, qualità leggermente inferiore. Vedi
     (`lesson_structure_is_ready`); regressione esplicita
     `course.status='content_pending'`.
   - `materialize_lesson_content` — applica le **10 validazioni §6.4**:
+    0. (schema, prima della materializzazione) `key_takeaways` e
+       `references` già normalizzati da `LessonContentOutput`: trim,
+       vuoti scartati, dedup case-insensitive con ordine conservato,
+       references a parità di `source`; `min_length=3` conta il grezzo,
+       la lista persistita può degradare a 1-2 voci
     1. `lesson_id` ↔ `lesson_code` match (hard)
     2. `section_id` univoci (hard)
     3. `asset_id` univoci per tipo (visual_assets, tables, equations, examples) (hard)
@@ -347,7 +621,13 @@ per lezione del ~40%, qualità leggermente inferiore. Vedi
     7. `coverage_check.objectives_covered` **derivato** dalle sections
     8. `coverage_check.topics_covered` **derivato** dalle sections
     9. Asset orfani (referenziati ma non definiti) → warning soft
+       `lesson_content_dangling_asset_refs`
     10. Asset non referenziati nel testo → warning soft
+       `lesson_content_unused_assets`
+    11. Tag ripetuti (stesso `(kind, id)` più di una volta nel corpus) →
+       warning soft `lesson_content_duplicate_asset_refs` con
+       `duplicated={"FIG:a": 3}`; la materializzazione prosegue (il PDF
+       tiene una sola ancora e trasforma le altre citazioni in rimandi)
   - `approve_lesson_content` / `approve_all_lessons_content` —
     l'approve-all è **tollerante** (come quelli di slide/discorso): ignora
     le lezioni `empty` (non ancora generate — normali nel flusso
@@ -358,14 +638,17 @@ per lezione del ~40%, qualità leggermente inferiore. Vedi
   - `_recompute_course_content_status`
 - `course_lesson_content_crud.py` — edit manuale di `content_raw`
   (richiede status `ready`/`approved`). Validazioni allentate (solo
-  unicità ID, no coverage hard).
+  unicità ID, no coverage hard). Il PATCH normalizza `key_takeaways` e
+  `references` che porta (schema `LessonContentUpdateInput`); i campi
+  assenti non vengono riscritti; il conteggio di audit `fields.*` è
+  post-normalizzazione.
 
 ### Worker parallelo
 
 `course_lesson_content_worker.py` — speculare al worker Fase 2 ma
 scoped a livello LEZIONE:
 - `_inflight: set[UUID]` su `lesson_id` (claim atomico in `_tick`,
-  vedi [02 — Architecture](../02-architecture.md#pattern-batch-parallelo-lesson_structure-lesson_content-lesson_pdf))
+  vedi [02 — Architecture](../02-architecture.md#pattern-batch-parallelo-lesson_structure-lesson_content-lesson_slides-lesson_speech-lesson_pdf-lesson_slides_pdf-lesson_speech_pdf-lesson_video-lesson_avatar_video))
 - `_semaphore = asyncio.Semaphore(course_lesson_content_max_concurrency)`
   (default `3`, output 5x più grande di Fase 2)
 - Polling: `course_lesson_content_poll_interval_seconds` (default `4`)
@@ -379,6 +662,16 @@ scoped a livello LEZIONE:
   `course_glossary_service.ensure_glossary_ready` (~10-20s).
 - Ticker progress: ease-out 15→85% in ~90s (lezione più lunga di
   Fase 2 → ticker più lento).
+- **Costo degli asset** (D16): dopo `validate_and_fix_content_assets`
+  l'usage della chiamata di Fase 3 riceve `assets` e `assets_cost_usd`
+  (`merge_assets_usage`), prima del filtro delle fonti riservate e di
+  `materialize_lesson_content`; `cost_usd` resta quello della chiamata
+  principale.
+- **Punti chiave degradati** (D18): dopo la materializzazione,
+  `_warn_on_degraded_key_takeaways` emette
+  `lesson_content_key_takeaways_below_min` se la dedup dello schema ha
+  lasciato meno di `KEY_TAKEAWAYS_MIN` voci. La lezione resta `ready`:
+  nessun retry.
 - **Auto-retry trasparente** — `_apply_failure(lesson, *,
   recoverable, auto_retry_max)` è invocato in tutti i 4 percorsi di
   errore (glossary_gate, openai_call, materialize). Se `recoverable`
@@ -422,7 +715,13 @@ lifespan `app/main.py`.
   pattern asset-ref `\[FIG:..\]` ecc.) — necessario perché alcuni
   output gpt-5.5 emettono LaTeX "puro" che `remark-math` non
   riconosce. Le classi tipografiche sono `lesson-prose` (custom CSS in
-  `index.css`, niente `@tailwindcss/typography`).
+  `index.css`, niente `@tailwindcss/typography`). Riceve `assetNumbers`
+  (`KIND:id_lower` → N) da `LessonContentView`, che numera il corpo NON
+  normalizzato (`computeAssetNumbers`) e poi lo passa da
+  `normalizeAssetRefs` / `citeAssetRefs` (`lib/assetRefNormalize.ts`):
+  tabelle, equazioni ed esempi portano l'etichetta «Tabella N.» /
+  «Equazione N.» / «Lemma N.» / «Esempio N.» (chiavi `courses.figures.*`,
+  sempre presente; senza mappa la forma non numerata, come nelle slide).
 - `FigureFrame.tsx` — cornice unica delle figure (D4): stesso markup del
   partial backend `templates/partials/figure.html.j2` (`<figure
   class="figure figure--{variant} figure--{format}">` + `<figcaption>` con
@@ -440,11 +739,16 @@ lifespan `app/main.py`.
   collassabili). Senza la pre-validazione, `mermaid.render()` su syntax
   invalida inietta nel DOM una grossa SVG bomb-icon che rompe il layout
   della pagina. Strip programmaticamente l'attributo `max-width` inline
-  dell'SVG generato e applica `width: 100%`; il tetto d'altezza
-  (`fullWidthSvgMaxHeightPx` in `lib/figureFormats.ts`) vale solo per i
-  diagrammi orizzontali (`viewBox` con larghezza ≥ altezza), mai sotto
-  l'altezza naturale: un tetto incondizionato faceva scalare i diagrammi
-  verticali (sequence, flowchart TD) fino a testo di 7 px.
+  dell'SVG generato; la larghezza viene dalla banda di leggibilità del
+  web (D10/D11, 8-11 pt): `measureSvgFontPx` misura nel DOM il corpo del
+  testo più piccolo (stesso JS del pre-render backend), `fitFigureWidthMm`
+  (`lib/figureFormats.ts`, mirror di `figure_scale.py`) dà la larghezza
+  `W` e un wrapper interno senza padding porta `width: min(100%, Wpx)`
+  con l'SVG a `width: 100%`. Nessun tetto d'altezza (il vecchio tetto
+  «solo per i diagrammi orizzontali» è superato: un tetto unito a
+  `width: 100%` scalava i verticali fino a testo di 7 px, mentre la
+  larghezza piena portava un flowchart LR a 18 pt in una colonna di
+  900 px).
 - `VegaLiteDiagram.tsx` — import dinamico di `vega` / `vega-lite` /
   `vega-embed` (`actions: false`, `config` = `VEGALITE_THEME_CONFIG`,
   `loader` inerte che rifiuta `load/http/file`: un `data.url` non viene
@@ -564,7 +868,12 @@ spec JSON `function`) — schema e renderer di vista condivisi con il PDF.
   - Tabelle → `TableEditor`
   - Formule → `LatexEditor` (latex) + `RichTextEditor` (explanation)
   - Esempi → `RichTextEditor`
-  - Key takeaways / References → `<Input>`
+  - Key takeaways / References → `<Input>`. `handleSubmit` invia sempre
+    entrambe le liste, scartando le righe vuote (per le references: le
+    citation vuote, che darebbero 422); il backend le restituisce
+    normalizzate (trim + dedup): la vista si aggiorna dalla risposta
+    (`setCache`), il dialog si chiude e alla riapertura mostra le liste
+    normalizzate.
   - **`RefIdField`**: per ogni asset (FIG/TAB/EQ/EX) mostra l'ID
     canonico (es. `[FIG:fig_pipeline]`) con pulsante **copy** e
     **input rinominabile**. Etichetta + chip readable in i18n
@@ -718,6 +1027,17 @@ Locali aggiornati: solo IT/EN canonici (le altre 22 lingue saranno
 completate via "Completa con AI" in app). Namespace
 `courses.lessonsContent.*` e `courses.glossary.*`.
 
+Vale anche per le 12 chiavi di etichetta dei quattro kind aggiunte da
+D5 sotto `courses.figures.*` (rimando, tabella, equazione, esempio,
+teorema): sono in `it.json` e `en.json` e in nessuno degli altri 22
+locali. Non è un buco visibile perché **entrambi i lati ricadono
+sull'italiano**: il frontend con `fallbackLng: "it"` (`src/i18n/index.ts`)
+e il backend con `figure_theme.figure_labels`, che normalizza il
+sottotag (`en-GB` → `en`) e per ogni altra lingua ritorna il dizionario
+`FIGURE_I18N_FALLBACK = "it"` (36 chiavi per `it` e per `en`). Un corso
+in una terza lingua vede quindi «Figura 1.» e «Tabella 1.» in italiano
+nella vista e nel PDF, non una chiave grezza.
+
 ## Configurazione
 
 ```env
@@ -732,11 +1052,24 @@ OPENAI_LESSON_CONTENT_MAX_TOKENS=32000
 OPENAI_LESSON_CONTENT_REASONING_EFFORT=high   # [minimal, low, medium, high]
 COURSE_LESSON_CONTENT_POLL_INTERVAL_SECONDS=4
 COURSE_LESSON_CONTENT_MAX_CONCURRENCY=3
-COURSE_LESSON_CONTENT_DOCUMENTS_CONTEXT_MAX_CHARS=20000
+# Selezione per lezione degli estratti documentali (vedi «--grounding»
+# in fondo): budget totale, budget per documento, kill-switch.
+COURSE_LESSON_CONTENT_DOCUMENTS_CONTEXT_MAX_CHARS=40000
+COURSE_LESSON_CONTENT_DOCUMENTS_PER_DOC_MAX_CHARS=12000
+COURSE_LESSON_CONTENT_DOCUMENTS_SELECTION_ENABLED=true
 # Numero massimo di retry automatici prima di transitare a `failed`.
 # La UI vede la lezione come "in elaborazione" durante i retry.
 COURSE_LESSON_CONTENT_AUTO_RETRY_MAX=5
 COURSE_LESSON_STRUCTURE_AUTO_RETRY_MAX=5
+
+# Revisore figura ↔ testo (D15): verdetto predefinito `coerente`,
+# riscrittura accettata solo se valida e non peggiora la misura.
+OPENAI_FIGURE_REVIEW_MODEL=gpt-4o-mini
+OPENAI_FIGURE_REVIEW_REASONING_EFFORT=
+OPENAI_FIGURE_REVIEW_MAX_TOKENS=4000
+FIGURE_REVIEW_MAX_ATTEMPTS=2
+FIGURE_REVIEW_MAX_PARALLEL=4
+FIGURE_REVIEW_ENABLED=true
 ```
 
 `OPENAI_LESSON_CONTENT_MAX_TOKENS=32000` è calibrato per output

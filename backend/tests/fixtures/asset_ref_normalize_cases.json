@@ -1,0 +1,708 @@
+{
+  "_comment": "Casi condivisi fra backend (asset_ref_normalize.py, test_asset_ref_normalize.py) e frontend (lib/assetRefNormalize.ts). `numbers` è {KIND: {id_lower: N}} (kind assente o vuoto = identità su quel kind); `references` sono i template del rimando per kind (default in testa, override per caso), interpolati dal runner con `{{n}}`; `theorem_kinds` mappa id_lower → parola del kind per le equazioni in famiglia THM (il runner costruisce la callable reference(kind, id_lower, n): per un [EQ:id] presente in theorem_kinds usa il template THM con {{kind}}). `normalized` è l'output esatto di normalize_asset_refs; `cite` elenca coppie text → cited di cite_asset_refs. Le regex usano classi esplicite ([ \\t], [0-9]) e nessun flag: stesso esito in Python e JavaScript.",
+  "references": {
+    "FIG": "Figura {{n}}",
+    "TAB": "Tabella {{n}}",
+    "EQ": "Equazione {{n}}",
+    "EX": "Esempio {{n}}",
+    "THM": "{{kind}} {{n}}"
+  },
+  "cases": [
+    {
+      "name": "citazione in linea prima dell'ancora",
+      "markdown": "Come mostrato in [FIG:a], il sistema converge.\n\n[FIG:a]\n\nDopo.",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "Come mostrato in Figura 1, il sistema converge.\n\n[FIG:a]\n\nDopo."
+    },
+    {
+      "name": "ancora prima della citazione",
+      "markdown": "[FIG:a]\n\nCome in [FIG:a], converge.",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "[FIG:a]\n\nCome in Figura 1, converge."
+    },
+    {
+      "name": "sole citazioni in linea (C2): ancora dopo il paragrafo",
+      "markdown": "Come mostrato in [FIG:a], il sistema converge.\nSeconda riga [FIG:a] ancora.\n\nParagrafo dopo.",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "Come mostrato in Figura 1, il sistema converge.\nSeconda riga Figura 1 ancora.\n\n[FIG:a]\n\nParagrafo dopo."
+    },
+    {
+      "name": "sole citazioni ripetute in paragrafi diversi: una sola ancora",
+      "markdown": "Prima [FIG:a].\n\nPoi [FIG:a] e [FIG:a].",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "Prima Figura 1.\n\n[FIG:a]\n\nPoi Figura 1 e Figura 1."
+    },
+    {
+      "name": "sole citazioni: ultima riga del corpo",
+      "markdown": "Testo.\n\nVedi [FIG:a].",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "Testo.\n\nVedi Figura 1.\n\n[FIG:a]"
+    },
+    {
+      "name": "sole citazioni: ultima riga della sezione, ancora prima del titolo seguente",
+      "markdown": "Sez. con [FIG:a].\n\n## Dopo\n\nTesto.",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "Sez. con Figura 1.\n\n[FIG:a]\n\n## Dopo\n\nTesto."
+    },
+    {
+      "name": "due ancore: la seconda rimossa con la riga vuota adiacente",
+      "markdown": "Intro.\n\n[FIG:a]\n\nTesto.\n\n[FIG:a]\n\nFine.",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "Intro.\n\n[FIG:a]\n\nTesto.\n\nFine."
+    },
+    {
+      "name": "due ancore in coda: la riga vuota precedente e' rimossa",
+      "markdown": "Testo.\n\n[FIG:a]\n\n[FIG:a]",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "Testo.\n\n[FIG:a]"
+    },
+    {
+      "name": "due ancore senza righe vuote intorno",
+      "markdown": "para1\n[FIG:a]\npara2\n[FIG:a]\npara3",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "para1\n[FIG:a]\npara2\npara3"
+    },
+    {
+      "name": "tre ancore e citazione fra le ancore",
+      "markdown": "[FIG:a]\n\nVedi [FIG:a].\n\n[FIG:a]\n\n[FIG:a]\n\nFine.",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "[FIG:a]\n\nVedi Figura 1.\n\nFine."
+    },
+    {
+      "name": "tag dentro una lista compatta: `- [FIG:b]` e' citazione, figure dopo la lista",
+      "markdown": "Elenco:\n- primo [FIG:a]\n- [FIG:b]\n- terzo\n\nSegue.",
+      "numbers": {
+        "FIG": {
+          "a": 1,
+          "b": 2
+        }
+      },
+      "normalized": "Elenco:\n- primo Figura 1\n- Figura 2\n- terzo\n\n[FIG:a]\n\n[FIG:b]\n\nSegue."
+    },
+    {
+      "name": "lista sciolta: la figura segue l'intera lista",
+      "markdown": "- a\n\n- b [FIG:a]\n\n- c\n\nDopo.",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "- a\n\n- b Figura 1\n\n- c\n\n[FIG:a]\n\nDopo."
+    },
+    {
+      "name": "lista sciolta con continuazione indentata",
+      "markdown": "1. primo [FIG:a]\n\n   continua\n\n2. secondo\n\nDopo.",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "1. primo Figura 1\n\n   continua\n\n2. secondo\n\n[FIG:a]\n\nDopo."
+    },
+    {
+      "name": "paragrafo seguito da lista sciolta: ancora fra i due",
+      "markdown": "Vedi [FIG:a]:\n\n- uno\n\n- due",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "Vedi Figura 1:\n\n[FIG:a]\n\n- uno\n\n- due"
+    },
+    {
+      "name": "tag dentro un fence chiuso: citazione nel codice, ancora dopo il fence",
+      "markdown": "Testo.\n\n```\n[FIG:a]\n```\n\nDopo.",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "Testo.\n\n```\nFigura 1\n```\n\n[FIG:a]\n\nDopo."
+    },
+    {
+      "name": "fence con righe vuote interne: il confine le salta",
+      "markdown": "Vedi [FIG:a]:\n```py\nx = 1\n\ny = 2\n```\nDopo.\n\nFine.",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "Vedi Figura 1:\n```py\nx = 1\n\ny = 2\n```\nDopo.\n\n[FIG:a]\n\nFine."
+    },
+    {
+      "name": "fence non chiuso non e' regione opaca (la riga-tag e' ancora)",
+      "markdown": "Testo.\n\n```\n[FIG:a]\n\nancora [FIG:a]",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "Testo.\n\n```\n[FIG:a]\n\nancora Figura 1"
+    },
+    {
+      "name": "fence con tilde: chiude solo un marcatore lungo almeno quanto l'apertura",
+      "markdown": "~~~~\n[FIG:a]\n~~~\n~~~~\nDopo [FIG:a].",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "~~~~\nFigura 1\n~~~\n~~~~\nDopo Figura 1.\n\n[FIG:a]"
+    },
+    {
+      "name": "code span: citazione, mai ancora",
+      "markdown": "Il tag `[FIG:a]` e poi [FIG:a].",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "Il tag `Figura 1` e poi Figura 1.\n\n[FIG:a]"
+    },
+    {
+      "name": "blocco $$ chiuso: la riga-tag e' citazione, ancora dopo la chiusura",
+      "markdown": "$$\n[FIG:a]\n$$\n\nDopo.",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "$$\nFigura 1\n$$\n\n[FIG:a]\n\nDopo."
+    },
+    {
+      "name": "blocco $$ chiuso con riga vuota interna: la riga-tag e' citazione",
+      "markdown": "$$\nx\n\n[FIG:a]\n$$\n\nDopo.",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "$$\nx\n\nFigura 1\n$$\n\n[FIG:a]\n\nDopo."
+    },
+    {
+      "name": "$$ non chiuso non e' regione opaca (i parser divergono a valle: PDF paragrafo, FE math)",
+      "markdown": "$$\n[FIG:a]\n\nDopo.",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "$$\n[FIG:a]\n\nDopo."
+    },
+    {
+      "name": "math inline: citazione",
+      "markdown": "Usa $[FIG:a]$ qui.",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "Usa $Figura 1$ qui.\n\n[FIG:a]"
+    },
+    {
+      "name": "id irrisolto intatto ovunque, nessuna ancora inserita ne' rimossa",
+      "markdown": "Vedi [FIG:ghost] e [FIG:a].\n\n[FIG:ghost]\n\n[FIG:ghost]",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "Vedi [FIG:ghost] e Figura 1.\n\n[FIG:a]\n\n[FIG:ghost]\n\n[FIG:ghost]"
+    },
+    {
+      "name": "[fig:x] minuscolo non e' un tag",
+      "markdown": "Vedi [fig:a] e [FIG:b].\n\n[FIG:a]",
+      "numbers": {
+        "FIG": {
+          "b": 1,
+          "a": 2
+        }
+      },
+      "normalized": "Vedi [fig:a] e Figura 1.\n\n[FIG:b]\n\n[FIG:a]"
+    },
+    {
+      "name": "id con spazi e case diverso: stesso numero, prima ancora tenuta, seconda rimossa",
+      "markdown": "Vedi [FIG: Fig_A ] e poi [FIG:fig_a].\n\n[FIG:FIG_A]\n\n[FIG:fig_a]",
+      "numbers": {
+        "FIG": {
+          "fig_a": 1
+        }
+      },
+      "normalized": "Vedi Figura 1 e poi Figura 1.\n\n[FIG:FIG_A]"
+    },
+    {
+      "name": "id con spazi: ancora inserita con l'id della prima citazione ripulito",
+      "markdown": "Vedi [FIG: Fig_A ] qui.",
+      "numbers": {
+        "FIG": {
+          "fig_a": 1
+        }
+      },
+      "normalized": "Vedi Figura 1 qui.\n\n[FIG:Fig_A]"
+    },
+    {
+      "name": "tag a cavallo di riga non e' un tag",
+      "markdown": "Vedi [FIG:a\n] no, [FIG:a] si'.\n\nFine.",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "Vedi [FIG:a\n] no, Figura 1 si'.\n\n[FIG:a]\n\nFine."
+    },
+    {
+      "name": "tabella: rimando nella cella, ancora dopo la tabella",
+      "markdown": "| a | b |\n|---|---|\n| vedi [FIG:a] | y |\n\nDopo.",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "| a | b |\n|---|---|\n| vedi Figura 1 | y |\n\n[FIG:a]\n\nDopo."
+    },
+    {
+      "name": "heading: rimando nel titolo, ancora dopo il blocco che lo segue",
+      "markdown": "## Schema [FIG:a]\nTesto sotto.\n\nFine.",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "## Schema Figura 1\nTesto sotto.\n\n[FIG:a]\n\nFine."
+    },
+    {
+      "name": "blockquote: rimando dentro, ancora dopo la citazione",
+      "markdown": "> Nota [FIG:a]\n> continua\n\nDopo.",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "> Nota Figura 1\n> continua\n\n[FIG:a]\n\nDopo."
+    },
+    {
+      "name": "HTML block: rimando dentro, ancora dopo il blocco",
+      "markdown": "<div>\nVedi [FIG:a]\n</div>\n\nDopo.",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "<div>\nVedi Figura 1\n</div>\n\n[FIG:a]\n\nDopo."
+    },
+    {
+      "name": "kind senza numeri (TAB) e' identita'",
+      "markdown": "Vedi [TAB:t1] e [FIG:a].\n\n[TAB:t1]",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "Vedi [TAB:t1] e Figura 1.\n\n[FIG:a]\n\n[TAB:t1]"
+    },
+    {
+      "name": "piu' id nello stesso paragrafo: ancore in ordine di citazione, numeri come dati",
+      "markdown": "Vedi [FIG:b] e [FIG:a].",
+      "numbers": {
+        "FIG": {
+          "b": 1,
+          "a": 2
+        }
+      },
+      "normalized": "Vedi Figura 1 e Figura 2.\n\n[FIG:b]\n\n[FIG:a]"
+    },
+    {
+      "name": "ancora tardiva di un id, altro id senza ancora",
+      "markdown": "Vedi [FIG:b] e [FIG:a].\n\n## S\n\n[FIG:a]\n\nFine.",
+      "numbers": {
+        "FIG": {
+          "b": 1,
+          "a": 2
+        }
+      },
+      "normalized": "Vedi Figura 1 e Figura 2.\n\n[FIG:b]\n\n## S\n\n[FIG:a]\n\nFine."
+    },
+    {
+      "name": "orfani accodati (A12) restano dopo l'ancora inserita",
+      "markdown": "## Sintesi\n\nChiude [FIG:a].\n\n[FIG:d]",
+      "numbers": {
+        "FIG": {
+          "a": 1,
+          "d": 2
+        }
+      },
+      "normalized": "## Sintesi\n\nChiude Figura 1.\n\n[FIG:a]\n\n[FIG:d]"
+    },
+    {
+      "name": "punteggiatura e spazi dell'autore conservati (niente doppio punto)",
+      "markdown": "Vedi ([FIG:a]) e [FIG:a]; poi [FIG:a]!\n\n[FIG:a]",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "Vedi (Figura 1) e Figura 1; poi Figura 1!\n\n[FIG:a]"
+    },
+    {
+      "name": "parola «Figura» gia' presente: limite dichiarato, nessuna guardia",
+      "markdown": "Nella Figura [FIG:a] si vede.",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "Nella Figura Figura 1 si vede.\n\n[FIG:a]"
+    },
+    {
+      "name": "numero preso come dato, mai ricalcolato",
+      "markdown": "Vedi [FIG:a].",
+      "numbers": {
+        "FIG": {
+          "a": 7
+        }
+      },
+      "normalized": "Vedi Figura 7.\n\n[FIG:a]"
+    },
+    {
+      "name": "inglese: template della lingua del corso",
+      "markdown": "See [FIG:a].",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "references": {
+        "FIG": "Figure {{n}}"
+      },
+      "normalized": "See Figure 1.\n\n[FIG:a]"
+    },
+    {
+      "name": "CRLF: ancora con \\r conservata, righe vuote \\r tollerate",
+      "markdown": "Vedi [FIG:a].\r\n\r\n[FIG:a]\r\n",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "Vedi Figura 1.\r\n\r\n[FIG:a]\r\n"
+    },
+    {
+      "name": "ancora con spazi intorno conservata byte-identica",
+      "markdown": "  [FIG:a]  \n\nTesto.",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "  [FIG:a]  \n\nTesto."
+    },
+    {
+      "name": "nessun tag gestito: identita' (fence e $$ con righe vuote)",
+      "markdown": "Testo.\n\n```\ncode\n\n```\n\n$$\nx\n$$",
+      "numbers": {
+        "FIG": {}
+      },
+      "normalized": "Testo.\n\n```\ncode\n\n```\n\n$$\nx\n$$"
+    },
+    {
+      "name": "vuoto",
+      "markdown": "",
+      "numbers": {
+        "FIG": {}
+      },
+      "normalized": ""
+    },
+    {
+      "name": "tabella numerata: rimando «Tabella 1», ancora [TAB:t1] inserita dopo il blocco",
+      "markdown": "Vedi [TAB:t1] qui.\n\nDopo.",
+      "numbers": {
+        "TAB": {
+          "t1": 1
+        }
+      },
+      "normalized": "Vedi Tabella 1 qui.\n\n[TAB:t1]\n\nDopo."
+    },
+    {
+      "name": "equazione: rimando «Equazione 2», ancore dell'autore conservate",
+      "markdown": "Da [EQ:e1] e [EQ:e2] segue.\n\n[EQ:e1]\n\n[EQ:e2]",
+      "numbers": {
+        "EQ": {
+          "e1": 1,
+          "e2": 2
+        }
+      },
+      "normalized": "Da Equazione 1 e Equazione 2 segue.\n\n[EQ:e1]\n\n[EQ:e2]"
+    },
+    {
+      "name": "esempio: rimando «Esempio 1»",
+      "markdown": "Come in [EX:x1].\n\n[EX:x1]",
+      "numbers": {
+        "EX": {
+          "x1": 1
+        }
+      },
+      "normalized": "Come in Esempio 1.\n\n[EX:x1]"
+    },
+    {
+      "name": "teorema: [EQ:id] in famiglia THM → «Lemma 2» (callable che conosce la famiglia, contatore EQ)",
+      "markdown": "Per [EQ:f] e [EQ:lem] vale.\n\n[EQ:f]\n\n[EQ:lem]",
+      "numbers": {
+        "EQ": {
+          "f": 1,
+          "lem": 2
+        }
+      },
+      "theorem_kinds": {
+        "lem": "Lemma"
+      },
+      "normalized": "Per Equazione 1 e Lemma 2 vale.\n\n[EQ:f]\n\n[EQ:lem]"
+    },
+    {
+      "name": "tag [TAB:x] dentro code span → citazione, mai ancora",
+      "markdown": "Il tag `[TAB:x]` e poi [TAB:x].\n\n[TAB:x]",
+      "numbers": {
+        "TAB": {
+          "x": 1
+        }
+      },
+      "normalized": "Il tag `Tabella 1` e poi Tabella 1.\n\n[TAB:x]"
+    },
+    {
+      "name": "quattro kind nello stesso paragrafo: ancore in ordine di citazione",
+      "markdown": "Vedi [TAB:t], [FIG:f], [EX:x] e [EQ:e].",
+      "numbers": {
+        "FIG": {
+          "f": 1
+        },
+        "TAB": {
+          "t": 1
+        },
+        "EQ": {
+          "e": 1
+        },
+        "EX": {
+          "x": 1
+        }
+      },
+      "normalized": "Vedi Tabella 1, Figura 1, Esempio 1 e Equazione 1.\n\n[TAB:t]\n\n[FIG:f]\n\n[EX:x]\n\n[EQ:e]"
+    },
+    {
+      "name": "stesso id in kind diversi: chiavi indipendenti, l'ancora inserita precede quella dell'autore",
+      "markdown": "[FIG:k] e [TAB:k].\n\n[FIG:k]",
+      "numbers": {
+        "FIG": {
+          "k": 1
+        },
+        "TAB": {
+          "k": 1
+        }
+      },
+      "normalized": "Figura 1 e Tabella 1.\n\n[TAB:k]\n\n[FIG:k]"
+    },
+    {
+      "name": "inglese sui quattro kind: «Table 2», «Equation 1», «Example 1», «Lemma 2»",
+      "markdown": "See [TAB:t2], [EQ:e], [EX:x] and [EQ:lem].",
+      "numbers": {
+        "TAB": {
+          "t2": 2
+        },
+        "EQ": {
+          "e": 1,
+          "lem": 2
+        },
+        "EX": {
+          "x": 1
+        }
+      },
+      "references": {
+        "FIG": "Figure {{n}}",
+        "TAB": "Table {{n}}",
+        "EQ": "Equation {{n}}",
+        "EX": "Example {{n}}",
+        "THM": "{{kind}} {{n}}"
+      },
+      "theorem_kinds": {
+        "lem": "Lemma"
+      },
+      "normalized": "See Table 2, Equation 1, Example 1 and Lemma 2.\n\n[TAB:t2]\n\n[EQ:e]\n\n[EX:x]\n\n[EQ:lem]"
+    },
+    {
+      "name": "id con BOM (U+FEFF): stessa risoluzione su Python e JavaScript",
+      "markdown": "Vedi [FIG:\ufeffa] qui.\n\nDopo.",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "Vedi Figura 1 qui.\n\n[FIG:a]\n\nDopo."
+    },
+    {
+      "name": "id con NEL (U+0085): stessa risoluzione su Python e JavaScript",
+      "markdown": "Vedi [FIG:a\u0085] qui.\n\nDopo.",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "Vedi Figura 1 qui.\n\n[FIG:a]\n\nDopo."
+    },
+    {
+      "name": "chiusura $$ seguita da BOM: regione opaca su entrambi i lati",
+      "markdown": "$$\n[FIG:a]\n$$\ufeff\n\nfine",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "$$\nFigura 1\n$$\ufeff\n\n[FIG:a]\n\nfine"
+    },
+    {
+      "name": "chiusura $$ seguita da NEL: regione opaca su entrambi i lati",
+      "markdown": "$$\n[FIG:a]\n$$\u0085\n\nfine",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "$$\nFigura 1\n$$\u0085\n\n[FIG:a]\n\nfine"
+    },
+    {
+      "name": "lista sciolta attaccata al paragrafo: l'ancora segue l'intera lista",
+      "markdown": "Elenco dei passaggi:\n- primo passaggio, vedi [FIG:a]\n\n- secondo passaggio\n\nDopo.",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "Elenco dei passaggi:\n- primo passaggio, vedi Figura 1\n\n- secondo passaggio\n\n[FIG:a]\n\nDopo."
+    },
+    {
+      "name": "lista ordinata sciolta attaccata al paragrafo: nessun <ol start=\"2\">",
+      "markdown": "Come mostrato in [FIG:a] il sistema converge.\n1. uno\n\n2. due\n\nDopo.",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "Come mostrato in Figura 1 il sistema converge.\n1. uno\n\n2. due\n\n[FIG:a]\n\nDopo."
+    },
+    {
+      "name": "marcatore ordinato che non apre la lista (2.): resta paragrafo",
+      "markdown": "Testo attaccato [FIG:a].\n2. due\n\n3. tre\n\nDopo.",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "normalized": "Testo attaccato Figura 1.\n2. due\n\n[FIG:a]\n\n3. tre\n\nDopo."
+    }
+  ],
+  "cite": [
+    {
+      "name": "coda: punto chiave con citazione",
+      "text": "Vedi [FIG:A]",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "cited": "Vedi Figura 1"
+    },
+    {
+      "name": "coda: ancora e id irrisolto: rimando, mai blocco, ghost intatto",
+      "text": "Vedi [FIG:A] e [FIG:ghost].\n\n[FIG:A]",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "cited": "Vedi Figura 1 e [FIG:ghost].\n\nFigura 1"
+    },
+    {
+      "name": "coda: item con code span",
+      "text": "- [FIG:a] e `[FIG:a]`",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "cited": "- Figura 1 e `Figura 1`"
+    },
+    {
+      "name": "coda: kind senza numeri intatto",
+      "text": "Vedi [TAB:t1]",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "cited": "Vedi [TAB:t1]"
+    },
+    {
+      "name": "coda: rimando di tabella e di teorema",
+      "text": "Vedi [TAB:t1] e [EQ:lem]",
+      "numbers": {
+        "TAB": {
+          "t1": 1
+        },
+        "EQ": {
+          "lem": 2
+        }
+      },
+      "theorem_kinds": {
+        "lem": "Lemma"
+      },
+      "cited": "Vedi Tabella 1 e Lemma 2"
+    },
+    {
+      "name": "coda: id con BOM risolto come su JavaScript",
+      "text": "Vedi [FIG:a\ufeff]",
+      "numbers": {
+        "FIG": {
+          "a": 1
+        }
+      },
+      "cited": "Vedi Figura 1"
+    }
+  ]
+}

@@ -17,6 +17,7 @@ Funzioni esposte (mirror slides):
 - `validate_tts_safety(text)` — helper riusato dal CRUD
 - `load_course_full`, `get_lesson_or_404`
 """
+
 from __future__ import annotations
 
 import json
@@ -34,13 +35,13 @@ from app.core.course_phase_order import (
     advance_course_status,
     ensure_course_not_terminal,
 )
-from app.services import document_citation_guard
 from app.core.errors import ConflictError, NotFoundError
 from app.core.logging import get_logger
 from app.models.course import Course
 from app.models.course_lesson import CourseLesson
 from app.models.course_module import CourseModule
 from app.schemas.course_lesson_speech import LessonSpeechOutput
+from app.services import document_citation_guard
 from app.services.course_architecture_service import _term_label
 from app.services.openai_lesson_speech_service import words_per_minute
 
@@ -128,9 +129,7 @@ def validate_tts_safety(text: str) -> list[str]:
 
 
 # Mappa di traduzione: ogni carattere proibito → spazio.
-_TTS_SANITIZE_TRANSLATION = {
-    ord(c): " " for c in _TTS_SAFETY_FORBIDDEN_CHARS
-}
+_TTS_SANITIZE_TRANSLATION = {ord(c): " " for c in _TTS_SAFETY_FORBIDDEN_CHARS}
 
 
 def sanitize_tts_text(text: str) -> str:
@@ -193,17 +192,13 @@ async def _refresh_full(db: AsyncSession, course: Course) -> Course:
 # ---------------------------------------------------------------------------
 
 
-def _format_recommended_bibliography(
-    course: Course, lesson: CourseLesson
-) -> str:
+def _format_recommended_bibliography(course: Course, lesson: CourseLesson) -> str:
     """Bibliografia consigliata della lezione introduttiva (§7.2 — il
     discorso introduttivo legge i titoli per esteso). Le voci che
     matchano documenti a fonte riservata sono filtrate in lettura."""
     if not lesson.is_introductory or not lesson.recommended_bibliography:
         return "(non applicabile)"
-    items = document_citation_guard.reserved_filtered_bibliography(
-        course, lesson
-    )
+    items = document_citation_guard.reserved_filtered_bibliography(course, lesson)
     lines: list[str] = []
     for b in items:
         if not isinstance(b, dict):
@@ -326,9 +321,7 @@ def is_regeneration_for_lesson(lesson: CourseLesson) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _normalize_speech_durations(
-    output: LessonSpeechOutput, target_seconds: int
-) -> None:
+def _normalize_speech_durations(output: LessonSpeechOutput, target_seconds: int) -> None:
     """Riscala in-place le `estimated_duration_seconds` dei segmenti
     perché la loro somma sia ~`target_seconds`.
 
@@ -352,29 +345,19 @@ def _normalize_speech_durations(
         )
 
     # Assorbe lo scarto di arrotondamento sull'ultimo segmento.
-    drift = target_seconds - sum(
-        s.estimated_duration_seconds for s in segments
-    )
+    drift = target_seconds - sum(s.estimated_duration_seconds for s in segments)
     if drift:
         last = segments[-1]
-        last.estimated_duration_seconds = max(
-            1, min(600, last.estimated_duration_seconds + drift)
-        )
+        last.estimated_duration_seconds = max(1, min(600, last.estimated_duration_seconds + drift))
 
     # Ricalcola le durate per-slide della mappa e il totale dichiarato.
     by_id = {s.segment_id: s for s in segments}
     for entry in output.slide_to_segments_map:
         entry.slide_total_duration_seconds = max(
             1,
-            sum(
-                by_id[sid].estimated_duration_seconds
-                for sid in entry.segment_ids
-                if sid in by_id
-            ),
+            sum(by_id[sid].estimated_duration_seconds for sid in entry.segment_ids if sid in by_id),
         )
-    output.estimated_total_duration_seconds = sum(
-        s.estimated_duration_seconds for s in segments
-    )
+    output.estimated_total_duration_seconds = sum(s.estimated_duration_seconds for s in segments)
 
 
 async def materialize_lesson_speech(
@@ -395,8 +378,7 @@ async def materialize_lesson_speech(
     # 1. Match lesson_id ↔ lesson_code
     if output.lesson_id != lesson.lesson_code:
         raise ConflictError(
-            f"L'AI ha prodotto lesson_id `{output.lesson_id}`, "
-            f"atteso `{lesson.lesson_code}`.",
+            f"L'AI ha prodotto lesson_id `{output.lesson_id}`, atteso `{lesson.lesson_code}`.",
             code="lesson_speech_id_mismatch",
         )
 
@@ -446,9 +428,7 @@ async def materialize_lesson_speech(
     #    per pochi punti percentuali. Hard-fail solo per deriva estrema
     #    (testo davvero sovra/sotto-dimensionato → va rigenerato).
     target = course.lesson_duration_minutes * 60
-    sum_durations = sum(
-        s.estimated_duration_seconds for s in output.speech_segments
-    )
+    sum_durations = sum(s.estimated_duration_seconds for s in output.speech_segments)
     if sum_durations <= 0:
         raise ConflictError(
             "Le durate stimate dei segmenti sono nulle o assenti.",
@@ -504,8 +484,7 @@ async def materialize_lesson_speech(
         for sid in entry.segment_ids:
             if sid not in seg_by_id:
                 raise ConflictError(
-                    f"slide_to_segments_map: segment_id `{sid}` non "
-                    f"presente in speech_segments.",
+                    f"slide_to_segments_map: segment_id `{sid}` non presente in speech_segments.",
                     code="lesson_speech_map_unknown_segment",
                 )
             seg = seg_by_id[sid]
@@ -529,28 +508,32 @@ async def materialize_lesson_speech(
     orphan_segments = seen_segment_ids - listed_segment_ids
     if orphan_segments:
         raise ConflictError(
-            f"slide_to_segments_map non lista i segmenti "
-            f"{sorted(orphan_segments)}.",
+            f"slide_to_segments_map non lista i segmenti {sorted(orphan_segments)}.",
             code="lesson_speech_map_orphan_segments",
         )
 
     # 8. TTS-safety: prima sanifica i caratteri di formattazione
     #    proibiti e i comandi LaTeX (artefatti che il TTS
-    #    mispronuncerebbe), poi valida ciò che resta. La sanitizzazione
-    #    muta `seg.text` → `raw` va ri-dumpato.
+    #    mispronuncerebbe), poi valida ciò che resta. Stessa politica per
+    #    `delivery_notes` (L9): le note finiscono nel PDF del discorso e
+    #    nella vista, e prima non passavano da nessun controllo. La
+    #    sanitizzazione muta i segmenti → `raw` va ri-dumpato.
     text_sanitized = False
     for seg in output.speech_segments:
-        cleaned = sanitize_tts_text(seg.text)
-        if cleaned and cleaned != seg.text:
-            seg.text = cleaned
-            text_sanitized = True
-        violations = validate_tts_safety(seg.text)
-        if violations:
-            raise ConflictError(
-                f"Segmento `{seg.segment_id}` non è TTS-safe: "
-                f"{'; '.join(violations[:5])}.",
-                code="lesson_speech_tts_unsafe",
-            )
+        for field in ("text", "delivery_notes"):
+            value = getattr(seg, field)
+            cleaned = sanitize_tts_text(value)
+            if cleaned != value and (cleaned or field == "delivery_notes"):
+                setattr(seg, field, cleaned)
+                text_sanitized = True
+            violations = validate_tts_safety(getattr(seg, field))
+            if violations:
+                where = "" if field == "text" else f" ({field})"
+                raise ConflictError(
+                    f"Segmento `{seg.segment_id}` non è TTS-safe{where}: "
+                    f"{'; '.join(violations[:5])}.",
+                    code="lesson_speech_tts_unsafe",
+                )
     if text_sanitized:
         log.info(
             "lesson_speech_text_sanitized",
@@ -607,9 +590,7 @@ def _recompute_course_speech_status(course: Course) -> None:
         advance_course_status(course, "speech_approved")
         return
 
-    if all(s in ("ready", "approved") for s in statuses) and any(
-        s == "ready" for s in statuses
-    ):
+    if all(s in ("ready", "approved") for s in statuses) and any(s == "ready" for s in statuses):
         advance_course_status(course, "speech_ready")
         return
 
@@ -619,13 +600,9 @@ def _recompute_course_speech_status(course: Course) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def load_course_full(
-    db: AsyncSession, *, course_id: uuid.UUID
-) -> Course | None:
+async def load_course_full(db: AsyncSession, *, course_id: uuid.UUID) -> Course | None:
     res = await db.execute(
-        select(Course)
-        .where(Course.id == course_id)
-        .options(*_eager_full_options())
+        select(Course).where(Course.id == course_id).options(*_eager_full_options())
     )
     return res.scalar_one_or_none()
 
@@ -700,8 +677,7 @@ async def request_lesson_speech_generation(
         )
     if lesson.speech_status not in VALID_LESSON_SPEECH_GENERATE_FROM_STATUSES:
         raise ConflictError(
-            f"Lezione {lesson.lesson_code}: stato discorso non valido: "
-            f"{lesson.speech_status}",
+            f"Lezione {lesson.lesson_code}: stato discorso non valido: {lesson.speech_status}",
             code="invalid_lesson_speech_status",
         )
 
@@ -709,9 +685,7 @@ async def request_lesson_speech_generation(
     lesson.speech_error = None
     lesson.speech_progress = 0
     lesson.speech_progress_phase = None
-    lesson.speech_regeneration_hint = (
-        regeneration_hint.strip() if regeneration_hint else None
-    )
+    lesson.speech_regeneration_hint = regeneration_hint.strip() if regeneration_hint else None
     # Il PDF discorso diventa obsoleto: i nuovi speech_raw potrebbero
     # avere segmenti, durate o testo diversi. Reset per impedire il
     # download del PDF stale.
@@ -731,9 +705,7 @@ async def request_lesson_speech_generation(
             "lesson_code": lesson.lesson_code,
             "is_regeneration": is_regeneration_for_lesson(lesson),
             "hint": (
-                lesson.speech_regeneration_hint[:200]
-                if lesson.speech_regeneration_hint
-                else None
+                lesson.speech_regeneration_hint[:200] if lesson.speech_regeneration_hint else None
             ),
         },
     )
@@ -757,13 +729,11 @@ async def request_all_lessons_speech_generation(
         lesson
         for m in course.modules
         for lesson in m.lessons
-        if lesson.slides_status == "approved"
-        and not lesson.is_assessment
+        if lesson.slides_status == "approved" and not lesson.is_assessment
     ]
     if not eligible:
         raise ConflictError(
-            "Nessuna lezione con slide approvate. Approva prima le slide "
-            "della Fase 4.",
+            "Nessuna lezione con slide approvate. Approva prima le slide della Fase 4.",
             code="no_lessons_with_slides",
         )
 
@@ -817,8 +787,7 @@ async def request_missing_lessons_speech_generation(
     ]
     if not missing:
         raise ConflictError(
-            "Nessuna lezione mancante: tutte hanno già discorso o non hanno "
-            "slide approvate.",
+            "Nessuna lezione mancante: tutte hanno già discorso o non hanno slide approvate.",
             code="no_missing_speech_lessons",
         )
 
@@ -856,9 +825,7 @@ async def cancel_all_speech_generation(
     subito, le processing finiscono l'I/O OpenAI ma il worker scarta
     il risultato (vedi `_process_one`).
     """
-    all_lessons: list[CourseLesson] = [
-        lesson for m in course.modules for lesson in m.lessons
-    ]
+    all_lessons: list[CourseLesson] = [lesson for m in course.modules for lesson in m.lessons]
     cancelled = 0
     for lesson in all_lessons:
         if lesson.speech_status in ("pending", "processing"):
@@ -939,31 +906,25 @@ async def approve_all_lessons_speech(
     lezioni che hanno discorso siano `ready` o già `approved`. Idempotente:
     se sono già tutti `approved` (o se l'utente clicca due volte) ritorna
     success senza errore."""
-    all_lessons: list[CourseLesson] = [
-        lesson for m in course.modules for lesson in m.lessons
-    ]
+    all_lessons: list[CourseLesson] = [lesson for m in course.modules for lesson in m.lessons]
     not_ready = [
-        l for l in all_lessons
-        if l.speech_status not in ("ready", "approved", "empty")
+        les for les in all_lessons if les.speech_status not in ("ready", "approved", "empty")
     ]
     if not_ready:
         raise ConflictError(
             f"Non tutte le lezioni hanno il discorso pronto. In attesa: "
-            f"{', '.join(l.lesson_code for l in not_ready)}.",
+            f"{', '.join(les.lesson_code for les in not_ready)}.",
             code="not_all_lessons_speech_ready",
         )
 
-    with_speech = [
-        l for l in all_lessons
-        if l.speech_status in ("ready", "approved")
-    ]
+    with_speech = [les for les in all_lessons if les.speech_status in ("ready", "approved")]
     if not with_speech:
         raise ConflictError(
             "Nessuna lezione ha il discorso generato. Genera prima il discorso.",
             code="no_speech_to_approve",
         )
 
-    eligible = [l for l in all_lessons if l.speech_status == "ready"]
+    eligible = [les for les in all_lessons if les.speech_status == "ready"]
     # Idempotente: se sono già tutti approved, no-op success.
     if not eligible:
         return await _refresh_full(db, course)

@@ -16,6 +16,8 @@ from app.services.svg_normalize import (
     NormalizedSvg,
     SvgRejectedError,
     normalize_svg,
+    svg_base_font_px,
+    svg_intrinsic_box,
     svg_to_data_uri,
 )
 
@@ -221,3 +223,146 @@ def test_svg_to_data_uri_is_base64():
     uri = svg_to_data_uri(svg)
     assert uri.startswith("data:image/svg+xml;base64,")
     assert base64.b64decode(uri.split(",", 1)[1]).decode("utf-8") == svg
+
+
+# ---------------------------------------------------------------------------
+# Letture per la banda di leggibilità (D10): `svg_intrinsic_box`, `svg_base_font_px`
+# ---------------------------------------------------------------------------
+
+
+def test_intrinsic_box_of_a_normalized_svg_matches_the_normalizer():
+    """`px_per_unit` è la scala fra le unità utente (pt per DOT e matplotlib)
+    e i px riscritti da `normalize_svg`; le due letture non toccano l'SVG."""
+    raw = (
+        '<svg width="83pt" height="213pt" viewBox="0 0 83 213">'
+        '<text font-size="10.00">a</text></svg>'
+    )
+    normalized = normalize_svg(raw, max_bytes=10_000)
+    box = svg_intrinsic_box(normalized.svg)
+    assert box is not None
+    # La radice riscritta porta i px arrotondati al centesimo (`_fmt`).
+    assert box.width_px == pytest.approx(normalized.width_px, abs=0.01)
+    assert box.height_px == pytest.approx(normalized.height_px, abs=0.01)
+    assert box.px_per_unit == pytest.approx(4 / 3, abs=1e-3)
+    metrics = svg_base_font_px(normalized.svg)
+    assert metrics.font_px_min == pytest.approx(10 * box.px_per_unit)
+    assert metrics.source == "parsed"
+    assert normalize_svg(normalized.svg, max_bytes=10_000).svg == normalized.svg  # idempotente
+
+
+def test_root_rule_must_be_exact_and_data_attributes_are_ignored():
+    # `#m svg{…}` non è la regola radice: senza `#m{…}` il testo resta irrisolto.
+    only_descendant = '<svg id="m"><style>#m svg{font-size:20px}</style><text>x</text></svg>'
+    assert svg_base_font_px(only_descendant).source == "unresolved"
+    # `#mm{…}` non è `#m{…}`; `#m{…}` preceduto da `}` sì.
+    longer_id = (
+        '<svg id="m"><style>#mm{font-size:9px}.a{}#m{font-size:14px}</style><text>x</text></svg>'
+    )
+    assert svg_base_font_px(longer_id).font_px_min == 14.0
+    assert (
+        svg_base_font_px('<svg><text data-font-size="99" font-size="10">a</text></svg>').font_px_min
+        == 10.0
+    )
+    # Con lo `style` presente ma relativo, l'attributo non fa da ripiego (precedenza CSS).
+    relative = '<svg><text style="font-size:1.2em" font-size="10">a</text></svg>'
+    assert svg_base_font_px(relative).source == "unresolved"
+    # Il minimo viene dal valore proprio anche a parità con la radice.
+    tie = (
+        '<svg id="m"><style>#m{font-size:14px}</style>'
+        '<text font-size="14">a</text><text>b</text></svg>'
+    )
+    assert svg_base_font_px(tie).source == "parsed"
+
+
+def _min_px(svg: str) -> float | None:
+    return svg_base_font_px(svg).font_px_min
+
+
+def test_style_cascade_follows_css_for_the_covered_selectors():
+    """Ripiego della misura Mermaid (F1 di WP3): le regole del `<style>` per
+    classe, discendenza e figlio diretto valgono come in Chromium, con
+    specificità e ordine; `#m svg` vale solo per un `<svg>` annidato."""
+    child = (
+        '<svg id="m"><style>#m{font-size:14px}#m .g>text{font-size:9px}</style>'
+        '<g class="g"><g><text>lontano</text></g></g></svg>'
+    )
+    assert _min_px(child) == 14.0  # `>` richiede il figlio diretto
+    direct = child.replace("<g><text>lontano</text></g>", "<text>vicino</text>")
+    assert _min_px(direct) == 9.0
+    specific = (
+        '<svg id="m"><style>#m g.k text{font-size:18px}#m .t{font-size:9px}</style>'
+        '<g class="k"><text class="t">a</text></g></svg>'
+    )
+    assert _min_px(specific) == 18.0  # (1,1,2) batte (1,1,0) anche se precede
+    later = '<svg id="m"><style>#m .t{font-size:9px}#m .t{font-size:13px}</style>'
+    assert _min_px(later + '<text class="t">a</text></svg>') == 13.0
+    nested = (
+        '<svg id="m"><style>#m{font-size:14px}#m svg{font-size:20px}</style>'
+        "<svg><text>dentro</text></svg></svg>"
+    )
+    assert _min_px(nested) == 20.0
+    # `>` nei selettori, commenti e CDATA nel `<style>` non rompono la scansione.
+    noisy = (
+        '<svg id="m"><style><![CDATA[/* a > b */ #m > g > text { font-size: 11px }]]></style>'
+        "<g><text>a</text></g><text>b</text></svg>"
+    )
+    metrics = svg_base_font_px(noisy)
+    assert (metrics.font_px_min, metrics.text_count, metrics.source) == (11.0, 2, "root_rule")
+
+
+def test_size_declarations_outside_the_grammar_are_unresolved():
+    """Un corpo che la cascata minima non sa attribuire non diventa mai un
+    valore: la lettura è irrisolta e il fit usa la costante di formato
+    (loggata). Le regole fuori grammatica senza corpo non contano."""
+    text = '<text font-size="12">a</text></svg>'
+    for style in (
+        "#m text[x]{font-size:30px}",
+        "#m g+text{font-size:30px}",
+        "#m g~text{font-size:30px}",
+        "#m text:not(.a){font-size:30px}",
+        "@media print{#m text{font-size:30px}}",
+        "@keyframes k{to{font-size:30px}}",
+        "#m text{font:30px sans-serif}",
+        "#m text{font-size:var(--x)}",
+        "#m text{font-size:2rem}",
+        "#m text{font-size:small}",
+        "#m text{font-size:calc(1px + 2px)}",
+        "#m{& text{font-size:30px}}",
+    ):
+        metrics = svg_base_font_px(f'<svg id="m"><style>{style}</style>{text}')
+        assert (metrics.font_px_min, metrics.source) == (None, "unresolved"), style
+    inline = '<svg><text style="font: 30px sans-serif" font-size="12">a</text></svg>'
+    assert svg_base_font_px(inline).source == "unresolved"
+    harmless = (
+        '<svg id="m"><style>#m text:first-child{fill:red}@keyframes k{to{opacity:0}}'
+        "@font-face{font-family:x}</style>" + text
+    )
+    assert (_min_px(harmless), svg_base_font_px(harmless).source) == (12.0, "parsed")
+    # Un `font-size=` dentro il valore di un altro attributo resta valore;
+    # le entità dei valori sono risolte come nel DOM.
+    aria = '<svg><text aria-label="x font-size=\'2\'" font-size="12">a</text></svg>'
+    assert _min_px(aria) == 12.0
+    quoted = '<svg><text style="font-family: &quot;Noto Sans&quot;; font-size: 16px">a</text></svg>'
+    assert _min_px(quoted) == 16.0
+
+
+def test_text_nodes_are_read_like_the_dom():
+    """Stessa definizione di «testo proprio» di `__measureSvgFontPx`: un nodo
+    di testo figlio diretto non vuoto; i tag autochiusi e i commenti non
+    contano, il prefisso di namespace sì."""
+    svg = (
+        '<svg xmlns:svg="http://www.w3.org/2000/svg">'
+        '<text font-size="7"/><text font-size="6"><!-- nota --></text>'
+        '<svg:text font-size="15">a</svg:text><text font-size="13">  <tspan>b</tspan></text>'
+        "</svg>"
+    )
+    metrics = svg_base_font_px(svg)
+    assert (metrics.font_px_min, metrics.text_count) == (13.0, 2)
+    # Il `tspan` senza valore eredita 13 dal padre: il minimo resta 13.
+    assert metrics.font_px_median == 14.0
+
+
+def test_exports_include_the_readers():
+    from app.services import svg_normalize
+
+    assert {"SvgBox", "svg_intrinsic_box", "svg_base_font_px"} <= set(svg_normalize.__all__)

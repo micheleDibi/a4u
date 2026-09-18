@@ -218,6 +218,12 @@ fase ha il suo modello + cap di token configurabile a parte.
 | `OPENAI_ASSET_LOCALIZE_MODEL` | `gpt-4o-mini` | Modello della **localizzazione degli asset** (`openai_asset_localize_service`: campi testuali rimasti in un'altra lingua, rete di sicurezza per script non latini). |
 | `OPENAI_ASSET_LOCALIZE_MAX_TOKENS` | `8000` | `max_completion_tokens` della localizzazione. |
 | `ASSET_LOCALIZE_ENABLED` | `true` | Kill-switch della localizzazione degli asset. |
+| `OPENAI_FIGURE_REVIEW_MODEL` | `gpt-4o-mini` | Modello del **revisore figura ↔ testo** (`openai_figure_review_service`, PROMPT 17): dopo il fix, ogni figura valida di Fase 3 è confrontata con il testo integrale della sezione che la cita e con la sua misura (nodi, archi, incroci, difetti, corpo del testo). Circa 0,0006 USD a figura con 3.000 token in ingresso e 300 in uscita; il costo è in `content_tokens.assets`. |
+| `OPENAI_FIGURE_REVIEW_REASONING_EFFORT` | _(vuoto)_ | Reasoning effort del revisore (non inviato se vuoto o su un modello non reasoning). |
+| `OPENAI_FIGURE_REVIEW_MAX_TOKENS` | `4000` | `max_completion_tokens` del revisore (la risposta può contenere la figura riscritta). Se il tetto tronca la risposta il verdetto è perso, ma i token pagati entrano lo stesso in `content_tokens.assets`. |
+| `FIGURE_REVIEW_MAX_ATTEMPTS` | `2` | Chiamate del revisore per figura: una riscrittura respinta dalla validazione o dalla misura torna al modello con il motivo finché restano tentativi; poi resta l'originale, senza rigenerare la lezione. `0` = nessuna chiamata. |
+| `FIGURE_REVIEW_MAX_PARALLEL` | `4` | Chiamate del revisore in volo per processo (semaforo per loop). Un giro ne lancia una per figura e le lezioni corrono in parallelo (`COURSE_LESSON_CONTENT_MAX_CONCURRENCY`): questo è il tetto di spesa e di pressione su OpenAI di Fase 3. |
+| `FIGURE_REVIEW_ENABLED` | `true` | Kill-switch del revisore: `false` non fa alcuna chiamata HTTP né alcuna resa. Senza `OPENAI_API_KEY` la fase è saltata prima della resa. |
 
 ### Figure accademiche (Fase 3/4)
 
@@ -236,13 +242,26 @@ descrive sempre i quattro formati (A19).
 | `FIGURE_DOT_ENABLED` | `true` | Kill-switch del formato `dot`. |
 | `FIGURE_FUNCTION_ENABLED` | `true` | Kill-switch del formato `function` (Mermaid non è disattivabile). |
 | `MERMAID_CDN_VERSION` | `11.17.2` | Pin unico di Mermaid: validatore Playwright a generazione e pre-render PDF/video caricano `mermaid@{versione}` da jsdelivr; il frontend segue con il lock npm. |
+| `MATHJAX_CDN_VERSION` | `3.2.2` | Pin di MathJax (`tex-svg`): il pre-render delle formule del PDF dispensa, del PDF slide e dei frame video carica `mathjax@{versione}/es5/tex-svg.js` da jsdelivr in una pagina headless che può contattare solo il CDN. |
 | `FIGURE_RENDER_TIMEOUT_SECONDS` | `20` | Tetto (`asyncio.wait_for`) del batch di figure di una lezione per formato; oltre, le figure mancanti degradano a fallback e l'export prosegue. Il batch Mermaid ha un tetto proprio di almeno 60 s (costo fisso Chromium + CDN). |
 | `FIGURE_FUNCTION_TIMEOUT_SECONDS` | `10` | Tetto del calcolo simbolico (sympy) nel processo figlio, ucciso allo scadere: resta il risultato numerico con «Valori approssimati.». |
 | `FIGURE_RENDER_MAX_WORKERS` | `2` | Render CPU-bound concorrenti (worker PDF/video + anteprime `render-function` dell'editor); 2 per la VM a 2 core. |
 | `FIGURE_SVG_CACHE_SIZE` | `256` | Cache LRU in memoria degli SVG (chiave: formato, hash del sorgente, `THEME_VERSION`) e dei risultati `function`. |
 | `FIGURE_SVG_MAX_BYTES` | `1500000` | Oltre, l'SVG prodotto è rifiutato (fallback). |
-| `FIGURE_DOT_MAX_CHARS` | `12000` | Limite del sorgente DOT accettato dal validatore. |
+| `FIGURE_DOT_MAX_CHARS` | `12000` | Limite del sorgente DOT accettato dal validatore. Un valore più alto non ha effetto oltre 12.000: è anche il tetto di `content` degli asset visivi generati dall'AI e di quelli cambiati nel PATCH (`VISUAL_ASSET_CONTENT_MAX_CHARS`). |
 | `GRAPHVIZ_DOT_PATH` | _(vuoto)_ | Percorso del binario `dot`; vuoto = ricerca nel `PATH`. Senza `dot` il formato è assente da `available_formats()` e `log.error("graphviz_dot_missing")` compare una volta all'avvio dei worker. |
+
+Le soglie **editoriali** dei grafi (D13) non sono variabili d'ambiente: sono
+costanti di `backend/app/services/figure_compute/graph_rules.py`
+(`MAX_GRAPH_NODES` 30, `MAX_GRAPH_EDGES` 45, `MAX_LABEL_CHARS` 64,
+`MAX_TITLE_CHARS` 110, `MAX_MERMAID_SOURCE_CHARS` 3.000, `MAX_GRAPH_LINES`
+120, `MAX_EDGE_CROSSINGS` 4 — quest'ultima solo diagnostica). Sono
+**provvisorie**, calibrate sui 57 modelli degli editor con margine ≥ 1,4×
+sul massimo osservato, da riconfermare sull'export reale del docente con
+`backend/scripts/measure_asset_refs.py --figures`: se il p90 reale supera
+il 60 % di una soglia, la soglia si alza. Un tetto di risorsa (le variabili
+qui sopra) protegge il server; una soglia editoriale dice che la figura,
+così com'è, non si legge.
 
 ### OpenAI — parallelismo + auto-retry worker corso
 
@@ -263,7 +282,9 @@ rate-limit OpenAI con tier free/1.
 | `COURSE_LESSON_STRUCTURE_AUTO_RETRY_MAX` | `5` | Numero massimo di retry trasparenti prima di transitare a `failed`. |
 | `COURSE_LESSON_CONTENT_POLL_INTERVAL_SECONDS` | `4` | Polling worker Fase 3. |
 | `COURSE_LESSON_CONTENT_MAX_CONCURRENCY` | `3` | Cap lezioni parallele Fase 3 (output 5x più grande di Fase 2 → cap più basso). |
-| `COURSE_LESSON_CONTENT_DOCUMENTS_CONTEXT_MAX_CHARS` | `20000` | Budget summary nel prompt Fase 3. |
+| `COURSE_LESSON_CONTENT_DOCUMENTS_CONTEXT_MAX_CHARS` | `40000` | Budget totale degli estratti documentali nel prompt Fase 3 (~11,5k token). |
+| `COURSE_LESSON_CONTENT_DOCUMENTS_PER_DOC_MAX_CHARS` | `12000` | Tetto per singolo documento rilevante; con un solo documento rilevante vale l'intero budget residuo. |
+| `COURSE_LESSON_CONTENT_DOCUMENTS_SELECTION_ENABLED` | `true` | Kill-switch del grounding Fase 3: `false` = comportamento storico (nessuna selezione per lezione, esempi e formule non serializzati). |
 | `COURSE_LESSON_CONTENT_AUTO_RETRY_MAX` | `5` | Vedi sopra. |
 | `COURSE_LESSON_SLIDES_POLL_INTERVAL_SECONDS` | `4` | Polling worker Fase 4. |
 | `COURSE_LESSON_SLIDES_MAX_CONCURRENCY` | `3` | Cap lezioni parallele Fase 4 (input ~8-18k token = content_raw, output ~4-8k). |
@@ -491,7 +512,7 @@ secret); valorizzare `R2_ENDPOINT`, `R2_BUCKET`, `R2_ACCESS_KEY_ID`,
 
 Il dominio Corsi usa lo stesso `OPENAI_API_KEY` per **sei** pipeline AI
 principali, con un setting `model` + `max_tokens` separato per ognuna, più
-tre servizi ausiliari degli asset visivi (tabella successiva):
+quattro servizi ausiliari degli asset visivi (tabella successiva):
 
 | Pipeline | Servizio | Endpoint | Sync/Async |
 |---|---|---|---|
@@ -506,6 +527,7 @@ tre servizi ausiliari degli asset visivi (tabella successiva):
 |---|---|---|
 | **Fix degli asset** (`OPENAI_ASSET_FIX_*`) | `openai_asset_fix_service` | a generazione, dentro `asset_validation_service`, solo sugli asset invalidi (LaTeX, Mermaid, Vega-Lite, DOT, `function`), fino a `ASSET_FIX_MAX_ATTEMPTS` |
 | **Localizzazione degli asset** (`OPENAI_ASSET_LOCALIZE_*`) | `openai_asset_localize_service` | a generazione, per lingue a script non latino, sui campi testuali rimasti in un'altra lingua (kill-switch `ASSET_LOCALIZE_ENABLED`) |
+| **Revisore figura ↔ testo** (`OPENAI_FIGURE_REVIEW_*`) | `openai_figure_review_service` | a generazione di Fase 3, dentro `asset_validation_service` fra il fix e la localizzazione, su ogni figura valida, fino a `FIGURE_REVIEW_MAX_ATTEMPTS` chiamate per figura (kill-switch `FIGURE_REVIEW_ENABLED`) |
 | **Immagine → Mermaid** (`OPENAI_IMAGE_TO_MERMAID_*`) | `openai_image_to_mermaid_service` | on-demand dall'editor lezione («Digitalizza in Mermaid»), sincrono |
 
 Le figure Vega-Lite, DOT e `function` non usano OpenAI a render: sono

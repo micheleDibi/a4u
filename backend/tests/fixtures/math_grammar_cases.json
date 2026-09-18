@@ -1,0 +1,566 @@
+[
+  {
+    "markdown": "Sia $x_0$ dato.",
+    "mode": "block",
+    "expected": [
+      [
+        "math_inline",
+        [
+          "x_0",
+          "inline"
+        ]
+      ]
+    ]
+  },
+  {
+    "markdown": "$ x_0 $",
+    "mode": "block",
+    "expected": [],
+    "note": "allow_space=False: prosa (coerente con _INLINE_RE del validatore; il frontend lo rende math: divergenza dichiarata)"
+  },
+  {
+    "markdown": "Testo.\n\n$$\nE = mc^2\n$$\n\nAltro.",
+    "mode": "block",
+    "expected": [
+      [
+        "math_block",
+        [
+          "E = mc^2",
+          "block"
+        ]
+      ]
+    ],
+    "html_contains": [
+      "<div class=\"math-block\">{svg}</div>"
+    ]
+  },
+  {
+    "markdown": "Testo.\n$$\nE = mc^2\n$$\nAltro.",
+    "mode": "block",
+    "expected": [
+      [
+        "math_inline_double",
+        [
+          "E = mc^2",
+          "block"
+        ]
+      ]
+    ],
+    "html_contains": [
+      "<span class=\"math-block\">{svg}</span>"
+    ],
+    "note": "delimitatori su righe proprie senza riga vuota: blocco via CSS dentro il <p>"
+  },
+  {
+    "markdown": "Sia $$E = mc^2$$ la relazione.",
+    "mode": "block",
+    "expected": [
+      [
+        "math_inline_double",
+        [
+          "E = mc^2",
+          "block"
+        ]
+      ]
+    ],
+    "html": "<p>Sia <span class=\"math-inline\">{svg}</span> la relazione.</p>\n"
+  },
+  {
+    "markdown": "Testo.\n$$x$$\nAltro.",
+    "mode": "block",
+    "expected": [
+      [
+        "math_inline_double",
+        [
+          "x",
+          "block"
+        ]
+      ]
+    ],
+    "html_contains": [
+      "<span class=\"math-inline\">{svg}</span>"
+    ]
+  },
+  {
+    "markdown": "| a |\n|---|\n| $$x^2$$ |",
+    "mode": "block",
+    "expected": [
+      [
+        "math_inline_double",
+        [
+          "x^2",
+          "block"
+        ]
+      ]
+    ],
+    "html_contains": [
+      "<td><span class=\"math-inline\">{svg}</span></td>"
+    ]
+  },
+  {
+    "markdown": "## Sezione su $\\alpha$ e \\(\\beta\\) e $$y$$",
+    "mode": "block",
+    "expected": [
+      [
+        "math_inline",
+        [
+          "\\alpha",
+          "inline"
+        ]
+      ],
+      [
+        "math_inline",
+        [
+          "\\beta",
+          "inline"
+        ]
+      ],
+      [
+        "math_inline_double",
+        [
+          "y",
+          "block"
+        ]
+      ]
+    ],
+    "html_contains": [
+      "<h2>Sezione su <span class=\"math-inline\">{svg}</span> e <span class=\"math-inline\">{svg}</span> e <span class=\"math-inline\">{svg}</span></h2>"
+    ]
+  },
+  {
+    "markdown": "Sia \\(x\\) e \\[E=mc^2\\] qui.",
+    "mode": "block",
+    "expected": [
+      [
+        "math_inline",
+        [
+          "x",
+          "inline"
+        ]
+      ],
+      [
+        "math_inline_double",
+        [
+          "E=mc^2",
+          "block"
+        ]
+      ]
+    ],
+    "html": "<p>Sia <span class=\"math-inline\">{svg}</span> e <span class=\"math-inline\">{svg}</span> qui.</p>\n"
+  },
+  {
+    "markdown": "$$ a &= b \\\\ c &= d $$",
+    "mode": "block",
+    "expected": [
+      [
+        "math_block",
+        [
+          "\\begin{aligned} a &= b \\\\ c &= d \\end{aligned}",
+          "block"
+        ]
+      ]
+    ],
+    "note": "ribilanciato da _normalize_math_source"
+  },
+  {
+    "markdown": "Vale $15{,}9$ e $0{,}866$ e $2^{10}$ e $10^{-3}$ e $1,5$.",
+    "mode": "block",
+    "expected": [
+      [
+        "math_inline",
+        [
+          "15{,}9",
+          "inline"
+        ]
+      ],
+      [
+        "math_inline",
+        [
+          "0{,}866",
+          "inline"
+        ]
+      ],
+      [
+        "math_inline",
+        [
+          "2^{10}",
+          "inline"
+        ]
+      ],
+      [
+        "math_inline",
+        [
+          "10^{-3}",
+          "inline"
+        ]
+      ],
+      [
+        "math_inline",
+        [
+          "1,5",
+          "inline"
+        ]
+      ]
+    ]
+  },
+  {
+    "markdown": "Angolo di $30^\\circ$.",
+    "mode": "block",
+    "expected": [
+      [
+        "math_inline",
+        [
+          "30^\\circ",
+          "inline"
+        ]
+      ]
+    ]
+  },
+  {
+    "markdown": "la base 2$^{10}$ e 2$\\pi$",
+    "mode": "block",
+    "expected": [
+      [
+        "math_inline",
+        [
+          "^{10}",
+          "inline"
+        ]
+      ],
+      [
+        "math_inline",
+        [
+          "\\pi",
+          "inline"
+        ]
+      ]
+    ],
+    "note": "allow_digits=True"
+  },
+  {
+    "markdown": "Il costo e $50 e sale a $70 al mese.",
+    "mode": "block",
+    "expected": [],
+    "html": "<p>Il costo e $50 e sale a $70 al mese.</p>\n",
+    "note": "L4: nessun token"
+  },
+  {
+    "markdown": "$50/$70, $5-$10, 5$/10$, 5$, 10$, 5$,10$",
+    "mode": "block",
+    "expected": [],
+    "html": "<p>$50/$70, $5-$10, 5$/10$, 5$, 10$, 5$,10$</p>\n",
+    "note": "contenuto currency-like: core rule"
+  },
+  {
+    "markdown": "US$50 e US$70",
+    "mode": "block",
+    "expected": [],
+    "html": "<p>US$50 e US$70</p>\n",
+    "note": "cifra dopo la chiusura + contenuto che inizia per cifra"
+  },
+  {
+    "markdown": "50$-70$ euro e 5$-10$",
+    "mode": "block",
+    "expected": [],
+    "html": "<p>50$-70$ euro e 5$-10$</p>\n",
+    "note": "cifra prima dell'apertura + contenuto numerico"
+  },
+  {
+    "markdown": "$2$3 e $50→$70",
+    "mode": "block",
+    "expected": [],
+    "html": "<p>$2$3 e $50→$70</p>\n"
+  },
+  {
+    "markdown": "$0$, $-1$, $3/4$, $2+2$, $5$, $50$, $50-70$",
+    "mode": "block",
+    "expected": [
+      [
+        "math_inline",
+        [
+          "0",
+          "inline"
+        ]
+      ],
+      [
+        "math_inline",
+        [
+          "-1",
+          "inline"
+        ]
+      ],
+      [
+        "math_inline",
+        [
+          "3/4",
+          "inline"
+        ]
+      ],
+      [
+        "math_inline",
+        [
+          "2+2",
+          "inline"
+        ]
+      ],
+      [
+        "math_inline",
+        [
+          "5",
+          "inline"
+        ]
+      ],
+      [
+        "math_inline",
+        [
+          "50",
+          "inline"
+        ]
+      ],
+      [
+        "math_inline",
+        [
+          "50-70",
+          "inline"
+        ]
+      ]
+    ],
+    "note": "un numero fra $ in una dispensa e' matematica"
+  },
+  {
+    "markdown": "$1$-$2$ e $x$2 e $a$1",
+    "mode": "block",
+    "expected": [
+      [
+        "math_inline",
+        [
+          "1",
+          "inline"
+        ]
+      ],
+      [
+        "math_inline",
+        [
+          "2",
+          "inline"
+        ]
+      ],
+      [
+        "math_inline",
+        [
+          "x",
+          "inline"
+        ]
+      ],
+      [
+        "math_inline",
+        [
+          "a",
+          "inline"
+        ]
+      ]
+    ]
+  },
+  {
+    "markdown": "costa \\$5 e \\\\(x\\\\)",
+    "mode": "block",
+    "expected": [],
+    "html": "<p>costa $5 e \\(x\\)</p>\n",
+    "note": "escape"
+  },
+  {
+    "markdown": "```python\nprint(\"a\\[0\\]\") $x$\n```",
+    "mode": "block",
+    "expected": [],
+    "html": "<pre><code class=\"language-python\">print(&quot;a\\[0\\]&quot;) $x$\n</code></pre>\n",
+    "note": "fence intatto (L11)"
+  },
+  {
+    "markdown": "~~~\n\\(x\\) $y$\n~~~",
+    "mode": "block",
+    "expected": [],
+    "html": "<pre><code>\\(x\\) $y$\n</code></pre>\n"
+  },
+  {
+    "markdown": "`$x$` e `\\(y\\)` e `a\\[0\\]`",
+    "mode": "block",
+    "expected": [],
+    "html": "<p><code>$x$</code> e <code>\\(y\\)</code> e <code>a\\[0\\]</code></p>\n",
+    "note": "code span"
+  },
+  {
+    "markdown": "    codice $x$ \\[y\\]",
+    "mode": "block",
+    "expected": [],
+    "html": "<pre><code>codice $x$ \\[y\\]\n</code></pre>\n",
+    "note": "blocco di codice indentato"
+  },
+  {
+    "markdown": "\\[1\\], \\[2, 3\\], \\[12–14\\], \\[FIG:x\\], \\[TAB:t1\\]",
+    "mode": "block",
+    "expected": [],
+    "html": "<p>[1], [2, 3], [12–14], [FIG:x], [TAB:t1]</p>\n",
+    "note": "citazioni e tag asset: rifiutati dalla rule, resi da escape"
+  },
+  {
+    "markdown": "para1 \\[a\n\nb\\] para2",
+    "mode": "block",
+    "expected": [],
+    "html": "<p>para1 [a</p>\n<p>b] para2</p>\n",
+    "note": "limite = paragrafo"
+  },
+  {
+    "markdown": "[testo \\(x\\)](http://a.b) e poi \\)",
+    "mode": "block",
+    "expected": [
+      [
+        "math_inline",
+        [
+          "x",
+          "inline"
+        ]
+      ]
+    ],
+    "html": "<p><a href=\"http://a.b\">testo <span class=\"math-inline\">{svg}</span></a> e poi )</p>\n",
+    "note": "posMax del link"
+  },
+  {
+    "markdown": "- item $x$\n- item \\(y\\)\n\n> quote $z$",
+    "mode": "block",
+    "expected": [
+      [
+        "math_inline",
+        [
+          "x",
+          "inline"
+        ]
+      ],
+      [
+        "math_inline",
+        [
+          "y",
+          "inline"
+        ]
+      ],
+      [
+        "math_inline",
+        [
+          "z",
+          "inline"
+        ]
+      ]
+    ]
+  },
+  {
+    "markdown": "<aside class=\"example\"><pre><code>print(&quot;a\\[0\\]&quot;) $x$</code></pre></aside>",
+    "mode": "block",
+    "expected": [],
+    "html": "<aside class=\"example\"><pre><code>print(&quot;a\\[0\\]&quot;) $x$</code></pre></aside>",
+    "note": "html_block: nessun token inline"
+  },
+  {
+    "markdown": "Angolo $30^\\circ$ <b>x</b> & \"y\"",
+    "mode": "inline",
+    "expected": [
+      [
+        "math_inline",
+        [
+          "30^\\circ",
+          "inline"
+        ]
+      ]
+    ],
+    "html": "Angolo <span class=\"math-inline\">{svg}</span> &lt;b&gt;x&lt;/b&gt; &amp; &#34;y&#34;"
+  },
+  {
+    "markdown": "Vedi [FIG:A] e *x* e http://a.b/c",
+    "mode": "inline",
+    "expected": [],
+    "html": "Vedi [FIG:A] e *x* e http://a.b/c",
+    "note": "preset zero: letterale"
+  },
+  {
+    "markdown": "Sia $$E$$ qui e \\[y\\]",
+    "mode": "inline",
+    "expected": [
+      [
+        "math_inline_double",
+        [
+          "E",
+          "block"
+        ]
+      ],
+      [
+        "math_inline_double",
+        [
+          "y",
+          "block"
+        ]
+      ]
+    ],
+    "html": "Sia <span class=\"math-inline\">{svg}</span> qui e <span class=\"math-inline\">{svg}</span>"
+  },
+  {
+    "markdown": "5$, 10$ e US$50 e US$70",
+    "mode": "inline",
+    "expected": [],
+    "html": "5$, 10$ e US$50 e US$70",
+    "note": "core rule attiva anche in parseInline"
+  },
+  {
+    "markdown": "Rudin, W. (1976). *Principles of Mathematical Analysis*, $\\epsilon$-$\\delta$.",
+    "mode": "inline",
+    "expected": [
+      [
+        "math_inline",
+        [
+          "\\epsilon",
+          "inline"
+        ]
+      ],
+      [
+        "math_inline",
+        [
+          "\\delta",
+          "inline"
+        ]
+      ]
+    ],
+    "html": "Rudin, W. (1976). *Principles of Mathematical Analysis*, <span class=\"math-inline\">{svg}</span>-<span class=\"math-inline\">{svg}</span>."
+  },
+  {
+    "markdown": "costa \\$5 e \\\\(x\\\\)",
+    "mode": "inline",
+    "expected": [],
+    "html": "costa \\$5 e \\\\(x\\\\)",
+    "note": "preset zero senza escape: byte-identico a markupsafe.escape"
+  },
+  {
+    "markdown": "Scrivi $$5 per raddoppiare $$10.",
+    "mode": "inline",
+    "expected": [],
+    "html": "Scrivi $$5 per raddoppiare $$10.",
+    "note": "guardia currency anche su math_inline_double: cifra dopo la chiusura e contenuto che inizia per cifra"
+  },
+  {
+    "markdown": "$$50/$$70",
+    "mode": "inline",
+    "expected": [],
+    "html": "$$50/$$70",
+    "note": "importo scritto col doppio dollaro: contenuto «importo + separatore»"
+  },
+  {
+    "markdown": "Sia $$E$$ la relazione.",
+    "mode": "inline",
+    "expected": [
+      [
+        "math_inline_double",
+        [
+          "E",
+          "block"
+        ]
+      ]
+    ],
+    "note": "B3(d): il doppio dollaro in frase resta math, la guardia decide dal contenuto"
+  }
+]

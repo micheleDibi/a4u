@@ -9,7 +9,7 @@
     *, *::before, *::after { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; }
     body {
-      font-family: "{{ tpl.font_family }}", "Inter", "DejaVu Sans",
+      font-family: "{{ tpl.font_family|css_string }}", "Inter", "DejaVu Sans",
                     "Liberation Sans", -apple-system, "Segoe UI",
                     Roboto, "Helvetica Neue", Arial,
                     "Noto Sans CJK JP", "Noto Sans", sans-serif;
@@ -59,7 +59,7 @@
       bottom: -{{ margin_bottom_cm }}cm;
       left: -{{ margin_side_cm }}cm;
       right: -{{ margin_side_cm }}cm;
-      background-image: url("{{ tpl.background_image_url }}");
+      background-image: url("{{ tpl.background_image_url|css_string }}");
       background-size: cover;
       background-position: center center;
       background-repeat: no-repeat;
@@ -103,7 +103,7 @@
       width: 100%;
       padding-top: 3pt;
       border-top: 0.5pt solid {{ tpl.secondary_color }}66;
-      font-family: "{{ tpl.font_family }}", "DejaVu Sans", sans-serif;
+      font-family: "{{ tpl.font_family|css_string }}", "DejaVu Sans", sans-serif;
       font-size: 7pt;
       line-height: 1.35;
       color: {{ tpl.text_color }};
@@ -247,6 +247,11 @@
     .equation { text-align: center; }
     .equation .math-block { margin: 0; }
     .equation figcaption .label { font-style: normal; font-weight: 600; }
+    /* Etichette «Tabella N.» / «Equazione N.» (D5): in tondo dentro la
+       didascalia in corsivo, grassetto da `.figure-label`. */
+    figure.table figcaption .figure-label, figure.equation figcaption .figure-label {
+      font-style: normal;
+    }
 
     /* === Teoremi / enunciati + dimostrazioni === */
     /* Il blocco teorema usa testo allineato a sinistra; solo le formule
@@ -288,15 +293,20 @@
       background: rgba(0, 0, 0, 0.04);
       color: rgba(0, 0, 0, 0.55); font-size: 9.5pt;
     }
-    /* Mermaid SVG: forza il riempimento della larghezza del container
-       (override del max-width:Xpx che mermaid mette inline — anche se
-       lo strippiamo lato Python, ribadiamo qui per safety). Il SVG
-       conserva l'aspect ratio via viewBox + preserveAspectRatio.
-       `max-height` evita che diagrammi TD (verticali, molti nodi)
-       eccedano l'altezza utile della pagina e vengano tagliati dal
-       page-break: WeasyPrint scala l'SVG per farlo entrare. */
+    /* Mermaid SVG: la larghezza del wrapper `.mermaid-svg` è decisa dalla
+       banda di leggibilità (D10/D11, `figure_scale`: il testo più piccolo
+       cade fra 8 e 11 pt) ed emessa dal partial come `style="width:Wmm"`;
+       il wrapper a larghezza fissa va centrato e mai oltre il body.
+       L'SVG riempie il wrapper (override del max-width:Xpx che mermaid
+       mette inline — anche se lo strippiamo lato Python, ribadiamo qui
+       per safety) e conserva l'aspect ratio via viewBox +
+       preserveAspectRatio. `max-height` resta come cintura: evita che un
+       diagramma più alto della pagina venga TAGLIATO dal page-break
+       (WeasyPrint scala l'SVG per farlo entrare); non evita il salto a
+       pagina nuova, che è un costo tipografico accettato. */
     .mermaid-svg {
-      margin: 0 -1mm;
+      margin: 0 auto;
+      max-width: 100%;
     }
     .mermaid-svg svg {
       max-width: 100% !important;
@@ -307,14 +317,18 @@
       margin: 0 auto;
     }
     /* Figure Vega-Lite, DOT e function: SVG normalizzato dentro un `<img>`
-       (replaced element: `max-height` rispettato). Nessun `width: 100%`:
-       la dimensione intrinseca in px riscritta da `normalize_svg` è un
-       massimo, `max-width` riduce ma non ingrandisce (un grafo DOT a tre
-       nodi resta piccolo). */
+       (replaced element: `max-height` rispettato). La larghezza viene dalla
+       banda di leggibilità come `style="width:Wmm"` sull'`<img>` (D10);
+       nessun `width: 100%` qui: senza fit la dimensione intrinseca in px
+       riscritta da `normalize_svg` è un massimo, `max-width` riduce ma non
+       ingrandisce (un grafo DOT a tre nodi resta piccolo). `object-fit:
+       contain` è la cintura: senza, un `max-height` violato deformerebbe
+       l'`<img>` a larghezza fissa. */
     .figure-svg {
       max-width: 100%;
       height: auto;
       max-height: {{ max_figure_height_cm }}cm;
+      object-fit: contain;
       display: block;
       margin: 0 auto;
     }
@@ -346,11 +360,11 @@
        (il wrapper interno `.mermaid-svg` è conservato dal partial perché
        questa regola continui ad applicarsi). NB la figure resta dentro
        i margini di testo del documento (no offset negativi): il
-       diagramma deve allinearsi al body come gli altri elementi. La
-       leggibilità su flowchart densi è già migliorata dallo stripping
-       del `max-width` inline di mermaid — l'SVG riempie tutto il
-       content-area invece di fermarsi alla sua dimensione naturale
-       (~340px). */
+       diagramma deve allinearsi al body come gli altri elementi. Il box
+       della banda di leggibilità (D10) sottrae questo padding: 168 mm
+       su A4 con margine 20 (`_MERMAID_BODY_PADDING_MM`). La larghezza
+       finale non è più «tutto il content-area» ma quella a cui il testo
+       più piccolo cade nella banda 8-11 pt. */
     figure.visual:has(.mermaid-svg) .figure-body {
       padding: 1mm;
     }
@@ -369,6 +383,9 @@
     /* Inline: l'SVG MathJax porta il proprio `vertical-align` per
        l'allineamento alla baseline del testo; limitiamo solo la larghezza. */
     .math-inline svg { max-width: 100%; }
+    /* `$$..$$` con i delimitatori su righe proprie dentro un paragrafo:
+       blocco via span (mai un <div> in un <p>). */
+    span.math-block { display: block; }
     .math-error {
       color: #cc0000; background: rgba(204, 0, 0, 0.08);
       padding: 0.5pt 3pt; border-radius: 2pt;

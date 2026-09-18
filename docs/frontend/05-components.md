@@ -1118,7 +1118,7 @@ un'eccezione che rompa la pagina.
 ### `FigureFrame.tsx`
 
 - **Props**: `{ assetId, format, caption, altText, number?, variant?:
-  "lesson" | "slide", extraCaption?, className?, children }`.
+  "lesson" | "slide", extraCaption?, cite?, className?, children }`.
 - **Comportamento**: `<figure role="figure" aria-label=… className="figure
   figure--{variant} figure--{format}">` + `<figcaption>` con
   `t("courses.figures.label", { n })` («Figura N.») oppure
@@ -1126,12 +1126,40 @@ un'eccezione che rompa la pagina.
   (slide e frame video, A2); `stripFigurePrefix(caption)` toglie un
   prefisso «Figura 3.» già scritto (solo a video, mai nel dato);
   `extraCaption` (coda calcolata di `function`) omessa se la didascalia
-  termina già con lo stesso testo. Stesso markup del partial backend
+  termina già con lo stesso testo. La didascalia (con il punto di
+  chiusura) passa da `InlineMath`: solo il math `$..$` / `\(..\)` è reso,
+  il resto è letterale; l'etichetta, la coda calcolata e l'`aria-label`
+  restano testo. `cite` (rimando testuale degli asset, `lessonAssetRefs`)
+  è applicato subito dopo `stripFigurePrefix`, quindi la didascalia
+  visibile e l'`aria-label` dicono la stessa cosa; `altText`, che ha la
+  precedenza sull'`aria-label`, resta testo d'autore e non è mai citato.
+  Stesso markup e stesso ordine del partial backend
   `partials/figure.html.j2`. Niente card: la figura è un elemento
   tipografico del testo. Esporta anche `FigureLoading` (segnaposto
   `courses.figures.loading`) e `FigureErrorBox` (titolo del formato,
   `courses.figures.renderError`, dettagli collassabili con sorgente ed
   errore tecnico).
+
+### `InlineMath.tsx`
+
+- **Props**: `{ text }`.
+- **Comportamento**: rende un campo inline (didascalia di figura o di
+  tabella, label di un'equazione, titolo di un esempio) con il SOLO math
+  (`$..$`, `$$..$$`, `\(..\)`, `\[..\]`) reso da KaTeX, tutto il resto
+  letterale: niente enfasi, link, code o escape (`\$5` resta `\$5`), in
+  parità con `render_markdown_inline` del PDF. La grammatica è
+  `lib/inlineMath.ts` (`splitInlineMath`, senza import: specchio di
+  dollarmath con `allow_space=False`/`allow_digits=True`, della rule
+  `\(..\)`/`\[..\]` che rifiuta `\[FIG:x\]` e `\[1\]`, e della guardia
+  anti-importi: `$50 e sale a $70`, `US$50 e US$70` restano prosa).
+  Ritorna un frammento senza elemento avvolgente: senza math il nodo di
+  testo è identico a prima; ogni formula è uno `<span class="math-inline">`
+  montato via ref con `katex.render` (`throwOnError: false`, `trust:
+  false`, `displayMode: false`: sempre text style), mai HTML da stringa.
+  Divergenze dichiarate rispetto al corpo (remark-math): `$ x $` è prosa
+  qui e math nel corpo; `$$..$$` è text style qui e display style nel PDF.
+  Parità con l'istanza zero del PDF e markup della figcaption pinnati da
+  `backend/tests/test_frontend_inline_math.py` (Node + Chromium).
 
 ### `MermaidDiagram.tsx`
 
@@ -1141,9 +1169,17 @@ un'eccezione che rompa la pagina.
   top-level, `securityLevel: "strict"`), `mermaid.parse` con
   `suppressErrors` prima del render (errore → `FigureErrorBox`),
   `sanitizeMermaidCode` (fence, righe `mermaid`/`all`), `max-width`
-  inline rimosso, `width: 100%`; tetto d'altezza
-  (`fullWidthSvgMaxHeightPx`) solo per i diagrammi orizzontali, mai
-  sotto l'altezza naturale (`tests/test_frontend_figure_layout.py`).
+  inline rimosso; larghezza dalla banda di leggibilità del web (D10/D11,
+  8-11 pt): il corpo del testo più piccolo è misurato nel DOM
+  (`measureSvgFontPx`, stesso JS del pre-render backend), il fit
+  (`fitFigureWidthMm`, mirror di `figure_scale.py`, senza box) dà la
+  larghezza `W` e il wrapper interno senza padding porta
+  `width: min(100%, Wpx)` con l'SVG a `width: 100%` dentro: nessun tetto
+  d'altezza, nessun `clientWidth`/`ResizeObserver`, la colonna la applica
+  il browser. Misura fallita → `MERMAID_FALLBACK_FONT_PX` (14); senza
+  testo → scala naturale. Geometria, parità del JS di misura e fixture
+  condivisa in `tests/test_frontend_figure_layout.py` e
+  `tests/test_figure_scale.py`.
 
 ### `VegaLiteDiagram.tsx`
 
@@ -1297,14 +1333,32 @@ un'eccezione che rompa la pagina.
   `mermaidConfig`, `VEGALITE_THEME_CONFIG`, `DOT_DEFAULTS`,
   `dotDefaultsPrelude`), da mantenere allineata a `figure_theme.py`
   (test di parità nel backend);
-- `figureNumbering.ts` — `FIG_REF_RE`, `citedFigureIds`,
-  `appendUncitedFigureRefs`, `computeFigureNumbers`, `stripFigurePrefix`
-  (copia di `figure_numbering.py`, fixture condivisa);
+- `figureNumbering.ts` — numerazione editoriale dei quattro kind:
+  `ASSET_KINDS`, `ASSET_REF_RE` / `FIG_REF_RE`, `citedAssetIds`,
+  `appendUncitedAssetRefs`, `computeAssetNumbers`, `assetNumbersByKind`,
+  `equationLabelFamily` / `nonEmptyProofSteps` (ramo teorema),
+  `stripFigurePrefix`, più le proiezioni storiche sulle sole figure
+  (`citedFigureIds`, `appendUncitedFigureRefs`, `computeFigureNumbers`);
+  copia di `figure_numbering.py`, fixture condivisa
+  `tests/fixtures/figure_numbering_cases.json`;
+- `assetRefNormalize.ts` — `normalizeAssetRefs` (rimandi in linea, ancora
+  unica dopo il blocco della prima citazione) e `citeAssetRefs` (soli
+  rimandi, per punti chiave e riferimenti), copia di
+  `asset_ref_normalize.py` con fixture condivisa
+  `tests/fixtures/asset_ref_normalize_cases.json`;
+- `inlineMath.ts` — `splitInlineMath`, grammatica del math dei campi
+  inline (specchio dell'istanza `zero` del PDF), usata da `InlineMath`;
+- `slides.ts` — `resolveAsset`, `assetRefKey` (`trim().toLowerCase()`,
+  stessa chiave del CRUD e del PDF delle slide) e `uniqueAssetRefs`;
 - `figureFormats.ts` — `VISUAL_FORMATS` / `RENDERABLE_FORMATS` /
   `LEGACY_FORMATS`, `formatLabel(format, t)`, `stripFenceAndControl`,
   `parseJsonObject`, `FigureParseError` (codici tradotti dal componente),
-  `sanitizeSvgElement`, `svgDataUri`, `svgIntrinsicSize`,
-  `fullWidthSvgMaxHeightPx`;
+  `sanitizeSvgElement`, `svgDataUri`, `svgIntrinsicBox` (con
+  `svgIntrinsicSize` come proiezione), `fitFigureWidthMm`, `formatMm`,
+  `measureSvgFontPx`, `READABILITY_BANDS_PT`, `MM_PER_PX`, `PT_PER_PX`,
+  `MERMAID_FALLBACK_FONT_PX` (mirror di `figure_scale.py` e di
+  `svg_normalize.svg_intrinsic_box`, fixture condivisa
+  `tests/fixtures/figure_scale_cases.json`);
 - `functionSpec.ts` — costanti e helper della spec `function` condivisi da
   vista ed editor;
 - `errors.ts` — `extractApiError` con `meta.errors[]` tipizzati
@@ -1312,11 +1366,42 @@ un'eccezione che rompa la pagina.
 
 ### Integrazione nelle viste
 
-`MarkdownRenderer` riceve `figureNumbers` (calcolati in
-`LessonContentView.buildFullMarkdown` sul corpo intro → sezioni → sintesi
-con i tag orfani accodati) e rende ogni `[FIG:id]` con `VisualAssetBody`
-dentro `FigureFrame`; `LessonSlidesView` usa `FigureFrame` con
-`variant="slide"` (nessun numero) e `MermaidDiagram` lazy; entrambi
-leggono `CourseRefContext` per `FunctionFigure`. `[FIG:]` dentro esempi
-e tabelle (`ExampleBlock` usa `ReactMarkdown` direttamente) non è
-risolvibile né numerabile: limite dichiarato.
+`MarkdownRenderer` riceve `assetNumbers` (`Map<"KIND:id_lower", N>`,
+calcolata in `LessonContentView` con `computeAssetNumbers` sul corpo intro
+→ sezioni → sintesi con i tag orfani dei quattro kind accodati, PRIMA di
+`normalizeAssetRefs` di `lib/assetRefNormalize.ts`, che riscrive le
+citazioni in linea nel rimando «Figura N» / «Tabella N» / «Lemma N» —
+chiavi `courses.figures.*.ref` — e lascia una sola ancora per asset dopo il
+blocco della prima citazione; la coda passa da `citeAssetRefs`) e rende
+ogni ancora `[KIND:id]` con `VisualAssetBody` dentro `FigureFrame`,
+`TableBlock` («Tabella N.»), `EquationBlock` («Equazione N.», oppure
+«Lemma N.» quando `equationLabelFamily` è `THM`) o `ExampleBlock`
+(«Esempio N.»), con le chiavi letterali
+`courses.figures.{table,equation,example,theorem}.*` e l'etichetta sempre
+presente; didascalia di tabella, `label` dell'equazione (entrambi i rami)
+e titolo dell'esempio passano da `InlineMath` (solo il math è reso, come
+nel PDF); `LessonSlidesView` usa `FigureFrame` con `variant="slide"`
+(nessun numero), le forme non numerate «Tabella.» / «Esempio.» sul proprio
+markup (didascalia e titolo via `InlineMath`) e `MermaidDiagram` lazy;
+entrambi leggono `CourseRefContext` per
+`FunctionFigure`. `[FIG:]` dentro esempi e tabelle (`ExampleBlock` usa
+`ReactMarkdown` direttamente) non è risolvibile né numerabile: limite
+dichiarato.
+
+In `LessonSlidesView` titolo, prosa e bullet della slide passano da
+`InlineMath` (parità con `render_markdown_inline` nel PDF delle slide) e
+l'elenco dei riferimenti da `uniqueAssetRefs`: un asset citato due volte
+dalla stessa slide è reso una volta, come nel PDF e nei frame video.
+`LessonSlidesEditDialog` usa la stessa chiave (`assetRefKey`) nella
+multi-select, così la lista salvata non ha ripetizioni e togliere un asset
+ne toglie ogni grafia.
+
+Le stringhe nuove delle etichette (`courses.figures.table.*`,
+`equation.*`, `example.*`, `theorem.*`, `ref`) esistono **solo** in
+`it.json` e `en.json`. Le altre 22 lingue del bundle non hanno il
+sottoalbero `courses.figures` e ricadono sul `fallbackLng: "it"` di
+`src/i18n/index.ts`: un corso in tedesco mostra «Figura 2», non una chiave
+grezza. Lo specchio backend ↔ frontend
+(`backend/tests/test_figure_i18n_mirrors_frontend.py`) confronta solo `it`
+e `en` e **fallisce**, non salta, se il sottoalbero è vuoto o parziale; le
+altre 22 lingue sono dichiarate fuori perimetro.

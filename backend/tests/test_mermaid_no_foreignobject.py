@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import os
 import re
-import socket
 from pathlib import Path
 
 import pytest
@@ -25,6 +24,7 @@ import pytest
 from app.services import figure_theme as theme
 from app.services import mermaid_prerender as mp
 from app.services.figure_render_service import REGISTRY, _svg_external_ref
+from tests.chromium_guard import render_batch_or_fail, require_cdn, require_chromium
 from tests.test_figure_render_service import MERMAID_BR_LINE_BREAKS
 
 _BR_CODE = "flowchart LR\n  A[Riga 1%sRiga 2] --> B"
@@ -49,18 +49,11 @@ _JOURNEY = "journey\n  title Percorso\n  section Inizio\n    Passo: 5: Studente"
 
 @pytest.fixture(scope="module")
 def rendered() -> dict[str, str | None]:
-    try:
-        socket.create_connection(("cdn.jsdelivr.net", 443), timeout=3).close()
-    except OSError:
-        pytest.skip("cdn.jsdelivr.net non raggiungibile")
+    require_cdn()
+    require_chromium()
     kinds = [*theme.MERMAID_D8_SAMPLES, "journey"]
     codes = [*theme.MERMAID_D8_SAMPLES.values(), _JOURNEY]
-    try:
-        svgs = mp._prerender_mermaid_to_svg_batch_sync(codes)
-    except Exception as exc:  # launch o rete: verifica locale, non gate CI
-        pytest.skip(f"Chromium o CDN non disponibili: {exc!r}"[:300])
-    if all(s is None for s in svgs):
-        pytest.skip("pagina di rendering non pronta (__mermaidReady) o CDN non caricata")
+    svgs = render_batch_or_fail(lambda: mp._prerender_mermaid_to_svg_batch_sync(codes))
     return dict(zip(kinds, svgs, strict=True))
 
 
@@ -103,17 +96,10 @@ def test_br_in_a_label_is_a_line_break_not_html(rendered):
 @pytest.fixture(scope="module")
 def br_rendered() -> dict[str, str]:
     """Rende `A[Riga 1<TOKEN>Riga 2] --> B` per ogni forma `<br…>` misurata."""
-    try:
-        socket.create_connection(("cdn.jsdelivr.net", 443), timeout=3).close()
-    except OSError:
-        pytest.skip("cdn.jsdelivr.net non raggiungibile")
+    require_cdn()
+    require_chromium()
     codes = [_BR_CODE % token for token in MERMAID_BR_LINE_BREAKS]
-    try:
-        svgs = mp._prerender_mermaid_to_svg_batch_sync(codes)
-    except Exception as exc:  # launch o rete: verifica locale, non gate CI
-        pytest.skip(f"Chromium o CDN non disponibili: {exc!r}"[:300])
-    if all(s is None for s in svgs):
-        pytest.skip("pagina di rendering non pronta (__mermaidReady) o CDN non caricata")
+    svgs = render_batch_or_fail(lambda: mp._prerender_mermaid_to_svg_batch_sync(codes))
     return dict(zip(MERMAID_BR_LINE_BREAKS, svgs, strict=True))
 
 
@@ -285,18 +271,11 @@ _EXTERNAL_RESOURCE_SOURCES: dict[str, tuple[str, str]] = {
 
 @pytest.fixture(scope="module")
 def external_resource_rendered() -> dict[str, str | None]:
-    try:
-        socket.create_connection(("cdn.jsdelivr.net", 443), timeout=3).close()
-    except OSError:
-        pytest.skip("cdn.jsdelivr.net non raggiungibile")
+    require_cdn()
+    require_chromium()
     names = list(_EXTERNAL_RESOURCE_SOURCES)
     codes = [_EXTERNAL_RESOURCE_SOURCES[n][0] for n in names]
-    try:
-        svgs = mp._prerender_mermaid_to_svg_batch_sync(codes)
-    except Exception as exc:  # launch o rete: verifica locale, non gate CI
-        pytest.skip(f"Chromium o CDN non disponibili: {exc!r}"[:300])
-    if all(s is None for s in svgs):
-        pytest.skip("pagina di rendering non pronta (__mermaidReady) o CDN non caricata")
+    svgs = render_batch_or_fail(lambda: mp._prerender_mermaid_to_svg_batch_sync(codes))
     return dict(zip(names, svgs, strict=True))
 
 

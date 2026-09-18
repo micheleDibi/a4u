@@ -16,6 +16,7 @@ speculare a `openai_asset_fix_service` / `openai_translate_service`.
 from __future__ import annotations
 
 import json
+import time
 from typing import Any
 
 import httpx
@@ -28,6 +29,7 @@ from app.services.openai_client import (
     OpenAINotConfiguredError,
     get_client,
 )
+from app.services.openai_pricing import build_usage_dict
 
 log = get_logger("app.openai_asset_localize")
 
@@ -90,7 +92,9 @@ async def localize_texts(
 ) -> tuple[dict[str, str], dict[str, Any]]:
     """Traduce nella lingua `language_code` i valori di `items` (dict key→testo).
 
-    Ritorna `(localized, usage)`. `localized` contiene SOLO le chiavi con una
+    Ritorna `(localized, usage)`, con `usage` di
+    `openai_pricing.build_usage_dict` (vuoto se `items` è vuoto: nessuna
+    chiamata). `localized` contiene SOLO le chiavi con una
     traduzione "meaningful" (per script non-latino: il valore deve contenere
     caratteri dello script atteso, così gli echi del source vengono scartati);
     le chiavi omesse fanno sì che il chiamante mantenga il valore originale.
@@ -122,6 +126,7 @@ async def localize_texts(
         items=len(items),
         model=model,
     )
+    started = time.monotonic()
     try:
         async with get_client(timeout=120.0) as client:
             resp = await client.post("/chat/completions", json=body, timeout=120.0)
@@ -132,6 +137,7 @@ async def localize_texts(
         raise OpenAIAssetLocalizeError(
             status=None, message=f"Errore HTTP verso OpenAI: {exc}"
         ) from exc
+    duration_ms = int((time.monotonic() - started) * 1000)
 
     if resp.status_code >= 400:
         try:
@@ -187,19 +193,21 @@ async def localize_texts(
             continue
         out[k] = v
 
-    usage_raw = data.get("usage") or {}
-    usage = {
-        "prompt": int(usage_raw.get("prompt_tokens") or 0),
-        "completion": int(usage_raw.get("completion_tokens") or 0),
-        "total": int(usage_raw.get("total_tokens") or 0),
-        "model": model,
-    }
+    # Usage uniforme alle fasi della pipeline (D16); nessun setting di
+    # reasoning per questo servizio: `reasoning_effort` resta `None`.
+    usage = build_usage_dict(
+        model=model,
+        reasoning_effort_setting=None,
+        openai_usage=data.get("usage") or {},
+        duration_ms=duration_ms,
+    )
     log.info(
         "openai_asset_localize_response",
         target=language_code,
         translated=len(out),
         requested=len(items),
         tokens=usage["total"],
+        cost_usd=usage["cost_usd"],
     )
     return out, usage
 

@@ -6,6 +6,10 @@ compatto di `FunctionFigureSpec` (D9) e tre esempi minimi che devono
 superare i validatori reali del registro; P4 rinvia a Fase 3 senza
 graffe; P5 vieta la lettura a voce delle sorgenti. Il testo dei prompt è
 statico (A19): nessun test dipende da `available_formats()`.
+
+WP5 (D17): la regola POSIZIONE DEI TAG di P3 (un tag per asset su riga
+propria, richiamo a parole), i rimandi da DIVIETI e dal suffisso di
+rigenerazione, e l'assenza della regola da P4.
 """
 
 from __future__ import annotations
@@ -232,6 +236,68 @@ def test_p3_caption_rule_forbids_figure_prefix():
     divieti = _flat(prompt[prompt.index("DIVIETI ASSOLUTI") : prompt.index("CASO SPECIALE")])
     assert '"Figura 1"/"Fig. 1"' in divieti
     assert "il numero lo mette il renderer" in divieti
+
+
+def _tag_rule(prompt: str) -> str:
+    return _flat(
+        prompt[prompt.index("POSIZIONE DEI TAG — REGOLA RIGIDA") : prompt.index("FORMATI DELLE")]
+    )
+
+
+def test_p3_tag_position_rule_places_each_tag_once_on_its_own_line():
+    """D17: il tag sta su una riga propria fra righe vuote, UNA volta per
+    asset, e nel testo l'asset si richiama a parole. È la forma che il
+    renderer rende come blocco dopo il paragrafo senza toccare la frase
+    (`test_lesson_pdf_figures.py`, forma insegnata dal prompt). Mai tag nei
+    campi in cui il PDF non li sostituisce (esempi, tabelle)."""
+    prompt = _p3()
+    assert prompt.count("POSIZIONE DEI TAG — REGOLA RIGIDA") == 1
+    rule = _tag_rule(prompt)
+    for text in (
+        "Per ogni asset: id stabile e UN tag nel testo",
+        "Il tag compare UNA sola volta",
+        "da solo su una riga propria fra due righe vuote",
+        "dopo il paragrafo che introduce l'asset",
+        '"come mostra la figura", "nella tabella seguente"',
+        "senza ripetere il tag",
+        'senza "Figura", "Tabella", "Equazione" o "Esempio" davanti al tag',
+        "Mai tag in codice, formule, `caption`, `key_takeaways`, `references`, "
+        "`examples[].content` o `tables[].markdown`",
+    ):
+        assert text in rule, text
+
+
+def test_p3_every_asset_kind_has_its_tag_and_the_old_minimum_is_gone():
+    """I quattro kind validati in materializzazione (FIG/TAB/EQ/EX) sono
+    nominati con il campo id del proprio array dentro la regola, che vale
+    quindi per figure, tabelle, equazioni ed esempi; la vecchia formula
+    «referenziato almeno una volta» ammetteva le ripetizioni."""
+    prompt = _p3()
+    rule = _tag_rule(prompt)
+    for tag in ("[FIG:asset_id]", "[TAB:table_id]", "[EQ:equation_id]", "[EX:example_id]"):
+        assert tag in rule, tag
+    assert "referenziato almeno una volta" not in _flat(prompt)
+    assert "tag asset ([FIG:], [EQ:], [TAB:], [EX:])" in _flat(prompt)
+    # La didascalia resta regolata da DIVIETI (una sola regola, non due).
+    divieti = _flat(prompt[prompt.index("DIVIETI ASSOLUTI") : prompt.index("CASO SPECIALE")])
+    assert "devono essere brevi descrizioni semantiche" in divieti
+
+
+def test_p3_divieti_and_regeneration_point_to_the_position_rule():
+    """Il blocco DIVIETI vieta la numerazione a mano e rimanda alla regola;
+    il suffisso di rigenerazione chiede di riscrivere i tag di una
+    versione precedente che la viola (il modello la rilegge nel prompt)."""
+    prompt = _p3()
+    divieti = _flat(prompt[prompt.index("DIVIETI ASSOLUTI") : prompt.index("CASO SPECIALE")])
+    assert '- NON numerare gli asset ("Figura 2"): vedi POSIZIONE DEI TAG.' in divieti
+    suffix = _flat(content.REGENERATION_SUFFIX)
+    assert "Tag ripetuti o dentro le frasi: riscrivili secondo POSIZIONE DEI TAG." in suffix
+
+
+def test_p3_tag_rule_stays_out_of_phase4():
+    """D17 tocca solo P3: il margine di P4 (300 caratteri) non lo regge."""
+    for prompt in (slides._system_prompt("it"), slides.REGENERATION_SUFFIX):
+        assert "POSIZIONE DEI TAG" not in prompt
 
 
 def test_p3_lingua_covers_the_new_formats():

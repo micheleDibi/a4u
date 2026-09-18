@@ -201,13 +201,19 @@ RunPod e va dritto al 60 %.
 
 Riusa **al 100 %** la pipeline del PDF slide (Fase 4): stesso template
 (`lesson_slides_pdf.html.j2`), stesso pre-render delle figure → SVG
-(`render_svg_map` del registro `figure_render_service`: Mermaid via
+(`render_figure_map` del registro `figure_render_service`: Mermaid via
 Playwright, Vega-Lite, DOT e `function` offline, tutte in `<img
 data:svg>` con la cornice «Figura.» senza numero — A2, A8; vedi
 [17 — Figure accademiche](17-visual-figures.md)), stessa risoluzione di
 asset (formule LaTeX → SVG MathJax con fallback MathML, immagini
 caricate). `_VIDEO_OVERRIDE_CSS` non tocca `.slide-asset`: ogni regola
-del template slide vale 1:1 nei frame. La differenza
+del template slide vale 1:1 nei frame, compreso il box della figura per
+pagina (D12): `render_slides_html` lo calcola sul contenuto della pagina
+resa (`slide_geometry.page_figure_budget`, senza split bullet e figura si
+dividono i 120 mm del body) e lo scrive come `--figure-w`/`--figure-h`
+sul `<figure>`, quindi i frame lo ereditano dall'HTML senza codice
+proprio; `tests/test_slide_figure_geometry.py` lo verifica in Chromium con
+la stessa `_VIDEO_OVERRIDE_CSS`. La differenza
 è il viewport: Playwright apre **1980×1400** (proporzione A4 landscape
 297:210 = 99:70) e scala ogni `.slide` per riempire esattamente il
 frame — niente bande bianche, niente distorsione. `enable_split=False`:
@@ -215,6 +221,58 @@ frame — niente bande bianche, niente distorsione. `enable_split=False`:
 
 Output: una PNG 1980×1400 per slide, in ordine 1:1 con
 `slides_raw.slides[].slide_id`.
+
+**Guardia di rete e JavaScript spento (WP4).** La pagina dei frame
+carica in Chromium un HTML costruito da contenuti d'autore, e non tutto è
+testo escapato: `asset_html` porta il markdown di esempi, spiegazioni delle
+equazioni, enunciati e celle delle tabelle, che ammette HTML come la
+dispensa. Due difese, indipendenti:
+
+- **JavaScript spento.** Il contesto è creato con
+  `java_script_enabled=False`: `<script>` e gestori `on*` d'autore non
+  partono (prima un `<img onerror>` in un esempio o un `<script>` nella
+  spiegazione di un'equazione giravano nel frame). Il template non ha
+  script propri, figure e formule arrivano già rese, e `page.evaluate` di
+  Playwright (attesa dei font, cambio di `display` per slide) resta
+  disponibile. Lo `src` di un asset `image` con URL assoluto è inoltre
+  escapato nell'attributo (10-lesson-slides).
+- **Guardia di rete.** Come le pagine di pre-render di Mermaid e MathJax,
+  la pagina instrada ogni richiesta con
+  `mermaid_prerender.block_external_requests(page, allowed_prefixes=…)`
+  **prima** di `set_content`: passano il CDN (`https://cdn.jsdelivr.net/`),
+  gli schemi inerti (`about:`, `data:`, `blob:`) e, solo con lo storage
+  remoto (`ovh_ftp`/`ovh_sftp`), l'host pubblico dei media
+  (`ovh_public_base_url` con la barra finale,
+  `mermaid_prerender.media_url_prefixes`, la stessa regola del fetcher di
+  WeasyPrint dei tre PDF); ogni altra richiesta HTTP(S) è annullata con
+  `prerender_request_blocked` nel log. Il backend locale
+  (`public_base_url`) non è mai ammesso. I WebSocket non passano da
+  `page.route`: la guardia li instrada a parte (`page.route_web_socket`) e
+  li chiude prima dell'handshake (`prerender_websocket_blocked`); poiché
+  quell'instradamento vale per i documenti caricati dopo, la guardia
+  riporta la pagina su `about:blank` prima di tornare. Figure e formule
+  sono data URL; loghi e sfondo del template caricati dall'app arrivano
+  come data URL (`_resolve_template_asset_url` legge lo storage e codifica
+  in base64): l'host dei media serve solo a un path assoluto già salvato in
+  quella forma. Senza `allowed_prefixes` la regola HTTP è quella di prima.
+
+Limiti dichiarati della guardia: non vede i canali che Playwright non
+instrada (WebRTC, WebTransport) e, da un Worker, l'apertura TCP verso
+l'host di un WebSocket (l'handshake non parte). Le pagine Mermaid e
+MathJax restano con JavaScript acceso, perché ne hanno bisogno, e contano
+anche sui controlli dei sorgenti (17-visual-figures); nei frame video il
+JavaScript spento chiude questi canali alla radice.
+
+Titolo, prosa e bullet con formule entrano nel budget della figura
+(10-lesson-slides, «Rendering di titolo, prosa, bullet e riferimenti»),
+verificato anche nei frame Chromium.
+
+I frame ereditano dall'HTML anche il resto della catena delle figure
+(10-lesson-slides, «Larghezza e box della figura»): la larghezza dalla
+banda 10-14 pt della variante `slide`, la didascalia «Figura.» senza
+numero, il troncamento del sorgente nel fallback di una figura non resa
+(`figure_fallback_truncated`) e il riferimento ripetuto reso una volta
+sola. Nessuna di queste regole ha codice proprio nel servizio video.
 
 ## 7. Composizione ffmpeg
 

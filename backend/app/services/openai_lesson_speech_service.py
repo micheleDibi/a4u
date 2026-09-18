@@ -12,6 +12,7 @@ Convenzioni di velocità di parlato (da spec §8.1):
 
 Errori → `OpenAILessonSpeechError` (sottoclasse di `OpenAIError`).
 """
+
 from __future__ import annotations
 
 import json
@@ -74,9 +75,7 @@ def _system_prompt(
     i default vuoti il prompt rimanda ai valori del messaggio utente.
     """
     if minuti_per_lezione:
-        target = (
-            f"{minuti_per_lezione} * 60 = {minuti_per_lezione * 60} secondi"
-        )
+        target = f"{minuti_per_lezione} * 60 = {minuti_per_lezione * 60} secondi"
     else:
         target = "la durata target indicata nel messaggio (minuti * 60 secondi)"
     ruolo = ruolo_docente or "indicato nel messaggio"
@@ -182,6 +181,10 @@ REGOLE — VINCOLI DI VALIDAZIONE (rispetta sempre)
   fornite (Fase 4)
 - ogni slide di Fase 4 ha almeno un segmento di parlato
 - `segment_id` univoci a livello di lezione (es. "SEG001", "SEG002", ...)
+- `delivery_notes` rispetta le stesse REGOLE — TTS-FRIENDLY di `text`
+  (niente abbreviazioni come "es.", "etc.", "ca.", niente caratteri
+  speciali, niente markdown, niente formule LaTeX): una sola
+  abbreviazione nelle note invalida l'intero discorso
 - somma di `estimated_duration_seconds` ∈ [target × 0.95, target × 1.05]
   con target = {target}
 - `slide_to_segments_map` coerente con `speech_segments`:
@@ -196,7 +199,8 @@ Output: SOLO JSON valido conforme allo schema."""
 
 # Addendum §9.5 — appeso al system prompt quando si rigenera un discorso
 # già prodotto (con o senza `regeneration_hint`).
-REGENERATION_SUFFIX = """\
+REGENERATION_SUFFIX = (
+    """\
 
 ATTENZIONE: stai RIGENERANDO il discorso di una lezione. Considera
 la versione precedente e il feedback del docente.
@@ -207,7 +211,9 @@ la versione precedente e il feedback del docente.
 - Se il feedback chiede una nuova durata, ridistribuisci di
   conseguenza, mantenendo proporzioni sensate tra slide.
 - Mantieni tutte le regole TTS-friendly.
-""" + REGENERATION_REGISTER_NOTE
+"""
+    + REGENERATION_REGISTER_NOTE
+)
 
 
 # JSON Schema verbatim §8.4 — passato a OpenAI come response_format.json_schema.
@@ -233,10 +239,7 @@ LESSON_SPEECH_JSON_SCHEMA: dict[str, Any] = {
                         },
                         "slide_id": {
                             "type": "string",
-                            "description": (
-                                "ID della slide a cui il segmento è "
-                                "ancorato"
-                            ),
+                            "description": "ID della slide a cui il segmento è ancorato",
                         },
                         "text": {
                             "type": "string",
@@ -251,7 +254,11 @@ LESSON_SPEECH_JSON_SCHEMA: dict[str, Any] = {
                             "type": "string",
                             "description": (
                                 "Annotazione opzionale per il docente "
-                                "su tono, ritmo, pause. Una frase breve."
+                                "su tono, ritmo, pause. Una frase breve. "
+                                "Stesse regole di `text`: niente "
+                                "abbreviazioni, niente caratteri "
+                                "speciali, niente markdown, niente "
+                                "formule LaTeX."
                             ),
                         },
                     },
@@ -374,11 +381,7 @@ async def generate_lesson_speech(
             payload = resp.json()
         except Exception:
             payload = {"text": resp.text}
-        message = (
-            payload.get("error", {}).get("message")
-            if isinstance(payload, dict)
-            else None
-        )
+        message = payload.get("error", {}).get("message") if isinstance(payload, dict) else None
         log.error(
             "openai_lesson_speech_api_error",
             status=resp.status_code,
@@ -406,12 +409,9 @@ async def generate_lesson_speech(
     if not content or not content.strip():
         usage_raw = data.get("usage") or {}
         completion_tokens = usage_raw.get("completion_tokens") or 0
-        reasoning_tokens = (
-            (usage_raw.get("completion_tokens_details") or {}).get(
-                "reasoning_tokens"
-            )
-            or 0
-        )
+        reasoning_tokens = (usage_raw.get("completion_tokens_details") or {}).get(
+            "reasoning_tokens"
+        ) or 0
         log.error(
             "openai_lesson_speech_empty_content",
             finish_reason=finish_reason,
@@ -443,9 +443,7 @@ async def generate_lesson_speech(
     try:
         parsed = json.loads(content)
     except json.JSONDecodeError as exc:
-        log.error(
-            "openai_lesson_speech_json_decode_failed", content=content[:500]
-        )
+        log.error("openai_lesson_speech_json_decode_failed", content=content[:500])
         raise OpenAILessonSpeechError(
             status=resp.status_code,
             message=f"OpenAI non ha restituito JSON valido: {exc}",

@@ -13,11 +13,12 @@ Tre punti di ingresso:
 - `available_formats()`: i formati offerti al modello e accettati dal
   validatore (kill-switch del setting E dipendenza presente), calcolati
   una volta per processo;
-- `render_svg_map(assets, *, language)`: l'UNICO punto in cui compaiono
-  `asyncio.to_thread`, `asyncio.wait_for` e il semaforo dei render
-  CPU-bound; raggruppa per formato, una `render_svg_batch` per formato,
-  cache LRU degli SVG e cache negativa dei render falliti; non solleva
-  mai (le chiavi assenti attivano il fallback del partial);
+- `render_figure_map(assets, *, language)` (e la proiezione
+  `render_svg_map`): l'UNICO punto in cui compaiono `asyncio.to_thread`,
+  `asyncio.wait_for` e il semaforo dei render CPU-bound; raggruppa per
+  formato, un batch per formato, cache LRU degli SVG e cache negativa dei
+  render falliti; non solleva mai (le chiavi assenti attivano il fallback
+  del partial);
 - `validate_visual_assets_or_raise(...)`: gate offline del PATCH manuale
   (A15) che valida SOLO gli asset con `(format, content)` cambiati e
   solleva `ValidationAppError` 422 con `meta.errors` per asset.
@@ -32,11 +33,19 @@ così l'SVG prodotto dalla validazione profonda del worker
 Gli SVG di Vega-Lite, DOT e `function` passano da
 `svg_normalize.normalize_svg`; quelli Mermaid no (catena byte-identica,
 A11). Progettazione: `docs/courses/17-visual-figures.md`.
+
+Metriche di leggibilità accanto all'SVG (D10): il valore della cache e
+della mappa di resa è `RenderedFigure(svg, metrics)`, dove `metrics` è
+misurato in Chromium per Mermaid (`MermaidRenderer.render_figure_batch`) e
+letto dagli attributi per gli altri formati (`RenderedFigure.from_svg`).
+L'SVG resta byte-identico e `THEME_VERSION` invariato perché il tema non
+cambia; `render_svg_map` e `render_svg_batch` sono proiezioni `.svg`.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import importlib.util
 import json
@@ -50,6 +59,8 @@ import time
 import weakref
 from collections import OrderedDict
 from collections.abc import Iterable, Iterator, Mapping, Sequence
+from contextvars import ContextVar
+from dataclasses import dataclass, replace
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Protocol
@@ -57,8 +68,15 @@ from typing import Any, Protocol
 from app.core.config import get_settings
 from app.core.errors import ValidationAppError
 from app.core.logging import get_logger
+from app.schemas.course_lesson_content import VISUAL_ASSET_CONTENT_MAX_CHARS
 from app.schemas.figure_function import FunctionFigureSpec, format_issues, parse_function_spec
-from app.services import figure_function_service
+from app.services import figure_function_service, figure_geometry
+from app.services.figure_compute.graph_rules import (
+    GRAPH_TOO_DENSE,
+    check_graph_rules,
+    crossings_violation,
+    format_graph_violations,
+)
 from app.services.figure_compute.isolated import (
     FigureComputeError,
     FigureTimeoutError,
@@ -74,6 +92,8 @@ from app.services.figure_function_service import (
     FunctionRenderError,
     FunctionRenderResult,
 )
+from app.services.figure_geometry import GeometryReport
+from app.services.figure_scale import SvgMetrics
 from app.services.figure_theme import (
     MERMAID_ALLOWED_TYPES,
     THEME_VERSION,
@@ -82,8 +102,9 @@ from app.services.figure_theme import (
 )
 from app.services.json_spans import replace_strings as replace_json_strings
 from app.services.mermaid_prerender import (
+    MermaidPrerender,
     _join_mermaid_text_newlines,
-    _prerender_mermaid_to_svg_batch_sync,
+    _prerender_mermaid_batch_sync,
     _sanitize_mermaid_code,
     _strip_mermaid_max_width,
 )
@@ -92,6 +113,8 @@ from app.services.svg_normalize import (
     iter_style_bodies,
     iter_tag_contents,
     normalize_svg,
+    svg_base_font_px,
+    svg_intrinsic_box,
 )
 
 log = get_logger("app.figure_render")
@@ -104,7 +127,8 @@ FIGURE_INVALID = "figure_invalid"
 FIGURE_FORMAT_UNAVAILABLE = "figure_format_unavailable"
 MERMAID_TYPE_NOT_ALLOWED = "mermaid_type_not_allowed"
 VEGALITE_USE_FUNCTION_FORMAT = USE_FUNCTION_FORMAT
-# `FUNCTION_SPEC_INVALID` è importato da `figure_function_service`.
+# `FUNCTION_SPEC_INVALID` è importato da `figure_function_service`;
+# `GRAPH_TOO_DENSE` (soglie editoriali D13/D14) da `graph_rules`.
 
 # Un messaggio di `validate` che inizia con uno di questi prefissi viene
 # classificato con quel `type`; tutto il resto è `figure_invalid`.
@@ -112,6 +136,7 @@ _TYPED_PREFIXES: tuple[str, ...] = (
     MERMAID_TYPE_NOT_ALLOWED,
     VEGALITE_USE_FUNCTION_FORMAT,
     FUNCTION_SPEC_INVALID,
+    GRAPH_TOO_DENSE,
 )
 
 VEGALITE_SCHEMA_URL = "https://vega.github.io/schema/vega-lite/v6.json"
@@ -167,6 +192,14 @@ class FigureRenderer(Protocol):
       per la localizzazione D7, con chiavi che sono percorsi DENTRO il
       contenuto (`title`, `encoding.x.axis.title`, `label.0`); la chiave
       vuota `""` indica l'intero contenuto (Mermaid).
+
+    Metodi FACOLTATIVI, letti con `getattr` (i renderer registrati
+    dall'esterno e i fake dei test non cambiano): `render_figure_batch`
+    (SVG con le metriche accanto, D10) e `measure(svg) -> GeometryReport`
+    (geometria di un SVG reso in Python, D14: oggi solo DOT; per Mermaid la
+    misura vive nella pagina del pre-render). Il registro chiama
+    `measure(svg)` con il solo SVG; `DotRenderer` accetta in più
+    `work_left`, il residuo del tetto di lavoro del suo batch.
     """
 
     fmt: str
@@ -188,13 +221,36 @@ class FigureRenderer(Protocol):
     def apply_translations(self, content: str, tr: Mapping[str, str]) -> str: ...
 
 
+@dataclass(frozen=True)
+class RenderedFigure:
+    """SVG di una figura con le metriche del testo accanto (D10). `metrics`
+    è `None` solo per i record costruiti a mano; `from_svg` le legge dagli
+    attributi (`svg_base_font_px`), `MermaidRenderer` le misura in
+    Chromium. `metrics.crossings` / `metrics.defects` portano la geometria
+    (D14): misurata nella pagina del pre-render per Mermaid, in Python per
+    DOT (`DotRenderer.measure`), assente (`None`, `()`) per gli altri
+    formati. L'SVG non è mai modificato."""
+
+    svg: str
+    metrics: SvgMetrics | None = None
+
+    @classmethod
+    def from_svg(cls, svg: str) -> RenderedFigure:
+        return cls(svg=svg, metrics=svg_base_font_px(svg))
+
+
+# Mappa `{asset_id → svg | RenderedFigure}` accettata dai renderer del PDF:
+# una stringa vale `RenderedFigure.from_svg` (metriche parsate).
+VisualSvgMap = Mapping[str, str | RenderedFigure]
+
+
 # ---------------------------------------------------------------------------
 # Cache LRU degli SVG + cache negativa
 # ---------------------------------------------------------------------------
 
 CacheKey = tuple[str, str, str]
 
-_svg_cache: OrderedDict[CacheKey, str] = OrderedDict()
+_svg_cache: OrderedDict[CacheKey, RenderedFigure] = OrderedDict()
 _negative_cache: dict[CacheKey, float] = {}
 _cache_lock = threading.Lock()
 
@@ -204,18 +260,27 @@ def cache_key(fmt: str, sanitized: str) -> CacheKey:
     return (fmt, digest, THEME_VERSION)
 
 
-def _cache_get(key: CacheKey) -> str | None:
+def _cache_get_figure(key: CacheKey) -> RenderedFigure | None:
     with _cache_lock:
-        svg = _svg_cache.get(key)
-        if svg is not None:
+        fig = _svg_cache.get(key)
+        if fig is not None:
             _svg_cache.move_to_end(key)
-        return svg
+        return fig
 
 
-def _cache_put(key: CacheKey, svg: str) -> None:
+def _cache_get(key: CacheKey) -> str | None:
+    """Proiezione `.svg` della cache (contratto storico dei chiamanti)."""
+    fig = _cache_get_figure(key)
+    return fig.svg if fig is not None else None
+
+
+def _cache_put(key: CacheKey, value: str | RenderedFigure) -> None:
+    """Una stringa entra come `RenderedFigure.from_svg` (metriche parsate
+    al put: la validazione profonda e i `render_svg` non cambiano)."""
+    fig = value if isinstance(value, RenderedFigure) else RenderedFigure.from_svg(value)
     size = max(1, int(get_settings().figure_svg_cache_size))
     with _cache_lock:
-        _svg_cache[key] = svg
+        _svg_cache[key] = fig
         _svg_cache.move_to_end(key)
         while len(_svg_cache) > size:
             _svg_cache.popitem(last=False)
@@ -251,6 +316,92 @@ def clear_svg_cache() -> None:
 
 def _render_failed(fmt: str, asset_id: str, reason: str) -> None:
     log.warning("figure_render_failed", format=fmt, asset_id=asset_id, reason=reason[:300])
+
+
+# `asset_id` dei log della misura quando la firma del chiamante non lo porta
+# (`validate(deep=True)` del protocollo): lo imposta `figure_asset_context`
+# e `asyncio.to_thread` lo copia nel thread del renderer.
+_asset_context: ContextVar[str] = ContextVar("figure_asset_id", default="")
+
+
+@contextlib.contextmanager
+def figure_asset_context(asset_id: str) -> Iterator[None]:
+    """`asset_id` dei log di geometria emessi dentro il blocco, anche dai
+    thread avviati con `asyncio.to_thread`."""
+    token = _asset_context.set(asset_id)
+    try:
+        yield
+    finally:
+        _asset_context.reset(token)
+
+
+def with_geometry(
+    metrics: SvgMetrics, report: GeometryReport | None, *, fmt: str, asset_id: str
+) -> SvgMetrics:
+    """`metrics` con la geometria della figura resa (D14) e i log strutturati:
+    `figure_measure_skipped` per un tetto di segmenti o di lavoro (incroci
+    `None`), `figure_geometry_defects` quando ci sono difetti o gli incroci
+    superano `MAX_EDGE_CROSSINGS` (la voce `graph_too_dense:` entra fra i
+    difetti).
+    Solo diagnostica, per ogni formato e in ogni percorso (validazione ed
+    export): la figura resta valida e l'SVG non cambia."""
+    if report is None:
+        return metrics
+    if report.skipped is not None:
+        log.warning(
+            "figure_measure_skipped",
+            format=fmt,
+            asset_id=asset_id,
+            reason=report.skipped,
+            segments=report.segments,
+            edges=report.edges,
+            work=report.work,
+        )
+        return replace(metrics, crossings=None, defects=report.defects)
+    defects = list(report.defects)
+    over = crossings_violation(report.crossings, fmt=fmt)
+    if over is not None:
+        defects.insert(0, over)
+    if defects:
+        log.warning(
+            "figure_geometry_defects",
+            format=fmt,
+            asset_id=asset_id,
+            crossings=report.crossings,
+            defects=defects,
+        )
+    return replace(metrics, crossings=report.crossings, defects=tuple(defects))
+
+
+def _measured_figure(
+    renderer: object, svg: str, *, asset_id: str, work_left: int | None = None
+) -> tuple[RenderedFigure, int]:
+    """`RenderedFigure.from_svg` più la geometria, se il renderer espone
+    `measure` (metodo facoltativo del protocollo, letto con `getattr`), e
+    il lavoro eseguito dalla misura (`GeometryReport.spent`, anche quando
+    un tetto l'ha interrotta; 0 se assente o fallita). `work_left` è
+    passato a `measure` solo se dato (i renderer esterni hanno la firma a
+    un argomento)."""
+    fig = RenderedFigure.from_svg(svg)
+    measure = getattr(renderer, "measure", None)
+    if not callable(measure) or fig.metrics is None:
+        return fig, 0
+    fmt = str(getattr(renderer, "fmt", ""))
+    try:
+        report = measure(svg) if work_left is None else measure(svg, work_left=work_left)
+    except Exception as exc:  # la misura è diagnostica: mai a spese della figura
+        log.warning("figure_measure_failed", format=fmt, asset_id=asset_id, error=str(exc)[:300])
+        return fig, 0
+    if not isinstance(report, GeometryReport):
+        return fig, 0
+    spent = max(0, report.spent)
+    metrics = with_geometry(fig.metrics, report, fmt=fmt, asset_id=asset_id)
+    return RenderedFigure(svg=svg, metrics=metrics), spent
+
+
+def _figure_from_svg(renderer: object, svg: str, *, asset_id: str) -> RenderedFigure:
+    """`_measured_figure` senza batch: solo il tetto per figura."""
+    return _measured_figure(renderer, svg, asset_id=asset_id)[0]
 
 
 # ---------------------------------------------------------------------------
@@ -315,6 +466,10 @@ _MERMAID_DIRECTIVE_RE = re.compile(
 _HTML_TAG_RE = re.compile(
     r"(?<!<)(?!</?[bB][rR][\s/]*>)</?[a-zA-Z][a-zA-Z0-9-]*(?:\s[^>\n\]\)\}]*)?/?>(?!>)"
 )
+# Inizio di un tag (stesse condizioni di `_HTML_TAG_RE`, senza attributi) e
+# carattere che chiude la sezione degli attributi: servono a `_html_tag`.
+_HTML_TAG_START_RE = re.compile(r"(?<!<)(?!</?[bB][rR][\s/]*>)</?[a-zA-Z][a-zA-Z0-9-]*")
+_HTML_TAG_ATTR_STOP_RE = re.compile(r"[>\n\]\)\}]")
 # Attributi di shape dei flowchart Mermaid 11 (`A@{ img: "https://…" }`):
 # il nodo diventa un `<image href="…">` che il Chromium del pre-render,
 # WeasyPrint (dispensa e slide) e il browser del docente dereferenziano —
@@ -426,7 +581,10 @@ _MERMAID_STATEMENT_SEPARATORS = ";\r"
 # eseguiva: misurato al giro 6 con `<a xlink:href>` in flowchart,
 # classDiagram e stateDiagram e `<image xlink:href>` più la GET arrivata
 # al listener in sequenceDiagram.
-_MERMAID_TRIM_RE = re.compile(r"^[\s\ufeff]+|[\s\ufeff]+$")
+# La coda si cerca solo dall'inizio di una corsa (lookbehind) e la si
+# prende intera: con `[\s\ufeff]+$` `sub` riscorreva una corsa interna
+# da ognuna delle sue posizioni (quadratico, 1,5 s su 12.000 spazi).
+_MERMAID_TRIM_RE = re.compile(r"^[\s\ufeff]+|(?<![\s\ufeff])[\s\ufeff]++$")
 # Statement che attaccano a un nodo un URL, un'icona o una callback: non
 # passano dalle shape e nessun gate li vedeva (SEC-1, terza via). Elenco
 # MISURATO rendendo ogni parola chiave in ognuna delle 15 famiglie D8 e
@@ -806,6 +964,38 @@ def mermaid_static_gate(code: str) -> tuple[str, str]:
     return ("", "")
 
 
+def _html_tag(line: str) -> str | None:
+    """Primo tag di `line`, cioè `_HTML_TAG_RE.search(line).group(0)`
+    (`None` se non ce ne sono), in tempo lineare.
+
+    La regex è provata solo dove può cominciare un tag. Un tentativo con
+    attributi legge fino al primo carattere che chiude la sezione (`>`,
+    `]`, `)`, `}`, a capo) e, se fallisce, fallisce lì: ogni `<` fra il nome
+    e quel carattere ha la stessa sezione e la stessa fine (un `>` più
+    vicino sarebbe esso stesso quel carattere), quindi fallisce allo stesso
+    punto e la ricerca riparte da lì. `search` invece riprovava da ogni
+    `<`: su `<a <a <a …` senza chiusura era quadratica (1,2 s su 12.000
+    caratteri, nel gate sincrono del salvataggio).
+
+    Il ragionamento vale per una riga senza a capo, come quelle del gate
+    (`split("\\n")`): `\\n` è insieme spazio e fine della sezione, e un nome
+    che finisce proprio lì la oltrepassa. Con un a capo resta la regex."""
+    if "\n" in line:
+        found = _HTML_TAG_RE.search(line)
+        return found.group(0) if found is not None else None
+    pos = 0
+    while (start := _HTML_TAG_START_RE.search(line, pos)) is not None:
+        tag = _HTML_TAG_RE.match(line, start.start())
+        if tag is not None:
+            return tag.group(0)
+        if line[start.end() : start.end() + 1].isspace():
+            stop = _HTML_TAG_ATTR_STOP_RE.search(line, start.end() + 1)
+            pos = stop.start() if stop is not None else len(line)
+        else:
+            pos = start.start() + 1
+    return None
+
+
 def _mermaid_gate_once(code: str, *, faithful: bool) -> tuple[str, str]:
     """Un passaggio del gate su una singola vista del sorgente; `faithful`
     sceglie il criterio con cui si scartano le righe di commento."""
@@ -832,9 +1022,9 @@ def _mermaid_gate_once(code: str, *, faithful: bool) -> tuple[str, str]:
     else:
         lines = [line for line in body if not line.lstrip().startswith("%%")]
     for line in lines:
-        m = _HTML_TAG_RE.search(line)
-        if m:
-            return (MERMAID_GATE_HTML, m.group(0))
+        tag = _html_tag(line)
+        if tag is not None:
+            return (MERMAID_GATE_HTML, tag)
     # Le direttive `@{ … }` possono occupare più righe: si guarda il corpo
     # intero, senza i commenti.
     # Unione dei tre controlli, mai uno scambio: basta che uno segnali.
@@ -910,6 +1100,13 @@ class MermaidRenderer:
                 False,
                 f"{MERMAID_TYPE_NOT_ALLOWED}: HTML nelle label non ammesso ({detail[:40]}){hint}",
             )
+        # Soglie editoriali (D13) DOPO il gate statico, sul sorgente: qui e
+        # non in `_mermaid_gate_once`, che gira su due viste dello stesso
+        # sorgente. Gli incroci di una figura Mermaid si misurano solo nel
+        # pre-render (export): il gate al salvataggio non ha l'SVG.
+        violations = check_graph_rules(self.fmt, code)
+        if violations:
+            return (False, format_graph_violations(violations))
         if deep:
             svg = self.render_svg(code)
             if svg is None:
@@ -922,22 +1119,62 @@ class MermaidRenderer:
         return self.render_svg_batch([content], asset_ids=[asset_id])[0]
 
     def render_svg_batch(self, contents: list[str], *, asset_ids: list[str]) -> list[str | None]:
+        """Proiezione `.svg` di `render_figure_batch`."""
+        return [
+            fig.svg if fig is not None else None
+            for fig in self.render_figure_batch(contents, asset_ids=asset_ids)
+        ]
+
+    def render_figure_batch(
+        self, contents: list[str], *, asset_ids: list[str]
+    ) -> list[RenderedFigure | None]:
+        """Batch con le metriche misurate nella pagina del pre-render
+        (`_prerender_mermaid_batch_sync`, simbolo di modulo patchabile).
+        Se la misura manca, le metriche vengono dagli attributi/regola
+        radice con un warning: mai un fallback silenzioso. La geometria
+        (incroci, testo fuori dalla tela) arriva dalla stessa pagina e
+        passa da `with_geometry`."""
         codes = [self.sanitize(c) for c in contents]
-        svgs = _prerender_mermaid_to_svg_batch_sync(codes)
-        out: list[str | None] = []
-        for svg, asset_id in zip(svgs, asset_ids, strict=True):
-            if not svg:
+        rendered: list[MermaidPrerender | None] = _prerender_mermaid_batch_sync(codes)
+        out: list[RenderedFigure | None] = []
+        for item, asset_id in zip(rendered, asset_ids, strict=True):
+            if item is None or not item.svg:
                 out.append(None)
                 continue
             # Il post-processing è già applicato dal pre-render ed è
             # idempotente: qui rende esplicito il contratto del registro.
-            svg = _join_mermaid_text_newlines(_strip_mermaid_max_width(svg))
+            svg = _join_mermaid_text_newlines(_strip_mermaid_max_width(item.svg))
             ref = _svg_external_ref(svg)
             if ref is not None:
                 _render_failed(self.fmt, asset_id, f"risorsa esterna nell'SVG: {ref}")
                 out.append(None)
                 continue
-            out.append(svg)
+            metrics = item.metrics
+            if metrics is None:
+                metrics = svg_base_font_px(svg)
+                log.warning(
+                    "mermaid_font_measure_missing", asset_id=asset_id, source=metrics.source
+                )
+            elif metrics.font_px_min is not None:
+                # `getComputedStyle` misura in unità utente: px naturali
+                # solo attraverso `px_per_unit` (1.0 con radice `width="100%"`).
+                box = svg_intrinsic_box(svg)
+                ppu = box.px_per_unit if box is not None else 1.0
+                if ppu != 1.0:
+                    median = metrics.font_px_median
+                    metrics = SvgMetrics(
+                        metrics.font_px_min * ppu,
+                        median * ppu if median is not None else None,
+                        metrics.text_count,
+                        metrics.source,
+                    )
+            # Geometria misurata nella stessa pagina (D14): gli incroci oltre
+            # soglia sono un warning e una voce del report, mai un rifiuto
+            # (come per DOT in `validate(deep=True)`).
+            metrics = with_geometry(
+                metrics, getattr(item, "geometry", None), fmt=self.fmt, asset_id=asset_id
+            )
+            out.append(RenderedFigure(svg=svg, metrics=metrics))
         return out
 
     def extract_translatable(self, content: str) -> dict[str, str]:
@@ -1516,8 +1753,16 @@ def _run_dot(source: str) -> str:
 
 class DotRenderer:
     """Validazione statica (lunghezza, intestazione, attributi che leggono
-    file, numero di archi) e, profonda, la prova di render con il tema
-    iniettato; `dot` assente → `dot_unavailable`, non fixable."""
+    file, numero di archi come tetto di risorsa, poi le soglie editoriali
+    di `graph_rules`) e, profonda, la prova di render con il tema iniettato;
+    `dot` assente → `dot_unavailable`, non fixable. Ogni SVG reso porta la
+    geometria nelle metriche (`measure`, D14): gli incroci oltre
+    `MAX_EDGE_CROSSINGS` sono un warning e una voce del report, mai un
+    rifiuto, anche in `validate(deep=True)`. La misura è in Python nello
+    stesso thread del render, dentro il timeout del batch: il suo costo è
+    limitato per costruzione (docstring di `figure_geometry`), con un tetto
+    di lavoro per figura e uno per batch (`MAX_MEASURE_WORK`,
+    `MAX_BATCH_MEASURE_WORK`), e oltre li salta, mai la figura."""
 
     fmt = "dot"
 
@@ -1553,36 +1798,88 @@ class DotRenderer:
         edges = len(_DOT_EDGE_RE.findall(src))
         if edges > DOT_MAX_EDGES:
             return (False, f"troppi archi ({edges} > {DOT_MAX_EDGES})")
+        violations = check_graph_rules(self.fmt, src)
+        if violations:
+            return (False, format_graph_violations(violations))
         if deep:
             try:
                 svg = self._render_or_raise(src)
             except (_DotError, SvgRejectedError) as exc:
                 return (False, str(exc)[:_ERROR_CAP])
-            _cache_put(cache_key(self.fmt, src), svg)
+            # Geometria misurata una volta e messa in cache con la figura:
+            # gli incroci oltre soglia producono `figure_geometry_defects` e
+            # la voce del report all'export, non un rifiuto (un grafo a
+            # strati completi ne ha per costruzione e il fix AI non può
+            # toglierli: il worker rigenererebbe la lezione).
+            figure = _figure_from_svg(self, svg, asset_id=_asset_context.get())
+            _cache_put(cache_key(self.fmt, src), figure)
         return (True, "")
+
+    def measure(self, svg: str, *, work_left: int | None = None) -> GeometryReport:
+        """Geometria dell'SVG reso: incroci arco × arco e i quattro difetti
+        di lettura (`figure_geometry.measure_dot_svg`), entro il tetto per
+        figura e, se dato, il residuo `work_left` del batch."""
+        return figure_geometry.measure_dot_svg(svg, work_left=work_left)
 
     def _render_or_raise(self, sanitized: str) -> str:
         raw = _run_dot(_dot_with_theme(sanitized))
         return normalize_svg(raw, max_bytes=get_settings().figure_svg_max_bytes).svg
 
-    def render_svg(self, content: str, *, asset_id: str = "") -> str | None:
+    def render_figure(self, content: str, *, asset_id: str = "") -> RenderedFigure | None:
+        """SVG con metriche e geometria; un hit della cache torna tale e
+        quale (la geometria è stata misurata al primo render)."""
+        return self._render_figure(content, asset_id=asset_id, work_left=None)[0]
+
+    def _render_figure(
+        self, content: str, *, asset_id: str, work_left: int | None
+    ) -> tuple[RenderedFigure | None, int]:
+        """`render_figure` con il residuo di lavoro del batch; ritorna anche
+        il lavoro speso dalla misura (0 per un hit o un fallimento)."""
         sanitized = self.sanitize(content)
         key = cache_key(self.fmt, sanitized)
-        hit = _cache_get(key)
+        hit = _cache_get_figure(key)
         if hit is not None:
-            return hit
+            return hit, 0
         try:
             svg = self._render_or_raise(sanitized)
         except (_DotError, SvgRejectedError) as exc:
             _cache_negative(key)
             _render_failed(self.fmt, asset_id, str(exc))
-            return None
-        _cache_put(key, svg)
-        return svg
+            return None, 0
+        fig, spent = _measured_figure(self, svg, asset_id=asset_id, work_left=work_left)
+        _cache_put(key, fig)
+        return fig, spent
+
+    def render_svg(self, content: str, *, asset_id: str = "") -> str | None:
+        fig = self.render_figure(content, asset_id=asset_id)
+        return fig.svg if fig is not None else None
+
+    def render_figure_batch(
+        self, contents: list[str], *, asset_ids: list[str]
+    ) -> list[RenderedFigure | None]:
+        """Le figure in ordine, con un solo tetto di lavoro della misura per
+        l'intero batch (ogni figura sottrae il lavoro eseguito, anche se la
+        sua misura è stata saltata): esaurito, le figure seguenti escono
+        senza geometria (`batch_work_cap`), mai senza SVG. Un'eccezione
+        imprevista costa la sola figura che l'ha sollevata (`None` e
+        `figure_render_failed`), non le altre del batch: senza questo
+        confine `render_figure_map` le perdeva tutte."""
+        budget = figure_geometry.MAX_BATCH_MEASURE_WORK
+        out: list[RenderedFigure | None] = []
+        for content, aid in zip(contents, asset_ids, strict=True):
+            try:
+                fig, spent = self._render_figure(content, asset_id=aid, work_left=budget)
+            except Exception as exc:  # difesa in profondità, per figura
+                _render_failed(self.fmt, aid, f"{type(exc).__name__}: {exc}")
+                fig, spent = None, 0
+            budget -= spent
+            out.append(fig)
+        return out
 
     def render_svg_batch(self, contents: list[str], *, asset_ids: list[str]) -> list[str | None]:
         return [
-            self.render_svg(c, asset_id=aid) for c, aid in zip(contents, asset_ids, strict=True)
+            fig.svg if fig is not None else None
+            for fig in self.render_figure_batch(contents, asset_ids=asset_ids)
         ]
 
     def extract_translatable(self, content: str) -> dict[str, str]:
@@ -1717,7 +2014,8 @@ class FunctionRenderer:
         `render_svg`/`validate(deep=True)`; mai calcolata qui. Vuota se la
         spec non è valida (nessun SVG a monte: il fallback è già loggato)
         o se il risultato non è (più) in cache: quest'ultimo caso non deve
-        accadere dopo `render_svg_map` (che lo ripopola) ed è loggato come
+        accadere dopo `render_figure_map` (che lo ripopola, anche quando è
+        chiamata dalla proiezione `render_svg_map`) ed è loggato come
         `figure_caption_missing`, così una coda persa non è silenziosa."""
         spec, _issues = parse_function_spec(self.sanitize(content))
         if spec is None:
@@ -1870,23 +2168,64 @@ def _iter_renderable(assets: Sequence[Mapping[str, Any]]) -> Iterator[tuple[str,
             yield fmt, asset_id, content
 
 
+def _render_batch(renderer: FigureRenderer, contents: list[str], asset_ids: list[str]) -> Any:
+    """Dispatch del batch: `render_figure_batch` se il renderer lo espone
+    (Mermaid, metriche misurate), altrimenti `render_svg_batch` del
+    protocollo. Nessun metodo nuovo nel `Protocol`: i renderer registrati
+    dall'esterno e i fake dei test non cambiano. Ritorna la lista grezza:
+    la guardia di lunghezza e il wrapping stanno in `render_figure_map`."""
+    batch = getattr(renderer, "render_figure_batch", None)
+    if callable(batch):
+        return batch(contents, asset_ids=asset_ids)
+    return renderer.render_svg_batch(contents, asset_ids=asset_ids)
+
+
+def _as_figure(
+    item: object, renderer: object = None, *, asset_id: str = ""
+) -> RenderedFigure | None:
+    """Record della mappa di resa: un `RenderedFigure` passa tale e quale,
+    una stringa diventa `RenderedFigure.from_svg` con la geometria se il
+    renderer espone `measure`."""
+    if isinstance(item, RenderedFigure):
+        return item if item.svg else None
+    if isinstance(item, str) and item:
+        return _figure_from_svg(renderer, item, asset_id=asset_id)
+    return None
+
+
 async def render_svg_map(assets: Sequence[Mapping[str, Any]], *, language: str) -> dict[str, str]:
-    """`{asset_id: svg}` per gli asset renderizzabili di una lezione.
+    """`{asset_id: svg}`: proiezione `.svg` di `render_figure_map`."""
+    figures = await render_figure_map(assets, language=language)
+    return {asset_id: fig.svg for asset_id, fig in figures.items()}
+
+
+async def render_figure_map(
+    assets: Sequence[Mapping[str, Any]], *, language: str, cache_failures: bool = True
+) -> dict[str, RenderedFigure]:
+    """`{asset_id: RenderedFigure}` per gli asset renderizzabili di una
+    lezione (SVG e metriche del testo, D10).
 
     Unico punto di `asyncio.to_thread` + `asyncio.wait_for` + semaforo
     (tenuto dal chiamante async, rilasciato anche su timeout). Raggruppa
-    per formato e chiama UNA `render_svg_batch` per formato; serve dalla
-    cache LRU (per `function` solo se anche il risultato del motore è in
-    cache: `_svg_cache_hit_complete`) e salta le chiavi in cache negativa
-    (render fallito negli ultimi 60 s). Non solleva mai: timeout ed
-    eccezioni producono `figure_render_failed` e la chiave resta assente
-    (fallback del partial). `language` è solo contesto di log (vedi la
-    docstring del modulo sulla chiave di cache).
+    per formato e chiama UN batch per formato (`_render_batch`); serve
+    dalla cache LRU (per `function` solo se anche il risultato del motore
+    è in cache: `_svg_cache_hit_complete`) e salta le chiavi in cache
+    negativa (render fallito negli ultimi 60 s). Non solleva mai: timeout
+    ed eccezioni producono `figure_render_failed` e la chiave resta
+    assente (fallback del partial). `language` è solo contesto di log
+    (vedi la docstring del modulo sulla chiave di cache).
+
+    `cache_failures=False`: i fallimenti di questa chiamata non entrano in
+    cache negativa. Lo usa chi rende per MISURARE e non per pubblicare (la
+    revisione figura ↔ testo di `asset_validation_service`, che mette
+    originale e riscrittura nello stesso batch): un timeout del batch non
+    deve togliere le figure ORIGINALI all'export dei 60 s successivi. La
+    cache positiva resta scritta in ogni caso.
     """
     settings = get_settings()
     timeout = float(settings.figure_render_timeout_seconds)
     formats = available_formats()
-    result: dict[str, str] = {}
+    result: dict[str, RenderedFigure] = {}
     pending: dict[str, list[tuple[str, str, CacheKey]]] = {}
 
     for fmt, asset_id, content in _iter_renderable(assets):
@@ -1896,7 +2235,7 @@ async def render_svg_map(assets: Sequence[Mapping[str, Any]], *, language: str) 
             continue
         sanitized = renderer.sanitize(content)
         key = cache_key(fmt, sanitized)
-        hit = _cache_get(key)
+        hit = _cache_get_figure(key)
         if hit is not None and _svg_cache_hit_complete(renderer, sanitized):
             result[asset_id] = hit
             continue
@@ -1920,18 +2259,19 @@ async def render_svg_map(assets: Sequence[Mapping[str, Any]], *, language: str) 
         async with sem:
             try:
                 svgs = await asyncio.wait_for(
-                    asyncio.to_thread(renderer.render_svg_batch, contents, asset_ids=ids),
+                    asyncio.to_thread(_render_batch, renderer, contents, ids),
                     timeout=fmt_timeout,
                 )
             except TimeoutError:
                 for aid, _s, key in items:
-                    if fmt not in _NO_NEGATIVE_CACHE_ON_BATCH_TIMEOUT:
+                    if cache_failures and fmt not in _NO_NEGATIVE_CACHE_ON_BATCH_TIMEOUT:
                         _cache_negative(key)
                     _render_failed(fmt, aid, f"timeout dopo {fmt_timeout:g} s")
                 continue
             except Exception as exc:  # il renderer non deve sollevare; difesa in profondità
                 for aid, _s, key in items:
-                    _cache_negative(key)
+                    if cache_failures:
+                        _cache_negative(key)
                     _render_failed(fmt, aid, f"{type(exc).__name__}: {exc}")
                 continue
         # Il contratto vuole una lista parallela agli item: un renderer
@@ -1946,11 +2286,12 @@ async def render_svg_map(assets: Sequence[Mapping[str, Any]], *, language: str) 
                 got=len(svgs),
             )
             svgs = (svgs + [None] * len(items))[: len(items)]
-        for (aid, _s, key), svg in zip(items, svgs, strict=True):
-            if svg:
-                _cache_put(key, svg)
-                result[aid] = svg
-            else:
+        for (aid, _s, key), item in zip(items, svgs, strict=True):
+            fig = _as_figure(item, renderer, asset_id=aid)
+            if fig is not None:
+                _cache_put(key, fig)
+                result[aid] = fig
+            elif cache_failures:
                 _cache_negative(key)
     log.info(
         "figure_render_map",
@@ -1986,23 +2327,37 @@ async def validate_visual_assets_or_raise(
     loc_root: str,
     code: str,
 ) -> None:
-    """Gate del PATCH manuale: valida (`deep=False`, in thread) SOLO gli
-    asset renderizzabili con `(format, content)` cambiati e solleva
-    `ValidationAppError` 422 con `meta={"errors": [{loc, asset_id, format,
-    msg, type}]}`. Un formato assente da `available_formats()` è
-    `figure_format_unavailable`, mai un pass-through."""
+    """Gate del PATCH manuale: SOLO sugli asset con `(format, content)`
+    cambiati, il tetto di risorsa A1 (`VISUAL_ASSET_CONTENT_MAX_CHARS`, per
+    ogni formato: lo schema del PATCH non lo applica, un asset storico più
+    lungo e invariato resta salvabile) e, per i renderizzabili, `validate`
+    (`deep=False`, in thread); solleva `ValidationAppError` 422 con
+    `meta={"errors": [{loc, asset_id, format, msg, type}]}`. Un formato
+    assente da `available_formats()` è `figure_format_unavailable`, mai un
+    pass-through."""
     formats = available_formats()
     errors: list[dict[str, Any]] = []
     for i, asset in _changed_assets(assets, previous):
         fmt = str(asset.get("format") or "")
-        if fmt not in RENDERABLE_FORMATS:
-            continue
         asset_id = str(asset.get("asset_id") or "")
         entry: dict[str, Any] = {
             "loc": [loc_root, i, "content"],
             "asset_id": asset_id,
             "format": fmt,
         }
+        content = asset.get("content")
+        size = len(content) if isinstance(content, str) else 0
+        if size > VISUAL_ASSET_CONTENT_MAX_CHARS:
+            errors.append(
+                {
+                    **entry,
+                    "msg": f"contenuto oltre {VISUAL_ASSET_CONTENT_MAX_CHARS} caratteri ({size})",
+                    "type": FIGURE_INVALID,
+                }
+            )
+            continue
+        if fmt not in RENDERABLE_FORMATS:
+            continue
         renderer = REGISTRY.get(fmt)
         if renderer is None or fmt not in formats:
             errors.append(
@@ -2013,7 +2368,6 @@ async def validate_visual_assets_or_raise(
                 }
             )
             continue
-        content = asset.get("content")
         ok, msg = await asyncio.to_thread(
             renderer.validate, content if isinstance(content, str) else "", deep=False
         )
@@ -2047,16 +2401,20 @@ __all__ = [
     "FunctionRenderResult",
     "FunctionRenderer",
     "MermaidRenderer",
+    "RenderedFigure",
     "VegaLiteRenderer",
+    "VisualSvgMap",
     "available_formats",
     "cache_key",
     "clear_svg_cache",
     "error_type_for",
+    "figure_asset_context",
     "function_computed_caption",
     "mermaid_declared_type",
     "mermaid_first_meaningful_line",
     "mermaid_static_gate",
     "register_renderer",
+    "render_figure_map",
     "render_function",
     "render_svg_map",
     "validate_visual_assets_or_raise",

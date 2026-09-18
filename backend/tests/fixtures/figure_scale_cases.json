@@ -1,0 +1,822 @@
+{
+  "_comment": "Casi condivisi fra `app/services/figure_scale.py` + `svg_normalize.py` (Python) e `frontend/src/lib/figureFormats.ts` (`fitFigureWidthMm`, `svgIntrinsicBox`, `formatMm`). `fit`: input di `fit_figure_width_mm` (box di default della dispensa 168 mm Mermaid / 170 mm <img> × 242 mm; slide 255 × 80) → `width_mm` (floor al centesimo), `scale` (half-up 4 decimali), `text_pt` (half-up 2 decimali), `in_band`; `expected: null` = input degenere. `svg_box`: `svg_intrinsic_box`; `svg_font`: solo Python (`svg_base_font_px`, il frontend misura nel DOM); `format_mm`. I numeri attesi sono confrontati con tolleranza assoluta 1e-9.",
+  "fit": [
+    {
+      "name": "mermaid flowchart LR fluido, dispensa: riempimento pieno ridotto al tetto della banda (oggi 168 mm a 13,1 pt)",
+      "input": {
+        "vb_w": 507.828125,
+        "vb_h": 158,
+        "base_font_px": 14,
+        "box_w_mm": 168,
+        "box_h_mm": 242,
+        "variant": "lesson",
+        "intrinsic_w_px": null
+      },
+      "expected": {
+        "width_mm": 140.76,
+        "scale": 1.0476,
+        "text_pt": 11.0,
+        "in_band": true
+      }
+    },
+    {
+      "name": "stesso flowchart, slide: ingrandito fino al tetto 14 pt, altezza 55,74 ≤ 80",
+      "input": {
+        "vb_w": 507.828125,
+        "vb_h": 158,
+        "base_font_px": 14,
+        "box_w_mm": 255,
+        "box_h_mm": 80,
+        "variant": "slide",
+        "intrinsic_w_px": null
+      },
+      "expected": {
+        "width_mm": 179.15,
+        "scale": 1.3333,
+        "text_pt": 14.0,
+        "in_band": true
+      }
+    },
+    {
+      "name": "mermaid sequence (16 px inline), dispensa",
+      "input": {
+        "vb_w": 450,
+        "vb_h": 263,
+        "base_font_px": 16,
+        "box_w_mm": 168,
+        "box_h_mm": 242,
+        "variant": "lesson",
+        "intrinsic_w_px": null
+      },
+      "expected": {
+        "width_mm": 109.14,
+        "scale": 0.9167,
+        "text_pt": 11.0,
+        "in_band": true
+      }
+    },
+    {
+      "name": "mermaid gantt largo, dispensa: banda irraggiungibile, larghezza = box, voce D13",
+      "input": {
+        "vb_w": 1280,
+        "vb_h": 148,
+        "base_font_px": 10,
+        "box_w_mm": 168,
+        "box_h_mm": 242,
+        "variant": "lesson",
+        "intrinsic_w_px": null
+      },
+      "expected": {
+        "width_mm": 168.0,
+        "scale": 0.4961,
+        "text_pt": 3.72,
+        "in_band": false
+      }
+    },
+    {
+      "name": "mermaid class stretto e alto, dispensa: non si dilata a colonna",
+      "input": {
+        "vb_w": 104,
+        "vb_h": 400,
+        "base_font_px": 14,
+        "box_w_mm": 168,
+        "box_h_mm": 242,
+        "variant": "lesson",
+        "intrinsic_w_px": null
+      },
+      "expected": {
+        "width_mm": 28.82,
+        "scale": 1.0476,
+        "text_pt": 11.0,
+        "in_band": true
+      }
+    },
+    {
+      "name": "mermaid class, slide: fermato dal tetto di 80 mm dentro la banda",
+      "input": {
+        "vb_w": 150.90625,
+        "vb_h": 262.0966796875,
+        "base_font_px": 14,
+        "box_w_mm": 255,
+        "box_h_mm": 80,
+        "variant": "slide",
+        "intrinsic_w_px": null
+      },
+      "expected": {
+        "width_mm": 46.06,
+        "scale": 1.1536,
+        "text_pt": 12.11,
+        "in_band": true
+      }
+    },
+    {
+      "name": "mermaid mindmap, slide: sotto di 0,11 pt, nessuna tolleranza oltre 1e-9",
+      "input": {
+        "vb_w": 326.2588195800781,
+        "vb_h": 321.1033630371094,
+        "base_font_px": 14,
+        "box_w_mm": 255,
+        "box_h_mm": 80,
+        "variant": "slide",
+        "intrinsic_w_px": null
+      },
+      "expected": {
+        "width_mm": 81.28,
+        "scale": 0.9416,
+        "text_pt": 9.89,
+        "in_band": false
+      }
+    },
+    {
+      "name": "web senza box, flowchart: 140,76 mm = 532 px, la colonna la applica il CSS min(100%, 532px)",
+      "input": {
+        "vb_w": 507.828125,
+        "vb_h": 158,
+        "base_font_px": 14,
+        "box_w_mm": null,
+        "box_h_mm": null,
+        "variant": "lesson",
+        "intrinsic_w_px": null
+      },
+      "expected": {
+        "width_mm": 140.76,
+        "scale": 1.0476,
+        "text_pt": 11.0,
+        "in_band": true
+      }
+    },
+    {
+      "name": "web senza box, verticale 300×1000: oggi dilatato a tutta colonna (scala 3 in 900 px)",
+      "input": {
+        "vb_w": 300,
+        "vb_h": 1000,
+        "base_font_px": 14,
+        "box_w_mm": null,
+        "box_h_mm": null,
+        "variant": "lesson",
+        "intrinsic_w_px": null
+      },
+      "expected": {
+        "width_mm": 83.15,
+        "scale": 1.0476,
+        "text_pt": 11.0,
+        "in_band": true
+      }
+    },
+    {
+      "name": "vegalite intrinseco, dispensa: scala 1 al fondo della banda",
+      "input": {
+        "vb_w": 419,
+        "vb_h": 292,
+        "base_font_px": 11,
+        "box_w_mm": 170,
+        "box_h_mm": 242,
+        "variant": "lesson",
+        "intrinsic_w_px": 419
+      },
+      "expected": {
+        "width_mm": 110.86,
+        "scale": 1.0,
+        "text_pt": 8.25,
+        "in_band": true
+      }
+    },
+    {
+      "name": "vegalite, slide: ingrandimento verso 10 pt tagliato dal tetto di 80 mm (elenco D13)",
+      "input": {
+        "vb_w": 419,
+        "vb_h": 292,
+        "base_font_px": 11,
+        "box_w_mm": 255,
+        "box_h_mm": 80,
+        "variant": "slide",
+        "intrinsic_w_px": 419
+      },
+      "expected": {
+        "width_mm": 114.79,
+        "scale": 1.0355,
+        "text_pt": 8.54,
+        "in_band": false
+      }
+    },
+    {
+      "name": "DOT a scala naturale, dispensa (10 uu × 4/3, etichetta d'arco): identico all'intrinseco",
+      "input": {
+        "vb_w": 83,
+        "vb_h": 213,
+        "base_font_px": 13.3333,
+        "box_w_mm": 170,
+        "box_h_mm": 242,
+        "variant": "lesson",
+        "intrinsic_w_px": 110.67
+      },
+      "expected": {
+        "width_mm": 29.28,
+        "scale": 1.0,
+        "text_pt": 10.0,
+        "in_band": true
+      }
+    },
+    {
+      "name": "DOT, slide",
+      "input": {
+        "vb_w": 83,
+        "vb_h": 213,
+        "base_font_px": 13.3333,
+        "box_w_mm": 255,
+        "box_h_mm": 80,
+        "variant": "slide",
+        "intrinsic_w_px": 110.67
+      },
+      "expected": {
+        "width_mm": 29.28,
+        "scale": 1.0,
+        "text_pt": 10.0,
+        "in_band": true
+      }
+    },
+    {
+      "name": "function, dispensa (9 uu × 4/3 = 12 px)",
+      "input": {
+        "vb_w": 374.4,
+        "vb_h": 259.2,
+        "base_font_px": 12,
+        "box_w_mm": 170,
+        "box_h_mm": 242,
+        "variant": "lesson",
+        "intrinsic_w_px": 499.2
+      },
+      "expected": {
+        "width_mm": 132.08,
+        "scale": 1.0,
+        "text_pt": 9.0,
+        "in_band": true
+      }
+    },
+    {
+      "name": "function, slide: identico a oggi, il tetto già lo riduceva",
+      "input": {
+        "vb_w": 374.4,
+        "vb_h": 259.2,
+        "base_font_px": 12,
+        "box_w_mm": 255,
+        "box_h_mm": 80,
+        "variant": "slide",
+        "intrinsic_w_px": 499.2
+      },
+      "expected": {
+        "width_mm": 115.55,
+        "scale": 0.8749,
+        "text_pt": 7.87,
+        "in_band": false
+      }
+    },
+    {
+      "name": "senza testo, intrinseco: scala naturale",
+      "input": {
+        "vb_w": 100,
+        "vb_h": 50,
+        "base_font_px": null,
+        "box_w_mm": 168,
+        "box_h_mm": 242,
+        "variant": "lesson",
+        "intrinsic_w_px": 100
+      },
+      "expected": {
+        "width_mm": 26.45,
+        "scale": 1.0,
+        "text_pt": 0.0,
+        "in_band": true
+      }
+    },
+    {
+      "name": "senza testo, fluido (SVG_B di test come mermaid): scala naturale, nessun vincolo",
+      "input": {
+        "vb_w": 20,
+        "vb_h": 20,
+        "base_font_px": null,
+        "box_w_mm": 168,
+        "box_h_mm": 242,
+        "variant": "lesson",
+        "intrinsic_w_px": null
+      },
+      "expected": {
+        "width_mm": 5.29,
+        "scale": 1.0,
+        "text_pt": 0.0,
+        "in_band": true
+      }
+    },
+    {
+      "name": "SVG_A di test come mermaid (costante 14), dispensa",
+      "input": {
+        "vb_w": 10,
+        "vb_h": 10,
+        "base_font_px": 14,
+        "box_w_mm": 168,
+        "box_h_mm": 242,
+        "variant": "lesson",
+        "intrinsic_w_px": null
+      },
+      "expected": {
+        "width_mm": 2.77,
+        "scale": 1.0476,
+        "text_pt": 11.0,
+        "in_band": true
+      }
+    },
+    {
+      "name": "SVG_A di test come mermaid (costante 14), slide",
+      "input": {
+        "vb_w": 10,
+        "vb_h": 10,
+        "base_font_px": 14,
+        "box_w_mm": 255,
+        "box_h_mm": 80,
+        "variant": "slide",
+        "intrinsic_w_px": null
+      },
+      "expected": {
+        "width_mm": 3.52,
+        "scale": 1.3333,
+        "text_pt": 14.0,
+        "in_band": true
+      }
+    },
+    {
+      "name": "SVG_A di test come vegalite (costante 11, fluido perché senza width), dispensa 170×242: al tetto 11 pt",
+      "input": {
+        "vb_w": 10,
+        "vb_h": 10,
+        "base_font_px": 11,
+        "box_w_mm": 170,
+        "box_h_mm": 242,
+        "variant": "lesson",
+        "intrinsic_w_px": null
+      },
+      "expected": {
+        "width_mm": 3.52,
+        "scale": 1.3333,
+        "text_pt": 11.0,
+        "in_band": true
+      }
+    },
+    {
+      "name": "font minuscolo: s_lo enorme tagliato da s_box",
+      "input": {
+        "vb_w": 100,
+        "vb_h": 100,
+        "base_font_px": 1,
+        "box_w_mm": 168,
+        "box_h_mm": 242,
+        "variant": "lesson",
+        "intrinsic_w_px": null
+      },
+      "expected": {
+        "width_mm": 168.0,
+        "scale": 6.3496,
+        "text_pt": 4.76,
+        "in_band": false
+      }
+    },
+    {
+      "name": "box esattamente al bordo inferiore: in banda per la tolleranza 1e-9, floor sulla larghezza",
+      "input": {
+        "vb_w": 100,
+        "vb_h": 100,
+        "base_font_px": 14,
+        "box_w_mm": 20.158730158730158,
+        "box_h_mm": null,
+        "variant": "lesson",
+        "intrinsic_w_px": null
+      },
+      "expected": {
+        "width_mm": 20.15,
+        "scale": 0.7619,
+        "text_pt": 8.0,
+        "in_band": true
+      }
+    },
+    {
+      "name": "box minuscolo",
+      "input": {
+        "vb_w": 200,
+        "vb_h": 100,
+        "base_font_px": 14,
+        "box_w_mm": 10,
+        "box_h_mm": 10,
+        "variant": "lesson",
+        "intrinsic_w_px": null
+      },
+      "expected": {
+        "width_mm": 10.0,
+        "scale": 0.189,
+        "text_pt": 1.98,
+        "in_band": false
+      }
+    },
+    {
+      "name": "ingrandimento <img> sotto banda ammesso: cresce solo fino a lo",
+      "input": {
+        "vb_w": 100,
+        "vb_h": 50,
+        "base_font_px": 6,
+        "box_w_mm": 168,
+        "box_h_mm": 242,
+        "variant": "lesson",
+        "intrinsic_w_px": 100
+      },
+      "expected": {
+        "width_mm": 47.03,
+        "scale": 1.7778,
+        "text_pt": 8.0,
+        "in_band": true
+      }
+    },
+    {
+      "name": "ingrandimento <img> tagliato dal box",
+      "input": {
+        "vb_w": 100,
+        "vb_h": 50,
+        "base_font_px": 6,
+        "box_w_mm": 30,
+        "box_h_mm": 242,
+        "variant": "lesson",
+        "intrinsic_w_px": 100
+      },
+      "expected": {
+        "width_mm": 30.0,
+        "scale": 1.1339,
+        "text_pt": 5.1,
+        "in_band": false
+      }
+    },
+    {
+      "name": "degenere: viewBox largo 0",
+      "input": {
+        "vb_w": 0,
+        "vb_h": 10,
+        "base_font_px": 14,
+        "box_w_mm": 168,
+        "box_h_mm": 242,
+        "variant": "lesson",
+        "intrinsic_w_px": null
+      },
+      "expected": null
+    },
+    {
+      "name": "degenere: box_w negativo",
+      "input": {
+        "vb_w": 100,
+        "vb_h": 100,
+        "base_font_px": 14,
+        "box_w_mm": -1,
+        "box_h_mm": 242,
+        "variant": "lesson",
+        "intrinsic_w_px": null
+      },
+      "expected": null
+    },
+    {
+      "name": "degenere: box_h zero",
+      "input": {
+        "vb_w": 100,
+        "vb_h": 100,
+        "base_font_px": 14,
+        "box_w_mm": 168,
+        "box_h_mm": 0,
+        "variant": "lesson",
+        "intrinsic_w_px": null
+      },
+      "expected": null
+    },
+    {
+      "name": "degenere: intrinsic_w_px zero",
+      "input": {
+        "vb_w": 100,
+        "vb_h": 100,
+        "base_font_px": 14,
+        "box_w_mm": 168,
+        "box_h_mm": 242,
+        "variant": "lesson",
+        "intrinsic_w_px": 0
+      },
+      "expected": null
+    }
+  ],
+  "svg_box": [
+    {
+      "name": "fixture v11: width=\"100%\", fluido",
+      "svg": "<svg id=\"mmd-0\" width=\"100%\" xmlns=\"http://www.w3.org/2000/svg\" class=\"flowchart\" style=\"\" viewBox=\"0 0 507.828125 158\" role=\"graphics-document document\"><g/></svg>",
+      "expected": {
+        "vb_w": 507.828125,
+        "vb_h": 158,
+        "width_px": null,
+        "height_px": null,
+        "px_per_unit": 1.0
+      }
+    },
+    {
+      "name": "DOT normalizzato: unità utente in pt, px_per_unit 110.67/83",
+      "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"110.67\" height=\"284\" viewBox=\"0 0 83 213\" preserveAspectRatio=\"xMidYMid meet\"><g/></svg>",
+      "expected": {
+        "vb_w": 83,
+        "vb_h": 213,
+        "width_px": 110.67,
+        "height_px": 284,
+        "px_per_unit": 1.3333734939759037
+      }
+    },
+    {
+      "name": "senza viewBox: width/height numerici come viewBox",
+      "svg": "<svg width=\"300px\" height=\"120\"/>",
+      "expected": {
+        "vb_w": 300,
+        "vb_h": 120,
+        "width_px": 300,
+        "height_px": 120,
+        "px_per_unit": 1.0
+      }
+    },
+    {
+      "name": "viewBox con virgole, larghezza in pt",
+      "svg": "<svg width=\"75pt\" viewBox=\"0,0,100,50\"/>",
+      "expected": {
+        "vb_w": 100,
+        "vb_h": 50,
+        "width_px": 100,
+        "height_px": null,
+        "px_per_unit": 1.0
+      }
+    },
+    {
+      "name": "solo larghezza percentuale: non determinabile",
+      "svg": "<svg width=\"100%\"/>",
+      "expected": null
+    },
+    {
+      "name": "non SVG",
+      "svg": "<div/>",
+      "expected": null
+    },
+    {
+      "name": "viewBox degenere",
+      "svg": "<svg viewBox=\"0 0 0 10\"/>",
+      "expected": null
+    }
+  ],
+  "svg_font": [
+    {
+      "name": "attributo font-size in unità utente",
+      "svg": "<svg><text font-size=\"11.00\">a</text></svg>",
+      "expected": {
+        "font_px_min": 11.0,
+        "font_px_median": 11.0,
+        "text_count": 1,
+        "source": "parsed"
+      }
+    },
+    {
+      "name": "style vince sull'attributo",
+      "svg": "<svg><text style=\"font-size: 9px\" font-size=\"12\">a</text></svg>",
+      "expected": {
+        "font_px_min": 9.0,
+        "font_px_median": 9.0,
+        "text_count": 1,
+        "source": "parsed"
+      }
+    },
+    {
+      "name": "pt convertito in px (9pt → 12)",
+      "svg": "<svg><text font-size=\"9pt\">a</text></svg>",
+      "expected": {
+        "font_px_min": 12.0,
+        "font_px_median": 12.0,
+        "text_count": 1,
+        "source": "parsed"
+      }
+    },
+    {
+      "name": "unità relativa senza radice: irrisolvibile",
+      "svg": "<svg><text font-size=\"4ex\">a</text></svg>",
+      "expected": {
+        "font_px_min": null,
+        "font_px_median": null,
+        "text_count": 1,
+        "source": "unresolved"
+      }
+    },
+    {
+      "name": "lo tspan conta, il text contenitore no",
+      "svg": "<svg><text><tspan font-size=\"10\">a</tspan></text></svg>",
+      "expected": {
+        "font_px_min": 10.0,
+        "font_px_median": 10.0,
+        "text_count": 1,
+        "source": "parsed"
+      }
+    },
+    {
+      "name": "regola radice esatta `#m` (non `#m svg`, non `#m .t`) ed eredità del testo senza valore",
+      "svg": "<svg id=\"m\"><style>#m svg{font-size:20px}#m{font-size:14px}#m .t{font-size:18px}</style><text class=\"t\" font-size=\"18\">T</text><text>x</text></svg>",
+      "expected": {
+        "font_px_min": 14.0,
+        "font_px_median": 16.0,
+        "text_count": 2,
+        "source": "root_rule"
+      }
+    },
+    {
+      "name": "senza testi",
+      "svg": "<svg><rect width=\"1\" height=\"1\"/></svg>",
+      "expected": {
+        "font_px_min": null,
+        "font_px_median": null,
+        "text_count": 0,
+        "source": "no_text"
+      }
+    },
+    {
+      "name": "DOT-like: 10 uu × px_per_unit (110.67/83)",
+      "svg": "<svg width=\"110.67\" height=\"284\" viewBox=\"0 0 83 213\"><text font-size=\"10.00\">a</text><text font-size=\"11.00\">b</text></svg>",
+      "expected": {
+        "font_px_min": 13.333734939759037,
+        "font_px_median": 14.00042168674699,
+        "text_count": 2,
+        "source": "parsed"
+      }
+    },
+    {
+      "name": "SVG_A di test: testo senza valore e senza radice",
+      "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 10 10\"><text>a</text></svg>",
+      "expected": {
+        "font_px_min": null,
+        "font_px_median": null,
+        "text_count": 1,
+        "source": "unresolved"
+      }
+    },
+    {
+      "name": "display:none non filtrato dal parser (solo dal DOM): il tag conta",
+      "svg": "<svg><text style=\"display:none;font-size:8px\">n</text><text font-size=\"12\">v</text></svg>",
+      "expected": {
+        "font_px_min": 8.0,
+        "font_px_median": 10.0,
+        "text_count": 2,
+        "source": "parsed"
+      }
+    },
+    {
+      "name": "pie Mermaid 11: regole di classe e di discendenza sopra la radice (Chromium 17)",
+      "svg": "<svg id=\"p\" width=\"100%\" viewBox=\"0 0 400 300\"><style>#p{font-size:14px}#p svg{font-size:14px}#p .pieTitleText{font-size:25px}#p .slice{font-size:17px}#p .legend text{font-size:17px}</style><g><text class=\"slice\">60%</text><text class=\"pieTitleText\">Ripartizione</text><g class=\"legend\"><text>Teoria</text></g></g></svg>",
+      "expected": {
+        "font_px_min": 17.0,
+        "font_px_median": 17.0,
+        "text_count": 3,
+        "source": "root_rule"
+      }
+    },
+    {
+      "name": "radar Mermaid 11: regola di classe sotto la radice (Chromium 12)",
+      "svg": "<svg id=\"r\" width=\"100%\" viewBox=\"0 0 600 200\"><style>#r{font-size:14px}#r .radarTitle{font-size:14px}#r .radarAxisLabel{font-size:12px}</style><text class=\"radarAxisLabel\">Analisi</text><text class=\"radarTitle\">Competenze</text></svg>",
+      "expected": {
+        "font_px_min": 12.0,
+        "font_px_median": 13.0,
+        "text_count": 2,
+        "source": "root_rule"
+      }
+    },
+    {
+      "name": "sequence Mermaid 11: lo tspan eredita lo style del text che lo contiene (Chromium 16)",
+      "svg": "<svg id=\"s\"><style>#s{font-size:14px}</style><text class=\"actor\" style=\"text-anchor: middle; font-size: 16px\"><tspan>Server</tspan></text></svg>",
+      "expected": {
+        "font_px_min": 16.0,
+        "font_px_median": 16.0,
+        "text_count": 1,
+        "source": "parsed"
+      }
+    },
+    {
+      "name": "flowchart: le regole di tooltip e titolo non toccano le label, resta la radice",
+      "svg": "<svg id=\"f\"><style>#f{font-size:14px}#f div.mermaidTooltip{font-size:12px}#f .flowchartTitleText{font-size:18px}</style><g class=\"label\"><text><tspan class=\"text-inner-tspan\">Tesi</tspan></text></g></svg>",
+      "expected": {
+        "font_px_min": 14.0,
+        "font_px_median": 14.0,
+        "text_count": 1,
+        "source": "root_rule"
+      }
+    },
+    {
+      "name": "cascata: !important del foglio > style in linea > foglio > attributo di presentazione",
+      "svg": "<svg id=\"c\"><style>#c .a{font-size:20px!important}#c .b{font-size:20px}#c .d{font-size:9px}</style><text class=\"a\" style=\"font-size:8px\">a</text><text class=\"b\" style=\"font-size:11px\">b</text><text class=\"d\" font-size=\"30\">d</text></svg>",
+      "expected": {
+        "font_px_min": 9.0,
+        "font_px_median": 11.0,
+        "text_count": 3,
+        "source": "root_rule"
+      }
+    },
+    {
+      "name": "unità relative: em e % sul padre",
+      "svg": "<svg id=\"u\"><style>#u{font-size:10px}</style><text font-size=\"1.5em\">a</text><g font-size=\"20\"><text style=\"font-size:50%\">b</text></g></svg>",
+      "expected": {
+        "font_px_min": 10.0,
+        "font_px_median": 12.5,
+        "text_count": 2,
+        "source": "parsed"
+      }
+    },
+    {
+      "name": "em senza antenati accanto a un testo esatto: irrisolto (il DOM usa il contenitore)",
+      "svg": "<svg><text font-size=\"0.6em\">relativo</text><text font-size=\"14\">voce</text></svg>",
+      "expected": {
+        "font_px_min": null,
+        "font_px_median": null,
+        "text_count": 2,
+        "source": "unresolved"
+      }
+    },
+    {
+      "name": "% senza antenati nello style in linea: irrisolto",
+      "svg": "<svg><text style=\"font-size:60%\">relativo</text><text font-size=\"14\">voce</text></svg>",
+      "expected": {
+        "font_px_min": null,
+        "font_px_median": null,
+        "text_count": 2,
+        "source": "unresolved"
+      }
+    },
+    {
+      "name": "ex come limite inferiore (0,4 em): il titolo 4ex del timeline non è il minimo",
+      "svg": "<svg id=\"t\"><style>#t{font-size:14px}</style><text font-size=\"4ex\">Cronologia</text><text>Evento</text></svg>",
+      "expected": {
+        "font_px_min": 14.0,
+        "font_px_median": 18.2,
+        "text_count": 2,
+        "source": "root_rule"
+      }
+    },
+    {
+      "name": "ex che potrebbe stare sotto il minimo esatto: irrisolto",
+      "svg": "<svg id=\"t\"><style>#t{font-size:14px}</style><text font-size=\"2ex\">a</text><text>b</text></svg>",
+      "expected": {
+        "font_px_min": null,
+        "font_px_median": null,
+        "text_count": 2,
+        "source": "unresolved"
+      }
+    },
+    {
+      "name": "selettore fuori grammatica che dichiara il corpo: irrisolto, mai un valore inventato",
+      "svg": "<svg id=\"x\"><style>#x text:first-child{font-size:30px}</style><text font-size=\"12\">a</text></svg>",
+      "expected": {
+        "font_px_min": null,
+        "font_px_median": null,
+        "text_count": 1,
+        "source": "unresolved"
+      }
+    },
+    {
+      "name": "pseudo-classe dinamica e pseudo-elemento: mai nel render statico",
+      "svg": "<svg id=\"h\"><style>#h{font-size:14px}#h .n:hover{font-size:30px}#h .n::before{font-size:2px}</style><text class=\"n\">a</text></svg>",
+      "expected": {
+        "font_px_min": 14.0,
+        "font_px_median": 14.0,
+        "text_count": 1,
+        "source": "root_rule"
+      }
+    },
+    {
+      "name": "testo dopo un figlio e CDATA contano come nel DOM, lo spazio non separabile no",
+      "svg": "<svg><text font-size=\"10\"><tspan font-size=\"12\">a</tspan>b</text><text font-size=\"9\"><![CDATA[c]]></text><text font-size=\"8\">&#160;</text></svg>",
+      "expected": {
+        "font_px_min": 9.0,
+        "font_px_median": 10.0,
+        "text_count": 3,
+        "source": "parsed"
+      }
+    }
+  ],
+  "format_mm": [
+    {
+      "input": 140.76,
+      "output": "140.76"
+    },
+    {
+      "input": 168.0,
+      "output": "168"
+    },
+    {
+      "input": 2.7,
+      "output": "2.7"
+    },
+    {
+      "input": 0,
+      "output": "0"
+    },
+    {
+      "input": 29.28,
+      "output": "29.28"
+    }
+  ]
+}

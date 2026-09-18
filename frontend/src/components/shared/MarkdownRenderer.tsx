@@ -16,10 +16,12 @@ import type {
   LessonContentVisualAsset,
 } from "@/api/courses";
 import { isLegacyFormat } from "@/lib/figureFormats";
+import { equationLabelFamily, nonEmptyProofSteps } from "@/lib/figureNumbering";
 import { cn } from "@/lib/utils";
 
 import { FigureFrame } from "./FigureFrame";
 import { FunctionFigure } from "./FunctionFigure";
+import { InlineMath } from "./InlineMath";
 
 const MermaidDiagram = lazy(() => import("./MermaidDiagram"));
 const VegaLiteDiagram = lazy(() => import("./VegaLiteDiagram"));
@@ -32,13 +34,23 @@ interface MarkdownRendererProps {
   equations?: LessonContentEquation[];
   examples?: LessonContentExample[];
   /**
-   * Numeri delle figure (`Map<asset_id minuscolo, N>`) calcolati dal
-   * chiamante con `computeFigureNumbers` sull'intero corpo della dispensa
-   * (`LessonContentView`): il renderer non può numerare da solo perché è
-   * montato anche su frammenti (slide, esempi). Senza mappa le figure
-   * hanno l'etichetta senza numero («Figura.»).
+   * Numeri degli asset (`Map<"KIND:id_lower", N>`, chiave come in
+   * `computeAssetNumbers`) calcolati dal chiamante sull'intero corpo della
+   * dispensa (`LessonContentView`): il renderer non può numerare da solo
+   * perché è montato anche su frammenti (slide, esempi). Senza mappa i
+   * blocchi hanno l'etichetta senza numero («Figura.», «Tabella.»,
+   * «Equazione.», «Esempio.»; il teorema resta la sola parola del kind).
    */
-  figureNumbers?: Map<string, number>;
+  assetNumbers?: Map<string, number>;
+  /**
+   * Rimando testuale degli asset (`AssetRefs.cite` di
+   * `lib/lessonAssetRefs.ts`) applicato alle didascalie in una riga dei
+   * blocchi (figura, tabella, label dell'equazione, titolo dell'esempio),
+   * come il `cite` dei blocchi nel backend: un `[FIG:x]` scritto in una
+   * didascalia diventa «Figura 1». Il markdown dei corpi non è toccato.
+   * Senza, le didascalie restano com'erano.
+   */
+  cite?: (text: string) => string;
   className?: string;
 }
 
@@ -100,7 +112,8 @@ export function MarkdownRenderer({
   tables = [],
   equations = [],
   examples = [],
-  figureNumbers,
+  assetNumbers,
+  cite,
   className,
 }: MarkdownRendererProps) {
   const { preprocessed } = useMemo(
@@ -150,14 +163,15 @@ export function MarkdownRenderer({
               tableMap,
               equationMap,
               exampleMap,
-              figureNumbers,
+              assetNumbers,
+              cite,
             });
           }
         }
         return <p {...rest}>{children}</p>;
       },
     }),
-    [visualMap, tableMap, equationMap, exampleMap, figureNumbers],
+    [visualMap, tableMap, equationMap, exampleMap, assetNumbers, cite],
   );
 
   return (
@@ -178,7 +192,14 @@ interface AssetMaps {
   tableMap: Map<string, LessonContentTable>;
   equationMap: Map<string, LessonContentEquation>;
   exampleMap: Map<string, LessonContentExample>;
-  figureNumbers?: Map<string, number>;
+  assetNumbers?: Map<string, number>;
+  cite?: (text: string) => string;
+}
+
+/** Campo d'autore col rimando testuale degli asset applicato; senza
+ *  `cite` è l'identità (il renderer è montato anche su frammenti). */
+function cited(text: string, cite?: (t: string) => string): string {
+  return cite ? cite(text) : text;
 }
 
 function renderAssetBlock(
@@ -187,38 +208,38 @@ function renderAssetBlock(
   maps: AssetMaps,
 ): ReactNode {
   // Match case-insensitive (le mappe hanno chiavi minuscole); l'id
-  // originale resta per il messaggio "Asset non trovato".
+  // originale resta per il messaggio "Asset non trovato". Il numero ha la
+  // stessa chiave `KIND:id_lower` di `computeAssetNumbers`.
   const key = id.toLowerCase();
+  const number = maps.assetNumbers?.get(`${kind}:${key}`);
   switch (kind) {
     case "FIG": {
       const asset = maps.visualMap.get(key);
       if (!asset) {
         return <MissingAssetBlock kind={kind} id={id} />;
       }
-      return (
-        <VisualAssetBlock asset={asset} number={maps.figureNumbers?.get(key)} />
-      );
+      return <VisualAssetBlock asset={asset} number={number} cite={maps.cite} />;
     }
     case "TAB": {
       const table = maps.tableMap.get(key);
       if (!table) {
         return <MissingAssetBlock kind={kind} id={id} />;
       }
-      return <TableBlock table={table} />;
+      return <TableBlock table={table} number={number} cite={maps.cite} />;
     }
     case "EQ": {
       const eq = maps.equationMap.get(key);
       if (!eq) {
         return <MissingAssetBlock kind={kind} id={id} />;
       }
-      return <EquationBlock equation={eq} />;
+      return <EquationBlock equation={eq} number={number} cite={maps.cite} />;
     }
     case "EX": {
       const ex = maps.exampleMap.get(key);
       if (!ex) {
         return <MissingAssetBlock kind={kind} id={id} />;
       }
-      return <ExampleBlock example={ex} />;
+      return <ExampleBlock example={ex} number={number} cite={maps.cite} />;
     }
   }
 }
@@ -279,9 +300,11 @@ export function VisualAssetBody({
 function VisualAssetBlock({
   asset,
   number,
+  cite,
 }: {
   asset: LessonContentVisualAsset;
   number?: number;
+  cite?: (text: string) => string;
 }) {
   if (asset.format === "function") {
     return (
@@ -291,6 +314,7 @@ function VisualAssetBlock({
         caption={asset.caption}
         altText={asset.alt_text}
         number={number}
+        cite={cite}
       />
     );
   }
@@ -301,13 +325,30 @@ function VisualAssetBlock({
       caption={asset.caption}
       altText={asset.alt_text}
       number={number}
+      cite={cite}
     >
       <VisualAssetBody asset={asset} imageClassName="max-h-[28rem]" />
     </FigureFrame>
   );
 }
 
-function TableBlock({ table }: { table: LessonContentTable }) {
+/** Tabella con l'etichetta sempre presente («Tabella N.», senza `number`
+ *  «Tabella.»: stessa forma del PDF), seguita dalla didascalia se c'è
+ *  (solo il math è reso: `InlineMath`, come `render_markdown_inline`). */
+function TableBlock({
+  table,
+  number,
+  cite,
+}: {
+  table: LessonContentTable;
+  number?: number;
+  cite?: (text: string) => string;
+}) {
+  const { t } = useTranslation();
+  const label =
+    number != null
+      ? t("courses.figures.table.label", { n: number })
+      : t("courses.figures.table.labelUnnumbered");
   return (
     <figure className="my-6 overflow-hidden rounded-lg border border-border bg-card">
       <div className="lesson-prose overflow-x-auto p-2">
@@ -321,11 +362,12 @@ function TableBlock({ table }: { table: LessonContentTable }) {
           {table.markdown}
         </ReactMarkdown>
       </div>
-      {table.caption && (
-        <figcaption className="border-t border-border bg-muted/20 px-4 py-2 text-xs italic text-muted-foreground">
-          {table.caption}
-        </figcaption>
-      )}
+      <figcaption className="border-t border-border bg-muted/20 px-4 py-2 text-xs italic text-muted-foreground">
+        <span className="figure-label font-semibold not-italic">{label}</span>
+        {table.caption ? (
+          <InlineMath text={` ${cited(table.caption, cite)}`} />
+        ) : null}
+      </figcaption>
     </figure>
   );
 }
@@ -386,40 +428,52 @@ function ProseMarkdown({ source }: { source: string }) {
 }
 
 /**
- * Renderer unificato di un asset equazione: formula "nuda" (come prima)
- * oppure blocco teorema/proposizione con enunciato + dimostrazione a
- * passaggi. Esportato per riuso nelle slide (`LessonSlidesView`).
+ * Renderer unificato di un asset equazione: formula "nuda" oppure blocco
+ * teorema/proposizione con enunciato + dimostrazione a passaggi; la
+ * famiglia è decisa da `equationLabelFamily` (mirror del backend). Con
+ * `number` l'etichetta è «Equazione N.» / «Lemma N.»; senza (slide) è
+ * «Equazione.» / la sola parola del kind. La `label` dell'autore, in
+ * entrambi i rami, passa da `InlineMath` (solo il math è reso, come nel
+ * PDF). Esportato per riuso nelle slide (`LessonSlidesView`).
  */
-export function EquationBlock({ equation }: { equation: LessonContentEquation }) {
+export function EquationBlock({
+  equation,
+  number,
+  cite,
+}: {
+  equation: LessonContentEquation;
+  number?: number;
+  cite?: (text: string) => string;
+}) {
   const { t } = useTranslation();
+  const label = cited(equation.label || "", cite);
   const statement = (equation.statement || "").trim();
-  const steps = (equation.proof || []).filter(
-    (s) => (s?.latex || "").trim() || (s?.text || "").trim(),
-  );
+  const steps = nonEmptyProofSteps(equation.proof);
   const hasProof = steps.length > 0;
 
-  // Caso semplice (retro-compatibile): formula nuda → figure + caption.
-  if (!statement && !hasProof) {
-    const captionParts = [equation.label, equation.explanation]
-      .map((p) => (p || "").trim())
-      .filter(Boolean);
+  // Caso semplice (retro-compatibile): formula nuda → figure + caption,
+  // con l'etichetta sempre presente e la label dell'autore accanto.
+  if (equationLabelFamily(equation) === "EQ") {
+    const equationLabel =
+      number != null
+        ? t("courses.figures.equation.label", { n: number })
+        : t("courses.figures.equation.labelUnnumbered");
     return (
       <figure className="my-6 overflow-hidden rounded-lg border border-border bg-card">
         <div className="bg-muted/20 p-4">
           <KatexDisplay latex={equation.latex} />
         </div>
-        {captionParts.length > 0 && (
-          <figcaption className="border-t border-border bg-muted/30 px-4 py-2 text-xs text-muted-foreground">
-            {equation.label && (
-              <div className="font-semibold not-italic">{equation.label}</div>
-            )}
-            {(equation.explanation || "").trim() && (
-              <div className="italic [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
-                <ProseMarkdown source={equation.explanation} />
-              </div>
-            )}
-          </figcaption>
-        )}
+        <figcaption className="border-t border-border bg-muted/30 px-4 py-2 text-xs text-muted-foreground">
+          <div className="font-semibold not-italic">
+            <span className="figure-label">{equationLabel}</span>
+            {label ? <InlineMath text={` ${label}`} /> : null}
+          </div>
+          {(equation.explanation || "").trim() && (
+            <div className="italic [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
+              <ProseMarkdown source={equation.explanation} />
+            </div>
+          )}
+        </figcaption>
       </figure>
     );
   }
@@ -428,11 +482,15 @@ export function EquationBlock({ equation }: { equation: LessonContentEquation })
   const kindLabel = t(`courses.theorem.kind.${kind}`, {
     defaultValue: t("courses.theorem.kind.theorem"),
   });
+  const head =
+    number != null
+      ? t("courses.figures.theorem.label", { kind: kindLabel, n: number })
+      : kindLabel;
   return (
     <figure className="my-6 overflow-hidden rounded-lg border border-border bg-card">
       <div className="border-b border-border bg-muted/30 px-4 py-2 text-sm font-semibold text-primary">
-        {kindLabel}
-        {equation.label ? ` ${equation.label}` : ""}
+        {head}
+        {label ? <InlineMath text={` ${label}`} /> : null}
       </div>
       <div className="space-y-2 p-4">
         {statement && <ProseMarkdown source={statement} />}
@@ -463,14 +521,31 @@ export function EquationBlock({ equation }: { equation: LessonContentEquation })
   );
 }
 
-function ExampleBlock({ example }: { example: LessonContentExample }) {
+/** Esempio con l'etichetta sempre presente («Esempio N.», senza `number`
+ *  «Esempio.»: stessa forma del PDF), seguita dal titolo se c'è (solo il
+ *  math è reso: `InlineMath`). */
+function ExampleBlock({
+  example,
+  number,
+  cite,
+}: {
+  example: LessonContentExample;
+  number?: number;
+  cite?: (text: string) => string;
+}) {
+  const { t } = useTranslation();
+  const label =
+    number != null
+      ? t("courses.figures.example.label", { n: number })
+      : t("courses.figures.example.labelUnnumbered");
   return (
     <aside className="my-6 overflow-hidden rounded-lg border-l-4 border-primary bg-primary/5">
-      {example.title && (
-        <div className="border-b border-primary/20 bg-primary/10 px-4 py-2 text-sm font-semibold text-primary">
-          {example.title}
-        </div>
-      )}
+      <div className="border-b border-primary/20 bg-primary/10 px-4 py-2 text-sm font-semibold text-primary">
+        <span className="figure-label">{label}</span>
+        {example.title ? (
+          <InlineMath text={` ${cited(example.title, cite)}`} />
+        ) : null}
+      </div>
       <div className="lesson-prose px-4 py-3">
         <ReactMarkdown
           remarkPlugins={[remarkGfm, remarkMath]}

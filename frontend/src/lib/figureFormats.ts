@@ -384,63 +384,290 @@ export function sanitizeMermaidSvg(svg: string): string {
   return new XMLSerializer().serializeToString(root);
 }
 
+// ---------------------------------------------------------------------------
+// Banda di leggibilità (D10, D11): mirror di `app/services/figure_scale.py`
+// e di `svg_normalize.svg_intrinsic_box`, con parità provata dalla fixture
+// condivisa `backend/tests/fixtures/figure_scale_cases.json`
+// (`test_figure_scale.py::test_frontend_copy_matches_fixture`, Node con
+// `--experimental-strip-types`: qui solo import di tipo, niente DOM a
+// import). Stesso ordine di operazioni e stessi arrotondamenti del
+// Python: larghezza per DIFETTO al centesimo di mm (`Math.floor`), scala e
+// corpo half-up (`Math.floor(x·10^n + 0.5)/10^n`), mai `toFixed` sui numeri
+// confrontati.
+// ---------------------------------------------------------------------------
+
+/** Millimetri per px CSS (96 px = 25,4 mm). */
+export const MM_PER_PX = 25.4 / 96;
+/** Punti tipografici per px CSS. */
+export const PT_PER_PX = 0.75;
+
+export type FigureVariant = "lesson" | "slide";
+
+/** Bande di leggibilità in pt per superficie (D11): la dispensa e il web
+ *  8-11 pt, slide e frame video 10-14 pt. */
+export const READABILITY_BANDS_PT: Readonly<
+  Record<FigureVariant, readonly [number, number]>
+> = {
+  lesson: [8, 11],
+  slide: [10, 14],
+};
+const BAND_EPS = 1e-9;
+
+/** Corpo di Mermaid quando la misura nel DOM fallisce: `themeVariables.
+ *  fontSize` del tema (`figureTheme.ts`, 14px), lo stesso fallback di
+ *  `figure_scale.FALLBACK_BASE_FONT_PX["mermaid"]`. */
+export const MERMAID_FALLBACK_FONT_PX = 14;
+
+export interface SvgBox {
+  /** viewBox in unità utente. */
+  vbW: number;
+  vbH: number;
+  /** Dimensione intrinseca della radice in px (`null` per `width="100%"`). */
+  widthPx: number | null;
+  heightPx: number | null;
+  /** `widthPx / vbW`, 1.0 per gli SVG fluidi. */
+  pxPerUnit: number;
+}
+
+export interface FigureFit {
+  /** Larghezza da mettere sul wrapper: floor al centesimo di mm, sempre
+   *  entro il box. */
+  widthMm: number;
+  /** Rispetto a `vbW` px (fluidi) o a `intrinsicWPx` (`<img>`). */
+  scale: number;
+  /** Corpo minimo alla larghezza scelta (0 senza testo). */
+  textPt: number;
+  inBand: boolean;
+}
+
+export interface FigureFitInput {
+  vbW: number;
+  vbH: number;
+  baseFontPx: number | null;
+  boxWMm: number | null;
+  boxHMm: number | null;
+  variant?: FigureVariant;
+  intrinsicWPx?: number | null;
+}
+
+export interface SvgFontMetrics {
+  /** Corpo più piccolo fra i testi di contenuto, in unità utente
+   *  (`getComputedStyle().fontSize`), `null` senza testi. */
+  min: number | null;
+  median: number | null;
+  count: number;
+}
+
+const SVG_ROOT_RE = /<svg\b([^>]*)>/i;
+const SVG_ATTR_RE = /([A-Za-z_:][-A-Za-z0-9_:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+const LENGTH_RE = /^\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)\s*([a-z%]*)\s*$/;
+const NUMBER_RE = /[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?/g;
+const UNIT_TO_PX: Record<string, number> = {
+  "": 1,
+  px: 1,
+  pt: 96 / 72,
+  pc: 16,
+  mm: 96 / 25.4,
+  cm: 96 / 2.54,
+  in: 96,
+};
+
+/** Lunghezza CSS/SVG in px; `null` per assente, percentuale o unità non
+ *  convertibile (mirror di `svg_normalize._length_px`). */
+function lengthPx(value: string | undefined): number | null {
+  if (value === undefined) return null;
+  const m = LENGTH_RE.exec(value);
+  if (!m) return null;
+  const factor = UNIT_TO_PX[m[2].toLowerCase()];
+  if (factor === undefined) return null;
+  const px = Number(m[1]) * factor;
+  return px > 0 ? px : null;
+}
+
+function parseViewBox(value: string | undefined): [number, number] | null {
+  if (!value) return null;
+  const nums = value.match(NUMBER_RE);
+  if (!nums || nums.length !== 4) return null;
+  const w = Number(nums[2]);
+  const h = Number(nums[3]);
+  if (w <= 0 || h <= 0) return null;
+  return [w, h];
+}
+
+/** Attributi del tag radice con i nomi in minuscolo (l'ultimo vince);
+ *  `null` senza `<svg>`. */
+function svgRootAttrs(svg: string): Record<string, string> | null {
+  const root = SVG_ROOT_RE.exec(svg || "");
+  if (!root) return null;
+  const out: Record<string, string> = {};
+  for (const m of root[1].matchAll(SVG_ATTR_RE)) {
+    out[m[1].toLowerCase()] = m[2] !== undefined ? m[2] : (m[3] ?? "");
+  }
+  return out;
+}
+
+/**
+ * Geometria della radice di un SVG (testo): viewBox in unità utente,
+ * dimensione intrinseca in px se dichiarata e `pxPerUnit`; senza `viewBox`
+ * valgono `width`/`height` numerici (stessa regola di `normalize_svg`).
+ * `null` se non determinabile (nessuna radice, viewBox degenere, sola
+ * larghezza in percentuale). Mirror di `svg_normalize.svg_intrinsic_box`.
+ */
+export function svgIntrinsicBox(svg: string): SvgBox | null {
+  const attrs = svgRootAttrs(svg);
+  if (!attrs) return null;
+  const widthPx = lengthPx(attrs.width);
+  const heightPx = lengthPx(attrs.height);
+  let viewBox = parseViewBox(attrs.viewbox);
+  if (!viewBox && widthPx !== null && heightPx !== null) {
+    viewBox = [widthPx, heightPx];
+  }
+  if (!viewBox) return null;
+  const [vbW, vbH] = viewBox;
+  return {
+    vbW,
+    vbH,
+    widthPx,
+    heightPx,
+    pxPerUnit: widthPx !== null ? widthPx / vbW : 1,
+  };
+}
+
 export interface SvgSize {
   width: number;
   height: number;
 }
 
-const SVG_ROOT_RE = /<svg\b[^>]*>/i;
-const NUM = String.raw`[-+]?(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?`;
-const VIEWBOX_RE = new RegExp(
-  String.raw`\bviewBox\s*=\s*["']\s*${NUM}[\s,]+${NUM}[\s,]+(${NUM})[\s,]+(${NUM})\s*["']`,
-  "i",
-);
-const WIDTH_RE = new RegExp(
-  String.raw`\bwidth\s*=\s*["']\s*(${NUM})(?:px)?\s*["']`,
-  "i",
-);
-const HEIGHT_RE = new RegExp(
-  String.raw`\bheight\s*=\s*["']\s*(${NUM})(?:px)?\s*["']`,
-  "i",
-);
-
-/**
- * Dimensioni intrinseche di un SVG (testo) dal `viewBox` del tag radice,
- * in subordine da `width`/`height` numerici (non percentuali); `null` se
- * non determinabili o non positive. Mermaid emette sempre il `viewBox`.
- */
+/** Dimensioni intrinseche in unità utente: proiezione di `svgIntrinsicBox`. */
 export function svgIntrinsicSize(svg: string): SvgSize | null {
-  const root = SVG_ROOT_RE.exec(svg || "")?.[0];
-  if (!root) return null;
-  const vb = VIEWBOX_RE.exec(root);
-  let width = vb ? Number(vb[1]) : Number.NaN;
-  let height = vb ? Number(vb[2]) : Number.NaN;
-  if (!(width > 0 && height > 0)) {
-    width = Number(WIDTH_RE.exec(root)?.[1]);
-    height = Number(HEIGHT_RE.exec(root)?.[1]);
-  }
-  return width > 0 && height > 0 ? { width, height } : null;
+  const box = svgIntrinsicBox(svg);
+  return box ? { width: box.vbW, height: box.vbH } : null;
 }
 
-/** 28rem a 16px: `max_figure_height_cm` del PDF e `max-h-[28rem]` delle
- *  immagini caricate. */
-export const FULL_WIDTH_SVG_CAP_PX = 448;
+function halfUp(value: number, digits: number): number {
+  const factor = 10 ** digits;
+  return Math.floor(value * factor + 0.5) / factor;
+}
+
+function positive(value: number | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
 
 /**
- * Tetto d'altezza (px) di un SVG reso a larghezza piena (`MermaidDiagram`):
- * un diagramma orizzontale (larghezza ≥ altezza) non si dilata oltre
- * `capPx` di altezza, ma non scende mai sotto la propria altezza naturale;
- * un diagramma verticale (sequence, flowchart TD, class) non ha tetto e
- * conserva la geometria a larghezza piena, perché un `max-height` unito a
- * `width: 100%` lo farebbe scalare in `meet` fino a renderlo illeggibile.
- * `null` = nessun tetto.
+ * Larghezza (mm) a cui rendere la figura perché il testo più piccolo cada
+ * nella banda della superficie, entro il box (mirror riga per riga di
+ * `figure_scale.fit_figure_width_mm`).
+ *
+ * Politica di scala: gli SVG fluidi (`intrinsicWPx` assente: Mermaid,
+ * `width="100%"`) riempiono il box e vengono ridotti al tetto della banda;
+ * gli `<img>` intrinseci partono da scala 1, crescono solo fino al fondo
+ * della banda, scendono al tetto se sopra; mai oltre il box; senza testo
+ * scala naturale; banda irraggiungibile → larghezza massima del box e
+ * `inBand: false`. Un box `null` è «nessun vincolo» (web: la colonna la
+ * applica il CSS `min(100%, …)`). `null` per input degeneri; `variant`
+ * ignota → eccezione.
  */
-export function fullWidthSvgMaxHeightPx(
-  size: SvgSize | null,
-  capPx: number = FULL_WIDTH_SVG_CAP_PX,
-): number | null {
-  if (!size || size.width < size.height) return null;
-  return Math.max(capPx, Math.ceil(size.height));
+export function fitFigureWidthMm({
+  vbW,
+  vbH,
+  baseFontPx,
+  boxWMm,
+  boxHMm,
+  variant = "lesson",
+  intrinsicWPx = null,
+}: FigureFitInput): FigureFit | null {
+  const band = READABILITY_BANDS_PT[variant];
+  if (band === undefined) throw new Error(`variant sconosciuta: ${String(variant)}`);
+  const [lo, hi] = band;
+  if (positive(vbW) === null || positive(vbH) === null) return null;
+  if (boxWMm !== null && positive(boxWMm) === null) return null;
+  if (boxHMm !== null && positive(boxHMm) === null) return null;
+  if (intrinsicWPx !== null && positive(intrinsicWPx) === null) return null;
+
+  const fluid = intrinsicWPx === null;
+  const refWMm = (intrinsicWPx === null ? vbW : intrinsicWPx) * MM_PER_PX;
+  const refHMm = (refWMm * vbH) / vbW;
+  let sBox = Number.POSITIVE_INFINITY;
+  if (boxWMm !== null) sBox = Math.min(sBox, boxWMm / refWMm);
+  if (boxHMm !== null) sBox = Math.min(sBox, boxHMm / refHMm);
+
+  const base = baseFontPx !== null ? positive(baseFontPx) : null;
+  let scale: number;
+  let textPt: number;
+  let inBand: boolean;
+  if (base === null) {
+    // Senza testo: scala naturale, nessun vincolo di banda.
+    scale = Math.min(1, sBox);
+    textPt = 0;
+    inBand = true;
+  } else {
+    const ptPerScale = base * PT_PER_PX;
+    const sLo = lo / ptPerScale;
+    const sHi = hi / ptPerScale;
+    const sNat = fluid ? sBox : 1;
+    scale = Math.min(Math.min(Math.max(sNat, sLo), sHi), sBox);
+    textPt = ptPerScale * scale;
+    inBand = textPt >= lo - BAND_EPS;
+  }
+
+  const widthMm = Math.floor(refWMm * scale * 100) / 100;
+  return {
+    widthMm,
+    scale: halfUp(scale, 4),
+    textPt: halfUp(textPt, 2),
+    inBand,
+  };
+}
+
+/** `"140.76"`, `"168"`, `"0"`: stessa regola di `figure_scale.format_mm`
+ *  (`.2f` senza zeri finali); il valore arriva già al centesimo. */
+export function formatMm(value: number): string {
+  const text = value.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+  return text || "0";
+}
+
+/**
+ * Corpo del testo di un SVG misurato nel DOM: `{min, median, count}` sui
+ * `text`/`tspan` con nodo di testo proprio non vuoto e non `display:none`,
+ * in unità utente (`getComputedStyle().fontSize` non dipende da viewBox né
+ * dalla larghezza resa). Mirror funzionale (non copia letterale) di
+ * `MEASURE_SVG_FONT_PX_JS` nel pre-render backend (`mermaid_prerender.py`):
+ * stessa selezione, stesso filtro, stessa mediana; parità provata in
+ * Chromium da `test_frontend_figure_layout.py`. Host fuori schermo, MAI
+ * `visibility:hidden` (azzererebbe i testi), rimosso in `finally`. `null`
+ * se la misura fallisce (nessun DOM, eccezione): il chiamante ripiega sul
+ * fallback del tema.
+ */
+export function measureSvgFontPx(svg: string): SvgFontMetrics | null {
+  let host: HTMLDivElement | null = null;
+  try {
+    host = document.createElement("div");
+    host.style.cssText = "position:absolute;left:-100000px;top:0;width:1000px";
+    host.innerHTML = svg;
+    document.body.appendChild(host);
+    const sizes: number[] = [];
+    for (const el of host.querySelectorAll("text, tspan")) {
+      const own = Array.from(el.childNodes).some(
+        (n) => n.nodeType === 3 && (n.textContent ?? "").trim() !== "",
+      );
+      if (!own) continue;
+      const cs = getComputedStyle(el);
+      if (cs.display === "none") continue;
+      const px = parseFloat(cs.fontSize);
+      if (Number.isFinite(px) && px > 0) sizes.push(px);
+    }
+    if (sizes.length === 0) return { min: null, median: null, count: 0 };
+    sizes.sort((a, b) => a - b);
+    const mid = sizes.length >> 1;
+    const median =
+      sizes.length % 2 === 1 ? sizes[mid] : (sizes[mid - 1] + sizes[mid]) / 2;
+    return { min: sizes[0], median, count: sizes.length };
+  } catch {
+    return null;
+  } finally {
+    host?.remove();
+  }
 }
 
 /** `data:image/svg+xml;base64,...` di un SVG (testo UTF-8), come

@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { assetErrorsAfterRemoval } from "@/lib/errors";
 import { isLegacyFormat } from "@/lib/figureFormats";
+import { roundTrips } from "@/lib/figureNumbering";
 
 import {
   type LessonContentEquation,
@@ -342,6 +343,10 @@ export function LessonContentEditDialog({
     );
 
   const handleSubmit = () => {
+    // Le due liste partono SEMPRE, anche se non toccate: il backend le
+    // normalizza (trim, dedup case-insensitive) e così una lezione storica
+    // si ripulisce al primo salvataggio. Le righe vuote aggiunte e non
+    // compilate si scartano qui: una citation vuota darebbe 422.
     const payload: LessonContentUpdateInput = {
       introduction,
       summary,
@@ -351,7 +356,7 @@ export function LessonContentEditDialog({
       tables,
       equations,
       examples,
-      references,
+      references: references.filter((ref) => ref.citation.trim().length > 0),
     };
     onSubmit(payload);
   };
@@ -1149,15 +1154,19 @@ interface RefIdFieldProps {
  * Mostra l'identificatore di un asset/tabella/equazione/esempio nello stesso
  * formato `[KIND:id]` con cui è referenziato nel testo, in modo da rendere
  * immediato il match tra token nel testo e card nell'editor. L'`id` è
- * editabile e c'è un pulsante per copiare l'intero token in clipboard.
+ * editabile e c'è un pulsante per copiare l'intero token in clipboard; il
+ * token esiste solo se un renderer lo rilegge tale e quale (`roundTrips`,
+ * mirror di `_round_trips`): con un id vuoto, con `]` o con un a capo non
+ * c'è nulla da copiare.
  */
 function RefIdField({ kind, id, onChange, disabled }: RefIdFieldProps) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
 
-  const token = `[${kind}:${id || ""}]`;
+  const token = roundTrips(kind, id) ? `[${kind}:${id}]` : null;
 
   const handleCopy = async () => {
+    if (token === null) return;
     try {
       await navigator.clipboard.writeText(token);
       setCopied(true);
@@ -1186,7 +1195,7 @@ function RefIdField({ kind, id, onChange, disabled }: RefIdFieldProps) {
       <button
         type="button"
         onClick={handleCopy}
-        disabled={disabled || !id}
+        disabled={disabled || token === null}
         title={t("courses.lessonsContent.editor.refCopy")}
         className="inline-flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-accent-foreground disabled:opacity-40"
       >

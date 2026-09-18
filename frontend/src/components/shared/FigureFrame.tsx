@@ -5,6 +5,8 @@ import { useTranslation } from "react-i18next";
 import { stripFigurePrefix } from "@/lib/figureNumbering";
 import { cn } from "@/lib/utils";
 
+import { InlineMath } from "./InlineMath";
+
 /**
  * Cornice unica delle figure (D4): stesso markup e stessa didascalia del
  * partial backend `templates/partials/figure.html.j2` (`<figure
@@ -20,6 +22,9 @@ import { cn } from "@/lib/utils";
  * - `extraCaption` è la coda calcolata delle figure `function`; se la
  *   didascalia termina già con la stessa frase non viene ripetuta
  *   (stessa guardia del backend);
+ * - la didascalia del docente passa da `InlineMath` (solo il math
+ *   `$..$`/`\(..\)` è reso, con KaTeX; il resto è letterale, come nel
+ *   PDF); l'etichetta e la coda calcolata restano testo;
  * - il fallback `Suspense` dei renderer caricati in modo pigro sta dentro
  *   la cornice: la didascalia è visibile anche durante il caricamento.
  */
@@ -31,6 +36,11 @@ export interface FigureFrameProps {
   number?: number | null;
   variant?: "lesson" | "slide";
   extraCaption?: string;
+  /** Rimando testuale degli asset (`AssetRefs.cite`) applicato alla
+   *  didascalia DOPO `stripFigurePrefix` e prima di `InlineMath`, come il
+   *  `caption_renderer` del partial nel backend: un `[FIG:x]` nella
+   *  didascalia diventa «Figura 1». Default: identità. */
+  cite?: (text: string) => string;
   className?: string;
   children: ReactNode;
 }
@@ -55,6 +65,7 @@ export function FigureFrame({
   number,
   variant = "lesson",
   extraCaption,
+  cite,
   className,
   children,
 }: FigureFrameProps) {
@@ -63,7 +74,8 @@ export function FigureFrame({
     number != null
       ? t("courses.figures.label", { n: number })
       : t("courses.figures.labelUnnumbered");
-  const text = stripFigurePrefix(caption || "").trim();
+  const stripped = stripFigurePrefix(caption || "").trim();
+  const text = cite ? cite(stripped) : stripped;
   let extra = (extraCaption || "").trim();
   if (extra && text.endsWith(extra)) extra = "";
   // La coda calcolata è un periodo a sé («Zeri in x = -1, 1.»): senza il
@@ -71,6 +83,7 @@ export function FigureFrame({
   // Zeri in x…»). Stessa regola del partial del PDF (`figure_markup`).
   const stop =
     extra !== "" && text !== "" && !CAPTION_END_RE.test(text) ? "." : "";
+  const tail = text ? ` ${text}${stop}` : "";
 
   return (
     <figure
@@ -95,7 +108,7 @@ export function FigureFrame({
         )}
       >
         <span className="figure-label font-semibold">{label}</span>
-        {text ? ` ${text}${stop}` : ""}
+        {tail ? <InlineMath text={tail} /> : null}
         {extra ? ` ${extra}` : ""}
       </figcaption>
     </figure>

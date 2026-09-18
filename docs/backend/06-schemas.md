@@ -377,7 +377,7 @@ matematici (equazioni / teoremi con dimostrazione) e gli schemi della
 
 ### `VisualAssetFormat = Literal["mermaid", "vegalite", "dot", "function", "image", "image_prompt", "image_search_query", "description"]`
 
-Alias dei formati degli asset visivi (`:47`), importato anche da
+Alias dei formati degli asset visivi (`:86`), importato anche da
 `course_lesson_slides.py` per i `new_assets` di Fase 4. Contratto
 (docstring): le prime quattro voci sono le famiglie di **figure** con
 sorgente testuale, renderizzate dal registro `figure_render_service`
@@ -391,7 +391,7 @@ senza `function` (A1). Il frontend ne tiene la copia
 
 ### `class LessonContentVisualAsset(BaseModel)`
 
-Asset visivo della Fase 3 (`:75`; referenziato nel testo come `[FIG:..]`).
+Asset visivo della Fase 3 (`:114`; referenziato nel testo come `[FIG:..]`).
 `extra="ignore"` (i record JSONB precedenti al commit `92d5f37` possono
 ancora contenere `asset_type`, ignorato in lettura).
 - `asset_id: str` (1..50),
@@ -410,6 +410,36 @@ fix AI per kind), al PATCH manuale `figure_render_service.
 validate_visual_assets_or_raise` sui soli asset con `(format, content)`
 cambiati (`422 lesson_content_invalid_visual_asset` con
 `meta.errors[{loc, asset_id, format, msg, type}]`).
+
+### Tetto di risorsa sul sorgente di un asset visivo (A1, WP5)
+
+`VISUAL_ASSET_CONTENT_MAX_CHARS = 12_000` (`:74`) è la lunghezza più alta
+ammessa da un renderer con i default: `settings.figure_dot_max_chars`
+(12.000), Vega-Lite 4.000, soglia editoriale Mermaid 3.000
+(`figure_compute.graph_rules.MAX_MERMAID_SOURCE_CHARS`). È un tetto di
+**risorsa**, non una soglia editoriale: le soglie per formato restano nei
+renderer, perché un errore Pydantic scarta la lezione intera senza passare
+dal fix degli asset, mentre `validate` del registro lascia al fix la
+possibilità di semplificare. Un `FIGURE_DOT_MAX_CHARS` più alto di questo
+valore non ha effetto oltre il tetto.
+
+- `cap_visual_asset_content[AssetT: _HasContent](asset) -> AssetT` (`:140`)
+  — after-validator generico: oltre il tetto un `value_error` con `loc`
+  sull'elemento della lista;
+- `GeneratedVisualAsset = Annotated[LessonContentVisualAsset,
+  AfterValidator(cap_visual_asset_content)]` (`:152`), usato da
+  `LessonContentOutput.visual_assets`;
+- `LessonSlidesOutput.new_assets` in `course_lesson_slides.py` (`:118`)
+  applica lo stesso validatore a `LessonSlideNewAsset` con lo stesso
+  `Annotated`.
+
+Il tetto vale sugli asset **generati** (output AI di Fase 3 e 4) e, nel
+PATCH, solo sugli asset **cambiati**
+(`figure_render_service.validate_visual_assets_or_raise`). I modelli
+condivisi `LessonContentVisualAsset` e `LessonSlideNewAsset` non hanno
+tetto: l'editor invia sempre tutti gli asset e un Mermaid storico più
+lungo (nessun tetto prima di WP5, nessun backfill) renderebbe impossibile
+correggere un refuso in un altro campo.
 
 ### `class ProofStep(BaseModel)`
 
@@ -439,6 +469,41 @@ Asset equazione/teorema della Fase 3. `extra="forbid"`.
   senza enunciato dedicato,
 - `proof: list[ProofStep] = Field(default_factory=list)` — dimostrazione
   a passaggi; vuota quando non applicabile.
+
+### Normalizzazione di `key_takeaways` e `references` (questione B5, decisione D18)
+
+Costanti `KEY_TAKEAWAYS_MIN = 3` e `KEY_TAKEAWAYS_MAX = 12`, usate da
+`LessonContentOutput.key_takeaways` (`min_length`/`max_length`), da
+`LessonContentUpdateInput.key_takeaways` (`max_length`, 12 e non più 10:
+domanda aperta 14) e dal warning del worker. Due helper privati di
+modulo:
+- `_clean_key_takeaways(v: list[str]) -> list[str]` — trim, voci vuote
+  scartate (`str.strip()`), dedup `str.lower()` con ordine e grafia della
+  prima occorrenza. Stesso algoritmo di `_clean_argomenti`
+  (`course_objectives_generation.py`) e di `_clean_keywords` (sotto), senza
+  tetto di lunghezza e senza il ramo `isinstance`;
+- `_clean_references(v: list[LessonContentReference]) ->
+  list[LessonContentReference]` — trim della `citation`, citation vuote
+  scartate, dedup per `(source, citation.lower())`; `model_copy(update=)`
+  senza rivalidazione (il trim può solo accorciare), istanze già pulite
+  restituite così come sono.
+
+Quattro `field_validator` in mode "after" (precedente:
+`course_lesson_structure.py`, validatori su output AI e input del PATCH):
+- `LessonContentOutput._dedup_key_takeaways` — `ValueError("key_takeaways:
+  lista vuota dopo cleanup")` se restano zero voci;
+  `LessonContentOutput._dedup_references`;
+- `LessonContentUpdateInput._dedup_key_takeaways` /
+  `._dedup_references` — `None` resta `None` (campo non toccato), `[]` è
+  ammesso (azzeramento), nessun `ValueError`.
+
+`min_length`/`max_length` contano l'elenco grezzo: la lista persistita può
+avere 1-2 punti chiave. Nessuna dedup in lettura (PDF, vista web ed editor
+leggono `content_raw` com'è). Invariante: `content_raw` non viene mai
+ri-validato con `LessonContentOutput.model_validate` (unico call-site
+`openai_lesson_content_service.generate_lesson_content`); un round-trip su
+una lezione degradata fallirebbe con `too_short`. La duplicazione del corso
+(`course_duplication_service`) opera sul dict e non deve introdurlo.
 
 ### `class AssessmentMCOption(BaseModel)`
 
@@ -822,7 +887,9 @@ Costo OpenAI cumulato per una fase: `phase: str` (architecture |
 structure | content | slides | speech), `cost_usd: float`.
 
 Nota: `Course.glossary_tokens` usa lo schema vecchio senza `cost_usd` e
-NON compare in `by_phase`.
+NON compare in `by_phase`. `content` comprende il costo degli asset di
+Fase 3 (`content_tokens.assets_cost_usd`: fix, revisione figura ↔ testo,
+localizzazione).
 
 ### `class CostMetrics(BaseModel)`
 
