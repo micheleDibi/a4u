@@ -128,6 +128,19 @@ class _FakeRenderer:
 # ---------------------------------------------------------------------------
 
 
+def test_the_batch_timeout_grows_with_the_figures_of_the_lot() -> None:
+    """Il tetto è del BATCH: con la regola nuova del prompt (4-8 figure per
+    lezione invece di 1-3) una quota per figura evita che raddoppiando le
+    figure si dimezzi il budget di ciascuna. Vince sempre il massimo fra
+    tetto della singola resa, pavimento del formato e quota per il lotto."""
+    per = frs._BATCH_TIMEOUT_PER_FIGURE_S
+    assert frs._batch_timeout("dot", 20.0, 1) == 20.0
+    assert frs._batch_timeout("dot", 20.0, 8) == per * 8
+    assert frs._batch_timeout("mermaid", 20.0, 1) == frs._BATCH_TIMEOUT_FLOOR_S["mermaid"]
+    assert frs._batch_timeout("mermaid", 20.0, 20) == per * 20
+    assert frs._batch_timeout("dot", 20.0, 0) == 20.0
+
+
 def test_registry_and_renderable_formats():
     assert frs.RENDERABLE_FORMATS == ("mermaid", "vegalite", "dot", "function")
     assert set(frs.REGISTRY) == {"mermaid", "vegalite", "dot", "function"}
@@ -1494,6 +1507,9 @@ async def test_render_svg_map_never_raises_and_uses_the_negative_cache(
 async def test_render_svg_map_times_out_without_raising(monkeypatch: pytest.MonkeyPatch):
     slow = _FakeRenderer("vegalite", delay=0.6)
     monkeypatch.setitem(frs.REGISTRY, "vegalite", slow)
+    # Qui si misura il tetto della singola resa: la quota per figura del
+    # batch (sei secondi) lo coprirebbe e il timeout non scatterebbe.
+    monkeypatch.setattr(frs, "_BATCH_TIMEOUT_PER_FIGURE_S", 0.0)
     _patch_settings(monkeypatch, figure_render_timeout_seconds=0.2)
     t0 = time.perf_counter()
     out = await frs.render_svg_map(
@@ -1516,6 +1532,7 @@ async def test_render_svg_map_gives_the_mermaid_batch_its_own_floor_and_no_negat
     monkeypatch.setitem(frs._BATCH_TIMEOUT_FLOOR_S, "mermaid", 0.8)
     _patch_settings(monkeypatch, figure_render_timeout_seconds=0.1)
     assets = [{"asset_id": "M1", "format": "mermaid", "content": "flowchart LR\n A --> B"}]
+    monkeypatch.setattr(frs, "_BATCH_TIMEOUT_PER_FIGURE_S", 0.0)
     assert frs._batch_timeout("mermaid", 0.1) == 0.8 and frs._batch_timeout("dot", 0.1) == 0.1
     assert await frs.render_svg_map(assets, language="it") == {
         "M1": "<svg>mermaid:flowchart LR\n A --> B</svg>"

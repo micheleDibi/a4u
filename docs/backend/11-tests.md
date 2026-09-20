@@ -395,22 +395,72 @@ conta tutti i kind mentre l'elenco strutturale resta alle sole figure.
 `--figures` rende le figure e riporta le soglie di `graph_rules`,
 misurando ogni figura Mermaid in gruppi entro il budget; la modalità
 predefinita usa i contatori del gate. Stesso import namespace di
-`test_measure_register.py`.
+`test_measure_register.py`. La sezione (c) dello script (mix dei formati
+e dei tipi) è coperta da `test_lesson_content_figure_mix.py`, insieme
+alla funzione che la calcola.
 
 ---
 
 ## Prompt (registro accademico e figure)
 
-### `tests/test_prompt_register.py` (21)
+### `tests/test_prompt_register.py` (22)
 
 Blocco condiviso `prompt_register` nei prompt di Fase 3/4/5: composizione,
 ordine dei sette marcatori (LINGUA ultima), stringhe obbligatorie
 («DELIMITATORI MATH», «DIVIETI ASSOLUTI», `coverage_check`, …), guardie di
-lunghezza `MAX_SYSTEM_P3` (28.900; 27.923 misurati dopo la regola di
-posizione dei tag di WP5, 28.819 con il suffisso di rigenerazione, anche
-lui sotto guardia) / `P4` (15.400) / `P5` (12.500) anche sulle
-varianti con i default, determinismo (`_p3() == _p3()`), nessun tic
+lunghezza `MAX_SYSTEM_P3` (31.500; 29.777 con grounding, 30.783 nella
+variante più lunga — con la guardia precedente a 28.900 il margine era di
+UN carattere) / `P4` (18.200; 16.630 con i default, 17.474 nella variante
+più lunga) / `P5` (12.500), determinismo (`_p3() == _p3()`), nessun tic
 del corpus. Il testo dei prompt è statico (A19).
+
+La variante che la guardia deve misurare è quella di RIGENERAZIONE, per
+tutti e due i prompt che hanno un `REGENERATION_SUFFIX`: è il testo che
+parte davvero verso il modello. Fase 3 lo verificava da sempre
+(`test_p3_regeneration_variant_stays_under_guard`), Fase 4 no, e con
+`MAX_SYSTEM_P4` a 16.900 il prompt di una rigenerazione ne misurava
+17.049 — guardia superata senza che nessun test lo dicesse. Ora
+`test_p4_regeneration_variant_stays_under_guard` misura prompt +
+suffisso con le etichette più lunghe della tassonomia seeddata
+(migrazione 0009: `LONGEST_ROLE`, `LONGEST_STYLE`, `LONGEST_EQF`) e il
+codice lingua più lungo (`zh-cn`), che battono i rinvii al messaggio
+usati dai default.
+
+### `tests/test_lesson_content_figure_mix.py` (20)
+
+Il mix dei formati come MISURA, non come gate. Funzione pura
+(`app/services/figure_mix.py`): conteggio per formato e per tipo Mermaid,
+ordine stabile (conteggio decrescente, poi nome: due lezioni con lo stesso
+mix devono produrre la stessa riga di log), lettura indifferente dei
+modelli Pydantic di Fase 3 e dei dizionari di `content_raw`, sorgente
+Mermaid non riconosciuto senza sollevare, asset senza `format` ignorati.
+Materializzazione (con DB): `lesson_content_figure_mix` emesso con i
+conteggi giusti su una lezione con quattro formati, il warning
+`lesson_content_figure_monoculture` che scatta con tre flowchart e NON
+con due flowchart più un grafico di funzione, e in entrambi i casi la
+lezione resta `ready` — il warning non blocca. Sezione (c) di
+`scripts/measure_asset_refs.py` su una fixture della stessa forma
+dell'export reale del docente (che resta fuori dal repo): mix per lezione
+e aggregato, posizione della sezione fra (b) e (d), colonna «senza
+slide» sulle lezioni della fixture che hanno `slides_raw`, e la prova
+che script e materializzazione chiamano la stessa funzione.
+`single_mermaid_type` risponde `None` quando i Mermaid convivono con un
+altro formato: prima dichiarava «flowchart» anche a una lezione con
+quattro formati diversi, dove `monoculture` è falsa.
+
+### `tests/test_lesson_slides_asset_coverage.py` (5)
+
+Il contraltare di Fase 4: ogni figura e ogni tabella di Fase 3 dovrebbe
+avere la sua slide dedicata. La validazione controlla che ogni
+riferimento esista, non che ogni asset sia referenziato, e sull'export
+reale una lezione con quattro figure ne perdeva una (che sparisce anche
+dal video). `materialize_lesson_slides` emette ora il warning
+`lesson_slides_unreferenced_assets` e la lezione resta `ready`: quattro
+figure con tre slide lo fanno scattare, otto figure e due tabelle con la
+loro slide no, il confronto ignora maiuscole e spazi come il CRUD, e un
+`new_asset` di Fase 4 non è contato fra le figure perse. Nessun accesso
+al DB: `materialize_lesson_slides` è chiamata con `db=None`, come in
+`test_pdf_templates_autoescape.py`.
 
 ### `tests/test_prompt_composition_bugs.py` (14)
 
@@ -420,7 +470,7 @@ renderizzato, `_format_current_lesson_phase3` che serializza gli asset
 come `- {asset_id} [{format}]: {caption}` (parametrizzato su
 mermaid/vegalite/dot/function) con la guardia `"(?)" not in text`.
 
-### `tests/test_prompt_figures.py` (31)
+### `tests/test_prompt_figures.py` (47)
 
 Le quattro famiglie di figure nei prompt (WP3): il blocco «FORMATI DELLE
 FIGURE» di P3 elenca i tipi Mermaid ammessi ed esclusi (D8), le regole
@@ -432,6 +482,31 @@ delle sorgenti. WP5 (D17): il blocco `POSIZIONE DEI TAG — REGOLA RIGIDA`
 davanti al tag, mai in codice, formule, esempi o tabelle), i quattro tag
 con il proprio campo id dentro la regola, i rimandi da DIVIETI e da
 `REGENERATION_SUFFIX`, l'assenza della regola da P4.
+
+Monocultura e numerosità (18 settembre 2026, [doc 17 §
+22](../courses/17-visual-figures.md)): la `REGOLA DI SCELTA` mette il
+contenuto prima del formato e `function`/`vegalite`/`dot` prima del
+flowchart, dichiarato ultima scelta (l'asserzione è sull'ORDINE degli
+indici nel blocco, non solo sulle parole); ogni formato porta i propri
+esempi disciplinari; i blocchi `REALTÀ` e `VARIETÀ` sono presenti con la
+stessa forza e il freno alla figura inventata NON è un numero; la
+numerosità è sezione per sezione con l'ordine di grandezza 4-8 / 0-2 e il
+vecchio «1-3 figure per lezione» non compare in nessuna variante; P4
+ripete la scelta senza offrire `function` (che il suo schema strict
+rifiuterebbe) e il budget delle slide è tarato su 4-8 figure.
+
+Coerenza interna del blocco figure (20 settembre 2026, [doc 17 §
+22.7](../courses/17-visual-figures.md)): la chiusa «Dati illustrativi,
+non sperimentali» non è più l'alternativa alla fonte — sarebbe il
+permesso di inventare numeri purché etichettati, cioè il contrario di
+`REALTÀ` — in P3 e in P4; le rette e i polinomi ausiliari di Vega-Lite
+valgono solo sovrapposti ai dati, e non contraddicono più la riga «le
+funzioni matematiche non si tracciano in Vega-Lite»; P4 nomina ogni tipo
+Mermaid una volta sola, dentro `SCELTA`, con il proprio criterio e
+`classDiagram` compreso.
+`test_slide_range_has_room_for_eight_dedicated_figure_slides` è la
+controprova lato codice: `_expected_slide_range` più una slide per asset
+lascia posto a otto figure e due tabelle a 15, 30, 45, 60 e 90 minuti.
 
 ---
 

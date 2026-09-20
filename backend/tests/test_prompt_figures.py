@@ -10,6 +10,13 @@ statico (A19): nessun test dipende da `available_formats()`.
 WP5 (D17): la regola POSIZIONE DEI TAG di P3 (un tag per asset su riga
 propria, richiamo a parole), i rimandi da DIVIETI e dal suffisso di
 rigenerazione, e l'assenza della regola da P4.
+
+Monocultura e numerosità (18 settembre 2026, doc 17 § 22): la REGOLA DI
+SCELTA guidata dal contenuto (con il flowchart come ultima scelta e
+l'ordine di lettura come parte della regola), i blocchi REALTÀ e
+VARIETÀ, la regola di numerosità che sostituisce il tetto «1-3 figure
+per lezione», e il budget delle slide di Fase 4 ritarato su 4-8 figure —
+con la controprova lato codice sul range di `_expected_slide_range`.
 """
 
 from __future__ import annotations
@@ -24,6 +31,7 @@ from typing import Any
 import pytest
 
 from app.schemas import figure_function as ff
+from app.services import course_lesson_slides_service as slides_svc
 from app.services import openai_lesson_content_service as content
 from app.services import openai_lesson_slides_service as slides
 from app.services import openai_lesson_speech_service as speech
@@ -54,7 +62,7 @@ def _figure_block(prompt: str) -> str:
 
 
 def test_p3_figure_block_names_the_four_formats_and_maps_content_to_them():
-    block = _figure_block(_p3())
+    block = _flat(_figure_block(_p3()))
     for fmt in FORMATS:
         assert f"→ `{fmt}`" in block, fmt
     # Il blocco sta fra i requisiti degli asset e le equazioni, prima di
@@ -73,19 +81,179 @@ def test_p3_use_case_table_names_every_allowed_mermaid_type():
     table = _flat(block[: block.index("MERMAID 11.")])
     for name in MERMAID_D8_TYPES:
         assert name in table, name
-    # Ogni tipo porta il proprio criterio di scelta fra parentesi.
+    # Ogni tipo è RAGGIUNTO dal proprio criterio: si legge «contenuto →
+    # tipo», non «tipo (contenuto)». L'ordine conta quanto le parole — è il
+    # senso della freccia che decide da dove parte il modello.
     for criterion in (
-        "flowchart (processo, decisione)",
-        "gantt (pianificazione e dipendenze temporali)",
-        "sankey-beta (flussi che si ripartiscono fra stadi;",
-        "quadrantChart (posizionamento su due criteri)",
-        "radar-beta (profilo su più criteri, etichette brevi)",
-        "treemap-beta (gerarchia con quantità confrontabili)",
-        "block-beta (architettura a blocchi e livelli)",
-        "pie (ripartizione a poche voci)",
-        "xychart-beta (serie breve su assi, senza pretesa quantitativa)",
+        "processo con passi ORDINATI, dove l'ordine è il contenuto → `mermaid` flowchart",
+        "interazione fra attori nel tempo → `mermaid` sequenceDiagram",
+        "stati e transizioni → stateDiagram-v2",
+        "entità e cardinalità → erDiagram",
+        "classi e relazioni → classDiagram",
+        "scomposizione di un tema → mindmap",
+        "cronologia → timeline",
+        "pianificazione e dipendenze temporali → gantt",
+        "architettura a blocchi e livelli → block-beta",
+        "flusso che si ripartisce fra stadi → sankey-beta",
+        "posizionamento su due criteri → quadrantChart",
+        "profilo su più criteri, etichette brevi → radar-beta",
+        "gerarchia con quantità confrontabili → treemap-beta",
+        "ripartizione a poche voci → pie",
+        "serie breve su assi, senza pretesa quantitativa → xychart-beta",
     ):
         assert criterion in table, criterion
+
+
+def test_p3_selection_rule_puts_the_content_first_and_the_flowchart_last():
+    """Il difetto misurato il 18 settembre 2026 sull'export reale (13
+    flowchart su 14 figure generate, zero `vegalite`, zero `dot`) non
+    nasceva da un catalogo mancante — c'era già — ma dall'ORDINE del
+    ragionamento: il blocco apriva su `mermaid` con il criterio più largo
+    possibile («struttura, processo o relazione qualitativa»), e il primo
+    tipo nominato era il flowchart. Qui si verifica la forma nuova: prima
+    si dichiara che cosa la figura deve far vedere, il flowchart è
+    l'ultima scelta e i formati non-Mermaid vengono PRIMA di lui."""
+    block = _figure_block(_p3())
+    table = _flat(block[: block.index("MERMAID 11.")])
+    assert "REGOLA DI SCELTA — per OGNI figura decidi prima CHE COSA deve far vedere" in table
+    assert "non partire dal formato che sai già scrivere" in table
+    assert "Il flowchart è l'ULTIMA scelta, non la prima" in table
+    assert "un elenco di concetti collegati da frecce NON è un processo" in table
+    # I tre formati che il modello non sceglieva mai stanno prima del
+    # flowchart: l'ordine di lettura è parte della regola.
+    for fmt in ("`function`", "`vegalite`", "`dot`"):
+        assert table.index(fmt) < table.index("`mermaid` flowchart"), fmt
+    # La vecchia apertura, che apriva su Mermaid, non c'è più.
+    assert "struttura, processo o relazione qualitativa → `mermaid`" not in table
+
+
+def test_p3_selection_rule_binds_each_format_to_a_discipline_example():
+    """Un criterio senza esempio resta astratto. La riga `function` è la
+    più importante: in una lezione sui limiti il modello aveva prodotto un
+    flowchart di «successioni che convergono» invece dei grafici che il
+    contenuto chiedeva."""
+    table = _flat(_figure_block(_p3()))
+    table = table[: table.index("MERMAID 11.")]
+    funzione = table[table.index("→ `function`") : table.index("→ `vegalite`")]
+    for esempio in ("sin(1/x) vicino a zero", "x**2", "asintoti", "l'area fra due curve"):
+        assert esempio in funzione, esempio
+    assert "tangente" in table and "curve di livello" in table
+    dot = table[table.index("→ `dot`") : table.index("→ `mermaid` flowchart")]
+    for esempio in ("automa a stati finiti", "albero di derivazione", "topologia di una rete"):
+        assert esempio in dot, esempio
+
+
+def test_p3_reality_and_variety_rules_are_stated_with_the_same_force():
+    """I vincoli di realtà valgono quanto la regola di scelta: senza, la
+    spinta alla varietà diventa una spinta a INVENTARE dati per poter
+    disegnare un Vega-Lite. La varietà è una regola editoriale, non un
+    obbligo cieco: «se il contenuto lo consente»."""
+    table = _flat(_figure_block(_p3()))
+    realta = table[table.index("REALTÀ —") : table.index("VARIETÀ")]
+    assert "mai inventare numeri per avere un grafico" in realta
+    assert "dati che stanno nei documenti o notori e verificabili nel testo" in realta
+    assert "Mai una figura decorativa" in realta
+    assert "se il contenuto non chiede una figura, non la fai" in realta
+    # Il freno alla figura inventata NON è un numero: un tetto in prosa
+    # («meglio tre figure giuste che sei riempitive») rimetterebbe in
+    # piedi, dentro il blocco REALTÀ, il tappo che REQUISITI ha appena
+    # tolto. Il freno è sulla verità della figura, non sul conteggio.
+    assert "meglio una figura in meno che una inventata" in realta
+    assert "tre figure" not in realta
+    varieta = table[table.index("VARIETÀ") : table.index("Niente prompt per immagini")]
+    assert "regola editoriale, non obbligo cieco" in varieta
+    assert "in una lezione con almeno tre figure" in varieta
+    assert "se il contenuto lo consente, non più di due flowchart" in varieta
+    assert "In matematica, fisica e ingegneria" in varieta
+    assert "valuta esplicitamente una figura `function`" in varieta
+
+
+# ---------------------------------------------------------------------------
+# P3 — NUMEROSITÀ (quante figure, non solo quali)
+# ---------------------------------------------------------------------------
+
+
+def _requirements_block(prompt: str) -> str:
+    """«REQUISITI — ASSET VISIVI» fino alla regola dei tag. Il marcatore di
+    coda è cercato DOPO l'inizio del blocco: «POSIZIONE DEI TAG» è citata
+    anche nei DIVIETI, trenta righe più in alto."""
+    start = prompt.index("REQUISITI — ASSET VISIVI")
+    return _flat(prompt[start : prompt.index("POSIZIONE DEI TAG — REGOLA RIGIDA", start)])
+
+
+def test_p3_figure_count_follows_the_content_section_by_section():
+    """Il secondo difetto misurato il 18 settembre 2026, accanto alla
+    monocultura: la NUMEROSITÀ. Sull'export reale tre lezioni su quattro
+    avevano esattamente quattro figure, e M2.L2 ne aveva 14 solo perché il
+    docente ne aveva inserite a mano 12 dal catalogo. Il vecchio «1-3
+    figure per lezione» non era il vincolo che le teneva basse — tre
+    lezioni ordinarie su quattro stavano GIÀ sopra quel tetto: mancava il
+    criterio che lega la figura al contenuto. Qui si verifica la regola
+    nuova — il criterio è la sezione, non un tetto per lezione."""
+    block = _requirements_block(_p3())
+    assert "la figura segue il contenuto, sezione per sezione" in block
+    assert "merita la SUA figura" in block
+    for innesco in ("una struttura", "un andamento", "una relazione fra grandezze", "un processo"):
+        assert innesco in block, innesco
+    # L'ordine di grandezza c'è, ma come indicazione, non come tetto.
+    assert "Indicativamente 4-8 per lezione ordinaria, 0-2 per la lezione introduttiva" in block
+    # Il vecchio tappo non c'è più in NESSUNA variante del prompt.
+    for prompt in (_p3(), _p3(grounding_enabled=False), content._system_prompt("en")):
+        assert "1-3 figure per lezione" not in prompt
+
+
+def test_p3_figure_count_is_not_a_quota_to_fill():
+    """La numerosità senza freno è peggio della monocultura: produce
+    figure inventate. La regola porta il proprio antidoto, nella stessa
+    voce, così il modello non deve cercarlo trenta righe più in basso."""
+    block = _requirements_block(_p3())
+    assert "Non è una quota da riempire" in block
+    assert "non inventare contenuto per arrivare al numero" in block
+    assert "una sezione puramente discorsiva resta senza figura" in block
+
+
+def test_p4_slide_budget_accounts_for_the_new_figure_count():
+    """Una figura per slide (punto 2): con 4-8 figure di Fase 3 il conteggio
+    delle slide deve crescere, altrimenti il modello sceglie fra stare nel
+    range e dare una slide a ogni figura, e scarta le figure. Il codice lo
+    sa già (`course_lesson_slides_service` somma gli asset al tetto): qui
+    si verifica che lo dica anche il prompt, con l'ordine di grandezza
+    giusto."""
+    for prompt in (
+        slides._system_prompt("it"),
+        slides._system_prompt("it", minuti_per_lezione=45, livello_eqf="EQF 6"),
+    ):
+        flat = _flat(prompt)
+        assert "una lezione ordinaria ne porta 4-8 di Fase 3" in flat
+        assert "con 8 asset visivi e 2 tabelle il totale cresce di ~10 slide" in flat
+        assert "Il tetto della durata NON è un motivo per saltare un asset" in flat
+        assert "ogni figura di Fase 3 ha la sua slide, sempre" in flat
+        # L'esempio vecchio, tarato sul tetto 1-3, non c'è più.
+        assert "con 5 asset visivi e 2 tabelle" not in flat
+
+
+# Linee guida del prompt (§ NUMERO DI SLIDE), estremo alto di
+# contenuto + struttura, prima di qualunque slide dedicata agli asset.
+GUIDELINE_HIGH = {15: 10, 30: 15, 45: 23, 60: 30, 90: 42}
+
+
+@pytest.mark.parametrize("minuti", sorted(GUIDELINE_HIGH))
+def test_slide_range_has_room_for_eight_dedicated_figure_slides(minuti: int):
+    """Controprova lato codice della riga di prompt sopra.
+    `materialize_lesson_slides` somma al tetto una slide per asset visivo,
+    una per tabella e una per `new_asset`. Se quel tetto non bastasse, una
+    lezione con otto figure uscirebbe dal range e il modello imparerebbe a
+    scartarne qualcuna per stare nei numeri — esattamente il tappo che la
+    regola di numerosità toglie. Qui: slide di contenuto e struttura al
+    massimo delle linee guida, più una slide per ciascuna delle otto figure
+    e delle due tabelle, dentro il range allargato e mai vicino al
+    fallimento duro (oltre il doppio del tetto)."""
+    slide_asset = 8 + 2
+    low, high = slides_svc._expected_slide_range(minuti)
+    allargato = high + slide_asset  # come in `materialize_lesson_slides`
+    realistico = GUIDELINE_HIGH[minuti] + slide_asset
+    assert low <= realistico <= allargato, (minuti, realistico, low, allargato)
+    assert realistico < allargato * 2
 
 
 def test_p3_vegalite_catalogue_lists_the_eight_use_families():
@@ -134,8 +302,8 @@ def test_p3_names_the_limits_of_the_quantitative_mermaid_types():
     table = _flat(_figure_block(_p3()))
     assert "unico tipo con colori propri, non del tema" in table
     assert "solo quando il flusso è il contenuto" in table
-    assert "radar-beta (profilo su più criteri, etichette brevi)" in table
-    assert "treemap-beta (gerarchia con quantità confrontabili)" in table
+    assert "profilo su più criteri, etichette brevi → radar-beta" in table
+    assert "gerarchia con quantità confrontabili → treemap-beta" in table
 
 
 def test_p3_data_honesty_rule_covers_all_four_formats_not_only_vegalite():
@@ -152,6 +320,40 @@ def test_p3_data_honesty_rule_covers_all_four_formats_not_only_vegalite():
     assert "Dati illustrativi, non sperimentali" in clausola
     # Sta PRIMA dei paragrafi per formato, non dentro quello di Vega-Lite.
     assert block.index(regola) < block.index("MERMAID 11.") < block.index("VEGA-LITE")
+
+
+def test_p3_illustrative_label_is_not_a_licence_to_invent_numbers():
+    """`REALTÀ` vieta di inventare numeri per avere un grafico; otto righe
+    dopo, la clausola dell'onestà offriva l'alternativa: dichiarare la
+    fonte OPPURE chiudere con «Dati illustrativi, non sperimentali». Letta
+    da un modello, la seconda è il permesso esplicito di produrre numeri
+    non documentali purché etichettati, cioè il contrario della prima — ed
+    è proprio la regola che decide se oserà una `vegalite`, il formato che
+    nell'export non compariva mai. La chiusa ora etichetta i soli valori
+    schematici e rimanda a `REALTÀ`."""
+    block = _flat(_figure_block(_p3()))
+    clausola = block[block.index("ONESTÀ DEI DATI") : block.index("MERMAID 11.")]
+    assert "non autorizza a inventare dati (vale il blocco REALTÀ)" in clausola
+    assert "etichetta i soli valori schematici, che non affermano una misura" in clausola
+    assert "Numeri che sembrano misurati e non lo sono non si scrivono" in clausola
+    # L'alternativa alla fonte, che era il permesso, non c'è più.
+    assert "oppure la chiude con «Dati illustrativi" not in clausola
+
+
+def test_p3_auxiliary_polynomials_do_not_contradict_the_function_rule():
+    """«rette e polinomi ausiliari con `data.sequence`» e «le potenze su
+    una `sequence` NON si tracciano in Vega-Lite» si annullavano a
+    quarantasei righe di distanza: un polinomio è una potenza. L'ausilio è
+    ora dichiarato per quello che è — un livello sopra i dati — e la riga
+    delle funzioni dice fin dove arriva."""
+    block = _flat(_figure_block(_p3()))
+    apertura = block[block.index("VEGA-LITE (spec JSON") : block.index("Dati inline")]
+    assert "per i DATI" in apertura
+    assert "rette di tendenza e polinomi ausiliari SOVRAPPOSTI ai dati" in apertura
+    assert "mai come figura a sé" in apertura
+    funzioni = block[block.index("Le FUNZIONI MATEMATICHE") :]
+    assert "NON si tracciano in Vega-Lite: usa `function`" in funzioni
+    assert "qui restano solo come livello ausiliario su un grafico di dati" in funzioni
 
 
 def test_p3_pie_carries_the_professional_criterion_not_just_the_permission():
@@ -660,6 +862,101 @@ def test_p4_new_assets_carry_the_same_catalogue_of_chart_types():
         assert "`shape` solo quando porta significato" in flat
 
 
+def test_p4_selection_rule_mirrors_phase3_without_offering_function():
+    """La stessa regola di scelta di Fase 3, in forma breve, perché anche
+    qui il modello ricadeva sul flowchart. Con una differenza obbligata:
+    `function` NON è fra i formati offerti in Fase 4 (A1,
+    `_SLIDES_EXCLUDED_FORMATS`), quindi la riga sulle relazioni fra
+    grandezze rimanda alla figura di Fase 3 da REFERENZIARE invece di
+    proporre un formato che lo schema strict rifiuterebbe."""
+    for prompt in (
+        slides._system_prompt("it"),
+        slides._system_prompt("it", minuti_per_lezione=45, livello_eqf="EQF 6"),
+    ):
+        flat = _flat(prompt)
+        assert "SCELTA — decidi prima CHE COSA la figura deve far vedere, poi il formato" in flat
+        assert "Il flowchart è l'ULTIMA scelta, non la prima" in flat
+        assert "un elenco di concetti collegati da frecce non è un processo" in flat
+        assert "Mai inventare numeri per avere un grafico e mai una figura decorativa" in flat
+        scelta = flat[flat.index("SCELTA —") : flat.index("CATALOGO —")]
+        for criterion in (
+            "PRESENTI nel testo della lezione → `vegalite`",
+            "rete, automa, albero, gruppi → `dot`",
+            "processo con passi ORDINATI → `mermaid` flowchart",
+            "interazione fra attori nel tempo → sequenceDiagram",
+            "stati e transizioni → stateDiagram-v2",
+            "entità e cardinalità → erDiagram",
+            "scomposizione di un tema → mindmap",
+            "cronologia → timeline",
+        ):
+            assert criterion in scelta, criterion
+        # Nessuna riga «→ `function`»: la Fase 4 non lo offre al modello.
+        assert "→ `function`" not in flat
+        assert "è una figura `function` di Fase 3: qui la REFERENZI, non la ricrei" in scelta
+        assert (
+            "function"
+            not in slides.build_lesson_slides_json_schema(
+                visual_formats=("mermaid", "vegalite", "dot", "function")
+            )["schema"]["properties"]["new_assets"]["items"]["properties"]["format"]["enum"]
+        )
+
+
+def test_p4_repeats_the_reconciliation_of_the_illustrative_label():
+    """La stessa contraddizione di P3, in P4 stava nello stesso paragrafo:
+    la licenza precedeva il divieto di due righe."""
+    for prompt in (
+        slides._system_prompt("it"),
+        slides._system_prompt("it", minuti_per_lezione=45, livello_eqf="EQF 6"),
+    ):
+        flat = _flat(prompt)
+        assert "etichetta i valori schematici, non autorizza numeri inventati" in flat
+        assert "Mai inventare numeri per avere un grafico" in flat
+        assert "o la chiude con «Dati illustrativi" not in flat
+
+
+def test_p4_names_every_mermaid_type_once_with_its_own_criterion():
+    """L'elenco dei tipi Mermaid di Fase 4 era spezzato in due — sei tipi
+    con il criterio accanto dentro `SCELTA`, otto nudi dentro `CATALOGO` —
+    e `classDiagram` non stava in nessuno dei due, pur essendo in
+    `MERMAID_D8_TYPES`. Un nome senza criterio non viene scelto: è la tesi
+    stessa della campagna, e vale anche per la lista breve di Fase 4."""
+    for prompt in (
+        slides._system_prompt("it"),
+        slides._system_prompt("it", minuti_per_lezione=45, livello_eqf="EQF 6"),
+    ):
+        flat = _flat(prompt)
+        scelta = flat[flat.index("SCELTA —") : flat.index("CATALOGO —")]
+        for name in MERMAID_D8_TYPES:
+            assert name in scelta, name
+        assert "classi e relazioni → classDiagram" in scelta
+        # Nel catalogo resta il rinvio, non un secondo elenco.
+        catalogo = flat[flat.index("CATALOGO —") :]
+        rinvio = "Per `mermaid` i tipi ammessi sono quelli elencati sopra, uno per criterio"
+        assert rinvio in catalogo
+        ammessi = catalogo[: catalogo.index("esclusi ")]
+        for name in ("gantt", "quadrantChart", "sankey-beta", "block-beta", "treemap-beta"):
+            assert name not in ammessi, name
+
+
 def test_p5_forbids_reading_sources_aloud():
     prompt = _flat(speech._system_prompt("it", minuti_per_lezione=45))
     assert "MAI leggere codice Mermaid, spec JSON Vega-Lite/function, sorgente DOT" in prompt
+
+
+def test_the_prompt_does_not_promote_a_format_that_is_switched_off() -> None:
+    """La REGOLA DI SCELTA promuove `function`, `vegalite` e `dot`, ma l'enum
+    dello schema offre solo i formati accesi (`available_formats`): con un
+    kill-switch spento il prompt chiederebbe proprio cio' che il modello non
+    puo' produrre. Con tutti i formati accesi il blocco non compare."""
+    acceso = content._system_prompt("it")
+    assert "NON DISPONIBILI" not in acceso
+    spento = content._system_prompt("it", visual_formats=("mermaid", "function"))
+    riga = [ln for ln in spento.splitlines() if "NON DISPONIBILI" in ln]
+    assert len(riga) == 1
+    assert "`vegalite`" in riga[0] and "`dot`" in riga[0]
+    assert "`function`" not in riga[0] and "`mermaid`" not in riga[0]
+    # Il resto del prompt non cambia: il blocco si aggiunge, non sostituisce.
+    assert spento.replace(riga[0] + "\n", "").replace("\n\n\n", "\n\n") != ""
+    solo_mermaid = content._system_prompt("it", visual_formats=("mermaid",))
+    riga_solo = next(ln for ln in solo_mermaid.splitlines() if "NON DISPONIBILI" in ln)
+    assert "`function`" in riga_solo

@@ -28,6 +28,18 @@ Produce tabelle markdown:
               corpo (FIG → TAB → EQ → EX, poi ordine dell'array; A12, D3);
       «tag senza asset»: coppie (kind, id) citate (corpo o coda) ma non
               dichiarate (blocco missing-asset nel PDF);
+  (c) mix dei FORMATI (`mermaid`, `vegalite`, `dot`, `function`) e, dentro
+      Mermaid, dei TIPI di diagramma, per lezione e in aggregato con la
+      quota di ciascuno; segnala le lezioni in «monocultura» (almeno
+      `figure_mix.MONOCULTURE_MIN_FIGURES` figure, un solo formato e un
+      solo tipo). Stessa funzione della materializzazione
+      (`app.services.figure_mix.compute_figure_mix`, che in produzione
+      emette la riga `lesson_content_figure_mix`): la misura sull'export e
+      quella nei log non possono divergere. Con `slides_raw` nell'export,
+      la colonna «senza slide» conta le figure e le tabelle di Fase 3 che
+      nessuna slide referenzia (stessa misura del warning
+      `lesson_slides_unreferenced_assets`): una figura scartata dal deck
+      sparisce anche dal video;
   (d) per ogni visual_asset di formato mermaid/dot/vegalite: nodi, archi,
       etichetta più lunga, righe e caratteri contati sul sorgente con gli
       stessi contatori del gate editoriale
@@ -78,8 +90,9 @@ from pathlib import Path
 from typing import Any
 
 from app.services.figure_compute import graph_rules
+from app.services.figure_mix import MONOCULTURE_MIN_FIGURES, compute_figure_mix
 
-SCRIPT_VERSION = "2"
+SCRIPT_VERSION = "3"
 
 # Allineato a `course_lesson_pdf_service._ASSET_REF_RE` (case-sensitive sul
 # kind, il tag non attraversa la riga).
@@ -297,6 +310,133 @@ def asset_metrics(asset: dict[str, Any]) -> dict[str, Any]:
     met["len_sorgente"] = len(src)
     met["incroci"] = None  # solo con `--figures` (serve la figura resa)
     return met
+
+
+# ---------------------------------------------------------------------------
+# (c) mix dei formati e dei tipi
+# ---------------------------------------------------------------------------
+
+
+def format_counts(counts: Mapping[str, int]) -> str:
+    """`flowchart 3, pie 1` oppure `-` se vuoto (conteggio decrescente, poi
+    nome: è già l'ordine che `compute_figure_mix` restituisce)."""
+    return ", ".join(f"{name} {n}" for name, n in counts.items()) or "-"
+
+
+def share_rows(counts: Counter[str], total: int) -> list[list[Any]]:
+    """Righe `nome | n | quota` ordinate per conteggio decrescente, poi nome."""
+    return [
+        [name, n, f"{n / total:.0%}" if total else "-"]
+        for name, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    ]
+
+
+def assets_without_slide(content: Mapping[str, Any], slides: Any) -> list[str] | None:
+    """Figure e tabelle di Fase 3 che nessuna slide referenzia, `None` se
+    la lezione non ha ancora `slides_raw`.
+
+    Stessa misura del warning `lesson_slides_unreferenced_assets` e stessa
+    chiave di confronto del CRUD (`norm_id`): un riferimento con un'altra
+    grafia è lo stesso asset. Sull'export del 18 settembre 2026 una
+    lezione con quattro figure ne perdeva una.
+    """
+    if not isinstance(slides, Mapping):
+        return None
+    items = slides.get("slides")
+    if not isinstance(items, list):
+        return None
+    declared = {
+        norm_id(a.get(key))
+        for key, group in (("asset_id", "visual_assets"), ("table_id", "tables"))
+        for a in (content.get(group) or [])
+        if isinstance(a, dict)
+    }
+    declared.discard("")
+    referenced = {
+        norm_id(ref)
+        for slide in items
+        if isinstance(slide, dict)
+        for ref in (slide.get("references_assets") or [])
+    }
+    return sorted(declared - referenced)
+
+
+def print_figure_mix_report(rows: Sequence[dict[str, Any]]) -> None:
+    """Sezione (c): quali FORMATI e, dentro `mermaid`, quali TIPI di
+    diagramma il modello ha davvero prodotto, per lezione e in aggregato.
+
+    È la misura che risponde alla monocultura vista il 18 settembre 2026
+    sull'export reale: 13 flowchart su 14 figure generate, zero `vegalite`,
+    zero `dot`. Stessa funzione della materializzazione
+    (`app.services.figure_mix`), quindi la riga di log `lesson_content_
+    figure_mix` in produzione e questa tabella contano allo stesso modo.
+    """
+    per_lesson: list[list[Any]] = []
+    agg_formats: Counter[str] = Counter()
+    agg_types: Counter[str] = Counter()
+    mono = 0
+    orphans: list[tuple[str, list[str]]] = []
+    for row in rows:
+        content = row.get("content_raw") or {}
+        code = row.get("lesson_code") or str(row.get("id", ""))[:8]
+        assets = [a for a in (content.get("visual_assets") or []) if isinstance(a, dict)]
+        mix = compute_figure_mix(assets)
+        agg_formats.update(mix.formats)
+        agg_types.update(mix.mermaid_types)
+        mono += int(mix.monoculture)
+        senza_slide = assets_without_slide(content, row.get("slides_raw"))
+        if senza_slide:
+            orphans.append((code, senza_slide))
+        per_lesson.append(
+            [
+                code,
+                row.get("course_title", "-"),
+                mix.total,
+                len(mix.formats),
+                format_counts(mix.formats),
+                format_counts(mix.mermaid_types),
+                "SI" if mix.monoculture else "no",
+                "-" if senza_slide is None else len(senza_slide),
+            ]
+        )
+
+    total = sum(agg_formats.values())
+    print("\n## (c) Mix dei formati e dei tipi, per lezione")
+    print(
+        md_table(
+            [
+                "lezione",
+                "corso",
+                "figure",
+                "formati distinti",
+                "formati",
+                "tipi mermaid",
+                "monocultura",
+                "senza slide",
+            ],
+            per_lesson,
+        )
+    )
+    for code, ids in orphans:
+        print(f"senza slide in {code}: {', '.join(ids)}")
+    print("\n## (c) Mix aggregato — formati")
+    print(md_table(["formato", "n", "quota"], share_rows(agg_formats, total)))
+    mermaid_total = agg_formats.get("mermaid", 0)
+    print("\n## (c) Mix aggregato — tipi Mermaid")
+    print(md_table(["tipo", "n", "quota sui mermaid"], share_rows(agg_types, mermaid_total)))
+    print(
+        f"\nfigure totali: {total}; lezioni in monocultura "
+        f"(>= {MONOCULTURE_MIN_FIGURES} figure, un solo formato e un solo tipo): "
+        f"{mono} su {len(rows)}"
+    )
+    # `content_raw` non distingue la figura generata dal modello da quella
+    # inserita a mano dall'editor: sull'export del 18 settembre 2026 dodici
+    # campioni di catalogo (`A3`..`A14`) in una sola lezione facevano
+    # sembrare vario un corpus che era 13 flowchart su 14 figure generate.
+    print(
+        "nota: il conteggio comprende gli asset inseriti a mano dagli editor "
+        "(id tipo `A3`, `A7`); per il solo generato, filtra gli id del catalogo."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -759,6 +899,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             ],
         )
     )
+    print_figure_mix_report(rows)
     print("\n## (d) Struttura delle figure (incroci: solo con --figures)")
     print(
         md_table(

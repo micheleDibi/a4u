@@ -131,8 +131,29 @@ PRINCIPI
    esterni, `shape` solo quando porta significato: `doublecircle` per
    uno stato accettante, `Mrecord` per una struttura dati); niente
    prompt per immagini né descrizioni testuali. Ogni figura che porta
-   numeri dichiara la fonte nella caption o la chiude con «Dati
-   illustrativi, non sperimentali».
+   numeri dichiara la fonte nella caption: la chiusa «Dati
+   illustrativi, non sperimentali» etichetta i valori schematici, non
+   autorizza numeri inventati.
+   SCELTA — decidi prima CHE COSA la figura deve far vedere, poi il
+   formato. Dati, quantità, confronti, distribuzioni o serie temporali
+   PRESENTI nel testo della lezione → `vegalite`; struttura,
+   dipendenze, gerarchia, rete, automa, albero, gruppi → `dot`;
+   processo con passi ORDINATI → `mermaid` flowchart; interazione fra
+   attori nel tempo → sequenceDiagram; stati e transizioni →
+   stateDiagram-v2; entità e cardinalità → erDiagram; classi e
+   relazioni → classDiagram; scomposizione di un tema → mindmap;
+   cronologia → timeline; pianificazione e dipendenze temporali →
+   gantt; architettura a blocchi e livelli → block-beta; flusso che si
+   ripartisce fra stadi → sankey-beta; posizionamento su due criteri →
+   quadrantChart; profilo su più criteri, etichette brevi →
+   radar-beta; gerarchia con quantità confrontabili → treemap-beta;
+   ripartizione a poche voci → pie; serie breve su assi → xychart-beta.
+   Il flowchart è l'ULTIMA scelta, non la prima: un elenco di concetti
+   collegati da frecce non è un processo. Una relazione fra grandezze
+   (andamento, tangente, area, famiglia di curve) è una figura
+   `function` di Fase 3: qui la REFERENZI, non la ricrei. Mai inventare
+   numeri per avere un grafico e mai una figura decorativa: se il
+   contenuto non la chiede, non la fai.
    CATALOGO — per `vegalite` scegli il tipo dalla famiglia d'uso:
    confronto fra categorie (barre verticali, orizzontali, raggruppate,
    impilate), parte sul tutto (barre normalizzate, torta, ciambella),
@@ -144,10 +165,9 @@ PRINCIPI
    solo con poche categorie che compongono un intero e con quote
    nettamente diverse: altrimenti barre ordinate. Dichiara `sort`
    quando l'ordine delle categorie è cronologico, logico o per quota:
-   senza, Vega-Lite le mette in ordine alfabetico. Per `mermaid`, oltre
-   ai diagrammi di struttura e di processo, sono ammessi gantt,
-   quadrantChart, sankey-beta, block-beta, radar-beta, treemap-beta,
-   pie e xychart-beta; esclusi {_MERMAID_EXCLUDED_TEXT}. Catena
+   senza, Vega-Lite le mette in ordine alfabetico. Per `mermaid` i
+   tipi ammessi sono quelli elencati sopra, uno per criterio; esclusi
+   {_MERMAID_EXCLUDED_TEXT}. Catena
    lineare oltre quattro passi: `flowchart TB`; `LR` se corta o
    ramificata.
    Per evitare collisioni di ID, prefissa con `*_new_*` (es.
@@ -166,9 +186,11 @@ PRINCIPI
    - 60 min → 22-30 slide
    - 90 min → 32-42 slide
    A questi numeri si AGGIUNGE una slide dedicata per ogni asset
-   visivo e per ogni tabella (punto 2): con 5 asset visivi e 2
-   tabelle il totale cresce di ~7 slide. Adatta in funzione della
-   densità del contenuto.
+   visivo e per ogni tabella (punto 2): una lezione ordinaria ne porta
+   4-8 di Fase 3, quindi con 8 asset visivi e 2 tabelle il totale
+   cresce di ~10 slide. Il tetto della durata NON è un motivo per
+   saltare un asset: ogni figura di Fase 3 ha la sua slide, sempre.
+   Adatta in funzione della densità del contenuto.
 
 5. STRUTTURA STANDARD:
    - 1 slide titolo

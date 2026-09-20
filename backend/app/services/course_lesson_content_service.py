@@ -58,6 +58,7 @@ from app.services.course_architecture_service import (
     didactic_style_labels,  # noqa: F401  (ri-esposta per il worker Fase 3)
 )
 from app.services.course_glossary_service import format_glossary_for_prompt
+from app.services.figure_mix import compute_figure_mix
 
 log = get_logger("app.course_lesson_content")
 
@@ -1100,6 +1101,26 @@ async def materialize_lesson_content(
             unknown_tab=sorted(unknown_tab),
             unknown_eq=sorted(unknown_eq),
             unknown_ex=sorted(unknown_ex),
+        )
+
+    # 7b. Mix delle figure: diagnostica pura (non blocca, non scrive).
+    # È la misura che dice se la REGOLA DI SCELTA del prompt ha funzionato:
+    # senza, per saperlo bisogna riaprire le lezioni a una a una.
+    mix = compute_figure_mix(output.visual_assets)
+    log.info(
+        "lesson_content_figure_mix",
+        lesson_code=lesson.lesson_code,
+        figures=mix.total,
+        formats=mix.formats,
+        mermaid_types=mix.mermaid_types,
+    )
+    if mix.monoculture:
+        log.warning(
+            "lesson_content_figure_monoculture",
+            lesson_code=lesson.lesson_code,
+            figures=mix.total,
+            format=mix.single_format,
+            mermaid_type=mix.single_mermaid_type,
         )
 
     # 8. Apply — scrive content_raw + meta

@@ -5755,3 +5755,320 @@ generato non si tocca.
 | Il candidato si decide sul sorgente sanificato: fence in coda, riga `all`, carattere di controllo | `tests/test_figure_render_service.py::test_the_chain_is_recognised_on_the_source_the_renderer_draws` |
 | La vista toglie gli stessi caratteri di controllo del backend, e decide la direzione sul box della propria superficie | `tests/test_frontend_figure_layout.py::test_the_view_strips_the_control_chars_the_backend_strips`, `::test_the_view_decides_the_direction_on_the_box_of_its_own_surface` |
 | La voce entra nel `figure_fit_report` | `tests/test_lesson_pdf_figures.py::test_figure_fit_report_summary_lists_the_out_of_band_figures` |
+
+## 22. Monocultura: quali figure e quante (18 settembre 2026)
+
+Il difetto non è la singola figura, che i capitoli 18-21 hanno reso
+leggibile: è che quasi tutte le figure sono la **stessa** figura, e che
+sono **poche**. Il docente esporta quattro lezioni di quattro corsi
+diversi e le conta.
+
+### 22.1 La misura di partenza
+
+Delle **14 figure generate dal modello**: 13 `mermaid` e una `function`.
+Zero `vegalite`, zero `dot`. Dentro Mermaid, **13 flowchart su 13**:
+nessun sequence, state, class, er, mindmap, timeline, quadrant, pie,
+sankey, radar, treemap, xychart. Le altre 12 figure dell'export (id
+`A3`..`A14` in M2.L2) sono campioni di catalogo inseriti a mano dal
+docente dagli editor (§16), non prodotte dal modello: contate insieme
+alle altre farebbero sembrare vario un export che non lo è.
+
+| lezione | figure generate | formati | tipi Mermaid |
+| --- | --- | --- | --- |
+| M2.L2 — Analisi Matematica (limiti) | 2 | mermaid 1, function 1 | flowchart 1 |
+| M4.L1 — Economia degli intermediari | 4 | mermaid 4 | flowchart 4 |
+| M4.L3 — Misure Meccaniche e Termiche | 4 | mermaid 4 | flowchart 4 |
+| M12.L7 — Analisi Matematica (integrali) | 4 | mermaid 4 | flowchart 4 |
+
+Due esempi dicono il costo didattico meglio della tabella. **M2.L2** è
+una lezione sui limiti di funzioni reali: il contenuto chiede grafici di
+funzione — `sin(1/x)` che non ha limite, il confronto fra `x`, `x²` e
+`sin x`, gli asintoti, la costruzione epsilon-delta — e il modello ha
+prodotto un flowchart di «successioni che convergono» più un solo
+grafico. **M12.L7** è sui teoremi integrali: quattro flowchart, nessuna
+figura geometrica.
+
+Il conteggio è l'altra metà del difetto: **tre lezioni su quattro hanno
+esattamente quattro figure**, e nessuna ne ha di più. Il prompt diceva
+«1-3 figure per lezione», ma quel tetto **non era il vincolo**: tre
+lezioni ordinarie su quattro lo superavano già. A mancare era il criterio
+— quante figure chiede il contenuto, sezione per sezione — e il
+risultato, quattro figure ovunque, è la firma di una consuetudine, non
+di un limite. La correzione (numerosità legata alle sezioni) resta
+quella giusta; la diagnosi, scritta per la prima volta come «il tappo era
+1-3», era imprecisa sulla causa ed è corretta qui.
+
+### 22.2 Perché il catalogo non bastava
+
+I quattro formati esistono e funzionano dal capitolo 2; il catalogo dei
+quindici tipi Mermaid e delle otto famiglie Vega-Lite è nel prompt dal
+capitolo 17. Il difetto era **l'ordine del ragionamento**. Il blocco
+apriva così:
+
+> struttura, processo o relazione qualitativa → `mermaid`, con il tipo
+> scelto dal contenuto: flowchart (processo, decisione), …
+
+Il primo formato nominato era `mermaid`, raggiunto dal criterio più largo
+che si possa scrivere («struttura, processo o relazione qualitativa»:
+quasi ogni contenuto universitario ci rientra), e il primo tipo nominato
+era il flowchart. Un modello che legge in ordine non arriva mai a
+`function`: ha già trovato una casella che accetta tutto. E i criteri
+stavano **fra parentesi dopo il nome del formato** — «flowchart
+(processo, decisione)» — cioè si leggevano partendo dal formato, non dal
+contenuto.
+
+### 22.3 Le due regole nuove
+
+**Scelta** — il blocco `FORMATI DELLE FIGURE` apre ora con la regola,
+non con l'elenco: «per OGNI figura decidi prima CHE COSA deve far
+vedere, poi leggi qui sotto quale formato lo mostra. Mai il contrario:
+non partire dal formato che sai già scrivere.» Le frecce sono girate —
+si legge «contenuto → formato», non «formato (contenuto)» — e l'ordine
+delle righe è invertito: `function`, `vegalite` e `dot` vengono **prima**
+del flowchart, che è dichiarato esplicitamente «l'ULTIMA scelta, non la
+prima: un elenco di concetti collegati da frecce NON è un processo».
+Ogni riga porta due o tre esempi legati alle discipline (`sin(1/x)`
+vicino a zero, l'area fra due curve, un automa a stati finiti, l'albero
+di derivazione di una grammatica): un criterio senza esempio resta
+astratto.
+
+Due blocchi chiudono la regola. `REALTÀ`: mai inventare numeri per avere
+un grafico (`vegalite` solo su dati dei documenti o notori e verificabili
+nel testo), mai una figura decorativa, «meglio una figura in meno che una
+inventata». Senza, la spinta alla varietà diventa una spinta a inventare
+dati per poter disegnare un Vega-Lite. `VARIETÀ`, dichiarata come regola
+editoriale e non come obbligo cieco: in una lezione con almeno tre
+figure, **se il contenuto lo consente**, non più di due flowchart; in
+matematica, fisica e ingegneria, dove una sezione lega due grandezze, si
+valuta esplicitamente una figura `function`.
+
+**Numerosità** — in `REQUISITI — ASSET VISIVI` il tetto «1-3 figure per
+lezione» è sostituito dal criterio: «la figura segue il contenuto,
+sezione per sezione: ogni sezione che introduce una struttura, un
+andamento, una relazione fra grandezze, dei dati o un processo merita la
+SUA figura. Indicativamente 4-8 per lezione ordinaria, 0-2 per la lezione
+introduttiva.» L'antidoto sta nella stessa voce, non trenta righe più in
+basso: «Non è una quota da riempire: non inventare contenuto per arrivare
+al numero, e una sezione puramente discorsiva resta senza figura.»
+
+La Fase 4 riceve la regola di scelta in forma breve, senza `function`
+(che in Fase 4 non è fra i formati, A1: una relazione fra grandezze si
+REFERENZIA dalla figura di Fase 3, non si ricrea), e il budget delle
+slide è ritarato sulla nuova numerosità.
+
+### 22.4 Gli altri tetti, verificati uno per uno
+
+Alzare il numero nel prompt non serve se un tetto a valle lo riporta
+giù. Nessun altro cambio è stato necessario, ma ognuno è stato guardato:
+
+| tetto | valore | esito |
+| --- | --- | --- |
+| Schema JSON strict di Fase 3 | nessun `maxItems` su `visual_assets` | già libero |
+| `OPENAI_LESSON_CONTENT_MAX_TOKENS` | 32.000 | il `content_raw` reale di una lezione a 4 figure misura ~10,5k token, quello a 14 figure ~11,1k: una figura pesa in mediana 568 caratteri (~142 token). Passare da 3 a 8 figure costa ~700 token: margine ampio |
+| Range delle slide di Fase 4 | `_expected_slide_range` + una slide per ogni asset visivo, tabella e `new_asset` | il tetto **cresce già** con il numero di figure (`materialize_lesson_slides`): con 8 figure e 2 tabelle il totale sta nel range per 15, 30, 45, 60 e 90 minuti |
+| `_VALIDATION_TIMEOUT_S` (batch JS Mermaid/KaTeX) | 90 s per lezione | una sola pagina headless per tutta la lezione: il costo per figura è un `page.evaluate` |
+| `FIGURE_RENDER_TIMEOUT_SECONDS` | 20 s per figura | `vegalite`/`dot`/`function` sono validati in sequenza, uno per volta |
+
+La misura con il motore reale (`asset_validation_service._validate_slots`,
+Chromium + matplotlib/sympy + Vega), macchina di sviluppo:
+
+| batch | tempo |
+| --- | --- |
+| 3 figure miste (2 mermaid + 1 function) | 0,9-1,6 s |
+| 8 figure miste (4 mermaid, 1 dot, 1 vegalite, 2 function) | 1,3-2,4 s |
+| 8 figure tutte calcolate (dot, vegalite, function: il caso peggiore, validazione sequenziale) | 1,33 s |
+
+Otto figure costano **meno di tre secondi** di validazione: due ordini di
+grandezza sotto il timeout di batch, e la generazione OpenAI della
+lezione ne dura decine. Il costo che cresce davvero è quello dei token di
+output, ~700 in più su un cap di 32.000.
+
+### 22.5 La diagnostica, perché la prossima misura non richieda l'export
+
+Per contare 13 flowchart su 14 il docente ha dovuto esportare il database
+e riaprire le lezioni a una a una: in produzione del mix non restava
+traccia. `app/services/figure_mix.py` (modulo puro, libreria standard più
+`graph_rules`) calcola il conteggio per formato e, dentro Mermaid, per
+tipo di diagramma. Lo usano due chiamanti, apposta gli stessi:
+
+- `materialize_lesson_content` emette `lesson_content_figure_mix`
+  (`figures`, `formats`, `mermaid_types`) a ogni lezione materializzata e
+  aggiunge `lesson_content_figure_monoculture` come **warning** quando
+  una lezione con almeno tre figure usa un solo formato e un solo tipo.
+  Non blocca nulla: una lezione con tre flowchart resta valida e va in
+  `ready`. È una misura, non un gate;
+- `scripts/measure_asset_refs.py` guadagna la **sezione (c)**: mix per
+  lezione e in aggregato, con la quota di ciascun formato e di ciascun
+  tipo Mermaid, e il numero di lezioni in monocultura. Stesso comando che
+  il docente ha già usato per le altre misure.
+
+Contare con la stessa funzione in tutti e due i posti è il punto: se
+divergessero, la misura sull'export e i log direbbero due cose diverse
+sullo stesso corso.
+
+### 22.6 Gli oracoli
+
+| che cosa | test |
+| --- | --- |
+| La regola di scelta mette il contenuto prima del formato, `function`/`vegalite`/`dot` prima del flowchart, e il flowchart è dichiarato ultima scelta | `tests/test_prompt_figures.py::test_p3_selection_rule_puts_the_content_first_and_the_flowchart_last` |
+| Ogni formato porta i propri esempi disciplinari | `::test_p3_selection_rule_binds_each_format_to_a_discipline_example` |
+| I vincoli di realtà e la varietà hanno la stessa forza, e il freno non è un numero | `::test_p3_reality_and_variety_rules_are_stated_with_the_same_force` |
+| La numerosità è sezione per sezione, con l'ordine di grandezza 4-8 / 0-2, e il vecchio «1-3 figure per lezione» non è in nessuna variante | `::test_p3_figure_count_follows_the_content_section_by_section` |
+| La numerosità porta il proprio antidoto («non è una quota da riempire») | `::test_p3_figure_count_is_not_a_quota_to_fill` |
+| Fase 4 ripete la scelta senza offrire `function` e il budget delle slide è ritarato | `::test_p4_selection_rule_mirrors_phase3_without_offering_function`, `::test_p4_slide_budget_accounts_for_the_new_figure_count` |
+| Il range delle slide ha posto per otto slide dedicate, a ogni durata | `::test_slide_range_has_room_for_eight_dedicated_figure_slides` |
+| Il budget dei prompt resta sotto la guardia dichiarata, nella variante di rigenerazione compresa | `tests/test_prompt_register.py` (`MAX_SYSTEM_P3` 31.500, `MAX_SYSTEM_P4` 18.200), `::test_p3_regeneration_variant_stays_under_guard`, `::test_p4_regeneration_variant_stays_under_guard` |
+| La chiusa «Dati illustrativi» non autorizza numeri inventati, in P3 e in P4 | `tests/test_prompt_figures.py::test_p3_illustrative_label_is_not_a_licence_to_invent_numbers`, `::test_p4_repeats_the_reconciliation_of_the_illustrative_label` |
+| Le rette e i polinomi ausiliari di Vega-Lite non contraddicono la riga sulle funzioni | `::test_p3_auxiliary_polynomials_do_not_contradict_the_function_rule` |
+| P4 nomina ogni tipo Mermaid una volta sola, con il proprio criterio e `classDiagram` compreso | `::test_p4_names_every_mermaid_type_once_with_its_own_criterion` |
+| Una figura di Fase 3 che nessuna slide referenzia è segnalata, e otto figure con la loro slide non lo sono | `tests/test_lesson_slides_asset_coverage.py` |
+| `single_mermaid_type` non dichiara un tipo unico dove unico non è | `tests/test_lesson_content_figure_mix.py::test_the_single_mermaid_type_is_none_when_there_is_no_monoculture` |
+| La colonna «senza slide» della sezione (c) conta le figure mai arrivate a una slide | `::test_script_section_c_counts_the_figures_that_never_reached_a_slide` |
+| Il mix conta formati e tipi Mermaid, legge sia i modelli Pydantic sia i dizionari di `content_raw`, ordina in modo stabile | `tests/test_lesson_content_figure_mix.py` (prima metà) |
+| Il log è emesso alla materializzazione con i conteggi giusti su quattro formati; il warning scatta con tre flowchart e non con due flowchart più un grafico di funzione | `::test_materialization_logs_the_mix_of_four_formats`, `::test_three_flowcharts_warn_and_the_lesson_is_still_materialized`, `::test_two_flowcharts_and_a_function_graph_do_not_warn` |
+| La sezione (c) dello script riporta lo stesso mix su un export della forma di quello reale | `::test_script_section_c_reports_the_mix_per_lesson_and_aggregated`, `::test_script_and_materialization_share_one_measure` |
+| `docs/PROMPTS.md` è identico ai prompt renderizzati | `scripts/check_prompts_md.py` |
+
+### 22.7 La revisione del 20 settembre: coerenza del prompt, guardia di P4, figure che non arrivano alle slide
+
+La campagna è stata riletta riga per riga prima di mandarla in
+produzione. Quattro correzioni, tutte misurate.
+
+**La guardia di P4 non copriva il prompt che parte davvero.**
+`openai_lesson_slides_service` concatena `REGENERATION_SUFFIX` (803
+caratteri) al system prompt a ogni rigenerazione delle slide: il prompt
+inviato misurava 17.049 caratteri contro una guardia di 16.900. I due
+test che pinnavano il tetto misuravano `_system_prompt("it")` senza
+suffisso, e uno dichiarava in docstring che «la variante con i default è
+la più lunga» — falso due volte, per il suffisso e per le etichette reali
+della tassonomia (`zh-cn` più il ruolo e l'EQF più lunghi della
+migrazione 0009 valgono 16.674 contro 16.630). Fase 3 aveva già
+`test_p3_regeneration_variant_stays_under_guard`; ora ce l'ha anche Fase
+4, e `MAX_SYSTEM_P4` sale a **18.200**, cioè la misura reale (17.474) più
+il ~4% della convenzione. Nota di correzione: il messaggio del commit
+precedente attribuiva a P4 la misura «28.003», che è il VECCHIO P3 con
+ruolo/stile/EQF interpolati; P4 valeva 16.246.
+
+**`REALTÀ` e `ONESTÀ DEI DATI` dicevano il contrario l'una dell'altra.**
+A otto righe di distanza il prompt vietava di inventare numeri per avere
+un grafico e poi permetteva di chiudere una figura numerica con «Dati
+illustrativi, non sperimentali» *in alternativa* alla fonte: letta da un
+modello, la seconda è il permesso esplicito di produrre numeri non
+documentali purché etichettati. Siccome lo zero-Vega-Lite misurato è
+proprio il difetto da correggere, era la regola che decideva se il
+modello avrebbe osato una `vegalite`. Ora la chiusa etichetta i soli
+valori schematici — una scala di comodo, una curva di esempio — e rimanda
+a `REALTÀ`; la stessa frase è riscritta in P4, dove le due righe stavano
+nello stesso paragrafo.
+
+**I polinomi ausiliari di Vega-Lite.** «Rette e polinomi ausiliari con
+`data.sequence`» e «le potenze su una `sequence` NON si tracciano in
+Vega-Lite» si annullavano a quarantasei righe di distanza: un polinomio è
+una potenza. L'ausilio è ora dichiarato per quello che è, un livello
+SOVRAPPOSTO ai dati, «mai come figura a sé».
+
+**L'elenco Mermaid di P4 era spezzato in due**, con sei tipi dentro
+`SCELTA` (criterio accanto) e otto nudi dentro `CATALOGO`; `classDiagram`
+non compariva in nessuno dei due pur essendo in `MERMAID_D8_TYPES`. Ora
+l'elenco è uno solo, dentro `SCELTA`, un criterio per tipo: è la tesi
+stessa della campagna, e vale anche per la lista breve di Fase 4. In P3
+la riga «MERMAID 11. Tipi ammessi: …» ripete i quindici nomi già presenti
+nella regola di scelta (207 caratteri): resta, perché è generata da
+`MERMAID_D8_TYPES` e fa da whitelist esplicita accanto alla riga
+«Esclusi:», e il margine di `MAX_SYSTEM_P3` la regge.
+
+**La figura che non arriva alla slide.** La Fase 3 aveva la sua misura
+(`lesson_content_figure_mix`), la Fase 4 no. `materialize_lesson_slides`
+valida che ogni `references_assets` esista e che una slide non porti più
+di un asset visivo, ma nessun controllo diceva che ogni figura avesse la
+sua slide: sull'export reale M4.L1 ha quattro figure e quattordici slide,
+e `fig_markets_intermediaries` non compare in nessun `references_assets`.
+Una figura scartata sparisce dal deck e dal video (la Fase 5 parla le
+slide che esistono) e resta solo in coda alla dispensa, accodata da
+`figure_numbering.append_uncited_asset_refs`. Il warning nuovo —
+`lesson_slides_unreferenced_assets` (`unreferenced_assets`,
+`phase3_assets`, `total_slides`) — non blocca niente, come il gemello di
+Fase 3, e la stessa misura è la colonna «senza slide» della sezione (c)
+di `measure_asset_refs.py`:
+
+```
+| M4.L1 | Economia degli intermediari finanziari | 4 | 1 | mermaid 4 | flowchart 4 | SI | 2 |
+senza slide in M4.L1: fig_markets_intermediaries, tab_markets_vs_intermediaries
+```
+
+Con il tetto vecchio la perdita c'era già; con 4-8 figure cresce con il
+numero, e ora si vede senza riaprire le lezioni.
+
+**Nota sul lato slide.** Il conteggio non scarta nulla per ragioni di
+numero: `_expected_slide_range` somma `asset_slides` al tetto e il
+fallimento duro è al doppio. Resta fuori dalla campagna, per vincolo
+esplicito, la taratura di P5: con un deck di ~30 slide le bande
+suggerite (120-180 s per una slide concept densa) non stanno più nella
+somma pinnata a ±5% dei minuti di lezione. Non blocca —
+`course_lesson_speech_service` riscala le durate e logga
+`lesson_speech_durations_rescaled`, l'hard fail è solo fuori da [0,5x,
+2x] — ma è il primo candidato del giro successivo.
+
+### 22.8 Che cosa resta da verificare
+
+Il prompt non è stato provato contro il modello: nessuna chiamata
+OpenAI. La prova è del docente, in produzione, e la misura è già pronta —
+`scripts/measure_asset_refs.py` sull'export, o la riga
+`lesson_content_figure_mix` nei log. Le domande sono tre: la quota di
+flowchart scende sotto il 90%; `vegalite` e `dot` compaiono almeno una
+volta; le lezioni di matematica producono figure `function` dove il
+contenuto lega due grandezze. Se il conteggio sale ma la qualità scende —
+figure riempitive, numeri inventati — è il blocco `REALTÀ` a non aver
+tenuto, e va irrigidito prima di rialzare l'intervallo.
+
+### 22.9 Chiusura della revisione del 20 settembre (secondo giro)
+
+Il secondo giro ha chiuso con `ok=true` e sette rilievi, due minori e
+cinque note. Le correzioni fatte, con la misura che le motiva.
+
+- **Il tetto di tempo della resa ora scala con il lotto.** Era per BATCH e
+  non per figura: raddoppiando le figure si dimezzava il budget di
+  ciascuna. `_batch_timeout` prende il massimo fra il tetto della singola
+  resa, il pavimento del formato (60 s per Mermaid, costo fisso di
+  Chromium e della CDN) e una quota di 6 s per figura del lotto. Con otto
+  figure il batch ha 48 s invece dei 20 del tetto di base. Il tempo
+  misurato resta molto sotto: otto figure in quattro formati si rendono in
+  1,50 s a batch caldo, contro 1,60 s per quattro figure.
+- **Il prompt non promuove più un formato spento.** La regola di scelta
+  offre `function`, `vegalite` e `dot`, ma l'enum dello schema segue
+  `available_formats()`, cioè i kill-switch: con `vegalite` spento il
+  prompt chiedeva proprio ciò che il modello non poteva produrre. Ora
+  `_system_prompt` riceve i formati disponibili e, quando ne manca uno,
+  aggiunge una riga «NON DISPONIBILI in questo corso: …». Con tutti i
+  formati accesi il blocco non compare e `PROMPTS.md` resta verbatim.
+- **La guardia di lunghezza di P4 cerca il massimo invece di sceglierlo.**
+  Il test misurava la variante con l'etichetta di stile più lunga della
+  tassonomia («Collaborativo», 13 caratteri), ma il massimo reale è il
+  ripiego del servizio quando il termine manca: «indicato nel messaggio»
+  (22) e «(non specificato)» (17), che un corso senza
+  `stile_insegnamento_term_id` produce davvero. Ora il test prova le tre
+  forme per ogni durata e confronta il massimo: 17.483 contro un tetto di
+  18.200.
+
+Resta dichiarato, senza correzione perché non è un difetto ma un dato da
+conoscere.
+
+- **Il costo per lezione non cresce solo dei token del prompt.** La stima
+  di 600 token di ingresso vale per il prompt (P3 da 28.003 a 29.810
+  caratteri, P4 da 15.116 a 16.560), ma il costo dominante è a valle:
+  ogni figura pesa 539-606 caratteri dentro `content_raw`, quindi passare
+  da quattro a otto figure aggiunge circa 800 token di USCITA alla Fase 3,
+  che tornano come ingresso della Fase 4 e, via `slides_raw`, della Fase
+  5, più le slide dedicate (432-622 caratteri l'una). L'ordine di
+  grandezza resta sotto il centesimo per lezione con i modelli
+  predefiniti.
+- **Il tetto dei token di uscita della Fase 3 regge.** Misura sulle
+  quattro lezioni reali: il JSON prodotto sta fra 41.100 e 44.500
+  caratteri, cioè circa 14.000 token, contro `openai_lesson_content_max_tokens`
+  = 32.000. Quattro figure in più ne aggiungono meno di mille.
+- **La Fase 3 non conosce la durata della lezione**, quindi «4-8 figure»
+  è piatto su ogni durata, mentre il dimensionamento del testo scala per
+  profondità e quello delle slide per minuti. Il rischio è sul taglio
+  breve (una lezione da 15 minuti con otto figure avrebbe più slide
+  dedicate che di contenuto); la regola è però formulata sezione per
+  sezione, e nelle quattro lezioni reali le sezioni sono sempre sei.

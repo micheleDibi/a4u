@@ -32,7 +32,7 @@ from app.schemas.course_lesson_content import (
     LessonContentOutput,
 )
 from app.services.figure_compute.function_parse import FUNCTIONS
-from app.services.figure_render_service import available_formats
+from app.services.figure_render_service import RENDERABLE_FORMATS, available_formats
 from app.services.figure_theme import MERMAID_D8_TYPES, MERMAID_EXCLUDED_TYPES
 from app.services.openai_client import (
     OpenAIError,
@@ -159,6 +159,22 @@ _FUNCTION_EXAMPLE = (
 )
 
 
+def _formats_off_block(visual_formats: Sequence[str]) -> str:
+    """Riga aggiuntiva quando un kill-switch spegne un formato: la REGOLA DI
+    SCELTA promuove `function`, `vegalite` e `dot`, ma l'enum dello schema
+    offre solo i formati accesi. Senza questa riga il prompt chiederebbe
+    proprio cio' che il modello non puo' produrre."""
+    off = [f for f in RENDERABLE_FORMATS if f not in set(visual_formats)]
+    if not off:
+        return ""
+    names = ", ".join(f"`{f}`" for f in off)
+    return (
+        f"\nNON DISPONIBILI in questo corso: {names}. Non usarli: scegli fra i "
+        "formati rimasti quello che mostra meglio il contenuto, e se nessuno "
+        "lo mostra bene lascia stare la figura.\n"
+    )
+
+
 def _system_prompt(
     language_code: str,
     *,
@@ -166,10 +182,12 @@ def _system_prompt(
     stile_insegnamento: str = "",
     livello_eqf: str = "",
     grounding_enabled: bool = True,
+    visual_formats: Sequence[str] = RENDERABLE_FORMATS,
 ) -> str:
     register_block = academic_register_block("content", language_code)
     fonti_block = f"\n{_FONTI_BLOCK}" if grounding_enabled else ""
     riferimenti_block = "" if grounding_enabled else f"{_RIFERIMENTI_BLOCK}\n"
+    formats_off_block = _formats_off_block(visual_formats)
     return f"""\
 Sei un autore di materiale didattico universitario di alto livello.
 Il tuo compito è scrivere il TESTO COMPLETO di una singola lezione,
@@ -316,8 +334,13 @@ Linea guida (non vincolante):
 
 REQUISITI — ASSET VISIVI
 
-- 1-3 figure per lezione (NON per la lezione introduttiva, dove sono
-  opzionali e tipicamente 0-1)
+- QUANTE FIGURE — la figura segue il contenuto, sezione per sezione:
+  ogni sezione che introduce una struttura, un andamento, una
+  relazione fra grandezze, dei dati o un processo merita la SUA
+  figura. Indicativamente 4-8 per lezione ordinaria, 0-2 per la
+  lezione introduttiva. Non è una quota da riempire: non inventare
+  contenuto per arrivare al numero, e una sezione puramente
+  discorsiva resta senza figura.
 - formule LaTeX TUTTE le volte che la disciplina lo richiede
 - tabelle quando devi confrontare alternative o riassumere
   classificazioni
@@ -335,31 +358,53 @@ POSIZIONE DEI TAG — REGOLA RIGIDA
   `references`, `examples[].content` o `tables[].markdown`.
 
 FORMATI DELLE FIGURE (`visual_assets[].format`; `content` è sempre una
-stringa: codice, sorgente o spec JSON serializzata). Dal contenuto al
-formato e al tipo di diagramma:
-- struttura, processo o relazione qualitativa → `mermaid`, con il tipo
-  scelto dal contenuto: flowchart (processo, decisione),
-  sequenceDiagram (scambio di messaggi), classDiagram (classi e
-  relazioni), stateDiagram-v2 (stati e transizioni), erDiagram (entità
-  e cardinalità), mindmap (organizzazione dei concetti), timeline
-  (cronologia), gantt (pianificazione e dipendenze temporali),
-  block-beta (architettura a blocchi e livelli), sankey-beta (flussi
-  che si ripartiscono fra stadi; unico tipo con colori propri, non del
-  tema: usalo solo quando il flusso è il contenuto), quadrantChart
-  (posizionamento su due criteri), radar-beta (profilo su più criteri,
-  etichette brevi), treemap-beta (gerarchia con quantità
-  confrontabili), pie (ripartizione a poche voci),
-  xychart-beta (serie breve su assi, senza pretesa quantitativa);
-- dati, misure, distribuzioni, confronti quantitativi, serie
-  temporali → `vegalite` (catalogo dei tipi sotto);
-- grafi con archi etichettati, alberi, automi, reti → `dot`;
-- funzione matematica da studiare (grafico, tangente, area, famiglia
-  con parametro, curve di livello) → `function`.
+stringa: codice, sorgente o spec JSON serializzata).
+REGOLA DI SCELTA — per OGNI figura decidi prima CHE COSA deve far
+vedere, poi leggi qui sotto quale formato lo mostra. Mai il contrario:
+non partire dal formato che sai già scrivere.
+- relazione fra grandezze, andamento, tangente, area sottesa, famiglia
+  di curve al variare di un parametro, curve di livello → `function`
+  (sin(1/x) vicino a zero, il confronto fra x, x**2 e sin(x), gli
+  asintoti di una razionale, l'area fra due curve);
+- dati, quantità, confronti, distribuzioni, serie temporali PRESENTI
+  nei documenti → `vegalite` (la serie storica di una grandezza, la
+  ripartizione di un campione, la dispersione fra due misure);
+- struttura, dipendenze, gerarchia, rete, automa, albero, gruppi →
+  `dot` (un automa a stati finiti, l'albero di derivazione di una
+  grammatica, la topologia di una rete);
+- processo con passi ORDINATI, dove l'ordine è il contenuto →
+  `mermaid` flowchart (un algoritmo, una procedura sperimentale);
+- interazione fra attori nel tempo → `mermaid` sequenceDiagram; stati
+  e transizioni → stateDiagram-v2; entità e cardinalità → erDiagram;
+  classi e relazioni → classDiagram; scomposizione di un tema →
+  mindmap; cronologia → timeline; pianificazione e dipendenze
+  temporali → gantt; architettura a blocchi e livelli → block-beta;
+  flusso che si ripartisce fra stadi → sankey-beta (unico tipo con
+  colori propri, non del tema: solo quando il flusso è il contenuto);
+  posizionamento su due criteri → quadrantChart; profilo su più
+  criteri, etichette brevi → radar-beta; gerarchia con quantità
+  confrontabili → treemap-beta; ripartizione a poche voci → pie;
+  serie breve su assi, senza pretesa quantitativa → xychart-beta.
+Il flowchart è l'ULTIMA scelta, non la prima: un elenco di concetti
+collegati da frecce NON è un processo e non va reso come flowchart. Se
+stai per disegnare scatole e frecce, rileggi le righe sopra.
+REALTÀ — mai inventare numeri per avere un grafico: `vegalite` solo su
+dati che stanno nei documenti o notori e verificabili nel testo. Mai
+una figura decorativa: se il contenuto non chiede una figura, non la
+fai: meglio una figura in meno che una inventata.
+VARIETÀ (regola editoriale, non obbligo cieco) — in una lezione con
+almeno tre figure, se il contenuto lo consente, non più di due
+flowchart. In matematica, fisica e ingegneria, dove una sezione lega
+due grandezze, valuta esplicitamente una figura `function`.
 Niente prompt per immagini né descrizioni testuali: le immagini reali
-le carica il docente dall'editor.
+le carica il docente dall'editor.{formats_off_block}
 ONESTÀ DEI DATI, per TUTTI e quattro i formati: ogni figura che porta
-numeri dichiara la fonte nella caption oppure la chiude con «Dati
-illustrativi, non sperimentali».
+numeri dichiara la fonte nella caption. La chiusa «Dati illustrativi,
+non sperimentali» non autorizza a inventare dati (vale il blocco
+REALTÀ): etichetta i soli valori schematici, che non affermano una
+misura, come una scala di comodo o una curva di esempio. Numeri che
+sembrano misurati e non lo sono non si scrivono, con o senza
+etichetta.
 
 MERMAID 11. Tipi ammessi: {_MERMAID_TYPES_TEXT}.
 Esclusi: {_MERMAID_EXCLUDED_TEXT}.
@@ -368,9 +413,9 @@ doppie se contengono caratteri speciali; nessuna direttiva
 `%%{{init}}%%` né frontmatter: il tema lo impone il renderer.
 Catena lineare oltre quattro passi: `flowchart TB`; `LR` se corta o ramificata.
 
-VEGA-LITE (spec JSON v6, ≤ 4000 caratteri) SOLO per dati dei documenti
-del corso, dati illustrativi (vale la regola di onestà sopra) o rette e
-polinomi ausiliari con `data.sequence` + `transform.calculate`.
+VEGA-LITE (spec JSON v6, ≤ 4000 caratteri), per i DATI: rette di
+tendenza e polinomi ausiliari SOVRAPPOSTI ai dati con `data.sequence` +
+`transform.calculate`, mai come figura a sé.
 Dati inline in `data.values` (≤ 200 righe); vietati
 `data.url`, `data.name`, `mark: "image"`, `config`, `$schema`, `params`,
 `selection`, `tooltip`, `usermeta`, `encoding.href`: il tema lo inietta
@@ -416,7 +461,8 @@ ordinate si leggono meglio. Mai per confrontare grandezze che non
 sommano a un tutto.
 Le FUNZIONI MATEMATICHE (seno, esponenziale, potenze,
 razionali su una `sequence`) NON si tracciano in Vega-Lite: usa
-`function`. Esempio:
+`function`; qui restano solo come livello ausiliario su un grafico di
+dati. Esempio:
 {_VEGALITE_EXAMPLE}
 
 DOT (Graphviz): inizia con `graph`, `digraph` o `strict`; label brevi
@@ -827,6 +873,7 @@ async def generate_lesson_content(
         stile_insegnamento=stile_insegnamento,
         livello_eqf=livello_eqf,
         grounding_enabled=settings.course_lesson_content_documents_selection_enabled,
+        visual_formats=available_formats(),
     )
     if is_regeneration:
         system_prompt = system_prompt + REGENERATION_SUFFIX

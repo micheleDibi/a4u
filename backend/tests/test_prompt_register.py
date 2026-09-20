@@ -67,9 +67,65 @@ MAX_BLOCK_REDUCED = 6_400
 # vale anche per la variante di rigenerazione (prompt + suffisso, 28.819:
 # prima di D17 era 28.374), che è quella davvero più lunga. P4 e P5 non
 # sono toccati (la regola sta solo in Fase 3).
-MAX_SYSTEM_P3 = 28_900
-MAX_SYSTEM_P4 = 15_400
+#
+# Misure del 18 settembre 2026, dopo la REGOLA DI SCELTA guidata dal
+# contenuto (il formato viene dopo aver dichiarato che cosa la figura deve
+# far vedere; flowchart come ULTIMA scelta; vincoli di realtà sui numeri;
+# regola editoriale di varietà) e la regola di NUMEROSITÀ (la figura segue
+# il contenuto sezione per sezione, 4-8 per lezione ordinaria, 0-2 per
+# l'introduttiva, al posto del vecchio tetto «1-3 figure per lezione»).
+# L'export reale del docente misurava 13 flowchart su 14 figure generate.
+# Il tetto «1-3» NON era il vincolo che teneva basso il conteggio — tre
+# lezioni ordinarie su quattro ne avevano già quattro, sopra il tetto
+# dichiarato: la leva è il criterio sezione per sezione, e l'elenco
+# «formati disponibili» non bastava perché apriva su `mermaid` con il
+# criterio più largo possibile. P3 29.404 con grounding, 27.985 senza,
+# 29.437 con ruolo/stile/EQF interpolati, 30.333 con il suffisso di
+# rigenerazione (la variante più lunga), da 27.970 / 26.551 / 28.003 /
+# 28.899. Le due regole pesano +1.434 caratteri netti: la scelta +1.227
+# lordi meno i 111 recuperati comprimendo l'apertura di VEGA-LITE, la
+# numerosità +318. Con la guardia a 28.900 il margine della variante più
+# lunga era di UN carattere (28.899 su 28.900): sale a 31.500, cioè la
+# misura reale + ~4%, la stessa convenzione delle righe sopra.
+# P4 riceve la regola di scelta in forma breve (senza `function`, che la
+# Fase 4 non offre al modello per A1: una relazione fra grandezze si
+# REFERENZIA da Fase 3, non si ricrea) e la nota che le slide dedicate
+# seguono le 4-8 figure di Fase 3 invece delle 5 di prima: 16.246 con i
+# default e 16.192 con tutti gli argomenti, da 15.186 e 15.132.
+#
+# Misure del 20 settembre 2026 (correzione della revisione). Due conti
+# erano sbagliati e la guardia di P4 non teneva:
+# - la variante DAVVERO più lunga di P4 è quella di RIGENERAZIONE, non
+#   quella con i default: `REGENERATION_SUFFIX` (803 caratteri) si
+#   concatena al system prompt, e le etichette reali della tassonomia
+#   (migrazione 0009: ruolo «Ruoli di supporto e Tutoraggio», EQF
+#   «Diploma di licenza conclusiva del I ciclo di istruzione») più il
+#   codice lingua più lungo (`zh-cn`) aggiungono il resto. Con la guardia
+#   a 16.900 il prompt realmente inviato misurava 17.049 caratteri: la
+#   guardia non copriva il caso che si verifica a ogni rigenerazione. P3
+#   aveva già il test della variante col suffisso, P4 no: ora ce l'ha;
+# - il numero «28.003 per P4» del messaggio di commit precedente è il
+#   VECCHIO P3 con ruolo/stile/EQF interpolati (quarto valore della serie
+#   qui sopra), non una misura di P4: P4 valeva 16.246.
+# Con la riconciliazione fra REALTÀ e ONESTÀ DEI DATI, la scoping dei
+# polinomi ausiliari di Vega-Lite e l'elenco Mermaid unificato di P4
+# (`classDiagram` compreso): P3 29.777 con grounding, 28.358 senza,
+# 30.783 nella variante più lunga (zh-cn, etichette reali, suffisso di
+# rigenerazione) — la guardia resta 31.500, margine 2,3%. P4 16.630 con
+# i default, 17.433 con il suffisso, 17.474 nella variante più lunga: la
+# guardia sale da 16.900 a 18.200, cioè la misura reale + ~4%. P5 non è
+# toccato.
+MAX_SYSTEM_P3 = 31_500
+MAX_SYSTEM_P4 = 18_200
 MAX_SYSTEM_P5 = 12_500
+
+# Etichette più lunghe della tassonomia seeddata (migrazione 0009) e
+# codice lingua più lungo fra quelli TTS: la variante più lunga dei
+# prompt interpolati si misura con questi, non con i default.
+LONGEST_ROLE = "Ruoli di supporto e Tutoraggio"
+LONGEST_STYLE = "Collaborativo"
+LONGEST_EQF = "Diploma di licenza conclusiva del I ciclo di istruzione"
+LONGEST_LANGUAGE = "zh-cn"
 
 # Formule più frequenti nel corpus: devono comparire nei prompt SOLO come
 # esempi negativi (righe "DA EVITARE:") o dentro la REGOLA 2.
@@ -272,9 +328,50 @@ def test_p4_defaults_are_valid_strings():
     prompt = slides._system_prompt("it")
     assert 'ruolo\n"indicato nel messaggio"' in prompt
     assert "None" not in prompt
-    # La variante con i default è la più lunga (i rinvii al messaggio
-    # pesano più dei valori): è lei a dover stare sotto la guardia.
     assert len(prompt) <= MAX_SYSTEM_P4
+    # I rinvii al messaggio NON sono la variante più lunga: le etichette
+    # reali della tassonomia pesano di più (vedi il test qui sotto).
+    interpolato = slides._system_prompt(
+        LONGEST_LANGUAGE,
+        minuti_per_lezione=45,
+        livello_eqf=LONGEST_EQF,
+        ruolo_docente=LONGEST_ROLE,
+        stile_insegnamento=LONGEST_STYLE,
+    )
+    assert len(interpolato) > len(prompt)
+
+
+def test_p4_regeneration_variant_stays_under_guard():
+    """Il prompt di una rigenerazione (`_system_prompt` + suffisso) è il
+    più lungo di Fase 4, come in Fase 3: è quello che parte davvero verso
+    il modello ogni volta che il docente rigenera le slide, e la guardia
+    vale per lui. Senza questo test la guardia misurava una variante che
+    nessuna chiamata invia: con `MAX_SYSTEM_P4` a 16.900 il prompt reale
+    di una rigenerazione ne misurava 17.049."""
+    suffix = slides.REGENERATION_SUFFIX
+    assert len(slides._system_prompt("it") + suffix) <= MAX_SYSTEM_P4
+    # Variante più lunga: la si CERCA, non la si sceglie a mano. Lo stile
+    # più lungo non è l'etichetta più lunga della tassonomia
+    # («Collaborativo», 13 caratteri) ma il ripiego del servizio quando il
+    # termine manca o è assente: «indicato nel messaggio» (22) e «(non
+    # specificato)» (17), che il `Course` senza `stile_insegnamento_term_id`
+    # produce davvero.
+    styles = (LONGEST_STYLE, "", "(non specificato)")
+    lengths = [
+        len(
+            slides._system_prompt(
+                LONGEST_LANGUAGE,
+                livello_eqf=LONGEST_EQF,
+                ruolo_docente=LONGEST_ROLE,
+                stile_insegnamento=stile,
+                **({} if minuti is None else {"minuti_per_lezione": minuti}),
+            )
+            + suffix
+        )
+        for minuti in (None, 45, 90)
+        for stile in styles
+    ]
+    assert max(lengths) <= MAX_SYSTEM_P4, max(lengths)
 
 
 # ---------------------------------------------------------------------------

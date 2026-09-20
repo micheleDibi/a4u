@@ -339,6 +339,10 @@ async def materialize_lesson_slides(
                         valid_asset_ids.add(aid)
                         if key in ("visual_assets", "tables"):
                             visual_or_table_ids.add(aid)
+    # Sottoinsieme delle SOLE figure e tabelle di Fase 3, fotografato
+    # prima dei `new_assets`: è quello che il punto 8b confronta con i
+    # riferimenti delle slide (un `new_asset` nasce già referenziato).
+    phase3_visual_ids = set(visual_or_table_ids)
     for na in output.new_assets:
         valid_asset_ids.add(na.asset_id.strip().lower())
         # I new_assets di Fase 4 sono sempre visivi (diagram/schema/
@@ -403,6 +407,25 @@ async def materialize_lesson_slides(
             "lesson_slides_unreferenced_sections",
             lesson_code=lesson.lesson_code,
             unreferenced_sections=sorted(unreferenced),
+        )
+
+    # 8b. Ogni figura e ogni tabella di Fase 3 dovrebbe avere la sua
+    # slide dedicata (§7.1 punto 2). Soft come il punto 8: la validazione
+    # controlla che ogni riferimento esista, non che ogni asset sia
+    # referenziato, e una figura che nessuna slide cita sparisce dal deck
+    # e dal video (Fase 5 parla le slide che esistono) restando solo in
+    # coda alla dispensa. Sull'export reale del docente una lezione con
+    # quattro figure ne perdeva una senza che nulla lo dicesse: è la
+    # stessa misura di `lesson_content_figure_mix`, dal lato delle slide.
+    referenced_assets = {aid.strip().lower() for s in output.slides for aid in s.references_assets}
+    unreferenced_assets = sorted(phase3_visual_ids - referenced_assets)
+    if unreferenced_assets:
+        log.warning(
+            "lesson_slides_unreferenced_assets",
+            lesson_code=lesson.lesson_code,
+            unreferenced_assets=unreferenced_assets,
+            phase3_assets=len(phase3_visual_ids),
+            total_slides=len(output.slides),
         )
 
     # 9. Apply — scrive slides_raw + meta

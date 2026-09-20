@@ -428,6 +428,8 @@ In rigenerazione: `## Versione attuale del modulo (DA RIVEDERE)` + `## Indicazio
 - File: `backend/app/services/openai_lesson_content_service.py` — `_system_prompt(language_code, *, ruolo_docente, stile_insegnamento, livello_eqf, grounding_enabled)`, chiamata da `generate_lesson_content()`.
 - Modello: `settings.openai_lesson_content_model` (default `gpt-5.5`, reasoning `high`, max 32000 token — il task più complesso della pipeline).
 - Posizione dei tag (D17): il blocco `POSIZIONE DEI TAG — REGOLA RIGIDA` (al posto del paragrafo «Per ogni asset») chiede, per figure, tabelle, equazioni ed esempi, UN tag per asset (`[FIG:asset_id]`, `[TAB:table_id]`, `[EQ:equation_id]`, `[EX:example_id]`) da solo su una riga propria fra righe vuote, dopo il paragrafo che introduce l'asset; nel testo l'asset si richiama a parole («come mostra la figura»), senza ripetere il tag, senza «Figura»/«Tabella» davanti al tag e mai dentro codice, formule, `caption`, `key_takeaways`, `references`, `examples[].content` o `tables[].markdown` (negli ultimi due il PDF non sostituisce i tag). È la forma che il renderer (PDF e web) tratta come ancora del blocco senza toccare la frase; le citazioni in linea di un contenuto storico restano gestite come rimandi testuali («Figura N»). Il blocco DIVIETI vieta la numerazione a mano e rimanda alla regola; la regola sulle didascalie resta solo in DIVIETI. Budget: P3 27.923 caratteri con ruolo/stile/EQF interpolati (+373) e 28.819 con il suffisso di rigenerazione (+445), entrambi sotto la guardia `MAX_SYSTEM_P3` invariata a 28.900; P4 non è toccato.
+- Scelta del formato e numerosità delle figure (18 settembre 2026): sull'export reale di quattro lezioni di quattro corsi diversi, delle 14 figure GENERATE dal modello 13 erano `mermaid` flowchart e una `function` — zero `vegalite`, zero `dot`, e dentro Mermaid nessun sequence, state, class, er, mindmap, timeline — con quattro figure per lezione. Il catalogo dei formati c'era già: mancavano l'ORDINE del ragionamento e lo spazio per contare. Il blocco «FORMATI DELLE FIGURE» apre ora con la `REGOLA DI SCELTA` (per ogni figura si dichiara prima CHE COSA deve far vedere, poi il formato viene di conseguenza; `function`, `vegalite` e `dot` sono nominati PRIMA del flowchart, che è dichiarato «l'ULTIMA scelta, non la prima»), prosegue con `REALTÀ` (mai inventare numeri per avere un grafico, `vegalite` solo su dati dei documenti o notori e verificabili, mai una figura decorativa) e chiude con `VARIETÀ` (regola editoriale: in una lezione con almeno tre figure, se il contenuto lo consente, non più di due flowchart; in matematica, fisica e ingegneria si valuta esplicitamente una figura `function`). In «REQUISITI — ASSET VISIVI» il vecchio tetto «1-3 figure per lezione» (che non era il vincolo effettivo: tre lezioni ordinarie su quattro ne avevano già quattro) è sostituito dalla regola di NUMEROSITÀ: la figura segue il contenuto sezione per sezione, indicativamente 4-8 per lezione ordinaria e 0-2 per l'introduttiva, senza inventare contenuto per arrivare al numero. Budget: P3 29.437 caratteri con ruolo/stile/EQF interpolati e 30.333 con il suffisso di rigenerazione (da 28.003 e 28.899), guardia `MAX_SYSTEM_P3` da 28.900 a 31.500 — con la vecchia il margine era di UN carattere. Diagnostica: `app.services.figure_mix.compute_figure_mix` alimenta il log `lesson_content_figure_mix` alla materializzazione e la sezione (c) di `scripts/measure_asset_refs.py`.
+- Coerenza del blocco figure (20 settembre 2026): `REALTÀ` («mai inventare numeri per avere un grafico») e `ONESTÀ DEI DATI` dicevano due cose opposte a otto righe di distanza, perché la seconda offriva la chiusa «Dati illustrativi, non sperimentali» come ALTERNATIVA alla fonte; ora quella chiusa etichetta i soli valori schematici e rimanda a `REALTÀ`. Stessa correzione per Vega-Lite: le rette di tendenza e i polinomi ausiliari valgono solo SOVRAPPOSTI ai dati, mai come figura a sé, il che non contraddice più la riga «le funzioni matematiche non si tracciano in Vega-Lite: usa `function`». Budget: P3 29.777 caratteri con grounding, 30.783 nella variante più lunga; `MAX_SYSTEM_P3` resta 31.500.
 - Ruolo: scrive il testo completo Markdown della lezione (sezioni, figure nei quattro formati `mermaid`/`vegalite`/`dot`/`function` — blocco «FORMATI DELLE FIGURE»: tabella «contenuto → formato → tipo di diagramma» (D8) che nomina TUTTI e quindici i tipi Mermaid con il proprio caso d'uso, tipi Mermaid ammessi ed esclusi, regole D5 sui dati e vincoli del validatore, CATALOGO Vega-Lite per famiglia d'uso (confronto fra categorie, parte sul tutto, distribuzione, andamento nel tempo, correlazione, matrice, incertezza, graduatoria) con il criterio professionale della torta, stile D3, esempi minimi Vega-Lite/DOT, schema compatto ed esempio di `FunctionFigureSpec` (D9) —, formule LaTeX, tabelle, equazioni con enunciato/dimostrazione, esempi, riferimenti, coverage_check). Il testo è statico (A19): i quattro formati sono sempre descritti; solo l'`enum` dello schema strict segue `figure_render_service.available_formats()`. Gli elenchi dei tipi Mermaid e delle funzioni ammesse sono interpolati a import da `figure_theme.MERMAID_D8_TYPES`/`MERMAID_EXCLUDED_TYPES` e `function_parse.FUNCTIONS`: il testo sotto è il risultato con i valori correnti.
 - Interpolazione: `ruolo_docente`, `stile_insegnamento` e `livello_eqf` entrano nel tono del testo, entro il REGISTRO; `{register_block}` è il blocco condiviso di `prompt_register.academic_register_block("content", language_code)` (vedi sezione «Blocco condiviso — Registro accademico»). Resta un solo campione di prosa umana (registro didattico), da imitare per costruzione, non per contenuto; il Campione A (ritmo) è stato rimosso perché induceva frasi-sentenza e antitesi a effetto.
 - Grounding sui documenti (`_system_prompt(..., grounding_enabled=True)`, da `Settings.course_lesson_content_documents_selection_enabled`): il blocco `FONTI E ANCORAGGIO — REGOLA FORTE` (subito dopo il ruolo) sostituisce il vecchio `RIFERIMENTI`; nel messaggio user il blocco documenti è selezionato PER LEZIONE da `lesson_document_selection` (definizioni, formule, concetti, esempi e struttura dei riassunti, scelti per sovrapposizione lessicale con titolo/temi/scaletta/obiettivi; budget `COURSE_LESSON_CONTENT_DOCUMENTS_CONTEXT_MAX_CHARS`, default 40k) e sta dopo `## Lezione da generare`, prima di `## Compito`. Con il kill-switch a `false` torna il comportamento storico (blocco `RIFERIMENTI`, `_build_documents_context`, vecchio ordine).
@@ -747,8 +749,13 @@ Linea guida (non vincolante):
 
 REQUISITI — ASSET VISIVI
 
-- 1-3 figure per lezione (NON per la lezione introduttiva, dove sono
-  opzionali e tipicamente 0-1)
+- QUANTE FIGURE — la figura segue il contenuto, sezione per sezione:
+  ogni sezione che introduce una struttura, un andamento, una
+  relazione fra grandezze, dei dati o un processo merita la SUA
+  figura. Indicativamente 4-8 per lezione ordinaria, 0-2 per la
+  lezione introduttiva. Non è una quota da riempire: non inventare
+  contenuto per arrivare al numero, e una sezione puramente
+  discorsiva resta senza figura.
 - formule LaTeX TUTTE le volte che la disciplina lo richiede
 - tabelle quando devi confrontare alternative o riassumere
   classificazioni
@@ -766,31 +773,53 @@ POSIZIONE DEI TAG — REGOLA RIGIDA
   `references`, `examples[].content` o `tables[].markdown`.
 
 FORMATI DELLE FIGURE (`visual_assets[].format`; `content` è sempre una
-stringa: codice, sorgente o spec JSON serializzata). Dal contenuto al
-formato e al tipo di diagramma:
-- struttura, processo o relazione qualitativa → `mermaid`, con il tipo
-  scelto dal contenuto: flowchart (processo, decisione),
-  sequenceDiagram (scambio di messaggi), classDiagram (classi e
-  relazioni), stateDiagram-v2 (stati e transizioni), erDiagram (entità
-  e cardinalità), mindmap (organizzazione dei concetti), timeline
-  (cronologia), gantt (pianificazione e dipendenze temporali),
-  block-beta (architettura a blocchi e livelli), sankey-beta (flussi
-  che si ripartiscono fra stadi; unico tipo con colori propri, non del
-  tema: usalo solo quando il flusso è il contenuto), quadrantChart
-  (posizionamento su due criteri), radar-beta (profilo su più criteri,
-  etichette brevi), treemap-beta (gerarchia con quantità
-  confrontabili), pie (ripartizione a poche voci),
-  xychart-beta (serie breve su assi, senza pretesa quantitativa);
-- dati, misure, distribuzioni, confronti quantitativi, serie
-  temporali → `vegalite` (catalogo dei tipi sotto);
-- grafi con archi etichettati, alberi, automi, reti → `dot`;
-- funzione matematica da studiare (grafico, tangente, area, famiglia
-  con parametro, curve di livello) → `function`.
+stringa: codice, sorgente o spec JSON serializzata).
+REGOLA DI SCELTA — per OGNI figura decidi prima CHE COSA deve far
+vedere, poi leggi qui sotto quale formato lo mostra. Mai il contrario:
+non partire dal formato che sai già scrivere.
+- relazione fra grandezze, andamento, tangente, area sottesa, famiglia
+  di curve al variare di un parametro, curve di livello → `function`
+  (sin(1/x) vicino a zero, il confronto fra x, x**2 e sin(x), gli
+  asintoti di una razionale, l'area fra due curve);
+- dati, quantità, confronti, distribuzioni, serie temporali PRESENTI
+  nei documenti → `vegalite` (la serie storica di una grandezza, la
+  ripartizione di un campione, la dispersione fra due misure);
+- struttura, dipendenze, gerarchia, rete, automa, albero, gruppi →
+  `dot` (un automa a stati finiti, l'albero di derivazione di una
+  grammatica, la topologia di una rete);
+- processo con passi ORDINATI, dove l'ordine è il contenuto →
+  `mermaid` flowchart (un algoritmo, una procedura sperimentale);
+- interazione fra attori nel tempo → `mermaid` sequenceDiagram; stati
+  e transizioni → stateDiagram-v2; entità e cardinalità → erDiagram;
+  classi e relazioni → classDiagram; scomposizione di un tema →
+  mindmap; cronologia → timeline; pianificazione e dipendenze
+  temporali → gantt; architettura a blocchi e livelli → block-beta;
+  flusso che si ripartisce fra stadi → sankey-beta (unico tipo con
+  colori propri, non del tema: solo quando il flusso è il contenuto);
+  posizionamento su due criteri → quadrantChart; profilo su più
+  criteri, etichette brevi → radar-beta; gerarchia con quantità
+  confrontabili → treemap-beta; ripartizione a poche voci → pie;
+  serie breve su assi, senza pretesa quantitativa → xychart-beta.
+Il flowchart è l'ULTIMA scelta, non la prima: un elenco di concetti
+collegati da frecce NON è un processo e non va reso come flowchart. Se
+stai per disegnare scatole e frecce, rileggi le righe sopra.
+REALTÀ — mai inventare numeri per avere un grafico: `vegalite` solo su
+dati che stanno nei documenti o notori e verificabili nel testo. Mai
+una figura decorativa: se il contenuto non chiede una figura, non la
+fai: meglio una figura in meno che una inventata.
+VARIETÀ (regola editoriale, non obbligo cieco) — in una lezione con
+almeno tre figure, se il contenuto lo consente, non più di due
+flowchart. In matematica, fisica e ingegneria, dove una sezione lega
+due grandezze, valuta esplicitamente una figura `function`.
 Niente prompt per immagini né descrizioni testuali: le immagini reali
 le carica il docente dall'editor.
 ONESTÀ DEI DATI, per TUTTI e quattro i formati: ogni figura che porta
-numeri dichiara la fonte nella caption oppure la chiude con «Dati
-illustrativi, non sperimentali».
+numeri dichiara la fonte nella caption. La chiusa «Dati illustrativi,
+non sperimentali» non autorizza a inventare dati (vale il blocco
+REALTÀ): etichetta i soli valori schematici, che non affermano una
+misura, come una scala di comodo o una curva di esempio. Numeri che
+sembrano misurati e non lo sono non si scrivono, con o senza
+etichetta.
 
 MERMAID 11. Tipi ammessi: flowchart, sequenceDiagram, classDiagram, stateDiagram-v2, erDiagram, mindmap, timeline, pie, xychart-beta, quadrantChart, sankey-beta, block-beta, gantt, radar-beta, treemap-beta.
 Esclusi: journey, gitGraph, kanban, packet-beta, architecture-beta.
@@ -799,9 +828,9 @@ doppie se contengono caratteri speciali; nessuna direttiva
 `%%{init}%%` né frontmatter: il tema lo impone il renderer.
 Catena lineare oltre quattro passi: `flowchart TB`; `LR` se corta o ramificata.
 
-VEGA-LITE (spec JSON v6, ≤ 4000 caratteri) SOLO per dati dei documenti
-del corso, dati illustrativi (vale la regola di onestà sopra) o rette e
-polinomi ausiliari con `data.sequence` + `transform.calculate`.
+VEGA-LITE (spec JSON v6, ≤ 4000 caratteri), per i DATI: rette di
+tendenza e polinomi ausiliari SOVRAPPOSTI ai dati con `data.sequence` +
+`transform.calculate`, mai come figura a sé.
 Dati inline in `data.values` (≤ 200 righe); vietati
 `data.url`, `data.name`, `mark: "image"`, `config`, `$schema`, `params`,
 `selection`, `tooltip`, `usermeta`, `encoding.href`: il tema lo inietta
@@ -847,7 +876,8 @@ ordinate si leggono meglio. Mai per confrontare grandezze che non
 sommano a un tutto.
 Le FUNZIONI MATEMATICHE (seno, esponenziale, potenze,
 razionali su una `sequence`) NON si tracciano in Vega-Lite: usa
-`function`. Esempio:
+`function`; qui restano solo come livello ausiliario su un grafico di
+dati. Esempio:
 {"data":{"values":[{"mese":"gen","mm":80},{"mese":"feb","mm":65}]},"mark":{"type":"bar","clip":true},"encoding":{"x":{"field":"mese","type":"nominal","axis":{"title":"Mese"}},"y":{"field":"mm","type":"quantitative","scale":{"domain":[0,100]},"axis":{"title":"Precipitazioni (mm)"}}}}
 
 DOT (Graphviz): inizia con `graph`, `digraph` o `strict`; label brevi
@@ -1350,6 +1380,8 @@ In rigenerazione: blocco con la verifica attuale (`content_raw`) + indicazioni d
 
 **SCOPO**
 - File: `backend/app/services/openai_lesson_slides_service.py` — `_system_prompt(language_code, *, minuti_per_lezione, livello_eqf, ruolo_docente, stile_insegnamento)`, chiamata da `generate_lesson_slides()`. Durata, livello EQF, ruolo e stile sono interpolati davvero (prima restavano segnaposto letterali); i valori arrivano dal worker (`course.lesson_duration_minutes`, `didactic_style_labels`). La regola 3 rinvia ai formati, alle regole e ai limiti di Fase 3 (`mermaid`, `vegalite`, `dot`) con soli rinvii testuali, senza esempi né graffe, e ripete in forma breve il CATALOGO dei tipi di grafico per famiglia d'uso, con il criterio della torta: Fase 4 crea `new_assets` senza avere in contesto il prompt di Fase 3; `function` non è offerto in Fase 4 (A1).
+- Scelta del formato e budget delle slide (18 settembre 2026): il punto 3 porta la stessa `SCELTA` di Fase 3 in forma breve — prima che cosa la figura deve far vedere, poi il formato; flowchart come ultima scelta; niente numeri inventati né figure decorative — senza offrire `function`, che in Fase 4 non è fra i formati (A1): una relazione fra grandezze si REFERENZIA dalla figura di Fase 3, non si ricrea. Il punto 4 è tarato sulla nuova numerosità di Fase 3 (4-8 figure per lezione ordinaria): con 8 asset visivi e 2 tabelle il totale cresce di ~10 slide, e il tetto della durata non è un motivo per saltare un asset. Lato codice il tetto del range cresce già di una unità per ogni asset visivo, tabella e `new_asset` (`course_lesson_slides_service.materialize_lesson_slides`). Budget: `MAX_SYSTEM_P4` da 15.400 a 18.200 (20 settembre 2026). La variante più lunga NON è quella con i default ma quella di RIGENERAZIONE — il `REGENERATION_SUFFIX` (803 caratteri) si concatena al system prompt — con le etichette reali della tassonomia e il codice lingua più lungo: 17.474 caratteri contro i 16.630 dei default. Con la guardia a 16.900 il prompt realmente inviato a ogni rigenerazione ne misurava 17.049: la guardia non copriva il caso, e ora il test `test_p4_regeneration_variant_stays_under_guard` la misura come già faceva Fase 3.
+- Coerenza del blocco figure (20 settembre 2026): la clausola dell'onestà dei dati non è più l'alternativa alla fonte («dichiara la fonte OPPURE chiudi con «Dati illustrativi, non sperimentali»»), che valeva come permesso di inventare numeri purché etichettati: la chiusa etichetta i soli valori schematici e non autorizza numeri inventati. I tipi Mermaid ammessi stanno in UN solo elenco, dentro `SCELTA`, ciascuno con il proprio criterio e `classDiagram` compreso (prima erano spezzati fra `SCELTA` e `CATALOGO`, e `classDiagram` non compariva in nessuno dei due).
 - Modello: `settings.openai_lesson_slides_model` (default `gpt-5.5`, reasoning `medium`, max 16000 token).
 - Ruolo: trasforma il testo della lezione in una sequenza di slide dimensionata sui minuti per lezione, riusando gli asset di Fase 3 (una slide dedicata per ogni asset visivo/tabella).
 
@@ -1510,8 +1542,29 @@ PRINCIPI
    esterni, `shape` solo quando porta significato: `doublecircle` per
    uno stato accettante, `Mrecord` per una struttura dati); niente
    prompt per immagini né descrizioni testuali. Ogni figura che porta
-   numeri dichiara la fonte nella caption o la chiude con «Dati
-   illustrativi, non sperimentali».
+   numeri dichiara la fonte nella caption: la chiusa «Dati
+   illustrativi, non sperimentali» etichetta i valori schematici, non
+   autorizza numeri inventati.
+   SCELTA — decidi prima CHE COSA la figura deve far vedere, poi il
+   formato. Dati, quantità, confronti, distribuzioni o serie temporali
+   PRESENTI nel testo della lezione → `vegalite`; struttura,
+   dipendenze, gerarchia, rete, automa, albero, gruppi → `dot`;
+   processo con passi ORDINATI → `mermaid` flowchart; interazione fra
+   attori nel tempo → sequenceDiagram; stati e transizioni →
+   stateDiagram-v2; entità e cardinalità → erDiagram; classi e
+   relazioni → classDiagram; scomposizione di un tema → mindmap;
+   cronologia → timeline; pianificazione e dipendenze temporali →
+   gantt; architettura a blocchi e livelli → block-beta; flusso che si
+   ripartisce fra stadi → sankey-beta; posizionamento su due criteri →
+   quadrantChart; profilo su più criteri, etichette brevi →
+   radar-beta; gerarchia con quantità confrontabili → treemap-beta;
+   ripartizione a poche voci → pie; serie breve su assi → xychart-beta.
+   Il flowchart è l'ULTIMA scelta, non la prima: un elenco di concetti
+   collegati da frecce non è un processo. Una relazione fra grandezze
+   (andamento, tangente, area, famiglia di curve) è una figura
+   `function` di Fase 3: qui la REFERENZI, non la ricrei. Mai inventare
+   numeri per avere un grafico e mai una figura decorativa: se il
+   contenuto non la chiede, non la fai.
    CATALOGO — per `vegalite` scegli il tipo dalla famiglia d'uso:
    confronto fra categorie (barre verticali, orizzontali, raggruppate,
    impilate), parte sul tutto (barre normalizzate, torta, ciambella),
@@ -1523,10 +1576,9 @@ PRINCIPI
    solo con poche categorie che compongono un intero e con quote
    nettamente diverse: altrimenti barre ordinate. Dichiara `sort`
    quando l'ordine delle categorie è cronologico, logico o per quota:
-   senza, Vega-Lite le mette in ordine alfabetico. Per `mermaid`, oltre
-   ai diagrammi di struttura e di processo, sono ammessi gantt,
-   quadrantChart, sankey-beta, block-beta, radar-beta, treemap-beta,
-   pie e xychart-beta; esclusi journey, gitGraph, kanban, packet-beta, architecture-beta. Catena
+   senza, Vega-Lite le mette in ordine alfabetico. Per `mermaid` i
+   tipi ammessi sono quelli elencati sopra, uno per criterio; esclusi
+   journey, gitGraph, kanban, packet-beta, architecture-beta. Catena
    lineare oltre quattro passi: `flowchart TB`; `LR` se corta o
    ramificata.
    Per evitare collisioni di ID, prefissa con `*_new_*` (es.
@@ -1545,9 +1597,11 @@ PRINCIPI
    - 60 min → 22-30 slide
    - 90 min → 32-42 slide
    A questi numeri si AGGIUNGE una slide dedicata per ogni asset
-   visivo e per ogni tabella (punto 2): con 5 asset visivi e 2
-   tabelle il totale cresce di ~7 slide. Adatta in funzione della
-   densità del contenuto.
+   visivo e per ogni tabella (punto 2): una lezione ordinaria ne porta
+   4-8 di Fase 3, quindi con 8 asset visivi e 2 tabelle il totale
+   cresce di ~10 slide. Il tetto della durata NON è un motivo per
+   saltare un asset: ogni figura di Fase 3 ha la sua slide, sempre.
+   Adatta in funzione della densità del contenuto.
 
 5. STRUTTURA STANDARD:
    - 1 slide titolo

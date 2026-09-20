@@ -1112,6 +1112,60 @@ schema strict). Per accelerare drasticamente un corso grande, abbassare a
 > - upload immagini come asset visivo + conversione vision → Mermaid
 >   (commit `92d5f37`).
 
+## Quante figure e di quale formato (18 settembre 2026)
+
+Il prompt di Fase 3 chiedeva «1-3 figure per lezione» e apriva l'elenco
+dei formati su `mermaid` con il criterio più largo possibile. Sull'export
+reale di quattro lezioni di quattro corsi diversi il risultato era: **14
+figure generate dal modello, 13 `mermaid` flowchart e una `function`**,
+zero `vegalite`, zero `dot`, e tre lezioni su quattro con esattamente
+quattro figure — cioè **sopra** il tetto dichiarato: il «1-3» non era il
+vincolo che teneva basso il numero, mancava il criterio che lega la
+figura al contenuto. Due regole nuove, entrambe in
+`openai_lesson_content_service._system_prompt`:
+
+- **scelta guidata dal contenuto** — per ogni figura si dichiara prima
+  che cosa deve far vedere, il formato viene dopo; `function`,
+  `vegalite` e `dot` sono nominati prima del flowchart, che è «l'ULTIMA
+  scelta, non la prima». Con i vincoli di realtà (mai numeri inventati,
+  mai figure decorative) e una regola editoriale di varietà (non più di
+  due flowchart in una lezione con almeno tre figure, se il contenuto lo
+  consente);
+- **numerosità** — la figura segue il contenuto sezione per sezione,
+  indicativamente 4-8 per lezione ordinaria e 0-2 per l'introduttiva,
+  senza inventare contenuto per arrivare al numero.
+
+La Fase 4 riceve la stessa scelta in forma breve (senza `function`, A1) e
+un budget di slide ritarato: il range di `materialize_lesson_slides`
+cresce già di una slide per ogni asset visivo, tabella e `new_asset`,
+quindi otto figure non fanno uscire la lezione dal range a nessuna
+durata. Nessun altro tetto è stato toccato: lo schema strict non limita
+`visual_assets`, il cap di token (32.000) ha margine (~700 token in più
+passando da tre a otto figure) e la validazione di otto figure in un
+batch costa 1,3-2,4 s contro i 90 s del timeout. Storia completa,
+misure e oracoli in [17 — Figure accademiche § 22](17-visual-figures.md).
+
+**Diagnostica.** `app/services/figure_mix.py` (`compute_figure_mix`)
+conta i formati e, dentro Mermaid, i tipi di diagramma. Alla
+materializzazione `materialize_lesson_content` emette
+`lesson_content_figure_mix` (`figures`, `formats`, `mermaid_types`) e,
+quando una lezione con almeno tre figure usa un solo formato e un solo
+tipo, il warning `lesson_content_figure_monoculture`. Nessuno dei due
+blocca: la lezione resta valida e va in `ready`, è una misura per sapere
+se il prompt ha funzionato. La stessa funzione alimenta la sezione (c) di
+`scripts/measure_asset_refs.py`, così la misura sull'export e quella nei
+log non possono divergere.
+
+Dal lato Fase 4 la misura gemella è `lesson_slides_unreferenced_assets`
+(warning di `materialize_lesson_slides`): elenca le figure e le tabelle
+di Fase 3 che nessuna slide referenzia. La validazione controlla che
+ogni riferimento esista, non che ogni figura sia referenziata, e una
+figura senza slide sparisce anche dal video — la Fase 5 parla le slide
+che esistono — restando solo in coda alla dispensa. Sull'export reale
+capitava già con quattro figure; con 4-8 la perdita cresce. La stessa
+misura è la colonna «senza slide» della sezione (c) di
+`scripts/measure_asset_refs.py`.
+
 ## Misura del registro (strumento diagnostico)
 
 `backend/scripts/measure_register.py` misura, nei testi già generati

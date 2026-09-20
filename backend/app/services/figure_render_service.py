@@ -2102,14 +2102,24 @@ _semaphores: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaph
 # farebbe perdere in blocco tutte le figure Mermaid della lezione. Oggi
 # `_prerender_mermaid_for_lesson` non ha alcun tetto complessivo.
 _BATCH_TIMEOUT_FLOOR_S: dict[str, float] = {"mermaid": 60.0}
+# Quota di tempo per figura del batch, sopra il pavimento e sopra il tetto
+# della singola resa: il tetto è del BATCH, quindi senza questa quota
+# raddoppiare le figure dimezzava il budget di ciascuna. Con la regola
+# nuova del prompt (4-8 figure per lezione invece di 1-3) è la differenza
+# fra un lotto che passa e uno che scade tutto insieme.
+_BATCH_TIMEOUT_PER_FIGURE_S: float = 6.0
 # Formati per cui un timeout dell'INTERO batch non entra in cache negativa:
 # il tempo è dominato dal costo fisso, non attribuibile alle singole figure
 # (un render fallito per figura, `None` nella lista, resta in cache negativa).
 _NO_NEGATIVE_CACHE_ON_BATCH_TIMEOUT: frozenset[str] = frozenset({"mermaid"})
 
 
-def _batch_timeout(fmt: str, base: float) -> float:
-    return max(base, _BATCH_TIMEOUT_FLOOR_S.get(fmt, 0.0))
+def _batch_timeout(fmt: str, base: float, count: int = 1) -> float:
+    """Tetto del batch: il massimo fra il tetto della singola resa, il
+    pavimento del formato (costo fisso del motore) e la quota per figura
+    moltiplicata per le figure del lotto."""
+    per_figure = _BATCH_TIMEOUT_PER_FIGURE_S * max(1, count)
+    return max(base, _BATCH_TIMEOUT_FLOOR_S.get(fmt, 0.0), per_figure)
 
 
 def _render_semaphore() -> asyncio.Semaphore:
@@ -2270,7 +2280,7 @@ async def render_figure_map(
         renderer = REGISTRY[fmt]
         ids = [aid for aid, _s, _k in items]
         contents = [s for _a, s, _k in items]
-        fmt_timeout = _batch_timeout(fmt, timeout)
+        fmt_timeout = _batch_timeout(fmt, timeout, len(items))
         async with sem:
             try:
                 svgs = await asyncio.wait_for(
