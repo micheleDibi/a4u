@@ -6116,3 +6116,41 @@ numero non si muove neanche così, la leva successiva è lo schema
 (`minItems` sull'array), che però è un obbligo cieco: produrrebbe figure
 anche dove il contenuto non le chiede, ed è la ragione per cui non è la
 prima scelta.
+
+### 22.11 Seconda misura in produzione: la varietà segue il numero
+
+Stesse 42 lezioni, rigenerate dopo la riga nel messaggio della singola
+lezione (`_figure_count_request`). Conteggi dai log
+`lesson_content_figure_mix`.
+
+| | prima riga solo di sistema | con la riga nel messaggio |
+| --- | --- | --- |
+| figure totali | 114 | 154 |
+| media per lezione | 2,7 | 3,7 |
+| lezioni con 4 o più figure | 0 su 42 | 22 su 42 |
+| Mermaid | 101 (89%) | 92 (60%) |
+| Graphviz `dot` | 6 (5%) | 33 (21%) |
+| grafici `function` | 7 (6%) | 29 (19%) |
+| Vega-Lite | 0 | 0 |
+| lezioni con il solo Mermaid | 32 su 42 | 13 su 42 |
+| lezioni in monocultura (log dedicato) | 32 | 10 |
+
+Il dato interessante non è solo che il numero è salito: è che la varietà
+è salita CON il numero, senza toccare la regola di scelta. Finché il
+modello si concedeva tre figure sceglieva tre volte lo strumento più
+generico; con quattro o cinque da distribuire fra sei sezioni ha iniziato
+a usare il grafo per le strutture e il grafico di funzione per gli
+andamenti. Mermaid passa dall'89% al 60% delle figure, e le lezioni fatte
+di soli diagrammi di flusso scendono da 32 a 13.
+
+Vega-Lite resta a zero, ed è coerente con il vincolo dichiarato: il
+prompt lo ammette solo su dati presenti nei documenti del corso e vieta di
+inventarli. I corsi misurati (matematica, misure, teoria) non ne portano.
+La verifica vera sarà un corso con dati reali: se anche lì resta a zero,
+il vincolo è troppo stretto e va allentato, non il catalogo.
+
+Restano dieci lezioni in monocultura su quarantadue. Il passo successivo,
+se serve, è il suggerimento per sezione: leggere lo scopo dichiarato di
+ogni sezione della scaletta e proporre nel messaggio della lezione il
+formato adatto a quella sezione, invece di lasciare la scelta a una regola
+generale.
