@@ -1100,9 +1100,10 @@ dpi=200); FigureCanvasAgg(fig); ax = fig.add_subplot(111)`; spine
 `left`/`bottom` in `set_position("zero")` con frecce, `top`/`right`
 nascoste; rami `ax.plot(xs, ys, color=PALETTE[i], gid=f"branch-{i}-{j}")`;
 asintoti `axvline`/`axline(ls="--", color="#888")`; punti notevoli `"o"`
-`ms=4` con coordinate esatte; formula in alto a destra (`gid="formula"`);
-nessun titolo; griglia solo in `level_curves` (`contour` + `clabel`);
-`family` con `legend(frameon=False)` solo con più serie; `area` con
+`ms=4` con coordinate esatte; formula e legenda nella banda sopra gli assi
+(§23; `gid="formula"`, `legend-{i}`), l'altezza della figura cresce di
+quanto la banda occupa; nessun titolo; griglia solo in `level_curves`
+(`contour` + `clabel`); legenda solo con più curve; `area` con
 `fill_between(alpha=.25)`; `tangent` come retta `y = f(a) + f'(a)(x − a)`;
 `fig.savefig(buf, format="svg", metadata={"Date": None, "Creator": None})`
 → `normalize_svg`. I `gid` diventano `id=` nell'SVG: sono i ganci dei test.
@@ -1149,7 +1150,9 @@ si leggevano come un unico token: «8x»). L'**etichetta esatta di uno
 zero** è omessa quando in quel punto c'è già un tick con lo stesso testo
 («0₀») e scende di una riga quando il tick dice altro («−π» sopra «−3»):
 la scelta usa le posizioni del locator, che dipendono solo dai limiti già
-fissati, quindi il render resta byte-deterministico. `function_plot` non produce mai raster (`<image>`): `contour` e
+fissati, quindi il render resta byte-deterministico. Dal 20 settembre le
+etichette non hanno più uno scostamento fisso dal punto: il riquadro si
+misura e si sceglie fra più candidati quello libero (§23). `function_plot` non produce mai raster (`<image>`): `contour` e
 `fill_between` sono path, `imshow` non è usato; un test lo asserisce
 perché `normalize_svg` rifiuta `<image>` mentre `MATPLOTLIB_RC` tiene
 `svg.image_inline: True`.
@@ -6154,3 +6157,235 @@ se serve, è il suggerimento per sezione: leggere lo scopo dichiarato di
 ogni sezione della scaletta e proporre nel messaggio della lezione il
 formato adatto a quella sezione, invece di lasciare la scelta a una regola
 generale.
+
+## 23. Le scritte accavallate nei grafici di funzione (20 settembre 2026)
+
+Cinque schermate del PDF di produzione, tutte su figure `function`
+generate dal modello, mostrano lo stesso difetto in cinque forme:
+
+1. l'etichetta di un punto notevole sopra la formula in alto a destra
+   («massimo» sopra `spostamento normalizzato(x) = sin(2πx)`);
+2. la legenda in alto a sinistra sopra le etichette dei punti («segnale
+   di riferimento» / «segnale sfasato» sopra «massimo» e «massimo del
+   segnale»);
+3. due etichette di punti vicini che si toccano («velocità massima» e
+   «spostamento massimo»);
+4. la legenda di una famiglia (`k = 0`, `k = 0,12`, `k = 0,28`) sopra la
+   formula;
+5. la legenda sopra l'etichetta di un picco («quarto picco positivo»
+   sotto «risposta misurata»).
+
+Le cause erano tre, tutte nello stesso file (`figure_compute/function_plot.py`):
+la formula era ancorata a `(0,985, 0,985)` in coordinate ASSI, quindi
+disegnata dentro l'area dei dati, sopra curve ed etichette; la legenda era
+`ax.legend(loc="upper left")`, anch'essa dentro gli assi; le etichette dei
+punti avevano uno scostamento FISSO dal punto (`(4, 4)`, `(5, 5)`,
+`(3, −10)`) senza alcun controllo di collisione. La figura era di
+dimensione fissa (5,2 × 3,6 pollici): non c'era spazio riservato a
+formule e legenda, e quello spazio veniva preso due volte.
+
+### 23.1 La regola: lo spazio si riserva
+
+Formule e legenda escono dall'area degli assi e vanno in una **banda
+propria sopra** di essi, in coordinate figura. Sopra e non sotto perché
+sotto l'asse ci sono già le etichette dei tick, il nome dell'asse x e le
+etichette degli zeri (scritte a −10 e −20 pt dall'asse): una banda bassa
+avrebbe spostato il problema invece di risolverlo, mentre sopra l'area è
+vuota per costruzione. Le formule restano allineate a destra (una riga per
+espressione, la larghezza disponibile e la riduzione di corpo fino a 6,5 pt
+sono quelle di sempre), la legenda a sinistra, con le voci impaccate per
+riga sulla larghezza degli assi; quando la legenda sta su una riga sola e
+insieme alla prima formula entra nella larghezza, le due condividono la
+riga, altrimenti la legenda prende righe proprie. La legenda è disegnata
+a mano (segmento del colore della curva più il nome, `gid` `legend-{i}` e
+`legend-handle-{i}`): serve il riquadro esatto di ogni voce, che
+`ax.legend` calcola solo a tempo di disegno.
+
+**La figura cresce in altezza solo di quello che non entra nel vuoto che
+c'è già** — il docente ha detto esplicitamente che le figure possono
+essere più grandi, ma ogni punto in più si paga, e si paga dove il box è
+vincolato in altezza (§23.4) — e gli assi restano quelli di sempre: stessa
+larghezza, stessa altezza, stesso margine sotto. Sopra gli assi la figura
+di base ha già `TOP_PAD_PT` = 15,55 pt di margine vuoto: la banda lo USA,
+e l'altezza della figura è
+
+```
+fig_h = max(BASE_H_PT, AXES_TOP_PT + BAND_GAP_PT + contenuto + BAND_TOP_PAD_PT)
+      = max(259,2,     243,648     + 5,0         + contenuto + 3,0)
+```
+
+dove il contenuto è la somma delle righe (una formula o una fila di voci
+per riga, passo `corpo × BAND_LINE_FACTOR` = corpo × 1,30). Una riga sola
+costa così **4,1 pt** di figura, non 23,1. Ne segue che una figura senza
+formula e con una sola curva **non ha banda e resta identica a prima**,
+374,4 × 259,2 pt: nessun ricalcolo a valle, nessun backfill,
+`THEME_VERSION` invariato.
+
+L'altezza ha un tetto ARITMETICO, non sperimentale. Lo schema ammette al
+più `MAX_EXPRESSIONS` = 4 righe di formula e al più
+`max(MAX_EXPRESSIONS, MAX_PARAMETER_VALUES)` = 6 voci di legenda, che nel
+peggio dell'impaccamento stanno una per riga: il contenuto non supera
+`MAX_BAND_CONTENT_PT` = (4 + 6) × 9 × 1,30 = **117,0 pt** e la figura non
+supera `MAX_FIG_H_PT` = **368,65 pt**, sotto i 374,4 pt di larghezza. **La
+figura non è mai più alta che larga**, e non perché lo si sia provato su
+qualche caso: perché non esiste una spec legale che lo faccia.
+
+Le etichette dei punti non hanno più uno scostamento fisso. Per ognuna si
+misura il riquadro dell'inchiostro (`TextPath` sul font bundled, la stessa
+misura già usata per la formula) e si prova un candidato dopo l'altro —
+alto-destra, alto-sinistra, basso-destra, basso-sinistra e due posizioni
+centrate più lontane in verticale — scartando quelli che si sovrappongono
+a un testo già collocato, alla banda o al bordo degli assi. Vince il primo
+libero; se nessuno lo è vince quello con il conflitto minore e il disegno
+registra l'avvertenza `labels_crowded`, che finisce nelle `warnings` del
+render e quindi nei log: il caso stretto si vede invece di restare
+nascosto sotto un'altra etichetta.
+
+Gli ultimi candidati sono quelli **riportati dentro** il riquadro degli
+assi: un'etichetta più larga dello spazio che le resta accanto al punto
+uscirebbe dal viewBox in ogni posizione ancorata al punto, e in produzione
+è successo (un'etichetta d'area da 40 caratteri, il massimo dello schema,
+disegnata da x = 117,1 a x = 433,9 su una figura larga 374,4). Bloccando
+la x nel riquadro l'etichetta si legge tutta.
+
+Gli ostacoli sono **tutti i testi della figura**: quelli che il disegno
+colloca (etichette, formule, voci della legenda, nomi degli assi), la
+banda, e quelli che colloca matplotlib e il disegno si limita a misurare —
+le etichette dei **tick** e quelle dei **contorni**. Le etichette dei tick
+restano inoltre gestite dalla regola degli zeri (`_x_tick_conflict`:
+etichetta omessa se il tick dice già lo stesso, abbassata di una riga se
+dice altro), che agisce prima e per un motivo diverso (un duplicato non è
+una collisione geometrica).
+
+Limite dichiarato: le **curve** non sono ostacoli. Un'etichetta può
+attraversarle, ed è l'alone bianco a tenerla leggibile. Limite dichiarato
+il secondo: il riquadro di un `<text>` è misurato con `TextPath` sul font
+bundled (DejaVu Sans) mentre il disegno usa Noto Sans, e sulle stringhe
+lunghe lo scarto arriva a **4,6 pt** (misurato: una voce di legenda da 34
+caratteri); lo stacco di `LABEL_GAP_PT` = 3 pt lo assorbe in parte, e i
+riquadri MISURATI (tick, contorni) non ne soffrono perché vengono
+dall'artista.
+
+### 23.2 L'oracolo: il disegno si misura
+
+**Ogni** testo della figura ha il suo riquadro (`TextBox`: `gid`, `kind`,
+`x0/y0/x1/y1` in punti tipografici nel sistema della figura), per una di
+due vie:
+
+- `_Canvas.place` lo colloca e lo registra — `kind` `label`, `formula`,
+  `legend`, `axis`;
+- `_Canvas.register` registra il riquadro di un testo che ha collocato
+  matplotlib, misurato sull'artista vero con `get_window_extent` sul
+  renderer Agg — `kind` `tick` (etichette dei tick) e `contour`
+  (etichette dei livelli, che `ax.clabel` dispone lungo le curve).
+
+`function_plot.draw` restituisce quei riquadri accanto all'SVG e alle
+avvertenze (`DrawResult`); `render_svg` resta la coppia `(svg, warnings)`
+per i chiamanti. I test misurano lì: nessuna coppia di riquadri si
+interseca oltre mezzo punto — comprese le coppie con i tick e con i
+contorni, che prima non erano nemmeno registrate — ogni etichetta resta
+dentro il bordo degli assi, formule e legenda restano sopra il bordo alto.
+
+Due test verificano che i riquadri descrivano il disegno VERO e non le
+intenzioni, con una verifica diversa per ciascuna delle due vie. Per i
+riquadri COLLOCATI: per ogni testo disegnato come geometria le coordinate
+dei `<path>` dell'SVG cadono nel riquadro registrato, per ogni `<text>` ci
+cade l'ancora. Per i riquadri MISURATI: ogni tick e ogni etichetta di
+contorno porta il suo `gid` nell'SVG (`tick-x-{i}`, `tick-y-{i}`,
+`level-label-{k}`) e dentro quel gruppo c'è l'**alone** bianco, cioè il
+`<path>` che matplotlib disegna dietro il testo — il riquadro allargato
+del `pad` di `TEXT_HALO_BBOX`, al più 1,08 pt a corpo 9. Il riquadro
+registrato e l'alone devono contenersi a vicenda entro quel `pad`.
+
+Le etichette dei contorni sono l'unico testo che il disegno non può
+spostare: `ax.clabel` le dispone lungo le curve, e lungo una curva non c'è
+un altro posto. Quella che cade su un testo già registrato viene quindi
+**tolta**, e il disegno lo dichiara con `labels_crowded`; `inline=False`
+con l'alone bianco fa sì che toglierla non lasci il buco che `inline=True`
+apre nella curva.
+
+### 23.3 Prima e dopo, misurati
+
+Corpus in `tests/fixtures/function_label_layout_cases.json`: i cinque casi
+delle schermate ricostruiti come spec reali, tre casi avversari (etichette
+lunghissime, cinque punti ravvicinati, legenda con sei voci) e tre casi
+per i `kind` che mancavano — `area` con etichette quasi larghe quanto gli
+assi, `tangent` con due tangenti e due punti, `level_curves` con dodici
+livelli, il massimo dello schema. Le coppie sono misurate sui riquadri
+VERI degli artisti di matplotlib (`get_window_extent` su un renderer Agg),
+non sul modello del codice, e contano **tutti** i testi disegnati:
+etichette, formule, legenda, nomi degli assi, tick, contorni.
+
+| caso | coppie prima del difetto (`eac8c3a`) | dopo la prima stesura (`729f290`) | oggi | altezza (pt) |
+| --- | --- | --- | --- | --- |
+| a — «massimo» sopra la formula | 1 | 0 | 0 | 259,2 → 282,3 → **263,3** |
+| b — legenda sopra due etichette | 3 | 0 | 0 | 259,2 → 282,3 → **263,3** |
+| c — due etichette che si toccano | 2 | 0 | 0 | 259,2 → 282,3 → **263,3** |
+| d — legenda di famiglia e formula | 1 | 0 | 0 | 259,2 → 299,4 → **275,0** |
+| e — legenda sopra il picco | 1, più un'etichetta FUORI dalla figura | 0 | 0 | 259,2 → 282,3 → **263,3** |
+| f — etichette lunghissime | 3 | 0 | 0 | 259,2 → 316,5 → **286,7** |
+| g — cinque punti ravvicinati | 1 | 0 | 0 | 259,2 → 259,2 → **259,2** (nessuna banda) |
+| h — legenda con sei voci | 1 | 0 | 0 | 259,2 → 316,5 → **286,7** |
+| i — due etichette d'area | 0 | 0 | 0 | 259,2 → 282,3 → **263,3** |
+| j — tangenti e punti | 6 | 2 (con i tick) | 0 | 259,2 → 282,3 → **263,3** |
+| k — dodici curve di livello | 4 | 3 (fra le etichette dei contorni) | 0 | 259,2 → 282,3 → **263,3** |
+| **totale** | **23** | **5** | **0** | |
+
+Le cinque coppie rimaste dopo la prima stesura sono quelle che il suo
+oracolo non vedeva: due fra un'etichetta di punto e un numero dei tick
+(fino a 14,4 × 6,0 pt), due fra due etichette di contorno (16,3 × 7,3 e
+16,2 × 7,3 pt) e una fra un'etichetta di contorno e il nome dell'asse y
+(4,2 × 9,0 pt). Su un corpus più largo di 45 spec (trenta di stress, sette
+di rottura, otto canoniche, compresi i `kind` e le figure dei test PDF e
+slide) le coppie passano da **30 a 4**, e le quattro rimaste sono tutte
+nello stesso caso costruito apposta — sei etichette da 23 caratteri sullo
+stesso punto di una retta piatta — dove il disegno dichiara
+`labels_crowded`.
+
+Restano fuori dalla figura, prima come dopo e identiche in tutte e tre le
+versioni, le etichette dei tick y quando l'asse è a sinistra del riquadro
+(per esempio «−0,75» che comincia a x = −2,8 pt): è il margine sinistro
+degli assi (`MARGINS["left"]` = 8 %) più stretto dell'etichetta, difetto a
+sé e non toccato qui.
+
+### 23.4 Il costo in pagina: la dispensa e la slide
+
+Il box di riferimento della **dispensa** (168 × 242 mm) è vincolato in
+larghezza: la figura entra a scala naturale e resta **132,08 mm** in tutti
+i casi; l'altezza passa da 91,44 mm a 92,90 mm (una riga di banda), 97,03
+mm (due righe) o 101,16 mm (tre righe). Il corpo del testo resta **8-9
+pt**, dentro la banda di leggibilità della dispensa (8-11 pt), con
+`in_band=True`.
+
+Il box figura della slide di RIFERIMENTO è 255,0 × 86,6 mm
+(`course_lesson_slides_pdf_service.reference_slide_figure_box_mm()`): è
+vincolato in **altezza**, non in larghezza — la figura ne usa metà in
+orizzontale e tutta in verticale. Lì il fit scala per l'altezza, quindi
+**ogni punto di banda in più rimpicciolisce il testo reso in proporzione**.
+È il vincolo che la prima stesura non aveva misurato. Sul corpus di trenta
+spec, corpo del testo reso nel box della slide:
+
+| | `eac8c3a` (nessuna banda) | `729f290` (prima stesura) | oggi |
+| --- | --- | --- | --- |
+| media | — | −9,3 % | **−3,4 %** |
+| caso peggiore | — | −29,5 % (v19, 8,52 → 6,01 pt) | **−19,5 %** (8,52 → 6,86 pt) |
+| caso comune (una formula) | — | −8,2 % | **−1,6 %** |
+| corpo minimo | 7,58 pt | 5,89 pt | **6,58 pt** |
+
+Il caso peggiore DAVVERO consentito dallo schema — quattro espressioni con
+l'etichetta da 24 caratteri, il massimo di `ExpressionSpec.label`, che
+l'impaccamento mette su quattro righe di legenda — misura **374,4 × 345,2
+pt**, rapporto larghezza/altezza **1,08**: più larga che alta, come il
+tetto aritmetico di §23.1 garantisce. (La prima stesura dichiarava 374,4 ×
+367,8 pt con label corte e ne concludeva che il rapporto peggiore fosse
+1,02; con le label al massimo la misura vera era 402,0 pt e rapporto 0,93,
+cioè più ALTA che larga: il tetto ora rende l'affermazione vera invece di
+ripeterla.)
+
+La banda di leggibilità della slide (10-14 pt) le figure `function` non la
+raggiungono **né prima né dopo la banda** — non la raggiungevano nemmeno
+quando la banda non esisteva, perché il box è basso e la figura è grande:
+`in_band` è `False` in tutti i casi e nessun `figure_fit_out_of_band`
+nuovo compare. Quello è il difetto D13, che vive per conto suo; qui si
+pinna il pavimento misurato (`_SLIDE_FLOOR_PT` = 6,8 pt) perché la banda
+non torni ad allargarsi di nascosto.

@@ -1174,6 +1174,7 @@
             "levelsUndefined": "I livelli richiesti non compaiono nel dominio scelto.",
             "formulaNotMathtext": "La formula è mostrata in sintassi Python: la notazione matematica non è disponibile.",
             "formulaTooWide": "La formula non entra nella figura: resta il solo nome della funzione.",
+            "labelsCrowded": "Le etichette sono troppe o troppo vicine: qualcuna resta accostata a un'altra, oppure non è stata disegnata. Accorcia le etichette o riduci i punti annotati.",
             "symbolicTimeout": "Calcolo simbolico oltre il tempo massimo: i valori sono approssimati.",
             "symbolic": "Calcolo simbolico non disponibile: i valori sono approssimati."
           }

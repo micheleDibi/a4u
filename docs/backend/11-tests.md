@@ -167,6 +167,14 @@ reimporta il modulo e un monkeypatch nel padre non lo raggiunge.
   gestiti);
 - `figure_scale_cases.json` — casi condivisi fra `figure_scale.py` e
   `lib/figureFormats.ts` (`fit`, `svg_box`, `svg_font`, `format_mm`);
+- `function_label_layout_cases.json` — corpus dell'impaginazione delle
+  figure `function`: i cinque casi delle schermate di produzione con le
+  scritte accavallate (etichetta sopra la formula, legenda sopra le
+  etichette, due etichette che si toccano, legenda sopra la formula,
+  legenda sopra l'etichetta di un picco), tre casi avversari (etichette
+  lunghissime, cinque punti ravvicinati, legenda con sei voci) e tre per i
+  `kind` che mancavano (`area` con etichette quasi larghe quanto gli assi,
+  `tangent`, `level_curves` con dodici livelli);
 - `math_grammar_cases.json` — token e chiavi attesi della grammatica math
   del PDF, letti dal collector, dal renderer e dalla copia
   `lib/inlineMath.ts`;
@@ -763,6 +771,36 @@ formula dentro il viewBox, timeout reale con `slow_target`), registro
 PATCH, endpoint `render-function` (200, 422 semantico, 422 Pydantic, 403,
 rate limit). Skip se mancano numpy/matplotlib/sympy.
 
+### `tests/test_function_label_layout.py` (106)
+
+Impaginazione del formato `function` (§ 23 del documento 17): il corpus
+di `function_label_layout_cases.json` disegnato con il calcolo simbolico
+vero, e misurato sui riquadri che `function_plot.draw` registra per OGNI
+testo della figura (`DrawResult.boxes`), quelli che colloca lui e quelli
+che misura sugli artisti di matplotlib (tick e contorni). Per ogni caso:
+nessuna coppia di riquadri si interseca oltre mezzo punto — comprese le
+coppie con i tick e con i contorni — nessuna etichetta esce dal bordo
+degli assi, formule e legenda restano sopra il bordo alto degli assi e
+alzano la figura solo quando esistono, i riquadri COLLOCATI descrivono il
+disegno vero (coordinate dei `<path>` e ancore dei `<text>` dell'SVG) e
+quelli MISURATI coincidono con l'alone bianco che l'SVG disegna dietro il
+testo (`tick-x-{i}`, `tick-y-{i}`, `level-label-{k}`), la figura entra nel
+box della dispensa (168 × 242 mm) con il corpo del testo in banda ED entra
+nel box figura della slide di riferimento (255,0 × 86,6 mm, vincolato in
+ALTEZZA) senza scendere sotto il pavimento misurato di 6,8 pt, la figura
+non è mai più alta che larga, e due disegni della stessa spec hanno lo
+stesso sha256 e gli stessi riquadri. Più i casi a sé: una figura senza
+formula né legenda resta 374,4 × 259,2 pt (la geometria di sempre), una
+riga di banda costa 4,1 pt di figura perché usa il vuoto che c'è già, il
+caso peggiore DAVVERO consentito dallo schema (quattro espressioni con
+l'etichetta da 24 caratteri) resta più largo che alto, un'etichetta da 40
+caratteri viene riportata dentro il riquadro degli assi invece di uscire
+dal viewBox, le etichette dei tick sono ostacoli per quelle dei punti, le
+etichette dei contorni passano dall'oracolo e quella senza posto viene
+tolta con l'avvertenza, e sei etichette lunghe sullo stesso punto
+producono `labels_crowded` invece di sparire sotto le altre. Skip se
+mancano numpy/matplotlib/sympy.
+
 ### `tests/test_figure_numbering.py` (90)
 
 `figure_numbering` (D4, Q2) con la fixture condivisa: prima citazione → N
@@ -963,12 +1001,17 @@ frame video senza JavaScript d'autore, WebSocket chiusi dalla guardia di
 rete, fetcher di WeasyPrint limitato a data URL e host dei media,
 riferimenti con spazi ai bordi e visivi distinti contati come nel CRUD.
 
-### `tests/test_frontend_figure_i18n.py` (26)
+### `tests/test_frontend_figure_i18n.py` (27)
 
 Guardia i18n sui componenti frontend delle figure: nessuna stringa
 italiana hard-coded nei file dell'inventario (lessico di parole di
 interfaccia, template literal esclusi), ogni chiave `t("…")` risolta in
-`it.json` e `en.json`. Salta senza `../frontend`.
+`it.json` e `en.json`. Compreso il verso opposto: i codici delle
+avvertenze che il DISEGNO emette, letti dal sorgente di
+`function_plot.py` (le costanti e le stringhe passate a
+`warnings.append`), hanno tutti la loro chiave in `lib/figureFormats.ts`
+e la loro frase nei due locale — `labels_crowded` era arrivato al docente
+come codice grezzo. Salta senza `../frontend`.
 
 ### `tests/test_chain_layout.py` (54)
 

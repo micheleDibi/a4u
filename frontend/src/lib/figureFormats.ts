@@ -173,6 +173,7 @@ function functionWarningKey(code: string): string | null {
     levels_undefined: "levelsUndefined",
     formula_not_mathtext: "formulaNotMathtext",
     formula_too_wide: "formulaTooWide",
+    labels_crowded: "labelsCrowded",
   };
   return direct[code] ?? null;
 }

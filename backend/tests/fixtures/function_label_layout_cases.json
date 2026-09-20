@@ -1,0 +1,397 @@
+{
+  "cases": [
+    {
+      "name": "a-massimo-sopra-la-formula",
+      "origine": "schermata 1: l'etichetta «massimo» sopra la formula in alto a destra",
+      "spec": {
+        "kind": "function_study",
+        "expressions": [
+          {
+            "expr": "sin(2*pi*x)",
+            "label": "spostamento normalizzato"
+          }
+        ],
+        "domain": [
+          0,
+          2.2
+        ],
+        "show": [
+          "formula"
+        ],
+        "annotations": [
+          {
+            "kind": "point",
+            "at": 1.25,
+            "label": "massimo"
+          }
+        ]
+      }
+    },
+    {
+      "name": "b-legenda-sopra-le-etichette",
+      "origine": "schermata 2: la legenda in alto a sinistra sopra «massimo» e «massimo del segnale»",
+      "spec": {
+        "kind": "function_study",
+        "expressions": [
+          {
+            "expr": "sin(2*pi*x)",
+            "label": "segnale di riferimento"
+          },
+          {
+            "expr": "-cos(2*pi*x + pi/6)",
+            "label": "segnale sfasato"
+          }
+        ],
+        "domain": [
+          0,
+          2.2
+        ],
+        "show": [],
+        "annotations": [
+          {
+            "kind": "point",
+            "at": 0.25,
+            "label": "massimo"
+          },
+          {
+            "kind": "point",
+            "at": 0.4167,
+            "expr_index": 1,
+            "label": "massimo del segnale"
+          }
+        ]
+      }
+    },
+    {
+      "name": "c-due-etichette-vicine",
+      "origine": "schermata 3: «velocita massima» e «spostamento massimo» che si toccano",
+      "spec": {
+        "kind": "function_study",
+        "expressions": [
+          {
+            "expr": "sin(2*pi*x)",
+            "label": "spostamento"
+          },
+          {
+            "expr": "cos(2*pi*x)",
+            "label": "velocita"
+          },
+          {
+            "expr": "-sin(2*pi*x)",
+            "label": "accelerazione"
+          }
+        ],
+        "domain": [
+          0,
+          2.2
+        ],
+        "show": [],
+        "annotations": [
+          {
+            "kind": "point",
+            "at": 0.25,
+            "label": "spostamento massimo"
+          },
+          {
+            "kind": "point",
+            "at": 0.5,
+            "expr_index": 1,
+            "label": "velocita massima"
+          },
+          {
+            "kind": "point",
+            "at": 0.75,
+            "expr_index": 2,
+            "label": "accelerazione massima"
+          }
+        ]
+      }
+    },
+    {
+      "name": "d-famiglia-legenda-e-formula",
+      "origine": "schermata 4: la legenda k = 0, k = 0,12, k = 0,28 sopra la formula",
+      "spec": {
+        "kind": "family",
+        "expressions": [
+          {
+            "expr": "exp(-k*x)*cos(2*pi*x) + 0.15*sin(4*pi*x) - 0.05*cos(6*pi*x)",
+            "label": "risposta smorzata"
+          }
+        ],
+        "domain": [
+          0,
+          3
+        ],
+        "parameter": {
+          "name": "k",
+          "values": [
+            0,
+            0.12,
+            0.28
+          ]
+        },
+        "show": [
+          "formula"
+        ]
+      }
+    },
+    {
+      "name": "e-legenda-sopra-il-picco",
+      "origine": "schermata 5: «quarto picco positivo» sotto la voce «risposta misurata»",
+      "spec": {
+        "kind": "function_study",
+        "expressions": [
+          {
+            "expr": "exp(-0.12*x)*cos(2*pi*x)",
+            "label": "risposta misurata"
+          },
+          {
+            "expr": "exp(-0.12*x)",
+            "label": "inviluppo"
+          }
+        ],
+        "domain": [
+          0,
+          4.5
+        ],
+        "show": [],
+        "annotations": [
+          {
+            "kind": "point",
+            "at": 1,
+            "label": "primo picco positivo"
+          },
+          {
+            "kind": "point",
+            "at": 4,
+            "label": "quarto picco positivo"
+          }
+        ]
+      }
+    },
+    {
+      "name": "f-etichette-lunghissime",
+      "origine": "caso avverso: etichette al limite dei 40 caratteri",
+      "spec": {
+        "kind": "function_study",
+        "expressions": [
+          {
+            "expr": "sin(2*pi*x)",
+            "label": "ampiezza normalizzata"
+          },
+          {
+            "expr": "0.6*cos(2*pi*x)",
+            "label": "componente in quadratura"
+          }
+        ],
+        "domain": [
+          0,
+          2.2
+        ],
+        "show": [
+          "formula"
+        ],
+        "annotations": [
+          {
+            "kind": "point",
+            "at": 0.25,
+            "label": "massimo assoluto della componente A"
+          },
+          {
+            "kind": "point",
+            "at": 1.0,
+            "expr_index": 1,
+            "label": "massimo relativo della quadratura"
+          }
+        ]
+      }
+    },
+    {
+      "name": "g-cinque-punti-ravvicinati",
+      "origine": "caso avverso: cinque punti notevoli a distanza ravvicinata",
+      "spec": {
+        "kind": "function_study",
+        "expressions": [
+          {
+            "expr": "sin(2*pi*x)",
+            "label": "onda"
+          }
+        ],
+        "domain": [
+          0,
+          1.2
+        ],
+        "show": [],
+        "annotations": [
+          {
+            "kind": "point",
+            "at": 0.1,
+            "label": "primo campione"
+          },
+          {
+            "kind": "point",
+            "at": 0.2,
+            "label": "secondo campione"
+          },
+          {
+            "kind": "point",
+            "at": 0.3,
+            "label": "terzo campione"
+          },
+          {
+            "kind": "point",
+            "at": 0.4,
+            "label": "quarto campione"
+          },
+          {
+            "kind": "point",
+            "at": 0.5,
+            "label": "quinto campione"
+          }
+        ]
+      }
+    },
+    {
+      "name": "h-legenda-sei-voci",
+      "origine": "caso avverso: legenda con sei voci",
+      "spec": {
+        "kind": "family",
+        "expressions": [
+          {
+            "expr": "exp(-k*x)*sin(2*pi*x) + 0.12*sin(6*pi*x) - 0.04*cos(10*pi*x)",
+            "label": "modo smorzato"
+          }
+        ],
+        "domain": [
+          0,
+          3
+        ],
+        "parameter": {
+          "name": "k",
+          "values": [
+            0,
+            0.05,
+            0.1,
+            0.2,
+            0.35,
+            0.6
+          ]
+        },
+        "show": [
+          "formula"
+        ]
+      }
+    },
+    {
+      "name": "i-area-etichette-massime",
+      "origine": "caso avverso: due aree con etichette da 40 caratteri, il massimo dello schema — larghe piu' dello spazio che resta accanto al punto",
+      "spec": {
+        "kind": "area",
+        "expressions": [
+          {
+            "expr": "sin(x)",
+            "label": "onda"
+          }
+        ],
+        "domain": [
+          0,
+          6.2
+        ],
+        "show": [
+          "formula"
+        ],
+        "annotations": [
+          {
+            "kind": "area",
+            "between": [
+              0,
+              3.14
+            ],
+            "label": "prima semionda, contributo positivo"
+          },
+          {
+            "kind": "area",
+            "between": [
+              3.14,
+              6.2
+            ],
+            "label": "seconda semionda, contributo negativo"
+          }
+        ]
+      }
+    },
+    {
+      "name": "j-tangenti-e-punti",
+      "origine": "kind `tangent`: due tangenti e due punti annotati vicini",
+      "spec": {
+        "kind": "tangent",
+        "expressions": [
+          {
+            "expr": "x**3 - 3*x",
+            "label": "cubica"
+          }
+        ],
+        "domain": [
+          -3,
+          3
+        ],
+        "show": [
+          "critical_points",
+          "inflection_points",
+          "formula"
+        ],
+        "annotations": [
+          {
+            "kind": "tangent",
+            "at": 1.5,
+            "label": "tangente nel flesso"
+          },
+          {
+            "kind": "tangent",
+            "at": -1.5,
+            "label": "tangente simmetrica"
+          },
+          {
+            "kind": "point",
+            "at": -1,
+            "label": "massimo locale"
+          },
+          {
+            "kind": "point",
+            "at": 1,
+            "label": "minimo locale"
+          }
+        ]
+      }
+    },
+    {
+      "name": "k-curve-di-livello-dodici",
+      "origine": "kind `level_curves`: dodici livelli, cioe' il massimo dello schema — le etichette dei contorni le colloca matplotlib",
+      "spec": {
+        "kind": "level_curves",
+        "expressions": [
+          {
+            "expr": "sin(p)*cos(q)",
+            "label": "campo"
+          }
+        ],
+        "variables": [
+          "p",
+          "q"
+        ],
+        "domain": [
+          -3,
+          3
+        ],
+        "range": [
+          -3,
+          3
+        ],
+        "levels": 12,
+        "show": [
+          "formula"
+        ]
+      }
+    }
+  ]
+}

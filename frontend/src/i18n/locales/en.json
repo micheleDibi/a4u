@@ -1174,6 +1174,7 @@
             "levelsUndefined": "The requested levels do not appear on the chosen domain.",
             "formulaNotMathtext": "The formula is shown in Python syntax: mathematical notation is unavailable.",
             "formulaTooWide": "The formula does not fit in the figure: only the function name is kept.",
+            "labelsCrowded": "Labels are too many or too close: some end up next to another, or were not drawn. Shorten the labels or reduce the annotated points.",
             "symbolicTimeout": "Symbolic computation timed out: values are approximate.",
             "symbolic": "Symbolic computation unavailable: values are approximate."
           }

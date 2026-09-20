@@ -224,6 +224,28 @@ def test_engine_warning_codes_are_localized_not_shown_raw() -> None:
             assert f"{root}.{key}" in flat, f"{root}.{key} assente da {language}.json"
 
 
+def test_every_warning_the_drawing_emits_has_its_phrase() -> None:
+    """`labels_crowded` è arrivato al docente come codice grezzo: il
+    disegno lo emetteva e la mappa di `figureFormats.ts` non lo aveva,
+    quindi `describeFunctionWarning` ripiegava sul codice stesso. Qui i
+    codici si LEGGONO dal sorgente del disegno (le costanti e le stringhe
+    passate a `warnings.append`), non da un elenco a mano che si dimentica
+    di aggiornare."""
+    from app.services.figure_compute import function_plot as fplot
+
+    source = Path(fplot.__file__).read_text(encoding="utf-8")
+    codes = set(re.findall(r'warnings\.append\("([a-z_]+)"\)', source))
+    codes |= {fplot.LABELS_CROWDED, fplot.FORMULA_TOO_WIDE}
+    assert {"labels_crowded", "formula_too_wide", "formula_not_mathtext"} <= codes
+    formats = _read("lib/figureFormats.ts")
+    direct = dict(re.findall(r'^\s*([a-z_]+): "([A-Za-z]+)",$', formats, re.M))
+    root = "courses.lessonsContent.editorUI.function.warnings"
+    for code in sorted(codes):
+        assert code in direct, f"{code} non ha una chiave in figureFormats.ts"
+        for language in ("it", "en"):
+            assert f"{root}.{direct[code]}" in _locale(language), (code, language)
+
+
 def test_legacy_asset_banner_names_every_figure_family() -> None:
     """Il banner dell'asset legacy suggeriva solo «diagramma Mermaid o
     immagine» mentre il menu offre quattro famiglie di figure (I18N-8)."""
