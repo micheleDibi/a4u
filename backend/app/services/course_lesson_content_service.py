@@ -283,6 +283,38 @@ def _format_current_lesson_phase3(lesson: CourseLesson) -> str:
     return "\n\n".join(parts) if parts else "(Nessuna versione precedente.)"
 
 
+def _figure_count_request(lesson: CourseLesson) -> str:
+    """Riga del messaggio utente con il numero di figure atteso per QUESTA
+    lezione, calcolato sulle sue sezioni.
+
+    La regola sta già nel prompt di sistema, ma lì è una riga dentro
+    trentamila caratteri: la misura del 20 settembre 2026 su 42 lezioni
+    generate dice 32 lezioni a 3 figure, 8 a 2, 2 a 1 e nessuna oltre le
+    tre. Il numero va dove il modello non può non vederlo: nel messaggio
+    corto e specifico della lezione, con l'intervallo già fatto i conti."""
+    outline = [s for s in (lesson.section_outline or []) if isinstance(s, dict)]
+    sezioni = len(outline)
+    if lesson.is_introductory:
+        return (
+            "Figure: lezione introduttiva, quindi 0-2 figure, solo se il "
+            "contenuto le chiede davvero."
+        )
+    if sezioni == 0:
+        return "Figure: prevedine 4-8, secondo quanto il contenuto ne chiede."
+    basso = min(4, sezioni)
+    alto = min(8, max(basso, sezioni))
+    return (
+        f"Figure: questa lezione ha {sezioni} sezioni; prevedine da {basso} a "
+        f"{alto}, una per ogni sezione che mostra una struttura, un andamento, "
+        "una relazione fra grandezze, dei dati o un processo. Il formato viene "
+        "dal contenuto: `function` per le relazioni fra grandezze, `vegalite` "
+        "per i dati dei documenti, `dot` per strutture, alberi e reti, "
+        "`mermaid` flowchart SOLO per processi con passi ordinati. Una sezione "
+        "puramente discorsiva resta senza figura: non inventare contenuto per "
+        "arrivare al numero."
+    )
+
+
 def build_user_prompt(course: Course, lesson: CourseLesson) -> str:
     """Costruisce il messaggio utente conforme al template §6.3.
 
@@ -395,6 +427,7 @@ def build_user_prompt(course: Course, lesson: CourseLesson) -> str:
         "Genera il testo completo della lezione secondo lo schema JSON.",
         "Verifica internamente che ogni obiettivo, ogni tema obbligatorio",
         "e ogni asset siano correttamente trattati e referenziati.",
+        _figure_count_request(lesson),
     ]
     if grounding:
         task_block += [

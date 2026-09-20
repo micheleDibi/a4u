@@ -960,3 +960,34 @@ def test_the_prompt_does_not_promote_a_format_that_is_switched_off() -> None:
     solo_mermaid = content._system_prompt("it", visual_formats=("mermaid",))
     riga_solo = next(ln for ln in solo_mermaid.splitlines() if "NON DISPONIBILI" in ln)
     assert "`function`" in riga_solo
+
+
+def test_the_lesson_message_asks_for_the_figures_of_its_own_sections() -> None:
+    """La regola sta nel prompt di sistema, ma li' e' una riga dentro
+    trentamila caratteri: la misura su 42 lezioni generate dava 32 lezioni a
+    tre figure e nessuna oltre. Il numero va anche nel messaggio corto della
+    singola lezione, con l'intervallo calcolato sulle SUE sezioni."""
+    from app.models.course_lesson import CourseLesson
+    from app.services.course_lesson_content_service import _figure_count_request
+
+    def _lesson(sezioni: int, *, introduttiva: bool = False) -> CourseLesson:
+        return CourseLesson(
+            lesson_code="M1.L1",
+            title="Lezione",
+            is_introductory=introduttiva,
+            section_outline=[{"section_id": f"S{i}", "title": f"S{i}"} for i in range(sezioni)],
+        )
+
+    sei = _figure_count_request(_lesson(6))
+    assert "6 sezioni" in sei and "da 4 a 6" in sei
+    assert "`function`" in sei and "`vegalite`" in sei and "`dot`" in sei
+    assert "SOLO per processi con passi ordinati" in sei
+    # Lezione corta: l'intervallo non promette piu' sezioni di quante ce ne siano.
+    assert "da 2 a 2" in _figure_count_request(_lesson(2))
+    # Lezione lunga: il tetto resta otto.
+    assert "da 4 a 8" in _figure_count_request(_lesson(12))
+    # Introduttiva: la regola dell'introduttiva vince.
+    intro = _figure_count_request(_lesson(6, introduttiva=True))
+    assert "0-2" in intro and "sezioni" not in intro
+    # Senza scaletta si resta sull'ordine di grandezza del prompt di sistema.
+    assert "4-8" in _figure_count_request(_lesson(0))

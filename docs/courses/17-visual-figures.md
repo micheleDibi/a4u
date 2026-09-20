@@ -6072,3 +6072,47 @@ conoscere.
   breve (una lezione da 15 minuti con otto figure avrebbe più slide
   dedicate che di contenuto); la regola è però formulata sezione per
   sezione, e nelle quattro lezioni reali le sezioni sono sempre sei.
+
+### 22.10 Prima misura in produzione (20 settembre 2026) e la riga nel messaggio della lezione
+
+Il docente ha generato 42 lezioni con il prompt nuovo, tutte dopo l'avvio
+del container aggiornato (16:29 UTC, prima misura alle 16:36). Il
+conteggio viene dai log `lesson_content_figure_mix`.
+
+| figure per lezione | lezioni |
+| --- | --- |
+| 3 | 32 |
+| 2 | 8 |
+| 1 | 2 |
+| 4 o più | 0 |
+
+| formati | lezioni |
+| --- | --- |
+| solo `mermaid` | 32 |
+| `mermaid` + `function` | 3 |
+| `mermaid` + `dot` | 5 |
+| solo `function` | 1 |
+| `mermaid` + `dot` + `function` | 1 |
+
+Due letture opposte, ed entrambe contano. La varietà si è mossa: dieci
+lezioni su quarantadue portano un formato diverso dal flowchart, e una è
+fatta di soli grafici di funzione, dove prima l'export reale ne aveva uno
+su quattordici figure. Il numero no: la distribuzione è tagliata netta a
+tre, e non esiste alcun tetto nel codice — schema senza `maxItems`,
+nessun limite nel servizio, il prompt renderizzato dice davvero «4-8».
+
+Il modello si ferma da solo, e la causa più probabile è la posizione
+dell'istruzione: una riga dentro un prompt di sistema da trentamila
+caratteri, in concorrenza con il blocco `REALTÀ` che gli chiede prudenza.
+Da qui la correzione: il numero entra anche nel messaggio utente della
+singola lezione, che è corto e specifico, con l'intervallo già calcolato
+sulle sezioni di QUELLA lezione (`_figure_count_request`): «questa lezione
+ha 6 sezioni; prevedine da 4 a 6 …», più la riga della scelta del formato.
+L'intervallo non promette mai più figure delle sezioni disponibili e il
+tetto resta otto; la lezione introduttiva resta a 0-2.
+
+La prossima misura è di nuovo del docente, con lo stesso comando. Se il
+numero non si muove neanche così, la leva successiva è lo schema
+(`minItems` sull'array), che però è un obbligo cieco: produrrebbe figure
+anche dove il contenuto non le chiede, ed è la ragione per cui non è la
+prima scelta.
