@@ -353,7 +353,7 @@
       "tooLarge": "\"{{name}}\" exceeds the {{max}} MB limit.",
       "invalidType": "\"{{name}}\" has an unsupported format ({{type}}).",
       "dropHere": "Drop reference documents here",
-      "types": "PDF, DOC/DOCX, TXT, MD, RTF — max {{max}} MB each",
+      "types": "PDF, DOC/DOCX, PPTX, TXT, MD, RTF — max {{max}} MB each",
       "choose": "Choose file",
       "uploading": "Uploading…",
       "empty": "No documents uploaded.",
@@ -442,7 +442,7 @@
         "errors": {
           "policy_excluded": "Excluded document: its figures are not extracted.",
           "policy_content_only": "Restricted document (content only): its figures are not reproduced.",
-          "unsupported_format": "Format not supported for figures (PDF and DOCX only).",
+          "unsupported_format": "Format not supported for figures (PDF, DOCX and PPTX only).",
           "extraction_disabled": "Figure extraction is not enabled on this installation.",
           "source_missing": "Document file not found.",
           "encrypted": "Password-protected PDF.",

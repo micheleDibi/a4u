@@ -127,5 +127,29 @@
         "kind": "photo"
       }
     ]
+  },
+  "pptx": {
+    "file": "vibrometria_lezione.pptx",
+    "slides": 3,
+    "figures": [
+      {
+        "id": "pptx_ldv_schema",
+        "slide": 2,
+        "label": "Figura 1",
+        "caption": "Figura 1. Schema del vibrometro laser Doppler.",
+        "kind": "schematic"
+      },
+      {
+        "id": "pptx_bench_photo",
+        "slide": 3,
+        "label": null,
+        "caption": null,
+        "kind": "photo"
+      }
+    ],
+    "text": [
+      "Vibrometria laser Doppler",
+      "cella di Bragg"
+    ]
   }
 }

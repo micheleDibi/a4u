@@ -14,7 +14,13 @@ from pathlib import Path
 import pdfplumber
 import pytest
 
-from tests.fixtures.source_figures.build import DOCX_NAME, GROUND_TRUTH, PDF_NAME, build_all
+from tests.fixtures.source_figures.build import (
+    DOCX_NAME,
+    GROUND_TRUTH,
+    PDF_NAME,
+    PPTX_NAME,
+    build_all,
+)
 
 _DIR = Path(__file__).parent / "fixtures" / "source_figures"
 
@@ -56,3 +62,12 @@ def test_docx_has_two_body_pictures_and_a_header_logo(built: Path) -> None:
         headers = [n for n in zf.namelist() if n.startswith("word/header")]
         assert body.count("<a:blip ") == 2
         assert any(b"<a:blip " in zf.read(h) for h in headers if h.endswith(".xml"))
+
+
+def test_pptx_has_three_slides_and_two_pictures(built: Path) -> None:
+    with zipfile.ZipFile(built / PPTX_NAME) as zf:
+        names = zf.namelist()
+        assert names[0] == "[Content_Types].xml"
+        assert sum(n.startswith("ppt/slides/slide") for n in names) == 3
+        assert sum(n.startswith("ppt/media/") for n in names) == 2
+        assert b"Docente di Prova" in zf.read("docProps/core.xml")

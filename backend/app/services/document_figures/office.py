@@ -1,10 +1,16 @@
-"""Immagini incorporate nei documenti Office (DOCX; PPTX in WP2f).
+"""Immagini e testo dei documenti Office (DOCX e PPTX).
 
-Solo zipfile + XML della libreria standard (niente python-pptx): si
-leggono le immagini nel corpo del documento nell'ordine in cui compaiono,
-con la didascalia del paragrafo adiacente se ha un'etichetta di figura. Le
-immagini di testate e piè di pagina (loghi) non sono nel corpo e restano
-fuori. Formati vettoriali Office (EMF/WMF) → `unsupported_image_format`.
+Solo zipfile + XML della libreria standard (niente python-pptx):
+
+- DOCX: immagini del corpo nell'ordine in cui compaiono, con la didascalia
+  del paragrafo adiacente se ha un'etichetta di figura; le immagini di
+  testate e piè di pagina (loghi) non sono nel corpo e restano fuori;
+- PPTX: slide nell'ordine di `presentation.xml`, immagini (`p:pic`) di
+  ogni slide con la slide come «pagina», didascalia da un paragrafo della
+  slide con un'etichetta di figura, contesto dal testo della slide; le
+  immagini dei layout e dei master (loghi, sfondi) restano fuori.
+
+Formati vettoriali Office (EMF/WMF) → `unsupported_image_format`.
 """
 
 from __future__ import annotations
@@ -20,6 +26,7 @@ from PIL import Image
 from app.services.document_figures.captions import clip_caption, is_figure_caption
 
 _NS = {
+    "p": "http://schemas.openxmlformats.org/presentationml/2006/main",
     "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
     "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
     "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
@@ -44,6 +51,8 @@ class OfficeImage:
     reject_reason: str | None
     caption: str | None
     context: str | None
+    # Numero di slide per i PPTX; None per i DOCX.
+    page: int | None = None
 
 
 def _relationships(zf: zipfile.ZipFile, part: str) -> dict[str, str]:
@@ -122,6 +131,94 @@ def docx_images(path: str) -> list[OfficeImage]:
                         reject_reason=reason,
                         caption=caption,
                         context=" ".join(context_parts)[:700] or None,
+                    )
+                )
+        return out
+
+
+# --- PPTX ---------------------------------------------------------------------
+
+
+def _open_zip(path: str) -> zipfile.ZipFile:
+    try:
+        return zipfile.ZipFile(path)
+    except (zipfile.BadZipFile, OSError) as exc:
+        raise OfficeFormatError(str(exc)) from exc
+
+
+def _pptx_slides(zf: zipfile.ZipFile) -> list[str]:
+    """Parti delle slide nell'ordine della presentazione."""
+    try:
+        root = ET.fromstring(zf.read("ppt/presentation.xml"))
+    except (KeyError, ET.ParseError) as exc:
+        raise OfficeFormatError(str(exc)) from exc
+    rels = _relationships(zf, "ppt/presentation.xml")
+    names = set(zf.namelist())
+    slides = []
+    for slide_id in root.iter(f"{{{_NS['p']}}}sldId"):
+        target = rels.get(slide_id.get(f"{{{_NS['r']}}}id") or "")
+        if target and target in names:
+            slides.append(target)
+    return slides
+
+
+def _slide_paragraphs(root: ET.Element) -> list[str]:
+    out = []
+    for paragraph in root.iter(f"{{{_NS['a']}}}p"):
+        text = "".join(t.text or "" for t in paragraph.iter(f"{{{_NS['a']}}}t")).strip()
+        if text:
+            out.append(text)
+    return out
+
+
+def pptx_slide_count(path: str) -> int:
+    with _open_zip(path) as zf:
+        return len(_pptx_slides(zf))
+
+
+def pptx_text(path: str) -> str:
+    """Testo delle slide (una slide per blocco), per il riassunto."""
+    with _open_zip(path) as zf:
+        blocks = []
+        for part in _pptx_slides(zf):
+            try:
+                paragraphs = _slide_paragraphs(ET.fromstring(zf.read(part)))
+            except ET.ParseError as exc:
+                raise OfficeFormatError(str(exc)) from exc
+            if paragraphs:
+                blocks.append("\n".join(paragraphs))
+        return "\n\n".join(blocks)
+
+
+def pptx_images(path: str) -> list[OfficeImage]:
+    with _open_zip(path) as zf:
+        out: list[OfficeImage] = []
+        for slide_no, part in enumerate(_pptx_slides(zf), start=1):
+            try:
+                root = ET.fromstring(zf.read(part))
+            except ET.ParseError as exc:
+                raise OfficeFormatError(str(exc)) from exc
+            rels = _relationships(zf, part)
+            paragraphs = _slide_paragraphs(root)
+            caption = next((clip_caption(p) for p in paragraphs if is_figure_caption(p)), None)
+            context = " ".join(p for p in paragraphs if caption is None or p not in caption)
+            seen: set[str] = set()
+            for picture in root.iter(f"{{{_NS['p']}}}pic"):
+                blip = next(picture.iter(f"{{{_NS['a']}}}blip"), None)
+                media = rels.get(blip.get(_EMBED) or "") if blip is not None else None
+                if not media or media in seen or media not in zf.namelist():
+                    continue
+                seen.add(media)
+                image, reason = _open_image(zf, media)
+                out.append(
+                    OfficeImage(
+                        order=len(seen),
+                        media_name=media,
+                        image=image,
+                        reject_reason=reason,
+                        caption=caption,
+                        context=context[:700] or None,
+                        page=slide_no,
                     )
                 )
         return out

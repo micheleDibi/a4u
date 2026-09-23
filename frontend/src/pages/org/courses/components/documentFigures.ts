@@ -4,6 +4,7 @@ import type { CourseDocumentOut } from "@/api/courses";
 export const FIGURE_EXTRACTABLE_MIME = [
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 ];
 
 /** Documento da cui si possono chiedere le figure (citabile, formato

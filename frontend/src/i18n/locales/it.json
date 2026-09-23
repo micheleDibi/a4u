@@ -353,7 +353,7 @@
       "tooLarge": "\"{{name}}\" supera il limite di {{max}} MB.",
       "invalidType": "\"{{name}}\" ha un formato non supportato ({{type}}).",
       "dropHere": "Trascina qui i documenti di riferimento",
-      "types": "PDF, DOC/DOCX, TXT, MD, RTF — max {{max}} MB ciascuno",
+      "types": "PDF, DOC/DOCX, PPTX, TXT, MD, RTF — max {{max}} MB ciascuno",
       "choose": "Scegli file",
       "uploading": "Caricamento…",
       "empty": "Nessun documento caricato.",
@@ -442,7 +442,7 @@
         "errors": {
           "policy_excluded": "Documento escluso: le sue figure non vengono estratte.",
           "policy_content_only": "Documento riservato (solo contenuto): le sue figure non vengono riprodotte.",
-          "unsupported_format": "Formato non supportato per le figure (solo PDF e DOCX).",
+          "unsupported_format": "Formato non supportato per le figure (solo PDF, DOCX e PPTX).",
           "extraction_disabled": "L'estrazione delle figure non è attiva su questa installazione.",
           "source_missing": "File del documento non trovato.",
           "encrypted": "PDF protetto da password.",

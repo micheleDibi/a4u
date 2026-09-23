@@ -38,7 +38,8 @@ log = get_logger("app.document_figures_service")
 
 PDF_MIME = "application/pdf"
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-EXTRACTABLE_MIMES = frozenset({PDF_MIME, DOCX_MIME})
+PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+EXTRACTABLE_MIMES = frozenset({PDF_MIME, DOCX_MIME, PPTX_MIME})
 ACTIVE_STATUSES = ("pending", "processing")
 POLICY_SKIP_CODES = ("policy_excluded", "policy_content_only")
 SOURCE_FIGURE_FORMAT = "source_figure"

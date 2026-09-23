@@ -18,7 +18,7 @@ import pytest
 
 from app.services.document_figures.geometry import BBox
 from tests.dep_guard import require_module, required_deps
-from tests.fixtures.source_figures.build import DOCX_NAME, PDF_NAME, build_all
+from tests.fixtures.source_figures.build import DOCX_NAME, PDF_NAME, PPTX_NAME, build_all
 from tests.source_figure_child import run_child
 
 _MANIFEST = json.loads(
@@ -28,6 +28,7 @@ _MANIFEST = json.loads(
 )
 PDF_MIME = "application/pdf"
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 
 
 @pytest.fixture(scope="module")
@@ -219,3 +220,23 @@ def test_child_stdout_is_protocol_only(tmp_path: Path, fixtures_dir: Path) -> No
     )
     assert code == 0
     assert all("event" in e for e in events)
+
+
+def test_pptx_pictures_per_slide(tmp_path: Path, fixtures_dir: Path) -> None:
+    work = _workdir(tmp_path, fixtures_dir, PPTX_NAME)
+    code, events, stderr = run_child(
+        work, source=PPTX_NAME, mime=PPTX_MIME, engine="docling", blocks=[[1, 2], [3, 3]]
+    )
+    assert code == 0, stderr[-2000:]
+    assert events[0] == {"event": "ready", "pages": 3}
+    figures = [e for e in events if e["event"] == "figure"]
+    truth = _MANIFEST["pptx"]["figures"]
+    assert [e["locator"] for e in figures] == ["s0002-f01", "s0003-f01"]
+    for found, expected in zip(figures, truth, strict=True):
+        assert found["reject_reason"] is None
+        assert found["page"] == expected["slide"]
+        assert found["caption"] == expected["caption"]
+        assert found["source_label"] == expected["label"]
+        assert (work / found["file"]).is_file()
+    assert "cella di Bragg" in (figures[0]["context_excerpt"] or "")
+    assert [e["page"] for e in events if e["event"] == "page_done"] == [1, 2, 3]

@@ -28,6 +28,9 @@ PDF_MIMES = {"application/pdf"}
 DOCX_MIMES = {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
+PPTX_MIMES = {
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+}
 DOC_MIMES = {"application/msword"}
 RTF_MIMES = {"application/rtf", "text/rtf"}
 TEXT_MIMES = {"text/plain", "text/markdown"}
@@ -57,6 +60,19 @@ def _extract_docx(path: Path) -> str:
             if any(cells):
                 parts.append("\t".join(cells))
     return "\n".join(parts)
+
+
+def _extract_pptx(path: Path) -> str:
+    """Testo delle slide in ordine (zipfile + XML, come l'estrazione delle
+    figure: `document_figures.office`)."""
+    from app.services.document_figures.office import OfficeFormatError, pptx_text
+
+    try:
+        return pptx_text(str(path))
+    except OfficeFormatError as exc:
+        raise DocumentExtractionError(
+            f"Impossibile leggere il file PPTX: {exc}"
+        ) from exc
 
 
 def _extract_doc(path: Path) -> str:
@@ -123,6 +139,8 @@ def _dispatch(path: Path, mime_type: str) -> str:
         return _extract_pdf(path)
     if mime in DOCX_MIMES or suffix == ".docx":
         return _extract_docx(path)
+    if mime in PPTX_MIMES or suffix == ".pptx":
+        return _extract_pptx(path)
     if mime in DOC_MIMES or suffix == ".doc":
         return _extract_doc(path)
     if mime in RTF_MIMES or suffix == ".rtf":

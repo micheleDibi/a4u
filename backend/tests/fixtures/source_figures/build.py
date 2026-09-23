@@ -1,9 +1,10 @@
 """Generatore deterministico dei documenti di prova delle figure di fonte.
 
-Produce, in una cartella data, un PDF di 5 pagine (A4) e un DOCX con
-figure note e distrattori noti, più la verità di terreno (`ground_truth`)
-che `manifest.json` fissa. Nessuna dipendenza nuova: matplotlib per il PDF
-(testo vero, disegni vettoriali, un raster), python-docx per il DOCX.
+Produce, in una cartella data, un PDF di 5 pagine (A4), un DOCX e un PPTX
+con figure note e distrattori noti, più la verità di terreno
+(`ground_truth`) che `manifest.json` fissa. Nessuna dipendenza nuova:
+matplotlib per il PDF (testo vero, disegni vettoriali, un raster),
+python-docx per il DOCX, zipfile + XML scritto a mano per il PPTX.
 
 Coordinate dei bbox: punti PDF con origine in alto a sinistra
 (`x0, top, x1, bottom`), come pdfplumber.
@@ -33,6 +34,7 @@ PAGE_W = 595.28
 PAGE_H = 841.89
 PDF_NAME = "vibrometria_dispensa.pdf"
 DOCX_NAME = "vibrometria_appunti.docx"
+PPTX_NAME = "vibrometria_lezione.pptx"
 
 _PARAGRAPH_1 = (
     "Il vibrometro laser Doppler misura la velocità di vibrazione di una superficie "
@@ -143,6 +145,27 @@ GROUND_TRUTH: dict[str, Any] = {
                 "kind": "photo",
             },
         ],
+    },
+    "pptx": {
+        "file": PPTX_NAME,
+        "slides": 3,
+        "figures": [
+            {
+                "id": "pptx_ldv_schema",
+                "slide": 2,
+                "label": "Figura 1",
+                "caption": "Figura 1. Schema del vibrometro laser Doppler.",
+                "kind": "schematic",
+            },
+            {
+                "id": "pptx_bench_photo",
+                "slide": 3,
+                "label": None,
+                "caption": None,
+                "kind": "photo",
+            },
+        ],
+        "text": ["Vibrometria laser Doppler", "cella di Bragg"],
     },
 }
 
@@ -379,14 +402,133 @@ def build_docx(path: Path) -> None:
     document.save(str(path))
 
 
+_PPTX_NS = (
+    'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+    'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
+    'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"'
+)
+_REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
+_REL_TYPE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+
+
+def _pptx_text_shape(shape_id: int, paragraphs: list[str]) -> str:
+    body = "".join(f"<a:p><a:r><a:t>{p}</a:t></a:r></a:p>" for p in paragraphs)
+    return (
+        f'<p:sp><p:nvSpPr><p:cNvPr id="{shape_id}" name="Testo {shape_id}"/><p:cNvSpPr/>'
+        f"<p:nvPr/></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/>{body}</p:txBody></p:sp>"
+    )
+
+
+def _pptx_picture(shape_id: int, rel_id: str) -> str:
+    return (
+        f'<p:pic><p:nvPicPr><p:cNvPr id="{shape_id}" name="Immagine {shape_id}"/><p:cNvPicPr/>'
+        f'<p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="{rel_id}"/></p:blipFill>'
+        "<p:spPr/></p:pic>"
+    )
+
+
+def build_pptx(path: Path) -> None:
+    """PPTX minimale ma strutturalmente valido: 3 slide (solo testo; schema
+    con didascalia; foto senza didascalia) e le proprietà del documento."""
+    import zipfile
+
+    schema = _png(_ldv_schema, (6.3, 3.1))
+    photo = _png(lambda ax: ax.imshow(_photo(), aspect="auto"), (5.0, 3.2))
+    slides = [
+        (["Vibrometria laser Doppler", "Misura della velocità senza contatto."], None),
+        (
+            [
+                "Principio di funzionamento",
+                "Il fascio attraversa la cella di Bragg e interferisce sul fotorivelatore.",
+                GROUND_TRUTH["pptx"]["figures"][0]["caption"],
+            ],
+            "image1.png",
+        ),
+        (["Il banco di misura"], "image2.png"),
+    ]
+    files: dict[str, bytes | str] = {}
+    overrides = [
+        '<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.'
+        'openxmlformats-officedocument.presentationml.presentation.main+xml"/>',
+        '<Override PartName="/docProps/core.xml" ContentType="application/vnd.'
+        'openxmlformats-package.core-properties+xml"/>',
+    ]
+    sld_ids, pres_rels = [], []
+    for index, (paragraphs, media) in enumerate(slides, start=1):
+        shapes = _pptx_text_shape(2, paragraphs)
+        rels = []
+        if media:
+            shapes += _pptx_picture(3, "rId2")
+            rels.append(
+                f'<Relationship Id="rId2" Type="{_REL_TYPE}/image" Target="../media/{media}"/>'
+            )
+        files[f"ppt/slides/slide{index}.xml"] = (
+            f'<?xml version="1.0" encoding="UTF-8"?><p:sld {_PPTX_NS}><p:cSld><p:spTree>'
+            f"{shapes}</p:spTree></p:cSld></p:sld>"
+        )
+        files[f"ppt/slides/_rels/slide{index}.xml.rels"] = (
+            f'<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="{_REL_NS}">'
+            f"{''.join(rels)}</Relationships>"
+        )
+        overrides.append(
+            f'<Override PartName="/ppt/slides/slide{index}.xml" ContentType="application/'
+            'vnd.openxmlformats-officedocument.presentationml.slide+xml"/>'
+        )
+        sld_ids.append(f'<p:sldId id="{255 + index}" r:id="rId{index}"/>')
+        pres_rels.append(
+            f'<Relationship Id="rId{index}" Type="{_REL_TYPE}/slide" '
+            f'Target="slides/slide{index}.xml"/>'
+        )
+    files["ppt/media/image1.png"] = schema
+    files["ppt/media/image2.png"] = photo
+    files["ppt/presentation.xml"] = (
+        f'<?xml version="1.0" encoding="UTF-8"?><p:presentation {_PPTX_NS}>'
+        f"<p:sldIdLst>{''.join(sld_ids)}</p:sldIdLst></p:presentation>"
+    )
+    files["ppt/_rels/presentation.xml.rels"] = (
+        f'<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="{_REL_NS}">'
+        f"{''.join(pres_rels)}</Relationships>"
+    )
+    files["_rels/.rels"] = (
+        f'<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="{_REL_NS}">'
+        f'<Relationship Id="rId1" Type="{_REL_TYPE}/officeDocument" '
+        'Target="ppt/presentation.xml"/>'
+        '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/'
+        'relationships/metadata/core-properties" Target="docProps/core.xml"/>'
+        "</Relationships>"
+    )
+    files["docProps/core.xml"] = (
+        '<?xml version="1.0" encoding="UTF-8"?><cp:coreProperties '
+        'xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" '
+        'xmlns:dc="http://purl.org/dc/elements/1.1/">'
+        "<dc:title>Lezione di vibrometria</dc:title><dc:creator>Docente di Prova</dc:creator>"
+        "</cp:coreProperties>"
+    )
+    files["[Content_Types].xml"] = (
+        '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/'
+        'package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.'
+        'openxmlformats-package.relationships+xml"/><Default Extension="xml" '
+        'ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/>'
+        f"{''.join(overrides)}</Types>"
+    )
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for name in [
+            "[Content_Types].xml",
+            *sorted(n for n in files if n != "[Content_Types].xml"),
+        ]:
+            data = files[name]
+            zf.writestr(name, data if isinstance(data, bytes) else data.encode("utf-8"))
+
+
 def build_all(out_dir: Path) -> dict[str, Any]:
     out_dir.mkdir(parents=True, exist_ok=True)
     build_pdf(out_dir / PDF_NAME)
     build_docx(out_dir / DOCX_NAME)
+    build_pptx(out_dir / PPTX_NAME)
     return GROUND_TRUTH
 
 
 if __name__ == "__main__":
     target = Path(sys.argv[1] if len(sys.argv) > 1 else ".")
     truth = build_all(target)
-    print(json.dumps({"written": [PDF_NAME, DOCX_NAME], "dir": str(target)}))
+    print(json.dumps({"written": [PDF_NAME, DOCX_NAME, PPTX_NAME], "dir": str(target)}))

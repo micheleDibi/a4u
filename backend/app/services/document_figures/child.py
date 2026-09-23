@@ -38,6 +38,7 @@ Emit = Callable[[dict[str, Any]], None]
 
 PDF_MIME = "application/pdf"
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 
 
 class ChildError(Exception):
@@ -214,22 +215,38 @@ class PdfEngine:
 
 
 class DocxEngine:
-    def __init__(self, path: Path) -> None:
-        from app.services.document_figures.office import OfficeFormatError, docx_images
+    """DOCX (una sola «pagina») e PPTX (una pagina per slide)."""
 
+    def __init__(self, path: Path, *, pptx: bool = False) -> None:
+        from app.services.document_figures.office import (
+            OfficeFormatError,
+            docx_images,
+            pptx_images,
+            pptx_slide_count,
+        )
+
+        self.pptx = pptx
         try:
-            self.images = docx_images(str(path))
+            if pptx:
+                self.images = pptx_images(str(path))
+                self.total_pages = max(1, pptx_slide_count(str(path)))
+            else:
+                self.images = docx_images(str(path))
+                self.total_pages = 1
         except OfficeFormatError as exc:
             raise ChildError("corrupt", str(exc)) from exc
-        self.total_pages = 1
 
     def process(self, first: int, last: int, out_dir: Path, emit: Emit) -> None:
         for item in self.images:
-            locator = f"d{item.order:04d}"
+            if self.pptx and not (first <= (item.page or 0) <= last):
+                continue
+            locator = (
+                f"s{item.page or 0:04d}-f{item.order:02d}" if self.pptx else f"d{item.order:04d}"
+            )
             event: dict[str, Any] = {
                 "event": "figure",
                 "locator": locator,
-                "page": None,
+                "page": item.page,
                 "bbox": None,
                 "detector_class": "embedded",
                 "detector_confidence": None,
@@ -252,7 +269,8 @@ class DocxEngine:
                         width=image.width, height=image.height, dpi=None, phash=phash(image)
                     )
             emit(event)
-        emit({"event": "page_done", "page": 1})
+        for page in range(first, min(last, self.total_pages) + 1):
+            emit({"event": "page_done", "page": page})
 
 
 def _open_engine(job: dict[str, Any], cwd: Path) -> PdfEngine | DocxEngine:
@@ -267,6 +285,8 @@ def _open_engine(job: dict[str, Any], cwd: Path) -> PdfEngine | DocxEngine:
         )
     if mime == DOCX_MIME:
         return DocxEngine(source)
+    if mime == PPTX_MIME:
+        return DocxEngine(source, pptx=True)
     raise ChildError("unsupported_format", f"tipo non supportato: {mime}")
 
 

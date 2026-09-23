@@ -64,11 +64,39 @@ ALLOWED_DOCUMENT_MIME_TYPES = {
     "application/pdf": ".pdf",
     "application/msword": ".doc",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+    # Presentazioni (figure di fonte, U3): il MIME arriva dal client, quindi
+    # si verifica anche il contenuto (`_check_document_content`).
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
     "text/plain": ".txt",
     "text/markdown": ".md",
     "application/rtf": ".rtf",
     "text/rtf": ".rtf",
 }
+
+
+PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+
+
+def _check_document_content(mime: str, raw: bytes) -> None:
+    """Un .pptx dichiarato dal client dev'essere davvero un pacchetto OOXML
+    di presentazione (firma zip + `ppt/presentation.xml`)."""
+    if mime != PPTX_MIME:
+        return
+    import io
+    import zipfile
+
+    ok = raw[:4] == b"PK\x03\x04"
+    if ok:
+        try:
+            with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+                ok = "ppt/presentation.xml" in zf.namelist()
+        except zipfile.BadZipFile:
+            ok = False
+    if not ok:
+        raise ValidationAppError(
+            "Il file non è una presentazione PowerPoint valida.",
+            code="invalid_document_content",
+        )
 
 
 def _validate_subdir(subdir: str) -> str:
@@ -306,6 +334,7 @@ async def save_upload_document(
             f"Documento troppo grande (max {settings.course_document_max_mb}MB).",
             code="document_too_large",
         )
+    _check_document_content(mime, raw)
 
     ext = ALLOWED_DOCUMENT_MIME_TYPES[mime]
     stem = filename_stem or uuid.uuid4().hex
@@ -356,6 +385,7 @@ async def save_document_from_bytes(
             f"Documento troppo grande (max {settings.course_document_max_mb}MB).",
             code="document_too_large",
         )
+    _check_document_content(mime, payload)
 
     ext = ALLOWED_DOCUMENT_MIME_TYPES[mime]
     stem = filename_stem or uuid.uuid4().hex

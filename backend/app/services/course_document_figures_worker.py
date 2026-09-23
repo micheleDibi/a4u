@@ -77,7 +77,8 @@ log = get_logger("app.course_document_figures_worker")
 
 PDF_MIME = "application/pdf"
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-SUPPORTED_MIMES = frozenset({PDF_MIME, DOCX_MIME})
+PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+SUPPORTED_MIMES = frozenset({PDF_MIME, DOCX_MIME, PPTX_MIME})
 
 TERMINAL_CODES = frozenset(
     {"encrypted", "corrupt", "unsupported_format", "engine_unavailable", "source_missing"}
@@ -114,7 +115,7 @@ def _now() -> datetime:
 
 
 def _suffix(mime: str) -> str:
-    return ".pdf" if mime == PDF_MIME else ".docx"
+    return {PDF_MIME: ".pdf", PPTX_MIME: ".pptx"}.get(mime, ".docx")
 
 
 def fingerprint(file_sha256: str, engine: str) -> str:
