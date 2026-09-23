@@ -206,6 +206,9 @@ export interface OrganizationCourseSettingsOut {
   assessment_lesson_enabled: boolean;
   multiple_choice_questions_count: number;
   open_questions_count: number;
+  /** Politica di licenza delle figure di fonte (null = default
+   *  dell'installazione). */
+  figure_source_license_policy: "cite_all" | "open_only" | null;
   created_at: string;
   updated_at: string;
 }
@@ -218,4 +221,5 @@ export type OrganizationCourseSettingsInput = Pick<
   | "assessment_lesson_enabled"
   | "multiple_choice_questions_count"
   | "open_questions_count"
+  | "figure_source_license_policy"
 >;

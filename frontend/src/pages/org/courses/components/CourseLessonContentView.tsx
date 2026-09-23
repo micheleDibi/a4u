@@ -918,6 +918,7 @@ export function CourseLessonContentView({
             open={true}
             lessonLabel={lessonLabel(editDialog.lesson.lesson_code)}
             initial={editDialog.lesson.content_raw}
+            figureReview={editDialog.lesson.content_figure_review}
             orgId={orgId}
             courseId={course.id}
             isPending={updateLessonMut.isPending}

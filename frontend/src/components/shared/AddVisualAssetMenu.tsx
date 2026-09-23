@@ -1,4 +1,5 @@
 import {
+  BookImage,
   ChartColumn,
   Image as ImageIcon,
   Loader2,
@@ -19,8 +20,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { CourseRefContext } from "@/contexts/CourseRefContext";
 import { extractApiError } from "@/lib/errors";
 import { VISUAL_FORMATS, type VisualFormat } from "@/lib/figureFormats";
+
+import { SourceFigurePicker } from "./SourceFigurePicker";
 
 /**
  * Menu «Aggiungi asset visivo», condiviso dai dialog delle Dispense e
@@ -39,6 +43,9 @@ export interface AddVisualAssetMenuProps {
   formats?: readonly VisualFormat[];
   /** Etichetta del pulsante (le due superfici usano chiavi diverse). */
   triggerLabel: string;
+  /** Offre le figure dai documenti del corso (solo la dispensa: le slide
+   *  non creano figure di fonte). */
+  allowSourceFigures?: boolean;
 }
 
 const WRITE_ITEMS: ReadonlyArray<{
@@ -76,10 +83,12 @@ export function AddVisualAssetMenu({
   onAdd,
   formats = VISUAL_FORMATS,
   triggerLabel,
+  allowSourceFigures = false,
 }: AddVisualAssetMenuProps) {
   const { t } = useTranslation();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const triggerFilePicker = () => {
     if (disabled || uploading) return;
@@ -168,8 +177,31 @@ export function AddVisualAssetMenu({
               </DropdownMenuItem>
             ),
           )}
+          {allowSourceFigures && (
+            <DropdownMenuItem onClick={() => setPickerOpen(true)}>
+              <BookImage className="size-3.5" />
+              {t("courses.sourceFigures.addFromDocuments")}
+            </DropdownMenuItem>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
+      {allowSourceFigures && (
+        <CourseRefContext.Provider value={{ orgId, courseId }}>
+          <SourceFigurePicker
+            open={pickerOpen}
+            onClose={() => setPickerOpen(false)}
+            onPick={(figure) =>
+              onAdd({
+                asset_id: makeAssetId(),
+                format: "source_figure",
+                content: figure.id,
+                caption: figure.source_caption || figure.description || "",
+                alt_text: (figure.description || "").slice(0, 400),
+              })
+            }
+          />
+        </CourseRefContext.Provider>
+      )}
     </>
   );
 }

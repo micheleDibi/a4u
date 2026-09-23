@@ -415,7 +415,9 @@
       },
       "deleteConfirm": {
         "title": "Delete the document?",
-        "message": "You are about to delete \"{{name}}\"."
+        "message": "You are about to delete \"{{name}}\".",
+        "figuresUsed_one": "{{count}} figure from this document is already placed in a lesson: it will stay, with its source, until the lesson is regenerated.",
+        "figuresUsed_other": "{{count}} figures from this document are already placed in lessons: they will stay, with their source, until the lessons are regenerated."
       },
       "reprocessConfirm": {
         "title": "Regenerate the summary?",
@@ -456,6 +458,43 @@
           "vision_unavailable": "Figure description unavailable: automatic retry.",
           "storage_error": "Storage error: automatic retry.",
           "attempts_exhausted": "Attempts exhausted: retry with “Extract figures”."
+        },
+        "meta": {
+          "open": "Figure source",
+          "title": "Source of the document's figures",
+          "description": "These details make up the «Source» line of the document's figures. The system never invents them: when they are missing, the line uses the file name and the page.",
+          "bibTitle": "Title",
+          "authors": "Authors (one per line)",
+          "year": "Year",
+          "container": "Journal, book or course",
+          "doi": "DOI",
+          "url": "URL",
+          "license": "License",
+          "licenseUnknown": "Unknown",
+          "ownWork": "My own material (teacher's)",
+          "useProposal": "Use the details proposed by the summary",
+          "proposalHint": "Proposed by the AI summary: check it before saving.",
+          "save": "Save",
+          "saved": "Document source updated",
+          "saveFailed": "The document source could not be updated.",
+          "sourceLabel": {
+            "user": "entered by the teacher",
+            "openalex": "from OpenAlex",
+            "pdf_metadata": "from the file metadata",
+            "crossref": "from Crossref (DOI)"
+          }
+        },
+        "licenses": {
+          "cc0": "CC0",
+          "public_domain": "Public domain",
+          "cc_by": "CC BY",
+          "cc_by_sa": "CC BY-SA",
+          "cc_by_nc": "CC BY-NC",
+          "cc_by_nd": "CC BY-ND",
+          "cc_by_nc_sa": "CC BY-NC-SA",
+          "cc_by_nc_nd": "CC BY-NC-ND",
+          "all_rights_reserved": "All rights reserved",
+          "other": "Other license"
         }
       }
     },
@@ -1718,7 +1757,8 @@
         "vegalite": "Vega-Lite chart",
         "dot": "Graphviz graph",
         "function": "Mathematical figure",
-        "image": "Image"
+        "image": "Image",
+        "source_figure": "Figure from documents"
       },
       "function": {
         "zeros": "Zeros at {{var}} = {{values}}.",
@@ -1865,6 +1905,31 @@
         "clips": "Avatar clips",
         "size": "Size"
       }
+    },
+    "sourceFigures": {
+      "badge": "Source figure",
+      "addFromDocuments": "Figure from course documents",
+      "exclude": "Stop suggesting",
+      "excluded": "Figure excluded from suggestions: lessons already generated do not change.",
+      "excludeFailed": "The figure could not be excluded.",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "sourceLine": "Source line (computed by the system)",
+      "notices": {
+        "title": "Reviewer notes",
+        "incoherent": "The figure may not show what the section explains: {{reason}}",
+        "redundant": "Redundant with {{other}}: {{reason}}",
+        "complementary": "Complementary to {{other}}: {{reason}}"
+      },
+      "picker": {
+        "title": "Figures from course documents",
+        "description": "Figures extracted from citable documents. The system adds the source on every surface.",
+        "empty": "No figures available: extract the figures from the course's citable documents.",
+        "page": "p. {{page}}",
+        "slide": "slide {{page}}",
+        "add": "Add",
+        "notSelectable": "Not available"
+      }
     }
   },
   "courseSettings": {
@@ -1893,7 +1958,9 @@
       "assessment": "Final knowledge assessment",
       "assessmentHelp": "If enabled, the last lesson of every module is an auto-generated knowledge assessment: a set of questions (multiple choice and open) is generated to verify acquired competencies. The platform only generates content; student delivery is out of scope.",
       "mcq": "Multiple choice questions",
-      "openQuestions": "Open questions"
+      "openQuestions": "Open questions",
+      "figureLicensePolicy": "Figures from documents: allowed licenses",
+      "figureLicensePolicyHint": "«All, with the source» cites every figure; «Open licenses only» suggests only CC0, public domain, CC BY, CC BY-SA figures or the teacher's own material. Not retroactive: lessons already generated do not change."
     },
     "units": {
       "modules": "modules",
@@ -1917,6 +1984,11 @@
       "hours_one": "{{count}} hour",
       "hours_other": "{{count}} hours",
       "hoursAndMinutes": "{{hours}}h {{minutes}}m"
+    },
+    "figureLicensePolicy": {
+      "default": "Installation default",
+      "cite_all": "All, with the source",
+      "open_only": "Open licenses only"
     }
   },
   "command": {

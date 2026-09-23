@@ -28,6 +28,7 @@ import {
   type LessonContentTable,
   type LessonContentUpdateInput,
   type LessonContentVisualAsset,
+  type LessonFigureReview,
 } from "@/api/courses";
 import { Button } from "@/components/ui/button";
 import {
@@ -76,6 +77,8 @@ interface Props {
    * carica un'immagine come asset visivo o la digitalizza in Mermaid.
    */
   orgId: string;
+  /** Verdetto del revisore delle figure di fonte (avvisi sulle card). */
+  figureReview?: LessonFigureReview | null;
   courseId: string;
   onClose: () => void;
   onSubmit: (payload: LessonContentUpdateInput) => void;
@@ -107,8 +110,36 @@ export function LessonContentEditDialog({
   onClose,
   onSubmit,
   assetErrors,
+  figureReview,
 }: Props) {
   const { t } = useTranslation();
+  // Avvisi del revisore per asset (solo testo; mai applicati al contenuto).
+  const figureNotices = (assetId: string): string[] => {
+    const verdict = figureReview?.figures?.[assetId];
+    if (!verdict) return [];
+    const out: string[] = [];
+    if (verdict.coherence === "incoerente") {
+      out.push(t("courses.sourceFigures.notices.incoherent", { reason: verdict.reason ?? "" }));
+    }
+    for (const pair of verdict.pairs ?? []) {
+      if (pair.verdict === "ridondante") {
+        out.push(
+          t("courses.sourceFigures.notices.redundant", {
+            other: pair.other,
+            reason: pair.reason ?? "",
+          }),
+        );
+      } else if (pair.verdict === "complementare") {
+        out.push(
+          t("courses.sourceFigures.notices.complementary", {
+            other: pair.other,
+            reason: pair.reason ?? "",
+          }),
+        );
+      }
+    }
+    return out;
+  };
   const [introduction, setIntroduction] = useState(initial.introduction);
   const [summary, setSummary] = useState(initial.summary);
   const [keyTakeaways, setKeyTakeaways] = useState<string[]>(
@@ -534,6 +565,27 @@ export function LessonContentEditDialog({
                     i === idx ? { ...a, ...updates } : a,
                   ),
                 );
+              // Riordino delle card: la numerazione resta quella della prima
+              // citazione `[FIG:id]`; gli asset mai citati seguono l'ordine
+              // della lista. Gli errori per posizione si scambiano con le card.
+              const move = (delta: -1 | 1) => {
+                const target = idx + delta;
+                if (target < 0 || target >= visualAssets.length) return;
+                const next = [...visualAssets];
+                [next[idx], next[target]] = [next[target], next[idx]];
+                setVisualAssets(next);
+                setLocalAssetErrors((prev) => {
+                  if (!prev) return prev;
+                  const swapped = { ...prev };
+                  const a = prev[idx];
+                  const b = prev[target];
+                  delete swapped[idx];
+                  delete swapped[target];
+                  if (b !== undefined) swapped[idx] = b;
+                  if (a !== undefined) swapped[target] = a;
+                  return swapped;
+                });
+              };
               return (
                 <VisualAssetEditor
                   key={idx}
@@ -547,6 +599,9 @@ export function LessonContentEditDialog({
                   }}
                   disabled={isPending}
                   error={localAssetErrors?.[idx]}
+                  notices={figureNotices(asset.asset_id)}
+                  onMoveUp={idx > 0 ? () => move(-1) : undefined}
+                  onMoveDown={idx < visualAssets.length - 1 ? () => move(1) : undefined}
                   idSlot={
                     <RefIdField
                       kind="FIG"
@@ -582,6 +637,7 @@ export function LessonContentEditDialog({
               triggerLabel={t(
                 "courses.lessonsContent.editor.assetActions.addVisualAsset",
               )}
+              allowSourceFigures
             />
           </SectionGroup>
 

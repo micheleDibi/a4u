@@ -26,7 +26,10 @@ EXPECTED_KEYS = {
     "courses.figures.renderError",
     "courses.figures.loading",
     "courses.figures.missing",
-    *(f"courses.figures.formats.{f}" for f in ("mermaid", "vegalite", "dot", "function", "image")),
+    *(
+        f"courses.figures.formats.{f}"
+        for f in ("mermaid", "vegalite", "dot", "function", "image", "source_figure")
+    ),
     *(
         f"courses.figures.function.{k}"
         for k in (
@@ -74,7 +77,8 @@ def test_figure_i18n_it_en_same_keys():
         for key, text in theme.FIGURE_I18N[lang].items():
             assert key.startswith("courses.figures."), key
             assert text.strip(), key
-    assert len(EXPECTED_KEYS) == 36
+    # 36 + `courses.figures.formats.source_figure` (figure di fonte, WP4).
+    assert len(EXPECTED_KEYS) == 37
     assert theme.FIGURE_I18N["it"]["courses.figures.label"] == "Figura {{n}}."
     assert theme.FIGURE_I18N["en"]["courses.figures.label"] == "Figure {{n}}."
     assert theme.FIGURE_I18N["it"]["courses.figures.labelUnnumbered"] == "Figura."

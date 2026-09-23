@@ -1,8 +1,9 @@
 import { useRef, useState, type DragEvent } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
+  BookMarked,
   Eye,
   FileText,
   Images,
@@ -32,6 +33,7 @@ import {
   CitationPolicyCards,
   CitationPolicyChip,
 } from "./CitationPolicyPicker";
+import { DocumentSourceDialog } from "./DocumentSourceDialog";
 import { DocumentSummaryDialog } from "./DocumentSummaryDialog";
 import { DocumentFiguresStatus } from "./DocumentFiguresStatus";
 import { canRequestFigures } from "./documentFigures";
@@ -80,6 +82,15 @@ export function CourseDocumentUploader({
   const [toDelete, setToDelete] = useState<CourseDocumentOut | null>(null);
   const [toReprocess, setToReprocess] = useState<CourseDocumentOut | null>(null);
   const [openSummary, setOpenSummary] = useState<CourseDocumentOut | null>(null);
+  const [openSource, setOpenSource] = useState<CourseDocumentOut | null>(null);
+  // Figure del documento già collocate nelle lezioni: la cancellazione le
+  // stacca e le lascia dove sono (U1), il dialogo lo dice.
+  const usageQuery = useQuery({
+    queryKey: ["document-figure-usage", orgId, courseId, toDelete?.id],
+    queryFn: () => coursesApi.documents.figureUsage(orgId, courseId, toDelete!.id),
+    enabled: Boolean(toDelete && toDelete.figures_count),
+  });
+  const usedFigures = toDelete ? usageQuery.data?.figures_used ?? 0 : 0;
   // Politica di citazione applicata ai file del prossimo upload (batch).
   const [uploadPolicy, setUploadPolicy] = useState<CitationPolicy>("citable");
 
@@ -370,6 +381,17 @@ export function CourseDocumentUploader({
                     <Button
                       variant="ghost"
                       size="icon"
+                      title={t("courses.docs.figures.meta.open")}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setOpenSource(d);
+                      }}
+                    >
+                      <BookMarked className="size-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       title={t("courses.docs.reprocess")}
                       disabled={
                         d.summary_status === "processing" ||
@@ -409,9 +431,14 @@ export function CourseDocumentUploader({
       <ConfirmDialog
         open={!!toDelete}
         title={t("courses.docs.deleteConfirm.title")}
-        message={t("courses.docs.deleteConfirm.message", {
-          name: toDelete?.filename_original ?? "",
-        })}
+        message={
+          t("courses.docs.deleteConfirm.message", {
+            name: toDelete?.filename_original ?? "",
+          }) +
+          (usedFigures > 0
+            ? ` ${t("courses.docs.deleteConfirm.figuresUsed", { count: usedFigures })}`
+            : "")
+        }
         destructive
         confirmLabel={t("common.delete")}
         onClose={() => setToDelete(null)}
@@ -445,6 +472,14 @@ export function CourseDocumentUploader({
         doc={openSummary}
         open={!!openSummary}
         onClose={() => setOpenSummary(null)}
+      />
+
+      <DocumentSourceDialog
+        orgId={orgId}
+        courseId={courseId}
+        doc={openSource}
+        open={!!openSource}
+        onClose={() => setOpenSource(null)}
       />
     </div>
   );

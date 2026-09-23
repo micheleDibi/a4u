@@ -10,6 +10,7 @@ import {
   ClipboardCheck,
   Clock,
   HelpCircle,
+  Images,
   Layers,
   ListChecks,
   Minus,
@@ -22,6 +23,13 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import {
   Tooltip,
@@ -39,6 +47,7 @@ const schema = z.object({
   assessment_lesson_enabled: z.boolean(),
   multiple_choice_questions_count: z.number().int().min(0).max(200),
   open_questions_count: z.number().int().min(0).max(50),
+  figure_source_license_policy: z.enum(["cite_all", "open_only"]).nullable(),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -50,6 +59,7 @@ const DEFAULTS: FormValues = {
   assessment_lesson_enabled: true,
   multiple_choice_questions_count: 30,
   open_questions_count: 6,
+  figure_source_license_policy: null,
 };
 
 export default function CourseSettingsPage() {
@@ -73,6 +83,7 @@ export default function CourseSettingsPage() {
             multiple_choice_questions_count:
               query.data.multiple_choice_questions_count,
             open_questions_count: query.data.open_questions_count,
+            figure_source_license_policy: query.data.figure_source_license_policy ?? null,
           }
         : DEFAULTS,
     [query.data]
@@ -103,6 +114,7 @@ export default function CourseSettingsPage() {
         assessment_lesson_enabled: data.assessment_lesson_enabled,
         multiple_choice_questions_count: data.multiple_choice_questions_count,
         open_questions_count: data.open_questions_count,
+        figure_source_license_policy: data.figure_source_license_policy ?? null,
       });
     },
     onError: (err) => toast.error(extractApiError(err).message),
@@ -145,6 +157,40 @@ export default function CourseSettingsPage() {
                 />
               </div>
             </SectionCard>
+
+            <Controller
+              name="figure_source_license_policy"
+              control={form.control}
+              render={({ field }) => (
+                <SectionCard
+                  icon={<Images className="size-4" />}
+                  title={t("courseSettings.fields.figureLicensePolicy")}
+                  subtitle={t("courseSettings.fields.figureLicensePolicyHint")}
+                >
+                  <Select
+                    value={field.value ?? "default"}
+                    onValueChange={(v) =>
+                      field.onChange(v === "default" ? null : (v as "cite_all" | "open_only"))
+                    }
+                  >
+                    <SelectTrigger aria-label={t("courseSettings.fields.figureLicensePolicy")}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="default">
+                        {t("courseSettings.figureLicensePolicy.default")}
+                      </SelectItem>
+                      <SelectItem value="cite_all">
+                        {t("courseSettings.figureLicensePolicy.cite_all")}
+                      </SelectItem>
+                      <SelectItem value="open_only">
+                        {t("courseSettings.figureLicensePolicy.open_only")}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </SectionCard>
+              )}
+            />
 
             <SectionCard
               icon={<Clock className="size-4" />}

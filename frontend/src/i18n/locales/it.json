@@ -415,7 +415,9 @@
       },
       "deleteConfirm": {
         "title": "Eliminare il documento?",
-        "message": "Stai per eliminare \"{{name}}\"."
+        "message": "Stai per eliminare \"{{name}}\".",
+        "figuresUsed_one": "{{count}} figura di questo documento è già collocata in una lezione: resterà, con la sua fonte, finché la lezione non viene rigenerata.",
+        "figuresUsed_other": "{{count}} figure di questo documento sono già collocate nelle lezioni: resteranno, con la loro fonte, finché le lezioni non vengono rigenerate."
       },
       "reprocessConfirm": {
         "title": "Rigenerare il riassunto?",
@@ -456,6 +458,43 @@
           "vision_unavailable": "Descrizione delle figure non disponibile: nuovo tentativo automatico.",
           "storage_error": "Errore di archiviazione: nuovo tentativo automatico.",
           "attempts_exhausted": "Tentativi esauriti: riprova con «Estrai figure»."
+        },
+        "meta": {
+          "open": "Fonte delle figure",
+          "title": "Fonte delle figure del documento",
+          "description": "Questi dati compongono la riga «Fonte» delle figure del documento. Il sistema non li inventa: se mancano, la riga usa il nome del file e la pagina.",
+          "bibTitle": "Titolo",
+          "authors": "Autori (uno per riga)",
+          "year": "Anno",
+          "container": "Rivista, libro o corso",
+          "doi": "DOI",
+          "url": "URL",
+          "license": "Licenza",
+          "licenseUnknown": "Sconosciuta",
+          "ownWork": "Materiale mio (del docente)",
+          "useProposal": "Usa i dati proposti dal riassunto",
+          "proposalHint": "Proposta dal riassunto AI: controllala prima di salvare.",
+          "save": "Salva",
+          "saved": "Fonte del documento aggiornata",
+          "saveFailed": "Impossibile aggiornare la fonte del documento.",
+          "sourceLabel": {
+            "user": "inserita dal docente",
+            "openalex": "da OpenAlex",
+            "pdf_metadata": "dai metadati del file",
+            "crossref": "da Crossref (DOI)"
+          }
+        },
+        "licenses": {
+          "cc0": "CC0",
+          "public_domain": "Pubblico dominio",
+          "cc_by": "CC BY",
+          "cc_by_sa": "CC BY-SA",
+          "cc_by_nc": "CC BY-NC",
+          "cc_by_nd": "CC BY-ND",
+          "cc_by_nc_sa": "CC BY-NC-SA",
+          "cc_by_nc_nd": "CC BY-NC-ND",
+          "all_rights_reserved": "Tutti i diritti riservati",
+          "other": "Altra licenza"
         }
       }
     },
@@ -1718,7 +1757,8 @@
         "vegalite": "Grafico Vega-Lite",
         "dot": "Grafo Graphviz",
         "function": "Figura matematica",
-        "image": "Immagine"
+        "image": "Immagine",
+        "source_figure": "Figura dai documenti"
       },
       "function": {
         "zeros": "Zeri in {{var}} = {{values}}.",
@@ -1865,6 +1905,31 @@
         "clips": "Clip avatar",
         "size": "Dimensione"
       }
+    },
+    "sourceFigures": {
+      "badge": "Figura di fonte",
+      "addFromDocuments": "Figura dai documenti del corso",
+      "exclude": "Non proporre più",
+      "excluded": "Figura esclusa dalle proposte: le lezioni già generate non cambiano.",
+      "excludeFailed": "Impossibile escludere la figura.",
+      "moveUp": "Sposta su",
+      "moveDown": "Sposta giù",
+      "sourceLine": "Riga della fonte (calcolata dal sistema)",
+      "notices": {
+        "title": "Avvisi del revisore",
+        "incoherent": "La figura potrebbe non mostrare ciò che la sezione spiega: {{reason}}",
+        "redundant": "Ridondante con {{other}}: {{reason}}",
+        "complementary": "Complementare a {{other}}: {{reason}}"
+      },
+      "picker": {
+        "title": "Figure dai documenti del corso",
+        "description": "Figure estratte dai documenti citabili. La fonte la aggiunge il sistema in ogni superficie.",
+        "empty": "Nessuna figura disponibile: estrai le figure dai documenti citabili del corso.",
+        "page": "p. {{page}}",
+        "slide": "slide {{page}}",
+        "add": "Aggiungi",
+        "notSelectable": "Non proponibile"
+      }
     }
   },
   "courseSettings": {
@@ -1893,7 +1958,9 @@
       "assessment": "Verifica di apprendimento finale",
       "assessmentHelp": "Se attivo, l'ultima lezione di ogni modulo è una verifica generata automaticamente: viene prodotta una serie di domande (a scelta multipla e aperte) per verificare le competenze acquisite. La piattaforma genera solo i contenuti, non gestisce la fruizione da parte degli studenti.",
       "mcq": "Domande a scelta multipla",
-      "openQuestions": "Domande aperte"
+      "openQuestions": "Domande aperte",
+      "figureLicensePolicy": "Figure dai documenti: licenze ammesse",
+      "figureLicensePolicyHint": "«Tutte, con la fonte» cita ogni figura; «Solo licenze aperte» propone solo figure CC0, pubblico dominio, CC BY, CC BY-SA o materiale del docente. Non retroattivo: le lezioni già generate non cambiano."
     },
     "units": {
       "modules": "moduli",
@@ -1917,6 +1984,11 @@
       "hours_one": "{{count}} ora",
       "hours_other": "{{count}} ore",
       "hoursAndMinutes": "{{hours}}h {{minutes}}m"
+    },
+    "figureLicensePolicy": {
+      "default": "Predefinita dell'installazione",
+      "cite_all": "Tutte, con la fonte",
+      "open_only": "Solo licenze aperte"
     }
   },
   "command": {

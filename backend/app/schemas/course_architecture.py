@@ -96,6 +96,9 @@ class CourseLessonOut(ORMModel):
     content_approved_at: datetime | None = None
     content_tokens: dict[str, Any] | None = None
     content_regeneration_hint: str | None = None
+    # Verdetto del revisore delle figure di fonte (PROMPT 19): solo avvisi
+    # per l'editor, mai applicati al contenuto.
+    content_figure_review: dict[str, Any] | None = None
     # Stale-detection: timestamp dell'ultima modifica manuale (NON i
     # worker AI). Usati lato FE per calcolare se un downstream è
     # disallineato. Vedi `lib/staleness.ts` nel frontend.

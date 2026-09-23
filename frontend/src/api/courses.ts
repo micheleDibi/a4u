@@ -191,6 +191,97 @@ export type DocumentFiguresStatus =
 
 export type CitationPolicy = "citable" | "content_only" | "excluded";
 
+/** Licenze di un documento (la sconosciuta è `null`). */
+export type DocumentLicense =
+  | "cc0"
+  | "public_domain"
+  | "cc_by"
+  | "cc_by_sa"
+  | "cc_by_nc"
+  | "cc_by_nd"
+  | "cc_by_nc_sa"
+  | "cc_by_nc_nd"
+  | "all_rights_reserved"
+  | "other";
+
+export interface DocumentBibliographyInput {
+  title?: string | null;
+  authors?: string[];
+  year?: number | null;
+  container?: string | null;
+  publisher?: string | null;
+  doi?: string | null;
+  url?: string | null;
+}
+
+/** PATCH parziale del documento (almeno un campo). */
+export interface CourseDocumentUpdate {
+  citation_policy?: CitationPolicy;
+  bibliography?: DocumentBibliographyInput | null;
+  license?: DocumentLicense | null;
+  is_own_work?: boolean;
+}
+
+export interface LessonFigureReview {
+  version: number;
+  model?: string;
+  reviewed_at?: string;
+  figures: Record<
+    string,
+    {
+      coherence?: "coerente" | "incoerente";
+      reason?: string;
+      pairs?: {
+        other: string;
+        verdict: "distinta" | "complementare" | "ridondante";
+        reason?: string;
+      }[];
+    }
+  >;
+}
+
+/** Figura di fonte del corso (`GET …/document-figures`). La riga
+ *  «Fonte» (`attribution`) è calcolata dal backend: il frontend la mostra
+ *  così com'è, non la ricompone mai. */
+export interface DocumentFigure {
+  id: string;
+  document_id: string | null;
+  document_filename: string | null;
+  source_kind: string;
+  page: number | null;
+  locator: string;
+  kind: string | null;
+  description: string | null;
+  keywords: { course?: string[]; en?: string[] } | null;
+  source_caption: string | null;
+  source_label: string | null;
+  width: number | null;
+  height: number | null;
+  mime_type: string | null;
+  quality_score: number | null;
+  is_useful_for_teaching: boolean | null;
+  excluded_by_user: boolean;
+  status: string;
+  license: string;
+  detached: boolean;
+  attribution: string;
+  renderable: boolean;
+  selectable: boolean;
+  reason: string | null;
+}
+
+export interface DocumentFigureUsage {
+  document_id: string;
+  figures_total: number;
+  figures_used: number;
+  lessons: {
+    lesson_id: string;
+    lesson_code: string;
+    title: string;
+    asset_ids: string[];
+  }[];
+}
+
 export interface CourseDocumentDetailOut extends CourseDocumentOut {
   summary: DocumentSummaryOut | null;
 }
@@ -263,6 +354,9 @@ export type LessonContentVisualAssetFormat =
   | "dot"
   | "function"
   | "image"
+  // Figura di fonte (dai documenti del corso): `content` è l'id della
+  // figura; immagine e riga «Fonte» arrivano solo dal backend.
+  | "source_figure"
   // — legacy read-only —
   | "image_prompt"
   | "image_search_query"
@@ -278,6 +372,8 @@ export interface LessonContentVisualAsset {
    * - `format="function"`: `FunctionFigureSpec` serializzata in JSON.
    * - `format="image"`: path pubblico relativo (es. `lesson_assets/{cid}/{uuid}.png`).
    *   Per renderizzare l'immagine usare `/uploads/${content}`.
+   * - `format="source_figure"`: id della figura di fonte del corso
+   *   (`DocumentFigure.id`); immagine dall'endpoint autenticato.
    * - legacy: testo libero (prompt, query, descrizione).
    */
   content: string;
@@ -669,6 +765,9 @@ export interface CourseLessonOut {
   content_approved_at: string | null;
   content_tokens: LessonContentTokens | null;
   content_regeneration_hint: string | null;
+  /** Verdetto del revisore delle figure di fonte (PROMPT 19): avvisi per
+   *  l'editor, mai applicati al contenuto. */
+  content_figure_review?: LessonFigureReview | null;
   // Stale-detection — set solo da CRUD manuale, non dai worker AI.
   lesson_structure_modified_at: string | null;
   content_modified_at: string | null;
@@ -1243,12 +1342,70 @@ export const coursesApi = {
       );
       return res.data;
     },
+    /** PATCH parziale: politica e metadati della fonte (bibliografia,
+     *  licenza, materiale proprio). */
+    update: async (
+      orgId: string,
+      courseId: string,
+      docId: string,
+      patch: CourseDocumentUpdate
+    ): Promise<CourseDocumentOut> => {
+      const res = await apiClient.patch<CourseDocumentOut>(
+        `${base(orgId)}/${courseId}/documents/${docId}`,
+        patch
+      );
+      return res.data;
+    },
+    figureUsage: async (
+      orgId: string,
+      courseId: string,
+      docId: string
+    ): Promise<DocumentFigureUsage> => {
+      const res = await apiClient.get<DocumentFigureUsage>(
+        `${base(orgId)}/${courseId}/documents/${docId}/figure-usage`
+      );
+      return res.data;
+    },
     remove: async (
       orgId: string,
       courseId: string,
       docId: string
     ): Promise<void> => {
       await apiClient.delete(`${base(orgId)}/${courseId}/documents/${docId}`);
+    },
+  },
+  documentFigures: {
+    list: async (orgId: string, courseId: string): Promise<DocumentFigure[]> => {
+      const res = await apiClient.get<DocumentFigure[]>(
+        `${base(orgId)}/${courseId}/document-figures`
+      );
+      return res.data;
+    },
+    /** Immagine (o anteprima) come Blob dall'endpoint autenticato: mai un
+     *  URL dello storage. */
+    image: async (
+      orgId: string,
+      courseId: string,
+      figureId: string,
+      preview = false
+    ): Promise<Blob> => {
+      const res = await apiClient.get<Blob>(
+        `${base(orgId)}/${courseId}/document-figures/${figureId}/image`,
+        { params: preview ? { preview: true } : undefined, responseType: "blob" }
+      );
+      return res.data;
+    },
+    update: async (
+      orgId: string,
+      courseId: string,
+      figureId: string,
+      patch: { excluded_by_user: boolean }
+    ): Promise<DocumentFigure> => {
+      const res = await apiClient.patch<DocumentFigure>(
+        `${base(orgId)}/${courseId}/document-figures/${figureId}`,
+        patch
+      );
+      return res.data;
     },
   },
   papers: {

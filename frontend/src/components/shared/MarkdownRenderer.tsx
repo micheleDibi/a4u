@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 
 import { FigureFrame } from "./FigureFrame";
 import { FunctionFigure } from "./FunctionFigure";
+import { SourceFigure } from "./SourceFigure";
 import { InlineMath } from "./InlineMath";
 
 const MermaidDiagram = lazy(() => import("./MermaidDiagram"));
@@ -316,6 +317,18 @@ function VisualAssetBlock({
       <FunctionFigure
         assetId={asset.asset_id}
         content={asset.content}
+        caption={asset.caption}
+        altText={asset.alt_text}
+        number={number}
+        cite={cite}
+      />
+    );
+  }
+  if (asset.format === "source_figure") {
+    return (
+      <SourceFigure
+        assetId={asset.asset_id}
+        figureId={asset.content}
         caption={asset.caption}
         altText={asset.alt_text}
         number={number}

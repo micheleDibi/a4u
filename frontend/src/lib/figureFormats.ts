@@ -61,6 +61,9 @@ const FIGURE_FORMAT_KEYS: Record<VisualFormat, string> = {
 };
 
 const OTHER_KIND_KEYS: Record<string, string> = {
+  // Figura di fonte: non la crea il menu dei formati ma il catalogo dei
+  // documenti (`SourceFigurePicker`).
+  source_figure: "courses.figures.formats.source_figure",
   table: "courses.lessonsSlides.editor.assetKinds.table",
   equation: "courses.lessonsSlides.editor.assetKinds.equation",
   example: "courses.lessonsSlides.editor.assetKinds.example",

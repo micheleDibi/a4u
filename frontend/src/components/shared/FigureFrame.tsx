@@ -26,7 +26,11 @@ import { InlineMath } from "./InlineMath";
  *   `$..$`/`\(..\)` è reso, con KaTeX; il resto è letterale, come nel
  *   PDF); l'etichetta e la coda calcolata restano testo;
  * - il fallback `Suspense` dei renderer caricati in modo pigro sta dentro
- *   la cornice: la didascalia è visibile anche durante il caricamento.
+ *   la cornice: la didascalia è visibile anche durante il caricamento;
+ * - `attribution` (figure di fonte, solo dispensa) è la riga «Fonte»
+ *   calcolata dal backend, su una riga propria in coda alla didascalia,
+ *   come `<span class="figure-source">` del partial; nelle slide la riga
+ *   sta fuori dalla didascalia (`SourceFigure`, fascia U2).
  */
 export interface FigureFrameProps {
   assetId: string;
@@ -41,6 +45,8 @@ export interface FigureFrameProps {
    *  `caption_renderer` del partial nel backend: un `[FIG:x]` nella
    *  didascalia diventa «Figura 1». Default: identità. */
   cite?: (text: string) => string;
+  /** Riga «Fonte» del backend (figure di fonte, dispensa). */
+  attribution?: string;
   className?: string;
   children: ReactNode;
 }
@@ -66,6 +72,7 @@ export function FigureFrame({
   variant = "lesson",
   extraCaption,
   cite,
+  attribution,
   className,
   children,
 }: FigureFrameProps) {
@@ -110,6 +117,11 @@ export function FigureFrame({
         <span className="figure-label font-semibold">{label}</span>
         {tail ? <InlineMath text={tail} /> : null}
         {extra ? ` ${extra}` : ""}
+        {attribution ? (
+          <span className="figure-source mt-0.5 block text-xs text-muted-foreground">
+            {attribution}
+          </span>
+        ) : null}
       </figcaption>
     </figure>
   );
