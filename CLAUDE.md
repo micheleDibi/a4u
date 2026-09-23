@@ -23,12 +23,13 @@ Sviluppo in locale (Postgres in Docker, app nativa); produzione con docker compo
 - Configurazione: `backend/app/core/config.py` + `.env` alla root, `docker-compose.prod.yml` (NON modificare senza chiedere)
 
 ## Comandi
+- Venv backend (una volta): `cd backend && python3.12 -m venv .venv && source .venv/bin/activate && pip install -e ".[dev]"`; i comandi backend qui sotto assumono `.venv` attivo
 - Avvio locale: `docker compose up -d postgres`; poi `cd backend && alembic upgrade head && uvicorn app.main:app --reload --port 8000`; poi `cd frontend && npm run start` (porta 5173)
-- Test di un singolo file: `cd backend && DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib python3 -m pytest tests/test_<nome>.py -q`
-- Test completi backend: `cd backend && DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib python3 -m pytest -q` (durata [DA VERIFICARE])
+- Test di un singolo file: `cd backend && DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib python -m pytest tests/test_<nome>.py -q`
+- Test completi backend: `cd backend && DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib python -m pytest -q` (durata circa 6 min)
 - Frontend (non c'è un test runner): `cd frontend && npm run lint && npm run type-check && npm run build`
 - Lint/format backend (come in CI): `cd backend && ruff check . && ruff format --check . && mypy app`
-- Coerenza di docs/PROMPTS.md con i prompt: `cd backend && JWT_SECRET=$(printf 'x%.0s' $(seq 1 40)) python3 -m scripts.check_prompts_md`
+- Coerenza di docs/PROMPTS.md con i prompt: `cd backend && JWT_SECRET=$(printf 'x%.0s' $(seq 1 40)) python -m scripts.check_prompts_md`
 
 ## Convenzioni
 - Codice e nomi in inglese; commenti, docstring e documentazione in italiano
