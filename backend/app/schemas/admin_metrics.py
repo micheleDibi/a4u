@@ -62,7 +62,7 @@ class CostByPhase(BaseModel):
     localizzazione).
     """
 
-    phase: str  # architecture | structure | content | slides | speech
+    phase: str  # architecture | structure | content | slides | speech | document_figures
     cost_usd: float
 
 

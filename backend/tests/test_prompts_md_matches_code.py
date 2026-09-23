@@ -16,6 +16,7 @@ segnaposto documentati (`{language_code}`, `{ruolo_docente}`, …).
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -56,3 +57,25 @@ def test_the_comparison_would_catch_a_missing_line(documento: str) -> None:
     assert mutilato != documento, prima_riga_utile
     diffs = [diff for _check, diff in compare(mutilato, checks) if diff]
     assert diffs, "il confronto non vede una riga mancante"
+
+
+# Da qui in avanti ogni prompt numerato nuovo entra nel confronto nello
+# stesso commit in cui entra nel codice (campagna figure da letteratura).
+_FIRST_COVERED_NEW_PROMPT = 18
+_PROMPT_NUMBER_RE = re.compile(r"\bPROMPT (\d+)\b")
+
+
+def test_every_new_numbered_prompt_of_the_code_is_checked() -> None:
+    """Un servizio che dichiara un «PROMPT n» (n ≥ 18) nel suo modulo deve
+    avere il blocco corrispondente fra i check: altrimenti PROMPTS.md può
+    divergere in silenzio."""
+    services = Path(__file__).resolve().parents[1] / "app" / "services"
+    declared = {
+        int(number)
+        for path in services.glob("openai_*_service.py")
+        for number in _PROMPT_NUMBER_RE.findall(path.read_text(encoding="utf-8"))
+        if int(number) >= _FIRST_COVERED_NEW_PROMPT
+    }
+    checked = {check.prompt_number for check in build_checks()}
+    assert declared, "nessun prompt nuovo trovato: il test sarebbe vacuo"
+    assert declared <= checked, f"prompt senza check: {sorted(declared - checked)}"

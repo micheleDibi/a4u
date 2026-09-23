@@ -26,12 +26,19 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.models.course import Course
 from app.models.course_document import CourseDocument
 from app.models.course_document_figure import CourseDocumentFigure
 from app.services import course_document_figures_worker as worker
 from app.services import remote_storage
 from app.services.document_figures import runner
 from app.services.document_figures import storage as figure_storage
+from app.services.openai_client import OpenAINotConfiguredError
+from app.services.openai_figure_describe_service import (
+    DescribeInput,
+    FigureDescription,
+    OpenAIFigureDescribeError,
+)
 from tests.course_builders import build_course, build_course_document
 from tests.fixtures.source_figures.build import GROUND_TRUTH, PDF_NAME, build_all
 
@@ -256,6 +263,46 @@ def settings(monkeypatch: pytest.MonkeyPatch):
     return apply
 
 
+class FakeVision:
+    """Vision finta: nessuna chiamata reale dai test; registra le chiamate
+    e può fallire su richiesta (`fail` = eccezione da sollevare)."""
+
+    def __init__(self) -> None:
+        self.calls: list[DescribeInput] = []
+        self.fail: BaseException | None = None
+        self.fail_after: int | None = None
+
+    async def __call__(self, item: DescribeInput) -> tuple[FigureDescription, dict[str, Any]]:
+        self.calls.append(item)
+        if self.fail is not None and (self.fail_after is None or len(self.calls) > self.fail_after):
+            raise self.fail
+        out = FigureDescription(
+            kind="schematic",
+            description="Schema di un vibrometro laser Doppler con cella di Bragg.",
+            keywords_course=["vibrometro", "laser", "cella di Bragg"],
+            keywords_en=["vibrometer", "laser", "Bragg cell"],
+            quality_score=4,
+            legibility="good",
+            is_useful_for_teaching=True,
+            reason="ok",
+        )
+        usage = {
+            "model": "gpt-4.1-mini",
+            "prompt": 1000,
+            "completion": 120,
+            "total": 1120,
+            "cost_usd": 0.0006,
+        }
+        return out, usage
+
+
+@pytest.fixture(autouse=True)
+def vision(monkeypatch: pytest.MonkeyPatch) -> FakeVision:
+    fake = FakeVision()
+    monkeypatch.setattr(worker, "describe_figure", fake)
+    return fake
+
+
 async def _queued_document(
     db: AsyncSession,
     storage: FakeStorage,
@@ -317,14 +364,15 @@ async def test_full_extraction_with_remote_storage(
     assert doc.figures_coverage == "full"
     assert doc.figures_pages_total == 5 and doc.figures_pages_done == 5
     assert doc.figures_engine == "heuristic" and doc.figures_fingerprint
-    assert doc.figures_progress == {"stage": "done", "next_page": 6}
+    assert doc.figures_progress["stage"] == "done"
+    assert doc.figures_progress["next_page"] == 6
     # Bibliografia deterministica dai metadati del PDF (mai dal modello).
     assert doc.bibliography_source == "pdf_metadata"
     assert doc.bibliography == {"title": "Vibrometria laser", "authors": ["Docente di Prova"]}
     assert _summary_snapshot(doc) == before
 
     rows = await _figures(db, doc.id)
-    kept = sorted((r for r in rows if r.status == "extracted"), key=lambda r: r.locator)
+    kept = sorted((r for r in rows if r.status == "ready"), key=lambda r: r.locator)
     assert [r.page for r in kept] == [1, 2, 3, 4]
     assert [r.source_label for r in kept] == ["Figura 2.1", "Figura 2.2", "Figura 2.3", None]
     for row in kept:
@@ -335,6 +383,14 @@ async def test_full_extraction_with_remote_storage(
         assert remote_storage.uploads_key(row.storage_path) in storage.files
         assert remote_storage.uploads_key(row.preview_path) in storage.files
         assert row.byte_size == len(storage.files[remote_storage.uploads_key(row.storage_path)])
+        # Vision (G9): descrizione applicata e costo contabilizzato sulla riga.
+        assert row.kind == "schematic" and row.quality_score == 4
+        assert row.keywords == {
+            "course": ["vibrometro", "laser", "cella di Bragg"],
+            "en": ["vibrometer", "laser", "Bragg cell"],
+        }
+        assert row.vision_usage["calls"] == 1 and row.vision_usage["cost_usd"] == 0.0006
+        assert row.vision_usage_at is not None and row.describe_model == "gpt-4.1-mini"
     rejected = [r for r in rows if r.status == "rejected"]
     assert rejected and all(r.storage_path is None for r in rejected)
     assert {r.reject_reason for r in rejected} <= {"too_small", "header_footer", "repeated"}
@@ -472,3 +528,127 @@ async def test_never_requested_documents_are_not_claimed(
     assert claimed is None or claimed.id != doc.id
     fresh = await db.get(CourseDocument, doc.id, populate_existing=True)
     assert fresh is not None and fresh.figures_status is None
+
+
+# --- descrizione Vision ---------------------------------------------------------
+
+
+async def test_vision_receives_caption_context_title_and_language(
+    db: AsyncSession, storage: FakeStorage, fixture_pdf: bytes, vision: FakeVision
+) -> None:
+    doc = await _queued_document(db, storage, fixture_pdf)
+    await _run(db, doc.id)
+    assert len(vision.calls) == 4
+    first = next(c for c in vision.calls if (c.caption or "").startswith("Figura 2.1."))
+    assert first.context and "fotorivelatore" in first.context
+    assert first.document_title == "Vibrometria laser"
+    assert first.language_code == "it"
+    assert first.image[:4] == b"\x89PNG"
+
+
+async def test_describe_cap_rejects_the_rest(
+    db: AsyncSession, storage: FakeStorage, fixture_pdf: bytes, settings: Any, vision: FakeVision
+) -> None:
+    settings(figure_describe_max_per_document=2)
+    doc = await _queued_document(db, storage, fixture_pdf)
+    doc = await _run(db, doc.id)
+    rows = await _figures(db, doc.id)
+    assert sum(r.status == "ready" for r in rows) == 2
+    assert sum(r.reject_reason == "describe_capped" for r in rows) == 2
+    assert doc.figures_count == 2 and len(vision.calls) == 2
+
+
+async def test_descriptions_are_reused_across_courses_of_the_organization(
+    db: AsyncSession, storage: FakeStorage, fixture_pdf: bytes, vision: FakeVision
+) -> None:
+    first = await _queued_document(db, storage, fixture_pdf)
+    await _run(db, first.id)
+    assert len(vision.calls) == 4
+    first_course = await db.get(Course, first.course_id)
+    second = await _queued_document(db, storage, fixture_pdf)
+    second_course = await db.get(Course, second.course_id)
+    assert first_course is not None and second_course is not None
+    second_course.organization_id = first_course.organization_id
+    await db.commit()
+    second = await _run(db, second.id)
+    assert second.figures_status == "ready" and second.figures_count == 4
+    assert len(vision.calls) == 4, "nessuna seconda chiamata Vision"
+    reused = [r for r in await _figures(db, second.id) if r.status == "ready"]
+    assert all(r.describe_source_id is not None for r in reused)
+    assert all(r.vision_usage is None for r in reused)
+
+
+async def test_descriptions_are_not_reused_across_organizations(
+    db: AsyncSession, storage: FakeStorage, fixture_pdf: bytes, vision: FakeVision
+) -> None:
+    first = await _queued_document(db, storage, fixture_pdf)
+    await _run(db, first.id)
+    second = await _queued_document(db, storage, fixture_pdf)
+    await _run(db, second.id)
+    assert len(vision.calls) == 8
+
+
+async def test_missing_openai_key_is_vision_unavailable(
+    db: AsyncSession, storage: FakeStorage, fixture_pdf: bytes, vision: FakeVision
+) -> None:
+    vision.fail = OpenAINotConfiguredError()
+    doc = await _queued_document(db, storage, fixture_pdf)
+    doc = await _run(db, doc.id)
+    assert (doc.figures_status, doc.figures_error_code) == ("pending", "vision_unavailable")
+    assert doc.figures_next_attempt_at is not None
+    rows = await _figures(db, doc.id)
+    assert not any(r.status == "ready" for r in rows)
+    # Nuovo tentativo con la Vision di nuovo disponibile: niente
+    # ri-estrazione, solo le descrizioni.
+    vision.fail = None
+    vision.calls.clear()
+    doc.figures_next_attempt_at = None
+    await db.commit()
+    doc = await _run(db, doc.id)
+    assert doc.figures_status == "ready" and doc.figures_count == 4
+    assert len(vision.calls) == 4
+
+
+async def test_paid_but_unusable_answer_is_accounted(
+    db: AsyncSession, storage: FakeStorage, fixture_pdf: bytes, vision: FakeVision
+) -> None:
+    """Una risposta 200 inutilizzabile costa comunque: l'usage finisce in
+    `vision_usage` anche se la figura resta non descritta (G9)."""
+    vision.fail_after = 3
+    vision.fail = OpenAIFigureDescribeError(
+        status=200, message="json troncato", usage={"model": "gpt-4.1-mini", "cost_usd": 0.0004}
+    )
+    doc = await _queued_document(db, storage, fixture_pdf)
+    doc = await _run(db, doc.id)
+    assert doc.figures_status == "ready" and doc.figures_count == 3
+    rows = await _figures(db, doc.id)
+    undescribed = [r for r in rows if r.status == "extracted"]
+    assert len(undescribed) == 1
+    assert undescribed[0].vision_usage["cost_usd"] == 0.0004
+    assert undescribed[0].vision_usage["calls"] == 1
+
+
+async def test_admin_cost_includes_document_figures(db: AsyncSession) -> None:
+    from app.services import admin_metrics_service as metrics
+
+    now = datetime.now(UTC)
+
+    async def figures_cost() -> float:
+        cost = await metrics._cost(
+            db, cutoff_7d=now - timedelta(days=7), cutoff_30d=now - timedelta(days=30)
+        )
+        return next(p.cost_usd for p in cost.by_phase if p.phase == "document_figures")
+
+    before = await figures_cost()
+    course_id, _org, _user = await build_course(db, modules=1, lessons_per_module=1)
+    doc = build_course_document(course_id, filename="costo.pdf")
+    db.add(doc)
+    await db.flush()
+    from tests.source_figure_builders import build_document_figure
+
+    figure = build_document_figure(course_id, doc.id, license="unknown")
+    figure.vision_usage = {"calls": 2, "cost_usd": 0.25}
+    figure.vision_usage_at = now
+    db.add(figure)
+    await db.commit()
+    assert round(await figures_cost() - before, 6) == 0.25

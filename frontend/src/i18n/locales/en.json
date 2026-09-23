@@ -2428,7 +2428,8 @@
           "structure": "Lessons structure",
           "content": "Lecture notes",
           "slides": "Slides",
-          "speech": "Speech"
+          "speech": "Speech",
+          "document_figures": "Source figures"
         }
       },
       "loginActivity": {

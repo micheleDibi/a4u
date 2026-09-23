@@ -2428,7 +2428,8 @@
           "structure": "Struttura lezioni",
           "content": "Dispense",
           "slides": "Slide",
-          "speech": "Discorso"
+          "speech": "Discorso",
+          "document_figures": "Figure di fonte"
         }
       },
       "loginActivity": {

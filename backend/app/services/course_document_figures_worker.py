@@ -42,12 +42,13 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import or_, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.db.session import async_session_factory
+from app.models.course import Course
 from app.models.course_document import CourseDocument
 from app.models.course_document_figure import CourseDocumentFigure
 from app.schemas.document_bibliography import DocumentBibliography
@@ -62,7 +63,14 @@ from app.services.document_figures.runner import (
     ExtractionChildError,
     mem_available_mb,
 )
+from app.services.figure_attribution import attribution_source
 from app.services.heavy_job_lock import HEAVY_JOB_LOCK
+from app.services.openai_client import OpenAINotConfiguredError
+from app.services.openai_figure_describe_service import (
+    DescribeInput,
+    FigureDescription,
+    describe_figure,
+)
 from app.services.source_figure_policy import document_license_to_figure
 
 log = get_logger("app.course_document_figures_worker")
@@ -74,7 +82,7 @@ SUPPORTED_MIMES = frozenset({PDF_MIME, DOCX_MIME})
 TERMINAL_CODES = frozenset(
     {"encrypted", "corrupt", "unsupported_format", "engine_unavailable", "source_missing"}
 )
-RECOVERABLE_CODES = frozenset({"timeout", "oom", "crashed", "storage_error"})
+RECOVERABLE_CODES = frozenset({"timeout", "oom", "crashed", "storage_error", "vision_unavailable"})
 # Pausa prima di riprovare un documento rinviato per memoria insufficiente.
 DEFER_SECONDS = 120
 # Tempo per blocco: caricamento del modello più un minuto a pagina.
@@ -82,10 +90,16 @@ _BLOCK_BASE_SECONDS = 180
 _BLOCK_SECONDS_PER_PAGE = 60
 # Duplicati nel corso: stessa immagine (pHash) di un'altra figura.
 _COURSE_DUPLICATE_DISTANCE = 4
+# Descrizione riusata da una figura quasi identica già descritta.
+_DESCRIBE_REUSE_DISTANCE = 4
 
 
 class _DeferredError(Exception):
     """Memoria disponibile sotto soglia: si riprova più tardi."""
+
+
+class _VisionUnavailableError(Exception):
+    """Nessuna descrizione riuscita (chiave assente o servizio irraggiungibile)."""
 
 
 @dataclass
@@ -441,6 +455,199 @@ async def _deduplicate(db: AsyncSession, doc: CourseDocument) -> None:
     await db.commit()
 
 
+# --- descrizione Vision (PROMPT 18) -------------------------------------------
+
+
+def merge_usage(previous: dict[str, Any] | None, usage: dict[str, Any]) -> dict[str, Any]:
+    """Somma cumulativa dell'usage delle chiamate AI su una figura."""
+    merged = dict(previous or {})
+    merged["model"] = usage.get("model")
+    merged["calls"] = int(merged.get("calls") or 0) + 1
+    for key in ("prompt", "completion", "total", "cached_tokens", "reasoning_tokens"):
+        merged[key] = int(merged.get(key) or 0) + int(usage.get(key) or 0)
+    cost = usage.get("cost_usd")
+    if cost is not None:
+        merged["cost_usd"] = round(float(merged.get("cost_usd") or 0.0) + float(cost), 8)
+    merged["last"] = usage
+    return merged
+
+
+def _apply_description(row: CourseDocumentFigure, out: FigureDescription, model: str) -> None:
+    row.kind = out.kind
+    row.description = out.description
+    row.keywords = {"course": out.keywords_course, "en": out.keywords_en}
+    row.quality_score = out.quality_score
+    row.legibility = out.legibility
+    row.is_useful_for_teaching = out.is_useful_for_teaching
+    row.described_at = _now()
+    row.describe_model = model[:80]
+    row.status = "ready"
+
+
+def _copy_description(row: CourseDocumentFigure, source: CourseDocumentFigure) -> None:
+    row.kind = source.kind
+    row.description = source.description
+    row.keywords = source.keywords
+    row.quality_score = source.quality_score
+    row.legibility = source.legibility
+    row.is_useful_for_teaching = source.is_useful_for_teaching
+    row.described_at = _now()
+    row.describe_model = source.describe_model
+    row.describe_source_id = source.id
+    row.status = "ready"
+
+
+def _local_crop(workdir: Path | None, row: CourseDocumentFigure) -> Path | None:
+    if workdir is None or not row.storage_path:
+        return None
+    ext = ".jpg" if row.mime_type == "image/jpeg" else ".png"
+    candidate = workdir / f"{row.locator}{ext}"
+    return candidate if candidate.is_file() else None
+
+
+async def _describe(db: AsyncSession, doc: CourseDocument, workdir: Path | None) -> None:
+    """Descrive le figure `extracted` del documento (fino al tetto), riusando
+    le descrizioni delle figure quasi identiche del corso."""
+    settings = get_settings()
+    rows = list(
+        (
+            await db.execute(
+                select(CourseDocumentFigure)
+                .where(
+                    CourseDocumentFigure.document_id == doc.id,
+                    CourseDocumentFigure.status == "extracted",
+                )
+                .order_by(
+                    CourseDocumentFigure.page.asc().nulls_last(), CourseDocumentFigure.locator
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not rows:
+        return
+    already = int(
+        (
+            await db.execute(
+                select(func.count())
+                .select_from(CourseDocumentFigure)
+                .where(
+                    CourseDocumentFigure.document_id == doc.id,
+                    CourseDocumentFigure.described_at.is_not(None),
+                )
+            )
+        ).scalar_one()
+    )
+    cap = max(0, int(settings.figure_describe_max_per_document) - already)
+    for row in rows[cap:]:
+        row.status = "rejected"
+        row.reject_reason = "describe_capped"
+    rows = rows[:cap]
+    await db.commit()
+    if not rows:
+        return
+    course = await db.get(Course, doc.course_id)
+    language = course.language_code if course is not None else "it"
+    src = attribution_source(rows[0], doc)
+    title = (src.title or src.fallback_name) if src is not None else None
+    # Riuso delle descrizioni fra i corsi della stessa organizzazione (lo
+    # stesso PDF caricato in più corsi): niente seconda chiamata Vision.
+    described_pool = list(
+        (
+            await db.execute(
+                select(CourseDocumentFigure)
+                .join(Course, Course.id == CourseDocumentFigure.course_id)
+                .where(
+                    Course.organization_id == (course.organization_id if course else None),
+                    CourseDocumentFigure.described_at.is_not(None),
+                    CourseDocumentFigure.describe_source_id.is_(None),
+                    CourseDocumentFigure.phash.is_not(None),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    semaphore = asyncio.Semaphore(max(1, int(settings.openai_figure_describe_concurrency)))
+    model = settings.openai_figure_describe_model
+
+    async def call(row: CourseDocumentFigure) -> tuple[FigureDescription, dict[str, Any]]:
+        local = _local_crop(workdir, row)
+        if local is not None:
+            image = await asyncio.to_thread(local.read_bytes)
+        else:
+            image = await asyncio.to_thread(figure_storage.read, str(row.storage_path))
+        async with semaphore:
+            return await describe_figure(
+                DescribeInput(
+                    image=image,
+                    caption=row.source_caption,
+                    context=row.context_excerpt,
+                    document_title=title,
+                    language_code=language,
+                )
+            )
+
+    succeeded = failed = 0
+    batch_size = max(1, int(settings.openai_figure_describe_concurrency)) * 2
+    for start in range(0, len(rows), batch_size):
+        batch = rows[start : start + batch_size]
+        pending: list[CourseDocumentFigure] = []
+        for row in batch:
+            source = (
+                next(
+                    (
+                        other
+                        for other in described_pool
+                        if other.id != row.id
+                        and hamming(str(row.phash), str(other.phash)) <= _DESCRIBE_REUSE_DISTANCE
+                    ),
+                    None,
+                )
+                if row.phash
+                else None
+            )
+            if source is not None:
+                _copy_description(row, source)
+                succeeded += 1
+            else:
+                pending.append(row)
+        results = await asyncio.gather(*(call(r) for r in pending), return_exceptions=True)
+        for row, result in zip(pending, results, strict=True):
+            if isinstance(result, OpenAINotConfiguredError):
+                await db.commit()
+                raise _VisionUnavailableError("chiave OpenAI assente")
+            if isinstance(result, BaseException):
+                failed += 1
+                usage = getattr(result, "usage", None)
+                if isinstance(usage, dict):
+                    row.vision_usage = merge_usage(row.vision_usage, usage)
+                    row.vision_usage_at = _now()
+                log.warning(
+                    "document_figures_describe_failed",
+                    figure_id=str(row.id),
+                    error=str(result)[:300],
+                )
+                continue
+            out, usage = result
+            _apply_description(row, out, model)
+            row.vision_usage = merge_usage(row.vision_usage, usage)
+            row.vision_usage_at = _now()
+            described_pool.append(row)
+            succeeded += 1
+        progress = dict(doc.figures_progress or {})
+        progress.update(
+            stage="describing",
+            candidates_total=len(rows),
+            candidates_done=min(len(rows), start + len(batch)),
+        )
+        doc.figures_progress = progress
+        await db.commit()
+    if succeeded == 0 and failed:
+        raise _VisionUnavailableError(f"{failed} descrizioni fallite, nessuna riuscita")
+
+
 async def _extract(
     db: AsyncSession, doc: CourseDocument, workdir: Path, source: Path, config: ChildConfig
 ) -> _Outcome:
@@ -581,6 +788,11 @@ async def process_document(db: AsyncSession, doc: CourseDocument) -> None:
                 return
 
         await _deduplicate(db, doc)
+        try:
+            await _describe(db, doc, workdir)
+        except _VisionUnavailableError as exc:
+            await _recoverable(db, doc, "vision_unavailable", str(exc))
+            return
         counts = Counter(
             (
                 await db.execute(
@@ -595,7 +807,7 @@ async def process_document(db: AsyncSession, doc: CourseDocument) -> None:
         partial = bool(outcome.skipped_blocks) or (doc.figures_pages_total or 0) > int(
             settings.figure_extraction_max_pages
         )
-        doc.figures_count = counts.get("extracted", 0) + counts.get("ready", 0)
+        doc.figures_count = counts.get("ready", 0)
         doc.figures_coverage = "partial" if partial else "full"
         doc.figures_stats = {
             "seconds": round(time.monotonic() - started, 1),

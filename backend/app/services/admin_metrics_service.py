@@ -25,6 +25,7 @@ from sqlalchemy import ColumnElement, Float, case, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.course import Course
+from app.models.course_document_figure import CourseDocumentFigure
 from app.models.course_lesson import CourseLesson
 from app.models.course_module import CourseModule
 from app.models.login_attempt import LoginAttempt
@@ -190,7 +191,7 @@ async def _sum_cost(
 
 
 async def _cost(db: AsyncSession, *, cutoff_7d: datetime, cutoff_30d: datetime) -> CostMetrics:
-    # 5 sorgenti di costo (Glossary usa schema vecchio senza cost_usd);
+    # 6 sorgenti di costo (Glossary usa schema vecchio senza cost_usd);
     # `content` somma anche il costo degli asset (D16).
     sources: list[tuple[str, object, object, tuple[str, ...]]] = [
         ("architecture", Course.architecture_tokens, Course.architecture_generated_at, ()),
@@ -208,6 +209,15 @@ async def _cost(db: AsyncSession, *, cutoff_7d: datetime, cutoff_30d: datetime) 
         ),
         ("slides", CourseLesson.slides_tokens, CourseLesson.slides_generated_at, ()),
         ("speech", CourseLesson.speech_tokens, CourseLesson.speech_generated_at, ()),
+        # Vision delle figure di fonte: `vision_usage` è cumulativo per
+        # figura e datato all'ultima chiamata (limite dichiarato delle
+        # finestre 7/30 giorni).
+        (
+            "document_figures",
+            CourseDocumentFigure.vision_usage,
+            CourseDocumentFigure.vision_usage_at,
+            (),
+        ),
     ]
     by_phase: list[CostByPhase] = []
     total_usd = 0.0

@@ -24,7 +24,8 @@ Perimetro: PROMPT 3 (dispense, con grounding), 4 (verifica), 5 (slide),
 6 (discorso), 11 (immagine → Mermaid), 12 (fix degli asset: variante
 principale Mermaid IT e le varianti Vega-Lite / DOT / `function` IT
 dichiarate verbatim), 17 (revisore figura ↔ testo: prompt IT e variante
-EN). I messaggi user e gli schemi JSON non sono confrontati (sono template
+EN), 18 (Vision delle figure di fonte: prompt IT e variante EN). I
+messaggi user e gli schemi JSON non sono confrontati (sono template
 descrittivi, non stringhe del codice).
 
 Uso (dalla cartella `backend/`; nessun DB, nessuna rete; `JWT_SECRET` in
@@ -50,6 +51,7 @@ from pathlib import Path
 from typing import cast
 
 from app.services import openai_asset_fix_service as fix_service
+from app.services import openai_figure_describe_service as describe_service
 from app.services import openai_figure_review_service as review_service
 from app.services import openai_image_to_mermaid_service as image_service
 from app.services import openai_lesson_content_service as content_service
@@ -196,6 +198,10 @@ def render_review(language: str) -> str:
     return review_service._system_prompt(language)
 
 
+def render_describe(language: str) -> str:
+    return describe_service._system_prompt(language)
+
+
 _RENDERERS: tuple[tuple[str, int, str | None, Callable[[], str]], ...] = (
     ("PROMPT 3 — dispense (grounding)", 3, None, render_content),
     ("PROMPT 4 — verifica", 4, None, render_assessment),
@@ -212,6 +218,13 @@ _RENDERERS: tuple[tuple[str, int, str | None, Callable[[], str]], ...] = (
         17,
         "_SYSTEM_REVIEW_EN",
         lambda: render_review("en"),
+    ),
+    ("PROMPT 18 — Vision delle figure di fonte IT", 18, None, lambda: render_describe("it")),
+    (
+        "PROMPT 18 — Vision delle figure di fonte EN",
+        18,
+        "_SYSTEM_DESCRIBE_EN",
+        lambda: render_describe("en"),
     ),
 )
 
