@@ -420,6 +420,43 @@
       "reprocessConfirm": {
         "title": "Regenerate the summary?",
         "message": "You are about to regenerate the summary for \"{{name}}\". New OpenAI tokens will be consumed."
+      },
+      "figures": {
+        "extract": "Extract figures",
+        "extractAll": "Extract figures from all documents",
+        "extractAllHint": "Looks for diagrams, charts and photos in citable PDFs and DOCX files, to propose them in the lecture notes with their source.",
+        "requested": "Figure extraction started",
+        "requestedAll": "Figure extraction started for {{count}} documents",
+        "notStarted": "Figures not extracted",
+        "status": {
+          "pending": "Figures queued",
+          "processing": "Extracting figures…",
+          "progress": "Figures: page {{done}} of {{total}}",
+          "describing": "Describing figures: {{done}} of {{total}}",
+          "ready_one": "{{count}} figure",
+          "ready_other": "{{count}} figures",
+          "failed": "Figures: error",
+          "skipped": "Figures: not extracted"
+        },
+        "coveragePartial": "Partial extraction: some pages were not analysed.",
+        "errors": {
+          "policy_excluded": "Excluded document: its figures are not extracted.",
+          "policy_content_only": "Restricted document (content only): its figures are not reproduced.",
+          "unsupported_format": "Format not supported for figures (PDF and DOCX only).",
+          "extraction_disabled": "Figure extraction is not enabled on this installation.",
+          "source_missing": "Document file not found.",
+          "encrypted": "Password-protected PDF.",
+          "corrupt": "Unreadable or damaged file.",
+          "engine_unavailable": "The extraction engine is not available on the server.",
+          "timeout": "Time limit exceeded: automatic retry.",
+          "crashed": "Error during extraction: automatic retry.",
+          "oom": "Not enough memory during extraction: automatic retry.",
+          "crashed_repeatedly": "Some pages caused repeated errors and were skipped.",
+          "resources_unavailable": "Server too busy: extraction postponed for too long.",
+          "vision_unavailable": "Figure description unavailable: automatic retry.",
+          "storage_error": "Storage error: automatic retry.",
+          "attempts_exhausted": "Attempts exhausted: retry with “Extract figures”."
+        }
       }
     },
     "papers": {

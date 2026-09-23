@@ -420,6 +420,43 @@
       "reprocessConfirm": {
         "title": "Rigenerare il riassunto?",
         "message": "Stai per rigenerare il riassunto di \"{{name}}\". Verranno utilizzati nuovi token OpenAI."
+      },
+      "figures": {
+        "extract": "Estrai figure",
+        "extractAll": "Estrai le figure da tutti i documenti",
+        "extractAllHint": "Cerca schemi, grafici e foto nei PDF e nei DOCX citabili, per proporli nelle dispense con la fonte.",
+        "requested": "Estrazione delle figure avviata",
+        "requestedAll": "Estrazione delle figure avviata per {{count}} documenti",
+        "notStarted": "Figure non estratte",
+        "status": {
+          "pending": "Figure in coda",
+          "processing": "Estrazione figure…",
+          "progress": "Figure: pagina {{done}} di {{total}}",
+          "describing": "Descrizione figure: {{done}} di {{total}}",
+          "ready_one": "{{count}} figura",
+          "ready_other": "{{count}} figure",
+          "failed": "Figure: errore",
+          "skipped": "Figure: non estratte"
+        },
+        "coveragePartial": "Estrazione parziale: alcune pagine non sono state analizzate.",
+        "errors": {
+          "policy_excluded": "Documento escluso: le sue figure non vengono estratte.",
+          "policy_content_only": "Documento riservato (solo contenuto): le sue figure non vengono riprodotte.",
+          "unsupported_format": "Formato non supportato per le figure (solo PDF e DOCX).",
+          "extraction_disabled": "L'estrazione delle figure non è attiva su questa installazione.",
+          "source_missing": "File del documento non trovato.",
+          "encrypted": "PDF protetto da password.",
+          "corrupt": "File illeggibile o danneggiato.",
+          "engine_unavailable": "Il motore di estrazione non è disponibile sul server.",
+          "timeout": "Tempo massimo superato: nuovo tentativo automatico.",
+          "crashed": "Errore durante l'estrazione: nuovo tentativo automatico.",
+          "oom": "Memoria insufficiente durante l'estrazione: nuovo tentativo automatico.",
+          "crashed_repeatedly": "Alcune pagine hanno causato errori ripetuti e sono state saltate.",
+          "resources_unavailable": "Server troppo carico: estrazione rinviata troppo a lungo.",
+          "vision_unavailable": "Descrizione delle figure non disponibile: nuovo tentativo automatico.",
+          "storage_error": "Errore di archiviazione: nuovo tentativo automatico.",
+          "attempts_exhausted": "Tentativi esauriti: riprova con «Estrai figure»."
+        }
       }
     },
     "papers": {

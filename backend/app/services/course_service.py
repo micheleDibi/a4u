@@ -46,7 +46,7 @@ from app.schemas.course import (
     TaxonomyAssignments,
 )
 from app.schemas.document_bibliography import DocumentBibliography
-from app.services import file_service
+from app.services import document_figures_service, file_service
 from app.services.organization_course_settings_service import (
     get_or_create_settings,
 )
@@ -685,6 +685,7 @@ async def delete_course(
     # (vincoli FK) non lasciamo orfani sul filesystem.
     for path in document_paths:
         await file_service.delete_upload(path)
+    await document_figures_service.delete_course_files(course_id)
     await write_audit(
         db,
         action="course.delete",
@@ -895,6 +896,9 @@ async def update_document_citation_policy(
         if doc.summary_status in ("ready", "failed"):
             doc.summary_status = "pending"
             doc.summary_error = None
+    figures_requeued = document_figures_service.requeue_after_policy_change(
+        doc, old_policy=old_policy
+    )
 
     await write_audit(
         db,
@@ -909,6 +913,7 @@ async def update_document_citation_policy(
             "old": old_policy,
             "new": citation_policy,
             "summary_scrubbed": scrubbed,
+            "figures_requeued": figures_requeued,
         },
     )
     await db.commit()
@@ -954,9 +959,15 @@ async def delete_document(
 ) -> None:
     file_path = doc.file_path
     doc_id = doc.id
+    # Figure di fonte (U1, non retroattivo): quelle già usate da una lezione
+    # restano, staccate con l'attribuzione congelata; le altre si cancellano.
+    figure_paths, figures_detached = await document_figures_service.prepare_document_deletion(
+        db, doc
+    )
     await db.delete(doc)
     await db.flush()
     await file_service.delete_upload(file_path)
+    await document_figures_service.delete_files(figure_paths)
     await write_audit(
         db,
         action="course.document.delete",
@@ -964,7 +975,7 @@ async def delete_document(
         organization_id=course.organization_id,
         target_type="course_document",
         target_id=str(doc_id),
-        metadata={"course_id": str(course.id)},
+        metadata={"course_id": str(course.id), "figures_detached": figures_detached},
     )
 
 

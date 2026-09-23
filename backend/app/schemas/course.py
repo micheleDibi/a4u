@@ -88,6 +88,24 @@ class CourseDocumentOut(ORMModel):
     summary_chunks_done: int | None = None
     # Politica di citazione (Blocco 2): citable | content_only | excluded.
     citation_policy: str = "citable"
+    # Provenienza (figure di fonte): origine, opera propria, licenza e
+    # bibliografia da fonti deterministiche (`summary_proposal` = proposta
+    # del riassunto da confermare, fuori dalla riga «Fonte»).
+    origin: str = "upload"
+    is_own_work: bool = False
+    license: str | None = None
+    license_source: str | None = None
+    bibliography: dict[str, object] | None = None
+    bibliography_source: str | None = None
+    # Estrazione delle figure di fonte: NULL = mai richiesta.
+    figures_status: str | None = None
+    figures_error_code: str | None = None
+    figures_count: int | None = None
+    figures_coverage: str | None = None
+    figures_pages_total: int | None = None
+    figures_pages_done: int | None = None
+    figures_progress: dict[str, object] | None = None
+    figures_requested_at: datetime | None = None
     created_at: datetime
 
 

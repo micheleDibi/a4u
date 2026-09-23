@@ -301,6 +301,21 @@ export default function CourseEditorPage({ mode }: Props) {
       ) {
         return 5000;
       }
+      // Figure di fonte (ultimo controllo, il più lento): polling solo con
+      // estrazioni in coda o in corso, ogni 10 s e più di rado quando
+      // l'estrazione dura (i PDF lunghi richiedono decine di minuti).
+      const activeFigures = (data.documents ?? []).filter(
+        (d) => d.figures_status === "pending" || d.figures_status === "processing"
+      );
+      if (activeFigures.length > 0) {
+        const oldest = Math.min(
+          ...activeFigures.map((d) =>
+            d.figures_requested_at ? Date.parse(d.figures_requested_at) : Date.now()
+          )
+        );
+        const minutes = (Date.now() - oldest) / 60000;
+        return minutes < 3 ? 10000 : minutes < 15 ? 20000 : 30000;
+      }
       return false;
     },
   });
@@ -1512,6 +1527,7 @@ export default function CourseEditorPage({ mode }: Props) {
                   courseId={course.id}
                   documents={course.documents}
                   disabled={mode === "edit" && !canEdit}
+                  canGenerate={canGenerate}
                 />
               </CardContent>
             </Card>

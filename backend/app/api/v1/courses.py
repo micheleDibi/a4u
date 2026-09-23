@@ -116,6 +116,7 @@ from app.services import (
     course_lesson_video_service,
     course_module_pdf_service,
     course_service,
+    document_figures_service,
     figure_render_service,
     file_service,
     remote_storage,
@@ -636,6 +637,67 @@ async def reprocess_document(
         db, course_id=course_id, doc_id=doc_id
     )
     doc = await course_service.reprocess_document(
+        db, course=course, doc=doc, actor_id=current.id
+    )
+    return CourseDocumentOut.model_validate(doc)
+
+
+@router.post(
+    "/{course_id}/documents/figures/extract",
+    response_model=list[CourseDocumentOut],
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def extract_course_document_figures(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_GENERATE),
+) -> list[CourseDocumentOut]:
+    """Mette in coda l'estrazione delle figure di fonte di tutti i documenti
+    del corso (idempotente; i documenti non estraibili risultano `skipped`
+    con il motivo)."""
+    await _ensure_org(db, org_id)
+    granted = await resolve_permissions(db, user=current, organization_id=org_id)
+    course = await course_service.get_course(
+        db,
+        organization_id=org_id,
+        course_id=course_id,
+        current_user=current,
+        granted_permissions=granted,
+    )
+    docs = await document_figures_service.request_course_extraction(
+        db, course=course, actor_id=current.id
+    )
+    return [CourseDocumentOut.model_validate(d) for d in docs]
+
+
+@router.post(
+    "/{course_id}/documents/{doc_id}/figures/extract",
+    response_model=CourseDocumentOut,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def extract_document_figures(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    doc_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_GENERATE),
+) -> CourseDocumentOut:
+    """Mette in coda l'estrazione delle figure di fonte del documento
+    (idempotente: in coda, in corso o pronta → nessun cambio)."""
+    await _ensure_org(db, org_id)
+    granted = await resolve_permissions(db, user=current, organization_id=org_id)
+    course = await course_service.get_course(
+        db,
+        organization_id=org_id,
+        course_id=course_id,
+        current_user=current,
+        granted_permissions=granted,
+    )
+    doc = await course_service.get_document(db, course_id=course_id, doc_id=doc_id)
+    doc = await document_figures_service.request_extraction(
         db, course=course, doc=doc, actor_id=current.id
     )
     return CourseDocumentOut.model_validate(doc)

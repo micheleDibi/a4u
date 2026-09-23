@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import {
   Eye,
   FileText,
+  Images,
   Loader2,
   RotateCw,
   Trash2,
@@ -32,6 +33,8 @@ import {
   CitationPolicyChip,
 } from "./CitationPolicyPicker";
 import { DocumentSummaryDialog } from "./DocumentSummaryDialog";
+import { DocumentFiguresStatus } from "./DocumentFiguresStatus";
+import { canRequestFigures } from "./documentFigures";
 
 interface Props {
   orgId: string;
@@ -39,6 +42,8 @@ interface Props {
   documents: CourseDocumentOut[];
   onChanged?: () => void; // notify parent that the docs list has changed
   disabled?: boolean;
+  /** Permesso course:generate: abilita l'estrazione delle figure di fonte. */
+  canGenerate?: boolean;
 }
 
 const MAX_MB = 25;
@@ -65,6 +70,7 @@ export function CourseDocumentUploader({
   documents,
   onChanged,
   disabled,
+  canGenerate = false,
 }: Props) {
   const { t } = useTranslation();
   const qc = useQueryClient();
@@ -120,6 +126,29 @@ export function CourseDocumentUploader({
     },
     onError: (err) => toast.error(extractApiError(err).message),
   });
+
+  const figuresMut = useMutation({
+    mutationFn: (docId: string) =>
+      coursesApi.documents.extractFigures(orgId, courseId, docId),
+    onSuccess: () => {
+      toast.success(t("courses.docs.figures.requested"));
+      invalidate();
+    },
+    onError: (err) => toast.error(extractApiError(err).message),
+  });
+
+  const allFiguresMut = useMutation({
+    mutationFn: () => coursesApi.documents.extractAllFigures(orgId, courseId),
+    onSuccess: (docs) => {
+      const queued = docs.filter((d) => d.figures_status === "pending").length;
+      toast.success(t("courses.docs.figures.requestedAll", { count: queued }));
+      invalidate();
+    },
+    onError: (err) => toast.error(extractApiError(err).message),
+  });
+
+  const canExtractFigures = canGenerate && !disabled;
+  const anyFiguresToRequest = documents.some(canRequestFigures);
 
   const handleFiles = (files: FileList | File[]) => {
     if (disabled) return;
@@ -217,6 +246,22 @@ export function CourseDocumentUploader({
         disabled={disabled}
       />
 
+      {canExtractFigures && anyFiguresToRequest && (
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            disabled={allFiguresMut.isPending}
+            onClick={() => allFiguresMut.mutate()}
+          >
+            <Images className="size-4" />
+            {t("courses.docs.figures.extractAll")}
+          </Button>
+          <span>{t("courses.docs.figures.extractAllHint")}</span>
+        </div>
+      )}
+
       {documents.length > 0 ? (
         <ul className="divide-y divide-border rounded-lg border border-border">
           {documents.map((d) => {
@@ -241,6 +286,12 @@ export function CourseDocumentUploader({
                     {formatBytes(d.size_bytes)} · {d.mime_type}
                   </div>
                 </div>
+                <DocumentFiguresStatus
+                  doc={d}
+                  canExtract={canExtractFigures}
+                  pending={figuresMut.isPending && figuresMut.variables === d.id}
+                  onExtract={() => figuresMut.mutate(d.id)}
+                />
                 {(!disabled || d.citation_policy !== "citable") && (
                   <CitationPolicyChip
                     value={d.citation_policy}

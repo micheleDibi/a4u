@@ -157,8 +157,37 @@ export interface CourseDocumentOut {
    *  sempre usato per generare; con "content_only" l'origine non viene
    *  mai citata; con "excluded" il riassunto non entra nei prompt. */
   citation_policy: CitationPolicy;
+  /** Provenienza (figure di fonte): origine, opera propria, licenza e
+   *  bibliografia da fonti deterministiche. */
+  origin: "upload" | "paper_import" | "paper_metadata";
+  is_own_work: boolean;
+  license: string | null;
+  license_source: string | null;
+  bibliography: Record<string, unknown> | null;
+  bibliography_source: string | null;
+  /** Estrazione delle figure di fonte: null = mai richiesta (nessun
+   *  backfill automatico). */
+  figures_status: DocumentFiguresStatus | null;
+  figures_error_code: string | null;
+  figures_count: number | null;
+  figures_coverage: "full" | "partial" | null;
+  figures_pages_total: number | null;
+  figures_pages_done: number | null;
+  figures_progress: {
+    stage?: "extracting" | "describing" | "done";
+    candidates_total?: number;
+    candidates_done?: number;
+  } | null;
+  figures_requested_at: string | null;
   created_at: string;
 }
+
+export type DocumentFiguresStatus =
+  | "pending"
+  | "processing"
+  | "ready"
+  | "failed"
+  | "skipped";
 
 export type CitationPolicy = "citable" | "content_only" | "excluded";
 
@@ -1192,6 +1221,25 @@ export const coursesApi = {
     ): Promise<CourseDocumentOut> => {
       const res = await apiClient.post<CourseDocumentOut>(
         `${base(orgId)}/${courseId}/documents/${docId}/reprocess`
+      );
+      return res.data;
+    },
+    extractFigures: async (
+      orgId: string,
+      courseId: string,
+      docId: string
+    ): Promise<CourseDocumentOut> => {
+      const res = await apiClient.post<CourseDocumentOut>(
+        `${base(orgId)}/${courseId}/documents/${docId}/figures/extract`
+      );
+      return res.data;
+    },
+    extractAllFigures: async (
+      orgId: string,
+      courseId: string
+    ): Promise<CourseDocumentOut[]> => {
+      const res = await apiClient.post<CourseDocumentOut[]>(
+        `${base(orgId)}/${courseId}/documents/figures/extract`
       );
       return res.data;
     },
