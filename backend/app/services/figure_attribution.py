@@ -498,10 +498,10 @@ def fitted_written_line(
     if cur.authors:
         first = _ellipsize(cur.authors[0], _MAX_BAND_NAME_CHARS)
         cur = replace(cur, authors=(first, *cur.authors[1:]))
-    for field in ("credit", "fallback_name"):
-        value = getattr(cur, field)
-        if value:
-            cur = replace(cur, **{field: _ellipsize(value, _MAX_BAND_NAME_CHARS)})
+    if cur.credit:
+        cur = replace(cur, credit=_ellipsize(cur.credit, _MAX_BAND_NAME_CHARS))
+    if cur.fallback_name:
+        cur = replace(cur, fallback_name=_ellipsize(cur.fallback_name, _MAX_BAND_NAME_CHARS))
     if found := fits(cur, max_authors):
         return found
     if cur.container:

@@ -1539,7 +1539,9 @@ def test_slides_template_css_for_figures() -> None:
     lesson_css = (_TEMPLATES / "lesson_pdf.html.j2").read_text(encoding="utf-8")
     lesson_fallback = lesson_css.split(".mermaid-fallback, .figure-fallback {", 1)[1]
     assert re.findall(r"white-space:\s*([\w-]+);", lesson_fallback.split("}", 1)[0]) == ["pre-wrap"]
-    assert sorted(re.findall(r"max-height:\s*(\d+)mm", css)) == ["14", "40"]
+    # 15 mm: la fascia della riga «Fonte» delle figure di fonte (WP4,
+    # `SlideGeometry.attribution_max_h_mm`), non una figura.
+    assert sorted(re.findall(r"max-height:\s*(\d+)mm", css)) == ["14", "15", "40"]
     assert ".slide-asset .missing-asset," in css
 
 

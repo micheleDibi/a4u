@@ -85,7 +85,7 @@ SourceFigureMap = Mapping[str, ResolvedSourceFigure]
 _GEOMETRY = SlideGeometry()
 
 
-def band_texts(src: AttributionSource, *, language: str) -> tuple[str, str]:
+def band_texts(src: AttributionSource, *, language: str | None) -> tuple[str, str]:
     """Riga «Fonte» per la fascia delle slide: su due righe e su una."""
     two = _GEOMETRY.attribution_budget_em(_GEOMETRY.attribution_lines_per_figure)
     return (
