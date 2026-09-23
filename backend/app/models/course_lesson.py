@@ -245,6 +245,13 @@ class CourseLesson(UUIDPKMixin, TimestampMixin, Base):
     content_tokens: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB, nullable=True
     )
+    # Esiti del revisore delle figure di fonte (coerenza e ridondanza,
+    # migrazione 0037): creata solo dalla materializzazione di Fase 3; il
+    # CRUD manuale e la duplicazione possono solo potarla o rimapparla,
+    # mai aggiungere verdetti. Non fa parte di `content_raw`.
+    content_figure_review: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB(none_as_null=True), nullable=True
+    )
     content_attempts: Mapped[int] = mapped_column(
         SmallInteger, nullable=False, default=0, server_default="0"
     )

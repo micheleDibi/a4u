@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, CheckConstraint, ForeignKey, SmallInteger
+from sqlalchemy import Boolean, CheckConstraint, ForeignKey, SmallInteger, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -27,6 +27,11 @@ class OrganizationCourseSettings(UUIDPKMixin, TimestampMixin, Base):
         ),
         CheckConstraint(
             "open_questions_count >= 0", name="open_questions_count_min"
+        ),
+        CheckConstraint(
+            "figure_source_license_policy IS NULL OR "
+            "figure_source_license_policy IN ('cite_all','open_only')",
+            name="figure_source_license_policy_valid",
         ),
     )
 
@@ -53,6 +58,12 @@ class OrganizationCourseSettings(UUIDPKMixin, TimestampMixin, Base):
     )
     open_questions_count: Mapped[int] = mapped_column(
         SmallInteger, nullable=False, default=6, server_default="6"
+    )
+    # Politica di licenza delle figure di fonte per l'organizzazione
+    # (migrazione 0037). NULL = eredita `FIGURE_SOURCE_LICENSE_POLICY`.
+    # Letta dal vivo a ogni generazione (non copiata nel corso).
+    figure_source_license_policy: Mapped[str | None] = mapped_column(
+        String(20), nullable=True
     )
 
     organization: Mapped["Organization"] = relationship(

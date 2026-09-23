@@ -8,6 +8,7 @@ from app.models.avatar_voice_script import AvatarVoiceScript
 from app.models.course import Course
 from app.models.course_document import CourseDocument
 from app.models.course_document_chunk import CourseDocumentChunk
+from app.models.course_document_figure import CourseDocumentFigure
 from app.models.course_duplication_job import CourseDuplicationJob
 from app.models.course_lesson import CourseLesson
 from app.models.course_module import CourseModule
@@ -39,6 +40,7 @@ __all__ = [
     "Course",
     "CourseDocument",
     "CourseDocumentChunk",
+    "CourseDocumentFigure",
     "CourseDuplicationJob",
     "CourseLesson",
     "CourseModule",
