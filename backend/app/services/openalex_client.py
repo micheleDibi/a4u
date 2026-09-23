@@ -8,12 +8,22 @@ Funzioni esposte:
 - `search_works(query, filters, cursor, per_page)`: ricerca paper con
   filtri (anno, OA, citations, autore, venue, type). Cursor-based
   pagination.
-- `download_pdf(url, max_bytes)`: scarica un PDF dal `oa_url`.
+- `get_work(work_id)`: rilegge un lavoro dal server (import dei paper e
+  figure della letteratura aperta: l'URL del PDF viene da qui, mai dal
+  client).
+- `search_open_works(query, per_page)`: lavori open access con licenza
+  Creative Commons o pubblico dominio (figure della letteratura, WP5).
+- `download_pdf(url, max_bytes)`: scarica un PDF dal `oa_url` con
+  `safe_http` (niente SSRF, tetto di byte, contenuto verificato).
+
+Dal 13/02/2026 OpenAlex chiede una API key (`OPENALEX_API_KEY`, parametro
+`api_key` di ogni richiesta); senza, le richieste possono essere rifiutate.
 
 Errori -> `OpenAlexError(status, message)`.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -21,6 +31,7 @@ import httpx
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
+from app.services import safe_http
 
 log = get_logger("app.openalex")
 
@@ -79,14 +90,102 @@ def _user_agent() -> str:
 
 def _client(timeout: float = 30.0) -> httpx.AsyncClient:
     settings = get_settings()
+    key = (settings.openalex_api_key or "").strip()
     return httpx.AsyncClient(
         base_url=settings.openalex_base_url.rstrip("/"),
         headers={
             "User-Agent": _user_agent(),
             "Accept": "application/json",
         },
+        params={"api_key": key} if key else None,
         timeout=timeout,
     )
+
+
+# Licenza della location open access (OpenAlex) → licenza della figura;
+# altro (`other-oa`, assente) → None: niente figure da quella fonte.
+_OA_LICENSES = {
+    "cc-by": "cc_by",
+    "cc-by-sa": "cc_by_sa",
+    "cc0": "cc0",
+    "public-domain": "public_domain",
+    "cc-by-nc": "cc_by_nc",
+    "cc-by-nd": "cc_by_nd",
+    "cc-by-nc-sa": "cc_by_nc_sa",
+    "cc-by-nc-nd": "cc_by_nc_nd",
+}
+_WORK_ID_RE = re.compile(r"^(?:https://openalex\.org/)?(W\d{1,15})$")
+_WORK_SELECT = (
+    "id,doi,title,display_name,authorships,publication_year,primary_location,"
+    "best_oa_location,open_access,type,keywords,cited_by_count,abstract_inverted_index"
+)
+
+
+def oa_location_license(work: OpenAlexWork) -> str | None:
+    """Licenza della location open access migliore, come codice della
+    figura; None se assente o non riconosciuta."""
+    best = work.raw.get("best_oa_location") or {}
+    raw = best.get("license") if isinstance(best, dict) else None
+    return _OA_LICENSES.get(str(raw or "").strip().lower())
+
+
+def oa_landing_url(work: OpenAlexWork) -> str | None:
+    best = work.raw.get("best_oa_location") or {}
+    url = best.get("landing_page_url") if isinstance(best, dict) else None
+    return url if isinstance(url, str) and url.startswith(("https://", "http://")) else None
+
+
+def _raise_for_status(resp: httpx.Response) -> None:
+    if resp.status_code < 400:
+        return
+    try:
+        payload = resp.json()
+    except Exception:
+        payload = {"text": resp.text[:500]}
+    msg = payload.get("error") if isinstance(payload, dict) else None
+    raise OpenAlexError(
+        status=resp.status_code,
+        message=msg or f"OpenAlex ha risposto con HTTP {resp.status_code}.",
+        payload=payload,
+    )
+
+
+async def get_work(work_id: str) -> OpenAlexWork:
+    """Rilegge un lavoro da OpenAlex (id «W…» o URL https://openalex.org/W…)."""
+    match = _WORK_ID_RE.match((work_id or "").strip())
+    if match is None:
+        raise OpenAlexError(status=400, message=f"id OpenAlex non valido: {work_id!r}")
+    try:
+        async with _client(timeout=30.0) as client:
+            resp = await client.get(f"/works/{match.group(1)}", params={"select": _WORK_SELECT})
+    except httpx.HTTPError as exc:
+        raise OpenAlexError(status=None, message=f"Errore HTTP verso OpenAlex: {exc}") from exc
+    _raise_for_status(resp)
+    data = resp.json()
+    if not isinstance(data, dict):
+        raise OpenAlexError(status=None, message="Risposta OpenAlex non valida.")
+    return _to_work(data)
+
+
+async def search_open_works(query: str, *, per_page: int = 5) -> list[OpenAlexWork]:
+    """Lavori open access con licenza CC o pubblico dominio e un PDF."""
+    licenses = "|".join(_OA_LICENSES)
+    params: dict[str, Any] = {
+        "search": query.strip(),
+        "filter": f"is_oa:true,best_oa_location.license:{licenses}",
+        "select": _WORK_SELECT,
+        "per-page": max(1, min(per_page, 25)),
+    }
+    try:
+        async with _client(timeout=30.0) as client:
+            resp = await client.get("/works", params=params)
+    except httpx.HTTPError as exc:
+        raise OpenAlexError(status=None, message=f"Errore HTTP verso OpenAlex: {exc}") from exc
+    _raise_for_status(resp)
+    data = resp.json()
+    results = data.get("results") if isinstance(data, dict) else None
+    works = [_to_work(w) for w in results or [] if isinstance(w, dict)]
+    return [w for w in works if w.oa_pdf_url and oa_location_license(w)]
 
 
 def _reconstruct_abstract(
@@ -322,67 +421,24 @@ async def download_pdf(
     *,
     max_bytes: int,
 ) -> bytes:
-    """Scarica un PDF (binario) dall'URL specificato.
+    """Scarica un PDF (binario) dall'URL specificato, con `safe_http`:
+    niente indirizzi interni (SSRF), redirect ricontrollati, tetto di byte
+    e contenuto verificato dai primi byte (una landing page HTML con 200 è
+    rifiutata, così l'import ripiega sui metadati .md).
 
     Solleva `OpenAlexError(status=None)` su HTTP error, timeout o
-    `OpenAlexError(status=413)` se la dimensione supera `max_bytes`.
+    contenuto non PDF, `OpenAlexError(status=413)` oltre `max_bytes`.
     """
-    if not url or not url.startswith("http"):
-        raise OpenAlexError(
-            status=None, message=f"URL PDF non valido: {url!r}"
-        )
     try:
-        async with httpx.AsyncClient(
+        result = await safe_http.fetch(
+            url,
+            max_bytes=max_bytes,
             timeout=120.0,
-            follow_redirects=True,
+            allowed_kinds=frozenset({"pdf"}),
             headers={"User-Agent": _user_agent()},
-        ) as client:
-            resp = await client.get(url)
-    except httpx.HTTPError as exc:
-        log.warning("openalex_pdf_download_failed", url=url, error=str(exc))
-        raise OpenAlexError(
-            status=None, message=f"Download PDF fallito: {exc}"
-        ) from exc
-
-    if resp.status_code >= 400:
-        log.warning(
-            "openalex_pdf_download_http_error",
-            url=url,
-            status=resp.status_code,
         )
-        raise OpenAlexError(
-            status=resp.status_code,
-            message=f"Download PDF HTTP {resp.status_code}.",
-        )
-    payload = resp.content
-    if len(payload) > max_bytes:
-        raise OpenAlexError(
-            status=413,
-            message=(
-                f"PDF troppo grande: {len(payload)} byte > "
-                f"limite {max_bytes}."
-            ),
-        )
-    # Molti URL "oa_pdf" puntano a landing page / paywall che rispondono
-    # 200 con HTML invece del PDF. Senza questo controllo l'HTML verrebbe
-    # salvato come .pdf e poi fallirebbe l'estrazione testo ("No /Root
-    # object! - Is this really a PDF?"). Verifichiamo l'header %PDF (la
-    # spec ne tollera la presenza entro i primi ~1024 byte) cosi' l'import
-    # puo' ripiegare sui metadati .md.
-    if b"%PDF-" not in payload[:1024]:
-        ctype = resp.headers.get("content-type", "?")
-        log.warning(
-            "openalex_pdf_not_a_pdf",
-            url=url,
-            content_type=ctype,
-            size=len(payload),
-            head=payload[:16].hex(),
-        )
-        raise OpenAlexError(
-            status=None,
-            message=(
-                f"Il contenuto scaricato non e' un PDF "
-                f"(content-type={ctype})."
-            ),
-        )
-    return payload
+    except safe_http.SafeFetchError as exc:
+        log.warning("openalex_pdf_download_failed", url=url[:300], error=str(exc))
+        status = 413 if exc.code == "too_large" else exc.status
+        raise OpenAlexError(status=status, message=f"Download PDF fallito: {exc}") from exc
+    return result.content

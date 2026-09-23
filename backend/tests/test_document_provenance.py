@@ -91,7 +91,28 @@ async def test_pdf_import_records_openalex_bibliography(
     async def fake_download(url: str, *, max_bytes: int) -> bytes:
         return b"%PDF-1.4 fake"
 
+    async def fake_get_work(work_id: str) -> Any:
+        # WP5: l'URL del PDF e i metadati si rileggono dal server OpenAlex.
+        from app.services.openalex_client import _to_work
+
+        return _to_work(
+            {
+                "id": "https://openalex.org/W123",
+                "doi": "https://doi.org/10.1000/ldv",
+                "title": "Laser Doppler vibrometry for structural testing",
+                "authorships": [
+                    {"author": {"display_name": "Mario Rossi"}},
+                    {"author": {"display_name": "Anna Bianchi"}},
+                ],
+                "publication_year": 2020,
+                "primary_location": {"source": {"display_name": "Journal of Sound and Vibration"}},
+                "open_access": {"is_oa": True},
+                "best_oa_location": {"pdf_url": "https://x.org/a.pdf"},
+            }
+        )
+
     monkeypatch.setattr(paper_import_service, "download_pdf", fake_download)
+    monkeypatch.setattr(paper_import_service, "get_work", fake_get_work)
     course, user = await _course(db)
     result = await paper_import_service.import_paper(
         db, course=course, paper=_paper(oa_pdf_url="https://x.org/a.pdf"), actor_id=user.id

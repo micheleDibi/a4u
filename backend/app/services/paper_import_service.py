@@ -1,8 +1,12 @@
 """Service di import di paper scientifici come `CourseDocument`.
 
 Strategia per ogni paper selezionato dall'utente:
-- Se `oa_pdf_url` presente: tenta `openalex_client.download_pdf`. Se OK
-  -> salva come `.pdf` via `course_service.add_document_from_bytes`.
+- Se `oa_pdf_url` presente: rilegge il lavoro da OpenAlex (`get_work`) e
+  usa l'URL del PDF e i metadati del SERVER, mai quelli arrivati dal
+  client (chiude la SSRF dell'import); poi `openalex_client.download_pdf`
+  (con `safe_http`). Se OK -> salva come `.pdf` via
+  `course_service.add_document_from_bytes`, con la licenza della location
+  open access quando è Creative Commons o pubblico dominio.
 - Se download fallisce o NO PDF disponibile: genera un file `.md` con
   i metadata del paper (titolo, autori, anno, journal, DOI, abstract,
   tldr, keywords, subjects) e salva come `text/markdown` via lo stesso
@@ -32,7 +36,13 @@ from app.models.course_document import CourseDocument
 from app.schemas.document_bibliography import DocumentBibliography
 from app.schemas.paper_search import PaperOut
 from app.services import course_service
-from app.services.openalex_client import OpenAlexError, download_pdf
+from app.services.openalex_client import (
+    OpenAlexError,
+    OpenAlexWork,
+    download_pdf,
+    get_work,
+    oa_location_license,
+)
 
 log = get_logger("app.paper_import")
 
@@ -169,6 +179,22 @@ def _render_metadata_md(paper: PaperOut) -> str:
     return "\n".join(parts)
 
 
+def _from_server(paper: PaperOut, work: OpenAlexWork) -> PaperOut:
+    """Il paper con URL del PDF e metadati letti dal server OpenAlex."""
+    return paper.model_copy(
+        update={
+            "doi": work.doi,
+            "title": work.title or paper.title,
+            "authors": work.authors,
+            "year": work.publication_year,
+            "journal": work.journal,
+            "is_oa": work.is_oa,
+            "oa_pdf_url": work.oa_pdf_url,
+            "doi_url": f"https://doi.org/{work.doi}" if work.doi else None,
+        }
+    )
+
+
 async def import_paper(
     db: AsyncSession,
     *,
@@ -190,6 +216,20 @@ async def import_paper(
     max_bytes = settings.course_document_max_mb * 1024 * 1024
 
     pdf_bytes: bytes | None = None
+    license_code: str | None = None
+    if paper.oa_pdf_url:
+        # L'URL del client non si scarica mai: vale quello del server.
+        try:
+            work = await get_work(paper.id)
+            paper = _from_server(paper, work)
+            license_code = oa_location_license(work)
+        except OpenAlexError as exc:
+            log.warning(
+                "paper_import_reread_failed_fallback_to_metadata",
+                paper_id=paper.id,
+                error=str(exc),
+            )
+            paper = paper.model_copy(update={"oa_pdf_url": None})
     if paper.oa_pdf_url:
         try:
             pdf_bytes = await download_pdf(
@@ -226,6 +266,9 @@ async def import_paper(
                 bibliography=bibliography,
                 bibliography_source="openalex",
             )
+            if license_code is not None:
+                doc.license = license_code
+                doc.license_source = "openalex"
             return PaperImportResult(document=doc, mode="pdf")
         except ValidationAppError as exc:
             log.warning(
