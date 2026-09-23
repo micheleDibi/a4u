@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import {
   coursesApi,
   type CourseDocumentOut,
+  type CourseDocumentUpdate,
   type DocumentBibliographyInput,
   type DocumentLicense,
 } from "@/api/courses";
@@ -37,6 +38,10 @@ import { extractApiError } from "@/lib/errors";
  * della riga «Fonte» che il backend compone per ogni figura del documento;
  * il frontend non la ricompone mai. La proposta del riassunto AI si può
  * caricare nei campi, ma diventa bibliografia solo se il docente salva.
+ * Il salvataggio invia solo i campi cambiati: cambiare la licenza non
+ * trasforma in «docente» una bibliografia letta dai metadati, da Crossref
+ * o da OpenAlex, e i campi senza controllo nel form (editore, id OpenAlex)
+ * restano.
  */
 const DOCUMENT_LICENSES: DocumentLicense[] = [
   "cc0",
@@ -65,6 +70,27 @@ function str(value: unknown): string {
   return typeof value === "string" ? value : typeof value === "number" ? String(value) : "";
 }
 
+interface BibFields {
+  title: string;
+  authors: string;
+  year: string;
+  container: string;
+  doi: string;
+  url: string;
+}
+
+function bibFields(doc: CourseDocumentOut): BibFields {
+  const bib = doc.bibliography ?? {};
+  return {
+    title: str(bib.title),
+    authors: Array.isArray(bib.authors) ? bib.authors.map(str).join("\n") : "",
+    year: str(bib.year),
+    container: str(bib.container),
+    doi: str(bib.doi),
+    url: str(bib.url),
+  };
+}
+
 export function DocumentSourceDialog({ open, doc, orgId, courseId, onClose }: Props) {
   const { t } = useTranslation();
   const qc = useQueryClient();
@@ -80,13 +106,13 @@ export function DocumentSourceDialog({ open, doc, orgId, courseId, onClose }: Pr
 
   useEffect(() => {
     if (!doc) return;
-    const bib = doc.bibliography ?? {};
-    setTitle(str(bib.title));
-    setAuthors(Array.isArray(bib.authors) ? bib.authors.map(str).join("\n") : "");
-    setYear(str(bib.year));
-    setContainer(str(bib.container));
-    setDoi(str(bib.doi));
-    setUrl(str(bib.url));
+    const fields = bibFields(doc);
+    setTitle(fields.title);
+    setAuthors(fields.authors);
+    setYear(fields.year);
+    setContainer(fields.container);
+    setDoi(fields.doi);
+    setUrl(fields.url);
     setLicense(doc.license ?? UNKNOWN);
     setOwnWork(doc.is_own_work);
     setFromProposal(false);
@@ -113,31 +139,48 @@ export function DocumentSourceDialog({ open, doc, orgId, courseId, onClose }: Pr
 
   const saveMut = useMutation({
     mutationFn: async () => {
-      const authorList = authors
-        .split("\n")
-        .map((a) => a.trim())
-        .filter(Boolean);
-      const yearNumber = Number.parseInt(year, 10);
-      const bibliography: DocumentBibliographyInput = {
-        title: title.trim() || null,
-        authors: authorList,
-        year: Number.isFinite(yearNumber) ? yearNumber : null,
-        container: container.trim() || null,
-        doi: doi.trim() || null,
-        url: url.trim() || null,
-      };
-      const empty =
-        !bibliography.title &&
-        authorList.length === 0 &&
-        !bibliography.year &&
-        !bibliography.container &&
-        !bibliography.doi &&
-        !bibliography.url;
-      return coursesApi.documents.update(orgId, courseId, doc!.id, {
-        bibliography: empty ? null : bibliography,
-        license: license === UNKNOWN ? null : (license as DocumentLicense),
-        is_own_work: ownWork,
-      });
+      const current = doc!;
+      const initial = bibFields(current);
+      const edited: BibFields = { title, authors, year, container, doi, url };
+      const bibChanged =
+        fromProposal ||
+        (Object.keys(initial) as (keyof BibFields)[]).some(
+          (key) => initial[key].trim() !== edited[key].trim(),
+        );
+      const update: CourseDocumentUpdate = {};
+      if (bibChanged) {
+        const authorList = authors
+          .split("\n")
+          .map((a) => a.trim())
+          .filter(Boolean);
+        const yearNumber = Number.parseInt(year, 10);
+        const previous = current.bibliography ?? {};
+        const bibliography: DocumentBibliographyInput = {
+          title: title.trim() || null,
+          authors: authorList,
+          year: Number.isFinite(yearNumber) ? yearNumber : null,
+          container: container.trim() || null,
+          doi: doi.trim() || null,
+          url: url.trim() || null,
+          // Campi senza controllo nel form: restano come sono.
+          publisher: str(previous.publisher) || null,
+          openalex_id: str(previous.openalex_id) || null,
+        };
+        const empty =
+          !bibliography.title &&
+          authorList.length === 0 &&
+          !bibliography.year &&
+          !bibliography.container &&
+          !bibliography.doi &&
+          !bibliography.url &&
+          !bibliography.publisher;
+        update.bibliography = empty ? null : bibliography;
+      }
+      const nextLicense = license === UNKNOWN ? null : (license as DocumentLicense);
+      if (nextLicense !== (current.license ?? null)) update.license = nextLicense;
+      if (ownWork !== current.is_own_work) update.is_own_work = ownWork;
+      if (Object.keys(update).length === 0) return current;
+      return coursesApi.documents.update(orgId, courseId, current.id, update);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["courses", "detail", orgId, courseId] });

@@ -434,3 +434,15 @@ async def test_partial_document_patch_metadata_and_license_propagation(
     refreshed = await seeded_db.get(CourseDocument, doc.id, populate_existing=True)
     assert refreshed is not None and refreshed.bibliography_source is None
     assert figure_storage.belongs_to_course(figs["good"].storage_path, s["course"].id)
+
+
+def test_suggested_caption_drops_the_source_tail_and_fits_the_asset() -> None:
+    from app.services.source_figure_api_service import suggested_caption
+
+    fig = build_document_figure(uuid.uuid4(), uuid.uuid4(), license="cc_by")
+    fig.source_caption = "Schema del vibrometro. Fonte: Rossi, 2020"
+    assert suggested_caption(fig) == "Schema del vibrometro."
+    fig.source_caption = None
+    fig.description = "parola " * 200
+    long = suggested_caption(fig)
+    assert len(long) <= 600 and long.endswith("…")

@@ -1915,6 +1915,7 @@
       "excludeFailed": "Impossibile escludere la figura.",
       "moveUp": "Sposta su",
       "moveDown": "Sposta giù",
+      "replace": "Sostituisci con un'altra figura",
       "sourceLine": "Riga della fonte (calcolata dal sistema)",
       "notices": {
         "title": "Avvisi del revisore",

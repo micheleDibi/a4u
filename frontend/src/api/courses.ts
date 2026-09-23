@@ -212,6 +212,7 @@ export interface DocumentBibliographyInput {
   publisher?: string | null;
   doi?: string | null;
   url?: string | null;
+  openalex_id?: string | null;
 }
 
 /** PATCH parziale del documento (almeno un campo). */
@@ -254,6 +255,8 @@ export interface DocumentFigure {
   description: string | null;
   keywords: { course?: string[]; en?: string[] } | null;
   source_caption: string | null;
+  /** Didascalia proposta dal selettore (senza coda di fonte, ≤ 600 caratteri). */
+  suggested_caption: string;
   source_label: string | null;
   width: number | null;
   height: number | null;

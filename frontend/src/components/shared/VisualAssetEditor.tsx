@@ -1,5 +1,13 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, EyeOff, Loader2, Sparkles, Trash2 } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  EyeOff,
+  Loader2,
+  Replace,
+  Sparkles,
+  Trash2,
+} from "lucide-react";
 import type { FigureVariant } from "@/lib/figureFormats";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -20,6 +28,7 @@ import { DotEditor } from "./DotEditor";
 import { FunctionEditor } from "./FunctionEditor";
 import { MermaidEditor } from "./MermaidEditor";
 import { SourceFigure } from "./SourceFigure";
+import { SourceFigurePicker } from "./SourceFigurePicker";
 import { VegaLiteEditor } from "./VegaLiteEditor";
 
 /**
@@ -37,7 +46,8 @@ import { VegaLiteEditor } from "./VegaLiteEditor";
  *
  * Figure di fonte (`source_figure`): anteprima con la riga «Fonte» del
  * backend (`SourceFigure`, mai ricomposta qui), riferimento alla figura
- * NON modificabile (solo didascalia e testo alternativo), «Non proporre
+ * modificabile solo scegliendo un'altra figura del catalogo («Sostituisci»,
+ * che propone anche didascalia e testo alternativo nuovi), «Non proporre
  * più» (esclusione dalle proposte, non retroattiva) e gli avvisi del
  * revisore delle ridondanze (`notices`). `onMoveUp`/`onMoveDown` riordinano
  * le card (per tutti i formati): la numerazione resta quella della prima
@@ -89,6 +99,7 @@ export function VisualAssetEditor({
   const queryClient = useQueryClient();
   const [converting, setConverting] = useState(false);
   const [excluding, setExcluding] = useState(false);
+  const [replacing, setReplacing] = useState(false);
   const isSource = asset.format === "source_figure";
 
   const handleExclude = async () => {
@@ -289,6 +300,30 @@ export function VisualAssetEditor({
             )}
             {t("courses.sourceFigures.exclude")}
           </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setReplacing(true)}
+            disabled={disabled}
+          >
+            <Replace className="size-3.5" />
+            {t("courses.sourceFigures.replace")}
+          </Button>
+          <CourseRefContext.Provider value={{ orgId, courseId }}>
+            <SourceFigurePicker
+              open={replacing}
+              onClose={() => setReplacing(false)}
+              onPick={(figure) => {
+                setReplacing(false);
+                onChange({
+                  content: figure.id,
+                  caption: figure.suggested_caption,
+                  alt_text: (figure.description || "").slice(0, 400),
+                });
+              }}
+            />
+          </CourseRefContext.Provider>
         </div>
       )}
 

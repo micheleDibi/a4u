@@ -195,7 +195,7 @@ export function AddVisualAssetMenu({
                 asset_id: makeAssetId(),
                 format: "source_figure",
                 content: figure.id,
-                caption: figure.source_caption || figure.description || "",
+                caption: figure.suggested_caption,
                 alt_text: (figure.description || "").slice(0, 400),
               })
             }

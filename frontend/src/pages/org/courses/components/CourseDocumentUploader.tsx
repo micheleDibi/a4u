@@ -96,6 +96,8 @@ export function CourseDocumentUploader({
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["courses", "detail", orgId, courseId] });
+    // Politica, esclusione o cancellazione cambiano le figure proponibili.
+    qc.invalidateQueries({ queryKey: ["document-figures", orgId, courseId] });
     onChanged?.();
   };
 

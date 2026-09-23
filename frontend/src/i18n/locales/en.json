@@ -1915,6 +1915,7 @@
       "excludeFailed": "The figure could not be excluded.",
       "moveUp": "Move up",
       "moveDown": "Move down",
+      "replace": "Replace with another figure",
       "sourceLine": "Source line (computed by the system)",
       "notices": {
         "title": "Reviewer notes",

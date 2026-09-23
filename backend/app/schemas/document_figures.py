@@ -26,6 +26,10 @@ class DocumentFigureOut(BaseModel):
     keywords: dict[str, Any] | None
     source_caption: str | None
     source_label: str | None
+    # Didascalia proposta dal selettore: quella originale senza la coda di
+    # fonte (`clean_caption`, come nella fusione) o la descrizione, entro
+    # i 600 caratteri della didascalia di un asset.
+    suggested_caption: str = ""
     width: int | None
     height: int | None
     mime_type: str | None

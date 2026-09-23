@@ -36,6 +36,7 @@ from app.schemas.document_figures import (
 )
 from app.services.document_figures import storage as figure_storage
 from app.services.figure_attribution import figure_attribution_line
+from app.services.source_caption import clean_caption
 from app.services.source_figure_catalog import license_policy_for, unsuitable_reason
 from app.services.source_figure_policy import figure_visibility
 from app.services.source_figure_service import source_figure_uuid
@@ -52,6 +53,19 @@ async def _documents(db: AsyncSession, course_id: uuid.UUID) -> dict[uuid.UUID, 
 
 def _selectable_reason(fig: CourseDocumentFigure, select_reason: str | None) -> str | None:
     return select_reason if select_reason is not None else unsuitable_reason(fig)
+
+
+_CAPTION_MAX_CHARS = 600
+
+
+def suggested_caption(fig: CourseDocumentFigure) -> str:
+    """Didascalia da proporre inserendo la figura dal selettore."""
+    caption = clean_caption(fig.source_caption)[0] if fig.source_caption else ""
+    text = " ".join((caption or fig.description or "").split())
+    if len(text) <= _CAPTION_MAX_CHARS:
+        return text
+    cut = text[: _CAPTION_MAX_CHARS - 1]
+    return (cut[: cut.rfind(" ")] if " " in cut else cut).rstrip(" ,;:") + "\u2026"
 
 
 def figure_out(
@@ -80,6 +94,7 @@ def figure_out(
         keywords=fig.keywords,
         source_caption=fig.source_caption,
         source_label=fig.source_label,
+        suggested_caption=suggested_caption(fig),
         width=fig.width,
         height=fig.height,
         mime_type=fig.mime_type,
