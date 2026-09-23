@@ -53,10 +53,12 @@ from app.services.slide_geometry import (
     Prose,
     ProseMath,
     ProsePiece,
+    SlideGeometry,
     image_box,
     page_figure_budget,
 )
 from app.services.source_figure_service import (
+    ResolvedSourceFigure,
     SourceFigureMap,
     lesson_source_assets,
     resolve_source_figures,
@@ -173,23 +175,56 @@ def _slide_type_label(language: str, slide_type: str) -> str:
 _svg_to_data_uri = svg_to_data_uri
 
 
-def _page_attributions(
+def _page_source_figures(
     page_assets: list[tuple[str, dict[str, Any]]], source_figures: SourceFigureMap | None
-) -> list[str]:
-    """Righe «Fonte» delle figure di fonte RESE sulla pagina (le stesse
-    condizioni del blocco figura: senza immagine o senza riga, segnaposto e
-    nessuna riga), una volta ciascuna."""
-    lines: list[str] = []
+) -> tuple[SourceFigureMap | None, list[str]]:
+    """Figure di fonte rese sulla pagina e righe «Fonte» della sua fascia.
+
+    Stesse condizioni del blocco figura (senza immagine o senza riga:
+    segnaposto e nessuna riga), una riga per figura. La fascia ha 4 righe:
+    con 1-2 figure ogni riga può andare su due righe, con 3-4 su una (testo
+    accorciato dal resolver, `band_text`/`band_text_short`); dalla quinta
+    figura in poi la pagina mostra il segnaposto, mai un'immagine senza la
+    sua riga. Restituisce la mappa da usare per i blocchi della pagina.
+    """
+    if not source_figures:
+        return source_figures, []
+    shown: list[tuple[str, ResolvedSourceFigure]] = []
     for kind, payload in page_assets:
         if kind not in ("visual", "new_visual") or payload.get("format") != SOURCE_FIGURE_FORMAT:
             continue
-        resolved = (source_figures or {}).get(str(payload.get("asset_id") or ""))
+        asset_id = str(payload.get("asset_id") or "")
+        resolved = source_figures.get(asset_id)
         if resolved is None or not resolved.renderable or not resolved.data_url:
             continue
-        line = " ".join(resolved.attribution_text.split())
+        shown.append((asset_id, resolved))
+    figures: list[Any] = []
+    for _asset_id, resolved in shown:
+        key = resolved.figure_id or resolved.attribution_text
+        if key not in figures:
+            figures.append(key)
+    geometry = SlideGeometry()
+    kept = figures[: geometry.attribution_max_figures]
+    per_figure = min(
+        geometry.attribution_lines_per_figure, geometry.attribution_max_lines // max(1, len(kept))
+    )
+    dropped = {
+        asset_id
+        for asset_id, resolved in shown
+        if (resolved.figure_id or resolved.attribution_text) not in kept
+    }
+    lines: list[str] = []
+    for asset_id, resolved in shown:
+        if asset_id in dropped:
+            continue
+        text = resolved.band_text if per_figure >= 2 else resolved.band_text_short
+        line = " ".join((text or resolved.attribution_text).split())
         if line and line not in lines:
             lines.append(line)
-    return lines
+    if dropped:
+        log.warning("slide_source_figures_over_band", dropped=sorted(dropped))
+        return {k: v for k, v in source_figures.items() if k not in dropped}, lines
+    return source_figures, lines
 
 
 def _build_slide_asset_html(
@@ -830,6 +865,7 @@ def render_slides_html(
 
         for page_prose, page_assets in pages:
             assets_html: list[str] = []
+            page_sources, attributions = _page_source_figures(page_assets, source_figures)
             if page_assets:
                 # Il budget misura il sorgente: con le formule, i pezzi con
                 # gli SVG (larghezza e altezza di riga, `slide_geometry`).
@@ -868,7 +904,7 @@ def render_slides_html(
                         figure_budget=budget,
                         fit_report=fit_report,
                         cite=refs.cite,
-                        source_figures=source_figures,
+                        source_figures=page_sources,
                     )
                     if html:
                         assets_html.append(html)
@@ -878,7 +914,7 @@ def render_slides_html(
                     "body": page_prose.body_html,
                     "bullets": page_prose.bullets_html,
                     "assets_html": assets_html,
-                    "attributions": _page_attributions(page_assets, source_figures),
+                    "attributions": attributions,
                 }
             )
 

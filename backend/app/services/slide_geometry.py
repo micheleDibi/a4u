@@ -410,8 +410,19 @@ class SlideGeometry:
     attribution_left_mm: float = 18.0  # mirror di lesson_slides_pdf.html.j2:359
     attribution_right_mm: float = 85.0  # mirror di lesson_slides_pdf.html.j2:360
     attribution_bottom_mm: float = 36.0  # mirror di lesson_slides_pdf.html.j2:361
-    attribution_max_h_mm: float = 8.5  # mirror di lesson_slides_pdf.html.j2:362
-    attribution_pt: float = 8.0  # mirror di lesson_slides_pdf.html.j2:364
+    attribution_max_h_mm: float = 15.0  # mirror di lesson_slides_pdf.html.j2:362
+    attribution_pt: float = 8.0  # mirror di lesson_slides_pdf.html.j2:365
+    attribution_line_height: float = 1.3  # mirror di lesson_slides_pdf.html.j2:366
+    # Quota della larghezza della fascia usata dalla stima di
+    # `figure_attribution.text_em` (margine sulle differenze fra font) e em
+    # persi al più a ogni a capo (la parola che non ci sta va a capo).
+    attribution_width_safety: float = 0.87
+    attribution_wrap_loss_em: float = 12.0
+    # Figure di fonte con la loro riga in una sola pagina: le altre diventano
+    # segnaposto (mai un'immagine senza la sua riga «Fonte»).
+    attribution_max_figures: int = 4
+    # Righe al più per la riga «Fonte» di una figura (con 3-4 figure: 1).
+    attribution_lines_per_figure: int = 2
 
     @property
     def body_w_mm(self) -> float:
@@ -426,9 +437,25 @@ class SlideGeometry:
         return self.page_h_mm - self.body_bottom_mm  # 155
 
     @property
+    def attribution_max_lines(self) -> int:
+        """Righe di testo che stanno nella fascia (4)."""
+        line_mm = self.attribution_pt * self.attribution_line_height * 25.4 / 72
+        return int(self.attribution_max_h_mm // line_mm)
+
+    @property
+    def attribution_line_em(self) -> float:
+        """em del corpo disponibili su una riga della fascia, col margine."""
+        width_mm = self.page_w_mm - self.attribution_left_mm - self.attribution_right_mm
+        return width_mm / (self.attribution_pt * 25.4 / 72) * self.attribution_width_safety
+
+    def attribution_budget_em(self, lines: int) -> float:
+        """em per una riga «Fonte» che può andare a capo su `lines` righe."""
+        return lines * self.attribution_line_em - (lines - 1) * self.attribution_wrap_loss_em
+
+    @property
     def attribution_box_mm(self) -> tuple[float, float, float, float]:
         """(x0, y0, x1, y1) della fascia «Fonte», dall'angolo in alto a
-        sinistra della pagina: (18; 165,5; 212; 174)."""
+        sinistra della pagina: (18; 159; 212; 174)."""
         y1 = self.page_h_mm - self.attribution_bottom_mm
         return (
             self.attribution_left_mm,

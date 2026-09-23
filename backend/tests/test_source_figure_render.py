@@ -284,8 +284,11 @@ def test_band_geometry_is_outside_body_footer_and_avatar() -> None:
     # Sotto il body e sopra il footer (bottom 10 mm + circa 12 mm di contenuto).
     assert y0 >= geometry.body_bottom_y_mm
     assert y1 <= geometry.page_h_mm - 10.0 - 12.0
-    # Due righe a 8 pt con interlinea 1,3 entrano nell'altezza della fascia.
-    assert 2 * geometry.attribution_pt * 1.3 * 25.4 / 72 <= geometry.attribution_max_h_mm
+    # Quattro righe a 8 pt con interlinea 1,3 entrano nell'altezza della fascia
+    # (1-2 figure di fonte: due righe ciascuna; 3-4: una; test_source_figure_band).
+    assert geometry.attribution_max_lines == 4
+    line_mm = geometry.attribution_pt * geometry.attribution_line_height * 25.4 / 72
+    assert 4 * line_mm <= geometry.attribution_max_h_mm
 
 
 def test_slide_pdf_carries_the_line_on_the_figure_page() -> None:

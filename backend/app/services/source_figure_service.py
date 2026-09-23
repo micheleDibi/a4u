@@ -39,10 +39,13 @@ from app.models.course_document_figure import CourseDocumentFigure
 from app.schemas.course_lesson_content import SOURCE_FIGURE_FORMAT
 from app.services.document_figures import storage as figure_storage
 from app.services.figure_attribution import (
+    AttributionSource,
     attribution_source,
     figure_attribution_line,
+    fitted_written_line,
     spoken_source,
 )
+from app.services.slide_geometry import SlideGeometry
 from app.services.source_figure_policy import figure_visibility
 
 log = get_logger("app.source_figure_service")
@@ -63,8 +66,13 @@ class ResolvedSourceFigure:
     mime_type: str | None = None
     width: int | None = None
     height: int | None = None
-    # Riga scritta («Fonte: …»): dispensa, PDF slide, frame video, frontend.
+    # Riga scritta («Fonte: …»): dispensa, vista ed editor del frontend.
     attribution_text: str = ""
+    # La stessa riga per la fascia del PDF slide e dei frame video, accorciata
+    # con «…» solo se non ci sta: su due righe (`band_text`) o su una
+    # (`band_text_short`, pagine con 3-4 figure di fonte).
+    band_text: str = ""
+    band_text_short: str = ""
     # Dati da pronunciare (PROMPT 6, Fase 5): cognomi, titolo breve, anno.
     spoken: Mapping[str, Any] | None = None
     # Frase parlata già pronta («tratta da …»), sicura per il TTS; vuota se
@@ -73,6 +81,18 @@ class ResolvedSourceFigure:
 
 
 SourceFigureMap = Mapping[str, ResolvedSourceFigure]
+
+_GEOMETRY = SlideGeometry()
+
+
+def band_texts(src: AttributionSource, *, language: str) -> tuple[str, str]:
+    """Riga «Fonte» per la fascia delle slide: su due righe e su una."""
+    two = _GEOMETRY.attribution_budget_em(_GEOMETRY.attribution_lines_per_figure)
+    return (
+        fitted_written_line(src, language=language, max_em=two),
+        fitted_written_line(src, language=language, max_em=_GEOMETRY.attribution_budget_em(1)),
+    )
+
 
 _UNRESOLVED = ResolvedSourceFigure(False, "invalid_reference")
 
@@ -171,6 +191,7 @@ async def resolve_source_figures(
             out[asset_id] = ResolvedSourceFigure(False, "wrong_course", figure_id=fid)
             continue
         src = attribution_source(fig, doc)
+        band_text, band_text_short = band_texts(src, language=language) if src else (line, line)
         spoken = spoken_source(src, language=language) if src is not None else None
         spoken_text = figure_attribution_line(fig, doc, language=language, mode="spoken") or ""
         data_url = ""
@@ -189,6 +210,8 @@ async def resolve_source_figures(
             width=fig.width,
             height=fig.height,
             attribution_text=line,
+            band_text=band_text,
+            band_text_short=band_text_short,
             spoken=spoken,
             spoken_text=spoken_text,
         )

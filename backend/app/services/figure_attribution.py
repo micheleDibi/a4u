@@ -14,11 +14,15 @@ vista ed editor la ricevono già pronta (il frontend non la ricompone).
   come `figure_theme.figure_labels`) o la variante parlata per il TTS.
 - :func:`spoken_source` dà i dati parlati per il PROMPT 6 (Fase 5), già
   resi sicuri per il TTS.
+- :func:`fitted_written_line` è la stessa riga scritta accorciata con «…»
+  per stare nella fascia delle slide e dei frame (larghezza stimata con
+  :func:`text_em`); senza bisogno di tagli coincide con la riga intera.
 """
 
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass, replace
 from typing import Any, Literal, Protocol, TypeGuard
 
@@ -323,10 +327,12 @@ def freeze_attribution(
     return source.to_json() if source is not None else None
 
 
-def _join_authors(authors: tuple[str, ...], texts: dict[str, str]) -> str | None:
+def _join_authors(
+    authors: tuple[str, ...], texts: dict[str, str], *, max_authors: int = _MAX_AUTHORS_WRITTEN
+) -> str | None:
     if not authors:
         return None
-    if len(authors) > _MAX_AUTHORS_WRITTEN:
+    if len(authors) > max_authors:
         return f"{authors[0]} {texts['et_al']}"
     if len(authors) == 1:
         return authors[0]
@@ -350,37 +356,168 @@ def license_label(license: str | None, *, language: str | None) -> str | None:
     return _LICENSE_LABELS[_language(language)].get(license)
 
 
-def _written_line(src: AttributionSource, lang: str, *, adapted: bool) -> str:
-    texts = _TEXTS[lang]
-    segments: list[str] = []
+def _written_parts(
+    src: AttributionSource, texts: dict[str, str], *, max_authors: int = _MAX_AUTHORS_WRITTEN
+) -> tuple[list[str], list[str]]:
+    """Segmenti della riga scritta: testa (chi e che cosa) e coda (anno,
+    figura, pagina), che la versione compatta non accorcia mai."""
+    head: list[str] = []
     if src.credit:
-        segments.append(src.credit)
-    authors = _join_authors(src.authors, texts)
+        head.append(src.credit)
+    authors = _join_authors(src.authors, texts, max_authors=max_authors)
     if authors:
-        segments.append(authors)
+        head.append(authors)
     if src.title:
         title = _strip_final_period(src.title)
-        segments.append(f"{texts['title_open']}{title}{texts['title_close']}")
+        head.append(f"{texts['title_open']}{title}{texts['title_close']}")
     if not authors and not src.title and not src.credit:
         if src.fallback_name:
-            segments.append(src.fallback_name)
+            head.append(src.fallback_name)
         elif src.is_own_work:
-            segments.append(texts["own_work"])
+            head.append(texts["own_work"])
     if src.container:
-        segments.append(src.container)
+        head.append(src.container)
+    tail: list[str] = []
     if src.year:
-        segments.append(str(src.year))
+        tail.append(str(src.year))
     if src.figure_number:
-        segments.append(texts["figure"].format(n=src.figure_number))
+        tail.append(texts["figure"].format(n=src.figure_number))
     if src.page:
         key = "slide" if src.page_kind == "slide" else "page"
-        segments.append(texts[key].format(n=src.page))
+        tail.append(texts[key].format(n=src.page))
+    return head, tail
+
+
+def _compose(src: AttributionSource, lang: str, segments: list[str], *, adapted: bool) -> str:
+    texts = _TEXTS[lang]
     body = ", ".join(s for s in segments if s)
     label = license_label(src.license, language=lang)
     if label:
         body = f"{body} ({label})" if body else f"({label})"
     prefix = texts["prefix_adapted"] if adapted else texts["prefix"]
     return f"{prefix} {body}".strip()
+
+
+def _written_line(
+    src: AttributionSource,
+    lang: str,
+    *,
+    adapted: bool,
+    max_authors: int = _MAX_AUTHORS_WRITTEN,
+) -> str:
+    head, tail = _written_parts(src, _TEXTS[lang], max_authors=max_authors)
+    return _compose(src, lang, head + tail, adapted=adapted)
+
+
+# --- Riga compatta per la fascia delle slide e dei frame ----------------------
+# Larghezza stimata di un carattere, in em del corpo: stima prudente per i
+# font del tema e per i ripieghi del container (DejaVu Sans, il più largo
+# fra quelli comuni) e per gli ideogrammi (1 em).
+_EM_WIDE = 1.05
+_EM_BROAD = 1.0
+_EM_UPPER = 0.8
+_EM_SPACE = 0.34
+_EM_DEFAULT = 0.62
+_BROAD_CHARS = frozenset("mwMW@%&")
+_ELLIPSIS = "\u2026"
+_MAX_BAND_CONTAINER_CHARS = 40
+_MIN_BAND_TITLE_CHARS = 16
+_MAX_BAND_NAME_CHARS = 32
+
+
+def text_em(text: str) -> float:
+    """Larghezza stimata (in em del corpo) di una riga di testo."""
+    total = 0.0
+    for ch in text:
+        if unicodedata.east_asian_width(ch) in ("W", "F"):
+            total += _EM_WIDE
+        elif ch in _BROAD_CHARS:
+            total += _EM_BROAD
+        elif ch.isspace():
+            total += _EM_SPACE
+        elif ch.isupper() or ch.isdigit():
+            total += _EM_UPPER
+        else:
+            total += _EM_DEFAULT
+    return total
+
+
+def _ellipsize(text: str, max_chars: int) -> str:
+    """Taglia a `max_chars` (puntini compresi), a fine parola se possibile."""
+    if len(text) <= max_chars:
+        return text
+    cut = text[: max(1, max_chars - 1)]
+    space = cut.rfind(" ")
+    if space >= max_chars // 2:
+        cut = cut[:space]
+    return cut.rstrip(" ,;:.-\u2013\u2014") + _ELLIPSIS
+
+
+def fitted_written_line(
+    src: AttributionSource, *, language: str | None, max_em: float, adapted: bool = False
+) -> str:
+    """Riga scritta che sta in `max_em` em (fascia delle slide e dei frame).
+
+    Se la riga intera non ci sta accorcia con «…», nell'ordine: contenitore,
+    titolo (fino a 16 caratteri), autori (il primo più «et al.»), nome del
+    primo autore e nome di ripiego; poi toglie il contenitore. Anno, figura,
+    pagina e licenza restano sempre; se ancora non basta taglia la testa.
+    """
+    lang = _language(language)
+    line = _written_line(src, lang, adapted=adapted)
+    if text_em(line) <= max_em:
+        return line
+
+    def fits(candidate: AttributionSource, max_authors: int = _MAX_AUTHORS_WRITTEN) -> str | None:
+        text = _written_line(candidate, lang, adapted=adapted, max_authors=max_authors)
+        return text if text_em(text) <= max_em else None
+
+    cur = src
+    if cur.container:
+        cur = replace(cur, container=_ellipsize(cur.container, _MAX_BAND_CONTAINER_CHARS))
+        if found := fits(cur):
+            return found
+    if cur.title and len(cur.title) > _MIN_BAND_TITLE_CHARS:
+        # Il titolo più lungo che ci sta (ricerca binaria sui caratteri).
+        lo, hi, best = _MIN_BAND_TITLE_CHARS, len(cur.title) - 1, None
+        while lo <= hi:
+            mid = (lo + hi) // 2
+            found = fits(replace(cur, title=_ellipsize(cur.title, mid)))
+            if found:
+                best, lo = found, mid + 1
+            else:
+                hi = mid - 1
+        if best:
+            return best
+        cur = replace(cur, title=_ellipsize(cur.title, _MIN_BAND_TITLE_CHARS))
+    max_authors = _MAX_AUTHORS_WRITTEN
+    if len(cur.authors) > 1:
+        max_authors = 1
+        if found := fits(cur, max_authors):
+            return found
+    if cur.authors:
+        first = _ellipsize(cur.authors[0], _MAX_BAND_NAME_CHARS)
+        cur = replace(cur, authors=(first, *cur.authors[1:]))
+    for field in ("credit", "fallback_name"):
+        value = getattr(cur, field)
+        if value:
+            cur = replace(cur, **{field: _ellipsize(value, _MAX_BAND_NAME_CHARS)})
+    if found := fits(cur, max_authors):
+        return found
+    if cur.container:
+        cur = replace(cur, container=None)
+        if found := fits(cur, max_authors):
+            return found
+    # Ultima risorsa: la testa accorciata quanto serve, la coda intera.
+    texts = _TEXTS[lang]
+    head, tail = _written_parts(cur, texts, max_authors=max_authors)
+    joined = ", ".join(head)
+    for size in range(len(joined), 0, -1):
+        shortened = _ellipsize(joined, size) if size < len(joined) else joined
+        text = _compose(cur, lang, [shortened, *tail], adapted=adapted)
+        if text_em(text) <= max_em:
+            return text
+    return _compose(cur, lang, tail, adapted=adapted)
 
 
 def _tts_safe(value: str | None, lang: str) -> str | None:
