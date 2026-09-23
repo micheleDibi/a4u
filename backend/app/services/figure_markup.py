@@ -156,6 +156,7 @@ def render_figure_html(
     cite: Callable[[str], str] | None = None,
     caption_renderer: Callable[[str], Markup] | None = None,
     box: FigureBox | None = None,
+    attribution: str = "",
 ) -> str:
     """Rende il partial `partials/figure.html.j2` (vedi la docstring del
     modulo). `labels` è la mappa di `figure_labels(language)`; `None`
@@ -168,7 +169,9 @@ def render_figure_html(
     lavorano sul testo, non sul markup) e ritorna `Markup`; l'etichetta,
     `aria_label` e la coda restano testo. `box` (slide, D12) mette
     `--figure-w`/`--figure-h` sul `<figure>`; è facoltativo per ogni
-    variante: senza box il markup non cambia."""
+    variante: senza box il markup non cambia. `attribution` è la riga
+    «Fonte» di una figura di fonte (testo del server, escapato qui), in
+    coda alla didascalia; vuota, il markup non cambia."""
     labels = labels if labels is not None else figure_labels(None)
     text = caption_text(caption)
     if cite is not None:
@@ -198,6 +201,7 @@ def render_figure_html(
         caption=caption_renderer(caption_out) if caption_renderer and caption_out else caption_out,
         extra_caption=extra,
         box_style=box.style if box is not None else "",
+        attribution=_one_line(attribution),
     )
     return html.strip()
 

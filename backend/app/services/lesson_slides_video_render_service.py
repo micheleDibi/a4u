@@ -39,6 +39,7 @@ from app.models.slide_template import SlideTemplate
 from app.services import course_lesson_pdf_service as base_pdf
 from app.services import course_lesson_slides_pdf_service as slides_pdf
 from app.services.mermaid_prerender import block_external_requests, media_url_prefixes
+from app.services.source_figure_service import lesson_source_assets, resolve_source_figures
 
 log = get_logger("app.lesson_slides_video_render")
 
@@ -238,7 +239,17 @@ async def render_slides_to_png(
         lesson.content_raw, slides_raw, language=language
     )
 
-    html_pdf = slides_pdf.render_slides_html(
+    # Figure di fonte: immagine e riga «Fonte» nella fascia in basso a
+    # sinistra, fuori dall'avatar (U2), come nel PDF slide.
+    source_figures = await resolve_source_figures(
+        db,
+        course_id=course.id,
+        assets=lesson_source_assets(lesson),
+        language=language,
+    )
+
+    html_pdf = await asyncio.to_thread(
+        slides_pdf.render_slides_html,
         course=course,
         lesson=lesson,
         organization=organization,
@@ -247,6 +258,7 @@ async def render_slides_to_png(
         visual_svg_map=visual_svg_map,
         math_svg_map=math_svg_map,
         enable_split=False,  # 1 slide JSON → 1 frame video
+        source_figures=source_figures,
     )
     # Un evento per lezione se qualche formula è ricaduta sul MathML.
     base_pdf._log_math_fallbacks(lesson_code=lesson.lesson_code, svg_map=math_svg_map)

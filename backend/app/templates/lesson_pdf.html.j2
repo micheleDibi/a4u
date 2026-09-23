@@ -244,6 +244,20 @@
       color: rgba(0, 0, 0, 0.7);
     }
     .figure-label { font-weight: 700; }
+    /* Riga «Fonte» delle figure di fonte: calcolata dal server, su una riga
+       propria sotto la didascalia. */
+    .figure-source {
+      display: block; margin-top: 0.8mm; font-size: 8pt;
+      color: rgba(0, 0, 0, 0.6);
+    }
+    .source-figure {
+      max-width: 100%;
+      max-height: {{ max_figure_height_cm }}cm;
+      height: auto;
+      display: block;
+      margin: 0 auto;
+      object-fit: contain;
+    }
     .equation { text-align: center; }
     .equation .math-block { margin: 0; }
     .equation figcaption .label { font-style: normal; font-weight: 600; }

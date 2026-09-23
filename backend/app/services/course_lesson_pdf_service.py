@@ -93,6 +93,7 @@ from app.models.course_module import CourseModule
 from app.models.organization import Organization
 from app.models.pdf_template import PdfTemplate
 from app.models.user import User
+from app.schemas.course_lesson_content import SOURCE_FIGURE_FORMAT
 
 # Re-export dei nomi storici del pre-render Mermaid (vedi la sezione
 # «Mermaid pre-rendering» più avanti): slides_pdf, video e test li importano
@@ -136,6 +137,7 @@ from app.services.mermaid_prerender import (  # noqa: F401
     _sanitize_mermaid_code,
     _strip_mermaid_max_width,
 )
+from app.services.source_figure_service import SourceFigureMap, resolve_source_figures
 from app.services.svg_normalize import svg_intrinsic_box, svg_to_data_uri
 
 log = get_logger("app.course_lesson_pdf.service")
@@ -924,9 +926,18 @@ def _render_visual_asset_block(
     fit_report: list[FigureFitEntry] | None = None,
     figure_budget: slide_geometry.PageFigureBudget | None = None,
     cite: Callable[[str], str] = _identity,
+    source_figures: SourceFigureMap | None = None,
 ) -> str:
     """Blocco HTML di un asset visivo, per ogni formato, attraverso il
     partial unico `render_figure_html` (D4).
+
+    `source_figures` è la mappa `{asset_id → ResolvedSourceFigure}` di
+    `source_figure_service.resolve_source_figures` (figure di fonte): un
+    asset `source_figure` risolto riceve l'immagine (data URL) e, nella
+    dispensa, la riga «Fonte» in coda alla didascalia; nelle slide la riga
+    va nella fascia della pagina (`render_slides_html`). Non risolto, o
+    senza riga «Fonte», diventa il segnaposto numerato
+    (`courses.figures.missing`): mai un'immagine senza fonte, mai l'UUID.
 
     `cite` è il rimando testuale degli asset (`AssetRefs.cite`) passato al
     partial, che lo applica alla didascalia DOPO `caption_text` (quindi
@@ -992,6 +1003,7 @@ def _render_visual_asset_block(
     extra_caption = ""
     fig: RenderedFigure | None = None
     is_mermaid = fmt == "mermaid"
+    attribution = ""
 
     if fmt in RENDERABLE_FORMATS:
         # WeasyPrint NON esegue JS — il rendering avviene server-side (registro
@@ -1052,6 +1064,31 @@ def _render_visual_asset_block(
             )
         else:
             body = Markup(f'<div class="mermaid-svg"{style}>{fig.svg}</div>')
+    elif fmt == SOURCE_FIGURE_FORMAT:
+        resolved = (source_figures or {}).get(asset_id)
+        if (
+            resolved is not None
+            and resolved.renderable
+            and resolved.data_url
+            and resolved.attribution_text.strip()
+        ):
+            body = Markup(
+                f'<img class="source-figure" src="{_html_escape_text(resolved.data_url)}" '
+                f'alt="{_html_escape_text(alt_text)}" />'
+            )
+            if variant == "lesson":
+                attribution = resolved.attribution_text
+        else:
+            body = Markup(
+                '<div class="placeholder-image source-figure-missing">'
+                f"{_html_escape_text(labels_map.get('courses.figures.missing', ''))}</div>"
+            )
+            log.warning(
+                "source_figure_placeholder",
+                lesson_code=lesson_code,
+                asset_id=asset_id,
+                reason=resolved.reason if resolved is not None else "unresolved",
+            )
     elif fmt == "image":
         # Asset immagine caricato dall'utente (path relativo `lesson_assets/...`).
         # Riusiamo il resolver dei template asset: legge dallo storage e
@@ -1122,6 +1159,7 @@ def _render_visual_asset_block(
         cite=cite,
         caption_renderer=lambda text: Markup(render_markdown_inline(text, math_svg_map)),
         box=box,
+        attribution=attribution,
     )
 
 
@@ -1303,6 +1341,7 @@ def _build_asset_html_map(
     figure_box_mm: tuple[float, float] | None = None,
     fit_report: list[FigureFitEntry] | None = None,
     cite: Callable[[str], str] = _identity,
+    source_figures: SourceFigureMap | None = None,
 ) -> dict[tuple[str, str], str]:
     """Pre-renderizza ogni asset una sola volta. Chiavi: (KIND, id).
 
@@ -1341,6 +1380,7 @@ def _build_asset_html_map(
             figure_box_mm=figure_box_mm,
             fit_report=fit_report,
             cite=cite,
+            source_figures=source_figures,
         )
     for table in content.get("tables") or []:
         key = _asset_key(table.get("table_id"))
@@ -2210,9 +2250,14 @@ def render_lesson_html(
     teacher_name: str | None = None,
     visual_svg_map: VisualSvgMap | None = None,
     fit_report: list[FigureFitEntry] | None = None,
+    source_figures: SourceFigureMap | None = None,
 ) -> str:
     """Pure-function: produce l'HTML completo della lezione, pronto per
     WeasyPrint.
+
+    `source_figures` è la mappa delle figure di fonte risolte dal server
+    (`source_figure_service.resolve_source_figures`, immagine e riga
+    «Fonte»); senza, un asset `source_figure` diventa il segnaposto.
 
     `visual_svg_map` è `{asset_id → svg | RenderedFigure}` per tutti i
     formati renderizzabili (Mermaid, Vega-Lite, DOT, function; una stringa
@@ -2284,6 +2329,7 @@ def render_lesson_html(
         figure_box_mm=(margins_cm["figure_box_w_mm"], margins_cm["figure_box_h_mm"]),
         fit_report=fit_report,
         cite=prepared.refs.cite,
+        source_figures=source_figures,
     )
     body_md = _substitute_asset_refs(prepared.markdown, asset_map)
     body_html = render_markdown(body_md, math_svg_map)
@@ -2499,6 +2545,13 @@ async def materialize_lesson_pdf(
     )
     # Pre-render LaTeX → SVG (MathJax): WeasyPrint non rende il MathML.
     math_svg_map = await _prerender_math_for_lesson(raw_content, language=language)
+    # Figure di fonte: immagine e riga «Fonte» decise qui, dal server.
+    source_figures = await resolve_source_figures(
+        db,
+        course_id=course.id,
+        assets=raw_content.get("visual_assets") or [],
+        language=language,
+    )
 
     fit_report: list[FigureFitEntry] = []
     html = await asyncio.to_thread(
@@ -2512,6 +2565,7 @@ async def materialize_lesson_pdf(
         math_svg_map=math_svg_map,
         teacher_name=teacher_name,
         fit_report=fit_report,
+        source_figures=source_figures,
     )
     # Un evento per lezione se qualche formula è ricaduta sul MathML.
     _log_math_fallbacks(lesson_code=lesson.lesson_code, svg_map=math_svg_map)

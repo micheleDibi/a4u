@@ -404,6 +404,14 @@ class SlideGeometry:
     # dichiarata impossibile (`slide_figure_box_exhausted`).
     safety_mm: float = 3.0
     figure_min_h_mm: float = 25.0
+    # Fascia della riga «Fonte» delle figure di fonte (U2): in basso a
+    # sinistra, fuori dalla riserva dell'avatar a destra (85 mm, come il
+    # footer) e sotto il body.
+    attribution_left_mm: float = 18.0  # mirror di lesson_slides_pdf.html.j2:359
+    attribution_right_mm: float = 85.0  # mirror di lesson_slides_pdf.html.j2:360
+    attribution_bottom_mm: float = 36.0  # mirror di lesson_slides_pdf.html.j2:361
+    attribution_max_h_mm: float = 8.5  # mirror di lesson_slides_pdf.html.j2:362
+    attribution_pt: float = 8.0  # mirror di lesson_slides_pdf.html.j2:364
 
     @property
     def body_w_mm(self) -> float:
@@ -416,6 +424,18 @@ class SlideGeometry:
     @property
     def body_bottom_y_mm(self) -> float:
         return self.page_h_mm - self.body_bottom_mm  # 155
+
+    @property
+    def attribution_box_mm(self) -> tuple[float, float, float, float]:
+        """(x0, y0, x1, y1) della fascia «Fonte», dall'angolo in alto a
+        sinistra della pagina: (18; 165,5; 212; 174)."""
+        y1 = self.page_h_mm - self.attribution_bottom_mm
+        return (
+            self.attribution_left_mm,
+            y1 - self.attribution_max_h_mm,
+            self.page_w_mm - self.attribution_right_mm,
+            y1,
+        )
 
     @property
     def tag_h_mm(self) -> float:

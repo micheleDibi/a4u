@@ -348,6 +348,37 @@
       white-space: nowrap;
       color: {{ tpl.text_color|safe }};
     }
+    /* Figure di fonte (U2): la riga «Fonte» sta in una fascia in basso a
+       sinistra, fuori dal riquadro della figura e fuori dalla riserva
+       dell'avatar (stessi 85 mm a destra del footer), fra il body (che
+       finisce a 55 mm dal fondo) e il footer. Al più due righe; il testo
+       lo calcola il server (`figure_attribution`), mai il modello. Mirror
+       in `SlideGeometry.attribution_*`. */
+    .slide-attribution {
+      position: absolute;
+      left: 18mm;
+      right: 85mm;
+      bottom: 36mm;
+      max-height: 8.5mm;
+      overflow: hidden;
+      font-size: 8pt;
+      line-height: 1.3;
+      color: {{ tpl.text_color|safe }};
+      opacity: 0.75;
+      z-index: 5;
+    }
+    .slide-attribution .source-line {
+      display: block;
+    }
+    .slide-asset .source-figure {
+      max-width: 100%;
+      max-height: var(--figure-h);
+      width: auto;
+      height: auto;
+      object-fit: contain;
+      display: block;
+      margin: 0 auto;
+    }
 
     math { font-size: 11pt; }
     /* Formule come SVG pre-renderizzato (MathJax); WeasyPrint non rende
@@ -439,6 +470,14 @@
       </div>
       {% endif %}
     </div>
+
+    {% if slide.attributions %}
+    <div class="slide-attribution">
+      {% for line in slide.attributions %}
+      <span class="source-line">{{ line|e }}</span>
+      {% endfor %}
+    </div>
+    {% endif %}
 
     <div class="slide-footer">
       <div>

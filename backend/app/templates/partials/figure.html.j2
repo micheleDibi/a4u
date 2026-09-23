@@ -4,9 +4,12 @@
     tutto il resto (didascalia, alt, id, sorgente di fallback) è escapato.
     `box_style` (solo slide, D12) mette `--figure-w`/`--figure-h` sul
     <figure>, dopo `aria-label`; vuoto nella dispensa.
+    `attribution` (figure di fonte, solo dispensa) è la riga «Fonte»
+    calcolata dal server, in coda alla didascalia; vuota → markup identico
+    a prima. Nelle slide la riga sta nella fascia `.slide-attribution` (U2).
     Nessuna riga vuota nell'output: il blocco entra nel markdown della
     dispensa come HTML block (markdown-it lo chiude alla prima riga vuota). -#}
 <figure class="visual figure figure--{{ variant }} figure--{{ fmt_class }}" data-asset-id="{{ asset_id }}" role="figure" aria-label="{{ aria_label }}"{% if box_style %} style="{{ box_style }}"{% endif %}>
 <div class="figure-body">{% if body_html is not none %}{{ body_html }}{% else %}<pre class="figure-fallback">{{ fallback_source }}</pre>{% endif %}</div>
-<figcaption class="figure-caption"><span class="figure-label">{{ label }}</span>{% if caption %} {{ caption }}{% endif %}{% if extra_caption %} {{ extra_caption }}{% endif %}</figcaption>
+<figcaption class="figure-caption"><span class="figure-label">{{ label }}</span>{% if caption %} {{ caption }}{% endif %}{% if extra_caption %} {{ extra_caption }}{% endif %}{% if attribution %}<span class="figure-source">{{ attribution }}</span>{% endif %}</figcaption>
 </figure>

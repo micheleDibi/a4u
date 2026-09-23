@@ -42,6 +42,7 @@ from app.models.course_lesson import CourseLesson
 from app.models.organization import Organization
 from app.models.slide_template import SlideTemplate
 from app.models.user import User
+from app.schemas.course_lesson_content import SOURCE_FIGURE_FORMAT
 from app.services import course_lesson_pdf_service as base_pdf
 from app.services import course_lesson_slides_service, figure_render_service, remote_storage
 from app.services.figure_render_service import RenderedFigure, VisualSvgMap
@@ -54,6 +55,11 @@ from app.services.slide_geometry import (
     ProsePiece,
     image_box,
     page_figure_budget,
+)
+from app.services.source_figure_service import (
+    SourceFigureMap,
+    lesson_source_assets,
+    resolve_source_figures,
 )
 from app.services.svg_normalize import svg_to_data_uri
 
@@ -167,6 +173,25 @@ def _slide_type_label(language: str, slide_type: str) -> str:
 _svg_to_data_uri = svg_to_data_uri
 
 
+def _page_attributions(
+    page_assets: list[tuple[str, dict[str, Any]]], source_figures: SourceFigureMap | None
+) -> list[str]:
+    """Righe «Fonte» delle figure di fonte RESE sulla pagina (le stesse
+    condizioni del blocco figura: senza immagine o senza riga, segnaposto e
+    nessuna riga), una volta ciascuna."""
+    lines: list[str] = []
+    for kind, payload in page_assets:
+        if kind not in ("visual", "new_visual") or payload.get("format") != SOURCE_FIGURE_FORMAT:
+            continue
+        resolved = (source_figures or {}).get(str(payload.get("asset_id") or ""))
+        if resolved is None or not resolved.renderable or not resolved.data_url:
+            continue
+        line = " ".join(resolved.attribution_text.split())
+        if line and line not in lines:
+            lines.append(line)
+    return lines
+
+
 def _build_slide_asset_html(
     asset: dict[str, Any],
     *,
@@ -179,8 +204,12 @@ def _build_slide_asset_html(
     figure_budget: PageFigureBudget | None = None,
     fit_report: list[FigureFitEntry] | None = None,
     cite: Callable[[str], str] = base_pdf._identity,
+    source_figures: SourceFigureMap | None = None,
 ) -> str:
     """Costruisce il blocco HTML per un asset referenziato da una slide.
+
+    `source_figures`: figure di fonte risolte dal server (immagine; la riga
+    «Fonte» la mette `render_slides_html` nella fascia della pagina).
 
     `cite` è il rimando testuale degli asset (`base_pdf.AssetRefs.cite`,
     numeri della dispensa) applicato alle didascalie in una riga, come
@@ -225,6 +254,7 @@ def _build_slide_asset_html(
             figure_budget=figure_budget,
             fit_report=fit_report,
             cite=cite,
+            source_figures=source_figures,
         )
     if kind == "table":
         return base_pdf._render_table_block(
@@ -627,8 +657,14 @@ def render_slides_html(
     teacher_name: str | None = None,
     visual_svg_map: VisualSvgMap | None = None,
     fit_report: list[FigureFitEntry] | None = None,
+    source_figures: SourceFigureMap | None = None,
 ) -> str:
     """Pure-function: HTML completo delle slide pronto per WeasyPrint.
+
+    Figure di fonte (`source_figures`, dal resolver del server): immagine
+    nel blocco figura e riga «Fonte» nella fascia `.slide-attribution` della
+    PAGINA che la mostra (U2: in basso a sinistra, fuori dall'avatar), mai
+    nella didascalia; una figura di fonte senza riga resta segnaposto.
 
     `visual_svg_map` è `{asset_id → svg | RenderedFigure}` per tutti i
     formati renderizzabili; `mermaid_svg_map` è il nome storico dello stesso
@@ -832,6 +868,7 @@ def render_slides_html(
                         figure_budget=budget,
                         fit_report=fit_report,
                         cite=refs.cite,
+                        source_figures=source_figures,
                     )
                     if html:
                         assets_html.append(html)
@@ -841,6 +878,7 @@ def render_slides_html(
                     "body": page_prose.body_html,
                     "bullets": page_prose.bullets_html,
                     "assets_html": assets_html,
+                    "attributions": _page_attributions(page_assets, source_figures),
                 }
             )
 
@@ -915,6 +953,14 @@ async def materialize_lesson_slides_pdf(
     math_svg_map = await _prerender_math_for_slides(
         lesson.content_raw, slides_raw, language=language
     )
+    # Figure di fonte (della dispensa, citate dalle slide): immagine e riga
+    # «Fonte» decise dal server.
+    source_figures = await resolve_source_figures(
+        db,
+        course_id=course.id,
+        assets=lesson_source_assets(lesson),
+        language=language,
+    )
 
     fit_report: list[FigureFitEntry] = []
     html = await asyncio.to_thread(
@@ -928,6 +974,7 @@ async def materialize_lesson_slides_pdf(
         math_svg_map=math_svg_map,
         teacher_name=teacher_name,
         fit_report=fit_report,
+        source_figures=source_figures,
     )
     # Un evento per lezione se qualche formula è ricaduta sul MathML.
     base_pdf._log_math_fallbacks(lesson_code=lesson.lesson_code, svg_map=math_svg_map)
