@@ -35,7 +35,7 @@ from app.services.figure_theme import (
     PALETTE,
 )
 
-PREAMBLE_VERSION = "tikz-2026.09.1"
+PREAMBLE_VERSION = "tikz-2026.09.2"
 
 TIKZ_LIBRARIES: tuple[str, ...] = (
     "positioning",
@@ -45,7 +45,10 @@ TIKZ_LIBRARIES: tuple[str, ...] = (
     "backgrounds",
     "shapes.geometric",
     "shapes.misc",
+    "shapes.arrows",
     "decorations.pathreplacing",
+    # Molle e smorzatori (`zigzag`, `coil`) degli schemi di vibrazione.
+    "decorations.pathmorphing",
     "decorations.markings",
     "quotes",
     "angles",

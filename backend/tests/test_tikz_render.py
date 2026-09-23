@@ -48,10 +48,22 @@ SUBSCRIPTS = r"""\begin{circuitikz}
 \end{circuitikz}"""
 
 
+# Molla e smorzatore (`decorations.pathmorphing`, preambolo 2026.09.2) e
+# accenti matematici sopra le lettere (non sono sovrapposizioni).
+SPRING = r"""\begin{tikzpicture}
+  \draw[decorate, decoration={zigzag, amplitude=2mm, segment length=3mm}]
+    (0,0) -- (0,2) node[midway, left=3mm] {$k$};
+  \draw[decorate, decoration={coil, aspect=0.4, amplitude=2mm, segment length=2mm}]
+    (2,0) -- (2,2) node[midway, right=3mm] {$c$};
+  \draw[fill=a4uC0!12] (-0.5,2) rectangle (2.5,3) node[midway] {massa $m$};
+  \node at (1,-0.6) {$\hat{a}$, $\dot{q}$, $\bar{x}$, $\vec{v}$};
+\end{tikzpicture}"""
+
+
 @pytest.mark.parametrize(
     "source",
-    [CHAIN, CIRCUIT, PLOT, SUBSCRIPTS],
-    ids=["chain", "circuit", "plot", "subscripts"],
+    [CHAIN, CIRCUIT, PLOT, SUBSCRIPTS, SPRING],
+    ids=["chain", "circuit", "plot", "subscripts", "spring_accents"],
 )
 def test_teaching_figures_render_clean(source: str) -> None:
     result, geometry = _render(source)
@@ -84,6 +96,13 @@ NEGATIVES = {
   \foreach \i/\j in {b/a, c/b, d/c, e/d, f/e, g/f} { \node[draw, right=of \j] (\i) {Blocco}; }
 \end{tikzpicture}""",
         "text_small",
+    ),
+    "edge_through_label": (
+        r"""\begin{tikzpicture}
+  \node at (0,0) {Condizionamento};
+  \draw (-2,0) -- (2,0);
+\end{tikzpicture}""",
+        "edge_crosses_label",
     ),
     "clipped": (
         r"""\begin{tikzpicture}

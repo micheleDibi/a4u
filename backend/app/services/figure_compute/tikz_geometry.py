@@ -5,8 +5,8 @@ pdfplumber: parole con il loro corpo, rettangoli, linee e curve. Difetti
 deterministici, senza Vision:
 
 - `labels_overlap`: due glifi uno sopra l'altro (confronto per carattere:
-  pdfplumber fonde in una parola sola due testi sovrapposti; pedici e
-  crenatura non contano);
+  pdfplumber fonde in una parola sola due testi sovrapposti; pedici,
+  accenti matematici e crenatura non contano);
 - `text_outside_owner`: una parola attraversa il bordo di un riquadro
   (rettangolo o forma chiusa) invece di starci dentro o fuori;
 - `edge_crosses_label`: un segmento attraversa una parola (non vale dentro
@@ -25,6 +25,8 @@ PATCH sono avvisi. `font_px_min` va nelle metriche della resa
 from __future__ import annotations
 
 import io
+import unicodedata
+from collections.abc import Iterator
 from dataclasses import dataclass
 from itertools import pairwise
 from typing import Any
@@ -35,6 +37,8 @@ CHAR_OVERLAP = 0.35
 BORDER_CROSS_RATIO = 0.25
 BORDER_TOLERANCE_PT = 0.6
 SCRIPT_RATIO = 0.8
+# Lettere di un pedice (`out`, `max`, `ref`): oltre, è testo del corpo.
+MAX_SCRIPT_CHAIN = 6
 AXIS_ALIGNED_FILL = 0.85
 MAX_CHARS = 2_000
 _PT_PER_MM = 72 / 25.4
@@ -132,34 +136,67 @@ def _near(a: Box, b: Box, distance: float) -> bool:
     return gap_x <= distance and gap_y <= distance
 
 
+def _grid(chars: list[tuple[str, Box, float]], cell: float) -> dict[tuple[int, int], list[int]]:
+    grid: dict[tuple[int, int], list[int]] = {}
+    for i, (_t, box, _s) in enumerate(chars):
+        grid.setdefault((int(box[0] // cell), int(box[1] // cell)), []).append(i)
+    return grid
+
+
+def _neighbours(grid: dict[tuple[int, int], list[int]], box: Box, cell: float) -> Iterator[int]:
+    """Glifi nelle celle attorno a `box`: la distanza utile (mezzo corpo)
+    e la larghezza di un glifo stanno entro una cella, quindi bastano due
+    celle per lato."""
+    for gx in range(int(box[0] // cell) - 2, int(box[2] // cell) + 3):
+        for gy in range(int(box[1] // cell) - 2, int(box[3] // cell) + 3):
+            yield from grid.get((gx, gy), ())
+
+
 def _script_flags(chars: list[tuple[str, Box, float]]) -> list[bool]:
     """Pedici e apici. Un glifo è un pedice se sta accanto (entro mezzo
-    corpo) a uno più grande di almeno `1 / SCRIPT_RATIO`, oppure a un
-    pedice dello stesso corpo (le lettere successive di `V_{out}`). Il
-    confronto con la mediana dei corpi non basta: in `$V_{in}$` o `$R_1$` i
-    pedici sono la maggioranza."""
-    flags = [
-        any(
-            j != i and size < SCRIPT_RATIO * other_size and _near(box, other, 0.5 * other_size)
-            for j, (_o, other, other_size) in enumerate(chars)
-        )
-        for i, (_t, box, size) in enumerate(chars)
-    ]
-    changed = True
-    while changed:
-        changed = False
-        for i, (_t, box, size) in enumerate(chars):
-            if flags[i]:
+    corpo) a uno più grande di almeno `1 / SCRIPT_RATIO`; le lettere che lo
+    seguono sulla stessa riga, con lo stesso corpo, lo sono anche loro
+    (`V_{out}`), ma al più `MAX_SCRIPT_CHAIN` glifi: una scritta piccola
+    accanto a un nodo grande resta testo del corpo e può dare `text_small`.
+    Il confronto con la mediana dei corpi non basta: in `$V_{in}$` o
+    `$R_1$` i pedici sono la maggioranza. Griglia spaziale: costo lineare
+    nei glifi, non quadratico."""
+    if not chars:
+        return []
+    cell = max((size for _t, _b, size in chars), default=1.0) or 1.0
+    grid = _grid(chars, cell)
+    flags = [False] * len(chars)
+    frontier: list[tuple[int, int]] = []
+    for i, (_t, box, size) in enumerate(chars):
+        for j in _neighbours(grid, box, cell):
+            other, other_size = chars[j][1], chars[j][2]
+            if j != i and size < SCRIPT_RATIO * other_size and _near(box, other, 0.5 * other_size):
+                flags[i] = True
+                frontier.append((i, 1))
+                break
+    while frontier:
+        i, length = frontier.pop()
+        if length >= MAX_SCRIPT_CHAIN:
+            continue
+        _t, box, size = chars[i]
+        for j in _neighbours(grid, box, cell):
+            if flags[j]:
                 continue
-            for j, (_o, other, other_size) in enumerate(chars):
-                if (
-                    flags[j]
-                    and abs(size - other_size) <= 0.05 * other_size
-                    and _near(box, other, 0.5 * size)
-                ):
-                    flags[i] = changed = True
-                    break
+            other, other_size = chars[j][1], chars[j][2]
+            same_line = abs(other[3] - box[3]) <= 0.25 * size
+            gap_x = max(other[0] - box[2], box[0] - other[2], 0.0)
+            if abs(other_size - size) <= 0.05 * size and same_line and gap_x <= 0.5 * size:
+                flags[j] = True
+                frontier.append((j, length + 1))
     return flags
+
+
+_ACCENT_CATEGORIES = frozenset({"Sk", "Lm", "Mn", "Me"})
+
+
+def _is_accent(text: str) -> bool:
+    """Glifo di accento (modificatore o segno combinante), mai testo."""
+    return len(text) == 1 and unicodedata.category(text) in _ACCENT_CATEGORIES
 
 
 def _chars_overlap(a: Box, b: Box) -> bool:
@@ -234,8 +271,17 @@ def analyze(pdf: bytes, *, has_axis: bool) -> TikzGeometry:
         segments = [] if has_axis else _segments(page)
         drawn = [*page.lines, *page.rects, *page.curves]
     defects: list[str] = []
+    cell = max((size for _t, _b, size in chars), default=1.0) or 1.0
+    grid = _grid(chars, cell)
     for i, (text_a, box_a, size_a) in enumerate(chars):
-        for text_b, box_b, size_b in chars[i + 1 :]:
+        # Gli accenti matematici (`\hat`, `\dot`, `\bar`, `\vec`) stanno
+        # sopra la loro lettera per costruzione.
+        if _is_accent(text_a):
+            continue
+        for j in sorted(_neighbours(grid, box_a, cell)):
+            text_b, box_b, size_b = chars[j]
+            if j <= i or _is_accent(text_b):
+                continue
             # Un pedice o un apice accanto alla sua base non è una
             # sovrapposizione: si confrontano solo glifi di corpo simile.
             similar = min(size_a, size_b) >= SCRIPT_RATIO * max(size_a, size_b)

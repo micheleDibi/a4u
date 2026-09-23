@@ -61,6 +61,7 @@ from app.services.course_architecture_service import (
     didactic_style_labels,  # noqa: F401  (ri-esposta per il worker Fase 3)
 )
 from app.services.course_glossary_service import format_glossary_for_prompt
+from app.services.figure_compute.tikz_preamble import TIKZ_LIBRARIES
 from app.services.figure_mix import compute_figure_mix
 from app.services.lesson_figure_selection import FigureCatalog
 
@@ -373,17 +374,16 @@ def _source_figure_catalog_block(catalog_text: str) -> list[str]:
 # PROMPT 3 resta byte-identico); `tikz` conta nel budget (a).
 _TIKZ_BLOCK = r"""## Formato aggiuntivo: tikz
 
-Oltre ai formati del prompt di sistema puoi usare `tikz`, compilato dal
-server, per gli schemi di strumenti, i circuiti e le catene di misura
-(blocchi e segnali, sensori, ponti, anelli di controllo). Non per grafici
-di funzioni (`function`), dati (`vegalite`), alberi e reti (`dot`).
+Puoi usare anche `tikz` (compilato dal server) per schemi di strumenti,
+circuiti e catene di misura (blocchi e segnali, sensori, ponti, anelli di
+controllo); non per funzioni (`function`), dati (`vegalite`), alberi e
+reti (`dot`).
 - Se il catalogo delle figure di fonte ha già lo schema dello stesso
   oggetto, scegli quella figura e non ridisegnarla.
 - `content`: UN solo ambiente `tikzpicture` (o `circuitikz`, stile
   europeo), senza preambolo, `\usepackage`, `\usetikzlibrary`, `\def`,
-  `\newcommand`, `\input`, `overlay` né `remember picture`. Librerie già
-  caricate: positioning, arrows.meta, calc, fit, backgrounds, shapes,
-  quotes, angles, decorations.
+  `\newcommand`, `\input`, `overlay` né `remember picture`. Librerie
+  caricate (solo queste): """ + ", ".join(TIKZ_LIBRARIES) + r""".
 - Posizionamento relativo (`right=of`, `below=of`, `node distance`),
   etichette brevi nella lingua del corso, formule fra `$…$`, colori
   `a4uC0`…`a4uC7` e `a4uInk`, nessun font più grande di `\small`,
