@@ -18,6 +18,7 @@ validazione degli asset sono sostituiti. Oracoli:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -457,3 +458,142 @@ async def test_reserved_document_name_in_a_caption_is_flagged(
         .all()
     )
     assert audits, "nome del documento riservato nella didascalia non segnalato"
+
+
+# --- oracoli aggiunti dalla verifica dei test di WP3 --------------------------------
+
+
+def _extra_figure(setup: dict[str, Any], **kw: Any) -> Any:
+    return build_document_figure(
+        setup["course_id"],
+        setup["docs"]["citable"].id,
+        license=kw.pop("license", "cc_by"),
+        description=kw.pop(
+            "description", "Schema del vibrometro laser Doppler con la cella di Bragg"
+        ),
+        keywords=kw.pop(
+            "keywords", {"course": ["vibrometro laser Doppler", "cella di Bragg"], "en": []}
+        ),
+        **kw,
+    )
+
+
+async def _catalog_ids(seeded_db: AsyncSession, setup: dict[str, Any]) -> set[uuid.UUID]:
+    course = await content_svc.load_course_full(seeded_db, course_id=setup["course_id"])
+    assert course is not None
+    lesson = find_lesson(course, "M1.L1")
+    result = await source_figure_catalog.build_catalog(seeded_db, course, lesson)
+    return set(result.catalog.refs.values()) if result is not None else set()
+
+
+async def test_i3_content_raw_is_identical_with_and_without_the_reviewer(
+    seeded_db: AsyncSession, fakes: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """I3 nel worker: il revisore segnala soltanto, `content_raw` è lo stesso
+    con il revisore acceso e spento (stessa lezione rigenerata)."""
+    setup = await _setup(seeded_db)
+    await worker._process_one(setup["lesson_id"])
+    with_review = await _lesson(seeded_db, setup["lesson_id"])
+    assert with_review.content_figure_review is not None
+    raw_on = json.loads(json.dumps(with_review.content_raw))
+    patched = get_settings().model_copy(update={"figure_redundancy_enabled": False})
+    monkeypatch.setattr(avs, "get_settings", lambda: patched)
+    await seeded_db.execute(
+        update(CourseLesson)
+        .where(CourseLesson.id == setup["lesson_id"])
+        .values(content_status="pending", content_raw=None)
+    )
+    await seeded_db.commit()
+    await worker._process_one(setup["lesson_id"])
+    without = await _lesson(seeded_db, setup["lesson_id"])
+    assert without.content_status == "ready"
+    assert without.content_figure_review is None
+    assert without.content_raw == raw_on
+
+
+async def test_catalog_applies_the_organization_license_policy(
+    seeded_db: AsyncSession,
+) -> None:
+    from app.models.organization_course_settings import OrganizationCourseSettings
+
+    setup = await _setup(seeded_db)
+    unknown = _extra_figure(setup, license="unknown")
+    seeded_db.add(unknown)
+    await seeded_db.commit()
+    good = setup["figures"]["good"]
+    assert {good.id, unknown.id} <= await _catalog_ids(seeded_db, setup)
+    course = await seeded_db.get(Course, setup["course_id"])
+    assert course is not None
+    seeded_db.add(
+        OrganizationCourseSettings(
+            organization_id=course.organization_id, figure_source_license_policy="open_only"
+        )
+    )
+    await seeded_db.commit()
+    ids = await _catalog_ids(seeded_db, setup)
+    assert good.id in ids and unknown.id not in ids
+
+
+async def test_catalog_drops_low_quality_useless_and_decorative_figures(
+    seeded_db: AsyncSession,
+) -> None:
+    setup = await _setup(seeded_db)
+    low = _extra_figure(setup, quality_score=1)
+    useless = _extra_figure(setup, is_useful_for_teaching=False)
+    logo = _extra_figure(setup, kind="logo_or_decoration")
+    seeded_db.add_all([low, useless, logo])
+    await seeded_db.commit()
+    ids = await _catalog_ids(seeded_db, setup)
+    assert setup["figures"]["good"].id in ids
+    assert not ({low.id, useless.id, logo.id} & ids)
+
+
+async def test_worker_respects_the_source_figure_budget(
+    seeded_db: AsyncSession, fakes: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    setup = await _setup(seeded_db)
+    seeded_db.add_all([_extra_figure(setup), _extra_figure(setup)])
+    await seeded_db.commit()
+    patched = get_settings().model_copy(update={"figure_source_max_per_lesson": 1})
+    monkeypatch.setattr(source_figure_catalog, "get_settings", lambda: patched)
+    await worker._process_one(setup["lesson_id"])
+    lesson = await _lesson(seeded_db, setup["lesson_id"])
+    sources = [a for a in lesson.content_raw["visual_assets"] if a["format"] == "source_figure"]
+    assert len(sources) == 1
+    assert len(fakes["calls"][0]["source_figure_refs"]) == 3  # il catalogo ne offriva 3
+
+
+async def test_tick_dispatches_only_the_lessons_of_the_pending_query(
+    seeded_db: AsyncSession, monkeypatch: pytest.MonkeyPatch, _engine: Any
+) -> None:
+    """`_tick` usa il filtro SQL dell'attesa delle estrazioni: una lezione il
+    cui corso ha un'estrazione recente in corso non parte."""
+    setup = await _setup(seeded_db)
+    patched = get_settings().model_copy(
+        update={"figure_extraction_enabled": True, "figure_source_enabled": True}
+    )
+    monkeypatch.setattr(worker, "get_settings", lambda: patched)
+    monkeypatch.setattr(
+        worker, "async_session_factory", async_sessionmaker(_engine, expire_on_commit=False)
+    )
+    dispatched: list[uuid.UUID] = []
+
+    async def record(lesson_id: uuid.UUID) -> None:
+        dispatched.append(lesson_id)
+
+    monkeypatch.setattr(worker, "_bound_process", record)
+    monkeypatch.setattr(worker, "_inflight", set())
+    doc = setup["docs"]["citable"]
+    doc.figures_status = "processing"
+    doc.figures_requested_at = datetime.now(UTC)
+    await seeded_db.commit()
+    await worker._tick()
+    await asyncio.sleep(0)
+    assert setup["lesson_id"] not in dispatched
+    doc.figures_requested_at = datetime.now(UTC) - timedelta(
+        minutes=patched.figure_wait_max_minutes + 1
+    )
+    await seeded_db.commit()
+    await worker._tick()
+    await asyncio.sleep(0)
+    assert setup["lesson_id"] in dispatched

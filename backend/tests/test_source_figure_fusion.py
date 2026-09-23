@@ -232,3 +232,12 @@ def test_dropping_tags_leaves_untouched_fields_identical() -> None:
     text = "Intro.\n\n[FIG:SRC-aa]\n\nTesto.\n\n\nAltro."
     assert _drop_tags(text, {"src-aa"}) == "Intro.\n\nTesto.\n\n\nAltro."
     assert _drop_tags("Vedi [FIG:SRC-aa] qui.", {"src-aa"}) == "Vedi  qui."
+
+
+def test_alt_text_loses_the_source_tail_too() -> None:
+    output = _output()
+    output.source_figures[0].alt_text = "Schema del vibrometro. Fonte: Rossi, 2020"
+    fuse_source_figures(output, REFS, max_items=4)
+    alts = [a.alt_text for a in output.visual_assets if a.format == "source_figure"]
+    assert "Schema del vibrometro." in alts
+    assert not any("Rossi" in alt for alt in alts)
