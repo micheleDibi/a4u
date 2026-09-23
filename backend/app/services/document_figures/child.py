@@ -170,7 +170,12 @@ class PdfEngine:
             is_vector, native_ppi = _raster_share(det, rasters)
         else:
             is_vector, native_ppi = det.is_vector, det.native_ppi
-        caption = det.caption or caption_near(lines, det.bbox)
+        # La didascalia del rilevatore vince solo se porta l'etichetta
+        # («Figura N»); altrimenti (a volte Docling ne aggancia una sola
+        # riga) si preferisce quella etichettata trovata vicino al bbox.
+        caption = det.caption
+        if not caption_label(caption):
+            caption = caption_near(lines, det.bbox) or caption
         event: dict[str, Any] = {
             "event": "figure",
             "locator": locator,

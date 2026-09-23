@@ -75,8 +75,20 @@ def caption_near(lines: list[Line], bbox: BBox, *, max_gap: float = 45.0) -> str
         and ln.bbox.x0 < bbox.x1
         and is_figure_caption(ln.text)
     ]
-    candidates = sorted(below, key=lambda ln: ln.bbox.top) or sorted(
-        above, key=lambda ln: -ln.bbox.bottom
+    # Didascalia di fianco (figure affiancate al testo, «wrapfigure»): riga
+    # con l'etichetta accanto al bbox e sovrapposta in verticale.
+    beside = [
+        ln
+        for ln in lines
+        if ln.bbox.top < bbox.bottom
+        and ln.bbox.bottom > bbox.top
+        and min(abs(ln.bbox.x0 - bbox.x1), abs(bbox.x0 - ln.bbox.x1)) <= 40
+        and is_figure_caption(ln.text)
+    ]
+    candidates = (
+        sorted(below, key=lambda ln: ln.bbox.top)
+        or sorted(above, key=lambda ln: -ln.bbox.bottom)
+        or sorted(beside, key=lambda ln: ln.bbox.top)
     )
     if not candidates:
         return None
