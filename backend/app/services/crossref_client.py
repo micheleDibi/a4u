@@ -14,7 +14,7 @@ su HTTP error / timeout / not found.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
@@ -33,6 +33,9 @@ class CrossrefWork:
     references_count: int | None
     subjects: list[str]
     published_year: int | None
+    # Per la riga «Fonte» delle figure di fonte (bibliografia `crossref`).
+    authors: list[str] = field(default_factory=list)
+    container: str | None = None
 
 
 _JATS_TAG_RE = re.compile(r"<[^>]+>")
@@ -79,6 +82,28 @@ def _extract_published_year(message: dict[str, Any]) -> int | None:
                 year = first[0]
                 if isinstance(year, int):
                     return year
+    return None
+
+
+def _extract_authors(message: dict[str, Any]) -> list[str]:
+    out: list[str] = []
+    raw = message.get("author") or []
+    if isinstance(raw, list):
+        for person in raw:
+            if not isinstance(person, dict):
+                continue
+            given = str(person.get("given") or "").strip()
+            family = str(person.get("family") or person.get("name") or "").strip()
+            name = f"{given} {family}".strip()
+            if name:
+                out.append(name)
+    return out
+
+
+def _extract_container(message: dict[str, Any]) -> str | None:
+    raw = message.get("container-title") or []
+    if isinstance(raw, list) and raw and isinstance(raw[0], str) and raw[0].strip():
+        return raw[0].strip()
     return None
 
 
@@ -149,4 +174,6 @@ async def get_work_by_doi(doi: str) -> CrossrefWork | None:
         references_count=references_count,
         subjects=_extract_subjects(message),
         published_year=_extract_published_year(message),
+        authors=_extract_authors(message),
+        container=_extract_container(message),
     )

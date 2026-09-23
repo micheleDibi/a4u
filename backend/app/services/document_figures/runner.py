@@ -55,8 +55,11 @@ def child_python_path() -> str:
     HOME diversa troverebbe altrimenti un site-packages diverso."""
     seen: list[str] = []
     for entry in sys.path:
-        if entry and entry not in seen and Path(entry).is_dir():
-            seen.append(entry)
+        # `''` (uvicorn, `python -c`) e le voci relative valgono per la cwd
+        # del padre: il figlio gira altrove, quindi diventano assolute.
+        path = str(Path(entry or os.getcwd()).resolve())
+        if path not in seen and Path(path).is_dir():
+            seen.append(path)
     return os.pathsep.join(seen)
 
 

@@ -23,6 +23,7 @@ from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.services import (
     avatar_clip_worker,
     course_architecture_worker,
+    course_document_figures_worker,
     course_document_worker,
     course_duplication_worker,
     course_lesson_avatar_video_worker,
@@ -86,6 +87,8 @@ async def lifespan(app: FastAPI):
     avatar_clip_worker.start_worker()
     # Worker pre-processing documenti corso (Appendice A → riassunto strutturato).
     course_document_worker.start_worker()
+    # Figure di fonte: parte solo con FIGURE_EXTRACTION_ENABLED=true.
+    course_document_figures_worker.start_worker()
     # Worker generazione architettura corso (Fase 1 della pipeline AI).
     course_architecture_worker.start_worker()
     # Worker generazione struttura lezioni (Fase 2 — §5). Dispatch parallelo
@@ -142,6 +145,7 @@ async def lifespan(app: FastAPI):
         await course_lesson_content_worker.stop_worker()
         await course_lesson_structure_worker.stop_worker()
         await course_architecture_worker.stop_worker()
+        await course_document_figures_worker.stop_worker()
         await course_document_worker.stop_worker()
         await avatar_clip_worker.stop_worker()
         await engine.dispose()
