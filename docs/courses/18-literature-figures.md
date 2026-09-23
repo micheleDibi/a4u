@@ -377,7 +377,7 @@ schema con `create_all`. La parità modello↔migrazione è verificata da
 | **M2** Docling su PDF reali | arXiv 2402.10966 e 2304.11054, OCW 20.309, OpenStax. **Tempi** (arm64 nativo, 1 thread): 2,0-2,6 s/pag; RSS del figlio 1,35-1,76 GB. **Motore euristico**: 0,06-0,32 s/pag. **Richiamo** sulle figure con didascalia: Docling 0,93, euristico 0,90. **Precisione**: 0 falsi positivi su 45 ritagli. **Didascalie** esatte dopo la correzione. p90 dei byte 30-126 KB. **Proiezione sulla VM** senza M0 (k = 6): 11-15 s/pag, oltre la soglia di 4 s → decisione al cancello |
 | **M3** delta dell'immagine | Stima arm64 ~1,39 GB espansi / ~0,48 GB compressi (build completa non eseguita: disco di Docker pieno). 134 pacchetti, nessun AGPL, CUDA, triton od OpenCV |
 | **M4** Vision descrittiva | 49 ritagli: tutti i modelli passano. Scelto **gpt-4.1-mini a 768 px**: kind 0,94-0,98, useful 0,98-1,0, p95 3,6-4,8 s, ~0,0007 $/figura; manuale di 300 pagine ≈ 0,06 $ |
-| **M5** TikZ | TeX Live Debian per XeLaTeX: **+550 MB** (pdflatex +393 MB), oltre soglia → TeX solo con build arg. Nessuna libgs. Spike di generazione con il modello (5 schemi × 3): **non eseguito**, perché la proposta automatica resta spenta |
+| **M5** TikZ | TeX Live Debian per XeLaTeX: **+550 MB** (pdflatex +393 MB), oltre soglia → TeX solo con build arg. Nessuna libgs. **Spike di generazione** (gpt-5.5, reasoning high, blocco `tikz` reale; 5 schemi × 3: catena di misura, vibrometro, ponte di Wheatstone, anello di controllo, condizionamento di una termocoppia; 1,77 $): lexer **15/15** (soglia 85%); geometria pulita **8/15** (anello 3/3, Wheatstone 3/3, vibrometro 2/3, catena 0/3, condizionamento 0/3). I rifiuti, controllati sulle immagini, sono difetti veri: etichette sui riquadri, linee sulle etichette, figura più larga della pagina. Regola del piano: 8-11 su 15 → **solo editor**, proposta automatica spenta |
 | **M6** system prompt | Righe statiche misurate sulla variante peggiore; guardie invariate (PROMPT 3 ≤ 31.500, PROMPT 5 ≤ 18.200, PROMPT 6 ≤ 12.500) |
 | **M7** non sostituzione | Due giri: il 1° **fallito** su S3, il 2° **passato** (dettagli sotto). Costo 15,13 $ |
 | **Prova §7.3** | Corso con PDF arXiv CC BY sulla vibrometria + dispensa di prova. **Estrazione**: 4 + 14 figure, Vision 0,016 $. **Dispensa**: 3 figure di fonte oltre alle 4 generate, budget (a) rispettato. **Riga «Fonte»**: presente e identica in dispensa, PDF slide e frame video. **Fascia** fino a 212 mm, avatar da 212 mm. **Slide** 0,081 $. Il PDF arXiv non ha metadati bibliografici: la riga ripiega sul nome del file |
@@ -457,6 +457,44 @@ Motivazioni e alternative scartate sono nel piano, sezione (c).
     `delete_directory("courses")` cancellerebbe tutti i corsi. WP2 usa un
     helper stretto per `courses/{cid}/document_figures/…`.
 
+### Verifica di WP6 (3 verificatori in sola lettura) e correzioni
+
+Nessun rilievo di gravità alta. Correzioni:
+
+- **Lexer**:
+  - vietati anche `.append code`, `.prefix code`, `.add code`, `.get` ed
+    `.estore in` (a3d8078);
+  - le variabili di `\foreach` valgono solo nella dichiarazione e nel
+    corpo del ciclo; i nomi di primitive (`\input`, `\def`…) sono
+    rifiutati (bdff904). Prima, `\foreach \input in {1} {}` ammetteva
+    `\input{…}` in tutto il sorgente; la sandbox bloccava comunque la
+    lettura;
+  - un caso negativo per ogni regola.
+- **Preambolo 2026.09.2** con `decorations.pathmorphing` (molle e
+  smorzatori) e `shapes.arrows`. Il blocco `tikz` di PROMPT 3 elenca
+  esattamente le librerie caricate (2353b63).
+- **Oracolo geometrico**:
+  - pedici su griglia spaziale, con catena limitata alla stessa riga e a
+    6 glifi: costo lineare invece di 36 s per 960 glifi, e niente falso
+    negativo su una scritta piccola accanto a un nodo grande;
+  - accenti matematici esclusi dalle sovrapposizioni (2353b63).
+- **Sandbox occupata** durante un'estrazione (c078596):
+  - niente cache negativa;
+  - PDF della dispensa, PDF slide e frame video fanno ritentare il loro
+    worker invece di salvare «Figura non disponibile»;
+  - vista e PATCH rispondono 409 `tikz_busy`;
+  - la Fase 3 non offre `tikz` mentre gira un'estrazione;
+  - registro e renderer condividono la chiave di cache.
+- **Default allineati**. Messaggio e schema di PROMPT 3 usano gli stessi
+  formati anche quando il chiamante non li passa; lo script di M7 li
+  passa a entrambi (71f9c24).
+- **Rilievi minori** (1e7b9d2):
+  - un solo fix per figura anche dopo la localizzazione, con ritorno alla
+    versione valida;
+  - le slide non creano `tikz`;
+  - nodi commentati fuori dalle etichette;
+  - autotest della sandbox all'avvio, in un thread.
+
 ## 15. Sicurezza e rischi residui
 
 - **`/uploads` pubblico** (U5; in produzione `ovh_sftp` su una docroot
@@ -469,6 +507,10 @@ Motivazioni e alternative scartate sono nel piano, sezione (c).
   l'upgrade è SBX-1.
 - **Marcatore `tikz_unresolved` in memoria**. Un riavvio lo perde: al più
   un tentativo `tikz` in più, entro `course_lesson_content_auto_retry_max`.
+- **PDF con `tikz` durante un'estrazione lunga**. Il worker del PDF
+  ritenta (auto-retry). Un'estrazione più lunga dei suoi tentativi porta
+  il PDF a `failed`, visibile e rigenerabile, mai a un PDF con il
+  segnaposto.
 - **Lock TeX/Docling**. La compilazione TeX attende l'estrazione, ma
   l'estrazione non attende una compilazione già in corso: il blocco è a
   senso unico. I render Chromium esistenti non sono coordinati.
@@ -480,6 +522,15 @@ Motivazioni e alternative scartate sono nel piano, sezione (c).
   deploy ricompila.
 
 ## 16. Limiti noti e lavori futuri
+
+- **Etichette `tikz` escluse dall'estrazione**. Le etichette su più righe
+  (`\\`) e le chiavi `l=`/`label=` di circuitikz non sono estratte: né
+  per la traduzione né per le etichette attese dei PROMPT 5, 6 e 21.
+- **Possibile falso positivo** (non confermato):
+  `content_outside_page` scatta su nodi con `inner sep=0pt` al bordo
+  della figura (differenza fra il box del font e quello di TeX).
+- **Marcatore `tikz_unresolved`**. Resta in memoria anche dopo un
+  fallimento terminale; si consuma al tentativo successivo.
 
 - **Test e controlli mancanti**:
   - nessun test dell'SSRF a livello di endpoint `/papers/import` (c'è a

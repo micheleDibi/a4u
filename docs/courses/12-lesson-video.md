@@ -397,3 +397,18 @@ Vedi [04 — Configuration](../04-configuration.md). Variabili rilevanti:
   ma 3-5× più veloce.
 - Il video con avatar parlante sovrapposto è una feature separata:
   vedi [13 — Avatar video](13-avatar-video.md).
+
+## Figure di fonte e `tikz` nei frame (feat/literature-figures)
+
+I frame del video si rendono con lo stesso HTML del PDF delle slide
+(`lesson_slides_video_render_service.render_slides_to_png`).
+
+- **Figure di fonte**. Una slide che mostra una figura di fonte ha la riga
+  «Fonte» nella fascia `.slide-attribution` in basso a sinistra (x 18-212
+  mm, 15 mm, 4 righe), che non si sovrappone all'area dell'avatar (U2).
+  Una figura di fonte senza riga diventa un segnaposto.
+- **Figure `tikz`**. L'SVG viene dal registro (XeLaTeX in sandbox). Se la
+  sandbox è occupata da un'estrazione, il render solleva e il worker del
+  video ritenta, invece di produrre un frame con il segnaposto.
+
+Dettagli: [18 — Figure da letteratura](18-literature-figures.md) §7 e §10.
