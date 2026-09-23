@@ -341,6 +341,91 @@ class Settings(BaseSettings):
     # Percorso del binario `dot`; None = ricerca nel PATH (`shutil.which`).
     graphviz_dot_path: str | None = None
 
+    # --- Figure da letteratura (figure di fonte) ---
+    # Figure estratte dai documenti del corso (e, dopo il cancello, dalla
+    # letteratura aperta) citate in lezione come asset `source_figure`, con
+    # la riga di attribuzione calcolata a render. Vedi
+    # docs/courses/18-literature-figures.md.
+    # Kill-switch del catalogo nel prompt di Fase 3: con False messaggio
+    # user e schema strict sono identici a prima della feature.
+    figure_source_enabled: bool = True
+    # Politica di licenza: `cite_all` riproduce figure di qualunque licenza
+    # purché con attribuzione completa; `open_only` solo CC0, CC BY, CC BY-SA,
+    # pubblico dominio e documenti dichiarati propri. Override per
+    # organizzazione in `organization_course_settings` (NULL = questo valore).
+    figure_source_license_policy: Literal["cite_all", "open_only"] = "cite_all"
+    # Catalogo per lezione nel messaggio user di Fase 3 (voci e caratteri).
+    figure_source_catalog_max_items: int = 8
+    figure_source_catalog_max_chars: int = 4_000
+    # Budget (b) delle figure di fonte, separato da quello delle generate.
+    figure_source_max_per_lesson: int = 4
+    figure_source_max_per_intro_lesson: int = 1
+    # Sotto questo numero di figure di fonte pertinenti una lezione è «in
+    # buco» e (dopo il cancello, WP5) si integra dalla letteratura aperta.
+    figure_source_min_per_lesson: int = 1
+    # Attesa massima della Fase 3 per le estrazioni in corso dei documenti
+    # del corso (filtro nel `_tick`, mai uno sleep).
+    figure_wait_max_minutes: int = 15
+
+    # Estrazione delle figure dai documenti (worker gemello del riassunto).
+    # In produzione resta spenta finché la misura M0 sulla VM non conferma
+    # che torch/Docling girano (vedi docs/07-deployment.md).
+    figure_extraction_enabled: bool = True
+    # `docling` (default del brief) oppure `heuristic` (pdfplumber +
+    # pypdfium2, senza torch: qualità minore, solo per decisione esplicita).
+    figure_extraction_engine: Literal["docling", "heuristic"] = "docling"
+    # Thread del processo figlio (OMP/MKL/OPENBLAS e Docling).
+    figure_extraction_threads: int = 1
+    # Pagine per blocco di conversione e per processo figlio (riciclo della
+    # memoria), tetto di pagine per documento (oltre: copertura parziale).
+    figure_extraction_block_pages: int = 10
+    figure_extraction_pages_per_child: int = 40
+    figure_extraction_max_pages: int = 300
+    figure_extraction_total_timeout_seconds: int = 5_400
+    figure_extraction_probe_timeout_seconds: int = 180
+    # Watchdog di memoria del figlio e memoria minima disponibile prima di
+    # ogni blocco (sotto: rinvio senza consumare tentativi).
+    figure_extraction_max_rss_mb: int = 2_048
+    figure_extraction_min_available_mb: int = 1_800
+    figure_extraction_max_defer_minutes: int = 180
+    # Errori recuperabili → pending con backoff fino a questo tetto, poi
+    # failed; guardia anti-loop sui `processing` ripresi dopo un crash.
+    figure_extraction_auto_retry_max: int = 3
+    figure_extraction_attempts_max: int = 6
+    figure_extraction_poll_interval_seconds: int = 5
+    # Modelli Docling preinstallati nell'immagine (niente download a runtime).
+    figure_docling_artifacts_path: str = "/opt/docling-models"
+    # Idoneità didattica calcolata in lettura (una soglia cambiata agisce
+    # senza rielaborare) e tetto delle figure descritte per documento.
+    figure_min_quality_score: int = 3
+    figure_describe_max_per_document: int = 80
+
+    # Descrizione Vision delle figure candidate (PROMPT 18). Default
+    # provvisorio fino alla misura M4; il modello deve stare a listino
+    # (`openai_pricing.MODEL_PRICING`), altrimenti il costo non si vede.
+    openai_figure_describe_model: str = "gpt-4.1-mini"
+    openai_figure_describe_reasoning_effort: str | None = None
+    openai_figure_describe_max_tokens: int = 800
+    # `detail` sempre esplicito: con alcuni modelli un detail omesso vale
+    # «original» e fattura l'immagine a piena risoluzione.
+    openai_figure_describe_detail: Literal["low", "high"] = "high"
+    openai_figure_describe_timeout_seconds: int = 60
+    openai_figure_describe_concurrency: int = 3
+
+    # Revisore delle figure di fonte (coerenza e ridondanza, PROMPT 19):
+    # segnala soltanto, non modifica mai `content_raw`; errore = nessun avviso.
+    figure_redundancy_enabled: bool = True
+    figure_redundancy_max_attempts: int = 2
+    figure_redundancy_timeout_seconds: int = 120
+    openai_figure_redundancy_model: str = "gpt-4o-mini"
+    openai_figure_redundancy_reasoning_effort: str | None = None
+    openai_figure_redundancy_max_tokens: int = 1_500
+
+    # Fase 4: inserisce in modo deterministico la slide dedicata mancante
+    # per ogni figura di Fase 3 (generate e di fonte). False = output di
+    # Fase 4 identico a prima della feature.
+    figure_slides_coverage_repair_enabled: bool = True
+
     # §7 — Export PDF lezioni.
     # Cap=2: rendering Playwright è I/O+CPU intensive (Chromium istanza).
     course_lesson_pdf_poll_interval_seconds: int = 4

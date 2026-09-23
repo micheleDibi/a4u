@@ -263,6 +263,55 @@ il 60 % di una soglia, la soglia si alza. Un tetto di risorsa (le variabili
 qui sopra) protegge il server; una soglia editoriale dice che la figura,
 così com'è, non si legge.
 
+### Figure da letteratura (figure di fonte)
+
+Figure estratte dai documenti del corso e citate in lezione come asset
+`source_figure`, con la riga «Fonte» calcolata a render dai metadati e mai
+scritta dal modello (documento [Courses 18](courses/18-literature-figures.md)).
+Le figure di fonte si **aggiungono** a quelle generate: hanno un budget
+proprio nel prompt di Fase 3.
+
+| Variabile | Default | Descrizione |
+|---|---|---|
+| `FIGURE_SOURCE_ENABLED` | `true` | Kill-switch del catalogo delle figure di fonte nel prompt di Fase 3: con `false` messaggio user e schema strict sono identici a prima della feature. |
+| `FIGURE_SOURCE_LICENSE_POLICY` | `cite_all` | `cite_all`: figure di qualunque licenza, sempre con attribuzione completa. `open_only`: solo CC0, CC BY, CC BY-SA, pubblico dominio e documenti dichiarati propri dal docente. Sovrascrivibile per organizzazione (impostazioni dei corsi, `NULL` = questo valore). Vale per catalogo e aggiunte manuali; le figure già in lezione restano fino alla rigenerazione. |
+| `FIGURE_SOURCE_CATALOG_MAX_ITEMS` | `8` | Voci del catalogo per lezione nel messaggio user di Fase 3. |
+| `FIGURE_SOURCE_CATALOG_MAX_CHARS` | `4000` | Tetto in caratteri del catalogo (le voci non si troncano a metà). |
+| `FIGURE_SOURCE_MAX_PER_LESSON` | `4` | Budget delle figure di fonte in una lezione ordinaria (in aggiunta alle generate). |
+| `FIGURE_SOURCE_MAX_PER_INTRO_LESSON` | `1` | Budget nella lezione introduttiva. Le verifiche non ricevono catalogo. |
+| `FIGURE_SOURCE_MIN_PER_LESSON` | `1` | Sotto questo numero di figure pertinenti dai documenti la lezione è «in buco» (integrazione dalla letteratura aperta). |
+| `FIGURE_WAIT_MAX_MINUTES` | `15` | Attesa massima della Fase 3 per le estrazioni ancora in corso dei documenti del corso. |
+| `FIGURE_EXTRACTION_ENABLED` | `true` (codice) / `false` (compose) | Estrazione delle figure dai documenti. In produzione va accesa solo dopo la misura M0 sulla VM (torch senza AVX). Spenta: all'upload lo stato resta `NULL`, i `pending` passano a `skipped(extraction_disabled)`. |
+| `FIGURE_EXTRACTION_ENGINE` | `docling` | `docling` (layout + classificatore, CPU) oppure `heuristic` (pdfplumber + pypdfium2, senza torch, qualità minore). |
+| `FIGURE_EXTRACTION_THREADS` | `1` | Thread del processo figlio (OMP/MKL/OPENBLAS e Docling). |
+| `FIGURE_EXTRACTION_BLOCK_PAGES` | `10` | Pagine per blocco di conversione (checkpoint). |
+| `FIGURE_EXTRACTION_PAGES_PER_CHILD` | `40` | Pagine per processo figlio (riciclo della memoria). |
+| `FIGURE_EXTRACTION_MAX_PAGES` | `300` | Oltre, copertura `partial` (mai silenziosa). |
+| `FIGURE_EXTRACTION_TOTAL_TIMEOUT_SECONDS` | `5400` | Tetto dell'estrazione di un documento. |
+| `FIGURE_EXTRACTION_PROBE_TIMEOUT_SECONDS` | `180` | Tetto della probe di Docling nel figlio. |
+| `FIGURE_EXTRACTION_MAX_RSS_MB` | `2048` | Watchdog di memoria del figlio: oltre, il figlio è ucciso e il blocco dimezzato. |
+| `FIGURE_EXTRACTION_MIN_AVAILABLE_MB` | `1800` | Memoria libera minima prima di ogni blocco; sotto, rinvio senza consumare tentativi. |
+| `FIGURE_EXTRACTION_MAX_DEFER_MINUTES` | `180` | Oltre, `failed(resources_unavailable)`. |
+| `FIGURE_EXTRACTION_AUTO_RETRY_MAX` | `3` | Errori recuperabili → `pending` con backoff fino a questo tetto, poi `failed`. |
+| `FIGURE_EXTRACTION_ATTEMPTS_MAX` | `6` | Guardia anti-loop sui `processing` ripresi dopo un crash. |
+| `FIGURE_EXTRACTION_POLL_INTERVAL_SECONDS` | `5` | Intervallo del worker delle figure. |
+| `FIGURE_DOCLING_ARTIFACTS_PATH` | `/opt/docling-models` | Modelli Docling preinstallati nell'immagine (nessun download a runtime). |
+| `FIGURE_MIN_QUALITY_SCORE` | `3` | Qualità minima (1-5) di una figura per entrare nel catalogo (calcolata in lettura). |
+| `FIGURE_DESCRIBE_MAX_PER_DOCUMENT` | `80` | Figure descritte per documento (le più grandi e sicure prima). |
+| `OPENAI_FIGURE_DESCRIBE_MODEL` | `gpt-4.1-mini` | Modello Vision della descrizione (default provvisorio fino alla misura M4). Deve essere a listino in `openai_pricing`, altrimenti il costo non compare. |
+| `OPENAI_FIGURE_DESCRIBE_REASONING_EFFORT` | _(vuoto)_ | Solo per modelli reasoning. |
+| `OPENAI_FIGURE_DESCRIBE_MAX_TOKENS` | `800` | Tetto dell'output della descrizione. |
+| `OPENAI_FIGURE_DESCRIBE_DETAIL` | `high` | `detail` dell'immagine, sempre esplicito. |
+| `OPENAI_FIGURE_DESCRIBE_TIMEOUT_SECONDS` | `60` | Timeout per chiamata. |
+| `OPENAI_FIGURE_DESCRIBE_CONCURRENCY` | `3` | Chiamate Vision in volo per documento. |
+| `FIGURE_REDUNDANCY_ENABLED` | `true` | Revisore delle figure di fonte (coerenza e ridondanza con le generate): segnala soltanto, non modifica mai `content_raw`. |
+| `FIGURE_REDUNDANCY_MAX_ATTEMPTS` | `2` | Tentativi per figura di fonte (solo le chiamate fallite). |
+| `FIGURE_REDUNDANCY_TIMEOUT_SECONDS` | `120` | Tetto complessivo per lezione; oltre, nessun avviso. |
+| `OPENAI_FIGURE_REDUNDANCY_MODEL` | `gpt-4o-mini` | Modello del revisore (solo testo). |
+| `OPENAI_FIGURE_REDUNDANCY_REASONING_EFFORT` | _(vuoto)_ | Solo per modelli reasoning. |
+| `OPENAI_FIGURE_REDUNDANCY_MAX_TOKENS` | `1500` | Tetto dell'output del revisore. |
+| `FIGURE_SLIDES_COVERAGE_REPAIR_ENABLED` | `true` | Fase 4: inserisce la slide dedicata mancante per ogni figura di Fase 3 (generate e di fonte). `false` = output di Fase 4 identico a prima. |
+
 ### OpenAI — parallelismo + auto-retry worker corso
 
 I worker batch del pipeline corso (Fase 2, Fase 3, Fase 4, Fase 5, e i tre

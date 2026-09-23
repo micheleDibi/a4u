@@ -52,6 +52,9 @@ MODEL_PRICING: dict[str, dict[str, float]] = {
     # === Modelli classici (non reasoning) ===
     "gpt-4o": {"input": 2.50, "output": 10.00, "cached_input": 1.25},
     "gpt-4o-mini": {"input": 0.15, "output": 0.60, "cached_input": 0.075},
+    # Modello Vision della descrizione delle figure di fonte (default di
+    # OPENAI_FIGURE_DESCRIBE_MODEL). Listino ufficiale letto il 23/09/2026.
+    "gpt-4.1-mini": {"input": 0.40, "output": 1.60, "cached_input": 0.10},
     # === Reasoning serie o (thinking) ===
     "o1": {"input": 15.00, "output": 60.00, "cached_input": 7.50},
     "o1-mini": {"input": 3.00, "output": 12.00, "cached_input": 1.50},
