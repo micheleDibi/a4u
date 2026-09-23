@@ -37,6 +37,7 @@ from app.core.errors import ConflictError, NotFoundError, PermissionDeniedError
 from app.core.logging import get_logger
 from app.models.course import Course
 from app.models.course_document import CourseDocument
+from app.models.course_document_figure import CourseDocumentFigure
 from app.models.course_duplication_job import (
     DUPLICATION_JOB_STATUSES,
     CourseDuplicationJob,
@@ -46,6 +47,8 @@ from app.models.course_module import CourseModule
 from app.models.language import Language
 from app.services import course_duplication_paths as _paths
 from app.services import remote_storage
+from app.services.document_figures import storage as figure_storage
+from app.services.source_figure_service import source_figure_uuid
 from app.services.openai_translate_service import (
     OpenAITranslateError,
     translate_batch,
@@ -597,7 +600,10 @@ async def _clone_course_structure(
     await db.flush()  # need target.id per documenti
 
     # --- Documenti: copia sullo storage + nuovo CourseDocument --------
+    # Id esplicito: le figure di fonte (sotto) si agganciano al nuovo
+    # documento con `doc_map`.
     storage = remote_storage.get_storage()
+    doc_map: dict[uuid.UUID, uuid.UUID] = {}
     for src_doc in source.documents:
         new_stored = _new_filename_stored(src_doc.filename_stored)
         new_rel = f"courses/{target.id}/{new_stored}"
@@ -618,6 +624,7 @@ async def _clone_course_structure(
                 doc_id=str(src_doc.id),
             )
         new_doc = CourseDocument(
+            id=uuid.uuid4(),
             course_id=target.id,
             filename_original=src_doc.filename_original,
             filename_stored=new_stored,
@@ -644,8 +651,25 @@ async def _clone_course_structure(
             # La riservatezza è una proprietà del MATERIALE, non del
             # corso: il flag si clona (dimenticarlo = leak silenzioso).
             citation_policy=src_doc.citation_policy,
+            # Provenienza e riga «Fonte» delle figure: proprietà del
+            # materiale, si clonano come la politica.
+            origin=src_doc.origin,
+            is_own_work=src_doc.is_own_work,
+            license=src_doc.license,
+            license_source=src_doc.license_source,
+            bibliography=_deepcopy_json(src_doc.bibliography),
+            bibliography_source=src_doc.bibliography_source,
+            # Estrazione delle figure: gli esiti conclusi si clonano con
+            # le righe; un'estrazione in coda o in corso no (nessun worker
+            # la sta facendo per il corso nuovo: la si richiede di nuovo).
+            **_cloned_figures_state(src_doc),
         )
         db.add(new_doc)
+        doc_map[src_doc.id] = new_doc.id
+    await db.flush()
+    fig_map = await _clone_document_figures(
+        db, source_course_id=source.id, target_course_id=target.id, doc_map=doc_map
+    )
 
     # --- Moduli + lezioni --------------------------------------------
     for src_mod in source.modules:
@@ -687,7 +711,11 @@ async def _clone_course_structure(
                 section_outline=_deepcopy_json(src_lesson.section_outline),
                 # Fase 3 — content
                 content_status=src_lesson.content_status,
-                content_raw=_deepcopy_json(src_lesson.content_raw),
+                content_raw=_remap_source_figures(
+                    _deepcopy_json(src_lesson.content_raw), fig_map
+                ),
+                # Verdetto del revisore: per asset_id, che non cambiano.
+                content_figure_review=_deepcopy_json(src_lesson.content_figure_review),
                 content_attempts=0,
                 content_tokens=None,
                 content_error=None,
@@ -752,6 +780,191 @@ async def _clone_course_structure(
     await db.commit()
     await db.refresh(target)
     return target
+
+
+_FIGURES_FINAL_STATUSES = frozenset({"ready", "failed", "skipped"})
+
+
+def _cloned_figures_state(src_doc: CourseDocument) -> dict[str, Any]:
+    if src_doc.figures_status not in _FIGURES_FINAL_STATUSES:
+        return {}
+    return {
+        "figures_status": src_doc.figures_status,
+        "figures_error_code": src_doc.figures_error_code,
+        "figures_error": src_doc.figures_error,
+        "figures_count": src_doc.figures_count,
+        "figures_coverage": src_doc.figures_coverage,
+        "figures_engine": src_doc.figures_engine,
+        "figures_fingerprint": src_doc.figures_fingerprint,
+        "figures_pages_total": src_doc.figures_pages_total,
+        "figures_pages_done": src_doc.figures_pages_done,
+        "figures_progress": _deepcopy_json(src_doc.figures_progress),
+        "figures_stats": _deepcopy_json(src_doc.figures_stats),
+    }
+
+
+# Colonne della figura che NON si copiano così come sono: identità, corso
+# e documento (rimappati), file (copiati sotto il prefisso del corso
+# nuovo), autoriferimenti (rimappati), costo (già contato sul corso
+# sorgente: copiarlo lo raddoppierebbe nella dashboard) e timestamp.
+_FIGURE_SKIP_COLUMNS = frozenset(
+    {
+        "id",
+        "course_id",
+        "document_id",
+        "storage_path",
+        "preview_path",
+        "duplicate_of_id",
+        "describe_source_id",
+        "vision_usage",
+        "vision_usage_at",
+        "created_at",
+        "updated_at",
+    }
+)
+
+
+async def _copy_figure_file(
+    path: str | None, *, target_course_id: uuid.UUID, document_id: uuid.UUID | None
+) -> str | None:
+    if not path:
+        return None
+    name = path.rsplit("/", 1)[-1]
+    new_path = figure_storage.figure_path(target_course_id, document_id, name)
+    try:
+        data = await asyncio.to_thread(figure_storage.read, path)
+        await asyncio.to_thread(figure_storage.upload, new_path, data)
+    except Exception as exc:  # file sparito: la figura resterà non rendibile
+        log.warning("course_duplication_figure_file_missing", path=path, error=str(exc)[:200])
+        return None
+    return new_path
+
+
+async def _clone_document_figures(
+    db: AsyncSession,
+    *,
+    source_course_id: uuid.UUID,
+    target_course_id: uuid.UUID,
+    doc_map: dict[uuid.UUID, uuid.UUID],
+) -> dict[uuid.UUID, uuid.UUID]:
+    """Righe `course_document_figure` del corso sorgente (staccate
+    comprese) con i loro file, sul corso nuovo. Ritorna `{id sorgente →
+    id nuovo}` per rimappare `content_raw`. Una figura di un documento che
+    non è stato clonato resta fuori."""
+    rows = list(
+        (
+            await db.execute(
+                select(CourseDocumentFigure).where(
+                    CourseDocumentFigure.course_id == source_course_id
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    fig_map: dict[uuid.UUID, uuid.UUID] = {}
+    clones: list[tuple[CourseDocumentFigure, CourseDocumentFigure]] = []
+    columns = [c.key for c in CourseDocumentFigure.__table__.columns]
+    for row in rows:
+        new_doc_id = doc_map.get(row.document_id) if row.document_id else None
+        if row.document_id is not None and new_doc_id is None:
+            continue
+        clone = CourseDocumentFigure(id=uuid.uuid4())
+        for key in columns:
+            if key not in _FIGURE_SKIP_COLUMNS:
+                setattr(clone, key, _deepcopy_json(getattr(row, key)))
+        clone.course_id = target_course_id
+        clone.document_id = new_doc_id
+        clone.storage_path = await _copy_figure_file(
+            row.storage_path, target_course_id=target_course_id, document_id=new_doc_id
+        )
+        clone.preview_path = await _copy_figure_file(
+            row.preview_path, target_course_id=target_course_id, document_id=new_doc_id
+        )
+        if clone.status == "ready" and not clone.storage_path:
+            clone.status = "failed"
+        fig_map[row.id] = clone.id
+        clones.append((row, clone))
+        db.add(clone)
+    for row, clone in clones:
+        clone.duplicate_of_id = fig_map.get(row.duplicate_of_id) if row.duplicate_of_id else None
+        clone.describe_source_id = (
+            fig_map.get(row.describe_source_id) if row.describe_source_id else None
+        )
+    await db.flush()
+    return fig_map
+
+
+def _remap_source_figures(content_raw: Any, fig_map: dict[uuid.UUID, uuid.UUID]) -> Any:
+    """Riferimenti `source_figure` di `content_raw` alle figure clonate:
+    nessun id del corso sorgente resta nel JSON del corso nuovo (un id non
+    clonato resta e verrà reso come segnaposto)."""
+    if not isinstance(content_raw, dict):
+        return content_raw
+    for asset in content_raw.get("visual_assets") or []:
+        fid = source_figure_uuid(asset)
+        if fid is not None and fid in fig_map:
+            asset["content"] = str(fig_map[fid])
+    return content_raw
+
+
+async def _translate_document_figures(
+    db: AsyncSession,
+    *,
+    target: Course,
+    source_lang_code: str,
+    source_lang_name: str,
+    target_lang_code: str,
+    target_lang_name: str,
+) -> dict[str, Any]:
+    """Descrizione e parole chiave (nella lingua del corso) delle figure di
+    fonte del corso nuovo: il catalogo del PROMPT 3 le confronta con la
+    lezione nella lingua del corso. Le parole chiave in inglese restano."""
+    from sqlalchemy.orm.attributes import flag_modified
+
+    rows = list(
+        (
+            await db.execute(
+                select(CourseDocumentFigure).where(
+                    CourseDocumentFigure.course_id == target.id,
+                    CourseDocumentFigure.status == "ready",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    items: dict[str, str] = {}
+    for row in rows:
+        if row.description:
+            items[f"{row.id}:d"] = row.description
+        keywords = (row.keywords or {}).get("course") if isinstance(row.keywords, dict) else None
+        for index, keyword in enumerate(keywords or []):
+            if isinstance(keyword, str) and keyword.strip():
+                items[f"{row.id}:k{index}"] = keyword
+    if not items:
+        return {"strings_translated": 0}
+    translated = await _translate_batch_resilient(
+        items=items,
+        source_lang_code=source_lang_code,
+        source_lang_name=source_lang_name,
+        target_lang_code=target_lang_code,
+        target_lang_name=target_lang_name,
+        op_label=f"document_figures course_id={target.id}",
+    )
+    for row in rows:
+        if f"{row.id}:d" in translated:
+            row.description = translated[f"{row.id}:d"]
+        if isinstance(row.keywords, dict) and row.keywords.get("course"):
+            row.keywords = {
+                **row.keywords,
+                "course": [
+                    translated.get(f"{row.id}:k{i}", keyword)
+                    for i, keyword in enumerate(row.keywords["course"])
+                ],
+            }
+            flag_modified(row, "keywords")
+    return {"strings_translated": len(translated)}
 
 
 def _deepcopy_json(value: Any) -> Any:

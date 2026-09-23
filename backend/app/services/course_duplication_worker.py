@@ -432,6 +432,14 @@ async def _process_one(job_id: uuid.UUID) -> None:
                     target_lang_code=target_lang_code,
                     target_lang_name=target_lang_name,
                 )
+                await _svc._translate_document_figures(
+                    db,
+                    target=target,
+                    source_lang_code=source_lang_code,
+                    source_lang_name=source_lang_name,
+                    target_lang_code=target_lang_code,
+                    target_lang_name=target_lang_name,
+                )
                 await db.commit()
                 await _set_progress(
                     job_id, pct=95, phase="translating_glossary_documents"
