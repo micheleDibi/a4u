@@ -95,6 +95,26 @@ VisualAssetFormat = Literal[
     "description",
 ]
 
+# Formati degli asset della DISPENSA (Fase 3): quelli condivisi più
+# `source_figure`, la figura di fonte estratta da un documento (`content` =
+# UUID della riga `course_document_figure`, risolta lato server con la riga
+# «Fonte»). Scissione dell'alias: le slide (`new_assets`, Fase 4) restano su
+# `VisualAssetFormat` e non possono creare figure di fonte (le referenziano
+# da Fase 3); il modello di Fase 3 le sceglie solo tramite `source_figures`.
+ContentVisualAssetFormat = Literal[
+    "mermaid",
+    "vegalite",
+    "dot",
+    "function",
+    "image",
+    "source_figure",
+    # — legacy, read-only —
+    "image_prompt",
+    "image_search_query",
+    "description",
+]
+SOURCE_FIGURE_FORMAT = "source_figure"
+
 # ---------------------------------------------------------------------------
 # Output AI (§6.3) — validato dopo la chiamata OpenAI
 # ---------------------------------------------------------------------------
@@ -127,7 +147,7 @@ class LessonContentVisualAsset(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
     asset_id: str = Field(min_length=1, max_length=50)
-    format: VisualAssetFormat
+    format: ContentVisualAssetFormat
     content: str = Field(min_length=1)
     caption: str = Field(default="", max_length=600)
     alt_text: str = Field(default="", max_length=400)
@@ -149,7 +169,30 @@ def cap_visual_asset_content[AssetT: _HasContent](asset: AssetT) -> AssetT:
     return asset
 
 
-GeneratedVisualAsset = Annotated[LessonContentVisualAsset, AfterValidator(cap_visual_asset_content)]
+def reject_generated_source_figure(asset: LessonContentVisualAsset) -> LessonContentVisualAsset:
+    """Il modello sceglie le figure di fonte solo in `source_figures`: un
+    asset generato con quel formato è fuori contratto."""
+    if asset.format == SOURCE_FIGURE_FORMAT:
+        raise ValueError("format source_figure non ammesso negli asset generati")
+    return asset
+
+
+GeneratedVisualAsset = Annotated[
+    LessonContentVisualAsset,
+    AfterValidator(cap_visual_asset_content),
+    AfterValidator(reject_generated_source_figure),
+]
+
+
+class SourceFigureChoice(BaseModel):
+    """Figura del catalogo scelta dal PROMPT 3 (fusa lato server in un asset
+    `source_figure`): id del catalogo, didascalia e testo alternativo nella
+    lingua del corso, senza la fonte."""
+
+    model_config = ConfigDict(extra="forbid")
+    figure: str = Field(min_length=1, max_length=40)
+    caption: str = Field(default="", max_length=600)
+    alt_text: str = Field(default="", max_length=400)
 
 
 class LessonContentTable(BaseModel):
@@ -287,6 +330,13 @@ class LessonContentOutput(BaseModel):
     examples: list[LessonContentExample] = Field(default_factory=list)
     references: list[LessonContentReference] = Field(default_factory=list)
     coverage_check: LessonContentCoverageCheck
+    # Scelte del catalogo delle figure di fonte (solo con catalogo nel
+    # prompt): fuse in `visual_assets` da `source_figure_fusion` e poi
+    # svuotate. `exclude=True`: non entrano mai in `content_raw` (il PATCH e
+    # la materializzazione riscrivono `model_dump()`).
+    source_figures: list[SourceFigureChoice] = Field(
+        default_factory=list, max_length=20, exclude=True
+    )
 
     @field_validator("key_takeaways")
     @classmethod

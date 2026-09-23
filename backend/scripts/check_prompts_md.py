@@ -24,7 +24,8 @@ Perimetro: PROMPT 3 (dispense, con grounding), 4 (verifica), 5 (slide),
 6 (discorso), 11 (immagine → Mermaid), 12 (fix degli asset: variante
 principale Mermaid IT e le varianti Vega-Lite / DOT / `function` IT
 dichiarate verbatim), 17 (revisore figura ↔ testo: prompt IT e variante
-EN), 18 (Vision delle figure di fonte: prompt IT e variante EN). I
+EN), 18 (Vision delle figure di fonte) e 19 (ridondanze delle figure di
+fonte), ciascuno con il prompt IT e la variante EN. I
 messaggi user e gli schemi JSON non sono confrontati (sono template
 descrittivi, non stringhe del codice).
 
@@ -52,6 +53,7 @@ from typing import cast
 
 from app.services import openai_asset_fix_service as fix_service
 from app.services import openai_figure_describe_service as describe_service
+from app.services import openai_figure_redundancy_service as redundancy_service
 from app.services import openai_figure_review_service as review_service
 from app.services import openai_image_to_mermaid_service as image_service
 from app.services import openai_lesson_content_service as content_service
@@ -202,6 +204,10 @@ def render_describe(language: str) -> str:
     return describe_service._system_prompt(language)
 
 
+def render_redundancy(language: str) -> str:
+    return redundancy_service._system_prompt(language)
+
+
 _RENDERERS: tuple[tuple[str, int, str | None, Callable[[], str]], ...] = (
     ("PROMPT 3 — dispense (grounding)", 3, None, render_content),
     ("PROMPT 4 — verifica", 4, None, render_assessment),
@@ -225,6 +231,13 @@ _RENDERERS: tuple[tuple[str, int, str | None, Callable[[], str]], ...] = (
         18,
         "_SYSTEM_DESCRIBE_EN",
         lambda: render_describe("en"),
+    ),
+    ("PROMPT 19 — ridondanze delle figure di fonte IT", 19, None, lambda: render_redundancy("it")),
+    (
+        "PROMPT 19 — ridondanze delle figure di fonte EN",
+        19,
+        "_SYSTEM_REDUNDANCY_EN",
+        lambda: render_redundancy("en"),
     ),
 )
 

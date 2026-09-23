@@ -35,6 +35,11 @@ MONOCULTURE_MIN_FIGURES = 3
 # noto: è quello che `graph_rules._metrics` già usa, non un valore nuovo.
 UNKNOWN_MERMAID_TYPE = "?"
 
+# Figure non generate dal modello (figure di fonte dei documenti): contate a
+# parte in `sources`, fuori da `total` e `formats`, così il mix misura solo
+# le figure generate (budget (a)) e la monocultura non cambia significato.
+SOURCE_FORMATS: frozenset[str] = frozenset({"source_figure"})
+
 
 def _mermaid_type(source: str) -> str:
     return mermaid_source_metrics(source).kind or UNKNOWN_MERMAID_TYPE
@@ -61,6 +66,8 @@ class FigureMix:
     total: int
     formats: dict[str, int]
     mermaid_types: dict[str, int]
+    # Figure di fonte (budget (b)), per formato; non entrano in `total`.
+    sources: dict[str, int] | None = None
 
     @property
     def monoculture(self) -> bool:
@@ -110,6 +117,7 @@ def compute_figure_mix(assets: Iterable[Mapping[str, Any] | Any]) -> FigureMix:
     """
     formats: Counter[str] = Counter()
     mermaid_types: Counter[str] = Counter()
+    sources: Counter[str] = Counter()
     for asset in assets:
         if isinstance(asset, Mapping):
             fmt = asset.get("format")
@@ -119,6 +127,9 @@ def compute_figure_mix(assets: Iterable[Mapping[str, Any] | Any]) -> FigureMix:
             content = getattr(asset, "content", None)
         if not isinstance(fmt, str) or not fmt:
             continue
+        if fmt in SOURCE_FORMATS:
+            sources[fmt] += 1
+            continue
         formats[fmt] += 1
         read_subtype = _SUBTYPE_READERS.get(fmt)
         if read_subtype is not None:
@@ -127,4 +138,5 @@ def compute_figure_mix(assets: Iterable[Mapping[str, Any] | Any]) -> FigureMix:
         total=sum(formats.values()),
         formats=_sorted(formats),
         mermaid_types=_sorted(mermaid_types),
+        sources=_sorted(sources),
     )

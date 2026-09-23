@@ -32,6 +32,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from app.core.prompt_safety import neutralize_third_party_text
 from app.models.course_lesson import CourseLesson
 from app.services.lesson_document_selection import (
     UBIQUITY_MIN_ENTRIES,
@@ -111,7 +112,9 @@ def figure_terms(fig: FigureLike) -> tuple[frozenset[str], frozenset[str]]:
 
 
 def _clip(text: str | None, limit: int) -> str:
-    cleaned = " ".join((text or "").split())
+    # Testo di terzi (didascalia del documento, output della Vision): va nel
+    # PROMPT 3, quindi passa dalla neutralizzazione anche qui.
+    cleaned = " ".join(neutralize_third_party_text(text or "", limit + 200).split())
     if len(cleaned) <= limit:
         return cleaned
     return cleaned[:limit].rsplit(" ", 1)[0] + "…"
@@ -153,9 +156,9 @@ def _catalog_line(ref: str, fig: FigureLike) -> str:
         parts.append(f"didascalia originale: {_clip(fig.source_caption, CAPTION_MAX_CHARS)}")
     if fig.description:
         parts.append(f"descrizione: {_clip(fig.description, DESCRIPTION_MAX_CHARS)}")
-    keywords = _keywords(fig)[:KEYWORDS_MAX]
+    keywords = [_clip(k, 60) for k in _keywords(fig)[:KEYWORDS_MAX]]
     if keywords:
-        parts.append("parole chiave: " + ", ".join(keywords))
+        parts.append("parole chiave: " + ", ".join(k for k in keywords if k))
     return " | ".join(parts)
 
 

@@ -341,6 +341,8 @@ REQUISITI — ASSET VISIVI
   lezione introduttiva. Non è una quota da riempire: non inventare
   contenuto per arrivare al numero, e una sezione puramente
   discorsiva resta senza figura.
+- FIGURE DI FONTE — solo se il messaggio offre un catalogo: vanno in
+  `source_figures` e si AGGIUNGONO alle figure sopra, mai al loro posto.
 - formule LaTeX TUTTE le volte che la disciplina lo richiede
 - tabelle quando devi confrontare alternative o riassumere
   classificazioni
@@ -807,8 +809,14 @@ LESSON_CONTENT_JSON_SCHEMA: dict[str, Any] = {
 }
 
 
+SOURCE_FIGURES_SCHEMA_PROPERTY = "source_figures"
+
+
 def build_lesson_content_json_schema(
-    *, objective_ids: Sequence[str] = (), visual_formats: Sequence[str] = ()
+    *,
+    objective_ids: Sequence[str] = (),
+    visual_formats: Sequence[str] = (),
+    source_figure_refs: Sequence[str] = (),
 ) -> dict[str, Any]:
     """Schema della singola chiamata: la costante base + l'`enum` dei
     codici obiettivo sui due campi di contabilità + l'`enum` dei formati
@@ -824,13 +832,18 @@ def build_lesson_content_json_schema(
     lezioni sono in volo insieme e una mutazione in place farebbe colare
     l'enum di una lezione nella richiesta di un'altra.
 
-    Con ENTRAMBI gli argomenti vuoti ritorna la costante per identità.
+    Con un catalogo di figure di fonte (`source_figure_refs`, id `SRC-…`)
+    lo schema riceve l'array `source_figures` (id in `enum`, didascalia,
+    testo alternativo); senza catalogo lo schema resta byte-identico a
+    prima: `visual_assets` non cambia mai (budget (a) intatto).
+
+    Con TUTTI gli argomenti vuoti ritorna la costante per identità.
     Lista di obiettivi vuota (lezione senza obiettivi di Fase 2) → nessun
     `enum` sugli obiettivi: `"enum": []` non è uno schema strict valido e
     OpenAI risponderebbe 400 a ogni tentativo; lo stesso vale per i
     formati (vuoto → enum della costante, che elenca le quattro famiglie).
     """
-    if not objective_ids and not visual_formats:
+    if not objective_ids and not visual_formats and not source_figure_refs:
         return LESSON_CONTENT_JSON_SCHEMA
     schema = copy.deepcopy(LESSON_CONTENT_JSON_SCHEMA)
     props = schema["schema"]["properties"]
@@ -842,6 +855,24 @@ def build_lesson_content_json_schema(
         ]["enum"] = ids
     if visual_formats:
         props["visual_assets"]["items"]["properties"]["format"]["enum"] = list(visual_formats)
+    if source_figure_refs:
+        props[SOURCE_FIGURES_SCHEMA_PROPERTY] = {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "figure": {"type": "string", "enum": list(source_figure_refs)},
+                    "caption": {"type": "string"},
+                    "alt_text": {"type": "string"},
+                },
+                "required": ["figure", "caption", "alt_text"],
+                "additionalProperties": False,
+            },
+        }
+        schema["schema"]["required"] = [
+            *schema["schema"]["required"],
+            SOURCE_FIGURES_SCHEMA_PROPERTY,
+        ]
     return schema
 
 
@@ -854,6 +885,7 @@ async def generate_lesson_content(
     stile_insegnamento: str = "",
     livello_eqf: str = "",
     objective_ids: Sequence[str] = (),
+    source_figure_refs: Sequence[str] = (),
 ) -> tuple[LessonContentOutput, dict[str, Any]]:
     """Chiama OpenAI per generare il testo completo di una lezione.
 
@@ -889,6 +921,7 @@ async def generate_lesson_content(
             "json_schema": build_lesson_content_json_schema(
                 objective_ids=objective_ids,
                 visual_formats=available_formats(),
+                source_figure_refs=source_figure_refs,
             ),
         },
         "max_completion_tokens": settings.openai_lesson_content_max_tokens,

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Literal, Protocol, get_args
 
 from app.services.figure_attribution import attribution_source
@@ -55,7 +56,7 @@ class FigureLike(Protocol):
     source_kind: str
     excluded_by_user: bool
     license: str
-    detached_at: object
+    detached_at: datetime | None
     attribution: dict[str, Any] | None
     storage_path: str | None
     page: int | None

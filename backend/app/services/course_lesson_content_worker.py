@@ -37,22 +37,30 @@ import asyncio
 import contextlib
 import time
 import uuid
+from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import Select, or_, select
 
 from app.core.audit import write_audit
 from app.core.config import get_settings
 from app.core.course_phase_order import lesson_structure_is_ready
 from app.core.logging import get_logger
 from app.db.session import async_session_factory
+from app.models.course_document import CourseDocument
 from app.models.course_lesson import CourseLesson
-from app.schemas.course_lesson_content import KEY_TAKEAWAYS_MIN, LessonContentOutput
+from app.schemas.course_lesson_content import (
+    KEY_TAKEAWAYS_MIN,
+    SOURCE_FIGURE_FORMAT,
+    LessonContentOutput,
+)
 from app.services import (
     asset_validation_service,
     course_glossary_service,
     course_lesson_content_service,
     document_citation_guard,
     openai_lesson_content_service,
+    source_figure_catalog,
+    source_figure_fusion,
 )
 from app.services.openai_client import OpenAINotConfiguredError
 
@@ -334,12 +342,30 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                 return
 
         regen = course_lesson_content_service.is_regeneration_for_lesson(lesson)
+        # Catalogo delle figure di fonte (budget (b), IN AGGIUNTA alle figure
+        # generate): un errore qui non blocca la lezione, che resta senza.
+        catalog: source_figure_catalog.CatalogResult | None = None
+        if not lesson.is_assessment:
+            try:
+                async with db.begin_nested():
+                    catalog = await source_figure_catalog.build_catalog(db, course_full, lesson)
+            except Exception as exc:
+                log.warning(
+                    "lesson_content_source_catalog_failed",
+                    lesson_id=str(lesson.id),
+                    error=str(exc)[:300],
+                )
         if lesson.is_assessment:
             user_prompt = course_lesson_content_service.build_assessment_user_prompt(
                 course_full, lesson
             )
         else:
-            user_prompt = course_lesson_content_service.build_user_prompt(course_full, lesson)
+            user_prompt = course_lesson_content_service.build_user_prompt(
+                course_full,
+                lesson,
+                figure_catalog=catalog.catalog if catalog else None,
+                source_figures_max=catalog.budget if catalog else 0,
+            )
 
         # Aggiorna progresso → calling_openai e avvia ticker
         lesson.content_progress = 15
@@ -379,6 +405,7 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                         objective_ids=course_lesson_content_service.objective_ids_for_lesson(
                             lesson
                         ),
+                        source_figure_refs=list(catalog.catalog.refs) if catalog else (),
                     )
             except OpenAINotConfiguredError:
                 # NON recuperabile (config issue) → terminal subito.
@@ -465,6 +492,22 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
         # stadi: qui, prima del filtro delle fonti riservate (che tocca solo
         # `references`) e di `materialize_lesson_content`, che riceve
         # l'usage con le chiamate degli asset (`content_tokens.assets`).
+        fusion: source_figure_fusion.FusionReport | None = None
+        if isinstance(content_output, LessonContentOutput):
+            # Figure di fonte scelte → asset `source_figure` (prima della
+            # validazione, che le salta: non sono in RENDERABLE_FORMATS).
+            fusion = source_figure_fusion.fuse_source_figures(
+                content_output,
+                catalog.catalog.refs if catalog else {},
+                max_items=catalog.budget if catalog else 0,
+            )
+            if fusion.as_json():
+                log.info(
+                    "lesson_content_source_figures_fused",
+                    lesson_id=str(lesson.id),
+                    lesson_code=lesson.lesson_code,
+                    **fusion.as_json(),
+                )
         if not lesson.is_assessment:
             lesson.content_progress = 88
             lesson.content_progress_phase = "validating_assets"
@@ -545,6 +588,71 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                     assets_cost_usd=usage.get("assets_cost_usd"),
                 )
                 return
+
+        # Ricontrollo delle figure di fonte scelte (TOCTOU): politica,
+        # esclusione o licenza cambiate durante la generazione.
+        if (
+            catalog is not None
+            and fusion is not None
+            and fusion.added
+            and isinstance(content_output, LessonContentOutput)
+        ):
+            fused = {
+                a.asset_id: uuid.UUID(a.content)
+                for a in content_output.visual_assets
+                if a.format == SOURCE_FIGURE_FORMAT
+            }
+            blocked = await source_figure_catalog.not_selectable(
+                db, course_full, fused.values(), license_policy=catalog.license_policy
+            )
+            if blocked:
+                dropped = {aid for aid, fid in fused.items() if fid in blocked}
+                source_figure_fusion.remove_source_figures(content_output, dropped)
+                await write_audit(
+                    db,
+                    action="course.lesson.content.source_figures_dropped",
+                    actor_user_id=None,
+                    organization_id=course_full.organization_id,
+                    target_type="course_lesson",
+                    target_id=str(lesson.id),
+                    metadata={
+                        "course_id": str(course_full.id),
+                        "lesson_code": lesson.lesson_code,
+                        "dropped": sorted(dropped),
+                        "reason": "not_selectable_at_materialize",
+                    },
+                )
+                fusion.added = [a for a in fusion.added if a not in dropped]
+        # Revisore delle ridondanze (PROMPT 19): segnala soltanto, ogni
+        # errore vale «nessun avviso»; costo in `content_tokens.assets`.
+        figure_review: dict | None = None
+        if isinstance(content_output, LessonContentOutput) and fusion is not None and fusion.added:
+            infos = await source_figure_catalog.figure_infos(
+                db,
+                {
+                    a.asset_id: uuid.UUID(a.content)
+                    for a in content_output.visual_assets
+                    if a.format == SOURCE_FIGURE_FORMAT
+                },
+            )
+            (
+                figure_review,
+                redundancy_usage,
+            ) = await asset_validation_service.review_source_figure_redundancy(
+                content_output, infos, language_code=course_full.language_code
+            )
+            if redundancy_usage:
+                usage = asset_validation_service.merge_assets_usage(
+                    usage, [*(usage.get("assets") or []), *redundancy_usage]
+                )
+        if catalog is not None:
+            usage["source_figures"] = {
+                "catalog": len(catalog.catalog.candidates),
+                "relevant": catalog.catalog.relevant_count,
+                "budget": catalog.budget,
+                "license_policy": catalog.license_policy,
+                **(fusion.as_json() if fusion else {}),
+            }
 
         # Visibilità delle fonti: filtro hard delle references che
         # matchano documenti a fonte riservata (PRIMA di model_dump()
@@ -628,6 +736,7 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                     output=content_output,
                     raw=content_output.model_dump(),
                     usage=usage,
+                    figure_review=figure_review,
                 )
         except Exception as exc:
             settings = get_settings()
@@ -737,15 +846,36 @@ async def _bound_process(lesson_id: uuid.UUID) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _pending_lessons_query() -> Select[tuple[uuid.UUID]]:
+    """Lezioni `pending`. Una lezione di contenuto aspetta (senza sleep: la
+    riprende un tick successivo) finché nel suo corso c'è un'estrazione di
+    figure di fonte in coda o in corso, richiesta da meno di
+    `FIGURE_WAIT_MAX_MINUTES`: così il catalogo include le figure appena
+    richieste. Oltre il tetto si parte comunque."""
+    settings = get_settings()
+    query = select(CourseLesson.id).where(CourseLesson.content_status == "pending")
+    if not (settings.figure_source_enabled and settings.figure_extraction_enabled):
+        return query
+    cutoff = datetime.now(UTC) - timedelta(minutes=int(settings.figure_wait_max_minutes))
+    extracting = (
+        select(CourseDocument.id)
+        .where(
+            CourseDocument.course_id == CourseLesson.course_id,
+            CourseDocument.figures_status.in_(("pending", "processing")),
+            CourseDocument.figures_requested_at > cutoff,
+        )
+        .exists()
+    )
+    return query.where(or_(CourseLesson.is_assessment.is_(True), ~extracting))
+
+
 async def _tick() -> None:
     """Cerca lezioni `pending` non già in flight e le dispatcha come task
     paralleli (fire-and-forget). Il `_tick` ritorna subito.
     """
     async with async_session_factory() as db:
         try:
-            res = await db.execute(
-                select(CourseLesson.id).where(CourseLesson.content_status == "pending")
-            )
+            res = await db.execute(_pending_lessons_query())
             lesson_ids = [row[0] for row in res.all()]
         except Exception as exc:  # pragma: no cover
             log.warning("lesson_content_worker_tick_failed", error=str(exc))

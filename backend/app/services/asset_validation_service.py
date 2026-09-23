@@ -92,8 +92,9 @@ import sys
 import time
 import weakref
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any, cast
 
 from latex2mathml.converter import convert as _latex_to_mathml
@@ -101,12 +102,13 @@ from latex2mathml.converter import convert as _latex_to_mathml
 from app.core.config import get_settings
 from app.core.i18n_scripts import has_target_script_chars, primary_script
 from app.core.logging import get_logger
-from app.schemas.course_lesson_content import LessonContentOutput
+from app.schemas.course_lesson_content import SOURCE_FIGURE_FORMAT, LessonContentOutput
 from app.schemas.course_lesson_slides import LessonSlidesOutput
 from app.schemas.figure_function import parse_function_spec
 from app.services import (
     openai_asset_fix_service,
     openai_asset_localize_service,
+    openai_figure_redundancy_service,
     openai_figure_review_service,
 )
 from app.services.figure_compute.graph_rules import GRAPH_FORMATS, graph_source_metrics
@@ -1727,6 +1729,146 @@ def assets_cost_usd(assets: list[dict[str, Any]]) -> float:
             for a in assets
             if isinstance(a.get("cost_usd"), int | float) and not isinstance(a["cost_usd"], bool)
         )
+    )
+
+
+# ---------------------------------------------------------------------------
+# Revisore delle ridondanze delle figure di fonte (PROMPT 19, J-Q8)
+# ---------------------------------------------------------------------------
+
+_FIG_TAG_RE = re.compile(r"\[FIG:\s*([^\]\s]+)\s*\]", re.IGNORECASE)
+_OTHER_SOURCE_CAP = 240
+
+
+@dataclass(frozen=True)
+class SourceFigureInfo:
+    """Dati della riga `course_document_figure` che il revisore riceve."""
+
+    description: str
+    original_caption: str
+
+
+def _citing_section(output: LessonContentOutput, asset_id: str) -> tuple[str, str]:
+    """(titolo, testo) della prima parte della lezione che cita la figura."""
+    key = asset_id.lower()
+    parts = [
+        ("Introduzione", output.introduction or ""),
+        *((s.title, s.content) for s in output.sections),
+        ("Sintesi", output.summary or ""),
+    ]
+    for title, text in parts:
+        if any(m.group(1).lower() == key for m in _FIG_TAG_RE.finditer(text)):
+            return title, text
+    return "", ""
+
+
+def _other_summary(asset: Any, infos: Mapping[str, SourceFigureInfo]) -> str:
+    info = infos.get(asset.asset_id)
+    if info is not None:
+        return info.description
+    return " ".join((asset.content or "").split())[:_OTHER_SOURCE_CAP]
+
+
+async def review_source_figure_redundancy(
+    output: LessonContentOutput,
+    infos: Mapping[str, SourceFigureInfo],
+    *,
+    language_code: str,
+) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+    """Verdetti di coerenza e ridondanza delle figure di fonte della lezione.
+
+    Una chiamata per figura (sotto `_review_semaphore`, tetto complessivo
+    `figure_redundancy_timeout_seconds`); ogni errore vale «nessun avviso»
+    per quella figura. Ritorna il dict da salvare in
+    `course_lesson.content_figure_review` (None senza verdetti) e le voci di
+    usage `phase="redundancy"`, comprese quelle delle risposte pagate e
+    inutilizzabili. Non tocca mai `output`."""
+    settings = get_settings()
+    sources = [a for a in output.visual_assets if a.format == SOURCE_FIGURE_FORMAT]
+    usage: list[dict[str, Any]] = []
+    if not settings.figure_redundancy_enabled or not sources:
+        return None, usage
+
+    async def one(asset: Any) -> tuple[str, Any] | None:
+        info = infos.get(asset.asset_id, SourceFigureInfo(description="", original_caption=""))
+        title, text = _citing_section(output, asset.asset_id)
+        others = tuple(
+            openai_figure_redundancy_service.OtherFigure(
+                asset_id=o.asset_id,
+                format=o.format,
+                caption=o.caption or "",
+                summary=_other_summary(o, infos),
+            )
+            for o in output.visual_assets
+            if o.asset_id != asset.asset_id
+        )
+        item = openai_figure_redundancy_service.RedundancyInput(
+            asset_id=asset.asset_id,
+            description=info.description,
+            original_caption=info.original_caption,
+            lesson_caption=asset.caption or "",
+            section_title=title,
+            section_text=text,
+            others=others,
+            language_code=language_code,
+        )
+        try:
+            async with _review_semaphore():
+                verdict, call_usage = await openai_figure_redundancy_service.review_redundancy(item)
+        except OpenAIError as exc:
+            if isinstance(exc.usage, dict):
+                usage.append(_usage_entry("redundancy", asset.asset_id, exc.usage))
+            log.warning(
+                "figure_redundancy_call_failed",
+                asset_id=asset.asset_id,
+                error=str(exc)[:_LOG_CAP],
+            )
+            return None
+        except Exception as exc:
+            log.warning(
+                "figure_redundancy_call_failed",
+                asset_id=asset.asset_id,
+                error=f"{type(exc).__name__}: {exc}"[:_LOG_CAP],
+            )
+            return None
+        usage.append(_usage_entry("redundancy", asset.asset_id, call_usage))
+        return asset.asset_id, verdict
+
+    try:
+        results = await asyncio.wait_for(
+            asyncio.gather(*(one(a) for a in sources)),
+            timeout=float(settings.figure_redundancy_timeout_seconds),
+        )
+    except TimeoutError:
+        log.warning("figure_redundancy_timeout", figures=len(sources))
+        results = []
+    figures: dict[str, Any] = {}
+    for result in results:
+        if result is None:
+            continue
+        asset_id, verdict = result
+        flagged = [p.model_dump() for p in verdict.pairs if p.verdict != "distinta"]
+        figures[asset_id] = {
+            "coherence": verdict.coherence,
+            "reason": verdict.reason,
+            "pairs": flagged,
+        }
+        log.info(
+            "lesson_content_figure_redundancy",
+            asset_id=asset_id,
+            coherence=verdict.coherence,
+            pairs={p["other"]: p["verdict"] for p in flagged},
+        )
+    if not figures:
+        return None, usage
+    return (
+        {
+            "version": 1,
+            "model": settings.openai_figure_redundancy_model,
+            "reviewed_at": datetime.now(UTC).isoformat(),
+            "figures": figures,
+        },
+        usage,
     )
 
 
