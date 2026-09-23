@@ -55,6 +55,9 @@ FALLBACK_BASE_FONT_PX: dict[str, float] = {
     "vegalite": 11.0,
     "dot": 40.0 / 3.0,
     "function": 12.0,
+    # WP6: `\small` (9 pt) del preambolo TikZ → 12 px; di solito il corpo
+    # arriva misurato dal PDF (`tikz_geometry`).
+    "tikz": 12.0,
 }
 
 MetricsSource = Literal["measured", "parsed", "root_rule", "unresolved", "no_text"]

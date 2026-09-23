@@ -95,7 +95,7 @@ from collections import Counter
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import Any, cast, get_args
 
 from latex2mathml.converter import convert as _latex_to_mathml
 
@@ -1301,6 +1301,9 @@ def _function_guard(before_src: str, after_src: str) -> tuple[str, str]:
     return "", ""
 
 
+# Formati che il revisore figura ↔ testo (PROMPT 17) sa leggere.
+REVIEWED_FORMATS: frozenset[str] = frozenset(get_args(openai_figure_review_service.ReviewFormat))
+
 # Conservazione dei dati per i formati senza misura geometrica: tabella per
 # formato e non confronto letterale (D2, doc 17 § 9).
 _DATA_GUARDS: dict[str, Callable[[str, str], tuple[str, str]]] = {
@@ -1636,10 +1639,12 @@ async def _review_figures(
     if not settings.figure_review_enabled:
         return 0
     max_attempts = max(0, int(settings.figure_review_max_attempts))
+    # Solo i formati del revisore (`ReviewFormat`): `tikz` (WP6) ha la sua
+    # revisione della resa e non passa da qui.
     assets = [
         a
         for a in output.visual_assets
-        if a.format in RENDERABLE_FORMATS and (a.content or "").strip()
+        if a.format in REVIEWED_FORMATS and (a.content or "").strip()
     ]
     if max_attempts == 0 or not assets:
         return 0

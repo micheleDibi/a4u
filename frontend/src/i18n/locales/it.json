@@ -1758,6 +1758,7 @@
         "vegalite": "Grafico Vega-Lite",
         "dot": "Grafo Graphviz",
         "function": "Figura matematica",
+        "tikz": "Schema TikZ",
         "image": "Immagine",
         "source_figure": "Figura dai documenti"
       },

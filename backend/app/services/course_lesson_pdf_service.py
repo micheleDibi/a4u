@@ -1011,7 +1011,14 @@ def _render_visual_asset_block(
         # inserisce l'SVG già renderizzato: inline nella dispensa per
         # Mermaid, `<img>` con data URI negli altri casi e nelle slide.
         fig = _figure_entry(svg_map, asset_id)
-        if fig is None:
+        if fig is None and fmt == "tikz":
+            # Mai il sorgente TeX in pagina: segnaposto numerato.
+            body = Markup(
+                '<div class="placeholder-image">'
+                f"{_html_escape_text(labels_map.get('courses.figures.missing', ''))}</div>"
+            )
+            log.warning("tikz_figure_placeholder", lesson_code=lesson_code, asset_id=asset_id)
+        elif fig is None:
             fallback_source, fallback_reason = content, "svg_missing"
         elif fmt == "function":
             extra_caption = figure_render_service.function_computed_caption(
@@ -1108,8 +1115,9 @@ def _render_visual_asset_block(
             )
     elif fmt in _LEGACY_PLACEHOLDER_FORMATS:
         body = Markup(f'<div class="placeholder-image">{_html_escape_text(content)}</div>')
-    elif fallback_source is None:
-        # Formato sconosciuto: sorgente nel fallback, mai in chiaro nel corpo.
+    elif fallback_source is None and body is None:
+        # Formato sconosciuto: sorgente nel fallback, mai in chiaro nel corpo
+        # (un corpo già deciso, come il segnaposto di `tikz`, resta).
         fallback_source, fallback_reason = content, "format_unknown"
 
     if fallback_source is not None:

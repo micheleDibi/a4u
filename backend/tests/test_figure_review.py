@@ -553,7 +553,9 @@ async def test_a_rewrite_that_keeps_the_data_is_accepted(
 def test_the_data_guards_cover_the_formats_without_edges() -> None:
     """Tabella per formato (D2), sequenze contate come le righe e sorgenti
     illeggibili senza misura: decide la validazione."""
-    assert set(avs._DATA_GUARDS) == set(frs.RENDERABLE_FORMATS) - set(GRAPH_FORMATS)
+    # WP6: `tikz` non passa dal revisore figura ↔ testo (REVIEWED_FORMATS).
+    assert set(avs._DATA_GUARDS) == set(avs.REVIEWED_FORMATS) - set(GRAPH_FORMATS)
+    assert "tikz" in frs.RENDERABLE_FORMATS and "tikz" not in avs.REVIEWED_FORMATS
     seq = json.dumps({"data": {"sequence": {"start": 0, "stop": 10, "step": 1}}, "mark": "line"})
     flat = json.dumps({"data": {"values": []}, "mark": "line"})
     assert avs._vegalite_guard(seq, flat) == ("rejected", "sequence_removed: sequenze 1 → 0")

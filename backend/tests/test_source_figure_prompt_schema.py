@@ -193,3 +193,16 @@ def test_regeneration_block_lists_source_figures_apart() -> None:
     assert "- fig_1 [dot]: Catena." in head and "SRC-0f3c2a52" not in head
     assert "- SRC-0f3c2a52: Schema del vibrometro." in sources
     assert "0f3c2a52-1111" not in block
+
+
+def test_system_prompt_is_unchanged_with_tikz_off() -> None:
+    """WP6: `tikz` nel registro ma spento → il system prompt reale (formati
+    disponibili del server) è quello con i quattro formati di sempre."""
+    from app.services import figure_render_service as frs
+    from app.services import openai_lesson_content_service as content
+
+    formats = tuple(f for f in frs.available_formats() if f != "tikz")
+    assert "tikz" not in frs.available_formats()
+    prompt = content._system_prompt("it", visual_formats=frs.available_formats())
+    assert "tikz" not in prompt
+    assert prompt == content._system_prompt("it", visual_formats=formats)

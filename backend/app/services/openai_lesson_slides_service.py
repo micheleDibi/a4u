@@ -417,7 +417,7 @@ LESSON_SLIDES_JSON_SCHEMA: dict[str, Any] = {
 }
 
 # Formati mai offerti al modello in Fase 4 (A1), anche se disponibili.
-_SLIDES_EXCLUDED_FORMATS = frozenset({"function"})
+_SLIDES_EXCLUDED_FORMATS = frozenset({"function", "tikz"})
 
 
 def build_lesson_slides_json_schema(*, visual_formats: Sequence[str]) -> dict[str, Any]:

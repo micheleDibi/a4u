@@ -28,7 +28,7 @@ EXPECTED_KEYS = {
     "courses.figures.missing",
     *(
         f"courses.figures.formats.{f}"
-        for f in ("mermaid", "vegalite", "dot", "function", "image", "source_figure")
+        for f in ("mermaid", "vegalite", "dot", "function", "tikz", "image", "source_figure")
     ),
     *(
         f"courses.figures.function.{k}"
@@ -77,8 +77,9 @@ def test_figure_i18n_it_en_same_keys():
         for key, text in theme.FIGURE_I18N[lang].items():
             assert key.startswith("courses.figures."), key
             assert text.strip(), key
-    # 36 + `courses.figures.formats.source_figure` (figure di fonte, WP4).
-    assert len(EXPECTED_KEYS) == 37
+    # 36 + `courses.figures.formats.source_figure` (figure di fonte, WP4)
+    # + `courses.figures.formats.tikz` (formato tikz, WP6).
+    assert len(EXPECTED_KEYS) == 38
     assert theme.FIGURE_I18N["it"]["courses.figures.label"] == "Figura {{n}}."
     assert theme.FIGURE_I18N["en"]["courses.figures.label"] == "Figure {{n}}."
     assert theme.FIGURE_I18N["it"]["courses.figures.labelUnnumbered"] == "Figura."
@@ -388,9 +389,9 @@ def test_visual_asset_format_shared_by_content_and_slides(fmt: str):
 
 def test_visual_asset_format_rejects_unknown():
     with pytest.raises(ValidationError):
-        LessonContentVisualAsset(asset_id="A1", format="tikz", content="x")
+        LessonContentVisualAsset(asset_id="A1", format="svg", content="x")
     with pytest.raises(ValidationError):
-        LessonSlideNewAsset(asset_id="A1", format="tikz", content="x")
+        LessonSlideNewAsset(asset_id="A1", format="svg", content="x")
 
 
 def test_source_figure_only_in_phase_3():

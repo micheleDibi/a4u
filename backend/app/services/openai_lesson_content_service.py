@@ -32,7 +32,7 @@ from app.schemas.course_lesson_content import (
     LessonContentOutput,
 )
 from app.services.figure_compute.function_parse import FUNCTIONS
-from app.services.figure_render_service import RENDERABLE_FORMATS, available_formats
+from app.services.figure_render_service import PROMPTED_FORMATS, available_formats
 from app.services.figure_theme import MERMAID_D8_TYPES, MERMAID_EXCLUDED_TYPES
 from app.services.openai_client import (
     OpenAIError,
@@ -164,7 +164,9 @@ def _formats_off_block(visual_formats: Sequence[str]) -> str:
     SCELTA promuove `function`, `vegalite` e `dot`, ma l'enum dello schema
     offre solo i formati accesi. Senza questa riga il prompt chiederebbe
     proprio cio' che il modello non puo' produrre."""
-    off = [f for f in RENDERABLE_FORMATS if f not in set(visual_formats)]
+    # Solo i formati della REGOLA DI SCELTA: `tikz` (WP6) si offre a parte,
+    # nel messaggio user, e da spento non cambia il system prompt.
+    off = [f for f in PROMPTED_FORMATS if f not in set(visual_formats)]
     if not off:
         return ""
     names = ", ".join(f"`{f}`" for f in off)
@@ -182,7 +184,7 @@ def _system_prompt(
     stile_insegnamento: str = "",
     livello_eqf: str = "",
     grounding_enabled: bool = True,
-    visual_formats: Sequence[str] = RENDERABLE_FORMATS,
+    visual_formats: Sequence[str] = PROMPTED_FORMATS,
 ) -> str:
     register_block = academic_register_block("content", language_code)
     fonti_block = f"\n{_FONTI_BLOCK}" if grounding_enabled else ""

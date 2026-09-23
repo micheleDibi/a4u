@@ -61,7 +61,7 @@ from collections import OrderedDict
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass, replace
-from functools import lru_cache
+from functools import lru_cache, partial
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -126,7 +126,11 @@ from app.services.svg_normalize import (
 
 log = get_logger("app.figure_render")
 
-RENDERABLE_FORMATS: tuple[str, ...] = ("mermaid", "vegalite", "dot", "function")
+RENDERABLE_FORMATS: tuple[str, ...] = ("mermaid", "vegalite", "dot", "function", "tikz")
+# Formati promossi dalla REGOLA DI SCELTA del PROMPT 3 (system prompt): `tikz`
+# (WP6, spento di default) si offre solo con un blocco del messaggio user,
+# così con il formato spento il system prompt resta byte-identico.
+PROMPTED_FORMATS: tuple[str, ...] = ("mermaid", "vegalite", "dot", "function")
 
 # Tipi di errore del payload 422 (`meta.errors[].type`), stessa forma
 # `loc/msg/type` del handler Pydantic (`core/errors.py`).
@@ -2048,6 +2052,151 @@ class FunctionRenderer:
         return hit.computed_caption
 
 
+class TikzRenderer:
+    """Formato `tikz` (WP6): un solo ambiente `tikzpicture` o `circuitikz`,
+    compilato con XeLaTeX nella sandbox del container
+    (`tikz_compile_service`), SVG di pdftocairo normalizzato.
+
+    - validazione statica: `tikz_lexer.check` (allowlist) e script
+      supportato dai font del preambolo; profonda: compilazione vera e
+      oracolo geometrico (`tikz_geometry`), i cui difetti bloccano la figura
+      (fix AI) salvo `strict_geometry=False` (PATCH e anteprima: avvisi);
+    - `available()`: `FIGURE_TIKZ_ENABLED` e autotest della sandbox;
+    - chiave di cache con `PREAMBLE_VERSION`: un cambio del preambolo
+      invalida solo le figure `tikz`;
+    - metriche del testo dal PDF (`font_px_min`): nell'SVG di pdftocairo i
+      glifi sono tracciati, non `<text>`;
+    - traduzione (D7): testi dei nodi (`\node … {testo}`, `node[…]{testo}`)
+      senza matematica, con l'escape di TeX e un nuovo controllo del lexer.
+    """
+
+    fmt = "tikz"
+
+    def available(self) -> bool:
+        from app.services import tikz_compile_service
+
+        return bool(get_settings().figure_tikz_enabled) and tikz_compile_service.available()
+
+    def sanitize(self, content: str) -> str:
+        from app.services.figure_compute.tikz_lexer import strip_comments
+
+        return strip_comments(_strip_fence_and_control(content)).strip()
+
+    def _key(self, sanitized: str) -> CacheKey:
+        from app.services.figure_compute.tikz_preamble import PREAMBLE_VERSION
+
+        return cache_key(self.fmt, f"{PREAMBLE_VERSION}\n{sanitized}")
+
+    def static_check(self, content: str) -> str | None:
+        """Motivo del rifiuto statico (lexer, script), None se ammesso."""
+        from app.services.figure_compute import tikz_preamble
+        from app.services.figure_compute.tikz_lexer import TikzSourceError, check
+
+        src = self.sanitize(content)
+        if not src:
+            return "sorgente TikZ vuoto"
+        try:
+            check(src, max_chars=int(get_settings().figure_tikz_max_chars))
+            tikz_preamble.font_for(src)
+        except (TikzSourceError, tikz_preamble.TikzScriptUnsupportedError) as exc:
+            return str(exc)[:_ERROR_CAP]
+        return None
+
+    def validate(
+        self, content: str, *, deep: bool = False, strict_geometry: bool = True
+    ) -> tuple[bool, str]:
+        problem = self.static_check(content)
+        if problem is not None:
+            return (False, problem)
+        if not deep:
+            return (True, "")
+        if not self.available():
+            return (False, "tikz_unavailable")
+        src = self.sanitize(content)
+        try:
+            figure = self._render_or_raise(src)
+        except Exception as exc:  # compilazione, SVG, coda, motore
+            return (False, str(exc)[:_ERROR_CAP])
+        _cache_put(self._key(src), figure)
+        defects = figure.metrics.defects if figure.metrics is not None else ()
+        if strict_geometry and defects:
+            return (False, "difetti geometrici: " + "; ".join(defects)[:_ERROR_CAP])
+        return (True, "")
+
+    def _render_or_raise(self, sanitized: str) -> RenderedFigure:
+        from app.services import tikz_compile_service
+        from app.services.figure_compute import tikz_geometry, tikz_preamble
+
+        document, lines = tikz_preamble.document(sanitized)
+        result = tikz_compile_service.compile_document(document, preamble_lines=lines)
+        svg = normalize_svg(result.svg, max_bytes=get_settings().figure_svg_max_bytes).svg
+        geometry = tikz_geometry.analyze(result.pdf, has_axis=tikz_preamble.uses_axis(sanitized))
+        font_px = geometry.font_px_min
+        metrics = SvgMetrics(
+            font_px_min=font_px,
+            font_px_median=font_px,
+            text_count=1 if font_px is not None else 0,
+            source="parsed" if font_px is not None else "no_text",
+            defects=geometry.defects,
+        )
+        return RenderedFigure(svg=svg, metrics=metrics)
+
+    def render_figure(self, content: str, *, asset_id: str = "") -> RenderedFigure | None:
+        sanitized = self.sanitize(content)
+        key = self._key(sanitized)
+        hit = _cache_get_figure(key)
+        if hit is not None:
+            return hit
+        if self.static_check(sanitized) is not None or not self.available():
+            _render_failed(self.fmt, asset_id, "tikz non valido o motore non disponibile")
+            return None
+        try:
+            figure = self._render_or_raise(sanitized)
+        except Exception as exc:
+            _cache_negative(key)
+            _render_failed(self.fmt, asset_id, str(exc))
+            return None
+        _cache_put(key, figure)
+        return figure
+
+    def render_svg(self, content: str, *, asset_id: str = "") -> str | None:
+        figure = self.render_figure(content, asset_id=asset_id)
+        return figure.svg if figure is not None else None
+
+    def render_figure_batch(
+        self, contents: list[str], *, asset_ids: list[str]
+    ) -> list[RenderedFigure | None]:
+        return [
+            self.render_figure(c, asset_id=aid) for c, aid in zip(contents, asset_ids, strict=True)
+        ]
+
+    def render_svg_batch(self, contents: list[str], *, asset_ids: list[str]) -> list[str | None]:
+        return [
+            figure.svg if figure is not None else None
+            for figure in self.render_figure_batch(contents, asset_ids=asset_ids)
+        ]
+
+    def extract_translatable(self, content: str) -> dict[str, str]:
+        from app.services.figure_compute.tikz_translate import extract
+
+        return extract(self.sanitize(content))
+
+    def apply_translations(self, content: str, tr: Mapping[str, str]) -> str:
+        from app.services.figure_compute.tikz_lexer import TikzSourceError, check
+        from app.services.figure_compute.tikz_translate import apply
+
+        if not tr:
+            return content
+        sanitized = self.sanitize(content)
+        translated = apply(sanitized, tr)
+        try:
+            check(translated, max_chars=int(get_settings().figure_tikz_max_chars))
+        except TikzSourceError:
+            log.warning("tikz_translation_reverted", reason="lexer")
+            return content
+        return translated
+
+
 # ---------------------------------------------------------------------------
 # Registro
 # ---------------------------------------------------------------------------
@@ -2057,6 +2206,7 @@ REGISTRY: dict[str, FigureRenderer] = {
     "vegalite": VegaLiteRenderer(),
     "dot": DotRenderer(),
     "function": FunctionRenderer(),
+    "tikz": TikzRenderer(),
 }
 
 
@@ -2077,6 +2227,7 @@ def available_formats() -> tuple[str, ...]:
         "vegalite": settings.figure_vegalite_enabled,
         "dot": settings.figure_dot_enabled,
         "function": settings.figure_function_enabled,
+        "tikz": settings.figure_tikz_enabled,
     }
     out = ["mermaid"]
     for fmt in RENDERABLE_FORMATS[1:]:
@@ -2101,7 +2252,7 @@ _semaphores: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaph
 # fino a 15 s) prima del primo render: con il timeout unico una CDN lenta
 # farebbe perdere in blocco tutte le figure Mermaid della lezione. Oggi
 # `_prerender_mermaid_for_lesson` non ha alcun tetto complessivo.
-_BATCH_TIMEOUT_FLOOR_S: dict[str, float] = {"mermaid": 60.0}
+_BATCH_TIMEOUT_FLOOR_S: dict[str, float] = {"mermaid": 60.0, "tikz": 60.0}
 # Quota di tempo per figura del batch, sopra il pavimento e sopra il tetto
 # della singola resa: il tetto è del BATCH, quindi senza questa quota
 # raddoppiare le figure dimezzava il budget di ciascuna. Con la regola
@@ -2481,9 +2632,15 @@ async def validate_visual_assets_or_raise(
                 }
             )
             continue
-        ok, msg = await asyncio.to_thread(
-            renderer.validate, content if isinstance(content, str) else "", deep=False
-        )
+        text = content if isinstance(content, str) else ""
+        if isinstance(renderer, TikzRenderer):
+            # WP6: il controllo statico non basta per TeX, la prova di
+            # compilazione sì; i difetti geometrici qui sono solo avvisi.
+            ok, msg = await asyncio.to_thread(
+                partial(renderer.validate, text, deep=True, strict_geometry=False)
+            )
+        else:
+            ok, msg = await asyncio.to_thread(renderer.validate, text, deep=False)
         if not ok:
             errors.append({**entry, "msg": msg[:_PAYLOAD_MSG_CAP], "type": error_type_for(msg)})
     if errors:
@@ -2505,6 +2662,7 @@ __all__ = [
     "MERMAID_GATE_RESOURCE",
     "MERMAID_GATE_TYPE",
     "MERMAID_TYPE_NOT_ALLOWED",
+    "PROMPTED_FORMATS",
     "REGISTRY",
     "RENDERABLE_FORMATS",
     "VEGALITE_USE_FUNCTION_FORMAT",

@@ -356,6 +356,8 @@ export type LessonContentVisualAssetFormat =
   | "vegalite"
   | "dot"
   | "function"
+  // Schema vettoriale compilato dal server con XeLaTeX (WP6, spento di default).
+  | "tikz"
   | "image"
   // Figura di fonte (dai documenti del corso): `content` è l'id della
   // figura; immagine e riga «Fonte» arrivano solo dal backend.

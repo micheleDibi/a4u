@@ -24,12 +24,14 @@ export const VISUAL_FORMATS = [
 
 export type VisualFormat = (typeof VISUAL_FORMATS)[number];
 
-/** Formati resi da un renderer (mai `image`, mai i legacy). */
+/** Formati resi da un renderer (mai `image`, mai i legacy). `tikz` (WP6)
+ *  è reso dal server (XeLaTeX) ed è spento di default. */
 export const RENDERABLE_FORMATS = [
   "mermaid",
   "vegalite",
   "dot",
   "function",
+  "tikz",
 ] as const satisfies readonly LessonContentVisualAssetFormat[];
 
 export type RenderableFormat = (typeof RENDERABLE_FORMATS)[number];
@@ -61,6 +63,8 @@ const FIGURE_FORMAT_KEYS: Record<VisualFormat, string> = {
 };
 
 const OTHER_KIND_KEYS: Record<string, string> = {
+  // Schema TikZ (WP6): reso dal server, non dal menu dei formati.
+  tikz: "courses.figures.formats.tikz",
   // Figura di fonte: non la crea il menu dei formati ma il catalogo dei
   // documenti (`SourceFigurePicker`).
   source_figure: "courses.figures.formats.source_figure",

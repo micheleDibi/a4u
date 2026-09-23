@@ -142,14 +142,18 @@ def test_the_batch_timeout_grows_with_the_figures_of_the_lot() -> None:
 
 
 def test_registry_and_renderable_formats():
-    assert frs.RENDERABLE_FORMATS == ("mermaid", "vegalite", "dot", "function")
-    assert set(frs.REGISTRY) == {"mermaid", "vegalite", "dot", "function"}
+    # WP6 (figure da letteratura): `tikz` nel registro, spento di default e
+    # fuori dalla REGOLA DI SCELTA del system prompt (PROMPTED_FORMATS).
+    assert frs.RENDERABLE_FORMATS == ("mermaid", "vegalite", "dot", "function", "tikz")
+    assert frs.PROMPTED_FORMATS == ("mermaid", "vegalite", "dot", "function")
+    assert set(frs.REGISTRY) == {"mermaid", "vegalite", "dot", "function", "tikz"}
     for fmt, renderer in frs.REGISTRY.items():
         assert renderer.fmt == fmt
     assert frs.available_formats()[0] == "mermaid"
     # `function` (WP7) richiede numpy, matplotlib e sympy.
     function_available = frs.REGISTRY["function"].available()
     assert ("function" in frs.available_formats()) is function_available
+    assert "tikz" not in frs.available_formats()  # FIGURE_TIKZ_ENABLED=false
 
 
 def test_kill_switch_removes_a_format(monkeypatch: pytest.MonkeyPatch):

@@ -88,6 +88,8 @@ VisualAssetFormat = Literal[
     "vegalite",
     "dot",
     "function",
+    # WP6: figura vettoriale compilata con XeLaTeX (spenta di default).
+    "tikz",
     "image",
     # — legacy, read-only —
     "image_prompt",
@@ -106,6 +108,7 @@ ContentVisualAssetFormat = Literal[
     "vegalite",
     "dot",
     "function",
+    "tikz",
     "image",
     "source_figure",
     # — legacy, read-only —
