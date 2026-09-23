@@ -54,6 +54,7 @@ from app.services import (
     document_citation_guard,
     lesson_coverage_resolver,
     lesson_document_selection,
+    openai_lesson_content_service,
 )
 from app.services.course_architecture_service import (
     _build_documents_context,
@@ -417,7 +418,7 @@ def build_user_prompt(
     *,
     figure_catalog: FigureCatalog | None = None,
     source_figures_max: int = 0,
-    visual_formats: Sequence[str] = (),
+    visual_formats: Sequence[str] | None = None,
 ) -> str:
     """Costruisce il messaggio utente conforme al template §6.3.
 
@@ -428,7 +429,9 @@ def build_user_prompt(
     catalogo (dopo i documenti) e la riga del budget (b) nel compito; senza,
     il messaggio è byte-identico a quello di prima della funzione. Lo
     stesso per `tikz`: blocco e clausola solo se `visual_formats` (quelli
-    passati anche allo schema) lo contiene.
+    passati anche allo schema) lo contiene. None → lo stesso default di
+    `generate_lesson_content` (`phase3_visual_formats`), così messaggio e
+    schema non divergono se il chiamante non li passa.
     """
     settings = get_settings()
     lang = course.language_code
@@ -538,6 +541,8 @@ def build_user_prompt(
         "e ogni asset siano correttamente trattati e referenziati.",
         _figure_count_request(lesson),
     ]
+    if visual_formats is None:
+        visual_formats = openai_lesson_content_service.phase3_visual_formats(lang)
     tikz_block: list[str] = []
     if "tikz" in visual_formats:
         tikz_block = [_TIKZ_BLOCK]

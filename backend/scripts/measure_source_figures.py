@@ -261,12 +261,18 @@ async def run(args: argparse.Namespace) -> int:
         sem = asyncio.Semaphore(max(1, args.concurrency))
         style = content_svc.didactic_style_labels(course)
 
+        # Stessi formati per messaggio e schema, come nel worker: con
+        # `FIGURE_TIKZ_PROPOSE_ENABLED` la misura copre anche `tikz` nel
+        # budget (a) (M7 da ripetere prima di accendere la proposta).
+        visual_formats = openai_svc.phase3_visual_formats(course.language_code)
+
         async def one(lesson: Any, arm: str, catalog: Any) -> dict[str, Any]:
             user_prompt = content_svc.build_user_prompt(
                 course,
                 lesson,
                 figure_catalog=catalog.catalog if catalog else None,
                 source_figures_max=catalog.budget if catalog else 0,
+                visual_formats=visual_formats,
             )
             async with sem:
                 output, usage = await openai_svc.generate_lesson_content(
@@ -278,6 +284,7 @@ async def run(args: argparse.Namespace) -> int:
                     livello_eqf=style["livello_eqf"],
                     objective_ids=content_svc.objective_ids_for_lesson(lesson),
                     source_figure_refs=list(catalog.catalog.refs) if catalog else (),
+                    visual_formats=visual_formats,
                 )
             report = source_figure_fusion.fuse_source_figures(
                 output,

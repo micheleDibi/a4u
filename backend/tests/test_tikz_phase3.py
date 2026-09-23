@@ -358,3 +358,19 @@ async def test_worker_does_not_offer_tikz_during_an_extraction(
     during, after = calls
     assert list(during["visual_formats"]) == list(WITHOUT)
     assert list(after["visual_formats"]) == list(ALL)
+
+
+async def test_user_prompt_default_follows_the_schema_default(
+    seeded_db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Senza `visual_formats` il messaggio segue lo stesso default dello
+    schema (`phase3_visual_formats`): mai uno schema con `tikz` e un
+    messaggio senza le sue istruzioni (verifica WP6, script di M7)."""
+    course_id, _org, _user = await build_course(seeded_db, modules=1, lessons_per_module=1)
+    course = await content_svc.load_course_full(seeded_db, course_id=course_id)
+    assert course is not None
+    lesson = find_lesson(course, "M1.L1")
+    _offer(monkeypatch, propose=False)
+    assert "## Formato aggiuntivo: tikz" not in content_svc.build_user_prompt(course, lesson)
+    _offer(monkeypatch, propose=True)
+    assert "## Formato aggiuntivo: tikz" in content_svc.build_user_prompt(course, lesson)
