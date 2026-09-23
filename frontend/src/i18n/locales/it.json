@@ -2540,7 +2540,8 @@
           "content": "Dispense",
           "slides": "Slide",
           "speech": "Discorso",
-          "document_figures": "Figure di fonte"
+          "document_figures": "Figure di fonte",
+          "figures_gap": "Figure dalla letteratura aperta"
         }
       },
       "loginActivity": {

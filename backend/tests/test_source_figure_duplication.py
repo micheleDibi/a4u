@@ -88,7 +88,18 @@ async def _source(db: AsyncSession, storage: _Storage) -> dict[str, Any]:
     duplicate.reject_reason = "duplicate"
     duplicate.duplicate_of_id = fig.id
     duplicate.describe_source_id = fig.id
-    db.add(duplicate)
+    # Figura della letteratura aperta (WP5): nessun documento.
+    literature = build_document_figure(
+        course_id,
+        None,
+        license="cc_by_sa",
+        source_kind="wikimedia",
+        storage_path=f"/uploads/courses/{course_id}/document_figures/external/wm-101-abc.png",
+        attribution={"title": "LDV", "authors": ["Jane Doe"], "container": "Wikimedia Commons"},
+        external_id="commons:101",
+        source_url="https://commons.wikimedia.org/wiki/File:LDV.svg",
+    )
+    db.add_all([duplicate, literature])
     await db.flush()
     lesson = (
         (await db.execute(select(CourseLesson).where(CourseLesson.course_id == course_id)))
@@ -110,6 +121,7 @@ async def _source(db: AsyncSession, storage: _Storage) -> dict[str, Any]:
         fig.preview_path,
         detached.storage_path,
         duplicate.storage_path,
+        literature.storage_path,
         doc.file_path,
     ):
         storage.files[remote_storage.uploads_key(str(path))] = f"bytes:{path}".encode()
@@ -120,6 +132,7 @@ async def _source(db: AsyncSession, storage: _Storage) -> dict[str, Any]:
         "fig": fig,
         "detached": detached,
         "duplicate": duplicate,
+        "literature": literature,
     }
 
 
@@ -175,11 +188,15 @@ async def test_duplication_clones_figures_files_and_references(
         .scalars()
         .all()
     )
-    assert len(rows) == 3
-    old_ids = {s["fig"].id, s["detached"].id, s["duplicate"].id}
+    assert len(rows) == 4
+    old_ids = {s["fig"].id, s["detached"].id, s["duplicate"].id, s["literature"].id}
     assert not ({r.id for r in rows} & old_ids)
     clone = next(r for r in rows if r.document_id is not None and r.status == "ready")
-    clone_detached = next(r for r in rows if r.document_id is None)
+    clone_detached = next(r for r in rows if r.document_id is None and r.source_kind == "uploaded")
+    clone_literature = next(r for r in rows if r.source_kind == "wikimedia")
+    assert clone_literature.external_id == "commons:101"
+    assert clone_literature.source_url == s["literature"].source_url
+    assert clone_literature.attribution == s["literature"].attribution
     clone_dup = next(r for r in rows if r.status == "rejected")
     # Autoriferimenti rimappati sui cloni, mai verso il corso sorgente.
     assert clone_dup.duplicate_of_id == clone.id

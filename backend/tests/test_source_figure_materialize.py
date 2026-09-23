@@ -569,8 +569,14 @@ async def test_tick_dispatches_only_the_lessons_of_the_pending_query(
     """`_tick` usa il filtro SQL dell'attesa delle estrazioni: una lezione il
     cui corso ha un'estrazione recente in corso non parte."""
     setup = await _setup(seeded_db)
+    # Solo l'attesa delle estrazioni: quella dei buchi di figure (WP5) ha il
+    # suo test in test_source_figure_gaps.
     patched = get_settings().model_copy(
-        update={"figure_extraction_enabled": True, "figure_source_enabled": True}
+        update={
+            "figure_extraction_enabled": True,
+            "figure_source_enabled": True,
+            "figure_literature_enabled": False,
+        }
     )
     monkeypatch.setattr(worker, "get_settings", lambda: patched)
     monkeypatch.setattr(

@@ -39,7 +39,8 @@ import time
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import Select, or_, select
+from sqlalchemy import Select, or_, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
 from app.core.config import get_settings
@@ -920,22 +921,56 @@ def _pending_lessons_query() -> Select[tuple[uuid.UUID]]:
     riprende un tick successivo) finché nel suo corso c'è un'estrazione di
     figure di fonte in coda o in corso, richiesta da meno di
     `FIGURE_WAIT_MAX_MINUTES`: così il catalogo include le figure appena
-    richieste. Oltre il tetto si parte comunque."""
+    richieste. Con la letteratura aperta accesa (WP5) aspetta anche la
+    verifica dei buchi della lezione (`figures_gap_status` in coda o in
+    corso, stesso tetto dalla richiesta). Oltre il tetto si parte comunque."""
     settings = get_settings()
     query = select(CourseLesson.id).where(CourseLesson.content_status == "pending")
-    if not (settings.figure_source_enabled and settings.figure_extraction_enabled):
+    if not settings.figure_source_enabled:
         return query
     cutoff = datetime.now(UTC) - timedelta(minutes=int(settings.figure_wait_max_minutes))
-    extracting = (
-        select(CourseDocument.id)
-        .where(
-            CourseDocument.course_id == CourseLesson.course_id,
-            CourseDocument.figures_status.in_(("pending", "processing")),
-            CourseDocument.figures_requested_at > cutoff,
+    if settings.figure_extraction_enabled:
+        extracting = (
+            select(CourseDocument.id)
+            .where(
+                CourseDocument.course_id == CourseLesson.course_id,
+                CourseDocument.figures_status.in_(("pending", "processing")),
+                CourseDocument.figures_requested_at > cutoff,
+            )
+            .exists()
         )
-        .exists()
+        query = query.where(or_(CourseLesson.is_assessment.is_(True), ~extracting))
+    if settings.figure_literature_enabled:
+        # Esplicito sui NULL: NOT su un confronto con NULL escluderebbe la riga.
+        query = query.where(
+            or_(
+                CourseLesson.is_assessment.is_(True),
+                CourseLesson.figures_gap_status.is_(None),
+                CourseLesson.figures_gap_status.not_in(("pending", "processing")),
+                CourseLesson.figures_gap_requested_at.is_(None),
+                CourseLesson.figures_gap_requested_at <= cutoff,
+            )
+        )
+    return query
+
+
+async def _request_figure_gaps(db: AsyncSession) -> None:
+    """Letteratura aperta (WP5): le lezioni ordinarie in coda mai
+    verificate entrano nella coda dei buchi (`figures_gap_status=pending`),
+    PRIMA della query delle lezioni pronte, così nessuna parte senza."""
+    settings = get_settings()
+    if not (settings.figure_source_enabled and settings.figure_literature_enabled):
+        return
+    await db.execute(
+        update(CourseLesson)
+        .where(
+            CourseLesson.content_status == "pending",
+            CourseLesson.is_assessment.is_(False),
+            CourseLesson.figures_gap_status.is_(None),
+        )
+        .values(figures_gap_status="pending", figures_gap_requested_at=datetime.now(UTC))
     )
-    return query.where(or_(CourseLesson.is_assessment.is_(True), ~extracting))
+    await db.commit()
 
 
 async def _tick() -> None:
@@ -944,6 +979,7 @@ async def _tick() -> None:
     """
     async with async_session_factory() as db:
         try:
+            await _request_figure_gaps(db)
             res = await db.execute(_pending_lessons_query())
             lesson_ids = [row[0] for row in res.all()]
         except Exception as exc:  # pragma: no cover

@@ -218,6 +218,15 @@ async def _cost(db: AsyncSession, *, cutoff_7d: datetime, cutoff_30d: datetime) 
             CourseDocumentFigure.vision_usage_at,
             (),
         ),
+        # Buchi di figure di fonte (WP5): termini di ricerca e pertinenza
+        # delle figure della letteratura aperta (PROMPT 20), cumulativo per
+        # lezione e datato all'ultima verifica.
+        (
+            "figures_gap",
+            CourseLesson.figures_gap_usage,
+            CourseLesson.figures_gap_checked_at,
+            (),
+        ),
     ]
     by_phase: list[CostByPhase] = []
     total_usd = 0.0

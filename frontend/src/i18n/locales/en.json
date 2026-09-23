@@ -2540,7 +2540,8 @@
           "content": "Lecture notes",
           "slides": "Slides",
           "speech": "Speech",
-          "document_figures": "Source figures"
+          "document_figures": "Source figures",
+          "figures_gap": "Figures from open literature"
         }
       },
       "loginActivity": {
