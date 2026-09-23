@@ -1,0 +1,131 @@
+{
+  "pdf": {
+    "file": "vibrometria_dispensa.pdf",
+    "pages": 5,
+    "figures": [
+      {
+        "id": "ldv_schema",
+        "page": 1,
+        "bbox": [
+          70.0,
+          250.0,
+          525.0,
+          470.0
+        ],
+        "label": "Figura 2.1",
+        "caption": "Figura 2.1. Schema di principio di un vibrometro laser Doppler eterodina.",
+        "kind": "schematic",
+        "is_vector": true
+      },
+      {
+        "id": "bench_photo",
+        "page": 2,
+        "bbox": [
+          120.0,
+          190.0,
+          475.0,
+          420.0
+        ],
+        "label": "Figura 2.2",
+        "caption": "Figura 2.2. Banco di misura con testa vibrometrica e provino.",
+        "kind": "photo",
+        "is_vector": false
+      },
+      {
+        "id": "freq_response",
+        "page": 3,
+        "bbox": [
+          90.0,
+          330.0,
+          505.0,
+          560.0
+        ],
+        "label": "Figura 2.3",
+        "caption": "Figura 2.3. Risposta in frequenza misurata sul provino.",
+        "kind": "chart",
+        "is_vector": true
+      },
+      {
+        "id": "measurement_chain",
+        "page": 4,
+        "bbox": [
+          80.0,
+          170.0,
+          515.0,
+          300.0
+        ],
+        "label": null,
+        "caption": null,
+        "kind": "block_diagram",
+        "is_vector": true
+      }
+    ],
+    "distractors": [
+      {
+        "id": "logo",
+        "pages": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "bbox": [
+          40.0,
+          24.0,
+          64.0,
+          48.0
+        ],
+        "reason": "repeated"
+      },
+      {
+        "id": "icon",
+        "page": 2,
+        "bbox": [
+          60.0,
+          470.0,
+          72.0,
+          482.0
+        ],
+        "reason": "too_small"
+      },
+      {
+        "id": "table",
+        "page": 3,
+        "bbox": [
+          90.0,
+          140.0,
+          505.0,
+          260.0
+        ],
+        "reason": "table"
+      }
+    ],
+    "keywords": [
+      "vibrometro",
+      "laser",
+      "Doppler",
+      "cella di Bragg",
+      "fotorivelatore"
+    ]
+  },
+  "docx": {
+    "file": "vibrometria_appunti.docx",
+    "figures": [
+      {
+        "id": "docx_ldv_schema",
+        "order": 1,
+        "label": "Figura 1",
+        "caption": "Figura 1. Schema di un vibrometro laser Doppler.",
+        "kind": "schematic"
+      },
+      {
+        "id": "docx_bench_photo",
+        "order": 2,
+        "label": null,
+        "caption": null,
+        "kind": "photo"
+      }
+    ]
+  }
+}

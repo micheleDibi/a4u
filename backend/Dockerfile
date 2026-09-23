@@ -1,6 +1,8 @@
 # syntax=docker/dockerfile:1.7
 
-FROM python:3.12-slim AS builder
+# Tag Debian fisso (trixie): il tag mobile `python:3.12-slim` cambia
+# distribuzione senza preavviso.
+FROM python:3.12-slim-trixie AS builder
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential libpq-dev && rm -rf /var/lib/apt/lists/*
@@ -9,12 +11,26 @@ WORKDIR /build
 COPY pyproject.toml ./
 COPY app ./app
 # Il TTS XTTS-v2 gira su RunPod Serverless (cartella `XTTS/` del repo):
-# il backend non ha torch/coqui. Solo le dipendenze base, niente extra.
+# il backend non ha coqui. torch serve solo al layout di Docling per le
+# figure di fonte (extra `figures`, docs/courses/18-literature-figures.md):
+# torch/torchvision CPU dall'indice di PyTorch PRIMA dell'extra, altrimenti
+# su x86_64 pip porta le ruote CUDA (GB inutili).
+ARG TORCH_VERSION=2.14.0
+ARG TORCHVISION_VERSION=0.29.0
 RUN pip install --upgrade pip \
-    && pip install --no-cache-dir .
+    && pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu \
+        "torch==${TORCH_VERSION}" "torchvision==${TORCHVISION_VERSION}" \
+    && pip install --no-cache-dir ".[figures]"
+# Modello di layout di Docling (heron, variante torch) scaricato in build:
+# a runtime HF_HUB_OFFLINE=1, nessun download. La variante ONNX non serve.
+RUN python -c "from pathlib import Path; from docling.utils.model_downloader import download_models; download_models(output_dir=Path('/opt/docling-models'), with_layout=True, with_tableformer=False, with_code_formula=False, with_picture_classifier=False, with_rapidocr=False, with_easyocr=False)" \
+    && rm -rf /opt/docling-models/*-onnx
 
-FROM python:3.12-slim AS runtime
+FROM python:3.12-slim-trixie AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
+    # Docling (figure di fonte) legge i modelli da FIGURE_DOCLING_ARTIFACTS_PATH
+    # e non scarica nulla a runtime.
+    HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
     # HOME=/app (default per useradd -d /app).
     HOME=/app \
@@ -57,6 +73,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
+COPY --from=builder /opt/docling-models /opt/docling-models
 
 # Scarica il browser Chromium di Playwright in /ms-playwright (path
 # condiviso tra utenti, settato via env var sopra). Eseguito come root
@@ -75,3 +92,16 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
   CMD curl -fsS http://localhost:8000/api/v1/system/health || exit 1
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=*"]
+
+# Stage `test`: i test che richiedono Docling (e le guardie sui pacchetti di
+# sistema) girano nell'immagine reale, senza skip ambientali:
+#   docker build --target test -t a4u-backend:test backend
+#   docker run --rm -e A4U_REQUIRED_DEPS=docling a4u-backend:test \
+#       python -m pytest tests/test_source_figure_extraction.py tests/test_no_agpl_dependencies.py -q
+FROM runtime AS test
+USER root
+RUN pip install --no-cache-dir "pytest>=8.3.0" "pytest-asyncio>=0.24.0"
+USER app
+
+# Ultimo stage = immagine di produzione (docker compose non indica `target`).
+FROM runtime

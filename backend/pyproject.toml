@@ -59,6 +59,11 @@ dependencies = [
     "jsonschema>=4.18",
     "sympy>=1.13",
     "matplotlib>=3.9",
+    # Figure di fonte (docs/courses/18-literature-figures.md): PDFium
+    # (BSD/Apache) ritaglia il bbox delle figure in raster ad alta
+    # risoluzione. Già portato da pdfplumber: qui è esplicito perché il
+    # cropper lo usa direttamente. Niente PyMuPDF (AGPL).
+    "pypdfium2>=5.9,<6",
 ]
 
 [project.optional-dependencies]
@@ -70,6 +75,15 @@ dev = [
     "types-passlib",
     # Server FTP in-process per i test di OvhFtpStorage (test_remote_storage).
     "pyftpdlib>=1.5.0",
+]
+
+# Rilevazione del layout delle figure con Docling (MIT) su CPU, nel
+# sottoprocesso del worker delle figure. torch/torchvision vanno installati
+# PRIMA dall'indice CPU di PyTorch (Dockerfile), altrimenti su x86_64 pip
+# porta le ruote CUDA. Versione esatta: il layout e i ritagli dipendono dal
+# modello (extraction_version delle figure).
+figures = [
+    "docling-slim[convert-core,format-pdf,models-local]==2.130.0",
 ]
 
 [build-system]
@@ -111,6 +125,13 @@ ignore_missing_imports = true
 # (vl_convert e altair sono tipizzati).
 [[tool.mypy.overrides]]
 module = ["sympy.*", "mpmath.*", "jsonschema.*"]
+ignore_missing_imports = true
+
+# Docling e i suoi modelli sono un extra (`figures`) non installato in CI:
+# il codice li importa solo nel sottoprocesso di estrazione. pypdfium2 non
+# distribuisce `py.typed`.
+[[tool.mypy.overrides]]
+module = ["docling.*", "docling_core.*", "docling_ibm_models.*", "torch.*", "pypdfium2.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
