@@ -331,16 +331,26 @@ def _figure_count_request(lesson: CourseLesson) -> str:
 
 def _source_figure_count_request(lesson: CourseLesson, max_items: int) -> str:
     """Budget (b): figure di fonte IN AGGIUNTA alle generate, solo se
-    pertinenti. Riga separata da `_figure_count_request`, che non cambia."""
+    pertinenti. Riga separata da `_figure_count_request`, che non cambia.
+
+    Misura M7 del 23 settembre 2026 (prima versione di questa riga): numero
+    delle generate invariato, ma formati spostati dagli schemi (`dot`,
+    `mermaid`) ai grafici `function` quando il catalogo offre uno schema
+    dello stesso oggetto (TVD 0,31 contro 0,04 fra due estrazioni senza
+    catalogo). Da qui l'ordine esplicito: prima le generate come se il
+    catalogo non ci fosse, formati compresi, poi le figure di fonte."""
     return (
-        f"Figure di fonte: IN AGGIUNTA alle figure da generare (il numero sopra "
-        f"non cambia), puoi inserire da 0 a {max_items} figure del catalogo, solo "
-        "se mostrano ciò che la sezione spiega. Per ognuna: una voce in "
-        "`source_figures` (`figure` = id del catalogo, `caption` e `alt_text` "
-        "nella lingua del corso, senza indicare la fonte: la aggiunge il "
-        "sistema) e il tag `[FIG:id del catalogo]` nel testo, come per le "
-        "altre figure. Non sostituire con esse nessuna figura generata e non "
-        "cambiare per loro il resto del testo, salvo le frasi che le citano."
+        "Figure di fonte: IN AGGIUNTA alle figure da generare. Prima decidi le "
+        "figure generate come se il catalogo non ci fosse: stesso numero, stesse "
+        "sezioni e stessi formati (anche `dot` e `mermaid` quando una figura "
+        "del catalogo mostra lo stesso oggetto: la figura generata resta, con "
+        f"la tua versione). Poi puoi inserire da 0 a {max_items} figure del "
+        "catalogo, solo se mostrano ciò che la sezione spiega. Per ognuna: una "
+        "voce in `source_figures` (`figure` = id del catalogo, `caption` e "
+        "`alt_text` nella lingua del corso, senza indicare la fonte: la "
+        "aggiunge il sistema) e il tag `[FIG:id del catalogo]` nel testo, come "
+        "per le altre figure. Non cambiare per loro il resto del testo, salvo "
+        "le frasi che le citano."
     )
 
 

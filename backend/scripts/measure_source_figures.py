@@ -194,6 +194,8 @@ def _strip_static_line(prompt: str) -> str:
 
 
 async def run(args: argparse.Namespace) -> int:
+    from sqlalchemy import text
+
     from app.db.base import Base
     from app.db.seed import ensure_seed
     from app.db.session import async_session_factory, engine
@@ -209,6 +211,8 @@ async def run(args: argparse.Namespace) -> int:
     spec = json.loads(args.spec.read_text(encoding="utf-8"))
     args.out.mkdir(parents=True, exist_ok=True)
     async with engine.begin() as conn:
+        # Come nel conftest: lo schema dei modelli usa CITEXT.
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS citext"))
         await conn.run_sync(Base.metadata.create_all)
     async with async_session_factory() as db:
         await ensure_seed(db)
