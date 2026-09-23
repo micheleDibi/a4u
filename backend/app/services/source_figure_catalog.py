@@ -34,6 +34,20 @@ from app.services.source_figure_policy import effective_license_policy, figure_v
 EXCLUDED_KINDS = frozenset({"logo_or_decoration"})
 
 
+def unsuitable_reason(fig: CourseDocumentFigure) -> str | None:
+    """Perché una figura ammessa dal predicato non si propone comunque: gli
+    stessi filtri del catalogo (non utile alla didattica, qualità sotto
+    `FIGURE_MIN_QUALITY_SCORE`, loghi e decorazioni). Vale anche per il
+    selettore del frontend e per la guardia del PATCH."""
+    if fig.is_useful_for_teaching is not True:
+        return "not_useful"
+    if (fig.quality_score or 0) < int(get_settings().figure_min_quality_score):
+        return "low_quality"
+    if fig.kind in EXCLUDED_KINDS:
+        return "excluded_kind"
+    return None
+
+
 @dataclass(frozen=True)
 class CatalogResult:
     catalog: FigureCatalog

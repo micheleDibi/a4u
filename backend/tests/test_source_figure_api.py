@@ -281,6 +281,55 @@ async def test_lesson_patch_guards_new_or_changed_source_figures(
     assert lesson.content_figure_review is None
 
 
+async def test_lesson_patch_placed_figure_rename_quality_and_format_lock(
+    client: Any, seeded_db: AsyncSession, storage: _Storage
+) -> None:
+    s = await _setup(seeded_db, storage)
+    figs, lesson, course = s["figs"], s["lesson"], s["course"]
+    citable = s["docs"]["citable"]
+    useless = build_document_figure(
+        course.id, citable.id, license="cc_by", is_useful_for_teaching=False
+    )
+    logo = build_document_figure(course.id, citable.id, license="cc_by", kind="logo_or_decoration")
+    seeded_db.add_all([useless, logo])
+    lesson.content_raw = {
+        "introduction": "Intro [FIG:fig-src-1] e [FIG:gen-1].",
+        "sections": [],
+        "visual_assets": [
+            _asset("fig-src-1", figs["good"]),
+            {"asset_id": "gen-1", "format": "dot", "content": "digraph{a->b}", "caption": "C"},
+        ],
+    }
+    # U1: il documento diventa riservato dopo la collocazione.
+    citable.citation_policy = "content_only"
+    await seeded_db.commit()
+    generated = lesson.content_raw["visual_assets"][1]
+
+    # Rinominata (anche con l'UUID in maiuscolo): resta la stessa figura già
+    # collocata → ammessa, e il riferimento si salva in forma canonica.
+    renamed = _asset("SRC-rinominata", str(figs["good"].id).upper())
+    res = await _patch_content(client, s, [renamed, generated])
+    assert res.status_code == 200, res.text
+    await seeded_db.refresh(lesson)
+    saved = lesson.content_raw["visual_assets"][0]
+    assert saved["asset_id"] == "SRC-rinominata" and saved["content"] == str(figs["good"].id)
+
+    # Un asset generato non diventa di fonte con lo stesso asset_id.
+    res = await _patch_content(client, s, [saved, {**_asset("gen-1", figs["good"])}])
+    assert res.status_code == 422 and res.json()["code"] == "source_figure_format_locked"
+
+    # Figura NUOVA: stessi filtri del catalogo (utilità, qualità, loghi) e
+    # l'errore porta la posizione della card.
+    citable.citation_policy = "citable"
+    await seeded_db.commit()
+    for fig, reason in ((useless, "not_useful"), (logo, "excluded_kind")):
+        res = await _patch_content(client, s, [saved, generated, _asset("fig-new", fig)])
+        body = res.json()
+        assert res.status_code == 422 and body["code"] == "source_figure_not_available"
+        assert body["meta"]["reason"] == reason
+        assert body["meta"]["errors"][0]["loc"] == ["visual_assets", 2, "content"]
+
+
 async def test_open_only_organization_policy(
     client: Any, seeded_db: AsyncSession, storage: _Storage
 ) -> None:

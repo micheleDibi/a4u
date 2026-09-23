@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, NoReturn
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,7 +33,7 @@ from app.schemas.course_lesson_content import (
 )
 from app.services import remote_storage
 from app.services.figure_render_service import validate_visual_assets_or_raise
-from app.services.source_figure_catalog import license_policy_for
+from app.services.source_figure_catalog import license_policy_for, unsuitable_reason
 from app.services.source_figure_policy import figure_visibility
 from app.services.source_figure_service import source_figure_uuid
 
@@ -202,39 +202,67 @@ async def _guard_source_figures(
     course: Course,
     assets: list[dict[str, Any]],
     previous: list[Any] | None,
-) -> None:
-    """Figure di fonte nel PATCH della dispensa.
+) -> list[dict[str, Any]]:
+    """Figure di fonte nel PATCH della dispensa; restituisce gli asset con il
+    riferimento in forma canonica (UUID minuscolo con trattini), la stessa
+    che confrontano il resolver e il frontend.
 
     - Un asset non cambia famiglia: una figura di fonte resta tale e un
       asset generato non diventa di fonte (`source_figure_format_locked`).
-    - Una figura di fonte NUOVA o con un riferimento CAMBIATO deve essere
-      del corso (`source_figure_not_in_course`) e proponibile adesso, nel
-      modo select del predicato con la politica di licenza effettiva
-      (`source_figure_not_available`).
-    - Un asset invariato passa sempre, anche se nel frattempo la politica
-      del documento è cambiata (U1, non retroattivo).
+    - Una figura di fonte NUOVA (UUID che la dispensa non conteneva) deve
+      essere del corso (`source_figure_not_in_course`) e proponibile adesso:
+      modo select del predicato con la politica di licenza effettiva e gli
+      stessi filtri del catalogo (`source_figure_not_available`).
+    - Una figura già collocata passa sempre, anche rinominata o spostata e
+      anche se nel frattempo la politica del documento è cambiata (U1, non
+      retroattivo).
+
+    Gli errori portano `meta.errors[{loc: ["visual_assets", i, "content"]}]`
+    come quelli dei renderer, così il frontend li mostra sulla card.
     """
     before = {str(a.get("asset_id")): a for a in previous or [] if isinstance(a, dict)}
+    placed = {
+        fid
+        for a in previous or []
+        if isinstance(a, dict) and (fid := source_figure_uuid(a)) is not None
+    }
     policy: str | None = None
+    out: list[dict[str, Any]] = []
+
+    def invalid(message: str, code: str, index: int, asset_id: str, **extra: Any) -> NoReturn:
+        error = {
+            "loc": ["visual_assets", index, "content"],
+            "asset_id": asset_id,
+            "format": SOURCE_FIGURE_FORMAT,
+            "msg": message,
+            "type": code,
+        }
+        raise ValidationAppError(
+            message,
+            code=code,
+            meta={"asset_id": asset_id, "index": index, **extra, "errors": [error]},
+        )
+
     for index, asset in enumerate(assets):
         asset_id = str(asset.get("asset_id") or "")
         old = before.get(asset_id)
         is_source = asset.get("format") == SOURCE_FIGURE_FORMAT
+        out.append(asset)
         if old is not None and (old.get("format") == SOURCE_FIGURE_FORMAT) != is_source:
-            raise ValidationAppError(
+            invalid(
                 "Una figura di fonte non cambia formato e un asset generato non "
                 "diventa una figura di fonte.",
-                code="source_figure_format_locked",
-                meta={"asset_id": asset_id, "index": index},
+                "source_figure_format_locked",
+                index,
+                asset_id,
             )
         if not is_source:
             continue
-        if (
-            old is not None
-            and str(old.get("content") or "").strip() == str(asset.get("content") or "").strip()
-        ):
-            continue
         figure_id = source_figure_uuid(asset)
+        if figure_id is not None:
+            out[-1] = {**asset, "content": str(figure_id)}
+        if figure_id is not None and figure_id in placed:
+            continue
         figure = None
         if figure_id is not None:
             figure = (
@@ -246,10 +274,11 @@ async def _guard_source_figures(
                 )
             ).scalar_one_or_none()
         if figure is None:
-            raise ValidationAppError(
+            invalid(
                 "La figura di fonte non appartiene a questo corso.",
-                code="source_figure_not_in_course",
-                meta={"asset_id": asset_id, "index": index},
+                "source_figure_not_in_course",
+                index,
+                asset_id,
             )
         doc = await db.get(CourseDocument, figure.document_id) if figure.document_id else None
         if policy is None:
@@ -257,13 +286,17 @@ async def _guard_source_figures(
         visibility = figure_visibility(
             figure, doc, course_id=course.id, license_policy=policy, mode="select"
         )
-        if not visibility.renderable:
-            raise ValidationAppError(
+        reason = visibility.reason if not visibility.renderable else unsuitable_reason(figure)
+        if reason is not None:
+            invalid(
                 "La figura di fonte non si può inserire (politica del documento, "
-                "licenza, esclusione o file).",
-                code="source_figure_not_available",
-                meta={"asset_id": asset_id, "index": index, "reason": visibility.reason},
+                "licenza, esclusione, qualità o file).",
+                "source_figure_not_available",
+                index,
+                asset_id,
+                reason=reason,
             )
+    return out
 
 
 def _prune_figure_review(
@@ -329,7 +362,7 @@ async def update_lesson_content(
             loc_root="visual_assets",
             code="lesson_content_invalid_visual_asset",
         )
-        await _guard_source_figures(
+        guarded_assets = await _guard_source_figures(
             db,
             course=course,
             assets=[a.model_dump() for a in payload.visual_assets],
@@ -356,7 +389,7 @@ async def update_lesson_content(
         current_raw["key_takeaways"] = list(payload.key_takeaways)
         changed["key_takeaways"] = len(payload.key_takeaways)
     if payload.visual_assets is not None:
-        current_raw["visual_assets"] = [a.model_dump() for a in payload.visual_assets]
+        current_raw["visual_assets"] = guarded_assets
         changed["visual_assets"] = len(payload.visual_assets)
     if payload.tables is not None:
         current_raw["tables"] = [t.model_dump() for t in payload.tables]

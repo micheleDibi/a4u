@@ -23,7 +23,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
-from app.core.config import get_settings
 from app.core.errors import NotFoundError
 from app.core.logging import get_logger
 from app.models.course import Course
@@ -37,7 +36,7 @@ from app.schemas.document_figures import (
 )
 from app.services.document_figures import storage as figure_storage
 from app.services.figure_attribution import figure_attribution_line
-from app.services.source_figure_catalog import EXCLUDED_KINDS, license_policy_for
+from app.services.source_figure_catalog import license_policy_for, unsuitable_reason
 from app.services.source_figure_policy import figure_visibility
 from app.services.source_figure_service import source_figure_uuid
 
@@ -52,15 +51,7 @@ async def _documents(db: AsyncSession, course_id: uuid.UUID) -> dict[uuid.UUID, 
 
 
 def _selectable_reason(fig: CourseDocumentFigure, select_reason: str | None) -> str | None:
-    if select_reason is not None:
-        return select_reason
-    if fig.is_useful_for_teaching is not True:
-        return "not_useful"
-    if (fig.quality_score or 0) < int(get_settings().figure_min_quality_score):
-        return "low_quality"
-    if fig.kind in EXCLUDED_KINDS:
-        return "excluded_kind"
-    return None
+    return select_reason if select_reason is not None else unsuitable_reason(fig)
 
 
 def figure_out(

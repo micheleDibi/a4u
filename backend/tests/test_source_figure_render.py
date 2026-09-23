@@ -211,6 +211,44 @@ def test_lesson_html_every_source_image_has_its_line() -> None:
     assert "figure-source" not in figures["gen-1"]
 
 
+def test_numbering_follows_first_citation_after_reordering() -> None:
+    """Riordino delle card nell'editor (↑/↓ su `visual_assets`): la
+    numerazione segue la prima citazione `[FIG:id]`; gli asset non citati
+    si accodano nell'ordine della lista (comportamento dichiarato)."""
+
+    def numbers(order: list[str]) -> dict[str, str]:
+        assets = {
+            a: {"asset_id": a, "format": "dot", "content": "digraph{a->b}", "caption": a}
+            for a in ("A", "B", "C", "D")
+        }
+        lesson = CourseLesson(
+            lesson_code="M1.L2",
+            title="Vibrometria",
+            content_raw={
+                "introduction": "Prima [FIG:B], poi [FIG:A].",
+                "sections": [],
+                "summary": "",
+                "visual_assets": [assets[a] for a in order],
+            },
+        )
+        html = pdf.render_lesson_html(
+            course=_course(),
+            lesson=lesson,
+            organization=None,
+            pdf_template=None,
+            visual_svg_map=dict.fromkeys(order, SVG_A),
+        )
+        out = {}
+        for asset_id, markup in _figures(html).items():
+            found = re.search(r"Figura (\d+)\.", markup)
+            assert found is not None
+            out[asset_id] = found.group(1)
+        return out
+
+    assert numbers(["A", "B", "C", "D"]) == {"B": "1", "A": "2", "C": "3", "D": "4"}
+    assert numbers(["D", "C", "B", "A"]) == {"B": "1", "A": "2", "D": "3", "C": "4"}
+
+
 def test_resolved_figure_without_line_is_a_placeholder() -> None:
     html = pdf.render_lesson_html(
         course=_course(),
