@@ -1754,6 +1754,8 @@ strettamente necessario.
 
 In rigenerazione: `## Versione attuale delle slide (DA RIVEDERE)` (solo se esiste già `slides_raw`) + `## Indicazioni del docente per la rigenerazione` (se c'è un hint; entra anche su lezioni mai slidificate, senza `REGENERATION_SUFFIX`).
 
+Figure di fonte (solo se la dispensa ne ha; altrimenti il messaggio è byte-identico): nel JSON di Fase 3 il `content` degli asset `source_figure` (UUID interno) è sostituito da «(figura tratta dai documenti del corso; la fonte la aggiunge il sistema)» (`figure_provenance.prompt_view`), e in coda al compito entra: «Le figure con `format: source_figure` sono immagini tratte dai documenti del corso: dedica a ciascuna una slide, come alle altre figure (in `references_assets`), non ricrearle in `new_assets` e non scrivere la fonte (la aggiunge il sistema sulla slide).» Dopo la validazione, 8c (`FIGURE_SLIDES_COVERAGE_REPAIR_ENABLED`, default true) aggiunge una slide dedicata a ogni figura di Fase 3 che nessuna slide cita, dopo l'ultima slide della sua sezione, e rinumera; con il flag spento l'output è quello del modello. Scan SOFT dei documenti riservati nel testo delle slide (audit `course.lesson.slides.reserved_leak`).
+
 **JSON schema** (`LESSON_SLIDES_JSON_SCHEMA`) — la costante è la base; `build_lesson_slides_json_schema(visual_formats=available_formats())` ne fa un `deepcopy` e restringe l'`enum` di `new_assets[].format` ai formati disponibili sul server meno `function` (A1). Il vecchio `asset_type` e i formati legacy `image_prompt|image_search_query|description` non fanno più parte dello schema strict (restano accettati in lettura dal Pydantic):
 
 ```python
@@ -2102,6 +2104,17 @@ Vincoli da rispettare:
 ```
 
 In rigenerazione: `## Versione attuale del discorso (DA RIVEDERE)` (solo se esiste già `speech_raw`) + `## Indicazioni del docente per la rigenerazione` (se c'è un hint; entra anche su lezioni mai generate, senza `REGENERATION_SUFFIX`).
+
+Figure di fonte (solo se qualche slide ne mostra una e la fonte è pronunciabile; altrimenti il messaggio è byte-identico): il JSON di Fase 3 passa da `figure_provenance.prompt_view` (niente UUID) e prima di `## Compito` entra il blocco
+
+```
+## Fonti delle figure da citare a voce
+
+Quando presenti una di queste slide, di' una volta da dove viene la figura, con queste parole o poco diverse, senza cambiare nomi, titolo e anno e senza aggiungere pagine, numeri di figura o licenze:
+- slide {slide_id}: {variante parlata di figure_attribution, es. «tratta da Rossi, «Vibrometria laser», 2021»}
+```
+
+La frase la calcola il server (`figure_attribution.attribution_line(mode="spoken")`, sicura per il TTS), mai il modello; la regola sta nel messaggio user e non nel system (M6), che resta invariato. Controlli SOFT dopo la generazione: `lesson_speech_source_not_spoken` se il parlato della slide non nomina né un cognome né il titolo; scan dei documenti riservati (audit `course.lesson.speech.reserved_leak`).
 
 **JSON schema** (`LESSON_SPEECH_JSON_SCHEMA`):
 

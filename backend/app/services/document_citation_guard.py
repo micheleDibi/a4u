@@ -28,7 +28,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.models.course import Course
     from app.models.course_document import CourseDocument
+    from app.models.course_lesson import CourseLesson
 
 _MIN_CONTAINMENT_CHARS = 12
 _TITLE_RATIO = 0.85
@@ -204,3 +208,43 @@ def scan_text_for_leaks(
                 hits.append(entry.filename_original)
                 break
     return hits
+
+
+async def audit_reserved_leaks(
+    db: AsyncSession,
+    *,
+    course: Course,
+    lesson: CourseLesson,
+    text: str,
+    phase: str,
+) -> list[str]:
+    """Scan SOFT dei documenti riservati nel testo generato di Fase 4 o 5
+    (come la Fase 3): log e audit `course.lesson.<phase>.reserved_leak`, mai
+    una modifica. Ritorna i filename trovati."""
+    from app.core.audit import write_audit
+    from app.core.logging import get_logger
+
+    index = build_identity_index(list(course.documents))
+    leaks = scan_text_for_leaks(text, index)
+    if not leaks:
+        return []
+    get_logger("app.document_citation_guard").warning(
+        f"lesson_{phase}_reserved_leak",
+        lesson_id=str(lesson.id),
+        lesson_code=lesson.lesson_code,
+        documents=leaks,
+    )
+    await write_audit(
+        db,
+        action=f"course.lesson.{phase}.reserved_leak",
+        actor_user_id=None,
+        organization_id=course.organization_id,
+        target_type="course_lesson",
+        target_id=str(lesson.id),
+        metadata={
+            "course_id": str(course.id),
+            "lesson_code": lesson.lesson_code,
+            "documents": leaks,
+        },
+    )
+    return leaks

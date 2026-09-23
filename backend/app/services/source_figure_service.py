@@ -67,6 +67,9 @@ class ResolvedSourceFigure:
     attribution_text: str = ""
     # Dati da pronunciare (PROMPT 6, Fase 5): cognomi, titolo breve, anno.
     spoken: Mapping[str, Any] | None = None
+    # Frase parlata già pronta («tratta da …»), sicura per il TTS; vuota se
+    # nulla si può pronunciare in sicurezza (il discorso omette la fonte).
+    spoken_text: str = ""
 
 
 SourceFigureMap = Mapping[str, ResolvedSourceFigure]
@@ -169,6 +172,7 @@ async def resolve_source_figures(
             continue
         src = attribution_source(fig, doc)
         spoken = spoken_source(src, language=language) if src is not None else None
+        spoken_text = figure_attribution_line(fig, doc, language=language, mode="spoken") or ""
         data_url = ""
         if with_bytes:
             data = await _read(path)
@@ -186,6 +190,7 @@ async def resolve_source_figures(
             height=fig.height,
             attribution_text=line,
             spoken=spoken,
+            spoken_text=spoken_text,
         )
     for asset_id, resolved in out.items():
         if not resolved.renderable:

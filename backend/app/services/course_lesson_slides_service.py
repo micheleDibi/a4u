@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.audit import write_audit
+from app.core.config import get_settings
 from app.core.course_phase_order import (
     advance_course_status,
     ensure_course_not_terminal,
@@ -33,9 +34,11 @@ from app.core.logging import get_logger
 from app.models.course import Course
 from app.models.course_lesson import CourseLesson
 from app.models.course_module import CourseModule
-from app.schemas.course_lesson_slides import LessonSlidesOutput
+from app.schemas.course_lesson_slides import LessonSlideItem, LessonSlidesOutput
 from app.services import document_citation_guard
 from app.services.course_architecture_service import _term_label
+from app.services.figure_numbering import strip_figure_prefix
+from app.services.figure_provenance import prompt_view, source_figure_ids_in
 
 log = get_logger("app.course_lesson_slides")
 
@@ -149,8 +152,10 @@ def build_user_prompt(course: Course, lesson: CourseLesson) -> str:
     ruolo_docente = _term_label(course.ruolo_docente, lang)
     stile_insegnamento = _term_label(course.stile_insegnamento, lang)
 
+    # Figure di fonte: l'UUID della figura non va al modello (vista per il
+    # prompt, byte-identica senza figure di fonte).
     content_raw_json = (
-        json.dumps(lesson.content_raw, ensure_ascii=False, indent=2)
+        json.dumps(prompt_view(lesson.content_raw), ensure_ascii=False, indent=2)
         if lesson.content_raw
         else "(content_raw assente — questa è una situazione anomala)"
     )
@@ -181,6 +186,16 @@ def build_user_prompt(course: Course, lesson: CourseLesson) -> str:
         "asset di Fase 3 dove possibile. Aggiungi `new_assets` solo se",
         "strettamente necessario.",
     ]
+    if source_figure_ids_in(lesson.content_raw):
+        blocks.extend(
+            [
+                "",
+                "Le figure con `format: source_figure` sono immagini tratte dai "
+                "documenti del corso: dedica a ciascuna una slide, come alle altre "
+                "figure (in `references_assets`), non ricrearle in `new_assets` e "
+                "non scrivere la fonte (la aggiunge il sistema sulla slide).",
+            ]
+        )
 
     if lesson.slides_raw:
         blocks.extend(
@@ -240,6 +255,70 @@ def _expected_slide_range(minutes: int) -> tuple[int, int]:
     low = max(1, round(base_low * 0.80))
     high = max(low + 1, round(base_high * 1.20))
     return (low, high)
+
+
+_CLOSING_SLIDE_TYPES = frozenset({"summary", "takeaways", "references", "bibliography"})
+
+
+def _citing_section(content_raw: dict[str, Any], asset_id: str) -> str:
+    tag = f"[fig:{asset_id.strip().lower()}]"
+    for section in content_raw.get("sections") or []:
+        if isinstance(section, dict) and tag in str(section.get("content") or "").lower():
+            return str(section.get("section_id") or "")
+    return ""
+
+
+def repair_figure_coverage(
+    output: LessonSlidesOutput,
+    content_raw: dict[str, Any],
+    missing_asset_ids: list[str],
+    lesson_title: str,
+) -> list[str]:
+    """Slide dedicate (tipo `diagram`) per le figure di Fase 3 che nessuna
+    slide cita (8c). Posizione: dopo l'ultima slide della sezione che cita
+    la figura; senza sezione, prima delle slide di chiusura (sintesi,
+    punti chiave, riferimenti), altrimenti in coda. Muta `output` e
+    ritorna gli `slide_id` aggiunti."""
+    assets = {
+        str(a.get("asset_id") or "").strip().lower(): a
+        for a in content_raw.get("visual_assets") or []
+        if isinstance(a, dict)
+    }
+    taken = {s.slide_id.lower() for s in output.slides}
+    added: list[str] = []
+    counter = 1
+    for asset_id in missing_asset_ids:
+        asset = assets.get(asset_id.strip().lower(), {})
+        while f"fig_{counter}" in taken:
+            counter += 1
+        slide_id = f"fig_{counter}"
+        taken.add(slide_id)
+        section_id = _citing_section(content_raw, asset_id)
+        title = strip_figure_prefix(str(asset.get("caption") or "")).strip()
+        slide = LessonSlideItem(
+            slide_number=1,
+            slide_id=slide_id,
+            type="diagram",
+            title=(title or lesson_title or asset_id)[:300],
+            references_assets=[asset_id],
+            source_section_id=section_id,
+        )
+        slides = output.slides
+        position = len(slides)
+        same_section = [
+            i for i, s in enumerate(slides) if section_id and s.source_section_id == section_id
+        ]
+        if same_section:
+            position = same_section[-1] + 1
+        else:
+            while position > 0 and slides[position - 1].type in _CLOSING_SLIDE_TYPES:
+                position -= 1
+        slides.insert(position, slide)
+        added.append(slide_id)
+    for number, slide in enumerate(output.slides, start=1):
+        slide.slide_number = number
+    output.total_slides = len(output.slides)
+    return added
 
 
 async def materialize_lesson_slides(
@@ -426,6 +505,30 @@ async def materialize_lesson_slides(
             unreferenced_assets=unreferenced_assets,
             phase3_assets=len(phase3_visual_ids),
             total_slides=len(output.slides),
+        )
+
+    # 8c. Riparazione deterministica della copertura delle figure (dietro
+    # `FIGURE_SLIDES_COVERAGE_REPAIR_ENABLED`): ogni figura di Fase 3
+    # senza slide riceve la sua slide dedicata, dopo l'ultima slide della
+    # sezione che la cita; numerazione e `total_slides` ricalcolati, `raw`
+    # rifatto dall'output. Con il flag spento l'output è quello di prima.
+    phase3_figure_ids = [
+        str(a.get("asset_id") or "")
+        for a in content_raw.get("visual_assets") or []
+        if isinstance(a, dict) and a.get("asset_id")
+    ]
+    missing_figures = [
+        aid for aid in phase3_figure_ids if aid.strip().lower() in unreferenced_assets
+    ]
+    if missing_figures and get_settings().figure_slides_coverage_repair_enabled:
+        added = repair_figure_coverage(output, content_raw, missing_figures, lesson.title)
+        raw = output.model_dump()
+        log.info(
+            "lesson_slides_figure_coverage_repaired",
+            lesson_code=lesson.lesson_code,
+            added_slides=added,
+            figures=missing_figures,
+            total_slides=output.total_slides,
         )
 
     # 9. Apply — scrive slides_raw + meta

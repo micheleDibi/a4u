@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import re
 import uuid
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any
 
@@ -43,6 +44,7 @@ from app.models.course_module import CourseModule
 from app.schemas.course_lesson_speech import LessonSpeechOutput
 from app.services import document_citation_guard
 from app.services.course_architecture_service import _term_label
+from app.services.figure_provenance import prompt_view, spoken_sources_block
 from app.services.openai_lesson_speech_service import words_per_minute
 
 log = get_logger("app.course_lesson_speech")
@@ -226,8 +228,35 @@ def _format_current_speech_phase5(lesson: CourseLesson) -> str:
         return "(Versione precedente non serializzabile.)"
 
 
-def build_user_prompt(course: Course, lesson: CourseLesson) -> str:
+def _spoken_sources_blocks(
+    lesson: CourseLesson, spoken_sources: Mapping[str, str] | None
+) -> list[str]:
+    lines = spoken_sources_block(lesson.slides_raw, spoken_sources or {})
+    if not lines:
+        return []
+    return [
+        "## Fonti delle figure da citare a voce",
+        "",
+        "Quando presenti una di queste slide, di' una volta da dove viene la "
+        "figura, con queste parole o poco diverse, senza cambiare nomi, titolo e "
+        "anno e senza aggiungere pagine, numeri di figura o licenze:",
+        *lines,
+        "",
+    ]
+
+
+def build_user_prompt(
+    course: Course,
+    lesson: CourseLesson,
+    *,
+    spoken_sources: Mapping[str, str] | None = None,
+) -> str:
     """Costruisce il messaggio utente §8.3 (discorso temporizzato).
+
+    `spoken_sources`: `{asset_id → frase parlata della fonte}` delle figure
+    di fonte (dal resolver del server): se qualche slide le mostra entra il
+    blocco «Fonti delle figure da citare a voce»; senza, il messaggio è
+    byte-identico a prima.
 
     Pre-condizione: `course` e `lesson` sono stati caricati con eager-load.
     `lesson.content_raw` e `lesson.slides_raw` devono essere popolati
@@ -242,7 +271,7 @@ def build_user_prompt(course: Course, lesson: CourseLesson) -> str:
     stile_insegnamento = _term_label(course.stile_insegnamento, lang)
 
     content_raw_json = (
-        json.dumps(lesson.content_raw, ensure_ascii=False, indent=2)
+        json.dumps(prompt_view(lesson.content_raw), ensure_ascii=False, indent=2)
         if lesson.content_raw
         else "(content_raw assente — questa è una situazione anomala)"
     )
@@ -276,6 +305,7 @@ def build_user_prompt(course: Course, lesson: CourseLesson) -> str:
         "",
         _format_recommended_bibliography(course, lesson),
         "",
+        *_spoken_sources_blocks(lesson, spoken_sources),
         "## Compito",
         "",
         "Genera il discorso temporizzato secondo lo schema JSON.",

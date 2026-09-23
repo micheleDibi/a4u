@@ -38,7 +38,10 @@ from app.db.session import async_session_factory
 from app.models.course_lesson import CourseLesson
 from app.services import (
     course_lesson_speech_service,
+    document_citation_guard,
+    figure_provenance,
     openai_lesson_speech_service,
+    source_figure_service,
 )
 from app.services.course_architecture_service import didactic_style_labels
 from app.services.openai_client import OpenAINotConfiguredError
@@ -263,8 +266,36 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
         await db.commit()
 
         regen = course_lesson_speech_service.is_regeneration_for_lesson(lesson)
+        # Figure di fonte sulle slide: la fonte da dire a voce la calcola il
+        # server (variante parlata di `figure_attribution`), mai il modello.
+        spoken_sources: dict[str, str] = {}
+        spoken_source_keys: dict[str, list[str]] = {}
+        if figure_provenance.source_figure_ids_in(lesson.content_raw):
+            try:
+                resolved = await source_figure_service.resolve_source_figures(
+                    db,
+                    course_id=course_full.id,
+                    assets=source_figure_service.lesson_source_assets(lesson),
+                    language=course_full.language_code,
+                    with_bytes=False,
+                )
+                spoken_sources = {
+                    aid: r.spoken_text
+                    for aid, r in resolved.items()
+                    if r.renderable and r.spoken_text
+                }
+                spoken_source_keys = {
+                    aid: figure_provenance.spoken_keys(resolved[aid].spoken)
+                    for aid in spoken_sources
+                }
+            except Exception as exc:
+                log.warning(
+                    "lesson_speech_spoken_sources_failed",
+                    lesson_id=str(lesson.id),
+                    error=str(exc)[:300],
+                )
         user_prompt = course_lesson_speech_service.build_user_prompt(
-            course_full, lesson
+            course_full, lesson, spoken_sources=spoken_sources
         )
 
         # Aggiorna progresso → calling_openai e avvia ticker
@@ -374,6 +405,28 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                 current_status=lesson.speech_status,
             )
             return
+
+        # Controlli SOFT (solo log e audit, mai modifiche): la fonte delle
+        # figure di fonte è detta a voce; nessun documento riservato citato.
+        unspoken = figure_provenance.unspoken_sources(
+            lesson.slides_raw,
+            [(seg.slide_id, seg.text) for seg in speech_output.speech_segments],
+            spoken_source_keys,
+        )
+        if unspoken:
+            log.warning(
+                "lesson_speech_source_not_spoken",
+                lesson_id=str(lesson.id),
+                lesson_code=lesson.lesson_code,
+                slides=unspoken,
+            )
+        await document_citation_guard.audit_reserved_leaks(
+            db,
+            course=course_full,
+            lesson=lesson,
+            text="\n".join(seg.text for seg in speech_output.speech_segments),
+            phase="speech",
+        )
 
         # Materializzazione + validazioni §8.5
         lesson.speech_progress = 90

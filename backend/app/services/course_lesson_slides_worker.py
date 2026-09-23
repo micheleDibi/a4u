@@ -39,6 +39,7 @@ from app.models.course_lesson import CourseLesson
 from app.services import (
     asset_validation_service,
     course_lesson_slides_service,
+    document_citation_guard,
     openai_lesson_slides_service,
 )
 from app.services.course_architecture_service import didactic_style_labels
@@ -418,6 +419,18 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                 )
             await db.commit()
             return
+
+        # Scan SOFT dei documenti riservati nel testo delle slide (come la
+        # Fase 3): solo log e audit, mai modifiche.
+        await document_citation_guard.audit_reserved_leaks(
+            db,
+            course=course_full,
+            lesson=lesson,
+            text="\n".join(
+                "\n".join([s.title, s.body, *s.bullets]) for s in slides_output.slides
+            ),
+            phase="slides",
+        )
 
         # Materializzazione + validazioni §7.4
         lesson.slides_progress = 90
