@@ -61,6 +61,7 @@ from app.services import openai_image_to_mermaid_service as image_service
 from app.services import openai_lesson_content_service as content_service
 from app.services import openai_lesson_slides_service as slides_service
 from app.services import openai_lesson_speech_service as speech_service
+from app.services import openai_tikz_render_review_service as tikz_review_service
 
 DEFAULT_DOCS = Path(__file__).resolve().parents[2] / "docs" / "PROMPTS.md"
 
@@ -214,6 +215,10 @@ def render_relevance(language: str, kind: str) -> str:
     return relevance_service._system_prompt(language, kind)  # type: ignore[arg-type]
 
 
+def render_tikz_review(language: str) -> str:
+    return tikz_review_service._system_prompt(language)
+
+
 _RENDERERS: tuple[tuple[str, int, str | None, Callable[[], str]], ...] = (
     ("PROMPT 3 — dispense (grounding)", 3, None, render_content),
     ("PROMPT 4 — verifica", 4, None, render_assessment),
@@ -269,6 +274,13 @@ _RENDERERS: tuple[tuple[str, int, str | None, Callable[[], str]], ...] = (
         20,
         "_SYSTEM_QUERIES_EN",
         lambda: render_relevance("en", "queries"),
+    ),
+    ("PROMPT 21 — revisione della resa TikZ IT", 21, None, lambda: render_tikz_review("it")),
+    (
+        "PROMPT 21 — revisione della resa TikZ EN",
+        21,
+        "_SYSTEM_RENDER_EN",
+        lambda: render_tikz_review("en"),
     ),
 )
 

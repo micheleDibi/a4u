@@ -2174,6 +2174,36 @@ class TikzRenderer:
         figure = self.render_figure(content, asset_id=asset_id)
         return figure.svg if figure is not None else None
 
+    def render_png(self, content: str, *, dpi: int = 150) -> bytes | None:
+        """PNG della resa per la revisione Vision (PROMPT 21). Ricompila (la
+        cache tiene solo l'SVG) e rasterizza la pagina del PDF con
+        pypdfium2: il PDF è quello della sandbox, non un documento
+        dell'utente. None se il sorgente o il motore non lo permettono."""
+        import io
+
+        import pypdfium2 as pdfium
+
+        from app.services import tikz_compile_service
+        from app.services.figure_compute import tikz_preamble
+
+        sanitized = self.sanitize(content)
+        if self.static_check(sanitized) is not None or not self.available():
+            return None
+        try:
+            document, lines = tikz_preamble.document(sanitized)
+            result = tikz_compile_service.compile_document(document, preamble_lines=lines)
+            pdf = pdfium.PdfDocument(result.pdf)
+            try:
+                image = pdf[0].render(scale=dpi / 72.0).to_pil()
+            finally:
+                pdf.close()
+            buf = io.BytesIO()
+            image.save(buf, format="PNG")
+        except Exception as exc:
+            log.warning("tikz_png_failed", error=f"{type(exc).__name__}: {exc}"[:_ERROR_CAP])
+            return None
+        return buf.getvalue()
+
     def render_figure_batch(
         self, contents: list[str], *, asset_ids: list[str]
     ) -> list[RenderedFigure | None]:

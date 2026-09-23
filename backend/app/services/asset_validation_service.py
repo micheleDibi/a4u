@@ -110,6 +110,7 @@ from app.services import (
     openai_asset_localize_service,
     openai_figure_redundancy_service,
     openai_figure_review_service,
+    openai_tikz_render_review_service,
 )
 from app.services.figure_compute.graph_rules import GRAPH_FORMATS, graph_source_metrics
 from app.services.figure_compute.vegalite_rules import (
@@ -121,6 +122,7 @@ from app.services.figure_render_service import (
     REGISTRY,
     RENDERABLE_FORMATS,
     RenderedFigure,
+    TikzRenderer,
     available_formats,
     figure_asset_context,
     render_chain_variants,
@@ -688,15 +690,8 @@ async def _validate_slots(slots: list[_Slot]) -> list[AssetCheck]:
             js_items.append((s.kind, s.current))
     js_results = await _validate_js_batch(js_items)
     formats = available_formats()
-    settings = get_settings()
-    render_timeout = float(settings.figure_render_timeout_seconds)
-    # `tikz` attende anche la coda della sandbox (`heavy_job_lock`) prima di
-    # compilare: il tetto comune (20 s) lo darebbe per scaduto.
-    tikz_timeout = max(
-        render_timeout,
-        float(settings.figure_tikz_queue_timeout_seconds + settings.figure_tikz_timeout_seconds)
-        + 5.0,
-    )
+    render_timeout = float(get_settings().figure_render_timeout_seconds)
+    tikz_timeout = _tikz_timeout()
 
     checks: list[AssetCheck] = []
     for i, slot in enumerate(slots):
@@ -743,6 +738,17 @@ async def _validate_slots(slots: list[_Slot]) -> list[AssetCheck]:
             fixable = not err.startswith(_TIKZ_ENGINE_ERRORS)
             checks.append(AssetCheck(slot.id, slot.kind, ok, "" if ok else err, fixable=fixable))
     return checks
+
+
+def _tikz_timeout() -> float:
+    """Tetto di una validazione o resa `tikz`: attende anche la coda della
+    sandbox (`heavy_job_lock`) prima di compilare, e il tetto comune
+    (`figure_render_timeout_seconds`, 20 s) la darebbe per scaduta."""
+    settings = get_settings()
+    queue_and_compile = (
+        settings.figure_tikz_queue_timeout_seconds + settings.figure_tikz_timeout_seconds
+    )
+    return max(float(settings.figure_render_timeout_seconds), float(queue_and_compile) + 5.0)
 
 
 # Prefissi degli errori di `TikzRenderer.validate` che non dipendono dal
@@ -1950,6 +1956,116 @@ def merge_assets_usage(usage: dict[str, Any], assets: list[dict[str, Any]]) -> d
 # ---------------------------------------------------------------------------
 
 
+async def _review_tikz_renders(
+    output: LessonContentOutput,
+    *,
+    language_code: str,
+    usage_sink: list[dict[str, Any]],
+    fix_spent: set[str],
+) -> None:
+    """Revisione Vision della resa delle figure `tikz` (PROMPT 21).
+
+    Una chiamata per figura, sotto `_review_semaphore`. Con verdetto
+    `difetti` e l'unico fix ancora da spendere, i difetti diventano il
+    messaggio d'errore del fix (PROMPT 12, kind `tikz`): la riscrittura vale
+    solo se `validate(deep=True)` la accetta senza difetti geometrici,
+    altrimenti resta l'originale. Nessuna nuova chiamata Vision dopo il
+    fix. Ogni errore o timeout vale «nessun effetto»; l'usage va in
+    `usage_sink` (`phase="render_review"` e `"fix"`)."""
+    settings = get_settings()
+    assets = [a for a in output.visual_assets if a.format == "tikz" and (a.content or "").strip()]
+    renderer = REGISTRY.get("tikz")
+    if (
+        not settings.figure_tikz_render_review_enabled
+        or not assets
+        or not isinstance(renderer, TikzRenderer)
+        or "tikz" not in available_formats()
+    ):
+        return
+    timeout = _tikz_timeout()
+    fix_cap = _fix_cap("tikz", max(0, int(settings.asset_fix_max_attempts)))
+
+    async def one(asset: Any) -> tuple[Any, str] | None:
+        key = f"asset:{asset.asset_id}"
+        try:
+            png = await asyncio.wait_for(
+                asyncio.to_thread(renderer.render_png, asset.content), timeout=timeout
+            )
+        except TimeoutError:
+            png = None
+        if png is None:
+            log.info("tikz_render_review_skipped", asset_id=asset.asset_id, reason="no_png")
+            return None
+        context = _review_context(output, asset.asset_id)
+        labels = list(renderer.extract_translatable(asset.content).values())
+        try:
+            async with _review_semaphore():
+                verdict, call_usage = await openai_tikz_render_review_service.review_render(
+                    png,
+                    caption=asset.caption or "",
+                    citing_text=context.text,
+                    labels=labels,
+                    language_code=language_code,
+                )
+        except OpenAIError as exc:
+            if isinstance(exc.usage, dict):
+                usage_sink.append(_usage_entry("render_review", key, exc.usage))
+            log.warning(
+                "tikz_render_review_call_failed", asset_id=asset.asset_id, error=str(exc)[:_LOG_CAP]
+            )
+            return None
+        usage_sink.append(_usage_entry("render_review", key, call_usage))
+        log.info(
+            "tikz_render_review",
+            asset_id=asset.asset_id,
+            verdict=verdict.verdict,
+            defects=[d.kind for d in verdict.defects],
+        )
+        if verdict.verdict == "ok" or asset.asset_id in fix_spent or fix_cap <= 0:
+            return None
+        feedback = "revisione della resa: " + "; ".join(
+            f"{d.kind}: {d.detail}" for d in verdict.defects
+        )
+        try:
+            out, fix_usage = await openai_asset_fix_service.fix_asset(
+                kind="tikz",
+                source=asset.content,
+                error_message=feedback,
+                context=asset.caption or asset.alt_text or "",
+                language_code=language_code,
+            )
+        except openai_asset_fix_service.OpenAIAssetFixError as exc:
+            if isinstance(exc.usage, dict):
+                usage_sink.append(_usage_entry("fix", key, exc.usage))
+            log.warning("tikz_render_review_fix_failed", asset_id=asset.asset_id, error=str(exc))
+            return None
+        usage_sink.append(_usage_entry("fix", key, fix_usage))
+        candidate = _sanitize("tikz", out.fixed_content)
+        if not candidate or _looks_corrupted("tikz", candidate):
+            return None
+        try:
+            ok, err = await asyncio.wait_for(
+                asyncio.to_thread(renderer.validate, candidate, deep=True), timeout=timeout
+            )
+        except TimeoutError:
+            ok, err = False, f"tikz: validazione oltre {timeout:g} s"
+        if not ok:
+            log.info("tikz_render_review_fix_rejected", asset_id=asset.asset_id, error=err[:200])
+            return None
+        return asset, candidate
+
+    results = await asyncio.gather(*(one(a) for a in assets), return_exceptions=True)
+    # Le riscritture si applicano solo a fine giro: un guasto lascia tutto
+    # com'era.
+    for result in results:
+        if isinstance(result, BaseException):
+            log.warning("tikz_render_review_failed", error=f"{type(result).__name__}"[:_LOG_CAP])
+        elif result is not None:
+            asset, candidate = result
+            asset.content = candidate
+            log.info("tikz_render_review_fix_accepted", asset_id=asset.asset_id)
+
+
 async def validate_and_fix_content_assets(
     output: LessonContentOutput, *, language_code: str
 ) -> tuple[LessonContentOutput, list[dict[str, Any]]]:
@@ -1961,6 +2077,7 @@ async def validate_and_fix_content_assets(
     se un asset resta invalido; la revisione non solleva mai."""
     usage: list[dict[str, Any]] = []
     slots, inline_fields = _collect_content_slots(output)
+    tikz_before = {a.asset_id: a.content for a in output.visual_assets if a.format == "tikz"}
     if slots:
         fixed = await _validate_and_fix(
             slots, inline_fields, language_code=language_code, usage_sink=usage
@@ -1971,6 +2088,21 @@ async def validate_and_fix_content_assets(
             fixed=fixed,
             kinds=dict(Counter(s.kind for s in slots)),
         )
+    # Revisione Vision della resa `tikz` (PROMPT 21): consultiva, come quella
+    # figura ↔ testo non solleva mai. Un `tikz` già riscritto dal fix ha
+    # speso il suo unico fix.
+    if tikz_before:
+        spent = {
+            a.asset_id
+            for a in output.visual_assets
+            if a.asset_id in tikz_before and a.content != tikz_before[a.asset_id]
+        }
+        try:
+            await _review_tikz_renders(
+                output, language_code=language_code, usage_sink=usage, fix_spent=spent
+            )
+        except Exception as exc:
+            log.warning("tikz_render_review_failed", error=f"{type(exc).__name__}: {exc}"[:500])
     # La revisione non deve mai costare una rigenerazione: il worker tratta
     # ogni eccezione come recuperabile. Le riscritture si applicano solo a
     # fine revisione, quindi un guasto lascia gli originali intatti.
