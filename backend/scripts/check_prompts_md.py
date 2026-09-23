@@ -24,8 +24,9 @@ Perimetro: PROMPT 3 (dispense, con grounding), 4 (verifica), 5 (slide),
 6 (discorso), 11 (immagine → Mermaid), 12 (fix degli asset: variante
 principale Mermaid IT e le varianti Vega-Lite / DOT / `function` IT
 dichiarate verbatim), 17 (revisore figura ↔ testo: prompt IT e variante
-EN), 18 (Vision delle figure di fonte) e 19 (ridondanze delle figure di
-fonte), ciascuno con il prompt IT e la variante EN. I
+EN), 18 (Vision delle figure di fonte), 19 (ridondanze delle figure di
+fonte) e 20 (letteratura aperta: pertinenza e termini di ricerca),
+ciascuno con il prompt IT e la variante EN. I
 messaggi user e gli schemi JSON non sono confrontati (sono template
 descrittivi, non stringhe del codice).
 
@@ -54,6 +55,7 @@ from typing import cast
 from app.services import openai_asset_fix_service as fix_service
 from app.services import openai_figure_describe_service as describe_service
 from app.services import openai_figure_redundancy_service as redundancy_service
+from app.services import openai_figure_relevance_service as relevance_service
 from app.services import openai_figure_review_service as review_service
 from app.services import openai_image_to_mermaid_service as image_service
 from app.services import openai_lesson_content_service as content_service
@@ -208,6 +210,10 @@ def render_redundancy(language: str) -> str:
     return redundancy_service._system_prompt(language)
 
 
+def render_relevance(language: str, kind: str) -> str:
+    return relevance_service._system_prompt(language, kind)  # type: ignore[arg-type]
+
+
 _RENDERERS: tuple[tuple[str, int, str | None, Callable[[], str]], ...] = (
     ("PROMPT 3 — dispense (grounding)", 3, None, render_content),
     ("PROMPT 4 — verifica", 4, None, render_assessment),
@@ -238,6 +244,30 @@ _RENDERERS: tuple[tuple[str, int, str | None, Callable[[], str]], ...] = (
         19,
         "_SYSTEM_REDUNDANCY_EN",
         lambda: render_redundancy("en"),
+    ),
+    (
+        "PROMPT 20 — pertinenza delle figure della letteratura IT",
+        20,
+        None,
+        lambda: render_relevance("it", "relevance"),
+    ),
+    (
+        "PROMPT 20 — pertinenza delle figure della letteratura EN",
+        20,
+        "_SYSTEM_RELEVANCE_EN",
+        lambda: render_relevance("en", "relevance"),
+    ),
+    (
+        "PROMPT 20 — termini di ricerca della letteratura IT",
+        20,
+        "_SYSTEM_QUERIES_IT",
+        lambda: render_relevance("it", "queries"),
+    ),
+    (
+        "PROMPT 20 — termini di ricerca della letteratura EN",
+        20,
+        "_SYSTEM_QUERIES_EN",
+        lambda: render_relevance("en", "queries"),
     ),
 )
 
