@@ -1834,14 +1834,18 @@ async def review_source_figure_redundancy(
         usage.append(_usage_entry("redundancy", asset.asset_id, call_usage))
         return asset.asset_id, verdict
 
-    try:
-        results = await asyncio.wait_for(
-            asyncio.gather(*(one(a) for a in sources)),
-            timeout=float(settings.figure_redundancy_timeout_seconds),
-        )
-    except TimeoutError:
-        log.warning("figure_redundancy_timeout", figures=len(sources))
-        results = []
+    # Tetto di lotto: i verdetti già arrivati restano (il loro costo è già
+    # nell'usage); solo le chiamate ancora in corso vengono annullate.
+    tasks = [asyncio.ensure_future(one(a)) for a in sources]
+    done, pending = await asyncio.wait(
+        tasks, timeout=float(settings.figure_redundancy_timeout_seconds)
+    )
+    if pending:
+        log.warning("figure_redundancy_timeout", figures=len(sources), pending=len(pending))
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
+    results = [task.result() for task in tasks if task in done and not task.cancelled()]
     figures: dict[str, Any] = {}
     for result in results:
         if result is None:

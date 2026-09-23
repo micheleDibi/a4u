@@ -194,7 +194,8 @@ def build_user_message(item: RedundancyInput) -> str:
 
     others = (
         "\n".join(
-            f"- {o.asset_id} [{o.format}]: {clean(o.caption, _TEXT_CAP)} — "
+            f"- {neutralize_third_party_text(o.asset_id, 60)} "
+            f"[{neutralize_third_party_text(o.format, 30)}]: {clean(o.caption, _TEXT_CAP)} — "
             f"{clean(o.summary, _OTHER_CAP)}"
             for o in item.others
         )
@@ -204,11 +205,14 @@ def build_user_message(item: RedundancyInput) -> str:
     return "\n\n".join(
         [
             f"LINGUA DEL CORSO: {(item.language_code or 'it').lower()}",
-            f"FIGURA DI FONTE: {item.asset_id}",
+            f"FIGURA DI FONTE: {neutralize_third_party_text(item.asset_id, 60)}",
             data_block("DESCRIZIONE DELLA FIGURA", clean(item.description, 900)),
             data_block("DIDASCALIA ORIGINALE", clean(item.original_caption, _TEXT_CAP)),
             data_block("DIDASCALIA NELLA LEZIONE", clean(item.lesson_caption, _TEXT_CAP)),
-            f"SEZIONE CHE LA CITA: {item.section_title or '(senza titolo)'}",
+            data_block(
+                "SEZIONE CHE LA CITA",
+                neutralize_third_party_text(item.section_title, 300) or "(senza titolo)",
+            ),
             data_block(
                 "TESTO DELLA SEZIONE", neutralize_third_party_text(section, SECTION_MAX_CHARS)
             ),

@@ -14,8 +14,13 @@ Qui, lato server e prima della validazione degli asset:
 - un asset GENERATO con id `SRC-…` (collisione con lo spazio dei nomi delle
   figure di fonte) viene rinominato in modo deterministico, tag compresi,
   invece di far fallire la lezione;
-- la didascalia non può portare la fonte (la scrive il render): code
-  «Fonte: …», «Source: …», «©», «Courtesy of» vengono tolte.
+- la didascalia non può portare la fonte (la scrive il render): una CODA
+  «Fonte: …», «Source: …», «Quelle: …», «出典» (anche con i due punti a
+  larghezza piena), «(Rossi et al., 2019)», «©», «Courtesy of», «tratto
+  da …» dopo un separatore viene tolta (`source_caption`); una
+  didascalia che è soltanto la fonte resta com'è (meglio una fonte
+  ripetuta che una figura senza didascalia), e il testo che precede non si
+  tocca («Energy sources: solar…», «nel tratto da A a B» restano interi).
 
 Il resto del contenuto non cambia (budget (a) delle figure generate intatto).
 """
@@ -33,17 +38,17 @@ from app.schemas.course_lesson_content import (
     LessonContentVisualAsset,
 )
 from app.services.lesson_figure_selection import REF_PREFIX
+from app.services.source_caption import clean_caption
+
+__all__ = [
+    "FusionReport",
+    "clean_caption",
+    "fuse_source_figures",
+    "remove_source_figures",
+    "rename_generated_src_ids",
+]
 
 _TAG_RE = re.compile(r"\[FIG:\s*([^\]\s]+)\s*\]", re.IGNORECASE)
-# Coda di fonte scritta dal modello: «Fonte: …», «(Source: …)», «tratto da
-# …», «© …». Serve un segno esplicito (due punti o formula di rimando): una
-# «fonte luminosa» nella didascalia resta dov'è.
-_SOURCE_TAIL_RE = re.compile(
-    r"\s*[\(\[—–-]?\s*(?:(?:fonte|fonti|sources?|credits?|crediti)\s*:|courtesy of\b|"
-    r"tratt[aoie] da\b|adattat[aoie] da\b|riprodott[aoie] da\b|adapted from\b|"
-    r"reprinted from\b|reproduced from\b|©).*$",
-    re.IGNORECASE | re.DOTALL,
-)
 
 
 @dataclass
@@ -88,19 +93,28 @@ def _rename_tags(text: str, renames: Mapping[str, str]) -> str:
 
 def _drop_tags(text: str, ids: set[str]) -> str:
     """Toglie i tag degli id dati: una riga che contiene solo il tag sparisce
-    con le righe vuote in eccesso, un tag in mezzo al testo sparisce da solo."""
-    if not ids:
+    e, SOLO in quel punto, le righe vuote che la circondavano si riducono a
+    una; un tag in mezzo al testo sparisce da solo. Un campo senza quei tag
+    torna identico (anche le sue righe vuote multiple, per esempio nel
+    codice)."""
+    if not ids or not any(m.group(1).lower() in ids for m in _TAG_RE.finditer(text)):
         return text
-
-    def line_filter(line: str) -> bool:
-        stripped = line.strip()
-        match = _TAG_RE.fullmatch(stripped)
-        return not (match and match.group(1).lower() in ids)
-
-    lines = [line for line in text.split("\n") if line_filter(line)]
-    text = "\n".join(lines)
-    text = _TAG_RE.sub(lambda m: "" if m.group(1).lower() in ids else m.group(0), text)
-    return re.sub(r"\n{3,}", "\n\n", text)
+    lines = text.split("\n")
+    out: list[str] = []
+    for line in lines:
+        match = _TAG_RE.fullmatch(line.strip())
+        if match and match.group(1).lower() in ids:
+            # Riga di solo tag tolta: se sopra c'è già una riga vuota, anche
+            # quella vuota che seguirà verrà assorbita.
+            if out and out[-1].strip() == "":
+                out.append("\x00")
+            continue
+        if line.strip() == "" and out and out[-1] == "\x00":
+            out.pop()
+            continue
+        out.append(line)
+    text = "\n".join(line for line in out if line != "\x00")
+    return _TAG_RE.sub(lambda m: "" if m.group(1).lower() in ids else m.group(0), text)
 
 
 def rename_generated_src_ids(output: LessonContentOutput) -> dict[str, str]:
@@ -122,12 +136,6 @@ def rename_generated_src_ids(output: LessonContentOutput) -> dict[str, str]:
     if renames:
         _map_text(output, lambda text: _rename_tags(text, renames))
     return renames
-
-
-def clean_caption(text: str) -> tuple[str, bool]:
-    """Didascalia senza coda di fonte; (testo, è stata tagliata)."""
-    cleaned = _SOURCE_TAIL_RE.sub("", text or "").strip()
-    return cleaned, cleaned != (text or "").strip()
 
 
 def fuse_source_figures(

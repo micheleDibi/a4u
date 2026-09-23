@@ -19,9 +19,11 @@ Uso (dalla cartella `backend/`, con un DB creato apposta e OPENAI_API_KEY):
     DATABASE_URL=postgresql+asyncpg://a4u:a4u_dev_password@localhost:5432/a4u_m7 \\
         python -m scripts.measure_source_figures --spec spec.json --out out/ --apply
 
-Senza `--apply` stampa il piano delle chiamate e non chiama OpenAI. Non va
-mai puntato al DB di sviluppo o di produzione: lo script crea le tabelle
-con `create_all` e scrive dati di prova.
+Senza `--apply` stampa il piano delle chiamate e non chiama OpenAI, ma
+crea comunque il corso di prova (serve per costruire i cataloghi). Lo
+script crea le tabelle con `create_all` e scrive dati di prova: per questo
+rifiuta ogni DB il cui nome non sia da misura usa-e-getta (`a4u_m7…`,
+`a4u_measure…`, `…_tmp`), mai il DB di sviluppo o di produzione.
 """
 
 from __future__ import annotations
@@ -193,8 +195,31 @@ def _strip_static_line(prompt: str) -> str:
     return prompt[:start] + prompt[end:]
 
 
+THROWAWAY_DB_RE = r"^(a4u_m7|a4u_measure)[a-z0-9_]*$|^[a-z0-9_]+_tmp$"
+
+
+def throwaway_database(url: str) -> bool:
+    """Il DB di `DATABASE_URL` è da misura usa-e-getta?"""
+    import re
+
+    from sqlalchemy.engine import make_url
+
+    name = make_url(url).database or ""
+    return re.match(THROWAWAY_DB_RE, name) is not None
+
+
 async def run(args: argparse.Namespace) -> int:
     from sqlalchemy import text
+
+    from app.core.config import get_settings
+
+    if not throwaway_database(get_settings().database_url):
+        print(
+            "DATABASE_URL non punta a un DB di misura usa-e-getta "
+            "(a4u_m7…, a4u_measure…, …_tmp): nessuna scrittura.",
+            file=sys.stderr,
+        )
+        return 2
 
     from app.db.base import Base
     from app.db.seed import ensure_seed

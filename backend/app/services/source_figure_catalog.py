@@ -145,13 +145,17 @@ async def not_selectable(
 
 
 async def figure_infos(
-    db: AsyncSession, by_asset: dict[str, uuid.UUID]
+    db: AsyncSession, course_id: uuid.UUID, by_asset: dict[str, uuid.UUID]
 ) -> dict[str, SourceFigureInfo]:
-    """Descrizione e didascalia originale delle figure fuse (revisore)."""
+    """Descrizione e didascalia originale delle figure fuse (revisore),
+    solo del corso (difesa in profondità: arrivano dal catalogo)."""
     if not by_asset:
         return {}
     rows = await db.execute(
-        select(CourseDocumentFigure).where(CourseDocumentFigure.id.in_(set(by_asset.values())))
+        select(CourseDocumentFigure).where(
+            CourseDocumentFigure.id.in_(set(by_asset.values())),
+            CourseDocumentFigure.course_id == course_id,
+        )
     )
     found = {f.id: f for f in rows.scalars().all()}
     out = {}

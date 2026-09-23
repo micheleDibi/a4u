@@ -191,10 +191,44 @@ def test_figure_mix_counts_sources_apart() -> None:
         ),
         ("Schema del vibrometro. Fonte: Rossi, 2020", "Schema del vibrometro."),
         ("Schema (source: Wikipedia)", "Schema"),
-        ("Grafico tratto da Bianchi 2019", "Grafico"),
+        ("Grafico; tratto da Bianchi 2019", "Grafico"),
         ("Foto del banco © Ateneo", "Foto del banco"),
-        ("Adapted from Smith (2020)", ""),
+        ("Schema del banco di misura (Rossi et al., 2019)", "Schema del banco di misura"),
+        ("Diagramma del sensore. Quelle: Müller 2018", "Diagramma del sensore."),
+        ("传感器示意图。出典\uff1a山田 2019", "传感器示意图。"),
+        ("Schema del circuito (c) ACME", "Schema del circuito"),
+        # Solo fonte: resta com'è (meglio una fonte ripetuta che niente).
+        ("Adapted from Smith (2020)", "Adapted from Smith (2020)"),
+        # Falsi positivi della prima versione: il testo legittimo resta.
+        (
+            "Andamento della tensione nel tratto da A a B.",
+            "Andamento della tensione nel tratto da A a B.",
+        ),
+        ("Energy sources: solar and wind", "Energy sources: solar and wind"),
+        ("Resources: CPU and memory", "Resources: CPU and memory"),
+        (
+            "Carico adattato da un trasformatore di impedenza",
+            "Carico adattato da un trasformatore di impedenza",
+        ),
+        (
+            "Confronto delle fonti: rumore termico e shot",
+            "Confronto delle fonti: rumore termico e shot",
+        ),
+        ("Curva di risposta (1 kHz, 2019)", "Curva di risposta (1 kHz, 2019)"),
     ],
 )
 def test_clean_caption(caption: str, expected: str) -> None:
     assert clean_caption(caption)[0] == expected
+
+
+def test_dropping_tags_leaves_untouched_fields_identical() -> None:
+    """Un campo senza tag tolti torna identico (anche le righe vuote
+    multiple, per esempio in un blocco di codice); dove una riga di solo tag
+    sparisce, le righe vuote intorno si riducono a una."""
+    from app.services.source_figure_fusion import _drop_tags
+
+    code = "```python\nimport os\n\n\ndef f():\n    pass\n```"
+    assert _drop_tags(code, {"src-aa"}) == code
+    text = "Intro.\n\n[FIG:SRC-aa]\n\nTesto.\n\n\nAltro."
+    assert _drop_tags(text, {"src-aa"}) == "Intro.\n\nTesto.\n\n\nAltro."
+    assert _drop_tags("Vedi [FIG:SRC-aa] qui.", {"src-aa"}) == "Vedi  qui."

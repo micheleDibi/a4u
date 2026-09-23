@@ -589,8 +589,47 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                 )
                 return
 
-        # Ricontrollo delle figure di fonte scelte (TOCTOU): politica,
-        # esclusione o licenza cambiate durante la generazione.
+        # Revisore delle ridondanze (PROMPT 19): segnala soltanto, ogni
+        # errore vale «nessun avviso»; costo in `content_tokens.assets`.
+        # Gira PRIMA del ricontrollo TOCTOU e del terzo cancel-check: la sua
+        # attesa di rete (fino a `figure_redundancy_timeout_seconds`) non
+        # deve lasciare passare né un cambio di politica né un annullamento.
+        figure_review: dict | None = None
+        if isinstance(content_output, LessonContentOutput) and fusion is not None and fusion.added:
+            try:
+                infos = await source_figure_catalog.figure_infos(
+                    db,
+                    course_full.id,
+                    {
+                        a.asset_id: uuid.UUID(a.content)
+                        for a in content_output.visual_assets
+                        if a.format == SOURCE_FIGURE_FORMAT
+                    },
+                )
+                (
+                    figure_review,
+                    redundancy_usage,
+                ) = await asset_validation_service.review_source_figure_redundancy(
+                    content_output, infos, language_code=course_full.language_code
+                )
+            except Exception as exc:
+                figure_review, redundancy_usage = None, []
+                log.warning(
+                    "lesson_content_figure_redundancy_failed",
+                    lesson_id=str(lesson.id),
+                    lesson_code=lesson.lesson_code,
+                    error=str(exc)[:300],
+                )
+            if redundancy_usage:
+                usage = asset_validation_service.merge_assets_usage(
+                    usage, [*(usage.get("assets") or []), *redundancy_usage]
+                )
+
+        # Ricontrollo delle figure di fonte scelte (TOCTOU): politica del
+        # documento, esclusione o licenza (politica dell'organizzazione
+        # RILETTA adesso) cambiate durante la generazione. Se il ricontrollo
+        # stesso fallisce, le figure di fonte escono tutte (scelta prudente:
+        # mai una figura non ricontrollata).
         if (
             catalog is not None
             and fusion is not None
@@ -602,12 +641,25 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                 for a in content_output.visual_assets
                 if a.format == SOURCE_FIGURE_FORMAT
             }
-            blocked = await source_figure_catalog.not_selectable(
-                db, course_full, fused.values(), license_policy=catalog.license_policy
-            )
+            reason = "not_selectable_at_materialize"
+            try:
+                current_policy = await source_figure_catalog.license_policy_for(db, course_full)
+                blocked = await source_figure_catalog.not_selectable(
+                    db, course_full, fused.values(), license_policy=current_policy
+                )
+            except Exception as exc:
+                log.warning(
+                    "lesson_content_source_figures_recheck_failed",
+                    lesson_id=str(lesson.id),
+                    lesson_code=lesson.lesson_code,
+                    error=str(exc)[:300],
+                )
+                blocked = set(fused.values())
+                reason = "recheck_failed"
             if blocked:
                 dropped = {aid for aid, fid in fused.items() if fid in blocked}
                 source_figure_fusion.remove_source_figures(content_output, dropped)
+                figure_review = _drop_from_review(figure_review, dropped)
                 await write_audit(
                     db,
                     action="course.lesson.content.source_figures_dropped",
@@ -619,32 +671,10 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                         "course_id": str(course_full.id),
                         "lesson_code": lesson.lesson_code,
                         "dropped": sorted(dropped),
-                        "reason": "not_selectable_at_materialize",
+                        "reason": reason,
                     },
                 )
                 fusion.added = [a for a in fusion.added if a not in dropped]
-        # Revisore delle ridondanze (PROMPT 19): segnala soltanto, ogni
-        # errore vale «nessun avviso»; costo in `content_tokens.assets`.
-        figure_review: dict | None = None
-        if isinstance(content_output, LessonContentOutput) and fusion is not None and fusion.added:
-            infos = await source_figure_catalog.figure_infos(
-                db,
-                {
-                    a.asset_id: uuid.UUID(a.content)
-                    for a in content_output.visual_assets
-                    if a.format == SOURCE_FIGURE_FORMAT
-                },
-            )
-            (
-                figure_review,
-                redundancy_usage,
-            ) = await asset_validation_service.review_source_figure_redundancy(
-                content_output, infos, language_code=course_full.language_code
-            )
-            if redundancy_usage:
-                usage = asset_validation_service.merge_assets_usage(
-                    usage, [*(usage.get("assets") or []), *redundancy_usage]
-                )
         if catalog is not None:
             usage["source_figures"] = {
                 "catalog": len(catalog.catalog.candidates),
@@ -653,6 +683,20 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                 "license_policy": catalog.license_policy,
                 **(fusion.as_json() if fusion else {}),
             }
+
+        # Terzo cancel-check: il revisore delle ridondanze e il ricontrollo
+        # stanno dopo il secondo; un annullamento arrivato nel frattempo non
+        # va sovrascritto da `ready`.
+        await db.refresh(lesson, ["content_status"])
+        if lesson.content_status != "processing":
+            log.info(
+                "lesson_content_cancelled_pre_materialize",
+                lesson_id=str(lesson.id),
+                lesson_code=lesson.lesson_code,
+                current_status=lesson.content_status,
+                cost_usd=usage.get("cost_usd"),
+            )
+            return
 
         # Visibilità delle fonti: filtro hard delle references che
         # matchano documenti a fonte riservata (PRIMA di model_dump()
@@ -686,10 +730,19 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                             "dropped": [r.get("citation") for r in dropped_refs],
                         },
                     )
+                # Anche didascalie e testi alternativi delle figure: il nome
+                # di un documento riservato non deve comparire nemmeno lì.
+                figure_texts: list[str] = []
+                if isinstance(content_output, LessonContentOutput):
+                    figure_texts = [
+                        f"{asset.caption or ''}\n{asset.alt_text or ''}"
+                        for asset in content_output.visual_assets
+                    ]
                 prose = "\n".join(
                     [content_output.introduction or ""]
                     + [s.content or "" for s in content_output.sections]
                     + [content_output.summary or ""]
+                    + figure_texts
                 )
                 leaks = document_citation_guard.scan_text_for_leaks(prose, reserved_index)
                 if leaks:
@@ -844,6 +897,22 @@ async def _bound_process(lesson_id: uuid.UUID) -> None:
 # ---------------------------------------------------------------------------
 # Tick: discovery + dispatch
 # ---------------------------------------------------------------------------
+
+
+def _drop_from_review(review: dict | None, dropped: set[str]) -> dict | None:
+    """Verdetto del revisore senza le figure tolte dal ricontrollo (e senza
+    le coppie verso di esse)."""
+    if not review or not dropped:
+        return review
+    figures = {
+        aid: {
+            **verdict,
+            "pairs": [p for p in verdict.get("pairs") or [] if p.get("other") not in dropped],
+        }
+        for aid, verdict in (review.get("figures") or {}).items()
+        if aid not in dropped and isinstance(verdict, dict)
+    }
+    return {**review, "figures": figures} if figures else None
 
 
 def _pending_lessons_query() -> Select[tuple[uuid.UUID]]:

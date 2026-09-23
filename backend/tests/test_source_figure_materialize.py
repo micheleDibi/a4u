@@ -305,3 +305,155 @@ async def test_tick_waits_for_recent_extractions(
     )
     await seeded_db.commit()
     assert setup["lesson_id"] in await pending_ids()
+
+
+# --- correzioni della verifica WP3 -------------------------------------------------
+
+
+async def test_org_license_policy_is_reread_at_the_recheck(
+    seeded_db: AsyncSession, fakes: dict[str, Any], _engine: Any
+) -> None:
+    """L'organizzazione passa a open_only durante la generazione: il
+    ricontrollo rilegge la politica e toglie la figura a licenza ignota."""
+    from app.models.organization_course_settings import OrganizationCourseSettings
+
+    setup = await _setup(seeded_db)
+    good = setup["figures"]["good"]
+    good.license = "unknown"
+    await seeded_db.commit()
+    course = await seeded_db.get(Course, setup["course_id"])
+    assert course is not None
+    org_id = course.organization_id
+
+    async def switch_to_open_only() -> None:
+        factory = async_sessionmaker(_engine, expire_on_commit=False)
+        async with factory() as other:
+            row = (
+                await other.execute(
+                    select(OrganizationCourseSettings).where(
+                        OrganizationCourseSettings.organization_id == org_id
+                    )
+                )
+            ).scalar_one_or_none()
+            if row is None:
+                other.add(
+                    OrganizationCourseSettings(
+                        organization_id=org_id, figure_source_license_policy="open_only"
+                    )
+                )
+            else:
+                row.figure_source_license_policy = "open_only"
+            await other.commit()
+
+    fakes["on_generate"] = switch_to_open_only
+    await worker._process_one(setup["lesson_id"])
+    lesson = await _lesson(seeded_db, setup["lesson_id"])
+    assert lesson.content_status == "ready", lesson.content_error
+    assert not [a for a in lesson.content_raw["visual_assets"] if a["format"] == "source_figure"]
+    # Il verdetto del revisore non parla di una figura che non c'è più.
+    assert lesson.content_figure_review is None
+
+
+async def test_cancel_during_the_redundancy_review_is_not_overwritten(
+    seeded_db: AsyncSession, fakes: dict[str, Any], _engine: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    setup = await _setup(seeded_db)
+
+    async def cancel_then_answer(body: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
+        factory = async_sessionmaker(_engine, expire_on_commit=False)
+        async with factory() as other:
+            await other.execute(
+                update(CourseLesson)
+                .where(CourseLesson.id == setup["lesson_id"])
+                .values(content_status="failed", content_error="Generazione annullata dall'utente.")
+            )
+            await other.commit()
+        answer = {"coherence": "coerente", "reason": "ok", "pairs": []}
+        return {
+            "choices": [{"message": {"content": json.dumps(answer)}}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        }
+
+    monkeypatch.setattr(redundancy, "post_chat_with_retry", cancel_then_answer)
+    await worker._process_one(setup["lesson_id"])
+    lesson = await _lesson(seeded_db, setup["lesson_id"])
+    assert lesson.content_status == "failed"
+    assert lesson.content_error == "Generazione annullata dall'utente."
+
+
+async def test_reviewer_error_means_no_notice_and_the_lesson_is_ready(
+    seeded_db: AsyncSession, fakes: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    setup = await _setup(seeded_db)
+
+    async def broken(*args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("DB non raggiungibile")
+
+    monkeypatch.setattr(source_figure_catalog, "figure_infos", broken)
+    await worker._process_one(setup["lesson_id"])
+    lesson = await _lesson(seeded_db, setup["lesson_id"])
+    assert lesson.content_status == "ready", lesson.content_error
+    assert lesson.content_figure_review is None
+    assert [a for a in lesson.content_raw["visual_assets"] if a["format"] == "source_figure"]
+
+
+async def test_failed_recheck_drops_every_source_figure(
+    seeded_db: AsyncSession, fakes: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    setup = await _setup(seeded_db)
+
+    async def broken(*args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("DB non raggiungibile")
+
+    monkeypatch.setattr(source_figure_catalog, "not_selectable", broken)
+    await worker._process_one(setup["lesson_id"])
+    lesson = await _lesson(seeded_db, setup["lesson_id"])
+    assert lesson.content_status == "ready", lesson.content_error
+    assert not [a for a in lesson.content_raw["visual_assets"] if a["format"] == "source_figure"]
+
+
+async def test_reserved_document_name_in_a_caption_is_flagged(
+    seeded_db: AsyncSession, fakes: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Guardia leak anche su didascalie e testi alternativi (audit, mai
+    modifica del contenuto)."""
+    from app.schemas.course_lesson_content import LessonContentVisualAsset
+
+    setup = await _setup(seeded_db)
+    reserved = setup["docs"]["content_only"]
+    title = "Manuale riservato delle misure vibrometriche"
+    reserved.summary = {"source_title": title}
+    await seeded_db.commit()
+
+    async def generate(**kwargs: Any) -> tuple[LessonContentOutput, dict[str, Any]]:
+        out = _output("M1.L1", [])
+        out.visual_assets = [
+            LessonContentVisualAsset(
+                asset_id="gen-1",
+                format="dot",
+                content="digraph{a->b}",
+                caption=f"Schema dal {title}",
+                alt_text="schema",
+            )
+        ]
+        return out, {"model": "gpt-5.5", "total": 1, "cost_usd": 0.0}
+
+    monkeypatch.setattr(openai_svc, "generate_lesson_content", generate)
+    await worker._process_one(setup["lesson_id"])
+    lesson = await _lesson(seeded_db, setup["lesson_id"])
+    assert lesson.content_status == "ready", lesson.content_error
+    # Il contenuto non cambia: solo segnalazione.
+    assert lesson.content_raw["visual_assets"][0]["caption"] == f"Schema dal {title}"
+    audits = (
+        (
+            await seeded_db.execute(
+                select(AuditLog).where(
+                    AuditLog.action == "course.lesson.content.reserved_leak",
+                    AuditLog.target_id == str(setup["lesson_id"]),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert audits, "nome del documento riservato nella didascalia non segnalato"

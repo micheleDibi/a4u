@@ -41,6 +41,7 @@ from app.services.lesson_document_selection import (
     build_query_profile,
     terms,
 )
+from app.services.source_caption import clean_caption
 
 CANDIDATE_MIN_SCORE = 1.0
 RELEVANT_MIN_SCORE = 2.0
@@ -153,7 +154,10 @@ def _catalog_line(ref: str, fig: FigureLike) -> str:
     if fig.kind:
         parts.append(f"tipo: {fig.kind}")
     if fig.source_caption:
-        parts.append(f"didascalia originale: {_clip(fig.source_caption, CAPTION_MAX_CHARS)}")
+        # Senza la coda «Fonte: …» del documento: la fonte non entra mai nel
+        # catalogo (la scrive il render).
+        caption, _trimmed = clean_caption(fig.source_caption)
+        parts.append(f"didascalia originale: {_clip(caption, CAPTION_MAX_CHARS)}")
     if fig.description:
         parts.append(f"descrizione: {_clip(fig.description, DESCRIPTION_MAX_CHARS)}")
     keywords = [_clip(k, 60) for k in _keywords(fig)[:KEYWORDS_MAX]]

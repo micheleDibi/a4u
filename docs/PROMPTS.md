@@ -3405,7 +3405,7 @@ serves to flag.
 Output: ONLY valid JSON conforming to the schema.
 ```
 
-**Messaggio user** — `build_user_message()`; descrizioni, didascalie e testi passano da `prompt_safety.neutralize_third_party_text` e stanno fra delimitatori di dati:
+**Messaggio user** — `build_user_message()`; descrizioni, didascalie, titoli, testi e id passano da `prompt_safety.neutralize_third_party_text` e i testi stanno fra delimitatori di dati:
 
 ```
 LINGUA DEL CORSO: {language_code}
@@ -3424,7 +3424,9 @@ FIGURA DI FONTE: {asset_id, es. SRC-1a2b3c4d}
 {caption dell'asset, al più 600 caratteri}
 >>>
 
-SEZIONE CHE LA CITA: {titolo}
+<<<SEZIONE CHE LA CITA
+{titolo della sezione, al più 300 caratteri | (senza titolo)}
+>>>
 
 <<<TESTO DELLA SEZIONE
 {testo della prima parte della lezione che contiene [FIG:asset_id], al più 6000 caratteri}
@@ -3434,6 +3436,8 @@ SEZIONE CHE LA CITA: {titolo}
 - {asset_id} [{format}]: {caption} — {descrizione (figure di fonte) o primi 240 caratteri del sorgente (figure generate)}
 >>>
 ```
+
+Tetto di lotto `FIGURE_REDUNDANCY_TIMEOUT_SECONDS`: i verdetti già arrivati restano, solo le chiamate ancora in corso si annullano. Nel worker il revisore gira PRIMA del ricontrollo TOCTOU (con la politica di licenza riletta) e di un terzo controllo di annullamento; un suo errore vale «nessun avviso».
 
 **Output** — json_schema strict `figure_redundancy`: `{"coherence": "coerente" | "incoerente", "reason": string, "pairs": [{"other": enum degli id delle altre figure, "verdict": "distinta" | "complementare" | "ridondante", "reason": string}]}`, validato da `RedundancyOut`. Persistito come `{"version": 1, "model", "reviewed_at", "figures": {asset_id: {"coherence", "reason", "pairs": [solo complementare/ridondante]}}}`; log `lesson_content_figure_redundancy`. Costo: voci `phase="redundancy"` in `content_tokens.assets` (anche per le risposte 200 inutilizzabili).
 
