@@ -88,6 +88,11 @@ def test_app_import_does_not_load_forbidden_modules() -> None:
 def test_dockerfile_installs_no_agpl_system_package() -> None:
     text = (_BACKEND / "Dockerfile").read_text(encoding="utf-8")
     code = "\n".join(line.split("#", 1)[0] for line in text.splitlines())
+    # WP6: la guardia `! dpkg -s libgs10 … ghostscript` (TeX Live opzionale)
+    # nomina i pacchetti proprio per escluderli; deve esserci.
+    guards = re.findall(r"!\s*dpkg\s+-s\s+(\S+)", code)
+    assert {"libgs10", "ghostscript"} <= set(guards)
+    code = re.sub(r"!\s*dpkg\s+-s\s+\S+", "", code)
     assert _FORBIDDEN_SYSTEM.findall(code) == []
 
 

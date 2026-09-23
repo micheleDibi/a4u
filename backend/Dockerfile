@@ -70,6 +70,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd -r app && useradd -r -g app -d /app app
 
+# Formato `tikz` (WP6, spento di default con FIGURE_TIKZ_ENABLED=false):
+# TeX Live di Debian (XeLaTeX, TikZ, circuitikz, pgfplots, preview) e
+# pdftocairo solo su richiesta, `--build-arg INSTALL_TEX=true` (misura M5:
+# circa +550 MB). Guardia AGPL sempre attiva: niente Ghostscript (libgs)
+# nell'immagine (docs/courses/18-literature-figures.md).
+ARG INSTALL_TEX=false
+RUN if [ "$INSTALL_TEX" = "true" ]; then \
+        apt-get update && apt-get install -y --no-install-recommends \
+            texlive-xetex texlive-pictures texlive-latex-recommended \
+            preview-latex-style lmodern poppler-utils \
+        && rm -rf /var/lib/apt/lists/*; \
+    fi \
+    && ! dpkg -s libgs10 >/dev/null 2>&1 && ! dpkg -s ghostscript >/dev/null 2>&1
+
 WORKDIR /app
 COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin

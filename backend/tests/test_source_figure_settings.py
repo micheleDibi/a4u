@@ -74,6 +74,17 @@ _DEFAULTS: dict[str, object] = {
     "openai_figure_relevance_reasoning_effort": None,
     "openai_figure_relevance_max_tokens": 800,
     "openai_figure_relevance_timeout_seconds": 60,
+    "figure_tikz_enabled": False,
+    "figure_tikz_propose_enabled": False,
+    "figure_tikz_max_chars": 8000,
+    "figure_tikz_timeout_seconds": 10,
+    "figure_tikz_queue_timeout_seconds": 30,
+    "figure_tikz_fix_max_attempts": 1,
+    "figure_tikz_render_review_enabled": True,
+    "openai_tikz_review_model": "gpt-4.1-mini",
+    "openai_tikz_review_max_tokens": 1500,
+    "figure_tikz_preview_per_minute": 10,
+    "tex_bin_dir": None,
 }
 
 # In compose ed .env.example estrazione e letteratura aperta restano spente
@@ -131,6 +142,7 @@ def test_env_example_defaults_match_the_code() -> None:
         "openai_figure_describe_model",
         "openai_figure_redundancy_model",
         "openai_figure_relevance_model",
+        "openai_tikz_review_model",
     ],
 )
 def test_default_models_are_priced(setting: str) -> None:

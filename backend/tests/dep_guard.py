@@ -26,3 +26,15 @@ def require_module(dep: str, module: str) -> None:
         if dep in required_deps():
             pytest.fail(f"[dep:{dep}] richiesta da A4U_REQUIRED_DEPS ma non disponibile: {exc}")
         pytest.skip(f"[dep:{dep}] non installata: {exc}")
+
+
+def require_binary(dep: str, *names: str) -> None:
+    """Salta (o fallisce, con `A4U_REQUIRED_DEPS`) se manca un binario."""
+    import shutil
+
+    missing = [name for name in names if shutil.which(name) is None]
+    if missing:
+        message = f"[dep:{dep}] binari assenti: {', '.join(missing)}"
+        if dep in required_deps():
+            pytest.fail(f"{message} (richiesti da A4U_REQUIRED_DEPS)")
+        pytest.skip(message)

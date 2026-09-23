@@ -462,6 +462,26 @@ class Settings(BaseSettings):
     openai_figure_relevance_max_tokens: int = 800
     openai_figure_relevance_timeout_seconds: int = 60
 
+    # Formato `tikz` (WP6): figure vettoriali (schemi di strumenti, circuiti
+    # IEC, catene di misura) compilate con XeLaTeX nella sandbox del
+    # container (SBX-2: limiti di processo, ambiente senza segreti, TeX
+    # paranoico, autotest all'avvio). Spento finché non lo si accende: TeX
+    # Live entra nell'immagine solo con l'argomento di build INSTALL_TEX
+    # (misura M5: +550 MB circa). `figure_tikz_propose_enabled` decide se il
+    # modello di Fase 3 può proporlo da sé (altrimenti solo editor).
+    figure_tikz_enabled: bool = False
+    figure_tikz_propose_enabled: bool = False
+    figure_tikz_max_chars: int = 8_000
+    figure_tikz_timeout_seconds: int = 10
+    figure_tikz_queue_timeout_seconds: int = 30
+    figure_tikz_fix_max_attempts: int = 1
+    figure_tikz_render_review_enabled: bool = True
+    openai_tikz_review_model: str = "gpt-4.1-mini"
+    openai_tikz_review_max_tokens: int = 1_500
+    figure_tikz_preview_per_minute: int = 10
+    # Cartella dei binari TeX (xelatex, kpsewhich, pdftocairo); vuota = PATH.
+    tex_bin_dir: str | None = None
+
     # §7 — Export PDF lezioni.
     # Cap=2: rendering Playwright è I/O+CPU intensive (Chromium istanza).
     course_lesson_pdf_poll_interval_seconds: int = 4

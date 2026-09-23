@@ -334,6 +334,22 @@ proprio nel prompt di Fase 3.
 | `OPENAI_FIGURE_RELEVANCE_MAX_TOKENS` | `800` | Tetto dell'output. |
 | `OPENAI_FIGURE_RELEVANCE_TIMEOUT_SECONDS` | `60` | Timeout di una chiamata. |
 
+**Formato `tikz` (WP6).** Figure vettoriali compilate con XeLaTeX nella sandbox del container (limiti di processo, ambiente senza segreti, TeX paranoico, autotest all'avvio: se fallisce il formato non si offre). Spento di default: TeX Live entra nell'immagine solo con `docker compose -f docker-compose.yml -f docker-compose.prod.yml build --build-arg INSTALL_TEX=true backend` (circa +550 MB, misura M5). Vedi `docs/courses/18-literature-figures.md`.
+
+| Variabile | Default | Note |
+|---|---|---|
+| `FIGURE_TIKZ_ENABLED` | `false` | Formato disponibile (editor, validazione, resa). Richiede l'immagine con TeX. |
+| `FIGURE_TIKZ_PROPOSE_ENABLED` | `false` | Il modello di Fase 3 può proporre figure `tikz` da sé; con `false` solo l'editor. |
+| `FIGURE_TIKZ_MAX_CHARS` | `8000` | Lunghezza massima del sorgente. |
+| `FIGURE_TIKZ_TIMEOUT_SECONDS` | `10` | Tempo massimo di una compilazione (poi kill del gruppo di processi). |
+| `FIGURE_TIKZ_QUEUE_TIMEOUT_SECONDS` | `30` | Attesa massima in coda (una compilazione alla volta, mai durante un'estrazione Docling). |
+| `FIGURE_TIKZ_FIX_MAX_ATTEMPTS` | `1` | Correzioni AI per figura (PROMPT 12, variante `tikz`). |
+| `FIGURE_TIKZ_RENDER_REVIEW_ENABLED` | `true` | Revisione Vision della resa (PROMPT 21), consultiva. |
+| `OPENAI_TIKZ_REVIEW_MODEL` | `gpt-4.1-mini` | Modello della revisione; deve stare a listino. |
+| `OPENAI_TIKZ_REVIEW_MAX_TOKENS` | `1500` | Tetto dell'output. |
+| `FIGURE_TIKZ_PREVIEW_PER_MINUTE` | `10` | Anteprime dell'editor per utente al minuto. |
+| `TEX_BIN_DIR` | _(vuoto)_ | Cartella di xelatex, kpsewhich e pdftocairo; vuota = PATH. |
+
 ### OpenAI — parallelismo + auto-retry worker corso
 
 I worker batch del pipeline corso (Fase 2, Fase 3, Fase 4, Fase 5, e i tre
