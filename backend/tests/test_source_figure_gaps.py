@@ -767,3 +767,25 @@ async def test_phase_3_tick_requests_the_gap_check(
     await content_worker._tick()
     await asyncio.sleep(0)
     assert lesson_id in dispatched
+
+
+async def test_course_with_a_pdf_without_figures_gets_open_literature(
+    seeded_db: AsyncSession, env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """I2: estrazione accesa e fatta, nessuna figura nel PDF → letteratura;
+    nessun documento nuovo."""
+    course_id, lesson_id = await _lesson(seeded_db)
+    doc = build_course_document(course_id, filename="solo_testo.pdf")
+    doc.figures_status = "ready"
+    doc.figures_count = 0
+    seeded_db.add(doc)
+    await seeded_db.commit()
+    extraction_on = env["settings"].model_copy(update={"figure_extraction_enabled": True})
+    monkeypatch.setattr(gaps, "get_settings", lambda: extraction_on)
+    await gap_worker._tick()
+    lesson = await _fresh(seeded_db, lesson_id)
+    assert lesson.figures_gap_status == "done" and lesson.figures_gap_stats["kept"] == 1
+    docs = await seeded_db.scalar(
+        select(func.count(CourseDocument.id)).where(CourseDocument.course_id == course_id)
+    )
+    assert docs == 1

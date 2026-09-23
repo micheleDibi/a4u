@@ -138,3 +138,10 @@ async def test_unusable_answer_keeps_the_paid_usage(captured: dict[str, Any]) ->
         await relevance.assess_candidate(_png(), LESSON, source_title=None, source_text=None)
     assert excinfo.value.status == 200
     assert excinfo.value.usage is not None and excinfo.value.usage["cost_usd"] > 0
+
+
+async def test_unusable_search_terms_keep_the_paid_usage(captured: dict[str, Any]) -> None:
+    captured["answer"] = _answer({"queries": "non una lista"})
+    with pytest.raises(relevance.OpenAIFigureRelevanceError) as excinfo:
+        await relevance.search_terms(LESSON)
+    assert excinfo.value.usage is not None and excinfo.value.usage["cost_usd"] > 0
