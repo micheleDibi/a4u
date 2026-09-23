@@ -393,6 +393,17 @@ def test_visual_asset_format_rejects_unknown():
         LessonSlideNewAsset(asset_id="A1", format="tikz", content="x")
 
 
+def test_source_figure_only_in_phase_3():
+    """Scissione dell'alias (WP4): `source_figure` vale solo in Fase 3; nei
+    `new_assets` delle slide lo schema lo rifiuta sul campo `format`."""
+    content = LessonContentVisualAsset(asset_id="SRC-1", format="source_figure", content="x")
+    assert content.format == "source_figure"
+    with pytest.raises(ValidationError) as excinfo:
+        LessonSlideNewAsset(asset_id="SRC-1", format="source_figure", content="x")
+    errors = excinfo.value.errors()
+    assert [(e["loc"], e["type"]) for e in errors] == [(("format",), "literal_error")]
+
+
 # ---------------------------------------------------------------------------
 # Tema Mermaid: le variabili derivate del tema neutral sono fissate (D3)
 # ---------------------------------------------------------------------------

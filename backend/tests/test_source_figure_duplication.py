@@ -65,6 +65,7 @@ async def _source(db: AsyncSession, storage: _Storage) -> dict[str, Any]:
     doc.figures_status = "ready"
     doc.figures_count = 1
     doc.figures_engine = "docling"
+    doc.figures_coverage = "partial"
     db.add(doc)
     await db.flush()
     fig = build_document_figure(course_id, doc.id, license="cc_by")
@@ -81,6 +82,14 @@ async def _source(db: AsyncSession, storage: _Storage) -> dict[str, Any]:
     detached.detached_at = datetime.now(UTC)
     db.add_all([fig, detached])
     await db.flush()
+    # Duplicato di `fig` (stesso phash) che ne riusa la descrizione Vision:
+    # autoriferimenti da rimappare sui cloni.
+    duplicate = build_document_figure(course_id, doc.id, license="cc_by", status="rejected", page=2)
+    duplicate.reject_reason = "duplicate"
+    duplicate.duplicate_of_id = fig.id
+    duplicate.describe_source_id = fig.id
+    db.add(duplicate)
+    await db.flush()
     lesson = (
         (await db.execute(select(CourseLesson).where(CourseLesson.course_id == course_id)))
         .scalars()
@@ -96,9 +105,22 @@ async def _source(db: AsyncSession, storage: _Storage) -> dict[str, Any]:
     }
     lesson.content_figure_review = {"version": 1, "figures": {"SRC-a": {"pairs": []}}}
     await db.commit()
-    for path in (fig.storage_path, fig.preview_path, detached.storage_path, doc.file_path):
+    for path in (
+        fig.storage_path,
+        fig.preview_path,
+        detached.storage_path,
+        duplicate.storage_path,
+        doc.file_path,
+    ):
         storage.files[remote_storage.uploads_key(str(path))] = f"bytes:{path}".encode()
-    return {"course_id": course_id, "user": user, "doc": doc, "fig": fig, "detached": detached}
+    return {
+        "course_id": course_id,
+        "user": user,
+        "doc": doc,
+        "fig": fig,
+        "detached": detached,
+        "duplicate": duplicate,
+    }
 
 
 async def test_duplication_clones_figures_files_and_references(
@@ -140,6 +162,7 @@ async def test_duplication_clones_figures_files_and_references(
         "figures_status",
         "figures_count",
         "figures_engine",
+        "figures_coverage",
     ):
         assert getattr(new_doc, field) == getattr(old_doc, field), field
 
@@ -152,11 +175,15 @@ async def test_duplication_clones_figures_files_and_references(
         .scalars()
         .all()
     )
-    assert len(rows) == 2
-    old_ids = {s["fig"].id, s["detached"].id}
+    assert len(rows) == 3
+    old_ids = {s["fig"].id, s["detached"].id, s["duplicate"].id}
     assert not ({r.id for r in rows} & old_ids)
-    clone = next(r for r in rows if r.document_id is not None)
+    clone = next(r for r in rows if r.document_id is not None and r.status == "ready")
     clone_detached = next(r for r in rows if r.document_id is None)
+    clone_dup = next(r for r in rows if r.status == "rejected")
+    # Autoriferimenti rimappati sui cloni, mai verso il corso sorgente.
+    assert clone_dup.duplicate_of_id == clone.id
+    assert clone_dup.describe_source_id == clone.id
     assert clone.document_id == new_doc.id
     assert clone_detached.detached_at is not None
     assert clone_detached.attribution == s["detached"].attribution

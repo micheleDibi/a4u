@@ -375,7 +375,15 @@ async def test_resolver_course_scope_and_non_retroactive(
     not_ready.status = "extracted"
     gone = build_document_figure(course_id, doc.id, license="cc_by", locator="p0003-f01")
     foreign = build_document_figure(other_course, foreign_doc.id, license="cc_by")
-    db.add_all([good, not_ready, gone, foreign])
+    # Riga del corso che punta al file di un altro corso: mai letto.
+    stray = build_document_figure(
+        course_id,
+        doc.id,
+        license="cc_by",
+        locator="p0004-f01",
+        storage_path=str(foreign.storage_path),
+    )
+    db.add_all([good, not_ready, gone, foreign, stray])
     await db.commit()
     for fig in (good, foreign):
         storage.files[remote_storage.uploads_key(str(fig.storage_path))] = _png()
@@ -390,10 +398,12 @@ async def test_resolver_course_scope_and_non_retroactive(
         asset("garbage", "../../etc/passwd"),
         asset("not-ready", str(not_ready.id)),
         asset("gone", str(gone.id)),
+        asset("stray", str(stray.id)),
         {"asset_id": "gen", "format": "dot", "content": "digraph{}"},
     ]
     out = await resolve_source_figures(db, course_id=course_id, assets=assets, language="it")
-    assert set(out) == {"ok", "foreign", "invented", "garbage", "not-ready", "gone"}
+    assert set(out) == {"ok", "foreign", "invented", "garbage", "not-ready", "gone", "stray"}
+    assert (out["stray"].renderable, out["stray"].reason) == (False, "wrong_course")
     ok = out["ok"]
     assert ok.renderable and ok.data_url.startswith("data:image/png;base64,")
     assert ok.attribution_text.startswith("Fonte: Mario Rossi, «Vibrometria laser»")
