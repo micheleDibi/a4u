@@ -277,3 +277,48 @@ async def test_in_flight_extraction_is_not_cloned(
     assert target is not None
     assert target.documents[0].figures_status is None
     assert uuid.UUID(str(target.documents[0].id)) != doc.id
+
+
+async def test_tikz_asset_is_copied_verbatim(seeded_db: AsyncSession) -> None:
+    """WP6.6: la duplicazione copia il sorgente `tikz` così com'è (anche con
+    la traduzione: `visual_assets[].content` non è fra i percorsi
+    tradotti), quindi il corso nuovo rende lo stesso SVG (stessa chiave di
+    cache del renderer)."""
+    from app.services import figure_render_service as frs
+    from tests.test_tikz_validator import CHAIN
+
+    db = seeded_db
+    course_id, _org, _user = await build_course(
+        db, modules=1, lessons_per_module=1, content_status="ready"
+    )
+    lesson = (
+        (await db.execute(select(CourseLesson).where(CourseLesson.course_id == course_id)))
+        .scalars()
+        .one()
+    )
+    lesson.content_raw = {
+        "introduction": "Vedi [FIG:t1].",
+        "sections": [],
+        "visual_assets": [
+            {"asset_id": "t1", "format": "tikz", "content": CHAIN, "caption": "Catena."}
+        ],
+    }
+    await db.commit()
+    source = await dup.load_source_full(db, course_id=course_id)
+    assert source is not None
+    job = CourseDuplicationJob(
+        source_course_id=source.id, target_language_code="en", requested_by_user_id=None
+    )
+    db.add(job)
+    await db.flush()
+    target = await dup._clone_course_structure(
+        db, source=source, target_language_code="en", job=job
+    )
+    target = await dup.load_target_full(db, course_id=target.id)
+    assert target is not None
+    (copied,) = target.modules[0].lessons[0].content_raw["visual_assets"]
+    assert copied["content"] == CHAIN and copied["format"] == "tikz"
+    renderer = frs.REGISTRY["tikz"]
+    assert frs.cache_key("tikz", renderer.sanitize(copied["content"])) == frs.cache_key(
+        "tikz", renderer.sanitize(CHAIN)
+    )

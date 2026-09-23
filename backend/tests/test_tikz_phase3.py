@@ -11,11 +11,13 @@
   motore assente non vanno al fix; gli altri formati mantengono il tetto
   globale;
 - worker: dopo un `tikz_unresolved` il tentativo successivo non offre
-  `tikz` (né schema né messaggio), quello dopo sì.
+  `tikz` (né schema né messaggio), quello dopo sì;
+- PROMPT 5 e 6: al posto del sorgente TeX le sole etichette dei nodi.
 """
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import httpx
@@ -286,3 +288,33 @@ async def test_worker_withholds_tikz_right_after_unresolved(
     )
     assert stripped == withheld["user_prompt"]
     assert worker._TIKZ_WITHHELD == {}
+
+
+# ---------------------------------------------------------------------------
+# Fase 4 e 5: il sorgente TeX non entra nei prompt
+# ---------------------------------------------------------------------------
+
+
+def test_slides_and_speech_see_only_the_node_labels() -> None:
+    from app.services.figure_provenance import prompt_view
+
+    plain = {"visual_assets": [{"asset_id": "m1", "format": "mermaid", "content": "x"}]}
+    assert prompt_view(plain) is plain
+    raw = {
+        "visual_assets": [
+            {"asset_id": "t1", "format": "tikz", "content": CHAIN},
+            {
+                "asset_id": "t2",
+                "format": "tikz",
+                "content": r"\begin{tikzpicture}\end{tikzpicture}",
+            },
+            {"asset_id": "m1", "format": "mermaid", "content": "flowchart LR\n a-->b"},
+        ]
+    }
+    view = prompt_view(raw)
+    tikz, empty, mermaid = view["visual_assets"]
+    assert tikz["content"] == "(schema TikZ; etichette: Sensore; Condizionamento; ADC)"
+    assert empty["content"] == "(schema TikZ)"
+    assert mermaid["content"] == "flowchart LR\n a-->b"
+    assert "\\" not in json.dumps(view["visual_assets"][:2], ensure_ascii=False).replace("\\n", "")
+    assert raw["visual_assets"][0]["content"] == CHAIN  # l'originale non cambia

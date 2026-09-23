@@ -1,12 +1,17 @@
-"""Figure di fonte nei JSON che vanno ai prompt di Fase 4 e 5.
+"""Figure di fonte e `tikz` nei JSON che vanno ai prompt di Fase 4 e 5.
 
 `content_raw.visual_assets` contiene gli asset `source_figure` con
 `content` = UUID della riga `course_document_figure`: un identificativo
 interno che non serve al modello e che non deve tornare indietro in un
 output. `prompt_view` ne dà una copia con il contenuto sostituito da una
 nota fissa; la fonte NON c'è (la scrive il sistema sulla slide e nel
-discorso la dicono i dati del blocco dedicato). Senza figure di fonte la
-vista è il dict originale: il prompt resta byte-identico a prima.
+discorso la dicono i dati del blocco dedicato).
+
+Gli asset `tikz` (WP6) portano il sorgente TeX: al modello delle slide e
+del discorso bastano le etichette dei nodi (`tikz_translate.extract`), e
+così nessuna barra rovesciata del sorgente arriva al testo parlato
+(`(schema TikZ; etichette: …)`). Senza figure di fonte né `tikz` la vista
+è il dict originale: il prompt resta byte-identico a prima.
 """
 
 from __future__ import annotations
@@ -21,6 +26,8 @@ from app.core.prompt_safety import neutralize_third_party_text
 from app.schemas.course_lesson_content import SOURCE_FIGURE_FORMAT
 
 PROMPT_PLACEHOLDER = "(figura tratta dai documenti del corso; la fonte la aggiunge il sistema)"
+TIKZ_FORMAT = "tikz"
+_TIKZ_LABELS_CAP = 400
 
 
 def source_figure_ids_in(content_raw: Any) -> list[str]:
@@ -34,13 +41,32 @@ def source_figure_ids_in(content_raw: Any) -> list[str]:
     ]
 
 
+def tikz_prompt_text(source: str) -> str:
+    """Il contenuto di un asset `tikz` come lo vedono i PROMPT 5 e 6."""
+    from app.services.figure_compute.tikz_translate import extract
+
+    labels = "; ".join(extract(source or "").values())[:_TIKZ_LABELS_CAP]
+    return f"(schema TikZ; etichette: {labels})" if labels else "(schema TikZ)"
+
+
+def _has_tikz(content_raw: Any) -> bool:
+    return isinstance(content_raw, dict) and any(
+        isinstance(a, dict) and a.get("format") == TIKZ_FORMAT
+        for a in content_raw.get("visual_assets") or []
+    )
+
+
 def prompt_view(content_raw: Any) -> Any:
-    if not source_figure_ids_in(content_raw):
+    if not source_figure_ids_in(content_raw) and not _has_tikz(content_raw):
         return content_raw
     view = copy.deepcopy(content_raw)
     for asset in view.get("visual_assets") or []:
-        if isinstance(asset, dict) and asset.get("format") == SOURCE_FIGURE_FORMAT:
+        if not isinstance(asset, dict):
+            continue
+        if asset.get("format") == SOURCE_FIGURE_FORMAT:
             asset["content"] = PROMPT_PLACEHOLDER
+        elif asset.get("format") == TIKZ_FORMAT:
+            asset["content"] = tikz_prompt_text(str(asset.get("content") or ""))
     return view
 
 
