@@ -96,6 +96,45 @@ def _wrap(body: str) -> str:
         (_wrap(r"\foreach \i in {1,...,100000} {\draw (0,0);}"), "foreach_too_long"),
         (_wrap("{" * 25 + "}" * 25), "too_deep"),
         (_wrap(r"\node{x}; }"), "unbalanced_braces"),
+        # Una regola per caso (verifica WP6: le regole senza caso negativo
+        # sopravvivevano alla mutazione).
+        (_wrap(r"\tikzset{a/.ecode={x}}"), "forbidden_key_code_key"),
+        (_wrap(r"\tikzset{k/.estore in=\small}"), "forbidden_key_value_to_macro"),
+        (_wrap(r"\draw[store in=\small] (0,0);"), "forbidden_key_store_in"),
+        (_wrap(r"\tikzset{/handlers/.x/.style={}}"), "forbidden_key_handlers"),
+        (_wrap(r"\node[transform shape] {x};"), "forbidden_key_transform_shape"),
+        (_wrap(r"\fill[pattern=dots] (0,0) circle (1);"), "forbidden_key_pattern"),
+        (_wrap(r"\fill[path fading=east] (0,0) circle (1);"), "forbidden_key_fading"),
+        (
+            _wrap(r"\begin{scope}[transparency group]\end{scope}"),
+            "forbidden_key_transparency_group",
+        ),
+        (_wrap(r"\draw[left color=red] (0,0) circle (1);"), "forbidden_key_gradient_color"),
+        (_wrap(r"\tikzset{external/export=true}"), "forbidden_key_external"),
+        (_wrap(r"\node{\^{o}};"), "control_symbol"),
+        (r"\begin{scope}\end{scope}", "environment"),
+        (_wrap(r"\begin{scope}\end{axis}"), "environment_mismatch"),
+        (_wrap("\node{x\x07};"), "control_char"),
+        (_wrap(r"\foreach \i in {1,2,...,-5} {\draw (0,0);}"), "foreach_range"),
+        (_wrap(r"\foreach \i in {1,1,...,5} {\draw (0,0);}"), "foreach_range"),
+        (
+            _wrap(
+                r"\foreach \a in {1} \foreach \b in {1} \foreach \c in {1} "
+                r"\foreach \d in {1} \draw (0,0);"
+            ),
+            "foreach_nesting",
+        ),
+        (_wrap("\n".join([r"\path;"] * 401)), "too_many_paths"),
+        (
+            "\\begin{tikzpicture}\\begin{axis}\\addplot foo;\\end{axis}\\end{tikzpicture}",
+            "plot_source",
+        ),
+        # Variabili di `\foreach`: valgono solo nel corpo del ciclo, e mai
+        # con il nome di una primitiva (verifica WP6).
+        (_wrap(r"\foreach \input in {1} {}\node {\input{/etc/hostname}};"), "foreach_var"),
+        (_wrap(r"\foreach \x in {1} {}\node {\x};"), "control_word"),
+        (_wrap(r"\foreach \x in {1,2} \draw (\x,0);\node {\x};"), "control_word"),
+        (_wrap(r"\foreach \x in {\x} {\node {\x};}"), "control_word"),
     ],
 )
 def test_dangerous_sources_are_rejected_before_tex(source: str, rule: str) -> None:
@@ -124,6 +163,19 @@ def test_foreach_variables_are_allowed_only_when_declared() -> None:
     with pytest.raises(TikzSourceError) as excinfo:
         check(_wrap(r"\node at (\x, 0) {a};"), max_chars=800)
     assert excinfo.value.rule == "control_word"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        r"\foreach \x in {1,2} {\node at (\x,0) {\x};}",
+        r"\foreach \x/\y in {1/a,2/b} \node at (\x,0) {\y};",
+        r"\foreach \x in {1,2} \foreach \y in {3,4} \draw (\x,\y) -- (\y,\x);",
+        r"\foreach \x in {1,2} {\foreach \y in {3,4} {\draw (\x,\y) -- (\y,\x);}}",
+    ],
+)
+def test_foreach_variables_work_inside_their_body(body: str) -> None:
+    check(_wrap(body), max_chars=800)
 
 
 @pytest.mark.parametrize(

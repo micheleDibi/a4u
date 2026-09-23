@@ -123,6 +123,19 @@ _RANGE_RE = re.compile(
     r"\{\s*(-?\d+(?:\.\d+)?)\s*,\s*(?:(-?\d+(?:\.\d+)?)\s*,\s*)?\.\.\.\s*,\s*(-?\d+(?:\.\d+)?)\s*\}"
 )
 _FOREACH_VARS_RE = re.compile(r"\s*((?:\\[A-Za-z]+\s*/?\s*)+)")
+_FOREACH_IN_RE = re.compile(r"\s*(?:\[[^\]]*\]\s*)?in\s*")
+# Nomi che una variabile di `\foreach` non può prendere: dentro il corpo
+# il nome è la variabile, ma la difesa non deve dipendere da questo.
+_FOREACH_FORBIDDEN_VARS = frozenset(
+    {
+        "input", "include", "openin", "openout", "read", "readline", "write",
+        "immediate", "catcode", "csname", "endcsname", "def", "gdef", "edef",
+        "xdef", "let", "futurelet", "expandafter", "special", "scantokens",
+        "endinput", "everyeof", "newread", "newwrite", "closein", "closeout",
+        "jobname", "directlua", "shipout", "usepackage", "documentclass",
+        "newcommand", "renewcommand", "makeatletter", "tikzset", "pgfkeys",
+    }
+)  # fmt: skip
 _CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _PATH_COMMANDS = frozenset(
     {"draw", "path", "fill", "filldraw", "node", "coordinate", "clip", "matrix", "pic", "addplot"}
@@ -231,7 +244,8 @@ def check(source: str, *, max_chars: int) -> None:
     depth = 0
     nodes = 0
     path_commands = 0
-    foreach_vars: set[str] = set()
+    # Variabili dei `\foreach` con il campo in cui valgono (il corpo).
+    foreach_scopes: list[tuple[frozenset[str], int, int]] = []
     closed_outer_at: int | None = None
     statement_foreach = 0
     plot_statement: list[str] | None = None
@@ -283,7 +297,10 @@ def check(source: str, *, max_chars: int) -> None:
                     i += 1
                 i += 1
                 continue
-            if name not in ALLOWED_CONTROL_WORDS and name not in foreach_vars:
+            if name not in ALLOWED_CONTROL_WORDS and not any(
+                start <= token.offset < end and name in names
+                for names, start, end in foreach_scopes
+            ):
                 raise _fail(body, token.offset, "control_word", token.value)
             if name in _PATH_COMMANDS:
                 path_commands += 1
@@ -299,7 +316,16 @@ def check(source: str, *, max_chars: int) -> None:
                     raise _fail(body, token.offset, "foreach_nesting", str(statement_foreach))
                 declared = _FOREACH_VARS_RE.match(body, token.offset + len(token.value))
                 if declared is not None:
-                    foreach_vars.update(re.findall(r"\\([A-Za-z]+)", declared.group(1)))
+                    names = frozenset(re.findall(r"\\([A-Za-z]+)", declared.group(1)))
+                    bad = sorted(names & _FOREACH_FORBIDDEN_VARS)
+                    if bad:
+                        raise _fail(body, token.offset, "foreach_var", "\\" + bad[0])
+                    # La dichiarazione stessa e il corpo; mai la lista né il
+                    # testo dopo il ciclo.
+                    foreach_scopes.append((names, declared.start(), declared.end()))
+                    span = _foreach_body(body, declared.end())
+                    if span is not None:
+                        foreach_scopes.append((names, *span))
         if nodes > MAX_NODES:
             raise _fail(body, token.offset, "too_many_nodes", str(nodes))
         i += 1
@@ -309,6 +335,58 @@ def check(source: str, *, max_chars: int) -> None:
         raise TikzSourceError("unbalanced_braces", 1, 1, f"profondità finale {depth}")
     if closed_outer_at is None:
         raise TikzSourceError("structure", 1, 1, "ambiente esterno non chiuso")
+
+
+def _skip_group(source: str, i: int) -> int:
+    """Indice dopo la graffa che chiude il gruppo aperto in `i`."""
+    depth = 0
+    while i < len(source):
+        ch = source[i]
+        if ch == "\\":
+            i += 2
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return i + 1
+        i += 1
+    return len(source)
+
+
+def _foreach_body(source: str, pos: int) -> tuple[int, int] | None:
+    """Intervallo (inizio, fine) del CORPO di un `\foreach`, con `pos` alla
+    fine delle variabili: dopo le opzioni, `in` e la lista fra graffe. Il
+    corpo è un gruppo `{…}` oppure l'istruzione fino al `;` allo stesso
+    livello. Le variabili valgono solo lì: nella lista e dopo il ciclo il
+    nome è quello di TeX. None se la forma non è riconosciuta (variabili
+    senza campo: il loro uso viene rifiutato)."""
+    match = _FOREACH_IN_RE.match(source, pos)
+    if match is None or source[match.end() : match.end() + 1] != "{":
+        return None
+    i = _skip_group(source, match.end())
+    while i < len(source) and source[i].isspace():
+        i += 1
+    if source[i : i + 1] == "{":
+        return (i, _skip_group(source, i))
+    depth = 0
+    j = i
+    while j < len(source):
+        ch = source[j]
+        if ch == "\\":
+            j += 2
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            if depth == 0:
+                return (i, j)
+            depth -= 1
+        elif ch == ";" and depth == 0:
+            return (i, j + 1)
+        j += 1
+    return (i, len(source))
 
 
 def _check_plot(source: str, offset: int, statement: list[str]) -> None:
