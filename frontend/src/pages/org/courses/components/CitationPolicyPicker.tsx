@@ -198,6 +198,8 @@ interface ChipProps {
   confirm?: boolean;
   /** Nome del documento per la nota di conferma. */
   docName?: string;
+  /** Nota in più nella conferma (es. figure già collocate che restano). */
+  confirmNote?: string;
   /** Mutazione in corso: pill con spinner e popover disabilitato. */
   pending?: boolean;
   /** Prefisso della pill (es. "Fonti:"), utile in barre compatte. */
@@ -211,6 +213,7 @@ export function CitationPolicyChip({
   readOnly,
   confirm,
   docName,
+  confirmNote,
   pending,
   prefix,
   className,
@@ -340,6 +343,9 @@ export function CitationPolicyChip({
                 { name: docName ?? "" },
               )}
             </p>
+            {confirmNote && (
+              <p className="text-xs leading-snug text-muted-foreground">{confirmNote}</p>
+            )}
             <div className="flex justify-end gap-1.5">
               <Button variant="ghost" size="sm" onClick={close}>
                 {t("common.cancel")}

@@ -372,7 +372,8 @@
         "updated": "Citation policy updated.",
         "confirmTitle": "Change the citation policy?",
         "confirmContentOnly": "\"{{name}}\" will become a confidential source: its content stays in use but the origin will no longer be cited. The summary will be scrubbed and re-analyzed automatically. Already generated content does not change: regenerate to apply.",
-        "confirmGeneric": "The new setting for \"{{name}}\" only applies to future generations. Already generated content does not change: regenerate to apply."
+        "confirmGeneric": "The new setting for \"{{name}}\" only applies to future generations. Already generated content does not change: regenerate to apply.",
+        "figuresNote": "Figures from this document already placed in lessons stay, with their source, until the lessons are regenerated; they will no longer be suggested if the document is not citable."
       },
       "summary": {
         "pending": "To process",

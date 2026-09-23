@@ -310,6 +310,11 @@ export function CourseDocumentUploader({
                     readOnly={disabled}
                     confirm
                     docName={d.filename_original}
+                    confirmNote={
+                      (d.figures_count ?? 0) > 0
+                        ? t("courses.docs.citationPolicy.figuresNote")
+                        : undefined
+                    }
                     pending={
                       policyMut.isPending &&
                       policyMut.variables?.doc.id === d.id

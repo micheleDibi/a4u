@@ -372,7 +372,8 @@
         "updated": "Politica di citazione aggiornata.",
         "confirmTitle": "Cambiare la politica di citazione?",
         "confirmContentOnly": "\"{{name}}\" diventerà una fonte riservata: il contenuto resterà in uso ma l'origine non verrà più citata. Il riassunto verrà ripulito e rielaborato automaticamente. I contenuti già generati non cambiano: rigenera per applicare la nuova impostazione.",
-        "confirmGeneric": "La nuova impostazione per \"{{name}}\" vale solo per le generazioni future. I contenuti già generati non cambiano: rigenera per applicare."
+        "confirmGeneric": "La nuova impostazione per \"{{name}}\" vale solo per le generazioni future. I contenuti già generati non cambiano: rigenera per applicare.",
+        "figuresNote": "Le figure di questo documento già collocate nelle lezioni restano, con la loro fonte, finché le lezioni non vengono rigenerate; non verranno più proposte se il documento non è citabile."
       },
       "summary": {
         "pending": "Da elaborare",
