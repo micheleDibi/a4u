@@ -322,7 +322,7 @@ proprio nel prompt di Fase 3.
 | `FIGURE_LITERATURE_TIMEOUT_SECONDS` | `300` | Tempo massimo della verifica di una lezione. |
 | `FIGURE_LITERATURE_MAX_IMAGE_MB` | `20` | Byte massimi di un'immagine scaricata. |
 | `FIGURE_LITERATURE_MAX_PDF_MB` | `30` | Byte massimi di un PDF OpenAlex. |
-| `FIGURE_LITERATURE_MAX_IMAGE_PIXELS` | `40000000` | Pixel massimi di un'immagine (controllati prima di decodificarla). |
+| `FIGURE_LITERATURE_MAX_IMAGE_PIXELS` | `16000000` | Pixel massimi di un'immagine, controllati prima di decodificarla (le miniature di Commons sono larghe 2000 px; 16 MP tengono bassi i picchi di memoria). |
 | `FIGURE_LITERATURE_MAX_PDF_PAGES` | `40` | Pagine massime di un PDF OpenAlex (oltre: scartato). |
 | `FIGURE_LITERATURE_IMAGE_WIDTH` | `2000` | Larghezza del PNG chiesto a Commons (anche per gli SVG, resi da Commons). |
 | `FIGURE_LITERATURE_AUTO_RETRY_MAX` | `2` | Ripetizioni su errori recuperabili (rete, 429, 5xx), poi `failed`. |

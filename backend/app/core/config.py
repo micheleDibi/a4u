@@ -444,7 +444,7 @@ class Settings(BaseSettings):
     # massimi, pagine massime di un PDF OpenAlex.
     figure_literature_max_image_mb: int = 20
     figure_literature_max_pdf_mb: int = 30
-    figure_literature_max_image_pixels: int = 40_000_000
+    figure_literature_max_image_pixels: int = 16_000_000
     figure_literature_max_pdf_pages: int = 40
     # Lato del PNG chiesto a Wikimedia (anche per gli SVG, resi da Commons).
     figure_literature_image_width: int = 2_000

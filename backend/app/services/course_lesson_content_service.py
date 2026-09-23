@@ -666,6 +666,16 @@ def build_assessment_user_prompt(course: Course, lesson: CourseLesson) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _reset_figure_gap(lesson: CourseLesson) -> None:
+    """Richiesta esplicita dell'utente: una verifica dei buchi di figure
+    saltata o fallita (documenti non ancora estratti, errori) si ripete. Una
+    verifica `done` resta: la letteratura è già stata consultata (WP5)."""
+    if lesson.figures_gap_status in ("skipped", "failed"):
+        lesson.figures_gap_status = None
+        lesson.figures_gap_attempts = 0
+        lesson.figures_gap_requested_at = None
+
+
 def _reset_attempts_for_request(lesson: CourseLesson) -> int | None:
     """Azzera il budget di auto-retry quando la richiesta arriva
     dall'utente su una lezione ferma (`failed`/`empty`).
@@ -708,6 +718,7 @@ async def request_lesson_generation(
         )
 
     attempts_reset_from = _reset_attempts_for_request(lesson)
+    _reset_figure_gap(lesson)
     lesson.content_status = "pending"
     lesson.content_error = None
     lesson.content_progress = 0
@@ -770,6 +781,7 @@ async def request_all_lessons_generation(
     for lesson in eligible_lessons:
         if _reset_attempts_for_request(lesson) is not None:
             attempts_reset += 1
+        _reset_figure_gap(lesson)
         lesson.content_status = "pending"
         lesson.content_error = None
         lesson.content_progress = 0
@@ -831,6 +843,7 @@ async def request_missing_lessons_generation(
     for lesson in missing_lessons:
         if _reset_attempts_for_request(lesson) is not None:
             attempts_reset += 1
+        _reset_figure_gap(lesson)
         lesson.content_status = "pending"
         lesson.content_error = None
         lesson.content_progress = 0

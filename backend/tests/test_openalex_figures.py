@@ -190,5 +190,42 @@ async def test_api_key_and_open_works_filter(monkeypatch: pytest.MonkeyPatch) ->
     assert openalex_client.oa_location_license(works[0]) == "cc_by"
     params = dict(seen[0].url.params)
     assert params["api_key"] == "k-123"
-    assert params["filter"].startswith("is_oa:true,best_oa_location.license:cc-by|")
-    assert "cc-by-nc-nd" in params["filter"]
+    # Solo licenze aperte per le figure (niente NC/ND riprodotte in automatico).
+    assert params["filter"] == (
+        "is_oa:true,best_oa_location.license:cc-by|cc-by-sa|cc0|public-domain"
+    )
+
+
+async def test_non_json_answers_become_openalex_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        openalex_client,
+        "_client",
+        _mock_client(lambda r: httpx.Response(200, content=b"<html>proxy</html>")),
+    )
+    with pytest.raises(OpenAlexError):
+        await openalex_client.get_work("W42")
+    with pytest.raises(OpenAlexError):
+        await openalex_client.search_open_works("x")
+
+
+def test_pdf_and_license_come_from_the_same_location() -> None:
+    work = _to_work(
+        _work(
+            best_oa_location={"landing_page_url": "https://x.org/abs", "license": "cc-by"},
+            open_access={"is_oa": True, "oa_url": "https://mirror.example/a.pdf"},
+        )
+    )
+    # Il PDF di un'altra location non vale per la licenza della migliore.
+    assert openalex_client.oa_best_pdf_url(work) is None
+
+
+def test_httpx_request_urls_are_not_logged() -> None:
+    """La API key sta nella query string: httpx non deve loggarla a INFO."""
+    import logging
+
+    from app.core.config import get_settings
+    from app.core.logging import configure_logging
+
+    configure_logging(get_settings())
+    assert logging.getLogger("httpx").getEffectiveLevel() >= logging.WARNING
+    assert logging.getLogger("httpcore").getEffectiveLevel() >= logging.WARNING

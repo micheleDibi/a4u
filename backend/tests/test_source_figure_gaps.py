@@ -124,6 +124,21 @@ def _verdict(relevant: bool = True) -> relevance.FigureRelevance:
     )
 
 
+@pytest.fixture(autouse=True)
+async def _isolate_gap_queue(seeded_db: AsyncSession) -> None:
+    """Il DB dei test è condiviso fra i file: le lezioni in coda lasciate da
+    altri test non devono entrare nella coda dei buchi di questi."""
+    await seeded_db.execute(
+        update(CourseLesson)
+        .where(
+            (CourseLesson.figures_gap_status.is_(None))
+            | (CourseLesson.figures_gap_status.in_(("pending", "processing")))
+        )
+        .values(figures_gap_status="done")
+    )
+    await seeded_db.commit()
+
+
 @pytest.fixture
 def env(monkeypatch: pytest.MonkeyPatch, _engine: Any) -> dict[str, Any]:
     from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -507,3 +522,248 @@ async def test_openalex_figures_come_from_the_open_access_pdf(
     assert resolved["SRC-y"].attribution_text == (
         "Fonte: Mario Rossi, «Vibrometria laser Doppler», Misure, 2021, fig. 2.1, p. 1 (CC BY)"
     )
+
+
+async def test_gap_is_checked_only_before_phase_3(
+    seeded_db: AsyncSession, env: dict[str, Any]
+) -> None:
+    """Una verifica rimasta in coda dopo la partenza della Fase 3 si chiude
+    senza costi (il contenuto è già scritto)."""
+    _course_id, lesson_id = await _lesson(seeded_db)
+    await seeded_db.execute(
+        update(CourseLesson).where(CourseLesson.id == lesson_id).values(content_status="ready")
+    )
+    await seeded_db.commit()
+    await gap_worker._tick()
+    lesson = await _fresh(seeded_db, lesson_id)
+    assert lesson.figures_gap_status == "skipped"
+    assert lesson.figures_gap_stats == {"reason": "phase3_started"}
+    assert env["calls"] == []
+
+
+async def test_user_regeneration_repeats_a_skipped_check(
+    seeded_db: AsyncSession, env: dict[str, Any]
+) -> None:
+    from app.services.course_lesson_content_service import _reset_figure_gap
+
+    _course_id, lesson_id = await _lesson(seeded_db)
+    lesson = await _fresh(seeded_db, lesson_id)
+    lesson.figures_gap_status = "skipped"
+    lesson.figures_gap_attempts = 2
+    _reset_figure_gap(lesson)
+    assert (lesson.figures_gap_status, lesson.figures_gap_attempts) == (None, 0)
+    lesson.figures_gap_status = "done"
+    _reset_figure_gap(lesson)
+    assert lesson.figures_gap_status == "done"  # la letteratura è già stata consultata
+
+
+async def test_unexpected_errors_keep_the_cost_and_retry(
+    seeded_db: AsyncSession, env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _course_id, lesson_id = await _lesson(seeded_db)
+
+    async def broken(*args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("figlio caduto")
+
+    monkeypatch.setattr(relevance, "assess_candidate", broken)
+    await gap_worker._tick()
+    lesson = await _fresh(seeded_db, lesson_id)
+    assert (lesson.figures_gap_status, lesson.figures_gap_attempts) == ("pending", 1)
+    assert lesson.figures_gap_usage["calls"] == 1  # termini di ricerca pagati
+    assert "figlio caduto" in lesson.figures_gap_stats["error"]
+
+
+async def test_interrupted_checks_count_as_attempts(
+    seeded_db: AsyncSession, env: dict[str, Any]
+) -> None:
+    _course_id, lesson_id = await _lesson(seeded_db)
+    limit = int(env["settings"].figure_literature_auto_retry_max)
+    await seeded_db.execute(
+        update(CourseLesson)
+        .where(CourseLesson.id == lesson_id)
+        .values(figures_gap_status="processing", figures_gap_attempts=limit - 1)
+    )
+    await seeded_db.commit()
+    await gap_worker.reset_interrupted()
+    lesson = await _fresh(seeded_db, lesson_id)
+    assert (lesson.figures_gap_status, lesson.figures_gap_attempts) == ("pending", limit)
+    await seeded_db.execute(
+        update(CourseLesson)
+        .where(CourseLesson.id == lesson_id)
+        .values(figures_gap_status="processing")
+    )
+    await seeded_db.commit()
+    await gap_worker.reset_interrupted()
+    assert (await _fresh(seeded_db, lesson_id)).figures_gap_status == "failed"
+
+
+async def test_non_open_licenses_never_reach_the_vision(
+    seeded_db: AsyncSession, env: dict[str, Any]
+) -> None:
+    course_id, _lesson_id = await _lesson(seeded_db)
+    run = gaps._Run(
+        course_id=course_id,
+        profile={},
+        context=relevance.LessonContext("L", (), (), "it"),
+        target=1,
+        max_candidates=5,
+        deadline=10**12,
+        hashes=[],
+        known_ids=set(),
+    )
+    kept = await gaps._consider(
+        seeded_db,
+        run,
+        image_bytes=_image(1),
+        source_kind="openalex",
+        locator="oa-w1-p0001",
+        external_id="W1#p0001",
+        source_title="T",
+        source_text=None,
+        license="cc_by_nc",
+        license_url=None,
+        attribution={"title": "T"},
+        source_url=None,
+        caption=None,
+    )
+    assert kept is False and run.stats == {"license_not_open": 1}
+    no_attr = await gaps._consider(
+        seeded_db,
+        run,
+        image_bytes=_image(1),
+        source_kind="openalex",
+        locator="oa-w1-p0002",
+        external_id="W1#p0002",
+        source_title=None,
+        source_text=None,
+        license="cc_by",
+        license_url=None,
+        attribution={"year": 2020},
+        source_url=None,
+        caption=None,
+    )
+    assert no_attr is False and run.stats["attribution_missing"] == 1
+    assert [c for c in env["calls"] if c[0] == "assess"] == []
+
+
+async def test_external_file_names_are_not_derivable(
+    seeded_db: AsyncSession, env: dict[str, Any]
+) -> None:
+    course_id, _lesson_id = await _lesson(seeded_db)
+    await gap_worker._tick()
+    (row,) = (
+        (
+            await seeded_db.execute(
+                select(CourseDocumentFigure).where(CourseDocumentFigure.course_id == course_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    name = str(row.storage_path).rsplit("/", 1)[-1]
+    # wm-<pageid>-<casuale 8>-<sha12>.png
+    parts = name.removesuffix(".png").split("-")
+    assert parts[:2] == ["wm", "101"] and len(parts[2]) == 8 and len(parts[3]) == 12
+
+
+async def test_caps_and_quality_filters(
+    seeded_db: AsyncSession, env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Tetto per corso, candidate massime e filtri sul verdetto."""
+    course_id, lesson_id = await _lesson(seeded_db)
+    # Tetto per corso già raggiunto: nessuna chiamata.
+    capped = env["settings"].model_copy(update={"figure_literature_max_per_course": 0})
+    monkeypatch.setattr(gaps, "get_settings", lambda: capped)
+    await gap_worker._tick()
+    lesson = await _fresh(seeded_db, lesson_id)
+    assert lesson.figures_gap_stats["reason"] == "course_cap" and env["calls"] == []
+    # Nessuna candidata ammessa: nessuna chiamata, nemmeno i termini.
+    none = env["settings"].model_copy(update={"figure_literature_max_candidates_per_lesson": 0})
+    monkeypatch.setattr(gaps, "get_settings", lambda: none)
+    await seeded_db.execute(
+        update(CourseLesson)
+        .where(CourseLesson.id == lesson_id)
+        .values(figures_gap_status="pending")
+    )
+    await seeded_db.commit()
+    await gap_worker._tick()
+    lesson = await _fresh(seeded_db, lesson_id)
+    assert lesson.figures_gap_stats["reason"] == "no_room" and env["calls"] == []
+    # Verdetti pertinenti ma non utili, di qualità bassa o loghi: scartati.
+    monkeypatch.setattr(gaps, "get_settings", lambda: env["settings"])
+    verdicts = iter(
+        [
+            _verdict().model_copy(update={"is_useful_for_teaching": False}),
+            _verdict().model_copy(update={"quality_score": 1}),
+        ]
+    )
+
+    async def assess(image: bytes, context: Any, **kw: Any) -> Any:
+        return next(verdicts), dict(USAGE)
+
+    monkeypatch.setattr(relevance, "assess_candidate", assess)
+    await seeded_db.execute(
+        update(CourseLesson)
+        .where(CourseLesson.id == lesson_id)
+        .values(figures_gap_status="pending")
+    )
+    await seeded_db.commit()
+    await gap_worker._tick()
+    lesson = await _fresh(seeded_db, lesson_id)
+    assert lesson.figures_gap_stats["not_relevant"] == 2 and lesson.figures_gap_stats["kept"] == 0
+    count = await seeded_db.scalar(
+        select(func.count(CourseDocumentFigure.id)).where(
+            CourseDocumentFigure.course_id == course_id
+        )
+    )
+    assert count == 0
+
+
+async def test_vision_rate_limit_retries_with_the_paid_usage(
+    seeded_db: AsyncSession, env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _course_id, lesson_id = await _lesson(seeded_db)
+
+    async def limited(image: bytes, context: Any, **kw: Any) -> Any:
+        raise relevance.OpenAIFigureRelevanceError(
+            status=429, message="rate limit", usage=dict(USAGE)
+        )
+
+    monkeypatch.setattr(relevance, "assess_candidate", limited)
+    await gap_worker._tick()
+    lesson = await _fresh(seeded_db, lesson_id)
+    assert (lesson.figures_gap_status, lesson.figures_gap_attempts) == ("pending", 1)
+    # Termini + la valutazione rifiutata (pagata anche se 429 in coda).
+    assert lesson.figures_gap_usage["calls"] == 2
+
+
+async def test_phase_3_tick_requests_the_gap_check(
+    seeded_db: AsyncSession, env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`content_worker._tick` stesso marca la verifica e non avvia la lezione."""
+    _course_id, lesson_id = await _lesson(seeded_db)
+    await seeded_db.execute(
+        update(CourseLesson)
+        .where(CourseLesson.id == lesson_id)
+        .values(figures_gap_status=None, figures_gap_requested_at=None)
+    )
+    await seeded_db.commit()
+    dispatched: list[uuid.UUID] = []
+
+    async def record(lid: uuid.UUID) -> None:
+        dispatched.append(lid)
+
+    monkeypatch.setattr(content_worker, "_bound_process", record)
+    monkeypatch.setattr(content_worker, "_inflight", set())
+    await content_worker._tick()
+    import asyncio
+
+    await asyncio.sleep(0)
+    lesson = await _fresh(seeded_db, lesson_id)
+    assert lesson.figures_gap_status == "pending" and lesson_id not in dispatched
+    # Con la letteratura spenta: niente attesa, niente richiesta.
+    off = env["settings"].model_copy(update={"figure_literature_enabled": False})
+    monkeypatch.setattr(content_worker, "get_settings", lambda: off)
+    await content_worker._tick()
+    await asyncio.sleep(0)
+    assert lesson_id in dispatched

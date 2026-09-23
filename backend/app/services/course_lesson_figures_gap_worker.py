@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import time
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -42,6 +43,8 @@ log = get_logger("app.course_lesson_figures_gap_worker")
 
 # Attesa minima prima di un nuovo tentativo, moltiplicata per i tentativi.
 RETRY_BASE_SECONDS = 60
+# Tempo per giro del worker: più lezioni per giro, poi la pausa.
+TICK_BUDGET_SECONDS = 120.0
 
 
 def _now() -> datetime:
@@ -70,14 +73,30 @@ def _extracting_documents() -> Any:
 
 async def claim_next(db: AsyncSession) -> CourseLesson | None:
     """Prima lezione `pending` pronta (backoff scaduto, estrazioni finite),
-    portata a `processing` con un UPDATE condizionale."""
+    portata a `processing` con un UPDATE condizionale. Una verifica serve
+    solo PRIMA della Fase 3: se la lezione non è più in coda per il
+    contenuto, la verifica si chiude `skipped` senza costi."""
     now = _now()
+    await db.execute(
+        update(CourseLesson)
+        .where(
+            CourseLesson.figures_gap_status == "pending",
+            CourseLesson.content_status != "pending",
+        )
+        .values(
+            figures_gap_status="skipped",
+            figures_gap_checked_at=now,
+            figures_gap_stats={"reason": "phase3_started"},
+        )
+    )
+    await db.commit()
     candidates = (
         (
             await db.execute(
                 select(CourseLesson.id, CourseLesson.figures_gap_attempts)
                 .where(
                     CourseLesson.figures_gap_status == "pending",
+                    CourseLesson.content_status == "pending",
                     ~_extracting_documents(),
                 )
                 .order_by(CourseLesson.figures_gap_requested_at.asc().nulls_first())
@@ -170,11 +189,21 @@ def _merged(previous: dict[str, Any] | None, usage: dict[str, Any] | None) -> An
 
 
 async def _tick() -> None:
+    """Verifica le lezioni pronte una dopo l'altra, entro un tempo per giro:
+    le verifiche senza ricerca (figure già sufficienti) durano millisecondi e
+    le lezioni di un corso grande non devono aspettare un giro ciascuna."""
+    budget = time.monotonic() + TICK_BUDGET_SECONDS
+    while time.monotonic() < budget:
+        if not await _process_next():
+            return
+
+
+async def _process_next() -> bool:
     async with async_session_factory() as db:
         try:
             lesson = await claim_next(db)
             if lesson is None:
-                return
+                return False
             lesson_id = lesson.id
             try:
                 await process_lesson(db, lesson)
@@ -187,19 +216,40 @@ async def _tick() -> None:
                     fresh.figures_gap_checked_at = _now()
                     fresh.figures_gap_stats = {"error": str(exc)[:500]}
                     await db.commit()
+            return True
         except Exception as exc:  # pragma: no cover
             await db.rollback()
             log.warning("figures_gap_tick_failed", error=str(exc))
+            return False
 
 
 async def reset_interrupted() -> None:
     """All'avvio (un solo processo): le verifiche rimaste `processing`
-    tornano `pending`."""
+    tornano `pending` e la ripresa conta come un tentativo (un contenuto che
+    fa cadere il processo non riparte all'infinito); oltre il tetto,
+    `failed`."""
+    limit = int(get_settings().figure_literature_auto_retry_max)
     async with async_session_factory() as db:
         await db.execute(
             update(CourseLesson)
+            .where(
+                CourseLesson.figures_gap_status == "processing",
+                CourseLesson.figures_gap_attempts >= limit,
+            )
+            .values(
+                figures_gap_status="failed",
+                figures_gap_attempts=CourseLesson.figures_gap_attempts + 1,
+                figures_gap_checked_at=_now(),
+            )
+        )
+        await db.execute(
+            update(CourseLesson)
             .where(CourseLesson.figures_gap_status == "processing")
-            .values(figures_gap_status="pending")
+            .values(
+                figures_gap_status="pending",
+                figures_gap_attempts=CourseLesson.figures_gap_attempts + 1,
+                figures_gap_checked_at=_now(),
+            )
         )
         await db.commit()
 
@@ -226,6 +276,10 @@ def start_worker() -> None:
     if not literature_active():
         log.info("figures_gap_worker_disabled")
         return
+    if not (get_settings().papers_polite_email or "").strip():
+        # La policy di Wikimedia chiede un contatto nello User-Agent: senza,
+        # le richieste possono essere bloccate (403).
+        log.warning("figures_gap_no_contact_email", setting="PAPERS_POLITE_EMAIL")
     if _worker_task is not None and not _worker_task.done():
         return
     _stop_event = asyncio.Event()

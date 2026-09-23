@@ -41,6 +41,7 @@ from app.services.openalex_client import (
     OpenAlexWork,
     download_pdf,
     get_work,
+    oa_best_pdf_url,
     oa_location_license,
 )
 
@@ -222,7 +223,11 @@ async def import_paper(
         try:
             work = await get_work(paper.id)
             paper = _from_server(paper, work)
-            license_code = oa_location_license(work)
+            # La licenza vale solo per il PDF della sua location.
+            best_pdf = oa_best_pdf_url(work)
+            if best_pdf:
+                paper = paper.model_copy(update={"oa_pdf_url": best_pdf})
+                license_code = oa_location_license(work)
         except OpenAlexError as exc:
             log.warning(
                 "paper_import_reread_failed_fallback_to_metadata",

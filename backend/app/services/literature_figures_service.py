@@ -39,6 +39,7 @@ import shutil
 import tempfile
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -52,7 +53,10 @@ from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.models.course import Course
 from app.models.course_document import CourseDocument
-from app.models.course_document_figure import CourseDocumentFigure
+from app.models.course_document_figure import (
+    FIGURE_ATTRIBUTION_IDENTIFYING_KEYS,
+    CourseDocumentFigure,
+)
 from app.models.course_lesson import CourseLesson
 from app.services import image_limits, openalex_client, source_figure_catalog, wikimedia_client
 from app.services import openai_figure_relevance_service as relevance
@@ -63,7 +67,9 @@ from app.services.document_figures_service import EXTRACTABLE_MIMES
 from app.services.figure_attribution import figure_number_from_label
 from app.services.lesson_document_selection import build_query_profile, terms
 from app.services.openai_client import OpenAINotConfiguredError
+from app.services.remote_storage import StorageError
 from app.services.safe_http import SafeFetchError
+from app.services.source_figure_policy import OPEN_LICENSES
 
 log = get_logger("app.literature_figures")
 
@@ -232,6 +238,14 @@ async def _consider(
 ) -> bool:
     """Valuta una candidata e, se pertinente, la salva nel catalogo."""
     settings = get_settings()
+    # Prima della Vision (che costa): solo licenze aperte (come Wikimedia e
+    # la politica open_only) e un'attribuzione che nomini la fonte.
+    if license not in OPEN_LICENSES:
+        run.count("license_not_open")
+        return False
+    if not any(attribution.get(key) for key in FIGURE_ATTRIBUTION_IDENTIFYING_KEYS):
+        run.count("attribution_missing")
+        return False
     try:
         safe = await asyncio.to_thread(
             image_limits.load_image,
@@ -265,14 +279,19 @@ async def _consider(
     ):
         run.count("not_relevant")
         return False
-    sha12 = hashlib.sha256(safe.data).hexdigest()[:12]
+    # Nome non ricavabile dall'esterno (U5): lo sha di un rendering pubblico
+    # di Commons sarebbe calcolabile, il suffisso casuale no.
+    stem = f"{locator}-{uuid.uuid4().hex[:8]}-{hashlib.sha256(safe.data).hexdigest()[:12]}"
     ext = "jpg" if safe.mime == "image/jpeg" else "png"
     course_id = run.course_id
-    storage_path = figure_storage.figure_path(course_id, None, f"{locator}-{sha12}.{ext}")
-    preview_path = figure_storage.figure_path(course_id, None, f"{locator}-{sha12}-preview.jpg")
+    storage_path = figure_storage.figure_path(course_id, None, f"{stem}.{ext}")
+    preview_path = figure_storage.figure_path(course_id, None, f"{stem}-preview.jpg")
     preview = await asyncio.to_thread(cropper.preview, safe.image)
-    await asyncio.to_thread(figure_storage.upload, storage_path, safe.data)
-    await asyncio.to_thread(figure_storage.upload, preview_path, preview)
+    try:
+        await asyncio.to_thread(figure_storage.upload, storage_path, safe.data)
+        await asyncio.to_thread(figure_storage.upload, preview_path, preview)
+    except (StorageError, OSError) as exc:
+        raise GapRetryError(f"storage: {exc}") from exc
     now = _now()
     db.add(
         CourseDocumentFigure(
@@ -312,12 +331,16 @@ async def _consider(
     )
     try:
         await db.commit()
-    except IntegrityError:
-        # Stessa figura esterna salvata nel frattempo: niente doppioni.
+    except IntegrityError as exc:
         await db.rollback()
         await asyncio.to_thread(figure_storage.delete, storage_path)
         await asyncio.to_thread(figure_storage.delete, preview_path)
-        run.count("duplicates")
+        if "uq_course_document_figure_external" in str(exc):
+            # Stessa figura esterna salvata nel frattempo: niente doppioni.
+            run.count("duplicates")
+        else:
+            log.error("figures_gap_row_rejected", error=str(exc)[:300])
+            run.count("db_rejected")
         return False
     run.hashes.append(digest)
     run.known_ids.add(external_id)
@@ -370,53 +393,94 @@ async def _from_wikimedia(db: AsyncSession, run: _Run, queries: list[str]) -> No
             )
 
 
-async def extract_pdf_figures(pdf: bytes, *, max_pages: int) -> list[dict[str, Any]]:
+class HeavyJobBusyError(Exception):
+    """Un'estrazione dei documenti tiene il lock oltre la scadenza."""
+
+
+async def extract_pdf_figures(
+    pdf: bytes,
+    *,
+    max_pages: int,
+    wait_seconds: float,
+    select: Callable[[list[dict[str, Any]]], list[dict[str, Any]]],
+) -> list[dict[str, Any]]:
     """Ritagli di un PDF di terzi con lo stesso processo figlio dei documenti
-    (motore di `FIGURE_EXTRACTION_ENGINE`, sotto `HEAVY_JOB_LOCK`). Ogni voce
-    è l'evento del figlio con `data` (i byte del ritaglio)."""
+    (motore di `FIGURE_EXTRACTION_ENGINE`, sotto `HEAVY_JOB_LOCK`, atteso al
+    più `wait_seconds`). Il PDF lo apre SOLO il figlio (pagine comprese: il
+    tetto `max_pages` si controlla sul numero che restituisce). `select`
+    sceglie fra gli eventi dei ritagli; solo per quelli si leggono i byte
+    (`data`)."""
     from app.services import course_document_figures_worker as figures_worker
     from app.services.document_figures.runner import ChildSession
     from app.services.heavy_job_lock import HEAVY_JOB_LOCK
 
     config = figures_worker._config()
     workdir = Path(tempfile.mkdtemp(prefix="a4u-literature-"))
-    out: list[dict[str, Any]] = []
     try:
         source = workdir / "source.pdf"
         await asyncio.to_thread(source.write_bytes, pdf)
-        async with HEAVY_JOB_LOCK:
+        try:
+            await asyncio.wait_for(HEAVY_JOB_LOCK.acquire(), timeout=max(0.1, wait_seconds))
+        except TimeoutError as exc:
+            raise HeavyJobBusyError("estrazione dei documenti in corso") from exc
+        try:
             if figures_worker._memory_low():
                 raise GapRetryError("memoria disponibile sotto la soglia")
             await figures_worker._ensure_engine(config, workdir)
             session = ChildSession(config, workdir)
+            events: list[dict[str, Any]] = []
             try:
                 pages = await session.start(source_name=source.name, mime="application/pdf")
-                last = min(pages, max_pages)
+                if pages > max_pages:
+                    raise image_limits.ImageLimitError(
+                        "too_many_pages", f"{pages} pagine oltre {max_pages}"
+                    )
                 block = max(1, int(get_settings().figure_extraction_block_pages))
                 first = 1
-                while first <= last:
-                    end = min(first + block - 1, last)
+                while first <= pages:
+                    end = min(first + block - 1, pages)
                     result = await session.run_block(first, end)
-                    for event in result.figures:
-                        if event.get("reject_reason") or not event.get("file"):
-                            continue
-                        path = workdir / Path(str(event["file"])).name
-                        out.append({**event, "data": await asyncio.to_thread(path.read_bytes)})
+                    events.extend(
+                        e for e in result.figures if not e.get("reject_reason") and e.get("file")
+                    )
                     first = end + 1
             finally:
                 await session.close()
+        finally:
+            HEAVY_JOB_LOCK.release()
+        chosen = select(events)
+        return [
+            {
+                **event,
+                "data": await asyncio.to_thread(
+                    (workdir / Path(str(event["file"])).name).read_bytes
+                ),
+            }
+            for event in chosen
+        ]
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
-    return out
 
 
 def _caption_score(profile: dict[str, float], caption: str | None) -> float:
     return sum(profile.get(term, 0.0) for term in terms(caption))
 
 
+def _ranking_profile(run: _Run, queries: list[str], title: str | None) -> dict[str, float]:
+    """Profilo per le didascalie dei PDF, per lo più in inglese: quello della
+    lezione più i termini delle ricerche inglesi (PROMPT 20) e del titolo del
+    lavoro."""
+    profile = dict(run.profile)
+    for text in (*queries, title or ""):
+        for term in terms(text):
+            profile[term] = max(profile.get(term, 0.0), 1.0)
+    return profile
+
+
 async def _from_openalex(db: AsyncSession, run: _Run, queries: list[str]) -> None:
+    from app.services.document_figures.runner import ExtractionChildError
+
     settings = get_settings()
-    profile = run.profile
     for query in queries:
         if run.done:
             return
@@ -433,37 +497,64 @@ async def _from_openalex(db: AsyncSession, run: _Run, queries: list[str]) -> Non
             if run.done:
                 return
             license = openalex_client.oa_location_license(work)
-            if license is None or not work.oa_pdf_url:
+            pdf_url = openalex_client.oa_best_pdf_url(work)
+            if license not in OPEN_LICENSES or not pdf_url:
+                continue
+            title = wikimedia_client.plain_text(work.title, limit=500)
+            authors = [
+                a for a in (wikimedia_client.plain_text(n, limit=200) for n in work.authors) if a
+            ]
+            if not (title or authors):
+                run.count("attribution_missing")
                 continue
             try:
                 pdf = await openalex_client.download_pdf(
-                    work.oa_pdf_url,
-                    max_bytes=int(settings.figure_literature_max_pdf_mb) * 1024 * 1024,
-                )
-                pages = await asyncio.to_thread(
-                    image_limits.pdf_page_count,
-                    pdf,
-                    max_pages=int(settings.figure_literature_max_pdf_pages),
+                    pdf_url, max_bytes=int(settings.figure_literature_max_pdf_mb) * 1024 * 1024
                 )
             except openalex_client.OpenAlexError:
                 run.count("download_errors")
                 continue
+            profile = _ranking_profile(run, queries, title)
+
+            def choose(
+                events: list[dict[str, Any]], profile: dict[str, float] = profile
+            ) -> list[dict[str, Any]]:
+                scored = sorted(
+                    (
+                        (score, index, event)
+                        for index, event in enumerate(events)
+                        if (score := _caption_score(profile, event.get("caption"))) > 0
+                    ),
+                    key=lambda item: (-item[0], item[1]),
+                )
+                if scored:
+                    return [event for _s, _i, event in scored[:OPENALEX_FIGURES_PER_WORK]]
+                # Nessuna didascalia vicina alla lezione: una sola figura,
+                # la prima, e decide la Vision.
+                return events[:1]
+
+            try:
+                figures = await extract_pdf_figures(
+                    pdf,
+                    max_pages=int(settings.figure_literature_max_pdf_pages),
+                    wait_seconds=max(0.0, run.deadline - time.monotonic()),
+                    select=choose,
+                )
             except image_limits.ImageLimitError as exc:
                 run.count(f"rejected_{exc.code}")
                 continue
-            figures = await extract_pdf_figures(pdf, max_pages=pages)
-            ranked = sorted(
-                (
-                    (score, event)
-                    for event in figures
-                    if (score := _caption_score(profile, event.get("caption"))) > 0
-                ),
-                key=lambda item: -item[0],
-            )[:OPENALEX_FIGURES_PER_WORK]
+            except HeavyJobBusyError:
+                run.count("heavy_job_busy")
+                return
+            except ExtractionChildError as exc:
+                run.count(f"extraction_{exc.code}")
+                if exc.code == "engine_unavailable":
+                    return
+                continue
             work_key = work.id.rsplit("/", 1)[-1].lower()
             landing = openalex_client.oa_landing_url(work)
             doi_url = f"https://doi.org/{work.doi}" if work.doi else None
-            for _score, event in ranked:
+            for event in figures:
                 if run.done:
                     return
                 locator = str(event.get("locator") or "")
@@ -473,9 +564,9 @@ async def _from_openalex(db: AsyncSession, run: _Run, queries: list[str]) -> Non
                 run.known_ids.add(external_id)
                 figure_number = figure_number_from_label(event.get("source_label"))
                 attribution: dict[str, Any] = {
-                    "authors": work.authors[:20],
-                    "title": work.title,
-                    "container": work.journal,
+                    "authors": authors[:20],
+                    "title": title,
+                    "container": wikimedia_client.plain_text(work.journal, limit=300),
                     "year": work.publication_year,
                     "figure_number": figure_number,
                     "page": event.get("page"),
@@ -489,7 +580,7 @@ async def _from_openalex(db: AsyncSession, run: _Run, queries: list[str]) -> Non
                     source_kind="openalex",
                     locator=_safe_locator(f"oa-{work_key}-{locator}"),
                     external_id=external_id,
-                    source_title=work.title,
+                    source_title=title,
                     source_text=event.get("caption"),
                     license=license,
                     license_url=None,
@@ -514,6 +605,8 @@ async def check_lesson(db: AsyncSession, lesson: CourseLesson) -> GapOutcome:
     Solleva `GapRetryError` sugli errori recuperabili, con l'usage già
     pagato e l'esito parziale."""
     settings = get_settings()
+    # Valori semplici subito: dopo un rollback l'oggetto ORM è scaduto.
+    lesson_id = lesson.id
     course = await db.get(Course, lesson.course_id)
     if course is None:
         return GapOutcome("skipped", {"reason": "course_missing"}, None)
@@ -530,7 +623,7 @@ async def check_lesson(db: AsyncSession, lesson: CourseLesson) -> GapOutcome:
     if unknown:
         log.info(
             "figures_gap_documents_not_extracted",
-            lesson_id=str(lesson.id),
+            lesson_id=str(lesson_id),
             documents=unknown,
         )
         return GapOutcome(
@@ -550,6 +643,9 @@ async def check_lesson(db: AsyncSession, lesson: CourseLesson) -> GapOutcome:
         known_ids=await _course_external_ids(db, course.id),
         stats=dict(stats),
     )
+    if run.done:
+        # Niente posto o nessuna candidata ammessa: nessuna chiamata AI.
+        return GapOutcome("done", {**run.stats, "reason": "no_room", "kept": 0}, None)
     try:
         try:
             queries, usage = await relevance.search_terms(run.context)
@@ -571,6 +667,11 @@ async def check_lesson(db: AsyncSession, lesson: CourseLesson) -> GapOutcome:
     except GapRetryError as exc:
         # L'usage già pagato si conserva anche se la lezione torna in coda.
         raise GapRetryError(str(exc), run.usage, run.stats) from exc
+    except Exception as exc:
+        # Qualunque altro errore (figlio, storage, rete): stessa strada dei
+        # recuperabili, con il costo già pagato (G9) e il tetto dei tentativi.
+        log.warning("figures_gap_unexpected_error", lesson_id=str(lesson_id), error=str(exc))
+        raise GapRetryError(f"errore inatteso: {exc}", run.usage, run.stats) from exc
     run.stats.update(
         kept=run.kept,
         evaluated=run.evaluated,

@@ -121,6 +121,26 @@ _WORK_SELECT = (
 )
 
 
+# Licenze ammesse per le FIGURE della letteratura aperta: le stesse della
+# politica open_only e di Wikimedia (niente NC/ND riprodotte in automatico).
+_OA_FIGURE_LICENSES = ("cc-by", "cc-by-sa", "cc0", "public-domain")
+
+
+def oa_best_pdf_url(work: OpenAlexWork) -> str | None:
+    """PDF della location open access migliore, la stessa da cui viene la
+    licenza (niente landing page, niente URL di un'altra location)."""
+    best = work.raw.get("best_oa_location") or {}
+    url = best.get("pdf_url") if isinstance(best, dict) else None
+    return url if isinstance(url, str) and url.startswith(("https://", "http://")) else None
+
+
+def _json(resp: httpx.Response) -> Any:
+    try:
+        return resp.json()
+    except ValueError as exc:
+        raise OpenAlexError(status=None, message="Risposta OpenAlex non JSON.") from exc
+
+
 def oa_location_license(work: OpenAlexWork) -> str | None:
     """Licenza della location open access migliore, come codice della
     figura; None se assente o non riconosciuta."""
@@ -161,15 +181,16 @@ async def get_work(work_id: str) -> OpenAlexWork:
     except httpx.HTTPError as exc:
         raise OpenAlexError(status=None, message=f"Errore HTTP verso OpenAlex: {exc}") from exc
     _raise_for_status(resp)
-    data = resp.json()
+    data = _json(resp)
     if not isinstance(data, dict):
         raise OpenAlexError(status=None, message="Risposta OpenAlex non valida.")
     return _to_work(data)
 
 
 async def search_open_works(query: str, *, per_page: int = 5) -> list[OpenAlexWork]:
-    """Lavori open access con licenza CC o pubblico dominio e un PDF."""
-    licenses = "|".join(_OA_LICENSES)
+    """Lavori open access con licenza aperta (CC BY, CC BY-SA, CC0, pubblico
+    dominio) e il PDF della stessa location."""
+    licenses = "|".join(_OA_FIGURE_LICENSES)
     params: dict[str, Any] = {
         "search": query.strip(),
         "filter": f"is_oa:true,best_oa_location.license:{licenses}",
@@ -182,10 +203,10 @@ async def search_open_works(query: str, *, per_page: int = 5) -> list[OpenAlexWo
     except httpx.HTTPError as exc:
         raise OpenAlexError(status=None, message=f"Errore HTTP verso OpenAlex: {exc}") from exc
     _raise_for_status(resp)
-    data = resp.json()
+    data = _json(resp)
     results = data.get("results") if isinstance(data, dict) else None
     works = [_to_work(w) for w in results or [] if isinstance(w, dict)]
-    return [w for w in works if w.oa_pdf_url and oa_location_license(w)]
+    return [w for w in works if oa_best_pdf_url(w) and oa_location_license(w)]
 
 
 def _reconstruct_abstract(

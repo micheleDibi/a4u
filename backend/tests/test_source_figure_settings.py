@@ -63,7 +63,7 @@ _DEFAULTS: dict[str, object] = {
     "figure_literature_timeout_seconds": 300,
     "figure_literature_max_image_mb": 20,
     "figure_literature_max_pdf_mb": 30,
-    "figure_literature_max_image_pixels": 40_000_000,
+    "figure_literature_max_image_pixels": 16_000_000,
     "figure_literature_max_pdf_pages": 40,
     "figure_literature_image_width": 2000,
     "figure_literature_auto_retry_max": 2,
