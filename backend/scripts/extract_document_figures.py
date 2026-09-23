@@ -5,7 +5,8 @@ Nessun backfill automatico: i documenti caricati prima della funzione hanno
 l'estrazione (bottone «Estrai figure» o questo script). Senza `--apply` lo
 script elenca soltanto che cosa farebbe (dry-run, nessuna scrittura).
 
-- default: documenti mai richiesti (`figures_status` NULL) → in coda
+- default: documenti mai richiesti (`figures_status` NULL) o saltati
+  perché l'estrazione era spenta (`skipped/extraction_disabled`) → in coda
   (`pending`), o `skipped` con il motivo se non estraibili (politica,
   formato, estrazione spenta); il worker li prende uno alla volta;
 - `--retry-failed`: rimette in coda anche i documenti `failed`;
@@ -64,13 +65,21 @@ async def run(args: argparse.Namespace) -> int:
                     print(f"{row.course_id}  {row.id}  {row.storage_path}")
                 print(f"figure staccate non usate {verb}: {len(orphans)}")
                 return 0
-            statuses = [None, "failed"] if args.retry_failed else [None]
+
+            def eligible(doc: CourseDocument) -> bool:
+                if doc.figures_status is None:
+                    return True
+                if (doc.figures_status, doc.figures_error_code) == (
+                    "skipped",
+                    "extraction_disabled",
+                ):
+                    return True
+                return bool(args.retry_failed) and doc.figures_status == "failed"
+
             query = select(CourseDocument).order_by(CourseDocument.created_at.asc())
             if args.course is not None:
                 query = query.where(CourseDocument.course_id == args.course)
-            docs = [
-                d for d in (await db.execute(query)).scalars().all() if d.figures_status in statuses
-            ]
+            docs = [d for d in (await db.execute(query)).scalars().all() if eligible(d)]
             queued = skipped = 0
             for doc in docs:
                 code = service.skip_code(doc)

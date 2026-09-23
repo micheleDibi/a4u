@@ -30,6 +30,7 @@ class _Fig:
     status: str = "ready"
     source_kind: str = "uploaded"
     excluded_by_user: bool = False
+    reject_reason: str | None = None
     license: str = "all_rights_reserved"
     detached_at: object = None
     attribution: dict[str, Any] | None = None
@@ -217,6 +218,15 @@ _CASES: list[tuple[str, _Fig | None, _Doc | None, str, dict[str, Any], str | Non
         {},
         "document_mismatch",
         "document_mismatch",
+    ),
+    (
+        "row of a previous extraction (superseded), already placed",
+        _Fig(reject_reason="superseded"),
+        _Doc(),
+        "cite_all",
+        {},
+        "superseded",
+        None,
     ),
     (
         "no file path",

@@ -8,11 +8,14 @@ export const FIGURE_EXTRACTABLE_MIME = [
 ];
 
 /** Documento da cui si possono chiedere le figure (citabile, formato
- *  supportato, estrazione mai chiesta o fallita). */
+ *  supportato, estrazione mai chiesta, fallita o saltata perché era spenta:
+ *  riaccesa l'estrazione, si richiede di nuovo). */
 export function canRequestFigures(d: CourseDocumentOut): boolean {
   return (
     d.citation_policy === "citable" &&
     FIGURE_EXTRACTABLE_MIME.includes(d.mime_type) &&
-    (d.figures_status === null || d.figures_status === "failed")
+    (d.figures_status === null ||
+      d.figures_status === "failed" ||
+      (d.figures_status === "skipped" && d.figures_error_code === "extraction_disabled"))
   );
 }

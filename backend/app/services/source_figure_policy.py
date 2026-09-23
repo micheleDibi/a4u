@@ -41,6 +41,7 @@ REASONS: tuple[str, ...] = (
     "document_mismatch",
     "not_ready",
     "excluded_by_user",
+    "superseded",
     "document_excluded",
     "document_content_only",
     "license_not_open",
@@ -55,6 +56,7 @@ class FigureLike(Protocol):
     status: str
     source_kind: str
     excluded_by_user: bool
+    reject_reason: str | None
     license: str
     detached_at: datetime | None
     attribution: dict[str, Any] | None
@@ -145,6 +147,10 @@ def figure_visibility(
     if mode == "select":
         if fig.excluded_by_user:
             return Visibility(False, "excluded_by_user")
+        if fig.reject_reason is not None:
+            # Riga di un'estrazione precedente (`superseded`): resta dove è
+            # già collocata (U1), non si propone più.
+            return Visibility(False, "superseded")
         if fig.source_kind == "uploaded":
             if doc is None:
                 # Figura staccata da un documento cancellato: resta dove è

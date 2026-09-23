@@ -335,7 +335,11 @@ async def test_script_dry_run_writes_nothing_and_apply_queues(
 
     course_id, _org, _user = await build_course(seeded_db, modules=1, lessons_per_module=1)
     doc = build_course_document(course_id, filename="vecchio.pdf")
-    seeded_db.add(doc)
+    # Chiesto quando l'estrazione era spenta: si rimette in coda anche lui.
+    disabled = build_course_document(course_id, filename="chiesto_a_estrazione_spenta.pdf")
+    disabled.figures_status = "skipped"
+    disabled.figures_error_code = "extraction_disabled"
+    seeded_db.add_all([doc, disabled])
     await seeded_db.commit()
 
     async def run(*argv: str) -> None:
@@ -365,8 +369,9 @@ async def test_script_dry_run_writes_nothing_and_apply_queues(
     assert fresh is not None and fresh.figures_status is None
     assert "dry-run" in capsys.readouterr().out
     await run("--course", str(course_id), "--apply")
-    fresh = await seeded_db.get(CourseDocument, doc.id, populate_existing=True)
-    assert fresh is not None and fresh.figures_status == "pending"
+    for doc_id in (doc.id, disabled.id):
+        fresh = await seeded_db.get(CourseDocument, doc_id, populate_existing=True)
+        assert fresh is not None and fresh.figures_status == "pending"
 
 
 def test_every_figures_error_code_and_status_has_ui_text() -> None:

@@ -100,6 +100,55 @@ def test_heuristic_engine_on_the_fixture_pdf(tmp_path: Path, fixtures_dir: Path)
     assert [e["pages"] for e in events if e["event"] == "block_done"] == [[1, 3], [4, 5]]
 
 
+def test_cropbox_inset_crops_the_same_drawing(tmp_path: Path, fixtures_dir: Path) -> None:
+    """CropBox rientrata di 40 pt: PDFium rende solo la CropBox, quindi il
+    bbox (spazio di pdfplumber) va traslato; il ritaglio resta lo stesso."""
+    from pypdf import PdfReader, PdfWriter
+    from pypdf.generic import RectangleObject
+
+    from app.services.document_figures.phash import hamming
+
+    inset = 40.0
+    reader = PdfReader(str(fixtures_dir / PDF_NAME))
+    writer = PdfWriter()
+    for page in reader.pages:
+        box = page.mediabox
+        page.cropbox = RectangleObject(
+            [
+                float(box.left) + inset,
+                float(box.bottom) + inset,
+                float(box.right) - inset,
+                float(box.top) - inset,
+            ]
+        )
+        writer.add_page(page)
+    work_crop = tmp_path / "crop"
+    work_crop.mkdir()
+    with (work_crop / PDF_NAME).open("wb") as handle:
+        writer.write(handle)
+    work_full = _workdir(tmp_path, fixtures_dir, PDF_NAME)
+
+    def accepted(work: Path) -> dict[int, dict[str, Any]]:
+        code, events, stderr = run_child(
+            work, source=PDF_NAME, mime=PDF_MIME, engine="heuristic", blocks=[[1, 5]]
+        )
+        assert code == 0, stderr[-2000:]
+        return {
+            e["page"]: e for e in events if e["event"] == "figure" and e["reject_reason"] is None
+        }
+
+    full = accepted(work_full)
+    cropped = accepted(work_crop)
+    assert set(cropped) == set(full)
+    for expected in _MANIFEST["pdf"]["figures"]:
+        found = cropped[expected["page"]]
+        gt = BBox(*expected["bbox"]).translate(-inset, -inset)
+        assert _bbox(found).iou(gt) >= 0.6, (expected["id"], found["bbox"])
+        assert found["bbox"]["page_w"] == pytest.approx(595.0 - 2 * inset, abs=1)
+        assert hamming(found["phash"], full[expected["page"]]["phash"]) <= 6, expected["id"]
+        assert found["caption"] == expected["caption"], expected["id"]
+
+
 def _docling_artifacts() -> str:
     require_module("docling", "docling")
     path = os.environ.get("FIGURE_DOCLING_ARTIFACTS_PATH", "/opt/docling-models")

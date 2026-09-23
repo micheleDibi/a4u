@@ -54,6 +54,9 @@ class BBox:
         """Quota di `other` contenuta in questo rettangolo."""
         return self.intersection_area(other) / other.area if other.area > 0 else 0.0
 
+    def translate(self, dx: float, dy: float) -> BBox:
+        return BBox(self.x0 + dx, self.top + dy, self.x1 + dx, self.bottom + dy)
+
     def expand(self, margin: float) -> BBox:
         return BBox(self.x0 - margin, self.top - margin, self.x1 + margin, self.bottom + margin)
 

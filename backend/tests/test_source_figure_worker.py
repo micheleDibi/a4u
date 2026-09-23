@@ -5,10 +5,17 @@
   (anche il nipote muore);
 - worker: estrazione completa del PDF di prova con il motore euristico e
   uno storage remoto simulato (scarica e carica solo il padre), checkpoint
-  e ripresa, politiche del documento, file mancante, crash ripetuto sullo
-  stesso blocco (saltato, copertura parziale), rinvio per memoria senza
-  consumare tentativi, `FIGURE_EXTRACTION_ENABLED=false` → nessun lavoro;
+  e ripresa, politiche del documento (anche cambiate durante
+  l'estrazione), file mancante, crash ripetuto sullo stesso blocco
+  (saltato, copertura parziale), rinvio per memoria senza consumare
+  tentativi, errore di storage a metà blocco, sonda transitoria non messa
+  in cache, SIGILL e timeout passando dal worker, `HEAVY_JOB_LOCK`,
+  impronta cambiata (`superseded`), `FIGURE_EXTRACTION_ENABLED=false` →
+  nessun lavoro;
 - isolamento dal riassunto: i campi `summary_*` restano identici.
+
+Coda isolata: `claim_next` è globale, quindi la fixture `db` mette da parte
+i documenti in coda lasciati da altri file di test.
 """
 
 from __future__ import annotations
@@ -22,13 +29,14 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import get_settings
 from app.models.course import Course
 from app.models.course_document import CourseDocument
 from app.models.course_document_figure import CourseDocumentFigure
+from app.models.course_lesson import CourseLesson
 from app.services import course_document_figures_worker as worker
 from app.services import remote_storage
 from app.services.document_figures import runner
@@ -78,18 +86,22 @@ def fake_child(monkeypatch: pytest.MonkeyPatch):
     """Sostituisce il modulo del figlio con `tests.fake_figure_child`; il
     modo si sceglie chiamando la funzione restituita."""
     original_env = runner.child_env
-    state = {"mode": "ok"}
+    state = {"mode": "ok", "pidfile": ""}
 
     def env_with_mode(workdir: Path, **kwargs: Any) -> dict[str, str]:
         env = original_env(workdir, **kwargs)
         env["A4U_FAKE_CHILD_MODE"] = state["mode"]
+        if state["pidfile"]:
+            env["A4U_FAKE_CHILD_PIDFILE"] = state["pidfile"]
         return env
 
     monkeypatch.setattr(runner, "CHILD_MODULE", "tests.fake_figure_child")
     monkeypatch.setattr(runner, "child_env", env_with_mode)
+    monkeypatch.setattr(worker, "ChildSession", runner.ChildSession)
 
-    def set_mode(mode: str) -> None:
+    def set_mode(mode: str, pidfile: Path | None = None) -> None:
         state["mode"] = mode
+        state["pidfile"] = str(pidfile) if pidfile else ""
 
     return set_mode
 
@@ -201,8 +213,14 @@ class FakeStorage:
     def __init__(self) -> None:
         self.files: dict[str, bytes] = {}
         self.downloads: list[str] = []
+        self.uploads = 0
+        # Errore di storage dal caricamento numero `fail_upload_after + 1`.
+        self.fail_upload_after: int | None = None
 
     def upload_bytes(self, key: str, data: bytes) -> None:
+        self.uploads += 1
+        if self.fail_upload_after is not None and self.uploads > self.fail_upload_after:
+            raise remote_storage.StorageError("sftp non raggiungibile")
         self.files[key] = data
 
     def download_to(self, key: str, dest_path: Path) -> None:
@@ -236,8 +254,20 @@ def storage(monkeypatch: pytest.MonkeyPatch) -> FakeStorage:
     return fake
 
 
+async def park_queued_documents(db: AsyncSession) -> None:
+    """Documenti in coda lasciati da altri test: fuori dalla coda, così
+    `claim_next` (globale) prende solo quelli del test."""
+    await db.execute(
+        update(CourseDocument)
+        .where(CourseDocument.figures_status.in_(("pending", "processing")))
+        .values(figures_status="skipped", figures_error_code="extraction_disabled")
+    )
+    await db.commit()
+
+
 @pytest.fixture
-def db(seeded_db: AsyncSession) -> AsyncSession:
+async def db(seeded_db: AsyncSession) -> AsyncSession:
+    await park_queued_documents(seeded_db)
     return seeded_db
 
 
@@ -310,8 +340,10 @@ async def _queued_document(
     *,
     policy: str = "citable",
     mime: str = "application/pdf",
+    course_id: uuid.UUID | None = None,
 ) -> CourseDocument:
-    course_id, _org, _user = await build_course(db, modules=1, lessons_per_module=1)
+    if course_id is None:
+        course_id, _org, _user = await build_course(db, modules=1, lessons_per_module=1)
     doc = build_course_document(course_id, filename="vibrometria_dispensa.pdf", policy=policy)
     doc.mime_type = mime
     doc.figures_status = "pending"
@@ -484,12 +516,41 @@ async def test_low_memory_defers_without_consuming_attempts(
     assert doc.figures_status == "pending" and doc.figures_error_code is None
     assert doc.figures_attempts == 0
     assert doc.figures_next_attempt_at is not None
-    # Oltre FIGURE_EXTRACTION_MAX_DEFER_MINUTES dalla richiesta: fallisce.
+    assert "deferred_since" in doc.figures_progress
+    # Una richiesta vecchia non basta: la finestra parte dal primo rinvio.
     doc.figures_requested_at = datetime.now(UTC) - timedelta(hours=5)
     doc.figures_next_attempt_at = None
     await db.commit()
     doc = await _run(db, doc.id)
+    assert doc.figures_status == "pending" and doc.figures_error_code is None
+    # Oltre FIGURE_EXTRACTION_MAX_DEFER_MINUTES dal primo rinvio: fallisce.
+    progress = dict(doc.figures_progress)
+    progress["deferred_since"] = (datetime.now(UTC) - timedelta(hours=5)).isoformat()
+    doc.figures_progress = progress
+    doc.figures_next_attempt_at = None
+    await db.commit()
+    doc = await _run(db, doc.id)
     assert (doc.figures_status, doc.figures_error_code) == ("failed", "resources_unavailable")
+
+
+async def test_memory_is_checked_only_before_starting_a_child(
+    db: AsyncSession,
+    storage: FakeStorage,
+    fixture_pdf: bytes,
+    monkeypatch: pytest.MonkeyPatch,
+    settings: Any,
+) -> None:
+    """Con il figlio vivo la sua RSS abbassa MemAvailable: il controllo si fa
+    solo prima di avviarne uno, non prima di ogni blocco."""
+    settings(figure_extraction_pages_per_child=4)
+    # Letture: prima della sonda e prima del primo figlio; poi memoria bassa.
+    readings = iter([None, None])
+    monkeypatch.setattr(worker, "mem_available_mb", lambda: next(readings, 100))
+    doc = await _queued_document(db, storage, fixture_pdf)
+    doc = await _run(db, doc.id)
+    # Blocchi 1-2 e 3-4 con lo stesso figlio; rinvio solo prima del secondo.
+    assert doc.figures_status == "pending" and doc.figures_error_code is None
+    assert doc.figures_progress["next_page"] == 5, doc.figures_progress
 
 
 async def test_docling_without_the_engine_fails_visibly(
@@ -524,10 +585,21 @@ async def test_never_requested_documents_are_not_claimed(
     db.add(doc)
     await db.commit()
     assert doc.figures_status is None
-    claimed = await worker.claim_next(db)
-    assert claimed is None or claimed.id != doc.id
-    fresh = await db.get(CourseDocument, doc.id, populate_existing=True)
-    assert fresh is not None and fresh.figures_status is None
+    never_requested = set(
+        (await db.execute(select(CourseDocument.id).where(CourseDocument.figures_status.is_(None))))
+        .scalars()
+        .all()
+    )
+    assert doc.id in never_requested
+    # Coda isolata dalla fixture `db`: con soli documenti mai richiesti non
+    # c'è niente da prendere.
+    assert await worker.claim_next(db) is None
+    still_null = set(
+        (await db.execute(select(CourseDocument.id).where(CourseDocument.figures_status.is_(None))))
+        .scalars()
+        .all()
+    )
+    assert never_requested <= still_null
 
 
 # --- descrizione Vision ---------------------------------------------------------
@@ -613,19 +685,32 @@ async def test_paid_but_unusable_answer_is_accounted(
     db: AsyncSession, storage: FakeStorage, fixture_pdf: bytes, vision: FakeVision
 ) -> None:
     """Una risposta 200 inutilizzabile costa comunque: l'usage finisce in
-    `vision_usage` anche se la figura resta non descritta (G9)."""
+    `vision_usage` anche se la figura resta non descritta (G9). Il documento
+    torna in coda solo per le figure non descritte (le altre restano pronte)."""
     vision.fail_after = 3
     vision.fail = OpenAIFigureDescribeError(
         status=200, message="json troncato", usage={"model": "gpt-4.1-mini", "cost_usd": 0.0004}
     )
     doc = await _queued_document(db, storage, fixture_pdf)
     doc = await _run(db, doc.id)
-    assert doc.figures_status == "ready" and doc.figures_count == 3
+    assert (doc.figures_status, doc.figures_error_code) == ("pending", "vision_unavailable")
+    assert doc.figures_count == 3 and doc.figures_next_attempt_at is not None
     rows = await _figures(db, doc.id)
     undescribed = [r for r in rows if r.status == "extracted"]
     assert len(undescribed) == 1
     assert undescribed[0].vision_usage["cost_usd"] == 0.0004
     assert undescribed[0].vision_usage["calls"] == 1
+    # Nuovo giro: niente ri-estrazione, una sola chiamata per la figura mancante.
+    vision.fail = None
+    vision.calls.clear()
+    doc.figures_next_attempt_at = None
+    await db.commit()
+    doc = await _run(db, doc.id)
+    assert doc.figures_status == "ready" and doc.figures_count == 4
+    assert len(vision.calls) == 1
+    retried = next(r for r in await _figures(db, doc.id) if r.id == undescribed[0].id)
+    assert retried.status == "ready" and retried.vision_usage["calls"] == 2
+    assert retried.vision_usage["cost_usd"] == pytest.approx(0.001)
 
 
 async def test_admin_cost_includes_document_figures(db: AsyncSession) -> None:
@@ -652,3 +737,304 @@ async def test_admin_cost_includes_document_figures(db: AsyncSession) -> None:
     db.add(figure)
     await db.commit()
     assert round(await figures_cost() - before, 6) == 0.25
+
+
+# --- correzioni della verifica WP2 ------------------------------------------------
+
+
+async def test_storage_error_mid_block_is_recoverable_with_backoff(
+    db: AsyncSession, storage: FakeStorage, fixture_pdf: bytes
+) -> None:
+    """Errore di storage dopo che il blocco ha già aggiunto righe: rollback,
+    documento riletto (niente oggetti scaduti) e ritorno in coda con backoff."""
+    doc = await _queued_document(db, storage, fixture_pdf)
+    storage.fail_upload_after = 3
+    doc = await _run(db, doc.id)
+    assert (doc.figures_status, doc.figures_error_code) == ("pending", "storage_error")
+    assert doc.figures_next_attempt_at is not None and doc.figures_attempts == 1
+    storage.fail_upload_after = None
+    doc.figures_next_attempt_at = None
+    await db.commit()
+    doc = await _run(db, doc.id)
+    assert doc.figures_status == "ready" and doc.figures_count == 4
+
+
+async def test_transient_probe_failure_is_not_cached(
+    db: AsyncSession, storage: FakeStorage, fixture_pdf: bytes, fake_child: Any, settings: Any
+) -> None:
+    settings(figure_extraction_engine="docling", figure_extraction_probe_timeout_seconds=1)
+    fake_child("silent")
+    doc = await _queued_document(db, storage, fixture_pdf)
+    doc = await _run(db, doc.id)
+    assert (doc.figures_status, doc.figures_error_code) == ("pending", "timeout")
+    # La sonda riparte al giro successivo e questa volta riesce.
+    fake_child("ok")
+    doc.figures_next_attempt_at = None
+    await db.commit()
+    doc = await _run(db, doc.id)
+    assert doc.figures_status == "ready", (doc.figures_error_code, doc.figures_error)
+
+
+async def test_sigill_with_docling_fails_through_the_worker(
+    db: AsyncSession, storage: FakeStorage, fixture_pdf: bytes, fake_child: Any, settings: Any
+) -> None:
+    settings(figure_extraction_engine="docling")
+    fake_child("sigill")
+    first = await _queued_document(db, storage, fixture_pdf)
+    first = await _run(db, first.id)
+    assert (first.figures_status, first.figures_error_code) == ("failed", "engine_unavailable")
+    # Motore inutilizzabile: in cache, anche se il figlio tornasse sano.
+    fake_child("ok")
+    second = await _queued_document(db, storage, fixture_pdf)
+    second = await _run(db, second.id)
+    assert (second.figures_status, second.figures_error_code) == ("failed", "engine_unavailable")
+
+
+async def test_block_timeout_through_the_worker_leaves_no_child(
+    db: AsyncSession,
+    storage: FakeStorage,
+    fixture_pdf: bytes,
+    fake_child: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(worker, "_BLOCK_BASE_SECONDS", 1)
+    monkeypatch.setattr(worker, "_BLOCK_SECONDS_PER_PAGE", 0)
+    pidfile = tmp_path / "grandchild.pid"
+    fake_child("hang", pidfile=pidfile)
+    doc = await _queued_document(db, storage, fixture_pdf)
+    started = time.monotonic()
+    doc = await _run(db, doc.id)
+    assert (doc.figures_status, doc.figures_error_code) == ("pending", "timeout")
+    # Kill immediato: niente attesa di 10 s per un'uscita ordinata.
+    assert time.monotonic() - started < 8
+    grandchild = int(pidfile.read_text())
+    for _ in range(50):
+        if not _alive(grandchild):
+            break
+        await asyncio.sleep(0.1)
+    assert not _alive(grandchild), "processo dell'estrazione sopravvissuto al worker"
+
+
+async def test_heavy_job_lock_serializes_extractions(
+    _engine: Any, storage: FakeStorage, fixture_pdf: bytes, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Due documenti elaborati insieme non estraggono mai in parallelo
+    (PDFium e Docling con concorrenza 1, G5)."""
+    windows: list[tuple[float, float]] = []
+
+    async def fake_extract(*_args: Any, **_kwargs: Any) -> Any:
+        start = time.monotonic()
+        await asyncio.sleep(0.3)
+        windows.append((start, time.monotonic()))
+        return worker._Outcome()
+
+    monkeypatch.setattr(worker, "_extract", fake_extract)
+    factory = async_sessionmaker(_engine, expire_on_commit=False)
+    async with factory() as setup:
+        await park_queued_documents(setup)
+        first = await _queued_document(setup, storage, fixture_pdf)
+        second = await _queued_document(setup, storage, fixture_pdf)
+        ids = [first.id, second.id]
+
+    async def process(doc_id: uuid.UUID) -> None:
+        async with factory() as session:
+            doc = await session.get(CourseDocument, doc_id)
+            assert doc is not None
+            doc.figures_status = "processing"
+            await session.commit()
+            await worker.process_document(session, doc)
+
+    await asyncio.gather(*(process(i) for i in ids))
+    assert len(windows) == 2
+    (_a_start, a_end), (b_start, _b_end) = sorted(windows)
+    assert b_start >= a_end, "due estrazioni sovrapposte sotto HEAVY_JOB_LOCK"
+
+
+async def test_policy_change_during_extraction_stops_it(
+    db: AsyncSession,
+    _engine: Any,
+    storage: FakeStorage,
+    fixture_pdf: bytes,
+    vision: FakeVision,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = worker._store_block
+    factory = async_sessionmaker(_engine, expire_on_commit=False)
+
+    async def store_then_exclude(session: AsyncSession, doc: CourseDocument, *a: Any) -> Any:
+        outcome = await original(session, doc, *a)
+        async with factory() as teacher:
+            await teacher.execute(
+                update(CourseDocument)
+                .where(CourseDocument.id == doc.id)
+                .values(citation_policy="excluded")
+            )
+            await teacher.commit()
+        return outcome
+
+    monkeypatch.setattr(worker, "_store_block", store_then_exclude)
+    doc = await _queued_document(db, storage, fixture_pdf)
+    doc = await _run(db, doc.id)
+    assert (doc.figures_status, doc.figures_error_code) == ("skipped", "policy_excluded")
+    # Solo il primo blocco (pagine 1-2), nessuna chiamata Vision a pagamento.
+    assert {r.page for r in await _figures(db, doc.id)} <= {1, 2}
+    assert vision.calls == []
+
+
+async def test_descriptions_are_not_reused_across_languages(
+    db: AsyncSession, storage: FakeStorage, fixture_pdf: bytes, vision: FakeVision
+) -> None:
+    first = await _queued_document(db, storage, fixture_pdf)
+    await _run(db, first.id)
+    first_course = await db.get(Course, first.course_id)
+    second = await _queued_document(db, storage, fixture_pdf)
+    second_course = await db.get(Course, second.course_id)
+    assert first_course is not None and second_course is not None
+    second_course.organization_id = first_course.organization_id
+    second_course.language_code = "en"
+    await db.commit()
+    await _run(db, second.id)
+    assert len(vision.calls) == 8
+    assert {c.language_code for c in vision.calls[4:]} == {"en"}
+
+
+async def test_copies_of_non_selectable_figures_are_not_duplicates(
+    db: AsyncSession, storage: FakeStorage, fixture_pdf: bytes
+) -> None:
+    """Lo stesso PDF caricato di nuovo nel corso: le figure di un documento
+    ora escluso (o staccate) non rendono «duplicate» quelle nuove."""
+    first = await _queued_document(db, storage, fixture_pdf)
+    await _run(db, first.id)
+    first.citation_policy = "excluded"
+    await db.commit()
+    second = await _queued_document(db, storage, fixture_pdf, course_id=first.course_id)
+    second = await _run(db, second.id)
+    assert second.figures_count == 4
+    assert not any(r.reject_reason == "duplicate" for r in await _figures(db, second.id))
+    # Con il primo documento citabile, invece, le copie sono duplicate.
+    first.citation_policy = "citable"
+    await db.commit()
+    third = await _queued_document(db, storage, fixture_pdf, course_id=first.course_id)
+    third = await _run(db, third.id)
+    assert third.figures_count == 0
+
+
+async def test_new_fingerprint_supersedes_the_previous_extraction(
+    db: AsyncSession, storage: FakeStorage, fixture_pdf: bytes, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.services import source_figure_catalog
+    from app.services.source_figure_policy import figure_visibility
+
+    doc = await _queued_document(db, storage, fixture_pdf)
+    doc = await _run(db, doc.id)
+    before = {r.locator: r for r in await _figures(db, doc.id)}
+    placed = next(r for r in before.values() if r.page == 1 and r.status == "ready")
+    placed_locator = placed.locator
+    lesson = (
+        (await db.execute(select(CourseLesson).where(CourseLesson.course_id == doc.course_id)))
+        .scalars()
+        .first()
+    )
+    assert lesson is not None
+    lesson.content_raw = {
+        "visual_assets": [
+            {"asset_id": "fig-src-1", "format": "source_figure", "content": str(placed.id)}
+        ]
+    }
+    await db.commit()
+    old_files = {
+        remote_storage.uploads_key(p)
+        for r in before.values()
+        if r.id != placed.id
+        for p in (r.storage_path, r.preview_path)
+        if p
+    }
+    monkeypatch.setattr(worker, "EXTRACTION_VERSION", 2)
+    doc.figures_status = "pending"
+    await db.commit()
+    doc = await _run(db, doc.id)
+    assert doc.figures_status == "ready" and doc.figures_count == 4
+    rows = await _figures(db, doc.id)
+    kept = next(r for r in rows if r.id == placed.id)
+    # La figura già collocata resta (U1), si rende ancora, non si propone più.
+    assert kept.status == "ready" and kept.reject_reason == "superseded"
+    assert kept.locator != placed_locator
+    assert figure_visibility(
+        kept, doc, course_id=doc.course_id, license_policy="cite_all", mode="render"
+    ).renderable
+    assert (
+        figure_visibility(
+            kept, doc, course_id=doc.course_id, license_policy="cite_all", mode="select"
+        ).reason
+        == "superseded"
+    )
+    course = await db.get(Course, doc.course_id)
+    assert course is not None
+    selectable = await source_figure_catalog.selectable_figures(
+        db, course, license_policy="cite_all"
+    )
+    assert kept.id not in {f.id for f in selectable}
+    # Le altre righe vecchie sono sparite, con i loro file; le nuove hanno
+    # ripreso i locator.
+    assert not ({r.id for r in before.values()} - {placed.id}) & {r.id for r in rows}
+    # Nessun file orfano: ogni ritaglio rimasto nello storage appartiene a
+    # una riga attuale (quelli nuovi identici riprendono lo stesso nome).
+    referenced = {
+        remote_storage.uploads_key(p) for r in rows for p in (r.storage_path, r.preview_path) if p
+    }
+    prefix = remote_storage.uploads_key(figure_storage.owner_prefix(doc.course_id, doc.id))
+    assert {k for k in storage.files if k.startswith(prefix)} <= referenced
+    assert old_files
+    fresh = [r for r in rows if r.reject_reason is None and r.status == "ready"]
+    assert placed_locator in {r.locator for r in fresh} and len(fresh) == 4
+
+
+async def test_bibliography_from_child_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
+    """La bibliografia arriva dal figlio (il padre non apre il documento):
+    prima i metadati del file, poi il DOI solo se il titolo di Crossref
+    compare nel documento."""
+    from app.services import crossref_client
+    from app.services.crossref_client import CrossrefWork
+
+    cited = CrossrefWork(
+        doi="10.1016/j.ymssp.2016.04.011",
+        title="An international review of laser Doppler vibrometry",
+        abstract=None,
+        references_count=None,
+        subjects=[],
+        published_year=2017,
+        authors=["Steve Rothberg"],
+        container="Optics and Lasers in Engineering",
+    )
+
+    async def lookup(doi: str) -> CrossrefWork:
+        return cited
+
+    monkeypatch.setattr(crossref_client, "get_work_by_doi", lookup)
+
+    def new_doc() -> CourseDocument:
+        doc = build_course_document(uuid.uuid4(), filename="dispensa.pdf")
+        doc.mime_type = "application/pdf"
+        return doc
+
+    doc = new_doc()
+    await worker._fill_bibliography(
+        doc, {"bibliography": {"title": "Vibrometria laser", "authors": ["Docente di Prova"]}}
+    )
+    assert doc.bibliography_source == "pdf_metadata"
+    # Una dispensa che cita l'articolo: il DOI non è il suo.
+    doc = new_doc()
+    text = "Dispensa di misure. Si veda Rothberg et al., doi:10.1016/j.ymssp.2016.04.011"
+    await worker._fill_bibliography(doc, {"bibliography": None, "text": text})
+    assert doc.bibliography_source is None and doc.bibliography is None
+    # L'articolo stesso: titolo nella prima pagina, DOI accettato.
+    doc = new_doc()
+    text = "AN INTERNATIONAL REVIEW OF LASER DOPPLER VIBROMETRY\ndoi:10.1016/j.ymssp.2016.04.011"
+    await worker._fill_bibliography(doc, {"bibliography": None, "text": text})
+    assert doc.bibliography_source == "crossref"
+    assert doc.bibliography is not None and doc.bibliography["year"] == 2017
+    # Metadati malformati dal figlio: ignorati.
+    doc = new_doc()
+    await worker._fill_bibliography(doc, {"bibliography": {"title": 3, "extra": "x"}})
+    assert doc.bibliography_source is None

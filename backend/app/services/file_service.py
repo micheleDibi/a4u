@@ -79,17 +79,25 @@ PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presen
 
 def _check_document_content(mime: str, raw: bytes) -> None:
     """Un .pptx dichiarato dal client dev'essere davvero un pacchetto OOXML
-    di presentazione (firma zip + `ppt/presentation.xml`)."""
+    di presentazione (firma zip + `ppt/presentation.xml`) e non una bomba
+    zip (tetti di `document_figures.office` sulle dimensioni decompresse)."""
     if mime != PPTX_MIME:
         return
     import io
     import zipfile
 
+    from app.services.document_figures.office import MAX_XML_PART_BYTES, package_problem
+
     ok = raw[:4] == b"PK\x03\x04"
     if ok:
         try:
             with zipfile.ZipFile(io.BytesIO(raw)) as zf:
-                ok = "ppt/presentation.xml" in zf.namelist()
+                names = set(zf.namelist())
+                ok = (
+                    "ppt/presentation.xml" in names
+                    and package_problem(zf) is None
+                    and zf.getinfo("ppt/presentation.xml").file_size <= MAX_XML_PART_BYTES
+                )
         except zipfile.BadZipFile:
             ok = False
     if not ok:

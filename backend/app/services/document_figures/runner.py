@@ -128,6 +128,8 @@ class ChildSession:
         self.proc: asyncio.subprocess.Process | None = None
         self.pages_total = 0
         self.pages_processed = 0
+        # Metadati del documento letti dal figlio (se richiesti a `start`).
+        self.metadata: dict[str, Any] | None = None
         self._stderr = bytearray()
         self._stderr_task: asyncio.Task[None] | None = None
 
@@ -176,12 +178,15 @@ class ChildSession:
             while True:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
+                    # Kill subito: `close()` aspetterebbe 10 s un'uscita ordinata.
+                    self.kill()
                     raise ExtractionChildError("timeout", "tempo massimo del blocco superato")
                 done, _ = await asyncio.wait({read}, timeout=min(_RSS_POLL_SECONDS, remaining))
                 if done:
                     break
                 rss = process_rss_mb(self.proc.pid)
                 if rss is not None and rss > self.config.max_rss_mb:
+                    self.kill()
                     raise ExtractionChildError("oom", f"RSS del figlio {rss} MB oltre la soglia")
         finally:
             if not read.done():
@@ -233,7 +238,7 @@ class ChildSession:
             )
         return ExtractionChildError("crashed", f"figlio uscito con codice {code}", stderr_tail=tail)
 
-    async def start(self, *, source_name: str, mime: str) -> int:
+    async def start(self, *, source_name: str, mime: str, metadata: bool = False) -> int:
         await self._spawn()
         await self._send(
             {
@@ -242,6 +247,7 @@ class ChildSession:
                 "engine": self.config.engine,
                 "artifacts_path": self.config.artifacts_path,
                 "threads": self.config.threads,
+                "metadata": metadata,
             }
         )
         deadline = time.monotonic() + self.config.probe_timeout_seconds
@@ -249,6 +255,8 @@ class ChildSession:
         if event.get("event") != "ready":
             raise ExtractionChildError("crashed", f"evento inatteso all'avvio: {event}")
         self.pages_total = int(event.get("pages") or 0)
+        raw = event.get("metadata")
+        self.metadata = raw if isinstance(raw, dict) else None
         return self.pages_total
 
     async def run_block(self, first: int, last: int) -> BlockResult:

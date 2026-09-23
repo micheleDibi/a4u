@@ -4,8 +4,9 @@ Il comportamento arriva da `A4U_FAKE_CHILD_MODE` (aggiunta all'ambiente
 dai test): `env` (emette i nomi e i valori delle variabili ricevute),
 `sigill`, `exit` (esce senza eventi), `hang` (avvia un nipote e resta
 fermo, scrivendo il pid del nipote in `grandchild.pid`), `crash_block:N`
-(muore quando riceve il blocco che contiene la pagina N), `ok` (pagine
-vuote).
+(muore quando riceve il blocco che contiene la pagina N), `silent` (legge
+il lavoro e non risponde più), `ok` (pagine vuote). Con `--probe` i modi
+`ok` e `crash_block:N` rispondono `probe_ok`.
 """
 
 from __future__ import annotations
@@ -26,6 +27,12 @@ def _emit(event: dict) -> None:
 def main() -> int:
     mode = os.environ.get("A4U_FAKE_CHILD_MODE", "ok")
     job = json.loads(sys.stdin.readline() or "{}")
+    if mode == "silent":
+        time.sleep(600)
+        return 0
+    if "--probe" in sys.argv and (mode == "ok" or mode.startswith("crash_block:")):
+        _emit({"event": "probe_ok", "engine": job.get("engine")})
+        return 0
     if mode == "env":
         _emit({"event": "ready", "pages": 1, "env": dict(os.environ), "job": job})
         return 0
@@ -35,8 +42,10 @@ def main() -> int:
         return 1
     if mode == "hang":
         grandchild = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(600)"])
-        with open("grandchild.pid", "w", encoding="ascii") as handle:
-            handle.write(str(grandchild.pid))
+        for path in ("grandchild.pid", os.environ.get("A4U_FAKE_CHILD_PIDFILE")):
+            if path:
+                with open(path, "w", encoding="ascii") as handle:
+                    handle.write(str(grandchild.pid))
         _emit({"event": "ready", "pages": 5})
         for _ in sys.stdin:
             time.sleep(600)

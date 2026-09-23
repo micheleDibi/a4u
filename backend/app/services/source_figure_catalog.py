@@ -79,6 +79,7 @@ async def selectable_figures(
             CourseDocumentFigure.course_id == course.id,
             CourseDocumentFigure.status == "ready",
             CourseDocumentFigure.excluded_by_user.is_(False),
+            CourseDocumentFigure.reject_reason.is_(None),
             CourseDocumentFigure.is_useful_for_teaching.is_(True),
             CourseDocumentFigure.quality_score >= int(settings.figure_min_quality_score),
         )

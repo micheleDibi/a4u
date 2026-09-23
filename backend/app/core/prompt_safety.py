@@ -12,6 +12,7 @@ basata su input non-fidato. Attualmente usato da `nova_service`.
 from __future__ import annotations
 
 import re
+import unicodedata
 
 # Pattern noti di prompt injection (case-insensitive). Lista compilata
 # una volta sola al modulo-load per efficienza.
@@ -109,15 +110,41 @@ _ROLE_PREFIX_RE = re.compile(
     r"(?im)^(\s*)(system|assistant|developer|user|sistema|assistente|utente)\s*:"
 )
 _INVISIBLE_RE = re.compile("[​-‏‪-‮⁠-⁤﻿]")
+# Fine riga che `splitlines()` riconosce oltre a «\n»: si portano a «\n»
+# PRIMA della regex dei ruoli, altrimenti «Figura 3\rsystem: …» diventerebbe
+# una riga di ruolo solo dopo il controllo.
+_LINE_BREAKS_RE = re.compile("\r\n|[\r\x85\u2028\u2029]")
+# Caratteri «sosia» (forme a larghezza piena, alfanumerici matematici,
+# legature, forme piccole): ripiegati con NFKC uno per uno, così un «>>>» o
+# un «ignore» scritti a larghezza piena (U+FF1E, U+FF49…) non aggirano
+# delimitatori e pattern; il resto del testo (esponenti, «µ», simboli)
+# resta com'è.
+_LOOKALIKE_RANGES: tuple[tuple[int, int], ...] = (
+    (0xFB00, 0xFB06),
+    (0xFE50, 0xFE6F),
+    (0xFF01, 0xFF5E),
+    (0x1D400, 0x1D7FF),
+)
 _CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _BLANKS_RE = re.compile(r"[ \t]+")
 _THIRD_PARTY_MARK = "[testo rimosso]"
 
 
+def _fold_lookalikes(text: str) -> str:
+    return "".join(
+        unicodedata.normalize("NFKC", ch)
+        if any(low <= ord(ch) <= high for low, high in _LOOKALIKE_RANGES)
+        else ch
+        for ch in text
+    )
+
+
 def neutralize_third_party_text(text: str | None, max_length: int = 2000) -> str:
     """Rende inerte un testo di terzi prima di metterlo in un prompt.
 
-    Toglie caratteri invisibili e di controllo, falsi delimitatori di dati
+    Ripiega i caratteri sosia (larghezza piena, alfanumerici matematici),
+    toglie i caratteri di formato (Cf), invisibili e di controllo, porta a
+    «\n» tutti i fine riga, poi toglie i falsi delimitatori di dati
     (`<<<`, `>>>`, fence), prefissi di ruolo a inizio riga («system:»),
     sostituisce i tentativi espliciti di istruzione con «[testo rimosso]» e
     tronca a `max_length` su un confine di parola. Il resto del testo resta
@@ -125,7 +152,12 @@ def neutralize_third_party_text(text: str | None, max_length: int = 2000) -> str
     """
     if not isinstance(text, str):
         return ""
-    cleaned = _INVISIBLE_RE.sub("", text)
+    cleaned = _fold_lookalikes(text)
+    # Tutta la categoria Cf (formato: larghezza zero, bidi, trattino
+    # morbido, caratteri tag U+E0000-E007F) oltre all'elenco storico.
+    cleaned = "".join(ch for ch in cleaned if unicodedata.category(ch) != "Cf")
+    cleaned = _INVISIBLE_RE.sub("", cleaned)
+    cleaned = _LINE_BREAKS_RE.sub("\n", cleaned)
     cleaned = _CONTROL_RE.sub(" ", cleaned)
     cleaned = _FAKE_DELIMITER_RE.sub(" ", cleaned)
     cleaned = _ROLE_PREFIX_RE.sub(lambda m: f"{m.group(1)}{m.group(2)} -", cleaned)

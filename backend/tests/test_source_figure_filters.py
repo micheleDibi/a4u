@@ -107,6 +107,38 @@ def test_caption_beside_the_figure() -> None:
     assert caption_near(lines, bbox) == "Fig. 1. The melting temperature"
 
 
+def test_stacked_figures_with_captions_above_get_their_own_caption() -> None:
+    # «Figura 1», figura 1, «Figura 2», figura 2: la riga sotto la figura 1
+    # è più vicina alla figura 2, quindi è la sua didascalia.
+    fig1 = BBox(100, 120, 500, 300)
+    fig2 = BBox(100, 340, 500, 520)
+    lines = [
+        _line("Figura 1. Schema a blocchi.", 100, 104, 300, 115),
+        _line("Figura 2. Banco di misura.", 100, 325, 300, 336),
+    ]
+    others = [fig1, fig2]
+    assert caption_near(lines, fig1, others=others) == "Figura 1. Schema a blocchi."
+    assert caption_near(lines, fig2, others=others) == "Figura 2. Banco di misura."
+    # Didascalie sotto: ognuna resta alla figura che la precede.
+    lines_below = [
+        _line("Figura 1. Schema a blocchi.", 100, 305, 300, 316),
+        _line("Figura 2. Banco di misura.", 100, 525, 300, 536),
+    ]
+    assert caption_near(lines_below, fig1, others=others) == "Figura 1. Schema a blocchi."
+    assert caption_near(lines_below, fig2, others=others) == "Figura 2. Banco di misura."
+
+
+def test_two_column_caption_keeps_its_continuation_line() -> None:
+    bbox = BBox(60, 200, 290, 380)
+    lines = [
+        _line("Figure 3: Architecture of the proposed", 60, 390, 290, 401),
+        # Riga dell'altra colonna, fra le due righe della didascalia.
+        _line("which is measured with the reference", 310, 396, 540, 407),
+        _line("vibrometer.", 60, 403, 120, 414),
+    ]
+    assert caption_near(lines, bbox) == "Figure 3: Architecture of the proposed vibrometer."
+
+
 def test_far_or_unlabelled_lines_are_not_captions() -> None:
     bbox = BBox(100, 200, 500, 400)
     lines = [
@@ -183,3 +215,48 @@ def test_encoding_choices() -> None:
 def test_blank_detection() -> None:
     assert cropper.is_blank(Image.new("RGB", (200, 200), "white"))
     assert not cropper.is_blank(_drawing(3))
+
+
+def test_storage_helpers_only_touch_figure_crops(monkeypatch: pytest.MonkeyPatch) -> None:
+    import uuid
+
+    from app.services import remote_storage
+    from app.services.document_figures import storage
+
+    calls: list[tuple[str, str]] = []
+
+    class _Fake:
+        def upload_bytes(self, key: str, data: bytes) -> None:
+            calls.append(("upload", key))
+
+        def download_bytes(self, key: str) -> bytes:
+            calls.append(("read", key))
+            return b""
+
+        def delete(self, key: str) -> None:
+            calls.append(("delete", key))
+
+    monkeypatch.setattr(remote_storage, "get_storage", lambda: _Fake())
+    course, doc = uuid.uuid4(), uuid.uuid4()
+    good = storage.figure_path(course, doc, "p0001-f01-0123456789ab.png")
+    storage.upload(good, b"x")
+    storage.read(good)
+    storage.delete(good)
+    assert [c[0] for c in calls] == ["upload", "read", "delete"]
+    assert storage.belongs_to_course(good, course)
+    assert not storage.belongs_to_course(good, uuid.uuid4())
+    bad_paths = [
+        f"/uploads/courses/{course}/documents/lezione.pdf",
+        f"/uploads/courses/{course}/document_figures/{doc}/../../documents/x.png",
+        f"/uploads/courses/{course}/document_figures/{doc}/sub/x.png",
+        f"/uploads/avatars/{doc}/p0001.png",
+        f"/uploads/courses/{course}/document_figures/{doc}/P0001.PNG",
+    ]
+    for bad in bad_paths:
+        for helper in (storage.read, storage.delete):
+            with pytest.raises(storage.FigureStoragePathError):
+                helper(bad)
+        with pytest.raises(storage.FigureStoragePathError):
+            storage.upload(bad, b"x")
+        assert not storage.belongs_to_course(bad, course)
+    assert len(calls) == 3

@@ -8,6 +8,7 @@ le pagine con testo).
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -54,9 +55,41 @@ def page_lines(words: list[dict[str, Any]]) -> list[Line]:
     return lines
 
 
-def caption_near(lines: list[Line], bbox: BBox, *, max_gap: float = 45.0) -> str | None:
+def _vertical_gap(line: Line, box: BBox) -> float | None:
+    """Distanza verticale fra la riga e il bbox se la riga sta sopra o sotto
+    (sovrapposta in orizzontale); None altrimenti."""
+    if not (line.bbox.x1 > box.x0 and line.bbox.x0 < box.x1):
+        return None
+    if line.bbox.top >= box.bottom - 2:
+        return line.bbox.top - box.bottom
+    if line.bbox.bottom <= box.top + 2:
+        return box.top - line.bbox.bottom
+    return None
+
+
+def _closer_to_another(line: Line, bbox: BBox, others: Sequence[BBox]) -> bool:
+    """La didascalia appartiene alla figura più vicina: con figure impilate
+    («Fig. 1», figura 1, «Fig. 2», figura 2) la riga sotto la figura 1 è la
+    didascalia della 2 se sta più vicina alla 2."""
+    mine = _vertical_gap(line, bbox)
+    if mine is None:
+        return False
+    for other in others:
+        if other == bbox:
+            continue
+        gap = _vertical_gap(line, other)
+        if gap is not None and gap < mine:
+            return True
+    return False
+
+
+def caption_near(
+    lines: list[Line], bbox: BBox, *, max_gap: float = 45.0, others: Sequence[BBox] = ()
+) -> str | None:
     """Didascalia di figura subito sotto (o, in subordine, sopra) il bbox:
-    la riga con l'etichetta più le righe che la seguono a passo di riga."""
+    la riga con l'etichetta più le righe che la seguono a passo di riga.
+    `others`: le altre figure della pagina (una didascalia più vicina a
+    un'altra figura non viene assegnata a questa)."""
     below = [
         ln
         for ln in lines
@@ -65,6 +98,7 @@ def caption_near(lines: list[Line], bbox: BBox, *, max_gap: float = 45.0) -> str
         and ln.bbox.x1 > bbox.x0
         and ln.bbox.x0 < bbox.x1
         and is_figure_caption(ln.text)
+        and not _closer_to_another(ln, bbox, others)
     ]
     above = [
         ln
@@ -74,6 +108,7 @@ def caption_near(lines: list[Line], bbox: BBox, *, max_gap: float = 45.0) -> str
         and ln.bbox.x1 > bbox.x0
         and ln.bbox.x0 < bbox.x1
         and is_figure_caption(ln.text)
+        and not _closer_to_another(ln, bbox, others)
     ]
     # Didascalia di fianco (figure affiancate al testo, «wrapfigure»): riga
     # con l'etichetta accanto al bbox e sovrapposta in verticale.
@@ -97,6 +132,10 @@ def caption_near(lines: list[Line], bbox: BBox, *, max_gap: float = 45.0) -> str
     cursor = first.bbox
     for ln in lines:
         if ln.bbox.top <= cursor.top:
+            continue
+        # Pagina a due colonne: le righe dell'altra colonna (nessuna
+        # sovrapposizione orizzontale con la didascalia) si saltano.
+        if ln.bbox.x1 <= first.bbox.x0 or ln.bbox.x0 >= max(first.bbox.x1, cursor.x1):
             continue
         step = ln.bbox.top - cursor.bottom
         if step > 6 or abs(ln.bbox.x0 - first.bbox.x0) > 30 or is_figure_caption(ln.text):

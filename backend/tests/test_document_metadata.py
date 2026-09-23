@@ -89,3 +89,53 @@ def test_unreadable_files_give_no_bibliography(tmp_path: Path) -> None:
     assert metadata.pdf_bibliography(tmp_path / "rotto.pdf") is None
     assert metadata.office_bibliography(tmp_path / "rotto.docx") is None
     assert metadata.pdf_first_pages_text(tmp_path / "rotto.pdf") == ""
+
+
+def test_file_dates_never_become_the_publication_year(built: Path) -> None:
+    # /CreationDate e dcterms:created sono date di salvataggio del file.
+    pdf = metadata.pdf_bibliography(built / PDF_NAME)
+    docx = metadata.office_bibliography(built / DOCX_NAME)
+    assert pdf is not None and pdf.year is None
+    assert docx is not None and docx.year is None
+
+
+def test_oversized_core_xml_is_ignored(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import zipfile
+
+    monkeypatch.setattr(metadata, "MAX_CORE_XML_BYTES", 1024)
+    path = tmp_path / "gonfio.docx"
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(
+            "docProps/core.xml",
+            '<cp:coreProperties xmlns:cp="x" xmlns:dc="http://purl.org/dc/elements/1.1/">'
+            "<dc:title>Titolo del documento</dc:title>" + " " * 4096 + "</cp:coreProperties>",
+        )
+    assert metadata.office_bibliography(path) is None
+
+
+@pytest.mark.parametrize(
+    ("title", "text", "info_title", "expected"),
+    [
+        # Il titolo dell'articolo compare nella prima pagina: DOI del documento.
+        (
+            "Laser Doppler vibrometry for structural testing",
+            "LASER DOPPLER VIBROMETRY FOR\nSTRUCTURAL TESTING\nA. Rossi",
+            None,
+            True,
+        ),
+        # DOI di un articolo citato in una dispensa: titolo assente dal testo.
+        (
+            "An overview of laser vibrometry applications",
+            "Dispensa di misure. Si veda Rothberg et al., doi:10.1016/j.ymssp.2016.04.011",
+            "Dispensa di misure",
+            False,
+        ),
+        ("Laser vibrometry", "", "Laser vibrometry", True),
+        ("Breve", "Breve", None, False),
+        (None, "qualsiasi testo", None, False),
+    ],
+)
+def test_crossref_title_must_appear_in_the_document(
+    title: str | None, text: str, info_title: str | None, expected: bool
+) -> None:
+    assert metadata.crossref_title_matches(title, text, info_title) is expected

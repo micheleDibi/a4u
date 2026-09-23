@@ -5,8 +5,12 @@ nessun accesso a DB o storage: vedi :mod:`.runner`). Protocollo a righe
 JSON:
 
 - stdin, prima riga: il lavoro ``{"source", "mime", "engine",
-  "artifacts_path", "threads"}``; il figlio risponde
+  "artifacts_path", "threads", "metadata"}``; il figlio risponde
   ``{"event": "ready", "pages": N}`` oppure ``{"event": "error", "code"}``;
+  con ``"metadata": true`` l'evento ``ready`` porta anche
+  ``{"metadata": {"bibliography", "text", "info_title"}}`` (bibliografia e
+  testo delle prime pagine letti QUI, non nel processo principale: il
+  documento è ostile per ipotesi; tetto di tempo ``METADATA_SECONDS``);
 - stdin, righe successive: un blocco ``{"pages": [primo, ultimo]}``; il
   figlio emette un evento ``figure`` per ogni figura (anche scartata, con
   ``reject_reason``) e chiude con ``{"event": "block_done"}``;
@@ -23,8 +27,11 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import sys
 from collections.abc import Callable
+from dataclasses import dataclass, replace
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -39,6 +46,9 @@ Emit = Callable[[dict[str, Any]], None]
 PDF_MIME = "application/pdf"
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+# Metadati (bibliografia, testo delle prime pagine): tetto di tempo e di testo.
+METADATA_SECONDS = 30
+METADATA_TEXT_CHARS = 20_000
 
 
 class ChildError(Exception):
@@ -66,6 +76,51 @@ def _write(out_dir: Path, locator: str, data: bytes, mime: str, preview: bytes) 
     preview_name = f"{locator}-preview.jpg"
     (out_dir / preview_name).write_bytes(preview)
     return {"file": name, "preview_file": preview_name, "byte_size": len(data), "mime": mime}
+
+
+@dataclass(frozen=True)
+class PageBoxes:
+    """CropBox della pagina nello spazio di pdfplumber (origine della
+    MediaBox, in alto a sinistra). PDFium rende solo la CropBox: un bbox di
+    pdfplumber va traslato di (-ox, -oy) prima del ritaglio."""
+
+    ox: float
+    oy: float
+    crop_w: float
+    crop_h: float
+    media_w: float
+    media_h: float
+
+    @property
+    def cropped(self) -> bool:
+        return (
+            abs(self.ox) > 0.5
+            or abs(self.oy) > 0.5
+            or abs(self.crop_w - self.media_w) > 0.5
+            or abs(self.crop_h - self.media_h) > 0.5
+        )
+
+    def in_crop_space(self, page_w: float, page_h: float) -> bool:
+        """Il rilevatore ha misurato la pagina come la CropBox (e non come
+        la MediaBox di pdfplumber)?"""
+        return (
+            self.cropped
+            and abs(page_w - self.crop_w) <= 1.0
+            and abs(page_h - self.crop_h) <= 1.0
+            and not (abs(page_w - self.media_w) <= 1.0 and abs(page_h - self.media_h) <= 1.0)
+        )
+
+
+def page_boxes(ppage: Any) -> PageBoxes:
+    x0, top, x1, bottom = (float(v) for v in ppage.cropbox)
+    return PageBoxes(
+        ox=x0,
+        oy=top,
+        crop_w=x1 - x0,
+        crop_h=bottom - top,
+        media_w=float(ppage.width),
+        media_h=float(ppage.height),
+    )
 
 
 def _raster_share(
@@ -143,10 +198,33 @@ class PdfEngine:
                     src = image.get("srcsize") or (0, 0)
                     ppi = src[0] / (box.width / 72.0) if src and src[0] and box.width > 0 else None
                     rasters.append((box, ppi))
-                ordered = sorted(detections, key=lambda d: (d.bbox.top, d.bbox.x0))
+                boxes = page_boxes(ppage)
+                # Tutto nello spazio di pdfplumber (parole, immagini): i bbox
+                # di un rilevatore che misura la CropBox si riportano lì.
+                placed = [
+                    det
+                    if not boxes.in_crop_space(det.page_w, det.page_h)
+                    else replace(
+                        det,
+                        bbox=det.bbox.translate(boxes.ox, boxes.oy),
+                        page_w=boxes.media_w,
+                        page_h=boxes.media_h,
+                    )
+                    for det in detections
+                ]
+                ordered = sorted(placed, key=lambda d: (d.bbox.top, d.bbox.x0))
+                others = [d.bbox for d in ordered]
                 for index, det in enumerate(ordered, start=1):
                     self._emit_one(
-                        det, index, lines, rasters, out_dir, emit, caption_near, context_excerpt
+                        det,
+                        index,
+                        lines,
+                        rasters,
+                        out_dir,
+                        emit,
+                        partial(caption_near, others=others),
+                        context_excerpt,
+                        boxes,
                     )
             finally:
                 close = getattr(ppage, "close", None)
@@ -164,8 +242,14 @@ class PdfEngine:
         emit: Emit,
         caption_near: Callable[..., str | None],
         context_excerpt: Callable[..., str | None],
+        boxes: PageBoxes,
     ) -> None:
         locator = f"p{det.page:04d}-f{index:02d}"
+        # Bbox nella pagina visibile (CropBox), per filtri, ritaglio e JSON;
+        # una figura tutta fuori dalla CropBox non si vede: scartata.
+        shifted = det.bbox.translate(-boxes.ox, -boxes.oy)
+        on_page = shifted.intersection(BBox(0.0, 0.0, boxes.crop_w, boxes.crop_h))
+        visible = on_page or shifted
         if self.detector is not None:
             is_vector, native_ppi = _raster_share(det, rasters)
         else:
@@ -180,7 +264,7 @@ class PdfEngine:
             "event": "figure",
             "locator": locator,
             "page": det.page,
-            "bbox": det.bbox.as_json(det.page_w, det.page_h),
+            "bbox": visible.as_json(boxes.crop_w, boxes.crop_h),
             "detector_class": det.detector_class,
             "detector_confidence": det.confidence,
             "caption": caption,
@@ -190,19 +274,21 @@ class PdfEngine:
             "reject_reason": None,
         }
         reason = "header_footer" if det.detector_class == "furniture" else None
+        if reason is None and on_page is None:
+            reason = "too_small"
         reason = reason or filters.geometry_reject_reason(
-            det.bbox,
-            page_w=det.page_w,
-            page_h=det.page_h,
+            visible,
+            page_w=boxes.crop_w,
+            page_h=boxes.crop_h,
             is_vector=is_vector,
             confidence=det.confidence,
         )
         if reason is None:
             crop = cropper.render_crop(
                 self.pdf[det.page - 1],
-                det.bbox,
-                page_w=det.page_w,
-                page_h=det.page_h,
+                visible,
+                page_w=boxes.crop_w,
+                page_h=boxes.crop_h,
                 is_vector=is_vector,
                 native_ppi=native_ppi,
             )
@@ -295,6 +381,40 @@ def _open_engine(job: dict[str, Any], cwd: Path) -> PdfEngine | DocxEngine:
     raise ChildError("unsupported_format", f"tipo non supportato: {mime}")
 
 
+class _MetadataTimeout(BaseException):
+    """Tempo dei metadati scaduto (BaseException: le funzioni di
+    `metadata` intercettano `Exception` e non devono fermarlo)."""
+
+
+def _on_alarm(signum: int, frame: Any) -> None:
+    raise _MetadataTimeout()
+
+
+def document_metadata(source: Path, mime: str) -> dict[str, Any]:
+    """Bibliografia deterministica e testo delle prime pagine, entro
+    `METADATA_SECONDS` (dopo, quello che c'è)."""
+    from app.services.document_figures import metadata
+
+    out: dict[str, Any] = {"bibliography": None, "text": "", "info_title": None}
+    previous = signal.signal(signal.SIGALRM, _on_alarm)
+    signal.alarm(METADATA_SECONDS)
+    try:
+        if mime == PDF_MIME:
+            bib = metadata.pdf_bibliography(source)
+            out["bibliography"] = bib.as_json() if bib is not None else None
+            out["info_title"] = metadata.pdf_info_title(source)
+            out["text"] = metadata.pdf_first_pages_text(source)[:METADATA_TEXT_CHARS]
+        else:
+            bib = metadata.office_bibliography(source)
+            out["bibliography"] = bib.as_json() if bib is not None else None
+    except _MetadataTimeout:
+        out["timed_out"] = True
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, previous)
+    return out
+
+
 def _probe(job: dict[str, Any], emit: Emit) -> int:
     info: dict[str, Any] = {"event": "probe_ok", "engine": job.get("engine")}
     if job.get("engine") == "docling":
@@ -326,7 +446,12 @@ def main(argv: list[str]) -> int:
         if "--probe" in argv:
             return _probe(job, emit)
         engine = _open_engine(job, cwd)
-        emit({"event": "ready", "pages": engine.total_pages})
+        ready: dict[str, Any] = {"event": "ready", "pages": engine.total_pages}
+        if job.get("metadata"):
+            ready["metadata"] = document_metadata(
+                cwd / Path(str(job["source"])).name, str(job.get("mime") or "")
+            )
+        emit(ready)
         for raw in sys.stdin:
             if not raw.strip():
                 continue

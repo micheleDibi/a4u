@@ -7,15 +7,22 @@ Ciclo di un documento:
 
 1. claim condizionale (`pending`, o `processing` rimasto da un riavvio) con
    `figures_next_attempt_at` scaduto; un documento alla volta;
-2. ricontrollo della politica (excluded / content_only → `skipped`);
+2. ricontrollo della politica (excluded / content_only → `skipped`), poi
+   di nuovo prima di ogni blocco e prima della Vision (il docente può
+   cambiarla durante l'estrazione);
 3. download nella cartella temporanea (storage in `to_thread`), impronta
-   del file, bibliografia deterministica se manca (:mod:`.document_figures.
-   metadata`);
+   del file; con un'impronta nuova le righe della vecchia estrazione
+   escono (`superseded` se già collocate in una lezione, altrimenti
+   cancellate);
 4. estrazione nel sottoprocesso sotto `HEAVY_JOB_LOCK`, a blocchi di
-   pagine con checkpoint (`figures_progress.next_page`); prima di ogni
-   blocco controllo di `MemAvailable` (rinvio senza consumare tentativi);
+   pagine con checkpoint (`figures_progress.next_page`); `MemAvailable` si
+   controlla prima di avviare un figlio (rinvio senza consumare tentativi,
+   finestra dal primo rinvio); la bibliografia deterministica, se manca, la
+   legge il figlio (:mod:`.document_figures.metadata`);
 5. ritagli caricati nello storage dal padre, righe `extracted`/`rejected`;
-6. deduplicazione (ripetute, duplicate nel documento e nel corso).
+6. deduplicazione (ripetute, duplicate nel documento e nel corso);
+7. descrizione Vision; se qualche descrizione fallisce il documento torna
+   in coda (le figure descritte restano pronte).
 
 Errori: `encrypted`, `corrupt`, `unsupported_format`, `engine_unavailable`,
 `source_missing` sono terminali; `timeout`, `oom`, `crashed`,
@@ -36,12 +43,12 @@ import shutil
 import tempfile
 import time
 import uuid
-from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from pydantic import ValidationError
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -52,9 +59,10 @@ from app.models.course import Course
 from app.models.course_document import CourseDocument
 from app.models.course_document_figure import CourseDocumentFigure
 from app.schemas.document_bibliography import DocumentBibliography
-from app.services import crossref_client, remote_storage
+from app.services import crossref_client, document_figures_service, remote_storage
 from app.services.document_figures import EXTRACTION_VERSION, metadata
 from app.services.document_figures import storage as figure_storage
+from app.services.document_figures.child import METADATA_TEXT_CHARS
 from app.services.document_figures.filters import HashedFigure, repeated_and_duplicates
 from app.services.document_figures.phash import hamming
 from app.services.document_figures.runner import (
@@ -100,7 +108,16 @@ class _DeferredError(Exception):
 
 
 class _VisionUnavailableError(Exception):
-    """Nessuna descrizione riuscita (chiave assente o servizio irraggiungibile)."""
+    """Descrizioni fallite (chiave assente, servizio irraggiungibile o errori
+    su singole figure): il documento riprova più tardi."""
+
+
+class _PolicyChangedError(Exception):
+    """Il documento non è più citabile: ci si ferma."""
+
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
 
 
 @dataclass
@@ -139,8 +156,10 @@ _probe_error: ExtractionChildError | None = None
 
 async def _ensure_engine(config: ChildConfig, workdir: Path) -> None:
     """Sonda Docling una volta per processo (torch senza AVX → SIGILL qui,
-    non a metà di un documento). Un fallimento resta in memoria fino al
-    riavvio dell'app."""
+    non a metà di un documento). Resta in memoria fino al riavvio dell'app
+    solo un motore davvero inutilizzabile (`engine_unavailable`: SIGILL,
+    import, caricamento del modello); timeout, memoria e crash della sonda
+    sono transitori e il documento riprova."""
     global _probe_result, _probe_error
     if config.engine != "docling" or _probe_result is not None:
         return
@@ -152,6 +171,14 @@ async def _ensure_engine(config: ChildConfig, workdir: Path) -> None:
             "document_figures_probe_ok", **{k: v for k, v in _probe_result.items() if k != "event"}
         )
     except ExtractionChildError as exc:
+        if exc.code != "engine_unavailable":
+            log.warning(
+                "document_figures_probe_transient",
+                code=exc.code,
+                error=str(exc),
+                stderr=exc.stderr_tail[-1500:],
+            )
+            raise
         _probe_error = ExtractionChildError(
             "engine_unavailable", str(exc), stderr_tail=exc.stderr_tail
         )
@@ -207,11 +234,32 @@ async def _recoverable(db: AsyncSession, doc: CourseDocument, code: str, error: 
     )
 
 
+def _parse_time(value: Any) -> datetime | None:
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+
+
+def _memory_low() -> bool:
+    available = mem_available_mb()
+    return available is not None and available < int(
+        get_settings().figure_extraction_min_available_mb
+    )
+
+
 async def _defer(db: AsyncSession, doc: CourseDocument) -> None:
-    """Rinvio per memoria insufficiente: il tentativo non conta."""
+    """Rinvio per memoria insufficiente: il tentativo non conta. La finestra
+    `FIGURE_EXTRACTION_MAX_DEFER_MINUTES` parte dal PRIMO rinvio (non dalla
+    richiesta: un documento può aspettare a lungo in coda dietro altri)."""
     settings = get_settings()
-    requested = doc.figures_requested_at or _now()
-    if _now() - requested > timedelta(minutes=int(settings.figure_extraction_max_defer_minutes)):
+    now = _now()
+    progress = dict(doc.figures_progress or {})
+    since = _parse_time(progress.get("deferred_since")) or now
+    if now - since > timedelta(minutes=int(settings.figure_extraction_max_defer_minutes)):
+        progress.pop("deferred_since", None)
+        doc.figures_progress = progress
         await _finish(
             db,
             doc,
@@ -220,14 +268,29 @@ async def _defer(db: AsyncSession, doc: CourseDocument) -> None:
             error="Memoria disponibile insufficiente per troppo tempo.",
         )
         return
+    progress["deferred_since"] = since.isoformat()
+    doc.figures_progress = progress
     doc.figures_attempts = max(0, doc.figures_attempts - 1)
     await _finish(
         db,
         doc,
         status="pending",
         code=None,
-        next_attempt_at=_now() + timedelta(seconds=DEFER_SECONDS),
+        next_attempt_at=now + timedelta(seconds=DEFER_SECONDS),
     )
+
+
+async def _ensure_citable(db: AsyncSession, doc_id: uuid.UUID) -> None:
+    """Politica riletta dal DB (prima di ogni blocco e prima della Vision):
+    un documento reso excluded/content_only durante l'estrazione non
+    produce altri ritagli né altre chiamate a pagamento."""
+    policy = (
+        await db.execute(select(CourseDocument.citation_policy).where(CourseDocument.id == doc_id))
+    ).scalar_one_or_none()
+    if policy == "excluded":
+        raise _PolicyChangedError("policy_excluded")
+    if policy == "content_only":
+        raise _PolicyChangedError("policy_content_only")
 
 
 # --- claim ------------------------------------------------------------------
@@ -289,36 +352,90 @@ def _config() -> ChildConfig:
     )
 
 
-async def _fill_bibliography(doc: CourseDocument, source: Path) -> None:
-    """Bibliografia deterministica solo se il documento non ne ha una."""
-    if doc.bibliography_source is not None:
+async def _fill_bibliography(doc: CourseDocument, meta: dict[str, Any] | None) -> None:
+    """Bibliografia deterministica solo se il documento non ne ha una, dai
+    metadati letti dal figlio (il documento non si apre mai nel processo
+    principale). Ordine del piano: prima i metadati del file
+    (`pdf_metadata`), poi il DOI risolto da Crossref, accettato solo se il
+    titolo restituito compare nel documento (il primo DOI di una dispensa è
+    spesso quello di un articolo citato)."""
+    if doc.bibliography_source is not None or not isinstance(meta, dict):
         return
-    if doc.mime_type == PDF_MIME:
-        text = await asyncio.to_thread(metadata.pdf_first_pages_text, source)
-        doi = metadata.find_doi(text)
-        if doi:
-            work = await crossref_client.get_work_by_doi(doi)
-            title = metadata.plausible_title(work.title) if work else None
-            if work is not None and title:
-                bib = DocumentBibliography(
-                    title=title,
-                    authors=[a[:200] for a in work.authors][:50],
-                    year=work.published_year
-                    if work.published_year and 1400 <= work.published_year <= 2100
-                    else None,
-                    container=(work.container or "")[:300] or None,
-                    doi=doi[:200],
-                    url=f"https://doi.org/{doi}"[:1000],
-                )
-                doc.bibliography = bib.as_json()
-                doc.bibliography_source = "crossref"
-                return
-        found = await asyncio.to_thread(metadata.pdf_bibliography, source)
-    else:
-        found = await asyncio.to_thread(metadata.office_bibliography, source)
-    if found is not None:
-        doc.bibliography = found.as_json()
-        doc.bibliography_source = "pdf_metadata"
+    raw = meta.get("bibliography")
+    if isinstance(raw, dict):
+        try:
+            found: DocumentBibliography | None = DocumentBibliography.model_validate(raw)
+        except ValidationError:
+            found = None
+        if found is not None and (found.title or found.authors):
+            doc.bibliography = found.as_json()
+            doc.bibliography_source = "pdf_metadata"
+            return
+    if doc.mime_type != PDF_MIME:
+        return
+    text = str(meta.get("text") or "")[:METADATA_TEXT_CHARS]
+    doi = metadata.find_doi(text)
+    if not doi:
+        return
+    work = await crossref_client.get_work_by_doi(doi)
+    title = metadata.plausible_title(work.title) if work else None
+    if work is None or not title:
+        return
+    info_title = meta.get("info_title")
+    if not metadata.crossref_title_matches(
+        title, text, info_title if isinstance(info_title, str) else None
+    ):
+        log.info("document_figures_doi_not_the_document", doc_id=str(doc.id), doi=doi)
+        return
+    bib = DocumentBibliography(
+        title=title,
+        authors=[a[:200] for a in work.authors][:50],
+        year=work.published_year
+        if work.published_year and 1400 <= work.published_year <= 2100
+        else None,
+        container=(work.container or "")[:300] or None,
+        doi=doi[:200],
+        url=f"https://doi.org/{doi}"[:1000],
+    )
+    doc.bibliography = bib.as_json()
+    doc.bibliography_source = "crossref"
+
+
+async def _supersede_previous(db: AsyncSession, doc: CourseDocument) -> list[str]:
+    """Impronta nuova (file, motore o `EXTRACTION_VERSION` diversi): le righe
+    della vecchia estrazione non si mescolano con le nuove. Quelle già
+    collocate in una lezione restano (U1) ma escono dal catalogo
+    (`superseded`) e liberano il locator; le altre si cancellano. Ritorna i
+    file da togliere dallo storage dopo il commit."""
+    rows = list(
+        (
+            await db.execute(
+                select(CourseDocumentFigure).where(CourseDocumentFigure.document_id == doc.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    rows = [r for r in rows if r.reject_reason != "superseded"]
+    if not rows:
+        return []
+    used = await document_figures_service.used_figure_ids(db, doc.course_id)
+    paths: list[str] = []
+    for row in rows:
+        if row.id in used:
+            row.reject_reason = "superseded"
+            row.locator = f"old-{row.id.hex[:12]}-{row.locator}"[:60]
+        else:
+            paths.extend(p for p in (row.storage_path, row.preview_path) if p)
+            await db.delete(row)
+    await db.flush()
+    log.info(
+        "document_figures_superseded",
+        doc_id=str(doc.id),
+        kept=sum(1 for r in rows if r.id in used),
+        deleted=sum(1 for r in rows if r.id not in used),
+    )
+    return paths
 
 
 async def _existing_locators(db: AsyncSession, doc_id: uuid.UUID) -> set[str]:
@@ -427,16 +544,21 @@ async def _deduplicate(db: AsyncSession, doc: CourseDocument) -> None:
         by_key[key].status = "rejected"
         by_key[key].reject_reason = "duplicate"
         by_key[key].duplicate_of_id = uuid.UUID(original)
+    # Solo figure proponibili: una copia di una figura staccata, esclusa dal
+    # docente, superata o di un documento non citabile non deve rendere
+    # «duplicata» (quindi mai proponibile) la figura di questo documento.
     others = list(
         (
             await db.execute(
-                select(CourseDocumentFigure).where(
+                select(CourseDocumentFigure)
+                .join(CourseDocument, CourseDocument.id == CourseDocumentFigure.document_id)
+                .where(
                     CourseDocumentFigure.course_id == doc.course_id,
-                    or_(
-                        CourseDocumentFigure.document_id.is_(None),
-                        CourseDocumentFigure.document_id != doc.id,
-                    ),
+                    CourseDocumentFigure.document_id != doc.id,
+                    CourseDocument.citation_policy == "citable",
                     CourseDocumentFigure.status.in_(("extracted", "ready")),
+                    CourseDocumentFigure.excluded_by_user.is_(False),
+                    CourseDocumentFigure.reject_reason.is_(None),
                     CourseDocumentFigure.phash.is_not(None),
                 )
             )
@@ -553,14 +675,20 @@ async def _describe(db: AsyncSession, doc: CourseDocument, workdir: Path | None)
     src = attribution_source(rows[0], doc)
     title = (src.title or src.fallback_name) if src is not None else None
     # Riuso delle descrizioni fra i corsi della stessa organizzazione (lo
-    # stesso PDF caricato in più corsi): niente seconda chiamata Vision.
+    # stesso PDF caricato in più corsi): niente seconda chiamata Vision. Solo
+    # corsi della stessa lingua (descrizione e parole chiave sono scritte
+    # nella lingua del corso) e figure di documenti citabili.
     described_pool = list(
         (
             await db.execute(
                 select(CourseDocumentFigure)
                 .join(Course, Course.id == CourseDocumentFigure.course_id)
+                .join(CourseDocument, CourseDocument.id == CourseDocumentFigure.document_id)
                 .where(
                     Course.organization_id == (course.organization_id if course else None),
+                    Course.language_code == language,
+                    CourseDocument.citation_policy == "citable",
+                    CourseDocumentFigure.status == "ready",
                     CourseDocumentFigure.described_at.is_not(None),
                     CourseDocumentFigure.describe_source_id.is_(None),
                     CourseDocumentFigure.phash.is_not(None),
@@ -645,8 +773,20 @@ async def _describe(db: AsyncSession, doc: CourseDocument, workdir: Path | None)
         )
         doc.figures_progress = progress
         await db.commit()
-    if succeeded == 0 and failed:
-        raise _VisionUnavailableError(f"{failed} descrizioni fallite, nessuna riuscita")
+    if failed:
+        # Anche con qualche descrizione riuscita: le figure rimaste
+        # `extracted` si riprovano al prossimo giro (le pronte restano).
+        raise _VisionUnavailableError(f"{failed} descrizioni fallite, {succeeded} riuscite")
+
+
+def _extraction_done(doc: CourseDocument) -> bool:
+    """Tutte le pagine (fino al tetto) già estratte: al nuovo giro resta solo
+    la descrizione (per esempio dopo descrizioni Vision fallite)."""
+    total = doc.figures_pages_total
+    if not total:
+        return False
+    next_page = int((doc.figures_progress or {}).get("next_page") or 1)
+    return next_page > min(total, max(1, int(get_settings().figure_extraction_max_pages)))
 
 
 async def _extract(
@@ -661,22 +801,37 @@ async def _extract(
     per_child = max(block_pages, int(settings.figure_extraction_pages_per_child))
     max_pages = max(1, int(settings.figure_extraction_max_pages))
     deadline = time.monotonic() + float(settings.figure_extraction_total_timeout_seconds)
-    known = await _existing_locators(db, doc.id)
     total = _Outcome(skipped_blocks=len(skipped))
+    if _extraction_done(doc):
+        return total
+    known = await _existing_locators(db, doc.id)
+    want_metadata = doc.bibliography_source is None
     session: ChildSession | None = None
     try:
         while True:
             if time.monotonic() > deadline:
                 raise ExtractionChildError("timeout", "tempo totale dell'estrazione superato")
-            available = mem_available_mb()
-            if available is not None and available < int(
-                settings.figure_extraction_min_available_mb
-            ):
-                raise _DeferredError()
+            await _ensure_citable(db, doc.id)
             if session is None:
+                # Memoria controllata solo prima di avviare un figlio: con il
+                # figlio vivo la sua RSS la abbasserebbe a ogni blocco.
+                if _memory_low():
+                    raise _DeferredError()
                 session = ChildSession(config, workdir)
-                pages = await session.start(source_name=source.name, mime=doc.mime_type)
+                pages = await session.start(
+                    source_name=source.name, mime=doc.mime_type, metadata=want_metadata
+                )
                 doc.figures_pages_total = pages
+                if want_metadata:
+                    want_metadata = False
+                    try:
+                        await _fill_bibliography(doc, session.metadata)
+                    except Exception as exc:  # la bibliografia non blocca le figure
+                        log.warning(
+                            "document_figures_bibliography_failed",
+                            doc_id=str(doc.id),
+                            error=str(exc),
+                        )
             last_page = min(doc.figures_pages_total or 1, max_pages)
             if next_page > last_page:
                 break
@@ -709,6 +864,7 @@ async def _extract(
             total.rejected += stored.rejected
             next_page = end + 1
             progress.update(stage="extracting", next_page=next_page)
+            progress.pop("deferred_since", None)
             doc.figures_progress = dict(progress)
             doc.figures_pages_done = end
             await db.commit()
@@ -723,6 +879,9 @@ async def _extract(
 
 async def process_document(db: AsyncSession, doc: CourseDocument) -> None:
     settings = get_settings()
+    # Id salvato subito: dopo un rollback l'oggetto è scaduto e rileggerne
+    # gli attributi in AsyncSession solleva MissingGreenlet.
+    doc_id = doc.id
     if doc.figures_attempts > int(settings.figure_extraction_attempts_max):
         await _finish(
             db, doc, status="failed", code="attempts_exhausted", error="Tentativi esauriti."
@@ -756,25 +915,32 @@ async def process_document(db: AsyncSession, doc: CourseDocument) -> None:
             return
         file_sha = await asyncio.to_thread(_sha256, source)
         new_fingerprint = fingerprint(file_sha, config.engine)
+        stale_paths: list[str] = []
         if doc.figures_fingerprint != new_fingerprint:
-            # File, motore o versione diversi: si riparte da capo.
+            # File, motore o versione diversi: si riparte da capo, senza
+            # mescolare le righe della vecchia estrazione con le nuove.
+            stale_paths = await _supersede_previous(db, doc)
             doc.figures_fingerprint = new_fingerprint
             doc.figures_progress = {"stage": "extracting", "next_page": 1}
             doc.figures_pages_done = 0
+            doc.figures_pages_total = None
         doc.figures_engine = config.engine
-        try:
-            await _fill_bibliography(doc, source)
-        except Exception as exc:  # la bibliografia non blocca le figure
-            log.warning("document_figures_bibliography_failed", doc_id=str(doc.id), error=str(exc))
         await db.commit()
+        if stale_paths:
+            await document_figures_service.delete_files(stale_paths)
 
         async with HEAVY_JOB_LOCK:
             try:
-                if doc.mime_type == PDF_MIME:
+                if doc.mime_type == PDF_MIME and not _extraction_done(doc):
+                    if _memory_low():
+                        raise _DeferredError()
                     await _ensure_engine(config, workdir)
                 outcome = await _extract(db, doc, workdir, source, config)
             except _DeferredError:
                 await _defer(db, doc)
+                return
+            except _PolicyChangedError as exc:
+                await _finish(db, doc, status="skipped", code=exc.code)
                 return
             except ExtractionChildError as exc:
                 if exc.code in RECOVERABLE_CODES:
@@ -785,30 +951,33 @@ async def process_document(db: AsyncSession, doc: CourseDocument) -> None:
                 return
             except (remote_storage.StorageError, OSError) as exc:
                 await db.rollback()
-                await _recoverable(db, doc, "storage_error", str(exc))
+                fresh = await db.get(CourseDocument, doc_id, populate_existing=True)
+                if fresh is not None:
+                    await _recoverable(db, fresh, "storage_error", str(exc))
                 return
 
         await _deduplicate(db, doc)
+        vision_error: str | None = None
         try:
+            await _ensure_citable(db, doc_id)
             await _describe(db, doc, workdir)
-        except _VisionUnavailableError as exc:
-            await _recoverable(db, doc, "vision_unavailable", str(exc))
+        except _PolicyChangedError as exc:
+            await _finish(db, doc, status="skipped", code=exc.code)
             return
-        counts = Counter(
-            (
-                await db.execute(
-                    select(CourseDocumentFigure.status).where(
-                        CourseDocumentFigure.document_id == doc.id
-                    )
+        except _VisionUnavailableError as exc:
+            vision_error = str(exc)
+        rows = (
+            await db.execute(
+                select(CourseDocumentFigure.status, CourseDocumentFigure.reject_reason).where(
+                    CourseDocumentFigure.document_id == doc_id
                 )
             )
-            .scalars()
-            .all()
-        )
+        ).all()
         partial = bool(outcome.skipped_blocks) or (doc.figures_pages_total or 0) > int(
             settings.figure_extraction_max_pages
         )
-        doc.figures_count = counts.get("ready", 0)
+        # Le righe `superseded` di un'estrazione precedente non contano.
+        doc.figures_count = sum(1 for st, reason in rows if st == "ready" and reason is None)
         doc.figures_coverage = "partial" if partial else "full"
         doc.figures_stats = {
             "seconds": round(time.monotonic() - started, 1),
@@ -817,9 +986,12 @@ async def process_document(db: AsyncSession, doc: CourseDocument) -> None:
             "engine": config.engine,
             "extraction_version": EXTRACTION_VERSION,
             "figures": doc.figures_count,
-            "rejected": counts.get("rejected", 0),
+            "rejected": sum(1 for st, _reason in rows if st == "rejected"),
             "skipped_blocks": (doc.figures_progress or {}).get("skipped_blocks") or [],
         }
+        if vision_error is not None:
+            await _recoverable(db, doc, "vision_unavailable", vision_error)
+            return
         progress = dict(doc.figures_progress or {})
         progress["stage"] = "done"
         doc.figures_progress = dict(progress)
@@ -839,14 +1011,15 @@ async def _tick() -> None:
             doc = await claim_next(db)
             if doc is None:
                 return
+            doc_id = doc.id
             try:
                 await process_document(db, doc)
             except Exception as exc:  # pragma: no cover - rete di sicurezza
                 await db.rollback()
                 log.error(
-                    "document_figures_unexpected", doc_id=str(doc.id), error=str(exc), exc_info=True
+                    "document_figures_unexpected", doc_id=str(doc_id), error=str(exc), exc_info=True
                 )
-                fresh = await db.get(CourseDocument, doc.id, populate_existing=True)
+                fresh = await db.get(CourseDocument, doc_id, populate_existing=True)
                 if fresh is not None and fresh.figures_status == "processing":
                     await _recoverable(db, fresh, "crashed", str(exc))
         except Exception as exc:  # pragma: no cover
