@@ -318,3 +318,43 @@ def test_slides_and_speech_see_only_the_node_labels() -> None:
     assert mermaid["content"] == "flowchart LR\n a-->b"
     assert "\\" not in json.dumps(view["visual_assets"][:2], ensure_ascii=False).replace("\\n", "")
     assert raw["visual_assets"][0]["content"] == CHAIN  # l'originale non cambia
+
+
+async def test_worker_does_not_offer_tikz_during_an_extraction(
+    seeded_db: AsyncSession, monkeypatch: pytest.MonkeyPatch, _engine: Any
+) -> None:
+    """La sandbox TeX non gira mentre Docling estrae (`HEAVY_JOB_LOCK`): una
+    figura `tikz` resterebbe senza validazione e costerebbe una
+    rigenerazione, quindi il tentativo non la offre (verifica WP6)."""
+    from app.services.heavy_job_lock import HEAVY_JOB_LOCK
+
+    course_id, _org, _user = await build_course(
+        seeded_db, modules=1, lessons_per_module=1, content_status="pending"
+    )
+    await seeded_db.execute(
+        update(Course).where(Course.id == course_id).values(glossary_status="ready")
+    )
+    await seeded_db.commit()
+    course = await content_svc.load_course_full(seeded_db, course_id=course_id)
+    assert course is not None
+    lesson_id = find_lesson(course, "M1.L1").id
+    _offer(monkeypatch, propose=True)
+    calls: list[dict[str, Any]] = []
+
+    async def generate(**kwargs: Any) -> tuple[LessonContentOutput, dict[str, Any]]:
+        calls.append(kwargs)
+        raise openai_svc.OpenAILessonContentError(status=500, message="fermo qui")
+
+    monkeypatch.setattr(
+        worker, "async_session_factory", async_sessionmaker(_engine, expire_on_commit=False)
+    )
+    monkeypatch.setattr(openai_svc, "generate_lesson_content", generate)
+    await HEAVY_JOB_LOCK.acquire()
+    try:
+        await worker._process_one(lesson_id)
+    finally:
+        HEAVY_JOB_LOCK.release()
+    await worker._process_one(lesson_id)
+    during, after = calls
+    assert list(during["visual_formats"]) == list(WITHOUT)
+    assert list(after["visual_formats"]) == list(ALL)

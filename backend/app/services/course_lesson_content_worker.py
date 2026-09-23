@@ -63,6 +63,7 @@ from app.services import (
     source_figure_catalog,
     source_figure_fusion,
 )
+from app.services.heavy_job_lock import HEAVY_JOB_LOCK
 from app.services.openai_client import OpenAINotConfiguredError
 
 log = get_logger("app.course_lesson_content.worker")
@@ -365,8 +366,14 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                     error=str(exc)[:300],
                 )
         # Formati offerti a questo tentativo: gli stessi per schema e
-        # messaggio user (`tikz` solo se proposto e non appena fallito).
-        withhold_tikz = _TIKZ_WITHHELD.pop(lesson.id, None) == (lesson.content_attempts or 0) - 1
+        # messaggio user (`tikz` solo se proposto, non appena fallito e non
+        # durante un'estrazione Docling, che occupa la sandbox TeX: la
+        # figura resterebbe senza validazione e costerebbe una
+        # rigenerazione).
+        withhold_tikz = (
+            _TIKZ_WITHHELD.pop(lesson.id, None) == (lesson.content_attempts or 0) - 1
+            or HEAVY_JOB_LOCK.locked()
+        )
         visual_formats = openai_lesson_content_service.phase3_visual_formats(
             course_full.language_code, withhold_tikz=withhold_tikz
         )

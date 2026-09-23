@@ -1491,17 +1491,23 @@ async def _prerender_visual_assets_for_lesson(
     content: dict[str, Any],
     *,
     language: str = "it",
+    raise_on_busy: bool = False,
 ) -> dict[str, RenderedFigure]:
     """Pre-renderizza in batch tutti gli asset visivi renderizzabili della
     lezione attraverso il registro (`render_figure_map`: un batch per
     formato, cache LRU, semaforo e timeout). Ritorna {asset_id →
     RenderedFigure} (SVG e metriche del testo, D10); chiavi assenti
     indicano rendering fallito o formato non disponibile (fallback del
-    partial). Non solleva mai: i worker non vedono eccezioni nuove."""
+    partial). Non solleva, salvo `raise_on_busy=True` con un motore
+    occupato (`FigureEngineBusyError`, oggi solo `tikz` durante
+    un'estrazione): chi pubblica un PDF lo chiede, e il suo worker ritenta
+    (auto-retry) invece di salvare il segnaposto."""
     assets = [a for a in content.get("visual_assets") or [] if isinstance(a, dict)]
     if not assets:
         return {}
-    return await figure_render_service.render_figure_map(assets, language=language)
+    return await figure_render_service.render_figure_map(
+        assets, language=language, raise_on_busy=raise_on_busy
+    )
 
 
 # Alias del nome storico (i chiamanti esterni e la documentazione lo citano):
@@ -2596,7 +2602,9 @@ async def materialize_lesson_pdf(
     # i diagrammi della lezione; senza diagrammi Mermaid nessun Chromium).
     raw_content = lesson.content_raw or {}
     language = (course.language_code or "it").lower()
-    visual_svg_map = await _prerender_visual_assets_for_lesson(raw_content, language=language)
+    visual_svg_map = await _prerender_visual_assets_for_lesson(
+        raw_content, language=language, raise_on_busy=True
+    )
     # Direzione delle catene (D15): per le sole figure Mermaid che escono
     # sotto la banda e il cui sorgente è una catena orizzontale si rende
     # anche la variante verticale; la misura del fit sceglie fra le due.

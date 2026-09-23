@@ -413,8 +413,10 @@ async def _prerender_mermaid_for_slides(
         # L'id di Fase 4 è già irraggiungibile: qui si salta il render.
         if isinstance(na, dict) and _asset_ref_key(na.get("asset_id")) not in seen:
             merged_visual_assets.append(na)
+    # PDF slide e video pubblicano: un motore occupato (`tikz` durante
+    # un'estrazione) solleva e il worker ritenta, niente segnaposto salvato.
     figures = await base_pdf._prerender_visual_assets_for_lesson(
-        {"visual_assets": merged_visual_assets}, language=language
+        {"visual_assets": merged_visual_assets}, language=language, raise_on_busy=True
     )
     # Direzione delle catene (D15): stessa regola della dispensa, sul box
     # della slide di riferimento. La variante ha la stessa chiave di cache

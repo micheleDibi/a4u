@@ -66,7 +66,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from app.core.config import get_settings
-from app.core.errors import ValidationAppError
+from app.core.errors import ConflictError, ValidationAppError
 from app.core.logging import get_logger
 from app.schemas.course_lesson_content import VISUAL_ASSET_CONTENT_MAX_CHARS
 from app.schemas.figure_function import FunctionFigureSpec, format_issues, parse_function_spec
@@ -2052,6 +2052,12 @@ class FunctionRenderer:
         return hit.computed_caption
 
 
+class FigureEngineBusyError(Exception):
+    """Il motore della figura è occupato da un altro lavoro pesante (TeX
+    in coda o estrazione Docling in corso): non è un errore del sorgente,
+    quindi niente cache negativa; la resa si ritenta più tardi."""
+
+
 def tikz_timeout_seconds() -> float:
     """Tetto di una validazione o resa `tikz` vista dal chiamante: attende
     anche la coda della sandbox (`heavy_job_lock`) prima di compilare, e il
@@ -2150,6 +2156,12 @@ class TikzRenderer:
         )
 
         src = self.sanitize(content)
+        cached = _cache_get_figure(self._key(src))
+        if cached is not None:
+            defects = cached.metrics.defects if cached.metrics is not None else ()
+            if strict_geometry and defects:
+                return (False, "difetti geometrici: " + "; ".join(defects)[:_ERROR_CAP])
+            return (True, "")
         try:
             figure = self._render_or_raise(src)
         # Coda e motore non dipendono dal sorgente: prefissi riconosciuti
@@ -2190,11 +2202,20 @@ class TikzRenderer:
         hit = _cache_get_figure(key)
         if hit is not None:
             return hit
+        if _cache_is_negative(key):
+            _render_failed(self.fmt, asset_id, "negative_cache")
+            return None
         if self.static_check(sanitized) is not None or not self.available():
             _render_failed(self.fmt, asset_id, "tikz non valido o motore non disponibile")
             return None
+        from app.services.tikz_compile_service import TikzBusyError
+
         try:
             figure = self._render_or_raise(sanitized)
+        except TikzBusyError as exc:
+            # Occupato non vuol dire rotto: niente cache negativa.
+            _render_failed(self.fmt, asset_id, f"tikz_busy: {exc}")
+            raise FigureEngineBusyError(str(exc)) from exc
         except Exception as exc:
             _cache_negative(key)
             _render_failed(self.fmt, asset_id, str(exc))
@@ -2203,7 +2224,10 @@ class TikzRenderer:
         return figure
 
     def render_svg(self, content: str, *, asset_id: str = "") -> str | None:
-        figure = self.render_figure(content, asset_id=asset_id)
+        try:
+            figure = self.render_figure(content, asset_id=asset_id)
+        except FigureEngineBusyError:
+            return None
         return figure.svg if figure is not None else None
 
     def render_png(self, content: str, *, dpi: int = 150) -> bytes | None:
@@ -2492,7 +2516,11 @@ async def render_svg_map(assets: Sequence[Mapping[str, Any]], *, language: str) 
 
 
 async def render_figure_map(
-    assets: Sequence[Mapping[str, Any]], *, language: str, cache_failures: bool = True
+    assets: Sequence[Mapping[str, Any]],
+    *,
+    language: str,
+    cache_failures: bool = True,
+    raise_on_busy: bool = False,
 ) -> dict[str, RenderedFigure]:
     """`{asset_id: RenderedFigure}` per gli asset renderizzabili di una
     lezione (SVG e metriche del testo, D10).
@@ -2526,7 +2554,7 @@ async def render_figure_map(
             _render_failed(fmt, asset_id, "format_unavailable")
             continue
         sanitized = renderer.sanitize(content)
-        key = cache_key(fmt, sanitized)
+        key = _renderer_key(renderer, fmt, sanitized)
         hit = _cache_get_figure(key)
         if hit is not None and _svg_cache_hit_complete(renderer, sanitized):
             result[asset_id] = hit
@@ -2560,6 +2588,13 @@ async def render_figure_map(
                         _cache_negative(key)
                     _render_failed(fmt, aid, f"timeout dopo {fmt_timeout:g} s")
                 continue
+            except FigureEngineBusyError:
+                # Motore occupato (TeX durante un'estrazione): niente cache
+                # negativa; chi pubblica (PDF, frame) chiede di sollevare e il
+                # suo worker ritenta invece di salvare un segnaposto.
+                if raise_on_busy:
+                    raise
+                continue
             except Exception as exc:  # il renderer non deve sollevare; difesa in profondità
                 for aid, _s, key in items:
                     if cache_failures:
@@ -2592,6 +2627,14 @@ async def render_figure_map(
         rendered=len(result),
     )
     return result
+
+
+def _renderer_key(renderer: Any, fmt: str, sanitized: str) -> CacheKey:
+    """Chiave di cache del renderer se ne dichiara una (`tikz`: con
+    `PREAMBLE_VERSION`), altrimenti quella comune: una sola voce per figura
+    nella LRU, condivisa da `render_figure_map` e dal renderer."""
+    own = getattr(renderer, "_key", None)
+    return own(sanitized) if callable(own) else cache_key(fmt, sanitized)
 
 
 def _out_of_band(fig: RenderedFigure, *, box_mm: FigureBoxMm, variant: FigureVariant) -> bool:
@@ -2755,6 +2798,11 @@ async def validate_visual_assets_or_raise(
             ok, msg = await asyncio.to_thread(
                 partial(renderer.validate, text, deep=True, strict_geometry=False)
             )
+            if not ok and msg.startswith("tikz_busy"):
+                # Non è un errore dell'asset: si riprova più tardi.
+                raise ConflictError(
+                    "Compilazione TikZ occupata: riprova fra poco.", code="tikz_busy"
+                )
         else:
             ok, msg = await asyncio.to_thread(renderer.validate, text, deep=False)
         if not ok:

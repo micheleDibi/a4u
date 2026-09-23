@@ -38,6 +38,7 @@ from app.models.course import Course
 from app.models.course_lesson import CourseLesson
 from app.services.figure_render_service import (
     REGISTRY,
+    FigureEngineBusyError,
     RenderedFigure,
     TikzPreview,
     TikzPreviewError,
@@ -148,6 +149,10 @@ async def view(db: AsyncSession, *, course: Course, asset_id: str, content: str)
             asyncio.to_thread(renderer.render_figure, content, asset_id=asset_id),
             timeout=timeout,
         )
+    except FigureEngineBusyError as exc:
+        raise ConflictError(
+            "Compilazione TikZ occupata: riprova fra poco.", code="tikz_busy"
+        ) from exc
     except TimeoutError as exc:
         raise ValidationAppError(f"Resa oltre {timeout:g} s.", code="tikz_render_timeout") from exc
     if figure is None:

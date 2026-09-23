@@ -372,7 +372,8 @@ def _source_figure_catalog_block(catalog_text: str) -> list[str]:
 # Formato `tikz` (WP6.3): offerto solo quando `phase3_visual_formats` lo
 # include. Regole nel messaggio user, non nel system (M6: il system di
 # PROMPT 3 resta byte-identico); `tikz` conta nel budget (a).
-_TIKZ_BLOCK = r"""## Formato aggiuntivo: tikz
+_TIKZ_BLOCK = (
+    r"""## Formato aggiuntivo: tikz
 
 Puoi usare anche `tikz` (compilato dal server) per schemi di strumenti,
 circuiti e catene di misura (blocchi e segnali, sensori, ponti, anelli di
@@ -383,7 +384,9 @@ reti (`dot`).
 - `content`: UN solo ambiente `tikzpicture` (o `circuitikz`, stile
   europeo), senza preambolo, `\usepackage`, `\usetikzlibrary`, `\def`,
   `\newcommand`, `\input`, `overlay` né `remember picture`. Librerie
-  caricate (solo queste): """ + ", ".join(TIKZ_LIBRARIES) + r""".
+  caricate (solo queste): """
+    + ", ".join(TIKZ_LIBRARIES)
+    + r""".
 - Posizionamento relativo (`right=of`, `below=of`, `node distance`),
   etichette brevi nella lingua del corso, formule fra `$…$`, colori
   `a4uC0`…`a4uC7` e `a4uInk`, nessun font più grande di `\small`,
@@ -400,6 +403,7 @@ Esempio (catena di misura):
   \draw[->] (c) -- (a);
 \end{tikzpicture}
 """
+)
 
 _TIKZ_COUNT_CLAUSE = (
     "Una figura `tikz` (schema di strumento, circuito o catena di misura) è "

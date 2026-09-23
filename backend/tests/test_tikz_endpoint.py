@@ -8,7 +8,10 @@ Senza TeX (renderer con la compilazione sostituita, lexer vero):
   solo dalle compilazioni (gli hit della cache non contano) → 429; sandbox
   occupata → 409 `tikz_busy`; 403 senza COURSE_EDIT;
 - vista (COURSE_VIEW): solo un sorgente identico a un asset `tikz` salvato
-  in una lezione del corso, altrimenti 404 `tikz_asset_not_found`.
+  in una lezione del corso, altrimenti 404 `tikz_asset_not_found`;
+- sandbox occupata: niente cache negativa, `render_figure_map` solleva
+  solo se chi pubblica lo chiede (PDF, frame), 409 `tikz_busy` per vista e
+  PATCH; registro e renderer condividono la chiave della cache.
 
 Con TeX (container `test`): l'anteprima vera compila e misura.
 """
@@ -233,3 +236,50 @@ def test_real_preview_compiles_with_tex(monkeypatch: pytest.MonkeyPatch) -> None
         assert again.cached and calls == [1]
     finally:
         tikz_compile_service.available.cache_clear()
+
+
+# ---------------------------------------------------------------------------
+# Sandbox occupata (verifica WP6): mai cache negativa, mai un segnaposto
+# salvato in silenzio, 409 per vista e PATCH
+# ---------------------------------------------------------------------------
+
+
+async def test_busy_is_not_a_broken_figure(fake: _FakeTikz) -> None:
+    import asyncio
+
+    from app.core.errors import ConflictError
+
+    assets = [{"asset_id": "t1", "format": "tikz", "content": CHAIN}]
+    fake.busy = True
+    assert await frs.render_figure_map(assets, language="it") == {}
+    with pytest.raises(frs.FigureEngineBusyError):
+        await frs.render_figure_map(assets, language="it", raise_on_busy=True)
+    with pytest.raises(ConflictError) as excinfo:
+        await frs.validate_visual_assets_or_raise(
+            assets,
+            previous=[],
+            loc_root="visual_assets",
+            code="lesson_content_invalid_visual_asset",
+        )
+    assert excinfo.value.code == "tikz_busy"
+    # Libera la sandbox: nessuna cache negativa, la figura si rende.
+    fake.busy = False
+    figures = await frs.render_figure_map(assets, language="it")
+    assert figures["t1"].svg == SVG and len(fake.compiled) == 1
+    # Stessa chiave della cache per registro e renderer: niente ricompilazione.
+    assert await asyncio.to_thread(fake.validate, CHAIN, deep=True, strict_geometry=False)
+    assert len(fake.compiled) == 1
+
+
+async def test_view_answers_409_when_the_sandbox_is_busy(
+    client: Any, seeded_db: AsyncSession, fake: _FakeTikz
+) -> None:
+    user_id, org_id, course_id = await _course_for(seeded_db, role_code=R.MEMBER)
+    await _lesson_with(seeded_db, course_id, CHAIN)
+    fake.busy = True
+    res = await client.post(
+        f"{_base(org_id, course_id)}/tikz-view",
+        json={"asset_id": "t1", "content": CHAIN},
+        headers=_bearer(user_id),
+    )
+    assert res.status_code == 409 and res.json()["code"] == "tikz_busy"

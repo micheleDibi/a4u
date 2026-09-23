@@ -1303,16 +1303,19 @@ async def test_prerender_for_lesson_delegates_to_render_svg_map(
     seen: dict[str, Any] = {}
     fig_a = frs.RenderedFigure.from_svg(SVG_A)
 
-    async def fake_render_figure_map(assets, *, language):
+    async def fake_render_figure_map(assets, *, language, raise_on_busy=False):
         seen["assets"], seen["language"] = list(assets), language
+        seen["raise_on_busy"] = raise_on_busy
         return {"A": fig_a}
 
     monkeypatch.setattr(frs, "render_figure_map", fake_render_figure_map)
     content = {"visual_assets": [_asset("A", "dot", "digraph { a }"), "non-dict", None]}
     got = await pdf._prerender_visual_assets_for_lesson(content, language="en")
     assert got == {"A": fig_a} and got["A"].svg == SVG_A
-    assert seen["language"] == "en"
+    assert seen["language"] == "en" and seen["raise_on_busy"] is False
     assert [a["asset_id"] for a in seen["assets"]] == ["A"]
+    await pdf._prerender_visual_assets_for_lesson(content, language="en", raise_on_busy=True)
+    assert seen["raise_on_busy"] is True
     assert pdf._prerender_mermaid_for_lesson is pdf._prerender_visual_assets_for_lesson
     assert await pdf._prerender_visual_assets_for_lesson({"visual_assets": []}) == {}
     assert await pdf._prerender_visual_assets_for_lesson({}) == {}
@@ -1324,8 +1327,11 @@ async def test_prerender_for_slides_merges_content_and_new_assets(
 ) -> None:
     seen: dict[str, Any] = {}
 
-    async def fake_render_figure_map(assets, *, language):
+    async def fake_render_figure_map(assets, *, language, raise_on_busy=False):
         seen["ids"], seen["language"] = [a["asset_id"] for a in assets], language
+        # PDF slide e frame pubblicano: un motore occupato fa ritentare il
+        # worker invece di salvare il segnaposto.
+        assert raise_on_busy is True
         return {}
 
     monkeypatch.setattr(frs, "render_figure_map", fake_render_figure_map)
