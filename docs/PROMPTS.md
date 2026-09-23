@@ -18,7 +18,7 @@ Fonte autorevole: `backend/app/core/config.py` (classe `Settings`). Override via
 | `openai_lesson_slides_model` | `gpt-5.5` | `medium` | 16000 | Slide (PROMPT 5) |
 | `openai_lesson_speech_model` | `gpt-5.5` | `medium` | 16000 | Discorso (PROMPT 6) |
 | `openai_image_to_mermaid_model` | `gpt-4o` | `None` | 4000 | Immagine → Mermaid (PROMPT 11) |
-| `openai_asset_fix_model` | `gpt-4o-mini` | `None` | 4000 | Fix asset LaTeX/Mermaid/Vega-Lite/DOT/function (PROMPT 12) |
+| `openai_asset_fix_model` | `gpt-4o-mini` | `None` | 4000 | Fix asset LaTeX/Mermaid/Vega-Lite/DOT/function/tikz (PROMPT 12) |
 | `openai_asset_localize_model` | `gpt-4o-mini` | — | 8000 | Localizzazione dei campi testuali degli asset (`openai_asset_localize_service`, kill-switch `asset_localize_enabled`) |
 | `openai_figure_review_model` | `gpt-4o-mini` | `None` | 4000 | Revisore figura ↔ testo (PROMPT 17; kill-switch `figure_review_enabled`, `figure_review_max_attempts` = 2) |
 | `openai_figure_describe_model` | `gpt-4.1-mini` | `None` | 800 | Vision descrittiva delle figure di fonte (PROMPT 18; `detail` `openai_figure_describe_detail`, concorrenza `openai_figure_describe_concurrency`) |
@@ -1045,12 +1045,17 @@ Figure estratte dai documenti del corso, riproducibili con la fonte, che il sist
 {al più FIGURE_SOURCE_CATALOG_MAX_ITEMS (8) righe, FIGURE_SOURCE_CATALOG_MAX_CHARS (4000) caratteri: `- SRC-<hex8> | tipo: … | didascalia originale: … | descrizione: … | parole chiave: …` (lesson_figure_selection; mai la riga «Fonte» né il nome del documento)}
 >>>
 
+## Formato aggiuntivo: tikz          (solo se `phase3_visual_formats` offre `tikz`)
+
+{_TIKZ_BLOCK di course_lesson_content_service (~1,4k caratteri): quando usare `tikz` (schemi di strumenti, circuiti, catene di misura; non grafici, dati, alberi); se il catalogo ha già lo stesso oggetto si sceglie quella figura; un solo ambiente `tikzpicture`/`circuitikz` senza preambolo né comandi vietati; librerie già caricate; posizionamento relativo, etichette brevi, colori `a4uC0`…`a4uC7`/`a4uInk`, font entro `\small`, larghezza entro 16 cm; configurazione standard, ONESTÀ DEI DATI; esempio della catena di misura}
+
 ## Compito
 
 Genera il testo completo della lezione secondo lo schema JSON.
 Verifica internamente che ogni obiettivo, ogni tema obbligatorio
 e ogni asset siano correttamente trattati e referenziati.
 {_figure_count_request(lesson): numero di figure generate atteso, invariato}
+{solo con `tikz` offerto — _TIKZ_COUNT_CLAUSE: «Una figura `tikz` (schema di strumento, circuito o catena di misura) è una figura generata: rientra in questo stesso intervallo.»}
 {solo con catalogo — _source_figure_count_request(lesson, max): «Figure di fonte: IN AGGIUNTA alle figure da generare. Prima decidi le figure generate come se il catalogo non ci fosse: stesso numero, stesse sezioni e stessi formati (anche `dot` e `mermaid` quando una figura del catalogo mostra lo stesso oggetto: la figura generata resta, con la tua versione). Poi puoi inserire da 0 a {FIGURE_SOURCE_MAX_PER_LESSON, 1 per l'introduttiva} figure del catalogo, solo se mostrano ciò che la sezione spiega. Per ognuna: una voce in `source_figures` (`figure` = id del catalogo, `caption` e `alt_text` nella lingua del corso, senza indicare la fonte: la aggiunge il sistema) e il tag `[FIG:id del catalogo]` nel testo, come per le altre figure. Non cambiare per loro il resto del testo, salvo le frasi che le citano.»}
 Ancora ogni affermazione sostanziale agli estratti qui sopra quando
 li coprono; per i temi non coperti usa conoscenza consolidata della
@@ -1058,6 +1063,8 @@ disciplina e registralo in `references` come `suggerimento_generale`.
 ```
 
 Senza catalogo il messaggio è byte-identico a quello di prima della funzione (test I1). Le lezioni di verifica non ricevono mai catalogo.
+
+Formato `tikz` (WP6.3): `openai_lesson_content_service.phase3_visual_formats(language_code, withhold_tikz=…)` parte da `available_formats()` e toglie `tikz` salvo tre condizioni insieme: `FIGURE_TIKZ_PROPOSE_ENABLED`, script della lingua coperto dai font del preambolo (latino, greco, cirillico, CJK, hangul) e nessun `tikz_unresolved` al tentativo precedente (marcatore in memoria del worker). Il worker passa gli stessi formati al messaggio user e allo schema. Il system prompt non cambia: `_formats_off_block` considera solo `PROMPTED_FORMATS`, quindi con `tikz` spento o non offerto system, messaggio e schema sono byte-identici a prima.
 
 In rigenerazione: `## Versione attuale della lezione (DA RIVEDERE)` (solo se esiste già `content_raw`; gli asset generati sono elencati come `- asset_id [format]: caption`, senza suffisso se il record storico non ha `format`; le figure di fonte a parte, in `### Figure di fonte della versione attuale (riprendile solo tramite `source_figures`, se sono ancora nel catalogo)`) + `## Indicazioni del docente per la rigenerazione` (se c'è un hint; entra anche su lezioni mai generate, senza `REGENERATION_SUFFIX`).
 
@@ -1067,8 +1074,8 @@ ne fa un `deepcopy` e inietta l'`enum` dei codici obiettivo su
 `sections[].objectives_addressed` e su
 `coverage_check.objectives_covered[].objective`, così il modello non
 può riferirsi a un obiettivo inesistente, e l'`enum` di
-`visual_assets[].format` ristretto a `figure_render_service.available_formats()`
-(kill-switch `figure_*_enabled` e dipendenze presenti sul server). Con zero
+`visual_assets[].format` ristretto a `phase3_visual_formats()`
+(kill-switch `figure_*_enabled` e dipendenze presenti sul server; `tikz` solo se offerto). Con zero
 obiettivi non inietta nulla (`"enum": []` non è uno schema strict valido).
 Con un catalogo di figure di fonte aggiunge la proprietà obbligatoria
 `source_figures`: `[{"figure": enum degli id SRC-… del catalogo, "caption":
@@ -2699,10 +2706,10 @@ Converti questa immagine in codice Mermaid. Ricorda: solo codice, niente backtic
 
 ---
 
-# PROMPT 12 — Fix automatico di un asset (LaTeX / Mermaid / Vega-Lite / DOT / function)
+# PROMPT 12 — Fix automatico di un asset (LaTeX / Mermaid / Vega-Lite / DOT / function / tikz)
 
 **SCOPO**
-- File: `backend/app/services/openai_asset_fix_service.py` — `_system_prompt(kind, language_code)` che sceglie tra 10 varianti dal dizionario `_SYSTEM_PROMPTS = {kind: (IT, EN)}` (`_SYSTEM_MERMAID_IT/EN`, `_SYSTEM_LATEX_IT/EN`, `_SYSTEM_VEGALITE_IT/EN`, `_SYSTEM_DOT_IT/EN`, `_SYSTEM_FUNCTION_IT/EN`; `kind` ignoto → `ValueError`, A20), chiamata da `fix_asset()`.
+- File: `backend/app/services/openai_asset_fix_service.py` — `_system_prompt(kind, language_code)` che sceglie tra 12 varianti dal dizionario `_SYSTEM_PROMPTS = {kind: (IT, EN)}` (`_SYSTEM_MERMAID_IT/EN`, `_SYSTEM_LATEX_IT/EN`, `_SYSTEM_VEGALITE_IT/EN`, `_SYSTEM_DOT_IT/EN`, `_SYSTEM_FUNCTION_IT/EN`, `_SYSTEM_TIKZ_IT/EN`; `kind` ignoto → `ValueError`, A20), chiamata da `fix_asset()`.
 - Modello: `settings.openai_asset_fix_model` (default `gpt-4o-mini`, max 4000 token: una spec ≤ 4.000 caratteri ≈ 1.500 token, A16), fino a `asset_fix_max_attempts` (3) tentativi.
 - Ruolo: a generazione (Fase 3/4), quando un asset non supera la validazione, corregge SOLO la sintassi preservando il significato; il caller ri-valida.
 
@@ -2769,7 +2776,7 @@ ASSET DA CORREGGERE:
 }
 ```
 
-**Varianti/note**: altre 9 varianti nel dizionario `_SYSTEM_PROMPTS` — `_SYSTEM_MERMAID_EN`, `_SYSTEM_LATEX_IT/EN`, `_SYSTEM_VEGALITE_IT/EN`, `_SYSTEM_DOT_IT/EN`, `_SYSTEM_FUNCTION_IT/EN` (la variante EN è scelta per ogni lingua diversa da `it`). I prompt LaTeX impongono di restituire SOLO il corpo della formula senza delimitatori, compatibile con KaTeX (`strict:"ignore"`) + latex2mathml. Le tre coppie nuove (WP2b) seguono le regole D5 di `figure_compute.vegalite_rules`, i vincoli di `DotRenderer` e la whitelist di `function_parse`; il testo IT di ciascuna:
+**Varianti/note**: altre 11 varianti nel dizionario `_SYSTEM_PROMPTS` — `_SYSTEM_MERMAID_EN`, `_SYSTEM_LATEX_IT/EN`, `_SYSTEM_VEGALITE_IT/EN`, `_SYSTEM_DOT_IT/EN`, `_SYSTEM_FUNCTION_IT/EN`, `_SYSTEM_TIKZ_IT/EN` (la variante EN è scelta per ogni lingua diversa da `it`). I prompt LaTeX impongono di restituire SOLO il corpo della formula senza delimitatori, compatibile con KaTeX (`strict:"ignore"`) + latex2mathml. Le tre coppie nuove (WP2b) seguono le regole D5 di `figure_compute.vegalite_rules`, i vincoli di `DotRenderer` e la whitelist di `function_parse`; il testo IT di ciascuna:
 
 **Variante `_SYSTEM_VEGALITE_IT`** (verbatim):
 
@@ -2850,7 +2857,33 @@ VINCOLI RIGIDI:
 Output: SOLO JSON valido conforme allo schema.
 ```
 
-**Flusso lato chiamante** (`asset_validation_service`): questa funzione è invocata solo sugli asset "fragili" risultati invalidi alla validazione (formule LaTeX validate con `latex2mathml` + KaTeX; diagrammi Mermaid con il gate statico D8 del registro e il parse della 11.x del pin `settings.mermaid_cdn_version`, la stessa del pre-render e del frontend; spec Vega-Lite, sorgenti DOT e spec `function` con `validate(deep=True)` del renderer di `figure_render_service`, offline e mai pass-through). Coinvolge `equations[].latex`, ogni `proof[].latex`, il math inline `$..$`/`$$..$$` nei campi testo (introduction, summary, sezioni, esempi, `statement` e `proof[].text` delle equazioni) e i `visual_assets`/`new_assets` con formato in `RENDERABLE_FORMATS`. Un formato non disponibile sul server (`available_formats()`) produce un check non riparabile: nessuna chiamata di fix, escalation immediata alla rigenerazione. Prima del fix AI c'è uno step deterministico (rimozione caratteri di controllo/combining marks) che spesso risolve senza spendere token. L'output del fix viene sanitizzato (niente code-fence/delimitatori reintrodotti) e scartato se reintroduce un placeholder asset (`[EQ:..]` ecc.). Solo gli asset davvero riparati vengono ri-committati; quelli già validi restano byte-identici. Se un asset resta invalido dopo `asset_fix_max_attempts` → `AssetFixUnresolvedError` (recuperabile): il worker di Fase 3/4 rigenera l'intera lezione via auto-retry, così nessun asset rotto raggiunge `ready`. Dettagli in [08 — Lesson content § Validazione asset](courses/08-lesson-content.md).
+**Variante `_SYSTEM_TIKZ_IT`** (verbatim):
+
+```text
+Sei un esperto di TikZ e circuitikz. Ricevi il corpo di una figura che NON
+supera la validazione: comando non ammesso, errore di compilazione di
+XeLaTeX o difetto geometrico della resa (etichette sovrapposte, testo che
+esce dal suo riquadro, linee sopra le etichette, parti fuori pagina, testo
+troppo piccolo). Correggila PRESERVANDO elementi, collegamenti ed etichette.
+
+VINCOLI RIGIDI:
+- Restituisci SOLO il corpo: UN solo ambiente `tikzpicture` o `circuitikz`,
+  NIENTE backtick, NIENTE code fence, niente preambolo, `\documentclass`,
+  `\usepackage`, `\usetikzlibrary`, niente testo prima o dopo.
+- MAI `\def`, `\newcommand`, `\input`, `\include`, `\write`,
+  `\catcode`, `\csname`, `@`, `#`, chiavi `.code`, `execute at`,
+  `overlay`, `remember picture`, `external`; dopo `\addplot` solo coordinate
+  o espressioni.
+- Sovrapposizioni: distanzia con posizionamento relativo (`right=of`,
+  `below=of`, `node distance`) o sposta l'etichetta (`above`, `below`,
+  `pos=`); testo fuori dal riquadro: `text width` o `minimum width`; testo
+  piccolo: niente `\tiny`/`\scriptsize` e niente `scale` sotto 1.
+- Etichette nella lingua del corso; NON aggiungere ne' rimuovere elementi.
+
+Output: SOLO JSON valido conforme allo schema.
+```
+
+**Flusso lato chiamante** (`asset_validation_service`): questa funzione è invocata solo sugli asset "fragili" risultati invalidi alla validazione (formule LaTeX validate con `latex2mathml` + KaTeX; diagrammi Mermaid con il gate statico D8 del registro e il parse della 11.x del pin `settings.mermaid_cdn_version`, la stessa del pre-render e del frontend; spec Vega-Lite, sorgenti DOT e spec `function` con `validate(deep=True)` del renderer di `figure_render_service`, offline e mai pass-through). Coinvolge `equations[].latex`, ogni `proof[].latex`, il math inline `$..$`/`$$..$$` nei campi testo (introduction, summary, sezioni, esempi, `statement` e `proof[].text` delle equazioni) e i `visual_assets`/`new_assets` con formato in `RENDERABLE_FORMATS`. Un formato non disponibile sul server (`available_formats()`) produce un check non riparabile: nessuna chiamata di fix, escalation immediata alla rigenerazione. Prima del fix AI c'è uno step deterministico (rimozione caratteri di controllo/combining marks) che spesso risolve senza spendere token. L'output del fix viene sanitizzato (niente code-fence/delimitatori reintrodotti) e scartato se reintroduce un placeholder asset (`[EQ:..]` ecc.). Solo gli asset davvero riparati vengono ri-committati; quelli già validi restano byte-identici. Se un asset resta invalido dopo `asset_fix_max_attempts` → `AssetFixUnresolvedError` (recuperabile): il worker di Fase 3/4 rigenera l'intera lezione via auto-retry, così nessun asset rotto raggiunge `ready`. Un asset `tikz` ha UN solo fix (`FIGURE_TIKZ_FIX_MAX_ATTEMPTS`, entro il tetto globale); la sandbox occupata (`tikz_busy`) o il motore assente (`tikz_unavailable`) non vanno al fix. Se resta invalido: `AssetFixUnresolvedError(code="tikz_unresolved")`, e il tentativo successivo della lezione non offre `tikz`. Dettagli in [08 — Lesson content § Validazione asset](courses/08-lesson-content.md).
 
 ---
 

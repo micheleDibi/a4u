@@ -80,6 +80,14 @@ _worker_task: asyncio.Task | None = None
 _stop_event: asyncio.Event | None = None
 _active_tasks: set[asyncio.Task] = set()
 
+# Lezioni il cui ultimo tentativo è fallito per una figura `tikz` rimasta
+# invalida dopo il suo unico fix (`tikz_unresolved`): valore =
+# `content_attempts` del tentativo fallito. Il tentativo SUCCESSIVO non
+# offre `tikz` (né nello schema né nel messaggio user). In memoria: un
+# riavvio lo perde (limite dichiarato, al più un tentativo `tikz` in più
+# entro `course_lesson_content_auto_retry_max`).
+_TIKZ_WITHHELD: dict[uuid.UUID, int] = {}
+
 
 # ---------------------------------------------------------------------------
 # Auto-retry helper
@@ -356,6 +364,12 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                     lesson_id=str(lesson.id),
                     error=str(exc)[:300],
                 )
+        # Formati offerti a questo tentativo: gli stessi per schema e
+        # messaggio user (`tikz` solo se proposto e non appena fallito).
+        withhold_tikz = _TIKZ_WITHHELD.pop(lesson.id, None) == (lesson.content_attempts or 0) - 1
+        visual_formats = openai_lesson_content_service.phase3_visual_formats(
+            course_full.language_code, withhold_tikz=withhold_tikz
+        )
         if lesson.is_assessment:
             user_prompt = course_lesson_content_service.build_assessment_user_prompt(
                 course_full, lesson
@@ -366,6 +380,7 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                 lesson,
                 figure_catalog=catalog.catalog if catalog else None,
                 source_figures_max=catalog.budget if catalog else 0,
+                visual_formats=visual_formats,
             )
 
         # Aggiorna progresso → calling_openai e avvia ticker
@@ -407,6 +422,7 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                             lesson
                         ),
                         source_figure_refs=list(catalog.catalog.refs) if catalog else (),
+                        visual_formats=visual_formats,
                     )
             except OpenAINotConfiguredError:
                 # NON recuperabile (config issue) → terminal subito.
@@ -528,6 +544,15 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                 # Il costo gia' speso nei tentativi di fix non si
                 # materializza (la lezione viene rigenerata): resta almeno
                 # visibile nei log, come quello scartato dal cancel-check.
+                if getattr(exc, "code", None) == "tikz_unresolved":
+                    _TIKZ_WITHHELD[lesson.id] = lesson.content_attempts or 0
+                    log.warning(
+                        "lesson_content_tikz_unresolved",
+                        lesson_id=str(lesson.id),
+                        lesson_code=lesson.lesson_code,
+                        attempts=lesson.content_attempts,
+                        error=str(exc)[:300],
+                    )
                 spent = getattr(exc, "assets_usage", [])
                 if spent:
                     log.warning(

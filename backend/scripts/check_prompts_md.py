@@ -224,6 +224,7 @@ _RENDERERS: tuple[tuple[str, int, str | None, Callable[[], str]], ...] = (
     ("PROMPT 12 — fix Vega-Lite IT", 12, "_SYSTEM_VEGALITE_IT", lambda: render_fix("vegalite")),
     ("PROMPT 12 — fix DOT IT", 12, "_SYSTEM_DOT_IT", lambda: render_fix("dot")),
     ("PROMPT 12 — fix function IT", 12, "_SYSTEM_FUNCTION_IT", lambda: render_fix("function")),
+    ("PROMPT 12 — fix tikz IT", 12, "_SYSTEM_TIKZ_IT", lambda: render_fix("tikz")),
     ("PROMPT 17 — revisore figura ↔ testo IT", 17, None, lambda: render_review("it")),
     (
         "PROMPT 17 — revisore figura ↔ testo EN",

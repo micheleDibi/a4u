@@ -2112,10 +2112,21 @@ class TikzRenderer:
             return (True, "")
         if not self.available():
             return (False, "tikz_unavailable")
+        from app.services.tikz_compile_service import (
+            TikzBusyError,
+            TikzEngineUnavailableError,
+        )
+
         src = self.sanitize(content)
         try:
             figure = self._render_or_raise(src)
-        except Exception as exc:  # compilazione, SVG, coda, motore
+        # Coda e motore non dipendono dal sorgente: prefissi riconosciuti
+        # dalla validazione di Fase 3 (nessun fix AI).
+        except TikzBusyError as exc:
+            return (False, f"tikz_busy: {exc}"[:_ERROR_CAP])
+        except TikzEngineUnavailableError as exc:
+            return (False, f"tikz_unavailable: {exc}"[:_ERROR_CAP])
+        except Exception as exc:  # compilazione, SVG
             return (False, str(exc)[:_ERROR_CAP])
         _cache_put(self._key(src), figure)
         defects = figure.metrics.defects if figure.metrics is not None else ()

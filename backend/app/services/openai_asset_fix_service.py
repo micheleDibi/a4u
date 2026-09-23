@@ -1,5 +1,5 @@
 """Auto-fix AI di un singolo asset "fragile" (formula LaTeX, diagramma
-Mermaid, spec Vega-Lite, sorgente DOT o spec `function`) generato dall'AI
+Mermaid, spec Vega-Lite, sorgente DOT, spec `function` o corpo `tikz`) generato dall'AI
 ma non valido.
 
 Usato a generazione (Fase 3 + Fase 4) da `asset_validation_service`: quando
@@ -50,7 +50,7 @@ from app.services.openai_pricing import build_usage_dict
 
 log = get_logger("app.openai_asset_fix")
 
-AssetKind = Literal["latex", "mermaid", "vegalite", "dot", "function"]
+AssetKind = Literal["latex", "mermaid", "vegalite", "dot", "function", "tikz"]
 
 # Cap sul messaggio del validatore inoltrato al modello (era 800: gli errori
 # dello schema JSON di Vega-Lite e delle regole D5 sono piu' lunghi).
@@ -310,6 +310,56 @@ STRICT CONSTRAINTS:
 
 Output: ONLY valid JSON conforming to the schema."""
 
+# `tikz` (WP6.3): un solo fix per asset (`FIGURE_TIKZ_FIX_MAX_ATTEMPTS`).
+# L'errore arriva dal lexer (regola, riga, colonna), da XeLaTeX (riga del
+# corpo) o dall'oracolo geometrico (`labels_overlap`, `text_outside_owner`,
+# `edge_crosses_label`, `content_outside_page`, `text_small`).
+_SYSTEM_TIKZ_IT = """\
+Sei un esperto di TikZ e circuitikz. Ricevi il corpo di una figura che NON
+supera la validazione: comando non ammesso, errore di compilazione di
+XeLaTeX o difetto geometrico della resa (etichette sovrapposte, testo che
+esce dal suo riquadro, linee sopra le etichette, parti fuori pagina, testo
+troppo piccolo). Correggila PRESERVANDO elementi, collegamenti ed etichette.
+
+VINCOLI RIGIDI:
+- Restituisci SOLO il corpo: UN solo ambiente `tikzpicture` o `circuitikz`,
+  NIENTE backtick, NIENTE code fence, niente preambolo, `\\documentclass`,
+  `\\usepackage`, `\\usetikzlibrary`, niente testo prima o dopo.
+- MAI `\\def`, `\\newcommand`, `\\input`, `\\include`, `\\write`,
+  `\\catcode`, `\\csname`, `@`, `#`, chiavi `.code`, `execute at`,
+  `overlay`, `remember picture`, `external`; dopo `\\addplot` solo coordinate
+  o espressioni.
+- Sovrapposizioni: distanzia con posizionamento relativo (`right=of`,
+  `below=of`, `node distance`) o sposta l'etichetta (`above`, `below`,
+  `pos=`); testo fuori dal riquadro: `text width` o `minimum width`; testo
+  piccolo: niente `\\tiny`/`\\scriptsize` e niente `scale` sotto 1.
+- Etichette nella lingua del corso; NON aggiungere ne' rimuovere elementi.
+
+Output: SOLO JSON valido conforme allo schema."""
+
+_SYSTEM_TIKZ_EN = """\
+You are a TikZ and circuitikz expert. You receive the body of a figure that
+FAILS validation: a forbidden command, an XeLaTeX compile error or a
+geometric defect of the rendering (overlapping labels, text leaving its box,
+lines over labels, parts outside the page, text too small). Fix it while
+PRESERVING elements, connections and labels.
+
+STRICT CONSTRAINTS:
+- Return ONLY the body: ONE `tikzpicture` or `circuitikz` environment, NO
+  backticks, NO code fences, no preamble, `\\documentclass`, `\\usepackage`,
+  `\\usetikzlibrary`, no text before or after.
+- NEVER `\\def`, `\\newcommand`, `\\input`, `\\include`, `\\write`,
+  `\\catcode`, `\\csname`, `@`, `#`, `.code` keys, `execute at`, `overlay`,
+  `remember picture`, `external`; after `\\addplot` only coordinates or
+  expressions.
+- Overlaps: space elements with relative positioning (`right=of`,
+  `below=of`, `node distance`) or move the label (`above`, `below`, `pos=`);
+  text leaving its box: `text width` or `minimum width`; small text: no
+  `\\tiny`/`\\scriptsize` and no `scale` below 1.
+- Labels in the course language; do NOT add or remove elements.
+
+Output: ONLY valid JSON conforming to the schema."""
+
 # Coppia (IT, EN) per kind: un kind assente e' un errore di programmazione.
 _SYSTEM_PROMPTS: dict[str, tuple[str, str]] = {
     "latex": (_SYSTEM_LATEX_IT, _SYSTEM_LATEX_EN),
@@ -317,6 +367,7 @@ _SYSTEM_PROMPTS: dict[str, tuple[str, str]] = {
     "vegalite": (_SYSTEM_VEGALITE_IT, _SYSTEM_VEGALITE_EN),
     "dot": (_SYSTEM_DOT_IT, _SYSTEM_DOT_EN),
     "function": (_SYSTEM_FUNCTION_IT, _SYSTEM_FUNCTION_EN),
+    "tikz": (_SYSTEM_TIKZ_IT, _SYSTEM_TIKZ_EN),
 }
 
 

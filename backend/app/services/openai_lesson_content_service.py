@@ -9,8 +9,9 @@ esempi), references e coverage_check.
 
 Il testo del system prompt è statico e descrive sempre le quattro
 famiglie di figure (A19); solo l'`enum` di `visual_assets[].format`
-nello schema strict è ristretto a `figure_render_service.available_formats()`
-(kill-switch e dipendenze del server).
+nello schema strict è ristretto a `phase3_visual_formats()` (kill-switch e
+dipendenze del server; `tikz` solo con la proposta accesa, e allora con il
+suo blocco nel messaggio user).
 
 Errori → `OpenAILessonContentError` (sottoclasse di `OpenAIError`).
 """
@@ -26,6 +27,7 @@ from typing import Any
 import httpx
 
 from app.core.config import get_settings
+from app.core.i18n_scripts import primary_script
 from app.core.logging import get_logger
 from app.schemas.course_lesson_content import (
     LessonAssessmentOutput,
@@ -157,6 +159,31 @@ _FUNCTION_EXAMPLE = (
     '"asymptotes","formula"],"annotations":[{"kind":"point","at":0,"expr_index":0,'
     '"label":"intercetta"}]}'
 )
+
+
+# Script coperti dai font del preambolo TikZ (`tikz_preamble.font_for`):
+# latino (None), greco, cirillico, CJK e hangul. Arabo, ebraico e script
+# indiani non ricevono l'offerta: il lexer li rifiuterebbe comunque.
+_TIKZ_SCRIPTS: frozenset[str | None] = frozenset({None, "greek", "cyrillic", "cjk", "hangul"})
+
+
+def phase3_visual_formats(language_code: str, *, withhold_tikz: bool = False) -> tuple[str, ...]:
+    """Formati offerti alla Fase 3 (enum dello schema e blocco user).
+
+    `available_formats()` senza `tikz`, salvo tre condizioni insieme:
+    proposta accesa (`FIGURE_TIKZ_PROPOSE_ENABLED`), script della lingua del
+    corso coperto dai font del preambolo, nessun `tikz_unresolved` al
+    tentativo precedente (`withhold_tikz`, dal worker). Con `tikz` acceso
+    solo per l'editor (proposta spenta) il modello non lo vede."""
+    formats = available_formats()
+    if "tikz" not in formats:
+        return formats
+    offered = (
+        get_settings().figure_tikz_propose_enabled
+        and not withhold_tikz
+        and primary_script(language_code) in _TIKZ_SCRIPTS
+    )
+    return formats if offered else tuple(f for f in formats if f != "tikz")
 
 
 def _formats_off_block(visual_formats: Sequence[str]) -> str:
@@ -636,7 +663,7 @@ LESSON_CONTENT_JSON_SCHEMA: dict[str, Any] = {
                         "asset_id": {"type": "string"},
                         # Le quattro famiglie renderizzabili (D1); a runtime
                         # `build_lesson_content_json_schema` restringe l'enum
-                        # a `figure_render_service.available_formats()`.
+                        # a `phase3_visual_formats()`.
                         "format": {
                             "type": "string",
                             "enum": ["mermaid", "vegalite", "dot", "function"],
@@ -827,8 +854,8 @@ def build_lesson_content_json_schema(
     Con l'`enum` il modello non PUÒ emettere un obiettivo che non esiste
     (era la causa di `lesson_content_unknown_objective`) né un formato di
     figura non renderizzabile su questo server (`visual_formats` =
-    `figure_render_service.available_formats()`: kill-switch e dipendenze;
-    il testo del prompt resta statico, A19).
+    `phase3_visual_formats()`: kill-switch e dipendenze; il testo del
+    prompt resta statico, A19).
 
     `deepcopy` obbligatorio: fino a `COURSE_LESSON_CONTENT_MAX_CONCURRENCY`
     lezioni sono in volo insieme e una mutazione in place farebbe colare
@@ -888,8 +915,12 @@ async def generate_lesson_content(
     livello_eqf: str = "",
     objective_ids: Sequence[str] = (),
     source_figure_refs: Sequence[str] = (),
+    visual_formats: Sequence[str] | None = None,
 ) -> tuple[LessonContentOutput, dict[str, Any]]:
     """Chiama OpenAI per generare il testo completo di una lezione.
+
+    `visual_formats`: i formati offerti a QUESTA lezione (il worker passa
+    gli stessi del messaggio user); None → `phase3_visual_formats`.
 
     Ritorna `(content, usage)` dove `usage` è un dict con i conteggi
     token. Solleva `OpenAILessonContentError` su errore HTTP/parsing/
@@ -901,13 +932,18 @@ async def generate_lesson_content(
     `OPENAI_LESSON_CONTENT_MAX_TOKENS` deve partire alto (32000).
     """
     settings = get_settings()
+    formats = (
+        tuple(visual_formats)
+        if visual_formats is not None
+        else phase3_visual_formats(language_code)
+    )
     system_prompt = _system_prompt(
         language_code,
         ruolo_docente=ruolo_docente,
         stile_insegnamento=stile_insegnamento,
         livello_eqf=livello_eqf,
         grounding_enabled=settings.course_lesson_content_documents_selection_enabled,
-        visual_formats=available_formats(),
+        visual_formats=formats,
     )
     if is_regeneration:
         system_prompt = system_prompt + REGENERATION_SUFFIX
@@ -922,7 +958,7 @@ async def generate_lesson_content(
             "type": "json_schema",
             "json_schema": build_lesson_content_json_schema(
                 objective_ids=objective_ids,
-                visual_formats=available_formats(),
+                visual_formats=formats,
                 source_figure_refs=source_figure_refs,
             ),
         },

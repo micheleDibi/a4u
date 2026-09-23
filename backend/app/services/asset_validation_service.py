@@ -142,11 +142,21 @@ class AssetFixUnresolvedError(Exception):
     Recuperabile: il worker la mappa su auto-retry (rigenera la lezione).
     `assets_usage` porta le chiamate degli asset gia' pagate nel tentativo
     fallito: nulla si materializza (la lezione viene rigenerata), ma il
-    costo resta visibile nei log del worker invece di sparire."""
+    costo resta visibile nei log del worker invece di sparire.
 
-    def __init__(self, message: str, *, assets_usage: list[dict[str, Any]] | None = None) -> None:
+    `code="tikz_unresolved"` quando fra gli asset irrisolti c'è una figura
+    `tikz`: il worker non offre `tikz` al tentativo successivo."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        assets_usage: list[dict[str, Any]] | None = None,
+        code: str | None = None,
+    ) -> None:
         super().__init__(message)
         self.assets_usage: list[dict[str, Any]] = list(assets_usage or [])
+        self.code = code
 
 
 @dataclass(frozen=True)
@@ -653,7 +663,7 @@ async def _validate_slots(slots: list[_Slot]) -> list[AssetCheck]:
     - `latex`: latex2mathml (Python, gate duro) E KaTeX (JS);
     - `mermaid`: gate statico D8 del registro (duro, offline), poi parse con
       la 11.x del pin `settings.mermaid_cdn_version` (JS);
-    - `vegalite` | `dot` | `function`: `validate(deep=True)` del renderer in
+    - `vegalite` | `dot` | `function` | `tikz`: `validate(deep=True)` del renderer in
       un thread con `wait_for(figure_render_timeout_seconds)`, mai
       pass-through; formato non disponibile → check non fixable; timeout →
       check invalido (riparabile: il fix AI può semplificare la spec).
@@ -678,7 +688,15 @@ async def _validate_slots(slots: list[_Slot]) -> list[AssetCheck]:
             js_items.append((s.kind, s.current))
     js_results = await _validate_js_batch(js_items)
     formats = available_formats()
-    render_timeout = float(get_settings().figure_render_timeout_seconds)
+    settings = get_settings()
+    render_timeout = float(settings.figure_render_timeout_seconds)
+    # `tikz` attende anche la coda della sandbox (`heavy_job_lock`) prima di
+    # compilare: il tetto comune (20 s) lo darebbe per scaduto.
+    tikz_timeout = max(
+        render_timeout,
+        float(settings.figure_tikz_queue_timeout_seconds + settings.figure_tikz_timeout_seconds)
+        + 5.0,
+    )
 
     checks: list[AssetCheck] = []
     for i, slot in enumerate(slots):
@@ -701,7 +719,7 @@ async def _validate_slots(slots: list[_Slot]) -> list[AssetCheck]:
             else:
                 ok, err = js_results[js_pos[i]]
                 checks.append(AssetCheck(slot.id, "mermaid", ok, "" if ok else f"mermaid: {err}"))
-        else:  # vegalite | dot | function
+        else:  # vegalite | dot | function | tikz
             renderer = REGISTRY.get(slot.kind)
             if renderer is None or slot.kind not in formats:
                 checks.append(
@@ -712,16 +730,36 @@ async def _validate_slots(slots: list[_Slot]) -> list[AssetCheck]:
             # (o un renderer lento) non deve bloccare la validazione della
             # lezione oltre `figure_render_timeout_seconds`. Il contesto dà
             # l'`asset_id` ai log della misura geometrica nel thread.
+            timeout = tikz_timeout if slot.kind == "tikz" else render_timeout
             try:
                 with figure_asset_context(slot.id.split(":", 1)[-1]):
                     ok, err = await asyncio.wait_for(
                         asyncio.to_thread(renderer.validate, slot.current, deep=True),
-                        timeout=render_timeout,
+                        timeout=timeout,
                     )
             except TimeoutError:
-                ok, err = False, f"{slot.kind}: validazione oltre {render_timeout:g} s"
-            checks.append(AssetCheck(slot.id, slot.kind, ok, "" if ok else err))
+                ok, err = False, f"{slot.kind}: validazione oltre {timeout:g} s"
+            # Sandbox occupata o motore assente: il fix AI non li risolve.
+            fixable = not err.startswith(_TIKZ_ENGINE_ERRORS)
+            checks.append(AssetCheck(slot.id, slot.kind, ok, "" if ok else err, fixable=fixable))
     return checks
+
+
+# Prefissi degli errori di `TikzRenderer.validate` che non dipendono dal
+# sorgente (`AssetCheck.fixable=False`).
+_TIKZ_ENGINE_ERRORS = ("tikz_busy", "tikz_unavailable")
+
+
+def _fix_cap(kind: str, max_attempts: int) -> int:
+    """Fix AI ammessi per uno slot: `tikz` ne ha uno solo
+    (`FIGURE_TIKZ_FIX_MAX_ATTEMPTS`, entro il tetto globale)."""
+    if kind == "tikz":
+        return min(max_attempts, max(0, int(get_settings().figure_tikz_fix_max_attempts)))
+    return max_attempts
+
+
+def _unresolved_code(invalid: list[AssetCheck]) -> str | None:
+    return "tikz_unresolved" if any(c.kind == "tikz" for c in invalid) else None
 
 
 def _unresolved_details(invalid: list[AssetCheck]) -> str:
@@ -734,7 +772,11 @@ def _raise_if_unfixable(
     """Solleva subito se un check invalido non e' riparabile dal fix AI."""
     blocked = [c for c in invalid if not c.fixable]
     if blocked:
-        raise AssetFixUnresolvedError(_unresolved_details(blocked), assets_usage=usage_sink)
+        raise AssetFixUnresolvedError(
+            _unresolved_details(blocked),
+            assets_usage=usage_sink,
+            code=_unresolved_code(blocked),
+        )
 
 
 def _usage_entry(phase: str, asset_id: str | None, usage: dict[str, Any]) -> dict[str, Any]:
@@ -790,13 +832,22 @@ async def _validate_and_fix(
     # AI: nessun token speso, escalation immediata alla rigenerazione.
     _raise_if_unfixable(invalid, usage_sink)
 
-    # Fix AI iterativo, SOLO sugli asset ancora invalidi.
+    # Fix AI iterativo, SOLO sugli asset ancora invalidi. Tetto globale in
+    # giri (`asset_fix_max_attempts`) e tetto per slot (`_fix_cap`: `tikz`
+    # uno solo); per gli altri formati il secondo coincide col primo.
     remaining = max_attempts
+    spent: dict[str, int] = {}
     while invalid:
-        if remaining <= 0:
-            raise AssetFixUnresolvedError(_unresolved_details(invalid), assets_usage=usage_sink)
+        capped = [c for c in invalid if spent.get(c.id, 0) >= _fix_cap(c.kind, max_attempts)]
+        if remaining <= 0 or capped:
+            raise AssetFixUnresolvedError(
+                _unresolved_details(invalid),
+                assets_usage=usage_sink,
+                code=_unresolved_code(invalid),
+            )
         remaining -= 1
         for c in invalid:
+            spent[c.id] = spent.get(c.id, 0) + 1
             slot = by_id[c.id]
             try:
                 out, usage = await openai_asset_fix_service.fix_asset(

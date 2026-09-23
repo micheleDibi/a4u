@@ -19,6 +19,7 @@ from __future__ import annotations
 import re
 import uuid
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -367,12 +368,52 @@ def _source_figure_catalog_block(catalog_text: str) -> list[str]:
     ]
 
 
+# Formato `tikz` (WP6.3): offerto solo quando `phase3_visual_formats` lo
+# include. Regole nel messaggio user, non nel system (M6: il system di
+# PROMPT 3 resta byte-identico); `tikz` conta nel budget (a).
+_TIKZ_BLOCK = r"""## Formato aggiuntivo: tikz
+
+Oltre ai formati del prompt di sistema puoi usare `tikz`, compilato dal
+server, per gli schemi di strumenti, i circuiti e le catene di misura
+(blocchi e segnali, sensori, ponti, anelli di controllo). Non per grafici
+di funzioni (`function`), dati (`vegalite`), alberi e reti (`dot`).
+- Se il catalogo delle figure di fonte ha già lo schema dello stesso
+  oggetto, scegli quella figura e non ridisegnarla.
+- `content`: UN solo ambiente `tikzpicture` (o `circuitikz`, stile
+  europeo), senza preambolo, `\usepackage`, `\usetikzlibrary`, `\def`,
+  `\newcommand`, `\input`, `overlay` né `remember picture`. Librerie già
+  caricate: positioning, arrows.meta, calc, fit, backgrounds, shapes,
+  quotes, angles, decorations.
+- Posizionamento relativo (`right=of`, `below=of`, `node distance`),
+  etichette brevi nella lingua del corso, formule fra `$…$`, colori
+  `a4uC0`…`a4uC7` e `a4uInk`, nessun font più grande di `\small`,
+  larghezza entro 16 cm; nessuna etichetta sopra linee o altri testi.
+- Configurazione standard dell'oggetto, senza valori inventati: l'ONESTÀ
+  DEI DATI vale anche per `tikz`.
+
+Esempio (catena di misura):
+\begin{tikzpicture}[box/.style={draw, rounded corners, minimum height=9mm}]
+  \node[box] (s) {Sensore};
+  \node[box, right=of s] (c) {Condizionamento};
+  \node[box, right=of c] (a) {ADC};
+  \draw[->] (s) -- node[above] {$v(t)$} (c);
+  \draw[->] (c) -- (a);
+\end{tikzpicture}
+"""
+
+_TIKZ_COUNT_CLAUSE = (
+    "Una figura `tikz` (schema di strumento, circuito o catena di misura) è "
+    "una figura generata: rientra in questo stesso intervallo."
+)
+
+
 def build_user_prompt(
     course: Course,
     lesson: CourseLesson,
     *,
     figure_catalog: FigureCatalog | None = None,
     source_figures_max: int = 0,
+    visual_formats: Sequence[str] = (),
 ) -> str:
     """Costruisce il messaggio utente conforme al template §6.3.
 
@@ -381,7 +422,9 @@ def build_user_prompt(
 
     Con un catalogo di figure di fonte non vuoto entrano il blocco del
     catalogo (dopo i documenti) e la riga del budget (b) nel compito; senza,
-    il messaggio è byte-identico a quello di prima della funzione.
+    il messaggio è byte-identico a quello di prima della funzione. Lo
+    stesso per `tikz`: blocco e clausola solo se `visual_formats` (quelli
+    passati anche allo schema) lo contiene.
     """
     settings = get_settings()
     lang = course.language_code
@@ -491,6 +534,10 @@ def build_user_prompt(
         "e ogni asset siano correttamente trattati e referenziati.",
         _figure_count_request(lesson),
     ]
+    tikz_block: list[str] = []
+    if "tikz" in visual_formats:
+        tikz_block = [_TIKZ_BLOCK]
+        task_block.append(_TIKZ_COUNT_CLAUSE)
     with_catalog = bool(figure_catalog and figure_catalog.candidates and source_figures_max > 0)
     if with_catalog:
         assert figure_catalog is not None
@@ -504,9 +551,10 @@ def build_user_prompt(
         ]
         # Documenti adiacenti al compito (recency): la scaletta viene letta
         # prima, gli estratti sono ciò a cui "applicarla".
-        blocks = context_block + glossary_block + lesson_block + documents_block + task_block
+        blocks = context_block + glossary_block + lesson_block + documents_block
     else:
-        blocks = context_block + lesson_block + documents_block + glossary_block + task_block
+        blocks = context_block + lesson_block + documents_block + glossary_block
+    blocks = blocks + tikz_block + task_block
 
     # La versione precedente entra solo se esiste davvero; l'hint del
     # docente entra anche su una lezione mai generata (generate-all con
