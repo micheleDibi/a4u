@@ -6,10 +6,11 @@ from typing import Literal
 
 from typing import Any
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 from app.schemas.common import ORMModel
 from app.schemas.course_architecture import CourseModuleOut
+from app.schemas.document_bibliography import DocumentBibliography
 from app.schemas.document_summary import DocumentSummaryOut
 
 CourseStatus = Literal[
@@ -119,11 +120,43 @@ class CourseDocumentDetailOut(CourseDocumentOut):
 CitationPolicy = Literal["citable", "content_only", "excluded"]
 
 
-class CourseDocumentPolicyUpdate(BaseModel):
-    """Body PATCH `/documents/{id}`: unico campo mutabile del documento
-    (file e metadati restano immutabili post-create)."""
+DocumentLicense = Literal[
+    "cc0",
+    "public_domain",
+    "cc_by",
+    "cc_by_sa",
+    "cc_by_nc",
+    "cc_by_nd",
+    "cc_by_nc_sa",
+    "cc_by_nc_nd",
+    "all_rights_reserved",
+    "other",
+]
 
-    citation_policy: CitationPolicy
+
+class CourseDocumentUpdate(BaseModel):
+    """Body PATCH `/documents/{id}` (parziale, almeno un campo): politica di
+    citazione e metadati della fonte per la riga «Fonte» delle figure
+    (bibliografia confermata dal docente, licenza, materiale proprio). Con
+    `null` la bibliografia o la licenza si cancellano. File e contenuto
+    restano immutabili post-create."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    citation_policy: CitationPolicy | None = None
+    bibliography: DocumentBibliography | None = None
+    license: DocumentLicense | None = None
+    is_own_work: bool | None = None
+
+    @model_validator(mode="after")
+    def _at_least_one_field(self) -> CourseDocumentUpdate:
+        fields = self.model_fields_set
+        if not fields:
+            raise ValueError("Indicare almeno un campo da aggiornare.")
+        for name in ("citation_policy", "is_own_work"):
+            if name in fields and getattr(self, name) is None:
+                raise ValueError(f"`{name}` non può essere null.")
+        return self
 
 
 class CourseListLessonsProgress(BaseModel):

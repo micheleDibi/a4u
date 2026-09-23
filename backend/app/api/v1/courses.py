@@ -38,7 +38,7 @@ from app.schemas.course import (
     CourseCreateInput,
     CourseDocumentDetailOut,
     CourseDocumentOut,
-    CourseDocumentPolicyUpdate,
+    CourseDocumentUpdate,
     CourseListItemOut,
     CourseListLessonsProgress,
     CourseOut,
@@ -86,6 +86,11 @@ from app.schemas.course_lesson_video import (
     LessonVideoGenerateInput,
     LessonVideoStatusOut,
 )
+from app.schemas.document_figures import (
+    DocumentFigureOut,
+    DocumentFigureUpdate,
+    DocumentFigureUsageOut,
+)
 from app.schemas.figure_function import FunctionFigureSpec, check_function_spec
 from app.schemas.paper_ai_summary import PaperAISummaryOut
 from app.schemas.paper_search import (
@@ -120,6 +125,7 @@ from app.services import (
     figure_render_service,
     file_service,
     remote_storage,
+    source_figure_api_service,
 )
 from app.services.figure_compute.isolated import FigureTimeoutError
 from app.services.figure_function_service import FunctionRenderError
@@ -703,6 +709,106 @@ async def extract_document_figures(
     return CourseDocumentOut.model_validate(doc)
 
 
+async def _visible_course(
+    db: Any, *, org_id: uuid.UUID, course_id: uuid.UUID, current: Any
+) -> Course:
+    await _ensure_org(db, org_id)
+    granted = await resolve_permissions(db, user=current, organization_id=org_id)
+    return await course_service.get_course(
+        db,
+        organization_id=org_id,
+        course_id=course_id,
+        current_user=current,
+        granted_permissions=granted,
+    )
+
+
+@router.get(
+    "/{course_id}/document-figures",
+    response_model=list[DocumentFigureOut],
+)
+async def list_document_figures(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_VIEW),
+) -> list[DocumentFigureOut]:
+    """Figure di fonte pronte del corso, con la riga «Fonte» calcolata dal
+    server, la resa (non retroattiva) e la proponibilità attuale."""
+    course = await _visible_course(db, org_id=org_id, course_id=course_id, current=current)
+    return await source_figure_api_service.list_course_figures(db, course=course)
+
+
+@router.get("/{course_id}/document-figures/{figure_id}/image")
+async def get_document_figure_image(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    figure_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_VIEW),
+    preview: Annotated[bool, Query()] = False,
+) -> Response:
+    """Ritaglio (o anteprima) di una figura del corso che si può rendere;
+    404 altrimenti. Mai un URL dello storage verso il frontend."""
+    course = await _visible_course(db, org_id=org_id, course_id=course_id, current=current)
+    data, mime = await source_figure_api_service.figure_image(
+        db, course=course, figure_id=figure_id, preview=preview
+    )
+    return Response(
+        content=data,
+        media_type=mime,
+        headers={"Cache-Control": "private, max-age=300", "X-Content-Type-Options": "nosniff"},
+    )
+
+
+@router.patch(
+    "/{course_id}/document-figures/{figure_id}",
+    response_model=DocumentFigureOut,
+)
+async def update_document_figure(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    figure_id: uuid.UUID,
+    payload: DocumentFigureUpdate,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_EDIT),
+) -> DocumentFigureOut:
+    """Esclude (o riammette) una figura dalle proposte del catalogo. Non
+    retroattivo (U1): le lezioni già generate non cambiano."""
+    course = await _visible_course(db, org_id=org_id, course_id=course_id, current=current)
+    return await source_figure_api_service.update_figure(
+        db,
+        course=course,
+        figure_id=figure_id,
+        excluded_by_user=payload.excluded_by_user,
+        actor_id=current.id,
+    )
+
+
+@router.get(
+    "/{course_id}/documents/{doc_id}/figure-usage",
+    response_model=DocumentFigureUsageOut,
+)
+async def get_document_figure_usage(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    doc_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_VIEW),
+) -> DocumentFigureUsageOut:
+    """Lezioni in cui sono collocate le figure del documento (per i dialoghi
+    di cancellazione e di cambio di politica)."""
+    await _visible_course(db, org_id=org_id, course_id=course_id, current=current)
+    await course_service.get_document(db, course_id=course_id, doc_id=doc_id)
+    return await source_figure_api_service.document_figure_usage(
+        db, course_id=course_id, document_id=doc_id
+    )
+
+
 @router.patch(
     "/{course_id}/documents/{doc_id}",
     response_model=CourseDocumentOut,
@@ -711,15 +817,17 @@ async def update_document_policy(
     org_id: uuid.UUID,
     course_id: uuid.UUID,
     doc_id: uuid.UUID,
-    payload: CourseDocumentPolicyUpdate,
+    payload: CourseDocumentUpdate,
     db: DbSession,
     current: CurrentUser,
     _=require(P.COURSE_EDIT),
 ) -> CourseDocumentOut:
-    """Aggiorna la politica di citazione del documento (visibilità delle
-    fonti). Sempre permesso: la nuova policy vale per le generazioni
-    successive; al passaggio a `content_only` il riassunto viene
-    ripulito dei campi identitari e ri-accodato al worker."""
+    """PATCH parziale del documento: politica di citazione (visibilità delle
+    fonti) e metadati della fonte delle figure (bibliografia, licenza,
+    materiale proprio). Sempre permesso: la nuova policy vale per le
+    generazioni successive (non retroattiva, U1); al passaggio a
+    `content_only` il riassunto viene ripulito dei campi identitari e
+    ri-accodato al worker."""
     await _ensure_org(db, org_id)
     granted = await resolve_permissions(db, user=current, organization_id=org_id)
     course = await course_service.get_course(
@@ -732,11 +840,11 @@ async def update_document_policy(
     doc = await course_service.get_document(
         db, course_id=course_id, doc_id=doc_id
     )
-    doc = await course_service.update_document_citation_policy(
+    doc = await course_service.update_document(
         db,
         course=course,
         doc=doc,
-        citation_policy=payload.citation_policy,
+        payload=payload,
         actor_id=current.id,
     )
     return CourseDocumentOut.model_validate(doc)

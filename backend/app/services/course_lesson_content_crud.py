@@ -16,19 +16,26 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
-from app.core.errors import ConflictError
+from app.core.errors import ConflictError, ValidationAppError
 from app.core.logging import get_logger
 from app.models.course import Course
+from app.models.course_document import CourseDocument
+from app.models.course_document_figure import CourseDocumentFigure
 from app.models.course_lesson import CourseLesson
 from app.schemas.course_lesson_content import (
+    SOURCE_FIGURE_FORMAT,
     LessonAssessmentUpdateInput,
     LessonContentUpdateInput,
 )
 from app.services import remote_storage
 from app.services.figure_render_service import validate_visual_assets_or_raise
+from app.services.source_figure_catalog import license_policy_for
+from app.services.source_figure_policy import figure_visibility
+from app.services.source_figure_service import source_figure_uuid
 
 log = get_logger("app.course_lesson_content_crud")
 
@@ -189,6 +196,111 @@ def _cleanup_removed_image_assets(
             )
 
 
+async def _guard_source_figures(
+    db: AsyncSession,
+    *,
+    course: Course,
+    assets: list[dict[str, Any]],
+    previous: list[Any] | None,
+) -> None:
+    """Figure di fonte nel PATCH della dispensa.
+
+    - Un asset non cambia famiglia: una figura di fonte resta tale e un
+      asset generato non diventa di fonte (`source_figure_format_locked`).
+    - Una figura di fonte NUOVA o con un riferimento CAMBIATO deve essere
+      del corso (`source_figure_not_in_course`) e proponibile adesso, nel
+      modo select del predicato con la politica di licenza effettiva
+      (`source_figure_not_available`).
+    - Un asset invariato passa sempre, anche se nel frattempo la politica
+      del documento è cambiata (U1, non retroattivo).
+    """
+    before = {str(a.get("asset_id")): a for a in previous or [] if isinstance(a, dict)}
+    policy: str | None = None
+    for index, asset in enumerate(assets):
+        asset_id = str(asset.get("asset_id") or "")
+        old = before.get(asset_id)
+        is_source = asset.get("format") == SOURCE_FIGURE_FORMAT
+        if old is not None and (old.get("format") == SOURCE_FIGURE_FORMAT) != is_source:
+            raise ValidationAppError(
+                "Una figura di fonte non cambia formato e un asset generato non "
+                "diventa una figura di fonte.",
+                code="source_figure_format_locked",
+                meta={"asset_id": asset_id, "index": index},
+            )
+        if not is_source:
+            continue
+        if (
+            old is not None
+            and str(old.get("content") or "").strip() == str(asset.get("content") or "").strip()
+        ):
+            continue
+        figure_id = source_figure_uuid(asset)
+        figure = None
+        if figure_id is not None:
+            figure = (
+                await db.execute(
+                    select(CourseDocumentFigure).where(
+                        CourseDocumentFigure.id == figure_id,
+                        CourseDocumentFigure.course_id == course.id,
+                    )
+                )
+            ).scalar_one_or_none()
+        if figure is None:
+            raise ValidationAppError(
+                "La figura di fonte non appartiene a questo corso.",
+                code="source_figure_not_in_course",
+                meta={"asset_id": asset_id, "index": index},
+            )
+        doc = await db.get(CourseDocument, figure.document_id) if figure.document_id else None
+        if policy is None:
+            policy = await license_policy_for(db, course)
+        visibility = figure_visibility(
+            figure, doc, course_id=course.id, license_policy=policy, mode="select"
+        )
+        if not visibility.renderable:
+            raise ValidationAppError(
+                "La figura di fonte non si può inserire (politica del documento, "
+                "licenza, esclusione o file).",
+                code="source_figure_not_available",
+                meta={"asset_id": asset_id, "index": index, "reason": visibility.reason},
+            )
+
+
+def _prune_figure_review(
+    review: Any, assets: list[Any], previous: list[Any]
+) -> dict[str, Any] | None:
+    """Il CRUD può solo POTARE il verdetto del revisore (PROMPT 19), mai
+    aggiungerne: via le figure di fonte tolte o con il riferimento
+    cambiato e le coppie verso asset che non ci sono più."""
+    if not isinstance(review, dict) or not isinstance(review.get("figures"), dict):
+        return None
+
+    def contents(items: list[Any]) -> dict[str, str]:
+        return {
+            str(a.get("asset_id")): str(a.get("content") or "").strip()
+            for a in items
+            if isinstance(a, dict)
+        }
+
+    current = contents(assets)
+    before = contents(previous)
+    figures: dict[str, Any] = {}
+    for asset_id, verdict in review["figures"].items():
+        if asset_id not in current or not isinstance(verdict, dict):
+            continue
+        if before.get(asset_id) != current[asset_id]:
+            continue
+        pairs = [
+            p
+            for p in verdict.get("pairs") or []
+            if isinstance(p, dict) and p.get("other") in current
+        ]
+        figures[asset_id] = {**verdict, "pairs": pairs}
+    if not figures:
+        return None
+    return {**review, "figures": figures}
+
+
 async def update_lesson_content(
     db: AsyncSession,
     *,
@@ -216,6 +328,12 @@ async def update_lesson_content(
             previous=current_raw.get("visual_assets"),
             loc_root="visual_assets",
             code="lesson_content_invalid_visual_asset",
+        )
+        await _guard_source_figures(
+            db,
+            course=course,
+            assets=[a.model_dump() for a in payload.visual_assets],
+            previous=current_raw.get("visual_assets"),
         )
 
     # Snapshot dei visual_assets attuali PRIMA dell'update — serve per il
@@ -268,6 +386,12 @@ async def update_lesson_content(
     current_raw.setdefault("estimated_word_count", 0)
 
     lesson.content_raw = current_raw
+    if "visual_assets" in changed and lesson.content_figure_review is not None:
+        lesson.content_figure_review = _prune_figure_review(
+            lesson.content_figure_review,
+            current_raw.get("visual_assets") or [],
+            old_visual_assets,
+        )
     # Stale-detection: marca il content come modificato manualmente. Il
     # FE confronta con `pdf_generated_at` per dedurre se il PDF
     # downstream è stale. I worker AI di Fase 3 NON toccano questo campo.

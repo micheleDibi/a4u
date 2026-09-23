@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import UploadFile
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -42,6 +42,7 @@ from app.models.role import OrganizationRole
 from app.models.user import User
 from app.schemas.course import (
     CourseCreateInput,
+    CourseDocumentUpdate,
     CourseUpdateInput,
     TaxonomyAssignments,
 )
@@ -50,6 +51,7 @@ from app.services import document_figures_service, file_service
 from app.services.organization_course_settings_service import (
     get_or_create_settings,
 )
+from app.services.source_figure_policy import document_license_to_figure
 
 # Mappa nome campo Pydantic → (taxonomy_type, model attribute) per
 # validazione coerenza term_type.
@@ -918,6 +920,77 @@ async def update_document_citation_policy(
     )
     await db.commit()
     await db.refresh(doc)
+    return doc
+
+
+async def update_document(
+    db: AsyncSession,
+    *,
+    course: Course,
+    doc: CourseDocument,
+    payload: CourseDocumentUpdate,
+    actor_id: uuid.UUID,
+) -> CourseDocument:
+    """PATCH parziale del documento: la politica passa da
+    `update_document_citation_policy` (suo audit); i metadati della fonte
+    (bibliografia `user`, licenza `user`, materiale proprio) hanno un audit
+    distinto. La licenza nuova vale anche per le figure del documento che
+    la ereditano (`license_source='document'`): la riga «Fonte» e la
+    politica open_only leggono la licenza della figura."""
+    fields = payload.model_fields_set
+    if "citation_policy" in fields and payload.citation_policy is not None:
+        doc = await update_document_citation_policy(
+            db,
+            course=course,
+            doc=doc,
+            citation_policy=payload.citation_policy,
+            actor_id=actor_id,
+        )
+    changes: dict[str, Any] = {}
+    if "bibliography" in fields:
+        new_bib = payload.bibliography.as_json() if payload.bibliography is not None else None
+        new_bib = new_bib or None
+        new_source = "user" if new_bib else None
+        if new_bib != doc.bibliography or new_source != doc.bibliography_source:
+            doc.bibliography = new_bib
+            doc.bibliography_source = new_source
+            changes["bibliography"] = "set" if new_bib else "cleared"
+    if "license" in fields and payload.license != doc.license:
+        doc.license = payload.license
+        doc.license_source = "user" if payload.license else None
+        changes["license"] = payload.license
+        await db.execute(
+            update(CourseDocumentFigure)
+            .where(
+                CourseDocumentFigure.document_id == doc.id,
+                CourseDocumentFigure.source_kind == "uploaded",
+                CourseDocumentFigure.license_source == "document",
+            )
+            .values(license=document_license_to_figure(payload.license))
+        )
+    if (
+        "is_own_work" in fields
+        and payload.is_own_work is not None
+        and payload.is_own_work != doc.is_own_work
+    ):
+        doc.is_own_work = payload.is_own_work
+        changes["is_own_work"] = payload.is_own_work
+    if changes:
+        await write_audit(
+            db,
+            action="course.document.metadata.update",
+            actor_user_id=actor_id,
+            organization_id=course.organization_id,
+            target_type="course_document",
+            target_id=str(doc.id),
+            metadata={
+                "course_id": str(course.id),
+                "filename_original": doc.filename_original,
+                "changes": changes,
+            },
+        )
+        await db.commit()
+        await db.refresh(doc)
     return doc
 
 

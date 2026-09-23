@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -15,6 +16,10 @@ class OrganizationCourseSettingsBase(BaseModel):
     assessment_lesson_enabled: bool = True
     multiple_choice_questions_count: int = Field(ge=0, le=200)
     open_questions_count: int = Field(ge=0, le=50)
+    # Politica di licenza delle figure di fonte per l'organizzazione
+    # (`cite_all` | `open_only`); None = il default di
+    # `FIGURE_SOURCE_LICENSE_POLICY`. Letta dal vivo dal catalogo.
+    figure_source_license_policy: Literal["cite_all", "open_only"] | None = None
 
 
 class OrganizationCourseSettingsUpdate(OrganizationCourseSettingsBase):
