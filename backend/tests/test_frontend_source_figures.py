@@ -1,0 +1,96 @@
+"""Frontend delle figure di fonte (G1, WP4c): controlli statici sul sorgente.
+
+- punto unico: la riga «Fonte» (`attribution` del catalogo, calcolata dal
+  backend) la mostrano solo `SourceFigure` e il selettore del catalogo; il
+  frontend non compone mai una fonte («Fonte:», «Source:»);
+- l'immagine arriva solo dall'endpoint autenticato (`documentFigures.image`),
+  mai da `mediaUrl`/`/uploads` per un asset `source_figure`;
+- ogni chiave i18n nuova usata dai componenti esiste in `it.json` e
+  `en.json` (le altre lingue si completano dalla UI).
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from pathlib import Path
+
+_FRONTEND = Path(__file__).resolve().parents[2] / "frontend" / "src"
+_LOCALES = _FRONTEND / "i18n" / "locales"
+_DISPLAY_FILES = {"SourceFigure.tsx", "SourceFigurePicker.tsx"}
+
+
+def _sources() -> dict[Path, str]:
+    return {
+        path: path.read_text(encoding="utf-8")
+        for path in _FRONTEND.rglob("*")
+        if path.suffix in {".ts", ".tsx"} and "i18n" not in path.parts
+    }
+
+
+def test_attribution_is_shown_only_by_the_source_figure_components() -> None:
+    users = {
+        path.name
+        for path, text in _sources().items()
+        if re.search(r"\.attribution\b", text) and path.name != "courses.ts"
+    }
+    assert users <= _DISPLAY_FILES, users
+    assert "SourceFigure.tsx" in users
+
+
+def test_the_frontend_never_writes_a_source_line() -> None:
+    offenders = [
+        path.name
+        for path, text in _sources().items()
+        if re.search(r"[\"'`](?:Fonte|Source|Fuente|Quelle)\s*:", text)
+    ]
+    assert offenders == []
+
+
+def test_source_figure_images_come_from_the_authenticated_endpoint() -> None:
+    source = (_FRONTEND / "components" / "shared" / "SourceFigure.tsx").read_text(encoding="utf-8")
+    assert "documentFigures.image" in source
+    assert "mediaUrl" not in source and "/uploads" not in source
+
+
+def _flatten(node: dict, prefix: str = "") -> set[str]:
+    keys: set[str] = set()
+    for key, value in node.items():
+        full = f"{prefix}.{key}" if prefix else key
+        if isinstance(value, dict):
+            keys |= _flatten(value, full)
+        else:
+            keys.add(re.sub(r"_(one|other|many|few|zero|two)$", "", full))
+    return keys
+
+
+def test_new_i18n_keys_exist_in_italian_and_english() -> None:
+    pattern = re.compile(
+        r"t\(\s*[\"'`]((?:courses\.sourceFigures|courses\.docs\.figures\.meta|"
+        r"courses\.docs\.figures\.licenses|courseSettings\.figureLicensePolicy|"
+        r"courseSettings\.fields\.figureLicensePolicy)[\w.]*)[\"'`]"
+    )
+    used = {m.group(1) for text in _sources().values() for m in pattern.finditer(text)}
+    assert used, "nessuna chiave delle figure di fonte trovata nei componenti"
+    for language in ("it", "en"):
+        keys = _flatten(json.loads((_LOCALES / f"{language}.json").read_text(encoding="utf-8")))
+        missing = sorted(k for k in used if k not in keys)
+        assert not missing, (language, missing)
+    # Anche le chiavi composte (licenze, fonti della bibliografia).
+    for language in ("it", "en"):
+        keys = _flatten(json.loads((_LOCALES / f"{language}.json").read_text(encoding="utf-8")))
+        for code in (
+            "cc0",
+            "public_domain",
+            "cc_by",
+            "cc_by_sa",
+            "cc_by_nc",
+            "cc_by_nd",
+            "cc_by_nc_sa",
+            "cc_by_nc_nd",
+            "all_rights_reserved",
+            "other",
+        ):
+            assert f"courses.docs.figures.licenses.{code}" in keys, (language, code)
+        for source in ("user", "openalex", "pdf_metadata", "crossref"):
+            assert f"courses.docs.figures.meta.sourceLabel.{source}" in keys, (language, source)
