@@ -277,12 +277,18 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                     course_id=course_full.id,
                     assets=source_figure_service.lesson_source_assets(lesson),
                     language=course_full.language_code,
-                    with_bytes=False,
+                    # Con i byte: se il file manca il frame mostra il
+                    # segnaposto e il discorso non deve citarne la fonte.
+                    with_bytes=True,
                 )
+                # Nomi e titoli sono testo di terzi: neutralizzati, e una
+                # frase con un tentativo di istruzione si scarta.
                 spoken_sources = {
-                    aid: r.spoken_text
+                    aid: safe
                     for aid, r in resolved.items()
-                    if r.renderable and r.spoken_text
+                    if r.renderable
+                    and r.data_url
+                    and (safe := figure_provenance.safe_spoken_text(r.spoken_text))
                 }
                 spoken_source_keys = {
                     aid: figure_provenance.spoken_keys(resolved[aid].spoken)

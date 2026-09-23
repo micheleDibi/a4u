@@ -16,6 +16,8 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
+from app.core.prompt_safety import _THIRD_PARTY_MARK as THIRD_PARTY_MARK
+from app.core.prompt_safety import neutralize_third_party_text
 from app.schemas.course_lesson_content import SOURCE_FIGURE_FORMAT
 
 PROMPT_PLACEHOLDER = "(figura tratta dai documenti del corso; la fonte la aggiunge il sistema)"
@@ -63,17 +65,32 @@ def slides_with_source_figures(
     return out
 
 
+def safe_spoken_text(text: str) -> str:
+    """Frase parlata pronta per il prompt: nomi e titoli vengono da terzi
+    (metadati del PDF, Crossref, OpenAlex), quindi passano da
+    `prompt_safety.neutralize_third_party_text`; una frase con un tentativo
+    di istruzione si scarta del tutto (il discorso omette la fonte, la
+    riga scritta resta), invece di chiedere al modello di leggere
+    «[testo rimosso]»."""
+    neutral = neutralize_third_party_text(text, max_length=400)
+    if not neutral or THIRD_PARTY_MARK in neutral:
+        return ""
+    return " ".join(neutral.split())
+
+
 def spoken_sources_block(slides_raw: Any, spoken_by_asset: Mapping[str, str]) -> list[str]:
     """Righe del blocco «Fonti delle figure da citare a voce» del PROMPT 6
     (vuoto senza figure di fonte sulle slide o senza frasi pronunciabili).
     Le frasi vengono da `figure_attribution` (variante parlata): mai dal
-    modello, mai con pagine, numeri di figura o licenze."""
+    modello, mai con pagine, numeri di figura o licenze; neutralizzate
+    (`safe_spoken_text`) perché nomi e titoli sono testo di terzi."""
+    safe = {aid: safe_spoken_text(text) for aid, text in spoken_by_asset.items()}
     lines: list[str] = []
     for slide_id, asset_ids in slides_with_source_figures(
-        slides_raw, [aid for aid, text in spoken_by_asset.items() if text.strip()]
+        slides_raw, [aid for aid, text in safe.items() if text]
     ).items():
         for asset_id in asset_ids:
-            lines.append(f"- slide {slide_id}: {spoken_by_asset[asset_id].strip()}")
+            lines.append(f"- slide {slide_id}: {safe[asset_id]}")
     return lines
 
 
