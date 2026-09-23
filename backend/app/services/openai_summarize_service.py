@@ -8,9 +8,7 @@ Errori → `OpenAISummarizeError` (sottoclasse di `OpenAIError`).
 """
 from __future__ import annotations
 
-import asyncio
 import json
-import random
 from typing import Any
 
 import httpx
@@ -24,6 +22,7 @@ from app.services.openai_client import (
     OpenAINotConfiguredError,
     get_client,
 )
+from app.services.openai_http import post_chat_with_retry
 
 log = get_logger("app.openai_summarize")
 
@@ -326,97 +325,21 @@ async def summarize_document(
 # QUI si ritenta (diversamente dal pattern della duplicazione, che
 # tratta tutti i 4xx come terminali) — è l'unica protezione reale dal
 # rate limit per un run da ~50+ chiamate.
-_RETRYABLE_STATUSES = {429, 500, 502, 503, 504}
-
-
-def _retry_after_seconds(resp: httpx.Response) -> float | None:
-    value = resp.headers.get("retry-after")
-    if not value:
-        return None
-    try:
-        return max(0.0, float(value))
-    except ValueError:
-        return None
-
-
 async def _post_chat_with_retry(
     body: dict[str, Any], *, timeout: float, label: str
 ) -> dict[str, Any]:
-    """POST /chat/completions con retry esponenziale + jitter sui soli
-    errori transient (rete/timeout, 429 onorando Retry-After, 5xx).
-    Gli altri 4xx sono terminali immediati. Timeout per-chiamata passato
-    a `client.post` (il parametro di `get_client(timeout=...)` è un
-    no-op: il default reale del client condiviso è read=600s)."""
+    """POST /chat/completions con retry sui transient: delega al trasporto
+    condiviso `openai_http.post_chat_with_retry` con il tetto dei tentativi,
+    l'errore e il prefisso dei log propri del riassunto (comportamento
+    invariato)."""
     settings = get_settings()
-    max_attempts = max(1, int(settings.course_document_llm_retry_max))
-    delay = 1.0
-    for attempt in range(1, max_attempts + 1):
-        try:
-            async with get_client() as client:
-                resp = await client.post(
-                    "/chat/completions", json=body, timeout=timeout
-                )
-        except OpenAINotConfiguredError:
-            raise
-        except httpx.HTTPError as exc:
-            if attempt < max_attempts:
-                sleep_for = delay + random.uniform(0, delay / 2)
-                log.warning(
-                    "openai_summarize_retry_transient",
-                    label=label,
-                    attempt=attempt,
-                    error=str(exc),
-                    sleep=round(sleep_for, 1),
-                )
-                await asyncio.sleep(sleep_for)
-                delay *= 2
-                continue
-            raise OpenAISummarizeError(
-                status=None, message=f"Errore HTTP verso OpenAI: {exc}"
-            ) from exc
-
-        if resp.status_code < 400:
-            return resp.json()
-
-        if resp.status_code in _RETRYABLE_STATUSES and attempt < max_attempts:
-            retry_after = _retry_after_seconds(resp)
-            sleep_for = max(delay, retry_after or 0.0) + random.uniform(
-                0, delay / 2
-            )
-            log.warning(
-                "openai_summarize_retry_status",
-                label=label,
-                attempt=attempt,
-                status=resp.status_code,
-                sleep=round(sleep_for, 1),
-            )
-            await asyncio.sleep(sleep_for)
-            delay *= 2
-            continue
-
-        try:
-            payload = resp.json()
-        except Exception:
-            payload = {"text": resp.text}
-        message = (
-            payload.get("error", {}).get("message")
-            if isinstance(payload, dict)
-            else None
-        )
-        log.error(
-            "openai_summarize_api_error",
-            label=label,
-            status=resp.status_code,
-            message=message or "unknown",
-        )
-        raise OpenAISummarizeError(
-            status=resp.status_code,
-            message=message
-            or f"OpenAI ha risposto con HTTP {resp.status_code}.",
-            payload=payload,
-        )
-    raise OpenAISummarizeError(  # pragma: no cover — difensivo
-        status=None, message="Tentativi OpenAI esauriti."
+    return await post_chat_with_retry(
+        body,
+        timeout=timeout,
+        label=label,
+        max_attempts=settings.course_document_llm_retry_max,
+        error_cls=OpenAISummarizeError,
+        log_prefix="openai_summarize",
     )
 
 
