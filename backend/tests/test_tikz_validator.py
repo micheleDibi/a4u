@@ -67,6 +67,10 @@ def _wrap(body: str) -> str:
         (_wrap(r"\makeatletter"), "control_word"),
         (_wrap(r"\node{\includegraphics{/uploads/x.png}};"), "control_word"),
         (_wrap(r"\tikzset{a/.code={x}}"), "forbidden_key_code_key"),
+        (_wrap(r"\tikzset{k/.append code={\draw (0,0);}}"), "forbidden_key_code_key"),
+        (_wrap(r"\tikzset{k/.prefix code={x}}"), "forbidden_key_code_key"),
+        (_wrap(r"\tikzset{k/.add code={x}{y}}"), "forbidden_key_code_key"),
+        (_wrap(r"\tikzset{k/.get=\small}"), "forbidden_key_value_to_macro"),
         (_wrap(r"\draw[/utils/exec={x}] (0,0);"), "forbidden_key_utils_exec"),
         (_wrap(r"\draw[execute at begin node={x}] (0,0);"), "forbidden_key_execute_at"),
         (

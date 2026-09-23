@@ -89,8 +89,13 @@ ALLOWED_CONTROL_SYMBOLS = frozenset(
 )
 
 _FORBIDDEN_KEYS: tuple[tuple[str, str], ...] = (
-    ("code_key", r"\.e?code\b"),
+    # Handler di pgfkeys che attaccano codice a una chiave: `.code`,
+    # `.ecode`, `.code n args`, ma anche `.append code`, `.prefix code` e
+    # `.add code` (la parola `code` non segue il punto).
+    ("code_key", r"\.(?:e?code|(?:append|prefix|add)\s+code)\b"),
     ("store_in", r"\bstore\s+in\b"),
+    # Handler che scrivono il valore in una macro (`.estore in`, `.get`).
+    ("value_to_macro", r"\.(?:estore\s+in|get)\b"),
     ("utils_exec", r"/utils/exec"),
     ("handlers", r"/handlers/"),
     ("execute_at", r"\bexecute\s+at\b"),
