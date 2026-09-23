@@ -240,3 +240,100 @@ def test_module_has_no_follow_redirects_client() -> None:
     import inspect
 
     assert "follow_redirects=False" in inspect.getsource(safe_http.fetch)
+
+
+@pytest.mark.parametrize("encoding", ["gzip", "br", "deflate"])
+async def test_compressed_responses_are_refused(encoding: str) -> None:
+    """Una bomba gzip/brotli si decomprimerebbe prima del tetto di byte."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, headers={"content-encoding": encoding}, stream=httpx.ByteStream(b"\x1f\x8b")
+        )
+
+    with pytest.raises(SafeFetchError) as excinfo:
+        await _fetch("https://ok.example/a.pdf", {"ok.example": ["93.184.216.34"]}, handler)
+    assert excinfo.value.code == "unexpected_encoding"
+
+
+@pytest.mark.parametrize(
+    "address", ["64:ff9b::7f00:1", "::a9fe:a9fe", "::ffff:0:7f00:1", "fec0::1", "64:ff9b:1::1"]
+)
+def test_embedded_or_site_local_ipv6_is_not_public(address: str) -> None:
+    assert not is_public_address(address)
+
+
+async def test_idn_host_is_sent_as_punycode_and_bad_labels_are_invalid() -> None:
+    result, seen = await _fetch(
+        "https://müller.example/a.pdf",
+        {"xn--mller-kva.example": ["93.184.216.34"]},
+        lambda r: httpx.Response(200, content=PDF),
+    )
+    assert result.kind == "pdf" and seen[0].headers["host"] == "xn--mller-kva.example"
+    with pytest.raises(SafeFetchError) as excinfo:
+        await _fetch(f"https://{'a' * 70}.example/x.pdf", {}, lambda r: httpx.Response(200))
+    assert excinfo.value.code in ("invalid_url", "dns_failed")
+
+
+async def test_dns_is_inside_the_total_deadline() -> None:
+    import asyncio
+    import time
+
+    async def slow(host: str, port: int) -> list[str]:
+        await asyncio.sleep(3)
+        return ["93.184.216.34"]
+
+    transport, _seen = _transport(lambda r: httpx.Response(200, content=PDF))
+    started = time.monotonic()
+    with pytest.raises(SafeFetchError) as excinfo:
+        await fetch(
+            "https://slow.example/a.pdf",
+            max_bytes=10_000,
+            timeout=0.5,
+            allowed_kinds=frozenset({"pdf"}),
+            resolver=slow,
+            transport=transport,
+        )
+    assert excinfo.value.code == "timeout" and time.monotonic() - started < 2
+
+
+async def test_caller_headers_do_not_follow_a_redirect_to_another_host() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.headers["host"] == "ok.example":
+            return httpx.Response(302, headers={"location": "https://other.example/b.pdf"})
+        return httpx.Response(200, content=PDF)
+
+    _result, seen = await _fetch(
+        "https://ok.example/a.pdf",
+        {"ok.example": ["93.184.216.34"], "other.example": ["93.184.216.35"]},
+        handler,
+        headers={"User-Agent": "a4u-test", "X-Secret": "s3cr3t"},
+    )
+    first, second = seen
+    assert first.headers["x-secret"] == "s3cr3t"
+    assert "x-secret" not in second.headers and second.headers["user-agent"] == "a4u-test"
+
+
+async def test_allowed_hosts_are_rechecked_on_redirects() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(302, headers={"location": "https://cdn.other.example/x.png"})
+
+    with pytest.raises(SafeFetchError) as excinfo:
+        await _fetch(
+            "https://upload.wikimedia.org/x.png",
+            {"upload.wikimedia.org": ["198.35.26.112"], "cdn.other.example": ["93.184.216.34"]},
+            handler,
+            allowed_kinds=frozenset({"png"}),
+            allowed_hosts=frozenset({"upload.wikimedia.org"}),
+        )
+    assert excinfo.value.code == "blocked_host"
+
+
+async def test_wrong_kind_and_server_errors() -> None:
+    table = {"ok.example": ["93.184.216.34"]}
+    with pytest.raises(SafeFetchError) as kind:
+        await _fetch("https://ok.example/a.pdf", table, lambda r: httpx.Response(200, content=PNG))
+    assert kind.value.code == "unexpected_type"
+    with pytest.raises(SafeFetchError) as server:
+        await _fetch("https://ok.example/a.pdf", table, lambda r: httpx.Response(503))
+    assert server.value.code == "server_error" and server.value.recoverable

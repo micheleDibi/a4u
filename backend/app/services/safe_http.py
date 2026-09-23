@@ -25,7 +25,7 @@ import asyncio
 import ipaddress
 import socket
 import time
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from urllib.parse import urljoin, urlsplit
 
@@ -73,6 +73,15 @@ class FetchResult:
     content_type: str | None
 
 
+# IPv6 che incapsulano un IPv4 o non sono instradabili, anche dove
+# `ipaddress` li considera globali: NAT64 (64:ff9b::/96, /48 locale),
+# IPv4-compatibili (::/96), SIIT (::ffff:0:0:0/96), site-local (fec0::/10).
+_IPV6_BLOCKED = tuple(
+    ipaddress.ip_network(net)
+    for net in ("64:ff9b::/96", "64:ff9b:1::/48", "::/96", "::ffff:0:0:0/96", "fec0::/10")
+)
+
+
 def is_public_address(ip: str) -> bool:
     """True solo per un indirizzo instradabile su Internet."""
     try:
@@ -83,7 +92,7 @@ def is_public_address(ip: str) -> bool:
         embedded = addr.ipv4_mapped or addr.sixtofour
         if embedded is not None:
             addr = embedded
-        elif addr.teredo is not None:
+        elif addr.teredo is not None or any(addr in net for net in _IPV6_BLOCKED):
             return False
     return bool(addr.is_global) and not addr.is_multicast
 
@@ -122,6 +131,11 @@ def _check_url(url: str, allowed_hosts: frozenset[str] | None) -> tuple[str, str
     host = (parts.hostname or "").lower().rstrip(".")
     if scheme not in ("http", "https") or not host:
         raise SafeFetchError("invalid_url", "solo URL http/https con un host")
+    try:
+        # IDN in punycode: lo stesso nome per DNS, Host e SNI.
+        host = host.encode("idna").decode("ascii")
+    except UnicodeError as exc:
+        raise SafeFetchError("invalid_url", f"host non valido: {exc}") from exc
     if parts.username or parts.password:
         raise SafeFetchError("invalid_url", "credenziali nell'URL non ammesse")
     port = port or (443 if scheme == "https" else 80)
@@ -142,7 +156,7 @@ async def _pinned_address(host: str, port: int, resolver: Resolver) -> str:
     else:
         try:
             addresses = await resolver(host, port)
-        except OSError as exc:
+        except (OSError, UnicodeError) as exc:
             raise SafeFetchError("dns_failed", f"risoluzione di {host} fallita") from exc
     if not addresses:
         raise SafeFetchError("dns_failed", f"nessun indirizzo per {host}")
@@ -160,6 +174,16 @@ def _pinned_url(url: str, scheme: str, address: str, port: int) -> str:
     path = parts.path or "/"
     query = f"?{parts.query}" if parts.query else ""
     return f"{scheme}://{netloc}{path}{query}"
+
+
+async def _raw_chunks(response: httpx.Response) -> AsyncIterator[bytes]:
+    """Byte come arrivano (mai decompressi da httpx). Una risposta già in
+    memoria (trasporti di test) si restituisce così com'è."""
+    if response.is_stream_consumed:
+        yield response.content
+        return
+    async for chunk in response.aiter_raw(_CHUNK):
+        yield chunk
 
 
 def _retry_after(response: httpx.Response) -> float | None:
@@ -196,15 +220,32 @@ async def fetch(
         follow_redirects=False,
         timeout=httpx.Timeout(min(timeout, 30.0)),
     ) as client:
+        first_host: str | None = None
         for _hop in range(max_redirects + 1):
             scheme, host, port = _check_url(current, allowed_hosts)
-            address = await _pinned_address(host, port, resolve)
+            first_host = first_host or host
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise SafeFetchError("timeout", "tempo massimo del download superato")
+            try:
+                # Anche la risoluzione DNS sta nella scadenza totale.
+                async with asyncio.timeout(remaining):
+                    address = await _pinned_address(host, port, resolve)
+            except TimeoutError as exc:
+                raise SafeFetchError("timeout", "tempo massimo del download superato") from exc
+            # Le intestazioni del chiamante solo verso l'host iniziale: un
+            # redirect verso un altro host riceve solo lo User-Agent.
+            caller_headers = dict(headers or {})
+            if host != first_host:
+                caller_headers = {
+                    k: v for k, v in caller_headers.items() if k.lower() == "user-agent"
+                }
             request_headers = {
-                # Niente compressione: il tetto vale sui byte veri (e una
-                # risposta compressa comunque arriva decompressa a pezzi).
+                # Niente compressione: il tetto vale sui byte veri; una
+                # risposta compressa comunque si rifiuta (bomba gzip/brotli).
+                **caller_headers,
                 "Accept-Encoding": "identity",
-                **(headers or {}),
-                "Host": urlsplit(current).netloc.split("@")[-1],
+                "Host": host if port in (80, 443) else f"{host}:{port}",
             }
             request = client.build_request(
                 "GET",
@@ -249,11 +290,17 @@ async def fetch(
                                 f"HTTP {response.status_code}",
                                 status=response.status_code,
                             )
+                        encoding = response.headers.get("content-encoding", "").strip().lower()
+                        if encoding not in ("", "identity"):
+                            # httpx decomprimerebbe PRIMA del tetto di byte.
+                            raise SafeFetchError(
+                                "unexpected_encoding", f"Content-Encoding {encoding} non ammesso"
+                            )
                         declared = response.headers.get("content-length")
                         if declared and declared.isdigit() and int(declared) > max_bytes:
                             raise SafeFetchError("too_large", f"{declared} byte > {max_bytes}")
                         buffer = bytearray()
-                        async for chunk in response.aiter_bytes(_CHUNK):
+                        async for chunk in _raw_chunks(response):
                             buffer.extend(chunk)
                             if len(buffer) > max_bytes:
                                 raise SafeFetchError("too_large", f"oltre {max_bytes} byte")

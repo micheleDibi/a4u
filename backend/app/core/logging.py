@@ -105,6 +105,10 @@ def configure_logging(settings: Settings) -> None:
         logging.getLogger(noisy).handlers = [handler]
         logging.getLogger(noisy).propagate = False
         logging.getLogger(noisy).setLevel("INFO" if noisy.startswith("uvicorn") else "WARNING")
+    # httpx scrive a INFO l'URL completo di ogni richiesta, query string
+    # compresa: la API key di OpenAlex (`api_key=…`) finirebbe nei log.
+    for client_logger in ("httpx", "httpcore"):
+        logging.getLogger(client_logger).setLevel("WARNING")
 
 
 def get_logger(name: str | None = None) -> Any:
