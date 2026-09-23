@@ -73,6 +73,11 @@ class ResolvedSourceFigure:
     # (`band_text_short`, pagine con 3-4 figure di fonte).
     band_text: str = ""
     band_text_short: str = ""
+    # Figure della letteratura aperta: provenienza, licenza e pagina della
+    # fonte per i crediti in coda alla dispensa (URI della licenza).
+    source_kind: str = "uploaded"
+    license_url: str | None = None
+    source_url: str | None = None
     # Dati da pronunciare (PROMPT 6, Fase 5): cognomi, titolo breve, anno.
     spoken: Mapping[str, Any] | None = None
     # Frase parlata già pronta («tratta da …»), sicura per il TTS; vuota se
@@ -212,6 +217,9 @@ async def resolve_source_figures(
             attribution_text=line,
             band_text=band_text,
             band_text_short=band_text_short,
+            source_kind=fig.source_kind,
+            license_url=fig.license_url,
+            source_url=fig.source_url,
             spoken=spoken,
             spoken_text=spoken_text,
         )

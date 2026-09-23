@@ -516,3 +516,44 @@ def test_video_frame_band_is_drawn_outside_the_avatar(tmp_path: Path) -> None:
         geometry.page_w_mm - 85.0, geometry.body_bottom_y_mm + 1, 297.0, geometry.page_h_mm
     )
     assert list(images[0].crop(avatar).getdata()) == list(images[1].crop(avatar).getdata())
+
+
+def test_lesson_pdf_lists_credits_for_open_literature_figures() -> None:
+    """Le figure della letteratura aperta hanno in coda i crediti con il
+    link alla licenza (le CC lo chiedono) e alla pagina della fonte; senza
+    figure esterne il blocco non c'è."""
+    external = ResolvedSourceFigure(
+        True,
+        figure_id=FIG_UUID,
+        data_url=_resolved().data_url,
+        mime_type="image/png",
+        width=320,
+        height=200,
+        attribution_text="Fonte: Jane Doe, «LDV», Wikimedia Commons (CC BY-SA 4.0)",
+        source_kind="wikimedia",
+        license_url="https://creativecommons.org/licenses/by-sa/4.0",
+        source_url="https://commons.wikimedia.org/wiki/File:LDV.svg",
+    )
+    html = pdf.render_lesson_html(
+        course=_course(),
+        lesson=_lesson(),
+        organization=None,
+        pdf_template=None,
+        visual_svg_map={"gen-1": SVG_A},
+        source_figures={"fig-src-1": external},
+    )
+    credits = html.split('class="pb-avoid figure-credits"', 1)[1]
+    assert "Crediti delle figure" in credits
+    assert "Figura 2: Fonte: Jane Doe, «LDV», Wikimedia Commons (CC BY-SA 4.0)" in credits
+    assert 'href="https://creativecommons.org/licenses/by-sa/4.0"' in credits
+    assert 'href="https://commons.wikimedia.org/wiki/File:LDV.svg"' in credits
+    # Figura di un documento del corso: nessun credito in coda.
+    plain = pdf.render_lesson_html(
+        course=_course(),
+        lesson=_lesson(),
+        organization=None,
+        pdf_template=None,
+        visual_svg_map={"gen-1": SVG_A},
+        source_figures={"fig-src-1": _resolved()},
+    )
+    assert "figure-credits" not in plain

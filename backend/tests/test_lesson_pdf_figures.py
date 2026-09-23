@@ -678,6 +678,11 @@ def test_labels_for_and_slide_labels_have_no_asset_label_keys() -> None:
         "cfu",
         "teacher",
         "proof",
+        # Crediti delle figure della letteratura aperta (WP5): titoli di
+        # sezione, non etichette di asset.
+        "figure_credits",
+        "credit_license",
+        "credit_source",
         *(f"kind_{k}" for k in _THEOREM_KINDS),
     }
     slide_types = (

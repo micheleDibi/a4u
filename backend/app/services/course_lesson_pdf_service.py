@@ -2196,6 +2196,9 @@ def _labels_for(language: str) -> dict[str, str]:
             "summary": "Summary",
             "key_takeaways": "Key takeaways",
             "references": "References",
+            "figure_credits": "Figure credits",
+            "credit_license": "License",
+            "credit_source": "Source page",
             "module": "Module",
             "lesson": "lesson",
             "cfu": "ECTS",
@@ -2213,6 +2216,9 @@ def _labels_for(language: str) -> dict[str, str]:
         "summary": "Sintesi",
         "key_takeaways": "Punti chiave",
         "references": "Riferimenti",
+        "figure_credits": "Crediti delle figure",
+        "credit_license": "Licenza",
+        "credit_source": "Pagina della fonte",
         "module": "Modulo",
         "lesson": "lezione",
         "cfu": "CFU",
@@ -2342,6 +2348,9 @@ def render_lesson_html(
         {**(ref if isinstance(ref, dict) else {}), "citation": _tail(_citation_text(ref))}
         for ref in raw.get("references") or []
     ]
+    figure_credits = _figure_credits(
+        raw, source_figures, prepared.refs.asset_numbers, labels=figure_i18n
+    )
 
     template = _jinja_env.get_template("lesson_pdf.html.j2")
     html = template.render(
@@ -2366,8 +2375,58 @@ def render_lesson_html(
         body_html=body_html,
         key_takeaways=key_takeaways,
         references=references,
+        figure_credits=figure_credits,
     )
     return html
+
+
+def _http_link(value: str | None) -> str | None:
+    return value if value and value.startswith(("https://", "http://")) else None
+
+
+def _figure_credits(
+    raw: Mapping[str, Any],
+    source_figures: SourceFigureMap | None,
+    asset_numbers: Mapping[tuple[str, str], int],
+    *,
+    labels: Mapping[str, str],
+) -> list[dict[str, Any]]:
+    """Crediti delle figure della letteratura aperta RESE nella dispensa, in
+    ordine di numero: riga «Fonte», link alla licenza e alla pagina della
+    fonte (le licenze Creative Commons chiedono l'URI della licenza; nella
+    didascalia e nella fascia delle slide non c'è posto). Vuoto senza figure
+    esterne: il PDF resta quello di prima."""
+    credits: list[tuple[int, dict[str, Any]]] = []
+    for asset in raw.get("visual_assets") or []:
+        if not isinstance(asset, dict) or asset.get("format") != SOURCE_FIGURE_FORMAT:
+            continue
+        asset_id = str(asset.get("asset_id") or "")
+        resolved = (source_figures or {}).get(asset_id)
+        if (
+            resolved is None
+            or not resolved.renderable
+            or not resolved.data_url
+            or resolved.source_kind == "uploaded"
+        ):
+            continue
+        number = asset_numbers.get(("FIG", asset_id.strip().lower()))
+        label = (
+            labels["courses.figures.ref"].replace("{{n}}", str(number))
+            if number
+            else labels["courses.figures.labelUnnumbered"].rstrip(".")
+        )
+        credits.append(
+            (
+                number or 10_000,
+                {
+                    "label": label,
+                    "line": resolved.attribution_text,
+                    "license_url": _http_link(resolved.license_url),
+                    "source_url": _http_link(resolved.source_url),
+                },
+            )
+        )
+    return [entry for _n, entry in sorted(credits, key=lambda item: item[0])]
 
 
 # ---------------------------------------------------------------------------

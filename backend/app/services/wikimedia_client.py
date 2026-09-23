@@ -45,6 +45,7 @@ _EXTMETADATA_FIELDS = (
     "UsageTerms",
     "AttributionRequired",
     "Artist",
+    "Attribution",
     "Credit",
     "ObjectName",
     "ImageDescription",
@@ -66,6 +67,10 @@ class CommonsFile:
     author: str | None
     object_name: str | None
     description: str | None
+    # Attribuzione nella forma voluta dal licenziante (campo `Attribution`
+    # di Commons), quando c'è: sostituisce l'autore nella riga «Fonte».
+    credit: str | None = None
+    license_version: str | None = None
 
     @property
     def external_id(self) -> str:
@@ -77,10 +82,13 @@ class CommonsFile:
             "title": self.object_name or _file_label(self.title),
             "container": "Wikimedia Commons",
             "license": self.license,
+            "license_version": self.license_version,
             "license_url": self.license_url,
             "url": self.description_url,
         }
-        if self.author:
+        if self.credit:
+            data["credit"] = self.credit
+        elif self.author:
             data["authors"] = [self.author]
         return {k: v for k, v in data.items() if v}
 
@@ -115,6 +123,22 @@ def license_code(meta: dict[str, Any]) -> str | None:
     if re.match(r"^cc-by-\d", raw):
         return "cc_by"
     return None
+
+
+_VERSION_RE = re.compile(r"\b(\d+\.\d+)\b")
+
+
+def _license_version(short_name: Any) -> str | None:
+    """Versione della licenza dal nome breve di Commons («CC BY-SA 4.0»)."""
+    match = _VERSION_RE.search(str(short_name or ""))
+    return match.group(1) if match else None
+
+
+def _http_url(value: str | None) -> str | None:
+    """Solo URL http/https (finiscono come link nel PDF)."""
+    if value and value.startswith("//"):
+        value = "https:" + value
+    return value if value and value.startswith(("https://", "http://")) else None
 
 
 def _value(meta: dict[str, Any], key: str) -> Any:
@@ -167,8 +191,10 @@ def parse_files(payload: Any) -> list[CommonsFile]:
                     width=width if isinstance(width, int) else None,
                     height=height if isinstance(height, int) else None,
                     license=code,
-                    license_url=plain_text(_value(meta, "LicenseUrl"), limit=500),
+                    license_url=_http_url(plain_text(_value(meta, "LicenseUrl"), limit=500)),
                     author=plain_text(_value(meta, "Artist"), limit=200),
+                    credit=plain_text(_value(meta, "Attribution"), limit=200),
+                    license_version=_license_version(_value(meta, "LicenseShortName")),
                     object_name=plain_text(_value(meta, "ObjectName"), limit=300),
                     description=plain_text(_value(meta, "ImageDescription"), limit=600),
                 ),

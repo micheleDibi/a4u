@@ -160,6 +160,9 @@ class AttributionSource:
     page: int | None = None
     page_kind: PageKind = "page"
     license: str = "unknown"
+    # Versione della licenza Creative Commons («4.0»), quando la fonte la
+    # dichiara (Wikimedia): la riga scritta la riporta accanto al nome.
+    license_version: str | None = None
     license_url: str | None = None
     url: str | None = None
     is_own_work: bool = False
@@ -188,6 +191,7 @@ class AttributionSource:
             "page": self.page,
             "page_kind": self.page_kind,
             "license": self.license,
+            "license_version": self.license_version,
             "license_url": self.license_url,
             "url": self.url,
             "is_own_work": self.is_own_work,
@@ -216,6 +220,7 @@ class AttributionSource:
             page=page if _is_int(page) and page >= 1 else None,
             page_kind="slide" if page_kind == "slide" else "page",
             license=license or str(data.get("license") or "unknown"),
+            license_version=_clean_optional(data.get("license_version")),
             license_url=_clean_optional(data.get("license_url")),
             url=_clean_optional(data.get("url")),
             is_own_work=data.get("is_own_work") is True,
@@ -392,6 +397,8 @@ def _compose(src: AttributionSource, lang: str, segments: list[str], *, adapted:
     texts = _TEXTS[lang]
     body = ", ".join(s for s in segments if s)
     label = license_label(src.license, language=lang)
+    if label and src.license_version:
+        label = f"{label} {src.license_version}"
     if label:
         body = f"{body} ({label})" if body else f"({label})"
     prefix = texts["prefix_adapted"] if adapted else texts["prefix"]

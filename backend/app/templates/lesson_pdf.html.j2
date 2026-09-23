@@ -486,5 +486,14 @@
     </ol>
   </section>
   {% endif %}
+
+  {% if figure_credits %}
+  <section class="pb-avoid figure-credits">
+    <h2>{{ labels.figure_credits }}</h2>
+    <ul class="references-list">
+      {% for credit in figure_credits %}<li>{{ credit.label }}: {{ credit.line }}{% if credit.license_url %}. {{ labels.credit_license }}: <a href="{{ credit.license_url }}">{{ credit.license_url }}</a>{% endif %}{% if credit.source_url %}. {{ labels.credit_source }}: <a href="{{ credit.source_url }}">{{ credit.source_url }}</a>{% endif %}</li>{% endfor %}
+    </ul>
+  </section>
+  {% endif %}
 </body>
 </html>

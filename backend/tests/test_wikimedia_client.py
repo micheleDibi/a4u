@@ -70,6 +70,8 @@ def test_parse_keeps_only_free_licenses_without_restrictions() -> None:
                 _page(3, license="pd", short="Public domain", index=3),
                 _page(4, license="cc-by-4.0", short="CC BY 4.0", index=4),
                 _page(5, license="gfdl", short="GFDL", index=5),
+                _page(10, license="cc-by-nc-sa-4.0", short="CC BY-NC-SA 4.0", index=10),
+                _page(11, license="cc-by-nd-4.0", short="CC BY-ND 4.0", index=11),
                 _page(6, license="", short="", index=6),
                 _page(7, restrictions="trademarked", index=7),
                 _page(8, host="evil.example", index=8),
@@ -99,8 +101,9 @@ def test_frozen_attribution_gives_the_source_line() -> None:
     assert attribution["url"].startswith("https://commons.wikimedia.org/wiki/File:")
     src = AttributionSource.from_json(attribution, license=item.license)
     line = attribution_line(src, language="it")
+    # Versione della licenza dal nome breve di Commons (CC BY-SA 4.0).
     assert line == (
-        "Fonte: Jane Doe, «Laser Doppler vibrometer & optics», Wikimedia Commons (CC BY-SA)"
+        "Fonte: Jane Doe, «Laser Doppler vibrometer & optics», Wikimedia Commons (CC BY-SA 4.0)"
     )
 
 
