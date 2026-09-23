@@ -126,6 +126,42 @@ def _chars(page: Any) -> list[tuple[str, Box, float]]:
     return out[:MAX_CHARS]
 
 
+def _near(a: Box, b: Box, distance: float) -> bool:
+    gap_x = max(b[0] - a[2], a[0] - b[2], 0.0)
+    gap_y = max(b[1] - a[3], a[1] - b[3], 0.0)
+    return gap_x <= distance and gap_y <= distance
+
+
+def _script_flags(chars: list[tuple[str, Box, float]]) -> list[bool]:
+    """Pedici e apici. Un glifo è un pedice se sta accanto (entro mezzo
+    corpo) a uno più grande di almeno `1 / SCRIPT_RATIO`, oppure a un
+    pedice dello stesso corpo (le lettere successive di `V_{out}`). Il
+    confronto con la mediana dei corpi non basta: in `$V_{in}$` o `$R_1$` i
+    pedici sono la maggioranza."""
+    flags = [
+        any(
+            j != i and size < SCRIPT_RATIO * other_size and _near(box, other, 0.5 * other_size)
+            for j, (_o, other, other_size) in enumerate(chars)
+        )
+        for i, (_t, box, size) in enumerate(chars)
+    ]
+    changed = True
+    while changed:
+        changed = False
+        for i, (_t, box, size) in enumerate(chars):
+            if flags[i]:
+                continue
+            for j, (_o, other, other_size) in enumerate(chars):
+                if (
+                    flags[j]
+                    and abs(size - other_size) <= 0.05 * other_size
+                    and _near(box, other, 0.5 * size)
+                ):
+                    flags[i] = changed = True
+                    break
+    return flags
+
+
 def _chars_overlap(a: Box, b: Box) -> bool:
     """Due glifi uno sopra l'altro (non solo vicini: pedici, crenatura)."""
     ox = min(a[2], b[2]) - max(a[0], b[0])
@@ -226,13 +262,13 @@ def analyze(pdf: bytes, *, has_axis: bool) -> TikzGeometry:
     ]
     if outside:
         defects.append(f"content_outside_page: {len(outside)} elementi tagliati")
-    sizes = sorted(size for _t, _b, size in chars if size > 0)
+    sizes = [size for _t, _b, size in chars if size > 0]
     min_font = None
     if sizes:
-        median = sizes[len(sizes) // 2]
         # Pedici e apici (≈ 70% del corpo) non sono il corpo del testo.
-        body = [size for size in sizes if size >= SCRIPT_RATIO * median]
-        min_font = min(body) if body else sizes[0]
+        scripts = _script_flags(chars)
+        body = [size for i, (_t, _b, size) in enumerate(chars) if size > 0 and not scripts[i]]
+        min_font = min(body) if body else min(sizes)
         width_mm = width / _PT_PER_MM
         effective = min_font * min(1.0, LESSON_WIDTH_MM / width_mm) if width_mm else min_font
         if effective < MIN_TEXT_PT:

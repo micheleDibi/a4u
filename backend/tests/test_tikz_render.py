@@ -1,7 +1,8 @@
 """Resa delle figure `tikz` (W6-T3): XeLaTeX vero, SVG e oracolo geometrico.
 
-- catena di misura, circuito (circuitikz) e grafico (pgfplots) compilano in
-  una pagina, l'SVG passa `normalize_svg`, nessun difetto geometrico;
+- catena di misura, circuito (circuitikz), grafico (pgfplots) e circuito
+  con i pedici in maggioranza compilano in una pagina, l'SVG passa
+  `normalize_svg`, nessun difetto geometrico;
 - controlli negativi (piano, M5): nodi sovrapposti, testo che esce dal
   riquadro, figura troppo larga (testo troppo piccolo nella dispensa),
   contenuto fuori dalla pagina → difetti segnalati;
@@ -36,7 +37,22 @@ def _render(source: str) -> tuple[tex.CompileResult, geo.TikzGeometry]:
     return result, geo.analyze(result.pdf, has_axis=pre.uses_axis(source))
 
 
-@pytest.mark.parametrize("source", [CHAIN, CIRCUIT, PLOT], ids=["chain", "circuit", "plot"])
+# Pedici in maggioranza (`V_{in}`, `V_{out}`, `R_1`): i pedici non sono il
+# corpo del testo anche quando superano per numero le lettere di base.
+SUBSCRIPTS = r"""\begin{circuitikz}
+  \draw (0,0) to[V, l=$V_{in}$] (0,4) -- (2.5,4)
+    to[R, l=$R_1$] (2.5,2)
+    to[R, l=$R_2$] (2.5,0) -- (0,0);
+  \draw (2.5,2) to[short, -o] (4.5,2) node[right] {$V_{out}$};
+  \draw (2.5,0) to[short, -o] (4.5,0);
+\end{circuitikz}"""
+
+
+@pytest.mark.parametrize(
+    "source",
+    [CHAIN, CIRCUIT, PLOT, SUBSCRIPTS],
+    ids=["chain", "circuit", "plot", "subscripts"],
+)
 def test_teaching_figures_render_clean(source: str) -> None:
     result, geometry = _render(source)
     svg = normalize_svg(result.svg, max_bytes=1_500_000)
