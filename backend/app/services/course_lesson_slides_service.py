@@ -15,6 +15,7 @@ Le funzioni di orchestrazione lato API (`request_lesson_slides_generation`,
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -261,9 +262,10 @@ _CLOSING_SLIDE_TYPES = frozenset({"summary", "takeaways", "references", "bibliog
 
 
 def _citing_section(content_raw: dict[str, Any], asset_id: str) -> str:
-    tag = f"[fig:{asset_id.strip().lower()}]"
+    # Come la numerazione: `[FIG: id ]` con spazi e maiuscole qualsiasi.
+    tag = re.compile(rf"\[FIG:\s*{re.escape(asset_id.strip())}\s*\]", re.IGNORECASE)
     for section in content_raw.get("sections") or []:
-        if isinstance(section, dict) and tag in str(section.get("content") or "").lower():
+        if isinstance(section, dict) and tag.search(str(section.get("content") or "")):
             return str(section.get("section_id") or "")
     return ""
 

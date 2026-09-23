@@ -952,13 +952,18 @@ async def update_document(
         new_bib = new_bib or None
         new_source = "user" if new_bib else None
         if new_bib != doc.bibliography or new_source != doc.bibliography_source:
+            changes["bibliography"] = {
+                "from_source": doc.bibliography_source,
+                "to": "set" if new_bib else "cleared",
+            }
             doc.bibliography = new_bib
             doc.bibliography_source = new_source
-            changes["bibliography"] = "set" if new_bib else "cleared"
     if "license" in fields and payload.license != doc.license:
+        # Valore precedente nell'audit: la licenza dichiarata decide la riga
+        # «Fonte» e la politica open_only.
+        changes["license"] = {"from": doc.license, "to": payload.license}
         doc.license = payload.license
         doc.license_source = "user" if payload.license else None
-        changes["license"] = payload.license
         await db.execute(
             update(CourseDocumentFigure)
             .where(
@@ -973,8 +978,8 @@ async def update_document(
         and payload.is_own_work is not None
         and payload.is_own_work != doc.is_own_work
     ):
+        changes["is_own_work"] = {"from": doc.is_own_work, "to": payload.is_own_work}
         doc.is_own_work = payload.is_own_work
-        changes["is_own_work"] = payload.is_own_work
     if changes:
         await write_audit(
             db,

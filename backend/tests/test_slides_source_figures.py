@@ -146,6 +146,23 @@ async def test_without_a_section_the_slide_goes_before_the_closing_slides() -> N
     assert ids == ["s1", "s2", "fig_1", "s3", "s4"]
 
 
+async def test_citing_section_accepts_spaces_and_case_in_the_tag() -> None:
+    """Come la numerazione: `[FIG: fig_1 ]` e `[fig:FIG_1]` citano fig_1."""
+    content = _content_raw(with_source=False)
+    content["sections"][0]["content"] = "Vedi [FIG: fig_1 ]."
+    slides = [
+        _slide(1, "", type="title"),
+        _slide(2, "S1"),
+        _slide(3, "S2", ["fig_2"]),
+        _slide(4, "", type="summary"),
+    ]
+    lesson = await _materialize(slides, content)
+    raw = lesson.slides_raw
+    ids = [s["slide_id"] for s in raw["slides"]]
+    assert ids == ["s1", "s2", "fig_1", "s3", "s4"]
+    assert raw["slides"][2]["source_section_id"] == "S1"
+
+
 async def test_flag_off_keeps_the_output_of_main(monkeypatch: pytest.MonkeyPatch) -> None:
     patched = get_settings().model_copy(update={"figure_slides_coverage_repair_enabled": False})
     monkeypatch.setattr(slides_svc, "get_settings", lambda: patched)

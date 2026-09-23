@@ -24,7 +24,9 @@ _SOURCE_PHRASES = (
     r"reprinted from|reproduced from|redrawn from|modified from|adaptado de|"
     r"adapté de|tomado de|tiré de)\b"
 )
-_CITATION = r"\(\s*[A-ZÀ-Ý][^()]{0,80}?(?:et al\.?)?,?\s*(?:1[5-9]|20)\d\d[a-z]?\s*\)"
+# Citazione autore-anno: serve «et al.» o una virgola prima dell'anno
+# («(Rossi, 2019)», «(Rossi et al. 2019)»), non «(Gennaio 2020)».
+_CITATION = r"\(\s*[A-ZÀ-Ý][^()]{0,80}?(?:\s+et al\.?\s*,?|,)\s*(?:1[5-9]|20)\d\d[a-z]?\s*\)"
 _SOURCE_TAIL_RE = re.compile(
     rf"(?:(?<=[.;:!?])\s+|(?<=[\u3002\uff1b\uff01\uff1f])\s*|\s*[(\[]\s*|\s+[—–-]\s+)"
     rf"(?:{_SOURCE_WORDS}|{_SOURCE_PHRASES}|©|copyright\b).*$"

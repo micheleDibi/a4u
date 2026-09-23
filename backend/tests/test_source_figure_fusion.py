@@ -215,6 +215,10 @@ def test_figure_mix_counts_sources_apart() -> None:
             "Confronto delle fonti: rumore termico e shot",
         ),
         ("Curva di risposta (1 kHz, 2019)", "Curva di risposta (1 kHz, 2019)"),
+        ("Curva di carico (Gennaio 2020)", "Curva di carico (Gennaio 2020)"),
+        ("Consumi per regione (Italia 2008)", "Consumi per regione (Italia 2008)"),
+        ("Schema di prova (Rossi, 2019)", "Schema di prova"),
+        ("Schema di prova (Rossi et al. 2019)", "Schema di prova"),
     ],
 )
 def test_clean_caption(caption: str, expected: str) -> None:

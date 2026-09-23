@@ -402,6 +402,24 @@ async def test_partial_document_patch_metadata_and_license_propagation(
         .all()
     )
     assert "course.document.metadata.update" in actions
+    # L'audit registra il valore precedente e il nuovo (dichiarazioni del
+    # docente che decidono la riga «Fonte» e la politica open_only).
+    payloads = (
+        (
+            await seeded_db.execute(
+                select(AuditLog.payload).where(
+                    AuditLog.target_id == str(doc.id),
+                    AuditLog.action == "course.document.metadata.update",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    changes = payloads[0]["changes"]
+    assert changes["license"] == {"from": "cc_by", "to": "cc_by_sa"}
+    assert changes["is_own_work"] == {"from": False, "to": True}
+    assert changes["bibliography"] == {"from_source": "user", "to": "set"}
     # Solo la politica: il vecchio contratto resta valido.
     res = await client.patch(
         url, json={"citation_policy": "content_only"}, headers=_bearer(s["user"])
