@@ -133,6 +133,9 @@ class _TikzStub:
         self.validated.append(content)
         return (True, "") if content == "valido" else (False, self.error)
 
+    def extract_translatable(self, content: str) -> dict[str, str]:
+        return {}
+
 
 @pytest.fixture
 def tikz_on(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
@@ -318,6 +321,14 @@ def test_slides_and_speech_see_only_the_node_labels() -> None:
     assert mermaid["content"] == "flowchart LR\n a-->b"
     assert "\\" not in json.dumps(view["visual_assets"][:2], ensure_ascii=False).replace("\\n", "")
     assert raw["visual_assets"][0]["content"] == CHAIN  # l'originale non cambia
+    commented = CHAIN.replace("\\node[box] (s)", "% \\node {Vecchia}\n  \\node[box] (s)")
+    assert "Vecchia" in commented
+    assert (
+        "Vecchia"
+        not in prompt_view(
+            {"visual_assets": [{"asset_id": "t1", "format": "tikz", "content": commented}]}
+        )["visual_assets"][0]["content"]
+    )
 
 
 async def test_worker_does_not_offer_tikz_during_an_extraction(
@@ -374,3 +385,36 @@ async def test_user_prompt_default_follows_the_schema_default(
     assert "## Formato aggiuntivo: tikz" not in content_svc.build_user_prompt(course, lesson)
     _offer(monkeypatch, propose=True)
     assert "## Formato aggiuntivo: tikz" in content_svc.build_user_prompt(course, lesson)
+
+
+async def test_one_fix_in_total_and_revert_after_a_broken_translation(
+    monkeypatch: pytest.MonkeyPatch, tikz_on: list[dict[str, Any]]
+) -> None:
+    """Un solo fix per figura `tikz` in tutta la validazione della lezione,
+    anche nella rivalidazione dopo la localizzazione; se la traduzione la
+    rompe, la figura torna alla versione valida (verifica WP6)."""
+    monkeypatch.setitem(frs.REGISTRY, "tikz", _TikzStub("tikz_compile_failed: x"))
+    fixes: list[str] = []
+
+    async def _fix(**kw: Any) -> tuple[fix.AssetFixOut, dict[str, Any]]:
+        fixes.append(kw["source"])
+        return fix.AssetFixOut(fixed_content="valido"), {"cost_usd": 0.001}
+
+    async def _translate_badly(fields: Any, *, language_code: str, usage_sink: Any) -> bool:
+        for asset in output.visual_assets:
+            asset.content = "tradotto e rotto"
+        return True
+
+    async def _nothing(*args: Any, **kwargs: Any) -> None:
+        return None
+
+    monkeypatch.setattr(fix, "fix_asset", _fix)
+    monkeypatch.setattr(avs, "_localize_fields", _translate_badly)
+    monkeypatch.setattr(avs, "_review_figures", _nothing)
+    monkeypatch.setattr(avs, "_review_tikz_renders", _nothing)
+    output = _output()
+    output.visual_assets[0].content = "rotto"
+    out, usage = await avs.validate_and_fix_content_assets(output, language_code="it")
+    assert fixes == ["rotto"]  # nessun secondo fix dopo la traduzione
+    assert out.visual_assets[0].content == "valido"
+    assert [u["phase"] for u in usage] == ["fix"]

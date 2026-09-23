@@ -786,6 +786,7 @@ async def _validate_and_fix(
     *,
     language_code: str,
     usage_sink: list[dict[str, Any]] | None = None,
+    already_fixed: set[str] | frozenset[str] = frozenset(),
 ) -> int:
     """Valida gli slot e ripara SOLO quelli invalidi. Gli asset gia' validi
     NON vengono toccati: nessun clean, nessun commit, restano byte-identici.
@@ -832,7 +833,10 @@ async def _validate_and_fix(
     # giri (`asset_fix_max_attempts`) e tetto per slot (`_fix_cap`: `tikz`
     # uno solo); per gli altri formati il secondo coincide col primo.
     remaining = max_attempts
-    spent: dict[str, int] = {}
+    # `already_fixed`: slot che hanno già avuto un fix in un giro precedente
+    # della stessa lezione (rivalidazione dopo la localizzazione): per
+    # `tikz` il tetto è già raggiunto.
+    spent: dict[str, int] = dict.fromkeys(already_fixed, 1)
     while invalid:
         capped = [c for c in invalid if spent.get(c.id, 0) >= _fix_cap(c.kind, max_attempts)]
         if remaining <= 0 or capped:
@@ -1987,7 +1991,8 @@ async def _review_tikz_renders(
             log.info("tikz_render_review_skipped", asset_id=asset.asset_id, reason="no_png")
             return None
         context = _review_context(output, asset.asset_id)
-        labels = list(renderer.extract_translatable(asset.content).values())
+        # Etichette della figura resa: senza i nodi commentati.
+        labels = list(renderer.extract_translatable(renderer.sanitize(asset.content)).values())
         try:
             async with _review_semaphore():
                 verdict, call_usage = await openai_tikz_render_review_service.review_render(
@@ -2067,7 +2072,7 @@ async def validate_and_fix_content_assets(
     se un asset resta invalido; la revisione non solleva mai."""
     usage: list[dict[str, Any]] = []
     slots, inline_fields = _collect_content_slots(output)
-    tikz_before = {a.asset_id: a.content for a in output.visual_assets if a.format == "tikz"}
+    tikz_ids = {a.asset_id for a in output.visual_assets if a.format == "tikz"}
     if slots:
         fixed = await _validate_and_fix(
             slots, inline_fields, language_code=language_code, usage_sink=usage
@@ -2079,17 +2084,16 @@ async def validate_and_fix_content_assets(
             kinds=dict(Counter(s.kind for s in slots)),
         )
     # Revisione Vision della resa `tikz` (PROMPT 21): consultiva, come quella
-    # figura ↔ testo non solleva mai. Un `tikz` già riscritto dal fix ha
-    # speso il suo unico fix.
-    if tikz_before:
-        spent = {
-            a.asset_id
-            for a in output.visual_assets
-            if a.asset_id in tikz_before and a.content != tikz_before[a.asset_id]
-        }
+    # figura ↔ testo non solleva mai. Un `tikz` con una chiamata di fix nel
+    # suo usage ha speso il suo unico fix (la sola pulizia dei caratteri di
+    # controllo non conta).
+    if tikz_ids:
         try:
             await _review_tikz_renders(
-                output, language_code=language_code, usage_sink=usage, fix_spent=spent
+                output,
+                language_code=language_code,
+                usage_sink=usage,
+                fix_spent=_fixed_asset_ids(usage) & tikz_ids,
             )
         except Exception as exc:
             log.warning("tikz_render_review_failed", error=f"{type(exc).__name__}: {exc}"[:500])
@@ -2100,6 +2104,7 @@ async def validate_and_fix_content_assets(
         await _review_figures(output, language_code=language_code, usage_sink=usage)
     except Exception as exc:
         log.warning("figure_review_failed", error=f"{type(exc).__name__}: {exc}"[:500])
+    tikz_before_loc = {a.asset_id: a.content for a in output.visual_assets if a.format == "tikz"}
     structural_changed = await _localize_fields(
         _collect_content_loc_fields(output), language_code=language_code, usage_sink=usage
     )
@@ -2111,11 +2116,32 @@ async def validate_and_fix_content_assets(
         if slots2:
             try:
                 await _validate_and_fix(
-                    slots2, inline2, language_code=language_code, usage_sink=usage
+                    slots2,
+                    inline2,
+                    language_code=language_code,
+                    usage_sink=usage,
+                    already_fixed={f"asset:{aid}" for aid in _fixed_asset_ids(usage)},
                 )
             except AssetFixUnresolvedError as exc:
                 log.warning("asset_localize_revalidate_failed", error=str(exc))
+                # Una `tikz` non ha un secondo fix né un segnaposto in pagina:
+                # torna alla versione valida, prima della traduzione.
+                for asset in output.visual_assets:
+                    previous = tikz_before_loc.get(asset.asset_id)
+                    if previous is not None and asset.content != previous:
+                        asset.content = previous
+                        log.info("tikz_localization_reverted", asset_id=asset.asset_id)
     return output, usage
+
+
+def _fixed_asset_ids(usage: list[dict[str, Any]]) -> set[str]:
+    """Id degli asset visivi con almeno una chiamata di fix nell'usage
+    (voci `phase="fix"`, `asset_id="asset:<id>"`)."""
+    return {
+        str(entry["asset_id"]).split(":", 1)[1]
+        for entry in usage
+        if entry.get("phase") == "fix" and str(entry.get("asset_id") or "").startswith("asset:")
+    }
 
 
 async def validate_and_fix_slides_assets(

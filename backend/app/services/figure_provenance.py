@@ -43,9 +43,11 @@ def source_figure_ids_in(content_raw: Any) -> list[str]:
 
 def tikz_prompt_text(source: str) -> str:
     """Il contenuto di un asset `tikz` come lo vedono i PROMPT 5 e 6."""
+    from app.services.figure_compute.tikz_lexer import strip_comments
     from app.services.figure_compute.tikz_translate import extract
 
-    labels = "; ".join(extract(source or "").values())[:_TIKZ_LABELS_CAP]
+    # Un nodo commentato (`% \node {vecchia}`) non è nella figura.
+    labels = "; ".join(extract(strip_comments(source or "")).values())[:_TIKZ_LABELS_CAP]
     return f"(schema TikZ; etichette: {labels})" if labels else "(schema TikZ)"
 
 

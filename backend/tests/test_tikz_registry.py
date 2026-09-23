@@ -170,3 +170,17 @@ def test_patch_reports_compile_errors(tex: None) -> None:
         )
     (error,) = excinfo.value.meta["errors"]
     assert "tikz_compile_failed" in error["msg"] and error["loc"] == ["visual_assets", 0, "content"]
+
+
+def test_slides_cannot_create_tikz_new_assets() -> None:
+    """Le slide referenziano le `tikz` della dispensa, non ne creano: la
+    vista `tikz-view` rende solo sorgenti di `content_raw` (verifica WP6)."""
+    from pydantic import ValidationError
+
+    from app.schemas.course_lesson_content import LessonContentVisualAsset
+    from app.schemas.course_lesson_slides import LessonSlideNewAsset
+
+    asset = {"asset_id": "n1", "format": "tikz", "content": CHAIN}
+    assert LessonContentVisualAsset.model_validate(asset).format == "tikz"
+    with pytest.raises(ValidationError):
+        LessonSlideNewAsset.model_validate(asset)

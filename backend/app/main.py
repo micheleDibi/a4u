@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -83,6 +84,17 @@ async def lifespan(app: FastAPI):
         "lesson_avatar_videos",
     ):
         (settings.upload_root / sub).mkdir(parents=True, exist_ok=True)
+
+    # Formati di figura disponibili, compreso l'autotest della sandbox TikZ
+    # (solo con FIGURE_TIKZ_ENABLED): all'avvio e in un thread, non alla
+    # prima richiesta sull'event loop. Un guasto non blocca l'avvio.
+    try:
+        from app.services.figure_render_service import available_formats
+
+        formats = await asyncio.to_thread(available_formats)
+        log.info("startup_figure_formats", formats=list(formats))
+    except Exception as exc:  # pragma: no cover
+        log.warning("startup_figure_formats_failed", error=str(exc)[:300])
 
     # Worker MiniMax (genera/polla clip avatar). Resuma task pending da DB.
     avatar_clip_worker.start_worker()

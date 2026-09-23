@@ -201,6 +201,7 @@ async def test_view_renders_only_saved_sources(
         {"asset_id": "t1", "content": CHAIN + "\n% altro"},  # sorgente diverso
         {"asset_id": "t2", "content": CHAIN},  # id assente
         {"asset_id": "m1", "content": "flowchart LR\n a-->b"},  # non tikz
+        {"asset_id": "m1", "content": CHAIN},  # id di un altro asset, sorgente tikz
     ):
         res = await client.post(url, json=payload, headers=headers)
         assert res.status_code == 404, payload

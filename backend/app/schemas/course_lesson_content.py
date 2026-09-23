@@ -88,8 +88,6 @@ VisualAssetFormat = Literal[
     "vegalite",
     "dot",
     "function",
-    # WP6: figura vettoriale compilata con XeLaTeX (spenta di default).
-    "tikz",
     "image",
     # — legacy, read-only —
     "image_prompt",
@@ -98,11 +96,14 @@ VisualAssetFormat = Literal[
 ]
 
 # Formati degli asset della DISPENSA (Fase 3): quelli condivisi più
-# `source_figure`, la figura di fonte estratta da un documento (`content` =
-# UUID della riga `course_document_figure`, risolta lato server con la riga
-# «Fonte»). Scissione dell'alias: le slide (`new_assets`, Fase 4) restano su
-# `VisualAssetFormat` e non possono creare figure di fonte (le referenziano
-# da Fase 3); il modello di Fase 3 le sceglie solo tramite `source_figures`.
+# `tikz` (WP6: figura vettoriale compilata con XeLaTeX, spenta di default)
+# e `source_figure`, la figura di fonte estratta da un documento (`content`
+# = UUID della riga `course_document_figure`, risolta lato server con la
+# riga «Fonte»). Scissione dell'alias: le slide (`new_assets`, Fase 4)
+# restano su `VisualAssetFormat` e non possono creare né figure di fonte né
+# `tikz` (le referenziano da Fase 3: la vista `tikz-view` rende solo sorgenti
+# della dispensa); il modello di Fase 3 sceglie le figure di fonte solo
+# tramite `source_figures`.
 ContentVisualAssetFormat = Literal[
     "mermaid",
     "vegalite",

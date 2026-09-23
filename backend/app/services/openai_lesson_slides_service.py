@@ -423,7 +423,8 @@ _SLIDES_EXCLUDED_FORMATS = frozenset({"function", "tikz"})
 def build_lesson_slides_json_schema(*, visual_formats: Sequence[str]) -> dict[str, Any]:
     """Schema della singola chiamata: la costante base con l'`enum` di
     `new_assets[].format` ristretto ai formati disponibili sul server
-    (`figure_render_service.available_formats()`) meno `function` (A1).
+    (`figure_render_service.available_formats()`) meno `function` (A1) e
+    `tikz` (WP6: le slide referenziano le figure `tikz` della dispensa).
 
     `deepcopy` obbligatorio: più lezioni sono in volo insieme e una
     mutazione in place farebbe colare l'enum di una richiesta in un'altra.

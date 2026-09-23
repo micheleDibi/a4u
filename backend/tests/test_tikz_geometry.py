@@ -5,12 +5,15 @@
   piccola accanto a un nodo grande resta testo del corpo;
 - costo lineare nei glifi (griglia spaziale), non quadratico;
 - accenti matematici fuori dal confronto delle sovrapposizioni;
-- soglia `CHAR_OVERLAP` fissata.
+- soglia `CHAR_OVERLAP` fissata;
+- ambiente della sandbox TeX senza segreti e con TeX paranoico.
 """
 
 from __future__ import annotations
 
 import time
+
+import pytest
 
 from app.services.figure_compute import tikz_geometry as geo
 
@@ -61,3 +64,20 @@ def test_overlap_threshold_is_pinned() -> None:
     assert geo._chars_overlap(a, (5.0, 0.0, 15.0, 10.0))  # metà
     assert not geo._chars_overlap(a, (8.0, 0.0, 18.0, 10.0))  # un quinto
     assert geo.CHAR_OVERLAP == 0.35
+
+
+def test_sandbox_environment_is_paranoid_and_secret_free(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ambiente del figlio TeX: solo chiavi in elenco, TeX paranoico e
+    shell escape spento anche via ambiente (non solo `-no-shell-escape`)."""
+    from pathlib import Path
+
+    from app.services import tikz_compile_service as tcs
+
+    monkeypatch.setenv("JWT_SECRET", "segreto-da-non-passare")
+    env = tcs._env(Path("/tmp/w"), "/usr/bin/xelatex")
+    assert env["shell_escape"] == "f"
+    assert env["openin_any"] == "p" and env["openout_any"] == "p"
+    assert "JWT_SECRET" not in env and "OPENAI_API_KEY" not in env
+    assert env["HOME"] == env["TMPDIR"] == "/tmp/w"
