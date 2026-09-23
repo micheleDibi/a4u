@@ -22,7 +22,9 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol, get_args
+
+from app.services.figure_attribution import attribution_source
 
 VisibilityMode = Literal["select", "render"]
 LicensePolicy = Literal["cite_all", "open_only"]
@@ -35,6 +37,7 @@ OPEN_LICENSES: frozenset[str] = frozenset({"cc0", "public_domain", "cc_by", "cc_
 REASONS: tuple[str, ...] = (
     "not_found",
     "wrong_course",
+    "document_mismatch",
     "not_ready",
     "excluded_by_user",
     "document_excluded",
@@ -53,13 +56,21 @@ class FigureLike(Protocol):
     excluded_by_user: bool
     license: str
     detached_at: object
-    attribution: dict[str, object] | None
+    attribution: dict[str, Any] | None
     storage_path: str | None
+    page: int | None
+    source_label: str | None
 
 
 class DocumentLike(Protocol):
+    id: uuid.UUID
     citation_policy: str
     is_own_work: bool
+    filename_original: str
+    mime_type: str
+    origin: str
+    bibliography: dict[str, Any] | None
+    bibliography_source: str | None
 
 
 @dataclass(frozen=True)
@@ -73,14 +84,14 @@ VISIBLE = Visibility(True, None)
 
 def effective_license_policy(org_policy: str | None, settings_policy: str) -> LicensePolicy:
     """Politica effettiva: l'override dell'organizzazione se presente,
-    altrimenti il setting globale. Un valore fuori dominio vale `cite_all`
-    solo se nessuna delle due fonti è valida (il DB ha un CHECK)."""
+    altrimenti il setting globale. Se nessuna delle due è valida (il DB ha
+    un CHECK e Settings un Literal) vale la più restrittiva, `open_only`."""
     for candidate in (org_policy, settings_policy):
         if candidate == "open_only":
             return "open_only"
         if candidate == "cite_all":
             return "cite_all"
-    return "cite_all"
+    return "open_only"
 
 
 def is_open_license(license: str | None, *, is_own_work: bool) -> bool:
@@ -97,16 +108,11 @@ def document_license_to_figure(document_license: str | None) -> str:
 def _is_own_work(fig: FigureLike, doc: DocumentLike | None) -> bool:
     if doc is not None:
         return bool(doc.is_own_work)
+    if fig.source_kind != "uploaded":
+        # La letteratura aperta non è mai materiale proprio del docente.
+        return False
     attribution = fig.attribution or {}
-    return bool(attribution.get("is_own_work"))
-
-
-def _has_attribution(fig: FigureLike, doc: DocumentLike | None) -> bool:
-    if fig.source_kind == "uploaded" and doc is not None:
-        # Un documento del corso ha sempre almeno il nome del file.
-        return True
-    attribution = fig.attribution
-    return isinstance(attribution, dict) and bool(attribution)
+    return attribution.get("is_own_work") is True
 
 
 def figure_visibility(
@@ -118,11 +124,21 @@ def figure_visibility(
     mode: VisibilityMode,
     file_present: bool = True,
 ) -> Visibility:
-    """Decide se la figura si può mostrare (render) o proporre (select)."""
+    """Decide se la figura si può mostrare (render) o proporre (select).
+
+    Un modo o una politica fuori dominio sono un errore del chiamante
+    (ValueError), mai un ripiego permissivo.
+    """
+    if mode not in get_args(VisibilityMode):
+        raise ValueError(f"modo di visibilità sconosciuto: {mode!r}")
+    if license_policy not in get_args(LicensePolicy):
+        raise ValueError(f"politica di licenza sconosciuta: {license_policy!r}")
     if fig is None:
         return Visibility(False, "not_found")
     if fig.course_id != course_id:
         return Visibility(False, "wrong_course")
+    if doc is not None and doc.id != fig.document_id:
+        return Visibility(False, "document_mismatch")
     if fig.status != "ready":
         return Visibility(False, "not_ready")
     if mode == "select":
@@ -141,7 +157,7 @@ def figure_visibility(
             fig.license, is_own_work=_is_own_work(fig, doc)
         ):
             return Visibility(False, "license_not_open")
-    if not _has_attribution(fig, doc):
+    if attribution_source(fig, doc) is None:
         return Visibility(False, "attribution_missing")
     if not fig.storage_path or not file_present:
         return Visibility(False, "file_missing")

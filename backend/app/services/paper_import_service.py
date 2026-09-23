@@ -87,15 +87,23 @@ def _paper_bibliography(paper: PaperOut) -> DocumentBibliography:
     Serve alla riga «Fonte» delle figure di fonte; la licenza del PDF non
     è nei metadati di ricerca e resta sconosciuta (NULL) sul documento.
     """
+    def clip(value: str | None, limit: int) -> str | None:
+        cleaned = " ".join((value or "").split())[:limit].strip()
+        return cleaned or None
+
     year = paper.year if paper.year and 1400 <= paper.year <= 2100 else None
+    url = clip(paper.doi_url, 1000)
+    if url and not url.lower().startswith(("https://", "http://")):
+        url = None
+    authors = [a for a in (clip(name, 200) for name in paper.authors) if a]
     return DocumentBibliography(
-        title=(paper.title or "")[:500] or None,
-        authors=[a[:200] for a in paper.authors if a and a.strip()][:50],
+        title=clip(paper.title, 500),
+        authors=authors[:50],
         year=year,
-        container=(paper.journal or "")[:300] or None,
-        doi=(paper.doi or "")[:200] or None,
-        url=(paper.doi_url or "")[:1000] or None,
-        openalex_id=(paper.id or "")[:100] or None,
+        container=clip(paper.journal, 300),
+        doi=clip(paper.doi, 200),
+        url=url,
+        openalex_id=clip(paper.id, 100),
     )
 
 

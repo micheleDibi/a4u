@@ -42,6 +42,13 @@ class DocumentBibliography(BaseModel):
             return None
         return value
 
+    @field_validator("url")
+    @classmethod
+    def _http_url_only(cls, value: str | None) -> str | None:
+        if value is not None and not value.lower().startswith(("https://", "http://")):
+            raise ValueError("url: solo http(s)")
+        return value
+
     def as_json(self) -> dict[str, Any]:
         """Dict da salvare in JSONB, senza chiavi vuote."""
         return self.model_dump(exclude_none=True, exclude_defaults=False)

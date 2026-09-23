@@ -65,7 +65,9 @@ def test_missing_license_is_not_open() -> None:
         ("open_only", "open_only", "open_only"),
         ("cite_all", "cite_all", "cite_all"),
         ("bogus", "open_only", "open_only"),
-        (None, "bogus", "cite_all"),
+        # Nessuna fonte valida: la più restrittiva.
+        (None, "bogus", "open_only"),
+        ("bogus", "bogus", "open_only"),
     ],
 )
 def test_effective_policy_org_override_both_directions(

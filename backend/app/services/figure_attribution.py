@@ -19,8 +19,8 @@ vista ed editor la ricevono già pronta (il frontend non la ricompone).
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
-from typing import Any, Literal, Protocol
+from dataclasses import dataclass, replace
+from typing import Any, Literal, Protocol, TypeGuard
 
 from app.schemas.document_bibliography import TRUSTED_BIBLIOGRAPHY_SOURCES
 
@@ -32,6 +32,7 @@ _MAX_AUTHORS_WRITTEN = 3
 _MAX_SURNAMES_SPOKEN = 2
 _MAX_SPOKEN_TITLE = 120
 
+_PAPER_ORIGINS = frozenset({"paper_import", "paper_metadata"})
 _PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 
 # Testi per lingua. Le lingue diverse da it/en ricadono su it.
@@ -137,6 +138,7 @@ class FigureAttributionLike(Protocol):
 class DocumentAttributionLike(Protocol):
     filename_original: str
     mime_type: str
+    origin: str
     is_own_work: bool
     bibliography: dict[str, Any] | None
     bibliography_source: str | None
@@ -162,8 +164,18 @@ class AttributionSource:
     # Riga di credito imposta dalla fonte (es. «Artist» di Wikimedia).
     credit: str | None = None
 
+    @property
+    def identifies_source(self) -> bool:
+        """True se c'è almeno un dato che nomina la fonte: una riga con la
+        sola pagina o la sola licenza non è un'attribuzione."""
+        return bool(
+            self.authors or self.title or self.credit or self.fallback_name or self.is_own_work
+        )
+
     def to_json(self) -> dict[str, Any]:
-        return {
+        """Forma congelata, senza chiavi vuote (il CHECK del DB esige almeno
+        una chiave che identifichi la fonte)."""
+        data: dict[str, Any] = {
             "authors": list(self.authors),
             "title": self.title,
             "container": self.container,
@@ -178,11 +190,16 @@ class AttributionSource:
             "fallback_name": self.fallback_name,
             "credit": self.credit,
         }
+        return {k: v for k, v in data.items() if v not in (None, [], False, "")}
 
     @classmethod
     def from_json(cls, data: dict[str, Any], *, license: str | None = None) -> AttributionSource:
         """Ricostruisce l'attribuzione congelata, tollerando chiavi mancanti."""
         authors = data.get("authors") or ()
+        if isinstance(authors, str):
+            authors = [authors]
+        elif not isinstance(authors, list | tuple):
+            authors = ()
         year = data.get("year")
         page = data.get("page")
         page_kind = data.get("page_kind")
@@ -190,17 +207,21 @@ class AttributionSource:
             authors=tuple(_clean(a) for a in authors if isinstance(a, str) and _clean(a)),
             title=_clean_optional(data.get("title")),
             container=_clean_optional(data.get("container")),
-            year=year if isinstance(year, int) else None,
+            year=year if _is_int(year) else None,
             figure_number=_clean_optional(data.get("figure_number")),
-            page=page if isinstance(page, int) and page >= 1 else None,
+            page=page if _is_int(page) and page >= 1 else None,
             page_kind="slide" if page_kind == "slide" else "page",
             license=license or str(data.get("license") or "unknown"),
             license_url=_clean_optional(data.get("license_url")),
             url=_clean_optional(data.get("url")),
-            is_own_work=bool(data.get("is_own_work")),
+            is_own_work=data.get("is_own_work") is True,
             fallback_name=_clean_optional(data.get("fallback_name")),
             credit=_clean_optional(data.get("credit")),
         )
+
+
+def _is_int(value: Any) -> TypeGuard[int]:
+    return isinstance(value, int) and not isinstance(value, bool)
 
 
 def _clean(value: str) -> str:
@@ -227,13 +248,15 @@ def figure_number_from_label(source_label: str | None) -> str | None:
     return match.group(1) if match else None
 
 
-def readable_filename(filename: str | None) -> str | None:
-    """Nome del file senza estensione, senza il suffisso degli import dei
-    paper e con gli underscore resi spazi."""
+def readable_filename(filename: str | None, *, paper_import: bool = False) -> str | None:
+    """Nome del file senza estensione e con gli underscore resi spazi; per i
+    documenti importati dalla ricerca paper toglie anche il suffisso casuale
+    (`_1a2b3c`) che l'import aggiunge."""
     if not filename:
         return None
     stem = _EXTENSION_RE.sub("", filename.strip())
-    stem = _PAPER_SUFFIX_RE.sub("", stem)
+    if paper_import:
+        stem = _PAPER_SUFFIX_RE.sub("", stem)
     stem = _clean(stem.replace("_", " "))
     return stem or None
 
@@ -245,7 +268,9 @@ def attribution_source(
 
     Documento presente → dati vivi dal documento (bibliografia fidata o
     nome del file). Documento assente (figura staccata o esterna) →
-    attribuzione congelata sulla figura.
+    attribuzione congelata sulla figura. Senza un dato che nomini la fonte
+    (autori, titolo, credito, nome del file, materiale proprio) la figura
+    non è attribuibile.
     """
     figure_number = figure_number_from_label(fig.source_label)
     if fig.source_kind == "uploaded" and doc is not None:
@@ -263,7 +288,7 @@ def attribution_source(
                 "url": bibliography.get("url"),
             }
         )
-        return AttributionSource(
+        source = AttributionSource(
             authors=base.authors,
             title=base.title,
             container=base.container,
@@ -274,12 +299,19 @@ def attribution_source(
             license=fig.license or "unknown",
             url=base.url,
             is_own_work=bool(doc.is_own_work),
-            fallback_name=readable_filename(doc.filename_original),
+            fallback_name=readable_filename(
+                doc.filename_original, paper_import=doc.origin in _PAPER_ORIGINS
+            ),
         )
+        return source if source.identifies_source else None
     frozen = fig.attribution
     if not isinstance(frozen, dict) or not frozen:
         return None
-    return AttributionSource.from_json(frozen, license=fig.license)
+    source = AttributionSource.from_json(frozen, license=fig.license)
+    if fig.source_kind != "uploaded" and source.is_own_work:
+        # Le figure della letteratura aperta non sono mai materiale proprio.
+        source = replace(source, is_own_work=False)
+    return source if source.identifies_source else None
 
 
 def freeze_attribution(
@@ -301,8 +333,14 @@ def _join_authors(authors: tuple[str, ...], texts: dict[str, str]) -> str | None
     return f"{', '.join(authors[:-1])} {texts['and']} {authors[-1]}"
 
 
+# Un punto finale che chiude un'abbreviazione o un'iniziale resta.
+_KEEP_FINAL_PERIOD_RE = re.compile(r"(?:\b(?:etc|al|ca|vs|e\.g|i\.e)|\b[A-Za-z]|\.\.)\.$")
+
+
 def _strip_final_period(value: str) -> str:
-    return value[:-1].rstrip() if value.endswith(".") and not value.endswith("..") else value
+    if not value.endswith(".") or _KEEP_FINAL_PERIOD_RE.search(value):
+        return value
+    return value[:-1].rstrip()
 
 
 def license_label(license: str | None, *, language: str | None) -> str | None:
@@ -381,13 +419,17 @@ def spoken_source(src: AttributionSource, *, language: str | None) -> dict[str, 
         safe = _tts_safe(_surname(author), lang)
         if safe:
             surnames.append(safe)
-    title = _strip_final_period(src.title) if src.title else None
-    if title and len(title) > _MAX_SPOKEN_TITLE:
-        title = title[:_MAX_SPOKEN_TITLE].rsplit(" ", 1)[0]
+    # Prima l'espansione delle abbreviazioni (che hanno il punto), poi il
+    # punto finale e il taglio.
+    title = _tts_safe(src.title, lang)
+    if title:
+        title = _strip_final_period(title)
+        if len(title) > _MAX_SPOKEN_TITLE:
+            title = title[:_MAX_SPOKEN_TITLE].rsplit(" ", 1)[0]
     data: dict[str, Any] = {
         "authors": surnames,
         "more_authors": len(src.authors) > _MAX_SURNAMES_SPOKEN,
-        "title": _tts_safe(title, lang),
+        "title": title or None,
         "year": src.year,
     }
     if not surnames and not data["title"]:
@@ -411,10 +453,13 @@ def _spoken_line(src: AttributionSource, lang: str, *, adapted: bool) -> str:
         segments.append(data["name"])
     if not segments and src.is_own_work:
         segments.append(texts["own_work"])
+    if not segments:
+        # Niente di pronunciabile in sicurezza: il discorso omette la fonte.
+        return ""
     if data["year"]:
         segments.append(str(data["year"]))
     prefix = texts["prefix_adapted"] if adapted else texts["prefix"]
-    return f"{prefix} {', '.join(segments)}".strip()
+    return f"{prefix} {', '.join(segments)}"
 
 
 def attribution_line(
@@ -426,8 +471,9 @@ def attribution_line(
 ) -> str:
     """Testo della riga «Fonte» (scritta) o della sua variante parlata.
 
-    La variante parlata non contiene pagine, numeri di figura né licenze e
-    supera sempre `validate_tts_safety`.
+    La variante parlata non contiene pagine, numeri di figura né licenze,
+    supera sempre `validate_tts_safety` ed è vuota se nessun dato si può
+    pronunciare in sicurezza (il discorso allora omette la fonte).
     """
     lang = _language(language)
     if mode == "spoken":

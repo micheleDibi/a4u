@@ -8,7 +8,7 @@ collocate) verifica solo le condizioni strutturali.
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 import pytest
@@ -34,15 +34,26 @@ class _Fig:
     detached_at: object = None
     attribution: dict[str, Any] | None = None
     storage_path: str | None = "/uploads/courses/x/document_figures/y/p1-f1-abc.png"
+    page: int | None = 1
+    source_label: str | None = None
 
 
 @dataclass
 class _Doc:
     citation_policy: str = "citable"
     is_own_work: bool = False
+    # None = lo stesso documento della figura (lo imposta `_vis`).
+    id: uuid.UUID | None = None
+    filename_original: str = "Dispense_misure.pdf"
+    mime_type: str = "application/pdf"
+    origin: str = "upload"
+    bibliography: dict[str, Any] | None = None
+    bibliography_source: str | None = None
 
 
 def _vis(fig: _Fig | None, doc: _Doc | None, *, mode: str, policy: str = "cite_all", **kw: Any):
+    if fig is not None and doc is not None and doc.id is None:
+        doc = replace(doc, id=fig.document_id)
     return figure_visibility(
         fig,
         doc,
@@ -157,7 +168,9 @@ _CASES: list[tuple[str, _Fig | None, _Doc | None, str, dict[str, Any], str | Non
     ),
     (
         "external with attribution",
-        _Fig(source_kind="wikimedia", document_id=None, license="cc_by", attribution={"a": 1}),
+        _Fig(
+            source_kind="wikimedia", document_id=None, license="cc_by", attribution={"title": "T"}
+        ),
         None,
         "open_only",
         {},
@@ -165,18 +178,45 @@ _CASES: list[tuple[str, _Fig | None, _Doc | None, str, dict[str, Any], str | Non
         None,
     ),
     (
-        "external own-work flag in attribution",
+        "external attribution without identifying data",
+        _Fig(source_kind="wikimedia", document_id=None, license="cc_by", attribution={"a": 1}),
+        None,
+        "cite_all",
+        {},
+        "attribution_missing",
+        "attribution_missing",
+    ),
+    (
+        "external figures are never own work",
         _Fig(
             source_kind="openalex",
             document_id=None,
             license="unknown",
-            attribution={"is_own_work": True},
+            attribution={"is_own_work": True, "title": "T"},
         ),
         None,
         "open_only",
         {},
+        "license_not_open",
         None,
-        None,
+    ),
+    (
+        "document named only by punctuation",
+        _Fig(),
+        _Doc(filename_original="_.pdf"),
+        "cite_all",
+        {},
+        "attribution_missing",
+        "attribution_missing",
+    ),
+    (
+        "document of another figure",
+        _Fig(),
+        _Doc(id=uuid.uuid4(), is_own_work=True),
+        "open_only",
+        {},
+        "document_mismatch",
+        "document_mismatch",
     ),
     (
         "no file path",
@@ -228,6 +268,14 @@ def test_render_mode_is_not_retroactive() -> None:
     for doc in (_Doc(citation_policy="excluded"), _Doc(citation_policy="content_only")):
         assert _vis(fig, doc, mode="render", policy="open_only") == VISIBLE
         assert not _vis(fig, doc, mode="select", policy="open_only").renderable
+
+
+@pytest.mark.parametrize(
+    ("mode", "policy"), [("Select", "cite_all"), ("select", "Open_Only"), ("render", "")]
+)
+def test_unknown_mode_or_policy_is_a_caller_error(mode: str, policy: str) -> None:
+    with pytest.raises(ValueError):
+        _vis(_Fig(), _Doc(), mode=mode, policy=policy)
 
 
 def test_reasons_are_all_reachable() -> None:

@@ -34,7 +34,7 @@ def build_document_figure(
     **overrides: Any,
 ) -> CourseDocumentFigure:
     """`CourseDocumentFigure` in memoria, pronta da aggiungere alla sessione."""
-    loc = locator or f"p{page or 0:04d}-x{uuid.uuid4().hex[:3]}"
+    loc = locator or f"p{page or 0:04d}-x{uuid.uuid4().hex}"
     figure = CourseDocumentFigure(
         course_id=course_id,
         document_id=document_id,

@@ -49,6 +49,7 @@ class _Fig:
 class _Doc:
     filename_original: str = "rossi_2020_laser_vibrometry_a1b2c3.pdf"
     mime_type: str = "application/pdf"
+    origin: str = "paper_import"
     is_own_work: bool = False
     bibliography: dict[str, Any] | None = field(
         default_factory=lambda: {
@@ -156,7 +157,7 @@ def test_bibliography_is_used_only_from_trusted_sources(source: str) -> None:
 
 
 def test_missing_bibliography_falls_back_to_filename() -> None:
-    doc = _Doc(filename_original="Dispense_Misure_2024.pdf", bibliography=None)
+    doc = _Doc(filename_original="Dispense_Misure_2024.pdf", bibliography=None, origin="upload")
     doc.bibliography_source = None
     line = figure_attribution_line(_Fig(source_label=None), doc, language="it")
     assert line == "Fonte: Dispense Misure 2024, p. 12 (CC BY)"
@@ -209,18 +210,39 @@ def test_figure_number_only_when_read(label: str | None, expected: str | None) -
 
 
 @pytest.mark.parametrize(
-    ("filename", "expected"),
+    ("filename", "paper_import", "expected"),
     [
-        ("rossi_2020_laser_vibrometry_a1b2c3.pdf", "rossi 2020 laser vibrometry"),
-        ("anon_ny_paper_0f0f0f.md", "anon ny paper"),
-        ("Dispense  Misure.docx", "Dispense Misure"),
-        ("senza_estensione", "senza estensione"),
-        ("", None),
-        (None, None),
+        ("rossi_2020_laser_vibrometry_a1b2c3.pdf", True, "rossi 2020 laser vibrometry"),
+        ("anon_ny_paper_0f0f0f.md", True, "anon ny paper"),
+        ("Dispense  Misure.docx", False, "Dispense Misure"),
+        ("senza_estensione", False, "senza estensione"),
+        # Il suffisso si toglie solo ai file importati dalla ricerca paper.
+        ("Verbale_esame_202403.pdf", False, "Verbale esame 202403"),
+        ("Appunti_decade.pdf", False, "Appunti decade"),
+        ("_.pdf", False, None),
+        (".pdf", False, None),
+        ("_1a2b3c.pdf", True, None),
+        ("", False, None),
+        (None, False, None),
     ],
 )
-def test_readable_filename(filename: str | None, expected: str | None) -> None:
-    assert readable_filename(filename) == expected
+def test_readable_filename(filename: str | None, paper_import: bool, expected: str | None) -> None:
+    assert readable_filename(filename, paper_import=paper_import) == expected
+
+
+@pytest.mark.parametrize("filename", ["_.pdf", ".pdf", "___.docx"])
+def test_document_without_any_name_is_not_attributable(filename: str) -> None:
+    """Una riga con la sola pagina non è un'attribuzione: la figura non si
+    mostra (`attribution_missing`) invece di uscire con «Fonte: p. 3»."""
+    doc = _Doc(filename_original=filename, bibliography=None, origin="upload")
+    doc.bibliography_source = None
+    assert attribution_source(_Fig(page=3), doc) is None
+    assert figure_attribution_line(_Fig(page=3), doc, language="it") is None
+    own = _Doc(filename_original=filename, bibliography=None, origin="upload", is_own_work=True)
+    own.bibliography_source = None
+    assert figure_attribution_line(_Fig(page=3, source_label=None), own, language="it") == (
+        "Fonte: materiale del docente, p. 3 (CC BY)"
+    )
 
 
 def test_own_work_without_any_name_says_instructor_material() -> None:
@@ -249,10 +271,24 @@ def test_frozen_attribution_gives_the_same_line(language: str, mime: str) -> Non
         ) == figure_attribution_line(fig, doc, language=language, mode=mode)
 
 
-def test_detached_or_external_without_attribution_is_not_attributable() -> None:
-    assert attribution_source(_Fig(attribution=None), None) is None
-    assert attribution_source(_Fig(attribution={}), None) is None
-    assert figure_attribution_line(_Fig(source_kind="wikimedia"), None, language="it") is None
+@pytest.mark.parametrize(
+    "frozen",
+    [None, {}, {"foo": 1}, {"year": True}, {"page": 3, "license": "cc_by"}, {"authors": []}],
+)
+def test_detached_or_external_without_identifying_data_is_not_attributable(
+    frozen: dict[str, Any] | None,
+) -> None:
+    assert attribution_source(_Fig(attribution=frozen), None) is None
+    wiki = _Fig(source_kind="wikimedia", attribution=frozen)
+    assert figure_attribution_line(wiki, None, language="it") is None
+
+
+def test_external_figures_are_never_own_work() -> None:
+    fig = _Fig(source_kind="openalex", attribution={"is_own_work": True})
+    assert attribution_source(fig, None) is None
+    fig = _Fig(source_kind="openalex", attribution={"is_own_work": True, "title": "T"})
+    src = attribution_source(fig, None)
+    assert src is not None and src.is_own_work is False
 
 
 def test_external_attribution_with_credit() -> None:
@@ -280,6 +316,21 @@ def test_from_json_tolerates_garbage() -> None:
     )
     assert src.authors == ("A B",)
     assert src.year is None and src.page is None and src.page_kind == "page"
+    # Un autore come stringa non si scompone in lettere; i booleani non sono
+    # numeri; `is_own_work` vale solo se è proprio True.
+    odd = AttributionSource.from_json(
+        {"authors": "Mario Rossi", "year": True, "page": True, "is_own_work": "false"}
+    )
+    assert odd.authors == ("Mario Rossi",)
+    assert odd.year is None and odd.page is None and odd.is_own_work is False
+    assert AttributionSource.from_json({"authors": {"a": 1}}).authors == ()
+
+
+def test_frozen_form_has_no_empty_keys() -> None:
+    frozen = freeze_attribution(_Fig(page=None, source_label=None), _Doc())
+    assert frozen is not None
+    assert all(v not in (None, [], False, "") for v in frozen.values())
+    assert {"title", "authors", "fallback_name"} <= set(frozen)
 
 
 # ---------------------------------------------------------------------------
@@ -312,6 +363,37 @@ def test_spoken_line_is_always_tts_safe(title: str, language: str) -> None:
     for value in (data["title"], *data["authors"], data.get("name")):
         if value:
             assert validate_tts_safety(value) == [], value
+
+
+@pytest.mark.parametrize(
+    ("title", "language", "expected", "forbidden"),
+    [
+        ("Vibrometry, e.g. laser methods, etc.", "it", "eccetera", "etc"),
+        ("Vibrometry, e.g. laser methods, etc.", "en", "etcetera", "etc,"),
+        ("Misure CA.", "it", "circa", "CA"),
+    ],
+)
+def test_spoken_title_expands_final_abbreviations(
+    title: str, language: str, expected: str, forbidden: str
+) -> None:
+    doc = _Doc(bibliography={"title": title})
+    line = figure_attribution_line(_Fig(), doc, language=language, mode="spoken")
+    assert line is not None
+    assert expected in line, line
+    assert f"{forbidden}»" not in line and f"{forbidden}\u201d" not in line, line
+    assert validate_tts_safety(line) == []
+
+
+def test_written_title_keeps_the_period_of_an_abbreviation() -> None:
+    doc = _Doc(bibliography={"title": "Methods, etc.", "authors": ["A B"]})
+    line = figure_attribution_line(_Fig(page=None, source_label=None), doc, language="it")
+    assert line == "Fonte: A B, «Methods, etc.» (CC BY)"
+
+
+def test_spoken_line_is_empty_when_nothing_is_speakable() -> None:
+    src = AttributionSource(title="$\\frac$", fallback_name=None, license="cc_by", page=3)
+    assert attribution_line(src, language="it", mode="spoken") == ""
+    assert attribution_line(AttributionSource(), language="en", mode="spoken") == ""
 
 
 def test_spoken_line_has_no_page_figure_or_license() -> None:
@@ -355,3 +437,6 @@ def test_bibliography_schema_forbids_extra_and_drops_blanks() -> None:
         DocumentBibliography(authors=[""])
     with pytest.raises(ValueError):
         DocumentBibliography(year=99)
+    with pytest.raises(ValueError):
+        DocumentBibliography(url="javascript:alert(1)")
+    assert DocumentBibliography(url="https://doi.org/10.1/x").url == "https://doi.org/10.1/x"

@@ -80,9 +80,28 @@ FIGURE_REJECT_REASONS: tuple[str, ...] = (
 FIGURE_MIME_TYPES: tuple[str, ...] = ("image/png", "image/jpeg")
 
 
+# Chiavi che identificano la fonte in un'attribuzione congelata
+# (`figure_attribution.AttributionSource.to_json` omette quelle vuote).
+FIGURE_ATTRIBUTION_IDENTIFYING_KEYS: tuple[str, ...] = (
+    "title",
+    "authors",
+    "credit",
+    "fallback_name",
+    "is_own_work",
+)
+
+
 def _in_list(column: str, values: tuple[str, ...]) -> str:
     quoted = ",".join(f"'{v}'" for v in values)
     return f"{column} IN ({quoted})"
+
+
+_ATTRIBUTION_PRESENT = (
+    "attribution IS NOT NULL AND jsonb_typeof(attribution) = 'object' "
+    "AND attribution ?| array["
+    + ",".join(f"'{k}'" for k in FIGURE_ATTRIBUTION_IDENTIFYING_KEYS)
+    + "]"
+)
 
 
 class CourseDocumentFigure(UUIDPKMixin, TimestampMixin, Base):
@@ -115,15 +134,14 @@ class CourseDocumentFigure(UUIDPKMixin, TimestampMixin, Base):
             name="ck_course_document_figure_uploaded_has_document",
         ),
         # `jsonb_typeof` distingue un oggetto dal JSON `null`; la parte
-        # `IS NOT NULL` serve perché un CHECK con esito NULL passerebbe.
+        # `IS NOT NULL` serve perché un CHECK con esito NULL passerebbe; `?|`
+        # esige almeno un dato che identifichi la fonte (`{}` non basta).
         CheckConstraint(
-            "source_kind = 'uploaded' OR (attribution IS NOT NULL "
-            "AND jsonb_typeof(attribution) = 'object')",
+            "source_kind = 'uploaded' OR (" + _ATTRIBUTION_PRESENT + ")",
             name="ck_course_document_figure_external_has_attribution",
         ),
         CheckConstraint(
-            "detached_at IS NULL OR (attribution IS NOT NULL "
-            "AND jsonb_typeof(attribution) = 'object')",
+            "detached_at IS NULL OR (" + _ATTRIBUTION_PRESENT + ")",
             name="ck_course_document_figure_detached_has_attribution",
         ),
         CheckConstraint(
@@ -147,7 +165,7 @@ class CourseDocumentFigure(UUIDPKMixin, TimestampMixin, Base):
             name="ck_course_document_figure_mime_type_valid",
         ),
         CheckConstraint(
-            "status <> 'ready' OR storage_path IS NOT NULL",
+            "status <> 'ready' OR (storage_path IS NOT NULL AND storage_path <> '')",
             name="ck_course_document_figure_ready_has_file",
         ),
         CheckConstraint(

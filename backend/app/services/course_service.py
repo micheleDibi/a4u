@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import UploadFile
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -32,6 +32,7 @@ from app.core.errors import (
 from app.core.permissions import P, R
 from app.models.course import Course
 from app.models.course_document import CourseDocument
+from app.models.course_document_figure import CourseDocumentFigure
 from app.models.course_duplication_job import CourseDuplicationJob
 from app.models.course_lesson import CourseLesson
 from app.models.course_taxonomy import CourseTaxonomyTerm
@@ -672,6 +673,12 @@ async def delete_course(
     organization_id = course.organization_id
     documents_count = len(course.documents)
     document_paths = [d.file_path for d in course.documents]
+    # Le figure di fonte prima dei documenti: l'ORM cancella i documenti
+    # (cascade) prima del corso, e il SET NULL su una figura ancora
+    # agganciata violerebbe `ck_course_document_figure_uploaded_has_document`.
+    await db.execute(
+        delete(CourseDocumentFigure).where(CourseDocumentFigure.course_id == course_id)
+    )
     await db.delete(course)
     await db.flush()
     # Cancella i file su disco DOPO il flush DB, così se DELETE fallisce

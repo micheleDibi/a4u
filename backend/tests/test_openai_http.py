@@ -139,3 +139,39 @@ async def test_not_configured_propagates_without_retry(
     with pytest.raises(OpenAINotConfiguredError):
         await openai_http.post_chat_with_retry({}, timeout=5.0, label="t", max_attempts=5)
     assert no_sleep == []
+
+
+@pytest.mark.parametrize("attempts", [1, 2])
+async def test_retryable_status_on_last_attempt_raises_caller_error(
+    monkeypatch: pytest.MonkeyPatch, no_sleep: list[float], attempts: int
+) -> None:
+    payload = {"error": {"message": "sovraccarico"}}
+    client = _Client(*[_Resp(503, payload) for _ in range(attempts)])
+    monkeypatch.setattr(openai_http, "get_client", client)
+    with pytest.raises(_ServiceError) as info:
+        await openai_http.post_chat_with_retry(
+            {}, timeout=5.0, label="t", max_attempts=attempts, error_cls=_ServiceError
+        )
+    assert info.value.status == 503
+    assert info.value.payload == payload
+    assert len(client.timeouts) == attempts
+    assert len(no_sleep) == attempts - 1
+
+
+async def test_summarize_wrapper_keeps_its_error_and_attempt_budget(
+    monkeypatch: pytest.MonkeyPatch, no_sleep: list[float]
+) -> None:
+    """Il riassunto dei documenti delega al trasporto condiviso con il suo
+    errore (`OpenAISummarizeError`) e il suo tetto di tentativi."""
+    from app.core.config import get_settings
+    from app.services import openai_summarize_service as summarize
+
+    attempts = get_settings().course_document_llm_retry_max
+    assert attempts >= 2
+    client = _Client(*[_Resp(500, {"error": {"message": "boom"}}) for _ in range(attempts)])
+    monkeypatch.setattr(openai_http, "get_client", client)
+    with pytest.raises(summarize.OpenAISummarizeError) as info:
+        await summarize._post_chat_with_retry({"model": "x"}, timeout=7.0, label="doc")
+    assert info.value.status == 500
+    assert len(client.timeouts) == attempts
+    assert client.timeouts == [7.0] * attempts

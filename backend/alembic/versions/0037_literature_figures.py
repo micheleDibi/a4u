@@ -292,12 +292,14 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint(
             "source_kind = 'uploaded' OR (attribution IS NOT NULL "
-            "AND jsonb_typeof(attribution) = 'object')",
+            "AND jsonb_typeof(attribution) = 'object' AND attribution ?| "
+            "array['title','authors','credit','fallback_name','is_own_work'])",
             name="ck_course_document_figure_external_has_attribution",
         ),
         sa.CheckConstraint(
             "detached_at IS NULL OR (attribution IS NOT NULL "
-            "AND jsonb_typeof(attribution) = 'object')",
+            "AND jsonb_typeof(attribution) = 'object' AND attribution ?| "
+            "array['title','authors','credit','fallback_name','is_own_work'])",
             name="ck_course_document_figure_detached_has_attribution",
         ),
         sa.CheckConstraint(
@@ -327,7 +329,7 @@ def upgrade() -> None:
             name="ck_course_document_figure_mime_type_valid",
         ),
         sa.CheckConstraint(
-            "status <> 'ready' OR storage_path IS NOT NULL",
+            "status <> 'ready' OR (storage_path IS NOT NULL AND storage_path <> '')",
             name="ck_course_document_figure_ready_has_file",
         ),
         sa.CheckConstraint(

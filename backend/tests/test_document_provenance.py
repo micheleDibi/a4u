@@ -141,3 +141,21 @@ async def test_bibliography_and_source_go_together(db: AsyncSession) -> None:
             actor_id=user.id,
             bibliography=DocumentBibliography(title="T"),
         )
+
+
+async def test_client_supplied_metadata_is_normalised(db: AsyncSession) -> None:
+    """I metadati arrivano dal client (`PaperOut`): spazi compressi prima del
+    taglio, url solo http(s). Nessun 500 per un autore pieno di spazi."""
+    course, user = await _course(db)
+    paper = _paper(
+        authors=[" " * 200 + "x", "Anna   Bianchi"],
+        doi_url="javascript:alert(1)",
+        title="  Titolo   con   spazi  ",
+    )
+    doc = (
+        await paper_import_service.import_paper(db, course=course, paper=paper, actor_id=user.id)
+    ).document
+    assert doc.bibliography is not None
+    assert doc.bibliography["authors"] == ["x", "Anna Bianchi"]
+    assert doc.bibliography["title"] == "Titolo con spazi"
+    assert "url" not in doc.bibliography

@@ -128,10 +128,11 @@ async def test_figure_domain_checks(db: AsyncSession, field: str, value: object)
     await _expect_integrity_error(db, figure)
 
 
-async def test_ready_figure_requires_file(db: AsyncSession) -> None:
+@pytest.mark.parametrize("path", [None, ""])
+async def test_ready_figure_requires_file(db: AsyncSession, path: str | None) -> None:
     doc = await _document(db)
     figure = build_document_figure(doc.course_id, doc.id, license="unknown")
-    figure.storage_path = None
+    figure.storage_path = path
     await _expect_integrity_error(db, figure)
 
 
@@ -176,12 +177,35 @@ async def test_json_null_attribution_is_not_attribution(db: AsyncSession) -> Non
             )
 
 
-async def test_detached_figure_needs_frozen_attribution(db: AsyncSession) -> None:
+# Oggetti che non identificano la fonte: vuoto, chiavi estranee, sola
+# licenza o pagina.
+_NON_IDENTIFYING = [None, {}, {"foo": 1}, {"license": "cc_by", "page": 3}]
+
+
+@pytest.mark.parametrize("attribution", _NON_IDENTIFYING)
+async def test_detached_figure_needs_frozen_attribution(
+    db: AsyncSession, attribution: dict[str, object] | None
+) -> None:
     doc = await _document(db)
     detached = build_document_figure(
-        doc.course_id, None, license="unknown", detached_at=datetime.now(UTC)
+        doc.course_id,
+        None,
+        license="unknown",
+        detached_at=datetime.now(UTC),
+        attribution=attribution,
     )
     await _expect_integrity_error(db, detached)
+
+
+@pytest.mark.parametrize("attribution", _NON_IDENTIFYING)
+async def test_external_figure_needs_identifying_attribution(
+    db: AsyncSession, attribution: dict[str, object] | None
+) -> None:
+    doc = await _document(db)
+    figure = build_document_figure(
+        doc.course_id, None, license="cc_by", source_kind="openalex", attribution=attribution
+    )
+    await _expect_integrity_error(db, figure)
 
 
 async def test_external_figure_needs_attribution(db: AsyncSession) -> None:
@@ -278,6 +302,65 @@ async def test_deleting_document_keeps_detached_figure(db: AsyncSession) -> None
     assert figure.license == "cc_by"
 
 
+async def test_deleting_course_with_attached_figures(
+    db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`delete_course` cancella le figure prima dei documenti: senza, il SET
+    NULL su una figura agganciata violerebbe `uploaded_has_document`."""
+    from app.models.course import Course
+    from app.services import course_service, file_service
+
+    course_id, _org, user = await build_course(db, modules=1, lessons_per_module=1)
+    doc = build_course_document(course_id, filename="ldv.pdf")
+    db.add(doc)
+    await db.flush()
+    db.add(build_document_figure(course_id, doc.id, license="unknown"))
+    await db.flush()
+
+    async def no_disk(path: str) -> None:
+        return None
+
+    monkeypatch.setattr(file_service, "delete_upload", no_disk)
+    course = await course_service._refresh_full(db, course_id)
+    await course_service.delete_course(db, course=course, actor_id=user.id)
+    db.expunge_all()
+    assert await db.get(Course, course_id) is None
+    remaining = await db.execute(
+        select(CourseDocumentFigure).where(CourseDocumentFigure.course_id == course_id)
+    )
+    assert remaining.scalars().all() == []
+
+
+async def test_duplicate_reference_survives_deleting_both_documents(db: AsyncSession) -> None:
+    """Figura del documento B duplicato di una del documento A: cancellati
+    figura e documento A, il riferimento si azzera; poi si cancellano anche
+    figura e documento B senza errori."""
+    doc_a = await _document(db)
+    doc_b = build_course_document(doc_a.course_id, filename="b.pdf")
+    db.add(doc_b)
+    await db.flush()
+    original = build_document_figure(doc_a.course_id, doc_a.id, license="unknown")
+    db.add(original)
+    await db.flush()
+    copy = build_document_figure(
+        doc_b.course_id, doc_b.id, license="unknown", duplicate_of_id=original.id
+    )
+    db.add(copy)
+    await db.flush()
+    await db.execute(delete(CourseDocumentFigure).where(CourseDocumentFigure.id == original.id))
+    await db.execute(delete(CourseDocument).where(CourseDocument.id == doc_a.id))
+    await db.flush()
+    await db.refresh(copy)
+    assert copy.duplicate_of_id is None
+    await db.execute(delete(CourseDocumentFigure).where(CourseDocumentFigure.id == copy.id))
+    await db.execute(delete(CourseDocument).where(CourseDocument.id == doc_b.id))
+    await db.flush()
+    left = await db.execute(
+        select(CourseDocument).where(CourseDocument.id.in_([doc_a.id, doc_b.id]))
+    )
+    assert left.scalars().all() == []
+
+
 async def test_duplicate_reference_is_cleared_when_target_is_deleted(
     db: AsyncSession,
 ) -> None:
@@ -324,9 +407,15 @@ def _migration_checks() -> dict[str, str]:
                 name_node, _table, cond_node = node.args[:3]
                 if isinstance(name_node, ast.Constant) and isinstance(cond_node, ast.Constant):
                     found[name_node.value] = cond_node.value
-        if isinstance(node, ast.Assign) and any(
-            isinstance(t, ast.Name) and t.id == "_DOC_CHECKS" for t in node.targets
-        ):
+        targets = (
+            node.targets
+            if isinstance(node, ast.Assign)
+            else [node.target]
+            if isinstance(node, ast.AnnAssign)
+            else []
+        )
+        if any(isinstance(t, ast.Name) and t.id == "_DOC_CHECKS" for t in targets):
+            assert isinstance(node, ast.Assign | ast.AnnAssign) and node.value is not None
             assert isinstance(node.value, ast.Tuple)
             for item in node.value.elts:
                 assert isinstance(item, ast.Tuple)
@@ -369,6 +458,8 @@ def test_migration_checks_match_models() -> None:
         if name.startswith("ck_course_document_")
         and not name.startswith("ck_course_document_figure_")
     }
+    # I 7 CHECK nuovi di `course_document` (gli altri sono preesistenti).
+    assert len(doc_migration) == 7
     assert doc_migration <= doc_model
 
     org_model = {
