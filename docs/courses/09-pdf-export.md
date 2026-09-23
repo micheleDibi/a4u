@@ -1568,3 +1568,20 @@ Gli asset «da correggere» (`mermaid_type_not_allowed`,
 li blocca solo alla rigenerazione o alla modifica di quel singolo asset,
 mai all'edit del testo (A15). Esito della run di consegna in
 [17 — Figure accademiche § Verifiche e consegna](17-visual-figures.md#14-verifiche-e-consegna).
+
+
+## Figure di fonte e `tikz` nei PDF (feat/literature-figures)
+
+- **Dispensa e PDF di modulo**. Le figure `source_figure` sono risolte
+  lato server (`source_figure_service.resolve_source_figures`, filtrato
+  per corso): ritaglio come data URI e riga «Fonte» nel `<figcaption>`
+  (partial unico, byte-identico senza figure di fonte). In fondo c'è
+  l'appendice «Crediti delle figure» per le figure esterne CC.
+- **PDF slide**. La riga «Fonte» sta nella fascia `.slide-attribution` in
+  basso a sinistra (x 18-212 mm, 15 mm, 4 righe), fuori dall'avatar. Una
+  figura di fonte senza riga diventa un segnaposto numerato.
+- **`tikz`**. L'SVG viene dal renderer del registro (XeLaTeX nella
+  sandbox). Senza SVG c'è il segnaposto numerato, mai il sorgente TeX in
+  pagina.
+
+Dettagli: [18 — Figure da letteratura](18-literature-figures.md) §7.

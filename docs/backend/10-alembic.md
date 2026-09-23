@@ -633,6 +633,63 @@ precedente non è ricostruibile).
 
 ---
 
+## `alembic/versions/0037_literature_figures.py`
+
+Figure da letteratura, catalogo delle figure di fonte e provenienza dei
+documenti ([Courses 18](../courses/18-literature-figures.md)). Solo ADD e
+CREATE TABLE: nessuna riscrittura di righe, NULL = estrazione mai chiesta
+(nessun backfill).
+
+### Sequenza `upgrade()`
+
+1. `course_document`:
+   - provenienza: `origin` NOT NULL default `upload`, `is_own_work` NOT
+     NULL default false, `license`, `license_source`, `bibliography`
+     JSONB, `bibliography_source`;
+   - estrazione: `figures_status`, `figures_error_code`, `figures_*`;
+   - CHECK sugli enum.
+2. `course_document_figure`, con queste FK:
+   - `course_id` CASCADE;
+   - `document_id` **SET NULL** (stacco non retroattivo);
+   - `duplicate_of_id` e `describe_source_id` SET NULL.
+
+   `license` è NOT NULL **senza** server_default. Ci sono CHECK su
+   `source_kind`, `status`, `reject_reason` e `license`, più `UNIQUE
+   (document_id, locator)` e gli indici `(course_id, status)`,
+   `(course_id, phash)`, `(document_id)`.
+3. `course_lesson.content_figure_review` JSONB.
+4. `organization_course_settings.figure_source_license_policy` (CHECK in
+   `cite_all | open_only`, NULL = eredita).
+
+### Sequenza `downgrade()`
+
+Inversa: drop della tabella e delle colonne.
+
+## `alembic/versions/0038_literature_figures_gaps.py`
+
+Letteratura aperta (WP5).
+
+### Sequenza `upgrade()`
+
+1. `course_document_figure`: `external_id`, `source_url`, `retrieved_at`,
+   e l'indice unico parziale `uq_course_document_figure_external` su
+   `(course_id, source_kind, external_id) WHERE document_id IS NULL`.
+2. `course_lesson`: stato dei buchi (`figures_gap_status`,
+   `figures_gap_attempts`, `figures_gap_requested_at`,
+   `figures_gap_checked_at`, `figures_gap_usage`, `figures_gap_stats`),
+   più il CHECK `ck_course_lesson_figures_gap_status` (`pending |
+   processing | done | skipped | failed`).
+
+### Sequenza `downgrade()`
+
+Inversa. Il ciclo `upgrade → downgrade -1 → upgrade` è stato eseguito a
+mano su un DB usa-e-getta; non c'è un test automatico della downgrade.
+
+In produzione le migrazioni vanno eseguite **prima** dell'avvio del
+backend, come descritto in `CLAUDE.md`.
+
+---
+
 ## Workflow per nuove migrazioni
 
 ```bash

@@ -1532,6 +1532,30 @@ httpx con `get_client`, `response_format` json_schema strict
   dal
   testo, registro accademico, niente placeholder né `graph [...]` in DOT.
 
+### Figure da letteratura (doc 18): figure di fonte, letteratura aperta, `tikz`
+
+Moduli del branch `feat/literature-figures`; progettazione, misure e
+decisioni in [Courses 18](../courses/18-literature-figures.md).
+
+| Area | Moduli | Scopo |
+|---|---|---|
+| Estrazione | `course_document_figures_worker.py`, `document_figures/` (`runner`, `child`, `docling_adapter`, `heuristic`, `office`, `cropper`, `filters`, `phash`, `captions`, `page_text`, `metadata`, `storage`), `document_figures_service.py`, `heavy_job_lock.py` | Worker gemello del riassunto, con processo figlio (ambiente in allowlist, killpg, watchdog RSS/tempo); il ritaglio lo fa pypdfium2; il padre scarica e carica lo storage; stato `figures_*` e richiesta dell'estrazione |
+| Vision e costo | `openai_figure_describe_service.py` (PROMPT 18), `openai_http.py` | Descrizione, tipo e parole chiave; trasporto OpenAI condiviso con retry (`post_chat_with_retry`) |
+| Attribuzione e policy | `figure_attribution.py`, `source_figure_policy.py`, `source_caption.py` | Riga «Fonte» scritta e parlata (unico punto), `figure_visibility(mode=select|render)`, `cite_all`/`open_only` |
+| Catalogo e Fase 3 | `lesson_figure_selection.py`, `source_figure_catalog.py`, `source_figure_fusion.py`, `source_figure_substitution.py`, `openai_figure_redundancy_service.py` (PROMPT 19) | Selezione lessicale, catalogo nel messaggio user, fusione in `visual_assets`, misura M7, revisore delle ridondanze (solo avvisi) |
+| Resa e API | `source_figure_service.py` (resolver), `source_figure_api_service.py`, `figure_provenance.py` | Byte e riga «Fonte» lato server per dispensa, slide, frame; catalogo, immagini autenticate, uso; vista dei JSON per i PROMPT 5 e 6 |
+| Letteratura aperta | `course_lesson_figures_gap_worker.py`, `literature_figures_service.py`, `safe_http.py`, `image_limits.py`, `wikimedia_client.py`, `openai_figure_relevance_service.py` (PROMPT 20) | Buchi colmati prima della Fase 3; download sicuri (SSRF, bombe, pixel) |
+| `tikz` | `tikz_compile_service.py`, `figure_compute/{tikz_lexer,tikz_preamble,tex_sandbox,tikz_geometry,tikz_translate}.py`, `TikzRenderer` in `figure_render_service.py`, `openai_tikz_render_review_service.py` (PROMPT 21), `tikz_api_service.py` | Lexer ad allowlist, sandbox SBX-2, oracolo geometrico, registro, revisione della resa, anteprima e vista |
+
+Worker nuovi nel lifespan di `app/main.py`: `course_document_figures_worker`
+e `course_lesson_figures_gap_worker`, con lo stesso schema degli altri
+(start/stop, claim, auto-retry). Il costo delle chiamate AI è registrato
+in tre punti:
+
+- `course_document_figure.vision_usage`: fase admin `document_figures`;
+- `course_lesson.figures_gap_usage`: fase admin `figures_gap`;
+- `content_tokens.assets`: fasi `redundancy`, `render_review` e `fix`.
+
 ### Pattern condivisi (tutti i worker AI)
 
 - **Lifecycle**: registrati in `app/main.py` lifespan; ognuno espone `start_worker()` (idempotente) + `async stop_worker()` (gracefully attende task in flight con timeout 15s).

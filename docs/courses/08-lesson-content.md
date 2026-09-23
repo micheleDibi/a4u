@@ -1231,3 +1231,30 @@ selezione lascia un log `lesson_documents_context_selected` con
 stessa selezione per ogni dispensa e riporta `ground_cov` (quota delle voci
 selezionate che compaiono nel testo generato) e `refs_doc`/`refs_gen`
 (references per `source`).
+
+
+## Figure di fonte e formato `tikz` nella Fase 3 (feat/literature-figures)
+
+Le figure di fonte **si aggiungono** alle generate. Budget (a): 4-8
+generate, invariato; budget (b): 1-4 di fonte, solo se pertinenti.
+
+- Il catalogo della lezione (`source_figure_catalog`, al più 8 voci) entra
+  nel **messaggio user** di PROMPT 3; lo schema strict riceve
+  `source_figures[]` con l'enum degli id `SRC-…`.
+- La fusione crea asset `format="source_figure"`, con `content` = UUID
+  della riga del catalogo. La riga «Fonte» non la scrive mai il modello:
+  la calcola il server a render.
+- Il revisore delle ridondanze (PROMPT 19) segnala soltanto (avvisi sulla
+  card dell'editor, `content_figure_review`) e non tocca `content_raw`.
+- Il PATCH della dispensa controlla gli asset di fonte nuovi o cambiati
+  (422 `source_figure_not_in_course` / `source_figure_not_available`);
+  quelli invariati restano ammessi (non retroattività, U1).
+- Il formato **`tikz`** (spento di default) si propone al modello solo con
+  `FIGURE_TIKZ_PROPOSE_ENABLED`. Conta nel budget (a), ha un solo fix
+  (PROMPT 12) e, se resta irrisolto, `tikz_unresolved` fa sì che il
+  tentativo successivo non lo offra.
+
+Senza catalogo e con `tikz` non offerto, system, messaggio e schema sono
+byte-identici a prima.
+
+Dettagli: [18 — Figure da letteratura](18-literature-figures.md) §6 e §10.

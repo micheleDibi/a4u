@@ -1174,6 +1174,20 @@ eseguono dentro l'immagine `backend/Dockerfile` con uno script montato in
 `/tmp` (`docker run --rm -v probe.py:/tmp/probe.py:ro -e JWT_SECRET=…
 <immagine> python /tmp/probe.py`); esiti in Courses 17 § 14.3.
 
+### Figure da letteratura (doc 18)
+
+Mappa garanzie → file in [Courses 18 § 17](../courses/18-literature-figures.md).
+Le dipendenze pesanti sono guardate da `tests/dep_guard.py`: in locale i
+test saltano con il motivo (`[dep:docling]`, `[dep:tex]`), nel container
+con `A4U_REQUIRED_DEPS=docling,tex` lo skip diventa un fallimento. I test
+TeX si eseguono in un'immagine con TeX Live (build con
+`--build-arg INSTALL_TEX=true`), montando `backend/` (e `frontend/src` per
+`test_frontend_figure_templates.py`) in sola lettura, con `--network none`.
+I test che richiedono Postgres restano in locale. Builder condivisi:
+`tests/source_figure_builders.py`, `tests/fake_figure_child.py`,
+`tests/source_figure_child.py`; fixture deterministiche in
+`tests/fixtures/source_figures/` (`build.py`, `manifest.json`).
+
 ---
 
 ## Strategie di estensione

@@ -274,3 +274,25 @@ Vedi [04 — Configuration](../04-configuration.md). Variabili rilevanti
   nella whitelist MIME documenti: il `course_document_worker` legge il
   `.md` come testo e produce il riassunto AI di Appendice A (vedi
   [02 — Document pre-processing](02-document-preprocessing.md)).
+
+
+## Import riletto lato server e figure (feat/literature-figures)
+
+- **Import** (`/papers/import`). Non si fida più del `PaperOut` del
+  client:
+  - il lavoro si rilegge con `openalex_client.get_work` (id solo
+    OpenAlex);
+  - si scarica soltanto il PDF della `best_oa_location` del server, via
+    `safe_http` (SSRF chiusa);
+  - la licenza di quella location va sul documento, con bibliografia
+    `openalex`;
+  - se la rilettura fallisce, l'import ripiega sui metadati senza alcun
+    download.
+- **Chiave**. `OPENALEX_API_KEY` è obbligatoria dal 13/02/2026: il polite
+  pool è stato abolito. La chiave viaggia in query string e non compare
+  nei log (httpx a WARNING).
+- **Buchi di figure**. OpenAlex cerca solo lavori open access con licenza
+  CC BY, CC BY-SA, CC0 o pubblico dominio; dai PDF si tengono solo i
+  ritagli, senza creare documenti.
+
+Dettagli: [18 — Figure da letteratura](18-literature-figures.md) §9.

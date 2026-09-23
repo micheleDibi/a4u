@@ -842,6 +842,32 @@ Response completa di un job. Estende il compact con:
 
 ---
 
+## `app/schemas/document_figures.py` e `app/schemas/document_bibliography.py`
+
+Figure da letteratura ([Courses 18](../courses/18-literature-figures.md)).
+
+- `DocumentFigureOut`: voce del catalogo del corso per il frontend (tipo,
+  descrizione, didascalia originale e suggerita, pagina, licenza, riga
+  «Fonte» `attribution` calcolata dal server, `renderable`, proponibilità
+  attuale). Nessun percorso dello storage.
+- `DocumentFigureUpdate`: `{excluded_by_user: bool}`.
+- `FigureUsageLesson` / `DocumentFigureUsageOut`: lezioni in cui sono
+  collocate le figure di un documento.
+- `DocumentBibliography` (`extra="forbid"`): titolo, autori, anno,
+  contenitore, DOI, URL…, usata nel PATCH parziale del documento
+  (`CourseDocumentUpdate` in `schemas/course.py`, almeno un campo) e nella
+  colonna JSONB `course_document.bibliography`.
+
+Nelle Fasi 3 e 4:
+
+- `LessonContentOutput.source_figures` è dichiarato ed escluso dai dump
+  persistiti;
+- `VisualAssetFormat` aggiunge `tikz`: le slide lo rifiutano comunque fra
+  i `new_assets`, con `_SLIDES_EXCLUDED_FORMATS` del servizio;
+- `ContentVisualAssetFormat` (solo dispensa) aggiunge anche
+  `source_figure`: con l'alias delle slide, `source_figure` fra i
+  `new_assets` è un 422 di Pydantic.
+
 ## `app/schemas/admin_metrics.py`
 
 DTO per `GET /admin/metrics` (dashboard pannello admin). I conteggi per

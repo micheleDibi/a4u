@@ -711,3 +711,22 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f backend 
 | `frontend/src/pages/org/courses/CoursesListPage.tsx` | DropdownMenuItem + badge + polling condizionato 3s |
 | `frontend/src/index.css` | Keyframe `a4u-shimmer` |
 | `docker-compose.yml` | `max_connections=200` per supportare alta concorrenza pool DB |
+
+
+## Figure di fonte nella duplicazione (feat/literature-figures)
+
+- **Documenti**. Vengono clonati con id espliciti e con la provenienza:
+  `origin`, `is_own_work`, `license*`, `bibliography*` e lo stato
+  dell'estrazione.
+- **Figure**. Si clonano righe e file del catalogo: anche le figure
+  staccate e quelle della letteratura aperta, sotto il prefisso del corso
+  nuovo.
+- **Riferimenti**. `content_raw` e `content_figure_review` sono rimappati
+  sui cloni; descrizione e parole chiave vengono tradotte.
+- **Costo Vision**. Non si copia: niente doppio conteggio in dashboard.
+- **Controprova G6**: stessa riga «Fonte» e stessa visibilità prima e
+  dopo.
+- **`tikz`**. Il sorgente si copia com'è (stesso SVG). Come per le altre
+  figure, le etichette dei nodi non vengono tradotte.
+
+Dettagli: [18 — Figure da letteratura](18-literature-figures.md) §8.

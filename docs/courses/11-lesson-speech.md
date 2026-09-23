@@ -435,3 +435,20 @@ frequenti:
 - `lesson_speech_uncovered_slides` — qualche slide non ha segmenti. Edit manuale per aggiungerli, o rigenerare.
 - `lesson_slides_not_ready_for_speech` — le slide della lezione non sono `approved`; tornare alla Fase 4 e approvarle.
 - `OpenAILessonSpeechError` con finish_reason=length — output troncato per lezioni lunghe (90 min ≈ 11700 parole IT). Alzare `OPENAI_LESSON_SPEECH_MAX_TOKENS`.
+
+
+## Fonti delle figure a voce (feat/literature-figures)
+
+- Quando una slide mostra una figura di fonte, il messaggio di PROMPT 6
+  contiene il blocco `FONTI DELLE FIGURE`:
+  - con la frase parlata della riga «Fonte» (`attribution_line(...,
+    mode="spoken")`, TTS-safe);
+  - neutralizzata (`safe_spoken_text`) e fra delimitatori di dati.
+- Il modello la pronuncia una volta, senza pagine, numeri di figura né
+  licenze.
+- Il JSON di Fase 3 passa da `prompt_view`: niente UUID, e per le figure
+  `tikz` solo le etichette dei nodi, così nessuna barra rovesciata del
+  sorgente arriva al parlato.
+- Senza figure di fonte né `tikz` il messaggio è byte-identico a prima.
+
+Dettagli: [18 — Figure da letteratura](18-literature-figures.md) §7.

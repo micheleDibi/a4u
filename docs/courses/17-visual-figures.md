@@ -6389,3 +6389,34 @@ quando la banda non esisteva, perché il box è basso e la figura è grande:
 nuovo compare. Quello è il difetto D13, che vive per conto suo; qui si
 pinna il pavimento misurato (`_SLIDE_FLOOR_PT` = 6,8 pt) perché la banda
 non torni ad allargarsi di nascosto.
+
+
+## 24. Figure di fonte e formato `tikz` (23-24 settembre 2026)
+
+Il branch `feat/literature-figures` aggiunge ai formati di questo documento
+due famiglie. Progettazione completa in
+[18 — Figure da letteratura](18-literature-figures.md).
+
+- **`source_figure`**:
+  - figura estratta dalle fonti del corso o dalla letteratura aperta;
+  - `content` = UUID della riga del catalogo;
+  - resa e riga «Fonte» solo lato server.
+
+  È fuori da `RENDERABLE_FORMATS`, quindi fix e revisore figura ↔ testo
+  la saltano. È numerata «Figura N.» come le altre. Chiave i18n
+  `courses.figures.formats.source_figure`.
+- **`tikz`**. È nel registro dei renderer (`TikzRenderer`):
+  - XeLaTeX in sandbox, poi `pdftocairo -svg`, poi `normalize_svg`;
+  - lexer ad allowlist e oracolo geometrico;
+  - traduzione delle etichette dei nodi (D7).
+
+  È spento di default (`FIGURE_TIKZ_ENABLED`). Il modello lo vede solo con
+  `FIGURE_TIKZ_PROPOSE_ENABLED`, e allora con un blocco nel messaggio
+  user: il system prompt di PROMPT 3 resta byte-identico perché
+  `_formats_off_block` considera solo `PROMPTED_FORMATS`.
+
+**Ribaltamento dichiarato** (D17). Il lavoro «figure accademiche»
+escludeva LaTeX/TikZ; il committente l'ha riaperto con il brief delle
+figure da letteratura. La scelta del motore (XeLaTeX di TeX Live Debian,
+niente dvisvgm né Ghostscript, per via dell'AGPL) e la sandbox sono in
+Courses 18 §10.

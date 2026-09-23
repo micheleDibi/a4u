@@ -128,7 +128,7 @@ variabili `R2_*` (`R2_ENDPOINT` ha forma
 | Servizio | Immagine base | Runtime extra |
 |---|---|---|
 | `postgres` | `postgres:16-alpine` | – |
-| `backend` | `python:3.12-slim` | Pango/Cairo (WeasyPrint), Chromium di Playwright (pre-render Mermaid 11 e frame video), **Graphviz `dot`** (figure DOT), font Noto/DejaVu (usati anche da vl-convert e matplotlib per le figure Vega-Lite e `function`; `MPLCONFIGDIR=/tmp/cache/matplotlib`, `MPLBACKEND=Agg`), `ffmpeg` (encoding video Fase 6/6b) — già nel `Dockerfile` |
+| `backend` | `python:3.12-slim-trixie` (tag fisso) | Pango/Cairo (WeasyPrint), Chromium di Playwright (pre-render Mermaid 11 e frame video), **Graphviz `dot`** (figure DOT), font Noto/DejaVu (usati anche da vl-convert e matplotlib per le figure Vega-Lite e `function`; `MPLCONFIGDIR=/tmp/cache/matplotlib`, `MPLBACKEND=Agg`), `ffmpeg` (encoding video Fase 6/6b) — già nel `Dockerfile` |
 | `frontend` | `node:20` (build) → `nginx:alpine` (runtime) | – |
 
 > **Importante** — il `backend/Dockerfile` installa Pango/Cairo +
@@ -138,6 +138,31 @@ variabili `R2_*` (`R2_ENDPOINT` ha forma
 > container backend: sono delegati a endpoint RunPod GPU (vedi
 > "Prerequisiti esterni" sopra). Il client MuseTalk è vendored in
 > `backend/app/musetalk_client/` e gira come subprocess.
+
+### Figure da letteratura: immagine, disco e accensione
+
+Riferimento: [Courses 18](courses/18-literature-figures.md) §18.
+
+- **Docling + torch CPU** (extra `figures`) sono nell'immagine, con i
+  modelli di layout preinstallati in `/opt/docling-models`
+  (`HF_HUB_OFFLINE`, nessun download a runtime). Stima della misura M3 su
+  arm64: circa +1,4 GB espansi e +0,5 GB compressi. Se il disco del
+  server non basta, `docker image prune` prima della build.
+- **TeX Live** (XeLaTeX e `pdftocairo`, per il formato `tikz`) entra solo
+  con `docker compose -f docker-compose.yml -f docker-compose.prod.yml build
+  --build-arg INSTALL_TEX=true backend`: circa
+  +550 MB (M5). Senza TeX il formato `tikz` resta non disponibile anche
+  con `FIGURE_TIKZ_ENABLED=true`: l'autotest della sandbox è a guasto
+  chiuso. Il build rifiuta Ghostscript (`libgs`, AGPL).
+- **Estrazione in produzione**. Si accende (`FIGURE_EXTRACTION_ENABLED=true`
+  nel `.env`) solo dopo la misura **M0** sulla VM: CPU, AVX, RAM e sonda
+  Docling con `--memory 2g/3g`. La proiezione di M2 senza M0 supera 4
+  s/pagina; il motore `heuristic` è un ripiego di qualità minore, da
+  scegliere esplicitamente.
+- **Migrazioni 0037 e 0038** prima dell'avvio (vedi sotto). Nessun
+  backfill: le estrazioni dei corsi esistenti si chiedono dalla UI o con
+  lo script `scripts/extract_document_figures.py --apply` (dry-run senza
+  `--apply`).
 
 ### Workflow di deploy (prima volta)
 

@@ -298,7 +298,7 @@ proprio nel prompt di Fase 3.
 | `FIGURE_DOCLING_ARTIFACTS_PATH` | `/opt/docling-models` | Modelli Docling preinstallati nell'immagine (nessun download a runtime). |
 | `FIGURE_MIN_QUALITY_SCORE` | `3` | Qualità minima (1-5) di una figura per entrare nel catalogo (calcolata in lettura). |
 | `FIGURE_DESCRIBE_MAX_PER_DOCUMENT` | `80` | Figure descritte per documento (le più grandi e sicure prima). |
-| `OPENAI_FIGURE_DESCRIBE_MODEL` | `gpt-4.1-mini` | Modello Vision della descrizione (default provvisorio fino alla misura M4). Deve essere a listino in `openai_pricing`, altrimenti il costo non compare. |
+| `OPENAI_FIGURE_DESCRIBE_MODEL` | `gpt-4.1-mini` | Modello Vision della descrizione (scelto dalla misura M4: il più economico che passa le soglie, a 768 px). Deve essere a listino in `openai_pricing`, altrimenti il costo non compare. |
 | `OPENAI_FIGURE_DESCRIBE_REASONING_EFFORT` | _(vuoto)_ | Solo per modelli reasoning. |
 | `OPENAI_FIGURE_DESCRIBE_MAX_TOKENS` | `800` | Tetto dell'output della descrizione. |
 | `OPENAI_FIGURE_DESCRIBE_DETAIL` | `high` | `detail` dell'immagine, sempre esplicito. |

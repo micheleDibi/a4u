@@ -198,3 +198,29 @@ class DocumentSummaryOut(BaseModel):
 - `course.document.summary.failed` (failure worker — `course_document_worker.py:69,112,131`)
 - `course.document.reprocess` (reset manuale — `course_service.py:820`)
 - `course.document.delete` (eliminazione — `course_service.py:850`)
+
+
+## Figure di fonte ed estrazione (feat/literature-figures)
+
+Accanto al riassunto, un **secondo worker** (`course_document_figures_worker`)
+estrae le figure dei documenti PDF, DOCX e PPTX: Docling in un processo
+figlio, ritaglio con pypdfium2 e Vision descrittiva (PROMPT 18). Le figure
+entrano nel catalogo `course_document_figure`.
+
+Stato separato da quello del riassunto: `figures_status`, dove NULL vuol
+dire «mai chiesta». Non c'è backfill: l'estrazione si chiede dalla UI,
+dall'endpoint `…/figures/extract` o con lo script. I documenti
+`excluded`/`content_only` non vengono mai estratti.
+
+Novità sul documento:
+
+- **PPTX** accettato in upload (U3), con sniffing della firma zip; il
+  testo delle slide alimenta il riassunto.
+- **Provenienza**:
+  - `origin`, `is_own_work`, `license`;
+  - `bibliography` da fonti deterministiche (docente, OpenAlex, metadati
+    del PDF/DOCX/PPTX, Crossref);
+  - la proposta del riassunto (`summary_proposal`) va confermata dal
+    docente.
+
+Dettagli in [18 — Figure da letteratura](18-literature-figures.md) §4-§5.

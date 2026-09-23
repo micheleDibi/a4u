@@ -170,7 +170,8 @@ automaticamente con cascade — vedi [15 — Duplicazione corso](15-course-dupli
 ### `POST /orgs/{org_id}/courses/{course_id}/documents`
 
 `course:edit`. Multipart `file`. Limite 25 MB. Mime accettati: PDF, DOC, DOCX,
-TXT, MD, RTF.
+PPTX (firma zip controllata, U3), TXT, MD, RTF. Il documento nasce con
+`origin="upload"`; bibliografia e licenza si impostano poi con il PATCH.
 
 ### `GET /orgs/{org_id}/courses/{course_id}/documents`
 
@@ -185,9 +186,88 @@ strutturato. Senza il flag, il summary è omesso (per non gonfiare la list respo
 
 `course:edit`. 202. Reset a `pending`; il worker riprende.
 
+### `PATCH /orgs/{org_id}/courses/{course_id}/documents/{doc_id}`
+
+`course:edit`. PATCH **parziale** (`CourseDocumentUpdate`, `extra="forbid"`,
+almeno un campo): `citation_policy`, `bibliography` (`DocumentBibliography`,
+confermata dal docente → `bibliography_source="user"`), `license`,
+`is_own_work`. `null` cancella bibliografia o licenza; `citation_policy` e
+`is_own_work` non accettano `null`. Politica e metadati scrivono audit
+distinti. Il cambio di politica NON è retroattivo (U1): le figure già
+collocate restano fino alla rigenerazione della lezione.
+
 ### `DELETE /orgs/{org_id}/courses/{course_id}/documents/{doc_id}`
 
-`course:edit`. 204.
+`course:edit`. 204. Le figure di fonte del documento **usate** in una
+lezione vengono staccate (`document_id → NULL`, `detached_at`, attribuzione
+congelata) e continuano a rendersi con la stessa riga «Fonte»; le non
+usate si cancellano con i file.
+
+## Figure di fonte e formato `tikz`
+
+Documento di riferimento: [18 — Figure da letteratura](18-literature-figures.md).
+
+### `POST /orgs/{org_id}/courses/{course_id}/documents/figures/extract`
+
+`course:generate`. 202, lista di `CourseDocumentOut`. Mette in coda
+l'estrazione delle figure di tutti i documenti (idempotente): i documenti
+`excluded`/`content_only`, di formato non supportato o con l'estrazione
+spenta risultano `figures_status="skipped"` con il motivo in
+`figures_error_code`.
+
+### `POST /orgs/{org_id}/courses/{course_id}/documents/{doc_id}/figures/extract`
+
+`course:generate`. 202. Come sopra per un solo documento.
+
+### `GET /orgs/{org_id}/courses/{course_id}/document-figures`
+
+`course:view`. Figure pronte del corso (`DocumentFigureOut`): tipo,
+descrizione, didascalia originale, pagina, licenza, riga «Fonte»
+(`attribution`, calcolata dal server), `renderable` (resa non retroattiva)
+e proponibilità attuale (politica, esclusione del docente). Mai un URL
+dello storage.
+
+### `GET /orgs/{org_id}/courses/{course_id}/document-figures/{figure_id}/image?preview=false`
+
+`course:view`. Byte del ritaglio (o dell'anteprima ridotta con
+`preview=true`), `Cache-Control: private`, `X-Content-Type-Options:
+nosniff`. 404 per una figura di un altro corso o non rendibile.
+
+### `PATCH /orgs/{org_id}/courses/{course_id}/document-figures/{figure_id}`
+
+`course:edit`. Body `{"excluded_by_user": bool}`: esclude (o riammette) la
+figura dalle proposte del catalogo. Non retroattivo.
+
+### `GET /orgs/{org_id}/courses/{course_id}/documents/{doc_id}/figure-usage`
+
+`course:view`. Lezioni in cui sono collocate le figure del documento (per
+i dialoghi di cancellazione e di cambio di politica).
+
+### `POST /orgs/{org_id}/courses/{course_id}/lesson-assets/render-tikz`
+
+`course:edit`. Body `{"content": "<corpo tikzpicture|circuitikz>"}`.
+Anteprima dell'editor: `{svg, font_px_min, warnings, content_hash}`; i
+difetti geometrici sono `warnings`, non errori. Limite 20/min per IP e
+quota per utente `FIGURE_TIKZ_PREVIEW_PER_MINUTE` consumata solo quando
+serve compilare (gli hit della cache non contano). Errori: `409
+figure_format_unavailable` (tikz spento o TeX assente), `409 tikz_busy`
+(sandbox occupata), `422 tikz_source_invalid | tikz_compile_failed |
+tikz_render_timeout` con `meta.errors[{loc: ["content"], msg, type}]`,
+`429 tikz_preview_rate_limited`.
+
+### `POST /orgs/{org_id}/courses/{course_id}/lesson-assets/tikz-view`
+
+`course:view`. Body `{"asset_id", "content"}` → `{svg}`. Rende SOLO un
+sorgente identico a quello di un asset `tikz` salvato in una lezione del
+corso (`content_raw.visual_assets`), altrimenti `404
+tikz_asset_not_found`: chi ha la sola vista non fa compilare sorgenti
+arbitrari. Limite 60/min per IP.
+
+### `GET /orgs/{org_id}/courses/{course_id}/lesson-assets/formats`
+
+`course:view`. `{formats: [...]}` = `figure_render_service.available_formats()`
+(kill-switch e dipendenze del server): il menu «Aggiungi asset visivo»
+della dispensa mostra lo schema TikZ solo se c'è `tikz`.
 
 ## Ricerca paper scientifici
 
@@ -309,8 +389,14 @@ Errori:
 { "papers": [ { /* PaperOut */ } ] }
 ```
 
-`papers` 1..50. Importa ciascun paper come `CourseDocument`: se il paper
-è OA e il PDF è scaricabile → file `.pdf` (`mode="pdf"`); altrimenti
+`papers` 1..50. Importa ciascun paper come `CourseDocument` (`origin` =
+`paper_import` o `paper_metadata`). Dal WP5 il `PaperOut` del client non
+è più fidato: il lavoro si rilegge lato server (`openalex_client.get_work`,
+id solo OpenAlex) e si scarica soltanto il PDF della `best_oa_location`
+del server, via `safe_http` (indirizzi interni rifiutati: SSRF chiusa),
+con la licenza di quella stessa location sul documento. Se la rilettura
+fallisce l'import ripiega sui metadati senza alcun download. Se il PDF è
+scaricabile → file `.pdf` (`mode="pdf"`); altrimenti
 genera un `.md` con i metadati del paper (titolo, autori, anno, journal,
 DOI, link, citazioni, abstract, TL;DR, keywords, subjects)
 (`mode="metadata"`). Ogni documento è creato con

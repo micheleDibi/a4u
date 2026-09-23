@@ -501,3 +501,20 @@ frequenti:
 - `lesson_slides_multiple_visual_assets` — il PATCH aggiunge o sostituisce una figura o tabella su una slide che ne avrebbe più di una (o crea una slide con due): una slide per asset visivo. Le slide storiche con più figure restano come sono e si possono solo ridurre (togliere figure passa, sostituirle no).
 - `lesson_slides_invalid_new_asset` — un `new_assets[]` modificato a mano non supera il validatore del suo formato (spec Vega-Lite senza `clip`/`scale.domain`, tipo Mermaid escluso, attributo DOT che legge file, spec `function` incoerente): `meta.errors` indica asset e campo.
 - `OpenAILessonSlidesError` con finish_reason=length — output troncato, alzare `OPENAI_LESSON_SLIDES_MAX_TOKENS`.
+
+
+## Figure di fonte e `tikz` nelle slide (feat/literature-figures)
+
+- Il JSON di Fase 3 dato a PROMPT 5 passa da `figure_provenance.prompt_view`:
+  - niente UUID delle figure di fonte;
+  - per le `tikz`, al posto del sorgente, «(schema TikZ; etichette: …)».
+- Le slide referenziano le figure di fonte della dispensa e non possono
+  crearne fra i `new_assets`; lo stesso vale per `tikz`
+  (`_SLIDES_EXCLUDED_FORMATS`).
+- La riparazione deterministica **8c** (`FIGURE_SLIDES_COVERAGE_REPAIR_ENABLED`)
+  aggiunge la slide dedicata a ogni figura di Fase 3 che nessuna slide
+  cita, poi rinumera.
+- **Resa**. Nella vista web la riga «Fonte» sta nella fascia in basso a
+  sinistra (U2), come nel PDF delle slide e nei frame del video.
+
+Dettagli: [18 — Figure da letteratura](18-literature-figures.md) §7.
