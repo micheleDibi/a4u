@@ -982,7 +982,8 @@
           "uploading": "Caricamento…",
           "writeVegalite": "Scrivi un grafico Vega-Lite",
           "writeDot": "Scrivi un grafo Graphviz (DOT)",
-          "writeFunction": "Componi una figura matematica"
+          "writeFunction": "Componi una figura matematica",
+          "writeTikz": "Disegna uno schema TikZ"
         },
         "assetRejected": "Asset rifiutato dal server",
         "legacyAssetBanner": "Asset legacy non più editabile. Eliminalo e ricrealo come figura (Mermaid, Vega-Lite, DOT, matematica) o immagine caricata.",
@@ -1254,6 +1255,24 @@
             "labelsCrowded": "Le etichette sono troppe o troppo vicine: qualcuna resta accostata a un'altra, oppure non è stata disegnata. Accorcia le etichette o riduci i punti annotati.",
             "symbolicTimeout": "Calcolo simbolico oltre il tempo massimo: i valori sono approssimati.",
             "symbolic": "Calcolo simbolico non disponibile: i valori sono approssimati."
+          }
+        },
+        "tikz": {
+          "title": "Schema TikZ",
+          "code": "Sorgente TikZ",
+          "preview": "Anteprima (compilata dal server)",
+          "previewEmpty": "Scrivi il sorgente (o scegli un template) per vedere l'anteprima",
+          "insertTemplate": "Inserisci template…",
+          "warnings": "Avvisi sulla resa: il salvataggio li accetta, ma la generazione automatica rifiuterebbe la figura",
+          "groups": {
+            "blocks": "Schemi a blocchi",
+            "circuits": "Circuiti"
+          },
+          "templates": {
+            "chain": "Catena di misura",
+            "vibrometer": "Vibrometro laser Doppler",
+            "divider": "Partitore di tensione",
+            "wheatstone": "Ponte di Wheatstone"
           }
         }
       }

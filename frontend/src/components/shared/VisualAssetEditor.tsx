@@ -29,6 +29,7 @@ import { FunctionEditor } from "./FunctionEditor";
 import { MermaidEditor } from "./MermaidEditor";
 import { SourceFigure } from "./SourceFigure";
 import { SourceFigurePicker } from "./SourceFigurePicker";
+import { TikzEditor } from "./TikzEditor";
 import { VegaLiteEditor } from "./VegaLiteEditor";
 
 /**
@@ -39,9 +40,9 @@ import { VegaLiteEditor } from "./VegaLiteEditor";
  * riferimenti nelle Dispense, un `Input` nelle slide), `headerActions`
  * (pulsante «Evidenzia dove usato»), `labels` (chiavi diverse).
  *
- * Per formato: Mermaid, Vega-Lite, DOT e `function` con il rispettivo
- * editor e anteprima; `image` con la digitalizzazione in Mermaid; legacy
- * in sola lettura. `error` è il 422 per asset del PATCH: gli editor dei
+ * Per formato: Mermaid, Vega-Lite, DOT, `function` e `tikz` con il
+ * rispettivo editor e anteprima; `image` con la digitalizzazione in
+ * Mermaid; legacy in sola lettura. `error` è il 422 per asset del PATCH: gli editor dei
  * formati nuovi lo mostrano in testa, per gli altri lo mostra la card.
  *
  * Figure di fonte (`source_figure`): anteprima con la riga «Fonte» del
@@ -123,7 +124,8 @@ export function VisualAssetEditor({
   const editorShowsError =
     asset.format === "vegalite" ||
     asset.format === "dot" ||
-    asset.format === "function";
+    asset.format === "function" ||
+    asset.format === "tikz";
 
   const handleConvertToMermaid = async () => {
     if (asset.format !== "image" || !asset.content) return;
@@ -237,6 +239,17 @@ export function VisualAssetEditor({
         <FunctionEditor
           value={asset.content}
           onChange={(content) => onChange({ content })}
+          disabled={disabled}
+          orgId={orgId}
+          courseId={courseId}
+          error={error}
+        />
+      )}
+
+      {asset.format === "tikz" && (
+        <TikzEditor
+          value={asset.content}
+          onChange={(code) => onChange({ content: code })}
           disabled={disabled}
           orgId={orgId}
           courseId={courseId}

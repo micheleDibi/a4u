@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { FigureFrame } from "@/components/shared/FigureFrame";
 import { FunctionFigure } from "@/components/shared/FunctionFigure";
 import { SourceFigure } from "@/components/shared/SourceFigure";
+import { TikzFigure } from "@/components/shared/TikzFigure";
 import { InlineMath } from "@/components/shared/InlineMath";
 import {
   EquationBlock,
@@ -226,6 +227,18 @@ function SlideAssetRender({
         <SourceFigure
           assetId={a.asset_id}
           figureId={a.content}
+          caption={a.caption}
+          altText={a.alt_text}
+          variant="slide"
+          cite={cite}
+        />
+      );
+    }
+    if (a.format === "tikz") {
+      return (
+        <TikzFigure
+          assetId={a.asset_id}
+          content={a.content}
           caption={a.caption}
           altText={a.alt_text}
           variant="slide"

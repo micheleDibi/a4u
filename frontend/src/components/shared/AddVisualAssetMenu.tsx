@@ -1,6 +1,8 @@
+import { useQuery } from "@tanstack/react-query";
 import {
   BookImage,
   ChartColumn,
+  CircuitBoard,
   Image as ImageIcon,
   Loader2,
   Plus,
@@ -29,7 +31,8 @@ import { SourceFigurePicker } from "./SourceFigurePicker";
 /**
  * Menu «Aggiungi asset visivo», condiviso dai dialog delle Dispense e
  * delle Slide: carica un'immagine oppure crea un asset vuoto per uno dei
- * formati di figura (Mermaid, Vega-Lite, DOT, `function`). L'id lo decide
+ * formati di figura (Mermaid, Vega-Lite, DOT, `function`; nella dispensa
+ * anche `tikz`, se il server lo rende). L'id lo decide
  * il chiamante con `makeAssetId` (Dispense: `A{n}`, slide: `asset_new_{n}`,
  * entrambi con il ciclo anti-collisione sugli id esistenti).
  */
@@ -46,6 +49,9 @@ export interface AddVisualAssetMenuProps {
   /** Offre le figure dai documenti del corso (solo la dispensa: le slide
    *  non creano figure di fonte). */
   allowSourceFigures?: boolean;
+  /** Offre lo schema TikZ (solo la dispensa: le slide non creano figure
+   *  `tikz`), e solo se il server lo rende (`GET …/lesson-assets/formats`). */
+  allowTikz?: boolean;
 }
 
 const WRITE_ITEMS: ReadonlyArray<{
@@ -84,8 +90,16 @@ export function AddVisualAssetMenu({
   formats = VISUAL_FORMATS,
   triggerLabel,
   allowSourceFigures = false,
+  allowTikz = false,
 }: AddVisualAssetMenuProps) {
   const { t } = useTranslation();
+  const serverFormats = useQuery({
+    queryKey: ["figure-formats", orgId, courseId],
+    queryFn: () => coursesApi.lessonAssets.formats(orgId, courseId),
+    enabled: allowTikz,
+    staleTime: 10 * 60_000,
+  });
+  const tikzAvailable = allowTikz && Boolean(serverFormats.data?.includes("tikz"));
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [uploading, setUploading] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -122,7 +136,7 @@ export function AddVisualAssetMenu({
     }
   };
 
-  const addEmpty = (format: Exclude<VisualFormat, "image">) => {
+  const addEmpty = (format: Exclude<VisualFormat, "image"> | "tikz") => {
     onAdd({
       asset_id: makeAssetId(),
       format,
@@ -176,6 +190,12 @@ export function AddVisualAssetMenu({
                 {t(labelKey)}
               </DropdownMenuItem>
             ),
+          )}
+          {tikzAvailable && (
+            <DropdownMenuItem onClick={() => addEmpty("tikz")}>
+              <CircuitBoard className="size-3.5" />
+              {t("courses.lessonsContent.editor.assetActions.writeTikz")}
+            </DropdownMenuItem>
           )}
           {allowSourceFigures && (
             <DropdownMenuItem onClick={() => setPickerOpen(true)}>

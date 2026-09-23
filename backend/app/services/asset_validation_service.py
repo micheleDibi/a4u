@@ -127,6 +127,7 @@ from app.services.figure_render_service import (
     figure_asset_context,
     render_chain_variants,
     render_figure_map,
+    tikz_timeout_seconds,
 )
 from app.services.figure_scale import FigureFit, fit_figure_width_mm, resolve_base_font_px
 from app.services.figure_theme import mermaid_initialize_js
@@ -691,7 +692,7 @@ async def _validate_slots(slots: list[_Slot]) -> list[AssetCheck]:
     js_results = await _validate_js_batch(js_items)
     formats = available_formats()
     render_timeout = float(get_settings().figure_render_timeout_seconds)
-    tikz_timeout = _tikz_timeout()
+    tikz_timeout = tikz_timeout_seconds()
 
     checks: list[AssetCheck] = []
     for i, slot in enumerate(slots):
@@ -738,17 +739,6 @@ async def _validate_slots(slots: list[_Slot]) -> list[AssetCheck]:
             fixable = not err.startswith(_TIKZ_ENGINE_ERRORS)
             checks.append(AssetCheck(slot.id, slot.kind, ok, "" if ok else err, fixable=fixable))
     return checks
-
-
-def _tikz_timeout() -> float:
-    """Tetto di una validazione o resa `tikz`: attende anche la coda della
-    sandbox (`heavy_job_lock`) prima di compilare, e il tetto comune
-    (`figure_render_timeout_seconds`, 20 s) la darebbe per scaduta."""
-    settings = get_settings()
-    queue_and_compile = (
-        settings.figure_tikz_queue_timeout_seconds + settings.figure_tikz_timeout_seconds
-    )
-    return max(float(settings.figure_render_timeout_seconds), float(queue_and_compile) + 5.0)
 
 
 # Prefissi degli errori di `TikzRenderer.validate` che non dipendono dal
@@ -1982,7 +1972,7 @@ async def _review_tikz_renders(
         or "tikz" not in available_formats()
     ):
         return
-    timeout = _tikz_timeout()
+    timeout = tikz_timeout_seconds()
     fix_cap = _fix_cap("tikz", max(0, int(settings.asset_fix_max_attempts)))
 
     async def one(asset: Any) -> tuple[Any, str] | None:

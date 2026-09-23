@@ -58,7 +58,7 @@ import threading
 import time
 import weakref
 from collections import OrderedDict
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass, replace
 from functools import lru_cache, partial
@@ -2052,6 +2052,38 @@ class FunctionRenderer:
         return hit.computed_caption
 
 
+def tikz_timeout_seconds() -> float:
+    """Tetto di una validazione o resa `tikz` vista dal chiamante: attende
+    anche la coda della sandbox (`heavy_job_lock`) prima di compilare, e il
+    tetto comune (`figure_render_timeout_seconds`, 20 s) la darebbe per
+    scaduta."""
+    settings = get_settings()
+    queue_and_compile = (
+        settings.figure_tikz_queue_timeout_seconds + settings.figure_tikz_timeout_seconds
+    )
+    return max(float(settings.figure_render_timeout_seconds), float(queue_and_compile) + 5.0)
+
+
+@dataclass(frozen=True)
+class TikzPreview:
+    """Esito di `TikzRenderer.preview` (anteprima dell'editor)."""
+
+    svg: str
+    font_px_min: float | None
+    warnings: tuple[str, ...]
+    content_hash: str
+    cached: bool
+
+
+class TikzPreviewError(Exception):
+    """Anteprima `tikz` rifiutata; `code` è quello della risposta API."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
 class TikzRenderer:
     """Formato `tikz` (WP6): un solo ambiente `tikzpicture` o `circuitikz`,
     compilato con XeLaTeX nella sandbox del container
@@ -2203,6 +2235,49 @@ class TikzRenderer:
             log.warning("tikz_png_failed", error=f"{type(exc).__name__}: {exc}"[:_ERROR_CAP])
             return None
         return buf.getvalue()
+
+    def preview(
+        self, content: str, *, before_compile: Callable[[], None] | None = None
+    ) -> TikzPreview:
+        """Anteprima dell'editor (`POST …/render-tikz`): SVG, corpo minimo
+        del testo e difetti geometrici come AVVISI (mai bloccanti qui).
+
+        `before_compile` gira solo se serve compilare (niente cache): la
+        quota per utente dell'endpoint non si consuma sugli hit. Errori con
+        il codice dell'API in `TikzPreviewError`."""
+        from app.services import tikz_compile_service
+
+        if "tikz" not in available_formats():
+            raise TikzPreviewError("figure_format_unavailable", "Formato tikz non disponibile.")
+        sanitized = self.sanitize(content)
+        problem = self.static_check(sanitized)
+        if problem is not None:
+            raise TikzPreviewError("tikz_source_invalid", problem)
+        key = self._key(sanitized)
+        figure = _cache_get_figure(key)
+        cached = figure is not None
+        if figure is None:
+            if before_compile is not None:
+                before_compile()
+            try:
+                figure = self._render_or_raise(sanitized)
+            except tikz_compile_service.TikzBusyError as exc:
+                raise TikzPreviewError("tikz_busy", str(exc)) from exc
+            except tikz_compile_service.TikzEngineUnavailableError as exc:
+                raise TikzPreviewError("figure_format_unavailable", str(exc)) from exc
+            except tikz_compile_service.TikzTimeoutError as exc:
+                raise TikzPreviewError("tikz_render_timeout", str(exc)) from exc
+            except Exception as exc:  # compilazione, SVG
+                raise TikzPreviewError("tikz_compile_failed", str(exc)[:_ERROR_CAP]) from exc
+            _cache_put(key, figure)
+        metrics = figure.metrics
+        return TikzPreview(
+            svg=figure.svg,
+            font_px_min=metrics.font_px_min if metrics is not None else None,
+            warnings=tuple(metrics.defects) if metrics is not None else (),
+            content_hash=key[1],
+            cached=cached,
+        )
 
     def render_figure_batch(
         self, contents: list[str], *, asset_ids: list[str]

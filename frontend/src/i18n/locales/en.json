@@ -982,7 +982,8 @@
           "uploading": "Uploading…",
           "writeVegalite": "Write a Vega-Lite chart",
           "writeDot": "Write a Graphviz graph (DOT)",
-          "writeFunction": "Compose a mathematical figure"
+          "writeFunction": "Compose a mathematical figure",
+          "writeTikz": "Draw a TikZ diagram"
         },
         "assetRejected": "Asset rejected by the server",
         "legacyAssetBanner": "Legacy asset, no longer editable. Delete it and recreate it as a figure (Mermaid, Vega-Lite, DOT, mathematical) or an uploaded image.",
@@ -1254,6 +1255,24 @@
             "labelsCrowded": "Labels are too many or too close: some end up next to another, or were not drawn. Shorten the labels or reduce the annotated points.",
             "symbolicTimeout": "Symbolic computation timed out: values are approximate.",
             "symbolic": "Symbolic computation unavailable: values are approximate."
+          }
+        },
+        "tikz": {
+          "title": "TikZ diagram",
+          "code": "TikZ source",
+          "preview": "Preview (compiled by the server)",
+          "previewEmpty": "Write the source (or pick a template) to see the preview",
+          "insertTemplate": "Insert template…",
+          "warnings": "Rendering warnings: saving accepts them, but automatic generation would reject the figure",
+          "groups": {
+            "blocks": "Block diagrams",
+            "circuits": "Circuits"
+          },
+          "templates": {
+            "chain": "Measurement chain",
+            "vibrometer": "Laser Doppler vibrometer",
+            "divider": "Voltage divider",
+            "wheatstone": "Wheatstone bridge"
           }
         }
       }

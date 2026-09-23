@@ -638,6 +638,7 @@ export function LessonContentEditDialog({
                 "courses.lessonsContent.editor.assetActions.addVisualAsset",
               )}
               allowSourceFigures
+              allowTikz
             />
           </SectionGroup>
 

@@ -15,7 +15,10 @@ modelli e li fa passare dal validatore e dal renderer DI PRODUZIONE:
   leggono file e prova di render con il binario `dot`, più la MISURA della
   geometria dell'SVG reso (ogni testo dentro la tela e dentro il nodo che
   lo possiede, nessuna etichetta sovrapposta a un'altra, nessun arco che
-  attraversa un'etichetta).
+  attraversa un'etichetta);
+* TikZ (`TikzEditor.tsx`, WP6) — il lexer ovunque; con TeX
+  `REGISTRY["tikz"].validate(code, deep=True)`: compilazione nella sandbox
+  e oracolo geometrico severo (nessun avviso nell'anteprima).
 
 Motivo: un modello che il docente sceglie dal menu e che poi viene
 rifiutato al salvataggio (422 per asset) è un difetto peggiore della sua
@@ -111,7 +114,14 @@ def _extract(rel: str) -> list[Template]:
 MERMAID = _extract("MermaidEditor.tsx")
 VEGALITE = _extract("VegaLiteEditor.tsx")
 DOT = _extract("DotEditor.tsx")
-ALL = [*MERMAID, *VEGALITE, *DOT]
+# TikZ: nei template literal ogni barra è raddoppiata (`\\node`); il
+# sorgente vero è quello che vede il browser.
+TIKZ_RAW = _extract("TikzEditor.tsx")
+TIKZ = [
+    Template(t.editor, t.id, t.label_key, t.group, t.group_key, t.code.replace("\\\\", "\\"))
+    for t in TIKZ_RAW
+]
+ALL = [*MERMAID, *VEGALITE, *DOT, *TIKZ]
 
 
 def _ids(templates: list[Template]) -> list[str]:
@@ -146,13 +156,14 @@ def test_the_extractor_sees_the_whole_catalogue() -> None:
     assert len(MERMAID) == len(theme.MERMAID_D8_TYPES), _ids(MERMAID)
     assert len(VEGALITE) >= 20, _ids(VEGALITE)
     assert len(DOT) >= 18, _ids(DOT)
+    assert len(TIKZ) >= 4, _ids(TIKZ)
     for tpl in ALL:
         assert tpl.code.strip(), f"{tpl.editor}: modello {tpl.id} vuoto"
         assert tpl.group, f"{tpl.editor}: modello {tpl.id} senza famiglia d'uso"
 
 
 def test_template_ids_are_unique_per_editor() -> None:
-    for templates in (MERMAID, VEGALITE, DOT):
+    for templates in (MERMAID, VEGALITE, DOT, TIKZ):
         ids = _ids(templates)
         assert len(ids) == len(set(ids)), ids
 
@@ -189,7 +200,7 @@ def test_no_locale_declares_a_template_that_no_editor_offers(language: str) -> N
 
 @pytest.mark.parametrize(
     ("editor", "templates"),
-    [("mermaid", MERMAID), ("vegalite", VEGALITE), ("dot", DOT)],
+    [("mermaid", MERMAID), ("vegalite", VEGALITE), ("dot", DOT), ("tikz", TIKZ)],
 )
 def test_the_menu_is_ordered_by_family_not_alphabetically(
     editor: str, templates: list[Template]
@@ -903,3 +914,42 @@ def test_no_mermaid_text_carries_a_literal_newline(
     sankey = mermaid_rendered["sankey"]
     assert sankey is not None
     assert "Lezioni 48" in sankey and "Lezioni\n48" not in sankey
+
+
+# ---------------------------------------------------------------------------
+# TikZ (WP6): lexer ovunque, compilazione e geometria con TeX
+# ---------------------------------------------------------------------------
+
+
+def test_tikz_templates_double_every_backslash() -> None:
+    """Una barra singola in un template literal è un escape di JavaScript
+    (`\\n` di `\\node` diventerebbe un a capo)."""
+    for tpl in TIKZ_RAW:
+        assert not re.search(r"(?<!\\)\\(?!\\)", tpl.code.replace("\\\\", "")), tpl.id
+        assert "${" not in tpl.code, f"{tpl.id}: interpolazione nel template literal"
+
+
+@pytest.mark.parametrize("tpl", TIKZ, ids=_ids(TIKZ))
+def test_tikz_template_passes_the_lexer(tpl: Template) -> None:
+    assert REGISTRY["tikz"].validate(tpl.code) == (True, ""), tpl.code
+
+
+@pytest.mark.parametrize("tpl", TIKZ, ids=_ids(TIKZ))
+def test_tikz_template_compiles_without_defects(
+    tpl: Template, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Con la geometria severa della generazione: un modello del menu non
+    deve portare avvisi nell'anteprima."""
+    from app.services import figure_render_service as frs
+    from app.services import tikz_compile_service
+    from tests.dep_guard import require_binary
+
+    require_binary("tex", "xelatex", "kpsewhich", "pdftocairo")
+    patched = frs.get_settings().model_copy(update={"figure_tikz_enabled": True})
+    monkeypatch.setattr(frs, "get_settings", lambda: patched)
+    monkeypatch.setattr(tikz_compile_service, "get_settings", lambda: patched)
+    tikz_compile_service.available.cache_clear()
+    try:
+        assert REGISTRY["tikz"].validate(tpl.code, deep=True) == (True, "")
+    finally:
+        tikz_compile_service.available.cache_clear()

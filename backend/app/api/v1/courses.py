@@ -126,6 +126,7 @@ from app.services import (
     file_service,
     remote_storage,
     source_figure_api_service,
+    tikz_api_service,
 )
 from app.services.figure_compute.isolated import FigureTimeoutError
 from app.services.figure_function_service import FunctionRenderError
@@ -3085,6 +3086,106 @@ async def render_function_figure(
         computed_caption=result.computed_caption,
         content_hash=result.content_hash,
     )
+
+
+class _TikzRenderIn(BaseModel):
+    content: str = Field(min_length=1, max_length=20_000)
+
+
+class _TikzRenderOut(BaseModel):
+    """Anteprima `tikz` dell'editor: SVG normalizzato, corpo minimo del
+    testo e difetti geometrici come avvisi."""
+
+    svg: str
+    font_px_min: float | None
+    warnings: list[str]
+    content_hash: str
+
+
+class _TikzViewIn(BaseModel):
+    asset_id: str = Field(min_length=1, max_length=200)
+    content: str = Field(min_length=1, max_length=20_000)
+
+
+class _TikzViewOut(BaseModel):
+    svg: str
+
+
+class _FigureFormatsOut(BaseModel):
+    formats: list[str]
+
+
+@router.post(
+    "/{course_id}/lesson-assets/render-tikz",
+    response_model=_TikzRenderOut,
+)
+@limiter.limit("20/minute")
+async def render_tikz_figure(
+    request: Request,
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    payload: _TikzRenderIn,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_EDIT),
+) -> _TikzRenderOut:
+    """Anteprima di una figura `tikz` per l'editor (WP6.5).
+
+    Oltre ai 20/min per IP, `FIGURE_TIKZ_PREVIEW_PER_MINUTE` compilazioni
+    per utente (gli hit della cache non contano). Errori:
+    `409 figure_format_unavailable | tikz_busy`, `422 tikz_source_invalid |
+    tikz_compile_failed | tikz_render_timeout` (`meta.errors` con
+    `loc=["content"]`), `429 tikz_preview_rate_limited`.
+    """
+    await _visible_course(db, org_id=org_id, course_id=course_id, current=current)
+    result = await tikz_api_service.preview(payload.content, user_id=current.id)
+    return _TikzRenderOut(
+        svg=result.svg,
+        font_px_min=result.font_px_min,
+        warnings=list(result.warnings),
+        content_hash=result.content_hash,
+    )
+
+
+@router.post(
+    "/{course_id}/lesson-assets/tikz-view",
+    response_model=_TikzViewOut,
+)
+@limiter.limit("60/minute")
+async def view_tikz_figure(
+    request: Request,
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    payload: _TikzViewIn,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_VIEW),
+) -> _TikzViewOut:
+    """SVG di una figura `tikz` GIÀ salvata in una lezione del corso (vista
+    lezione e slide): il sorgente deve coincidere con quello di un asset
+    `tikz` con lo stesso id, altrimenti `404 tikz_asset_not_found`."""
+    course = await _visible_course(db, org_id=org_id, course_id=course_id, current=current)
+    figure = await tikz_api_service.view(
+        db, course=course, asset_id=payload.asset_id, content=payload.content
+    )
+    return _TikzViewOut(svg=figure.svg)
+
+
+@router.get(
+    "/{course_id}/lesson-assets/formats",
+    response_model=_FigureFormatsOut,
+)
+async def list_figure_formats(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_VIEW),
+) -> _FigureFormatsOut:
+    """Formati di figura disponibili su questo server (kill-switch e
+    dipendenze): alimenta il menu «Aggiungi asset visivo»."""
+    await _visible_course(db, org_id=org_id, course_id=course_id, current=current)
+    return _FigureFormatsOut(formats=list(figure_render_service.available_formats()))
 
 
 # ---------------------------------------------------------------------------

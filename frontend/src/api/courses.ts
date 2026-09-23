@@ -479,6 +479,17 @@ export interface FunctionRenderOut {
   content_hash: string;
 }
 
+/** Risposta di `POST /lesson-assets/render-tikz` (anteprima dell'editor). */
+export interface TikzRenderOut {
+  /** SVG normalizzato (da mostrare come `data:image/svg+xml;base64`). */
+  svg: string;
+  /** Corpo minimo del testo in px (null senza testo). */
+  font_px_min: number | null;
+  /** Difetti geometrici della resa: avvisi, non errori. */
+  warnings: string[];
+  content_hash: string;
+}
+
 export interface LessonContentTable {
   table_id: string;
   markdown: string;
@@ -2359,6 +2370,41 @@ export const coursesApi = {
         { timeout: 30_000 },
       );
       return res.data;
+    },
+    /** Anteprima di una figura `tikz` dell'editor (COURSE_EDIT). */
+    renderTikz: async (
+      orgId: string,
+      courseId: string,
+      content: string,
+    ): Promise<TikzRenderOut> => {
+      const res = await apiClient.post<TikzRenderOut>(
+        `${base(orgId)}/${courseId}/lesson-assets/render-tikz`,
+        { content },
+        { timeout: 60_000 },
+      );
+      return res.data;
+    },
+    /** SVG di una figura `tikz` già salvata in una lezione (COURSE_VIEW):
+     *  il backend la rende solo se id e sorgente coincidono con un asset. */
+    tikzView: async (
+      orgId: string,
+      courseId: string,
+      assetId: string,
+      content: string,
+    ): Promise<{ svg: string }> => {
+      const res = await apiClient.post<{ svg: string }>(
+        `${base(orgId)}/${courseId}/lesson-assets/tikz-view`,
+        { asset_id: assetId, content },
+        { timeout: 60_000 },
+      );
+      return res.data;
+    },
+    /** Formati di figura disponibili sul server (kill-switch e dipendenze). */
+    formats: async (orgId: string, courseId: string): Promise<string[]> => {
+      const res = await apiClient.get<{ formats: string[] }>(
+        `${base(orgId)}/${courseId}/lesson-assets/formats`,
+      );
+      return res.data.formats;
     },
   },
   lessonVideo: {
