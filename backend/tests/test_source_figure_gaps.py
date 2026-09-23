@@ -406,3 +406,104 @@ async def test_phase_3_waits_for_the_gap_check(
     )
     await seeded_db.commit()
     assert lesson_id in await ready_ids()
+
+
+@pytest.fixture(scope="module")
+def fixture_pdf(tmp_path_factory: pytest.TempPathFactory) -> bytes:
+    from tests.fixtures.source_figures.build import PDF_NAME, build_all
+
+    directory = tmp_path_factory.mktemp("gap_fixtures")
+    build_all(directory)
+    return (directory / PDF_NAME).read_bytes()
+
+
+async def test_openalex_figures_come_from_the_open_access_pdf(
+    seeded_db: AsyncSession,
+    env: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    fixture_pdf: bytes,
+) -> None:
+    """Con la chiave OpenAlex: PDF open access del lavoro, ritagli estratti
+    dal processo figlio vero (motore euristico), Vision sulle didascalie
+    più vicine alla lezione, riga con attribuzione del lavoro e licenza
+    della location, `external_id` = lavoro#ritaglio."""
+    from app.services import course_document_figures_worker as figures_worker
+    from app.services import openalex_client
+    from app.services.openalex_client import _to_work
+
+    settings = env["settings"].model_copy(
+        update={
+            "openalex_api_key": "k-test",
+            "figure_extraction_enabled": True,
+            "figure_extraction_engine": "heuristic",
+            "figure_extraction_block_pages": 2,
+        }
+    )
+    monkeypatch.setattr(gaps, "get_settings", lambda: settings)
+    monkeypatch.setattr(figures_worker, "get_settings", lambda: settings)
+    monkeypatch.setattr(figures_worker, "mem_available_mb", lambda: None)
+    figures_worker._reset_probe_for_tests()
+    env["files"] = []  # Wikimedia non trova nulla: tocca a OpenAlex.
+    work = _to_work(
+        {
+            "id": "https://openalex.org/W42",
+            "doi": "https://doi.org/10.1000/ldv",
+            "title": "Vibrometria laser Doppler",
+            "authorships": [{"author": {"display_name": "Mario Rossi"}}],
+            "publication_year": 2021,
+            "primary_location": {"source": {"display_name": "Misure"}},
+            "open_access": {"is_oa": True},
+            "best_oa_location": {
+                "pdf_url": "https://example.org/ldv.pdf",
+                "landing_page_url": "https://example.org/ldv",
+                "license": "cc-by",
+            },
+        }
+    )
+
+    async def search_open_works(query: str, *, per_page: int) -> list[Any]:
+        env["calls"].append(("openalex", query))
+        return [work]
+
+    async def download_pdf(url: str, *, max_bytes: int) -> bytes:
+        env["calls"].append(("pdf", url))
+        return fixture_pdf
+
+    async def assess(image: bytes, context: Any, *, source_title: Any, source_text: Any) -> Any:
+        env["calls"].append(("assess", source_text))
+        return _verdict("vibrometro laser" in str(source_text).lower()), dict(USAGE)
+
+    monkeypatch.setattr(openalex_client, "search_open_works", search_open_works)
+    monkeypatch.setattr(openalex_client, "download_pdf", download_pdf)
+    monkeypatch.setattr(relevance, "assess_candidate", assess)
+    course_id, lesson_id = await _lesson(seeded_db)
+    await gap_worker._tick()
+    lesson = await _fresh(seeded_db, lesson_id)
+    assert lesson.figures_gap_status == "done", lesson.figures_gap_stats
+    assert ("pdf", "https://example.org/ldv.pdf") in env["calls"]
+    rows = list(
+        (
+            await seeded_db.execute(
+                select(CourseDocumentFigure).where(CourseDocumentFigure.course_id == course_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(rows) == 1, [r.source_caption for r in rows]
+    row = rows[0]
+    assert (row.source_kind, row.document_id, row.license) == ("openalex", None, "cc_by")
+    assert row.external_id.startswith("https://openalex.org/W42#")
+    assert row.page == 1 and "vibrometro laser Doppler" in str(row.source_caption)
+    assert row.attribution["authors"] == ["Mario Rossi"]
+    assert row.attribution["figure_number"] == "2.1"
+    assert row.source_url == "https://example.org/ldv"
+    resolved = await resolve_source_figures(
+        seeded_db,
+        course_id=course_id,
+        assets=[{"asset_id": "SRC-y", "format": "source_figure", "content": str(row.id)}],
+        language="it",
+    )
+    assert resolved["SRC-y"].attribution_text == (
+        "Fonte: Mario Rossi, «Vibrometria laser Doppler», Misure, 2021, fig. 2.1, p. 1 (CC BY)"
+    )
