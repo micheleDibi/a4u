@@ -44,6 +44,7 @@ from app.schemas.course import (
     CourseUpdateInput,
     TaxonomyAssignments,
 )
+from app.schemas.document_bibliography import DocumentBibliography
 from app.services import file_service
 from app.services.organization_course_settings_service import (
     get_or_create_settings,
@@ -779,6 +780,9 @@ async def add_document_from_bytes(
     mime_type: str,
     actor_id: uuid.UUID,
     citation_policy: str = "citable",
+    origin: str = "upload",
+    bibliography: DocumentBibliography | None = None,
+    bibliography_source: str | None = None,
 ) -> CourseDocument:
     """Sibling di `add_document` che riceve bytes invece di un
     `UploadFile`. Usato per importare paper scientifici scaricati da
@@ -786,7 +790,13 @@ async def add_document_from_bytes(
     generati da paper non-OA. Stesso flusso: salva su disco -> crea
     `CourseDocument` con `summary_status='pending'` -> il worker
     `course_document_worker` prende in carico.
+
+    `origin`, `bibliography` e `bibliography_source` registrano la
+    provenienza (riga «Fonte» delle figure di fonte): la bibliografia
+    arriva da fonti deterministiche, mai dal modello.
     """
+    if (bibliography is None) != (bibliography_source is None):
+        raise ValueError("bibliography e bibliography_source vanno passati insieme")
     public_path, filename_stored, size_bytes = (
         await file_service.save_document_from_bytes(
             payload,
@@ -804,6 +814,9 @@ async def add_document_from_bytes(
         uploaded_by_user_id=actor_id,
         summary_status="pending",
         citation_policy=citation_policy,
+        origin=origin,
+        bibliography=bibliography.as_json() if bibliography is not None else None,
+        bibliography_source=bibliography_source,
     )
     db.add(doc)
     try:
@@ -829,6 +842,8 @@ async def add_document_from_bytes(
             "mime_type": doc.mime_type,
             "source": "external_import",
             "citation_policy": doc.citation_policy,
+            "origin": doc.origin,
+            "bibliography_source": doc.bibliography_source,
         },
     )
     return doc

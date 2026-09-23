@@ -29,6 +29,7 @@ from app.core.errors import ValidationAppError
 from app.core.logging import get_logger
 from app.models.course import Course
 from app.models.course_document import CourseDocument
+from app.schemas.document_bibliography import DocumentBibliography
 from app.schemas.paper_search import PaperOut
 from app.services import course_service
 from app.services.openalex_client import OpenAlexError, download_pdf
@@ -78,6 +79,24 @@ def _build_filename_stem(paper: PaperOut) -> str:
     # Suffix UUID corto per unicità (l'utente potrebbe re-importare).
     suffix = uuid.uuid4().hex[:6]
     return f"{author_slug}_{year}_{title_slug}_{suffix}"
+
+
+def _paper_bibliography(paper: PaperOut) -> DocumentBibliography:
+    """Bibliografia del documento dai metadati OpenAlex dell'import.
+
+    Serve alla riga «Fonte» delle figure di fonte; la licenza del PDF non
+    è nei metadati di ricerca e resta sconosciuta (NULL) sul documento.
+    """
+    year = paper.year if paper.year and 1400 <= paper.year <= 2100 else None
+    return DocumentBibliography(
+        title=(paper.title or "")[:500] or None,
+        authors=[a[:200] for a in paper.authors if a and a.strip()][:50],
+        year=year,
+        container=(paper.journal or "")[:300] or None,
+        doi=(paper.doi or "")[:200] or None,
+        url=(paper.doi_url or "")[:1000] or None,
+        openalex_id=(paper.id or "")[:100] or None,
+    )
 
 
 def _render_metadata_md(paper: PaperOut) -> str:
@@ -183,6 +202,7 @@ async def import_paper(
             pdf_bytes = None
 
     stem = _build_filename_stem(paper)
+    bibliography = _paper_bibliography(paper)
 
     if pdf_bytes is not None:
         try:
@@ -194,6 +214,9 @@ async def import_paper(
                 mime_type="application/pdf",
                 actor_id=actor_id,
                 citation_policy=citation_policy,
+                origin="paper_import",
+                bibliography=bibliography,
+                bibliography_source="openalex",
             )
             return PaperImportResult(document=doc, mode="pdf")
         except ValidationAppError as exc:
@@ -216,5 +239,8 @@ async def import_paper(
         mime_type="text/markdown",
         actor_id=actor_id,
         citation_policy=citation_policy,
+        origin="paper_metadata",
+        bibliography=bibliography,
+        bibliography_source="openalex",
     )
     return PaperImportResult(document=doc, mode="metadata")
