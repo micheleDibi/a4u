@@ -426,6 +426,42 @@ class Settings(BaseSettings):
     # Fase 4 identico a prima della feature.
     figure_slides_coverage_repair_enabled: bool = True
 
+    # Letteratura aperta (WP5): una lezione con meno di
+    # `figure_source_min_per_lesson` figure di fonte pertinenti dai documenti
+    # riceve, prima della Fase 3, figure da Wikimedia Commons e (solo con
+    # `openalex_api_key`) dai PDF open access di OpenAlex, fino al budget
+    # (b). Solo ritagli nel catalogo del corso, mai documenti: riassunti,
+    # testo e riferimenti delle lezioni non cambiano. In produzione resta
+    # spenta finché non la si accende (rete esterna, costo Vision).
+    figure_literature_enabled: bool = True
+    # Candidate valutate dalla Vision per lezione (PROMPT 20) e tetto delle
+    # figure della letteratura aperta per corso.
+    figure_literature_max_candidates_per_lesson: int = 8
+    figure_literature_max_per_course: int = 40
+    # Tempo massimo del lavoro di una lezione (ricerca, download, Vision).
+    figure_literature_timeout_seconds: int = 300
+    # Download: byte massimi di un'immagine e di un PDF, pixel decodificati
+    # massimi, pagine massime di un PDF OpenAlex.
+    figure_literature_max_image_mb: int = 20
+    figure_literature_max_pdf_mb: int = 30
+    figure_literature_max_image_pixels: int = 40_000_000
+    figure_literature_max_pdf_pages: int = 40
+    # Lato del PNG chiesto a Wikimedia (anche per gli SVG, resi da Commons).
+    figure_literature_image_width: int = 2_000
+    # Errori recuperabili (rete, 429) → pending fino a questo tetto.
+    figure_literature_auto_retry_max: int = 2
+    figure_literature_poll_interval_seconds: int = 5
+    wikimedia_api_url: str = "https://commons.wikimedia.org/w/api.php"
+    # OpenAlex chiede una API key dal 13/02/2026: senza, la ricerca delle
+    # figure salta OpenAlex (Wikimedia resta).
+    openalex_api_key: str | None = None
+    # Termini di ricerca e pertinenza delle candidate (PROMPT 20); il modello
+    # deve stare a listino (`openai_pricing.MODEL_PRICING`).
+    openai_figure_relevance_model: str = "gpt-4.1-mini"
+    openai_figure_relevance_reasoning_effort: str | None = None
+    openai_figure_relevance_max_tokens: int = 800
+    openai_figure_relevance_timeout_seconds: int = 60
+
     # §7 — Export PDF lezioni.
     # Cap=2: rendering Playwright è I/O+CPU intensive (Chromium istanza).
     course_lesson_pdf_poll_interval_seconds: int = 4
@@ -573,6 +609,7 @@ class Settings(BaseSettings):
         "bootstrap_admin_password",
         "minimax_api_key",
         "openai_api_key",
+        "openalex_api_key",
         "runpod_api_key",
         "runpod_tts_endpoint_id",
         "runpod_musetalk_endpoint_id",

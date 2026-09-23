@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import ast
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -538,3 +539,95 @@ def test_migration_downgrade_drops_every_added_column() -> None:
                     )
     dropped |= {("course_document", c) for c in downgrade_tuple}
     assert added == dropped
+
+
+# --- migrazione 0038: letteratura aperta (WP5) ------------------------------
+
+
+async def _two_courses(db: AsyncSession) -> tuple[uuid.UUID, uuid.UUID]:
+    first, _org, _user = await build_course(db, modules=1, lessons_per_module=1)
+    second, _org2, _user2 = await build_course(db, modules=1, lessons_per_module=1)
+    return first, second
+
+
+_MIGRATION_0038 = _MIGRATION.parent / "0038_literature_figures_gaps.py"
+
+
+def test_migration_0038_matches_models() -> None:
+    """CHECK dello stato dei buchi e indice unico parziale delle figure
+    esterne: stessa definizione nella migrazione e nei modelli."""
+    from app.models.course_lesson import CourseLesson
+
+    text = _MIGRATION_0038.read_text(encoding="utf-8")
+    tree = ast.parse(text)
+    checks: dict[str, str] = {}
+    indexes: dict[str, tuple[list[str], str]] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        if node.func.attr == "create_check_constraint":
+            name, _table, cond = node.args[:3]
+            assert isinstance(name, ast.Constant) and isinstance(cond, ast.Constant)
+            checks[name.value] = cond.value
+        if node.func.attr == "create_index":
+            name, _table, cols = node.args[:3]
+            assert isinstance(name, ast.Constant) and isinstance(cols, ast.List)
+            where = next(k.value for k in node.keywords if k.arg == "postgresql_where")
+            assert isinstance(where, ast.Call) and isinstance(where.args[0], ast.Constant)
+            indexes[name.value] = (
+                [c.value for c in cols.elts if isinstance(c, ast.Constant)],
+                where.args[0].value,
+            )
+    # La naming convention (`ck_%(table_name)s_%(constraint_name)s`) vale per
+    # modello e migrazione: si confrontano le condizioni, come per la 0037.
+    lesson_checks = {
+        _norm(str(c.sqltext))
+        for c in CourseLesson.__table__.constraints
+        if isinstance(c, CheckConstraint) and str(c.name).endswith("figures_gap_status")
+    }
+    assert lesson_checks == {_norm(checks["ck_course_lesson_figures_gap_status"])}
+    (index,) = [
+        i
+        for i in CourseDocumentFigure.__table__.indexes
+        if i.name == "uq_course_document_figure_external"
+    ]
+    columns, where = indexes["uq_course_document_figure_external"]
+    assert index.unique and [c.name for c in index.columns] == columns
+    assert _norm(str(index.dialect_options["postgresql"]["where"])) == _norm(where)
+
+
+async def test_external_figure_is_unique_per_course(db: AsyncSession) -> None:
+    course_id, other_id = await _two_courses(db)
+
+    def external(course: uuid.UUID) -> CourseDocumentFigure:
+        return build_document_figure(
+            course,
+            None,
+            license="cc_by_sa",
+            source_kind="wikimedia",
+            attribution={"title": "LDV", "authors": ["Jane Doe"]},
+            external_id="commons:101",
+        )
+
+    db.add_all([external(course_id), external(other_id)])
+    await db.commit()
+    db.add(external(course_id))
+    with pytest.raises(IntegrityError):
+        await db.commit()
+    await db.rollback()
+
+
+async def test_gap_status_domain(db: AsyncSession) -> None:
+    from app.models.course_lesson import CourseLesson
+
+    course_id, _other = await _two_courses(db)
+    lesson = (
+        (await db.execute(select(CourseLesson).where(CourseLesson.course_id == course_id)))
+        .scalars()
+        .first()
+    )
+    assert lesson is not None
+    lesson.figures_gap_status = "chissà"
+    with pytest.raises(IntegrityError):
+        await db.commit()
+    await db.rollback()

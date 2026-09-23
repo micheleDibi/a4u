@@ -57,10 +57,28 @@ _DEFAULTS: dict[str, object] = {
     "openai_figure_redundancy_reasoning_effort": None,
     "openai_figure_redundancy_max_tokens": 1500,
     "figure_slides_coverage_repair_enabled": True,
+    "figure_literature_enabled": True,
+    "figure_literature_max_candidates_per_lesson": 8,
+    "figure_literature_max_per_course": 40,
+    "figure_literature_timeout_seconds": 300,
+    "figure_literature_max_image_mb": 20,
+    "figure_literature_max_pdf_mb": 30,
+    "figure_literature_max_image_pixels": 40_000_000,
+    "figure_literature_max_pdf_pages": 40,
+    "figure_literature_image_width": 2000,
+    "figure_literature_auto_retry_max": 2,
+    "figure_literature_poll_interval_seconds": 5,
+    "wikimedia_api_url": "https://commons.wikimedia.org/w/api.php",
+    "openalex_api_key": None,
+    "openai_figure_relevance_model": "gpt-4.1-mini",
+    "openai_figure_relevance_reasoning_effort": None,
+    "openai_figure_relevance_max_tokens": 800,
+    "openai_figure_relevance_timeout_seconds": 60,
 }
 
-# In compose ed .env.example l'estrazione resta spenta finché M0 non passa.
-_DEPLOY_OVERRIDES = {"FIGURE_EXTRACTION_ENABLED": "false"}
+# In compose ed .env.example estrazione e letteratura aperta restano spente
+# finché non le si accende (M0; rete esterna e costo Vision).
+_DEPLOY_OVERRIDES = {"FIGURE_EXTRACTION_ENABLED": "false", "FIGURE_LITERATURE_ENABLED": "false"}
 
 
 def _code_defaults() -> dict[str, object]:
@@ -108,7 +126,12 @@ def test_env_example_defaults_match_the_code() -> None:
 
 
 @pytest.mark.parametrize(
-    "setting", ["openai_figure_describe_model", "openai_figure_redundancy_model"]
+    "setting",
+    [
+        "openai_figure_describe_model",
+        "openai_figure_redundancy_model",
+        "openai_figure_relevance_model",
+    ],
 )
 def test_default_models_are_priced(setting: str) -> None:
     model = str(_DEFAULTS[setting])

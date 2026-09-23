@@ -121,6 +121,11 @@ class CourseLesson(UUIDPKMixin, TimestampMixin, Base):
             name="ck_course_lesson_content_progress",
         ),
         CheckConstraint(
+            "figures_gap_status IS NULL OR figures_gap_status IN "
+            "('pending','processing','done','skipped','failed')",
+            name="ck_course_lesson_figures_gap_status",
+        ),
+        CheckConstraint(
             "pdf_status IN ('empty','pending','processing','ready','failed')",
             name="ck_course_lesson_pdf_status",
         ),
@@ -250,6 +255,27 @@ class CourseLesson(UUIDPKMixin, TimestampMixin, Base):
     # CRUD manuale e la duplicazione possono solo potarla o rimapparla,
     # mai aggiungere verdetti. Non fa parte di `content_raw`.
     content_figure_review: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB(none_as_null=True), nullable=True
+    )
+    # Buchi di figure di fonte (WP5, migrazione 0038): verifica, prima della
+    # Fase 3, che la lezione abbia abbastanza figure di fonte pertinenti; se
+    # no la letteratura aperta integra. NULL = mai verificata. `usage` è il
+    # costo cumulativo delle chiamate AI della ricerca (termini e
+    # pertinenza, dashboard admin), `stats` l'esito dell'ultima verifica.
+    figures_gap_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    figures_gap_attempts: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, default=0, server_default="0"
+    )
+    figures_gap_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    figures_gap_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    figures_gap_usage: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB(none_as_null=True), nullable=True
+    )
+    figures_gap_stats: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB(none_as_null=True), nullable=True
     )
     content_attempts: Mapped[int] = mapped_column(

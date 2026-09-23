@@ -16,6 +16,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -190,6 +191,16 @@ class CourseDocumentFigure(UUIDPKMixin, TimestampMixin, Base):
             "course_id",
             "phash",
         ),
+        # La stessa figura esterna (letteratura aperta, WP5) una volta per
+        # corso; le figure staccate non hanno `external_id` (migrazione 0038).
+        Index(
+            "uq_course_document_figure_external",
+            "course_id",
+            "source_kind",
+            "external_id",
+            unique=True,
+            postgresql_where=text("document_id IS NULL AND external_id IS NOT NULL"),
+        ),
     )
 
     # --- Riferimenti ------------------------------------------------------
@@ -285,6 +296,14 @@ class CourseDocumentFigure(UUIDPKMixin, TimestampMixin, Base):
     attribution: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB(none_as_null=True), nullable=True
     )
+
+    # --- Letteratura aperta (WP5, migrazione 0038) ------------------------
+    # Identità nella fonte esterna (`commons:<pageid>`, `<W…>#<locator>`),
+    # pagina della fonte e data del recupero. NULL per le figure dei
+    # documenti del corso.
+    external_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    source_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    retrieved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     document: Mapped[CourseDocument | None] = relationship(
         "CourseDocument", back_populates="figures"

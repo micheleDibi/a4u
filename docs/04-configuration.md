@@ -312,6 +312,28 @@ proprio nel prompt di Fase 3.
 | `OPENAI_FIGURE_REDUNDANCY_MAX_TOKENS` | `1500` | Tetto dell'output del revisore. |
 | `FIGURE_SLIDES_COVERAGE_REPAIR_ENABLED` | `true` | Fase 4: inserisce la slide dedicata mancante per ogni figura di Fase 3 (generate e di fonte). `false` = output di Fase 4 identico a prima. |
 
+**Letteratura aperta (WP5).** Una lezione ordinaria con meno di `FIGURE_SOURCE_MIN_PER_LESSON` figure di fonte pertinenti riceve, prima della Fase 3, figure da Wikimedia Commons e (con `OPENALEX_API_KEY` ed estrazione accesa) dai PDF open access di OpenAlex: solo ritagli nel catalogo del corso, mai documenti. Download con `safe_http` (niente indirizzi interni, redirect ricontrollati, tetti di byte e di tempo, tipo verificato dai primi byte). Vedi `docs/courses/18-literature-figures.md`.
+
+| Variabile | Default | Note |
+|---|---|---|
+| `FIGURE_LITERATURE_ENABLED` | `true` nel codice, `false` in `.env.example` e compose | Kill-switch della ricerca nella letteratura aperta (rete esterna, costo Vision). Con `false` la Fase 3 non aspetta la verifica dei buchi. |
+| `FIGURE_LITERATURE_MAX_CANDIDATES_PER_LESSON` | `8` | Candidate valutate dalla Vision (PROMPT 20) per lezione. |
+| `FIGURE_LITERATURE_MAX_PER_COURSE` | `40` | Tetto delle figure della letteratura aperta per corso. |
+| `FIGURE_LITERATURE_TIMEOUT_SECONDS` | `300` | Tempo massimo della verifica di una lezione. |
+| `FIGURE_LITERATURE_MAX_IMAGE_MB` | `20` | Byte massimi di un'immagine scaricata. |
+| `FIGURE_LITERATURE_MAX_PDF_MB` | `30` | Byte massimi di un PDF OpenAlex. |
+| `FIGURE_LITERATURE_MAX_IMAGE_PIXELS` | `40000000` | Pixel massimi di un'immagine (controllati prima di decodificarla). |
+| `FIGURE_LITERATURE_MAX_PDF_PAGES` | `40` | Pagine massime di un PDF OpenAlex (oltre: scartato). |
+| `FIGURE_LITERATURE_IMAGE_WIDTH` | `2000` | Larghezza del PNG chiesto a Commons (anche per gli SVG, resi da Commons). |
+| `FIGURE_LITERATURE_AUTO_RETRY_MAX` | `2` | Ripetizioni su errori recuperabili (rete, 429, 5xx), poi `failed`. |
+| `FIGURE_LITERATURE_POLL_INTERVAL_SECONDS` | `5` | Intervallo del worker dei buchi. |
+| `WIKIMEDIA_API_URL` | `https://commons.wikimedia.org/w/api.php` | API di Commons; il contatto nello `User-Agent` è `PAPERS_POLITE_EMAIL`. |
+| `OPENALEX_API_KEY` | _(vuoto)_ | Obbligatoria per OpenAlex dal 13/02/2026 (anche per la ricerca paper); senza, i buchi usano solo Wikimedia. |
+| `OPENAI_FIGURE_RELEVANCE_MODEL` | `gpt-4.1-mini` | Termini di ricerca e pertinenza (PROMPT 20); deve stare a listino. |
+| `OPENAI_FIGURE_RELEVANCE_REASONING_EFFORT` | _(vuoto)_ | Solo per modelli reasoning. |
+| `OPENAI_FIGURE_RELEVANCE_MAX_TOKENS` | `800` | Tetto dell'output. |
+| `OPENAI_FIGURE_RELEVANCE_TIMEOUT_SECONDS` | `60` | Timeout di una chiamata. |
+
 ### OpenAI — parallelismo + auto-retry worker corso
 
 I worker batch del pipeline corso (Fase 2, Fase 3, Fase 4, Fase 5, e i tre
