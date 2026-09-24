@@ -580,6 +580,103 @@ async def test_openalex_figures_come_from_the_open_access_pdf(
     )
 
 
+async def test_blocked_publishers_fall_back_to_the_openalex_copy(
+    seeded_db: AsyncSession,
+    env: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    fixture_pdf: bytes,
+) -> None:
+    """MDPI risponde 403 ai download automatici: si prende la copia ospitata
+    da OpenAlex; lo stesso editore non si riprova nel giro; a credito finito
+    (429) la copia di OpenAlex non si chiede più."""
+    from app.services import course_document_figures_worker as figures_worker
+    from app.services import openalex_client
+    from app.services.openalex_client import OpenAlexError, _to_work
+
+    settings = env["settings"].model_copy(
+        update={
+            "openalex_api_key": "k-test",
+            "figure_extraction_enabled": True,
+            "figure_extraction_engine": "heuristic",
+            "figure_extraction_block_pages": 2,
+        }
+    )
+    monkeypatch.setattr(gaps, "get_settings", lambda: settings)
+    monkeypatch.setattr(figures_worker, "get_settings", lambda: settings)
+    monkeypatch.setattr(figures_worker, "mem_available_mb", lambda: None)
+    figures_worker._reset_probe_for_tests()
+    env["files"] = []
+
+    def mdpi_work(n: int) -> Any:
+        return _to_work(
+            {
+                "id": f"https://openalex.org/W{n}",
+                "title": "Vibrometria laser Doppler",
+                "authorships": [{"author": {"display_name": "Mario Rossi"}}],
+                "publication_year": 2021,
+                "primary_location": {"source": {"display_name": "Sensors"}},
+                "open_access": {"is_oa": True},
+                "best_oa_location": {
+                    "pdf_url": f"https://www.mdpi.com/{n}/pdf",
+                    "landing_page_url": f"https://www.mdpi.com/{n}",
+                    "license": "cc-by",
+                },
+                "has_content": {"pdf": True},
+            }
+        )
+
+    works = [mdpi_work(1), mdpi_work(2), mdpi_work(3)]
+    content_answers: list[Any] = [fixture_pdf]
+
+    async def search_open_works(query: str, *, per_page: int) -> list[Any]:
+        return works
+
+    async def download_pdf(url: str, *, max_bytes: int) -> bytes:
+        env["calls"].append(("publisher", url))
+        raise OpenAlexError(status=403, message="HTTP 403")
+
+    async def download_content_pdf(work: Any, *, max_bytes: int) -> bytes:
+        env["calls"].append(("content", work.id))
+        answer = content_answers.pop(0) if content_answers else None
+        if answer is None:
+            raise OpenAlexError(status=429, message="credito finito")
+        return answer
+
+    async def assess(image: bytes, context: Any, *, source_title: Any, source_text: Any) -> Any:
+        return _verdict(True), dict(USAGE)
+
+    monkeypatch.setattr(openalex_client, "search_open_works", search_open_works)
+    monkeypatch.setattr(openalex_client, "download_pdf", download_pdf)
+    monkeypatch.setattr(openalex_client, "download_content_pdf", download_content_pdf)
+    monkeypatch.setattr(relevance, "assess_candidate", assess)
+    course_id, lesson_id = await _lesson(seeded_db)
+    await gap_worker._tick()
+    lesson = await _fresh(seeded_db, lesson_id)
+    stats = lesson.figures_gap_stats
+    assert stats["downloads_openalex"] == 1, stats
+    assert stats["kept"] >= 1, stats
+    # L'editore che ha risposto 403 si prova una volta sola nel giro.
+    assert [c for c in env["calls"] if c[0] == "publisher"] == [
+        ("publisher", "https://www.mdpi.com/1/pdf")
+    ]
+    # Credito finito al secondo lavoro (429): il terzo non chiede la copia.
+    assert [c[1] for c in env["calls"] if c[0] == "content"] == [
+        "https://openalex.org/W1",
+        "https://openalex.org/W2",
+    ]
+    assert stats["download_errors"] == 2, stats
+    rows = list(
+        (
+            await seeded_db.execute(
+                select(CourseDocumentFigure).where(CourseDocumentFigure.course_id == course_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert rows and all(r.source_kind == "openalex" and r.license == "cc_by" for r in rows)
+
+
 async def test_gap_is_checked_only_before_phase_3(
     seeded_db: AsyncSession, env: dict[str, Any]
 ) -> None:

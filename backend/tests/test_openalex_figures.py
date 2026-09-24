@@ -229,3 +229,88 @@ def test_httpx_request_urls_are_not_logged() -> None:
     configure_logging(get_settings())
     assert logging.getLogger("httpx").getEffectiveLevel() >= logging.WARNING
     assert logging.getLogger("httpcore").getEffectiveLevel() >= logging.WARNING
+
+
+# --- PDF ospitati da OpenAlex (editori che bloccano i download) ------------------
+
+
+def _with_key(monkeypatch: pytest.MonkeyPatch, key: str | None) -> None:
+    patched = openalex_client.get_settings().model_copy(update={"openalex_api_key": key})
+    monkeypatch.setattr(openalex_client, "get_settings", lambda: patched)
+
+
+async def test_content_pdf_url_key_and_no_key_in_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.services import safe_http
+
+    _with_key(monkeypatch, "segreta-123")
+    work = _to_work(_work(has_content={"pdf": True, "grobid_xml": False}))
+    seen: list[str] = []
+
+    async def fetch(url: str, **kwargs: Any) -> Any:
+        seen.append(url)
+        assert kwargs["allowed_kinds"] == frozenset({"pdf"})
+        return safe_http.FetchResult(
+            content=b"%PDF-1.7", kind="pdf", final_url=url, status=200, content_type=None
+        )
+
+    monkeypatch.setattr(safe_http, "fetch", fetch)
+    assert await openalex_client.download_content_pdf(work, max_bytes=1000) == b"%PDF-1.7"
+    assert seen == ["https://content.openalex.org/works/W42.pdf?api_key=segreta-123"]
+
+    async def refused(url: str, **kwargs: Any) -> Any:
+        raise safe_http.SafeFetchError("http_error", f"HTTP 429 su {url}", status=429)
+
+    monkeypatch.setattr(safe_http, "fetch", refused)
+    with pytest.raises(OpenAlexError) as excinfo:
+        await openalex_client.download_content_pdf(work, max_bytes=1000)
+    assert excinfo.value.status == 429
+    assert "segreta-123" not in str(excinfo.value)
+
+
+async def test_content_pdf_needs_the_key_and_a_hosted_pdf(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services import safe_http
+
+    async def never(url: str, **kwargs: Any) -> Any:
+        raise AssertionError("nessuna richiesta attesa")
+
+    monkeypatch.setattr(safe_http, "fetch", never)
+    hosted = _to_work(_work(has_content={"pdf": True}))
+    _with_key(monkeypatch, None)
+    with pytest.raises(OpenAlexError):
+        await openalex_client.download_content_pdf(hosted, max_bytes=1000)
+    _with_key(monkeypatch, "k")
+    with pytest.raises(OpenAlexError):
+        await openalex_client.download_content_pdf(
+            _to_work(_work(has_content={"pdf": False})), max_bytes=1000
+        )
+
+
+@pytest.mark.parametrize(("key", "expected"), [("k-1", ["W42", "W45"]), (None, ["W42"])])
+async def test_open_works_without_a_publisher_pdf_need_the_hosted_copy(
+    monkeypatch: pytest.MonkeyPatch, key: str | None, expected: list[str]
+) -> None:
+    _with_key(monkeypatch, key)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert "has_content" in dict(request.url.params)["select"]
+        results = [
+            _work(),
+            # Solo la copia di OpenAlex (l'editore non espone il PDF).
+            _work(
+                id="https://openalex.org/W45",
+                best_oa_location={"landing_page_url": "https://x.org/abs", "license": "cc-by"},
+                has_content={"pdf": True},
+            ),
+            _work(
+                id="https://openalex.org/W46",
+                best_oa_location={"landing_page_url": "https://x.org/abs", "license": "cc-by"},
+                has_content={"pdf": False},
+            ),
+        ]
+        return httpx.Response(200, json={"results": results})
+
+    monkeypatch.setattr(openalex_client, "_client", _mock_client(handler))
+    works = await openalex_client.search_open_works("fiber bragg grating", per_page=5)
+    assert [w.id.rsplit("/", 1)[-1] for w in works] == expected

@@ -44,6 +44,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -81,7 +82,7 @@ EXTRACTION_VERSION = 1
 # Ritagli di un PDF OpenAlex valutati dalla Vision (i più vicini alla
 # lezione per didascalia) e lavori OpenAlex per ricerca.
 OPENALEX_FIGURES_PER_WORK = 3
-OPENALEX_WORKS_PER_QUERY = 3
+OPENALEX_WORKS_PER_QUERY = 5
 WIKIMEDIA_FILES_PER_QUERY = 10
 
 
@@ -179,6 +180,12 @@ class _Run:
     kept: int = 0
     evaluated: int = 0
     stats: dict[str, Any] = field(default_factory=dict)
+    # Editori che hanno rifiutato il download (401/403): nello stesso giro si
+    # passa subito alla copia di OpenAlex.
+    blocked_hosts: set[str] = field(default_factory=set)
+    # Copia di OpenAlex non più tentata (chiave rifiutata o credito del
+    # giorno finito).
+    content_off: bool = False
 
     @property
     def done(self) -> bool:
@@ -485,6 +492,45 @@ def _ranking_profile(run: _Run, queries: list[str], title: str | None) -> dict[s
     return profile
 
 
+async def _work_pdf(
+    run: _Run, work: openalex_client.OpenAlexWork, pdf_url: str | None, *, max_bytes: int
+) -> bytes | None:
+    """PDF del lavoro: prima dall'editore (gratis); se l'editore rifiuta i
+    download automatici (403 di MDPI, Hindawi…) o il PDF non si scarica,
+    dalla copia ospitata da OpenAlex (0,01 $ sulla API key). Mai scavalcare
+    le protezioni dell'editore: si usa solo la copia di OpenAlex. None se
+    non si ottiene nessun PDF."""
+    host = (urlsplit(pdf_url).hostname or "").lower() if pdf_url else ""
+    if pdf_url and host not in run.blocked_hosts:
+        try:
+            pdf = await openalex_client.download_pdf(pdf_url, max_bytes=max_bytes)
+        except openalex_client.OpenAlexError as exc:
+            if exc.status == 413:
+                # La copia di OpenAlex è lo stesso file: troppo grande anche lei.
+                run.count("rejected_too_large")
+                return None
+            run.count("publisher_errors")
+            if exc.status in (401, 403) and host:
+                run.blocked_hosts.add(host)
+        else:
+            run.count("downloads_publisher")
+            return pdf
+    if run.content_off or not openalex_client.content_pdf_available(work):
+        run.count("download_errors")
+        return None
+    try:
+        pdf = await openalex_client.download_content_pdf(work, max_bytes=max_bytes)
+    except openalex_client.OpenAlexError as exc:
+        run.count("download_errors")
+        if exc.status == 413:
+            run.count("rejected_too_large")
+        elif exc.status in (401, 402, 403, 429):
+            run.content_off = True
+        return None
+    run.count("downloads_openalex")
+    return pdf
+
+
 async def _from_openalex(db: AsyncSession, run: _Run, queries: list[str]) -> None:
     from app.services.document_figures.runner import ExtractionChildError
 
@@ -506,7 +552,9 @@ async def _from_openalex(db: AsyncSession, run: _Run, queries: list[str]) -> Non
                 return
             license = openalex_client.oa_location_license(work)
             pdf_url = openalex_client.oa_best_pdf_url(work)
-            if license not in OPEN_LICENSES or not pdf_url:
+            if license not in OPEN_LICENSES or not (
+                pdf_url or openalex_client.content_pdf_available(work)
+            ):
                 continue
             title = wikimedia_client.plain_text(work.title, limit=500)
             authors = [
@@ -515,12 +563,13 @@ async def _from_openalex(db: AsyncSession, run: _Run, queries: list[str]) -> Non
             if not (title or authors):
                 run.count("attribution_missing")
                 continue
-            try:
-                pdf = await openalex_client.download_pdf(
-                    pdf_url, max_bytes=int(settings.figure_literature_max_pdf_mb) * 1024 * 1024
-                )
-            except openalex_client.OpenAlexError:
-                run.count("download_errors")
+            pdf = await _work_pdf(
+                run,
+                work,
+                pdf_url,
+                max_bytes=int(settings.figure_literature_max_pdf_mb) * 1024 * 1024,
+            )
+            if pdf is None:
                 continue
             profile = _ranking_profile(run, queries, title)
 

@@ -26,6 +26,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlencode
 
 import httpx
 
@@ -117,8 +118,13 @@ _OA_LICENSES = {
 _WORK_ID_RE = re.compile(r"^(?:https://openalex\.org/)?(W\d{1,15})$")
 _WORK_SELECT = (
     "id,doi,title,display_name,authorships,publication_year,primary_location,"
-    "best_oa_location,open_access,type,keywords,cited_by_count,abstract_inverted_index"
+    "best_oa_location,open_access,type,keywords,cited_by_count,abstract_inverted_index,"
+    "has_content"
 )
+# PDF ospitati da OpenAlex (`has_content.pdf`): servono la API key (in query
+# string, come per l'API) e costano 0,01 $ a download, dentro 1 $ gratuito
+# al giorno per chiave (help.openalex.org/access/example-costs).
+_CONTENT_BASE_URL = "https://content.openalex.org"
 
 
 # Licenze ammesse per le FIGURE della letteratura aperta: le stesse della
@@ -132,6 +138,16 @@ def oa_best_pdf_url(work: OpenAlexWork) -> str | None:
     best = work.raw.get("best_oa_location") or {}
     url = best.get("pdf_url") if isinstance(best, dict) else None
     return url if isinstance(url, str) and url.startswith(("https://", "http://")) else None
+
+
+def content_pdf_available(work: OpenAlexWork) -> bool:
+    """True se OpenAlex ospita il PDF del lavoro (`has_content.pdf`)."""
+    has = work.raw.get("has_content")
+    return isinstance(has, dict) and has.get("pdf") is True
+
+
+def _has_api_key() -> bool:
+    return bool((get_settings().openalex_api_key or "").strip())
 
 
 def _json(resp: httpx.Response) -> Any:
@@ -189,7 +205,8 @@ async def get_work(work_id: str) -> OpenAlexWork:
 
 async def search_open_works(query: str, *, per_page: int = 5) -> list[OpenAlexWork]:
     """Lavori open access con licenza aperta (CC BY, CC BY-SA, CC0, pubblico
-    dominio) e il PDF della stessa location."""
+    dominio) e un PDF: quello della stessa location o, con la API key, la
+    copia ospitata da OpenAlex."""
     licenses = "|".join(_OA_FIGURE_LICENSES)
     params: dict[str, Any] = {
         "search": query.strip(),
@@ -206,7 +223,12 @@ async def search_open_works(query: str, *, per_page: int = 5) -> list[OpenAlexWo
     data = _json(resp)
     results = data.get("results") if isinstance(data, dict) else None
     works = [_to_work(w) for w in results or [] if isinstance(w, dict)]
-    return [w for w in works if oa_best_pdf_url(w) and oa_location_license(w)]
+    content = _has_api_key()
+    return [
+        w
+        for w in works
+        if oa_location_license(w) and (oa_best_pdf_url(w) or (content and content_pdf_available(w)))
+    ]
 
 
 def _reconstruct_abstract(
@@ -462,4 +484,40 @@ async def download_pdf(
         log.warning("openalex_pdf_download_failed", url=url[:300], error=str(exc))
         status = 413 if exc.code == "too_large" else exc.status
         raise OpenAlexError(status=status, message=f"Download PDF fallito: {exc}") from exc
+    return result.content
+
+
+async def download_content_pdf(work: OpenAlexWork, *, max_bytes: int) -> bytes:
+    """PDF del lavoro ospitato da OpenAlex (`content.openalex.org`), per gli
+    editori che rifiutano i download automatici (403 di MDPI, Hindawi…).
+    Costa 0,01 $ sulla API key. Stesse difese di `download_pdf`; la chiave
+    sta nell'URL, quindi né l'URL né il testo dell'errore vanno nei log.
+
+    Solleva `OpenAlexError(status=None)` senza richieste se manca la chiave
+    o il lavoro non ha un PDF ospitato; altrimenti lo stato HTTP (429 o 402
+    a credito giornaliero finito, 413 oltre `max_bytes`).
+    """
+    key = (get_settings().openalex_api_key or "").strip()
+    match = _WORK_ID_RE.match((work.id or "").strip())
+    if not key or match is None or not content_pdf_available(work):
+        raise OpenAlexError(status=None, message="PDF di OpenAlex non disponibile.")
+    work_id = match.group(1)
+    url = f"{_CONTENT_BASE_URL}/works/{work_id}.pdf?{urlencode({'api_key': key})}"
+    try:
+        result = await safe_http.fetch(
+            url,
+            max_bytes=max_bytes,
+            timeout=120.0,
+            allowed_kinds=frozenset({"pdf"}),
+            headers={"User-Agent": _user_agent()},
+        )
+    except safe_http.SafeFetchError as exc:
+        log.warning(
+            "openalex_content_download_failed", work=work_id, code=exc.code, status=exc.status
+        )
+        status = 413 if exc.code == "too_large" else exc.status
+        detail = str(exc).replace(key, "***")
+        raise OpenAlexError(
+            status=status, message=f"Download del PDF di OpenAlex fallito: {detail}"
+        ) from exc
     return result.content
