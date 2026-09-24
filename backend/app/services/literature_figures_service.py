@@ -128,15 +128,15 @@ def lesson_context(course: Course, lesson: CourseLesson) -> relevance.LessonCont
 
 
 async def documents_not_extracted(db: AsyncSession, course_id: uuid.UUID) -> int:
-    """Documenti citabili estraibili con figure ancora ignote (estrazione
-    mai richiesta o in corso). Con l'estrazione spenta non lo saranno mai:
-    0."""
+    """Documenti non esclusi estraibili con figure ancora ignote
+    (estrazione mai richiesta o in corso). Con l'estrazione spenta non lo
+    saranno mai: 0."""
     if not get_settings().figure_extraction_enabled:
         return 0
     count = await db.scalar(
         select(func.count(CourseDocument.id)).where(
             CourseDocument.course_id == course_id,
-            CourseDocument.citation_policy == "citable",
+            CourseDocument.citation_policy != "excluded",
             CourseDocument.mime_type.in_(tuple(EXTRACTABLE_MIMES)),
             (CourseDocument.figures_status.is_(None))
             | (CourseDocument.figures_status.in_(GAP_ACTIVE)),

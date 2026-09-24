@@ -416,18 +416,21 @@ async def test_resolver_course_scope_and_non_retroactive(
     # G7: il file della figura dell'altro corso non viene mai letto.
     assert remote_storage.uploads_key(str(foreign.storage_path)) not in storage.reads
 
-    # U1: il documento diventa content_only → la figura collocata resta.
+    # U1: il documento diventa content_only → la figura collocata resta; la
+    # riga diventa quella del materiale del docente, senza nominare il
+    # documento riservato.
     doc.citation_policy = "content_only"
     await db.commit()
     again = await resolve_source_figures(db, course_id=course_id, assets=assets[:1], language="it")
-    assert again["ok"].renderable and again["ok"].attribution_text == ok.attribution_text
+    assert again["ok"].renderable
+    assert again["ok"].attribution_text == "Fonte: materiale del docente"
     # Senza byte (payload API): stessa riga, nessuna lettura.
     reads = len(storage.reads)
     light = await resolve_source_figures(
         db, course_id=course_id, assets=assets[:1], language="it", with_bytes=False
     )
     assert light["ok"].renderable and light["ok"].data_url == ""
-    assert light["ok"].attribution_text == ok.attribution_text
+    assert light["ok"].attribution_text == again["ok"].attribution_text
     assert len(storage.reads) == reads
 
 

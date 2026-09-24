@@ -373,7 +373,7 @@
         "confirmTitle": "Cambiare la politica di citazione?",
         "confirmContentOnly": "\"{{name}}\" diventerà una fonte riservata: il contenuto resterà in uso ma l'origine non verrà più citata. Il riassunto verrà ripulito e rielaborato automaticamente. I contenuti già generati non cambiano: rigenera per applicare la nuova impostazione.",
         "confirmGeneric": "La nuova impostazione per \"{{name}}\" vale solo per le generazioni future. I contenuti già generati non cambiano: rigenera per applicare.",
-        "figuresNote": "Le figure di questo documento già collocate nelle lezioni restano, con la loro fonte, finché le lezioni non vengono rigenerate; non verranno più proposte se il documento non è citabile."
+        "figuresNote": "Le figure di questo documento già collocate nelle lezioni restano finché le lezioni non vengono rigenerate. Da fonte riservata la loro riga «Fonte» diventa «materiale del docente»; da documento escluso non verranno più proposte."
       },
       "summary": {
         "pending": "Da elaborare",
@@ -427,7 +427,7 @@
       "figures": {
         "extract": "Estrai figure",
         "extractAll": "Estrai le figure da tutti i documenti",
-        "extractAllHint": "Cerca schemi, grafici e foto nei PDF e nei DOCX citabili, per proporli nelle dispense con la fonte.",
+        "extractAllHint": "Cerca schemi, grafici e foto nei PDF, DOCX e PPTX non esclusi, per proporli nelle dispense con la fonte. Le figure delle fonti riservate compaiono come «materiale del docente».",
         "requested": "Estrazione delle figure avviata",
         "requestedAll": "Estrazione delle figure avviata per {{count}} documenti",
         "notStarted": "Figure non estratte",
@@ -444,7 +444,7 @@
         "coveragePartial": "Estrazione parziale: alcune pagine non sono state analizzate.",
         "errors": {
           "policy_excluded": "Documento escluso: le sue figure non vengono estratte.",
-          "policy_content_only": "Documento riservato (solo contenuto): le sue figure non vengono riprodotte.",
+          "policy_content_only": "Documento riservato: figure non estratte con la regola precedente. Usa «Estrai figure».",
           "unsupported_format": "Formato non supportato per le figure (solo PDF, DOCX e PPTX).",
           "extraction_disabled": "L'estrazione delle figure non è attiva su questa installazione.",
           "source_missing": "File del documento non trovato.",

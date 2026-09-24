@@ -127,11 +127,17 @@ async def test_extract_all_marks_unextractable_documents_skipped(
         "riservato.pdf": build_course_document(
             course.id, filename="riservato.pdf", policy="content_only"
         ),
+        # Saltato con la regola precedente (riservati mai estratti): torna in coda.
+        "vecchio.pdf": build_course_document(
+            course.id, filename="vecchio.pdf", policy="content_only"
+        ),
         "escluso.pdf": build_course_document(course.id, filename="escluso.pdf", policy="excluded"),
         "testo.md": build_course_document(course.id, filename="testo.md"),
     }
     docs["note.docx"].mime_type = DOCX
     docs["testo.md"].mime_type = "text/markdown"
+    docs["vecchio.pdf"].figures_status = "skipped"
+    docs["vecchio.pdf"].figures_error_code = "policy_content_only"
     seeded_db.add_all(docs.values())
     await seeded_db.commit()
     res = await client.post(_url(course), headers=_bearer(user_id))
@@ -139,13 +145,12 @@ async def test_extract_all_marks_unextractable_documents_skipped(
     by_name = {d["filename_original"]: d for d in res.json()}
     assert by_name["ok.pdf"]["figures_status"] == "pending"
     assert by_name["note.docx"]["figures_status"] == "pending"
-    assert (
-        by_name["riservato.pdf"]["figures_status"],
-        by_name["riservato.pdf"]["figures_error_code"],
-    ) == (
-        "skipped",
-        "policy_content_only",
-    )
+    # Fonte riservata = materiale del docente: si estrae.
+    for name in ("riservato.pdf", "vecchio.pdf"):
+        assert (by_name[name]["figures_status"], by_name[name]["figures_error_code"]) == (
+            "pending",
+            None,
+        )
     assert by_name["escluso.pdf"]["figures_error_code"] == "policy_excluded"
     assert by_name["testo.md"]["figures_error_code"] == "unsupported_format"
 
@@ -185,6 +190,21 @@ async def test_back_to_citable_requeues_only_policy_skips(seeded_db: AsyncSessio
         )
     assert skipped.figures_status == "pending" and skipped.figures_requested_at is not None
     assert (failed.figures_status, failed.figures_error_code) == ("failed", "corrupt")
+
+
+async def test_from_excluded_to_reserved_requeues(seeded_db: AsyncSession) -> None:
+    """Un documento escluso che diventa fonte riservata si estrae."""
+    course_id, _org, user = await build_course(seeded_db, modules=1, lessons_per_module=1)
+    course = await seeded_db.get(Course, course_id)
+    assert course is not None
+    doc = build_course_document(course_id, filename="a.pdf", policy="excluded")
+    doc.figures_status, doc.figures_error_code = "skipped", "policy_excluded"
+    seeded_db.add(doc)
+    await seeded_db.commit()
+    await course_service.update_document_citation_policy(
+        seeded_db, course=course, doc=doc, citation_policy="content_only", actor_id=user.id
+    )
+    assert (doc.figures_status, doc.figures_error_code) == ("pending", None)
 
 
 # --- cancellazione del documento (U1) ---------------------------------------------
@@ -339,7 +359,11 @@ async def test_script_dry_run_writes_nothing_and_apply_queues(
     disabled = build_course_document(course_id, filename="chiesto_a_estrazione_spenta.pdf")
     disabled.figures_status = "skipped"
     disabled.figures_error_code = "extraction_disabled"
-    seeded_db.add_all([doc, disabled])
+    # Fonte riservata saltata con la regola precedente: ora si estrae.
+    reserved = build_course_document(course_id, filename="riservato.pdf", policy="content_only")
+    reserved.figures_status = "skipped"
+    reserved.figures_error_code = "policy_content_only"
+    seeded_db.add_all([doc, disabled, reserved])
     await seeded_db.commit()
 
     async def run(*argv: str) -> None:
@@ -369,7 +393,7 @@ async def test_script_dry_run_writes_nothing_and_apply_queues(
     assert fresh is not None and fresh.figures_status is None
     assert "dry-run" in capsys.readouterr().out
     await run("--course", str(course_id), "--apply")
-    for doc_id in (doc.id, disabled.id):
+    for doc_id in (doc.id, disabled.id, reserved.id):
         fresh = await seeded_db.get(CourseDocument, doc_id, populate_existing=True)
         assert fresh is not None and fresh.figures_status == "pending"
 

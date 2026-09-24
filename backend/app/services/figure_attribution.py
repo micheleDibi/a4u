@@ -172,6 +172,9 @@ class AttributionSource:
     fallback_name: str | None = None
     # Riga di credito imposta dalla fonte (es. «Artist» di Wikimedia).
     credit: str | None = None
+    # Fonte riservata (materiale del docente): la riga non nomina il
+    # documento né la sua licenza, anche dopo lo stacco.
+    reserved: bool = False
 
     @property
     def identifies_source(self) -> bool:
@@ -199,6 +202,7 @@ class AttributionSource:
             "is_own_work": self.is_own_work,
             "fallback_name": self.fallback_name,
             "credit": self.credit,
+            "reserved": self.reserved,
         }
         return {k: v for k, v in data.items() if v not in (None, [], False, "")}
 
@@ -213,6 +217,10 @@ class AttributionSource:
         year = data.get("year")
         page = data.get("page")
         page_kind = data.get("page_kind")
+        reserved = data.get("reserved") is True
+        if reserved:
+            # La licenza della riga del DB è quella del documento riservato.
+            license = "unknown"
         return cls(
             authors=tuple(_clean(a) for a in authors if isinstance(a, str) and _clean(a)),
             title=_clean_optional(data.get("title")),
@@ -228,6 +236,7 @@ class AttributionSource:
             is_own_work=data.get("is_own_work") is True,
             fallback_name=_clean_optional(data.get("fallback_name")),
             credit=_clean_optional(data.get("credit")),
+            reserved=reserved,
         )
 
 
@@ -286,7 +295,22 @@ def attribution_source(
     attribuzione congelata sulla figura. Senza un dato che nomini la fonte
     (autori, titolo, credito, nome del file, materiale proprio) la figura
     non è attribuibile.
+
+    Fonte riservata (`content_only`) → materiale del docente: la riga non
+    nomina mai il documento (titolo, autori, file, anno, pagina, numero di
+    figura, licenza); resta solo il credito di terzi scritto nella
+    didascalia originale, se c'è.
     """
+    if (
+        fig.source_kind == "uploaded"
+        and doc is not None
+        and getattr(doc, "citation_policy", "citable") == "content_only"
+    ):
+        return AttributionSource(
+            credit=third_party_credit(getattr(fig, "source_caption", None)),
+            is_own_work=True,
+            reserved=True,
+        )
     figure_number = figure_number_from_label(fig.source_label)
     if fig.source_kind == "uploaded" and doc is not None:
         bibliography: dict[str, Any] = {}

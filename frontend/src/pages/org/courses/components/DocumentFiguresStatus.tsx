@@ -97,7 +97,7 @@ export function DocumentFiguresStatus({ doc, canExtract, pending, onExtract }: P
           {tooltip && <TooltipContent className="max-w-md">{tooltip}</TooltipContent>}
         </Tooltip>
       </TooltipProvider>
-      {showButton && status === "failed" && (
+      {showButton && (status === "failed" || status === "skipped") && (
         <Button
           variant="ghost"
           size="sm"

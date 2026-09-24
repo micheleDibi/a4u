@@ -7,15 +7,18 @@ export const FIGURE_EXTRACTABLE_MIME = [
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 ];
 
-/** Documento da cui si possono chiedere le figure (citabile, formato
- *  supportato, estrazione mai chiesta, fallita o saltata perché era spenta:
- *  riaccesa l'estrazione, si richiede di nuovo). */
+/** Documento da cui si possono chiedere le figure (non escluso: le fonti
+ *  riservate sono materiale del docente; formato supportato; estrazione mai
+ *  chiesta, fallita, saltata perché era spenta o saltata con la regola
+ *  precedente sulle fonti riservate). */
 export function canRequestFigures(d: CourseDocumentOut): boolean {
   return (
-    d.citation_policy === "citable" &&
+    d.citation_policy !== "excluded" &&
     FIGURE_EXTRACTABLE_MIME.includes(d.mime_type) &&
     (d.figures_status === null ||
       d.figures_status === "failed" ||
-      (d.figures_status === "skipped" && d.figures_error_code === "extraction_disabled"))
+      (d.figures_status === "skipped" &&
+        (d.figures_error_code === "extraction_disabled" ||
+          d.figures_error_code === "policy_content_only")))
   );
 }

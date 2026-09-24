@@ -3,8 +3,11 @@
 - Richiesta di estrazione (bottone «Estrai figure», script di
   amministrazione): idempotente; `figures_status` NULL = mai richiesta,
   nessun backfill automatico. Documenti non estraibili → `skipped` con il
-  motivo (politica, formato, estrazione spenta).
-- Cambio di politica verso `citable`: il documento torna in coda solo se era
+  motivo (documento escluso, formato, estrazione spenta). Le fonti riservate
+  (`content_only`) si estraggono: sono materiale del docente e la riga
+  «Fonte» non le nomina mai.
+- Cambio di politica da `excluded` (o, per i documenti saltati prima di
+  questa regola, da `content_only`): il documento torna in coda solo se era
   stato saltato proprio per la politica.
 - Cancellazione del documento (decisione U1, non retroattiva): le figure già
   usate da una lezione vengono staccate (riga e file conservati,
@@ -53,8 +56,6 @@ def skip_code(doc: CourseDocument) -> str | None:
     """Motivo per cui il documento non si estrae (None = estraibile)."""
     if doc.citation_policy == "excluded":
         return "policy_excluded"
-    if doc.citation_policy == "content_only":
-        return "policy_content_only"
     if doc.mime_type not in EXTRACTABLE_MIMES:
         return "unsupported_format"
     if not get_settings().figure_extraction_enabled:
@@ -144,12 +145,11 @@ async def request_course_extraction(
 
 
 def requeue_after_policy_change(doc: CourseDocument, *, old_policy: str) -> bool:
-    """Politica tornata `citable` su un documento saltato per la politica:
-    torna in coda. Nessun altro cambio (le figure già estratte restano;
-    il catalogo applica la politica corrente)."""
+    """Politica cambiata su un documento saltato per la politica, che ora
+    si estrae (non più escluso): torna in coda. Nessun altro cambio (le
+    figure già estratte restano; il catalogo applica la politica corrente)."""
     if (
-        doc.citation_policy == "citable"
-        and old_policy != "citable"
+        doc.citation_policy != old_policy
         and doc.figures_status == "skipped"
         and doc.figures_error_code in POLICY_SKIP_CODES
         and skip_code(doc) is None

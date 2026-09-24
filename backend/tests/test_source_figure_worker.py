@@ -460,17 +460,32 @@ async def test_resume_from_checkpoint(
     assert pages == {3, 4, 5}
 
 
-@pytest.mark.parametrize(
-    ("policy", "code"), [("excluded", "policy_excluded"), ("content_only", "policy_content_only")]
-)
-async def test_policy_blocks_extraction(
-    db: AsyncSession, storage: FakeStorage, fixture_pdf: bytes, policy: str, code: str
+async def test_excluded_document_is_not_extracted(
+    db: AsyncSession, storage: FakeStorage, fixture_pdf: bytes
 ) -> None:
-    doc = await _queued_document(db, storage, fixture_pdf, policy=policy)
+    doc = await _queued_document(db, storage, fixture_pdf, policy="excluded")
     doc = await _run(db, doc.id)
-    assert (doc.figures_status, doc.figures_error_code) == ("skipped", code)
+    assert (doc.figures_status, doc.figures_error_code) == ("skipped", "policy_excluded")
     assert await _figures(db, doc.id) == []
     assert storage.downloads == []
+
+
+async def test_reserved_document_is_extracted_without_its_title(
+    db: AsyncSession, storage: FakeStorage, fixture_pdf: bytes, vision: FakeVision
+) -> None:
+    """Fonte riservata = materiale del docente: si estrae, ma il titolo del
+    documento non arriva nemmeno alla Vision (la descrizione finisce nel
+    catalogo del prompt di Fase 3)."""
+    doc = await _queued_document(db, storage, fixture_pdf, policy="content_only")
+    doc = await _run(db, doc.id)
+    assert (doc.figures_status, doc.figures_error_code) == ("ready", None)
+    assert doc.figures_count == 4 and len(vision.calls) == 4
+    assert all(c.document_title is None for c in vision.calls)
+    # Controprova: lo stesso PDF citabile passa il titolo.
+    citable = await _queued_document(db, storage, fixture_pdf)
+    vision.calls.clear()
+    await _run(db, citable.id)
+    assert vision.calls and all(c.document_title == "Vibrometria laser" for c in vision.calls)
 
 
 async def test_unsupported_format_is_skipped(db: AsyncSession, storage: FakeStorage) -> None:

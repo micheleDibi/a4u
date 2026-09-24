@@ -5,10 +5,12 @@ Nessun backfill automatico: i documenti caricati prima della funzione hanno
 l'estrazione (bottone «Estrai figure» o questo script). Senza `--apply` lo
 script elenca soltanto che cosa farebbe (dry-run, nessuna scrittura).
 
-- default: documenti mai richiesti (`figures_status` NULL) o saltati
-  perché l'estrazione era spenta (`skipped/extraction_disabled`) → in coda
-  (`pending`), o `skipped` con il motivo se non estraibili (politica,
-  formato, estrazione spenta); il worker li prende uno alla volta;
+- default: documenti mai richiesti (`figures_status` NULL), saltati
+  perché l'estrazione era spenta (`skipped/extraction_disabled`) o fonti
+  riservate saltate con la regola precedente (`skipped/policy_content_only`:
+  ora si estraggono come materiale del docente) → in coda (`pending`), o
+  `skipped` con il motivo se non estraibili (documento escluso, formato,
+  estrazione spenta); il worker li prende uno alla volta;
 - `--retry-failed`: rimette in coda anche i documenti `failed`;
 - `--gc-detached`: figure staccate (documento cancellato) che nessuna
   lezione usa più → cancellate con i file.
@@ -69,9 +71,9 @@ async def run(args: argparse.Namespace) -> int:
             def eligible(doc: CourseDocument) -> bool:
                 if doc.figures_status is None:
                     return True
-                if (doc.figures_status, doc.figures_error_code) == (
-                    "skipped",
+                if doc.figures_status == "skipped" and doc.figures_error_code in (
                     "extraction_disabled",
+                    "policy_content_only",
                 ):
                     return True
                 return bool(args.retry_failed) and doc.figures_status == "failed"

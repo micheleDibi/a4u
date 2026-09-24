@@ -5,8 +5,9 @@ docs/courses/18-literature-figures.md):
 
 - ``select``: vale per il catalogo del prompt di Fase 3, per il PATCH di un
   asset nuovo o cambiato e per il ricontrollo di fine generazione. Applica
-  politica di citazione del documento, esclusione del docente e politica
-  di licenza.
+  politica di citazione del documento (gli esclusi non si propongono; le
+  fonti riservate sì, come materiale del docente), esclusione del docente
+  e politica di licenza.
 - ``render``: vale per le figure già collocate in una lezione. Verifica solo
   le condizioni strutturali (figura del corso, pronta, attribuibile, file
   presente): una figura non si ritira perché il documento è diventato
@@ -43,7 +44,6 @@ REASONS: tuple[str, ...] = (
     "excluded_by_user",
     "superseded",
     "document_excluded",
-    "document_content_only",
     "license_not_open",
     "attribution_missing",
     "file_missing",
@@ -110,7 +110,8 @@ def document_license_to_figure(document_license: str | None) -> str:
 
 def _is_own_work(fig: FigureLike, doc: DocumentLike | None) -> bool:
     if doc is not None:
-        return bool(doc.is_own_work)
+        # Una fonte riservata si assume materiale del docente.
+        return bool(doc.is_own_work) or doc.citation_policy == "content_only"
     if fig.source_kind != "uploaded":
         # La letteratura aperta non è mai materiale proprio del docente.
         return False
@@ -158,8 +159,6 @@ def figure_visibility(
                 return Visibility(False, "document_excluded")
             if doc.citation_policy == "excluded":
                 return Visibility(False, "document_excluded")
-            if doc.citation_policy == "content_only":
-                return Visibility(False, "document_content_only")
         if license_policy == "open_only" and not is_open_license(
             fig.license, is_own_work=_is_own_work(fig, doc)
         ):

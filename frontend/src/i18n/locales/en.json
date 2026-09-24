@@ -373,7 +373,7 @@
         "confirmTitle": "Change the citation policy?",
         "confirmContentOnly": "\"{{name}}\" will become a confidential source: its content stays in use but the origin will no longer be cited. The summary will be scrubbed and re-analyzed automatically. Already generated content does not change: regenerate to apply.",
         "confirmGeneric": "The new setting for \"{{name}}\" only applies to future generations. Already generated content does not change: regenerate to apply.",
-        "figuresNote": "Figures from this document already placed in lessons stay, with their source, until the lessons are regenerated; they will no longer be suggested if the document is not citable."
+        "figuresNote": "Figures from this document already placed in lessons stay until the lessons are regenerated. As a restricted source their “Source” line becomes “instructor's material”; if the document is excluded they will no longer be suggested."
       },
       "summary": {
         "pending": "To process",
@@ -427,7 +427,7 @@
       "figures": {
         "extract": "Extract figures",
         "extractAll": "Extract figures from all documents",
-        "extractAllHint": "Looks for diagrams, charts and photos in citable PDFs and DOCX files, to propose them in the lecture notes with their source.",
+        "extractAllHint": "Looks for diagrams, charts and photos in PDF, DOCX and PPTX files that are not excluded, to propose them in the lecture notes with their source. Figures from restricted sources are shown as “instructor's material”.",
         "requested": "Figure extraction started",
         "requestedAll": "Figure extraction started for {{count}} documents",
         "notStarted": "Figures not extracted",
@@ -444,7 +444,7 @@
         "coveragePartial": "Partial extraction: some pages were not analysed.",
         "errors": {
           "policy_excluded": "Excluded document: its figures are not extracted.",
-          "policy_content_only": "Restricted document (content only): its figures are not reproduced.",
+          "policy_content_only": "Restricted document: figures were not extracted under the previous rule. Use “Extract figures”.",
           "unsupported_format": "Format not supported for figures (PDF, DOCX and PPTX only).",
           "extraction_disabled": "Figure extraction is not enabled on this installation.",
           "source_missing": "Document file not found.",

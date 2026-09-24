@@ -3,10 +3,12 @@
 Il worker di Fase 3 gira davvero; OpenAI (PROMPT 3 e PROMPT 19) e la
 validazione degli asset sono sostituiti. Oracoli:
 
-- G2: figure di documenti `excluded`/`content_only`, escluse dal docente o
-  di altri corsi non entrano mai nel catalogo (canarini nelle descrizioni)
-  né nell'output; il ricontrollo TOCTOU toglie una figura il cui documento
-  diventa riservato durante la generazione, con audit;
+- G2: figure di documenti `excluded`, escluse dal docente o di altri
+  corsi non entrano mai nel catalogo (canarini nelle descrizioni) né
+  nell'output; quelle delle fonti riservate (`content_only`, materiale del
+  docente) sì, ma il nome del documento non entra mai nel prompt; il
+  ricontrollo TOCTOU toglie una figura il cui documento viene escluso
+  durante la generazione, con audit;
 - I1: senza catalogo messaggio user e riferimenti offerti sono quelli di
   prima, e `content_raw` ha le stesse chiavi;
 - la figura scelta diventa un asset `source_figure` con l'UUID, il budget
@@ -40,6 +42,7 @@ from app.services import course_lesson_content_worker as worker
 from app.services import openai_figure_redundancy_service as redundancy
 from app.services import openai_lesson_content_service as openai_svc
 from app.services import source_figure_catalog
+from app.services.figure_attribution import figure_attribution_line
 from app.services.lesson_figure_selection import figure_ref
 from tests.course_builders import build_course, build_course_document, find_lesson
 from tests.source_figure_builders import build_document_figure
@@ -47,9 +50,14 @@ from tests.source_figure_builders import build_document_figure
 CANARY_RESERVED = "CANARINORISERVATO"
 CANARY_EXCLUDED = "CANARINOESCLUSO"
 CANARY_USER = "CANARINOESCLUSODOCENTE"
+# Identità del documento riservato: mai nel prompt.
+CANARY_RESERVED_NAME = ("CANARINONOMEFILE", "CANARINOTITOLO", "CANARINOAUTORE")
 
 
-async def _setup(db: AsyncSession) -> dict[str, Any]:
+async def _setup(db: AsyncSession, *, with_reserved: bool = False) -> dict[str, Any]:
+    """Corso con una figura citabile pertinente, una esclusa dal docente e
+    una di un documento escluso; con `with_reserved` anche una figura della
+    fonte riservata, anch'essa proponibile."""
     course_id, _org, _user = await build_course(
         db, modules=1, lessons_per_module=1, content_status="pending"
     )
@@ -89,10 +97,18 @@ async def _setup(db: AsyncSession) -> dict[str, Any]:
 
     figures = {
         "good": fig(docs["citable"]),
-        "reserved": fig(docs["content_only"], CANARY_RESERVED),
         "excluded": fig(docs["excluded"], CANARY_EXCLUDED),
         "by_user": fig(docs["citable"], CANARY_USER, excluded_by_user=True),
     }
+    if with_reserved:
+        reserved = docs["content_only"]
+        reserved.filename_original = f"{CANARY_RESERVED_NAME[0]}.pdf"
+        reserved.bibliography = {
+            "title": CANARY_RESERVED_NAME[1],
+            "authors": [CANARY_RESERVED_NAME[2]],
+        }
+        reserved.bibliography_source = "user"
+        figures["reserved"] = fig(reserved, CANARY_RESERVED)
     db.add_all(figures.values())
     await db.commit()
     return {"course_id": course_id, "lesson_id": lesson.id, "docs": docs, "figures": figures}
@@ -212,6 +228,32 @@ async def test_catalog_respects_policies_and_figure_is_fused(
     assert [a["phase"] for a in tokens["assets"]] == ["redundancy"]
 
 
+async def test_reserved_figure_is_offered_without_the_document_name(
+    seeded_db: AsyncSession, fakes: dict[str, Any]
+) -> None:
+    """Fonte riservata = materiale del docente: la figura entra nel catalogo
+    e nella dispensa, ma nome del file, titolo e autori del documento non
+    entrano mai nel prompt, nel contenuto né nella riga «Fonte»."""
+    setup = await _setup(seeded_db, with_reserved=True)
+    reserved = setup["figures"]["reserved"]
+    await worker._process_one(setup["lesson_id"])
+    call = fakes["calls"][0]
+    prompt = call["user_prompt"]
+    assert figure_ref(reserved.id) in list(call["source_figure_refs"])
+    assert CANARY_RESERVED in prompt  # controprova: la figura è nel catalogo
+    for canary in CANARY_RESERVED_NAME:
+        assert canary not in prompt
+    lesson = await _lesson(seeded_db, setup["lesson_id"])
+    assert lesson.content_status == "ready", lesson.content_error
+    placed = [a for a in lesson.content_raw["visual_assets"] if a["format"] == "source_figure"]
+    assert str(reserved.id) in {a["content"] for a in placed}
+    dumped = json.dumps(lesson.content_raw, ensure_ascii=False)
+    for canary in CANARY_RESERVED_NAME:
+        assert canary not in dumped
+    doc = setup["docs"]["content_only"]
+    assert figure_attribution_line(reserved, doc, language="it") == "Fonte: materiale del docente"
+
+
 async def test_no_catalog_keeps_prompt_and_content_raw_as_before(
     seeded_db: AsyncSession, fakes: dict[str, Any]
 ) -> None:
@@ -242,17 +284,17 @@ async def test_policy_change_during_generation_drops_the_figure(
     setup = await _setup(seeded_db)
     citable = setup["docs"]["citable"]
 
-    async def make_reserved() -> None:
+    async def make_excluded() -> None:
         factory = async_sessionmaker(_engine, expire_on_commit=False)
         async with factory() as other:
             await other.execute(
                 update(CourseDocument)
                 .where(CourseDocument.id == citable.id)
-                .values(citation_policy="content_only")
+                .values(citation_policy="excluded")
             )
             await other.commit()
 
-    fakes["on_generate"] = make_reserved
+    fakes["on_generate"] = make_excluded
     await worker._process_one(setup["lesson_id"])
     lesson = await _lesson(seeded_db, setup["lesson_id"])
     assert lesson.content_status == "ready"

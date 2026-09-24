@@ -60,6 +60,7 @@ class _Doc:
         }
     )
     bibliography_source: str | None = "openalex"
+    citation_policy: str = "citable"
 
 
 # ---------------------------------------------------------------------------
@@ -249,6 +250,47 @@ def test_own_work_without_any_name_says_instructor_material() -> None:
     src = AttributionSource(is_own_work=True, page=2, license="unknown")
     assert attribution_line(src, language="it") == "Fonte: materiale del docente, p. 2"
     assert attribution_line(src, language="en") == "Source: instructor's material, p. 2"
+
+
+# Nome, titolo, autori, file, anno, pagina e numero di figura del documento
+# riservato di `_Doc`/`_Fig`: nessuno deve comparire nella riga.
+_RESERVED_IDENTITY = ("Rossi", "Bianchi", "Laser Doppler", "rossi", "2020", "12", "3.2", "J. Sound")
+
+
+@pytest.mark.parametrize(
+    ("language", "expected"),
+    [("it", "Fonte: materiale del docente"), ("en", "Source: instructor's material")],
+)
+def test_reserved_document_is_instructor_material_and_never_named(
+    language: str, expected: str
+) -> None:
+    """Fonte riservata = materiale del docente, anche senza `is_own_work`:
+    la riga (scritta, parlata, congelata allo stacco) non nomina mai il
+    documento."""
+    fig, doc = _Fig(license="all_rights_reserved"), _Doc(citation_policy="content_only")
+    assert figure_attribution_line(fig, doc, language=language) == expected
+    spoken = figure_attribution_line(fig, doc, language=language, mode="spoken")
+    assert spoken and validate_tts_safety(spoken) == []
+    frozen = freeze_attribution(fig, doc)
+    assert frozen is not None
+    detached = figure_attribution_line(_Fig(attribution=frozen), None, language=language)
+    assert detached == expected
+    for line in (spoken, detached, str(frozen)):
+        for piece in _RESERVED_IDENTITY:
+            assert piece not in line
+    # Controprova: lo stesso documento citabile è nominato.
+    assert "Rossi" in (figure_attribution_line(fig, _Doc(), language=language) or "")
+
+
+def test_reserved_document_keeps_only_a_third_party_credit() -> None:
+    fig = _CaptionedFig(
+        source_caption="Figure 3. Pump schematic. Reprinted from Smith et al. (2010), © Elsevier.",
+        license="unknown",
+    )
+    line = figure_attribution_line(fig, _Doc(citation_policy="content_only"), language="it")
+    assert line == "Fonte: Reprinted from Smith et al. (2010), © Elsevier"
+    for piece in _RESERVED_IDENTITY:
+        assert piece not in line
 
 
 # ---------------------------------------------------------------------------

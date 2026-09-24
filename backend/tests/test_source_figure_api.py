@@ -9,7 +9,7 @@
 - esclusione `PATCH …/document-figures/{id}` (non retroattiva);
 - uso `GET …/documents/{id}/figure-usage`;
 - PATCH della dispensa: figura nuova di un altro corso → 422
-  `source_figure_not_in_course`; di un documento content_only o non aperta
+  `source_figure_not_in_course`; di un documento escluso o non aperta
   con open_only → 422 `source_figure_not_available`; cambio di famiglia →
   422 `source_figure_format_locked`; asset invariato dopo un cambio di
   politica → 200 (U1); round-trip GET → PATCH invariato; verdetto del
@@ -157,9 +157,10 @@ async def test_catalog_payload_and_course_scope(
     assert good["renderable"] and good["selectable"] and good["reason"] is None
     assert good["document_filename"] == "Dispense_misure.pdf"
     reserved = items[str(figs["reserved"].id)]
-    # U1: resa sì (se già collocata), proposta no.
-    assert reserved["renderable"] and not reserved["selectable"]
-    assert reserved["reason"] == "document_content_only"
+    # Fonte riservata = materiale del docente: resa e proposta, con una riga
+    # che non nomina il documento.
+    assert reserved["renderable"] and reserved["selectable"] and reserved["reason"] is None
+    assert reserved["attribution"] == "Fonte: materiale del docente"
     # Nessun percorso dello storage nel payload.
     assert "uploads" not in res.text
 
@@ -252,9 +253,16 @@ async def test_lesson_patch_guards_new_or_changed_source_figures(
     assert res.status_code == 422 and res.json()["code"] == "source_figure_not_in_course"
     res = await _patch_content(client, s, [good, _asset("fig-src-2", str(uuid.uuid4()))])
     assert res.json()["code"] == "source_figure_not_in_course"
+    # Fonte riservata = materiale del docente: la figura nuova è ammessa…
+    res = await _patch_content(client, s, [good, _asset("fig-src-2", figs["reserved"])])
+    assert res.status_code == 200, res.text
+    assert (await _patch_content(client, s, [good])).status_code == 200
+    # …quella di un documento escluso no.
+    s["docs"]["reserved"].citation_policy = "excluded"
+    await seeded_db.commit()
     res = await _patch_content(client, s, [good, _asset("fig-src-2", figs["reserved"])])
     assert res.status_code == 422 and res.json()["code"] == "source_figure_not_available"
-    assert res.json()["meta"]["reason"] == "document_content_only"
+    assert res.json()["meta"]["reason"] == "document_excluded"
     locked = {**good, "format": "image", "content": "lesson_assets/x.png"}
     res = await _patch_content(client, s, [locked])
     assert res.status_code == 422 and res.json()["code"] == "source_figure_format_locked"

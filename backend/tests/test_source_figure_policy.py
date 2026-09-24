@@ -103,13 +103,24 @@ _CASES: list[tuple[str, _Fig | None, _Doc | None, str, dict[str, Any], str | Non
         "document_excluded",
         None,
     ),
+    # Fonte riservata = materiale del docente: si propone, anche con
+    # open_only e una licenza chiusa.
     (
         "document content_only",
         _Fig(),
         _Doc(citation_policy="content_only"),
         "cite_all",
         {},
-        "document_content_only",
+        None,
+        None,
+    ),
+    (
+        "content_only, open_only, closed license",
+        _Fig(license="all_rights_reserved"),
+        _Doc(citation_policy="content_only"),
+        "open_only",
+        {},
+        None,
         None,
     ),
     (

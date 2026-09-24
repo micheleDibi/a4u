@@ -281,17 +281,15 @@ async def _defer(db: AsyncSession, doc: CourseDocument) -> None:
     )
 
 
-async def _ensure_citable(db: AsyncSession, doc_id: uuid.UUID) -> None:
+async def _ensure_not_excluded(db: AsyncSession, doc_id: uuid.UUID) -> None:
     """Politica riletta dal DB (prima di ogni blocco e prima della Vision):
-    un documento reso excluded/content_only durante l'estrazione non
-    produce altri ritagli né altre chiamate a pagamento."""
+    un documento escluso durante l'estrazione non produce altri ritagli né
+    altre chiamate a pagamento. Le fonti riservate si estraggono."""
     policy = (
         await db.execute(select(CourseDocument.citation_policy).where(CourseDocument.id == doc_id))
     ).scalar_one_or_none()
     if policy == "excluded":
         raise _PolicyChangedError("policy_excluded")
-    if policy == "content_only":
-        raise _PolicyChangedError("policy_content_only")
 
 
 # --- claim ------------------------------------------------------------------
@@ -549,8 +547,11 @@ async def _deduplicate(db: AsyncSession, doc: CourseDocument) -> None:
         by_key[key].reject_reason = "duplicate"
         by_key[key].duplicate_of_id = uuid.UUID(original)
     # Solo figure proponibili: una copia di una figura staccata, esclusa dal
-    # docente, superata o di un documento non citabile non deve rendere
+    # docente, superata o di un documento escluso non deve rendere
     # «duplicata» (quindi mai proponibile) la figura di questo documento.
+    # Una fonte riservata non nasconde mai la copia di un documento
+    # citabile, che ha la riga «Fonte» più precisa.
+    policies = ("citable",) if doc.citation_policy == "citable" else ("citable", "content_only")
     others = list(
         (
             await db.execute(
@@ -559,7 +560,7 @@ async def _deduplicate(db: AsyncSession, doc: CourseDocument) -> None:
                 .where(
                     CourseDocumentFigure.course_id == doc.course_id,
                     CourseDocumentFigure.document_id != doc.id,
-                    CourseDocument.citation_policy == "citable",
+                    CourseDocument.citation_policy.in_(policies),
                     CourseDocumentFigure.status.in_(("extracted", "ready")),
                     CourseDocumentFigure.excluded_by_user.is_(False),
                     CourseDocumentFigure.reject_reason.is_(None),
@@ -848,7 +849,7 @@ async def _extract(
         while True:
             if time.monotonic() > deadline:
                 raise ExtractionChildError("timeout", "tempo totale dell'estrazione superato")
-            await _ensure_citable(db, doc.id)
+            await _ensure_not_excluded(db, doc.id)
             # Pagine già tutte fatte (dopo il riciclo del figlio): nessun
             # figlio nuovo da avviare solo per scoprirlo (Fase D).
             if (
@@ -935,9 +936,6 @@ async def process_document(db: AsyncSession, doc: CourseDocument) -> None:
     if doc.citation_policy == "excluded":
         await _finish(db, doc, status="skipped", code="policy_excluded")
         return
-    if doc.citation_policy == "content_only":
-        await _finish(db, doc, status="skipped", code="policy_content_only")
-        return
     if doc.mime_type not in SUPPORTED_MIMES:
         await _finish(db, doc, status="skipped", code="unsupported_format")
         return
@@ -1004,7 +1002,7 @@ async def process_document(db: AsyncSession, doc: CourseDocument) -> None:
         await _deduplicate(db, doc)
         vision_error: str | None = None
         try:
-            await _ensure_citable(db, doc_id)
+            await _ensure_not_excluded(db, doc_id)
             await _describe(db, doc, workdir)
         except _PolicyChangedError as exc:
             await _finish(db, doc, status="skipped", code=exc.code)
