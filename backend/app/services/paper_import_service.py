@@ -7,6 +7,9 @@ Strategia per ogni paper selezionato dall'utente:
   (con `safe_http`). Se OK -> salva come `.pdf` via
   `course_service.add_document_from_bytes`, con la licenza della location
   open access quando è Creative Commons o pubblico dominio.
+- Se l'editore rifiuta il download automatico (403 di MDPI, Hindawi…) o il
+  PDF non si scarica: la copia ospitata da OpenAlex (`has_content.pdf`,
+  con la API key, 0,01 $ a PDF), con la licenza della stessa location.
 - Se download fallisce o NO PDF disponibile: genera un file `.md` con
   i metadata del paper (titolo, autori, anno, journal, DOI, abstract,
   tldr, keywords, subjects) e salva come `text/markdown` via lo stesso
@@ -39,6 +42,8 @@ from app.services import course_service
 from app.services.openalex_client import (
     OpenAlexError,
     OpenAlexWork,
+    content_pdf_available,
+    download_content_pdf,
     download_pdf,
     get_work,
     oa_best_pdf_url,
@@ -208,7 +213,8 @@ async def import_paper(
 
     Strategia:
     1. Se `oa_pdf_url` presente -> tenta download PDF -> se OK salva .pdf.
-    2. Altrimenti (o se download fallisce) -> genera .md con metadati.
+    2. Se l'editore rifiuta -> copia del PDF ospitata da OpenAlex.
+    3. Altrimenti (o se download fallisce) -> genera .md con metadati.
 
     Solleva eccezione solo per errori non recuperabili (es. validation
     file_service). Errori di download sono gestiti con fallback a .md.
@@ -218,6 +224,7 @@ async def import_paper(
 
     pdf_bytes: bytes | None = None
     license_code: str | None = None
+    work: OpenAlexWork | None = None
     if paper.oa_pdf_url:
         # L'URL del client non si scarica mai: vale quello del server.
         try:
@@ -250,6 +257,24 @@ async def import_paper(
                 "paper_import_pdf_failed_fallback_to_metadata",
                 paper_id=paper.id,
                 url=paper.oa_pdf_url,
+                error=str(exc),
+            )
+            pdf_bytes = None
+    if pdf_bytes is None and work is not None and content_pdf_available(work):
+        # Editore che blocca i download automatici o PDF non scaricabile: la
+        # copia ospitata da OpenAlex, con la licenza della location migliore.
+        try:
+            pdf_bytes = await download_content_pdf(work, max_bytes=max_bytes)
+            license_code = oa_location_license(work)
+            log.info(
+                "paper_import_pdf_from_openalex_copy",
+                paper_id=paper.id,
+                size=len(pdf_bytes),
+            )
+        except OpenAlexError as exc:
+            log.warning(
+                "paper_import_openalex_copy_failed_fallback_to_metadata",
+                paper_id=paper.id,
                 error=str(exc),
             )
             pdf_bytes = None

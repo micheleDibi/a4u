@@ -819,4 +819,6 @@ con la letteratura aperta accesa. Sono emersi tre difetti.
   `downloads_openalex`, `publisher_errors`, `download_errors`.
 - La chiave non compare nei log: gli errori la oscurano e httpx è a
   WARNING.
+- Anche l'import dei paper (Fase 1) usa la stessa copia quando l'editore
+  rifiuta: prima importava solo i metadati (doc 16).
 

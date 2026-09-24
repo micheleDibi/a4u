@@ -122,13 +122,66 @@ async def test_reread_failure_falls_back_to_metadata_without_download(
     async def never(url: str, *, max_bytes: int) -> bytes:
         raise AssertionError(f"download non atteso: {url}")
 
+    async def never_copy(work: Any, *, max_bytes: int) -> bytes:
+        raise AssertionError("copia di OpenAlex non attesa")
+
     monkeypatch.setattr(paper_import_service, "get_work", failing_get_work)
     monkeypatch.setattr(paper_import_service, "download_pdf", never)
+    monkeypatch.setattr(paper_import_service, "download_content_pdf", never_copy)
     course, user = await _course(seeded_db)
     result = await paper_import_service.import_paper(
         seeded_db, course=course, paper=_paper(), actor_id=user.id
     )
     assert result.mode == "metadata" and result.document.license is None
+
+
+@pytest.mark.parametrize("copy_ok", [True, False])
+async def test_import_uses_the_openalex_copy_when_the_publisher_blocks(
+    seeded_db: AsyncSession, monkeypatch: pytest.MonkeyPatch, copy_ok: bool
+) -> None:
+    """MDPI risponde 403: il PDF arriva dalla copia di OpenAlex, con la
+    licenza della location migliore; se anche la copia fallisce (credito
+    finito) l'import ripiega sui metadati."""
+    calls: list[str] = []
+    mdpi = _work(
+        best_oa_location={
+            "pdf_url": "https://www.mdpi.com/1424-8220/14/4/7394/pdf",
+            "landing_page_url": "https://www.mdpi.com/1424-8220/14/4/7394",
+            "license": "cc-by",
+        },
+        has_content={"pdf": True},
+    )
+
+    async def fake_get_work(work_id: str) -> Any:
+        return _to_work(mdpi)
+
+    async def blocked(url: str, *, max_bytes: int) -> bytes:
+        calls.append(f"editore {url}")
+        raise OpenAlexError(status=403, message="HTTP 403")
+
+    async def copy(work: Any, *, max_bytes: int) -> bytes:
+        calls.append(f"copia {work.id}")
+        if not copy_ok:
+            raise OpenAlexError(status=429, message="credito finito")
+        return b"%PDF-1.4 copia"
+
+    monkeypatch.setattr(paper_import_service, "get_work", fake_get_work)
+    monkeypatch.setattr(paper_import_service, "download_pdf", blocked)
+    monkeypatch.setattr(paper_import_service, "download_content_pdf", copy)
+    course, user = await _course(seeded_db)
+    result = await paper_import_service.import_paper(
+        seeded_db, course=course, paper=_paper(), actor_id=user.id
+    )
+    assert calls == [
+        "editore https://www.mdpi.com/1424-8220/14/4/7394/pdf",
+        "copia https://openalex.org/W42",
+    ]
+    if copy_ok:
+        assert result.mode == "pdf"
+        assert result.document.license == "cc_by"
+        assert result.document.filename_original.endswith(".pdf")
+    else:
+        assert result.mode == "metadata" and result.document.license is None
 
 
 async def test_download_pdf_blocks_internal_addresses_without_requests() -> None:

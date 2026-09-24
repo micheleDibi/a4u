@@ -286,8 +286,13 @@ Vedi [04 — Configuration](../04-configuration.md). Variabili rilevanti
     `safe_http` (SSRF chiusa);
   - la licenza di quella location va sul documento, con bibliografia
     `openalex`;
+  - se l'editore rifiuta il download automatico (403 di MDPI, Hindawi…) o
+    il PDF non si scarica, si usa la copia ospitata da OpenAlex
+    (`has_content.pdf`, `content.openalex.org`, con la API key). Costa
+    0,01 $ a PDF, dentro 1 $ gratuito al giorno; la licenza resta quella
+    della location migliore;
   - se la rilettura fallisce, l'import ripiega sui metadati senza alcun
-    download.
+    download; lo stesso se falliscono sia l'editore sia la copia.
 - **Chiave**. `OPENALEX_API_KEY` è obbligatoria dal 13/02/2026: il polite
   pool è stato abolito. La chiave viaggia in query string e non compare
   nei log (httpx a WARNING).
