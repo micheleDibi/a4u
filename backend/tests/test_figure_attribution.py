@@ -440,3 +440,35 @@ def test_bibliography_schema_forbids_extra_and_drops_blanks() -> None:
     with pytest.raises(ValueError):
         DocumentBibliography(url="javascript:alert(1)")
     assert DocumentBibliography(url="https://doi.org/10.1/x").url == "https://doi.org/10.1/x"
+
+
+# ---------------------------------------------------------------------------
+# Fase D: credito di terzi, numero di figura, metadati di default
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _CaptionedFig(_Fig):
+    source_caption: str | None = None
+
+
+def test_third_party_credit_from_the_original_caption_is_in_the_line() -> None:
+    """Una figura «Reprinted from … © Elsevier» dentro un articolo CC BY non
+    è dell'autore dell'articolo: la riga nomina l'origine."""
+    fig = _CaptionedFig(
+        source_caption=(
+            "Figure 3. Pump schematic. Reprinted from Smith et al. (2010), "
+            "© Elsevier, with permission."
+        ),
+        license="unknown",
+    )
+    line = figure_attribution_line(fig, _Doc(), language="it")
+    assert line.startswith("Fonte: Reprinted from Smith et al. (2010), © Elsevier")
+    assert "Mario Rossi" in line and "(CC BY)" not in line
+    plain = _CaptionedFig(source_caption="Figura 3.2. Schema del vibrometro.")
+    assert "Reprinted" not in figure_attribution_line(plain, _Doc(), language="it")
+
+
+def test_an_absurd_figure_number_is_not_a_number() -> None:
+    assert figure_number_from_label("Figura 3.2") == "3.2"
+    assert figure_number_from_label("Fig. 1.2.3.4.5.6.7.8.9.10.11.12.13") is None

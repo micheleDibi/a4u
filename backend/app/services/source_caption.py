@@ -44,3 +44,20 @@ def clean_caption(text: str) -> tuple[str, bool]:
     if not cleaned:
         return original, False
     return cleaned, cleaned != original
+
+
+def third_party_credit(caption: str | None) -> str | None:
+    """Credito di terzi nella didascalia ORIGINALE di una figura estratta
+    («Reprinted from Smith et al. (2010), © Elsevier, with permission»,
+    «Fonte: …», «(Rossi et al., 2019)»): la figura non è dell'autore del
+    documento, quindi non ne eredita la licenza e la riga «Fonte» deve
+    nominarne l'origine (Fase D). None se non c'è."""
+    text = " ".join((caption or "").split())
+    match = _SOURCE_TAIL_RE.search(text)
+    if match is None:
+        return None
+    credit = match.group(0).strip().lstrip("([—–-;:").strip()
+    if credit.count(")") > credit.count("("):
+        credit = credit.rstrip(")").strip()
+    credit = credit.rstrip(".;, ").strip()
+    return credit[:200] or None

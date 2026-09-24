@@ -33,8 +33,19 @@ from app.services.document_figures.office import safe_fromstring
 # un DOI letto da un PDF non può aggiungere query all'URL di Crossref.
 DOI_RE = re.compile(r"\b(10\.\d{4,9}/[-._;()/:A-Z0-9]+)", re.IGNORECASE)
 _JUNK_TITLE_RE = re.compile(
-    r"(^microsoft (word|powerpoint)|^untitled|^senza titolo|^presentazione|^documento\d*$"
-    r"|\.(docx?|pptx?|pdf|tex|dvi|odt)$|^slide \d+$)",
+    r"(^microsoft (word|powerpoint|excel)|^untitled|^senza titolo|^presentazione"
+    r"|^powerpoint presentation$|^presentation\s*\d*$|^documento?\s*\d*$"
+    r"|^scanned (document|image)|^scan\b|^diapositiva \d+$|^slide \d+$"
+    r"|\.(docx?|pptx?|pdf|tex|dvi|odt)$|[\\/]|^[a-z]:)",
+    re.IGNORECASE,
+)
+# Autori di default dei programmi e degli scanner, mai persone (Fase D:
+# «Fonte: Microsoft Office User, «PowerPoint Presentation»…»).
+_JUNK_AUTHOR_RE = re.compile(
+    r"(microsoft office|office user|windows user|utente di windows|^utente$|^user$"
+    r"|administrator|amministratore|^author$|^autore$|^unknown$|sconosciuto"
+    r"|\b(canon|xerox|ricoh|epson|konica|kyocera|brother|lexmark|sharp|toshiba|"
+    r"hewlett|hp laserjet|hp officejet|scanner|scansione)\b)",
     re.IGNORECASE,
 )
 # `docProps/core.xml` legittimo: pochi KB.
@@ -57,20 +68,38 @@ def plausible_title(value: Any) -> str | None:
     return title
 
 
+def _split_names(segment: str) -> list[str]:
+    """Una parte fra `;` o «and»: «Rossi, Mario Luigi» è UN nome (cognome,
+    nome), «A. Rossi, B. Bianchi» sono due."""
+    pieces = [p.strip() for p in segment.split(",") if p.strip()]
+    if len(pieces) == 2 and len(pieces[0].split()) == 1 and len(pieces[1].split()) <= 3:
+        return [f"{pieces[1]} {pieces[0]}"]
+    if len(pieces) > 1 and all(len(p.split()) >= 2 for p in pieces):
+        return pieces
+    return [segment]
+
+
 def plausible_authors(value: Any) -> list[str]:
-    """Autori da una stringa «A. Rossi; B. Bianchi» o «Rossi, Bianchi»:
-    solo nomi con almeno due parole (un account `mrossi` non è un autore)."""
+    """Autori da «A. Rossi; B. Bianchi», «Rossi, M.; Bianchi, L.», «Smith,
+    John and Doe, Jane» o da una lista: solo nomi con almeno due parole (un
+    account `mrossi` non è un autore), mai account o scanner di default."""
     if isinstance(value, list):
-        parts = [str(v) for v in value]
+        segments = [str(v) for v in value]
     elif isinstance(value, str):
-        parts = re.split(r";|\band\b|\be\b|,(?=\s*[A-ZÀ-Ý][^,]*\s)", value)
+        segments = re.split(r";|\band\b|\s\be\b\s|&", value)
     else:
         return []
     out = []
-    for part in parts:
-        name = " ".join(part.split()).strip(" ,;")
-        if len(name.split()) >= 2 and len(name) <= 200 and not re.search(r"[@\\/_]", name):
-            out.append(name)
+    for segment in segments:
+        for part in _split_names(" ".join(segment.split()).strip(" ,;")):
+            name = " ".join(part.split()).strip(" ,;")
+            if (
+                len(name.split()) >= 2
+                and len(name) <= 200
+                and not re.search(r"[@\\/_]", name)
+                and not _JUNK_AUTHOR_RE.search(name)
+            ):
+                out.append(name)
     return out[:50]
 
 

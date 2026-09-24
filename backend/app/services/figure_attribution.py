@@ -27,6 +27,7 @@ from dataclasses import dataclass, replace
 from typing import Any, Literal, Protocol, TypeGuard
 
 from app.schemas.document_bibliography import TRUSTED_BIBLIOGRAPHY_SOURCES
+from app.services.source_caption import third_party_credit
 
 AttributionMode = Literal["written", "spoken"]
 PageKind = Literal["page", "slide"]
@@ -121,6 +122,7 @@ _SPOKEN_ABBREVIATION_RE = re.compile(
 
 # «Figura 3.2», «Fig. 12a», «Figure 4-1», «Abb. 2»: numero letto
 # dall'etichetta estratta dal documento, mai inventato.
+_MAX_FIGURE_NUMBER_CHARS = 10
 _FIGURE_NUMBER_RE = re.compile(
     r"\b(?:fig(?:ure|ura|\.)?|abb(?:ildung|\.)?)\s*(\d+(?:[.\-]\d+)*[a-z]?)\b",
     re.IGNORECASE,
@@ -254,7 +256,11 @@ def figure_number_from_label(source_label: str | None) -> str | None:
     if not source_label:
         return None
     match = _FIGURE_NUMBER_RE.search(source_label)
-    return match.group(1) if match else None
+    # Un «numero» di 60 caratteri riempie la fascia e fa sparire chi e che
+    # cosa (Fase D): oltre _MAX_FIGURE_NUMBER_CHARS non è un numero.
+    if match is None or len(match.group(1)) > _MAX_FIGURE_NUMBER_CHARS:
+        return None
+    return match.group(1)
 
 
 def readable_filename(filename: str | None, *, paper_import: bool = False) -> str | None:
@@ -298,6 +304,9 @@ def attribution_source(
             }
         )
         source = AttributionSource(
+            # Credito di terzi nella didascalia originale: la figura viene da
+            # lì, il documento è solo il tramite (Fase D).
+            credit=third_party_credit(getattr(fig, "source_caption", None)),
             authors=base.authors,
             title=base.title,
             container=base.container,

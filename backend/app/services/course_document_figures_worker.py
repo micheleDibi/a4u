@@ -79,6 +79,7 @@ from app.services.openai_figure_describe_service import (
     FigureDescription,
     describe_figure,
 )
+from app.services.source_caption import third_party_credit
 from app.services.source_figure_policy import document_license_to_figure
 
 log = get_logger("app.course_document_figures_worker")
@@ -476,6 +477,7 @@ async def _store_block(
             await asyncio.to_thread(figure_storage.upload, preview_path, preview)
         elif reason is None:
             reason = "blank"
+        third_party = third_party_credit(event.get("caption")) is not None
         db.add(
             CourseDocumentFigure(
                 course_id=doc.course_id,
@@ -504,8 +506,10 @@ async def _store_block(
                 detector_confidence=event.get("detector_confidence"),
                 status="rejected" if reason else "extracted",
                 reject_reason=reason,
-                license=license,
-                license_source="document",
+                # Didascalia con un credito di terzi («Reprinted from…», «©»):
+                # la figura non ha la licenza del documento (Fase D).
+                license="unknown" if third_party else license,
+                license_source=None if third_party else "document",
             )
         )
         known.add(locator)

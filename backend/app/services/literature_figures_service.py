@@ -69,6 +69,7 @@ from app.services.lesson_document_selection import build_query_profile, terms
 from app.services.openai_client import OpenAINotConfiguredError
 from app.services.remote_storage import StorageError
 from app.services.safe_http import SafeFetchError
+from app.services.source_caption import third_party_credit
 from app.services.source_figure_policy import OPEN_LICENSES
 
 log = get_logger("app.literature_figures")
@@ -562,6 +563,11 @@ async def _from_openalex(db: AsyncSession, run: _Run, queries: list[str]) -> Non
                 if external_id in run.known_ids:
                     continue
                 run.known_ids.add(external_id)
+                # Figura di terzi dentro il paper («Reprinted from…», «©»): la
+                # licenza del paper non le si applica (Fase D).
+                if third_party_credit(event.get("caption")):
+                    run.stats["third_party"] = int(run.stats.get("third_party") or 0) + 1
+                    continue
                 figure_number = figure_number_from_label(event.get("source_label"))
                 attribution: dict[str, Any] = {
                     "authors": authors[:20],

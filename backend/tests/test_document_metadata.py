@@ -150,3 +150,37 @@ def test_doi_from_a_pdf_cannot_carry_a_query() -> None:
     assert find_doi("https://doi.org/10.1016/J.MEASUREMENT.2020.108(3)#s2") == (
         "10.1016/j.measurement.2020.108(3"
     )
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("Microsoft Office User", []),
+        ("Windows User", []),
+        ("Utente di Windows", []),
+        ("Canon iR-ADV C5535", []),
+        ("Rossi, Mario Luigi", ["Mario Luigi Rossi"]),
+        ("Rossi, M.; Bianchi, L.", ["M. Rossi", "L. Bianchi"]),
+        ("Smith, John and Doe, Jane", ["John Smith", "Jane Doe"]),
+        ("A. Rossi, B. Bianchi", ["A. Rossi", "B. Bianchi"]),
+        ("Mario Rossi; Anna Bianchi", ["Mario Rossi", "Anna Bianchi"]),
+    ],
+)
+def test_default_authors_and_surname_first_names(value: str, expected: list[str]) -> None:
+    """Fase D: niente account di Office/Windows né scanner come autori, e
+    «Cognome, Nome» resta un nome solo, con il cognome."""
+    assert metadata.plausible_authors(value) == expected
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "PowerPoint Presentation",
+        "Presentation1",
+        "Document1",
+        "Scanned Document",
+        "C:\\Users\\mario\\Desktop\\lezione",
+    ],
+)
+def test_default_titles_are_not_titles(title: str) -> None:
+    assert metadata.plausible_title(title) is None
