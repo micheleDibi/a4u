@@ -232,3 +232,36 @@ async def test_worker_extracts_pictures_per_slide(
     ]
     line: Any = figure_attribution_line(rows[0], claimed, language="it")
     assert line == "Fonte: Docente di Prova, «Lezione di vibrometria», fig. 1, slide 2"
+
+
+def test_entity_expansion_bombs_are_refused_before_parsing(
+    pptx_bytes: bytes, tmp_path: Path
+) -> None:
+    """Fase D: una slide con una DTD e migliaia di riferimenti a un'entità
+    interna (17 KB caricati → GB di RAM nel processo principale durante il
+    riassunto) viene rifiutata prima di costruire l'albero; Office Open XML
+    non usa mai DTD. Stessa guardia per `core.xml` dei metadati."""
+    entity = "A" * 250
+    body = "&a;" * 20_000
+    bomb_slide = (
+        f'<?xml version="1.0"?><!DOCTYPE p:sld [<!ENTITY a "{entity}">]>'
+        '<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" '
+        'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+        f"<p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>{body}</a:t></a:r></a:p>"
+        "</p:txBody></p:sp></p:spTree></p:cSld></p:sld>"
+    ).encode()
+    source = zipfile.ZipFile(io.BytesIO(pptx_bytes))
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
+        for info in source.infolist():
+            data = source.read(info)
+            if info.filename.startswith("ppt/slides/slide") and info.filename.endswith(".xml"):
+                data = bomb_slide
+            zf.writestr(info, data)
+    path = tmp_path / "bomba.pptx"
+    path.write_bytes(out.getvalue())
+    with pytest.raises(office.OfficeFormatError, match="DTD"):
+        office.pptx_text(str(path))
+    with pytest.raises(office.OfficeFormatError, match="DTD"):
+        office.safe_fromstring(b'<!DOCTYPE x [<!ENTITY a "b">]><x>&a;</x>')
+    assert office.safe_fromstring(b"<x><y>ok</y></x>").find("y").text == "ok"

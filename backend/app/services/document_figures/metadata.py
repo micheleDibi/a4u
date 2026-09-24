@@ -25,11 +25,13 @@ import re
 import zipfile
 from pathlib import Path
 from typing import Any
-from xml.etree import ElementTree as ET
 
 from app.schemas.document_bibliography import DocumentBibliography
+from app.services.document_figures.office import safe_fromstring
 
-DOI_RE = re.compile(r"\b(10\.\d{4,9}/[^\s\"<>{}|\\^`\[\]]+)", re.IGNORECASE)
+# Caratteri della regex raccomandata da Crossref: niente `? # @ & =`, così
+# un DOI letto da un PDF non può aggiungere query all'URL di Crossref.
+DOI_RE = re.compile(r"\b(10\.\d{4,9}/[-._;()/:A-Z0-9]+)", re.IGNORECASE)
 _JUNK_TITLE_RE = re.compile(
     r"(^microsoft (word|powerpoint)|^untitled|^senza titolo|^presentazione|^documento\d*$"
     r"|\.(docx?|pptx?|pdf|tex|dvi|odt)$|^slide \d+$)",
@@ -116,7 +118,7 @@ def office_bibliography(path: Path) -> DocumentBibliography | None:
             info = zf.getinfo("docProps/core.xml")
             if info.file_size > MAX_CORE_XML_BYTES:
                 return None
-            root = ET.fromstring(zf.read(info))
+            root = safe_fromstring(zf.read(info))
     except Exception:
         return None
     title = plausible_title(root.findtext("dc:title", default=None, namespaces=_CORE_NS))

@@ -26,6 +26,7 @@ import posixpath
 import zipfile
 from dataclasses import dataclass
 from xml.etree import ElementTree as ET
+from xml.parsers import expat
 
 from PIL import Image
 
@@ -93,11 +94,37 @@ def _read_part(zf: zipfile.ZipFile, name: str, limit: int | None = None) -> byte
     return zf.read(info)
 
 
-def _parse_part(zf: zipfile.ZipFile, name: str, limit: int | None = None) -> ET.Element:
+class _DtdRefusedError(Exception):
+    pass
+
+
+def _refuse_dtd(*_args: object) -> None:
+    raise _DtdRefusedError
+
+
+def safe_fromstring(data: bytes) -> ET.Element:
+    """`ET.fromstring` senza DTD. Office Open XML non ne usa mai; una
+    dichiarazione `<!DOCTYPE>` o `<!ENTITY>` serve solo a espandere
+    entità: 17 KB di PPTX diventavano ~3 GB di RAM nel processo principale
+    (Fase D). Un primo passaggio con expat si ferma al primo DOCTYPE, poi
+    si costruisce l'albero."""
+    probe = expat.ParserCreate()
+    probe.StartDoctypeDeclHandler = _refuse_dtd
+    probe.EntityDeclHandler = _refuse_dtd
     try:
-        return ET.fromstring(_read_part(zf, name, limit))
+        probe.Parse(data, True)
+    except _DtdRefusedError as exc:
+        raise OfficeFormatError("XML con DTD o entità: non ammesso") from exc
+    except expat.ExpatError as exc:
+        raise OfficeFormatError(str(exc)) from exc
+    try:
+        return ET.fromstring(data)
     except ET.ParseError as exc:
         raise OfficeFormatError(str(exc)) from exc
+
+
+def _parse_part(zf: zipfile.ZipFile, name: str, limit: int | None = None) -> ET.Element:
+    return safe_fromstring(_read_part(zf, name, limit))
 
 
 def _resolve_target(folder: str, target: str) -> str:

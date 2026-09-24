@@ -139,3 +139,14 @@ def test_crossref_title_must_appear_in_the_document(
     title: str | None, text: str, info_title: str | None, expected: bool
 ) -> None:
     assert metadata.crossref_title_matches(title, text, info_title) is expected
+
+
+def test_doi_from_a_pdf_cannot_carry_a_query() -> None:
+    """Fase D: il DOI letto da un PDF finisce nell'URL di Crossref; i
+    caratteri fuori dalla regex di Crossref (`? # @ & =`) chiudono il DOI."""
+    from app.services.document_figures.metadata import find_doi
+
+    assert find_doi("doi: 10.1000/ldv.2021?mailto=x@y&rows=1000") == "10.1000/ldv.2021"
+    assert find_doi("https://doi.org/10.1016/J.MEASUREMENT.2020.108(3)#s2") == (
+        "10.1016/j.measurement.2020.108(3"
+    )
