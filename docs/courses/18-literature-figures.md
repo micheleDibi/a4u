@@ -779,3 +779,26 @@ Decisioni dell'utente dopo il primo rilascio, prese con il docente.
   - un manuale di 700 pagine richiede ore. La Fase 3 lo aspetta al
     massimo `FIGURE_WAIT_MAX_MINUTES`; le sue figure entrano nelle
     dispense generate o rigenerate dopo.
+
+## 21. Qualità delle figure della letteratura (24/09/2026)
+
+Prima prova in produzione: corso «Reti di Calcolatori», senza documenti,
+con la letteratura aperta accesa. Sono emersi tre difetti.
+
+| Difetto | Causa | Correzione |
+|---|---|---|
+| Figure nere o con bande nere | I rendering PNG di Commons hanno lo sfondo trasparente (per esempio in modo `LA`); `convert("RGB")` scartava l'alfa. Il file «IPv4 address structure…» risultava interamente nero, con luminosità media 0 contro 241 su fondo bianco. Lo stesso valeva per le immagini trasparenti dentro DOCX e PPTX | `cropper.on_white`: le zone trasparenti vanno su fondo bianco, sia in `image_limits.load_image` (letteratura) sia in `office._open_image` |
+| Figura nera promossa dalla Vision | Il modello si fidava del titolo della fonte | Le immagini vuote o uniformi (`is_blank`) si scartano prima della Vision (`rejected_blank`) |
+| Testo in arabo e farsi | Le ricerche in inglese su Commons trovano anche le varianti `-ar`/`-fa` dello stesso schema | PROMPT 20 dichiara `text_language` (ISO 639-1 o `none`). Si tengono solo la lingua del corso, l'inglese o `none` (`rejected_language`); decisione dell'utente: italiano e inglese |
+| Le stesse 7 figure in quasi tutte le 48 lezioni | Catalogo di corso senza vincoli di riuso; la verifica dei buchi contava come pertinenti le figure già usate altrove (`reason: enough`) e non cercava più | Una figura di fonte sta in **una sola lezione** (decisione dell'utente). Il catalogo non offre quelle collocate in un'altra lezione; il ricontrollo di fine generazione toglie quelle prese intanto da una lezione generata in parallelo, con audit; la verifica dei buchi conta solo le figure libere. Il docente può comunque inserire a mano una figura già usata |
+
+**Limiti**
+- Le figure già salvate prima della correzione restano com'erano: il file
+  è stato salvato già nero. Per la prova si usa un corso nuovo.
+- Due lezioni che salvano quasi nello stesso istante possono ancora
+  tenere la stessa figura: il ricontrollo legge lo stato già salvato.
+- OpenAlex: molti editori open access (MDPI, Hindawi) rispondono 403 ai
+  download automatici (`download_errors`). Per ogni ricerca si provano
+  solo i primi 3 lavori, quindi nei temi di ingegneria dominati da MDPI
+  OpenAlex dà poche figure.
+
