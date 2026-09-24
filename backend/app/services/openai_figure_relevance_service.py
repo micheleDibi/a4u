@@ -75,6 +75,8 @@ class FigureRelevance(BaseModel):
     legibility: Legibility
     is_useful_for_teaching: bool
     reason: str = ""
+    # Lingua del testo dentro la figura (ISO 639-1) o `none`.
+    text_language: str = "none"
 
 
 @dataclass(frozen=True)
@@ -150,8 +152,13 @@ Campi:
   nella lingua del corso e in inglese, senza parole generiche come
   «figura» o «schema».
 - `quality_score` da 1 a 5: 5 = nitida e leggibile anche stampata, 3 =
-  usabile, 1 = sgranata, tagliata o illeggibile.
+  usabile, 1 = sgranata, tagliata, illeggibile, vuota o quasi uniforme.
 - `legibility`: `good`, `fair` o `poor` per il testo dentro la figura.
+- `text_language`: la lingua del testo scritto DENTRO la figura
+  (etichette, titoli, legende), come codice ISO 639-1 di due lettere
+  minuscole (`it`, `en`, `ar`, `fa`, `zh`…); con più lingue, quella
+  prevalente; `none` se la figura non contiene parole (solo numeri,
+  simboli o formule).
 - `is_useful_for_teaching`: false per loghi, decorazioni, foto di persone
   senza contenuto tecnico, copertine, frammenti; true se la figura spiega
   qualcosa.
@@ -183,8 +190,13 @@ Fields:
   course language and in English, without generic words such as "figure"
   or "diagram".
 - `quality_score` from 1 to 5: 5 = sharp and legible even when printed,
-  3 = usable, 1 = blurred, cropped or unreadable.
+  3 = usable, 1 = blurred, cropped, unreadable, empty or nearly uniform.
 - `legibility`: `good`, `fair` or `poor` for the text inside the figure.
+- `text_language`: the language of the text written INSIDE the figure
+  (labels, titles, legends), as a two-letter lowercase ISO 639-1 code
+  (`it`, `en`, `ar`, `fa`, `zh`…); with several languages, the prevailing
+  one; `none` if the figure contains no words (only numbers, symbols or
+  formulas).
 - `is_useful_for_teaching`: false for logos, decorations, photos of people
   without technical content, covers, fragments; true if the figure
   explains something.
@@ -231,6 +243,7 @@ FIGURE_RELEVANCE_JSON_SCHEMA: dict[str, Any] = {
             "legibility": {"type": "string", "enum": ["good", "fair", "poor"]},
             "is_useful_for_teaching": {"type": "boolean"},
             "reason": {"type": "string"},
+            "text_language": {"type": "string"},
         },
         "required": [
             "relevant",
@@ -242,6 +255,7 @@ FIGURE_RELEVANCE_JSON_SCHEMA: dict[str, Any] = {
             "legibility",
             "is_useful_for_teaching",
             "reason",
+            "text_language",
         ],
         "additionalProperties": False,
     },
@@ -270,6 +284,18 @@ def build_relevance_message(
             data_block("DESCRIZIONE O DIDASCALIA DELLA FONTE", text),
         ]
     )
+
+
+def text_language_allowed(text_language: str | None, course_language: str | None) -> bool:
+    """Testo della figura nella lingua del corso o in inglese, oppure
+    nessun testo (`none`). Tutto il resto, compreso un valore illeggibile,
+    si scarta: una figura in arabo o in farsi non serve a un corso in
+    italiano."""
+    code = (text_language or "").strip().lower().replace("_", "-").split("-")[0]
+    if code in ("none", "zxx"):
+        return True
+    course = (course_language or "it").strip().lower().replace("_", "-").split("-")[0]
+    return code in {course, "en"}
 
 
 def clean_queries(values: list[str]) -> list[str]:

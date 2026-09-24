@@ -147,6 +147,26 @@ def test_absolute_relationship_targets_are_resolved(pptx_bytes: bytes, tmp_path:
     assert len(office.pptx_images(str(source))) == len(office.pptx_images(str(original)))
 
 
+def test_transparent_pictures_are_put_on_white(pptx_bytes: bytes, tmp_path: Path) -> None:
+    """Un PNG trasparente dentro la presentazione (loghi e schemi lo sono
+    spesso) non diventa nero: la trasparenza va su fondo bianco."""
+    from PIL import Image
+
+    rgba = Image.new("RGBA", (400, 240), (0, 0, 0, 0))
+    for x in range(20, 380):
+        for y in (60, 61, 180, 181):
+            rgba.putpixel((x, y), (0, 0, 0, 255))
+    buf = io.BytesIO()
+    rgba.convert("LA").save(buf, format="PNG")
+    source = tmp_path / "trasparente.pptx"
+    source.write_bytes(_rewrite(pptx_bytes, {"ppt/media/image1.png": buf.getvalue()}))
+    (item,) = [i for i in office.pptx_images(str(source)) if i.media_name.endswith("image1.png")]
+    assert item.image is not None
+    pixels = list(item.image.convert("L").getdata())
+    assert sum(pixels) / len(pixels) > 230  # prima: ≈ 0, tutta nera
+    assert min(pixels) < 30  # il disegno resta
+
+
 def test_docx_captions_above_the_pictures(tmp_path: Path) -> None:
     from docx import Document
     from docx.shared import Cm

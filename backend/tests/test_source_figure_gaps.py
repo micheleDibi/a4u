@@ -110,7 +110,7 @@ def _file(page_id: int, title: str) -> CommonsFile:
     )
 
 
-def _verdict(relevant: bool = True) -> relevance.FigureRelevance:
+def _verdict(relevant: bool = True, text_language: str = "it") -> relevance.FigureRelevance:
     return relevance.FigureRelevance(
         relevant=relevant,
         kind="schematic",
@@ -121,6 +121,7 @@ def _verdict(relevant: bool = True) -> relevance.FigureRelevance:
         legibility="good",
         is_useful_for_teaching=True,
         reason="ok",
+        text_language=text_language,
     )
 
 
@@ -162,6 +163,7 @@ def env(monkeypatch: pytest.MonkeyPatch, _engine: Any) -> dict[str, Any]:
         "calls": [],
         "files": [_file(101, "Laser Doppler vibrometer"), _file(102, "Unrelated bridge")],
         "irrelevant": {"Unrelated bridge"},
+        "languages": {},
         "images": {101: _image(1), 102: _image(2)},
         "search_error": None,
         "settings": settings,
@@ -190,7 +192,11 @@ def env(monkeypatch: pytest.MonkeyPatch, _engine: Any) -> dict[str, Any]:
 
     async def assess(image: bytes, context: Any, *, source_title: Any, source_text: Any) -> Any:
         state["calls"].append(("assess", source_title))
-        return _verdict(source_title not in state["irrelevant"]), dict(USAGE)
+        verdict = _verdict(
+            source_title not in state["irrelevant"],
+            text_language=state["languages"].get(source_title, "it"),
+        )
+        return verdict, dict(USAGE)
 
     monkeypatch.setattr(relevance, "search_terms", search_terms)
     monkeypatch.setattr(relevance, "assess_candidate", assess)
@@ -251,6 +257,56 @@ async def test_enough_pertinent_figures_means_no_calls(
     assert lesson.figures_gap_status == "done"
     assert lesson.figures_gap_stats["reason"] == "enough"
     assert env["calls"] == [] and lesson.figures_gap_usage is None
+
+
+async def test_a_figure_used_by_another_lesson_does_not_fill_the_gap(
+    seeded_db: AsyncSession, env: dict[str, Any]
+) -> None:
+    """La figura pertinente è già collocata in un'altra lezione: non conta
+    (una figura in una sola lezione), quindi si cerca in letteratura. Era il
+    caso delle 7 figure di Commons riusate in quasi tutte le lezioni."""
+    course_id, lesson_id = await _lesson(seeded_db)
+    doc = build_course_document(course_id, filename="dispensa.pdf")
+    doc.figures_status = "ready"
+    seeded_db.add(doc)
+    await seeded_db.flush()
+    figure = build_document_figure(
+        course_id,
+        doc.id,
+        license="cc_by",
+        description="Schema del vibrometro laser Doppler con la cella di Bragg",
+        keywords={"course": ["vibrometro laser Doppler", "cella di Bragg"], "en": []},
+    )
+    seeded_db.add(figure)
+    lesson = await _fresh(seeded_db, lesson_id)
+    seeded_db.add(
+        CourseLesson(
+            module_id=lesson.module_id,
+            course_id=course_id,
+            position=2,
+            lesson_code="M1.L2",
+            title="Applicazioni",
+            summary="Applicazioni.",
+            learning_objectives=[],
+            mandatory_topics=[],
+            prerequisites=[],
+            section_outline=[],
+            content_status="ready",
+            figures_gap_status="done",
+            content_raw={
+                "visual_assets": [
+                    {"asset_id": "SRC-a", "format": "source_figure", "content": str(figure.id)}
+                ]
+            },
+        )
+    )
+    await seeded_db.commit()
+    await gap_worker._tick()
+    lesson = await _fresh(seeded_db, lesson_id)
+    assert lesson.figures_gap_status == "done"
+    assert lesson.figures_gap_stats.get("reason") != "enough", lesson.figures_gap_stats
+    assert lesson.figures_gap_stats["pertinent_before"] == 0
+    assert ("wikimedia", "laser doppler vibrometer") in env["calls"]
 
 
 async def test_course_without_documents_gets_open_literature_figures(
@@ -807,3 +863,96 @@ async def test_errors_outside_the_check_go_back_to_pending(
     lesson = await _fresh(seeded_db, lesson_id)
     assert (lesson.figures_gap_status, lesson.figures_gap_attempts) == ("pending", 1)
     assert "connessione persa" in lesson.figures_gap_stats["error"]
+
+
+# --- qualità delle figure della letteratura -----------------------------------
+
+
+def _png(image: Image.Image) -> bytes:
+    buf = io.BytesIO()
+    image.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _transparent_schematic() -> bytes:
+    """Rendering di Commons: tratti neri su fondo trasparente, modo LA."""
+    rgba = Image.new("RGBA", (640, 400), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(rgba)
+    draw.rectangle([60, 80, 300, 200], outline=(0, 0, 0, 255), width=6)
+    draw.line([300, 140, 580, 320], fill=(0, 0, 0, 255), width=6)
+    return _png(rgba.convert("LA"))
+
+
+async def _external_rows(db: AsyncSession, course_id: uuid.UUID) -> list[CourseDocumentFigure]:
+    rows = await db.execute(
+        select(CourseDocumentFigure)
+        .where(CourseDocumentFigure.course_id == course_id)
+        .execution_options(populate_existing=True)
+    )
+    return list(rows.scalars().all())
+
+
+async def test_transparent_commons_image_is_stored_on_white_and_blank_is_rejected(
+    seeded_db: AsyncSession, env: dict[str, Any]
+) -> None:
+    env["files"] = [
+        _file(101, "Laser Doppler vibrometer"),
+        _file(103, "Laser Doppler vibrometer blank"),
+    ]
+    env["images"] = {
+        101: _transparent_schematic(),
+        103: _png(Image.new("RGB", (640, 400), "black")),
+    }
+    course_id, lesson_id = await _lesson(seeded_db)
+    await gap_worker._tick()
+    lesson = await _fresh(seeded_db, lesson_id)
+    assert lesson.figures_gap_stats["rejected_blank"] == 1, lesson.figures_gap_stats
+    # L'immagine vuota non arriva nemmeno alla Vision.
+    assessed = [c[1] for c in env["calls"] if c[0] == "assess"]
+    assert assessed == ["Laser Doppler vibrometer"]
+    (row,) = await _external_rows(seeded_db, course_id)
+    stored = Image.open(
+        io.BytesIO(env["storage"].files[remote_storage.uploads_key(str(row.storage_path))])
+    )
+    pixels = list(stored.convert("L").getdata())
+    assert sum(pixels) / len(pixels) > 230  # prima: tutta nera
+    assert min(pixels) < 40
+
+
+async def test_figures_with_text_in_another_language_are_rejected(
+    seeded_db: AsyncSession, env: dict[str, Any]
+) -> None:
+    """Corso in italiano: testo in italiano, in inglese o senza parole sì;
+    in arabo no (la variante `-ar` dello stesso schema di Commons)."""
+    env["files"] = [
+        _file(101, "Laser Doppler vibrometer"),
+        _file(104, "Laser Doppler vibrometer ar"),
+        _file(105, "Laser Doppler vibrometer en"),
+    ]
+    env["images"] = {101: _image(1), 104: _image(4), 105: _image(5)}
+    env["languages"] = {"Laser Doppler vibrometer ar": "ar", "Laser Doppler vibrometer en": "en"}
+    course_id, lesson_id = await _lesson(seeded_db)
+    await gap_worker._tick()
+    lesson = await _fresh(seeded_db, lesson_id)
+    assert lesson.figures_gap_stats["rejected_language"] == 1, lesson.figures_gap_stats
+    kept = {row.external_id for row in await _external_rows(seeded_db, course_id)}
+    assert kept == {"commons:101", "commons:105"}
+
+
+@pytest.mark.parametrize(
+    ("text_language", "course", "allowed"),
+    [
+        ("it", "it", True),
+        ("en", "it", True),
+        ("EN-us", "it", True),
+        ("none", "it", True),
+        ("ar", "it", False),
+        ("fa", "it", False),
+        ("zh", "it", False),
+        ("", "it", False),
+        ("de", "de", True),
+        ("it", "de", False),
+    ],
+)
+def test_text_language_allowed(text_language: str, course: str, allowed: bool) -> None:
+    assert relevance.text_language_allowed(text_language, course) is allowed

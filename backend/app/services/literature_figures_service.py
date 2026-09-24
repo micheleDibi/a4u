@@ -256,6 +256,10 @@ async def _consider(
     except image_limits.ImageLimitError as exc:
         run.count(f"rejected_{exc.code}")
         return False
+    if await asyncio.to_thread(cropper.is_blank, safe.image):
+        # Vuota o uniforme: la Vision la promuoveva fidandosi del titolo.
+        run.count("rejected_blank")
+        return False
     digest = await asyncio.to_thread(phash, safe.image)
     if any(hamming(digest, other) <= DUPLICATE_DISTANCE for other in run.hashes):
         run.count("duplicates")
@@ -272,6 +276,9 @@ async def _consider(
         run.count("vision_errors")
         return False
     run.usage = merge_usage(run.usage, usage)
+    if not relevance.text_language_allowed(verdict.text_language, run.context.language_code):
+        run.count("rejected_language")
+        return False
     if not (
         verdict.relevant
         and verdict.is_useful_for_teaching

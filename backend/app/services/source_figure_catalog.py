@@ -6,9 +6,13 @@
   dell'organizzazione), poi selezione lessicale per la lezione
   (`lesson_figure_selection`). Nessun catalogo per le verifiche, con
   `FIGURE_SOURCE_ENABLED=false` o con budget (b) nullo.
+- Una figura di fonte sta in una sola lezione del corso: il catalogo di una
+  lezione non offre le figure già collocate in un'altra (il docente può
+  comunque inserirle a mano dall'editor).
 - `not_selectable`: ricontrollo TOCTOU delle figure scelte dal modello,
   sullo stato del DB al momento della materializzazione (un documento
-  diventato riservato durante la generazione non entra).
+  escluso durante la generazione non entra; nemmeno una figura collocata
+  nel frattempo da un'altra lezione generata in parallelo).
 """
 
 from __future__ import annotations
@@ -26,6 +30,7 @@ from app.models.course_document import CourseDocument
 from app.models.course_document_figure import CourseDocumentFigure
 from app.models.course_lesson import CourseLesson
 from app.models.organization_course_settings import OrganizationCourseSettings
+from app.services import document_figures_service
 from app.services.asset_validation_service import SourceFigureInfo
 from app.services.lesson_figure_selection import FigureCatalog, select_figure_candidates
 from app.services.source_figure_policy import effective_license_policy, figure_visibility
@@ -85,8 +90,14 @@ async def _documents(db: AsyncSession, course_id: uuid.UUID) -> dict[uuid.UUID, 
 
 
 async def selectable_figures(
-    db: AsyncSession, course: Course, *, license_policy: str
+    db: AsyncSession,
+    course: Course,
+    *,
+    license_policy: str,
+    lesson_id: uuid.UUID | None = None,
 ) -> list[CourseDocumentFigure]:
+    """Figure proponibili del corso; con `lesson_id`, senza quelle già
+    collocate in un'altra lezione."""
     settings = get_settings()
     rows = await db.execute(
         select(CourseDocumentFigure).where(
@@ -99,9 +110,14 @@ async def selectable_figures(
         )
     )
     docs = await _documents(db, course.id)
+    taken = (
+        await document_figures_service.used_figure_ids(db, course.id, except_lesson_id=lesson_id)
+        if lesson_id is not None
+        else set()
+    )
     out = []
     for fig in rows.scalars().all():
-        if fig.kind in EXCLUDED_KINDS:
+        if fig.kind in EXCLUDED_KINDS or fig.id in taken:
             continue
         doc = docs.get(fig.document_id) if fig.document_id else None
         visibility = figure_visibility(
@@ -120,7 +136,7 @@ async def build_catalog(
     if not settings.figure_source_enabled or budget <= 0:
         return None
     policy = await license_policy_for(db, course)
-    figures = await selectable_figures(db, course, license_policy=policy)
+    figures = await selectable_figures(db, course, license_policy=policy, lesson_id=lesson.id)
     catalog = select_figure_candidates(
         figures,
         lesson,
@@ -133,9 +149,15 @@ async def build_catalog(
 
 
 async def not_selectable(
-    db: AsyncSession, course: Course, figure_ids: Iterable[uuid.UUID], *, license_policy: str
+    db: AsyncSession,
+    course: Course,
+    figure_ids: Iterable[uuid.UUID],
+    *,
+    license_policy: str,
+    lesson_id: uuid.UUID | None = None,
 ) -> set[uuid.UUID]:
-    """Figure scelte che nel frattempo non sono più ammesse."""
+    """Figure scelte che nel frattempo non sono più ammesse; con
+    `lesson_id`, anche quelle collocate intanto in un'altra lezione."""
     wanted = set(figure_ids)
     if not wanted:
         return set()
@@ -155,6 +177,10 @@ async def not_selectable(
         )
         if not visibility.renderable:
             blocked.add(fid)
+    if lesson_id is not None:
+        blocked |= wanted & await document_figures_service.used_figure_ids(
+            db, course.id, except_lesson_id=lesson_id
+        )
     return blocked
 
 

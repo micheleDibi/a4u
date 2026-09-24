@@ -678,7 +678,11 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
             try:
                 current_policy = await source_figure_catalog.license_policy_for(db, course_full)
                 blocked = await source_figure_catalog.not_selectable(
-                    db, course_full, fused.values(), license_policy=current_policy
+                    db,
+                    course_full,
+                    fused.values(),
+                    license_policy=current_policy,
+                    lesson_id=lesson.id,
                 )
             except Exception as exc:
                 log.warning(

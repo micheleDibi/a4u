@@ -23,7 +23,7 @@ from dataclasses import dataclass
 
 from PIL import Image
 
-from app.services.document_figures.cropper import encode_image, looks_like_photo
+from app.services.document_figures.cropper import encode_image, looks_like_photo, on_white
 
 ALLOWED_FORMATS = frozenset({"PNG", "JPEG", "GIF", "WEBP"})
 
@@ -64,7 +64,7 @@ def load_image(data: bytes, *, max_pixels: int) -> SafeImage:
         # quello corrente, già entro il tetto di pixel controllato sopra.
         probe.seek(0)
         probe.load()
-        image = probe.convert("RGB")
+        image = on_white(probe)
     except Exception as exc:
         raise ImageLimitError("unreadable", f"immagine non decodificabile: {exc}") from exc
     encoded, mime = encode_image(image, photo=looks_like_photo(image))

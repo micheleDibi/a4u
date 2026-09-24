@@ -645,3 +645,101 @@ async def test_tick_dispatches_only_the_lessons_of_the_pending_query(
     await worker._tick()
     await asyncio.sleep(0)
     assert setup["lesson_id"] in dispatched
+
+
+# --- una figura di fonte in una sola lezione ----------------------------------------
+
+
+async def _second_lesson(
+    db: AsyncSession, setup: dict[str, Any], visual_assets: list[dict[str, Any]]
+) -> CourseLesson:
+    first = await _lesson(db, setup["lesson_id"])
+    other = CourseLesson(
+        module_id=first.module_id,
+        course_id=first.course_id,
+        position=2,
+        lesson_code="M1.L2",
+        title="Vibrometro laser Doppler: applicazioni",
+        summary="Applicazioni del vibrometro laser Doppler.",
+        learning_objectives=[],
+        mandatory_topics=[],
+        prerequisites=[],
+        section_outline=[],
+        content_status="ready",
+        content_raw={"introduction": "Testo.", "sections": [], "visual_assets": visual_assets},
+    )
+    db.add(other)
+    await db.commit()
+    return other
+
+
+def _placed(fig_id: uuid.UUID) -> dict[str, Any]:
+    return {"asset_id": "SRC-altra", "format": "source_figure", "content": str(fig_id)}
+
+
+async def test_a_source_figure_is_offered_to_one_lesson_only(
+    seeded_db: AsyncSession, fakes: dict[str, Any]
+) -> None:
+    """La figura già collocata in un'altra lezione non entra nel catalogo;
+    torna disponibile se la collocazione è nella lezione stessa (che si
+    rigenera)."""
+    setup = await _setup(seeded_db)
+    good = setup["figures"]["good"]
+    other = await _second_lesson(seeded_db, setup, [_placed(good.id)])
+    assert good.id not in await _catalog_ids(seeded_db, setup)
+    # Controprova: la figura collocata nella lezione stessa resta proponibile.
+    other.content_raw = {"introduction": "Testo.", "sections": [], "visual_assets": []}
+    lesson = await _lesson(seeded_db, setup["lesson_id"])
+    lesson.content_raw = {
+        "introduction": "Testo.",
+        "sections": [],
+        "visual_assets": [_placed(good.id)],
+    }
+    await seeded_db.commit()
+    assert good.id in await _catalog_ids(seeded_db, setup)
+
+
+async def test_parallel_lessons_do_not_both_keep_the_same_figure(
+    seeded_db: AsyncSession, fakes: dict[str, Any], _engine: Any
+) -> None:
+    """Due lezioni generate insieme scelgono la stessa figura: al
+    ricontrollo quella arrivata seconda la toglie, con audit."""
+    setup = await _setup(seeded_db)
+    good = setup["figures"]["good"]
+    other = await _second_lesson(seeded_db, setup, [])
+
+    async def other_lesson_takes_it() -> None:
+        factory = async_sessionmaker(_engine, expire_on_commit=False)
+        async with factory() as session:
+            await session.execute(
+                update(CourseLesson)
+                .where(CourseLesson.id == other.id)
+                .values(
+                    content_raw={
+                        "introduction": "Testo.",
+                        "sections": [],
+                        "visual_assets": [_placed(good.id)],
+                    }
+                )
+            )
+            await session.commit()
+
+    fakes["on_generate"] = other_lesson_takes_it
+    await worker._process_one(setup["lesson_id"])
+    lesson = await _lesson(seeded_db, setup["lesson_id"])
+    assert lesson.content_status == "ready", lesson.content_error
+    assert list(fakes["calls"][0]["source_figure_refs"]) == [figure_ref(good.id)]
+    assert not [a for a in lesson.content_raw["visual_assets"] if a["format"] == "source_figure"]
+    audits = (
+        (
+            await seeded_db.execute(
+                select(AuditLog).where(
+                    AuditLog.action == "course.lesson.content.source_figures_dropped",
+                    AuditLog.target_id == str(setup["lesson_id"]),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(audits) == 1

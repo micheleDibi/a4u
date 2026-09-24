@@ -31,6 +31,7 @@ from xml.parsers import expat
 from PIL import Image
 
 from app.services.document_figures.captions import clip_caption, is_figure_caption
+from app.services.document_figures.cropper import on_white
 
 _NS = {
     "p": "http://schemas.openxmlformats.org/presentationml/2006/main",
@@ -192,7 +193,7 @@ def _open_image(zf: zipfile.ZipFile, media: str) -> tuple[Image.Image | None, st
         image.load()
     except Exception:
         return None, "unsupported_image_format"
-    return image.convert("RGB"), None
+    return on_white(image), None
 
 
 def _docx_caption_index(texts: list[str], has_image: list[bool], index: int) -> int | None:

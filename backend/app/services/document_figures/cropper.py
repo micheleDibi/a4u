@@ -58,6 +58,20 @@ def choose_dpi(bbox: BBox, *, is_vector: bool, native_ppi: float | None) -> int:
     return max(1, int(dpi))
 
 
+def on_white(image: Image.Image) -> Image.Image:
+    """RGB con le zone trasparenti su fondo bianco. `convert("RGB")` scarta
+    l'alfa: i PNG trasparenti (rendering di Commons, immagini di DOCX e
+    PPTX) diventavano neri, con il testo nero invisibile."""
+    has_alpha = image.mode in ("RGBA", "LA", "PA") or (
+        image.mode == "P" and "transparency" in image.info
+    )
+    if not has_alpha:
+        return image.convert("RGB")
+    rgba = image.convert("RGBA")
+    background = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
+    return Image.alpha_composite(background, rgba).convert("RGB")
+
+
 def is_blank(image: Image.Image) -> bool:
     gray = np.asarray(image.convert("L"), dtype=np.float32)
     return float(gray.std()) < BLANK_STDDEV

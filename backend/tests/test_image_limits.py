@@ -80,6 +80,37 @@ def test_valid_image_is_reencoded_without_metadata() -> None:
     assert b"Mallory" not in safe.data
 
 
+def _transparent_schematic(mode: str) -> Image.Image:
+    """Schema nero su fondo trasparente, come i rendering PNG di Commons
+    (il file «IPv4 address structure…» è in modo LA)."""
+    rgba = Image.new("RGBA", (300, 120), (0, 0, 0, 0))
+    for x in range(20, 280):
+        for y in (30, 31, 90, 91):
+            rgba.putpixel((x, y), (0, 0, 0, 255))
+    if mode == "LA":
+        return rgba.convert("LA")
+    if mode == "P":
+        return rgba.convert("P")  # trasparenza nella palette (`info["transparency"]`)
+    return rgba
+
+
+@pytest.mark.parametrize("mode", ["RGBA", "LA", "P"])
+def test_transparent_background_becomes_white_not_black(mode: str) -> None:
+    image = _transparent_schematic(mode)
+    buf = io.BytesIO()
+    image.save(buf, format="PNG")
+    safe = load_image(buf.getvalue(), max_pixels=40_000_000)
+    pixels = list(safe.image.convert("L").getdata())
+    mean = sum(pixels) / len(pixels)
+    # Prima: `convert("RGB")` rendeva nero tutto lo sfondo (media ≈ 0).
+    assert mean > 230, mean
+    # Il disegno nero resta visibile.
+    assert min(pixels) < 30
+    # Controprova: la conversione ingenua dà un'immagine tutta nera.
+    naive = list(image.convert("RGB").convert("L").getdata())
+    assert sum(naive) / len(naive) < 5
+
+
 def _pnginfo(key: str, value: str) -> object:
     from PIL.PngImagePlugin import PngInfo
 

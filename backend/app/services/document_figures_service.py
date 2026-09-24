@@ -224,10 +224,15 @@ def source_figure_ids(content_raw: Any) -> set[uuid.UUID]:
     return ids
 
 
-async def used_figure_ids(db: AsyncSession, course_id: uuid.UUID) -> set[uuid.UUID]:
-    rows = await db.execute(
-        select(CourseLesson.content_raw).where(CourseLesson.course_id == course_id)
-    )
+async def used_figure_ids(
+    db: AsyncSession, course_id: uuid.UUID, *, except_lesson_id: uuid.UUID | None = None
+) -> set[uuid.UUID]:
+    """Figure di fonte collocate nelle lezioni del corso (tranne, se dato,
+    `except_lesson_id`)."""
+    query = select(CourseLesson.content_raw).where(CourseLesson.course_id == course_id)
+    if except_lesson_id is not None:
+        query = query.where(CourseLesson.id != except_lesson_id)
+    rows = await db.execute(query)
     used: set[uuid.UUID] = set()
     for content_raw in rows.scalars().all():
         used |= source_figure_ids(content_raw)
