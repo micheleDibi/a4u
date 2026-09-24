@@ -174,8 +174,13 @@ schema con `create_all`. La parità modello↔migrazione è verificata da
   valutazione legale spetta al committente e non blocca il rilascio:
   `open_only` è l'opzione prudente.
 - **Crediti**. Le figure esterne CC hanno in fondo alla dispensa
-  l'appendice «Crediti delle figure»: autore, titolo, licenza con
-  versione e URI, fonte.
+  l'appendice «Crediti delle figure»: autore, titolo, licenza (con
+  versione e URI per Wikimedia; OpenAlex dà solo il codice) e fonte.
+- **Figure di terzi** (Fase D). Una didascalia originale con un credito
+  («Reprinted from…», «©», «courtesy of», «Fonte: …») rende la figura
+  `unknown`: non eredita la licenza del documento ed esce da `open_only`.
+  Il credito entra nella riga «Fonte». Le candidate OpenAlex di terzi
+  sono scartate.
 
 ## 6. Selezione e PROMPT 3 (WP3)
 
@@ -376,7 +381,7 @@ schema con `create_all`. La parità modello↔migrazione è verificata da
 | **M1** fonti reali in produzione | **Non eseguita** (SQL in sola lettura nell'Appendice B del piano, a cura dell'utente) |
 | **M2** Docling su PDF reali | arXiv 2402.10966 e 2304.11054, OCW 20.309, OpenStax. **Tempi** (arm64 nativo, 1 thread): 2,0-2,6 s/pag; RSS del figlio 1,35-1,76 GB. **Motore euristico**: 0,06-0,32 s/pag. **Richiamo** sulle figure con didascalia: Docling 0,93, euristico 0,90. **Precisione**: 0 falsi positivi su 45 ritagli. **Didascalie** esatte dopo la correzione. p90 dei byte 30-126 KB. **Proiezione sulla VM** senza M0 (k = 6): 11-15 s/pag, oltre la soglia di 4 s → decisione al cancello |
 | **M3** delta dell'immagine | Stima arm64 ~1,39 GB espansi / ~0,48 GB compressi (build completa non eseguita: disco di Docker pieno). 134 pacchetti, nessun AGPL, CUDA, triton od OpenCV |
-| **M4** Vision descrittiva | 49 ritagli: tutti i modelli passano. Scelto **gpt-4.1-mini a 768 px**: kind 0,94-0,98, useful 0,98-1,0, p95 3,6-4,8 s, ~0,0007 $/figura; manuale di 300 pagine ≈ 0,06 $ |
+| **M4** Vision descrittiva | 49 ritagli: tutti i modelli passano. Scelto **gpt-4.1-mini a 768 px**: kind 0,94-0,98, useful 0,98-1,0, p95 3,6-4,8 s, ~0,0007 $/figura; con il tetto di 80 figure descritte per documento un manuale costa ≈ 0,06 $ (senza tetto, 210 figure in 300 pagine: ≈ 0,15 $). Oltre il tetto le figure non entrano nel catalogo: dalla Fase D si scelgono prima quelle con didascalia, distribuite su tutto il documento |
 | **M5** TikZ | TeX Live Debian per XeLaTeX: **+550 MB** (pdflatex +393 MB), oltre soglia → TeX solo con build arg. Nessuna libgs. **Spike di generazione** (gpt-5.5, reasoning high, blocco `tikz` reale; 5 schemi × 3: catena di misura, vibrometro, ponte di Wheatstone, anello di controllo, condizionamento di una termocoppia; 1,77 $): lexer **15/15** (soglia 85%); geometria pulita **8/15** (anello 3/3, Wheatstone 3/3, vibrometro 2/3, catena 0/3, condizionamento 0/3). I rifiuti, controllati sulle immagini, sono difetti veri: etichette sui riquadri, linee sulle etichette, figura più larga della pagina. Regola del piano: 8-11 su 15 → **solo editor**, proposta automatica spenta |
 | **M6** system prompt | Righe statiche misurate sulla variante peggiore; guardie invariate (PROMPT 3 ≤ 31.500, PROMPT 5 ≤ 18.200, PROMPT 6 ≤ 12.500) |
 | **M7** non sostituzione | Due giri: il 1° **fallito** su S3, il 2° **passato** (dettagli sotto). Costo 15,13 $ |
@@ -601,4 +606,95 @@ con il motivo esplicito (`[dep:tex]`, `[dep:docling]`).
 
 ## 19. Revisione avversariale (Fase D)
 
-Esito riportato nel corpo della PR e nel report finale della campagna.
+Cinque revisori in sola lettura sulle dimensioni del brief §8 (costo e
+prestazioni, correttezza, sicurezza, attribuzione e i18n, tipografia nelle
+cinque uscite), più un confutatore sulle correzioni.
+
+### Misura sul manuale di 500 pagine (OpenStax UP1, docling, 1 thread)
+
+Container `--cpus 2 --memory 3g`, codice vero del worker
+(`_extract`), storage e DB finti.
+
+| Voce | Esito |
+|---|---|
+| Tempo | 1,87 s/pag nei blocchi; 17,1 min per 500 pagine con due interruzioni (≈2,0 s/pag); 16 avvii del figlio da 3,7 s |
+| Memoria | RSS del figlio 1,64-1,65 GB, stabile con 40 pagine per figlio (watchdog a 2048 MB); padre 91 MB |
+| Figure | 401 estratte e 138 scartate; dopo la dedup 210 fino a p. 300 e 390 fino a p. 500; p50 26 KB, p90 66 KB |
+| Ripresa | Dopo il kill del container riprende dal checkpoint, senza righe doppie. Dopo il kill del figlio il blocco va rifatto al tentativo dopo (backoff 60 s, un auto-retry) |
+| Tetto | `FIGURE_EXTRACTION_MAX_PAGES`=300 rispettato: copertura `partial` |
+| VM | Proiezione (k = 6, M0 non fatta): ≈11 s/pag, 300 pagine ≈ 1 h. Oltre `FIGURE_WAIT_MAX_MINUTES`: la Fase 3 di un corso nuovo parte senza le figure del manuale, che arrivano alle rigenerazioni |
+
+### Correzioni (con test)
+
+| Commit | Dimensione | Correzione |
+|---|---|---|
+| cb45a98 | sicurezza | XML Office con DTD o entità rifiutato prima del parse. Un PPTX di 17 KB portava il processo principale a ~3 GB durante il riassunto. DOI letto dal PDF senza caratteri di query |
+| 5699a02 | correttezza | Duplicazione oltre ~700 figure: i rimandi fra figure si assegnano dopo il primo INSERT (prima c'era una FK violata a ogni tentativo). Fusione: `[fig:]` minuscolo non è una citazione; id con spazi. Worker dei buchi: errori inattesi → `pending` |
+| e8abd47 | costo | Traduzione delle figure nella duplicazione a blocchi da 25: in una sola chiamata ~80 figure troncavano la risposta, il job falliva e il corso copia veniva cancellato. Tetto delle descrizioni distribuito sul documento, didascalie prima: prima le prime 80 figure in ordine di pagina (su 300 pagine si fermava a p. 138). Niente figlio avviato a pagine finite; memoria del cgroup |
+| 83f44cf | attribuzione | Metadati di default esclusi (Microsoft Office User, scanner, Presentation1…). «Cognome, Nome» non perde più il cognome né il primo autore. Figure di terzi («Reprinted from…», «©»): licenza `unknown` e credito originale nella riga; candidate OpenAlex di terzi scartate. Numero di figura oltre 10 caratteri ignorato |
+| 86937ae | tipografia | `tikz` a grandezza naturale (prima usciva al 75%). Nella dispensa la riga «Fonte» resta sulla pagina della figura. Ritagli non oltre 1,25× la misura nell'originale. Fascia: cognome conservato, «et al.» solo da tre autori, niente « » aperte |
+| 84eb94a | attribuzione | Code di fonte del modello riconosciute in tutte le lingue dell'interfaccia |
+
+### Rilievi dichiarati, senza correzione
+
+**Correttezza**
+- **TOCTOU fra cancellazione e collocazione**: un documento cancellato
+  mentre la Fase 3 o il PATCH collocano una sua figura può lasciare un
+  segnaposto fino alla rigenerazione. Probabilità bassa, sempre visibile.
+- **File orfani nello storage**: documento o corso cancellati durante
+  un'estrazione; cartella del corso copia dopo una duplicazione fallita;
+  righe `superseded` non più usate.
+- **Id `SRC-` dopo la duplicazione**: restano quelli del corso sorgente;
+  alla rigenerazione il modello non può ripescare quelle figure con l'id
+  vecchio (resa e numerazione invariate).
+- **Descrizione Vision fallita**: una sola figura con errore
+  deterministico porta il documento a `failed(vision_unavailable)`; le
+  figure già `ready` restano usabili.
+
+**Costo**
+- **OpenAlex nei buchi**:
+  - l'estrazione di un PDF (fino a 40 pagine) sotto `HEAVY_JOB_LOCK`
+    non rispetta la scadenza della verifica;
+  - nessuna cache per corso;
+  - ai ritentativi le candidate già scartate si rivalutano (≤ ~0,03 $
+    per lezione).
+- **Upload su SFTP**: una connessione per file (2-7 min stimati per 300
+  pagine su SFTP).
+- **Dashboard**: il costo Vision delle righe cancellate o sostituite
+  sparisce, perché il totale in admin non è uno storico.
+
+**Attribuzione**
+- **Riga nei PDF già generati**: dopo una modifica di bibliografia o
+  licenza del documento i PDF non risultano «da rigenerare» (coerente
+  con U1: vale dalla prossima esportazione).
+- **Script non latini**: in WeasyPrint le righe della fascia con script
+  non latini sono alte ~15 px invece di 13,9; con 4 figure la quarta può
+  perdere ~3 px. Font macOS diversi da quelli del container: dato
+  incerto.
+- **Variante parlata**: il cognome è l'ultima parola (nomi
+  ungheresi/giapponesi); il credito Wikimedia si perde se c'è il titolo.
+- **Fascia con più figure**: le righe non dicono a quale figura si
+  riferiscono.
+- **Crediti OpenAlex**: senza URI e versione della licenza (OpenAlex dà
+  solo il codice). Le figure Wikimedia li hanno.
+- **Endpoint `…/image`**: serve anche le figure non proponibili del corso
+  (sempre con la riga, a chi ha COURSE_VIEW).
+- **«p. N»**: è la pagina del PDF, non quella stampata.
+- **Lingue diverse da it/en**: etichette della riga in italiano (A4);
+  nessun isolamento bidi.
+
+**Tipografia**
+- **Avatar nei frame**: può coprire l'angolo di una figura di fonte larga
+  (rapporto ~1,8-3,2) su una slide con il solo titolo. Geometria
+  preesistente del body.
+- **Slide con 3-4 figure di fonte**: una figura si perde o diventa
+  illeggibile nel PDF slide; nella dispensa restano tutte.
+- **A capo**: spazio non separabile assente in «fig. N» / «p. N».
+- **Separatore**: «e» italiana fra autori in cirillico o cinese.
+- **Ritagli senza dpi** (Wikimedia): restano a piena larghezza del
+  riquadro.
+
+**Sicurezza**
+- **Variabili di `\foreach`**: la lista dei nomi vietati non è
+  determinante, perché pgffor rilega la variabile nel corpo. Resta come
+  difesa a strati.
