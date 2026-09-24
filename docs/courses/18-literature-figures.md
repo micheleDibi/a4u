@@ -797,8 +797,26 @@ con la letteratura aperta accesa. Sono emersi tre difetti.
   è stato salvato già nero. Per la prova si usa un corso nuovo.
 - Due lezioni che salvano quasi nello stesso istante possono ancora
   tenere la stessa figura: il ricontrollo legge lo stato già salvato.
-- OpenAlex: molti editori open access (MDPI, Hindawi) rispondono 403 ai
-  download automatici (`download_errors`). Per ogni ricerca si provano
-  solo i primi 3 lavori, quindi nei temi di ingegneria dominati da MDPI
-  OpenAlex dà poche figure.
+
+**OpenAlex: editori che bloccano i download** (correzione successiva)
+- Molti editori open access (MDPI, Hindawi) rispondono 403 ai download
+  automatici. Nei temi di ingegneria, dominati da MDPI, OpenAlex non dava
+  quasi figure (`download_errors`).
+- Le protezioni degli editori non si aggirano. Se l'editore rifiuta, si
+  usa la copia del PDF ospitata da OpenAlex (`has_content.pdf`,
+  `content.openalex.org/works/{id}.pdf`, API key in query string).
+  - Costa 0,01 $ a PDF, dentro 1 $ gratuito al giorno per chiave (circa
+    100 PDF).
+  - Si prova prima l'editore, che è gratis. Un editore che risponde 401 o
+    403 non si riprova nello stesso giro.
+  - A credito finito (429/402) o con la chiave rifiutata, la copia di
+    OpenAlex non si chiede più per quella lezione.
+- Licenza e attribuzione restano quelle di `best_oa_location`. OpenAlex
+  precisa che i PDF mantengono il copyright originale: per questo si
+  tengono solo le licenze CC BY, CC BY-SA, CC0 e pubblico dominio.
+- Si provano fino a 5 lavori per ricerca, prima 3.
+- Statistiche in `figures_gap_stats`: `downloads_publisher`,
+  `downloads_openalex`, `publisher_errors`, `download_errors`.
+- La chiave non compare nei log: gli errori la oscurano e httpx è a
+  WARNING.
 

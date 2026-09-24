@@ -328,7 +328,7 @@ proprio nel prompt di Fase 3.
 | `FIGURE_LITERATURE_AUTO_RETRY_MAX` | `2` | Ripetizioni su errori recuperabili (rete, 429, 5xx), poi `failed`. |
 | `FIGURE_LITERATURE_POLL_INTERVAL_SECONDS` | `5` | Intervallo del worker dei buchi. |
 | `WIKIMEDIA_API_URL` | `https://commons.wikimedia.org/w/api.php` | API di Commons; il contatto nello `User-Agent` è `PAPERS_POLITE_EMAIL`. |
-| `OPENALEX_API_KEY` | _(vuoto)_ | Obbligatoria per OpenAlex dal 13/02/2026 (anche per la ricerca paper); senza, i buchi usano solo Wikimedia. |
+| `OPENALEX_API_KEY` | _(vuoto)_ | Obbligatoria per OpenAlex dal 13/02/2026 (anche per la ricerca paper); senza, i buchi usano solo Wikimedia. Con la chiave, se l'editore rifiuta il download (403 di MDPI, Hindawi…) si usa la copia del PDF ospitata da OpenAlex: 0,01 $ a PDF, dentro 1 $ gratuito al giorno. |
 | `OPENAI_FIGURE_RELEVANCE_MODEL` | `gpt-4.1-mini` | Termini di ricerca e pertinenza (PROMPT 20); deve stare a listino. |
 | `OPENAI_FIGURE_RELEVANCE_REASONING_EFFORT` | _(vuoto)_ | Solo per modelli reasoning. |
 | `OPENAI_FIGURE_RELEVANCE_MAX_TOKENS` | `800` | Tetto dell'output. |
