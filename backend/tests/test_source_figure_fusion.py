@@ -289,3 +289,21 @@ def test_generated_id_equal_to_a_catalog_id_is_reported() -> None:
     report = fuse_source_figures(output, REFS, max_items=4)
     assert report.renamed_catalog_collisions == ["src-aaaaaaaa"]
     assert "renamed_catalog_collisions" in report.as_json()
+
+
+@pytest.mark.parametrize(
+    "caption",
+    [
+        "Schema del vibrometro. Bron: Rossi 2019",
+        "Schema del vibrometro. Πηγή: Rossi 2019",
+        "Schema del vibrometro. Lähde: Rossi 2019",
+        "Schema del vibrometro. Källa: Rossi 2019",
+        "Schema del vibrometro. Forrás: Rossi 2019",
+        "Schema del vibrometro. Image courtesy of NASA.",
+        "Schema del vibrometro. Per gentile concessione di Polytec.",
+    ],
+)
+def test_source_tails_in_other_languages_are_removed(caption: str) -> None:
+    """Fase D: la coda di fonte scritta dal modello si riconosce anche nelle
+    altre lingue dell'interfaccia; la fonte la scrive solo il server."""
+    assert clean_caption(caption) == ("Schema del vibrometro.", True)

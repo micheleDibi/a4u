@@ -15,12 +15,18 @@ import re
 # «; tratto da …», « — © …», « (Rossi et al., 2019)». Serve un segno
 # esplicito (due punti, anche a larghezza piena, o una formula di
 # rimando): «Energy sources: solar» e «il tratto da A a B» non sono code.
+# «Fonte» nelle lingue dell'interfaccia e in quelle non latine più usate
+# (Fase D: nl, el, fi, hu, ro, sv, da, bg, lv, lt, et, sl, hr, mt, ga, ar,
+# he mancavano).
 _SOURCE_WORDS = (
     r"(?:fonte|fonti|sources?|credits?|crediti|quelle|quellen|fuente|fuentes|"
-    r"źródło|źródła|zdroj|источник|来源|來源|出典|出处|出處|출처)\s*[:\uff1a]"
+    r"źródło|źródła|zdroj|источник|джерело|bron|πηγή|lähde|forrás|sursa|källa|kilde|"
+    r"източник|avots|šaltinis|allikas|vir|izvor|sors|foinse|المصدر|מקור|"
+    r"来源|來源|出典|出处|出處|출처)\s*[:\uff1a]"
 )
 _SOURCE_PHRASES = (
-    r"(?:courtesy of|tratt[aoie] da|adattat[aoie] da|riprodott[aoie] da|adapted from|"
+    r"(?:(?:image |photo |foto |immagine )?courtesy of|per gentile concessione|"
+    r"tratt[aoie] da|adattat[aoie] da|riprodott[aoie] da|adapted from|"
     r"reprinted from|reproduced from|redrawn from|modified from|adaptado de|"
     r"adapté de|tomado de|tiré de)\b"
 )
