@@ -421,7 +421,9 @@ async def test_figure_translation_is_chunked_and_a_failed_chunk_keeps_the_origin
         sizes.append(len(items))
         if "Descrizione 0" in items.values():
             raise RuntimeError("risposta troncata")
-        return {key: f"EN:{value}" for key, value in items.items()}
+        # Una risposta che rinumera da 0 (chiavi corte): «0» non è di questo
+        # blocco e non deve scrivere sulla prima figura (confutatore).
+        return {"0": "INTRUSO", **{key: f"EN:{value}" for key, value in items.items()}}
 
     monkeypatch.setattr(dup, "_translate_batch_resilient", fake_translate)
     stats = await dup._translate_document_figures(

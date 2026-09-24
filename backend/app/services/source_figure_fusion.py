@@ -52,6 +52,9 @@ __all__ = [
 # `[fig:…]` non è un rimando per la numerazione, quindi non lo è neanche per
 # la fusione (Fase D).
 _TAG_RE = re.compile(r"\[FIG:\s*([^\]\s]+)\s*\]")
+# Per TOGLIERE i tag (orfani `SRC-`, figure ritirate) anche la forma
+# minuscola: un `[fig:SRC-…]` non cita, ma non deve restare nel testo.
+_ANY_TAG_RE = re.compile(r"\[FIG:\s*([^\]\s]+)\s*\]", re.IGNORECASE)
 
 
 @dataclass
@@ -103,7 +106,7 @@ def _drop_tags(text: str, ids: set[str]) -> str:
     una; un tag in mezzo al testo sparisce da solo. Un campo senza quei tag
     torna identico (anche le sue righe vuote multiple, per esempio nel
     codice)."""
-    if not ids or not any(m.group(1).lower() in ids for m in _TAG_RE.finditer(text)):
+    if not ids or not any(m.group(1).lower() in ids for m in _ANY_TAG_RE.finditer(text)):
         return text
     lines = text.split("\n")
     out: list[str] = []
@@ -120,7 +123,7 @@ def _drop_tags(text: str, ids: set[str]) -> str:
             continue
         out.append(line)
     text = "\n".join(line for line in out if line != "\x00")
-    return _TAG_RE.sub(lambda m: "" if m.group(1).lower() in ids else m.group(0), text)
+    return _ANY_TAG_RE.sub(lambda m: "" if m.group(1).lower() in ids else m.group(0), text)
 
 
 def rename_generated_src_ids(output: LessonContentOutput) -> dict[str, str]:
@@ -204,7 +207,7 @@ def fuse_source_figures(
         for field_text in _body_fields(output)
         + [ex.content for ex in output.examples]
         + [t.markdown for t in output.tables]
-        for m in _TAG_RE.finditer(field_text)
+        for m in _ANY_TAG_RE.finditer(field_text)
         if m.group(1).upper().startswith(REF_PREFIX) and m.group(1).lower() not in valid
     }
     if orphan:

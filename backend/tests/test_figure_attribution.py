@@ -472,3 +472,45 @@ def test_third_party_credit_from_the_original_caption_is_in_the_line() -> None:
 def test_an_absurd_figure_number_is_not_a_number() -> None:
     assert figure_number_from_label("Figura 3.2") == "3.2"
     assert figure_number_from_label("Fig. 1.2.3.4.5.6.7.8.9.10.11.12.13") is None
+
+
+@pytest.mark.parametrize(
+    ("caption", "credit"),
+    [
+        (
+            "Figure 3. Pump schematic. Reprinted from Smith et al. (2010), © Elsevier, "
+            "with permission.",
+            "Reprinted from Smith et al. (2010), © Elsevier, with permission",
+        ),
+        ("Fig. 3. (a) Setup, (b) signal, (c) spectrum.", None),  # pannelli, non ©
+        ("Figure 4. Diagram (c) 2019 Elsevier", "© 2019 Elsevier"),
+        ("Figura 2. Schema. Fonte: elaborazione propria", None),  # materiale proprio
+        ("Figura 2. Schema. Fonte: Rossi 2019", "Rossi 2019"),  # niente «Fonte: Fonte:»
+        ("Figura 5. Schema (Rossi et al., 2019).", "Rossi et al., 2019"),
+        ("Figure 1. Transformer. Sources: primary and secondary windings", None),
+        ("Figure 2. Energy sources: solar and wind", None),
+        ("図1。構成。出典\uff1a日本機械学会", "日本機械学会"),  # due punti a larghezza piena
+    ],
+)
+def test_third_party_credit(caption: str, credit: str | None) -> None:
+    """Fase D (confutatore): etichette di pannello, materiale proprio e code
+    senza un nome non sono crediti di terzi."""
+    from app.services.source_caption import third_party_credit
+
+    assert third_party_credit(caption) == credit
+
+
+@pytest.mark.parametrize(
+    ("name", "short"),
+    [
+        ("Maximilian Alexander von Humboldt", "M. A. von Humboldt"),
+        ("Rossi M.", "Rossi M."),
+        ("Smith J", "Smith J"),
+        ("De Luca, Giovanni", "De Luca, Giovanni"),
+        ("Mario Rossi Jr.", "M. Rossi"),
+    ],
+)
+def test_initials_keep_the_surname(name: str, short: str) -> None:
+    from app.services.figure_attribution import _initials
+
+    assert _initials(name) == short

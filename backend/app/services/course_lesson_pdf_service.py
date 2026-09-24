@@ -1081,9 +1081,11 @@ def _render_visual_asset_block(
         ):
             # Mai oltre la misura naturale (×1,25): `max-width` e `max-height`
             # del CSS restano i tetti del riquadro.
+            # Solo nella dispensa: slide e frame hanno il loro riquadro, come
+            # l'anteprima web delle slide.
             width_style = (
                 f' style="width: {resolved.display_width_mm}mm"'
-                if resolved.display_width_mm
+                if resolved.display_width_mm and variant == "lesson"
                 else ""
             )
             body = Markup(

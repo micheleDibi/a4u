@@ -99,7 +99,18 @@ def _cgroup_headroom_mb(root: str = "/sys/fs/cgroup") -> int | None:
             return None
         with open(f"{root}/memory.current", encoding="ascii") as handle:
             current = int(handle.read().strip())
-        return max(0, int(limit) - current) // (1024 * 1024)
+        # `memory.current` conta anche la page cache: quella inattiva il
+        # kernel la libera, quindi non è memoria occupata.
+        reclaimable = 0
+        try:
+            with open(f"{root}/memory.stat", encoding="ascii") as handle:
+                for line in handle:
+                    if line.startswith("inactive_file "):
+                        reclaimable = int(line.split()[1])
+                        break
+        except (OSError, ValueError):
+            reclaimable = 0
+        return max(0, int(limit) - max(0, current - reclaimable)) // (1024 * 1024)
     except (OSError, ValueError):
         return None
 

@@ -76,10 +76,19 @@ def _extract_pptx(path: Path) -> str:
 
 
 def _extract_doc(path: Path) -> str:
+    import zipfile
+
     import docx2txt
 
+    from app.services.document_figures.office import OfficeFormatError, assert_safe_package
+
     try:
+        # `docx2txt` legge l'XML senza guardie: prima bomba zip e DTD.
+        if zipfile.is_zipfile(path):
+            assert_safe_package(str(path))
         text = docx2txt.process(str(path))
+    except OfficeFormatError as exc:
+        raise DocumentExtractionError(f"Impossibile leggere il file DOC: {exc}") from exc
     except Exception as exc:
         raise DocumentExtractionError(
             f"Impossibile leggere il file DOC: {exc}"

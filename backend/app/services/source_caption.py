@@ -52,18 +52,43 @@ def clean_caption(text: str) -> tuple[str, bool]:
     return cleaned, cleaned != original
 
 
+# Etichetta di pannello «(c)» (dopo «(a)», «(b)»): non è un ©. Un vero
+# «(c)» di copyright ha un anno o un titolare subito dopo.
+_PANEL_C_RE = re.compile(r"^\(?c\)\s*(?!\d{4}\b|copyright\b)", re.IGNORECASE)
+_LEADING_SOURCE_WORD_RE = re.compile(rf"^{_SOURCE_WORDS}\s*", re.IGNORECASE)
+_NAMES_SOMEONE_RE = re.compile(r"[A-ZÀ-ÝΑ-ΩА-ЯЁ0-9©]|[\u0600-\u06ff\u05d0-\u05ea\u2e80-\uffff]")
+# Materiale dell'autore del documento: non è un credito di terzi.
+_OWN_WORK_RE = re.compile(
+    r"^(?:elaborazione (?:propria|dell'autore|degli autori)|own (?:elaboration|work)|"
+    r"author'?s? own|elaborated by the authors?|figura originale|original figure)\b",
+    re.IGNORECASE,
+)
+
+
 def third_party_credit(caption: str | None) -> str | None:
     """Credito di terzi nella didascalia ORIGINALE di una figura estratta
     («Reprinted from Smith et al. (2010), © Elsevier, with permission»,
-    «Fonte: …», «(Rossi et al., 2019)»): la figura non è dell'autore del
-    documento, quindi non ne eredita la licenza e la riga «Fonte» deve
-    nominarne l'origine (Fase D). None se non c'è."""
+    «Fonte: Rossi 2019», «(Rossi et al., 2019)»): la figura non è
+    dell'autore del documento, quindi non ne eredita la licenza e la riga
+    «Fonte» deve nominarne l'origine (Fase D). None se non c'è, se è
+    un'etichetta di pannello «(c)» o se dichiara materiale proprio. Il
+    credito non ripete la parola «Fonte» (la mette la riga)."""
     text = " ".join((caption or "").split())
     match = _SOURCE_TAIL_RE.search(text)
     if match is None:
         return None
-    credit = match.group(0).strip().lstrip("([—–-;:").strip()
+    raw = match.group(0).strip().lstrip("[—–-;:").strip()
+    if _PANEL_C_RE.match(raw) and re.search(r"\((?:a|b)\)", text, re.IGNORECASE):
+        return None
+    credit = re.sub(r"^\(c\)", "©", raw, flags=re.IGNORECASE).lstrip("(").strip()
+    credit = _LEADING_SOURCE_WORD_RE.sub("", credit).strip().rstrip(".;, ").strip()
     if credit.count(")") > credit.count("("):
-        credit = credit.rstrip(")").strip()
-    credit = credit.rstrip(".;, ").strip()
-    return credit[:200] or None
+        credit = credit.rstrip(")").strip().rstrip(".;, ").strip()
+    if not credit or _OWN_WORK_RE.match(credit):
+        return None
+    # Un credito nomina qualcuno (maiuscola, anche greca o cirillica), porta
+    # un anno o un ©, o è in una scrittura senza maiuscole (CJK): «Sources:
+    # primary and secondary windings» non lo è.
+    if not _NAMES_SOMEONE_RE.search(credit):
+        return None
+    return credit[:200]

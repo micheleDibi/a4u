@@ -36,7 +36,7 @@ _JUNK_TITLE_RE = re.compile(
     r"(^microsoft (word|powerpoint|excel)|^untitled|^senza titolo|^presentazione"
     r"|^powerpoint presentation$|^presentation\s*\d*$|^documento?\s*\d*$"
     r"|^scanned (document|image)|^scan\b|^diapositiva \d+$|^slide \d+$"
-    r"|\.(docx?|pptx?|pdf|tex|dvi|odt)$|[\\/]|^[a-z]:)",
+    r"|\.(docx?|pptx?|pdf|tex|dvi|odt)$|\\|^/|^[a-z]:)",
     re.IGNORECASE,
 )
 # Autori di default dei programmi e degli scanner, mai persone (Fase D:
@@ -44,8 +44,10 @@ _JUNK_TITLE_RE = re.compile(
 _JUNK_AUTHOR_RE = re.compile(
     r"(microsoft office|office user|windows user|utente di windows|^utente$|^user$"
     r"|administrator|amministratore|^author$|^autore$|^unknown$|sconosciuto"
-    r"|\b(canon|xerox|ricoh|epson|konica|kyocera|brother|lexmark|sharp|toshiba|"
-    r"hewlett|hp laserjet|hp officejet|scanner|scansione)\b)",
+    # Marca seguita da un modello (cifre): «Canon iR-ADV C5535», non il
+    # cognome «Sharp, Phillip A.».
+    r"|\b(canon|xerox|ricoh|epson|konica|kyocera|brother|lexmark|sharp|toshiba)\b.*\d"
+    r"|\b(hewlett|hp laserjet|hp officejet|scanner|scansione)\b)",
     re.IGNORECASE,
 )
 # `docProps/core.xml` legittimo: pochi KB.
@@ -73,7 +75,13 @@ def _split_names(segment: str) -> list[str]:
     nome), «A. Rossi, B. Bianchi» sono due."""
     pieces = [p.strip() for p in segment.split(",") if p.strip()]
     if len(pieces) == 2 and len(pieces[0].split()) == 1 and len(pieces[1].split()) <= 3:
-        return [f"{pieces[1]} {pieces[0]}"]
+        given = pieces[1]
+        # Si inverte solo se la seconda parte è sicuramente un prenome
+        # (iniziali o più parole): «Smith, John» e «Rossi, Bianchi» restano
+        # come sono, senza inventare una persona «Bianchi Rossi».
+        if re.search(r"\b[A-ZÀ-Ý]\.", given) or len(given.split()) >= 2:
+            return [f"{given} {pieces[0]}"]
+        return [segment]
     if len(pieces) > 1 and all(len(p.split()) >= 2 for p in pieces):
         return pieces
     return [segment]
@@ -177,7 +185,14 @@ def find_doi(text: str | None) -> str | None:
     match = DOI_RE.search(text)
     if match is None:
         return None
-    return match.group(1).rstrip(".,;:)]}'\"").lower()
+    doi = match.group(1).rstrip(".,;:]}'\"")
+    # Una parentesi chiusa resta se apre dentro il DOI («…108(3)»).
+    while doi.endswith(")") and doi.count(")") > doi.count("("):
+        doi = doi[:-1].rstrip(".,;:")
+    # Segmenti «.» o «..» cambierebbero la risorsa chiesta a Crossref.
+    if re.search(r"(^|/)\.{1,2}(/|$)", doi):
+        return None
+    return doi.lower()
 
 
 def pdf_first_pages_text(path: Path, pages: int = 2) -> str:

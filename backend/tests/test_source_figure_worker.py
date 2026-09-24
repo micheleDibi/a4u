@@ -1081,3 +1081,14 @@ def test_available_memory_respects_the_container_limit(tmp_path: Path) -> None:
     (tmp_path / "memory.max").write_text("max\n")
     assert runner._cgroup_headroom_mb(str(tmp_path)) is None
     assert runner._cgroup_headroom_mb(str(tmp_path / "assente")) is None
+
+
+def test_page_cache_is_not_counted_as_used_memory(tmp_path: Path) -> None:
+    """Fase D (confutatore): `memory.current` conta la page cache; quella
+    inattiva (`inactive_file`) il kernel la libera."""
+    from app.services.document_figures import runner
+
+    (tmp_path / "memory.max").write_text(str(3 * 1024**3) + "\n")
+    (tmp_path / "memory.current").write_text(str(2 * 1024**3) + "\n")
+    (tmp_path / "memory.stat").write_text(f"anon 1000\ninactive_file {1024**3}\n")
+    assert runner._cgroup_headroom_mb(str(tmp_path)) == 2048

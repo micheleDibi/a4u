@@ -628,3 +628,21 @@ def test_crop_is_never_wider_than_its_natural_size() -> None:
     )
     assert _re.search(r'<img class="source-figure" src="[^"]+" style="width: 62.5mm"', html)
     assert 'style="width' not in _lesson_html().split('class="source-figure"')[1][:4000]
+
+
+def test_natural_width_is_for_the_lecture_notes_only() -> None:
+    """Fase D (confutatore): nelle slide e nei frame la figura resta nel suo
+    riquadro, come nell'anteprima web delle slide."""
+    import dataclasses
+
+    resolved = dataclasses.replace(_resolved(), display_width_mm=62.5)
+    asset = {"asset_id": "fig-src-1", "format": "source_figure", "content": str(FIG_UUID)}
+    blocks = {
+        variant: pdf._render_visual_asset_block(
+            asset, variant=variant, source_figures={"fig-src-1": resolved}
+        )
+        for variant in ("lesson", "slide")
+    }
+    assert 'class="source-figure"' in blocks["slide"]
+    assert "width: 62.5mm" in blocks["lesson"]
+    assert "width: 62.5mm" not in blocks["slide"]

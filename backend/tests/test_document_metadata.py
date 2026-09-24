@@ -148,7 +148,7 @@ def test_doi_from_a_pdf_cannot_carry_a_query() -> None:
 
     assert find_doi("doi: 10.1000/ldv.2021?mailto=x@y&rows=1000") == "10.1000/ldv.2021"
     assert find_doi("https://doi.org/10.1016/J.MEASUREMENT.2020.108(3)#s2") == (
-        "10.1016/j.measurement.2020.108(3"
+        "10.1016/j.measurement.2020.108(3)"
     )
 
 
@@ -161,7 +161,9 @@ def test_doi_from_a_pdf_cannot_carry_a_query() -> None:
         ("Canon iR-ADV C5535", []),
         ("Rossi, Mario Luigi", ["Mario Luigi Rossi"]),
         ("Rossi, M.; Bianchi, L.", ["M. Rossi", "L. Bianchi"]),
-        ("Smith, John and Doe, Jane", ["John Smith", "Jane Doe"]),
+        ("Smith, John and Doe, Jane", ["Smith, John", "Doe, Jane"]),
+        ("Rossi, Bianchi", ["Rossi, Bianchi"]),  # mai una persona inventata
+        ("Sharp, Phillip A.", ["Phillip A. Sharp"]),  # cognome, non uno scanner
         ("A. Rossi, B. Bianchi", ["A. Rossi", "B. Bianchi"]),
         ("Mario Rossi; Anna Bianchi", ["Mario Rossi", "Anna Bianchi"]),
     ],
@@ -184,3 +186,14 @@ def test_default_authors_and_surname_first_names(value: str, expected: list[str]
 )
 def test_default_titles_are_not_titles(title: str) -> None:
     assert metadata.plausible_title(title) is None
+
+
+@pytest.mark.parametrize("title", ["TCP/IP networking", "AlGaN/GaN transistors", "A/B testing"])
+def test_titles_with_a_slash_are_titles(title: str) -> None:
+    assert metadata.plausible_title(title) == title
+
+
+def test_doi_keeps_balanced_parentheses_and_refuses_dot_segments() -> None:
+    assert metadata.find_doi("10.1016/J.MEAS.2020.108(3)#s2") == "10.1016/j.meas.2020.108(3)"
+    assert metadata.find_doi("vedi (10.1000/abc).") == "10.1000/abc"
+    assert metadata.find_doi("10.1234/../../members/311/works") is None

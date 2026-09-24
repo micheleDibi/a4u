@@ -261,6 +261,8 @@ def test_lowercase_fig_tag_is_not_a_citation() -> None:
     report = fuse_source_figures(output, REFS, max_items=4)
     assert "SRC-aaaaaaaa" in report.dropped_uncited
     assert not _source_assets(output)
+    # Il tag minuscolo non cita, ma non resta nel testo (id interno).
+    assert "SRC-aaaaaaaa" not in output.sections[0].content
 
 
 def test_generated_id_with_spaces_is_renamed_with_its_tag() -> None:

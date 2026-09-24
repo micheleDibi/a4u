@@ -265,3 +265,16 @@ def test_entity_expansion_bombs_are_refused_before_parsing(
     with pytest.raises(office.OfficeFormatError, match="DTD"):
         office.safe_fromstring(b'<!DOCTYPE x [<!ENTITY a "b">]><x>&a;</x>')
     assert office.safe_fromstring(b"<x><y>ok</y></x>").find("y").text == "ok"
+
+
+def test_doc_upload_with_a_dtd_is_refused_before_docx2txt(tmp_path: Path) -> None:
+    """Fase D (confutatore): un «.doc» che è uno zip con una DTD finiva a
+    `docx2txt` senza guardie (1 KB → 43 MB di testo)."""
+    path = tmp_path / "bomba.doc"
+    with zipfile.ZipFile(path, "w") as zf:
+        zf.writestr(
+            "word/document.xml",
+            '<!DOCTYPE w [<!ENTITY a "' + "A" * 200 + '">]><w>' + "&a;" * 5000 + "</w>",
+        )
+    with pytest.raises(document_extraction_service.DocumentExtractionError, match="DTD"):
+        document_extraction_service._extract_doc(path)

@@ -551,8 +551,14 @@ _PARTICLES = frozenset({"de", "di", "da", "del", "della", "van", "von", "der", "
 def _initials(name: str) -> str:
     """Prenomi in iniziali, cognome (con le particelle) intero."""
     words = name.split()
-    if len(words) < 2:
+    # Già abbreviato o con il cognome davanti («Rossi M.», «Smith J»,
+    # «De Luca, Giovanni»): resta com'è.
+    if len(words) < 2 or "," in name or re.fullmatch(r"[A-ZÀ-Ý]\.?", words[-1]):
         return name
+    # Suffissi (Jr., Sr., II, III) non sono il cognome.
+    while len(words) > 2 and re.fullmatch(r"(?:jr|sr)\.?|[ivx]+", words[-1], re.IGNORECASE):
+        words = words[:-1]
+        name = " ".join(words)
     # Cognome = ultima parola con lettere (un numero o un suffisso dopo resta).
     surname_start = max(
         (i for i, w in enumerate(words) if any(ch.isalpha() for ch in w)), default=0

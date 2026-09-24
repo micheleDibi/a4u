@@ -123,6 +123,30 @@ def safe_fromstring(data: bytes) -> ET.Element:
         raise OfficeFormatError(str(exc)) from exc
 
 
+def _refuse_dtd_in(data: bytes) -> None:
+    probe = expat.ParserCreate()
+    probe.StartDoctypeDeclHandler = _refuse_dtd
+    probe.EntityDeclHandler = _refuse_dtd
+    try:
+        probe.Parse(data, True)
+    except _DtdRefusedError as exc:
+        raise OfficeFormatError("XML con DTD o entità: non ammesso") from exc
+    except expat.ExpatError:
+        return  # malformato: lo rifiuterà chi lo legge davvero
+
+
+def assert_safe_package(path: str) -> None:
+    """Pacchetto zip Office letto da librerie di terzi (`docx2txt` per i
+    `.doc`): niente bomba zip e nessuna parte XML con DTD, prima di passarlo
+    (Fase D: un «.doc» di 1 KB diventava 43 MB di testo)."""
+    with _open_zip(path) as zf:
+        for info in zf.infolist():
+            if info.filename.endswith((".xml", ".rels")):
+                if info.file_size > MAX_DOCX_BODY_BYTES:
+                    raise OfficeFormatError(f"parte troppo grande: {info.filename}")
+                _refuse_dtd_in(zf.read(info))
+
+
 def _parse_part(zf: zipfile.ZipFile, name: str, limit: int | None = None) -> ET.Element:
     return safe_fromstring(_read_part(zf, name, limit))
 

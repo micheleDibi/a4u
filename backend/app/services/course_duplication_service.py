@@ -963,14 +963,18 @@ async def _translate_document_figures(
     keys = list(items)
 
     async def one_chunk(start: int) -> dict[str, str]:
-        return await _translate_batch_resilient(
-            items={k: items[k] for k in keys[start : start + _TRANSLATE_CHUNK_SIZE]},
+        chunk = {k: items[k] for k in keys[start : start + _TRANSLATE_CHUNK_SIZE]}
+        result = await _translate_batch_resilient(
+            items=chunk,
             source_lang_code=source_lang_code,
             source_lang_name=source_lang_name,
             target_lang_code=target_lang_code,
             target_lang_name=target_lang_name,
             op_label=f"document_figures course_id={target.id} chunk={start}",
         )
+        # Chiavi corte: una risposta che rinumerasse da 0 scriverebbe su
+        # altre figure. Solo le chiavi chieste in questo blocco.
+        return {k: v for k, v in result.items() if k in chunk}
 
     starts = list(range(0, len(keys), _TRANSLATE_CHUNK_SIZE))
     results = await asyncio.gather(*(one_chunk(start) for start in starts), return_exceptions=True)
