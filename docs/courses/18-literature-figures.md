@@ -634,8 +634,20 @@ Container `--cpus 2 --memory 3g`, codice vero del worker
 | 83f44cf | attribuzione | Metadati di default esclusi (Microsoft Office User, scanner, Presentation1…). «Cognome, Nome» non perde più il cognome né il primo autore. Figure di terzi («Reprinted from…», «©»): licenza `unknown` e credito originale nella riga; candidate OpenAlex di terzi scartate. Numero di figura oltre 10 caratteri ignorato |
 | 86937ae | tipografia | `tikz` a grandezza naturale (prima usciva al 75%). Nella dispensa la riga «Fonte» resta sulla pagina della figura. Ritagli non oltre 1,25× la misura nell'originale. Fascia: cognome conservato, «et al.» solo da tre autori, niente « » aperte |
 | 84eb94a | attribuzione | Code di fonte del modello riconosciute in tutte le lingue dell'interfaccia |
+| 1410aee | confutatore | Correzioni delle correzioni:
+- crediti di terzi: le etichette di pannello «(c)» e «elaborazione propria» non sono crediti; niente «Fonte: Fonte:»;
+- titoli con «/» accettati; nessuna persona inventata da «Smith, John»;
+- DOI senza segmenti «..»;
+- iniziali solo sui nomi con prenome in testa;
+- tag `[fig:SRC-…]` minuscoli tolti dal testo;
+- larghezza naturale solo nella dispensa;
+- traduzione limitata alle chiavi del blocco;
+- page cache esclusa dalla memoria;
+- `.doc` zip controllato prima di `docx2txt` |
 
 ### Rilievi dichiarati, senza correzione
+
+Il confutatore li ha CONFERMATI tutti, con prove dal codice o misure.
 
 **Correttezza**
 - **TOCTOU fra cancellazione e collocazione**: un documento cancellato
