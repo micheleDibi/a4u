@@ -21,6 +21,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.course import Course
 from app.models.course_document_figure import CourseDocumentFigure
 from app.models.course_duplication_job import CourseDuplicationJob
 from app.models.course_lesson import CourseLesson
@@ -385,3 +386,57 @@ async def test_forward_references_survive_a_chunked_insert(
     )
     assert {c.duplicate_of_id for c in clones} == {fig_map[original.id]}
     assert {c.describe_source_id for c in clones} == {fig_map[original.id]}
+
+
+async def test_figure_translation_is_chunked_and_a_failed_chunk_keeps_the_originals(
+    seeded_db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fase D: con 80 figure descritte una sola chiamata superava il tetto
+    d'uscita del modello e il job falliva fino a cancellare il corso copia.
+    Blocchi da `_TRANSLATE_CHUNK_SIZE`; un blocco fallito lascia il testo
+    originale, il job prosegue."""
+    db = seeded_db
+    course_id, _org, _user = await build_course(db, modules=1, lessons_per_module=1)
+    doc = build_course_document(course_id, filename="Manuale.pdf")
+    db.add(doc)
+    await db.flush()
+    figures = [
+        build_document_figure(
+            course_id,
+            doc.id,
+            license="cc_by",
+            page=page + 1,
+            description=f"Descrizione {page}",
+            keywords={"course": [f"termine {page}a", f"termine {page}b"], "en": ["term"]},
+        )
+        for page in range(100)
+    ]
+    db.add_all(figures)
+    await db.commit()
+    target = await db.get(Course, course_id)
+    assert target is not None
+    sizes: list[int] = []
+
+    async def fake_translate(*, items: dict[str, str], **kwargs: Any) -> dict[str, str]:
+        sizes.append(len(items))
+        if "Descrizione 0" in items.values():
+            raise RuntimeError("risposta troncata")
+        return {key: f"EN:{value}" for key, value in items.items()}
+
+    monkeypatch.setattr(dup, "_translate_batch_resilient", fake_translate)
+    stats = await dup._translate_document_figures(
+        db,
+        target=target,
+        source_lang_code="it",
+        source_lang_name="Italiano",
+        target_lang_code="en",
+        target_lang_name="English",
+    )
+    await db.commit()
+    assert max(sizes) <= dup._TRANSLATE_CHUNK_SIZE and sum(sizes) == 300
+    assert stats["strings_translated"] == 300 - dup._TRANSLATE_CHUNK_SIZE
+    first = await db.get(CourseDocumentFigure, figures[0].id, populate_existing=True)
+    last = await db.get(CourseDocumentFigure, figures[-1].id, populate_existing=True)
+    assert first is not None and first.description == "Descrizione 0"  # blocco fallito
+    assert last is not None and last.description == "EN:Descrizione 99"
+    assert last.keywords == {"course": ["EN:termine 99a", "EN:termine 99b"], "en": ["term"]}

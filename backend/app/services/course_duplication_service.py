@@ -940,36 +940,66 @@ async def _translate_document_figures(
         .scalars()
         .all()
     )
+    # Chiavi corte (indici) e blocchi da `_TRANSLATE_CHUNK_SIZE` in parallelo,
+    # come `_translate_jsonb_inplace`: in una sola chiamata un manuale con
+    # 80 figure descritte superava il tetto d'uscita del modello, la risposta
+    # troncata faceva fallire il job a ogni tentativo e il corso copia
+    # veniva cancellato (Fase D). Un blocco fallito tiene l'originale.
     items: dict[str, str] = {}
-    for row in rows:
+    places: dict[str, tuple[int, int | None]] = {}  # chiave → (riga, indice keyword)
+    for row_index, row in enumerate(rows):
         if row.description:
-            items[f"{row.id}:d"] = row.description
+            key = str(len(items))
+            items[key] = row.description
+            places[key] = (row_index, None)
         keywords = (row.keywords or {}).get("course") if isinstance(row.keywords, dict) else None
         for index, keyword in enumerate(keywords or []):
             if isinstance(keyword, str) and keyword.strip():
-                items[f"{row.id}:k{index}"] = keyword
+                key = str(len(items))
+                items[key] = keyword
+                places[key] = (row_index, index)
     if not items:
         return {"strings_translated": 0}
-    translated = await _translate_batch_resilient(
-        items=items,
-        source_lang_code=source_lang_code,
-        source_lang_name=source_lang_name,
-        target_lang_code=target_lang_code,
-        target_lang_name=target_lang_name,
-        op_label=f"document_figures course_id={target.id}",
-    )
-    for row in rows:
-        if f"{row.id}:d" in translated:
-            row.description = translated[f"{row.id}:d"]
-        if isinstance(row.keywords, dict) and row.keywords.get("course"):
-            row.keywords = {
-                **row.keywords,
-                "course": [
-                    translated.get(f"{row.id}:k{i}", keyword)
-                    for i, keyword in enumerate(row.keywords["course"])
-                ],
-            }
-            flag_modified(row, "keywords")
+    keys = list(items)
+
+    async def one_chunk(start: int) -> dict[str, str]:
+        return await _translate_batch_resilient(
+            items={k: items[k] for k in keys[start : start + _TRANSLATE_CHUNK_SIZE]},
+            source_lang_code=source_lang_code,
+            source_lang_name=source_lang_name,
+            target_lang_code=target_lang_code,
+            target_lang_name=target_lang_name,
+            op_label=f"document_figures course_id={target.id} chunk={start}",
+        )
+
+    starts = list(range(0, len(keys), _TRANSLATE_CHUNK_SIZE))
+    results = await asyncio.gather(*(one_chunk(start) for start in starts), return_exceptions=True)
+    translated: dict[str, str] = {}
+    for start, result in zip(starts, results, strict=True):
+        if isinstance(result, BaseException):
+            log.warning(
+                "course_duplication_figures_chunk_failed",
+                chunk_start=start,
+                error=str(result)[:200],
+            )
+            continue
+        translated.update(result)
+    new_keywords: dict[int, list[Any]] = {}
+    for key, value in translated.items():
+        place = places.get(key)
+        if place is None or not isinstance(value, str) or not value.strip():
+            continue
+        row_index, keyword_index = place
+        row = rows[row_index]
+        if keyword_index is None:
+            row.description = value
+        elif isinstance(row.keywords, dict):
+            current = new_keywords.setdefault(row_index, list(row.keywords.get("course") or []))
+            current[keyword_index] = value
+    for row_index, keywords in new_keywords.items():
+        row = rows[row_index]
+        row.keywords = {**(row.keywords or {}), "course": keywords}
+        flag_modified(row, "keywords")
     return {"strings_translated": len(translated)}
 
 

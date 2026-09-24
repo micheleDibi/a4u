@@ -1038,3 +1038,46 @@ async def test_bibliography_from_child_metadata(monkeypatch: pytest.MonkeyPatch)
     doc = new_doc()
     await worker._fill_bibliography(doc, {"bibliography": {"title": 3, "extra": "x"}})
     assert doc.bibliography_source is None
+
+
+def test_description_cap_prefers_captions_and_spreads_over_the_document() -> None:
+    """Fase D: con 210 candidate e il tetto a 80 si descrivevano le prime 80
+    in ordine di pagina (fino a p. 138 di 300). Ora prima le figure con una
+    didascalia letta, poi le altre, distribuite su tutto il documento."""
+    import uuid as _uuid
+
+    from app.models.course_document_figure import CourseDocumentFigure
+    from app.services.course_document_figures_worker import pick_for_description
+
+    def figure(page: int, *, captioned: bool) -> CourseDocumentFigure:
+        return CourseDocumentFigure(
+            id=_uuid.uuid4(),
+            page=page,
+            source_label=f"Figura {page}." if captioned else None,
+            source_caption=None,
+        )
+
+    rows = [figure(page, captioned=page % 3 == 0) for page in range(1, 301)]
+    chosen = pick_for_description(rows, 80)
+    assert len(chosen) == 80
+    assert all(row.source_label for row in chosen)  # 100 con didascalia > 80
+    assert max(row.page or 0 for row in chosen) > 280  # fino in fondo
+    assert [r.page for r in chosen] == sorted(r.page or 0 for r in chosen)
+    few = pick_for_description(rows[:30], 80)
+    assert few == rows[:30]
+    assert pick_for_description(rows, 0) == []
+    mixed = pick_for_description(rows, 150)
+    assert sum(1 for row in mixed if row.source_label) == 100
+
+
+def test_available_memory_respects_the_container_limit(tmp_path: Path) -> None:
+    """Fase D: /proc/meminfo in un container mostra la memoria dell'host;
+    il margine del cgroup v2 (`memory.max − memory.current`) la limita."""
+    from app.services.document_figures import runner
+
+    (tmp_path / "memory.max").write_text("3221225472\n")  # 3 GB
+    (tmp_path / "memory.current").write_text(str(2 * 1024**3) + "\n")
+    assert runner._cgroup_headroom_mb(str(tmp_path)) == 1024
+    (tmp_path / "memory.max").write_text("max\n")
+    assert runner._cgroup_headroom_mb(str(tmp_path)) is None
+    assert runner._cgroup_headroom_mb(str(tmp_path / "assente")) is None

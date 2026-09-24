@@ -628,6 +628,36 @@ def _local_crop(workdir: Path | None, row: CourseDocumentFigure) -> Path | None:
     return candidate if candidate.is_file() else None
 
 
+def _spread(items: list[CourseDocumentFigure], n: int) -> list[CourseDocumentFigure]:
+    """`n` elementi distribuiti su tutta la lista (in ordine di pagina)."""
+    if n <= 0:
+        return []
+    if len(items) <= n:
+        return list(items)
+    step = len(items) / n
+    return [items[int(i * step)] for i in range(n)]
+
+
+def pick_for_description(rows: list[CourseDocumentFigure], cap: int) -> list[CourseDocumentFigure]:
+    """Figure da descrivere entro il tetto `FIGURE_DESCRIBE_MAX_PER_DOCUMENT`.
+
+    Prima quelle con una didascalia letta («Figura N», etichetta), poi le
+    altre; in ciascun gruppo distribuite su tutto il documento. Prima si
+    prendevano le prime in ordine di pagina: su un manuale di 300 pagine
+    la 80ª figura era a pagina 138 e il 62% delle figure non entrava mai
+    nel catalogo (Fase D). Ritorna le scelte in ordine di pagina."""
+    if cap <= 0:
+        return []
+    if len(rows) <= cap:
+        return list(rows)
+    captioned = [r for r in rows if r.source_label or r.source_caption]
+    others = [r for r in rows if not (r.source_label or r.source_caption)]
+    chosen = _spread(captioned, cap)
+    chosen += _spread(others, cap - len(chosen))
+    order = {row.id: index for index, row in enumerate(rows)}
+    return sorted(chosen, key=lambda row: order[row.id])
+
+
 async def _describe(db: AsyncSession, doc: CourseDocument, workdir: Path | None) -> None:
     """Descrive le figure `extracted` del documento (fino al tetto), riusando
     le descrizioni delle figure quasi identiche del corso."""
@@ -663,10 +693,13 @@ async def _describe(db: AsyncSession, doc: CourseDocument, workdir: Path | None)
         ).scalar_one()
     )
     cap = max(0, int(settings.figure_describe_max_per_document) - already)
-    for row in rows[cap:]:
-        row.status = "rejected"
-        row.reject_reason = "describe_capped"
-    rows = rows[:cap]
+    chosen = pick_for_description(rows, cap)
+    chosen_ids = {row.id for row in chosen}
+    for row in rows:
+        if row.id not in chosen_ids:
+            row.status = "rejected"
+            row.reject_reason = "describe_capped"
+    rows = chosen
     await db.commit()
     if not rows:
         return
@@ -812,6 +845,14 @@ async def _extract(
             if time.monotonic() > deadline:
                 raise ExtractionChildError("timeout", "tempo totale dell'estrazione superato")
             await _ensure_citable(db, doc.id)
+            # Pagine già tutte fatte (dopo il riciclo del figlio): nessun
+            # figlio nuovo da avviare solo per scoprirlo (Fase D).
+            if (
+                session is None
+                and doc.figures_pages_total
+                and next_page > min(doc.figures_pages_total, max_pages)
+            ):
+                break
             if session is None:
                 # Memoria controllata solo prima di avviare un figlio: con il
                 # figlio vivo la sua RSS la abbasserebbe a ogni blocco.

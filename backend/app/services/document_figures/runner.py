@@ -89,16 +89,38 @@ def child_env(workdir: Path, *, threads: int, artifacts_path: str | None) -> dic
     return env
 
 
+def _cgroup_headroom_mb(root: str = "/sys/fs/cgroup") -> int | None:
+    """Memoria ancora concessa dal cgroup v2 del container
+    (`memory.max − memory.current`); None senza limite o fuori da Linux."""
+    try:
+        with open(f"{root}/memory.max", encoding="ascii") as handle:
+            limit = handle.read().strip()
+        if limit == "max":
+            return None
+        with open(f"{root}/memory.current", encoding="ascii") as handle:
+            current = int(handle.read().strip())
+        return max(0, int(limit) - current) // (1024 * 1024)
+    except (OSError, ValueError):
+        return None
+
+
 def mem_available_mb() -> int | None:
-    """MemAvailable da /proc/meminfo (Linux); None se non disponibile."""
+    """MemAvailable da /proc/meminfo (Linux), limitata dal cgroup del
+    container se ne ha uno: dentro un container da 3 GB /proc/meminfo
+    mostra la memoria dell'host (Fase D). None se non disponibile."""
+    available: int | None = None
     try:
         with open("/proc/meminfo", encoding="ascii") as handle:
             for line in handle:
                 if line.startswith("MemAvailable:"):
-                    return int(line.split()[1]) // 1024
+                    available = int(line.split()[1]) // 1024
+                    break
     except (OSError, ValueError):
-        return None
-    return None
+        available = None
+    headroom = _cgroup_headroom_mb()
+    if available is None:
+        return headroom
+    return available if headroom is None else min(available, headroom)
 
 
 def process_rss_mb(pid: int) -> int | None:
