@@ -245,3 +245,47 @@ def test_alt_text_loses_the_source_tail_too() -> None:
     alts = [a.alt_text for a in output.visual_assets if a.format == "source_figure"]
     assert "Schema del vibrometro." in alts
     assert not any("Rossi" in alt for alt in alts)
+
+
+def _one_section(content: str, **overrides: Any) -> LessonContentOutput:
+    return _output(
+        sections=[{"section_id": "S1", "title": "Principio", "content": content}],
+        **overrides,
+    )
+
+
+def test_lowercase_fig_tag_is_not_a_citation() -> None:
+    """Fase D: numerazione e resa riconoscono solo `[FIG:…]`; un `[fig:…]`
+    non cita la figura neanche per la fusione."""
+    output = _one_section("Vedi [fig:SRC-aaaaaaaa] e [FIG:fig1].")
+    report = fuse_source_figures(output, REFS, max_items=4)
+    assert "SRC-aaaaaaaa" in report.dropped_uncited
+    assert not _source_assets(output)
+
+
+def test_generated_id_with_spaces_is_renamed_with_its_tag() -> None:
+    output = _one_section(
+        "Vedi [FIG: SRC-zz1] e [FIG:fig1].",
+        visual_assets=[
+            {"asset_id": " SRC-zz1", "format": "mermaid", "content": "flowchart LR\nA-->B"},
+            {"asset_id": "fig1", "format": "mermaid", "content": "flowchart LR\nC-->D"},
+        ],
+        source_figures=[],
+    )
+    report = fuse_source_figures(output, {}, max_items=4)
+    new_id = report.renamed_generated["src-zz1"]
+    assert output.visual_assets[0].asset_id == new_id
+    assert f"[FIG:{new_id}]" in output.sections[0].content
+    assert not report.removed_tags
+
+
+def test_generated_id_equal_to_a_catalog_id_is_reported() -> None:
+    output = _one_section(
+        "Vedi [FIG:SRC-aaaaaaaa].",
+        visual_assets=[
+            {"asset_id": "SRC-aaaaaaaa", "format": "mermaid", "content": "flowchart LR\nA-->B"}
+        ],
+    )
+    report = fuse_source_figures(output, REFS, max_items=4)
+    assert report.renamed_catalog_collisions == ["src-aaaaaaaa"]
+    assert "renamed_catalog_collisions" in report.as_json()

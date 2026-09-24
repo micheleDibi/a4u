@@ -48,7 +48,10 @@ __all__ = [
     "rename_generated_src_ids",
 ]
 
-_TAG_RE = re.compile(r"\[FIG:\s*([^\]\s]+)\s*\]", re.IGNORECASE)
+# `FIG` sensibile alle maiuscole come `figure_numbering.FIG_REF_RE`: un
+# `[fig:…]` non è un rimando per la numerazione, quindi non lo è neanche per
+# la fusione (Fase D).
+_TAG_RE = re.compile(r"\[FIG:\s*([^\]\s]+)\s*\]")
 
 
 @dataclass
@@ -61,6 +64,9 @@ class FusionReport:
     removed_tags: list[str] = field(default_factory=list)
     renamed_generated: dict[str, str] = field(default_factory=dict)
     captions_trimmed: list[str] = field(default_factory=list)
+    # Id generati uguali a un id del catalogo: rinominati con il loro tag,
+    # la figura di fonte omonima resta senza citazione (caso ambiguo).
+    renamed_catalog_collisions: list[str] = field(default_factory=list)
 
     def as_json(self) -> dict[str, object]:
         return {k: v for k, v in self.__dict__.items() if v}
@@ -119,11 +125,12 @@ def _drop_tags(text: str, ids: set[str]) -> str:
 
 def rename_generated_src_ids(output: LessonContentOutput) -> dict[str, str]:
     """Asset generati con id nello spazio `SRC-`: nuovi id `fig-src-N`."""
-    taken = {a.asset_id.lower() for a in output.visual_assets}
+    taken = {a.asset_id.strip().lower() for a in output.visual_assets}
     renames: dict[str, str] = {}
     counter = 1
     for asset in output.visual_assets:
-        if asset.format == SOURCE_FIGURE_FORMAT or not asset.asset_id.upper().startswith(
+        # Id con spazi ai bordi (` SRC-x`): stesso trattamento (Fase D).
+        if asset.format == SOURCE_FIGURE_FORMAT or not asset.asset_id.strip().upper().startswith(
             REF_PREFIX
         ):
             continue
@@ -131,7 +138,7 @@ def rename_generated_src_ids(output: LessonContentOutput) -> dict[str, str]:
             counter += 1
         new_id = f"fig-src-{counter}"
         taken.add(new_id)
-        renames[asset.asset_id.lower()] = new_id
+        renames[asset.asset_id.strip().lower()] = new_id
         asset.asset_id = new_id
     if renames:
         _map_text(output, lambda text: _rename_tags(text, renames))
@@ -148,6 +155,7 @@ def fuse_source_figures(
     e svuota `source_figures`. `refs`: id del catalogo → id della figura."""
     report = FusionReport(renamed_generated=rename_generated_src_ids(output))
     catalog = {ref.lower(): (ref, fid) for ref, fid in refs.items()}
+    report.renamed_catalog_collisions = sorted(set(report.renamed_generated) & set(catalog))
     body = "\n".join(_body_fields(output))
     first_citation: dict[str, int] = {}
     for match in _TAG_RE.finditer(body):
@@ -190,7 +198,7 @@ def fuse_source_figures(
         report.added.append(ref)
 
     # Tag `SRC-` senza asset (scelte scartate o mai dichiarate): via dal testo.
-    valid = {a.asset_id.lower() for a in output.visual_assets}
+    valid = {a.asset_id.strip().lower() for a in output.visual_assets}
     orphan = {
         m.group(1).lower()
         for field_text in _body_fields(output)

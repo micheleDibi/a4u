@@ -883,9 +883,15 @@ async def _clone_document_figures(
         )
         if clone.status == "ready" and not clone.storage_path:
             clone.status = "failed"
+        # I rimandi fra figure si assegnano dopo il primo flush: l'INSERT
+        # viene spezzato in blocchi e una riga può rimandare a un clone di un
+        # blocco successivo (FK violata oltre ~700 figure, Fase D).
+        clone.duplicate_of_id = None
+        clone.describe_source_id = None
         fig_map[row.id] = clone.id
         clones.append((row, clone))
         db.add(clone)
+    await db.flush()
     for row, clone in clones:
         clone.duplicate_of_id = fig_map.get(row.duplicate_of_id) if row.duplicate_of_id else None
         clone.describe_source_id = (

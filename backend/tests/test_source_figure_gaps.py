@@ -789,3 +789,21 @@ async def test_course_with_a_pdf_without_figures_gets_open_literature(
         select(func.count(CourseDocument.id)).where(CourseDocument.course_id == course_id)
     )
     assert docs == 1
+
+
+async def test_errors_outside_the_check_go_back_to_pending(
+    seeded_db: AsyncSession, env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fase D: anche un errore inatteso fuori dalla verifica (per esempio
+    un errore DB transitorio al commit) rimette la lezione in coda con un
+    tentativo in più; `failed` solo oltre il tetto."""
+    _course_id, lesson_id = await _lesson(seeded_db)
+
+    async def broken(db: AsyncSession, lesson: CourseLesson) -> None:
+        raise RuntimeError("connessione persa")
+
+    monkeypatch.setattr(gap_worker, "process_lesson", broken)
+    await gap_worker._tick()
+    lesson = await _fresh(seeded_db, lesson_id)
+    assert (lesson.figures_gap_status, lesson.figures_gap_attempts) == ("pending", 1)
+    assert "connessione persa" in lesson.figures_gap_stats["error"]

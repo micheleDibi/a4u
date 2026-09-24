@@ -207,12 +207,18 @@ async def _process_next() -> bool:
             lesson_id = lesson.id
             try:
                 await process_lesson(db, lesson)
-            except Exception as exc:  # pragma: no cover - rete di sicurezza
+            except Exception as exc:  # rete di sicurezza
+                # Errore inatteso (anche un errore DB transitorio): di nuovo
+                # `pending` con backoff come i recuperabili, `failed` solo
+                # oltre il tetto dei tentativi (regola dei worker AI, Fase D).
                 await db.rollback()
                 log.error("figures_gap_unexpected", lesson_id=str(lesson_id), error=str(exc))
                 fresh = await db.get(CourseLesson, lesson_id, populate_existing=True)
                 if fresh is not None and fresh.figures_gap_status == "processing":
-                    fresh.figures_gap_status = "failed"
+                    attempts = int(fresh.figures_gap_attempts or 0) + 1
+                    limit = int(get_settings().figure_literature_auto_retry_max)
+                    fresh.figures_gap_attempts = attempts
+                    fresh.figures_gap_status = "failed" if attempts > limit else "pending"
                     fresh.figures_gap_checked_at = _now()
                     fresh.figures_gap_stats = {"error": str(exc)[:500]}
                     await db.commit()

@@ -322,3 +322,66 @@ async def test_tikz_asset_is_copied_verbatim(seeded_db: AsyncSession) -> None:
     assert frs.cache_key("tikz", renderer.sanitize(copied["content"])) == frs.cache_key(
         "tikz", renderer.sanitize(CHAIN)
     )
+
+
+async def test_forward_references_survive_a_chunked_insert(
+    seeded_db: AsyncSession, storage: _Storage
+) -> None:
+    """Fase D: con molte figure l'INSERT dei cloni è spezzato in blocchi; un
+    duplicato che rimanda (`duplicate_of_id`, `describe_source_id`) a un
+    originale inserito in un blocco successivo violava la FK. L'originale
+    aggiornato dopo i duplicati (come fa la Vision) finisce in fondo
+    all'heap, quindi in fondo alla SELECT."""
+    from sqlalchemy import update
+
+    db = seeded_db
+    course_id, _org, _user = await build_course(db, modules=1, lessons_per_module=1)
+    doc = build_course_document(course_id, filename="Manuale.pdf")
+    db.add(doc)
+    await db.flush()
+    original = build_document_figure(course_id, doc.id, license="cc_by", status="extracted")
+    db.add(original)
+    await db.flush()
+    duplicates = []
+    for page in range(900):
+        dup_row = build_document_figure(
+            course_id, doc.id, license="cc_by", status="rejected", page=page + 2
+        )
+        dup_row.reject_reason = "duplicate"
+        dup_row.duplicate_of_id = original.id
+        dup_row.describe_source_id = original.id
+        duplicates.append(dup_row)
+    db.add_all(duplicates)
+    await db.flush()
+    await db.execute(
+        update(CourseDocumentFigure)
+        .where(CourseDocumentFigure.id == original.id)
+        .values(status="ready")
+    )
+    await db.commit()
+    target_course_id, _o2, _u2 = await build_course(db, modules=1, lessons_per_module=1)
+    target_doc = build_course_document(target_course_id, filename="Manuale.pdf")
+    db.add(target_doc)
+    await db.flush()
+    fig_map = await dup._clone_document_figures(
+        db,
+        source_course_id=course_id,
+        target_course_id=target_course_id,
+        doc_map={doc.id: target_doc.id},
+    )
+    await db.commit()
+    assert len(fig_map) == 901
+    clones = (
+        (
+            await db.execute(
+                select(CourseDocumentFigure).where(
+                    CourseDocumentFigure.course_id == target_course_id,
+                    CourseDocumentFigure.status == "rejected",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert {c.duplicate_of_id for c in clones} == {fig_map[original.id]}
+    assert {c.describe_source_id for c in clones} == {fig_map[original.id]}
