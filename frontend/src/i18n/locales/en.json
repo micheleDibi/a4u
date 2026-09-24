@@ -397,7 +397,17 @@
             "examples": "Examples & cases",
             "formulas": "Formulas & rules",
             "authors": "Authors & references",
-            "tags": "Relevance tags"
+            "tags": "Relevance tags",
+            "figures": "Figures"
+          },
+          "figures": {
+            "hint_one": "{{count}} figure extracted. Excluded figures are no longer suggested in the lecture notes; lessons already generated do not change.",
+            "hint_other": "{{count}} figures extracted. Excluded figures are no longer suggested in the lecture notes; lessons already generated do not change.",
+            "empty": "No figures extracted from this document.",
+            "excludedBadge": "Excluded from suggestions",
+            "include": "Suggest again",
+            "included": "The figure is suggested again in the lecture notes.",
+            "showMore": "Show more ({{count}})"
           },
           "authors": {
             "author": "Author",
@@ -1946,8 +1956,8 @@
       },
       "picker": {
         "title": "Figures from course documents",
-        "description": "Figures extracted from citable documents. The system adds the source on every surface.",
-        "empty": "No figures available: extract the figures from the course's citable documents.",
+        "description": "Figures extracted from the course documents that are not excluded. The system adds the source on every surface.",
+        "empty": "No figures available: extract the figures from the course documents.",
         "page": "p. {{page}}",
         "slide": "slide {{page}}",
         "add": "Add",

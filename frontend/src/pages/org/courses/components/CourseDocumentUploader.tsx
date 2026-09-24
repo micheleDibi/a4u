@@ -479,6 +479,7 @@ export function CourseDocumentUploader({
         doc={openSummary}
         open={!!openSummary}
         onClose={() => setOpenSummary(null)}
+        canEdit={!disabled}
       />
 
       <DocumentSourceDialog

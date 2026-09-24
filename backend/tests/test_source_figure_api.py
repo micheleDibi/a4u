@@ -165,6 +165,26 @@ async def test_catalog_payload_and_course_scope(
     assert "uploads" not in res.text
 
 
+async def test_catalog_filtered_by_document(
+    client: Any, seeded_db: AsyncSession, storage: _Storage
+) -> None:
+    """Riassunto strutturato: solo le figure del documento chiesto; il
+    documento di un altro corso non restituisce le sue figure."""
+    s = await _setup(seeded_db, storage)
+    figs, docs = s["figs"], s["docs"]
+    url, headers = f"{s['base']}/document-figures", _bearer(s["user"])
+    res = await client.get(url, params={"document_id": str(docs["citable"].id)}, headers=headers)
+    assert res.status_code == 200, res.text
+    ids = {item["id"] for item in res.json()}
+    assert str(figs["good"].id) in ids and str(figs["reserved"].id) not in ids
+    assert {item["document_id"] for item in res.json()} == {str(docs["citable"].id)}
+    foreign_doc = figs["foreign"].document_id
+    res = await client.get(url, params={"document_id": str(foreign_doc)}, headers=headers)
+    assert res.status_code == 200 and res.json() == []
+    res = await client.get(url, params={"document_id": "non-un-uuid"}, headers=headers)
+    assert res.status_code == 422
+
+
 async def test_image_endpoint_and_idor(
     client: Any, seeded_db: AsyncSession, storage: _Storage
 ) -> None:

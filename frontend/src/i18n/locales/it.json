@@ -397,7 +397,17 @@
             "examples": "Esempi e casi",
             "formulas": "Formule e regole",
             "authors": "Autori e riferimenti",
-            "tags": "Tag rilevanza"
+            "tags": "Tag rilevanza",
+            "figures": "Figure"
+          },
+          "figures": {
+            "hint_one": "{{count}} figura estratta. Quelle escluse non vengono più proposte nelle dispense; le lezioni già generate non cambiano.",
+            "hint_other": "{{count}} figure estratte. Quelle escluse non vengono più proposte nelle dispense; le lezioni già generate non cambiano.",
+            "empty": "Nessuna figura estratta da questo documento.",
+            "excludedBadge": "Esclusa dalle proposte",
+            "include": "Proponi di nuovo",
+            "included": "La figura torna fra le proposte delle dispense.",
+            "showMore": "Mostra altre ({{count}})"
           },
           "authors": {
             "author": "Autore",
@@ -1946,8 +1956,8 @@
       },
       "picker": {
         "title": "Figure dai documenti del corso",
-        "description": "Figure estratte dai documenti citabili. La fonte la aggiunge il sistema in ogni superficie.",
-        "empty": "Nessuna figura disponibile: estrai le figure dai documenti citabili del corso.",
+        "description": "Figure estratte dai documenti del corso non esclusi. La fonte la aggiunge il sistema in ogni superficie.",
+        "empty": "Nessuna figura disponibile: estrai le figure dai documenti del corso.",
         "page": "p. {{page}}",
         "slide": "slide {{page}}",
         "add": "Aggiungi",

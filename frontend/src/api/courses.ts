@@ -1393,9 +1393,15 @@ export const coursesApi = {
     },
   },
   documentFigures: {
-    list: async (orgId: string, courseId: string): Promise<DocumentFigure[]> => {
+    /** Figure pronte del corso; con `documentId` solo quelle del documento. */
+    list: async (
+      orgId: string,
+      courseId: string,
+      documentId?: string
+    ): Promise<DocumentFigure[]> => {
       const res = await apiClient.get<DocumentFigure[]>(
-        `${base(orgId)}/${courseId}/document-figures`
+        `${base(orgId)}/${courseId}/document-figures`,
+        { params: documentId ? { document_id: documentId } : undefined }
       );
       return res.data;
     },

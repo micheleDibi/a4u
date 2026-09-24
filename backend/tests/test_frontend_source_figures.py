@@ -1,8 +1,9 @@
 """Frontend delle figure di fonte (G1, WP4c): controlli statici sul sorgente.
 
 - punto unico: la riga «Fonte» (`attribution` del catalogo, calcolata dal
-  backend) la mostrano solo `SourceFigure` e il selettore del catalogo; il
-  frontend non compone mai una fonte («Fonte:», «Source:»);
+  backend) la mostrano solo `SourceFigure`, il selettore del catalogo e la
+  sezione «Figure» del riassunto strutturato; il frontend non compone mai
+  una fonte («Fonte:», «Source:»);
 - l'immagine arriva solo dall'endpoint autenticato (`documentFigures.image`),
   mai da `mediaUrl`/`/uploads` per un asset `source_figure`;
 - ogni chiave i18n nuova usata dai componenti esiste in `it.json` e
@@ -15,9 +16,11 @@ import json
 import re
 from pathlib import Path
 
+import pytest
+
 _FRONTEND = Path(__file__).resolve().parents[2] / "frontend" / "src"
 _LOCALES = _FRONTEND / "i18n" / "locales"
-_DISPLAY_FILES = {"SourceFigure.tsx", "SourceFigurePicker.tsx"}
+_DISPLAY_FILES = {"SourceFigure.tsx", "SourceFigurePicker.tsx", "DocumentFiguresSection.tsx"}
 
 
 def _sources() -> dict[Path, str]:
@@ -47,8 +50,15 @@ def test_the_frontend_never_writes_a_source_line() -> None:
     assert offenders == []
 
 
-def test_source_figure_images_come_from_the_authenticated_endpoint() -> None:
-    source = (_FRONTEND / "components" / "shared" / "SourceFigure.tsx").read_text(encoding="utf-8")
+@pytest.mark.parametrize(
+    "relative",
+    [
+        "components/shared/SourceFigure.tsx",
+        "pages/org/courses/components/DocumentFiguresSection.tsx",
+    ],
+)
+def test_source_figure_images_come_from_the_authenticated_endpoint(relative: str) -> None:
+    source = (_FRONTEND / relative).read_text(encoding="utf-8")
     assert "documentFigures.image" in source
     assert "mediaUrl" not in source and "/uploads" not in source
 

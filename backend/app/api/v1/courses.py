@@ -734,11 +734,15 @@ async def list_document_figures(
     db: DbSession,
     current: CurrentUser,
     _=require(P.COURSE_VIEW),
+    document_id: Annotated[uuid.UUID | None, Query()] = None,
 ) -> list[DocumentFigureOut]:
-    """Figure di fonte pronte del corso, con la riga «Fonte» calcolata dal
-    server, la resa (non retroattiva) e la proponibilità attuale."""
+    """Figure di fonte pronte del corso (o del solo `document_id`), con la
+    riga «Fonte» calcolata dal server, la resa (non retroattiva) e la
+    proponibilità attuale."""
     course = await _visible_course(db, org_id=org_id, course_id=course_id, current=current)
-    return await source_figure_api_service.list_course_figures(db, course=course)
+    return await source_figure_api_service.list_course_figures(
+        db, course=course, document_id=document_id
+    )
 
 
 @router.get("/{course_id}/document-figures/{figure_id}/image")

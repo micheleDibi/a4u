@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
+import { DocumentFiguresSection } from "./DocumentFiguresSection";
 
 interface Props {
   orgId: string;
@@ -26,6 +27,8 @@ interface Props {
   doc: CourseDocumentOut | null;
   open: boolean;
   onClose: () => void;
+  /** Permette di escludere le figure dalle proposte (sezione «Figure»). */
+  canEdit?: boolean;
 }
 
 const SECTIONS = [
@@ -37,6 +40,7 @@ const SECTIONS = [
   "formulas",
   "authors",
   "tags",
+  "figures",
 ] as const;
 
 type SectionId = (typeof SECTIONS)[number];
@@ -96,9 +100,13 @@ export function DocumentSummaryDialog({
   doc,
   open,
   onClose,
+  canEdit = false,
 }: Props) {
   const { t } = useTranslation();
   const [section, setSection] = useState<SectionId>("abstract");
+  // La sezione «Figure» c'è solo se dal documento sono state estratte figure.
+  const hasFigures = (doc?.figures_count ?? 0) > 0;
+  const sections = SECTIONS.filter((s) => s !== "figures" || hasFigures);
 
   // Reset alla prima sezione ogni volta che si apre per un altro documento.
   useEffect(() => {
@@ -149,7 +157,7 @@ export function DocumentSummaryDialog({
           <div className="mt-2 flex gap-4">
             {/* Menu laterale */}
             <nav className="flex w-48 shrink-0 flex-col gap-1">
-              {SECTIONS.map((s) => (
+              {sections.map((s) => (
                 <button
                   key={s}
                   type="button"
@@ -323,6 +331,15 @@ export function DocumentSummaryDialog({
                     ))}
                   </div>
                 ))}
+
+              {section === "figures" && doc && hasFigures && (
+                <DocumentFiguresSection
+                  orgId={orgId}
+                  courseId={courseId}
+                  doc={doc}
+                  canEdit={canEdit}
+                />
+              )}
             </ScrollArea>
           </div>
         )}

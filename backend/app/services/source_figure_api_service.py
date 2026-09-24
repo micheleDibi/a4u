@@ -1,6 +1,7 @@
 """Servizio delle API delle figure di fonte del corso (WP4).
 
-- `list_course_figures`: figure pronte del corso con la riga «Fonte» del
+- `list_course_figures`: figure pronte del corso (o di un suo documento)
+  con la riga «Fonte» del
   server, la resa (modo render, non retroattivo) e la proponibilità (modo
   select con la politica di licenza effettiva, più qualità e utilità come
   il catalogo del PROMPT 3);
@@ -111,14 +112,19 @@ def figure_out(
     )
 
 
-async def list_course_figures(db: AsyncSession, *, course: Course) -> list[DocumentFigureOut]:
+async def list_course_figures(
+    db: AsyncSession, *, course: Course, document_id: uuid.UUID | None = None
+) -> list[DocumentFigureOut]:
+    """Figure pronte del corso; con `document_id` solo quelle di quel
+    documento (riassunto strutturato)."""
+    query = select(CourseDocumentFigure).where(
+        CourseDocumentFigure.course_id == course.id,
+        CourseDocumentFigure.status == "ready",
+    )
+    if document_id is not None:
+        query = query.where(CourseDocumentFigure.document_id == document_id)
     rows = await db.execute(
-        select(CourseDocumentFigure)
-        .where(
-            CourseDocumentFigure.course_id == course.id,
-            CourseDocumentFigure.status == "ready",
-        )
-        .order_by(
+        query.order_by(
             CourseDocumentFigure.document_id.asc().nulls_last(),
             CourseDocumentFigure.page.asc().nulls_last(),
             CourseDocumentFigure.locator.asc(),
