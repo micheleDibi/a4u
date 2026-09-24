@@ -3381,7 +3381,7 @@ LINGUA DEL CORSO: {language_code}
 >>>
 
 <<<TITOLO DEL DOCUMENTO
-{titolo della bibliografia fidata o nome leggibile del file, al più 200 caratteri | (assente)}
+{titolo della bibliografia fidata o nome leggibile del file, al più 200 caratteri | (assente); sempre (assente) per le fonti riservate, materiale del docente}
 >>>
 ```
 

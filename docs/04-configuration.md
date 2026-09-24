@@ -286,8 +286,8 @@ proprio nel prompt di Fase 3.
 | `FIGURE_EXTRACTION_THREADS` | `1` | Thread del processo figlio (OMP/MKL/OPENBLAS e Docling). |
 | `FIGURE_EXTRACTION_BLOCK_PAGES` | `10` | Pagine per blocco di conversione (checkpoint). |
 | `FIGURE_EXTRACTION_PAGES_PER_CHILD` | `40` | Pagine per processo figlio (riciclo della memoria). |
-| `FIGURE_EXTRACTION_MAX_PAGES` | `300` | Oltre, copertura `partial` (mai silenziosa). |
-| `FIGURE_EXTRACTION_TOTAL_TIMEOUT_SECONDS` | `5400` | Tetto dell'estrazione di un documento. |
+| `FIGURE_EXTRACTION_MAX_PAGES` | `0` | Tetto di pagine per documento; `0` = nessun tetto (copertura totale). Con un tetto, oltre: copertura `partial` (mai silenziosa). |
+| `FIGURE_EXTRACTION_TOTAL_TIMEOUT_SECONDS` | `0` | Tempo massimo di un giro del worker su un documento; `0` = nessun limite (resta il tempo massimo di ogni blocco). |
 | `FIGURE_EXTRACTION_PROBE_TIMEOUT_SECONDS` | `180` | Tetto della probe di Docling nel figlio. |
 | `FIGURE_EXTRACTION_MAX_RSS_MB` | `2048` | Watchdog di memoria del figlio: oltre, il figlio è ucciso e il blocco dimezzato. |
 | `FIGURE_EXTRACTION_MIN_AVAILABLE_MB` | `1800` | Memoria libera minima prima di ogni blocco; sotto, rinvio senza consumare tentativi. |
@@ -297,7 +297,7 @@ proprio nel prompt di Fase 3.
 | `FIGURE_EXTRACTION_POLL_INTERVAL_SECONDS` | `5` | Intervallo del worker delle figure. |
 | `FIGURE_DOCLING_ARTIFACTS_PATH` | `/opt/docling-models` | Modelli Docling preinstallati nell'immagine (nessun download a runtime). |
 | `FIGURE_MIN_QUALITY_SCORE` | `3` | Qualità minima (1-5) di una figura per entrare nel catalogo (calcolata in lettura). |
-| `FIGURE_DESCRIBE_MAX_PER_DOCUMENT` | `80` | Figure descritte per documento (le più grandi e sicure prima). |
+| `FIGURE_DESCRIBE_MAX_PER_DOCUMENT` | `0` | Figure descritte dalla Vision per documento; `0` = tutte. Con un tetto, prima quelle con didascalia, distribuite sul documento. |
 | `OPENAI_FIGURE_DESCRIBE_MODEL` | `gpt-4.1-mini` | Modello Vision della descrizione (scelto dalla misura M4: il più economico che passa le soglie, a 768 px). Deve essere a listino in `openai_pricing`, altrimenti il costo non compare. |
 | `OPENAI_FIGURE_DESCRIBE_REASONING_EFFORT` | _(vuoto)_ | Solo per modelli reasoning. |
 | `OPENAI_FIGURE_DESCRIBE_MAX_TOKENS` | `800` | Tetto dell'output della descrizione. |

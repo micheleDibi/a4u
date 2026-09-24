@@ -211,17 +211,21 @@ Documento di riferimento: [18 — Figure da letteratura](18-literature-figures.m
 
 `course:generate`. 202, lista di `CourseDocumentOut`. Mette in coda
 l'estrazione delle figure di tutti i documenti (idempotente): i documenti
-`excluded`/`content_only`, di formato non supportato o con l'estrazione
-spenta risultano `figures_status="skipped"` con il motivo in
-`figures_error_code`.
+`excluded`, di formato non supportato o con l'estrazione spenta risultano
+`figures_status="skipped"` con il motivo in `figures_error_code`. Le fonti
+riservate (`content_only`) si estraggono come materiale del docente. Un
+documento `ready` torna in coda solo se è incompleto (pagine oltre un
+tetto precedente, figure scartate dal tetto delle descrizioni) e riprende
+dal checkpoint.
 
 ### `POST /orgs/{org_id}/courses/{course_id}/documents/{doc_id}/figures/extract`
 
 `course:generate`. 202. Come sopra per un solo documento.
 
-### `GET /orgs/{org_id}/courses/{course_id}/document-figures`
+### `GET /orgs/{org_id}/courses/{course_id}/document-figures?document_id=`
 
-`course:view`. Figure pronte del corso (`DocumentFigureOut`): tipo,
+`course:view`. Figure pronte del corso, o del solo `document_id` (sezione
+«Figure» del riassunto strutturato), come `DocumentFigureOut`: tipo,
 descrizione, didascalia originale, pagina, licenza, riga «Fonte»
 (`attribution`, calcolata dal server), `renderable` (resa non retroattiva)
 e proponibilità attuale (politica, esclusione del docente). Mai un URL

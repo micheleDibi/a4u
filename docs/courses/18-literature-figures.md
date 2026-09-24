@@ -150,8 +150,9 @@ schema con `create_all`. La parità modello↔migrazione è verificata da
 
   Il riassunto dell'LLM è solo una **proposta** (`summary_proposal`),
   mostrata in UI da confermare, e non entra mai nella riga.
-- **Documenti esclusi**. Da `excluded` e `content_only` non si estrae
-  nulla (`skipped` con il motivo).
+- **Documenti esclusi**. Da `excluded` non si estrae nulla (`skipped`
+  con il motivo). Le fonti riservate (`content_only`) si estraggono come
+  materiale del docente (§20).
 - **Richiesta dell'estrazione**. Endpoint `…/figures/extract` e script
   `scripts/extract_document_figures.py` (dry-run di default; opzioni
   `--apply`, `--retry-failed` e `--gc-detached`). Non c'è backfill automatico (G10).
@@ -255,10 +256,10 @@ schema con `create_all`. La parità modello↔migrazione è verificata da
   - le figure già collocate restano, con la loro riga, finché la lezione
     non viene rigenerata.
 
-  È una **deviazione dichiarata** dal vincolo del brief («da content_only
-  nessuna figura viene riprodotta»). Rischio accettato: la figura di un
-  documento diventato `content_only` resta visibile, con la fonte in
-  chiaro, fino alla rigenerazione.
+  Dal 24/09/2026 le fonti riservate sono materiale del docente (§20): la
+  figura di un documento diventato `content_only` resta, e la sua riga
+  scritta diventa subito «materiale del docente», perché si calcola al
+  render.
 - **Cancellazione del documento**:
   - le figure **usate** vengono staccate: riga e file restano,
     `document_id → NULL`, attribuzione congelata;
@@ -433,7 +434,9 @@ Esiti delle giurie:
 - **J-Q3**: worker gemello con processo figlio.
 - **J-Q4**: XeLaTeX → pdftocairo, con SBX-2.
 - **J-Q5**: non retroattivo (U1).
-- **J-Q6**: nessun ridisegno da `content_only`.
+- **J-Q6**: nessun ridisegno da `content_only`. La riproduzione delle
+  figure riservate come materiale del docente è una decisione successiva
+  dell'utente (§20).
 - **J-Q7**: Docling solo per rilevare, più ritaglio con pypdfium2.
 - **J-Q8**: revisore gemello (PROMPT 19).
 
@@ -441,8 +444,10 @@ Motivazioni e alternative scartate sono nel piano, sezione (c).
 
 ## 14. Deviazioni dichiarate
 
-1. **U1 contro il vincolo `content_only`** del brief: le figure collocate
-   restano fino alla rigenerazione.
+1. **Figure delle fonti riservate** (§20, decisione dell'utente del
+   24/09/2026, contro il vincolo del brief «da content_only nessuna figura
+   viene riprodotta»): si estraggono e si propongono come materiale del
+   docente, con una riga che non nomina mai il documento.
 2. **FK `SET NULL`** con lo stacco, invece del cascade.
 3. **dpi adattivo 300-600** per i vettoriali (D21).
 4. **OpenAlex**: licenza della stessa location del PDF, non sempre
@@ -552,7 +557,8 @@ Nessun rilievo di gravità alta. Correzioni:
   - slide e frame mostrano solo nome e versione della licenza, senza URI
     (l'URI è nei crediti della dispensa);
   - il discorso cita anche le fonti di documenti diventati riservati
-    finché la lezione non viene rigenerata (U1);
+    finché la lezione non viene rigenerata (U1); la riga scritta invece
+    diventa subito «materiale del docente»;
   - nella duplicazione con traduzione, le etichette dei nodi `tikz`
     restano nella lingua di partenza, come le etichette di Mermaid, DOT e
     Vega-Lite (`visual_assets[].content` non si traduce).
@@ -564,7 +570,7 @@ Nessun rilievo di gravità alta. Correzioni:
 | Garanzia | File |
 |---|---|
 | G1 riga «Fonte» ovunque | `test_figure_attribution`, `test_source_figure_render`, `test_source_figure_band`, `test_source_figure_api`, `test_speech_source_figures`, `test_frontend_source_figures`, `test_source_figure_call_sites` |
-| G2 excluded/content_only fuori da catalogo e generazione | `test_source_figure_materialize` (canarini, TOCTOU), `test_source_figure_policy`, `test_source_figure_worker` (nessuna estrazione) |
+| G2 excluded fuori da catalogo e generazione; content_only dentro come materiale del docente, senza nome del documento | `test_source_figure_materialize` (canarini, TOCTOU, nome del riservato mai nel prompt), `test_source_figure_policy`, `test_source_figure_worker` (esclusi non estratti, riservati senza titolo alla Vision), `test_figure_attribution` |
 | G3 open_only | `test_license_policy`, `test_source_figure_policy` |
 | G4 licenza sempre valorizzata | `test_source_figure_model` |
 | G5 isolamento figure/riassunto | `test_source_figure_worker` |
@@ -602,7 +608,9 @@ con il motivo esplicito (`[dep:tex]`, `[dep:docling]`).
    - `FIGURE_TIKZ_ENABLED=true` (con TeX nell'immagine);
    - `FIGURE_TIKZ_PROPOSE_ENABLED=true`, solo dopo lo spike M5 e M7.
 4. Nessun backfill: le estrazioni dei corsi esistenti si chiedono dalla UI
-   o con `scripts/extract_document_figures.py --apply`.
+   o con `scripts/extract_document_figures.py --apply`. Lo script rimette
+   in coda anche le fonti riservate saltate con la regola precedente e i
+   documenti incompleti (§20).
 
 ## 19. Revisione avversariale (Fase D)
 
@@ -710,3 +718,64 @@ Il confutatore li ha CONFERMATI tutti, con prove dal codice o misure.
 - **Variabili di `\foreach`**: la lista dei nomi vietati non è
   determinante, perché pgffor rilega la variabile nel corpo. Resta come
   difesa a strati.
+
+## 20. Modifiche del 24/09/2026: fonti riservate, riassunto, copertura totale
+
+Decisioni dell'utente dopo il primo rilascio, prese con il docente.
+
+**Fonti riservate = materiale del docente**
+- Le figure si estraggono da tutti i documenti tranne gli esclusi
+  (`excluded`, «Escluso dalla generazione»), che restano fuori.
+- Una fonte riservata (`content_only`) si assume materiale del docente,
+  senza campi nuovi nel DB: vale la politica corrente del documento.
+  - Le sue figure si propongono nelle dispense, anche con `open_only`.
+  - La riga «Fonte» è «materiale del docente» («instructor's material»).
+    Non nomina mai il documento: niente titolo, autori, file, anno,
+    pagina, numero di figura o licenza.
+  - Se la didascalia originale dichiara un credito di terzi («© Elsevier»,
+    «Reprinted from …»), la riga mostra quel credito.
+  - Allo stacco (documento cancellato) l'attribuzione congelata porta
+    `reserved: true`: la riga resta identica e senza licenza.
+- Alla Vision (PROMPT 18) non arriva il titolo del documento riservato;
+  il catalogo del PROMPT 3 non contiene nomi di documenti.
+- Deduplicazione nel corso: una fonte riservata non nasconde mai la copia
+  di un documento citabile, che ha la riga più precisa.
+- I documenti saltati con la regola precedente
+  (`skipped/policy_content_only`) tornano in coda con «Estrai figure» o
+  con lo script.
+
+**Figure nel riassunto strutturato**
+- Sezione «Figure» nel dialog del riassunto, presente solo se il
+  documento ha figure estratte.
+- Per ogni figura: miniatura dall'endpoint autenticato, pagina o slide,
+  didascalia originale, descrizione e riga «Fonte» del backend.
+- Le figure si caricano a gruppi di 24.
+- Chi può modificare il corso esclude una figura dalle proposte o la
+  riammette; le lezioni già generate non cambiano.
+- Elenco da `GET …/document-figures?document_id=`.
+
+**Copertura totale**
+- Default `0` = nessun tetto per `FIGURE_EXTRACTION_MAX_PAGES` (prima
+  300), `FIGURE_EXTRACTION_TOTAL_TIMEOUT_SECONDS` (prima 5400) e
+  `FIGURE_DESCRIBE_MAX_PER_DOCUMENT` (prima 80). Resta il tempo massimo di
+  ogni blocco. I valori sono in `Settings`, `.env.example` e compose.
+- Un blocco che manda in crash il motore due volte si riprova pagina per
+  pagina: si salta solo la pagina che va in crash due volte (copertura
+  `partial`, `crashed_repeatedly`).
+- Un giro che avanza azzera il conto dei tentativi automatici. Su un
+  manuale lungo contano gli errori di fila, non quelli di tutto il
+  documento.
+- Un documento `ready` ma incompleto rispetto ai tetti attuali torna in
+  coda su richiesta e riprende dal checkpoint (`next_page`), senza rifare
+  le pagine già analizzate. Le figure scartate dal tetto delle
+  descrizioni (`describe_capped`) tornano da descrivere. In UI il bottone
+  è «Completa l'estrazione».
+- **Costo e tempi**:
+  - la Vision costa ~0,0007 $ a figura, quindi un manuale con 500 figure
+    costa ~0,35 $;
+  - sulla VM di produzione (16 core, 32 GB, senza AVX; misura del
+    24/09/2026) un articolo di 16 pagine ha richiesto 132,5 s, circa
+    8 s/pagina con descrizioni e avvio del figlio compresi;
+  - un manuale di 700 pagine richiede ore. La Fase 3 lo aspetta al
+    massimo `FIGURE_WAIT_MAX_MINUTES`; le sue figure entrano nelle
+    dispense generate o rigenerate dopo.
