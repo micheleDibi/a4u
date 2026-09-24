@@ -83,9 +83,24 @@ class ResolvedSourceFigure:
     # Frase parlata già pronta («tratta da …»), sicura per il TTS; vuota se
     # nulla si può pronunciare in sicurezza (il discorso omette la fonte).
     spoken_text: str = ""
+    # Larghezza di stampa (mm): la misura nell'originale (px/dpi) ingrandita
+    # al più di NATURAL_WIDTH_SCALE. None senza dpi: resta il riquadro.
+    display_width_mm: float | None = None
 
 
 SourceFigureMap = Mapping[str, ResolvedSourceFigure]
+
+# Un ritaglio non si allarga oltre 1,25 volte la sua misura nell'originale:
+# a 96 ppi CSS uno schema di 50 mm riempiva i 170 mm della pagina con
+# etichette a 27 pt, e le foto a 200 ppi uscivano sgranate (Fase D).
+NATURAL_WIDTH_SCALE = 1.25
+
+
+def display_width_mm(width_px: int | None, dpi: float | None) -> float | None:
+    if not width_px or not dpi or dpi <= 0:
+        return None
+    return round(width_px / float(dpi) * 25.4 * NATURAL_WIDTH_SCALE, 1)
+
 
 _GEOMETRY = SlideGeometry()
 
@@ -222,6 +237,7 @@ async def resolve_source_figures(
             source_url=fig.source_url,
             spoken=spoken,
             spoken_text=spoken_text,
+            display_width_mm=display_width_mm(fig.width, fig.dpi),
         )
     for asset_id, resolved in out.items():
         if not resolved.renderable:

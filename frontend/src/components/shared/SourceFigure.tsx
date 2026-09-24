@@ -139,7 +139,7 @@ export function SourceFigure({
     return (
       <div className="source-figure-slide">
         {frame}
-        <p className="slide-attribution mt-1 text-left text-[0.7rem] leading-snug text-muted-foreground">
+        <p className="slide-attribution mt-1 break-words text-left text-[0.7rem] leading-snug text-muted-foreground">
           {attribution}
         </p>
       </div>

@@ -35,7 +35,8 @@ from app.services.figure_theme import (
     PALETTE,
 )
 
-PREAMBLE_VERSION = "tikz-2026.09.2"
+# 2026.09.3: SVG con la dimensione in pt (resa al 100% e non al 75%).
+PREAMBLE_VERSION = "tikz-2026.09.3"
 
 TIKZ_LIBRARIES: tuple[str, ...] = (
     "positioning",

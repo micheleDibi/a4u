@@ -248,11 +248,11 @@
        propria sotto la didascalia. */
     .figure-source {
       display: block; margin-top: 0.8mm; font-size: 8pt;
-      color: rgba(0, 0, 0, 0.6);
+      color: rgba(0, 0, 0, 0.6); overflow-wrap: anywhere;
     }
     .source-figure {
       max-width: 100%;
-      max-height: {{ max_figure_height_cm }}cm;
+      max-height: {{ max_source_figure_height_cm | default(max_figure_height_cm) }}cm;
       height: auto;
       display: block;
       margin: 0 auto;

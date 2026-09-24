@@ -507,12 +507,15 @@ def fitted_written_line(
             return best
         cur = replace(cur, title=_ellipsize(cur.title, _MIN_BAND_TITLE_CHARS))
     max_authors = _MAX_AUTHORS_WRITTEN
-    if len(cur.authors) > 1:
+    # «et al.» solo con almeno tre autori (Fase D): con due restano entrambi.
+    if len(cur.authors) > 2:
         max_authors = 1
         if found := fits(cur, max_authors):
             return found
     if cur.authors:
-        first = _ellipsize(cur.authors[0], _MAX_BAND_NAME_CHARS)
+        # Prenomi in iniziali prima di tagliare: il cognome resta
+        # («Maximilian Alexander von Humboldt» → «M. A. von Humboldt»).
+        first = _ellipsize(_initials(cur.authors[0]), _MAX_BAND_NAME_CHARS)
         cur = replace(cur, authors=(first, *cur.authors[1:]))
     if cur.credit:
         cur = replace(cur, credit=_ellipsize(cur.credit, _MAX_BAND_NAME_CHARS))
@@ -522,6 +525,12 @@ def fitted_written_line(
         return found
     if cur.container:
         cur = replace(cur, container=None)
+        if found := fits(cur, max_authors):
+            return found
+    # Senza il titolo, prima di tagliare la testa a metà (un taglio dentro
+    # «…» lasciava le virgolette aperte, Fase D).
+    if cur.title and (cur.authors or cur.credit):
+        cur = replace(cur, title=None)
         if found := fits(cur, max_authors):
             return found
     # Ultima risorsa: la testa accorciata quanto serve, la coda intera.
@@ -534,6 +543,28 @@ def fitted_written_line(
         if text_em(text) <= max_em:
             return text
     return _compose(cur, lang, tail, adapted=adapted)
+
+
+_PARTICLES = frozenset({"de", "di", "da", "del", "della", "van", "von", "der", "la", "le", "du"})
+
+
+def _initials(name: str) -> str:
+    """Prenomi in iniziali, cognome (con le particelle) intero."""
+    words = name.split()
+    if len(words) < 2:
+        return name
+    # Cognome = ultima parola con lettere (un numero o un suffisso dopo resta).
+    surname_start = max(
+        (i for i, w in enumerate(words) if any(ch.isalpha() for ch in w)), default=0
+    )
+    while surname_start > 1 and words[surname_start - 1].lower() in _PARTICLES:
+        surname_start -= 1
+    if surname_start == 0:
+        return name
+    given = [
+        f"{w[0]}." if w[:1].isalpha() and not w.endswith(".") else w for w in words[:surname_start]
+    ]
+    return " ".join([*given, *words[surname_start:]])
 
 
 def _tts_safe(value: str | None, lang: str) -> str | None:

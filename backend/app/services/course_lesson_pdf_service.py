@@ -1079,9 +1079,16 @@ def _render_visual_asset_block(
             and resolved.data_url
             and resolved.attribution_text.strip()
         ):
+            # Mai oltre la misura naturale (×1,25): `max-width` e `max-height`
+            # del CSS restano i tetti del riquadro.
+            width_style = (
+                f' style="width: {resolved.display_width_mm}mm"'
+                if resolved.display_width_mm
+                else ""
+            )
             body = Markup(
-                f'<img class="source-figure" src="{_html_escape_text(resolved.data_url)}" '
-                f'alt="{_html_escape_text(alt_text)}" />'
+                f'<img class="source-figure" src="{_html_escape_text(resolved.data_url)}"'
+                f'{width_style} alt="{_html_escape_text(alt_text)}" />'
             )
             if variant == "lesson":
                 attribution = resolved.attribution_text
@@ -2157,6 +2164,11 @@ _PAGE_WIDTHS_CM: dict[str, float] = {
 }
 
 
+# Riserva per didascalia (9 pt) e riga «Fonte» (8 pt) sotto una figura di
+# fonte, oltre alla safety comune di `max_figure_height_cm`.
+_SOURCE_FIGURE_TEXT_RESERVE_CM = 3.0
+
+
 def _compute_template_margins_cm(tpl_dict: dict[str, Any]) -> dict[str, float]:
     """Converte `margin_mm` + `header_height_mm` + `footer_height_mm` del
     template in cm per il CSS `@page`.
@@ -2386,6 +2398,13 @@ def render_lesson_html(
         margin_side_cm=margins_cm["margin_side_cm"],
         margin_bottom_cm=margins_cm["margin_bottom_cm"],
         max_figure_height_cm=margins_cm["max_figure_height_cm"],
+        # Figura di fonte: sotto l'immagine anche didascalia e riga «Fonte»
+        # (fino a ~3 righe ciascuna) devono stare nella stessa pagina; con
+        # la sola riserva della didascalia la «Fonte» andava alla pagina
+        # dopo (Fase D).
+        max_source_figure_height_cm=max(
+            5.0, round(margins_cm["max_figure_height_cm"] - _SOURCE_FIGURE_TEXT_RESERVE_CM, 2)
+        ),
         body_html=body_html,
         key_takeaways=key_takeaways,
         references=references,

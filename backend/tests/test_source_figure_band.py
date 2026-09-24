@@ -114,9 +114,17 @@ def test_fitted_line_fits_and_keeps_the_tail(name: str, lines: int) -> None:
     assert text.startswith("Fonte: ")
     for part in _tail(src):
         assert part in text, (part, text)
-    # Il nome della fonte (autore, credito o file) resta riconoscibile.
-    who = (src.authors[0] if src.authors else src.fallback_name or "")[:5]
+    # Il nome della fonte resta riconoscibile: il COGNOME del primo autore
+    # (i prenomi possono diventare iniziali, Fase D), o il credito, o il file.
+    surname = (
+        [w for w in src.authors[0].split() if any(c.isalpha() for c in w)][-1]
+        if src.authors
+        else src.fallback_name or ""
+    )
+    who = surname[:5]
     assert who in text
+    # Mai virgolette del titolo aperte e non chiuse.
+    assert text.count("«") == text.count("»"), text
 
 
 def test_short_line_is_identical_to_the_lesson_line() -> None:

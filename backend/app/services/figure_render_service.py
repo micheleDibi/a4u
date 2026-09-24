@@ -2058,6 +2058,22 @@ class FigureEngineBusyError(Exception):
     quindi niente cache negativa; la resa si ritenta più tardi."""
 
 
+_SVG_ROOT_RE = re.compile(r"<svg\b[^>]*>", re.IGNORECASE)
+_UNITLESS_SIZE_RE = re.compile(r'\b(width|height)="([0-9.]+)"')
+
+
+def _tikz_root_in_pt(svg: str) -> str:
+    """pdftocairo scrive `width="298.74"` senza unità, ma le unità del
+    viewBox sono pt: letto come px la figura usciva al 75% (testo sotto il
+    minimo dichiarato dall'oracolo, Fase D). L'unità esplicita fa
+    convertire a `normalize_svg` pt → px (px_per_unit = 4/3)."""
+    match = _SVG_ROOT_RE.search(svg)
+    if match is None:
+        return svg
+    root = _UNITLESS_SIZE_RE.sub(lambda m: f'{m.group(1)}="{m.group(2)}pt"', match.group(0))
+    return svg[: match.start()] + root + svg[match.end() :]
+
+
 def tikz_timeout_seconds() -> float:
     """Tetto di una validazione o resa `tikz` vista dal chiamante: attende
     anche la coda della sandbox (`heavy_job_lock`) prima di compilare, e il
@@ -2184,7 +2200,9 @@ class TikzRenderer:
 
         document, lines = tikz_preamble.document(sanitized)
         result = tikz_compile_service.compile_document(document, preamble_lines=lines)
-        svg = normalize_svg(result.svg, max_bytes=get_settings().figure_svg_max_bytes).svg
+        svg = normalize_svg(
+            _tikz_root_in_pt(result.svg), max_bytes=get_settings().figure_svg_max_bytes
+        ).svg
         geometry = tikz_geometry.analyze(result.pdf, has_axis=tikz_preamble.uses_axis(sanitized))
         font_px = geometry.font_px_min
         metrics = SvgMetrics(

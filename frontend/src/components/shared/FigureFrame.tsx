@@ -118,7 +118,7 @@ export function FigureFrame({
         {tail ? <InlineMath text={tail} /> : null}
         {extra ? ` ${extra}` : ""}
         {attribution ? (
-          <span className="figure-source mt-0.5 block text-xs text-muted-foreground">
+          <span className="figure-source mt-0.5 block break-words text-xs text-muted-foreground">
             {attribution}
           </span>
         ) : null}

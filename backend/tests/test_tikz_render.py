@@ -127,3 +127,20 @@ def test_cjk_text_uses_the_cjk_font() -> None:
     assert geometry.defects == ()
     assert pre.font_for(source) == pre.FONT_JP
     assert result.pdf.startswith(b"%PDF")
+
+
+def test_the_svg_keeps_the_natural_size_of_the_figure() -> None:
+    """Fase D: pdftocairo scrive la dimensione senza unità (pt) e la figura
+    usciva al 75%: il corpo del testo misurato dall'oracolo non era quello
+    della pagina. L'SVG normalizzato ha la larghezza del PDF in px (×4/3)."""
+    from app.services import figure_render_service as frs
+    from app.services.svg_normalize import svg_intrinsic_box
+
+    _result, geometry = _render(CHAIN)
+    renderer = frs.REGISTRY["tikz"]
+    assert isinstance(renderer, frs.TikzRenderer)
+    figure = renderer._render_or_raise(renderer.sanitize(CHAIN))
+    box = svg_intrinsic_box(figure.svg)
+    assert box is not None and box.width_px is not None
+    assert abs(box.width_px - geometry.width_pt * 4 / 3) < 0.01 * box.width_px
+    assert abs(box.px_per_unit - 4 / 3) < 0.01

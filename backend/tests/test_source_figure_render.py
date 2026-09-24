@@ -557,3 +557,74 @@ def test_lesson_pdf_lists_credits_for_open_literature_figures() -> None:
         source_figures={"fig-src-1": _resolved()},
     )
     assert "figure-credits" not in plain
+
+
+def test_tall_source_figure_keeps_caption_and_line_on_its_page() -> None:
+    """Fase D: una figura di fonte verticale occupava tutta l'altezza utile
+    e la riga «Fonte» (due righe) finiva in testa alla pagina dopo. La
+    figura di fonte riserva lo spazio di didascalia e riga."""
+    import base64
+
+    from pypdf import PdfReader
+
+    weasyprint = _weasyprint()
+    tall = Image.new("RGB", (400, 1000), "white")
+    ImageDraw.Draw(tall).rectangle([10, 10, 390, 990], outline="navy", width=8)
+    buf = io.BytesIO()
+    tall.save(buf, format="PNG")
+    long_line = (
+        "Fonte: Mario Rossi, Anna Bianchi e Luca Verdi, «Vibrometria laser Doppler "
+        "per le misure senza contatto su strutture meccaniche», Dispense di misure "
+        "meccaniche e termiche, 2021, fig. 2.1, p. 3 (CC BY-SA 4.0)"
+    )
+    resolved = ResolvedSourceFigure(
+        True,
+        figure_id=FIG_UUID,
+        data_url="data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii"),
+        mime_type="image/png",
+        width=400,
+        height=1000,
+        attribution_text=long_line,
+    )
+    html = pdf.render_lesson_html(
+        course=_course(),
+        lesson=_lesson(),
+        organization=None,
+        pdf_template=None,
+        visual_svg_map={"gen-1": SVG_A},
+        source_figures={"fig-src-1": resolved},
+    )
+    data, _text, _warnings = _pdf_text_and_warnings(weasyprint, html)
+    pages = [
+        " ".join((page.extract_text() or "").split()) for page in PdfReader(io.BytesIO(data)).pages
+    ]
+    with_line = [i for i, text in enumerate(pages) if "Vibrometria laser Doppler" in text]
+    assert with_line, pages
+    # La riga è nella stessa pagina della didascalia della figura di fonte.
+    caption_pages = [i for i, text in enumerate(pages) if "Schema del vibrometro" in text]
+    assert caption_pages and with_line[0] == caption_pages[0], (caption_pages, with_line)
+
+
+def test_crop_is_never_wider_than_its_natural_size() -> None:
+    """Fase D: il ritaglio usciva alla misura dei pixel a 96 ppi (uno schema
+    di 50 mm su tutti i 170 mm della pagina). Con i dpi del ritaglio la
+    larghezza di stampa è la misura nell'originale ×1,25; senza dpi resta
+    il riquadro."""
+    import dataclasses
+    import re as _re
+
+    from app.services.source_figure_service import display_width_mm
+
+    assert display_width_mm(1181, 600) == 62.5  # schema vettoriale di 50 mm
+    assert display_width_mm(1000, None) is None and display_width_mm(None, 300) is None
+    resolved = dataclasses.replace(_resolved(), display_width_mm=62.5)
+    html = pdf.render_lesson_html(
+        course=_course(),
+        lesson=_lesson(),
+        organization=None,
+        pdf_template=None,
+        visual_svg_map={"gen-1": SVG_A},
+        source_figures={"fig-src-1": resolved},
+    )
+    assert _re.search(r'<img class="source-figure" src="[^"]+" style="width: 62.5mm"', html)
+    assert 'style="width' not in _lesson_html().split('class="source-figure"')[1][:4000]
