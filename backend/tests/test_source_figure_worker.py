@@ -38,7 +38,7 @@ from app.models.course_document import CourseDocument
 from app.models.course_document_figure import CourseDocumentFigure
 from app.models.course_lesson import CourseLesson
 from app.services import course_document_figures_worker as worker
-from app.services import remote_storage
+from app.services import document_figures_service, remote_storage
 from app.services.document_figures import runner
 from app.services.document_figures import storage as figure_storage
 from app.services.openai_client import OpenAINotConfiguredError
@@ -286,6 +286,7 @@ def settings(monkeypatch: pytest.MonkeyPatch):
     def apply(**updates: Any) -> None:
         patched = get_settings().model_copy(update={**_BASE_OVERRIDES, **updates})
         monkeypatch.setattr(worker, "get_settings", lambda: patched)
+        monkeypatch.setattr(document_figures_service, "get_settings", lambda: patched)
 
     apply()
     monkeypatch.setattr(worker, "mem_available_mb", lambda: None)
@@ -500,7 +501,7 @@ async def test_missing_source_file_fails(db: AsyncSession, storage: FakeStorage)
     assert (doc.figures_status, doc.figures_error_code) == ("failed", "source_missing")
 
 
-async def test_repeated_crash_on_a_block_skips_it(
+async def test_repeated_crash_loses_only_the_bad_page(
     db: AsyncSession, storage: FakeStorage, fixture_pdf: bytes, fake_child: Any
 ) -> None:
     fake_child("crash_block:3")
@@ -514,12 +515,65 @@ async def test_repeated_crash_on_a_block_skips_it(
     doc.figures_next_attempt_at = None
     await db.commit()
     doc = await _run(db, doc.id)
-    # Secondo crash sullo stesso blocco: saltato, copertura parziale.
+    # Secondo crash sullo stesso blocco: si riprova pagina per pagina; la
+    # pagina 3 va in crash una prima volta.
+    assert (doc.figures_status, doc.figures_error_code) == ("pending", "crashed")
+    assert doc.figures_progress["single_until"] == 4, doc.figures_progress
+    assert doc.figures_progress["crashes"] == {"3-4": 2, "3-3": 1}, doc.figures_progress
+    doc.figures_next_attempt_at = None
+    await db.commit()
+    doc = await _run(db, doc.id)
+    # Secondo crash sulla stessa pagina: saltata solo lei, la 4 e la 5 no.
     assert doc.figures_status == "ready"
     assert doc.figures_coverage == "partial"
     assert doc.figures_error_code == "crashed_repeatedly"
-    assert doc.figures_progress["skipped_blocks"] == [[3, 4]]
-    assert doc.figures_stats["skipped_blocks"] == [[3, 4]]
+    assert doc.figures_progress["skipped_blocks"] == [[3, 3]]
+    assert doc.figures_stats["skipped_blocks"] == [[3, 3]]
+    assert doc.figures_pages_done == 5
+
+
+async def test_whole_document_without_a_page_cap_and_resume_after_a_cap(
+    db: AsyncSession, storage: FakeStorage, fixture_pdf: bytes, settings: Any, vision: FakeVision
+) -> None:
+    """Copertura totale: senza tetto si analizzano tutte le pagine; un
+    documento reso parziale da un tetto precedente riprende dal checkpoint,
+    senza rifare le pagine già fatte."""
+    settings(figure_extraction_max_pages=2)
+    doc = await _queued_document(db, storage, fixture_pdf)
+    doc = await _run(db, doc.id)
+    assert (doc.figures_status, doc.figures_coverage) == ("ready", "partial")
+    assert doc.figures_pages_done == 2 and doc.figures_pages_total == 5
+    before = {r.id: r.page for r in await _figures(db, doc.id)}
+    assert all(page is not None and page <= 2 for page in before.values())
+    calls_before = len(vision.calls)
+    course = await db.get(Course, doc.course_id)
+    assert course is not None
+    # Con il tetto ancora attivo la richiesta non cambia nulla.
+    doc = await document_figures_service.request_extraction(
+        db, course=course, doc=doc, actor_id=None
+    )
+    assert doc.figures_status == "ready"
+
+    settings(figure_extraction_max_pages=0)
+    doc = await document_figures_service.request_extraction(
+        db, course=course, doc=doc, actor_id=None
+    )
+    assert doc.figures_status == "pending"
+    doc = await _run(db, doc.id)
+    assert (doc.figures_status, doc.figures_coverage) == ("ready", "full")
+    assert doc.figures_pages_done == 5
+    rows = await _figures(db, doc.id)
+    after = {r.id: r.page for r in rows}
+    # Le figure delle pagine già fatte sono le stesse righe, non ridescritte.
+    assert set(before) <= set(after)
+    assert {3, 4, 5} <= set(after.values())
+    new_described = [r for r in rows if r.id not in before and r.described_at is not None]
+    assert new_described and len(vision.calls) - calls_before == len(new_described)
+    # Documento completo: una nuova richiesta non lo rimette in coda.
+    doc = await document_figures_service.request_extraction(
+        db, course=course, doc=doc, actor_id=None
+    )
+    assert doc.figures_status == "ready"
 
 
 async def test_low_memory_defers_without_consuming_attempts(
@@ -643,6 +697,20 @@ async def test_describe_cap_rejects_the_rest(
     assert sum(r.status == "ready" for r in rows) == 2
     assert sum(r.reject_reason == "describe_capped" for r in rows) == 2
     assert doc.figures_count == 2 and len(vision.calls) == 2
+
+    # Tetto tolto (default 0 = tutte): la richiesta riprende il documento e
+    # descrive le figure scartate, senza ridescrivere le altre.
+    settings(figure_describe_max_per_document=0)
+    course = await db.get(Course, doc.course_id)
+    assert course is not None
+    doc = await document_figures_service.request_extraction(
+        db, course=course, doc=doc, actor_id=None
+    )
+    assert doc.figures_status == "pending"
+    doc = await _run(db, doc.id)
+    rows = await _figures(db, doc.id)
+    assert not [r for r in rows if r.reject_reason == "describe_capped"]
+    assert doc.figures_count == 4 and len(vision.calls) == 4
 
 
 async def test_descriptions_are_reused_across_courses_of_the_organization(

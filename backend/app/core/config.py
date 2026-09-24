@@ -377,11 +377,13 @@ class Settings(BaseSettings):
     # Thread del processo figlio (OMP/MKL/OPENBLAS e Docling).
     figure_extraction_threads: int = 1
     # Pagine per blocco di conversione e per processo figlio (riciclo della
-    # memoria), tetto di pagine per documento (oltre: copertura parziale).
+    # memoria), tetto di pagine per documento (oltre: copertura parziale) e
+    # tempo massimo di un giro del worker su un documento. 0 = nessun tetto:
+    # copertura totale; resta il tempo massimo di ogni blocco.
     figure_extraction_block_pages: int = 10
     figure_extraction_pages_per_child: int = 40
-    figure_extraction_max_pages: int = 300
-    figure_extraction_total_timeout_seconds: int = 5_400
+    figure_extraction_max_pages: int = 0
+    figure_extraction_total_timeout_seconds: int = 0
     figure_extraction_probe_timeout_seconds: int = 180
     # Watchdog di memoria del figlio e memoria minima disponibile prima di
     # ogni blocco (sotto: rinvio senza consumare tentativi).
@@ -396,9 +398,10 @@ class Settings(BaseSettings):
     # Modelli Docling preinstallati nell'immagine (niente download a runtime).
     figure_docling_artifacts_path: str = "/opt/docling-models"
     # Idoneità didattica calcolata in lettura (una soglia cambiata agisce
-    # senza rielaborare) e tetto delle figure descritte per documento.
+    # senza rielaborare) e tetto delle figure descritte per documento
+    # (0 = tutte).
     figure_min_quality_score: int = 3
-    figure_describe_max_per_document: int = 80
+    figure_describe_max_per_document: int = 0
 
     # Descrizione Vision delle figure candidate (PROMPT 18). Default
     # provvisorio fino alla misura M4; il modello deve stare a listino

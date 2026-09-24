@@ -63,6 +63,29 @@ def skip_code(doc: CourseDocument) -> str | None:
     return None
 
 
+def page_cap() -> int | None:
+    """Tetto di pagine per documento (`FIGURE_EXTRACTION_MAX_PAGES`); None =
+    copertura totale."""
+    cap = int(get_settings().figure_extraction_max_pages)
+    return cap if cap > 0 else None
+
+
+def last_page(pages_total: int) -> int:
+    """Ultima pagina da analizzare, entro il tetto."""
+    cap = page_cap()
+    return pages_total if cap is None else min(pages_total, cap)
+
+
+def pages_left(doc: CourseDocument) -> bool:
+    """Pagine ancora da analizzare dopo il checkpoint (`next_page`), per
+    esempio in un documento pronto con un tetto di pagine precedente."""
+    total = doc.figures_pages_total
+    if not total:
+        return False
+    next_page = int((doc.figures_progress or {}).get("next_page") or 1)
+    return next_page <= last_page(total)
+
+
 def _queue(doc: CourseDocument) -> None:
     doc.figures_status = "pending"
     doc.figures_error_code = None
@@ -72,10 +95,35 @@ def _queue(doc: CourseDocument) -> None:
     doc.figures_requested_at = _now()
 
 
-def _mark_request(doc: CourseDocument) -> bool:
-    """Applica la richiesta; True se lo stato è cambiato."""
-    if doc.figures_status in ACTIVE_STATUSES or doc.figures_status == "ready":
+async def capped_document_ids(db: AsyncSession, doc_ids: Iterable[uuid.UUID]) -> set[uuid.UUID]:
+    """Documenti con figure scartate dal tetto delle descrizioni: senza più
+    il tetto vanno ripresi. Vuoto se il tetto c'è ancora."""
+    ids = list(doc_ids)
+    if not ids or int(get_settings().figure_describe_max_per_document) > 0:
+        return set()
+    rows = await db.execute(
+        select(CourseDocumentFigure.document_id)
+        .where(
+            CourseDocumentFigure.document_id.in_(ids),
+            CourseDocumentFigure.reject_reason == "describe_capped",
+        )
+        .distinct()
+    )
+    return {doc_id for doc_id in rows.scalars().all() if doc_id is not None}
+
+
+def _mark_request(doc: CourseDocument, *, capped: bool = False) -> bool:
+    """Applica la richiesta; True se lo stato è cambiato. Un documento
+    pronto torna in coda solo se è incompleto (pagine ancora da analizzare,
+    figure scartate da un tetto delle descrizioni, `capped`): il worker
+    riprende dal checkpoint (stesso file e motore), senza rifare il resto."""
+    if doc.figures_status in ACTIVE_STATUSES:
         return False
+    if doc.figures_status == "ready":
+        if not (pages_left(doc) or capped) or skip_code(doc) is not None:
+            return False
+        _queue(doc)
+        return True
     code = skip_code(doc)
     if code is not None:
         changed = (doc.figures_status, doc.figures_error_code) != ("skipped", code)
@@ -91,9 +139,10 @@ async def request_extraction(
     db: AsyncSession, *, course: Course, doc: CourseDocument, actor_id: uuid.UUID | None
 ) -> CourseDocument:
     """Mette in coda l'estrazione delle figure del documento (idempotente:
-    in coda, in corso o pronta → nessun cambio)."""
+    in coda, in corso o pronta e completa → nessun cambio)."""
     previous = doc.figures_status
-    if _mark_request(doc):
+    capped = doc.id in await capped_document_ids(db, [doc.id])
+    if _mark_request(doc, capped=capped):
         await write_audit(
             db,
             action="course.document.figures.extract",
@@ -127,7 +176,8 @@ async def request_course_extraction(
         .scalars()
         .all()
     )
-    changed = [d for d in docs if _mark_request(d)]
+    capped = await capped_document_ids(db, [d.id for d in docs])
+    changed = [d for d in docs if _mark_request(d, capped=d.id in capped)]
     if changed:
         await write_audit(
             db,

@@ -27,8 +27,17 @@ Ciclo di un documento:
 Errori: `encrypted`, `corrupt`, `unsupported_format`, `engine_unavailable`,
 `source_missing` sono terminali; `timeout`, `oom`, `crashed`,
 `storage_error` tornano `pending` con backoff fino a
-`FIGURE_EXTRACTION_AUTO_RETRY_MAX` (poi `failed`); un blocco che manda in
-crash il figlio due volte viene saltato (copertura `partial`).
+`FIGURE_EXTRACTION_AUTO_RETRY_MAX` errori di fila (poi `failed`; un giro
+che avanza azzera il conto); un blocco che manda in crash il figlio due
+volte si riprova pagina per pagina, e solo la pagina che va in crash due
+volte viene saltata (copertura `partial`).
+
+Copertura totale di default: nessun tetto di pagine
+(`FIGURE_EXTRACTION_MAX_PAGES=0`), di tempo per giro
+(`FIGURE_EXTRACTION_TOTAL_TIMEOUT_SECONDS=0`) né di figure descritte
+(`FIGURE_DESCRIBE_MAX_PER_DOCUMENT=0`); resta il tempo massimo di ogni
+blocco. Un documento pronto ma incompleto rispetto ai tetti attuali torna
+in coda su richiesta e riprende dal checkpoint.
 
 Con `FIGURE_EXTRACTION_ENABLED=false` il worker non parte e non prende
 lavori (nessun backfill: `figures_status` NULL = mai richiesto).
@@ -643,6 +652,12 @@ def _spread(items: list[CourseDocumentFigure], n: int) -> list[CourseDocumentFig
     return [items[int(i * step)] for i in range(n)]
 
 
+def describe_cap() -> int | None:
+    """Tetto di figure descritte per documento; None = tutte."""
+    cap = int(get_settings().figure_describe_max_per_document)
+    return cap if cap > 0 else None
+
+
 def pick_for_description(rows: list[CourseDocumentFigure], cap: int) -> list[CourseDocumentFigure]:
     """Figure da descrivere entro il tetto `FIGURE_DESCRIBE_MAX_PER_DOCUMENT`.
 
@@ -667,6 +682,18 @@ async def _describe(db: AsyncSession, doc: CourseDocument, workdir: Path | None)
     """Descrive le figure `extracted` del documento (fino al tetto), riusando
     le descrizioni delle figure quasi identiche del corso."""
     settings = get_settings()
+    if describe_cap() is None:
+        # Senza tetto, le figure scartate da un tetto precedente tornano da
+        # descrivere (ripresa di un documento con copertura parziale).
+        await db.execute(
+            update(CourseDocumentFigure)
+            .where(
+                CourseDocumentFigure.document_id == doc.id,
+                CourseDocumentFigure.reject_reason == "describe_capped",
+            )
+            .values(status="extracted", reject_reason=None)
+        )
+        await db.flush()
     rows = list(
         (
             await db.execute(
@@ -697,8 +724,8 @@ async def _describe(db: AsyncSession, doc: CourseDocument, workdir: Path | None)
             )
         ).scalar_one()
     )
-    cap = max(0, int(settings.figure_describe_max_per_document) - already)
-    chosen = pick_for_description(rows, cap)
+    limit = describe_cap()
+    chosen = rows if limit is None else pick_for_description(rows, max(0, limit - already))
     chosen_ids = {row.id for row in chosen}
     for row in rows:
         if row.id not in chosen_ids:
@@ -823,8 +850,7 @@ def _extraction_done(doc: CourseDocument) -> bool:
     total = doc.figures_pages_total
     if not total:
         return False
-    next_page = int((doc.figures_progress or {}).get("next_page") or 1)
-    return next_page > min(total, max(1, int(get_settings().figure_extraction_max_pages)))
+    return not document_figures_service.pages_left(doc)
 
 
 async def _extract(
@@ -837,17 +863,18 @@ async def _extract(
     skipped: list[list[int]] = list(progress.get("skipped_blocks") or [])
     block_pages = max(1, int(settings.figure_extraction_block_pages))
     per_child = max(block_pages, int(settings.figure_extraction_pages_per_child))
-    max_pages = max(1, int(settings.figure_extraction_max_pages))
-    deadline = time.monotonic() + float(settings.figure_extraction_total_timeout_seconds)
+    timeout = float(settings.figure_extraction_total_timeout_seconds)
+    deadline = time.monotonic() + timeout if timeout > 0 else None
     total = _Outcome(skipped_blocks=len(skipped))
     if _extraction_done(doc):
         return total
     known = await _existing_locators(db, doc.id)
     want_metadata = doc.bibliography_source is None
+    first_page = next_page
     session: ChildSession | None = None
     try:
         while True:
-            if time.monotonic() > deadline:
+            if deadline is not None and time.monotonic() > deadline:
                 raise ExtractionChildError("timeout", "tempo totale dell'estrazione superato")
             await _ensure_not_excluded(db, doc.id)
             # Pagine già tutte fatte (dopo il riciclo del figlio): nessun
@@ -855,7 +882,7 @@ async def _extract(
             if (
                 session is None
                 and doc.figures_pages_total
-                and next_page > min(doc.figures_pages_total, max_pages)
+                and next_page > document_figures_service.last_page(doc.figures_pages_total)
             ):
                 break
             if session is None:
@@ -878,10 +905,14 @@ async def _extract(
                             doc_id=str(doc.id),
                             error=str(exc),
                         )
-            last_page = min(doc.figures_pages_total or 1, max_pages)
+            last_page = document_figures_service.last_page(doc.figures_pages_total or 1)
             if next_page > last_page:
                 break
-            end = min(next_page + block_pages - 1, last_page)
+            if next_page <= int(progress.get("single_until") or 0):
+                # Dentro un blocco andato in crash due volte: pagina per pagina.
+                end = next_page
+            else:
+                end = min(next_page + block_pages - 1, last_page)
             try:
                 result = await session.run_block(next_page, end)
             except ExtractionChildError as exc:
@@ -891,17 +922,35 @@ async def _extract(
                     raise
                 key = f"{next_page}-{end}"
                 crashes[key] = crashes.get(key, 0) + 1
+                # Copie: il valore già salvato non va mutato sul posto, o il
+                # prossimo salvataggio dello stesso giro non si vedrebbe.
                 if crashes[key] < 2:
-                    progress.update(next_page=next_page, crashes=crashes)
+                    progress.update(next_page=next_page, crashes=dict(crashes))
                     doc.figures_progress = dict(progress)
+                    if next_page > first_page:
+                        # Il giro ha fatto progressi: su un manuale lungo i
+                        # tentativi automatici contano gli errori di fila,
+                        # non quelli di tutto il documento.
+                        doc.figures_attempts = 0
                     await db.commit()
                     raise
-                # Secondo crash sullo stesso blocco: lo si salta.
+                if end > next_page:
+                    # Secondo crash di un blocco di più pagine: lo si riprova
+                    # pagina per pagina, così si perde al massimo la pagina
+                    # che manda in crash il motore.
+                    log.warning("document_figures_block_split", doc_id=str(doc.id), pages=key)
+                    progress.update(next_page=next_page, crashes=dict(crashes), single_until=end)
+                    doc.figures_progress = dict(progress)
+                    await db.commit()
+                    continue
+                # Secondo crash sulla stessa pagina: la si salta.
                 log.warning("document_figures_block_skipped", doc_id=str(doc.id), pages=key)
                 skipped.append([next_page, end])
                 total.skipped_blocks += 1
                 next_page = end + 1
-                progress.update(next_page=next_page, crashes=crashes, skipped_blocks=skipped)
+                progress.update(
+                    next_page=next_page, crashes=dict(crashes), skipped_blocks=list(skipped)
+                )
                 doc.figures_progress = dict(progress)
                 await db.commit()
                 continue
@@ -1016,9 +1065,9 @@ async def process_document(db: AsyncSession, doc: CourseDocument) -> None:
                 )
             )
         ).all()
-        partial = bool(outcome.skipped_blocks) or (doc.figures_pages_total or 0) > int(
-            settings.figure_extraction_max_pages
-        )
+        partial = bool(outcome.skipped_blocks) or document_figures_service.last_page(
+            doc.figures_pages_total or 0
+        ) < (doc.figures_pages_total or 0)
         # Le righe `superseded` di un'estrazione precedente non contano.
         doc.figures_count = sum(1 for st, reason in rows if st == "ready" and reason is None)
         doc.figures_coverage = "partial" if partial else "full"

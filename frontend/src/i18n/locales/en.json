@@ -426,6 +426,7 @@
       },
       "figures": {
         "extract": "Extract figures",
+        "resume": "Complete extraction",
         "extractAll": "Extract figures from all documents",
         "extractAllHint": "Looks for diagrams, charts and photos in PDF, DOCX and PPTX files that are not excluded, to propose them in the lecture notes with their source. Figures from restricted sources are shown as “instructor's material”.",
         "requested": "Figure extraction started",

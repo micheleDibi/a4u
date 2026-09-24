@@ -426,6 +426,7 @@
       },
       "figures": {
         "extract": "Estrai figure",
+        "resume": "Completa l'estrazione",
         "extractAll": "Estrai le figure da tutti i documenti",
         "extractAllHint": "Cerca schemi, grafici e foto nei PDF, DOCX e PPTX non esclusi, per proporli nelle dispense con la fonte. Le figure delle fonti riservate compaiono come «materiale del docente».",
         "requested": "Estrazione delle figure avviata",

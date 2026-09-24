@@ -9,7 +9,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { canRequestFigures } from "./documentFigures";
+import { canRequestFigures, canResumeFigures } from "./documentFigures";
 
 interface Props {
   doc: CourseDocumentOut;
@@ -97,7 +97,7 @@ export function DocumentFiguresStatus({ doc, canExtract, pending, onExtract }: P
           {tooltip && <TooltipContent className="max-w-md">{tooltip}</TooltipContent>}
         </Tooltip>
       </TooltipProvider>
-      {showButton && (status === "failed" || status === "skipped") && (
+      {showButton && status !== null && (
         <Button
           variant="ghost"
           size="sm"
@@ -108,7 +108,9 @@ export function DocumentFiguresStatus({ doc, canExtract, pending, onExtract }: P
             onExtract();
           }}
         >
-          {t("courses.docs.figures.extract")}
+          {canResumeFigures(doc)
+            ? t("courses.docs.figures.resume")
+            : t("courses.docs.figures.extract")}
         </Button>
       )}
     </span>

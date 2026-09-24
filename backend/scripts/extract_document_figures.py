@@ -11,6 +11,9 @@ script elenca soltanto che cosa farebbe (dry-run, nessuna scrittura).
   ora si estraggono come materiale del docente) → in coda (`pending`), o
   `skipped` con il motivo se non estraibili (documento escluso, formato,
   estrazione spenta); il worker li prende uno alla volta;
+- documenti pronti ma incompleti rispetto alla copertura attuale (pagine
+  oltre un tetto precedente, figure scartate dal tetto delle descrizioni)
+  → in coda: il worker riprende dal punto in cui era arrivato;
 - `--retry-failed`: rimette in coda anche i documenti `failed`;
 - `--gc-detached`: figure staccate (documento cancellato) che nessuna
   lezione usa più → cancellate con i file.
@@ -68,9 +71,19 @@ async def run(args: argparse.Namespace) -> int:
                 print(f"figure staccate non usate {verb}: {len(orphans)}")
                 return 0
 
+            query = select(CourseDocument).order_by(CourseDocument.created_at.asc())
+            if args.course is not None:
+                query = query.where(CourseDocument.course_id == args.course)
+            all_docs = list((await db.execute(query)).scalars().all())
+            capped = await service.capped_document_ids(
+                db, [d.id for d in all_docs if d.figures_status == "ready"]
+            )
+
             def eligible(doc: CourseDocument) -> bool:
                 if doc.figures_status is None:
                     return True
+                if doc.figures_status == "ready":
+                    return service.pages_left(doc) or doc.id in capped
                 if doc.figures_status == "skipped" and doc.figures_error_code in (
                     "extraction_disabled",
                     "policy_content_only",
@@ -78,10 +91,7 @@ async def run(args: argparse.Namespace) -> int:
                     return True
                 return bool(args.retry_failed) and doc.figures_status == "failed"
 
-            query = select(CourseDocument).order_by(CourseDocument.created_at.asc())
-            if args.course is not None:
-                query = query.where(CourseDocument.course_id == args.course)
-            docs = [d for d in (await db.execute(query)).scalars().all() if eligible(d)]
+            docs = [d for d in all_docs if eligible(d)]
             queued = skipped = 0
             for doc in docs:
                 code = service.skip_code(doc)

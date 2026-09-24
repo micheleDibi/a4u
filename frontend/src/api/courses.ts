@@ -175,6 +175,8 @@ export interface CourseDocumentOut {
   figures_pages_done: number | null;
   figures_progress: {
     stage?: "extracting" | "describing" | "done";
+    /** Prossima pagina da analizzare (checkpoint del worker). */
+    next_page?: number;
     candidates_total?: number;
     candidates_done?: number;
   } | null;

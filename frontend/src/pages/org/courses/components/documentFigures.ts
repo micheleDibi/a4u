@@ -19,6 +19,20 @@ export function canRequestFigures(d: CourseDocumentOut): boolean {
       d.figures_status === "failed" ||
       (d.figures_status === "skipped" &&
         (d.figures_error_code === "extraction_disabled" ||
-          d.figures_error_code === "policy_content_only")))
+          d.figures_error_code === "policy_content_only")) ||
+      canResumeFigures(d))
+  );
+}
+
+/** Estrazione pronta con pagine ancora da analizzare (tetto di pagine di
+ *  una versione precedente): la richiesta riprende dal punto raggiunto. */
+export function canResumeFigures(d: CourseDocumentOut): boolean {
+  const total = d.figures_pages_total ?? 0;
+  const next = d.figures_progress?.next_page ?? 0;
+  return (
+    d.figures_status === "ready" &&
+    d.figures_coverage === "partial" &&
+    next > 0 &&
+    next <= total
   );
 }
