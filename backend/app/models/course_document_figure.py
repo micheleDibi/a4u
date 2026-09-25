@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import (
+    REAL,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -79,6 +80,14 @@ FIGURE_REJECT_REASONS: tuple[str, ...] = (
 )
 
 FIGURE_MIME_TYPES: tuple[str, ...] = ("image/png", "image/jpeg")
+
+# Come è stato fatto il ritaglio (migrazione 0039; NULL per i ritagli v1):
+# 'raster_native' = raster di un PDF reso sulla sua griglia di pixel;
+# 'mixed' = raster con tratti vettoriali sopra, reso a k volte il nativo;
+# 'vector' = solo tratti vettoriali; 'office' = immagine incorporata in un
+# DOCX o PPTX; 'external' = file della letteratura non ritagliato da un PDF
+# (Wikimedia Commons).
+FIGURE_CROP_MODES: tuple[str, ...] = ("raster_native", "mixed", "vector", "office", "external")
 
 
 # Chiavi che identificano la fonte in un'attribuzione congelata
@@ -181,6 +190,23 @@ class CourseDocumentFigure(UUIDPKMixin, TimestampMixin, Base):
             "quality_score IS NULL OR quality_score BETWEEN 1 AND 5",
             name="ck_course_document_figure_quality_score_range",
         ),
+        # Ingressi della risoluzione effettiva e ri-ritaglio (migrazione 0039).
+        CheckConstraint(
+            "native_ppi IS NULL OR native_ppi > 0",
+            name="ck_course_document_figure_native_ppi_positive",
+        ),
+        CheckConstraint(
+            "natural_width_mm IS NULL OR natural_width_mm > 0",
+            name="ck_course_document_figure_natural_width_positive",
+        ),
+        CheckConstraint(
+            "crop_mode IS NULL OR " + _in_list("crop_mode", FIGURE_CROP_MODES),
+            name="ck_course_document_figure_crop_mode_valid",
+        ),
+        CheckConstraint(
+            "crop_version >= 1",
+            name="ck_course_document_figure_crop_version_min",
+        ),
         Index(
             "ix_course_document_figure_course_status",
             "course_id",
@@ -247,6 +273,25 @@ class CourseDocumentFigure(UUIDPKMixin, TimestampMixin, Base):
     phash: Mapped[str | None] = mapped_column(String(16), nullable=True)
     detector_class: Mapped[str | None] = mapped_column(String(40), nullable=True)
     detector_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # --- Risoluzione effettiva (migrazione 0039) --------------------------
+    # Solo gli ingressi: la classe (good/acceptable/low/unusable) si calcola
+    # in lettura (`source_figure_resolution`). `dpi` resta il dpi del
+    # RENDER; `native_ppi` è il ppi del raster dominante nelle unità della
+    # pagina della fonte (NULL = vettoriale o ignoto); `natural_width_mm` è
+    # la misura nell'originale normalizzata alla pagina (min(1, 612/page_w)).
+    native_ppi: Mapped[float | None] = mapped_column(REAL, nullable=True)
+    natural_width_mm: Mapped[float | None] = mapped_column(REAL, nullable=True)
+    crop_mode: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # 1 = ritaglio storico (150-300 dpi, JPEG per i raster); 2 = griglia
+    # nativa e PNG per il tratto (`document_figures.CROP_VERSION`).
+    crop_version: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, default=1, server_default="1"
+    )
+    # Ri-ritaglio sul posto (stesso UUID, V2): percorsi e metadati del
+    # ritaglio precedente, per `rerender_document_figures --revert`.
+    recropped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    recrop_previous: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     # --- Analisi Vision ---------------------------------------------------
     kind: Mapped[str | None] = mapped_column(String(40), nullable=True)

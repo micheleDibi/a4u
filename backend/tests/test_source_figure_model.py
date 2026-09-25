@@ -386,13 +386,15 @@ async def test_duplicate_reference_is_cleared_when_target_is_deleted(
 # --- parità modello ↔ migrazione 0037 ------------------------------------
 
 
-def _migration_checks() -> dict[str, str]:
+def _migration_checks(path: Path = _MIGRATION) -> dict[str, str]:
     """CHECK dichiarati nella migrazione: {nome: condizione}.
 
     Le stringhe adiacenti sono già unite dal parser (un solo Constant),
-    quindi non serve importare il modulo di Alembic.
+    quindi non serve importare il modulo di Alembic. Le tuple di coppie
+    (nome, condizione) si leggono da `_DOC_CHECKS` (0037) e
+    `_FIGURE_CHECKS` (0039).
     """
-    tree = ast.parse(_MIGRATION.read_text(encoding="utf-8"))
+    tree = ast.parse(path.read_text(encoding="utf-8"))
     found: dict[str, str] = {}
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
@@ -415,7 +417,9 @@ def _migration_checks() -> dict[str, str]:
             if isinstance(node, ast.AnnAssign)
             else []
         )
-        if any(isinstance(t, ast.Name) and t.id == "_DOC_CHECKS" for t in targets):
+        if any(
+            isinstance(t, ast.Name) and t.id in ("_DOC_CHECKS", "_FIGURE_CHECKS") for t in targets
+        ):
             assert isinstance(node, ast.Assign | ast.AnnAssign) and node.value is not None
             assert isinstance(node.value, ast.Tuple)
             for item in node.value.elts:
@@ -435,7 +439,9 @@ def test_migration_checks_match_models() -> None:
     """Ogni CHECK della migrazione ha la stessa condizione nel modello, e
     viceversa (i nomi passano dalla naming convention in entrambi i casi,
     quindi si confrontano le condizioni)."""
-    migration = _migration_checks()
+    # La 0039 aggiunge i CHECK degli ingressi di risoluzione: il modello li
+    # dichiara tutti, quindi si confronta con l'unione delle due.
+    migration = {**_migration_checks(), **_migration_checks(_MIGRATION_0039)}
     figure_model = {
         _norm(str(c.sqltext))
         for c in CourseDocumentFigure.__table__.constraints
@@ -551,6 +557,7 @@ async def _two_courses(db: AsyncSession) -> tuple[uuid.UUID, uuid.UUID]:
 
 
 _MIGRATION_0038 = _MIGRATION.parent / "0038_literature_figures_gaps.py"
+_MIGRATION_0039 = _MIGRATION.parent / "0039_figure_resolution.py"
 
 
 def test_migration_0038_matches_models() -> None:
@@ -631,3 +638,60 @@ async def test_gap_status_domain(db: AsyncSession) -> None:
     with pytest.raises(IntegrityError):
         await db.commit()
     await db.rollback()
+
+
+# --- migrazione 0039: ingressi della risoluzione e ri-ritaglio ------------
+
+
+def test_migration_0039_lists_every_crop_mode_and_drops_what_it_adds() -> None:
+    from app.models.course_document_figure import FIGURE_CROP_MODES
+
+    text = _MIGRATION_0039.read_text(encoding="utf-8")
+    for value in FIGURE_CROP_MODES:
+        assert f"'{value}'" in text, f"crop_mode {value!r} assente dalla migrazione"
+    tree = ast.parse(text)
+    added: set[tuple[str, str]] = set()
+    dropped: set[tuple[str, str]] = set()
+    for fn in (n for n in tree.body if isinstance(n, ast.FunctionDef)):
+        for node in ast.walk(fn):
+            if (
+                fn.name == "upgrade"
+                and isinstance(node, ast.Call)
+                and getattr(node.func, "attr", "") == "add_column"
+            ):
+                table, column = node.args[:2]
+                assert isinstance(table, ast.Constant) and isinstance(column, ast.Call)
+                name = column.args[0]
+                assert isinstance(name, ast.Constant)
+                added.add((table.value, name.value))
+            # Nel downgrade: `for column in (...): op.drop_column("tabella", column)`.
+            if fn.name == "downgrade" and isinstance(node, ast.For):
+                (stmt,) = node.body
+                assert isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call)
+                if getattr(stmt.value.func, "attr", "") != "drop_column":
+                    continue
+                table_node = stmt.value.args[0]
+                assert isinstance(node.iter, ast.Tuple) and isinstance(table_node, ast.Constant)
+                names = [e.value for e in node.iter.elts if isinstance(e, ast.Constant)]
+                dropped |= {(table_node.value, name) for name in names}
+    assert added and added == dropped
+
+
+async def test_figure_resolution_inputs_domain(db: AsyncSession) -> None:
+    """Default dei ritagli v1 e CHECK degli ingressi di risoluzione."""
+    doc = await _document(db)
+    figure = build_document_figure(doc.course_id, doc.id, license="unknown")
+    db.add(figure)
+    await db.flush()
+    await db.refresh(figure)
+    assert figure.crop_version == 1
+    assert figure.crop_mode is None and figure.native_ppi is None
+    for field, value in (
+        ("crop_mode", "upscaled"),
+        ("crop_version", 0),
+        ("native_ppi", 0.0),
+        ("natural_width_mm", -1.0),
+    ):
+        bad = build_document_figure(doc.course_id, doc.id, license="unknown")
+        setattr(bad, field, value)
+        await _expect_integrity_error(db, bad)

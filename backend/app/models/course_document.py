@@ -264,6 +264,15 @@ class CourseDocument(UUIDPKMixin, TimestampMixin, Base):
     figures_stats: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB, nullable=True
     )
+    # Ri-ritaglio delle figure già estratte (migrazione 0039): richiesta a
+    # lease (il worker la prende quando è scaduta e la sposta avanti di un
+    # lease; a lavoro finito torna NULL) ed esito dell'ultimo giro.
+    figures_recrop_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    figures_recrop_stats: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB, nullable=True
+    )
 
     course: Mapped[Course] = relationship("Course", back_populates="documents")
     figures: Mapped[list[CourseDocumentFigure]] = relationship(
