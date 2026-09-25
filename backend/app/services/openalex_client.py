@@ -203,17 +203,26 @@ async def get_work(work_id: str) -> OpenAlexWork:
     return _to_work(data)
 
 
-async def search_open_works(query: str, *, per_page: int = 5) -> list[OpenAlexWork]:
+async def search_open_works(
+    query: str, *, per_page: int = 5, title_abstract: bool = False
+) -> list[OpenAlexWork]:
     """Lavori open access con licenza aperta (CC BY, CC BY-SA, CC0, pubblico
     dominio) e un PDF: quello della stessa location o, con la API key, la
-    copia ospitata da OpenAlex."""
+    copia ospitata da OpenAlex. Con `title_abstract` la ricerca guarda solo
+    titolo e abstract (più precisa, per un fabbisogno del piano delle
+    figure); senza, anche il testo completo."""
     licenses = "|".join(_OA_FIGURE_LICENSES)
+    cleaned = " ".join(query.replace(",", " ").replace(":", " ").split())
+    filters = f"is_oa:true,best_oa_location.license:{licenses}"
     params: dict[str, Any] = {
-        "search": query.strip(),
-        "filter": f"is_oa:true,best_oa_location.license:{licenses}",
         "select": _WORK_SELECT,
         "per-page": max(1, min(per_page, 25)),
     }
+    if title_abstract:
+        params["filter"] = f"{filters},title_and_abstract.search:{cleaned}"
+    else:
+        params["filter"] = filters
+        params["search"] = cleaned
     try:
         async with _client(timeout=30.0) as client:
             resp = await client.get("/works", params=params)
