@@ -8,10 +8,11 @@ SQL e un tetto, come per le estrazioni):
    (stesse regole del catalogo del PROMPT 3: `relevant` di
    `lesson_figure_selection`, modo select, filtri di qualità). Se sono
    almeno `FIGURE_SOURCE_MIN_PER_LESSON` → `done`, nessuna chiamata;
-2. documenti citabili con estrazione mai fatta o in corso → `skipped`
-   (`documents_not_extracted`): le loro figure non sono note, la
-   letteratura non si interroga (con l'estrazione spenta non lo saranno
-   mai: contano come senza figure);
+2. documenti con un'estrazione in coda o in corso, richiesta da meno di
+   `FIGURE_WAIT_MAX_MINUTES` → `skipped` (`documents_extracting`): le loro
+   figure arrivano a breve. Un documento con estrazione MAI richiesta non
+   blocca: la letteratura parte, e alla rigenerazione le figure dei
+   documenti, se poi estratte, tornano ad avere la precedenza;
 3. altrimenti la letteratura aperta integra fino al budget (b): termini di
    ricerca in inglese (PROMPT 20), poi Wikimedia Commons (licenze libere,
    rendering PNG di Commons) e, con `OPENALEX_API_KEY` e l'estrazione
@@ -41,7 +42,7 @@ import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -128,19 +129,22 @@ def lesson_context(course: Course, lesson: CourseLesson) -> relevance.LessonCont
     )
 
 
-async def documents_not_extracted(db: AsyncSession, course_id: uuid.UUID) -> int:
-    """Documenti non esclusi estraibili con figure ancora ignote
-    (estrazione mai richiesta o in corso). Con l'estrazione spenta non lo
-    saranno mai: 0."""
-    if not get_settings().figure_extraction_enabled:
+async def documents_extracting(db: AsyncSession, course_id: uuid.UUID) -> int:
+    """Documenti non esclusi estraibili con un'estrazione in coda o in corso,
+    richiesta da meno di `FIGURE_WAIT_MAX_MINUTES` (stesso tetto dell'attesa
+    della Fase 3). L'estrazione mai richiesta (NULL) non conta: non è in
+    arrivo. Con l'estrazione spenta: 0."""
+    settings = get_settings()
+    if not settings.figure_extraction_enabled:
         return 0
+    cutoff = _now() - timedelta(minutes=int(settings.figure_wait_max_minutes))
     count = await db.scalar(
         select(func.count(CourseDocument.id)).where(
             CourseDocument.course_id == course_id,
             CourseDocument.citation_policy != "excluded",
             CourseDocument.mime_type.in_(tuple(EXTRACTABLE_MIMES)),
-            (CourseDocument.figures_status.is_(None))
-            | (CourseDocument.figures_status.in_(GAP_ACTIVE)),
+            CourseDocument.figures_status.in_(GAP_ACTIVE),
+            CourseDocument.figures_requested_at > cutoff,
         )
     )
     return int(count or 0)
@@ -681,15 +685,15 @@ async def check_lesson(db: AsyncSession, lesson: CourseLesson) -> GapOutcome:
     stats: dict[str, Any] = {"pertinent_before": pertinent, "budget": budget}
     if pertinent >= int(settings.figure_source_min_per_lesson):
         return GapOutcome("done", {**stats, "reason": "enough"}, None)
-    unknown = await documents_not_extracted(db, course.id)
-    if unknown:
+    extracting = await documents_extracting(db, course.id)
+    if extracting:
         log.info(
-            "figures_gap_documents_not_extracted",
+            "figures_gap_documents_extracting",
             lesson_id=str(lesson_id),
-            documents=unknown,
+            documents=extracting,
         )
         return GapOutcome(
-            "skipped", {**stats, "reason": "documents_not_extracted", "documents": unknown}, None
+            "skipped", {**stats, "reason": "documents_extracting", "documents": extracting}, None
         )
     room = int(settings.figure_literature_max_per_course) - await external_figures(db, course.id)
     if room <= 0:

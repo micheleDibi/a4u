@@ -8,8 +8,9 @@ Worker e servizio veri su DB; Wikimedia, OpenAlex e PROMPT 20 finti.
   fonte, `external_id`), subito proponibili per la lezione; nessun
   `CourseDocument` creato, `content_raw` della lezione non toccato (I2);
   costo in `figures_gap_usage` e nella dashboard admin (`figures_gap`);
-- documenti con estrazione mai fatta (estrazione accesa) → `skipped`, niente
-  rete; con l'estrazione spenta contano come senza figure;
+- documento con estrazione mai richiesta → la letteratura parte lo stesso;
+  estrazione in corso da poco → `skipped` (`documents_extracting`), oltre il
+  tetto di attesa non blocca più;
 - candidata non pertinente o duplicata (phash) → scartata;
 - 429 → di nuovo `pending` con il costo già pagato conservato; oltre il
   tetto → `failed`;
@@ -367,30 +368,44 @@ async def test_course_without_documents_gets_open_literature_figures(
     )
 
 
-async def test_documents_not_extracted_skip_the_literature(
+async def test_a_never_extracted_document_does_not_block_the_literature(
     seeded_db: AsyncSession, env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Estrazione mai richiesta (figures_status NULL) con l'estrazione accesa:
+    le sue figure non sono in arrivo, la letteratura parte (WP1.1)."""
     course_id, lesson_id = await _lesson(seeded_db)
     seeded_db.add(build_course_document(course_id, filename="mai_estratto.pdf"))
     await seeded_db.commit()
     extraction_on = env["settings"].model_copy(update={"figure_extraction_enabled": True})
     monkeypatch.setattr(gaps, "get_settings", lambda: extraction_on)
     await gap_worker._tick()
-    lesson = await _fresh(seeded_db, lesson_id)
-    assert lesson.figures_gap_status == "skipped"
-    assert lesson.figures_gap_stats["reason"] == "documents_not_extracted"
-    assert env["calls"] == []
-    # Con l'estrazione spenta i documenti non avranno mai figure: si cerca.
-    monkeypatch.setattr(gaps, "get_settings", lambda: env["settings"])
-    await seeded_db.execute(
-        update(CourseLesson)
-        .where(CourseLesson.id == lesson_id)
-        .values(figures_gap_status="pending")
-    )
-    await seeded_db.commit()
-    await gap_worker._tick()
     assert (await _fresh(seeded_db, lesson_id)).figures_gap_status == "done"
     assert ("wikimedia", "laser doppler vibrometer") in env["calls"]
+
+
+async def test_an_extraction_in_progress_is_awaited_within_the_cap(
+    seeded_db: AsyncSession, env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Estrazione in corso richiesta da poco: la verifica aspetta (skipped,
+    niente rete). Oltre `FIGURE_WAIT_MAX_MINUTES` non blocca più."""
+    course_id, lesson_id = await _lesson(seeded_db)
+    doc = build_course_document(course_id, filename="in_corso.pdf")
+    doc.figures_status = "processing"
+    doc.figures_requested_at = datetime.now(UTC)
+    seeded_db.add(doc)
+    await seeded_db.commit()
+    extraction_on = env["settings"].model_copy(update={"figure_extraction_enabled": True})
+    monkeypatch.setattr(gaps, "get_settings", lambda: extraction_on)
+    lesson = await _fresh(seeded_db, lesson_id)
+    outcome = await gaps.check_lesson(seeded_db, lesson)
+    assert outcome.status == "skipped"
+    assert outcome.stats["reason"] == "documents_extracting"
+    assert env["calls"] == []
+    doc.figures_requested_at = datetime.now(UTC) - timedelta(
+        minutes=int(extraction_on.figure_wait_max_minutes) + 1
+    )
+    await seeded_db.commit()
+    assert await gaps.documents_extracting(seeded_db, course_id) == 0
 
 
 async def test_duplicate_candidate_is_not_evaluated(
