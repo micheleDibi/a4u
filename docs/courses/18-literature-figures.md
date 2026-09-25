@@ -1044,3 +1044,45 @@ ripiego inline), `course_lesson_figure_needs_worker.py` (worker).
     chiamata, massimo 22 s); 180 fabbisogni, 99 must, al più 6 must a
     lezione; 1,23 $ (circa 0,03 $ a lezione). Con 2500 token di output una
     lezione usciva troncata: tetto portato a 4500.
+
+### 23.2 Che cosa raffigura una figura: `depicts` (WP5)
+Per abbinare una figura a un fabbisogno serve sapere quale oggetto e quale
+**variante** mostra: le parole chiave dicono «vibrometro», non «vibrometro
+differenziale». La Vision descrittiva (PROMPT 18) e quella della
+letteratura (PROMPT 20) restituiscono anche `depicts`:
+
+- `items`: da 0 a 4 oggetti, il primo è lo strumento o l'allestimento di
+  cui la figura tratta nel suo insieme (non i suoi componenti);
+  `object_en` generico e senza variante, `variant_en` solo se la variante
+  si vede o la didascalia la dichiara, altrimenti vuota;
+- `focus`: il primo piano in 2-5 parole inglesi (optical layout,
+  measurement setup, instrument photo, application example, measured
+  response).
+
+Tutto in **inglese canonico** (deviazione 4 del piano): i termini nella
+lingua del corso stanno nei fabbisogni. L'output si neutralizza, si taglia
+a 80 caratteri, si deduplica; si salva in `course_document_figure.depicts`
+come `{"v": DEPICTS_VERSION, "items", "focus"}` (migrazione 0041).
+
+- **Riuso delle descrizioni**: una figura quasi identica copia la
+  descrizione (e `depicts`) solo da una fonte con `depicts` alla versione
+  corrente; altrimenti si paga una chiamata Vision.
+- **Figure già descritte**: `scripts/redescribe_figure_depicts.py`
+  (`--course` o `--all`; senza `--apply` conta e stima; `--apply` richiede
+  `--max-usd`). Una chiamata PROMPT 18 per figura, di cui si tiene SOLO
+  `depicts` (descrizione, parole chiave, tipo e qualità restano: il
+  catalogo non cambia); il costo va in `vision_usage`; le copie della
+  descrizione (`describe_source_id`) ricevono lo stesso `depicts` senza
+  chiamate.
+- **Misura M-D1** (50 figure etichettate a mano guardandole, 30 di
+  vibrometri che coprono tutte le varianti e 20 di accelerometri, shaker,
+  martelli, celle di carico): primo giro variante corretta 0,73 a 768 px e
+  0,60 a 1024 px; il modello elencava i componenti (laser, fotodiodo) al
+  posto dello strumento e metteva la variante nel nome («rotational
+  vibrometer»). Dopo una correzione del prompt: 0,77 a 768 px in senso
+  stretto, circa 0,90 contando i sinonimi («laser velocimeter») e le figure
+  in cui lo strumento non si vede; oggetto corretto 1,0 sulle 20 figure non
+  di vibrometri, nessun vibrometro inventato; `kind` coerente con la
+  rappresentazione 0,94. Resta 768 px (1024 non migliora); circa 0,0012 $
+  a figura. L'abbinamento (WP6) cerca i termini della variante anche nel
+  nome dell'oggetto e accetta sinonimi dell'oggetto.

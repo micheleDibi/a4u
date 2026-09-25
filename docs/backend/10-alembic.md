@@ -733,6 +733,20 @@ Inversa; ciclo `upgrade → downgrade → upgrade` eseguito su un DB
 usa-e-getta (copia del corso di produzione). Un test verifica che il
 downgrade tolga ogni colonna aggiunta.
 
+## `alembic/versions/0041_figure_depicts.py`
+
+Che cosa raffigura una figura di fonte (doc 18 §23.2).
+
+### Sequenza `upgrade()`
+
+`course_document_figure.depicts` (JSONB, NULL per le figure descritte
+prima; le completa `scripts/redescribe_figure_depicts.py`). Solo ADD.
+
+### Sequenza `downgrade()`
+
+Toglie la colonna; ciclo `upgrade → downgrade → upgrade` eseguito sulla
+copia usa-e-getta del corso; un test verifica colonna aggiunta = tolta.
+
 ---
 
 ## Workflow per nuove migrazioni
