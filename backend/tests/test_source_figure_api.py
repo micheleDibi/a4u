@@ -325,6 +325,11 @@ async def test_lesson_patch_duplicate_in_lesson_and_over_the_reuse_cap(
     res = await _patch_content(client, s, [good, dup])
     assert res.status_code == 422 and res.json()["code"] == "source_figure_duplicate_in_lesson"
     assert res.json()["meta"]["index"] == 1
+    # Il doppione nuovo PRIMA di quello salvato: l'errore resta sulla card
+    # nuova, non su quella già in lezione.
+    res = await _patch_content(client, s, [dup, good])
+    assert res.status_code == 422 and res.json()["code"] == "source_figure_duplicate_in_lesson"
+    assert (res.json()["meta"]["index"], res.json()["meta"]["asset_id"]) == (0, "fig-src-2")
 
     lesson.content_raw = {"introduction": "Intro.", "sections": [], "visual_assets": [good, dup]}
     await seeded_db.commit()
@@ -366,6 +371,17 @@ async def test_lesson_patch_duplicate_in_lesson_and_over_the_reuse_cap(
     assert audits[0].payload["figure_id"] == str(figs["reserved"].id)
     assert audits[0].payload["used_in"] == ["M1.L2", "M1.L3"]
     assert audits[0].payload["cap"] == 2
+    # Rimandare gli stessi asset (auto-save dell'editor) non registra di
+    # nuovo: la figura oltre il tetto è ormai della lezione.
+    res = await _patch_content(client, s, [good, _asset("fig-src-3", figs["reserved"])])
+    assert res.status_code == 200, res.text
+    again = await seeded_db.execute(
+        select(AuditLog).where(
+            AuditLog.action == "course.lesson.content.source_figure_over_cap",
+            AuditLog.target_id == str(lesson.id),
+        )
+    )
+    assert len(again.scalars().all()) == 1
 
 
 async def test_lesson_patch_placed_figure_rename_quality_and_format_lock(

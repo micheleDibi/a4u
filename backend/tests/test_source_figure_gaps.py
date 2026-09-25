@@ -408,6 +408,18 @@ async def test_an_extraction_in_progress_is_awaited_within_the_cap(
     assert outcome.status == "skipped"
     assert outcome.stats["reason"] == "documents_extracting"
     assert env["calls"] == []
+    # Con l'estrazione spenta nessun documento è «in estrazione».
+    extraction_off = env["settings"].model_copy(update={"figure_extraction_enabled": False})
+    monkeypatch.setattr(gaps, "get_settings", lambda: extraction_off)
+    assert await gaps.documents_extracting(seeded_db, course_id) == 0
+    monkeypatch.setattr(gaps, "get_settings", lambda: extraction_on)
+    # Un `processing` senza data di richiesta (righe vecchie) non blocca.
+    stale = build_course_document(course_id, filename="senza_data.pdf")
+    stale.figures_status = "processing"
+    stale.figures_requested_at = None
+    seeded_db.add(stale)
+    await seeded_db.commit()
+    assert await gaps.documents_extracting(seeded_db, course_id) == 1
     doc.figures_requested_at = datetime.now(UTC) - timedelta(
         minutes=int(extraction_on.figure_wait_max_minutes) + 1
     )

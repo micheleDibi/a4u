@@ -11,8 +11,9 @@ SQL e un tetto, come per le estrazioni):
 2. documenti con un'estrazione in coda o in corso, richiesta da meno di
    `FIGURE_WAIT_MAX_MINUTES` → `skipped` (`documents_extracting`): le loro
    figure arrivano a breve. Un documento con estrazione MAI richiesta non
-   blocca: la letteratura parte, e alla rigenerazione le figure dei
-   documenti, se poi estratte, tornano ad avere la precedenza;
+   blocca: la letteratura parte (la precedenza delle figure dei documenti
+   estratti dopo, alla rigenerazione, arriva con l'assegnazione del piano
+   delle figure, WP6, e la riapertura delle verifiche con WP7);
 3. altrimenti la letteratura aperta integra fino al budget (b): termini di
    ricerca in inglese (PROMPT 20), poi Wikimedia Commons (licenze libere,
    rendering PNG di Commons) e, con `OPENALEX_API_KEY` e l'estrazione

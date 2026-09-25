@@ -733,17 +733,120 @@ async def test_a_lesson_keeps_its_own_figure_even_beyond_the_cap(
     )
 
 
+async def _dropped_audits(db: AsyncSession, lesson_id: uuid.UUID) -> list[AuditLog]:
+    rows = await db.execute(
+        select(AuditLog).where(
+            AuditLog.action == "course.lesson.content.source_figures_dropped",
+            AuditLog.target_id == str(lesson_id),
+        )
+    )
+    return list(rows.scalars().all())
+
+
 @pytest.mark.parametrize("cap", [1, 2])
-async def test_parallel_lessons_respect_the_reuse_cap(
+async def test_regenerating_keeps_the_lessons_own_figure_beyond_the_cap_end_to_end(
+    seeded_db: AsyncSession, fakes: dict[str, Any], monkeypatch: pytest.MonkeyPatch, cap: int
+) -> None:
+    """Rigenerazione vera nel worker (catalogo, fusione, ricontrollo,
+    materializzazione): la figura già nella lezione resta anche se altre 5
+    lezioni la usano, con K=1 come con K=2, e nessun audit di scarto."""
+    _with_cap(monkeypatch, cap)
+    setup = await _setup(seeded_db)
+    good = setup["figures"]["good"]
+    for i in range(5):
+        await _second_lesson(
+            seeded_db, setup, [_placed(good.id)], code=f"M1.L{i + 2}", position=i + 2
+        )
+    lesson = await _lesson(seeded_db, setup["lesson_id"])
+    lesson.content_raw = {
+        "introduction": "Testo.",
+        "sections": [],
+        "visual_assets": [_placed(good.id)],
+    }
+    await seeded_db.commit()
+    await worker._process_one(setup["lesson_id"])
+    lesson = await _lesson(seeded_db, setup["lesson_id"])
+    assert lesson.content_status == "ready", lesson.content_error
+    assert list(fakes["calls"][0]["source_figure_refs"]) == [figure_ref(good.id)]
+    kept = [
+        a["content"] for a in lesson.content_raw["visual_assets"] if a["format"] == "source_figure"
+    ]
+    assert kept == [str(good.id)]
+    assert not await _dropped_audits(seeded_db, setup["lesson_id"])
+
+
+async def test_recheck_splits_the_audit_by_reason_with_policy_first(
+    seeded_db: AsyncSession, fakes: dict[str, Any], _engine: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Due figure scelte: A diventa di un documento escluso E arriva al
+    tetto, B arriva solo al tetto (K=1). Due audit: la politica prevale sul
+    tetto per A, il tetto (con K) vale per B."""
+    _with_cap(monkeypatch, 1)
+    setup = await _setup(seeded_db)
+    first = setup["figures"]["good"]
+    other_doc = build_course_document(setup["course_id"], filename="altro.pdf", policy="citable")
+    seeded_db.add(other_doc)
+    await seeded_db.flush()
+    second = build_document_figure(
+        setup["course_id"],
+        other_doc.id,
+        license="cc_by",
+        description="Schema del vibrometro laser Doppler con la cella di Bragg, variante",
+        keywords={"course": ["vibrometro laser Doppler", "cella di Bragg"], "en": []},
+    )
+    seeded_db.add(second)
+    await seeded_db.commit()
+    other = await _second_lesson(seeded_db, setup, [])
+
+    async def both_saturated_and_first_excluded() -> None:
+        factory = async_sessionmaker(_engine, expire_on_commit=False)
+        async with factory() as session:
+            await session.execute(
+                update(CourseDocument)
+                .where(CourseDocument.id == setup["docs"]["citable"].id)
+                .values(citation_policy="excluded")
+            )
+            placed = [
+                {"asset_id": "SRC-a", "format": "source_figure", "content": str(first.id)},
+                {"asset_id": "SRC-b", "format": "source_figure", "content": str(second.id)},
+            ]
+            await session.execute(
+                update(CourseLesson)
+                .where(CourseLesson.id == other.id)
+                .values(content_raw={"introduction": "T.", "sections": [], "visual_assets": placed})
+            )
+            await session.commit()
+
+    fakes["on_generate"] = both_saturated_and_first_excluded
+    await worker._process_one(setup["lesson_id"])
+    refs = set(fakes["calls"][0]["source_figure_refs"])
+    assert refs == {figure_ref(first.id), figure_ref(second.id)}
+    lesson = await _lesson(seeded_db, setup["lesson_id"])
+    assert lesson.content_status == "ready", lesson.content_error
+    assert not [a for a in lesson.content_raw["visual_assets"] if a["format"] == "source_figure"]
+    by_reason = {
+        a.payload["reason"]: a.payload for a in await _dropped_audits(seeded_db, setup["lesson_id"])
+    }
+    assert set(by_reason) == {"not_selectable_at_materialize", "reuse_cap"}
+    assert by_reason["not_selectable_at_materialize"]["dropped"] == [figure_ref(first.id)]
+    assert by_reason["reuse_cap"]["dropped"] == [figure_ref(second.id)]
+    assert by_reason["reuse_cap"]["cap"] == 1
+    assert "cap" not in by_reason["not_selectable_at_materialize"]
+
+
+@pytest.mark.parametrize("cap", [1, 2])
+async def test_sequential_lessons_respect_the_reuse_cap(
     seeded_db: AsyncSession,
     fakes: dict[str, Any],
     _engine: Any,
     monkeypatch: pytest.MonkeyPatch,
     cap: int,
 ) -> None:
-    """Due lezioni generate insieme scelgono la stessa figura. Con K=1 al
-    ricontrollo quella arrivata seconda la toglie, con audit `reuse_cap`;
-    con K=2 la tengono entrambe."""
+    """L'altra lezione colloca la figura (commit) mentre questa è in
+    generazione. Con K=1 al ricontrollo questa la toglie, con audit
+    `reuse_cap`; con K=2 la tengono entrambe. Due lezioni che fanno il
+    ricontrollo nello stesso istante possono ancora passarlo entrambe: il
+    lock di corso arriva con WP6."""
     _with_cap(monkeypatch, cap)
     setup = await _setup(seeded_db)
     good = setup["figures"]["good"]

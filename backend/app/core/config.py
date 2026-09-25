@@ -364,7 +364,9 @@ class Settings(BaseSettings):
     # buco» e (dopo il cancello, WP5) si integra dalla letteratura aperta.
     figure_source_min_per_lesson: int = 1
     # Riuso limitato: una figura di fonte compare in al più tante lezioni del
-    # corso (mai due volte nella stessa). 1 = esclusività di prima (9bb7c31).
+    # corso (mai due volte nella stessa). 1 = una sola lezione per le figure
+    # nuove, come in 9bb7c31; le collocazioni già esistenti restano alla
+    # rigenerazione della lezione (U1).
     figure_source_max_lessons_per_figure: int = 2
     # Risoluzione effettiva (doc 18 §22): classe good/acceptable/low/unusable
     # alla larghezza di riferimento, regola di stampa unica per dispensa,

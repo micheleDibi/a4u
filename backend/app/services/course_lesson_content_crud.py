@@ -240,7 +240,6 @@ async def _guard_source_figures(
         for a in previous or []
         if isinstance(a, dict) and (fid := source_figure_uuid(a)) is not None
     )
-    seen: Counter[uuid.UUID] = Counter()
     uses: dict[uuid.UUID, list[str]] | None = None
     over_cap: list[dict[str, Any]] = []
     policy: str | None = None
@@ -260,6 +259,23 @@ async def _guard_source_figures(
             meta={"asset_id": asset_id, "index": index, **extra, "errors": [error]},
         )
 
+    # Doppioni: una figura che compare più volte di quante ne avesse già la
+    # lezione. Il 422 va sul primo asset che la porta di NUOVO (non su quello
+    # già salvato, anche se lo precede nel payload), così il frontend mostra
+    # l'errore sulla card giusta.
+    occurrences: dict[uuid.UUID, list[tuple[int, str]]] = {}
+    for index, asset in enumerate(assets):
+        if asset.get("format") != SOURCE_FIGURE_FORMAT:
+            continue
+        fid = source_figure_uuid(asset)
+        if fid is not None:
+            occurrences.setdefault(fid, []).append((index, str(asset.get("asset_id") or "")))
+    blame: dict[uuid.UUID, int] = {}
+    for fid, found in occurrences.items():
+        if len(found) > max(1, before_counts[fid]):
+            fresh = [i for i, aid in found if source_figure_uuid(before.get(aid)) != fid]
+            blame[fid] = fresh[0] if fresh else found[-1][0]
+
     for index, asset in enumerate(assets):
         asset_id = str(asset.get("asset_id") or "")
         old = before.get(asset_id)
@@ -278,8 +294,7 @@ async def _guard_source_figures(
         figure_id = source_figure_uuid(asset)
         if figure_id is not None:
             out[-1] = {**asset, "content": str(figure_id)}
-            seen[figure_id] += 1
-            if seen[figure_id] > max(1, before_counts[figure_id]):
+            if blame.get(figure_id) == index:
                 invalid(
                     "La stessa figura di fonte compare già in questa lezione.",
                     "source_figure_duplicate_in_lesson",
@@ -478,7 +493,8 @@ async def update_lesson_content(
         },
     )
     # Il tetto di riuso non blocca il docente: l'inserimento oltre il tetto
-    # si registra (la figura resta, l'editor lo mostra).
+    # resta e si registra nell'audit (l'avviso nell'editor arriva con il
+    # badge «già usata in», WP9).
     for item in over_cap:
         await write_audit(
             db,

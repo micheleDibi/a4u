@@ -201,7 +201,12 @@ async def over_reuse_cap(
     db: AsyncSession, course: Course, figure_ids: Iterable[uuid.UUID], *, lesson_id: uuid.UUID
 ) -> set[uuid.UUID]:
     """Figure scelte che intanto altre lezioni hanno portato al tetto di
-    riuso (le figure già collocate nella lezione stessa passano)."""
+    riuso (le figure già collocate nella lezione stessa passano).
+
+    Il ricontrollo non è serializzato fra lezioni generate in parallelo:
+    due lezioni che scelgono la stessa figura possono passarlo entrambe
+    prima del commit dell'altra, e la figura finire in K+1 lezioni. Il lock
+    di corso attorno ad assegnazione e materializzazione arriva con WP6."""
     wanted = set(figure_ids)
     if not wanted:
         return set()
