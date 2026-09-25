@@ -303,6 +303,10 @@ class CourseDocumentFigure(UUIDPKMixin, TimestampMixin, Base):
     quality_score: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     is_useful_for_teaching: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     legibility: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Che cosa raffigura, in inglese canonico, per l'abbinamento con i
+    # fabbisogni delle lezioni (PROMPT 18 e 20): {"v", "items": [{"object_en",
+    # "variant_en"}], "focus"}; NULL = descritta prima della 0041.
+    depicts: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
     described_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     describe_model: Mapped[str | None] = mapped_column(String(80), nullable=True)
     # Descrizione riusata da una figura quasi identica (phash) dello stesso
