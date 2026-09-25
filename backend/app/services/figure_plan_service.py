@@ -20,8 +20,10 @@ Attesa della Fase 3 (`waiting_clause`): una lezione in coda aspetta finché
 una lezione in coda dello stesso corso ha i fabbisogni in coda o in
 calcolo, al più `FIGURE_WAIT_MAX_MINUTES` dalla PROPRIA richiesta. Così
 l'assegnazione delle figure vede la domanda di tutte le lezioni chieste
-insieme. Se i fabbisogni mancano o sono vecchi al momento della
-generazione, `ensure_lesson_needs` li calcola inline (una chiamata).
+insieme. `ensure_lesson_needs` è il ripiego inline (una chiamata) per i
+fabbisogni mancanti o vecchi al momento della generazione: lo collega alla
+Fase 3 il blocco del piano (WP8); in WP4 i fabbisogni si calcolano e si
+aspettano soltanto.
 
 Interruttore: `FIGURE_PLAN_ENABLED` (con `FIGURE_SOURCE_ENABLED`).
 """
@@ -42,6 +44,7 @@ from app.core.logging import get_logger
 from app.models.course import Course
 from app.models.course_lesson import CourseLesson
 from app.services import openai_figure_needs_service as needs_svc
+from app.services.openai_client import OpenAINotConfiguredError
 
 log = get_logger("app.figure_plan")
 
@@ -159,8 +162,11 @@ def request_needs(course: Course, lesson: CourseLesson) -> bool:
     fp = fingerprint(item, max_needs(lesson))
     if current_needs(lesson, fp) is not None:
         return False
+    if lesson.figure_needs_status not in NEEDS_ACTIVE:
+        # Solo per fabbisogni assenti, vecchi o falliti: un calcolo già in
+        # coda o in corso conserva il contatore dei tentativi.
+        lesson.figure_needs_attempts = 0
     lesson.figure_needs_status = "pending"
-    lesson.figure_needs_attempts = 0
     return True
 
 
@@ -244,8 +250,11 @@ async def ensure_lesson_needs(course: Course, lesson: CourseLesson) -> list[dict
         return ready
     try:
         result, usage = await needs_svc.generate_needs(item, max_total=max_total)
-    except needs_svc.OpenAIFigureNeedsError as exc:
-        lesson.figure_needs_usage = merge_usage(lesson.figure_needs_usage, exc.usage)
+    except (needs_svc.OpenAIFigureNeedsError, OpenAINotConfiguredError) as exc:
+        lesson.figure_needs_usage = merge_usage(
+            lesson.figure_needs_usage, getattr(exc, "usage", None)
+        )
+        lesson.figure_needs_checked_at = _now()
         log.warning("figure_needs_inline_failed", lesson_id=str(lesson.id), error=str(exc)[:300])
         return None
     store_needs(

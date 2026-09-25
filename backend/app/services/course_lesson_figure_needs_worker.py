@@ -10,8 +10,12 @@ richiesta di Fase 3, `figure_plan_service.request_needs`), fino a
 - Lezione senza scaletta o verifica: `skipped`, nessuna chiamata.
 - Errori recuperabili (rete, 429, 5xx, risposta inutilizzabile) →
   di nuovo `pending` con backoff, fino a `FIGURE_NEEDS_AUTO_RETRY_MAX`
-  ripetizioni, poi `failed` (la Fase 3 procede comunque, col ripiego
-  inline o senza piano); il costo pagato resta in `figure_needs_usage`.
+  ripetizioni, poi `failed` (la Fase 3 procede comunque, senza piano); il
+  costo pagato resta in `figure_needs_usage`. Un 4xx diverso da 429 o la
+  chiave assente → `failed` subito.
+- Una nuova richiesta arrivata durante il calcolo (stato di nuovo
+  `pending`) si soddisfa con il risultato solo se l'impronta dell'input
+  attuale coincide; altrimenti resta in coda e si ricalcola.
 - All'avvio i calcoli rimasti `processing` tornano `pending`.
 
 Parte solo con `FIGURE_SOURCE_ENABLED` e `FIGURE_PLAN_ENABLED`.
@@ -117,16 +121,23 @@ async def process_lesson(db: AsyncSession, lesson_id: uuid.UUID) -> None:
         fresh = await db.get(CourseLesson, lesson_id, populate_existing=True)
         if fresh is None:
             return
-        attempts = int(fresh.figure_needs_attempts or 0) + 1
-        terminal = isinstance(exc, OpenAINotConfiguredError) or attempts > int(
-            settings.figure_needs_auto_retry_max
-        )
-        fresh.figure_needs_attempts = attempts
-        fresh.figure_needs_status = "failed" if terminal else "pending"
-        fresh.figure_needs_checked_at = _now()
         fresh.figure_needs_usage = plan.merge_usage(
             fresh.figure_needs_usage, getattr(exc, "usage", None)
         )
+        fresh.figure_needs_checked_at = _now()
+        if fresh.figure_needs_status != "processing":
+            # Una richiesta nuova ha rimesso in coda la lezione: la si
+            # lascia com'è (il costo pagato resta).
+            await db.commit()
+            return
+        attempts = int(fresh.figure_needs_attempts or 0) + 1
+        terminal = (
+            isinstance(exc, OpenAINotConfiguredError)
+            or _client_error(exc)
+            or attempts > int(settings.figure_needs_auto_retry_max)
+        )
+        fresh.figure_needs_attempts = attempts
+        fresh.figure_needs_status = "failed" if terminal else "pending"
         await db.commit()
         log.warning(
             "figure_needs_failed" if terminal else "figure_needs_retry",
@@ -137,6 +148,21 @@ async def process_lesson(db: AsyncSession, lesson_id: uuid.UUID) -> None:
         return
     fresh = await db.get(CourseLesson, lesson_id, populate_existing=True)
     if fresh is None:
+        return
+    if fresh.figure_needs_status == "pending":
+        # Richiesta nuova durante il calcolo: vale il risultato solo se
+        # l'input attuale è lo stesso; altrimenti si ricalcola.
+        current = plan.needs_input(course, fresh) if course is not None else None
+        if current is None or plan.fingerprint(current, plan.max_needs(fresh)) != fp:
+            fresh.figure_needs_usage = plan.merge_usage(fresh.figure_needs_usage, usage)
+            fresh.figure_needs_checked_at = _now()
+            await db.commit()
+            return
+    elif fresh.figure_needs_status != "processing":
+        # `skipped` o altro stato scritto nel frattempo: si tiene solo il costo.
+        fresh.figure_needs_usage = plan.merge_usage(fresh.figure_needs_usage, usage)
+        fresh.figure_needs_checked_at = _now()
+        await db.commit()
         return
     plan.store_needs(
         fresh,
@@ -155,21 +181,32 @@ async def process_lesson(db: AsyncSession, lesson_id: uuid.UUID) -> None:
     )
 
 
+def _client_error(exc: BaseException) -> bool:
+    """4xx diverso da 429: la richiesta è sbagliata, ripeterla non serve."""
+    status = getattr(exc, "status", None)
+    return isinstance(status, int) and 400 <= status < 500 and status != 429
+
+
 async def _process_one(lesson_id: uuid.UUID) -> None:
-    async with async_session_factory() as db:
-        try:
-            await process_lesson(db, lesson_id)
-        except Exception as exc:  # rete di sicurezza: stessa regola dei worker AI
-            await db.rollback()
-            log.error("figure_needs_unexpected", lesson_id=str(lesson_id), error=str(exc)[:300])
-            fresh = await db.get(CourseLesson, lesson_id, populate_existing=True)
-            if fresh is not None and fresh.figure_needs_status == "processing":
-                attempts = int(fresh.figure_needs_attempts or 0) + 1
-                limit = int(get_settings().figure_needs_auto_retry_max)
-                fresh.figure_needs_attempts = attempts
-                fresh.figure_needs_status = "failed" if attempts > limit else "pending"
-                fresh.figure_needs_checked_at = _now()
-                await db.commit()
+    try:
+        async with async_session_factory() as db:
+            try:
+                await process_lesson(db, lesson_id)
+            except Exception as exc:  # rete di sicurezza: stessa regola dei worker AI
+                await db.rollback()
+                log.error("figure_needs_unexpected", lesson_id=str(lesson_id), error=str(exc)[:300])
+                fresh = await db.get(CourseLesson, lesson_id, populate_existing=True)
+                if fresh is not None and fresh.figure_needs_status == "processing":
+                    attempts = int(fresh.figure_needs_attempts or 0) + 1
+                    limit = int(get_settings().figure_needs_auto_retry_max)
+                    fresh.figure_needs_attempts = attempts
+                    fresh.figure_needs_status = "failed" if attempts > limit else "pending"
+                    fresh.figure_needs_checked_at = _now()
+                    await db.commit()
+    except Exception as exc:
+        # Anche la rete di sicurezza può fallire (DB giù): il worker non deve
+        # morire; la lezione resta `processing` e torna `pending` al riavvio.
+        log.error("figure_needs_safety_net_failed", lesson_id=str(lesson_id), error=str(exc)[:300])
 
 
 async def _tick() -> None:
@@ -182,7 +219,9 @@ async def _tick() -> None:
             log.warning("figure_needs_tick_failed", error=str(exc))
             return
     if ids:
-        await asyncio.gather(*(_process_one(lesson_id) for lesson_id in ids))
+        await asyncio.gather(
+            *(_process_one(lesson_id) for lesson_id in ids), return_exceptions=True
+        )
 
 
 async def reset_interrupted() -> None:
@@ -209,7 +248,10 @@ async def _run_loop() -> None:
         log.warning("figure_needs_reset_failed", error=str(exc))
     assert _stop_event is not None
     while not _stop_event.is_set():
-        await _tick()
+        try:
+            await _tick()
+        except Exception as exc:  # pragma: no cover - ultima difesa del loop
+            log.error("figure_needs_tick_crashed", error=str(exc)[:300])
         with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(_stop_event.wait(), timeout=interval)
     log.info("figure_needs_worker_stopped")
@@ -236,5 +278,7 @@ async def stop_worker() -> None:
         except TimeoutError:
             _worker_task.cancel()
             await asyncio.gather(_worker_task, return_exceptions=True)
+        except Exception as exc:  # task già terminato con un errore
+            log.warning("figure_needs_worker_stop_error", error=str(exc)[:300])
     _worker_task = None
     _stop_event = None

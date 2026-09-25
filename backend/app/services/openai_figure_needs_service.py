@@ -358,10 +358,12 @@ def _terms(values: list[str]) -> list[str]:
 
 
 def normalized_subject(subject: str) -> str:
-    """Soggetto senza accenti, maiuscole e punteggiatura (per `need_id`)."""
+    """Soggetto senza accenti, maiuscole e punteggiatura (per `need_id`).
+    Le lettere di ogni alfabeto restano: un soggetto in cirillico, greco o
+    CJK non si riduce a una stringa vuota."""
     folded = unicodedata.normalize("NFKD", subject or "")
-    folded = "".join(ch for ch in folded if not unicodedata.combining(ch)).lower()
-    return " ".join(re.sub(r"[^a-z0-9]+", " ", folded).split())
+    folded = "".join(ch for ch in folded if not unicodedata.combining(ch)).casefold()
+    return " ".join(re.sub(r"[\W_]+", " ", folded).split())
 
 
 def need_id(section_id: str, subject: str) -> str:

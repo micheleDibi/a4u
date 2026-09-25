@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from app.services import figure_plan_service as plan
 from app.services import openai_figure_needs_service as svc
 
@@ -140,6 +142,34 @@ def test_the_message_is_data_and_neutralizes_injections() -> None:
     assert "[testo rimosso]" in message and "Ignora le istruzioni precedenti" not in message
     assert "LINGUA DEL CORSO: it" in message
     assert "M4.L5 Principio di funzionamento" in message
+    # Anche i titoli delle lezioni sorelle sono testi da non eseguire.
+    sibling = svc.NeedsInput(**{**_INPUT.__dict__, "sibling_titles": (f"M4.L7 {sentinel}",)})
+    block = svc.build_user_message(sibling).split("ALTRE LEZIONI DEL MODULO", 1)[1]
+    assert "[testo rimosso]" in block and "Ignora le istruzioni precedenti" not in block
+
+
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [
+        ("Схема лазерного доплеровского виброметра", "Снимка на сканиращ виброметър"),
+        ("Σχήμα του δονησιόμετρου λέιζερ", "Φωτογραφία του σαρωτή"),
+        ("激光多普勒测振仪示意图", "扫描测振仪照片"),
+    ],
+)
+def test_need_ids_do_not_depend_on_the_order_in_non_latin_scripts(first: str, second: str) -> None:
+    assert svc.normalized_subject(first) and svc.normalized_subject(second)
+    assert svc.need_id("S1", first) != svc.need_id("S1", second)
+    one = svc.validate_needs([_raw("S1", first), _raw("S1", second)], _INPUT, max_total=10)
+    two = svc.validate_needs([_raw("S1", second), _raw("S1", first)], _INPUT, max_total=10)
+    assert {n["subject"]: n["need_id"] for n in one.needs} == {
+        n["subject"]: n["need_id"] for n in two.needs
+    }
+
+
+def test_latin_subjects_keep_their_ids() -> None:
+    assert svc.normalized_subject("Schema ottico à scansione (LDV)!") == (
+        "schema ottico a scansione ldv"
+    )
 
 
 def test_output_is_neutralized_too() -> None:
@@ -173,3 +203,18 @@ def test_fingerprint_changes_with_the_input() -> None:
     siblings = svc.NeedsInput(**{**_INPUT.__dict__, "sibling_titles": ()})
     assert len({base, plan.fingerprint(outline, 10), plan.fingerprint(siblings, 10)}) == 3
     assert plan.fingerprint(_INPUT, 3) != base
+    for field, value in (
+        ("objectives", ("Altro obiettivo",)),
+        ("topics", ("Altro tema",)),
+        ("title", "Altro titolo"),
+        ("language_code", "en"),
+        ("is_introductory", True),
+    ):
+        changed = svc.NeedsInput(**{**_INPUT.__dict__, field: value})
+        assert plan.fingerprint(changed, 10) != base, field
+
+
+def test_fingerprint_changes_with_the_prompt_version(monkeypatch: pytest.MonkeyPatch) -> None:
+    base = plan.fingerprint(_INPUT, 10)
+    monkeypatch.setattr(svc, "PROMPT_VERSION", svc.PROMPT_VERSION + 1)
+    assert plan.fingerprint(_INPUT, 10) != base

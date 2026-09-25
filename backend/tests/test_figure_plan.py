@@ -63,10 +63,13 @@ def settings(monkeypatch: pytest.MonkeyPatch):
 
 @pytest.fixture
 def fake(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
-    state: dict[str, Any] = {"calls": [], "error": None}
+    state: dict[str, Any] = {"calls": [], "error": None, "max_total": [], "during": None}
 
     async def generate(item: needs_svc.NeedsInput, *, max_total: int) -> Any:
         state["calls"].append(item)
+        state["max_total"].append(max_total)
+        if state["during"] is not None:
+            await state["during"]()
         if state["error"] is not None:
             raise state["error"]
         raw = [
@@ -144,9 +147,12 @@ async def test_request_queues_needs_once_per_fingerprint(
         "needs": [],
     }
     lesson.figure_needs_status = "ready"
+    old = datetime.now(UTC) - timedelta(hours=2)
+    lesson.figure_needs_requested_at = old
     await seeded_db.commit()
     assert plan.request_needs(course, lesson) is False
     assert lesson.figure_needs_status == "ready"
+    assert lesson.figure_needs_requested_at > old
     # Scaletta cambiata → impronta nuova → di nuovo in coda.
     lesson.section_outline = [
         {"section_id": "S1", "title": "Altro"},
@@ -154,6 +160,44 @@ async def test_request_queues_needs_once_per_fingerprint(
     ]
     assert plan.request_needs(course, lesson) is True
     assert lesson.figure_needs_status == "pending"
+
+
+async def test_request_resets_the_attempts_only_for_a_new_calculation(
+    seeded_db: AsyncSession, settings: Any
+) -> None:
+    course, _user = await _course(seeded_db)
+    lesson = find_lesson(course, "M1.L1")
+    lesson.figure_needs_status, lesson.figure_needs_attempts = "failed", 4
+    assert plan.request_needs(course, lesson) is True
+    assert (lesson.figure_needs_status, lesson.figure_needs_attempts) == ("pending", 0)
+    for status in ("pending", "processing"):
+        lesson.figure_needs_status, lesson.figure_needs_attempts = status, 2
+        assert plan.request_needs(course, lesson) is True
+        assert (lesson.figure_needs_status, lesson.figure_needs_attempts) == ("pending", 2)
+
+
+async def test_intro_lessons_ask_for_fewer_needs(
+    seeded_db: AsyncSession, settings: Any, fake: dict[str, Any], factory: Any
+) -> None:
+    await _park_other_queues(seeded_db)
+    course, _user = await _course(seeded_db)
+    lesson = find_lesson(course, "M1.L1")
+    lesson.is_introductory = True
+    await seeded_db.commit()
+    assert plan.max_needs(lesson) == 3
+    await _queue(seeded_db, course, ("M1.L1",))
+    await needs_worker._tick()
+    assert fake["max_total"] == [3]
+
+
+async def test_missing_lessons_request_queues_the_needs(
+    seeded_db: AsyncSession, settings: Any
+) -> None:
+    course, user = await _course(seeded_db)
+    await content_svc.request_missing_lessons_generation(seeded_db, course=course, actor_id=user.id)
+    assert {
+        lesson.figure_needs_status for module in course.modules for lesson in module.lessons
+    } == {"pending"}
 
 
 async def test_generate_all_queues_every_lesson_and_skips_the_assessment(
@@ -169,6 +213,9 @@ async def test_generate_all_queues_every_lesson_and_skips_the_assessment(
         for lesson in module.lessons
     }
     assert statuses == {"M1.L1": "pending", "M1.L2": "pending", "M1.L3": "skipped"}
+    # Le lezioni sorelle nell'input del PROMPT 22 non comprendono la verifica.
+    item = plan.needs_input(course, find_lesson(course, "M1.L1"))
+    assert item is not None and not any("M1.L3" in t for t in item.sibling_titles)
 
 
 async def test_plan_off_leaves_the_lessons_untouched(
@@ -208,6 +255,7 @@ async def test_worker_stores_needs_with_fingerprint_and_cost(
     assert need["need_id"].startswith("n") and need["section_id"] == "S1"
     assert fresh.figure_needs_usage["cost_usd"] == 0.0008
     assert fresh.figure_needs_usage["calls"] == 1
+    assert fresh.figure_needs_checked_at is not None
     assert [c.lesson_code for c in fake["calls"]] == ["M1.L1"]
     assert "M1.L2 Lezione 1.2" in fake["calls"][0].sibling_titles
 
@@ -229,6 +277,11 @@ async def test_worker_retries_then_fails_and_keeps_the_cost(
         1,
     )
     assert fresh.figure_needs_usage["cost_usd"] == 0.0008
+    # Backoff: il tick successivo, subito, non riprova.
+    await needs_worker._tick()
+    assert len(fake["calls"]) == 1
+    fresh = await seeded_db.get(CourseLesson, lesson.id, populate_existing=True)
+    assert fresh is not None and fresh.figure_needs_status == "pending"
     fresh.figure_needs_checked_at = datetime.now(UTC) - timedelta(hours=1)  # backoff scaduto
     await seeded_db.commit()
     await needs_worker._tick()
@@ -237,6 +290,9 @@ async def test_worker_retries_then_fails_and_keeps_the_cost(
         "failed",
         2,
     )
+    # Il costo delle due chiamate pagate si somma.
+    assert fresh.figure_needs_usage["calls"] == 2
+    assert fresh.figure_needs_usage["cost_usd"] == pytest.approx(0.0016)
 
 
 async def test_missing_openai_key_fails_at_once(
@@ -249,6 +305,133 @@ async def test_missing_openai_key_fails_at_once(
     await needs_worker._tick()
     fresh = await seeded_db.get(CourseLesson, lesson.id, populate_existing=True)
     assert fresh is not None and fresh.figure_needs_status == "failed"
+
+
+@pytest.mark.parametrize(("status", "expected"), [(400, "failed"), (429, "pending")])
+async def test_client_errors_are_terminal_but_rate_limits_are_not(
+    seeded_db: AsyncSession,
+    settings: Any,
+    fake: dict[str, Any],
+    factory: Any,
+    status: int,
+    expected: str,
+) -> None:
+    await _park_other_queues(seeded_db)
+    course, _user = await _course(seeded_db)
+    (lesson,) = await _queue(seeded_db, course, ("M1.L1",))
+    fake["error"] = needs_svc.OpenAIFigureNeedsError(status=status, message="x", usage=None)
+    await needs_worker._tick()
+    fresh = await seeded_db.get(CourseLesson, lesson.id, populate_existing=True)
+    assert fresh is not None and fresh.figure_needs_status == expected
+
+
+async def test_unexpected_errors_go_back_to_the_queue_then_fail(
+    seeded_db: AsyncSession, settings: Any, fake: dict[str, Any], factory: Any
+) -> None:
+    await _park_other_queues(seeded_db)
+    settings(figure_needs_auto_retry_max=1)
+    course, _user = await _course(seeded_db)
+    (lesson,) = await _queue(seeded_db, course, ("M1.L1",))
+    fake["error"] = RuntimeError("bug")
+    await needs_worker._tick()
+    fresh = await seeded_db.get(CourseLesson, lesson.id, populate_existing=True)
+    assert fresh is not None and (fresh.figure_needs_status, fresh.figure_needs_attempts) == (
+        "pending",
+        1,
+    )
+    fresh.figure_needs_checked_at = datetime.now(UTC) - timedelta(hours=1)
+    await seeded_db.commit()
+    await needs_worker._tick()
+    fresh = await seeded_db.get(CourseLesson, lesson.id, populate_existing=True)
+    assert fresh is not None and fresh.figure_needs_status == "failed"
+
+
+async def test_a_broken_safety_net_does_not_stop_the_worker(
+    seeded_db: AsyncSession,
+    settings: Any,
+    fake: dict[str, Any],
+    factory: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """DB giù anche nella rete di sicurezza: il tick non solleva, la lezione
+    resta `processing` (tornerà `pending` al riavvio)."""
+    await _park_other_queues(seeded_db)
+    course, _user = await _course(seeded_db)
+    (lesson,) = await _queue(seeded_db, course, ("M1.L1",))
+
+    async def broken(db: AsyncSession, lesson_id: uuid.UUID) -> None:
+        raise ConnectionResetError("postgres giù")
+
+    async def rollback_down(self: AsyncSession) -> None:
+        raise ConnectionRefusedError("postgres giù")
+
+    original = AsyncSession.rollback
+    monkeypatch.setattr(needs_worker, "process_lesson", broken)
+    monkeypatch.setattr(AsyncSession, "rollback", rollback_down)
+    await needs_worker._tick()
+    monkeypatch.setattr(AsyncSession, "rollback", original)
+    fresh = await seeded_db.get(CourseLesson, lesson.id, populate_existing=True)
+    assert fresh is not None and fresh.figure_needs_status == "processing"
+
+
+async def test_claim_is_conditional(seeded_db: AsyncSession, settings: Any, factory: Any) -> None:
+    await _park_other_queues(seeded_db)
+    course, _user = await _course(seeded_db)
+    (lesson,) = await _queue(seeded_db, course, ("M1.L1",))
+    async with factory() as one, factory() as two:
+        assert await needs_worker.claim_batch(one, 4) == [lesson.id]
+        assert await needs_worker.claim_batch(two, 4) == []
+
+
+async def test_a_request_during_the_call_with_the_same_input_is_satisfied(
+    seeded_db: AsyncSession, settings: Any, fake: dict[str, Any], factory: Any
+) -> None:
+    await _park_other_queues(seeded_db)
+    course, _user = await _course(seeded_db)
+    (lesson,) = await _queue(seeded_db, course, ("M1.L1",))
+
+    async def same_request() -> None:
+        async with factory() as db:
+            row = await db.get(CourseLesson, lesson.id)
+            assert row is not None and row.figure_needs_status == "processing"
+            assert plan.request_needs(course, row) is True
+            await db.commit()
+
+    fake["during"] = same_request
+    await needs_worker._tick()
+    fake["during"] = None
+    fresh = await seeded_db.get(CourseLesson, lesson.id, populate_existing=True)
+    assert fresh is not None and fresh.figure_needs_status == "ready"
+    await needs_worker._tick()
+    assert len(fake["calls"]) == 1
+
+
+async def test_a_request_during_the_call_with_a_new_input_is_recalculated(
+    seeded_db: AsyncSession, settings: Any, fake: dict[str, Any], factory: Any
+) -> None:
+    await _park_other_queues(seeded_db)
+    course, _user = await _course(seeded_db)
+    (lesson,) = await _queue(seeded_db, course, ("M1.L1",))
+
+    async def new_outline() -> None:
+        async with factory() as db:
+            row = await db.get(CourseLesson, lesson.id)
+            assert row is not None
+            row.section_outline = [{"section_id": "S7", "title": "Nuova"}]
+            assert plan.request_needs(course, row) is True
+            await db.commit()
+
+    fake["during"] = new_outline
+    await needs_worker._tick()
+    fake["during"] = None
+    fresh = await seeded_db.get(CourseLesson, lesson.id, populate_existing=True)
+    assert fresh is not None and fresh.figure_needs_status == "pending"
+    assert fresh.figure_needs_usage["calls"] == 1  # la chiamata pagata resta contata
+    await needs_worker._tick()
+    fresh = await seeded_db.get(CourseLesson, lesson.id, populate_existing=True)
+    assert fresh is not None and fresh.figure_needs_status == "ready"
+    assert fresh.figure_needs["needs"][0]["section_id"] == "S7"
+    assert len(fake["calls"]) == 2
 
 
 async def test_worker_uses_the_current_structure(
@@ -289,12 +472,14 @@ async def test_phase3_waits_for_the_needs_of_the_course_within_the_cap(
     seeded_db: AsyncSession, settings: Any
 ) -> None:
     settings(figure_literature_enabled=False, figure_extraction_enabled=False)
-    course, _user = await _course(seeded_db)
+    course, _user = await _course(seeded_db, with_assessment=True)
     other, _other_user = await _course(seeded_db)
     first, second = (find_lesson(course, "M1.L1"), find_lesson(course, "M1.L2"))
+    assessment = find_lesson(course, "M1.L3")
     foreign = find_lesson(other, "M1.L1")
-    for lesson in (first, second, foreign):
+    for lesson in (first, second, foreign, assessment):
         lesson.content_status = "pending"
+    assessment.figure_needs_requested_at = datetime.now(UTC)
     plan.request_needs(course, first)
     plan.request_needs(course, second)
     second.figure_needs_status = "ready"  # già calcolati
@@ -306,12 +491,23 @@ async def test_phase3_waits_for_the_needs_of_the_course_within_the_cap(
     # corso no.
     assert first.id not in ready and second.id not in ready
     assert foreign.id in ready
+    # Le verifiche non aspettano mai.
+    assert assessment.id in ready
     # Oltre il tetto (dalla propria richiesta) si parte comunque.
     cap = int(get_settings().figure_wait_max_minutes) + 1
     first.figure_needs_requested_at = datetime.now(UTC) - timedelta(minutes=cap)
     await seeded_db.commit()
     ready = await _ready_ids(seeded_db)
     assert first.id in ready and second.id not in ready
+    # Conta solo una sorella IN CODA per la Fase 3: una già in generazione
+    # o pronta non blocca, anche con i fabbisogni ancora in coda.
+    first.figure_needs_requested_at = datetime.now(UTC)
+    for content_status in ("processing", "ready"):
+        first.content_status = content_status
+        await seeded_db.commit()
+        assert second.id in await _ready_ids(seeded_db)
+    first.content_status = "pending"
+    await seeded_db.commit()
     # Piano spento: nessuna attesa.
     settings(
         figure_plan_enabled=False, figure_literature_enabled=False, figure_extraction_enabled=False
@@ -331,8 +527,12 @@ async def test_inline_fallback_calls_once_and_reuses_valid_needs(
     assert needs and lesson.figure_needs_status == "ready"
     again = await plan.ensure_lesson_needs(course, lesson)
     assert again == needs and len(fake["calls"]) == 1
-    fake["error"] = needs_svc.OpenAIFigureNeedsError(status=500, message="giù", usage=None)
+    fake["error"] = needs_svc.OpenAIFigureNeedsError(status=200, message="x", usage=dict(USAGE))
     lesson.section_outline = [{"section_id": "S9", "title": "Cambiata"}]
+    lesson.figure_needs_checked_at = None
+    assert await plan.ensure_lesson_needs(course, lesson) is None
+    assert lesson.figure_needs_usage["calls"] == 2 and lesson.figure_needs_checked_at is not None
+    fake["error"] = OpenAINotConfiguredError()
     assert await plan.ensure_lesson_needs(course, lesson) is None
 
 

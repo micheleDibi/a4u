@@ -981,8 +981,8 @@ ripiego inline), `course_lesson_figure_needs_worker.py` (worker).
   che esiste già e i buchi sparirebbero. Ogni stringa passa da
   `neutralize_third_party_text` dentro `data_block`.
 - **Uscita** per fabbisogno: `section_id` (solo fra quelli della
-  scaletta), `subject`, `representation` (schematic, photo, plot,
-  diagram, table, other), `focus`, `priority` (`must`/`should`),
+  scaletta), `subject`, `representation` (schematic, block_diagram,
+  circuit, chart, photo, micrograph, other), `focus`, `priority` (`must`/`should`),
   `object_en` + `object_terms`, `variant_en` + `variant_terms` (vuoti per
   la forma base, `is_base`), `sequence_group`/`sequence_index` per le
   enumerazioni ordinate, termini di ricerca nella lingua del corso e in
@@ -1004,16 +1004,21 @@ ripiego inline), `course_lesson_figure_needs_worker.py` (worker).
 - **Worker**: concorrenza `FIGURE_NEEDS_CONCURRENCY` (4), claim
   condizionale, backoff 30 s × tentativi, errore recuperabile → di nuovo
   `pending` fino a `FIGURE_NEEDS_AUTO_RETRY_MAX` (3), poi `failed`;
-  chiave OpenAI assente → `failed` subito; `processing` interrotti →
-  `pending` all'avvio. Il worker parte solo con il piano attivo.
+  chiave OpenAI assente o 4xx diverso da 429 → `failed` subito;
+  `processing` interrotti → `pending` all'avvio. Una richiesta arrivata
+  durante il calcolo si soddisfa col risultato solo se l'impronta
+  dell'input attuale coincide, altrimenti si ricalcola. Il worker parte
+  solo con il piano attivo e un errore del DB non lo ferma.
 - **Attesa della Fase 3** (`waiting_clause` in `_pending_lessons_query`):
   una lezione in coda parte quando nessuna lezione in coda dello stesso
   corso ha i fabbisogni in coda o in calcolo, oppure quando sono passati
   `FIGURE_WAIT_MAX_MINUTES` dalla **propria** richiesta. Così
   l'assegnazione globale (WP6) vede la domanda di tutte le lezioni chieste
-  insieme. Se al momento della generazione i fabbisogni mancano o sono
-  vecchi, `ensure_lesson_needs` li calcola inline (una chiamata); se
-  fallisce la Fase 3 procede senza piano.
+  insieme. Il ripiego inline `ensure_lesson_needs` (una chiamata, per
+  fabbisogni mancanti o vecchi al momento della generazione; se fallisce
+  la Fase 3 procede senza piano) è pronto ma lo collega alla Fase 3 il
+  blocco del piano (WP8): in WP4 i fabbisogni si calcolano e si aspettano
+  soltanto.
 - **Costo**: `figure_needs_usage` cumulativo, fase admin `figure_needs`.
   Duplicazione: i fabbisogni `ready` si copiano con la loro impronta (in
   una copia tradotta l'impronta non torna e si ricalcolano), il costo no.
