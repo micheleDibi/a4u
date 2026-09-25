@@ -49,7 +49,7 @@ log = get_logger("app.openai_figure_needs")
 
 # Versione del prompt e della validazione: entra nell'impronta dell'input,
 # quindi cambiarla fa ricalcolare i fabbisogni alla richiesta successiva.
-PROMPT_VERSION = 2
+PROMPT_VERSION = 3
 MAX_MUST = 8
 REPRESENTATIONS: tuple[str, ...] = (
     "schematic",
@@ -201,7 +201,11 @@ Campi:
   lingua del corso; il primo è il nome breve di `variant_en`, poi i
   sinonimi e le forme più specifiche («point-by-point scanning»).
 - `is_base`: true se il fabbisogno è la forma base o il principio
-  dell'oggetto, false per una variante.
+  dell'oggetto, false per una variante. La forma standard, quella che la
+  letteratura chiama con il solo nome dell'oggetto (per esempio il
+  vibrometro laser Doppler a punto singolo), è la forma base: `is_base`
+  true e `variant_en` vuota, anche quando la lezione la elenca fra le
+  tipologie.
 - `sequence_group`: un nome breve comune ai fabbisogni di una stessa
   enumerazione, altrimenti stringa vuota; `sequence_index`: 1, 2, 3…
   nell'ordine della scaletta, 0 fuori da una sequenza.
@@ -260,7 +264,10 @@ Fields:
   course language; the first one is the short name of `variant_en`, then
   synonyms and more specific forms ("point-by-point scanning").
 - `is_base`: true if the need is the base form or principle of the object,
-  false for a variant.
+  false for a variant. The standard form, the one the literature calls by
+  the object's name alone (for example the single-point laser Doppler
+  vibrometer), is the base form: `is_base` true and empty `variant_en`,
+  even when the lesson lists it among the types.
 - `sequence_group`: a short name shared by the needs of the same
   enumeration, otherwise empty string; `sequence_index`: 1, 2, 3… in the
   order of the outline, 0 outside a sequence.
