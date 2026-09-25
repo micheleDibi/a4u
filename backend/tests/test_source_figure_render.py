@@ -620,6 +620,16 @@ def test_crop_is_never_wider_than_its_natural_size() -> None:
 
     assert display_width_mm(1181, 600) == 62.5  # schema vettoriale di 50 mm
     assert display_width_mm(1000, None) is None and display_width_mm(None, 300) is None
+    # L'ingrandimento non porta mai sotto 200 ppi: un raster a 150 dpi resta
+    # alla misura naturale (150 ppi, prima 120); a 220 dpi si ingrandisce
+    # solo fino a 200 ppi.
+    assert display_width_mm(900, 150) == 152.4
+    assert display_width_mm(1100, 220) == round(1100 / 200 * 25.4, 1)
+    for px, dpi in ((900, 150), (1100, 220), (1181, 600), (2400, 300), (481, 150)):
+        width = display_width_mm(px, dpi)
+        assert width is not None
+        natural_ppi_ok = px / (width / 25.4) >= min(200.0, dpi) - 0.5
+        assert natural_ppi_ok, (px, dpi, width)
     resolved = dataclasses.replace(_resolved(), display_width_mm=62.5)
     html = pdf.render_lesson_html(
         course=_course(),

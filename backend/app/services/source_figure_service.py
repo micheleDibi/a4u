@@ -84,7 +84,8 @@ class ResolvedSourceFigure:
     # nulla si può pronunciare in sicurezza (il discorso omette la fonte).
     spoken_text: str = ""
     # Larghezza di stampa (mm): la misura nell'originale (px/dpi) ingrandita
-    # al più di NATURAL_WIDTH_SCALE. None senza dpi: resta il riquadro.
+    # al più di NATURAL_WIDTH_SCALE e mai sotto UPSCALE_MIN_PPI. None senza
+    # dpi: resta il riquadro.
     display_width_mm: float | None = None
 
 
@@ -94,12 +95,19 @@ SourceFigureMap = Mapping[str, ResolvedSourceFigure]
 # a 96 ppi CSS uno schema di 50 mm riempiva i 170 mm della pagina con
 # etichette a 27 pt, e le foto a 200 ppi uscivano sgranate (Fase D).
 NATURAL_WIDTH_SCALE = 1.25
+# L'ingrandimento oltre la misura naturale vale solo finché la stampa resta
+# ad almeno questi ppi: un ritaglio a 150 dpi ingrandito ×1,25 usciva a 120
+# ppi (le dispense del docente, 25/09/2026). Sotto, si stampa alla misura
+# naturale.
+UPSCALE_MIN_PPI = 200.0
 
 
 def display_width_mm(width_px: int | None, dpi: float | None) -> float | None:
     if not width_px or not dpi or dpi <= 0:
         return None
-    return round(width_px / float(dpi) * 25.4 * NATURAL_WIDTH_SCALE, 1)
+    natural = width_px / float(dpi) * 25.4
+    upscaled = min(natural * NATURAL_WIDTH_SCALE, width_px / UPSCALE_MIN_PPI * 25.4)
+    return round(max(natural, upscaled), 1)
 
 
 _GEOMETRY = SlideGeometry()
