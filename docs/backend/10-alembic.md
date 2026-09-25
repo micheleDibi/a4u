@@ -747,6 +747,26 @@ prima; le completa `scripts/redescribe_figure_depicts.py`). Solo ADD.
 Toglie la colonna; ciclo `upgrade → downgrade → upgrade` eseguito sulla
 copia usa-e-getta del corso; un test verifica colonna aggiunta = tolta.
 
+## `alembic/versions/0042_figure_assignment.py`
+
+Assegnazione delle figure ai fabbisogni (doc 18 §23.4).
+
+### Sequenza `upgrade()`
+
+1. `course_lesson.figure_assignment` (JSONB): offerta all'avvio della Fase
+   3 e fotografia finale alla materializzazione; la scrive solo il worker.
+2. `course_document_figure.found_for_lesson_id` (UUID, FK a
+   `course_lesson` ON DELETE SET NULL) e `found_for_need_id` (varchar 40):
+   riserva della letteratura aperta per un fabbisogno.
+
+Solo ADD.
+
+### Sequenza `downgrade()`
+
+Toglie la FK e le tre colonne; ciclo `upgrade → downgrade → upgrade`
+eseguito sulla copia usa-e-getta; un test verifica colonne aggiunte = tolte
+e la FK nel modello.
+
 ---
 
 ## Workflow per nuove migrazioni

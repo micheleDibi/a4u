@@ -1055,6 +1055,12 @@ ripiego inline), `course_lesson_figure_needs_worker.py` (worker).
     fabbisogni su M3.L4; M-N2: 42 lezioni in 111 s, 1,22 $, 96 must.
     Cambiando `PROMPT_VERSION` cambia l'impronta: i fabbisogni della v1 si
     ricalcolano alla richiesta successiva.
+  - PROMPT 22 v3: con la v2 il vibrometro a punto singolo arrivava come
+    variante («out-of-plane»), che nessuna figura dichiara; la v3 chiede la
+    forma standard (quella chiamata col solo nome dell'oggetto) come forma
+    base. M-N1 (gpt-5.5, 3 giri): recall dei must 1,0 in senso stretto,
+    spuri ≤1, M4.L6 con S1 base e le sei tipologie in ordine 3 su 3, 0
+    fabbisogni su M3.L4; M-N2: 42 lezioni in 101 s, 1,16 $, 89 must.
 
 ### 23.2 Che cosa raffigura una figura: `depicts` (WP5)
 Per abbinare una figura a un fabbisogno serve sapere quale oggetto e quale
@@ -1103,3 +1109,93 @@ come `{"v": DEPICTS_VERSION, "items", "focus"}` (migrazione 0041).
   rappresentazione 0,94. Resta 768 px (1024 non migliora); circa 0,0012 $
   a figura. L'abbinamento (WP6) cerca i termini della variante anche nel
   nome dell'oggetto e accetta sinonimi dell'oggetto.
+
+### 23.3 Abbinamento fabbisogno ↔ figura (`figure_need_matching.py`, WP6)
+Deterministico e lessicale su `depicts` (inglese canonico) e sui campi
+inglesi del fabbisogno; nessuna chiamata AI.
+
+| relazione | quando | copre | livello |
+|---|---|---|---|
+| `exact` | stesso oggetto e stessa variante (o forma base) | sì | 4 |
+| `exact_mixed` | variante scritta nel nome dell'oggetto o figura più specifica | sì | 3 |
+| `multi` | panoramica di più varianti, fra cui quella chiesta | sì | 2 |
+| `specialized` | fabbisogno base, figura di una variante | sì | 2 |
+| `legacy` / `base_implicit` | figura senza `depicts`, evidenza dal testo | sì, solo con l'interruttore | 1 |
+| `generic` | oggetto senza variante per un fabbisogno con variante | **no** | — |
+| `conflict` | altra variante | **no** | — |
+| `off_topic` | fabbisogno base senza nessun termine del tema nella figura | no | — |
+
+- La variante si confronta per uguaglianza esatta delle radici (stem
+  leggero, mai prefissi: «different» ≠ «differential»); tutte le radici di
+  una forma della variante chiesta devono stare fra quelle della figura.
+  «single» e «point» sono parole della forma base (PROMPT 22 v3).
+- Rappresentazione: disegno contro foto un livello in meno; grafico contro
+  disegno o foto non copre.
+- Nomi degli allestimenti equivalenti (setup, configuration, chain,
+  system, rig, bench). Nessun sinonimo «velocimeter → vibrometer»: è anche
+  l'anemometro laser Doppler dei flussi (errore trovato in M-A3).
+- `FIGURE_PLAN_LEGACY_MATCH_ENABLED=false`: una figura senza `depicts` non
+  copre mai un fabbisogno (precisione 0,53 in M-A3). Le figure vecchie si
+  completano con `scripts/redescribe_figure_depicts.py`.
+- Un indice per parola (`FigureIndex`) confronta ogni fabbisogno solo con
+  le figure che condividono una parola del suo oggetto; test di
+  equivalenza con la scansione completa.
+
+**Misura M-A3** (4 lezioni di riferimento, 20 fabbisogni, figure etichettate
+a vista; braccio A = solo testo, B = `depicts`):
+
+| | A | B, primo giro | B finale |
+|---|---|---|---|
+| precisione della figura scelta (17 fabbisogni con figura assegnata) | 0,53 | 0,76 | 0,88 |
+| recall sui fabbisogni con una figura corretta fra le candidate | 0,53 | — | 0,88 |
+| M4.L6: sei tipologie coperte dalla figura giusta | 3/6 | 5/6 | 6/6 |
+
+Le correzioni fra il primo giro e il finale: PROMPT 22 v2 e v3 (§23.1),
+oggetto base senza le parole della variante, panoramiche a livello 2,
+forma standard come base, sinonimo «velocimeter» tolto. Restano due
+errori: una figura d'allineamento CSLDV che la Vision descrive come
+«scanning» e un grafico ODS proposto per un confronto forme modali/ODS.
+Soglia del piano (0,95) non raggiunta: limite dichiarato; il revisore delle
+ridondanze e il docente vedono comunque la figura.
+
+### 23.4 Assegnazione globale (`source_figure_assignment.py`, `…_service.py`, WP6)
+- **Vincoli**: una figura al più una volta per lezione e per fabbisogno;
+  tetto di riuso K contando gli usi fissi (lezioni che non si rigenerano)
+  e le assegnazioni del giro; una figura già nella lezione resta sua anche
+  oltre K ma conta per le altre (e le si tiene il posto finché non la
+  prende); budget (b) del piano = min(`FIGURE_PLAN_MAX_PER_LESSON` 8,
+  max(morbido, must pronti)), morbido = minuti // `FIGURE_SOURCE_MINUTES_PER_FIGURE`
+  (4) fra il budget senza piano e il tetto; uno should non prende il posto
+  di un must ancora coperibile.
+- **Greedy** sugli archi ordinati per (bassa risoluzione, −livello,
+  letteratura, −must, −in sequenza, −classe, −già nella lezione, numero di
+  candidate, −punteggio, id): una `low` solo senza alternativa, prima la
+  specificità (regola del committente, anche uno should più specifico
+  batte un must generico di un'altra lezione), poi il documento del corso
+  prima della letteratura. Prima la riserva della letteratura
+  (`found_for_*`: la figura trovata per quel fabbisogno, se lo copre e
+  nessuna figura di documento lo copre meglio), dopo una riparazione a
+  scambio singolo (mai a livello o classe inferiori) e una seconda
+  passata.
+- **Partecipanti**: la lezione che parte e quelle del corso in coda per la
+  Fase 3 con i fabbisogni pronti; una lezione in generazione tiene le
+  figure della sua offerta per `OFFER_TTL` (2 h).
+- **Worker di Fase 3**: all'avvio `reserve` scrive l'offerta in
+  `course_lesson.figure_assignment` sotto il lock di corso
+  (`pg_try_advisory_xact_lock` con tentativi fino a 20 s, mai
+  un'eccezione); alla materializzazione il lock si riprende fino al commit:
+  il tetto di riuso si ricontrolla lì (prima due lezioni generate insieme
+  potevano superarlo entrambe, ora la seconda toglie la figura con audit
+  `reuse_cap`; test con la mutazione senza lock che fallisce) e `settle`
+  scrive la fotografia finale (figure collocate, fabbisogni legati
+  all'offerta, mancati). Il catalogo del PROMPT 3 resta quello lessicale
+  fino al blocco del piano (WP8).
+- **Duplicazione**: `found_for_*` rimappati sulle lezioni del corso nuovo,
+  `figure_assignment` non si copia.
+- **Misure Q3** (copia del corso, 35 lezioni con fabbisogni tutte in coda,
+  2225 figure, 4120 archi): greedy + riparazione = ottimo dei must (flusso
+  massimo) con K = 1, 2, 3 (63 must su 63 con candidate; 36 must senza
+  candidate); fotografia completa ≤1,4 s, assegnazione pura p95 15 ms. Su
+  istanze casuali piccole (2000 per K) il greedy resta sotto l'ottimo di
+  un must nel 3,5-5,4% dei casi (tutti must), 6-9% contando la precedenza
+  alla specificità: accettato, perché sui dati reali coincide.
