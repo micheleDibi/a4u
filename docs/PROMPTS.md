@@ -3836,14 +3836,18 @@ Campi:
   circuit, chart, photo, micrograph, other).
 - `focus`: che cosa deve essere evidente nella figura, una frase breve
   nella lingua del corso.
-- `object_en`: l'oggetto principale in inglese, al singolare e generico
-  («laser Doppler vibrometer», «modal test setup»).
+- `object_en`: l'oggetto principale in inglese, al singolare, generico e
+  SENZA la variante («laser Doppler vibrometer», non «scanning laser
+  Doppler vibrometer»; «modal test setup»).
 - `object_terms`: da 2 a 6 sinonimi dell'oggetto, in inglese e nella lingua
-  del corso.
-- `variant_en`: la variante o tipologia in inglese («scanning»,
-  «differential»); stringa vuota per l'oggetto base.
+  del corso, anch'essi senza la variante.
+- `variant_en`: il nome breve e comune della variante o tipologia in
+  inglese, come si trova in letteratura, in una o due parole («scanning»,
+  «differential», «in-plane», «impact hammer»), non una descrizione;
+  stringa vuota per l'oggetto base.
 - `variant_terms`: da 0 a 6 termini della variante, in inglese e nella
-  lingua del corso.
+  lingua del corso; il primo è il nome breve di `variant_en`, poi i
+  sinonimi e le forme più specifiche («point-by-point scanning»).
 - `is_base`: true se il fabbisogno è la forma base o il principio
   dell'oggetto, false per una variante.
 - `sequence_group`: un nome breve comune ai fabbisogni di una stessa
@@ -3893,14 +3897,18 @@ Fields:
   circuit, chart, photo, micrograph, other).
 - `focus`: what must be evident in the figure, a short sentence in the
   course language.
-- `object_en`: the main object in English, singular and generic ("laser
-  Doppler vibrometer", "modal test setup").
+- `object_en`: the main object in English, singular, generic and WITHOUT
+  the variant ("laser Doppler vibrometer", not "scanning laser Doppler
+  vibrometer"; "modal test setup").
 - `object_terms`: 2 to 6 synonyms of the object, in English and in the
-  course language.
-- `variant_en`: the variant or type in English ("scanning",
-  "differential"); empty string for the base object.
+  course language, also without the variant.
+- `variant_en`: the short common name of the variant or type in English,
+  as found in the literature, in one or two words ("scanning",
+  "differential", "in-plane", "impact hammer"), not a description; empty
+  string for the base object.
 - `variant_terms`: 0 to 6 terms of the variant, in English and in the
-  course language.
+  course language; the first one is the short name of `variant_en`, then
+  synonyms and more specific forms ("point-by-point scanning").
 - `is_base`: true if the need is the base form or principle of the object,
   false for a variant.
 - `sequence_group`: a short name shared by the needs of the same

@@ -1044,6 +1044,17 @@ ripiego inline), `course_lesson_figure_needs_worker.py` (worker).
     chiamata, massimo 22 s); 180 fabbisogni, 99 must, al più 6 must a
     lezione; 1,23 $ (circa 0,03 $ a lezione). Con 2500 token di output una
     lezione usciva troncata: tetto portato a 4500.
+  - PROMPT 22 v2 (dopo M-A3, §23.3): con la v1 `gpt-5.5` scriveva la
+    variante anche nell'oggetto («scanning laser Doppler vibrometer») e
+    varianti descrittive («discrete scanning», «force-controlled shaker
+    excitation»), che nessuna figura dichiara: l'abbinamento non trovava gli
+    schemi a scansione di M4.L6. La v2 chiede l'oggetto senza variante e il
+    nome breve e comune della variante, primo fra i `variant_terms`.
+    M-N1 ripetuta (gpt-5.5, 3 giri): recall dei must 1,0 anche in senso
+    stretto, must spuri ≤1, sequenza di M4.L6 corretta 3 su 3, 0
+    fabbisogni su M3.L4; M-N2: 42 lezioni in 111 s, 1,22 $, 96 must.
+    Cambiando `PROMPT_VERSION` cambia l'impronta: i fabbisogni della v1 si
+    ricalcolano alla richiesta successiva.
 
 ### 23.2 Che cosa raffigura una figura: `depicts` (WP5)
 Per abbinare una figura a un fabbisogno serve sapere quale oggetto e quale
