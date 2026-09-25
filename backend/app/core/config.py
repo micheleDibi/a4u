@@ -463,8 +463,11 @@ class Settings(BaseSettings):
     figure_literature_max_pdf_mb: int = 30
     figure_literature_max_image_pixels: int = 16_000_000
     figure_literature_max_pdf_pages: int = 40
-    # Lato del PNG chiesto a Wikimedia (anche per gli SVG, resi da Commons).
-    figure_literature_image_width: int = 2_000
+    # Larghezza del PNG chiesto a Wikimedia (anche per gli SVG, resi da
+    # Commons). 1920 è un passo standard dei rendering di Commons: con 2000
+    # gli SVG arrivavano a 3840 px (sonda del 25/09/2026), e 1920 px bastano
+    # per qualunque larghezza di stampa.
+    figure_literature_image_width: int = 1_920
     # Errori recuperabili (rete, 429) → pending fino a questo tetto.
     figure_literature_auto_retry_max: int = 2
     figure_literature_poll_interval_seconds: int = 5

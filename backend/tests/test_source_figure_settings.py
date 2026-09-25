@@ -68,7 +68,7 @@ _DEFAULTS: dict[str, object] = {
     "figure_literature_max_pdf_mb": 30,
     "figure_literature_max_image_pixels": 16_000_000,
     "figure_literature_max_pdf_pages": 40,
-    "figure_literature_image_width": 2000,
+    "figure_literature_image_width": 1920,
     "figure_literature_auto_retry_max": 2,
     "figure_literature_poll_interval_seconds": 5,
     "wikimedia_api_url": "https://commons.wikimedia.org/w/api.php",

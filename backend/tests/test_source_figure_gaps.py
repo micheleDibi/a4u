@@ -94,7 +94,7 @@ def _image(seed: int) -> bytes:
     return buf.getvalue()
 
 
-def _file(page_id: int, title: str) -> CommonsFile:
+def _file(page_id: int, title: str, **original: Any) -> CommonsFile:
     return CommonsFile(
         page_id=page_id,
         title=f"File:{title}.svg",
@@ -108,6 +108,7 @@ def _file(page_id: int, title: str) -> CommonsFile:
         author="Jane Doe",
         object_name=title,
         description=f"{title} schematic",
+        **original,
     )
 
 
@@ -603,6 +604,10 @@ async def test_openalex_figures_come_from_the_open_access_pdf(
     assert row.attribution["authors"] == ["Mario Rossi"]
     assert row.attribution["figure_number"] == "2.1"
     assert row.source_url == "https://example.org/ldv"
+    # Ingressi della risoluzione del ritaglio (prima si perdevano, D9).
+    assert row.crop_version == 2 and row.crop_mode in ("raster_native", "mixed", "vector")
+    assert row.dpi and row.bbox and isinstance(row.is_vector, bool)
+    assert row.natural_width_mm and row.natural_width_mm > 0
     resolved = await resolve_source_figures(
         seeded_db,
         course_id=course_id,
@@ -1087,3 +1092,75 @@ async def test_figures_with_text_in_another_language_are_rejected(
 )
 def test_text_language_allowed(text_language: str, course: str, allowed: bool) -> None:
     assert relevance.text_language_allowed(text_language, course) is allowed
+
+
+# --- risoluzione effettiva nella letteratura (doc 18 §22) ----------------------------
+
+
+def _tiny_png(width: int, height: int) -> bytes:
+    image = Image.new("RGB", (width, height), "white")
+    ImageDraw.Draw(image).rectangle([5, 5, width - 5, height - 5], outline="black", width=3)
+    buf = io.BytesIO()
+    image.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+async def test_commons_raster_below_the_minimum_is_skipped_before_download(
+    seeded_db: AsyncSession, env: dict[str, Any]
+) -> None:
+    """Originale di 250 px: a 90 mm convenzionali sono 70 ppi (unusable).
+    Niente download e niente Vision; l'altra candidata passa."""
+    env["files"] = [
+        _file(101, "Laser Doppler vibrometer"),
+        _file(103, "Tiny LDV", original_mime="image/png", original_width=250, original_height=150),
+    ]
+    _course_id, lesson_id = await _lesson(seeded_db)
+    await gap_worker._tick()
+    lesson = await _fresh(seeded_db, lesson_id)
+    assert ("download", 103) not in env["calls"]
+    assert ("assess", "Tiny LDV") not in env["calls"]
+    assert lesson.figures_gap_stats["rejected_resolution"] == 1
+
+
+async def test_downloaded_image_below_the_minimum_skips_the_vision(
+    seeded_db: AsyncSession, env: dict[str, Any]
+) -> None:
+    """Dimensioni originali ignote: si scarica, ma i pixel veri (200 px)
+    bastano a scartarla prima della Vision a pagamento."""
+    env["files"] = [_file(104, "Small LDV")]
+    env["images"][104] = _tiny_png(200, 120)
+    _course_id, lesson_id = await _lesson(seeded_db)
+    await gap_worker._tick()
+    lesson = await _fresh(seeded_db, lesson_id)
+    assert ("download", 104) in env["calls"]
+    assert ("assess", "Small LDV") not in env["calls"]
+    assert lesson.figures_gap_stats["rejected_resolution"] == 1
+
+
+async def test_commons_svg_is_saved_as_vector_with_the_crop_inputs(
+    seeded_db: AsyncSession, env: dict[str, Any]
+) -> None:
+    env["files"] = [
+        _file(
+            101,
+            "Laser Doppler vibrometer",
+            original_mime="image/svg+xml",
+            original_width=512,
+            original_height=300,
+        )
+    ]
+    course_id, _lesson_id = await _lesson(seeded_db)
+    await gap_worker._tick()
+    rows = (
+        (
+            await seeded_db.execute(
+                select(CourseDocumentFigure).where(CourseDocumentFigure.course_id == course_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    (row,) = rows
+    assert row.is_vector is True and row.crop_mode == "external" and row.crop_version == 2
+    assert row.mime_type == "image/png"  # schema: mai JPEG
+    assert row.dpi is None and row.natural_width_mm is None  # misura convenzionale

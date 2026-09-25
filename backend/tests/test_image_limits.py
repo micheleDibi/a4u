@@ -144,3 +144,21 @@ def test_pdf_page_cap() -> None:
     with pytest.raises(ImageLimitError) as bad:
         pdf_page_count(b"%PDF-1.4 broken", max_pages=5)
     assert bad.value.code == "unreadable"
+
+
+def test_crop_v2_encoding_keeps_line_art_lossless_even_from_jpeg() -> None:
+    """Ritaglio v2 (doc 18 §22): uno schema arrivato come JPEG diventa PNG;
+    una foto pesante da JPEG resta JPEG (q95 4:4:4)."""
+    from tests.fixtures.source_figures.native import line_art_image, photo_image
+
+    def as_jpeg(image: Image.Image) -> bytes:
+        buf = io.BytesIO()
+        image.save(buf, format="JPEG", quality=92)
+        return buf.getvalue()
+
+    art = load_image(as_jpeg(line_art_image()), max_pixels=20_000_000, crop_v2=True)
+    assert art.mime == "image/png"
+    photo = load_image(as_jpeg(photo_image()), max_pixels=20_000_000, crop_v2=True)
+    assert photo.mime == "image/jpeg"
+    legacy = load_image(as_jpeg(line_art_image()), max_pixels=20_000_000)
+    assert legacy.mime in ("image/png", "image/jpeg")

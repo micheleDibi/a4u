@@ -43,7 +43,9 @@ almeno ~135 ppi nel PDF delle slide.
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any
 
 # --- Soglie (ppi effettivi alla larghezza di riferimento) ---------------------
@@ -121,6 +123,12 @@ class ResolutionInputs:
             page_w_pt=page_w,
             source_kind=str(getattr(fig, "source_kind", None) or "uploaded"),
         )
+
+    @classmethod
+    def from_mapping(cls, data: Mapping[str, Any], *, source_kind: str) -> ResolutionInputs:
+        """Dagli stessi campi della riga in un dizionario (eventi del figlio,
+        candidate della letteratura prima del salvataggio)."""
+        return cls.from_figure(SimpleNamespace(**{**dict(data), "source_kind": source_kind}))
 
 
 @dataclass(frozen=True)

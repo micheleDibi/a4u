@@ -71,10 +71,29 @@ class CommonsFile:
     # di Commons), quando c'è: sostituisce l'autore nella riga «Fonte».
     credit: str | None = None
     license_version: str | None = None
+    # Il file originale (non il rendering): `thumbwidth` riporta la larghezza
+    # CHIESTA, non quella vera; i pixel veri si leggono dai byte scaricati.
+    original_mime: str | None = None
+    original_width: int | None = None
+    original_height: int | None = None
 
     @property
     def external_id(self) -> str:
         return f"commons:{self.page_id}"
+
+    @property
+    def is_vector(self) -> bool:
+        """SVG: Commons lo rasterizza alla larghezza chiesta (mai sgranato)."""
+        return (self.original_mime or "").lower() == "image/svg+xml"
+
+    def expected_width_px(self, requested: int) -> int | None:
+        """Larghezza del rendering che si scaricherà: per i raster Commons
+        non ingrandisce oltre l'originale."""
+        if self.is_vector:
+            return requested
+        if self.original_width is None:
+            return None
+        return min(self.original_width, requested)
 
     def attribution(self) -> dict[str, Any]:
         """Attribuzione congelata (forma di `AttributionSource.to_json`)."""
@@ -179,6 +198,8 @@ def parse_files(payload: Any) -> list[CommonsFile]:
         mime = str(info.get("thumbmime") or info.get("mime") or "")
         width = info.get("thumbwidth") or info.get("width")
         height = info.get("thumbheight") or info.get("height")
+        original_width = info.get("width")
+        original_height = info.get("height")
         out.append(
             (
                 int(page.get("index") or 0),
@@ -197,6 +218,9 @@ def parse_files(payload: Any) -> list[CommonsFile]:
                     license_version=_license_version(_value(meta, "LicenseShortName")),
                     object_name=plain_text(_value(meta, "ObjectName"), limit=300),
                     description=plain_text(_value(meta, "ImageDescription"), limit=600),
+                    original_mime=str(info.get("mime") or "") or None,
+                    original_width=original_width if isinstance(original_width, int) else None,
+                    original_height=original_height if isinstance(original_height, int) else None,
                 ),
             )
         )

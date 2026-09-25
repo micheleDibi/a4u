@@ -23,7 +23,12 @@ from dataclasses import dataclass
 
 from PIL import Image
 
-from app.services.document_figures.cropper import encode_image, looks_like_photo, on_white
+from app.services.document_figures.cropper import (
+    encode_figure,
+    encode_image,
+    looks_like_photo,
+    on_white,
+)
 
 ALLOWED_FORMATS = frozenset({"PNG", "JPEG", "GIF", "WEBP"})
 
@@ -43,8 +48,10 @@ class SafeImage:
     height: int
 
 
-def load_image(data: bytes, *, max_pixels: int) -> SafeImage:
-    """Apre e ricodifica un'immagine di terzi entro i limiti."""
+def load_image(data: bytes, *, max_pixels: int, crop_v2: bool = False) -> SafeImage:
+    """Apre e ricodifica un'immagine di terzi entro i limiti. Con `crop_v2`
+    la codifica è quella del ritaglio v2 (PNG senza perdita per il tratto,
+    JPEG q95 solo per foto pesanti da sorgente JPEG o WebP)."""
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("error", Image.DecompressionBombWarning)
@@ -67,7 +74,10 @@ def load_image(data: bytes, *, max_pixels: int) -> SafeImage:
         image = on_white(probe)
     except Exception as exc:
         raise ImageLimitError("unreadable", f"immagine non decodificabile: {exc}") from exc
-    encoded, mime = encode_image(image, photo=looks_like_photo(image))
+    if crop_v2:
+        encoded, mime = encode_figure(image, source_lossy=fmt in ("JPEG", "WEBP"))
+    else:
+        encoded, mime = encode_image(image, photo=looks_like_photo(image))
     return SafeImage(image=image, data=encoded, mime=mime, width=image.width, height=image.height)
 
 

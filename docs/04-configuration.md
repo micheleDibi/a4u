@@ -327,7 +327,7 @@ proprio nel prompt di Fase 3.
 | `FIGURE_LITERATURE_MAX_PDF_MB` | `30` | Byte massimi di un PDF OpenAlex. |
 | `FIGURE_LITERATURE_MAX_IMAGE_PIXELS` | `16000000` | Pixel massimi di un'immagine, controllati prima di decodificarla (le miniature di Commons sono larghe 2000 px; 16 MP tengono bassi i picchi di memoria). |
 | `FIGURE_LITERATURE_MAX_PDF_PAGES` | `40` | Pagine massime di un PDF OpenAlex (oltre: scartato). |
-| `FIGURE_LITERATURE_IMAGE_WIDTH` | `2000` | Larghezza del PNG chiesto a Commons (anche per gli SVG, resi da Commons). |
+| `FIGURE_LITERATURE_IMAGE_WIDTH` | `1920` | Larghezza del PNG chiesto a Commons (anche per gli SVG, resi da Commons). 1920 è un passo standard dei rendering di Commons (con 2000 gli SVG arrivavano a 3840 px); i raster non si ingrandiscono oltre l'originale. |
 | `FIGURE_LITERATURE_AUTO_RETRY_MAX` | `2` | Ripetizioni su errori recuperabili (rete, 429, 5xx), poi `failed`. |
 | `FIGURE_LITERATURE_POLL_INTERVAL_SECONDS` | `5` | Intervallo del worker dei buchi. |
 | `WIKIMEDIA_API_URL` | `https://commons.wikimedia.org/w/api.php` | API di Commons; il contatto nello `User-Agent` è `PAPERS_POLITE_EMAIL`. |

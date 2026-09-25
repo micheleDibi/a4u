@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from typing import Any
 
@@ -87,6 +88,13 @@ def test_parse_keeps_only_free_licenses_without_restrictions() -> None:
         (4, "cc_by"),
     ]
     first = files[1]
+    # Il file originale è un SVG: vettoriale, Commons lo rende alla
+    # larghezza chiesta; i raster non si ingrandiscono oltre l'originale.
+    assert first.is_vector and first.original_mime == "image/svg+xml"
+    assert first.expected_width_px(1920) == 1920
+    raster = dataclasses.replace(first, original_mime="image/png", original_width=640)
+    assert not raster.is_vector and raster.expected_width_px(1920) == 640
+    assert dataclasses.replace(raster, original_width=None).expected_width_px(1920) is None
     assert first.author == "Jane Doe"
     assert first.object_name == "Laser Doppler vibrometer & optics"
     assert first.description == "Schematic of an LDV"

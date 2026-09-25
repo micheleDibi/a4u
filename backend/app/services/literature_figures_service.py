@@ -63,7 +63,7 @@ from app.models.course_document_figure import (
 from app.models.course_lesson import CourseLesson
 from app.services import image_limits, openalex_client, source_figure_catalog, wikimedia_client
 from app.services import openai_figure_relevance_service as relevance
-from app.services.document_figures import cropper
+from app.services.document_figures import CROP_VERSION, cropper
 from app.services.document_figures import storage as figure_storage
 from app.services.document_figures.phash import hamming, phash
 from app.services.document_figures_service import EXTRACTABLE_MIMES
@@ -74,6 +74,7 @@ from app.services.remote_storage import StorageError
 from app.services.safe_http import SafeFetchError
 from app.services.source_caption import third_party_credit
 from app.services.source_figure_policy import OPEN_LICENSES
+from app.services.source_figure_resolution import ResolutionInputs, selection_class
 
 log = get_logger("app.literature_figures")
 
@@ -225,6 +226,52 @@ async def _course_external_ids(db: AsyncSession, course_id: uuid.UUID) -> set[st
     return {i for i in rows.scalars().all() if i}
 
 
+@dataclass(frozen=True)
+class CropMeta:
+    """Come si è ottenuto il file di una candidata: ingressi della
+    risoluzione effettiva (doc 18 §22), salvati sulla riga. Prima si
+    perdevano dpi, `is_vector` e bbox dei ritagli OpenAlex (D9)."""
+
+    dpi: int | None = None
+    is_vector: bool | None = None
+    bbox: dict[str, Any] | None = None
+    native_ppi: float | None = None
+    natural_width_mm: float | None = None
+    crop_mode: str | None = None
+    crop_version: int = 1
+
+    @classmethod
+    def from_event(cls, event: dict[str, Any]) -> CropMeta:
+        """Dall'evento `figure` del processo figlio (ritaglio di un PDF)."""
+
+        def positive(key: str) -> float | None:
+            try:
+                value = float(event.get(key) or 0)
+            except (TypeError, ValueError):
+                return None
+            return value if value > 0 else None
+
+        dpi = positive("dpi")
+        bbox = event.get("bbox")
+        return cls(
+            dpi=int(dpi) if dpi else None,
+            is_vector=event.get("is_vector") if isinstance(event.get("is_vector"), bool) else None,
+            bbox=bbox if isinstance(bbox, dict) else None,
+            native_ppi=positive("native_ppi"),
+            natural_width_mm=positive("natural_width_mm"),
+            crop_mode=event.get("crop_mode") or None,
+            crop_version=int(event.get("crop_version") or 1),
+        )
+
+
+def _unusable(inputs: ResolutionInputs) -> bool:
+    """Figura sotto la soglia minima di risoluzione (con la regola attiva):
+    la si scarta prima di pagare download o Vision."""
+    return bool(get_settings().figure_resolution_rules_enabled) and (
+        selection_class(inputs) == "unusable"
+    )
+
+
 def _safe_locator(value: str) -> str:
     cleaned = "".join(ch if ch.isalnum() else "-" for ch in value.lower())
     cleaned = "-".join(part for part in cleaned.split("-") if part)
@@ -248,8 +295,10 @@ async def _consider(
     caption: str | None,
     page: int | None = None,
     source_label: str | None = None,
+    crop: CropMeta | None = None,
 ) -> bool:
     """Valuta una candidata e, se pertinente, la salva nel catalogo."""
+    crop = crop or CropMeta()
     settings = get_settings()
     # Prima della Vision (che costa): solo licenze aperte (come Wikimedia e
     # la politica open_only) e un'attribuzione che nomini la fonte.
@@ -264,6 +313,7 @@ async def _consider(
             image_limits.load_image,
             image_bytes,
             max_pixels=int(settings.figure_literature_max_image_pixels),
+            crop_v2=bool(settings.figure_extraction_native_crop_enabled),
         )
     except image_limits.ImageLimitError as exc:
         run.count(f"rejected_{exc.code}")
@@ -275,6 +325,22 @@ async def _consider(
     digest = await asyncio.to_thread(phash, safe.image)
     if any(hamming(digest, other) <= DUPLICATE_DISTANCE for other in run.hashes):
         run.count("duplicates")
+        return False
+    # Risoluzione sui pixel VERI scaricati o ritagliati, prima della Vision.
+    inputs = ResolutionInputs.from_mapping(
+        {
+            "width": safe.width,
+            "height": safe.height,
+            "dpi": crop.dpi,
+            "native_ppi": crop.native_ppi,
+            "natural_width_mm": crop.natural_width_mm,
+            "is_vector": crop.is_vector,
+            "bbox": crop.bbox,
+        },
+        source_kind=source_kind,
+    )
+    if _unusable(inputs):
+        run.count("rejected_resolution")
         return False
     run.evaluated += 1
     try:
@@ -331,6 +397,13 @@ async def _consider(
             height=safe.height,
             byte_size=len(safe.data),
             phash=digest,
+            bbox=crop.bbox,
+            dpi=crop.dpi,
+            is_vector=crop.is_vector,
+            native_ppi=crop.native_ppi,
+            natural_width_mm=crop.natural_width_mm,
+            crop_mode=crop.crop_mode,
+            crop_version=crop.crop_version,
             kind=verdict.kind,
             description=verdict.description,
             keywords={"course": verdict.keywords_course, "en": verdict.keywords_en},
@@ -383,11 +456,27 @@ async def _from_wikimedia(db: AsyncSession, run: _Run, queries: list[str]) -> No
                 raise GapRetryError(str(exc)) from exc
             run.count("wikimedia_errors")
             continue
+        requested = int(get_settings().figure_literature_image_width)
         for item in files:
             if run.done:
                 return
             if item.external_id in run.known_ids:
                 continue
+            expected = item.expected_width_px(requested)
+            if expected is not None and item.original_width and item.original_height:
+                probe = ResolutionInputs.from_mapping(
+                    {
+                        "width": expected,
+                        "height": max(1, expected * item.original_height // item.original_width),
+                        "is_vector": item.is_vector,
+                    },
+                    source_kind="wikimedia",
+                )
+                if _unusable(probe):
+                    # Troppo piccola per qualunque stampa: niente download.
+                    run.known_ids.add(item.external_id)
+                    run.count("rejected_resolution")
+                    continue
             try:
                 got = await wikimedia_client.download_image(item)
             except SafeFetchError as exc:
@@ -410,6 +499,13 @@ async def _from_wikimedia(db: AsyncSession, run: _Run, queries: list[str]) -> No
                 attribution=item.attribution(),
                 source_url=item.description_url,
                 caption=item.description,
+                crop=CropMeta(
+                    is_vector=item.is_vector,
+                    crop_mode="external",
+                    crop_version=(
+                        CROP_VERSION if get_settings().figure_extraction_native_crop_enabled else 1
+                    ),
+                ),
             )
 
 
@@ -581,6 +677,19 @@ async def _from_openalex(db: AsyncSession, run: _Run, queries: list[str]) -> Non
             def choose(
                 events: list[dict[str, Any]], profile: dict[str, float] = profile
             ) -> list[dict[str, Any]]:
+                # Ritagli sotto la soglia di risoluzione: fuori prima di
+                # leggerne i byte e prima della Vision.
+                usable = [
+                    e
+                    for e in events
+                    if not _unusable(ResolutionInputs.from_mapping(e, source_kind="openalex"))
+                ]
+                if len(usable) < len(events):
+                    dropped = len(events) - len(usable)
+                    run.stats["rejected_resolution"] = (
+                        int(run.stats.get("rejected_resolution") or 0) + dropped
+                    )
+                events = usable
                 scored = sorted(
                     (
                         (score, index, event)
@@ -656,6 +765,7 @@ async def _from_openalex(db: AsyncSession, run: _Run, queries: list[str]) -> Non
                     caption=event.get("caption"),
                     page=event.get("page"),
                     source_label=event.get("source_label"),
+                    crop=CropMeta.from_event(event),
                 )
 
 
