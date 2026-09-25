@@ -28,6 +28,7 @@ _DEFAULTS: dict[str, object] = {
     "figure_source_min_per_lesson": 1,
     "figure_source_max_lessons_per_figure": 2,
     "figure_resolution_rules_enabled": True,
+    "figure_extraction_native_crop_enabled": True,
     "figure_wait_max_minutes": 15,
     "figure_extraction_enabled": True,
     "figure_extraction_engine": "docling",

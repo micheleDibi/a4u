@@ -429,6 +429,26 @@ async def test_full_extraction_with_remote_storage(
     assert {r.reject_reason for r in rejected} <= {"too_small", "header_footer", "repeated"}
     # Il padre ha scaricato il documento una volta sola.
     assert storage.downloads == [remote_storage.uploads_key(doc.file_path)]
+    # Ritaglio v2 (doc 18 §22): ingressi della risoluzione sulle righe.
+    for row in kept:
+        assert row.crop_version == 2 and row.crop_mode in ("raster_native", "mixed", "vector")
+        assert row.natural_width_mm and row.natural_width_mm > 0
+        assert row.mime_type == "image/png"
+        assert (row.native_ppi is None) is (row.crop_mode == "vector")
+
+
+async def test_native_crop_kill_switch_keeps_the_v1_crop(
+    db: AsyncSession, storage: FakeStorage, fixture_pdf: bytes, settings: Any
+) -> None:
+    settings(figure_extraction_native_crop_enabled=False)
+    doc = await _queued_document(db, storage, fixture_pdf)
+    doc = await _run(db, doc.id)
+    assert doc.figures_status == "ready", (doc.figures_error_code, doc.figures_error)
+    kept = [r for r in await _figures(db, doc.id) if r.status == "ready"]
+    assert kept
+    for row in kept:
+        assert row.crop_version == 1 and row.crop_mode is None
+        assert row.native_ppi is None and row.natural_width_mm is None
 
 
 async def test_rerun_is_idempotent(

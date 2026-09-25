@@ -5,7 +5,9 @@ nessun accesso a DB o storage: vedi :mod:`.runner`). Protocollo a righe
 JSON:
 
 - stdin, prima riga: il lavoro ``{"source", "mime", "engine",
-  "artifacts_path", "threads", "metadata"}``; il figlio risponde
+  "artifacts_path", "threads", "metadata", "crop_version"}``
+  (``crop_version`` 2 = ritaglio sulla griglia nativa, 1 = storico;
+  assente = 1); il figlio risponde
   ``{"event": "ready", "pages": N}`` oppure ``{"event": "error", "code"}``;
   con ``"metadata": true`` l'evento ``ready`` porta anche
   ``{"metadata": {"bibliography", "text", "info_title"}}`` (bibliografia e
@@ -40,6 +42,7 @@ from app.services.document_figures.captions import caption_label
 from app.services.document_figures.detection import Detection
 from app.services.document_figures.geometry import BBox
 from app.services.document_figures.phash import phash
+from app.services.document_figures.regions import PageRegions, page_regions
 
 Emit = Callable[[dict[str, Any]], None]
 
@@ -140,11 +143,22 @@ def _raster_share(
 
 
 class PdfEngine:
-    def __init__(self, path: Path, *, engine: str, artifacts_path: str | None, threads: int):
+    def __init__(
+        self,
+        path: Path,
+        *,
+        engine: str,
+        artifacts_path: str | None,
+        threads: int,
+        crop_version: int = 1,
+    ):
         import pdfplumber
         import pypdfium2 as pdfium
 
         self.path = path
+        self.crop_version = crop_version
+        # Contenuto delle pagine per il ritaglio v2 (una lettura per pagina).
+        self._regions: dict[int, PageRegions] = {}
         try:
             self.pdf = pdfium.PdfDocument(str(path))
         except pdfium.PdfiumError as exc:
@@ -284,31 +298,62 @@ class PdfEngine:
             confidence=det.confidence,
         )
         if reason is None:
-            crop = cropper.render_crop(
-                self.pdf[det.page - 1],
-                visible,
-                page_w=boxes.crop_w,
-                page_h=boxes.crop_h,
-                is_vector=is_vector,
-                native_ppi=native_ppi,
-            )
-            if cropper.is_blank(crop.image):
+            native = self._native_crop(det.page, visible, boxes) if self.crop_version >= 2 else None
+            if native is not None:
+                image = native.image
+                data, mime = native.data, native.mime
+                event.update(
+                    width=native.width,
+                    height=native.height,
+                    dpi=native.dpi,
+                    is_vector=native.is_vector,
+                    crop_version=2,
+                    crop_mode=native.mode,
+                    native_ppi=native.native_ppi,
+                    natural_width_mm=native.natural_width_mm,
+                    aligned=native.aligned,
+                )
+            else:
+                crop = cropper.render_crop(
+                    self.pdf[det.page - 1],
+                    visible,
+                    page_w=boxes.crop_w,
+                    page_h=boxes.crop_h,
+                    is_vector=is_vector,
+                    native_ppi=native_ppi,
+                )
+                image = crop.image
+                data, mime = crop.data, crop.mime
+                event.update(width=crop.width, height=crop.height, dpi=crop.dpi, crop_version=1)
+            if cropper.is_blank(image):
                 reason = "blank"
             else:
-                event.update(
-                    _write(out_dir, locator, crop.data, crop.mime, cropper.preview(crop.image))
-                )
-                event.update(
-                    width=crop.width, height=crop.height, dpi=crop.dpi, phash=phash(crop.image)
-                )
+                event.update(_write(out_dir, locator, data, mime, cropper.preview(image)))
+                event.update(phash=phash(image))
         event["reject_reason"] = reason
         emit(event)
+
+    def _native_crop(self, page_no: int, visible: BBox, boxes: PageBoxes) -> Any:
+        """Ritaglio v2; None (→ ritaglio v1) se la pagina non si legge o il
+        render fallisce (es. bitmap oltre il tetto anti-bomba)."""
+        page = self.pdf[page_no - 1]
+        try:
+            regions = self._regions.get(page_no)
+            if regions is None:
+                regions = self._regions[page_no] = page_regions(page)
+            return cropper.render_native_crop(
+                page, visible, regions, page_w=boxes.crop_w, page_h=boxes.crop_h
+            )
+        except Exception as exc:
+            detail = f"{type(exc).__name__}: {exc}"
+            print(f"native_crop_failed page={page_no}: {detail}", file=sys.stderr)
+            return None
 
 
 class DocxEngine:
     """DOCX (una sola «pagina») e PPTX (una pagina per slide)."""
 
-    def __init__(self, path: Path, *, pptx: bool = False) -> None:
+    def __init__(self, path: Path, *, pptx: bool = False, crop_version: int = 1) -> None:
         from app.services.document_figures.office import (
             OfficeFormatError,
             docx_images,
@@ -317,12 +362,15 @@ class DocxEngine:
         )
 
         self.pptx = pptx
+        # Ritaglio v2: geometria del documento (srcRect, ribaltamenti,
+        # rotazioni, EMU) e codifica per contenuto.
+        self.geometry = crop_version >= 2
         try:
             if pptx:
-                self.images = pptx_images(str(path))
+                self.images = pptx_images(str(path), geometry=self.geometry)
                 self.total_pages = max(1, pptx_slide_count(str(path)))
             else:
-                self.images = docx_images(str(path))
+                self.images = docx_images(str(path), geometry=self.geometry)
                 self.total_pages = 1
         except OfficeFormatError as exc:
             raise ChildError("corrupt", str(exc)) from exc
@@ -354,7 +402,19 @@ class DocxEngine:
                 elif cropper.is_blank(image):
                     event["reject_reason"] = "blank"
                 else:
-                    data, mime = cropper.encode_image(image, photo=cropper.looks_like_photo(image))
+                    if self.geometry:
+                        data, mime = cropper.encode_figure(image, source_lossy=item.source_lossy)
+                        event.update(
+                            crop_version=2,
+                            crop_mode="office",
+                            native_ppi=item.native_ppi,
+                            natural_width_mm=item.natural_width_mm,
+                        )
+                    else:
+                        data, mime = cropper.encode_image(
+                            image, photo=cropper.looks_like_photo(image)
+                        )
+                        event.update(crop_version=1)
                     event.update(_write(out_dir, locator, data, mime, cropper.preview(image)))
                     event.update(
                         width=image.width, height=image.height, dpi=None, phash=phash(image)
@@ -367,17 +427,19 @@ class DocxEngine:
 def _open_engine(job: dict[str, Any], cwd: Path) -> PdfEngine | DocxEngine:
     source = cwd / Path(str(job["source"])).name
     mime = str(job.get("mime") or "")
+    crop_version = int(job.get("crop_version") or 1)
     if mime == PDF_MIME:
         return PdfEngine(
             source,
             engine=str(job.get("engine") or "docling"),
             artifacts_path=job.get("artifacts_path"),
             threads=int(job.get("threads") or 1),
+            crop_version=crop_version,
         )
     if mime == DOCX_MIME:
-        return DocxEngine(source)
+        return DocxEngine(source, crop_version=crop_version)
     if mime == PPTX_MIME:
-        return DocxEngine(source, pptx=True)
+        return DocxEngine(source, pptx=True, crop_version=crop_version)
     raise ChildError("unsupported_format", f"tipo non supportato: {mime}")
 
 

@@ -373,6 +373,10 @@ class Settings(BaseSettings):
     # slide e frame, `unusable` fuori da catalogo e selettore. false = regola
     # di stampa v1 (solo dispensa) e nessun filtro di classe.
     figure_resolution_rules_enabled: bool = True
+    # Ritaglio v2 delle figure estratte (doc 18 §22): render sulla griglia
+    # dei pixel nativi, PNG per il tratto, geometria di DOCX e PPTX. false =
+    # ritaglio storico (150-300 dpi, JPEG per i raster), crop_version 1.
+    figure_extraction_native_crop_enabled: bool = True
     # Attesa massima della Fase 3 per le estrazioni in corso dei documenti
     # del corso (filtro nel `_tick`, mai uno sleep).
     figure_wait_max_minutes: int = 15

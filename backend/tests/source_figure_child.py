@@ -24,14 +24,17 @@ def run_child(
     artifacts_path: str | None = None,
     probe: bool = False,
     timeout: float = 900,
+    crop_version: int | None = None,
 ) -> tuple[int, list[dict[str, Any]], str]:
-    job = {
+    job: dict[str, Any] = {
         "source": source,
         "mime": mime,
         "engine": engine,
         "artifacts_path": artifacts_path,
         "threads": 1,
     }
+    if crop_version is not None:
+        job["crop_version"] = crop_version
     lines = [json.dumps(job), *(json.dumps({"pages": block}) for block in blocks)]
     # Stesso ambiente che usa il worker (allowlist, niente segreti).
     env = child_env(workdir, threads=1, artifacts_path=artifacts_path)

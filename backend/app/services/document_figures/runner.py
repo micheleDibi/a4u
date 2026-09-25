@@ -48,6 +48,8 @@ class ChildConfig:
     block_timeout_seconds: float = 900.0
     probe_timeout_seconds: float = 180.0
     max_rss_mb: int = 2048
+    # Versione del ritaglio chiesta al figlio (1 = storico, 2 = nativo).
+    crop_version: int = 1
 
 
 def child_python_path() -> str:
@@ -281,6 +283,7 @@ class ChildSession:
                 "artifacts_path": self.config.artifacts_path,
                 "threads": self.config.threads,
                 "metadata": metadata,
+                "crop_version": self.config.crop_version,
             }
         )
         deadline = time.monotonic() + self.config.probe_timeout_seconds

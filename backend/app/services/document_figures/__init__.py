@@ -18,3 +18,11 @@ il sottoprocesso gira con un ambiente ridotto all'osso.
 # Versione dell'algoritmo di estrazione: cambia quando cambiano rilevazione,
 # ritaglio o filtri in modo da rendere diversi i ritagli.
 EXTRACTION_VERSION = 1
+
+# Versione del solo ritaglio (colonna `crop_version`, migrazione 0039): 1 =
+# ritaglio storico (raster fra 150 e 300 dpi, JPEG per i raster); 2 = render
+# allineato alla griglia nativa e PNG per il tratto (doc 18 §22). Cambiarla
+# NON cambia l'impronta dell'estrazione (niente supersede delle figure già
+# collocate, decisione V2): le figure esistenti passano alla v2 col
+# ri-ritaglio sul posto (`scripts/rerender_document_figures`).
+CROP_VERSION = 2

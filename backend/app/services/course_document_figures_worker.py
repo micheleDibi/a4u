@@ -69,7 +69,7 @@ from app.models.course_document import CourseDocument
 from app.models.course_document_figure import CourseDocumentFigure
 from app.schemas.document_bibliography import DocumentBibliography
 from app.services import crossref_client, document_figures_service, remote_storage
-from app.services.document_figures import EXTRACTION_VERSION, metadata
+from app.services.document_figures import CROP_VERSION, EXTRACTION_VERSION, metadata
 from app.services.document_figures import storage as figure_storage
 from app.services.document_figures.child import METADATA_TEXT_CHARS
 from app.services.document_figures.filters import HashedFigure, repeated_and_duplicates
@@ -139,6 +139,15 @@ class _Outcome:
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+def _positive(value: Any) -> float | None:
+    """Numero > 0 dall'evento del figlio, altrimenti None (CHECK 0039)."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
 
 
 def _suffix(mime: str) -> str:
@@ -357,6 +366,7 @@ def _config() -> ChildConfig:
         block_timeout_seconds=float(_BLOCK_BASE_SECONDS + _BLOCK_SECONDS_PER_PAGE * block),
         probe_timeout_seconds=float(settings.figure_extraction_probe_timeout_seconds),
         max_rss_mb=int(settings.figure_extraction_max_rss_mb),
+        crop_version=CROP_VERSION if settings.figure_extraction_native_crop_enabled else 1,
     )
 
 
@@ -508,6 +518,11 @@ async def _store_block(
                 byte_size=event.get("byte_size") if storage_path else None,
                 is_vector=event.get("is_vector"),
                 phash=event.get("phash"),
+                # Ritaglio v2 (migrazione 0039): ingressi della risoluzione.
+                crop_version=int(event.get("crop_version") or 1),
+                crop_mode=event.get("crop_mode") if storage_path else None,
+                native_ppi=_positive(event.get("native_ppi")),
+                natural_width_mm=_positive(event.get("natural_width_mm")),
                 detector_class=(event.get("detector_class") or None)
                 and str(event["detector_class"])[:40],
                 detector_confidence=event.get("detector_confidence"),
