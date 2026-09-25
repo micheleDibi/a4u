@@ -960,3 +960,82 @@ Piano: `~/.claude/plans/pasted-content-id-3136-prompt-structured-stardust.md`
   lessicale.
 - Una figura mista sotto il minimo già collocata resta col ritaglio v1.
 
+## 23. Piano delle figure: copertura per concetto (WP4-WP10)
+
+Secondo difetto segnalato dal docente: figure corrette ma poche. In M4.L6
+«Tipologie di vibrometri laser Doppler» il testo tratta sei tipologie e le
+figure di fonte erano due. Il catalogo lessicale sceglie le figure «più
+simili alla lezione», non «una per ciascun concetto che la lezione
+enumera». Il piano delle figure dichiara prima i **fabbisogni** della
+lezione (quali figure servirebbero, in quale sezione, in quale ordine) e
+poi cerca, assegna, colloca o dichiara scoperto ciascun fabbisogno.
+
+### 23.1 Fabbisogni per lezione (PROMPT 22, WP4)
+Moduli: `openai_figure_needs_service.py` (prompt, schema strict,
+validazione), `figure_plan_service.py` (input, impronta, richiesta, attesa,
+ripiego inline), `course_lesson_figure_needs_worker.py` (worker).
+
+- **Input**: solo la struttura di Fase 2 della lezione (titolo, obiettivi,
+  temi, scaletta con `section_id`) più i titoli delle lezioni sorelle del
+  modulo. **Niente catalogo**: altrimenti il modello chiederebbe solo ciò
+  che esiste già e i buchi sparirebbero. Ogni stringa passa da
+  `neutralize_third_party_text` dentro `data_block`.
+- **Uscita** per fabbisogno: `section_id` (solo fra quelli della
+  scaletta), `subject`, `representation` (schematic, photo, plot,
+  diagram, table, other), `focus`, `priority` (`must`/`should`),
+  `object_en` + `object_terms`, `variant_en` + `variant_terms` (vuoti per
+  la forma base, `is_base`), `sequence_group`/`sequence_index` per le
+  enumerazioni ordinate, termini di ricerca nella lingua del corso e in
+  inglese, `reason`.
+- **Validazione** (`validate_needs`): sezioni inventate scartate; must
+  prima al troncamento, al più 8 must e `FIGURE_NEEDS_MAX_PER_LESSON` (10)
+  in totale, `FIGURE_NEEDS_MAX_PER_INTRO_LESSON` (3) nelle introduttive;
+  gruppi di un solo elemento sciolti; sequenze rinumerate; i conteggi
+  degli scarti vanno in `dropped`.
+- **`need_id` stabile**: `n` + sha1(`section_id` | soggetto normalizzato)
+  [:8], con suffisso sulle collisioni. Le etichette N1…Nn si calcolano
+  alla lettura. Collegamenti, «Non serve» e riserve restano validi finché
+  il fabbisogno è lo stesso.
+- **Pigrizia e impronta**: i fabbisogni si calcolano solo sulle richieste
+  esplicite di Fase 3 (le tre `request_*`), mai all'avvio o in una
+  migrazione. L'impronta è lo sha256 dell'input esatto, di
+  `PROMPT_VERSION` e dei tetti: con la stessa impronta una richiesta non
+  ricalcola nulla. Verifiche e lezioni senza scaletta → `skipped`.
+- **Worker**: concorrenza `FIGURE_NEEDS_CONCURRENCY` (4), claim
+  condizionale, backoff 30 s × tentativi, errore recuperabile → di nuovo
+  `pending` fino a `FIGURE_NEEDS_AUTO_RETRY_MAX` (3), poi `failed`;
+  chiave OpenAI assente → `failed` subito; `processing` interrotti →
+  `pending` all'avvio. Il worker parte solo con il piano attivo.
+- **Attesa della Fase 3** (`waiting_clause` in `_pending_lessons_query`):
+  una lezione in coda parte quando nessuna lezione in coda dello stesso
+  corso ha i fabbisogni in coda o in calcolo, oppure quando sono passati
+  `FIGURE_WAIT_MAX_MINUTES` dalla **propria** richiesta. Così
+  l'assegnazione globale (WP6) vede la domanda di tutte le lezioni chieste
+  insieme. Se al momento della generazione i fabbisogni mancano o sono
+  vecchi, `ensure_lesson_needs` li calcola inline (una chiamata); se
+  fallisce la Fase 3 procede senza piano.
+- **Costo**: `figure_needs_usage` cumulativo, fase admin `figure_needs`.
+  Duplicazione: i fabbisogni `ready` si copiano con la loro impronta (in
+  una copia tradotta l'impronta non torna e si ricalcolano), il costo no.
+- **Migrazione 0040**: `figure_needs`, `figure_needs_status` (CHECK),
+  `figure_needs_attempts`, `figure_needs_requested_at`,
+  `figure_needs_checked_at`, `figure_needs_usage`, indice parziale sulle
+  lezioni `pending`.
+- **Interruttore**: `FIGURE_PLAN_ENABLED` (con `FIGURE_SOURCE_ENABLED`).
+  Spento: nessuna richiesta, nessuna attesa, nessuna chiamata.
+- **Misure** (copia locale del corso del docente, 25/09/2026):
+  - M-N1, qualità: 4 lezioni di riferimento più M3.L4 di controllo, 3 giri
+    per modello, contro l'elenco dei fabbisogni attesi scritto prima di
+    ogni chiamata. `gpt-4.1-mini`: recall dei must 1,0 (0,96 contando solo
+    quelli classificati `must`), ma 4-5 must spuri sulla lezione
+    matematica di controllo e sequenza delle tipologie di M4.L6 spezzata
+    (multi-point declassato a should). `gpt-5.5` (reasoning `none`): recall
+    1,0 (0,92 in senso stretto: un giro su tre di M5.L1 classifica lo
+    schema del setup come should), must spuri ≤1, 0 sezioni inventate,
+    sequenza di M4.L6 corretta 3 volte su 3, 0 fabbisogni su M3.L4. Scelto
+    `gpt-5.5`. Stabilità fra giri (Jaccard dei fabbisogni attesi coperti)
+    1,0 tranne M5.L1 (0,33: lezione con un solo must atteso).
+  - M-N2, latenza: 42 lezioni con concorrenza 4 in 107 s (p50 11 s a
+    chiamata, massimo 22 s); 180 fabbisogni, 99 must, al più 6 must a
+    lezione; 1,23 $ (circa 0,03 $ a lezione). Con 2500 token di output una
+    lezione usciva troncata: tetto portato a 4500.

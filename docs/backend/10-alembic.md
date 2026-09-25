@@ -710,6 +710,29 @@ Inversa; ciclo `upgrade → downgrade → upgrade` eseguito su un DB
 usa-e-getta (copia del corso di produzione). Un test verifica che il
 downgrade tolga ogni colonna aggiunta.
 
+## `alembic/versions/0040_figure_needs.py`
+
+Piano delle figure: fabbisogni per lezione del PROMPT 22 (doc 18 §23.1).
+
+### Sequenza `upgrade()`
+
+1. `course_lesson`: `figure_needs` (JSONB), `figure_needs_status`
+   (`pending | processing | ready | failed | skipped`, NULL = mai
+   chiesti), `figure_needs_attempts` (SMALLINT NOT NULL, default 0),
+   `figure_needs_requested_at`, `figure_needs_checked_at`,
+   `figure_needs_usage` (JSONB).
+2. CHECK sullo stato e indice parziale `ix_course_lesson_figure_needs_pending`
+   su `figure_needs_requested_at` per le righe `pending`, dichiarati anche
+   nel modello (test di parità in `tests/test_figure_plan.py`).
+
+Solo ADD: nessuna riscrittura delle righe esistenti.
+
+### Sequenza `downgrade()`
+
+Inversa; ciclo `upgrade → downgrade → upgrade` eseguito su un DB
+usa-e-getta (copia del corso di produzione). Un test verifica che il
+downgrade tolga ogni colonna aggiunta.
+
 ---
 
 ## Workflow per nuove migrazioni

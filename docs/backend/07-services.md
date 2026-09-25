@@ -1545,15 +1545,17 @@ decisioni in [Courses 18](../courses/18-literature-figures.md).
 | Catalogo e Fase 3 | `lesson_figure_selection.py`, `source_figure_catalog.py`, `source_figure_fusion.py`, `source_figure_substitution.py`, `openai_figure_redundancy_service.py` (PROMPT 19) | Selezione lessicale, catalogo nel messaggio user, fusione in `visual_assets`, misura M7, revisore delle ridondanze (solo avvisi) |
 | Resa e API | `source_figure_service.py` (resolver), `source_figure_api_service.py`, `figure_provenance.py` | Byte e riga «Fonte» lato server per dispensa, slide, frame; catalogo, immagini autenticate, uso; vista dei JSON per i PROMPT 5 e 6 |
 | Letteratura aperta | `course_lesson_figures_gap_worker.py`, `literature_figures_service.py`, `safe_http.py`, `image_limits.py`, `wikimedia_client.py`, `openai_figure_relevance_service.py` (PROMPT 20) | Buchi colmati prima della Fase 3; download sicuri (SSRF, bombe, pixel) |
+| Piano delle figure | `openai_figure_needs_service.py` (PROMPT 22), `figure_plan_service.py`, `course_lesson_figure_needs_worker.py` | Fabbisogni per lezione calcolati sulle richieste di Fase 3, impronta dell'input, attesa della Fase 3 per le lezioni sorelle, ripiego inline |
 | `tikz` | `tikz_compile_service.py`, `figure_compute/{tikz_lexer,tikz_preamble,tex_sandbox,tikz_geometry,tikz_translate}.py`, `TikzRenderer` in `figure_render_service.py`, `openai_tikz_render_review_service.py` (PROMPT 21), `tikz_api_service.py` | Lexer ad allowlist, sandbox SBX-2, oracolo geometrico, registro, revisione della resa, anteprima e vista |
 
-Worker nuovi nel lifespan di `app/main.py`: `course_document_figures_worker`
-e `course_lesson_figures_gap_worker`, con lo stesso schema degli altri
+Worker nuovi nel lifespan di `app/main.py`: `course_document_figures_worker`,
+`course_lesson_figures_gap_worker` e `course_lesson_figure_needs_worker`, con lo stesso schema degli altri
 (start/stop, claim, auto-retry). Il costo delle chiamate AI è registrato
-in tre punti:
+in quattro punti:
 
 - `course_document_figure.vision_usage`: fase admin `document_figures`;
 - `course_lesson.figures_gap_usage`: fase admin `figures_gap`;
+- `course_lesson.figure_needs_usage`: fase admin `figure_needs`;
 - `content_tokens.assets`: fasi `redundancy`, `render_review` e `fix`.
 
 ### Pattern condivisi (tutti i worker AI)
