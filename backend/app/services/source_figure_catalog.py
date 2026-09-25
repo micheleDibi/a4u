@@ -24,6 +24,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,6 +39,7 @@ from app.services import document_figures_service
 from app.services.asset_validation_service import SourceFigureInfo
 from app.services.lesson_figure_selection import FigureCatalog, select_figure_candidates
 from app.services.source_figure_policy import effective_license_policy, figure_visibility
+from app.services.source_figure_resolution import ResolutionInputs, selection_class
 
 # Tipi che la Vision marca come non didattici anche quando «utili».
 EXCLUDED_KINDS = frozenset({"logo_or_decoration"})
@@ -54,7 +56,17 @@ def unsuitable_reason(fig: CourseDocumentFigure) -> str | None:
         return "low_quality"
     if fig.kind in EXCLUDED_KINDS:
         return "excluded_kind"
+    if resolution_class(fig) == "unusable":
+        return "resolution_unusable"
     return None
+
+
+def resolution_class(fig: Any) -> str | None:
+    """Classe di selezione della figura (doc 18 §22); None con la regola
+    spenta (FIGURE_RESOLUTION_RULES_ENABLED=false) o senza pixel."""
+    if not get_settings().figure_resolution_rules_enabled:
+        return None
+    return selection_class(ResolutionInputs.from_figure(fig))
 
 
 @dataclass(frozen=True)
@@ -137,6 +149,10 @@ async def selectable_figures(
     for fig in rows.scalars().all():
         if fig.kind in EXCLUDED_KINDS or fig.id in taken:
             continue
+        # Sotto il minimo di risoluzione: mai proposta (neanche rigenerando
+        # la lezione che già la usa; la collocazione esistente resta, U1).
+        if resolution_class(fig) == "unusable":
+            continue
         doc = docs.get(fig.document_id) if fig.document_id else None
         visibility = figure_visibility(
             fig, doc, course_id=course.id, license_policy=license_policy, mode="select"
@@ -160,6 +176,7 @@ async def build_catalog(
         lesson,
         max_items=int(settings.figure_source_catalog_max_items),
         max_chars=int(settings.figure_source_catalog_max_chars),
+        demote=lambda fig: resolution_class(fig) == "low",
     )
     if not catalog.candidates:
         return None

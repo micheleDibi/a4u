@@ -11,7 +11,23 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class FigureResolutionOut(BaseModel):
+    """Risoluzione effettiva (doc 18 §22), calcolata con le stesse funzioni
+    del render (`source_figure_resolution`) alla colonna di riferimento."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    # good | acceptable | low | unusable (classe di selezione e di stampa).
+    resolution_class: str = Field(serialization_alias="class")
+    # good | acceptable | low nelle slide (solo informazione e spareggio).
+    slide_class: str | None = None
+    # Base della misura naturale: measured, bbox, render, convention, estimate.
+    basis: str
+    print_width_mm: float
+    print_ppi: int
 
 
 class DocumentFigureOut(BaseModel):
@@ -51,6 +67,8 @@ class DocumentFigureOut(BaseModel):
     # o ripristino), così il frontend non mostra quella in cache. Hash del
     # percorso, mai il percorso (U5).
     image_rev: str = ""
+    # None con FIGURE_RESOLUTION_RULES_ENABLED=false o senza pixel.
+    resolution: FigureResolutionOut | None = None
 
 
 class DocumentFigureUpdate(BaseModel):

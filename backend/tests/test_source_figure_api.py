@@ -31,6 +31,7 @@ from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.permissions import R
 from app.models.audit_log import AuditLog
 from app.models.course import Course
@@ -557,3 +558,64 @@ def test_suggested_caption_drops_the_source_tail_and_fits_the_asset() -> None:
     fig.description = "parola " * 200
     long = suggested_caption(fig)
     assert len(long) <= 600 and long.endswith("…")
+
+
+# --- risoluzione effettiva (doc 18 §22) -------------------------------------------
+
+_TINY_DIMS = {
+    "width": 300,
+    "height": 200,
+    "dpi": 150,
+    "native_ppi": 60.0,
+    "is_vector": False,
+    "bbox": {"l": 72.0, "t": 100.0, "r": 216.0, "b": 196.0, "page_w": 595.0, "page_h": 842.0},
+}
+
+
+def _rules(monkeypatch: pytest.MonkeyPatch, enabled: bool) -> None:
+    from app.services import source_figure_api_service, source_figure_catalog
+
+    patched = get_settings().model_copy(update={"figure_resolution_rules_enabled": enabled})
+    for module in (source_figure_api_service, source_figure_catalog):
+        monkeypatch.setattr(module, "get_settings", lambda: patched)
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+async def test_resolution_in_the_catalog_and_the_patch(
+    client: Any,
+    seeded_db: AsyncSession,
+    storage: _Storage,
+    monkeypatch: pytest.MonkeyPatch,
+    enabled: bool,
+) -> None:
+    _rules(monkeypatch, enabled)
+    s = await _setup(seeded_db, storage)
+    course, lesson = s["course"], s["lesson"]
+    tiny = build_document_figure(course.id, s["docs"]["citable"].id, license="cc_by", **_TINY_DIMS)
+    seeded_db.add(tiny)
+    await seeded_db.commit()
+    storage.files[remote_storage.uploads_key(str(tiny.storage_path))] = _png()
+    res = await client.get(f"{s['base']}/document-figures", headers=_bearer(s["user"]))
+    items = {item["id"]: item for item in res.json()}
+    good, small = items[str(s["figs"]["good"].id)], items[str(tiny.id)]
+    if not enabled:
+        assert good["resolution"] is None and small["resolution"] is None
+        assert small["selectable"] and small["reason"] is None
+        return
+    assert good["resolution"]["class"] == "good" and good["resolution"]["print_ppi"] >= 200
+    assert good["resolution"]["basis"] == "bbox" and good["resolution"]["slide_class"]
+    assert small["resolution"]["class"] == "unusable"
+    assert small["resolution"]["print_ppi"] >= 100  # una collocata esce comunque a 100 ppi
+    assert not small["selectable"] and small["reason"] == "resolution_unusable"
+    # PATCH: una figura NUOVA sotto il minimo → 422; già collocata passa (U1).
+    res = await _patch_content(client, s, [_asset("fig-small", tiny)])
+    assert res.status_code == 422 and res.json()["code"] == "source_figure_not_available"
+    assert res.json()["meta"]["reason"] == "resolution_unusable"
+    lesson.content_raw = {
+        "introduction": "Intro.",
+        "sections": [],
+        "visual_assets": [_asset("fig-small", tiny)],
+    }
+    await seeded_db.commit()
+    res = await _patch_content(client, s, [_asset("fig-small", tiny, caption="Nuova.")])
+    assert res.status_code == 200, res.text

@@ -893,3 +893,78 @@ async def test_sequential_lessons_respect_the_reuse_cap(
     assert len(audits) == 1
     assert audits[0].payload["reason"] == "reuse_cap"
     assert audits[0].payload["cap"] == 1
+
+
+# --- risoluzione effettiva nel catalogo (doc 18 §22) --------------------------------
+
+_TINY = {  # 120 px d'informazione su 50,8 mm: 60 ppi → unusable
+    "width": 300,
+    "height": 200,
+    "dpi": 150,
+    "native_ppi": 60.0,
+    "is_vector": False,
+    "bbox": {"l": 72.0, "t": 100.0, "r": 216.0, "b": 196.0, "page_w": 595.0, "page_h": 842.0},
+}
+_LOW = {  # 480 px su 101,6 mm: 120 ppi → low
+    "width": 600,
+    "height": 400,
+    "dpi": 150,
+    "native_ppi": 120.0,
+    "is_vector": False,
+    "bbox": {"l": 72.0, "t": 100.0, "r": 360.0, "b": 292.0, "page_w": 595.0, "page_h": 842.0},
+}
+
+
+def _with_rules(monkeypatch: pytest.MonkeyPatch, enabled: bool) -> None:
+    patched = get_settings().model_copy(update={"figure_resolution_rules_enabled": enabled})
+    monkeypatch.setattr(source_figure_catalog, "get_settings", lambda: patched)
+
+
+async def _catalog_order(seeded_db: AsyncSession, setup: dict[str, Any]) -> list[uuid.UUID]:
+    course = await content_svc.load_course_full(seeded_db, course_id=setup["course_id"])
+    assert course is not None
+    result = await source_figure_catalog.build_catalog(
+        seeded_db, course, find_lesson(course, "M1.L1")
+    )
+    return [c.figure_id for c in result.catalog.candidates] if result is not None else []
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+async def test_catalog_excludes_unusable_and_puts_low_last(
+    seeded_db: AsyncSession, fakes: dict[str, Any], monkeypatch: pytest.MonkeyPatch, enabled: bool
+) -> None:
+    _with_rules(monkeypatch, enabled)
+    setup = await _setup(seeded_db)
+    # Stesso punteggio lessicale: senza la regola decide il locator (la low
+    # viene prima), con la regola la low va in coda.
+    low = _extra_figure(setup, locator="p0001-a-low", **_LOW)
+    sharp = _extra_figure(setup, locator="p0001-z-sharp")
+    tiny = _extra_figure(setup, locator="p0001-m-tiny", **_TINY)
+    seeded_db.add_all([low, sharp, tiny])
+    await seeded_db.commit()
+    order = await _catalog_order(seeded_db, setup)
+    if not enabled:
+        assert {low.id, sharp.id, tiny.id} <= set(order)
+        assert order.index(low.id) < order.index(sharp.id)
+        return
+    assert tiny.id not in order
+    assert order.index(sharp.id) < order.index(low.id)
+    assert source_figure_catalog.unsuitable_reason(tiny) == "resolution_unusable"
+    assert source_figure_catalog.unsuitable_reason(low) is None
+
+
+async def test_regenerating_does_not_offer_an_unusable_figure_it_already_has(
+    seeded_db: AsyncSession, fakes: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Sotto il minimo la figura non si ripropone neanche alla lezione che
+    la usa; la collocazione esistente resta finché la lezione non si
+    rigenera (U1)."""
+    _with_rules(monkeypatch, True)
+    setup = await _setup(seeded_db)
+    tiny = _extra_figure(setup, **_TINY)
+    seeded_db.add(tiny)
+    await seeded_db.commit()
+    lesson = await _lesson(seeded_db, setup["lesson_id"])
+    lesson.content_raw = {"introduction": "T.", "sections": [], "visual_assets": [_placed(tiny.id)]}
+    await seeded_db.commit()
+    assert tiny.id not in await _catalog_order(seeded_db, setup)

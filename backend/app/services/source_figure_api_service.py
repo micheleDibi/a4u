@@ -25,6 +25,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
+from app.core.config import get_settings
 from app.core.errors import NotFoundError
 from app.core.logging import get_logger
 from app.models.course import Course
@@ -34,6 +35,7 @@ from app.models.course_lesson import CourseLesson
 from app.schemas.document_figures import (
     DocumentFigureOut,
     DocumentFigureUsageOut,
+    FigureResolutionOut,
     FigureUsageLesson,
 )
 from app.services.document_figures import storage as figure_storage
@@ -41,6 +43,7 @@ from app.services.figure_attribution import figure_attribution_line
 from app.services.source_caption import clean_caption
 from app.services.source_figure_catalog import license_policy_for, unsuitable_reason
 from app.services.source_figure_policy import figure_visibility
+from app.services.source_figure_resolution import ResolutionInputs, plan_print, slide_class
 from app.services.source_figure_service import source_figure_uuid
 
 log = get_logger("app.source_figure_api_service")
@@ -111,6 +114,24 @@ def figure_out(
         selectable=reason is None,
         reason=reason,
         image_rev=image_rev(fig.storage_path),
+        resolution=resolution_out(fig),
+    )
+
+
+def resolution_out(fig: CourseDocumentFigure) -> FigureResolutionOut | None:
+    """Classe e stampa della figura, come le calcola il render."""
+    if not get_settings().figure_resolution_rules_enabled:
+        return None
+    inputs = ResolutionInputs.from_figure(fig)
+    printed = plan_print(inputs)
+    if printed is None:
+        return None
+    return FigureResolutionOut(
+        resolution_class=printed.resolution_class,
+        slide_class=slide_class(inputs),
+        basis=printed.natural_basis,
+        print_width_mm=printed.width_mm,
+        print_ppi=round(printed.ppi),
     )
 
 

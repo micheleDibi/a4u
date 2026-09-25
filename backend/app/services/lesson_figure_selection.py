@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import math
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -172,8 +172,13 @@ def select_figure_candidates(
     *,
     max_items: int,
     max_chars: int,
+    demote: Callable[[Any], bool] | None = None,
 ) -> FigureCatalog:
-    """Candidate della lezione in ordine di pertinenza, entro i tetti."""
+    """Candidate della lezione in ordine di pertinenza, entro i tetti.
+
+    `demote` (risoluzione effettiva, doc 18 §22): le figure per cui è vero
+    (classe `low`) vanno in coda, dopo tutte le altre pertinenti — una
+    figura a bassa risoluzione solo senza alternativa migliore."""
     if lesson.is_assessment or not figures or max_items <= 0:
         return FigureCatalog(stats={"figures": len(figures), "candidates": 0})
     profile = build_query_profile(lesson)
@@ -187,7 +192,15 @@ def select_figure_candidates(
         score, strong = score_figure(main, context, profile, df, len(figures))
         if score >= CANDIDATE_MIN_SCORE and strong >= 1:
             scored.append((score, strong, fig))
-    scored.sort(key=lambda s: (-s[0], str(s[2].document_id), s[2].page or 0, s[2].locator))
+    scored.sort(
+        key=lambda s: (
+            bool(demote(s[2])) if demote is not None else False,
+            -s[0],
+            str(s[2].document_id),
+            s[2].page or 0,
+            s[2].locator,
+        )
+    )
 
     candidates: list[FigureCandidate] = []
     used_refs: set[str] = set()
