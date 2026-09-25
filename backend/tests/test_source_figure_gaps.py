@@ -260,12 +260,15 @@ async def test_enough_pertinent_figures_means_no_calls(
     assert env["calls"] == [] and lesson.figures_gap_usage is None
 
 
-async def test_a_figure_used_by_another_lesson_does_not_fill_the_gap(
-    seeded_db: AsyncSession, env: dict[str, Any]
+@pytest.mark.parametrize("cap", [1, 2])
+async def test_a_figure_at_the_reuse_cap_does_not_fill_the_gap(
+    seeded_db: AsyncSession, env: dict[str, Any], monkeypatch: pytest.MonkeyPatch, cap: int
 ) -> None:
-    """La figura pertinente è già collocata in un'altra lezione: non conta
-    (una figura in una sola lezione), quindi si cerca in letteratura. Era il
-    caso delle 7 figure di Commons riusate in quasi tutte le lezioni."""
+    """La figura pertinente è già collocata in un'altra lezione. Con K=1 non
+    conta e si cerca in letteratura (erano le 7 figure di Commons riusate in
+    quasi tutte le lezioni); con K=2 ha ancora un posto e copre il buco."""
+    patched = get_settings().model_copy(update={"figure_source_max_lessons_per_figure": cap})
+    monkeypatch.setattr(source_figure_catalog, "get_settings", lambda: patched)
     course_id, lesson_id = await _lesson(seeded_db)
     doc = build_course_document(course_id, filename="dispensa.pdf")
     doc.figures_status = "ready"
@@ -305,6 +308,10 @@ async def test_a_figure_used_by_another_lesson_does_not_fill_the_gap(
     await gap_worker._tick()
     lesson = await _fresh(seeded_db, lesson_id)
     assert lesson.figures_gap_status == "done"
+    if cap > 1:
+        assert lesson.figures_gap_stats == {"pertinent_before": 1, "budget": 4, "reason": "enough"}
+        assert env["calls"] == []
+        return
     assert lesson.figures_gap_stats.get("reason") != "enough", lesson.figures_gap_stats
     assert lesson.figures_gap_stats["pertinent_before"] == 0
     assert ("wikimedia", "laser doppler vibrometer") in env["calls"]

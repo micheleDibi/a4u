@@ -280,6 +280,7 @@ proprio nel prompt di Fase 3.
 | `FIGURE_SOURCE_MAX_PER_LESSON` | `4` | Budget delle figure di fonte in una lezione ordinaria (in aggiunta alle generate). |
 | `FIGURE_SOURCE_MAX_PER_INTRO_LESSON` | `1` | Budget nella lezione introduttiva. Le verifiche non ricevono catalogo. |
 | `FIGURE_SOURCE_MIN_PER_LESSON` | `1` | Sotto questo numero di figure pertinenti dai documenti la lezione è «in buco» (integrazione dalla letteratura aperta). |
+| `FIGURE_SOURCE_MAX_LESSONS_PER_FIGURE` | `2` | Riuso limitato: una figura di fonte compare in al più N lezioni del corso, mai due volte nella stessa. Le figure già collocate in una lezione restano sue anche alla rigenerazione. `1` = una sola lezione (comportamento precedente). |
 | `FIGURE_WAIT_MAX_MINUTES` | `15` | Attesa massima della Fase 3 per le estrazioni ancora in corso dei documenti del corso. |
 | `FIGURE_EXTRACTION_ENABLED` | `true` (codice) / `false` (compose) | Estrazione delle figure dai documenti. In produzione va accesa solo dopo la misura M0 sulla VM (torch senza AVX). Spenta: all'upload lo stato resta `NULL`, i `pending` passano a `skipped(extraction_disabled)`. |
 | `FIGURE_EXTRACTION_ENGINE` | `docling` | `docling` (layout + classificatore, CPU) oppure `heuristic` (pdfplumber + pypdfium2, senza torch, qualità minore). |

@@ -38,6 +38,7 @@ import contextlib
 import time
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from sqlalchemy import Select, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -674,16 +675,20 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                 for a in content_output.visual_assets
                 if a.format == SOURCE_FIGURE_FORMAT
             }
-            reason = "not_selectable_at_materialize"
+            # Motivo per figura: politica (not_selectable_at_materialize) prima
+            # del tetto di riuso (reuse_cap), che le lezioni generate in
+            # parallelo possono aver raggiunto nel frattempo.
+            reason_by: dict[uuid.UUID, str] = {}
             try:
                 current_policy = await source_figure_catalog.license_policy_for(db, course_full)
-                blocked = await source_figure_catalog.not_selectable(
-                    db,
-                    course_full,
-                    fused.values(),
-                    license_policy=current_policy,
-                    lesson_id=lesson.id,
-                )
+                for fid in await source_figure_catalog.not_selectable(
+                    db, course_full, fused.values(), license_policy=current_policy
+                ):
+                    reason_by[fid] = "not_selectable_at_materialize"
+                for fid in await source_figure_catalog.over_reuse_cap(
+                    db, course_full, fused.values(), lesson_id=lesson.id
+                ):
+                    reason_by.setdefault(fid, "reuse_cap")
             except Exception as exc:
                 log.warning(
                     "lesson_content_source_figures_recheck_failed",
@@ -691,26 +696,31 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                     lesson_code=lesson.lesson_code,
                     error=str(exc)[:300],
                 )
-                blocked = set(fused.values())
-                reason = "recheck_failed"
-            if blocked:
-                dropped = {aid for aid, fid in fused.items() if fid in blocked}
+                reason_by = dict.fromkeys(fused.values(), "recheck_failed")
+            if reason_by:
+                dropped = {aid for aid, fid in fused.items() if fid in reason_by}
                 source_figure_fusion.remove_source_figures(content_output, dropped)
                 figure_review = _drop_from_review(figure_review, dropped)
-                await write_audit(
-                    db,
-                    action="course.lesson.content.source_figures_dropped",
-                    actor_user_id=None,
-                    organization_id=course_full.organization_id,
-                    target_type="course_lesson",
-                    target_id=str(lesson.id),
-                    metadata={
+                for reason in sorted(set(reason_by.values())):
+                    metadata: dict[str, Any] = {
                         "course_id": str(course_full.id),
                         "lesson_code": lesson.lesson_code,
-                        "dropped": sorted(dropped),
+                        "dropped": sorted(
+                            aid for aid, fid in fused.items() if reason_by.get(fid) == reason
+                        ),
                         "reason": reason,
-                    },
-                )
+                    }
+                    if reason == "reuse_cap":
+                        metadata["cap"] = source_figure_catalog.reuse_cap()
+                    await write_audit(
+                        db,
+                        action="course.lesson.content.source_figures_dropped",
+                        actor_user_id=None,
+                        organization_id=course_full.organization_id,
+                        target_type="course_lesson",
+                        target_id=str(lesson.id),
+                        metadata=metadata,
+                    )
                 fusion.added = [a for a in fusion.added if a not in dropped]
         if catalog is not None:
             usage["source_figures"] = {

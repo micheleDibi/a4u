@@ -313,6 +313,7 @@ async def test_policy_change_during_generation_drops_the_figure(
         .all()
     )
     assert len(audits) == 1
+    assert audits[0].payload["reason"] == "not_selectable_at_materialize"
 
 
 async def test_intro_lesson_budget_is_one(seeded_db: AsyncSession) -> None:
@@ -647,18 +648,28 @@ async def test_tick_dispatches_only_the_lessons_of_the_pending_query(
     assert setup["lesson_id"] in dispatched
 
 
-# --- una figura di fonte in una sola lezione ----------------------------------------
+# --- riuso limitato: una figura di fonte in al più K lezioni ------------------------
+
+
+def _with_cap(monkeypatch: pytest.MonkeyPatch, cap: int) -> None:
+    patched = get_settings().model_copy(update={"figure_source_max_lessons_per_figure": cap})
+    monkeypatch.setattr(source_figure_catalog, "get_settings", lambda: patched)
 
 
 async def _second_lesson(
-    db: AsyncSession, setup: dict[str, Any], visual_assets: list[dict[str, Any]]
+    db: AsyncSession,
+    setup: dict[str, Any],
+    visual_assets: list[dict[str, Any]],
+    *,
+    code: str = "M1.L2",
+    position: int = 2,
 ) -> CourseLesson:
     first = await _lesson(db, setup["lesson_id"])
     other = CourseLesson(
         module_id=first.module_id,
         course_id=first.course_id,
-        position=2,
-        lesson_code="M1.L2",
+        position=position,
+        lesson_code=code,
         title="Vibrometro laser Doppler: applicazioni",
         summary="Applicazioni del vibrometro laser Doppler.",
         learning_objectives=[],
@@ -677,18 +688,36 @@ def _placed(fig_id: uuid.UUID) -> dict[str, Any]:
     return {"asset_id": "SRC-altra", "format": "source_figure", "content": str(fig_id)}
 
 
-async def test_a_source_figure_is_offered_to_one_lesson_only(
-    seeded_db: AsyncSession, fakes: dict[str, Any]
+@pytest.mark.parametrize("cap", [1, 2])
+async def test_a_source_figure_is_offered_up_to_the_reuse_cap(
+    seeded_db: AsyncSession, fakes: dict[str, Any], monkeypatch: pytest.MonkeyPatch, cap: int
 ) -> None:
-    """La figura già collocata in un'altra lezione non entra nel catalogo;
-    torna disponibile se la collocazione è nella lezione stessa (che si
-    rigenera)."""
+    """Con K=1 (comportamento precedente) la figura collocata in un'altra
+    lezione non entra nel catalogo; con K=2 sì, finché le altre lezioni che
+    la usano sono meno di K."""
+    _with_cap(monkeypatch, cap)
     setup = await _setup(seeded_db)
     good = setup["figures"]["good"]
-    other = await _second_lesson(seeded_db, setup, [_placed(good.id)])
+    await _second_lesson(seeded_db, setup, [_placed(good.id)])
+    assert (good.id in await _catalog_ids(seeded_db, setup)) is (cap > 1)
+    await _second_lesson(seeded_db, setup, [_placed(good.id)], code="M1.L3", position=3)
     assert good.id not in await _catalog_ids(seeded_db, setup)
-    # Controprova: la figura collocata nella lezione stessa resta proponibile.
-    other.content_raw = {"introduction": "Testo.", "sections": [], "visual_assets": []}
+
+
+async def test_a_lesson_keeps_its_own_figure_even_beyond_the_cap(
+    seeded_db: AsyncSession, fakes: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Una figura già nella lezione stessa non consuma un posto: rigenerando
+    la lezione resta proponibile anche se altre 5 lezioni la usano (U1,
+    lo schema LDV del corso del docente sta in 5 lezioni)."""
+    _with_cap(monkeypatch, 2)
+    setup = await _setup(seeded_db)
+    good = setup["figures"]["good"]
+    for i in range(5):
+        await _second_lesson(
+            seeded_db, setup, [_placed(good.id)], code=f"M1.L{i + 2}", position=i + 2
+        )
+    assert good.id not in await _catalog_ids(seeded_db, setup)
     lesson = await _lesson(seeded_db, setup["lesson_id"])
     lesson.content_raw = {
         "introduction": "Testo.",
@@ -697,13 +726,25 @@ async def test_a_source_figure_is_offered_to_one_lesson_only(
     }
     await seeded_db.commit()
     assert good.id in await _catalog_ids(seeded_db, setup)
+    course = await content_svc.load_course_full(seeded_db, course_id=setup["course_id"])
+    assert course is not None
+    assert not await source_figure_catalog.over_reuse_cap(
+        seeded_db, course, [good.id], lesson_id=setup["lesson_id"]
+    )
 
 
-async def test_parallel_lessons_do_not_both_keep_the_same_figure(
-    seeded_db: AsyncSession, fakes: dict[str, Any], _engine: Any
+@pytest.mark.parametrize("cap", [1, 2])
+async def test_parallel_lessons_respect_the_reuse_cap(
+    seeded_db: AsyncSession,
+    fakes: dict[str, Any],
+    _engine: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    cap: int,
 ) -> None:
-    """Due lezioni generate insieme scelgono la stessa figura: al
-    ricontrollo quella arrivata seconda la toglie, con audit."""
+    """Due lezioni generate insieme scelgono la stessa figura. Con K=1 al
+    ricontrollo quella arrivata seconda la toglie, con audit `reuse_cap`;
+    con K=2 la tengono entrambe."""
+    _with_cap(monkeypatch, cap)
     setup = await _setup(seeded_db)
     good = setup["figures"]["good"]
     other = await _second_lesson(seeded_db, setup, [])
@@ -729,7 +770,11 @@ async def test_parallel_lessons_do_not_both_keep_the_same_figure(
     lesson = await _lesson(seeded_db, setup["lesson_id"])
     assert lesson.content_status == "ready", lesson.content_error
     assert list(fakes["calls"][0]["source_figure_refs"]) == [figure_ref(good.id)]
-    assert not [a for a in lesson.content_raw["visual_assets"] if a["format"] == "source_figure"]
+    kept = [a for a in lesson.content_raw["visual_assets"] if a["format"] == "source_figure"]
+    if cap > 1:
+        assert [a["content"] for a in kept] == [str(good.id)]
+        return
+    assert not kept
     audits = (
         (
             await seeded_db.execute(
@@ -743,3 +788,5 @@ async def test_parallel_lessons_do_not_both_keep_the_same_figure(
         .all()
     )
     assert len(audits) == 1
+    assert audits[0].payload["reason"] == "reuse_cap"
+    assert audits[0].payload["cap"] == 1

@@ -363,6 +363,9 @@ class Settings(BaseSettings):
     # Sotto questo numero di figure di fonte pertinenti una lezione è «in
     # buco» e (dopo il cancello, WP5) si integra dalla letteratura aperta.
     figure_source_min_per_lesson: int = 1
+    # Riuso limitato: una figura di fonte compare in al più tante lezioni del
+    # corso (mai due volte nella stessa). 1 = esclusività di prima (9bb7c31).
+    figure_source_max_lessons_per_figure: int = 2
     # Attesa massima della Fase 3 per le estrazioni in corso dei documenti
     # del corso (filtro nel `_tick`, mai uno sleep).
     figure_wait_max_minutes: int = 15

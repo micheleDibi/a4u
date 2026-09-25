@@ -6,13 +6,17 @@
   dell'organizzazione), poi selezione lessicale per la lezione
   (`lesson_figure_selection`). Nessun catalogo per le verifiche, con
   `FIGURE_SOURCE_ENABLED=false` o con budget (b) nullo.
-- Una figura di fonte sta in una sola lezione del corso: il catalogo di una
-  lezione non offre le figure già collocate in un'altra (il docente può
-  comunque inserirle a mano dall'editor).
-- `not_selectable`: ricontrollo TOCTOU delle figure scelte dal modello,
-  sullo stato del DB al momento della materializzazione (un documento
-  escluso durante la generazione non entra; nemmeno una figura collocata
-  nel frattempo da un'altra lezione generata in parallelo).
+- Riuso limitato: una figura di fonte sta in al più
+  `FIGURE_SOURCE_MAX_LESSONS_PER_FIGURE` lezioni del corso. Il catalogo di
+  una lezione non offre le figure già in quel numero di ALTRE lezioni; le
+  figure già collocate nella lezione stessa restano sue anche alla
+  rigenerazione (non consumano un posto). Il docente può comunque inserirle
+  a mano dall'editor.
+- `not_selectable`: ricontrollo TOCTOU della politica delle figure scelte
+  dal modello, sullo stato del DB al momento della materializzazione (un
+  documento escluso durante la generazione non entra).
+- `over_reuse_cap`: ricontrollo del riuso (figure che nel frattempo altre
+  lezioni generate in parallelo hanno portato al tetto).
 """
 
 from __future__ import annotations
@@ -89,6 +93,24 @@ async def _documents(db: AsyncSession, course_id: uuid.UUID) -> dict[uuid.UUID, 
     return {d.id: d for d in rows.scalars().all()}
 
 
+def reuse_cap() -> int:
+    """Numero massimo di lezioni per figura di fonte (almeno 1)."""
+    return max(1, int(get_settings().figure_source_max_lessons_per_figure))
+
+
+async def saturated_figures(
+    db: AsyncSession, course_id: uuid.UUID, lesson_id: uuid.UUID
+) -> set[uuid.UUID]:
+    """Figure già in `reuse_cap()` lezioni diverse da `lesson_id`, tolte
+    quelle già collocate nella lezione stessa (rigenerandola le tiene)."""
+    cap = reuse_cap()
+    uses = await document_figures_service.figure_lesson_uses(
+        db, course_id, except_lesson_id=lesson_id
+    )
+    own = await document_figures_service.lesson_figure_ids(db, lesson_id)
+    return {fid for fid, lessons in uses.items() if len(lessons) >= cap} - own
+
+
 async def selectable_figures(
     db: AsyncSession,
     course: Course,
@@ -96,8 +118,8 @@ async def selectable_figures(
     license_policy: str,
     lesson_id: uuid.UUID | None = None,
 ) -> list[CourseDocumentFigure]:
-    """Figure proponibili del corso; con `lesson_id`, senza quelle già
-    collocate in un'altra lezione."""
+    """Figure proponibili del corso; con `lesson_id`, senza quelle già al
+    tetto di riuso in altre lezioni."""
     settings = get_settings()
     rows = await db.execute(
         select(CourseDocumentFigure).where(
@@ -110,11 +132,7 @@ async def selectable_figures(
         )
     )
     docs = await _documents(db, course.id)
-    taken = (
-        await document_figures_service.used_figure_ids(db, course.id, except_lesson_id=lesson_id)
-        if lesson_id is not None
-        else set()
-    )
+    taken = await saturated_figures(db, course.id, lesson_id) if lesson_id is not None else set()
     out = []
     for fig in rows.scalars().all():
         if fig.kind in EXCLUDED_KINDS or fig.id in taken:
@@ -154,10 +172,9 @@ async def not_selectable(
     figure_ids: Iterable[uuid.UUID],
     *,
     license_policy: str,
-    lesson_id: uuid.UUID | None = None,
 ) -> set[uuid.UUID]:
-    """Figure scelte che nel frattempo non sono più ammesse; con
-    `lesson_id`, anche quelle collocate intanto in un'altra lezione."""
+    """Figure scelte che nel frattempo non sono più ammesse (politica del
+    documento, esclusione, licenza, file)."""
     wanted = set(figure_ids)
     if not wanted:
         return set()
@@ -177,11 +194,18 @@ async def not_selectable(
         )
         if not visibility.renderable:
             blocked.add(fid)
-    if lesson_id is not None:
-        blocked |= wanted & await document_figures_service.used_figure_ids(
-            db, course.id, except_lesson_id=lesson_id
-        )
     return blocked
+
+
+async def over_reuse_cap(
+    db: AsyncSession, course: Course, figure_ids: Iterable[uuid.UUID], *, lesson_id: uuid.UUID
+) -> set[uuid.UUID]:
+    """Figure scelte che intanto altre lezioni hanno portato al tetto di
+    riuso (le figure già collocate nella lezione stessa passano)."""
+    wanted = set(figure_ids)
+    if not wanted:
+        return set()
+    return wanted & await saturated_figures(db, course.id, lesson_id)
 
 
 async def figure_infos(

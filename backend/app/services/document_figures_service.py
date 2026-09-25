@@ -239,6 +239,33 @@ async def used_figure_ids(
     return used
 
 
+async def figure_lesson_uses(
+    db: AsyncSession, course_id: uuid.UUID, *, except_lesson_id: uuid.UUID | None = None
+) -> dict[uuid.UUID, list[str]]:
+    """Per ogni figura di fonte collocata, i codici delle lezioni del corso
+    che la usano (tranne, se dato, `except_lesson_id`). Una lezione conta
+    una volta per figura. `used_figure_ids` resta l'insieme usato da
+    cancellazione, supersede e gc."""
+    query = select(CourseLesson.lesson_code, CourseLesson.content_raw).where(
+        CourseLesson.course_id == course_id
+    )
+    if except_lesson_id is not None:
+        query = query.where(CourseLesson.id != except_lesson_id)
+    uses: dict[uuid.UUID, list[str]] = {}
+    for code, content_raw in (await db.execute(query)).all():
+        for fid in source_figure_ids(content_raw):
+            uses.setdefault(fid, []).append(str(code or ""))
+    return uses
+
+
+async def lesson_figure_ids(db: AsyncSession, lesson_id: uuid.UUID) -> set[uuid.UUID]:
+    """Figure di fonte già collocate nella lezione (contenuto salvato)."""
+    content_raw = await db.scalar(
+        select(CourseLesson.content_raw).where(CourseLesson.id == lesson_id)
+    )
+    return source_figure_ids(content_raw)
+
+
 async def prepare_document_deletion(db: AsyncSession, doc: CourseDocument) -> tuple[list[str], int]:
     """Da chiamare prima di cancellare il documento: stacca le figure usate
     (attribuzione congelata) e cancella le altre righe. Ritorna i percorsi
