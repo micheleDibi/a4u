@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -157,7 +158,9 @@ def fakes(monkeypatch: pytest.MonkeyPatch, _engine: Any) -> dict[str, Any]:
             await state["on_generate"]()
         refs = list(kwargs.get("source_figure_refs") or []) if state["choose"] else []
         usage = {"model": "gpt-5.5", "total": 10, "prompt": 5, "completion": 5, "cost_usd": 0.1}
-        return _output("M1.L1", refs), usage
+        # Il codice della lezione dal messaggio user (riga «ID: M1.L2»).
+        found = re.search(r"(?m)^ID: (\S+)", str(kwargs.get("user_prompt") or ""))
+        return _output(found.group(1) if found else "M1.L1", refs), usage
 
     async def no_validation(
         out: LessonContentOutput, *, language_code: str
@@ -844,9 +847,8 @@ async def test_sequential_lessons_respect_the_reuse_cap(
 ) -> None:
     """L'altra lezione colloca la figura (commit) mentre questa è in
     generazione. Con K=1 al ricontrollo questa la toglie, con audit
-    `reuse_cap`; con K=2 la tengono entrambe. Due lezioni che fanno il
-    ricontrollo nello stesso istante possono ancora passarlo entrambe: il
-    lock di corso arriva con WP6."""
+    `reuse_cap`; con K=2 la tengono entrambe. Due lezioni generate insieme:
+    `test_parallel_lessons_respect_the_reuse_cap_under_the_course_lock`."""
     _with_cap(monkeypatch, cap)
     setup = await _setup(seeded_db)
     good = setup["figures"]["good"]
@@ -893,6 +895,47 @@ async def test_sequential_lessons_respect_the_reuse_cap(
     assert len(audits) == 1
     assert audits[0].payload["reason"] == "reuse_cap"
     assert audits[0].payload["cap"] == 1
+
+
+async def test_parallel_lessons_respect_the_reuse_cap_under_the_course_lock(
+    seeded_db: AsyncSession, fakes: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Due lezioni generate INSIEME scelgono la stessa figura con K=1: entrambe
+    passano il primo ricontrollo (nessuna delle due ha ancora salvato), ma
+    alla materializzazione il lock di corso le serializza e la seconda la
+    toglie con audit `reuse_cap` (WP6)."""
+    _with_cap(monkeypatch, 1)
+    setup = await _setup(seeded_db)
+    good = setup["figures"]["good"]
+    first = await _lesson(seeded_db, setup["lesson_id"])
+    other = await _second_lesson(seeded_db, setup, [])
+    for field in ("title", "mandatory_topics", "section_outline", "learning_objectives", "summary"):
+        setattr(other, field, getattr(first, field))
+    other.content_status = "pending"
+    await seeded_db.commit()
+    both_generated = asyncio.Event()
+
+    async def wait_for_both() -> None:
+        if len(fakes["calls"]) >= 2:
+            both_generated.set()
+        await asyncio.wait_for(both_generated.wait(), timeout=30)
+
+    fakes["on_generate"] = wait_for_both
+    await asyncio.gather(worker._process_one(first.id), worker._process_one(other.id))
+    lessons = [await _lesson(seeded_db, lid) for lid in (first.id, other.id)]
+    assert all(lesson.content_status == "ready" for lesson in lessons), [
+        lesson.content_error for lesson in lessons
+    ]
+    assert all(figure_ref(good.id) in list(call["source_figure_refs"]) for call in fakes["calls"])
+    holders = [
+        lesson
+        for lesson in lessons
+        if any(a["content"] == str(good.id) for a in lesson.content_raw["visual_assets"])
+    ]
+    assert len(holders) == 1
+    loser = next(lesson for lesson in lessons if lesson not in holders)
+    audits = await _dropped_audits(seeded_db, loser.id)
+    assert [a.payload["reason"] for a in audits] == ["reuse_cap"]
 
 
 # --- risoluzione effettiva nel catalogo (doc 18 §22) --------------------------------

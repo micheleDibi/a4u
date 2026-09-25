@@ -62,6 +62,7 @@ from app.services import (
     document_citation_guard,
     figure_plan_service,
     openai_lesson_content_service,
+    source_figure_assignment_service,
     source_figure_catalog,
     source_figure_fusion,
 )
@@ -367,6 +368,19 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                     lesson_id=str(lesson.id),
                     error=str(exc)[:300],
                 )
+            # Piano delle figure (WP6): offerta della lezione, calcolata sotto
+            # il lock di corso sull'assegnazione globale; il commit che segue
+            # la salva e rilascia il lock. Un errore qui non blocca la lezione.
+            if figure_plan_service.plan_active():
+                try:
+                    async with db.begin_nested():
+                        await source_figure_assignment_service.reserve(db, course_full, lesson)
+                except Exception as exc:
+                    log.warning(
+                        "lesson_content_figure_assignment_failed",
+                        lesson_id=str(lesson.id),
+                        error=str(exc)[:300],
+                    )
         # Formati offerti a questo tentativo: gli stessi per schema e
         # messaggio user (`tikz` solo se proposto, non appena fallito e non
         # durante un'estrazione Docling, che occupa la sandbox TeX: la
@@ -699,29 +713,9 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                 )
                 reason_by = dict.fromkeys(fused.values(), "recheck_failed")
             if reason_by:
-                dropped = {aid for aid, fid in fused.items() if fid in reason_by}
-                source_figure_fusion.remove_source_figures(content_output, dropped)
-                figure_review = _drop_from_review(figure_review, dropped)
-                for reason in sorted(set(reason_by.values())):
-                    metadata: dict[str, Any] = {
-                        "course_id": str(course_full.id),
-                        "lesson_code": lesson.lesson_code,
-                        "dropped": sorted(
-                            aid for aid, fid in fused.items() if reason_by.get(fid) == reason
-                        ),
-                        "reason": reason,
-                    }
-                    if reason == "reuse_cap":
-                        metadata["cap"] = source_figure_catalog.reuse_cap()
-                    await write_audit(
-                        db,
-                        action="course.lesson.content.source_figures_dropped",
-                        actor_user_id=None,
-                        organization_id=course_full.organization_id,
-                        target_type="course_lesson",
-                        target_id=str(lesson.id),
-                        metadata=metadata,
-                    )
+                figure_review, dropped = await _drop_source_figures(
+                    db, course_full, lesson, content_output, figure_review, fused, reason_by
+                )
                 fusion.added = [a for a in fusion.added if a not in dropped]
         if catalog is not None:
             usage["source_figures"] = {
@@ -818,6 +812,37 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
         lesson.content_progress = 90
         lesson.content_progress_phase = "materializing"
         await db.commit()
+
+        # Lock di corso fino al commit della materializzazione: il tetto di
+        # riuso si ricontrolla qui, serializzato con le lezioni generate in
+        # parallelo (prima due lezioni potevano superarlo insieme), e la
+        # fotografia dell'assegnazione si scrive nella stessa transazione.
+        fused_now = _fused_source_figures(content_output)
+        if fused_now or (not lesson.is_assessment and lesson.figure_assignment):
+            await source_figure_assignment_service.course_lock(db, course_full.id)
+        if fused_now and isinstance(content_output, LessonContentOutput):
+            try:
+                over = await source_figure_catalog.over_reuse_cap(
+                    db, course_full, fused_now.values(), lesson_id=lesson.id
+                )
+                reuse_by = dict.fromkeys(over, "reuse_cap")
+            except Exception as exc:
+                log.warning(
+                    "lesson_content_source_figures_locked_recheck_failed",
+                    lesson_id=str(lesson.id),
+                    error=str(exc)[:300],
+                )
+                reuse_by = dict.fromkeys(fused_now.values(), "recheck_failed")
+            if reuse_by:
+                figure_review, _gone = await _drop_source_figures(
+                    db, course_full, lesson, content_output, figure_review, fused_now, reuse_by
+                )
+                if isinstance(usage.get("source_figures"), dict):
+                    usage["source_figures"]["dropped_at_lock"] = len(_gone)
+        if not lesson.is_assessment:
+            source_figure_assignment_service.settle(
+                lesson, set(_fused_source_figures(content_output).values())
+            )
 
         try:
             if lesson.is_assessment:
@@ -945,6 +970,52 @@ async def _bound_process(lesson_id: uuid.UUID) -> None:
 # ---------------------------------------------------------------------------
 # Tick: discovery + dispatch
 # ---------------------------------------------------------------------------
+
+
+async def _drop_source_figures(
+    db: AsyncSession,
+    course_full: Any,
+    lesson: CourseLesson,
+    content_output: LessonContentOutput,
+    figure_review: dict | None,
+    fused: dict[str, uuid.UUID],
+    reason_by: dict[uuid.UUID, str],
+) -> tuple[dict | None, set[str]]:
+    """Toglie dal contenuto le figure di fonte con un motivo (una riga di
+    audit per motivo). Ritorna il verdetto del revisore ripulito e gli
+    asset tolti."""
+    dropped = {aid for aid, fid in fused.items() if fid in reason_by}
+    source_figure_fusion.remove_source_figures(content_output, dropped)
+    figure_review = _drop_from_review(figure_review, dropped)
+    for reason in sorted(set(reason_by.values())):
+        metadata: dict[str, Any] = {
+            "course_id": str(course_full.id),
+            "lesson_code": lesson.lesson_code,
+            "dropped": sorted(aid for aid, fid in fused.items() if reason_by.get(fid) == reason),
+            "reason": reason,
+        }
+        if reason == "reuse_cap":
+            metadata["cap"] = source_figure_catalog.reuse_cap()
+        await write_audit(
+            db,
+            action="course.lesson.content.source_figures_dropped",
+            actor_user_id=None,
+            organization_id=course_full.organization_id,
+            target_type="course_lesson",
+            target_id=str(lesson.id),
+            metadata=metadata,
+        )
+    return figure_review, dropped
+
+
+def _fused_source_figures(content_output: Any) -> dict[str, uuid.UUID]:
+    if not isinstance(content_output, LessonContentOutput):
+        return {}
+    return {
+        a.asset_id: uuid.UUID(a.content)
+        for a in content_output.visual_assets
+        if a.format == SOURCE_FIGURE_FORMAT
+    }
 
 
 def _drop_from_review(review: dict | None, dropped: set[str]) -> dict | None:

@@ -670,6 +670,7 @@ async def _clone_course_structure(
     fig_map = await _clone_document_figures(
         db, source_course_id=source.id, target_course_id=target.id, doc_map=doc_map
     )
+    lesson_map: dict[uuid.UUID, uuid.UUID] = {}
 
     # --- Moduli + lezioni --------------------------------------------
     for src_mod in source.modules:
@@ -693,6 +694,7 @@ async def _clone_course_structure(
 
         for src_lesson in src_mod.lessons:
             new_lesson = CourseLesson(
+                id=uuid.uuid4(),
                 module_id=new_mod.id,
                 course_id=target.id,
                 position=src_lesson.position,
@@ -785,8 +787,10 @@ async def _clone_course_structure(
                 avatar_video_generated_at=None,
             )
             db.add(new_lesson)
+            lesson_map[src_lesson.id] = new_lesson.id
 
     await db.flush()
+    await _remap_found_for(db, source_course_id=source.id, fig_map=fig_map, lesson_map=lesson_map)
     job.target_course_id = target.id
     await db.commit()
     await db.refresh(target)
@@ -834,6 +838,10 @@ _FIGURE_SKIP_COLUMNS = frozenset(
         # I file copiati sono quelli attuali, e crop_version resta.
         "recrop_previous",
         "recropped_at",
+        # Figura della letteratura trovata per un fabbisogno: la lezione è
+        # del corso sorgente; si rimappa dopo aver creato le lezioni.
+        "found_for_lesson_id",
+        "found_for_need_id",
         "created_at",
         "updated_at",
     }
@@ -915,6 +923,40 @@ async def _clone_document_figures(
         )
     await db.flush()
     return fig_map
+
+
+async def _remap_found_for(
+    db: AsyncSession,
+    *,
+    source_course_id: uuid.UUID,
+    fig_map: dict[uuid.UUID, uuid.UUID],
+    lesson_map: dict[uuid.UUID, uuid.UUID],
+) -> None:
+    """Riserva della letteratura (figura trovata per un fabbisogno) sulle
+    lezioni del corso nuovo; i `need_id` restano (i fabbisogni pronti si
+    copiano con la lezione)."""
+    rows = (
+        await db.execute(
+            select(
+                CourseDocumentFigure.id,
+                CourseDocumentFigure.found_for_lesson_id,
+                CourseDocumentFigure.found_for_need_id,
+            ).where(
+                CourseDocumentFigure.course_id == source_course_id,
+                CourseDocumentFigure.found_for_lesson_id.is_not(None),
+            )
+        )
+    ).all()
+    for fig_id, lesson_id, need_id in rows:
+        clone_id = fig_map.get(fig_id)
+        new_lesson = lesson_map.get(lesson_id)
+        if clone_id is None or new_lesson is None:
+            continue
+        clone = await db.get(CourseDocumentFigure, clone_id)
+        if clone is not None:
+            clone.found_for_lesson_id = new_lesson
+            clone.found_for_need_id = need_id
+    await db.flush()
 
 
 def _remap_source_figures(content_raw: Any, fig_map: dict[uuid.UUID, uuid.UUID]) -> Any:

@@ -496,6 +496,14 @@ class Settings(BaseSettings):
     # Fabbisogni per lezione (al più 8 must) e nella lezione introduttiva.
     figure_needs_max_per_lesson: int = 10
     figure_needs_max_per_intro_lesson: int = 3
+    # Budget (b) del piano: figure di fonte per lezione = min(tetto, max(
+    # morbido, must pronti)), morbido = minuti della lezione // minuti per
+    # figura, fra il budget senza piano e il tetto (doc 18 §23.4).
+    figure_plan_max_per_lesson: int = 8
+    figure_source_minutes_per_figure: int = 4
+    # Abbinamento dal solo testo per le figure senza `depicts` (descritte
+    # prima della 0041): spento, precisione 0,53 nella misura M-A3.
+    figure_plan_legacy_match_enabled: bool = False
 
     # Formato `tikz` (WP6): figure vettoriali (schemi di strumenti, circuiti
     # IEC, catene di misura) compilate con XeLaTeX nella sandbox del

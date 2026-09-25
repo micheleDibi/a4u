@@ -508,3 +508,52 @@ async def test_the_clone_does_not_inherit_the_recrop_history(
     assert await recrop.revert(db, course_id=target.id) == {"reverted": 0}
     await recrop.purge_replaced(db, course_id=target.id, older_than=timedelta(days=14), apply=True)
     assert remote_storage.uploads_key(v1_path) in storage.files
+
+
+async def test_literature_found_for_a_need_follows_the_cloned_lesson(
+    seeded_db: AsyncSession, storage: _Storage
+) -> None:
+    """Piano delle figure (WP6): la riserva della letteratura punta alla
+    lezione del corso NUOVO; l'offerta dell'assegnazione non si copia."""
+    db = seeded_db
+    s = await _source(db, storage)
+    lesson = (
+        (await db.execute(select(CourseLesson).where(CourseLesson.course_id == s["course_id"])))
+        .scalars()
+        .one()
+    )
+    s["literature"].found_for_lesson_id = lesson.id
+    s["literature"].found_for_need_id = "n1234abcd"
+    lesson.figure_assignment = {"state": "settled", "offers": {}}
+    await db.commit()
+    source = await dup.load_source_full(db, course_id=s["course_id"])
+    assert source is not None
+    job = CourseDuplicationJob(
+        source_course_id=source.id, target_language_code="en", requested_by_user_id=None
+    )
+    db.add(job)
+    await db.flush()
+    target = await dup._clone_course_structure(
+        db, source=source, target_language_code="en", job=job
+    )
+    await db.commit()
+    new_lesson = (
+        (await db.execute(select(CourseLesson).where(CourseLesson.course_id == target.id)))
+        .scalars()
+        .one()
+    )
+    clone = (
+        (
+            await db.execute(
+                select(CourseDocumentFigure).where(
+                    CourseDocumentFigure.course_id == target.id,
+                    CourseDocumentFigure.external_id == "commons:101",
+                )
+            )
+        )
+        .scalars()
+        .one()
+    )
+    assert clone.found_for_lesson_id == new_lesson.id
+    assert clone.found_for_need_id == "n1234abcd"
+    assert new_lesson.figure_assignment is None
