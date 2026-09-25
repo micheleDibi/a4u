@@ -311,6 +311,14 @@ class CourseLesson(UUIDPKMixin, TimestampMixin, Base):
     figure_needs_usage: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB(none_as_null=True), nullable=True
     )
+    # Assegnazione delle figure di fonte ai fabbisogni (WP6, migrazione 0042):
+    # offerta scritta all'avvio della Fase 3 sotto il lock di corso
+    # (`state=offered`, `run_token`, `at`, `offers`, `unassigned`) e
+    # fotografia finale alla materializzazione (`state=settled`). La scrive
+    # solo il worker; nessun CRUD la tocca e non si copia in duplicazione.
+    figure_assignment: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB(none_as_null=True), nullable=True
+    )
     content_attempts: Mapped[int] = mapped_column(
         SmallInteger, nullable=False, default=0, server_default="0"
     )

@@ -355,6 +355,16 @@ class CourseDocumentFigure(UUIDPKMixin, TimestampMixin, Base):
     external_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
     source_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     retrieved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Piano delle figure (WP6, migrazione 0042): la figura esterna è stata
+    # trovata PER questo fabbisogno di questa lezione; l'assegnazione le
+    # riserva il posto se lo copre e nessuna figura di documento lo copre
+    # meglio. Rimappati in duplicazione.
+    found_for_lesson_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("course_lesson.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    found_for_need_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
     document: Mapped[CourseDocument | None] = relationship(
         "CourseDocument", back_populates="figures"
