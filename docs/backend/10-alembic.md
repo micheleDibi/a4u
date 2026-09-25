@@ -688,6 +688,28 @@ mano su un DB usa-e-getta; non c'è un test automatico della downgrade.
 In produzione le migrazioni vanno eseguite **prima** dell'avvio del
 backend, come descritto in `CLAUDE.md`.
 
+## `alembic/versions/0039_figure_resolution.py`
+
+Risoluzione effettiva e ri-ritaglio (doc 18 §22).
+
+### Sequenza `upgrade()`
+
+1. `course_document_figure`: `native_ppi` e `natural_width_mm` (REAL),
+   `crop_mode` (`raster_native | mixed | vector | office | external`),
+   `crop_version` (SMALLINT NOT NULL, default 1: le righe esistenti sono
+   v1), `recropped_at`, `recrop_previous` (JSONB); quattro CHECK, dichiarati
+   anche nel modello (`_FIGURE_CHECKS`, test di parità).
+2. `course_document`: `figures_recrop_requested_at` (richiesta a lease) e
+   `figures_recrop_stats` (JSONB).
+
+Solo ADD: nessuna riscrittura delle righe esistenti.
+
+### Sequenza `downgrade()`
+
+Inversa; ciclo `upgrade → downgrade → upgrade` eseguito su un DB
+usa-e-getta (copia del corso di produzione). Un test verifica che il
+downgrade tolga ogni colonna aggiunta.
+
 ---
 
 ## Workflow per nuove migrazioni

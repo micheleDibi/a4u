@@ -1247,8 +1247,11 @@ generate, invariato; budget (b): 1-4 di fonte, solo se pertinenti.
 - Il revisore delle ridondanze (PROMPT 19) segnala soltanto (avvisi sulla
   card dell'editor, `content_figure_review`) e non tocca `content_raw`.
 - Il PATCH della dispensa controlla gli asset di fonte nuovi o cambiati
-  (422 `source_figure_not_in_course` / `source_figure_not_available`);
-  quelli invariati restano ammessi (non retroattività, U1).
+  (422 `source_figure_not_in_course` / `source_figure_not_available`,
+  anche per `resolution_unusable`); la stessa figura due volte nella
+  lezione dà 422 `source_figure_duplicate_in_lesson`; una figura oltre il
+  tetto di riuso è ammessa con audit (doc 18 §22). Gli asset invariati
+  restano ammessi (non retroattività, U1).
 - Il formato **`tikz`** (spento di default) si propone al modello solo con
   `FIGURE_TIKZ_PROPOSE_ENABLED`. Conta nel budget (a), ha un solo fix
   (PROMPT 12) e, se resta irrisolto, `tikz_unresolved` fa sì che il

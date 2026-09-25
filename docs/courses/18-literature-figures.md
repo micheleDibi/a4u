@@ -245,7 +245,13 @@ schema con `create_all`. La parità modello↔migrazione è verificata da
   - il riordino segue la prima citazione `[FIG:id]`.
 - **PATCH della dispensa**:
   - asset nuovi o cambiati → 422 `source_figure_not_in_course` o
-    `source_figure_not_available`, e `source_figure_format_locked`;
+    `source_figure_not_available` (con `reason`, anche
+    `resolution_unusable`, §22), e `source_figure_format_locked`;
+  - la stessa figura due volte nella lezione → 422
+    `source_figure_duplicate_in_lesson`, sulla card che la porta di nuovo
+    (i doppioni già salvati passano);
+  - una figura nuova già in K altre lezioni è ammessa, con audit
+    `course.lesson.content.source_figure_over_cap` (§22);
   - gli asset invariati sono ammessi (U1).
 
 ## 8. Ciclo di vita e duplicazione
@@ -611,6 +617,7 @@ con il motivo esplicito (`[dep:tex]`, `[dep:docling]`).
    o con `scripts/extract_document_figures.py --apply`. Lo script rimette
    in coda anche le fonti riservate saltate con la regola precedente e i
    documenti incompleti (§20).
+5. Migrazione 0039 e ri-ritaglio delle figure già estratte: §22.6.
 
 ## 19. Revisione avversariale (Fase D)
 
@@ -790,7 +797,7 @@ con la letteratura aperta accesa. Sono emersi tre difetti.
 | Figure nere o con bande nere | I rendering PNG di Commons hanno lo sfondo trasparente (per esempio in modo `LA`); `convert("RGB")` scartava l'alfa. Il file «IPv4 address structure…» risultava interamente nero, con luminosità media 0 contro 241 su fondo bianco. Lo stesso valeva per le immagini trasparenti dentro DOCX e PPTX | `cropper.on_white`: le zone trasparenti vanno su fondo bianco, sia in `image_limits.load_image` (letteratura) sia in `office._open_image` |
 | Figura nera promossa dalla Vision | Il modello si fidava del titolo della fonte | Le immagini vuote o uniformi (`is_blank`) si scartano prima della Vision (`rejected_blank`) |
 | Testo in arabo e farsi | Le ricerche in inglese su Commons trovano anche le varianti `-ar`/`-fa` dello stesso schema | PROMPT 20 dichiara `text_language` (ISO 639-1 o `none`). Si tengono solo la lingua del corso, l'inglese o `none` (`rejected_language`); decisione dell'utente: italiano e inglese |
-| Le stesse 7 figure in quasi tutte le 48 lezioni | Catalogo di corso senza vincoli di riuso; la verifica dei buchi contava come pertinenti le figure già usate altrove (`reason: enough`) e non cercava più | Una figura di fonte sta in **una sola lezione** (decisione dell'utente). Il catalogo non offre quelle collocate in un'altra lezione; il ricontrollo di fine generazione toglie quelle prese intanto da una lezione generata in parallelo, con audit; la verifica dei buchi conta solo le figure libere. Il docente può comunque inserire a mano una figura già usata |
+| Le stesse 7 figure in quasi tutte le 48 lezioni | Catalogo di corso senza vincoli di riuso; la verifica dei buchi contava come pertinenti le figure già usate altrove (`reason: enough`) e non cercava più | Una figura di fonte sta in **una sola lezione** (decisione dell'utente; dal 25/09/2026 in al più `FIGURE_SOURCE_MAX_LESSONS_PER_FIGURE` lezioni, §22). Il catalogo non offre quelle collocate in un'altra lezione; il ricontrollo di fine generazione toglie quelle prese intanto da una lezione generata in parallelo, con audit; la verifica dei buchi conta solo le figure libere. Il docente può comunque inserire a mano una figura già usata |
 
 **Limiti**
 - Le figure già salvate prima della correzione restano com'erano: il file
@@ -821,4 +828,116 @@ con la letteratura aperta accesa. Sono emersi tre difetti.
   WARNING.
 - Anche l'import dei paper (Fase 1) usa la stessa copia quando l'editore
   rifiuta: prima importava solo i metadati (doc 16).
+
+## 22. Risoluzione effettiva e riuso limitato (25/09/2026)
+
+Segnalazione del docente del corso «Misure sperimentali per la dinamica
+strutturale»: figure sgranate e poche. Diagnosi sui dati di produzione
+(dump del corso, misure M-A1/M-A2/M-A2b):
+
+- **sgranate**: 50 collocazioni su 96 uscivano a 120 ppi (ritaglio v1 a
+  150 dpi ingrandito ×1,25), 12 raster su 13 in JPEG; alcune avevano un
+  nativo di 41-83 ppi, gonfiato dal ritaglio;
+- **poche**: estrazione ferma a 3 documenti su 218, letteratura mai
+  partita (un documento mai estratto la bloccava), catalogo esclusivo.
+
+Piano: `~/.claude/plans/pasted-content-id-3136-prompt-structured-stardust.md`
+(WP1-WP3 rilasciati; il piano delle figure per fabbisogno, WP4-WP10, non
+è ancora implementato).
+
+### 22.1 Correzioni rapide (WP1)
+- Un documento con estrazione **mai richiesta** non blocca più la
+  letteratura: si attendono solo le estrazioni in coda o in corso chieste
+  da meno di `FIGURE_WAIT_MAX_MINUTES` (`documents_extracting`).
+- **Riuso limitato**: una figura di fonte in al più
+  `FIGURE_SOURCE_MAX_LESSONS_PER_FIGURE` lezioni (default 2; 1 = come
+  prima per le figure nuove), mai due volte nella stessa. Le figure già
+  collocate in una lezione restano sue alla rigenerazione. Fra lezioni
+  generate in parallelo il tetto può essere superato di uno (nessun lock
+  di corso). Audit `source_figures_dropped` con `reason` (`reuse_cap`,
+  `not_selectable_at_materialize`).
+- PATCH: doppioni e tetto come in §7.
+
+### 22.2 Metrica e classi (`services/source_figure_resolution.py`)
+- ppi effettivi = pixel d'informazione / larghezza stampata; pixel
+  d'informazione = `width · min(1, native_ppi / dpi)` (un ritaglio a
+  150 dpi di un raster a 76 ppi ha metà dei pixel utili).
+- Misura naturale N normalizzata alla pagina (`min(1, 612/page_w)`: una
+  slide 16:9 non vale come un foglio da 34 cm); senza dati 90 mm (per
+  convenzione per Commons, per stima per le righe vecchie: mai
+  `unusable`).
+- Classe alla larghezza di riferimento R = min(170 mm, N): **good** ≥ 200,
+  **acceptable** ≥ 150, **low** ≥ 100, **unusable** < 100. Si calcola
+  sempre in lettura, non si salva.
+
+### 22.3 Regola di stampa
+- Dispensa: good `min(C, 1,25·N, px/200)`; acceptable alla misura
+  naturale; low `max(min(C, 0,8·N), px/150)`; unusable già collocata a
+  100 ppi. **Mai sotto 100 ppi.**
+- Slide PDF e frame video: `min(box_w, box_h·w/h, 1,25·px/6,667)`:
+  ingrandimento nei frame ≤ 1,25, ≥ 135 ppi nel PDF delle slide.
+- Interruttore `FIGURE_RESOLUTION_RULES_ENABLED` (false = regola
+  precedente, solo in dispensa, e nessun filtro).
+
+### 22.4 Ritaglio v2 (`crop_version` 2)
+- Il raster dominante si rende sulla **sua griglia di pixel** con
+  `FPDF_RenderPageBitmapWithMatrix` (correzione δ = 0,01 px,
+  `NO_SMOOTHIMAGE`): bit-identico all'oggetto nativo, anche con
+  ribaltamenti, rotazioni di 90°, pagine ruotate e Form XObject.
+- Figure **miste** (etichette e frecce vettoriali sopra): k volte il
+  nativo, mai sotto 300 dpi. Un raster sotto 50 ppi o a striscia sotto
+  segni vettoriali è **sfondo** (figura vettoriale). Pannelli a ppi
+  diversi: nessuna griglia unica, ppi del pannello peggiore.
+- Niente pavimento a 150 dpi né soffitto a 300; tetto 12 MP, anti-bomba
+  60 MP. PNG senza perdita per tratto e sorgenti senza perdita; JPEG q95
+  4:4:4 solo per foto da sorgente con perdita oltre 1,5 MB.
+- DOCX e PPTX: `srcRect`, ribaltamenti, rotazioni a quarti di giro, EMU,
+  scala dei gruppi, EXIF.
+- Interruttore `FIGURE_EXTRACTION_NATIVE_CROP_ENABLED`.
+  `EXTRACTION_VERSION` resta 1: nessun supersede delle figure collocate.
+
+### 22.5 Letteratura, selezione, editor
+- OpenAlex salva dpi, bbox e ingressi del ritaglio; Commons usa le
+  dimensioni del file originale (SVG = vettoriale) e chiede 1920 px.
+  Le candidate `unusable` si scartano prima del download (Commons) o della
+  Vision (`rejected_resolution`).
+- `unusable` non si propone (catalogo di Fase 3 anche alla lezione che la
+  usa, selettore, PATCH di figure nuove: `resolution_unusable`); le low
+  vanno in coda al catalogo. Il DTO ha `resolution` (classe, classe nelle
+  slide, base, larghezza e ppi di stampa) e `image_rev`.
+- Editor: badge «Bassa risoluzione» / «Risoluzione insufficiente» su card,
+  selettore e riassunto del documento.
+
+### 22.6 Ri-ritaglio sul posto (`scripts/rerender_document_figures.py`)
+- Stesso UUID anche per le figure collocate; niente Vision; verifica
+  d'identità (v1 riprodotto ai dpi salvati, phash); UPDATE condizionale;
+  `recrop_previous` per `--revert`; file v1 conservati fino a
+  `--purge-replaced --older-than 14 --apply`. Una figura che in v2 sarebbe
+  `unusable` resta v1 (badge in editor).
+- Il worker delle figure lo esegue a lotti di 40 figure con
+  `HEAVY_JOB_LOCK` per lotto, dopo le estrazioni in coda. Lo script
+  rifiuta `--apply`, `--inline` e `--revert` con estrazioni o ri-ritagli in
+  corso, e `--apply` con uno degli interruttori spenti.
+- Migrazione 0039: `native_ppi`, `natural_width_mm`, `crop_mode`,
+  `crop_version`, `recropped_at`, `recrop_previous` sulle figure;
+  `figures_recrop_requested_at` e `figures_recrop_stats` sui documenti.
+
+### 22.7 Prova sul corso del docente (copia locale)
+- 5 dispense riesportate: collocazioni a 41/77/83 ppi effettivi → tutte
+  sopra 100 tranne una mista (nativo 51 ppi, resta v1 a 52 mm); 12 su 13
+  a 150-480 ppi, in PNG; PDF +46,5%.
+- Ri-ritaglio: identità 442/442, raster sulla griglia nativa 80%, JPEG
+  288 → 0, byte mediana 2,1×.
+- Estrazione completa (212 documenti): 1865 figure nuove, 1,65 $ di Vision,
+  ~2,5 h di Docling in locale; i documenti contengono gli schemi di quasi
+  tutte le tipologie di vibrometro (Tomasini-Castellini, Rembe, Di Maio).
+- Trovato e corretto: il byte NUL nel testo di un PDF bloccava
+  l'estrazione del documento.
+
+### 22.8 Limiti
+- La copertura **per concetto** (una figura per tipologia, nella sua
+  sezione e in ordine, e i buchi dichiarati al docente) richiede il piano
+  delle figure (WP4-WP8), non ancora implementato: oggi il catalogo resta
+  lessicale.
+- Una figura mista sotto il minimo già collocata resta col ritaglio v1.
 
