@@ -76,6 +76,11 @@ async def _source(db: AsyncSession, storage: _Storage) -> dict[str, Any]:
     fig.preview_path = str(fig.storage_path).replace(".png", "-preview.jpg")
     fig.vision_usage = {"calls": 1, "cost_usd": 0.0007}
     fig.keywords = {"course": ["vibrometro laser", "cella di Bragg"], "en": ["laser vibrometer"]}
+    fig.depicts = {
+        "v": 1,
+        "items": [{"object_en": "laser Doppler vibrometer", "variant_en": ""}],
+        "focus": "optical layout",
+    }
     detached = build_document_figure(
         course_id,
         None,
@@ -254,6 +259,8 @@ async def test_duplication_clones_figures_files_and_references(
         "course": ["EN:vibrometro laser", "EN:cella di Bragg"],
         "en": ["laser vibrometer"],
     }
+    # `depicts` è in inglese canonico: si copia com'è e non si traduce.
+    assert translated.depicts == s["fig"].depicts
     # Il sorgente non cambia.
     original = await db.get(CourseDocumentFigure, s["fig"].id, populate_existing=True)
     assert original is not None and not str(original.description).startswith("EN:")

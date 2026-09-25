@@ -1073,7 +1073,13 @@ come `{"v": DEPICTS_VERSION, "items", "focus"}` (migrazione 0041).
   `depicts` (descrizione, parole chiave, tipo e qualità restano: il
   catalogo non cambia); il costo va in `vision_usage`; le copie della
   descrizione (`describe_source_id`) ricevono lo stesso `depicts` senza
-  chiamate.
+  chiamate. Il tetto `--max-usd` si applica stimando ogni chiamata come la
+  più cara vista (almeno 0,0012 $; un modello senza prezzo conta la stima)
+  e, finché non ha visto una chiamata pagata, lo script ne fa una alla
+  volta; una figura col file illeggibile o una chiamata fallita contano
+  come fallite e lo script prosegue (le copie di una fonte fallita si
+  descrivono da sé). Sulla copia del corso del docente: 2306 figure,
+  2,59 $, nessun fallimento.
 - **Misura M-D1** (50 figure etichettate a mano guardandole, 30 di
   vibrometri che coprono tutte le varianti e 20 di accelerometri, shaker,
   martelli, celle di carico): primo giro variante corretta 0,73 a 768 px e

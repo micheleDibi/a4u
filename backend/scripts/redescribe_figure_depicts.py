@@ -10,7 +10,13 @@ chiamate. Senza `--apply` lo script conta soltanto e stima il costo.
 - perimetro: figure `ready`, già descritte, con un file, senza `depicts`
   alla versione corrente; `--course` oppure `--all`;
 - `--max-usd` è obbligatorio con `--apply`: lo script non avvia chiamate
-  che porterebbero la spesa oltre il tetto;
+  che porterebbero la spesa oltre il tetto, stimando ogni chiamata come la
+  più cara vista (almeno `ESTIMATED_USD_PER_FIGURE`; un modello senza
+  prezzo conta la stima); finché non ha visto una chiamata pagata procede
+  una chiamata alla volta;
+- una figura col file illeggibile o una chiamata fallita contano come
+  fallite e lo script prosegue; le copie di una fonte fallita si
+  descrivono da sé;
 - `--limit N`: al più N chiamate Vision (per le misure).
 
 Uso (dalla cartella `backend/`, Postgres raggiungibile, chiave OpenAI):
@@ -149,6 +155,13 @@ async def _propagate(db: AsyncSession, source_id: uuid.UUID, depicts: dict[str, 
     return int(getattr(result, "rowcount", 0) or 0)
 
 
+def _cost(usage: dict[str, Any]) -> float:
+    """Costo della chiamata; con un modello senza prezzo (`cost_usd` None)
+    vale la stima, così il tetto resta garantito."""
+    value = usage.get("cost_usd")
+    return float(value) if value is not None else ESTIMATED_USD_PER_FIGURE
+
+
 async def redescribe(
     db: AsyncSession,
     *,
@@ -159,6 +172,7 @@ async def redescribe(
 ) -> Outcome:
     """Completa `depicts` entro `max_usd`. Commit a ogni lotto."""
     from app.services.course_document_figures_worker import merge_usage
+    from app.services.document_figures.storage import FigureStoragePathError
     from app.services.openai_client import OpenAINotConfiguredError
     from app.services.openai_figure_describe_service import (
         OpenAIFigureDescribeError,
@@ -166,17 +180,26 @@ async def redescribe(
         depicts_payload,
         describe_figure,
     )
+    from app.services.remote_storage import StorageError
 
     rows = await candidates(db, course_id)
     out = Outcome(candidates=len(rows))
     # Una copia la cui fonte è fra le candidate riceve `depicts` dalla
-    # propagazione quando la fonte è descritta: nessuna chiamata per lei.
+    # propagazione quando la fonte è descritta: nessuna chiamata per lei. Una
+    # fonte che fallisce esce dall'insieme: le sue copie si descrivono da sé.
     pending_sources = {row.id for row in rows}
     semaphore = asyncio.Semaphore(max(1, concurrency))
     calls = 0
-    batch_size = max(1, concurrency) * 2
+    # Stima prudente del costo della prossima chiamata: mai sotto la stima
+    # fissa né sotto la chiamata più cara vista (i fallimenti senza costo
+    # non la abbassano).
+    dearest = ESTIMATED_USD_PER_FIGURE
+    calibrated = False
     index = 0
     while index < len(rows):
+        # Una chiamata alla volta finché non se ne vede una pagata: il costo
+        # reale potrebbe superare la stima fissa.
+        batch_size = max(1, concurrency) * 2 if calibrated else 1
         batch: list[tuple[CourseDocumentFigure, Any]] = []
         while index < len(rows) and len(batch) < batch_size:
             row = rows[index]
@@ -190,14 +213,20 @@ async def redescribe(
                 out.copied += 1
                 index += 1
                 continue
-            mean = out.cost_usd / calls if calls else ESTIMATED_USD_PER_FIGURE
             if limit is not None and calls + len(batch) >= limit:
                 break
-            if out.cost_usd + mean * (len(batch) + 1) > max_usd:
+            if out.cost_usd + dearest * (len(batch) + 1) > max_usd:
                 out.stopped_by_budget = True
                 break
-            batch.append((row, await _describe_input(db, row)))
             index += 1
+            try:
+                item = await _describe_input(db, row)
+            except (StorageError, OSError, FigureStoragePathError) as exc:
+                out.failed += 1
+                out.errors.append(f"{row.id}: file illeggibile: {str(exc)[:120]}")
+                pending_sources.discard(row.id)
+                continue
+            batch.append((row, item))
         if not batch:
             await db.commit()
             break
@@ -215,9 +244,10 @@ async def redescribe(
                 raise result
             if isinstance(result, BaseException):
                 out.failed += 1
+                pending_sources.discard(row.id)
                 usage = getattr(result, "usage", None)
                 if isinstance(usage, dict):
-                    out.cost_usd += float(usage.get("cost_usd") or 0.0)
+                    out.cost_usd += _cost(usage)
                     row.vision_usage = merge_usage(row.vision_usage, usage)
                     row.vision_usage_at = now
                 if isinstance(result, OpenAIFigureDescribeError | OSError):
@@ -229,7 +259,10 @@ async def redescribe(
             row.depicts = payload
             row.vision_usage = merge_usage(row.vision_usage, usage)
             row.vision_usage_at = now
-            out.cost_usd += float(usage.get("cost_usd") or 0.0)
+            cost = _cost(usage)
+            dearest = max(dearest, cost)
+            calibrated = calibrated or usage.get("cost_usd") is not None
+            out.cost_usd += cost
             out.described += 1
             out.propagated += await _propagate(db, row.id, payload)
         await db.commit()
@@ -246,11 +279,19 @@ async def run(args: argparse.Namespace) -> int:
         async with async_session_factory() as db:
             if not args.apply:
                 rows = await candidates(db, course_id)
-                sources = [r for r in rows if r.describe_source_id is None]
+                ids = {r.id for r in rows}
+                # Una copia la cui fonte non è fra le candidate (già completa
+                # o fuori perimetro) si paga se la fonte non ha depicts.
+                paid = [
+                    r
+                    for r in rows
+                    if r.describe_source_id is None
+                    or (r.describe_source_id not in ids and await _source_depicts(db, r) is None)
+                ]
                 print(f"figure senza depicts corrente: {len(rows)}")
-                print(f"  fonti (una chiamata Vision ciascuna): {len(sources)}")
-                print(f"  copie di una descrizione: {len(rows) - len(sources)}")
-                estimate = len(sources) * ESTIMATED_USD_PER_FIGURE
+                print(f"  con una chiamata Vision: {len(paid)}")
+                print(f"  completate dalla propria fonte: {len(rows) - len(paid)}")
+                estimate = len(paid) * ESTIMATED_USD_PER_FIGURE
                 print(f"costo stimato: {estimate:.2f} $ (dry-run: nessuna scrittura)")
                 return 0
             if args.max_usd is None or args.max_usd <= 0:

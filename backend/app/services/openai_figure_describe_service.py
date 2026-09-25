@@ -321,13 +321,22 @@ def build_user_message(item: DescribeInput) -> str:
     )
 
 
+_MARKER_SCAN_CAP = 2000
+
+
+def _injected(value: str) -> bool:
+    """Il marcatore della neutralizzazione si cerca sul testo INTERO: dopo
+    il taglio potrebbe restarne solo un pezzo («[testo …»)."""
+    return "[testo rimosso]" in neutralize_third_party_text(value or "", _MARKER_SCAN_CAP)
+
+
 def _clean_keywords(values: list[str]) -> list[str]:
     out: list[str] = []
     seen: set[str] = set()
     for value in values:
         cleaned = neutralize_third_party_text(value, 60)
         key = cleaned.lower()
-        if cleaned and key not in seen and "[testo rimosso]" not in cleaned:
+        if cleaned and key not in seen and not _injected(value):
             seen.add(key)
             out.append(cleaned)
         if len(out) >= MAX_KEYWORDS:
@@ -336,8 +345,9 @@ def _clean_keywords(values: list[str]) -> list[str]:
 
 
 def _depicts_text(value: str) -> str:
-    cleaned = " ".join(neutralize_third_party_text(value or "", _DEPICTS_TEXT_CAP).split())
-    return "" if "[testo rimosso]" in cleaned else cleaned
+    if _injected(value):
+        return ""
+    return " ".join(neutralize_third_party_text(value or "", _DEPICTS_TEXT_CAP).split())
 
 
 def sanitize_depicts(depicts: Depicts) -> Depicts:
