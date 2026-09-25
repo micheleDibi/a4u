@@ -20,7 +20,10 @@ salva: si calcola in lettura da questi ingressi
   (esito dell'ultimo ri-ritaglio: conteggi, tentativi, errore).
 
 Solo ADD: le righe esistenti restano `crop_version = 1` con gli ingressi
-NULL (la classe si stima, mai `unusable`); downgrade pulito.
+NULL. La classe usa allora il bbox e i dpi del render (righe dei
+documenti) o la misura convenzionale di 90 mm (Commons: sotto circa
+355 px diventano `unusable`); solo le righe senza bbox né dpi, non di
+Commons, si stimano e non sono mai `unusable`. Downgrade pulito.
 """
 
 import sqlalchemy as sa

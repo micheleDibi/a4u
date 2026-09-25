@@ -55,8 +55,8 @@ log = get_logger("app.document_figures_recrop")
 # morto la lascia riprendere dopo, uno vivo non se la vede portare via.
 RECROP_LEASE = timedelta(hours=3)
 # Figure per giro del figlio: HEAVY_JOB_LOCK si prende e si rilascia per
-# lotto, così le estrazioni e la letteratura non aspettano un documento
-# intero.
+# lotto, così la letteratura (OpenAlex) e TikZ non aspettano un documento
+# intero. Le estrazioni sì: girano nello stesso giro del worker.
 RECROP_BATCH = 40
 RECROP_ATTEMPTS_MAX = 3
 # Distanza massima fra il phash del ritaglio v1 riprodotto e quello salvato.
@@ -306,6 +306,7 @@ async def apply_result(
         "errors": 0,
         "changed": 0,
         "kept_unusable": 0,
+        "kept_unusable_ids": [],
         "missing_inputs": len(result.skipped),
     }
     for snap in result.snapshots:
@@ -327,12 +328,15 @@ async def apply_result(
             continue
         # Una figura che col ritaglio v2 sarebbe sotto il minimo resta v1:
         # già collocata, uscirebbe di pochi millimetri (etichette vettoriali
-        # comprese); il badge dell'editor la segnala al docente.
+        # comprese). Senza `native_ppi` la sua classe resta quella dei pixel
+        # v1 (nessun badge): l'id va in `kept_unusable_ids`, da segnalare al
+        # docente.
         inputs = ResolutionInputs.from_mapping(
             {key: event.get(key) for key in _INPUT_KEYS}, source_kind="uploaded"
         )
         if selection_class(inputs) == "unusable":
             stats["kept_unusable"] += 1
+            stats["kept_unusable_ids"].append(str(figure_id))
             continue
         data = await asyncio.to_thread((result.workdir / Path(str(event["file"])).name).read_bytes)
         preview = await asyncio.to_thread(
@@ -461,7 +465,10 @@ async def process(
                     return stats
                 return {"error": code, "retry": True, **totals}
             for key, value in batch_stats.items():
-                totals[key] = int(totals.get(key) or 0) + int(value)
+                if isinstance(value, list):
+                    totals[key] = [*(totals.get(key) or []), *value]
+                else:
+                    totals[key] = int(totals.get(key) or 0) + int(value)
         totals["seconds"] = round(time.monotonic() - started, 1)
         await _finish(db, doc_id, totals)
         log.info("document_figures_recropped", doc_id=str(doc_id), **totals)

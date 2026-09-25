@@ -797,7 +797,7 @@ con la letteratura aperta accesa. Sono emersi tre difetti.
 | Figure nere o con bande nere | I rendering PNG di Commons hanno lo sfondo trasparente (per esempio in modo `LA`); `convert("RGB")` scartava l'alfa. Il file «IPv4 address structure…» risultava interamente nero, con luminosità media 0 contro 241 su fondo bianco. Lo stesso valeva per le immagini trasparenti dentro DOCX e PPTX | `cropper.on_white`: le zone trasparenti vanno su fondo bianco, sia in `image_limits.load_image` (letteratura) sia in `office._open_image` |
 | Figura nera promossa dalla Vision | Il modello si fidava del titolo della fonte | Le immagini vuote o uniformi (`is_blank`) si scartano prima della Vision (`rejected_blank`) |
 | Testo in arabo e farsi | Le ricerche in inglese su Commons trovano anche le varianti `-ar`/`-fa` dello stesso schema | PROMPT 20 dichiara `text_language` (ISO 639-1 o `none`). Si tengono solo la lingua del corso, l'inglese o `none` (`rejected_language`); decisione dell'utente: italiano e inglese |
-| Le stesse 7 figure in quasi tutte le 48 lezioni | Catalogo di corso senza vincoli di riuso; la verifica dei buchi contava come pertinenti le figure già usate altrove (`reason: enough`) e non cercava più | Una figura di fonte sta in **una sola lezione** (decisione dell'utente; dal 25/09/2026 in al più `FIGURE_SOURCE_MAX_LESSONS_PER_FIGURE` lezioni, §22). Il catalogo non offre quelle collocate in un'altra lezione; il ricontrollo di fine generazione toglie quelle prese intanto da una lezione generata in parallelo, con audit; la verifica dei buchi conta solo le figure libere. Il docente può comunque inserire a mano una figura già usata |
+| Le stesse 7 figure in quasi tutte le 48 lezioni | Catalogo di corso senza vincoli di riuso; la verifica dei buchi contava come pertinenti le figure già usate altrove (`reason: enough`) e non cercava più | Una figura di fonte sta in **una sola lezione** (decisione dell'utente; dal 25/09/2026 in al più `FIGURE_SOURCE_MAX_LESSONS_PER_FIGURE` lezioni, default 2, §22.1). Il catalogo non offre quelle già al tetto in altre lezioni; il ricontrollo di fine generazione toglie quelle arrivate intanto al tetto per una lezione generata in parallelo, con audit; la verifica dei buchi conta solo le figure sotto il tetto. Il docente può comunque inserire a mano una figura già usata |
 
 **Limiti**
 - Le figure già salvate prima della correzione restano com'erano: il file
@@ -853,8 +853,8 @@ Piano: `~/.claude/plans/pasted-content-id-3136-prompt-structured-stardust.md`
   `FIGURE_SOURCE_MAX_LESSONS_PER_FIGURE` lezioni (default 2; 1 = come
   prima per le figure nuove), mai due volte nella stessa. Le figure già
   collocate in una lezione restano sue alla rigenerazione. Fra lezioni
-  generate in parallelo il tetto può essere superato di uno (nessun lock
-  di corso). Audit `source_figures_dropped` con `reason` (`reuse_cap`,
+  generate in parallelo il tetto può essere superato (al più di tante
+  lezioni quante ne finiscono insieme): nessun lock di corso. Audit `source_figures_dropped` con `reason` (`reuse_cap`,
   `not_selectable_at_materialize`).
 - PATCH: doppioni e tetto come in §7.
 
@@ -873,7 +873,10 @@ Piano: `~/.claude/plans/pasted-content-id-3136-prompt-structured-stardust.md`
 ### 22.3 Regola di stampa
 - Dispensa: good `min(C, 1,25·N, px/200)`; acceptable alla misura
   naturale; low `max(min(C, 0,8·N), px/150)`; unusable già collocata a
-  100 ppi. **Mai sotto 100 ppi.**
+  100 ppi. **Mai sotto 100 ppi** sui pixel d'informazione noti: le righe
+  v1 (estratte prima della 0039, `native_ppi` NULL) contano i pixel del
+  render (150-300 dpi) e possono uscire sotto 100 ppi effettivi finché non
+  si ri-ritagliano (§22.6).
 - Slide PDF e frame video: `min(box_w, box_h·w/h, 1,25·px/6,667)`:
   ingrandimento nei frame ≤ 1,25, ≥ 135 ppi nel PDF delle slide.
 - Interruttore `FIGURE_RESOLUTION_RULES_ENABLED` (false = regola
@@ -885,14 +888,15 @@ Piano: `~/.claude/plans/pasted-content-id-3136-prompt-structured-stardust.md`
   `NO_SMOOTHIMAGE`): bit-identico all'oggetto nativo, anche con
   ribaltamenti, rotazioni di 90°, pagine ruotate e Form XObject.
 - Figure **miste** (etichette e frecce vettoriali sopra): k volte il
-  nativo, mai sotto 300 dpi. Un raster sotto 50 ppi o a striscia sotto
+  nativo (k ≤ 8), mai sotto 300 dpi entro il tetto di 12 MP. Un raster sotto 50 ppi o a striscia sotto
   segni vettoriali è **sfondo** (figura vettoriale). Pannelli a ppi
   diversi: nessuna griglia unica, ppi del pannello peggiore.
 - Niente pavimento a 150 dpi né soffitto a 300; tetto 12 MP, anti-bomba
   60 MP. PNG senza perdita per tratto e sorgenti senza perdita; JPEG q95
   4:4:4 solo per foto da sorgente con perdita oltre 1,5 MB.
 - DOCX e PPTX: `srcRect`, ribaltamenti, rotazioni a quarti di giro, EMU,
-  scala dei gruppi, EXIF.
+  scala dei gruppi (PPTX), EXIF. In un disegno DOCX con più immagini vale
+  l'`a:ext` di ciascuna, senza scala del gruppo.
 - Interruttore `FIGURE_EXTRACTION_NATIVE_CROP_ENABLED`.
   `EXTRACTION_VERSION` resta 1: nessun supersede delle figure collocate.
 
@@ -912,12 +916,27 @@ Piano: `~/.claude/plans/pasted-content-id-3136-prompt-structured-stardust.md`
 - Stesso UUID anche per le figure collocate; niente Vision; verifica
   d'identità (v1 riprodotto ai dpi salvati, phash); UPDATE condizionale;
   `recrop_previous` per `--revert`; file v1 conservati fino a
-  `--purge-replaced --older-than 14 --apply`. Una figura che in v2 sarebbe
-  `unusable` resta v1 (badge in editor).
+  `--purge-replaced --older-than 14 --apply`.
+- Una figura che in v2 sarebbe `unusable` resta v1 (`kept_unusable`, gli
+  id in `figures_recrop_stats.kept_unusable_ids`): senza `native_ppi` la sua
+  classe si calcola sui pixel del render v1, quindi **nessun badge** in
+  editor e resta proponibile (anche in una seconda lezione): va segnalata a
+  mano al docente.
+- Si lancia **un corso alla volta** (`--course`): le figure dei corsi su
+  cui non lo si lancia restano v1. Elenco dei corsi con figure v1 (sola
+  lettura): `select distinct course_id from course_document_figure where
+  crop_version = 1 and source_kind = 'uploaded' and storage_path is not
+  null`.
 - Il worker delle figure lo esegue a lotti di 40 figure con
-  `HEAVY_JOB_LOCK` per lotto, dopo le estrazioni in coda. Lo script
-  rifiuta `--apply`, `--inline` e `--revert` con estrazioni o ri-ritagli in
-  corso, e `--apply` con uno degli interruttori spenti.
+  `HEAVY_JOB_LOCK` per lotto, dopo le estrazioni in coda (le estrazioni
+  aspettano comunque la fine del documento: stesso giro del worker).
+  `--inline` gira senza `HEAVY_JOB_LOCK`: usarlo con il worker fermo o in
+  orari senza estrazioni. Lo script rifiuta `--apply`, `--inline` e
+  `--revert` con estrazioni o ri-ritagli in corso, e `--apply` e
+  `--inline` con uno degli interruttori spenti.
+- Dopo il ri-ritaglio vanno **riesportate** dispense e slide (ed
+  eventualmente i video) delle lezioni in `lessons_to_reexport` (lo dà
+  `--measure`): i PDF già generati non cambiano da soli.
 - Migrazione 0039: `native_ppi`, `natural_width_mm`, `crop_mode`,
   `crop_version`, `recropped_at`, `recrop_previous` sulle figure;
   `figures_recrop_requested_at` e `figures_recrop_stats` sui documenti.
@@ -926,8 +945,8 @@ Piano: `~/.claude/plans/pasted-content-id-3136-prompt-structured-stardust.md`
 - 5 dispense riesportate: collocazioni a 41/77/83 ppi effettivi → tutte
   sopra 100 tranne una mista (nativo 51 ppi, resta v1 a 52 mm); 12 su 13
   a 150-480 ppi, in PNG; PDF +46,5%.
-- Ri-ritaglio: identità 442/442, raster sulla griglia nativa 80%, JPEG
-  288 → 0, byte mediana 2,1×.
+- Ri-ritaglio: identità 442/442; modo `raster_native` 80% dei raster,
+  allineate alla griglia nativa 98%; JPEG 288 → 0; byte mediana 2,1×.
 - Estrazione completa (212 documenti): 1865 figure nuove, 1,65 $ di Vision,
   ~2,5 h di Docling in locale; i documenti contengono gli schemi di quasi
   tutte le tipologie di vibrometro (Tomasini-Castellini, Rembe, Di Maio).

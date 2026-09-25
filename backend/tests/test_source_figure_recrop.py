@@ -690,6 +690,8 @@ async def test_a_figure_that_v2_would_make_unusable_stays_v1(
     )
     stats = await recrop.apply_result(db, doc, result)
     assert stats["kept_unusable"] == 1 and stats["recropped"] == 1
+    # Gli id si riportano: senza `native_ppi` la riga v1 non ha il badge.
+    assert stats["kept_unusable_ids"] == [str(rows[0].id)]
     fresh = {r.id: r for r in await _figures(db, doc.id)}
     assert fresh[rows[0].id].crop_version == 1 and fresh[rows[1].id].crop_version == 2
 
