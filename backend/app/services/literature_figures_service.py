@@ -70,6 +70,7 @@ from app.services.document_figures_service import EXTRACTABLE_MIMES
 from app.services.figure_attribution import figure_number_from_label
 from app.services.lesson_document_selection import build_query_profile, terms
 from app.services.openai_client import OpenAINotConfiguredError
+from app.services.openai_figure_describe_service import depicts_payload
 from app.services.remote_storage import StorageError
 from app.services.safe_http import SafeFetchError
 from app.services.source_caption import third_party_credit
@@ -410,6 +411,7 @@ async def _consider(
             quality_score=verdict.quality_score,
             legibility=verdict.legibility,
             is_useful_for_teaching=verdict.is_useful_for_teaching,
+            depicts=depicts_payload(verdict.depicts),
             described_at=now,
             describe_model=str(settings.openai_figure_relevance_model)[:80],
             status="ready",

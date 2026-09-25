@@ -10,8 +10,8 @@ Due chiamate, entrambe con JSON schema strict e trasporto
 - `assess_candidate(image, …)`: Vision. Dice se la figura candidata è
   pertinente alla lezione e la descrive come il PROMPT 18 (tipo,
   descrizione nella lingua del corso, parole chiave nella lingua del corso
-  e in inglese, qualità, leggibilità, utilità didattica): la figura tenuta
-  entra nel catalogo di Fase 3 con questi dati.
+  e in inglese, qualità, leggibilità, utilità didattica, `depicts`): la
+  figura tenuta entra nel catalogo di Fase 3 con questi dati.
 
 Titolo e temi della lezione, titolo e descrizione del file di Commons o
 didascalia del PDF sono testi da non eseguire: passano da
@@ -31,17 +31,20 @@ import time
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.core.prompt_safety import data_block, neutralize_third_party_text
 from app.services.openai_client import OpenAIError, apply_reasoning_effort
 from app.services.openai_figure_describe_service import (
+    DEPICTS_JSON_SCHEMA,
     FIGURE_KINDS,
+    Depicts,
     FigureKind,
     Legibility,
     _clean_keywords,
+    sanitize_depicts,
     vision_image,
 )
 from app.services.openai_http import post_chat_with_retry
@@ -74,6 +77,7 @@ class FigureRelevance(BaseModel):
     quality_score: Literal[1, 2, 3, 4, 5]
     legibility: Legibility
     is_useful_for_teaching: bool
+    depicts: Depicts = Field(default_factory=Depicts)
     reason: str = ""
     # Lingua del testo dentro la figura (ISO 639-1) o `none`.
     text_language: str = "none"
@@ -162,6 +166,23 @@ Campi:
 - `is_useful_for_teaching`: false per loghi, decorazioni, foto di persone
   senza contenuto tecnico, copertine, frammenti; true se la figura spiega
   qualcosa.
+- `depicts`: che cosa raffigura la figura, IN INGLESE, per abbinarla alle
+  figure che le lezioni richiedono:
+  - `items`: da 0 a 4 oggetti tecnici. Il PRIMO è lo strumento, il
+    dispositivo o l'allestimento di cui la figura tratta nel suo insieme
+    (per lo schema ottico di un vibrometro: il vibrometro, non il laser o
+    il fotodiodo); i componenti vengono dopo, e solo se sono loro il
+    soggetto. `object_en` è l'oggetto al singolare e generico, SENZA la
+    variante («laser Doppler vibrometer», «modal test setup»,
+    «accelerometer»); `variant_en` è la variante o tipologia che la figura
+    mostra davvero («scanning», «differential», «in-plane», «rotational»,
+    «impact hammer excitation»), stringa vuota per la forma base o se la
+    variante non si riconosce. Non indovinare: una variante solo se si
+    vede o se la fonte la dichiara. Lista vuota per figure senza
+    contenuto tecnico.
+  - `focus`: in 2-5 parole inglesi, che cosa è in primo piano («optical
+    layout», «measurement setup», «instrument photo», «application
+    example», «measured response»).
 - `reason`: una frase per i log.
 
 Output: SOLO JSON valido conforme allo schema.
@@ -200,6 +221,23 @@ Fields:
 - `is_useful_for_teaching`: false for logos, decorations, photos of people
   without technical content, covers, fragments; true if the figure
   explains something.
+- `depicts`: what the figure depicts, IN ENGLISH, to match it with the
+  figures the lessons need:
+  - `items`: 0 to 4 technical objects. The FIRST one is the
+    instrument, device or setup the figure is about as a whole (for the
+    optical schematic of a vibrometer: the vibrometer, not the laser or the
+    photodiode); components come after, and only if they are the subject.
+    `object_en` is the object, singular and generic, WITHOUT the variant
+    ("laser Doppler vibrometer", "modal test setup", "accelerometer");
+    `variant_en` is the variant or type the figure actually shows
+    ("scanning", "differential", "in-plane", "rotational", "impact hammer
+    excitation"), empty string for the base form or when the variant
+    cannot be recognised. Do not guess: a variant only if it is visible or
+    the source states it. Empty list for figures without technical
+    content.
+  - `focus`: in 2-5 English words, what is in the foreground ("optical
+    layout", "measurement setup", "instrument photo", "application
+    example", "measured response").
 - `reason`: one sentence for the logs.
 
 Output: ONLY valid JSON conforming to the schema.
@@ -242,6 +280,7 @@ FIGURE_RELEVANCE_JSON_SCHEMA: dict[str, Any] = {
             "quality_score": {"type": "integer", "enum": [1, 2, 3, 4, 5]},
             "legibility": {"type": "string", "enum": ["good", "fair", "poor"]},
             "is_useful_for_teaching": {"type": "boolean"},
+            "depicts": DEPICTS_JSON_SCHEMA,
             "reason": {"type": "string"},
             "text_language": {"type": "string"},
         },
@@ -254,6 +293,7 @@ FIGURE_RELEVANCE_JSON_SCHEMA: dict[str, Any] = {
             "quality_score",
             "legibility",
             "is_useful_for_teaching",
+            "depicts",
             "reason",
             "text_language",
         ],
@@ -322,6 +362,7 @@ def sanitize_relevance(out: FigureRelevance) -> FigureRelevance:
             "description": neutralize_third_party_text(out.description, 800),
             "keywords_course": _clean_keywords(out.keywords_course),
             "keywords_en": _clean_keywords(out.keywords_en),
+            "depicts": sanitize_depicts(out.depicts),
             "reason": neutralize_third_party_text(out.reason, 300),
         }
     )

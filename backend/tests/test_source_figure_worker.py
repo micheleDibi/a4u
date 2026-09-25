@@ -43,6 +43,8 @@ from app.services.document_figures import runner
 from app.services.document_figures import storage as figure_storage
 from app.services.openai_client import OpenAINotConfiguredError
 from app.services.openai_figure_describe_service import (
+    DepictedItem,
+    Depicts,
     DescribeInput,
     FigureDescription,
     OpenAIFigureDescribeError,
@@ -315,6 +317,10 @@ class FakeVision:
             quality_score=4,
             legibility="good",
             is_useful_for_teaching=True,
+            depicts=Depicts(
+                items=[DepictedItem(object_en="laser Doppler vibrometer", variant_en="")],
+                focus="optical layout",
+            ),
             reason="ok",
         )
         usage = {
@@ -751,6 +757,33 @@ async def test_descriptions_are_reused_across_courses_of_the_organization(
     reused = [r for r in await _figures(db, second.id) if r.status == "ready"]
     assert all(r.describe_source_id is not None for r in reused)
     assert all(r.vision_usage is None for r in reused)
+    # `depicts` viaggia con la descrizione copiata (WP5).
+    assert all(r.depicts and r.depicts["v"] == 1 for r in reused)
+
+
+async def test_a_description_without_current_depicts_is_not_reused(
+    db: AsyncSession, storage: FakeStorage, fixture_pdf: bytes, vision: FakeVision
+) -> None:
+    """Una descrizione senza `depicts` corrente (fatta prima della 0041) non fa
+    da fonte: la copia nascerebbe senza e non sarebbe abbinabile ai
+    fabbisogni. Si paga una chiamata Vision in più."""
+    first = await _queued_document(db, storage, fixture_pdf)
+    await _run(db, first.id)
+    assert len(vision.calls) == 4
+    for row in await _figures(db, first.id):
+        row.depicts = None
+    first_course = await db.get(Course, first.course_id)
+    second = await _queued_document(db, storage, fixture_pdf)
+    second_course = await db.get(Course, second.course_id)
+    assert first_course is not None and second_course is not None
+    second_course.organization_id = first_course.organization_id
+    await db.commit()
+    second = await _run(db, second.id)
+    assert second.figures_status == "ready"
+    assert len(vision.calls) == 8
+    described = [r for r in await _figures(db, second.id) if r.status == "ready"]
+    assert described and all(r.describe_source_id is None for r in described)
+    assert all(r.depicts and r.depicts["v"] == 1 for r in described)
 
 
 async def test_descriptions_are_not_reused_across_organizations(

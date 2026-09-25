@@ -86,6 +86,8 @@ from app.services.openai_client import OpenAINotConfiguredError
 from app.services.openai_figure_describe_service import (
     DescribeInput,
     FigureDescription,
+    depicts_current,
+    depicts_payload,
     describe_figure,
 )
 from app.services.source_caption import third_party_credit
@@ -642,6 +644,7 @@ def _apply_description(row: CourseDocumentFigure, out: FigureDescription, model:
     row.quality_score = out.quality_score
     row.legibility = out.legibility
     row.is_useful_for_teaching = out.is_useful_for_teaching
+    row.depicts = depicts_payload(out.depicts)
     row.described_at = _now()
     row.describe_model = model[:80]
     row.status = "ready"
@@ -654,6 +657,7 @@ def _copy_description(row: CourseDocumentFigure, source: CourseDocumentFigure) -
     row.quality_score = source.quality_score
     row.legibility = source.legibility
     row.is_useful_for_teaching = source.is_useful_for_teaching
+    row.depicts = source.depicts
     row.described_at = _now()
     row.describe_model = source.describe_model
     row.describe_source_id = source.id
@@ -789,6 +793,10 @@ async def _describe(db: AsyncSession, doc: CourseDocument, workdir: Path | None)
         .scalars()
         .all()
     )
+    # Fa da fonte solo una descrizione con `depicts` alla versione corrente:
+    # altrimenti la copia nascerebbe senza e non sarebbe abbinabile ai
+    # fabbisogni (meglio una chiamata Vision in più).
+    described_pool = [row for row in described_pool if depicts_current(row.depicts)]
     semaphore = asyncio.Semaphore(max(1, int(settings.openai_figure_describe_concurrency)))
     model = settings.openai_figure_describe_model
 

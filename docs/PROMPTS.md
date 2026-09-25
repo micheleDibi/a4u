@@ -3327,6 +3327,23 @@ Campi:
   senza contenuto tecnico, copertine, frammenti di pagina, tabelle o
   equazioni rese come immagine senza altro contenuto; true se la figura
   spiega qualcosa.
+- `depicts`: che cosa raffigura la figura, IN INGLESE, per abbinarla alle
+  figure che le lezioni richiedono:
+  - `items`: da 0 a 4 oggetti tecnici. Il PRIMO è lo strumento, il
+    dispositivo o l'allestimento di cui la figura tratta nel suo insieme
+    (per lo schema ottico di un vibrometro: il vibrometro, non il laser o
+    il fotodiodo); i componenti vengono dopo, e solo se sono loro il
+    soggetto. `object_en` è l'oggetto al singolare e generico, SENZA la
+    variante («laser Doppler vibrometer», «modal test setup»,
+    «accelerometer»); `variant_en` è la variante o tipologia che la figura
+    mostra davvero («scanning», «differential», «in-plane», «rotational»,
+    «impact hammer excitation»), stringa vuota per la forma base o se la
+    variante non si riconosce. Non indovinare: una variante solo se si
+    vede o se la didascalia la dichiara. Lista vuota per figure senza
+    contenuto tecnico.
+  - `focus`: in 2-5 parole inglesi, che cosa è in primo piano («optical
+    layout», «measurement setup», «instrument photo», «application
+    example», «measured response»).
 - `reason`: una frase per i log.
 
 Output: SOLO JSON valido conforme allo schema.
@@ -3363,6 +3380,23 @@ Fields:
   without technical content, covers, page fragments, tables or equations
   rendered as images with nothing else; true if the figure explains
   something.
+- `depicts`: what the figure depicts, IN ENGLISH, to match it with the
+  figures the lessons need:
+  - `items`: 0 to 4 technical objects. The FIRST one is the
+    instrument, device or setup the figure is about as a whole (for the
+    optical schematic of a vibrometer: the vibrometer, not the laser or the
+    photodiode); components come after, and only if they are the subject.
+    `object_en` is the object, singular and generic, WITHOUT the variant
+    ("laser Doppler vibrometer", "modal test setup", "accelerometer");
+    `variant_en` is the variant or type the figure actually shows
+    ("scanning", "differential", "in-plane", "rotational", "impact hammer
+    excitation"), empty string for the base form or when the variant
+    cannot be recognised. Do not guess: a variant only if it is visible or
+    the caption states it. Empty list for figures without technical
+    content.
+  - `focus`: in 2-5 English words, what is in the foreground ("optical
+    layout", "measurement setup", "instrument photo", "application
+    example", "measured response").
 - `reason`: one sentence for the logs.
 
 Output: ONLY valid JSON conforming to the schema.
@@ -3386,7 +3420,7 @@ LINGUA DEL CORSO: {language_code}
 >>>
 ```
 
-**Output** — `response_format` json_schema strict `figure_description`: `{"kind": enum (schematic, block_diagram, circuit, chart, photo, micrograph, map, table_image, equation_image, screenshot, logo_or_decoration, other), "description": string, "keywords_course": [string], "keywords_en": [string], "quality_score": 1-5, "legibility": "good" | "fair" | "poor", "is_useful_for_teaching": boolean, "reason": string}`, validato da `FigureDescription`. L'output finisce nel catalogo del PROMPT 3: descrizione e parole chiave passano di nuovo da `neutralize_third_party_text` (parole chiave deduplicate, al più 12).
+**Output** — `response_format` json_schema strict `figure_description`: `{"kind": enum (schematic, block_diagram, circuit, chart, photo, micrograph, map, table_image, equation_image, screenshot, logo_or_decoration, other), "description": string, "keywords_course": [string], "keywords_en": [string], "quality_score": 1-5, "legibility": "good" | "fair" | "poor", "is_useful_for_teaching": boolean, "depicts": {"items": [{"object_en": string, "variant_en": string}], "focus": string}, "reason": string}`, validato da `FigureDescription`. L'output finisce nel catalogo del PROMPT 3: descrizione e parole chiave passano di nuovo da `neutralize_third_party_text` (parole chiave deduplicate, al più 12). `depicts` (oggetti e varianti raffigurati in inglese canonico, più il primo piano) serve all'abbinamento con i fabbisogni del PROMPT 22: testi neutralizzati e tagliati a 80 caratteri, oggetti vuoti scartati, al più 4 coppie distinte; si salva in `course_document_figure.depicts` come `{"v": DEPICTS_VERSION, "items", "focus"}`. Una descrizione senza `depicts` alla versione corrente non fa da fonte al riuso; `scripts/redescribe_figure_depicts.py` completa le figure descritte prima (stesso prompt, si tiene solo `depicts`).
 
 **Costo** — `openai_pricing.build_usage_dict` (con `cost_usd`), sommato in `course_document_figure.vision_usage` (`calls`, token, `cost_usd` cumulativi, `last`) con la data `vision_usage_at`; la dashboard admin lo mostra nella fase `document_figures`. Una risposta 200 inutilizzabile porta l'usage nell'eccezione e resta contabilizzata. Chiave assente o nessuna descrizione riuscita → documento `pending` con `vision_unavailable` e nuovo tentativo con backoff (senza ri-estrarre).
 
@@ -3537,6 +3571,23 @@ Campi:
 - `is_useful_for_teaching`: false per loghi, decorazioni, foto di persone
   senza contenuto tecnico, copertine, frammenti; true se la figura spiega
   qualcosa.
+- `depicts`: che cosa raffigura la figura, IN INGLESE, per abbinarla alle
+  figure che le lezioni richiedono:
+  - `items`: da 0 a 4 oggetti tecnici. Il PRIMO è lo strumento, il
+    dispositivo o l'allestimento di cui la figura tratta nel suo insieme
+    (per lo schema ottico di un vibrometro: il vibrometro, non il laser o
+    il fotodiodo); i componenti vengono dopo, e solo se sono loro il
+    soggetto. `object_en` è l'oggetto al singolare e generico, SENZA la
+    variante («laser Doppler vibrometer», «modal test setup»,
+    «accelerometer»); `variant_en` è la variante o tipologia che la figura
+    mostra davvero («scanning», «differential», «in-plane», «rotational»,
+    «impact hammer excitation»), stringa vuota per la forma base o se la
+    variante non si riconosce. Non indovinare: una variante solo se si
+    vede o se la fonte la dichiara. Lista vuota per figure senza
+    contenuto tecnico.
+  - `focus`: in 2-5 parole inglesi, che cosa è in primo piano («optical
+    layout», «measurement setup», «instrument photo», «application
+    example», «measured response»).
 - `reason`: una frase per i log.
 
 Output: SOLO JSON valido conforme allo schema.
@@ -3577,6 +3628,23 @@ Fields:
 - `is_useful_for_teaching`: false for logos, decorations, photos of people
   without technical content, covers, fragments; true if the figure
   explains something.
+- `depicts`: what the figure depicts, IN ENGLISH, to match it with the
+  figures the lessons need:
+  - `items`: 0 to 4 technical objects. The FIRST one is the
+    instrument, device or setup the figure is about as a whole (for the
+    optical schematic of a vibrometer: the vibrometer, not the laser or the
+    photodiode); components come after, and only if they are the subject.
+    `object_en` is the object, singular and generic, WITHOUT the variant
+    ("laser Doppler vibrometer", "modal test setup", "accelerometer");
+    `variant_en` is the variant or type the figure actually shows
+    ("scanning", "differential", "in-plane", "rotational", "impact hammer
+    excitation"), empty string for the base form or when the variant
+    cannot be recognised. Do not guess: a variant only if it is visible or
+    the source states it. Empty list for figures without technical
+    content.
+  - `focus`: in 2-5 English words, what is in the foreground ("optical
+    layout", "measurement setup", "instrument photo", "application
+    example", "measured response").
 - `reason`: one sentence for the logs.
 
 Output: ONLY valid JSON conforming to the schema.
@@ -3639,7 +3707,7 @@ Obiettivi: {obiettivi, al più 6}
 >>>
 ```
 
-**Output** — json_schema strict `figure_search_terms`: `{"queries": [string]}` (ripulite: niente virgolette né operatori, al più 3); `figure_relevance`: `{"relevant": bool, "kind": enum dei tipi del PROMPT 18, "description": string, "keywords_course": [string], "keywords_en": [string], "quality_score": 1-5, "legibility": "good" | "fair" | "poor", "is_useful_for_teaching": bool, "reason": string, "text_language": string (ISO 639-1 o `none`)}`, validato da `FigureRelevance` e neutralizzato (finisce nel catalogo del PROMPT 3). Costo: `course_lesson.figures_gap_usage` (cumulativo per lezione, anche per le risposte 200 inutilizzabili), fase `figures_gap` della dashboard admin.
+**Output** — json_schema strict `figure_search_terms`: `{"queries": [string]}` (ripulite: niente virgolette né operatori, al più 3); `figure_relevance`: `{"relevant": bool, "kind": enum dei tipi del PROMPT 18, "description": string, "keywords_course": [string], "keywords_en": [string], "quality_score": 1-5, "legibility": "good" | "fair" | "poor", "is_useful_for_teaching": bool, "depicts": {"items": [{"object_en": string, "variant_en": string}], "focus": string} (come nel PROMPT 18), "reason": string, "text_language": string (ISO 639-1 o `none`)}`, validato da `FigureRelevance` e neutralizzato (finisce nel catalogo del PROMPT 3). Costo: `course_lesson.figures_gap_usage` (cumulativo per lezione, anche per le risposte 200 inutilizzabili), fase `figures_gap` della dashboard admin.
 
 # PROMPT 21 — Revisione Vision della resa di una figura `tikz` (Fase 3, consultiva)
 

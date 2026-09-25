@@ -5,6 +5,9 @@ lungo, `detail` esplicito da setting): il modello dice che cosa mostra la
 figura (`kind`, descrizione nella lingua del corso), le parole chiave nella
 lingua del corso e in inglese (per la selezione lessicale di Fase 3), la
 qualità di riproduzione (1-5), la leggibilità e l'utilità didattica.
+Dice anche che cosa raffigura (`depicts`: oggetti e varianti in inglese
+canonico, più il primo piano), per l'abbinamento con i fabbisogni delle
+lezioni (doc 18 §23.2).
 
 Didascalia, contesto della pagina e titolo del documento sono testi di
 terzi: passano da `prompt_safety.neutralize_third_party_text` e stanno fra
@@ -28,7 +31,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from PIL import Image
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
@@ -75,6 +78,12 @@ Legibility = Literal["good", "fair", "poor"]
 # figura); 768 lascia margine alle etichette piccole degli schemi.
 VISION_LONG_SIDE_PX = 768
 MAX_KEYWORDS = 12
+# Versione di `depicts`: una figura con `depicts.v` diversa (o senza) va
+# ridescritta (`scripts/redescribe_figure_depicts.py`) e non fa da fonte al
+# riuso delle descrizioni.
+DEPICTS_VERSION = 1
+DEPICTS_MAX_ITEMS = 4
+_DEPICTS_TEXT_CAP = 80
 _CAPTION_CAP = 600
 _CONTEXT_CAP = 900
 _TITLE_CAP = 200
@@ -82,6 +91,21 @@ _TITLE_CAP = 200
 
 class OpenAIFigureDescribeError(OpenAIError):
     """Errore della Vision descrittiva (con l'eventuale `usage` pagato)."""
+
+
+class DepictedItem(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    object_en: str
+    variant_en: str = ""
+
+
+class Depicts(BaseModel):
+    """Che cosa raffigura la figura, in inglese canonico: oggetti con la
+    variante mostrata (vuota per la forma base) e il primo piano."""
+
+    model_config = ConfigDict(extra="ignore")
+    items: list[DepictedItem] = Field(default_factory=list)
+    focus: str = ""
 
 
 class FigureDescription(BaseModel):
@@ -93,6 +117,7 @@ class FigureDescription(BaseModel):
     quality_score: Literal[1, 2, 3, 4, 5]
     legibility: Legibility
     is_useful_for_teaching: bool
+    depicts: Depicts = Field(default_factory=Depicts)
     reason: str = ""
 
 
@@ -133,6 +158,23 @@ Campi:
   senza contenuto tecnico, copertine, frammenti di pagina, tabelle o
   equazioni rese come immagine senza altro contenuto; true se la figura
   spiega qualcosa.
+- `depicts`: che cosa raffigura la figura, IN INGLESE, per abbinarla alle
+  figure che le lezioni richiedono:
+  - `items`: da 0 a 4 oggetti tecnici. Il PRIMO è lo strumento, il
+    dispositivo o l'allestimento di cui la figura tratta nel suo insieme
+    (per lo schema ottico di un vibrometro: il vibrometro, non il laser o
+    il fotodiodo); i componenti vengono dopo, e solo se sono loro il
+    soggetto. `object_en` è l'oggetto al singolare e generico, SENZA la
+    variante («laser Doppler vibrometer», «modal test setup»,
+    «accelerometer»); `variant_en` è la variante o tipologia che la figura
+    mostra davvero («scanning», «differential», «in-plane», «rotational»,
+    «impact hammer excitation»), stringa vuota per la forma base o se la
+    variante non si riconosce. Non indovinare: una variante solo se si
+    vede o se la didascalia la dichiara. Lista vuota per figure senza
+    contenuto tecnico.
+  - `focus`: in 2-5 parole inglesi, che cosa è in primo piano («optical
+    layout», «measurement setup», «instrument photo», «application
+    example», «measured response»).
 - `reason`: una frase per i log.
 
 Output: SOLO JSON valido conforme allo schema.
@@ -167,6 +209,23 @@ Fields:
   without technical content, covers, page fragments, tables or equations
   rendered as images with nothing else; true if the figure explains
   something.
+- `depicts`: what the figure depicts, IN ENGLISH, to match it with the
+  figures the lessons need:
+  - `items`: 0 to 4 technical objects. The FIRST one is the
+    instrument, device or setup the figure is about as a whole (for the
+    optical schematic of a vibrometer: the vibrometer, not the laser or the
+    photodiode); components come after, and only if they are the subject.
+    `object_en` is the object, singular and generic, WITHOUT the variant
+    ("laser Doppler vibrometer", "modal test setup", "accelerometer");
+    `variant_en` is the variant or type the figure actually shows
+    ("scanning", "differential", "in-plane", "rotational", "impact hammer
+    excitation"), empty string for the base form or when the variant
+    cannot be recognised. Do not guess: a variant only if it is visible or
+    the caption states it. Empty list for figures without technical
+    content.
+  - `focus`: in 2-5 English words, what is in the foreground ("optical
+    layout", "measurement setup", "instrument photo", "application
+    example", "measured response").
 - `reason`: one sentence for the logs.
 
 Output: ONLY valid JSON conforming to the schema.
@@ -183,6 +242,27 @@ def _system_prompt(language_code: str) -> str:
     return _SYSTEM_PROMPTS["it" if _is_it(language_code) else "en"]
 
 
+DEPICTS_JSON_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "items": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "object_en": {"type": "string"},
+                    "variant_en": {"type": "string"},
+                },
+                "required": ["object_en", "variant_en"],
+                "additionalProperties": False,
+            },
+        },
+        "focus": {"type": "string"},
+    },
+    "required": ["items", "focus"],
+    "additionalProperties": False,
+}
+
 FIGURE_DESCRIBE_JSON_SCHEMA: dict[str, Any] = {
     "name": "figure_description",
     "strict": True,
@@ -196,6 +276,7 @@ FIGURE_DESCRIBE_JSON_SCHEMA: dict[str, Any] = {
             "quality_score": {"type": "integer", "enum": [1, 2, 3, 4, 5]},
             "legibility": {"type": "string", "enum": ["good", "fair", "poor"]},
             "is_useful_for_teaching": {"type": "boolean"},
+            "depicts": DEPICTS_JSON_SCHEMA,
             "reason": {"type": "string"},
         },
         "required": [
@@ -206,6 +287,7 @@ FIGURE_DESCRIBE_JSON_SCHEMA: dict[str, Any] = {
             "quality_score",
             "legibility",
             "is_useful_for_teaching",
+            "depicts",
             "reason",
         ],
         "additionalProperties": False,
@@ -253,6 +335,45 @@ def _clean_keywords(values: list[str]) -> list[str]:
     return out
 
 
+def _depicts_text(value: str) -> str:
+    cleaned = " ".join(neutralize_third_party_text(value or "", _DEPICTS_TEXT_CAP).split())
+    return "" if "[testo rimosso]" in cleaned else cleaned
+
+
+def sanitize_depicts(depicts: Depicts) -> Depicts:
+    """Testi neutralizzati e corti, oggetti vuoti scartati, al più
+    `DEPICTS_MAX_ITEMS` coppie (oggetto, variante) distinte."""
+    items: list[DepictedItem] = []
+    seen: set[tuple[str, str]] = set()
+    for item in depicts.items:
+        obj = _depicts_text(item.object_en)
+        if not obj:
+            continue
+        variant = _depicts_text(item.variant_en)
+        key = (obj.lower(), variant.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        items.append(DepictedItem(object_en=obj, variant_en=variant))
+        if len(items) >= DEPICTS_MAX_ITEMS:
+            break
+    return Depicts(items=items, focus=_depicts_text(depicts.focus))
+
+
+def depicts_payload(depicts: Depicts) -> dict[str, Any]:
+    """Valore della colonna `course_document_figure.depicts`."""
+    return {
+        "v": DEPICTS_VERSION,
+        "items": [item.model_dump() for item in depicts.items],
+        "focus": depicts.focus,
+    }
+
+
+def depicts_current(value: Any) -> bool:
+    """True se `depicts` c'è ed è alla versione corrente."""
+    return isinstance(value, dict) and value.get("v") == DEPICTS_VERSION
+
+
 def sanitize_output(out: FigureDescription) -> FigureDescription:
     """L'output del modello va nel catalogo del PROMPT 3: si neutralizza
     come ogni testo di terzi."""
@@ -261,6 +382,7 @@ def sanitize_output(out: FigureDescription) -> FigureDescription:
             "description": neutralize_third_party_text(out.description, 800),
             "keywords_course": _clean_keywords(out.keywords_course),
             "keywords_en": _clean_keywords(out.keywords_en),
+            "depicts": sanitize_depicts(out.depicts),
             "reason": neutralize_third_party_text(out.reason, 300),
         }
     )

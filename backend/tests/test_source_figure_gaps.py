@@ -46,6 +46,7 @@ from app.services import course_lesson_content_worker as content_worker
 from app.services import course_lesson_figures_gap_worker as gap_worker
 from app.services import literature_figures_service as gaps
 from app.services import openai_figure_relevance_service as relevance
+from app.services.openai_figure_describe_service import DepictedItem, Depicts
 from app.services.safe_http import FetchResult, SafeFetchError
 from app.services.source_figure_service import resolve_source_figures
 from app.services.wikimedia_client import CommonsFile
@@ -122,6 +123,10 @@ def _verdict(relevant: bool = True, text_language: str = "it") -> relevance.Figu
         quality_score=4,
         legibility="good",
         is_useful_for_teaching=True,
+        depicts=Depicts(
+            items=[DepictedItem(object_en="laser Doppler vibrometer", variant_en="")],
+            focus="optical layout",
+        ),
         reason="ok",
         text_language=text_language,
     )
@@ -342,6 +347,12 @@ async def test_course_without_documents_gets_open_literature_figures(
     assert row.license_source == "wikimedia" and row.source_url.endswith("101.svg")
     assert row.attribution["container"] == "Wikimedia Commons"
     assert remote_storage.uploads_key(str(row.storage_path)) in env["storage"].files
+    # WP5: `depicts` del PROMPT 20 salvato con la versione corrente.
+    assert row.depicts == {
+        "v": 1,
+        "items": [{"object_en": "laser Doppler vibrometer", "variant_en": ""}],
+        "focus": "optical layout",
+    }
     # I2: nessun documento nuovo, testo della lezione intatto.
     docs = await seeded_db.scalar(
         select(func.count(CourseDocument.id)).where(CourseDocument.course_id == course_id)
