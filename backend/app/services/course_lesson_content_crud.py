@@ -13,6 +13,7 @@ correzioni granulari.
 from __future__ import annotations
 
 import uuid
+from collections import Counter
 from datetime import UTC, datetime
 from typing import Any, NoReturn
 
@@ -32,8 +33,9 @@ from app.schemas.course_lesson_content import (
     LessonContentUpdateInput,
 )
 from app.services import remote_storage
+from app.services.document_figures_service import figure_lesson_uses
 from app.services.figure_render_service import validate_visual_assets_or_raise
-from app.services.source_figure_catalog import license_policy_for, unsuitable_reason
+from app.services.source_figure_catalog import license_policy_for, reuse_cap, unsuitable_reason
 from app.services.source_figure_policy import figure_visibility
 from app.services.source_figure_service import source_figure_uuid
 
@@ -200,12 +202,14 @@ async def _guard_source_figures(
     db: AsyncSession,
     *,
     course: Course,
+    lesson_id: uuid.UUID,
     assets: list[dict[str, Any]],
     previous: list[Any] | None,
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Figure di fonte nel PATCH della dispensa; restituisce gli asset con il
     riferimento in forma canonica (UUID minuscolo con trattini), la stessa
-    che confrontano il resolver e il frontend.
+    che confrontano il resolver e il frontend, e le figure NUOVE inserite
+    oltre il tetto di riuso (per l'audit).
 
     - Un asset non cambia famiglia: una figura di fonte resta tale e un
       asset generato non diventa di fonte (`source_figure_format_locked`).
@@ -216,6 +220,11 @@ async def _guard_source_figures(
     - Una figura già collocata passa sempre, anche rinominata o spostata e
       anche se nel frattempo la politica del documento è cambiata (U1, non
       retroattivo).
+    - Mai due volte la stessa figura nella stessa lezione: un doppione NUOVO
+      dà `source_figure_duplicate_in_lesson`; i doppioni già salvati passano.
+    - Il tetto di riuso (`FIGURE_SOURCE_MAX_LESSONS_PER_FIGURE`) non blocca il
+      docente: una figura nuova già in K altre lezioni passa e finisce
+      nell'elenco restituito, che il chiamante registra nell'audit.
 
     Gli errori portano `meta.errors[{loc: ["visual_assets", i, "content"]}]`
     come quelli dei renderer, così il frontend li mostra sulla card.
@@ -226,6 +235,14 @@ async def _guard_source_figures(
         for a in previous or []
         if isinstance(a, dict) and (fid := source_figure_uuid(a)) is not None
     }
+    before_counts = Counter(
+        fid
+        for a in previous or []
+        if isinstance(a, dict) and (fid := source_figure_uuid(a)) is not None
+    )
+    seen: Counter[uuid.UUID] = Counter()
+    uses: dict[uuid.UUID, list[str]] | None = None
+    over_cap: list[dict[str, Any]] = []
     policy: str | None = None
     out: list[dict[str, Any]] = []
 
@@ -261,6 +278,14 @@ async def _guard_source_figures(
         figure_id = source_figure_uuid(asset)
         if figure_id is not None:
             out[-1] = {**asset, "content": str(figure_id)}
+            seen[figure_id] += 1
+            if seen[figure_id] > max(1, before_counts[figure_id]):
+                invalid(
+                    "La stessa figura di fonte compare già in questa lezione.",
+                    "source_figure_duplicate_in_lesson",
+                    index,
+                    asset_id,
+                )
         if figure_id is not None and figure_id in placed:
             continue
         figure = None
@@ -296,7 +321,14 @@ async def _guard_source_figures(
                 asset_id,
                 reason=reason,
             )
-    return out
+        if uses is None:
+            uses = await figure_lesson_uses(db, course.id, except_lesson_id=lesson_id)
+        used_in = uses.get(figure.id, [])
+        if len(used_in) >= reuse_cap():
+            over_cap.append(
+                {"figure_id": str(figure.id), "used_in": sorted(used_in), "cap": reuse_cap()}
+            )
+    return out, over_cap
 
 
 def _prune_figure_review(
@@ -355,6 +387,7 @@ async def update_lesson_content(
     # content) diversi da quelli già salvati vengono validati offline dal
     # registro dei renderer; un edit del testo non rivalida i diagrammi
     # legacy già in DB. Errori → 422 con `meta.errors` per asset.
+    over_cap: list[dict[str, Any]] = []
     if payload.visual_assets is not None:
         await validate_visual_assets_or_raise(
             [a.model_dump() for a in payload.visual_assets],
@@ -362,9 +395,10 @@ async def update_lesson_content(
             loc_root="visual_assets",
             code="lesson_content_invalid_visual_asset",
         )
-        guarded_assets = await _guard_source_figures(
+        guarded_assets, over_cap = await _guard_source_figures(
             db,
             course=course,
+            lesson_id=lesson.id,
             assets=[a.model_dump() for a in payload.visual_assets],
             previous=current_raw.get("visual_assets"),
         )
@@ -443,6 +477,18 @@ async def update_lesson_content(
             "fields": changed,
         },
     )
+    # Il tetto di riuso non blocca il docente: l'inserimento oltre il tetto
+    # si registra (la figura resta, l'editor lo mostra).
+    for item in over_cap:
+        await write_audit(
+            db,
+            action="course.lesson.content.source_figure_over_cap",
+            actor_user_id=actor_id,
+            organization_id=course.organization_id,
+            target_type="course_lesson",
+            target_id=str(lesson.id),
+            metadata={"course_id": str(course.id), "lesson_code": lesson.lesson_code, **item},
+        )
     await db.commit()
 
     # Cleanup file orfani dopo il commit: se l'update ha sostituito o

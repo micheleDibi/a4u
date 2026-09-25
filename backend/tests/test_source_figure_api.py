@@ -309,6 +309,65 @@ async def test_lesson_patch_guards_new_or_changed_source_figures(
     assert lesson.content_figure_review is None
 
 
+async def test_lesson_patch_duplicate_in_lesson_and_over_the_reuse_cap(
+    client: Any, seeded_db: AsyncSession, storage: _Storage
+) -> None:
+    """Mai due volte la stessa figura nella stessa lezione: un doppione nuovo
+    dà 422, uno già salvato passa (U1). Il tetto di riuso non blocca il
+    docente: la figura già in K altre lezioni entra, con un audit."""
+    s = await _setup(seeded_db, storage)
+    figs, lesson = s["figs"], s["lesson"]
+    good = _asset("fig-src-1", figs["good"])
+    lesson.content_raw = {"introduction": "Intro.", "sections": [], "visual_assets": [good]}
+    await seeded_db.commit()
+
+    dup = _asset("fig-src-2", figs["good"])
+    res = await _patch_content(client, s, [good, dup])
+    assert res.status_code == 422 and res.json()["code"] == "source_figure_duplicate_in_lesson"
+    assert res.json()["meta"]["index"] == 1
+
+    lesson.content_raw = {"introduction": "Intro.", "sections": [], "visual_assets": [good, dup]}
+    await seeded_db.commit()
+    assert (await _patch_content(client, s, [good, dup])).status_code == 200
+
+    for position, code in ((2, "M1.L2"), (3, "M1.L3")):
+        seeded_db.add(
+            CourseLesson(
+                module_id=lesson.module_id,
+                course_id=lesson.course_id,
+                position=position,
+                lesson_code=code,
+                title="Altra lezione",
+                summary="Altra.",
+                learning_objectives=[],
+                mandatory_topics=[],
+                prerequisites=[],
+                section_outline=[],
+                content_status="ready",
+                content_raw={"visual_assets": [_asset("fig-src-9", figs["reserved"])]},
+            )
+        )
+    await seeded_db.commit()
+    res = await _patch_content(client, s, [good, _asset("fig-src-3", figs["reserved"])])
+    assert res.status_code == 200, res.text
+    audits = (
+        (
+            await seeded_db.execute(
+                select(AuditLog).where(
+                    AuditLog.action == "course.lesson.content.source_figure_over_cap",
+                    AuditLog.target_id == str(lesson.id),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(audits) == 1
+    assert audits[0].payload["figure_id"] == str(figs["reserved"].id)
+    assert audits[0].payload["used_in"] == ["M1.L2", "M1.L3"]
+    assert audits[0].payload["cap"] == 2
+
+
 async def test_lesson_patch_placed_figure_rename_quality_and_format_lock(
     client: Any, seeded_db: AsyncSession, storage: _Storage
 ) -> None:
