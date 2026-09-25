@@ -29,6 +29,7 @@ import { FunctionEditor } from "./FunctionEditor";
 import { MermaidEditor } from "./MermaidEditor";
 import { SourceFigure } from "./SourceFigure";
 import { SourceFigurePicker } from "./SourceFigurePicker";
+import { PlacedFigureResolutionBadge } from "./SourceFigureResolutionBadge";
 import { TikzEditor } from "./TikzEditor";
 import { VegaLiteEditor } from "./VegaLiteEditor";
 
@@ -298,6 +299,7 @@ export function VisualAssetEditor({
               altText={asset.alt_text}
               preview
             />
+            <PlacedFigureResolutionBadge figureId={asset.content} />
           </CourseRefContext.Provider>
           <Button
             type="button"

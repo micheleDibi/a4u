@@ -246,6 +246,16 @@ export interface LessonFigureReview {
 /** Figura di fonte del corso (`GET …/document-figures`). La riga
  *  «Fonte» (`attribution`) è calcolata dal backend: il frontend la mostra
  *  così com'è, non la ricompone mai. */
+/** Risoluzione effettiva (doc 18 §22), calcolata dal backend come il PDF. */
+export interface FigureResolution {
+  class: "good" | "acceptable" | "low" | "unusable";
+  slide_class: "good" | "acceptable" | "low" | null;
+  /** Base della misura naturale: measured, bbox, render, convention, estimate. */
+  basis: string;
+  print_width_mm: number;
+  print_ppi: number;
+}
+
 export interface DocumentFigure {
   id: string;
   document_id: string | null;
@@ -275,6 +285,8 @@ export interface DocumentFigure {
   reason: string | null;
   /** Revisione dell'immagine: cambia col ri-ritaglio (chiave di cache). */
   image_rev: string;
+  /** Null con la regola di risoluzione spenta. */
+  resolution: FigureResolution | null;
 }
 
 export interface DocumentFigureUsage {

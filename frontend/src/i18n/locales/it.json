@@ -1962,6 +1962,24 @@
         "slide": "slide {{page}}",
         "add": "Aggiungi",
         "notSelectable": "Non proponibile"
+      },
+      "resolution": {
+        "low": "Bassa risoluzione",
+        "unusable": "Risoluzione insufficiente",
+        "detail": "In stampa: {{width}} mm a {{ppi}} ppi"
+      },
+      "reasons": {
+        "resolution_unusable": "Risoluzione troppo bassa",
+        "not_useful": "Non utile alla didattica",
+        "low_quality": "Qualità insufficiente",
+        "excluded_kind": "Logo o decorazione",
+        "excluded_by_user": "Esclusa dal docente",
+        "document_excluded": "Documento escluso",
+        "license_not_open": "Licenza non aperta",
+        "attribution_missing": "Fonte non attribuibile",
+        "file_missing": "File mancante",
+        "superseded": "Estrazione superata",
+        "unknown": "Non proponibile"
       }
     }
   },

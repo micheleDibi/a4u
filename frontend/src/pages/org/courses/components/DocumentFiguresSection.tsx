@@ -8,6 +8,7 @@ import {
   type CourseDocumentOut,
   type DocumentFigure,
 } from "@/api/courses";
+import { SourceFigureResolutionBadge } from "@/components/shared/SourceFigureResolutionBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { extractApiError } from "@/lib/errors";
@@ -155,9 +156,14 @@ export function DocumentFiguresSection({ orgId, courseId, doc, canEdit }: Props)
               ) : (
                 !figure.selectable && (
                   <Badge variant="muted">
-                    {t("courses.sourceFigures.picker.notSelectable")}
+                    {t(`courses.sourceFigures.reasons.${figure.reason ?? "unknown"}`, {
+                      defaultValue: t("courses.sourceFigures.picker.notSelectable"),
+                    })}
                   </Badge>
                 )
+              )}
+              {figure.resolution?.class === "low" && (
+                <SourceFigureResolutionBadge resolution={figure.resolution} />
               )}
             </div>
             {figure.source_caption && (

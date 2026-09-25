@@ -14,6 +14,7 @@ import {
 import { useCourseRef } from "@/contexts/CourseRefContext";
 
 import { FigureLoading } from "./FigureFrame";
+import { SourceFigureResolutionBadge } from "./SourceFigureResolutionBadge";
 import { useCourseFigures } from "./useCourseFigures";
 
 /**
@@ -71,7 +72,11 @@ function Thumbnail({ figure }: { figure: DocumentFigure }) {
 export function SourceFigurePicker({ open, onClose, onPick }: SourceFigurePickerProps) {
   const { t } = useTranslation();
   const figures = useCourseFigures();
-  const selectable = (figures.data ?? []).filter((f) => f.selectable);
+  // Le figure a bassa risoluzione in coda: si usano solo senza alternative
+  // migliori (sotto il minimo il backend non le rende proponibili).
+  const selectable = (figures.data ?? [])
+    .filter((f) => f.selectable)
+    .sort((a, b) => Number(a.resolution?.class === "low") - Number(b.resolution?.class === "low"));
   return (
     <Dialog open={open} onOpenChange={(next) => (!next ? onClose() : undefined)}>
       <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
@@ -88,6 +93,7 @@ export function SourceFigurePicker({ open, onClose, onPick }: SourceFigurePicker
             {selectable.map((figure) => (
               <li key={figure.id} className="space-y-2 rounded-md border bg-muted/20 p-2">
                 <Thumbnail figure={figure} />
+                <SourceFigureResolutionBadge resolution={figure.resolution} />
                 <div className="text-xs">
                   {figure.source_caption || figure.description}
                 </div>

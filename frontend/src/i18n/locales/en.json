@@ -1962,6 +1962,24 @@
         "slide": "slide {{page}}",
         "add": "Add",
         "notSelectable": "Not available"
+      },
+      "resolution": {
+        "low": "Low resolution",
+        "unusable": "Resolution too low",
+        "detail": "Printed at {{width}} mm, {{ppi}} ppi"
+      },
+      "reasons": {
+        "resolution_unusable": "Resolution too low",
+        "not_useful": "Not useful for teaching",
+        "low_quality": "Insufficient quality",
+        "excluded_kind": "Logo or decoration",
+        "excluded_by_user": "Excluded by the teacher",
+        "document_excluded": "Document excluded",
+        "license_not_open": "License not open",
+        "attribution_missing": "Source cannot be attributed",
+        "file_missing": "File missing",
+        "superseded": "Superseded extraction",
+        "unknown": "Not selectable"
       }
     }
   },

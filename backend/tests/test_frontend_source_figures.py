@@ -104,3 +104,38 @@ def test_new_i18n_keys_exist_in_italian_and_english() -> None:
             assert f"courses.docs.figures.licenses.{code}" in keys, (language, code)
         for source in ("user", "openalex", "pdf_metadata", "crossref"):
             assert f"courses.docs.figures.meta.sourceLabel.{source}" in keys, (language, source)
+        # Motivi di «non proponibile» (chiavi dinamiche del riassunto) e
+        # badge della risoluzione effettiva (doc 18 §22).
+        for reason in (
+            "resolution_unusable",
+            "not_useful",
+            "low_quality",
+            "excluded_kind",
+            "excluded_by_user",
+            "document_excluded",
+            "license_not_open",
+            "attribution_missing",
+            "file_missing",
+            "superseded",
+            "unknown",
+        ):
+            assert f"courses.sourceFigures.reasons.{reason}" in keys, (language, reason)
+        for level in ("low", "unusable", "detail"):
+            assert f"courses.sourceFigures.resolution.{level}" in keys, (language, level)
+
+
+def test_resolution_badge_shows_only_backend_values() -> None:
+    """Il badge mostra classe, misura e ppi calcolati dal backend: nessuna
+    soglia di ppi ricalcolata nel frontend."""
+    badge = (_FRONTEND / "components/shared/SourceFigureResolutionBadge.tsx").read_text(
+        encoding="utf-8"
+    )
+    assert "resolution.print_ppi" in badge and "resolution.print_width_mm" in badge
+    code = re.sub(r"//[^\n]*", "", re.sub(r"/\*.*?\*/", "", badge, flags=re.S))
+    assert not re.search(r"\b(100|150|200)\b", code)
+    for relative in (
+        "components/shared/VisualAssetEditor.tsx",
+        "components/shared/SourceFigurePicker.tsx",
+        "pages/org/courses/components/DocumentFiguresSection.tsx",
+    ):
+        assert "ResolutionBadge" in (_FRONTEND / relative).read_text(encoding="utf-8"), relative
