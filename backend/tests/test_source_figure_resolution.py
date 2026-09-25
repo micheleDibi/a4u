@@ -446,3 +446,58 @@ async def test_resolver_carries_resolution_inputs_only_with_the_rule(
         assert resolved.resolution.natural_width_mm == 120.0
     else:
         assert resolved.resolution is None
+
+
+async def test_v1_rule_ignores_the_dpi_of_literature_rows(
+    seeded_db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Con l'interruttore spento la regola v1 resta com'era: le righe della
+    letteratura non avevano dpi (ora OpenAlex li salva) e non ricevono una
+    larghezza di stampa; quelle dei documenti sì."""
+    db = seeded_db
+    storage = _Storage()
+    monkeypatch.setattr(remote_storage, "get_storage", lambda: storage)
+    monkeypatch.setattr(get_settings(), "figure_resolution_rules_enabled", False)
+    course_id, _org, _user = await build_course(db, modules=1, lessons_per_module=1)
+    doc = build_course_document(course_id, filename="ldv.pdf")
+    db.add(doc)
+    await db.flush()
+    uploaded = build_document_figure(course_id, doc.id, license="cc_by", dpi=150)
+    external = build_document_figure(
+        course_id,
+        None,
+        license="cc_by",
+        source_kind="openalex",
+        dpi=150,
+        attribution={"title": "LDV", "authors": ["Jane Doe"]},
+        external_id="https://openalex.org/W1#p0001-f01",
+        storage_path=f"/uploads/courses/{course_id}/document_figures/external/oa-w1.png",
+    )
+    db.add_all([uploaded, external])
+    await db.commit()
+    for fig in (uploaded, external):
+        storage.files[remote_storage.uploads_key(str(fig.storage_path))] = _png(64, 48)
+    out = await resolve_source_figures(
+        db,
+        course_id=course_id,
+        assets=[
+            {"asset_id": "u", "format": "source_figure", "content": str(uploaded.id)},
+            {"asset_id": "e", "format": "source_figure", "content": str(external.id)},
+        ],
+        language="it",
+    )
+    assert out["u"].display_width_mm is not None
+    assert out["e"].renderable and out["e"].display_width_mm is None
+
+
+@pytest.mark.parametrize("width", [1, 2, 3, 4, 5, 8])
+def test_tiny_figures_never_break_the_100_ppi_invariant(width: int) -> None:
+    """Nessun pavimento di 1 mm sopra il tetto dei 100 ppi: o la stampa
+    regge 100 ppi, o nessuna larghezza (segnaposto del riquadro)."""
+    inputs = _inputs(width, height=1, dpi=150, native=150.0, natural=60.0)
+    plan = plan_print(inputs)
+    if plan is not None:
+        assert plan.width_mm > 0 and width / (plan.width_mm / 25.4) >= LOW_PPI - 1e-6
+    slide = plan_slide(inputs, box_w_mm=255, box_h_mm=86.6)
+    if slide is not None:
+        assert slide.upscale <= SLIDE_MAX_UPSCALE + 1e-9

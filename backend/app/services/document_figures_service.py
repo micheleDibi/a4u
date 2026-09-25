@@ -293,7 +293,7 @@ async def prepare_document_deletion(db: AsyncSession, doc: CourseDocument) -> tu
             detached += 1
         else:
             to_delete.append(row)
-    paths = [p for row in to_delete for p in (row.storage_path, row.preview_path) if p]
+    paths = [p for row in to_delete for p in figure_file_paths(row)]
     if to_delete:
         await db.execute(
             delete(CourseDocumentFigure).where(
@@ -302,6 +302,23 @@ async def prepare_document_deletion(db: AsyncSession, doc: CourseDocument) -> tu
         )
     await db.flush()
     return paths, detached
+
+
+def figure_file_paths(row: CourseDocumentFigure) -> list[str]:
+    """File di una figura da togliere con la riga: quelli attuali e, se la
+    figura è stata ri-ritagliata e non ancora ripulita, quelli v1 di
+    `recrop_previous` (solo del corso della riga, G7)."""
+    paths = [p for p in (row.storage_path, row.preview_path) if p]
+    previous = row.recrop_previous if isinstance(row.recrop_previous, dict) else {}
+    for key in ("storage_path", "preview_path"):
+        path = previous.get(key)
+        if (
+            isinstance(path, str)
+            and path not in paths
+            and figure_storage.belongs_to_course(path, row.course_id)
+        ):
+            paths.append(path)
+    return paths
 
 
 async def delete_files(paths: Iterable[str]) -> None:
@@ -339,7 +356,7 @@ async def gc_detached(
         if row.id not in used_by_course[row.course_id]:
             orphans.append(row)
     if apply and orphans:
-        paths = [p for row in orphans for p in (row.storage_path, row.preview_path) if p]
+        paths = [p for row in orphans for p in figure_file_paths(row)]
         await db.execute(
             delete(CourseDocumentFigure).where(CourseDocumentFigure.id.in_([r.id for r in orphans]))
         )

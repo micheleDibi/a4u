@@ -291,7 +291,9 @@ class CourseDocumentFigure(UUIDPKMixin, TimestampMixin, Base):
     # Ri-ritaglio sul posto (stesso UUID, V2): percorsi e metadati del
     # ritaglio precedente, per `rerender_document_figures --revert`.
     recropped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    recrop_previous: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    recrop_previous: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB(none_as_null=True), nullable=True
+    )
 
     # --- Analisi Vision ---------------------------------------------------
     kind: Mapped[str | None] = mapped_column(String(40), nullable=True)

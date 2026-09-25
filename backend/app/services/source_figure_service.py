@@ -253,7 +253,11 @@ async def resolve_source_figures(
             source_url=fig.source_url,
             spoken=spoken,
             spoken_text=spoken_text,
-            display_width_mm=display_width_mm(fig.width, fig.dpi),
+            # Regola v1 com'era: le righe della letteratura non avevano dpi
+            # (ora OpenAlex li salva, ma con l'interruttore spento non contano).
+            display_width_mm=display_width_mm(
+                fig.width, fig.dpi if fig.source_kind == "uploaded" else None
+            ),
             resolution=ResolutionInputs.from_figure(fig) if rules else None,
         )
     for asset_id, resolved in out.items():

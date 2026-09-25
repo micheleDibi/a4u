@@ -251,6 +251,15 @@ async def run(args: argparse.Namespace) -> int:
     try:
         async with async_session_factory() as db:
             if args.revert:
+                # Con un ri-ritaglio accodato o in corso il ripristino sarebbe
+                # parziale o annullato subito dopo dal worker.
+                busy = await recrop.busy_documents(db, args.course)
+                if busy:
+                    print(
+                        f"rifiutato: {busy} documenti con estrazione o ri-ritaglio in corso",
+                        file=sys.stderr,
+                    )
+                    return 2
                 out = await recrop.revert(db, course_id=args.course, document_id=args.document)
                 print(f"figure ripristinate al ritaglio v1: {out['reverted']}")
                 return 0
@@ -288,6 +297,12 @@ async def run(args: argparse.Namespace) -> int:
                     file=sys.stderr,
                 )
                 return 2
+            if not settings.figure_extraction_native_crop_enabled:
+                print(
+                    "rifiutato: FIGURE_EXTRACTION_NATIVE_CROP_ENABLED=false",
+                    file=sys.stderr,
+                )
+                return 2
             busy = await recrop.busy_documents(db, args.course)
             if busy:
                 print(
@@ -309,7 +324,14 @@ async def run(args: argparse.Namespace) -> int:
             config = figures_worker._config()
             total: Counter[str] = Counter()
             for doc in targets:
-                stats = await recrop.process(db, doc, config)
+                # Anche --inline passa dal lease: `busy_documents` lo vede e
+                # né il worker né un altro script prendono lo stesso documento.
+                await recrop.request(db, [doc.id])
+                claimed = await recrop.claim(db, doc.id)
+                if claimed is None:
+                    print(f"  {doc.filename_original[:50]}: già in lavorazione, saltato")
+                    continue
+                stats = await recrop.process(db, claimed, config)
                 total.update({k: int(v) for k, v in stats.items() if isinstance(v, int)})
                 print(f"  {doc.filename_original[:50]}: {stats}")
             print(f"totale: {dict(total)}")

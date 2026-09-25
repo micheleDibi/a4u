@@ -181,6 +181,16 @@ MIXED_MAX_FACTOR = 8
 # Pixel per asse di un raster «quadrato» (ppi_x ≈ ppi_y): sopra, la griglia
 # nativa distorcerebbe i tratti vettoriali.
 ANISOTROPY_TOL = 0.005
+# Raster «di sfondo»: con segni vettoriali sopra, un raster sotto questi ppi
+# (mappe di colore a celle, fondi) o con un asse molto più denso dell'altro
+# (strisce di gradiente) non è il contenuto della figura: la figura si rende
+# come vettoriale e la sua classe non la decide quel raster.
+BACKGROUND_MAX_PPI = 50.0
+BACKGROUND_ANISOTROPY = 4.0
+# Pannelli raster significativi di una figura composita: quota del box e
+# differenza di ppi oltre la quale non ci si allinea a una sola griglia.
+PANEL_MIN_SHARE = 0.15
+PANEL_PPI_TOLERANCE = 0.10
 # Anti-bomba: nessun bitmap di render oltre questo numero di pixel.
 MAX_RENDER_PIXELS = 60_000_000
 # JPEG solo per foto da sorgente con perdita, con PNG oltre il tetto.
@@ -218,15 +228,37 @@ class NativeCrop:
     source_lossy: bool
 
 
+def _is_background(raster: RasterRegion) -> bool:
+    low, high = sorted((raster.ppi_x, raster.ppi_y))
+    return raster.ppi < BACKGROUND_MAX_PPI or high / max(low, 1e-6) > BACKGROUND_ANISOTROPY
+
+
 def plan_crop(box: BBox, regions: PageRegions) -> CropPlan:
-    """Come rendere il bbox: raster nativo, misto o vettoriale."""
+    """Come rendere il bbox: raster nativo, misto o vettoriale.
+
+    - Con segni vettoriali sopra, i raster di sfondo non contano.
+    - Figura composita con pannelli significativi a ppi diversi: nessuna
+      griglia unica (il pannello più denso si sottocampionerebbe al vicino
+      più prossimo); render ai ppi del pannello più denso e ppi nativo del
+      pannello peggiore.
+    - Figura mista: mai sotto `MIXED_MIN_DPI`; se il fattore intero non ci
+      arriva (nativo molto basso) niente griglia, render ai dpi dei tratti.
+    """
+    overlay = regions.truncated or bool(overlay_marks(box, regions))
     rasters = [r for r in regions.rasters if r.rect.intersection_area(box) > 0]
+    if overlay:
+        rasters = [r for r in rasters if not _is_background(r)]
     share = union_coverage(box, [r.rect for r in rasters])
     if share < RASTER_SHARE_MIN:
         dpi = choose_dpi(box, is_vector=True, native_ppi=None)
         return CropPlan("vector", dpi / 72.0, dpi / 72.0, None, 1, None, False)
     dominant = max(rasters, key=lambda r: r.rect.intersection_area(box))
-    overlay = regions.truncated or bool(overlay_marks(box, regions))
+    panels = [
+        r for r in rasters if r.rect.intersection_area(box) >= PANEL_MIN_SHARE * box.area
+    ] or [dominant]
+    densest = max(r.ppi for r in panels)
+    worst = min(r.ppi for r in panels)
+    mosaic = densest / max(worst, 1e-6) - 1.0 > PANEL_PPI_TOLERANCE
     factor = 1
     if overlay:
         factor = math.ceil(MIXED_MIN_DPI / max(dominant.ppi, 1e-6) - 1e-9)
@@ -237,20 +269,24 @@ def plan_crop(box: BBox, regions: PageRegions) -> CropPlan:
         MAX_PIXELS
     ):
         factor -= 1
-    anchor = dominant if dominant.axis_aligned and square else None
+    reaches = not overlay or factor * dominant.ppi >= MIXED_MIN_DPI - 1e-6
+    anchor = dominant if dominant.axis_aligned and square and not mosaic and reaches else None
     if anchor is not None:
         scale_x = factor * dominant.ppi_x / 72.0
         scale_y = factor * dominant.ppi_y / 72.0
     else:
-        scale_x = scale_y = factor * max(dominant.ppi_x, dominant.ppi_y) / 72.0
+        target = max(factor * max(dominant.ppi_x, dominant.ppi_y), densest)
+        if overlay:
+            target = max(target, float(MIXED_MIN_DPI))
+        scale_x = scale_y = target / 72.0
     return CropPlan(
         "mixed" if overlay else "raster_native",
         scale_x,
         scale_y,
         anchor,
         factor,
-        dominant.ppi,
-        dominant.lossy,
+        worst,
+        any(r.lossy for r in panels),
     )
 
 
@@ -339,7 +375,11 @@ def render_native_crop(
         image = image.resize(size, Image.Resampling.LANCZOS)
         scale *= ratio
         aligned = False
-    data, mime = encode_figure(image, source_lossy=plan.source_lossy)
+    # Le figure miste restano PNG: le etichette vettoriali rese a k volte il
+    # nativo non si ricomprimono con perdita.
+    data, mime = encode_figure(
+        image, source_lossy=plan.source_lossy and plan.mode == "raster_native"
+    )
     from app.services.source_figure_resolution import natural_width_from_bbox
 
     return NativeCrop(
@@ -382,11 +422,17 @@ def _png_lossless(rgb: Image.Image) -> bytes:
     if np.array_equal(arr[..., 0], arr[..., 1]) and np.array_equal(arr[..., 1], arr[..., 2]):
         Image.fromarray(arr[..., 0], mode="L").save(buf, format="PNG", optimize=True)
         return buf.getvalue()
-    flat = arr.reshape(-1, 3)
-    colors, index = np.unique(flat, axis=0, return_inverse=True)
-    if len(colors) <= 256:
-        paletted = Image.fromarray(index.reshape(arr.shape[:2]).astype(np.uint8), mode="P")
-        paletted.putpalette(colors.astype(np.uint8).ravel().tolist())
+    # `getcolors` si ferma al 257-esimo colore: le foto (milioni di colori)
+    # non pagano il conteggio completo.
+    counted = rgb.getcolors(maxcolors=256)
+    if counted is not None:
+        palette = np.array(sorted({c for _n, c in counted}), dtype=np.uint32)
+        keys = (palette[:, 0] << 16) | (palette[:, 1] << 8) | palette[:, 2]
+        pixels = arr.astype(np.uint32)
+        codes = (pixels[..., 0] << 16) | (pixels[..., 1] << 8) | pixels[..., 2]
+        index = np.searchsorted(keys, codes).astype(np.uint8)
+        paletted = Image.fromarray(index, mode="P")
+        paletted.putpalette(palette.astype(np.uint8).ravel().tolist())
         paletted.save(buf, format="PNG", optimize=True)
         return buf.getvalue()
     rgb.save(buf, format="PNG", optimize=True)

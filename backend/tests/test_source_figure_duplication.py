@@ -14,11 +14,11 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.course import Course
@@ -44,6 +44,9 @@ class _Storage:
 
     def upload_bytes(self, key: str, data: bytes) -> None:
         self.files[key] = data
+
+    def delete(self, key: str) -> None:
+        self.files.pop(key, None)
 
 
 @pytest.fixture
@@ -442,3 +445,59 @@ async def test_figure_translation_is_chunked_and_a_failed_chunk_keeps_the_origin
     assert first is not None and first.description == "Descrizione 0"  # blocco fallito
     assert last is not None and last.description == "EN:Descrizione 99"
     assert last.keywords == {"course": ["EN:termine 99a", "EN:termine 99b"], "en": ["term"]}
+
+
+async def test_the_clone_does_not_inherit_the_recrop_history(
+    seeded_db: AsyncSession, storage: _Storage
+) -> None:
+    """Rilievo della verifica WP2: i percorsi v1 di `recrop_previous` sono
+    file del corso sorgente; il clone parte senza storia di ri-ritaglio, e
+    revert o purge sul clone non toccano mai i file del sorgente (G7, U1)."""
+    from app.services import document_figures_recrop_service as recrop
+
+    db = seeded_db
+    s = await _source(db, storage)
+    fig = s["fig"]
+    v1_path = str(fig.storage_path).replace(".png", "-v1.png")
+    storage.files[remote_storage.uploads_key(v1_path)] = b"ritaglio v1"
+    fig.crop_version = 2
+    fig.recropped_at = datetime.now(UTC) - timedelta(days=30)
+    fig.recrop_previous = {"storage_path": v1_path, "preview_path": None, "crop_version": 1}
+    await db.commit()
+    source = await dup.load_source_full(db, course_id=s["course_id"])
+    assert source is not None
+    job = CourseDuplicationJob(
+        source_course_id=source.id, target_language_code="en", requested_by_user_id=None
+    )
+    db.add(job)
+    await db.flush()
+    target = await dup._clone_course_structure(
+        db, source=source, target_language_code="en", job=job
+    )
+    await db.commit()
+    clones = list(
+        (
+            await db.execute(
+                select(CourseDocumentFigure).where(
+                    CourseDocumentFigure.course_id == target.id,
+                    CourseDocumentFigure.document_id.is_not(None),
+                    CourseDocumentFigure.status == "ready",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert clones and all(c.crop_version == 2 for c in clones)
+    assert all(c.recrop_previous is None and c.recropped_at is None for c in clones)
+    # SQL NULL, non il JSON `null`.
+    still = await db.scalar(
+        select(func.count(CourseDocumentFigure.id)).where(
+            CourseDocumentFigure.course_id == target.id,
+            CourseDocumentFigure.recrop_previous.is_not(None),
+        )
+    )
+    assert still == 0
+    assert await recrop.revert(db, course_id=target.id) == {"reverted": 0}
+    await recrop.purge_replaced(db, course_id=target.id, older_than=timedelta(days=14), apply=True)
+    assert remote_storage.uploads_key(v1_path) in storage.files

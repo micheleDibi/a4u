@@ -271,7 +271,7 @@ class CourseDocument(UUIDPKMixin, TimestampMixin, Base):
         DateTime(timezone=True), nullable=True
     )
     figures_recrop_stats: Mapped[dict[str, Any] | None] = mapped_column(
-        JSONB, nullable=True
+        JSONB(none_as_null=True), nullable=True
     )
 
     course: Mapped[Course] = relationship("Course", back_populates="documents")

@@ -818,6 +818,11 @@ _FIGURE_SKIP_COLUMNS = frozenset(
         "describe_source_id",
         "vision_usage",
         "vision_usage_at",
+        # Il clone non eredita la storia del ri-ritaglio: i percorsi v1 sono
+        # file del corso SORGENTE (revert e purge sul clone li toccherebbero).
+        # I file copiati sono quelli attuali, e crop_version resta.
+        "recrop_previous",
+        "recropped_at",
         "created_at",
         "updated_at",
     }

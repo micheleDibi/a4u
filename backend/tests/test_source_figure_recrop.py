@@ -279,7 +279,14 @@ async def test_a_row_changed_meanwhile_is_not_overwritten(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     doc = await _v1_document(db, storage, fixture_pdf, settings)
-    target = next(r for r in await _figures(db, doc.id) if r.status == "ready")
+    # Bersaglio deterministico (primo locator) e percorso cambiato qualunque
+    # sia l'estensione (il fixture v1 ha anche un JPEG).
+    ready = sorted(
+        (r for r in await _figures(db, doc.id) if r.status == "ready"), key=lambda r: r.locator
+    )
+    target = ready[0]
+    stem, ext = str(target.storage_path).rsplit(".", 1)
+    changed_path = f"{stem}-x.{ext}"
     original = recrop.run_child
 
     async def child_then_change(*args: Any, **kwargs: Any) -> Any:
@@ -287,7 +294,7 @@ async def test_a_row_changed_meanwhile_is_not_overwritten(
         await db.execute(
             update(type(target))
             .where(type(target).id == target.id)
-            .values(storage_path=target.storage_path.replace(".png", "-x.png"))
+            .values(storage_path=changed_path)
         )
         await db.commit()
         return result
@@ -301,6 +308,7 @@ async def test_a_row_changed_meanwhile_is_not_overwritten(
     assert stats["changed"] == 1
     fresh = next(r for r in await _figures(db, doc.id) if r.id == target.id)
     assert fresh.crop_version == 1 and fresh.recrop_previous is None
+    assert fresh.storage_path == changed_path
     # I file v2 della riga cambiata non restano orfani nello storage.
     new_files = set(storage.files) - uploads
     assert all(target.locator not in key for key in new_files)
@@ -492,9 +500,246 @@ async def test_script_inline_revert_and_purge(
     assert await script(["--course", course, "--inline"]) == 0
     rows = [r for r in await _figures(db, doc.id) if r.status == "ready"]
     assert rows and all(r.crop_version == 2 for r in rows)
-    assert await script(["--purge-replaced", "--older-than", "14"]) == 0
+    assert await script(["--purge-replaced", "--older-than", "14", "--course", course]) == 0
     assert "file v1 da cancellare: 0" in capsys.readouterr().out
     assert await script(["--course", course, "--revert"]) == 0
     assert f"ripristinate al ritaglio v1: {len(rows)}" in capsys.readouterr().out
     rows = [r for r in await _figures(db, doc.id) if r.status == "ready"]
     assert all(r.crop_version == 1 for r in rows)
+
+
+# --- rilievi della verifica WP2 -----------------------------------------------------
+
+
+async def test_a_second_recrop_of_the_same_snapshot_keeps_the_files_in_use(
+    db: AsyncSession, storage: FakeStorage, fixture_pdf: bytes, settings: Any, tmp_path: Path
+) -> None:
+    """Due giri sullo stesso documento producono gli stessi nomi v2: quello
+    che perde l'UPDATE condizionale non cancella i file della riga."""
+    doc = await _v1_document(db, storage, fixture_pdf, settings)
+    rows = await recrop.eligible_rows(db, doc.id)
+    workdir = tmp_path / "recrop"
+    workdir.mkdir()
+    result = await recrop.run_child(doc, rows, workdir, _config())
+    first = await recrop.apply_result(db, doc, result)
+    assert first["recropped"] == len(rows)
+    second = await recrop.apply_result(db, doc, result)
+    assert second["changed"] == len(rows) and second["recropped"] == 0
+    for row in await _figures(db, doc.id):
+        if row.status == "ready":
+            assert remote_storage.uploads_key(row.storage_path) in storage.files
+            assert remote_storage.uploads_key(row.preview_path) in storage.files
+
+
+@pytest.mark.parametrize(
+    "switch", ["figure_extraction_native_crop_enabled", "figure_resolution_rules_enabled"]
+)
+async def test_switches_off_leave_the_recrop_queue_untouched(
+    db: AsyncSession, storage: FakeStorage, fixture_pdf: bytes, settings: Any, switch: str
+) -> None:
+    doc = await _v1_document(db, storage, fixture_pdf, settings)
+    await recrop.request(db, [doc.id])
+    settings(**{switch: False})
+    await worker._recrop_tick(db)
+    fresh = await db.get(CourseDocument, doc.id, populate_existing=True)
+    assert fresh is not None and fresh.figures_recrop_requested_at is not None
+    assert "attempts" not in (fresh.figures_recrop_stats or {})
+    assert all(r.crop_version == 1 for r in await _figures(db, doc.id))
+
+
+async def test_a_storage_error_while_applying_counts_as_an_attempt(
+    db: AsyncSession, storage: FakeStorage, fixture_pdf: bytes, settings: Any
+) -> None:
+    doc = await _v1_document(db, storage, fixture_pdf, settings)
+    doc_id = doc.id  # dopo il rollback del servizio l'oggetto è scaduto
+    await recrop.request(db, [doc_id])
+    storage.fail_upload_after = storage.uploads  # il prossimo caricamento fallisce
+    for attempt in range(1, recrop.RECROP_ATTEMPTS_MAX + 1):
+        await db.execute(
+            update(CourseDocument)
+            .where(CourseDocument.id == doc_id)
+            .values(figures_recrop_requested_at=datetime.now(UTC) - timedelta(seconds=1))
+        )
+        await db.commit()
+        claimed = await recrop.claim(db, doc_id)
+        assert claimed is not None
+        out = await recrop.process(db, claimed, _config())
+        if attempt < recrop.RECROP_ATTEMPTS_MAX:
+            assert out == {"error": "apply_failed", "retry": True}
+    assert out["error"] == "attempts_exhausted"
+    fresh = await db.get(CourseDocument, doc_id, populate_existing=True)
+    assert fresh is not None and fresh.figures_recrop_requested_at is None
+
+
+async def test_revert_writes_sql_null(
+    db: AsyncSession, storage: FakeStorage, fixture_pdf: bytes, settings: Any
+) -> None:
+    from sqlalchemy import func, select
+
+    from app.models.course_document_figure import CourseDocumentFigure
+
+    doc = await _v1_document(db, storage, fixture_pdf, settings)
+    await recrop.request(db, [doc.id])
+    claimed = await recrop.claim(db, doc.id)
+    assert claimed is not None
+    await recrop.process(db, claimed, _config())
+    await recrop.revert(db, course_id=doc.course_id)
+    left = await db.scalar(
+        select(func.count(CourseDocumentFigure.id)).where(
+            CourseDocumentFigure.document_id == doc.id,
+            CourseDocumentFigure.recrop_previous.is_not(None),
+        )
+    )
+    assert left == 0
+
+
+def test_figure_file_paths_include_the_v1_files_of_the_same_course() -> None:
+    from types import SimpleNamespace
+
+    course = uuid.uuid4()
+    doc = uuid.uuid4()
+    base = f"/uploads/courses/{course}/document_figures/{doc}"
+    row = SimpleNamespace(
+        course_id=course,
+        storage_path=f"{base}/p0001-f01-aaaa-v2.png",
+        preview_path=f"{base}/p0001-f01-aaaa-v2-preview.jpg",
+        recrop_previous={
+            "storage_path": f"{base}/p0001-f01-bbbb.jpg",
+            "preview_path": f"/uploads/courses/{uuid.uuid4()}/document_figures/{doc}/x.jpg",
+        },
+    )
+    paths = document_figures_service.figure_file_paths(row)  # type: ignore[arg-type]
+    assert paths == [row.storage_path, row.preview_path, f"{base}/p0001-f01-bbbb.jpg"]
+
+
+async def test_script_refuses_with_the_native_crop_switch_off(
+    db: AsyncSession,
+    storage: FakeStorage,
+    fixture_pdf: bytes,
+    settings: Any,
+    script: Any,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    doc = await _v1_document(db, storage, fixture_pdf, settings)
+    for mode in ("--apply", "--inline"):
+        code = await script(
+            ["--course", str(doc.course_id), mode], figure_extraction_native_crop_enabled=False
+        )
+        assert code == 2
+        assert "FIGURE_EXTRACTION_NATIVE_CROP_ENABLED" in capsys.readouterr().err
+
+
+async def test_a_figure_that_v2_would_make_unusable_stays_v1(
+    db: AsyncSession, storage: FakeStorage, tmp_path: Path
+) -> None:
+    """Rilievo della verifica WP2: una figura mista col raster sotto il
+    minimo non si sostituisce (in dispensa uscirebbe di pochi millimetri)."""
+    import io as _io
+
+    from PIL import Image as _Image
+
+    from tests.course_builders import build_course, build_course_document
+    from tests.source_figure_builders import build_document_figure
+
+    course_id, _org, _user = await build_course(db, modules=1, lessons_per_module=1)
+    doc = build_course_document(course_id, filename="ldv.pdf")
+    db.add(doc)
+    await db.flush()
+    rows = [
+        build_document_figure(course_id, doc.id, license="cc_by", locator=f"p0001-f0{i}")
+        for i in (1, 2)
+    ]
+    db.add_all(rows)
+    await db.commit()
+    buf = _io.BytesIO()
+    _Image.new("RGB", (120, 90), "white").save(buf, format="PNG")
+    (tmp_path / "r.png").write_bytes(buf.getvalue())
+    (tmp_path / "r-preview.jpg").write_bytes(b"\xff\xd8")
+    base = {
+        "identity": {"ok": True, "distance": 0},
+        "file": "r.png",
+        "preview_file": "r-preview.jpg",
+        "mime": "image/png",
+        "height": 90,
+        "is_vector": False,
+        "phash": "0" * 16,
+        "crop_mode": "mixed",
+        "natural_width_mm": 50.8,
+    }
+    events = {
+        # 120 px a 360 dpi di un raster a 60 ppi: 20 px d'informazione.
+        rows[0].id.hex: {
+            **base,
+            "key": rows[0].id.hex,
+            "width": 120,
+            "dpi": 360,
+            "native_ppi": 60.0,
+        },
+        rows[1].id.hex: {
+            **base,
+            "key": rows[1].id.hex,
+            "width": 1200,
+            "dpi": 600,
+            "native_ppi": 600.0,
+        },
+    }
+    result = recrop.RecropResult(
+        snapshots=[{"id": r.id, "locator": r.locator, **recrop.previous_of(r)} for r in rows],
+        events=events,
+        workdir=tmp_path,
+    )
+    stats = await recrop.apply_result(db, doc, result)
+    assert stats["kept_unusable"] == 1 and stats["recropped"] == 1
+    fresh = {r.id: r for r in await _figures(db, doc.id)}
+    assert fresh[rows[0].id].crop_version == 1 and fresh[rows[1].id].crop_version == 2
+
+
+async def test_a_crashing_request_is_closed_after_the_attempts(
+    db: AsyncSession, storage: FakeStorage, fixture_pdf: bytes, settings: Any
+) -> None:
+    """Un processo che muore a ogni giro (niente eccezione da contare) non
+    fa riprendere la richiesta all'infinito: il claim la chiude."""
+    doc = await _v1_document(db, storage, fixture_pdf, settings)
+    await recrop.request(db, [doc.id])
+    await db.execute(
+        update(CourseDocument)
+        .where(CourseDocument.id == doc.id)
+        .values(figures_recrop_stats={"attempts": recrop.RECROP_ATTEMPTS_MAX})
+    )
+    await db.commit()
+    assert await recrop.claim_next(db) is None
+    fresh = await db.get(CourseDocument, doc.id, populate_existing=True)
+    assert fresh is not None and fresh.figures_recrop_requested_at is None
+    assert fresh.figures_recrop_stats["error"] == "attempts_exhausted"
+
+
+async def test_script_refuses_to_revert_while_a_recrop_is_queued(
+    db: AsyncSession,
+    storage: FakeStorage,
+    fixture_pdf: bytes,
+    settings: Any,
+    script: Any,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    doc = await _v1_document(db, storage, fixture_pdf, settings)
+    await recrop.request(db, [doc.id])
+    assert await script(["--course", str(doc.course_id), "--revert"]) == 2
+    assert "in corso" in capsys.readouterr().err
+
+
+def test_child_recrops_a_superseded_office_row(tmp_path: Path, built: Path) -> None:
+    work = _copy(tmp_path, built, DOCX_NAME)
+    code, events, stderr = run_child(
+        work, source=DOCX_NAME, mime=DOCX_MIME, engine="heuristic", blocks=[[1, 1]]
+    )
+    assert code == 0, stderr[-2000:]
+    first = next(e for e in events if e["event"] == "figure" and e["reject_reason"] is None)
+    item = {
+        "key": "old",
+        "locator": f"old-0123456789ab-{first['locator']}",
+        "phash": first["phash"],
+    }
+    code, out, stderr = run_recrop(work, source=DOCX_NAME, mime=DOCX_MIME, figures=[item])
+    assert code == 0, stderr[-2000:]
+    (event,) = [e for e in out if e["event"] == "recrop"]
+    assert event.get("error") is None and event["identity"]["ok"], event

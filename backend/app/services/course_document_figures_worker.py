@@ -444,7 +444,7 @@ async def _supersede_previous(db: AsyncSession, doc: CourseDocument) -> list[str
             row.reject_reason = "superseded"
             row.locator = f"old-{row.id.hex[:12]}-{row.locator}"[:60]
         else:
-            paths.extend(p for p in (row.storage_path, row.preview_path) if p)
+            paths.extend(document_figures_service.figure_file_paths(row))
             await db.delete(row)
     await db.flush()
     log.info(
@@ -1118,15 +1118,20 @@ async def _recrop_tick(db: AsyncSession) -> None:
     `HEAVY_JOB_LOCK`, figlio senza rilevatore."""
     from app.services import document_figures_recrop_service as recrop
 
+    settings = get_settings()
+    if not (
+        settings.figure_extraction_native_crop_enabled and settings.figure_resolution_rules_enabled
+    ):
+        # Interruttori spenti: le richieste restano in coda, nessun v2 nuovo.
+        return
     if _memory_low():
         # Prima del claim: nessun tentativo consumato, si riprova al giro dopo.
         return
     doc = await recrop.claim_next(db)
     if doc is None:
         return
-    config = _config()
-    async with HEAVY_JOB_LOCK:
-        await recrop.process(db, doc, config)
+    # HEAVY_JOB_LOCK per lotto di figure, dentro `process`.
+    await recrop.process(db, doc, _config(), lock=HEAVY_JOB_LOCK)
 
 
 async def _tick() -> None:

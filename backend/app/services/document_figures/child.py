@@ -435,9 +435,10 @@ class DocxEngine:
 # --- ri-ritaglio delle figure già estratte ---------------------------------------
 
 
+# Anche le righe superate e collocate (`old-<12 esadecimali>-<locator>`).
 _OFFICE_LOCATOR = {
-    DOCX_MIME: re.compile(r"^d(?P<order>\d{4})$"),
-    PPTX_MIME: re.compile(r"^s(?P<page>\d{4})-f(?P<order>\d{2})$"),
+    DOCX_MIME: re.compile(r"^(?:old-[0-9a-f]{12}-)?d(?P<order>\d{4})$"),
+    PPTX_MIME: re.compile(r"^(?:old-[0-9a-f]{12}-)?s(?P<page>\d{4})-f(?P<order>\d{2})$"),
 }
 
 
@@ -497,6 +498,10 @@ class _OfficeRecrop:
         ]
         if not pick or pick[0][0].image is None or pick[0][1].image is None:
             raise ChildError("source_missing", f"immagine assente: {item.get('locator')}")
+        new_image = pick[0][1].image
+        # Stessi filtri dell'estrazione, dopo srcRect e rotazioni.
+        if min(new_image.width, new_image.height) < 64 or cropper.is_blank(new_image):
+            raise ChildError("unsupported_format", f"ritaglio non valido: {item.get('locator')}")
         return pick[0]
 
 

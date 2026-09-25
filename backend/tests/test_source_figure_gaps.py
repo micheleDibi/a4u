@@ -1164,3 +1164,116 @@ async def test_commons_svg_is_saved_as_vector_with_the_crop_inputs(
     assert row.is_vector is True and row.crop_mode == "external" and row.crop_version == 2
     assert row.mime_type == "image/png"  # schema: mai JPEG
     assert row.dpi is None and row.natural_width_mm is None  # misura convenzionale
+
+
+async def test_openalex_unusable_crops_do_not_take_a_slot(
+    seeded_db: AsyncSession, env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Rilievo della verifica WP2: nella scelta dei ritagli di un PDF
+    OpenAlex quelli sotto il minimo si scartano prima di leggerne i byte e
+    prima della Vision; il ritaglio buono prende lo slot."""
+    from app.services import openalex_client
+    from app.services.openalex_client import _to_work
+
+    settings = env["settings"].model_copy(
+        update={"openalex_api_key": "k-test", "figure_extraction_enabled": True}
+    )
+    monkeypatch.setattr(gaps, "get_settings", lambda: settings)
+    env["files"] = []
+    work = _to_work(
+        {
+            "id": "https://openalex.org/W7",
+            "title": "Vibrometria laser Doppler",
+            "authorships": [{"author": {"display_name": "Mario Rossi"}}],
+            "publication_year": 2021,
+            "open_access": {"is_oa": True},
+            "best_oa_location": {"pdf_url": "https://example.org/w7.pdf", "license": "cc-by"},
+        }
+    )
+    bbox = {"l": 72.0, "t": 100.0, "r": 216.0, "b": 196.0, "page_w": 595.0, "page_h": 842.0}
+    events = [
+        {  # 120 px su 50,8 mm con un nativo a 60 ppi: unusable
+            "locator": "p0001-f01",
+            "caption": "Figura 1. Vibrometro laser Doppler",
+            "width": 120,
+            "height": 90,
+            "dpi": 60,
+            "native_ppi": 60.0,
+            "natural_width_mm": 50.8,
+            "is_vector": False,
+            "bbox": bbox,
+            "page": 1,
+        },
+        {
+            "locator": "p0002-f01",
+            "caption": "Figura 2. Vibrometro laser Doppler a scansione",
+            "width": 640,
+            "height": 400,
+            "dpi": 300,
+            "native_ppi": 300.0,
+            "natural_width_mm": 54.2,
+            "is_vector": False,
+            "bbox": bbox,
+            "page": 2,
+        },
+    ]
+    chosen: list[str] = []
+
+    async def fake_extract(pdf: bytes, *, max_pages: int, wait_seconds: float, select: Any) -> Any:
+        picked = select(events)
+        chosen.extend(e["locator"] for e in picked)
+        return [{**e, "data": _image(3)} for e in picked]
+
+    async def search_open_works(query: str, *, per_page: int) -> list[Any]:
+        return [work]
+
+    async def download_pdf(url: str, *, max_bytes: int) -> bytes:
+        return b"%PDF-1.4"
+
+    monkeypatch.setattr(gaps, "extract_pdf_figures", fake_extract)
+    monkeypatch.setattr(openalex_client, "search_open_works", search_open_works)
+    monkeypatch.setattr(openalex_client, "download_pdf", download_pdf)
+    _course_id, lesson_id = await _lesson(seeded_db)
+    await gap_worker._tick()
+    lesson = await _fresh(seeded_db, lesson_id)
+    assert chosen == ["p0002-f01"]
+    assert lesson.figures_gap_stats["rejected_resolution"] == 1
+
+
+async def test_with_the_rule_off_nothing_is_rejected_for_resolution(
+    seeded_db: AsyncSession, env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = env["settings"].model_copy(update={"figure_resolution_rules_enabled": False})
+    monkeypatch.setattr(gaps, "get_settings", lambda: settings)
+    env["files"] = [
+        _file(103, "Tiny LDV", original_mime="image/png", original_width=250, original_height=150)
+    ]
+    env["images"][103] = _tiny_png(250, 150)
+    _course_id, lesson_id = await _lesson(seeded_db)
+    await gap_worker._tick()
+    lesson = await _fresh(seeded_db, lesson_id)
+    assert ("download", 103) in env["calls"] and ("assess", "Tiny LDV") in env["calls"]
+    assert "rejected_resolution" not in (lesson.figures_gap_stats or {})
+
+
+@pytest.mark.parametrize("native_crop", [True, False])
+async def test_third_party_images_follow_the_native_crop_switch(
+    seeded_db: AsyncSession, env: dict[str, Any], monkeypatch: pytest.MonkeyPatch, native_crop: bool
+) -> None:
+    from app.services import image_limits
+
+    settings = env["settings"].model_copy(
+        update={"figure_extraction_native_crop_enabled": native_crop}
+    )
+    monkeypatch.setattr(gaps, "get_settings", lambda: settings)
+    seen: list[bool] = []
+    original = image_limits.load_image
+
+    def recording(data: bytes, *, max_pixels: int, crop_v2: bool = False) -> Any:
+        seen.append(crop_v2)
+        return original(data, max_pixels=max_pixels, crop_v2=crop_v2)
+
+    monkeypatch.setattr(image_limits, "load_image", recording)
+    await _lesson(seeded_db)
+    await gap_worker._tick()
+    assert seen and all(flag is native_crop for flag in seen)

@@ -160,10 +160,10 @@ class SlidePlan:
 
 
 def _floor_mm(width: float) -> float:
-    """Arrotondamento al decimo di mm per DIFETTO: la larghezza scritta nel
-    CSS non deve portare i ppi sotto la soglia né l'ingrandimento oltre il
-    tetto."""
-    return max(1.0, math.floor(width * 10.0 + 1e-9) / 10.0)
+    """Arrotondamento al decimo di mm per DIFETTO, dopo i tetti: la
+    larghezza scritta nel CSS non deve portare i ppi sotto la soglia né
+    l'ingrandimento oltre il tetto (nessun minimo che li scavalchi)."""
+    return math.floor(width * 10.0 + 1e-9) / 10.0
 
 
 def page_factor(page_w_pt: float | None) -> float:
@@ -285,6 +285,10 @@ def plan_print(
     if max_height_mm and max_height_mm > 0 and aspect:
         width = min(width, max_height_mm / aspect)
     width = _floor_mm(width)
+    if width <= 0:
+        # Meno di mezzo pixel d'informazione per decimo di mm: nessuna
+        # larghezza sensata (il render usa il segnaposto del riquadro).
+        return None
     return PrintPlan(
         width_mm=width,
         ppi=info / (width / MM_PER_INCH),
@@ -304,6 +308,8 @@ def plan_slide(inputs: ResolutionInputs, *, box_w_mm: float, box_h_mm: float) ->
         fill = min(fill, float(box_h_mm) / aspect)
     cap = SLIDE_MAX_UPSCALE * info / FRAME_PX_PER_MM
     width = _floor_mm(min(fill, cap))
+    if width <= 0:
+        return None
     upscale = width * FRAME_PX_PER_MM / info
     return SlidePlan(
         width_mm=width,

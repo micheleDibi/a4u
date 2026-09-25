@@ -139,3 +139,21 @@ def test_resolution_badge_shows_only_backend_values() -> None:
         "pages/org/courses/components/DocumentFiguresSection.tsx",
     ):
         assert "ResolutionBadge" in (_FRONTEND / relative).read_text(encoding="utf-8"), relative
+
+
+def test_image_rev_is_in_every_image_cache_key_and_request() -> None:
+    """Dopo un ri-ritaglio o un ripristino l'editor non mostra l'immagine
+    vecchia: `image_rev` sta nella chiave di TanStack (staleTime infinito) e
+    nell'URL (cache HTTP di 300 s)."""
+    for relative in (
+        "components/shared/SourceFigure.tsx",
+        "components/shared/SourceFigurePicker.tsx",
+        "pages/org/courses/components/DocumentFiguresSection.tsx",
+    ):
+        source = (_FRONTEND / relative).read_text(encoding="utf-8")
+        for key in re.finditer(r'queryKey:\s*\[\s*"document-figure-image"(.*?)\]', source, re.S):
+            assert "image_rev" in key.group(1), relative
+        calls = re.findall(r"documentFigures\.image\(([^;]*?)\)", source, re.S)
+        assert calls and all("image_rev" in call for call in calls), relative
+    api = (_FRONTEND / "api" / "courses.ts").read_text(encoding="utf-8")
+    assert re.search(r"params\.rev\s*=\s*rev", api)

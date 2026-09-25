@@ -462,3 +462,61 @@ def test_child_office_geometry(tmp_path: Path) -> None:
     assert slide_figure["crop_mode"] == "office" and slide_figure["native_ppi"] == pytest.approx(
         100.0
     )
+
+
+def test_a_mixed_crop_of_a_heavy_jpeg_photo_stays_png() -> None:
+    """Rilievo della verifica WP2: con etichette vettoriali sopra una foto
+    JPEG pesante il ritaglio misto resta PNG (le etichette non si
+    ricomprimono con perdita)."""
+    crop = _crop(
+        native.raster_page(native.photo_image(900, 650), ppi=150.0, jpeg=True, labels=True)
+    )
+    assert crop.mode == "mixed" and crop.source_lossy
+    assert crop.mime == "image/png"
+    plain = _crop(native.raster_page(native.photo_image(900, 650), ppi=150.0, jpeg=True))
+    assert plain.mode == "raster_native"
+
+
+@pytest.mark.parametrize(
+    ("size", "ppi"), [((12, 10), 3.0), ((256, 1), None)], ids=["celle-3ppi", "striscia"]
+)
+def test_low_density_background_under_vector_content_renders_as_vector(
+    size: tuple[int, int], ppi: float | None
+) -> None:
+    """Rilievo della verifica WP2: un fondo raster rado (mappa a celle) o a
+    striscia sotto etichette e frecce non decide la classe della figura, e
+    i tratti non scendono sotto i dpi vettoriali."""
+    width, height = size
+    image = Image.fromarray(
+        np.linspace(0, 255, width * height * 3).astype(np.uint8).reshape(height, width, 3)
+    )
+    density = ppi if ppi is not None else width / 4.0  # striscia: 256 px su 4 pollici
+    built = native.raster_page(image, ppi=density, labels=True)
+    crop = _crop(built)
+    assert crop.mode == "vector" and crop.native_ppi is None
+    assert crop.dpi >= 300
+
+
+def test_mosaic_of_panels_at_different_ppi_is_not_aligned_to_one_grid() -> None:
+    """Pannelli a 300 e 72 ppi nella stessa figura: niente griglia unica
+    (il pannello denso non si sottocampiona), ppi nativo del peggiore."""
+    pdf = pdfium.PdfDocument.new()
+    page = pdf.new_page(595, 842)
+    for img, ppi, x in (
+        (native.noise_image(500, 400), 300.0, 60.0),
+        (native.noise_image(160, 128), 72.0, 240.0),
+    ):
+        obj = pdfium.PdfImage.new(pdf)
+        obj.set_bitmap(pdfium.PdfBitmap.from_pil(img))
+        w, h = img.width / ppi * 72, img.height / ppi * 72
+        obj.set_matrix(pdfium.PdfMatrix().scale(w, h).translate(x, 400))
+        page.insert_obj(obj)
+    page.gen_content()
+    buf = io.BytesIO()
+    pdf.save(buf)
+    doc = pdfium.PdfDocument(buf.getvalue())
+    box = BBox(55, 842 - 400 - 130, 405, 842 - 395)
+    crop = cropper.render_native_crop(doc[0], box, page_regions(doc[0]), page_w=595, page_h=842)
+    assert not crop.aligned and crop.mode == "raster_native"
+    assert crop.native_ppi == pytest.approx(72.0, rel=1e-3)
+    assert crop.dpi == pytest.approx(300.0, abs=1.0)
