@@ -163,6 +163,14 @@ async def test_catalog_payload_and_course_scope(
     assert reserved["attribution"] == "Fonte: materiale del docente"
     # Nessun percorso dello storage nel payload.
     assert "uploads" not in res.text
+    # Revisione dell'immagine: 12 cifre esadecimali, diversa fra figure con
+    # file diversi; cambia quando cambia il file (ri-ritaglio v2).
+    assert len(good["image_rev"]) == 12 and good["image_rev"] != reserved["image_rev"]
+    figs["good"].storage_path = str(figs["good"].storage_path).replace(".png", "-v2.png")
+    await seeded_db.commit()
+    again = await client.get(f"{s['base']}/document-figures", headers=_bearer(s["user"]))
+    changed = {item["id"]: item for item in again.json()}[str(figs["good"].id)]
+    assert changed["image_rev"] != good["image_rev"]
 
 
 async def test_catalog_filtered_by_document(

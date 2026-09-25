@@ -47,6 +47,10 @@ class DocumentFigureOut(BaseModel):
     selectable: bool
     # Motivo di `selectable = False` (predicato, qualità, tipo).
     reason: str | None = None
+    # Revisione dell'immagine: cambia quando cambiano i byte (ri-ritaglio v2
+    # o ripristino), così il frontend non mostra quella in cache. Hash del
+    # percorso, mai il percorso (U5).
+    image_rev: str = ""
 
 
 class DocumentFigureUpdate(BaseModel):

@@ -39,8 +39,9 @@ function Thumbnail({
   const { t } = useTranslation();
   // Stessa chiave del selettore dell'editor: la cache è condivisa.
   const query = useQuery({
-    queryKey: ["document-figure-image", orgId, courseId, figure.id, true],
-    queryFn: () => coursesApi.documentFigures.image(orgId, courseId, figure.id, true),
+    queryKey: ["document-figure-image", orgId, courseId, figure.id, true, figure.image_rev],
+    queryFn: () =>
+      coursesApi.documentFigures.image(orgId, courseId, figure.id, true, figure.image_rev),
     staleTime: Infinity,
   });
   const [url, setUrl] = useState<string | null>(null);

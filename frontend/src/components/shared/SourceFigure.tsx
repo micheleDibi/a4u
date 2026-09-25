@@ -49,6 +49,7 @@ function useFigureImage(figure: DocumentFigure | undefined, preview: boolean) {
       courseRef?.courseId,
       figure?.id,
       preview,
+      figure?.image_rev,
     ],
     queryFn: () =>
       coursesApi.documentFigures.image(
@@ -56,6 +57,7 @@ function useFigureImage(figure: DocumentFigure | undefined, preview: boolean) {
         courseRef!.courseId,
         figure!.id,
         preview,
+        figure!.image_rev,
       ),
     enabled: Boolean(courseRef && figure && figure.renderable && figure.attribution),
     staleTime: Infinity,

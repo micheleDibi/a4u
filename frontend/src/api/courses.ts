@@ -273,6 +273,8 @@ export interface DocumentFigure {
   renderable: boolean;
   selectable: boolean;
   reason: string | null;
+  /** Revisione dell'immagine: cambia col ri-ritaglio (chiave di cache). */
+  image_rev: string;
 }
 
 export interface DocumentFigureUsage {
@@ -1411,11 +1413,17 @@ export const coursesApi = {
       orgId: string,
       courseId: string,
       figureId: string,
-      preview = false
+      preview = false,
+      rev = ""
     ): Promise<Blob> => {
+      // `rev` (image_rev) cambia l'URL dopo un ri-ritaglio: la cache HTTP
+      // (max-age 300) non restituisce l'immagine vecchia.
+      const params: Record<string, string | boolean> = {};
+      if (preview) params.preview = true;
+      if (rev) params.rev = rev;
       const res = await apiClient.get<Blob>(
         `${base(orgId)}/${courseId}/document-figures/${figureId}/image`,
-        { params: preview ? { preview: true } : undefined, responseType: "blob" }
+        { params: Object.keys(params).length ? params : undefined, responseType: "blob" }
       );
       return res.data;
     },

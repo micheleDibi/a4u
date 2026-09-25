@@ -32,9 +32,22 @@ export interface SourceFigurePickerProps {
 function Thumbnail({ figure }: { figure: DocumentFigure }) {
   const courseRef = useCourseRef();
   const query = useQuery({
-    queryKey: ["document-figure-image", courseRef?.orgId, courseRef?.courseId, figure.id, true],
+    queryKey: [
+      "document-figure-image",
+      courseRef?.orgId,
+      courseRef?.courseId,
+      figure.id,
+      true,
+      figure.image_rev,
+    ],
     queryFn: () =>
-      coursesApi.documentFigures.image(courseRef!.orgId, courseRef!.courseId, figure.id, true),
+      coursesApi.documentFigures.image(
+        courseRef!.orgId,
+        courseRef!.courseId,
+        figure.id,
+        true,
+        figure.image_rev,
+      ),
     enabled: Boolean(courseRef),
     staleTime: Infinity,
   });

@@ -17,6 +17,7 @@ altro corso è un 404, come un id inventato.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import uuid
 from typing import Any
 
@@ -109,7 +110,15 @@ def figure_out(
         renderable=render.renderable,
         selectable=reason is None,
         reason=reason,
+        image_rev=image_rev(fig.storage_path),
     )
+
+
+def image_rev(storage_path: str | None) -> str:
+    """Revisione dell'immagine: il nome del file porta già lo sha dei byte,
+    quindi l'hash del percorso cambia solo quando cambiano i byte."""
+    digest = hashlib.sha1((storage_path or "").encode("utf-8"), usedforsecurity=False)
+    return digest.hexdigest()[:12]
 
 
 async def list_course_figures(
