@@ -54,6 +54,7 @@ from typing import cast
 
 from app.services import openai_asset_fix_service as fix_service
 from app.services import openai_figure_describe_service as describe_service
+from app.services import openai_figure_needs_service as needs_service
 from app.services import openai_figure_redundancy_service as redundancy_service
 from app.services import openai_figure_relevance_service as relevance_service
 from app.services import openai_figure_review_service as review_service
@@ -215,6 +216,10 @@ def render_relevance(language: str, kind: str) -> str:
     return relevance_service._system_prompt(language, kind)  # type: ignore[arg-type]
 
 
+def render_needs(language: str) -> str:
+    return needs_service.system_prompt(language)
+
+
 def render_tikz_review(language: str) -> str:
     return tikz_review_service._system_prompt(language)
 
@@ -281,6 +286,13 @@ _RENDERERS: tuple[tuple[str, int, str | None, Callable[[], str]], ...] = (
         21,
         "_SYSTEM_RENDER_EN",
         lambda: render_tikz_review("en"),
+    ),
+    ("PROMPT 22 — fabbisogni di figure di fonte IT", 22, None, lambda: render_needs("it")),
+    (
+        "PROMPT 22 — fabbisogni di figure di fonte EN",
+        22,
+        "_SYSTEM_NEEDS_EN",
+        lambda: render_needs("en"),
     ),
 )
 
