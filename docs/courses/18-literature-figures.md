@@ -1199,3 +1199,55 @@ ridondanze e il docente vedono comunque la figura.
   istanze casuali piccole (2000 per K) il greedy resta sotto l'ottimo di
   un must nel 3,5-5,4% dei casi (tutti must), 6-9% contando la precedenza
   alla specificità: accettato, perché sui dati reali coincide.
+
+### 23.5 Buchi per fabbisogno (letteratura aperta, WP7)
+Con il piano attivo e i fabbisogni pronti, `check_lesson` non usa più il
+criterio «almeno `FIGURE_SOURCE_MIN_PER_LESSON` figure pertinenti» (che non
+vede le varianti scoperte, D1) ma `check_lesson_needs`:
+
+- **Solo i fabbisogni scoperti** per l'assegnazione (nessuna figura li copre,
+  o tutte sono al tetto di riuso); i must prima degli should. Nessuno
+  scoperto → `done` con `reason: covered`, nessuna chiamata.
+- **Ricerche dai fabbisogni** (niente chiamata dei termini del PROMPT 20):
+  Commons con una ricerca per gruppo di varianti (il solo oggetto, risultati
+  in cache nel giro) e un filtro lessicale sulla variante prima del
+  download; OpenAlex per fabbisogno, prima su titolo e abstract
+  (`title_and_abstract.search`), poi sul testo completo.
+- **Verifica della variante**: la Vision (PROMPT 20) riceve la FIGURA
+  CERCATA; la figura tenuta copre il fabbisogno solo se il suo `depicts`
+  supera l'abbinamento di §23.3. Se lo copre le si scrivono
+  `found_for_lesson_id`/`found_for_need_id` (riserva per l'assegnazione) e la
+  ricerca del fabbisogno si ferma; una figura pertinente che non lo copre
+  resta nel catalogo del corso (`kept_not_covering`).
+- **Tetti**: `FIGURE_LITERATURE_MAX_CANDIDATES_PER_NEED` (3, 1 per gli
+  should), `FIGURE_LITERATURE_MAX_CANDIDATES_PER_LESSON` (15),
+  `FIGURE_LITERATURE_MAX_COST_USD_PER_CHECK` (0,08 $, Vision e copie
+  OpenAlex), `FIGURE_LITERATURE_MAX_PAID_PDF_PER_LESSON` (3), tetto di corso
+  = max(`FIGURE_LITERATURE_MAX_PER_COURSE`, fabbisogni pronti del corso)
+  contando solo le figure esterne pronte e non escluse. La copia OpenAlex
+  (0,01 $) entra nel costo della verifica (`openalex_copies`), non fra le
+  chiamate AI.
+- **Esiti** in `figures_gap_stats.needs[need_id]` (`found` con la figura,
+  `not_found`, `not_searched`), fusi fra i giri (un trovato resta trovato);
+  `needs_fp` è l'impronta dei fabbisogni verificati.
+- **Richiesta e riapertura** (`_request_figure_gaps` nel tick della Fase 3):
+  la verifica si chiede quando i fabbisogni non sono più in calcolo; una
+  verifica `done` con un `needs_fp` diverso dall'impronta attuale (o fatta
+  prima del piano) si riapre. Con i fabbisogni pronti la verifica continua
+  anche dopo l'avvio della Fase 3 (niente `phase3_started`): le figure
+  trovate servono alla rigenerazione successiva.
+- **Limite dei corsi grandi (M-E, stima)**: i fabbisogni di 42 lezioni si
+  calcolano in circa 100 s (M-N2), ma il worker dei buchi è sequenziale e
+  una verifica con candidate da valutare dura da decine di secondi a
+  qualche minuto: con tutte le lezioni chieste insieme molte partono prima
+  della propria verifica (tetto `FIGURE_WAIT_MAX_MINUTES`). Le figure
+  trovate dopo servono alla rigenerazione; al docente si consiglia di
+  rigenerare per modulo.
+- **Misura M-L2 non eseguita in locale**: Commons risponde 403 alle
+  richieste di un client senza contatto nello User-Agent (robot policy di
+  Wikimedia; in produzione `PAPERS_POLITE_EMAIL` lo fornisce) e in locale
+  non c'è `OPENALEX_API_KEY` (D5). Il ramo è coperto dai test
+  (`tests/test_figure_gaps_needs.py`). Sulla copia del corso del docente, con
+  i documenti estratti, M4.L6 e M5.L1 risultano coperte (`covered`, nessuna
+  chiamata); restano scoperti tre should (M4.L7 microstrutture e validazione
+  modale, M5.L7 certificato di taratura).
