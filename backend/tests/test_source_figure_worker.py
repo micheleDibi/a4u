@@ -1195,3 +1195,28 @@ def test_page_cache_is_not_counted_as_used_memory(tmp_path: Path) -> None:
     (tmp_path / "memory.current").write_text(str(2 * 1024**3) + "\n")
     (tmp_path / "memory.stat").write_text(f"anon 1000\ninactive_file {1024**3}\n")
     assert runner._cgroup_headroom_mb(str(tmp_path)) == 2048
+
+
+async def test_nul_bytes_in_the_document_text_do_not_break_the_extraction(
+    db: AsyncSession, storage: FakeStorage, tmp_path: Path
+) -> None:
+    """M-A3b (cancello): il testo di un PDF con un byte NUL faceva fallire
+    l'INSERT della riga e, a ogni tentativo, l'estrazione del documento."""
+    doc = await _queued_document(db, storage, None)
+    event = {
+        "locator": "p0001-f01",
+        "page": 1,
+        "bbox": None,
+        "detector_class": "picture",
+        "caption": "Figura 1.\x00 Vibrometro",
+        "source_label": "Figura 1\x00",
+        "context_excerpt": "Contents\x00lists available",
+        "is_vector": True,
+        "reject_reason": "too_small",
+    }
+    outcome = await worker._store_block(db, doc, [event], tmp_path, set(), "docling")
+    assert outcome.rejected == 1
+    (row,) = await _figures(db, doc.id)
+    assert row.source_caption == "Figura 1. Vibrometro"
+    assert row.source_label == "Figura 1"
+    assert row.context_excerpt == "Contentslists available"

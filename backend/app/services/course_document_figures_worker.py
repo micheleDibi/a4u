@@ -141,6 +141,18 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
+def _db_text(value: Any, limit: int | None = None) -> str | None:
+    """Testo del documento pronto per PostgreSQL: il byte NUL (presente nel
+    testo di alcuni PDF) fa fallire l'INSERT e con lui l'intera estrazione
+    del documento, a ogni tentativo."""
+    if value is None:
+        return None
+    text = str(value).replace("\x00", "")
+    if limit is not None:
+        text = text[:limit]
+    return text or None
+
+
 def _positive(value: Any) -> float | None:
     """Numero > 0 dall'evento del figlio, altrimenti None (CHECK 0039)."""
     try:
@@ -505,10 +517,9 @@ async def _store_block(
                 engine=engine,
                 page=event.get("page"),
                 bbox=event.get("bbox"),
-                source_label=(event.get("source_label") or None)
-                and str(event["source_label"])[:60],
-                source_caption=event.get("caption"),
-                context_excerpt=event.get("context_excerpt"),
+                source_label=_db_text(event.get("source_label"), 60),
+                source_caption=_db_text(event.get("caption")),
+                context_excerpt=_db_text(event.get("context_excerpt")),
                 storage_path=storage_path,
                 preview_path=preview_path,
                 mime_type=event.get("mime") if storage_path else None,
