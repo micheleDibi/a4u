@@ -453,7 +453,13 @@ class Settings(BaseSettings):
     figure_literature_enabled: bool = True
     # Candidate valutate dalla Vision per lezione (PROMPT 20) e tetto delle
     # figure della letteratura aperta per corso.
-    figure_literature_max_candidates_per_lesson: int = 8
+    figure_literature_max_candidates_per_lesson: int = 15
+    # Piano delle figure (doc 18 §23.5): candidate per fabbisogno scoperto
+    # (1 per gli should), tetto in dollari per verifica (Vision e copie
+    # OpenAlex) e PDF a pagamento (copie OpenAlex) per lezione.
+    figure_literature_max_candidates_per_need: int = 3
+    figure_literature_max_cost_usd_per_check: float = 0.08
+    figure_literature_max_paid_pdf_per_lesson: int = 3
     figure_literature_max_per_course: int = 40
     # Tempo massimo del lavoro di una lezione (ricerca, download, Vision).
     figure_literature_timeout_seconds: int = 300

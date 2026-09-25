@@ -320,8 +320,11 @@ proprio nel prompt di Fase 3.
 | Variabile | Default | Note |
 |---|---|---|
 | `FIGURE_LITERATURE_ENABLED` | `true` nel codice, `false` in `.env.example` e compose | Kill-switch della ricerca nella letteratura aperta (rete esterna, costo Vision). Con `false` la Fase 3 non aspetta la verifica dei buchi. |
-| `FIGURE_LITERATURE_MAX_CANDIDATES_PER_LESSON` | `8` | Candidate valutate dalla Vision (PROMPT 20) per lezione. |
-| `FIGURE_LITERATURE_MAX_PER_COURSE` | `40` | Tetto delle figure della letteratura aperta per corso. |
+| `FIGURE_LITERATURE_MAX_CANDIDATES_PER_LESSON` | `15` | Candidate valutate dalla Vision (PROMPT 20) per lezione (era 8; con il piano delle figure la ricerca è per fabbisogno). |
+| `FIGURE_LITERATURE_MAX_CANDIDATES_PER_NEED` | `3` | Con il piano delle figure: candidate valutate per fabbisogno scoperto (1 per gli should); ci si ferma alla prima che copre il fabbisogno. |
+| `FIGURE_LITERATURE_MAX_COST_USD_PER_CHECK` | `0.08` | Con il piano: tetto in dollari di una verifica (Vision e copie OpenAlex). |
+| `FIGURE_LITERATURE_MAX_PAID_PDF_PER_LESSON` | `3` | Con il piano: copie OpenAlex a pagamento (0,01 $) per verifica. |
+| `FIGURE_LITERATURE_MAX_PER_COURSE` | `40` | Tetto delle figure della letteratura aperta per corso; con il piano vale come minimo: tetto = max(40, fabbisogni pronti del corso), contando solo le figure esterne pronte e non escluse. |
 | `FIGURE_LITERATURE_TIMEOUT_SECONDS` | `300` | Tempo massimo della verifica di una lezione. |
 | `FIGURE_LITERATURE_MAX_IMAGE_MB` | `20` | Byte massimi di un'immagine scaricata. |
 | `FIGURE_LITERATURE_MAX_PDF_MB` | `30` | Byte massimi di un PDF OpenAlex. |

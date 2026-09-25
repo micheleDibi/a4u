@@ -29,7 +29,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import or_, select, update
+from sqlalchemy import false, or_, select, true, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -37,6 +37,7 @@ from app.core.logging import get_logger
 from app.db.session import async_session_factory
 from app.models.course_document import CourseDocument
 from app.models.course_lesson import CourseLesson
+from app.services import figure_plan_service
 from app.services import literature_figures_service as gaps
 
 log = get_logger("app.course_lesson_figures_gap_worker")
@@ -71,17 +72,35 @@ def _extracting_documents() -> Any:
     )
 
 
+def _needs_ready() -> Any:
+    """Condizione SQL: la lezione ha i fabbisogni pronti e il piano è attivo."""
+    if not figure_plan_service.plan_active():
+        return false()
+    return CourseLesson.figure_needs_status == "ready"
+
+
+def _needs_not_ready() -> Any:
+    """Negazione esplicita sui NULL (NOT su un confronto con NULL escluderebbe
+    la riga)."""
+    if not figure_plan_service.plan_active():
+        return true()
+    return CourseLesson.figure_needs_status.is_distinct_from("ready")
+
+
 async def claim_next(db: AsyncSession) -> CourseLesson | None:
     """Prima lezione `pending` pronta (backoff scaduto, estrazioni finite),
-    portata a `processing` con un UPDATE condizionale. Una verifica serve
-    solo PRIMA della Fase 3: se la lezione non è più in coda per il
-    contenuto, la verifica si chiude `skipped` senza costi."""
+    portata a `processing` con un UPDATE condizionale. Senza il piano delle
+    figure una verifica serve solo PRIMA della Fase 3: se la lezione non è
+    più in coda per il contenuto, la verifica si chiude `skipped` senza
+    costi. Con i fabbisogni pronti la verifica continua anche dopo l'avvio
+    della Fase 3: le figure trovate servono alla rigenerazione successiva."""
     now = _now()
     await db.execute(
         update(CourseLesson)
         .where(
             CourseLesson.figures_gap_status == "pending",
             CourseLesson.content_status != "pending",
+            _needs_not_ready(),
         )
         .values(
             figures_gap_status="skipped",
@@ -96,7 +115,7 @@ async def claim_next(db: AsyncSession) -> CourseLesson | None:
                 select(CourseLesson.id, CourseLesson.figures_gap_attempts)
                 .where(
                     CourseLesson.figures_gap_status == "pending",
-                    CourseLesson.content_status == "pending",
+                    or_(CourseLesson.content_status == "pending", _needs_ready()),
                     ~_extracting_documents(),
                 )
                 .order_by(CourseLesson.figures_gap_requested_at.asc().nulls_first())
@@ -159,7 +178,7 @@ async def process_lesson(db: AsyncSession, lesson: CourseLesson) -> None:
     fresh.figures_gap_status = outcome.status
     fresh.figures_gap_checked_at = _now()
     fresh.figures_gap_usage = _merged(previous_usage, outcome.usage)
-    fresh.figures_gap_stats = outcome.stats
+    fresh.figures_gap_stats = merge_need_stats(fresh.figures_gap_stats, outcome.stats)
     await db.commit()
     log.info(
         "figures_gap_checked",
@@ -168,6 +187,26 @@ async def process_lesson(db: AsyncSession, lesson: CourseLesson) -> None:
         kept=outcome.stats.get("kept"),
         reason=outcome.stats.get("reason"),
     )
+
+
+def merge_need_stats(previous: Any, stats: dict[str, Any]) -> dict[str, Any]:
+    """Esito per fabbisogno fuso fra i giri della verifica: un fabbisogno
+    trovato resta trovato (con la sua figura) anche se un giro successivo
+    non lo cerca più; gli altri prendono l'esito più recente."""
+    out = dict(stats)
+    old = previous.get("needs") if isinstance(previous, dict) else None
+    new = stats.get("needs")
+    if not isinstance(old, dict) or not isinstance(new, dict):
+        return out
+    merged = dict(old)
+    for need_id, value in new.items():
+        if (merged.get(need_id) or {}).get("status") == "found" and (
+            not isinstance(value, dict) or value.get("status") != "found"
+        ):
+            continue
+        merged[need_id] = value
+    out["needs"] = merged
+    return out
 
 
 def _merged(previous: dict[str, Any] | None, usage: dict[str, Any] | None) -> Any:

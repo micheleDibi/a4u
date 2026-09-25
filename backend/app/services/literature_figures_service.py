@@ -68,6 +68,7 @@ from app.services.document_figures import storage as figure_storage
 from app.services.document_figures.phash import hamming, phash
 from app.services.document_figures_service import EXTRACTABLE_MIMES
 from app.services.figure_attribution import figure_number_from_label
+from app.services.figure_need_matching import NeedKey, match, tokens
 from app.services.lesson_document_selection import build_query_profile, terms
 from app.services.openai_client import OpenAINotConfiguredError
 from app.services.openai_figure_describe_service import depicts_payload
@@ -88,6 +89,8 @@ EXTRACTION_VERSION = 1
 OPENALEX_FIGURES_PER_WORK = 3
 OPENALEX_WORKS_PER_QUERY = 5
 WIKIMEDIA_FILES_PER_QUERY = 10
+# Costo della copia del PDF ospitata da OpenAlex (listino della API key).
+OPENALEX_COPY_USD = 0.01
 
 
 class GapRetryError(Exception):
@@ -172,6 +175,22 @@ async def external_figures(db: AsyncSession, course_id: uuid.UUID) -> int:
 
 
 @dataclass
+class _NeedSearch:
+    """Un fabbisogno scoperto cercato nella letteratura aperta."""
+
+    need: dict[str, Any]
+    key: NeedKey
+    cap: int
+    evaluated: int = 0
+    found: uuid.UUID | None = None
+    kept_other: int = 0
+
+    @property
+    def need_id(self) -> str:
+        return str(self.need.get("need_id") or "")
+
+
+@dataclass
 class _Run:
     # Solo valori semplici: dopo un rollback gli oggetti ORM scadono e
     # rileggerli in AsyncSession solleverebbe MissingGreenlet.
@@ -191,15 +210,38 @@ class _Run:
     # passa subito alla copia di OpenAlex.
     blocked_hosts: set[str] = field(default_factory=set)
     # Copia di OpenAlex non più tentata (chiave rifiutata o credito del
-    # giorno finito).
+    # giorno finito, o tetto dei PDF a pagamento).
     content_off: bool = False
+    # Piano delle figure (WP7): fabbisogno cercato ora, tetti della verifica.
+    current: _NeedSearch | None = None
+    lesson_id: uuid.UUID | None = None
+    max_cost_usd: float | None = None
+    paid_pdfs: int = 0
+    max_paid_pdfs: int | None = None
 
     @property
-    def done(self) -> bool:
+    def cost_usd(self) -> float:
+        return float((self.usage or {}).get("cost_usd") or 0.0)
+
+    @property
+    def exhausted(self) -> bool:
+        """Fine della verifica (tetti della lezione)."""
         return (
             self.kept >= self.target
             or self.evaluated >= self.max_candidates
             or time.monotonic() > self.deadline
+            or (self.max_cost_usd is not None and self.cost_usd >= self.max_cost_usd)
+        )
+
+    @property
+    def done(self) -> bool:
+        """Fine della ricerca in corso: la verifica, o il fabbisogno cercato
+        (trovato o al suo tetto di candidate)."""
+        if self.exhausted:
+            return True
+        current = self.current
+        return current is not None and (
+            current.found is not None or current.evaluated >= current.cap
         )
 
     def count(self, key: str) -> None:
@@ -344,9 +386,14 @@ async def _consider(
         run.count("rejected_resolution")
         return False
     run.evaluated += 1
+    current = run.current
+    if current is not None:
+        current.evaluated += 1
     try:
+        # Senza piano la chiamata resta quella di prima (nessun fabbisogno).
+        extra: dict[str, Any] = {"need": current.need} if current is not None else {}
         verdict, usage = await relevance.assess_candidate(
-            safe.data, run.context, source_title=source_title, source_text=source_text
+            safe.data, run.context, source_title=source_title, source_text=source_text, **extra
         )
     except relevance.OpenAIFigureRelevanceError as exc:
         run.usage = merge_usage(run.usage, exc.usage)
@@ -366,6 +413,22 @@ async def _consider(
     ):
         run.count("not_relevant")
         return False
+    # Piano delle figure: la figura copre il fabbisogno cercato? (stesso
+    # abbinamento dell'assegnazione, su `depicts` della Vision). Se sì le si
+    # lega il fabbisogno (`found_for_*`): l'assegnazione le riserva il posto.
+    depicts = depicts_payload(verdict.depicts)
+    covers = False
+    if current is not None:
+        probe = _Probe(
+            kind=verdict.kind,
+            depicts=depicts,
+            description=verdict.description,
+            source_caption=caption,
+            keywords={"course": verdict.keywords_course, "en": verdict.keywords_en},
+        )
+        covers = match(current.key, probe).covers
+        if not covers:
+            run.count("kept_not_covering")
     # Nome non ricavabile dall'esterno (U5): lo sha di un rendering pubblico
     # di Commons sarebbe calcolabile, il suffisso casuale no.
     stem = f"{locator}-{uuid.uuid4().hex[:8]}-{hashlib.sha256(safe.data).hexdigest()[:12]}"
@@ -380,8 +443,14 @@ async def _consider(
     except (StorageError, OSError) as exc:
         raise GapRetryError(f"storage: {exc}") from exc
     now = _now()
+    row_id = uuid.uuid4()
     db.add(
         CourseDocumentFigure(
+            id=row_id,
+            found_for_lesson_id=run.lesson_id if covers else None,
+            found_for_need_id=(current.need_id[:40] if current is not None else None)
+            if covers
+            else None,
             course_id=course_id,
             document_id=None,
             source_kind=source_kind,
@@ -411,7 +480,7 @@ async def _consider(
             quality_score=verdict.quality_score,
             legibility=verdict.legibility,
             is_useful_for_teaching=verdict.is_useful_for_teaching,
-            depicts=depicts_payload(verdict.depicts),
+            depicts=depicts,
             described_at=now,
             describe_model=str(settings.openai_figure_relevance_model)[:80],
             status="ready",
@@ -440,19 +509,34 @@ async def _consider(
     run.hashes.append(digest)
     run.known_ids.add(external_id)
     run.kept += 1
+    if current is not None:
+        if covers:
+            current.found = row_id
+        else:
+            current.kept_other += 1
     run.stats.setdefault("kept_by_source", {})
     run.stats["kept_by_source"][source_kind] = run.stats["kept_by_source"].get(source_kind, 0) + 1
     return True
 
 
-async def _from_wikimedia(db: AsyncSession, run: _Run, queries: list[str]) -> None:
+async def _from_wikimedia(
+    db: AsyncSession,
+    run: _Run,
+    queries: list[str],
+    cache: dict[str, list[wikimedia_client.CommonsFile]] | None = None,
+) -> None:
     for query in queries:
         if run.done:
             return
         try:
-            files = await wikimedia_client.search_files(
-                query, limit=WIKIMEDIA_FILES_PER_QUERY, language=run.context.language_code
-            )
+            if cache is not None and query in cache:
+                files = cache[query]
+            else:
+                files = await wikimedia_client.search_files(
+                    query, limit=WIKIMEDIA_FILES_PER_QUERY, language=run.context.language_code
+                )
+                if cache is not None:
+                    cache[query] = files
         except SafeFetchError as exc:
             if exc.recoverable:
                 raise GapRetryError(str(exc)) from exc
@@ -463,6 +547,13 @@ async def _from_wikimedia(db: AsyncSession, run: _Run, queries: list[str]) -> No
             if run.done:
                 return
             if item.external_id in run.known_ids:
+                continue
+            if run.current is not None and not _variant_in(
+                run.current.key, f"{item.title} {item.object_name or ''} {item.description or ''}"
+            ):
+                # Una ricerca per gruppo di varianti: la figura di un'altra
+                # variante non si scarica per questo fabbisogno.
+                run.count("filtered_variant")
                 continue
             expected = item.expected_width_px(requested)
             if expected is not None and item.original_width and item.original_height:
@@ -621,6 +712,12 @@ async def _work_pdf(
     if run.content_off or not openalex_client.content_pdf_available(work):
         run.count("download_errors")
         return None
+    if run.max_paid_pdfs is not None and run.paid_pdfs >= run.max_paid_pdfs:
+        run.count("paid_pdf_cap")
+        return None
+    if run.max_cost_usd is not None and run.cost_usd + OPENALEX_COPY_USD > run.max_cost_usd:
+        run.count("cost_cap")
+        return None
     try:
         pdf = await openalex_client.download_content_pdf(work, max_bytes=max_bytes)
     except openalex_client.OpenAlexError as exc:
@@ -631,10 +728,19 @@ async def _work_pdf(
             run.content_off = True
         return None
     run.count("downloads_openalex")
+    # La copia ospitata costa 0,01 $ sulla API key: nel costo della verifica
+    # (dashboard admin), senza contarla come chiamata AI.
+    run.paid_pdfs += 1
+    usage = dict(run.usage or {})
+    usage["cost_usd"] = round(float(usage.get("cost_usd") or 0.0) + OPENALEX_COPY_USD, 8)
+    usage["openalex_copies"] = int(usage.get("openalex_copies") or 0) + 1
+    run.usage = usage
     return pdf
 
 
-async def _from_openalex(db: AsyncSession, run: _Run, queries: list[str]) -> None:
+async def _from_openalex(
+    db: AsyncSession, run: _Run, queries: list[str], *, title_abstract: bool = False
+) -> None:
     from app.services.document_figures.runner import ExtractionChildError
 
     settings = get_settings()
@@ -642,9 +748,14 @@ async def _from_openalex(db: AsyncSession, run: _Run, queries: list[str]) -> Non
         if run.done:
             return
         try:
-            works = await openalex_client.search_open_works(
-                query, per_page=OPENALEX_WORKS_PER_QUERY
-            )
+            if title_abstract:
+                works = await openalex_client.search_open_works(
+                    query, per_page=OPENALEX_WORKS_PER_QUERY, title_abstract=True
+                )
+            else:
+                works = await openalex_client.search_open_works(
+                    query, per_page=OPENALEX_WORKS_PER_QUERY
+                )
         except openalex_client.OpenAlexError as exc:
             if exc.status is None or exc.status == 429 or exc.status >= 500:
                 raise GapRetryError(str(exc)) from exc
@@ -778,6 +889,198 @@ class GapOutcome:
     usage: dict[str, Any] | None
 
 
+# --- Piano delle figure: verifica per fabbisogno (WP7, doc 18 §23.5) --------------
+
+
+@dataclass(frozen=True)
+class _Probe:
+    """Vista minima di una candidata per l'abbinamento col fabbisogno."""
+
+    kind: str | None
+    depicts: dict[str, Any]
+    description: str | None
+    source_caption: str | None
+    keywords: dict[str, Any]
+    id: uuid.UUID | None = None
+
+
+def _variant_in(key: NeedKey, text: str) -> bool:
+    """Il testo (titolo e descrizione di Commons) nomina la variante cercata?
+    Sempre vero per un fabbisogno base."""
+    if key.is_base or not key.variants:
+        return True
+    words = tokens(text)
+    return any(variant <= words for variant in key.variants)
+
+
+def need_queries(need: dict[str, Any]) -> list[str]:
+    """Ricerche per un fabbisogno: «variante oggetto» in inglese, poi il primo
+    termine di ricerca inglese diverso."""
+    obj = str(need.get("object_en") or "").strip()
+    variant = str(need.get("variant_en") or "").strip()
+    first = " ".join(part for part in (variant, obj) if part)
+    out = [first] if first else []
+    for term in need.get("terms_en") or []:
+        term = str(term).strip()
+        if term and term.lower() not in (q.lower() for q in out):
+            out.append(term)
+            break
+    return out
+
+
+def _commons_query(need: dict[str, Any]) -> str:
+    """Commons: una ricerca per gruppo di varianti (il solo oggetto, poi il
+    filtro lessicale sulla variante); per un fabbisogno fuori gruppo anche la
+    variante."""
+    if need.get("sequence_group"):
+        return str(need.get("object_en") or "").strip()
+    queries = need_queries(need)
+    return queries[0] if queries else ""
+
+
+async def _course_with_lessons(db: AsyncSession, course_id: uuid.UUID) -> Course | None:
+    from sqlalchemy.orm import selectinload
+
+    from app.models.course_module import CourseModule
+
+    return (
+        await db.execute(
+            select(Course)
+            .where(Course.id == course_id)
+            .options(selectinload(Course.modules).selectinload(CourseModule.lessons))
+        )
+    ).scalar_one_or_none()
+
+
+async def _external_ready(db: AsyncSession, course_id: uuid.UUID) -> int:
+    count = await db.scalar(
+        select(func.count(CourseDocumentFigure.id)).where(
+            CourseDocumentFigure.course_id == course_id,
+            CourseDocumentFigure.source_kind.in_(EXTERNAL_KINDS),
+            CourseDocumentFigure.status == "ready",
+            CourseDocumentFigure.excluded_by_user.is_(False),
+        )
+    )
+    return int(count or 0)
+
+
+async def _ready_needs_in_course(db: AsyncSession, course: Course) -> int:
+    from app.services import figure_plan_service as plan
+
+    total = 0
+    for module in course.modules or []:
+        for lesson in module.lessons or []:
+            needs = plan.current_needs(lesson)
+            total += len(needs or [])
+    return total
+
+
+async def check_lesson_needs(
+    db: AsyncSession, course: Course, lesson: CourseLesson, needs: list[dict[str, Any]], fp: str
+) -> GapOutcome:
+    """Verifica con il piano delle figure: si cercano SOLO i fabbisogni
+    scoperti per l'assegnazione (nessuna figura li copre o sono tutte al
+    tetto di riuso), per fabbisogno, fermandosi alla prima figura che lo
+    copre (verifica della variante sulla risposta della Vision)."""
+    from app.services import source_figure_assignment_service as assignment
+
+    settings = get_settings()
+    lesson_id = lesson.id
+    stats: dict[str, Any] = {"mode": "needs", "needs_fp": fp, "needs_total": len(needs)}
+    snap = await assignment.snapshot(db, course, lesson)
+    open_reasons = ("no_candidate", "reuse_cap")
+    uncovered = [
+        n
+        for n in needs
+        if snap is not None
+        and snap.assignment.unassigned.get((lesson_id, str(n.get("need_id")))) in open_reasons
+    ]
+    stats["needs_uncovered"] = len(uncovered)
+    if not uncovered:
+        return GapOutcome("done", {**stats, "reason": "covered", "needs": {}}, None)
+    extracting = await documents_extracting(db, course.id)
+    if extracting:
+        return GapOutcome(
+            "skipped", {**stats, "reason": "documents_extracting", "documents": extracting}, None
+        )
+    cap = max(
+        int(settings.figure_literature_max_per_course), await _ready_needs_in_course(db, course)
+    )
+    room = cap - await _external_ready(db, course.id)
+    if room <= 0:
+        return GapOutcome("skipped", {**stats, "reason": "course_cap"}, None)
+    run = _Run(
+        course_id=course.id,
+        profile=build_query_profile(lesson),
+        context=lesson_context(course, lesson),
+        target=room,
+        max_candidates=max(0, int(settings.figure_literature_max_candidates_per_lesson)),
+        deadline=time.monotonic() + float(settings.figure_literature_timeout_seconds),
+        hashes=await _course_hashes(db, course.id),
+        known_ids=await _course_external_ids(db, course.id),
+        stats=dict(stats),
+        lesson_id=lesson_id,
+        max_cost_usd=float(settings.figure_literature_max_cost_usd_per_check),
+        max_paid_pdfs=max(0, int(settings.figure_literature_max_paid_pdf_per_lesson)),
+    )
+    per_need = max(0, int(settings.figure_literature_max_candidates_per_need))
+    ordered = sorted(uncovered, key=lambda n: 0 if n.get("priority") == "must" else 1)
+    outcome: dict[str, Any] = {}
+    commons_cache: dict[str, list[wikimedia_client.CommonsFile]] = {}
+    openalex_on = bool((settings.openalex_api_key or "").strip()) and bool(
+        settings.figure_extraction_enabled
+    )
+    try:
+        for need in ordered:
+            need_id = str(need.get("need_id") or "")
+            if run.exhausted:
+                outcome[need_id] = {"status": "not_searched"}
+                continue
+            search = _NeedSearch(
+                need=need,
+                key=NeedKey.from_need(need),
+                cap=per_need if need.get("priority") == "must" else min(1, per_need),
+            )
+            run.current = search
+            commons = _commons_query(need)
+            if commons:
+                await _from_wikimedia(db, run, [commons], cache=commons_cache)
+            queries = need_queries(need)
+            if openalex_on and not run.done and queries:
+                await _from_openalex(db, run, queries[:1], title_abstract=True)
+                if not run.done:
+                    await _from_openalex(db, run, queries[:1])
+            outcome[need_id] = {
+                "status": "found" if search.found else "not_found",
+                "evaluated": search.evaluated,
+                **({"figure_id": str(search.found)} if search.found else {}),
+                **({"kept_other": search.kept_other} if search.kept_other else {}),
+            }
+            run.current = None
+    except OpenAINotConfiguredError:
+        return GapOutcome(
+            "skipped",
+            {**run.stats, "reason": "openai_not_configured", "needs": outcome},
+            run.usage,
+        )
+    except GapRetryError as exc:
+        raise GapRetryError(str(exc), run.usage, {**run.stats, "needs": outcome}) from exc
+    except Exception as exc:
+        log.warning("figures_gap_unexpected_error", lesson_id=str(lesson_id), error=str(exc))
+        raise GapRetryError(
+            f"errore inatteso: {exc}", run.usage, {**run.stats, "needs": outcome}
+        ) from exc
+    run.stats.update(
+        kept=run.kept,
+        evaluated=run.evaluated,
+        found=sum(1 for v in outcome.values() if v.get("status") == "found"),
+        cost_usd=round(run.cost_usd, 6),
+        timed_out=time.monotonic() > run.deadline,
+        needs=outcome,
+    )
+    return GapOutcome("done", run.stats, run.usage)
+
+
 async def check_lesson(db: AsyncSession, lesson: CourseLesson) -> GapOutcome:
     """Verifica i buchi della lezione e integra dalla letteratura aperta.
 
@@ -794,6 +1097,28 @@ async def check_lesson(db: AsyncSession, lesson: CourseLesson) -> GapOutcome:
     budget = source_figure_catalog.budget_for(lesson)
     if not settings.figure_source_enabled or budget <= 0:
         return GapOutcome("skipped", {"reason": "no_budget"}, None)
+    # Piano delle figure: con i fabbisogni pronti la verifica è per
+    # fabbisogno (il vecchio criterio «abbastanza figure pertinenti» non
+    # vede le varianti scoperte).
+    from app.services import figure_plan_service as plan
+
+    if plan.plan_active():
+        full = await _course_with_lessons(db, course.id)
+        target = next(
+            (
+                item
+                for module in (full.modules if full else [])
+                for item in module.lessons or []
+                if item.id == lesson_id
+            ),
+            None,
+        )
+        item_input = plan.needs_input(full, target) if full and target else None
+        if full is not None and target is not None and item_input is not None:
+            fp = plan.fingerprint(item_input, plan.max_needs(target))
+            ready = plan.current_needs(target, fp)
+            if ready is not None:
+                return await check_lesson_needs(db, full, target, ready, fp)
     pertinent = await pertinent_figures(db, course, lesson)
     stats: dict[str, Any] = {"pertinent_before": pertinent, "budget": budget}
     if pertinent >= int(settings.figure_source_min_per_lesson):

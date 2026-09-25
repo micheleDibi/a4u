@@ -1083,15 +1083,47 @@ async def _request_figure_gaps(db: AsyncSession) -> None:
     settings = get_settings()
     if not (settings.figure_source_enabled and settings.figure_literature_enabled):
         return
-    await db.execute(
+    plan_on = figure_plan_service.plan_active()
+    now = datetime.now(UTC)
+    request = (
         update(CourseLesson)
         .where(
             CourseLesson.content_status == "pending",
             CourseLesson.is_assessment.is_(False),
             CourseLesson.figures_gap_status.is_(None),
         )
-        .values(figures_gap_status="pending", figures_gap_requested_at=datetime.now(UTC))
+        .values(figures_gap_status="pending", figures_gap_requested_at=now)
     )
+    if plan_on:
+        # Con il piano delle figure la verifica è per fabbisogno: si chiede
+        # quando i fabbisogni non sono più in calcolo.
+        request = request.where(
+            or_(
+                CourseLesson.figure_needs_status.is_(None),
+                CourseLesson.figure_needs_status.not_in(figure_plan_service.NEEDS_ACTIVE),
+            )
+        )
+    await db.execute(request)
+    if plan_on:
+        # Riapertura: una verifica chiusa per fabbisogni diversi da quelli
+        # attuali (impronta cambiata, o fatta prima del piano) si rifà.
+        await db.execute(
+            update(CourseLesson)
+            .where(
+                CourseLesson.content_status == "pending",
+                CourseLesson.is_assessment.is_(False),
+                CourseLesson.figures_gap_status == "done",
+                CourseLesson.figure_needs_status == "ready",
+                CourseLesson.figures_gap_stats["needs_fp"].astext.is_distinct_from(
+                    CourseLesson.figure_needs["fingerprint"].astext
+                ),
+            )
+            .values(
+                figures_gap_status="pending",
+                figures_gap_requested_at=now,
+                figures_gap_attempts=0,
+            )
+        )
     await db.commit()
 
 
