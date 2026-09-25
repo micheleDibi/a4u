@@ -137,6 +137,11 @@ from app.services.mermaid_prerender import (  # noqa: F401
     _sanitize_mermaid_code,
     _strip_mermaid_max_width,
 )
+from app.services.source_figure_resolution import (
+    REFERENCE_COLUMN_MM,
+    plan_print,
+    plan_slide,
+)
 from app.services.source_figure_service import SourceFigureMap, resolve_source_figures
 from app.services.svg_normalize import svg_intrinsic_box, svg_to_data_uri
 
@@ -1079,15 +1084,14 @@ def _render_visual_asset_block(
             and resolved.data_url
             and resolved.attribution_text.strip()
         ):
-            # Mai oltre la misura naturale (×1,25): `max-width` e `max-height`
-            # del CSS restano i tetti del riquadro.
-            # Solo nella dispensa: slide e frame hanno il loro riquadro, come
-            # l'anteprima web delle slide.
-            width_style = (
-                f' style="width: {resolved.display_width_mm}mm"'
-                if resolved.display_width_mm and variant == "lesson"
-                else ""
+            # Larghezza dalla risoluzione effettiva (doc 18 §22): in dispensa
+            # mai sotto 100 ppi, in slide e frame mai oltre 1,25 pixel del
+            # frame per pixel d'informazione. `max-width` e `max-height` del
+            # CSS restano i tetti del riquadro.
+            width_mm = _source_figure_width_mm(
+                resolved, variant=variant, figure_box_mm=figure_box_mm, box=box
             )
+            width_style = f' style="width: {width_mm}mm"' if width_mm else ""
             body = Markup(
                 f'<img class="source-figure" src="{_html_escape_text(resolved.data_url)}"'
                 f'{width_style} alt="{_html_escape_text(alt_text)}" />'
@@ -2169,6 +2173,36 @@ _PAGE_WIDTHS_CM: dict[str, float] = {
 # Riserva per didascalia (9 pt) e riga «Fonte» (8 pt) sotto una figura di
 # fonte, oltre alla safety comune di `max_figure_height_cm`.
 _SOURCE_FIGURE_TEXT_RESERVE_CM = 3.0
+
+
+def _source_figure_width_mm(
+    resolved: Any,
+    *,
+    variant: str,
+    figure_box_mm: tuple[float, float | None] | None,
+    box: FigureBox | None,
+) -> float | None:
+    """Larghezza (mm) di una figura di fonte nel riquadro reale.
+
+    - Regola v1 (`resolution` None, FIGURE_RESOLUTION_RULES_ENABLED=false):
+      solo in dispensa, `display_width_mm`; slide e frame restano al
+      riquadro del CSS.
+    - Slide e frame (con `box`, D12): `plan_slide` sul box della pagina.
+    - Dispensa: `plan_print` sulla colonna del template e sull'altezza utile
+      della figura di fonte (la stessa del `max-height` del CSS).
+    """
+    inputs = resolved.resolution
+    if inputs is None:
+        return resolved.display_width_mm if variant == "lesson" else None
+    if box is not None:
+        slide = plan_slide(inputs, box_w_mm=box.w_mm, box_h_mm=box.h_mm)
+        return slide.width_mm if slide is not None else None
+    if variant != "lesson":
+        return None
+    column, height = figure_box_mm if figure_box_mm else (REFERENCE_COLUMN_MM, None)
+    max_height = max(50.0, height - _SOURCE_FIGURE_TEXT_RESERVE_CM * 10.0) if height else None
+    printed = plan_print(inputs, column_mm=column, max_height_mm=max_height)
+    return printed.width_mm if printed is not None else None
 
 
 def _compute_template_margins_cm(tpl_dict: dict[str, Any]) -> dict[str, float]:

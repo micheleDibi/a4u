@@ -33,6 +33,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.models.course_document import CourseDocument
 from app.models.course_document_figure import CourseDocumentFigure
@@ -47,6 +48,7 @@ from app.services.figure_attribution import (
 )
 from app.services.slide_geometry import SlideGeometry
 from app.services.source_figure_policy import figure_visibility
+from app.services.source_figure_resolution import ResolutionInputs
 
 log = get_logger("app.source_figure_service")
 
@@ -83,10 +85,15 @@ class ResolvedSourceFigure:
     # Frase parlata già pronta («tratta da …»), sicura per il TTS; vuota se
     # nulla si può pronunciare in sicurezza (il discorso omette la fonte).
     spoken_text: str = ""
-    # Larghezza di stampa (mm): la misura nell'originale (px/dpi) ingrandita
-    # al più di NATURAL_WIDTH_SCALE e mai sotto UPSCALE_MIN_PPI. None senza
-    # dpi: resta il riquadro.
+    # Larghezza di stampa v1 (mm), usata solo con
+    # FIGURE_RESOLUTION_RULES_ENABLED=false: la misura nell'originale
+    # (px/dpi) ingrandita al più di NATURAL_WIDTH_SCALE e mai sotto
+    # UPSCALE_MIN_PPI. None senza dpi: resta il riquadro.
     display_width_mm: float | None = None
+    # Ingressi della risoluzione effettiva (doc 18 §22): con la regola attiva
+    # la larghezza in dispensa, slide e frame la decide
+    # `source_figure_resolution` sul riquadro reale. None = regola v1.
+    resolution: ResolutionInputs | None = None
 
 
 SourceFigureMap = Mapping[str, ResolvedSourceFigure]
@@ -193,6 +200,7 @@ async def resolve_source_figures(
         )
         docs = {doc.id: doc for doc in found_docs.scalars().all()}
 
+    rules = bool(get_settings().figure_resolution_rules_enabled)
     out: dict[str, ResolvedSourceFigure] = {}
     for asset_id, fid in wanted.items():
         if fid is None:
@@ -246,6 +254,7 @@ async def resolve_source_figures(
             spoken=spoken,
             spoken_text=spoken_text,
             display_width_mm=display_width_mm(fig.width, fig.dpi),
+            resolution=ResolutionInputs.from_figure(fig) if rules else None,
         )
     for asset_id, resolved in out.items():
         if not resolved.renderable:

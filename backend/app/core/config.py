@@ -366,6 +366,11 @@ class Settings(BaseSettings):
     # Riuso limitato: una figura di fonte compare in al più tante lezioni del
     # corso (mai due volte nella stessa). 1 = esclusività di prima (9bb7c31).
     figure_source_max_lessons_per_figure: int = 2
+    # Risoluzione effettiva (doc 18 §22): classe good/acceptable/low/unusable
+    # alla larghezza di riferimento, regola di stampa unica per dispensa,
+    # slide e frame, `unusable` fuori da catalogo e selettore. false = regola
+    # di stampa v1 (solo dispensa) e nessun filtro di classe.
+    figure_resolution_rules_enabled: bool = True
     # Attesa massima della Fase 3 per le estrazioni in corso dei documenti
     # del corso (filtro nel `_tick`, mai uno sleep).
     figure_wait_max_minutes: int = 15
