@@ -310,6 +310,38 @@ class ChildSession:
                 self.pages_processed += last - first + 1
                 return result
 
+    async def recrop(
+        self,
+        *,
+        source_name: str,
+        mime: str,
+        figures: list[dict[str, Any]],
+        identity_max_distance: int,
+        timeout_seconds: float,
+    ) -> list[dict[str, Any]]:
+        """Ri-ritaglio delle figure già estratte (comando `recrop` del
+        figlio, senza rilevatore): un evento per figura."""
+        await self._spawn()
+        await self._send(
+            {
+                "command": "recrop",
+                "source": source_name,
+                "mime": mime,
+                "figures": figures,
+                "identity_max_distance": identity_max_distance,
+                "crop_version": self.config.crop_version,
+            }
+        )
+        deadline = time.monotonic() + timeout_seconds
+        out: list[dict[str, Any]] = []
+        while True:
+            event = await self._read_event(deadline)
+            kind = event.get("event")
+            if kind == "recrop":
+                out.append(event)
+            elif kind == "recrop_done":
+                return out
+
     async def probe(self) -> dict[str, Any]:
         await self._spawn("--probe")
         await self._send(

@@ -1112,11 +1112,29 @@ async def process_document(db: AsyncSession, doc: CourseDocument) -> None:
         await asyncio.to_thread(shutil.rmtree, workdir, True)
 
 
+async def _recrop_tick(db: AsyncSession) -> None:
+    """Ri-ritaglio v2 delle figure già estratte (doc 18 §22), solo quando non
+    ci sono estrazioni da fare: un documento per giro, sotto
+    `HEAVY_JOB_LOCK`, figlio senza rilevatore."""
+    from app.services import document_figures_recrop_service as recrop
+
+    if _memory_low():
+        # Prima del claim: nessun tentativo consumato, si riprova al giro dopo.
+        return
+    doc = await recrop.claim_next(db)
+    if doc is None:
+        return
+    config = _config()
+    async with HEAVY_JOB_LOCK:
+        await recrop.process(db, doc, config)
+
+
 async def _tick() -> None:
     async with async_session_factory() as db:
         try:
             doc = await claim_next(db)
             if doc is None:
+                await _recrop_tick(db)
                 return
             doc_id = doc.id
             try:

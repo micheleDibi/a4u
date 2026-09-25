@@ -296,6 +296,16 @@ def _render_scaled(page: Any, box: BBox, *, page_w: float, page_h: float, scale:
     return bitmap.to_pil().convert("RGB")
 
 
+def render_v1_at(page: Any, bbox: BBox, *, page_w: float, page_h: float, dpi: float) -> Image.Image:
+    """Il ritaglio v1 riprodotto ai dpi salvati (verifica d'identità del
+    ri-ritaglio: stesso bbox, stesso margine, stesso render)."""
+    box = bbox.expand(CROP_MARGIN_PT).clamp(page_w, page_h)
+    image: Image.Image = _render_scaled(
+        page, box, page_w=page_w, page_h=page_h, scale=float(dpi) / 72.0
+    )
+    return image
+
+
 def render_native_crop(
     page: Any,
     bbox: BBox,

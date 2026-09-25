@@ -21,6 +21,13 @@ JSON:
 Con ``--probe`` verifica soltanto che il motore si carichi (import di torch
 e Docling, modello di layout) e risponde ``probe_ok``.
 
+Ri-ritaglio (``{"command": "recrop", "source", "mime", "figures": [...],
+"identity_max_distance"}``, doc 18 §22): nessun rilevatore (niente
+Docling); per ogni figura già estratta il figlio riproduce il ritaglio v1
+ai dpi salvati e ne confronta il phash con quello salvato (verifica
+d'identità: stesso file, stesso bbox), poi rende il ritaglio v2; emette un
+evento ``recrop`` per figura e chiude con ``recrop_done``.
+
 Lo stdout del processo è riservato al protocollo: il descrittore 1 viene
 rediretto su stderr, così le librerie che stampano non lo corrompono.
 """
@@ -29,6 +36,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import signal
 import sys
 from collections.abc import Callable
@@ -41,7 +49,7 @@ from app.services.document_figures import cropper, filters
 from app.services.document_figures.captions import caption_label
 from app.services.document_figures.detection import Detection
 from app.services.document_figures.geometry import BBox
-from app.services.document_figures.phash import phash
+from app.services.document_figures.phash import hamming, phash
 from app.services.document_figures.regions import PageRegions, page_regions
 
 Emit = Callable[[dict[str, Any]], None]
@@ -424,6 +432,138 @@ class DocxEngine:
             emit({"event": "page_done", "page": page})
 
 
+# --- ri-ritaglio delle figure già estratte ---------------------------------------
+
+
+_OFFICE_LOCATOR = {
+    DOCX_MIME: re.compile(r"^d(?P<order>\d{4})$"),
+    PPTX_MIME: re.compile(r"^s(?P<page>\d{4})-f(?P<order>\d{2})$"),
+}
+
+
+class _PdfRecrop:
+    def __init__(self, source: Path) -> None:
+        import pypdfium2 as pdfium
+
+        try:
+            self.pdf = pdfium.PdfDocument(str(source))
+        except pdfium.PdfiumError as exc:
+            code = "encrypted" if "password" in str(exc).lower() else "corrupt"
+            raise ChildError(code, str(exc)) from exc
+        self._regions: dict[int, PageRegions] = {}
+
+    def old_and_new(self, item: dict[str, Any]) -> tuple[Any, Any]:
+        page_no = int(item["page"])
+        box = item["bbox"]
+        visible = BBox(float(box["l"]), float(box["t"]), float(box["r"]), float(box["b"]))
+        page_w, page_h = float(box["page_w"]), float(box["page_h"])
+        page = self.pdf[page_no - 1]
+        old = cropper.render_v1_at(page, visible, page_w=page_w, page_h=page_h, dpi=item["dpi"])
+        regions = self._regions.get(page_no)
+        if regions is None:
+            regions = self._regions[page_no] = page_regions(page)
+        new = cropper.render_native_crop(page, visible, regions, page_w=page_w, page_h=page_h)
+        return old, new
+
+
+class _OfficeRecrop:
+    def __init__(self, source: Path, mime: str) -> None:
+        from app.services.document_figures.office import (
+            OfficeFormatError,
+            docx_images,
+            pptx_images,
+        )
+
+        read = pptx_images if mime == PPTX_MIME else docx_images
+        self.mime = mime
+        try:
+            self.old = read(str(source))
+            self.new = read(str(source), geometry=True)
+        except OfficeFormatError as exc:
+            raise ChildError("corrupt", str(exc)) from exc
+
+    def old_and_new(self, item: dict[str, Any]) -> tuple[Any, Any]:
+        match = _OFFICE_LOCATOR[self.mime].match(str(item.get("locator") or ""))
+        if match is None:
+            raise ChildError(
+                "unsupported_format", f"locator non riconosciuto: {item.get('locator')}"
+            )
+        order = int(match["order"])
+        page = int(match["page"]) if "page" in match.groupdict() else None
+        pick = [
+            (old, new)
+            for old, new in zip(self.old, self.new, strict=True)
+            if old.order == order and (page is None or old.page == page)
+        ]
+        if not pick or pick[0][0].image is None or pick[0][1].image is None:
+            raise ChildError("source_missing", f"immagine assente: {item.get('locator')}")
+        return pick[0]
+
+
+def _recrop(job: dict[str, Any], cwd: Path, emit: Emit) -> int:
+    source = cwd / Path(str(job["source"])).name
+    mime = str(job.get("mime") or "")
+    max_distance = int(job.get("identity_max_distance") or 4)
+    if mime == PDF_MIME:
+        handler: _PdfRecrop | _OfficeRecrop = _PdfRecrop(source)
+    elif mime in (DOCX_MIME, PPTX_MIME):
+        handler = _OfficeRecrop(source, mime)
+    else:
+        raise ChildError("unsupported_format", f"tipo non supportato: {mime}")
+    emit({"event": "ready", "figures": len(job.get("figures") or [])})
+    for item in job.get("figures") or []:
+        key = str(item["key"])
+        try:
+            old, new = handler.old_and_new(item)
+            if isinstance(handler, _PdfRecrop):
+                old_image, image = old, new.image
+                data, mime_out = new.data, new.mime
+                extra = {
+                    "dpi": new.dpi,
+                    "is_vector": new.is_vector,
+                    "crop_mode": new.mode,
+                    "native_ppi": new.native_ppi,
+                    "natural_width_mm": new.natural_width_mm,
+                    "aligned": new.aligned,
+                    "source_lossy": new.source_lossy,
+                }
+            else:
+                old_image, image = old.image, new.image
+                data, mime_out = cropper.encode_figure(image, source_lossy=new.source_lossy)
+                extra = {
+                    "dpi": None,
+                    "is_vector": False,
+                    "crop_mode": "office",
+                    "native_ppi": new.native_ppi,
+                    "natural_width_mm": new.natural_width_mm,
+                    "aligned": False,
+                    "source_lossy": new.source_lossy,
+                }
+            distance = hamming(phash(old_image), str(item["phash"])) if item.get("phash") else None
+            event: dict[str, Any] = {
+                "event": "recrop",
+                "key": key,
+                "identity": {
+                    "distance": distance,
+                    "ok": distance is not None and distance <= max_distance,
+                },
+                "width": image.width,
+                "height": image.height,
+                "phash": phash(image),
+                "crop_version": 2,
+                **extra,
+            }
+            event.update(_write(cwd, f"r-{key}", data, mime_out, cropper.preview(image)))
+        except ChildError as exc:
+            event = {"event": "recrop", "key": key, "error": exc.code, "message": str(exc)[:300]}
+        except Exception as exc:
+            detail = f"{type(exc).__name__}: {exc}"[:300]
+            event = {"event": "recrop", "key": key, "error": "crashed", "message": detail}
+        emit(event)
+    emit({"event": "recrop_done"})
+    return 0
+
+
 def _open_engine(job: dict[str, Any], cwd: Path) -> PdfEngine | DocxEngine:
     source = cwd / Path(str(job["source"])).name
     mime = str(job.get("mime") or "")
@@ -507,6 +647,8 @@ def main(argv: list[str]) -> int:
         job = json.loads(sys.stdin.readline() or "{}")
         if "--probe" in argv:
             return _probe(job, emit)
+        if job.get("command") == "recrop":
+            return _recrop(job, cwd, emit)
         engine = _open_engine(job, cwd)
         ready: dict[str, Any] = {"event": "ready", "pages": engine.total_pages}
         if job.get("metadata"):

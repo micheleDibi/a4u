@@ -52,3 +52,35 @@ def run_child(
     )
     events = [json.loads(line) for line in proc.stdout.splitlines() if line.strip()]
     return proc.returncode, events, proc.stderr
+
+
+def run_recrop(
+    workdir: Path,
+    *,
+    source: str,
+    mime: str,
+    figures: list[dict[str, Any]],
+    identity_max_distance: int = 4,
+    timeout: float = 900,
+) -> tuple[int, list[dict[str, Any]], str]:
+    """Comando `recrop` del figlio (ri-ritaglio delle figure già estratte)."""
+    job = {
+        "command": "recrop",
+        "source": source,
+        "mime": mime,
+        "figures": figures,
+        "identity_max_distance": identity_max_distance,
+        "crop_version": 2,
+    }
+    env = child_env(workdir, threads=1, artifacts_path=None)
+    proc = subprocess.run(
+        [sys.executable, "-m", "app.services.document_figures.child"],
+        input=json.dumps(job) + "\n",
+        capture_output=True,
+        text=True,
+        cwd=workdir,
+        env=env,
+        timeout=timeout,
+    )
+    events = [json.loads(line) for line in proc.stdout.splitlines() if line.strip()]
+    return proc.returncode, events, proc.stderr
