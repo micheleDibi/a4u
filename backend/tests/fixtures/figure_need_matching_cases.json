@@ -1,0 +1,772 @@
+{
+ "note": "Casi dell'abbinamento fabbisogno-figura (doc 18 §23.3). needs: campi del PROMPT 22; figures: depicts (null = figura descritta prima della 0041), kind, testo; cases: relazione attesa.",
+ "needs": {
+  "base": {
+   "object_en": "laser Doppler vibrometer",
+   "object_terms": [
+    "LDV",
+    "vibrometro laser Doppler"
+   ],
+   "variant_en": "",
+   "variant_terms": [],
+   "is_base": true,
+   "representation": "schematic",
+   "terms_en": [
+    "laser Doppler vibrometer",
+    "Bragg cell",
+    "interferometer"
+   ],
+   "terms_course": [
+    "vibrometro"
+   ]
+  },
+  "scan": {
+   "object_en": "laser Doppler vibrometer",
+   "object_terms": [
+    "LDV"
+   ],
+   "variant_en": "scanning",
+   "variant_terms": [
+    "scanning",
+    "SLDV",
+    "scansione"
+   ],
+   "is_base": false,
+   "representation": "schematic",
+   "terms_en": [
+    "scanning mirrors"
+   ],
+   "terms_course": []
+  },
+  "diff": {
+   "object_en": "laser Doppler vibrometer",
+   "object_terms": [
+    "LDV"
+   ],
+   "variant_en": "differential",
+   "variant_terms": [
+    "differential",
+    "differenziale"
+   ],
+   "is_base": false,
+   "representation": "schematic",
+   "terms_en": [],
+   "terms_course": []
+  },
+  "inplane": {
+   "object_en": "laser Doppler vibrometer",
+   "object_terms": [
+    "LDV"
+   ],
+   "variant_en": "in-plane",
+   "variant_terms": [
+    "in-plane"
+   ],
+   "is_base": false,
+   "representation": "schematic",
+   "terms_en": [],
+   "terms_course": []
+  },
+  "rot": {
+   "object_en": "laser Doppler vibrometer",
+   "object_terms": [
+    "LDV"
+   ],
+   "variant_en": "rotational",
+   "variant_terms": [
+    "rotational",
+    "torsional"
+   ],
+   "is_base": false,
+   "representation": "schematic",
+   "terms_en": [],
+   "terms_course": []
+  },
+  "multi": {
+   "object_en": "laser Doppler vibrometer",
+   "object_terms": [
+    "LDV"
+   ],
+   "variant_en": "multi-point",
+   "variant_terms": [
+    "multi-point",
+    "multichannel"
+   ],
+   "is_base": false,
+   "representation": "schematic",
+   "terms_en": [],
+   "terms_course": []
+  },
+  "cont": {
+   "object_en": "laser Doppler vibrometer",
+   "object_terms": [
+    "LDV",
+    "CSLDV"
+   ],
+   "variant_en": "continuous scanning",
+   "variant_terms": [
+    "continuous scanning",
+    "CSLDV"
+   ],
+   "is_base": false,
+   "representation": "schematic",
+   "terms_en": [],
+   "terms_course": []
+  },
+  "impact": {
+   "object_en": "modal test setup",
+   "object_terms": [
+    "impact test",
+    "prova modale"
+   ],
+   "variant_en": "impact hammer excitation",
+   "variant_terms": [
+    "impact hammer",
+    "martello strumentato"
+   ],
+   "is_base": false,
+   "representation": "schematic",
+   "terms_en": [],
+   "terms_course": []
+  },
+  "shaker": {
+   "object_en": "modal test setup",
+   "object_terms": [
+    "shaker test"
+   ],
+   "variant_en": "shaker excitation",
+   "variant_terms": [
+    "electrodynamic shaker",
+    "shaker"
+   ],
+   "is_base": false,
+   "representation": "schematic",
+   "terms_en": [],
+   "terms_course": []
+  },
+  "track": {
+   "object_en": "laser Doppler vibrometer",
+   "object_terms": [
+    "LDV"
+   ],
+   "variant_en": "tracking",
+   "variant_terms": [
+    "tracking",
+    "TLDV"
+   ],
+   "is_base": false,
+   "representation": "schematic",
+   "terms_en": [],
+   "terms_course": []
+  },
+  "hammer_chain": {
+   "object_en": "modal impact test setup",
+   "object_terms": [
+    "modal impact test setup",
+    "impact hammer test setup",
+    "catena per impact test"
+   ],
+   "variant_en": "instrumented hammer with response sensor",
+   "variant_terms": [
+    "instrumented hammer",
+    "impact hammer",
+    "martello strumentato"
+   ],
+   "is_base": false,
+   "representation": "schematic",
+   "terms_en": [],
+   "terms_course": []
+  },
+  "scan_in_object": {
+   "object_en": "scanning laser Doppler vibrometer",
+   "object_terms": [
+    "scanning LDV",
+    "SLDV"
+   ],
+   "variant_en": "scanning",
+   "variant_terms": [
+    "scanning"
+   ],
+   "is_base": false,
+   "representation": "schematic",
+   "terms_en": [],
+   "terms_course": []
+  },
+  "shaker_short": {
+   "object_en": "modal test setup",
+   "object_terms": [
+    "experimental modal analysis setup"
+   ],
+   "variant_en": "shaker",
+   "variant_terms": [
+    "shaker",
+    "electrodynamic shaker"
+   ],
+   "is_base": false,
+   "representation": "schematic",
+   "terms_en": [],
+   "terms_course": []
+  }
+ },
+ "figures": {
+  "base": {
+   "kind": "schematic",
+   "depicts": {
+    "v": 1,
+    "items": [
+     {
+      "object_en": "laser Doppler vibrometer",
+      "variant_en": ""
+     }
+    ],
+    "focus": "optical layout"
+   },
+   "keywords": {
+    "en": [
+     "laser Doppler vibrometer",
+     "Bragg cell",
+     "interferometer"
+    ],
+    "course": [
+     "cella di Bragg"
+    ]
+   }
+  },
+  "scan": {
+   "kind": "schematic",
+   "depicts": {
+    "v": 1,
+    "items": [
+     {
+      "object_en": "laser Doppler vibrometer",
+      "variant_en": "scanning"
+     }
+    ],
+    "focus": "optical layout"
+   },
+   "keywords": {
+    "en": [
+     "scanning laser Doppler vibrometer",
+     "scanning mirrors",
+     "Bragg cell"
+    ],
+    "course": []
+   }
+  },
+  "rot_in_name": {
+   "kind": "schematic",
+   "depicts": {
+    "v": 1,
+    "items": [
+     {
+      "object_en": "rotational vibrometer",
+      "variant_en": ""
+     }
+    ],
+    "focus": "working principle"
+   }
+  },
+  "diff_in_name": {
+   "kind": "schematic",
+   "depicts": {
+    "v": 1,
+    "items": [
+     {
+      "object_en": "fiber optic differential vibrometer",
+      "variant_en": ""
+     },
+     {
+      "object_en": "Bragg cell",
+      "variant_en": ""
+     }
+    ],
+    "focus": "optical layout"
+   }
+  },
+  "two_variants": {
+   "kind": "schematic",
+   "depicts": {
+    "v": 1,
+    "items": [
+     {
+      "object_en": "laser Doppler vibrometer",
+      "variant_en": "scanning"
+     },
+     {
+      "object_en": "laser Doppler vibrometer",
+      "variant_en": "differential"
+     }
+    ],
+    "focus": "comparison"
+   }
+  },
+  "inplane_spaced": {
+   "kind": "schematic",
+   "depicts": {
+    "v": 1,
+    "items": [
+     {
+      "object_en": "laser Doppler vibrometer",
+      "variant_en": "in plane"
+     }
+    ],
+    "focus": "optical layout"
+   }
+  },
+  "scan_chart": {
+   "kind": "chart",
+   "depicts": {
+    "v": 1,
+    "items": [
+     {
+      "object_en": "laser Doppler vibrometer",
+      "variant_en": "scanning"
+     }
+    ],
+    "focus": "measured response"
+   }
+  },
+  "rot_photo": {
+   "kind": "photo",
+   "depicts": {
+    "v": 1,
+    "items": [
+     {
+      "object_en": "laser Doppler vibrometer",
+      "variant_en": "rotational"
+     }
+    ],
+    "focus": "instrument photo"
+   }
+  },
+  "accelerometer": {
+   "kind": "schematic",
+   "depicts": {
+    "v": 1,
+    "items": [
+     {
+      "object_en": "accelerometer",
+      "variant_en": "piezoelectric"
+     }
+    ],
+    "focus": "cross section"
+   }
+  },
+  "different": {
+   "kind": "schematic",
+   "depicts": {
+    "v": 1,
+    "items": [
+     {
+      "object_en": "laser Doppler vibrometer",
+      "variant_en": "different wavelength"
+     }
+    ],
+    "focus": "optical layout"
+   }
+  },
+  "velocimeter_tracking": {
+   "kind": "schematic",
+   "depicts": {
+    "v": 1,
+    "items": [
+     {
+      "object_en": "laser velocimeter",
+      "variant_en": "tracking"
+     }
+    ],
+    "focus": "concept"
+   }
+  },
+  "cont_scan": {
+   "kind": "schematic",
+   "depicts": {
+    "v": 1,
+    "items": [
+     {
+      "object_en": "laser Doppler vibrometer",
+      "variant_en": "continuous scanning"
+     }
+    ],
+    "focus": "measurement setup"
+   }
+  },
+  "old_depicts_version": {
+   "kind": "schematic",
+   "depicts": {
+    "v": 0,
+    "items": [
+     {
+      "object_en": "laser Doppler vibrometer",
+      "variant_en": "scanning"
+     }
+    ],
+    "focus": ""
+   },
+   "caption": "Schema di un vibrometro",
+   "keywords": {
+    "en": [
+     "vibrometer"
+    ],
+    "course": []
+   }
+  },
+  "legacy_scan": {
+   "kind": "schematic",
+   "depicts": null,
+   "caption": "Schema ottico del vibrometro a scansione (SLDV)",
+   "description": "Specchi galvanometrici deviano il fascio.",
+   "keywords": {
+    "en": [
+     "scanning laser Doppler vibrometer",
+     "scanning mirrors"
+    ],
+    "course": [
+     "scansione"
+    ]
+   }
+  },
+  "legacy_base": {
+   "kind": "schematic",
+   "depicts": null,
+   "caption": "Schema di principio del vibrometro laser Doppler",
+   "description": "Interferometro con cella di Bragg.",
+   "keywords": {
+    "en": [
+     "laser Doppler vibrometer",
+     "Bragg cell",
+     "interferometer"
+    ],
+    "course": [
+     "vibrometro"
+    ]
+   }
+  },
+  "hammer_setup": {
+   "kind": "block_diagram",
+   "depicts": {
+    "v": 1,
+    "items": [
+     {
+      "object_en": "modal test setup",
+      "variant_en": "impact hammer"
+     }
+    ],
+    "focus": "measurement setup"
+   }
+  },
+  "shaker_setup": {
+   "kind": "schematic",
+   "depicts": {
+    "v": 1,
+    "items": [
+     {
+      "object_en": "modal test setup",
+      "variant_en": "shaker excitation"
+     }
+    ],
+    "focus": "measurement setup"
+   }
+  },
+  "hammer_setup_named": {
+   "kind": "block_diagram",
+   "depicts": {
+    "v": 1,
+    "items": [
+     {
+      "object_en": "impact hammer test setup",
+      "variant_en": ""
+     },
+     {
+      "object_en": "accelerometer",
+      "variant_en": ""
+     }
+    ],
+    "focus": "impact hammer test setup"
+   }
+  },
+  "shaker_system": {
+   "kind": "block_diagram",
+   "depicts": {
+    "v": 1,
+    "items": [
+     {
+      "object_en": "shaker system",
+      "variant_en": ""
+     }
+    ],
+    "focus": "typical test configuration"
+   }
+  },
+  "ldv_spectrum": {
+   "kind": "schematic",
+   "depicts": {
+    "v": 1,
+    "items": [
+     {
+      "object_en": "laser Doppler vibrometer",
+      "variant_en": ""
+     }
+    ],
+    "focus": "measured response"
+   },
+   "keywords": {
+    "en": [
+     "LDV output spectrum",
+     "frequency"
+    ],
+    "course": []
+   }
+  },
+  "overview": {
+   "kind": "schematic",
+   "depicts": {
+    "v": 1,
+    "items": [
+     {
+      "object_en": "laser Doppler vibrometer",
+      "variant_en": "standard"
+     },
+     {
+      "object_en": "laser Doppler vibrometer",
+      "variant_en": "in-plane"
+     },
+     {
+      "object_en": "laser Doppler vibrometer",
+      "variant_en": "differential"
+     }
+    ],
+    "focus": "comparison of setups"
+   },
+   "keywords": {
+    "en": [
+     "laser Doppler vibrometer",
+     "interferometer"
+    ],
+    "course": []
+   }
+  },
+  "single_point": {
+   "kind": "schematic",
+   "depicts": {
+    "v": 1,
+    "items": [
+     {
+      "object_en": "vibrometer",
+      "variant_en": "single-point"
+     }
+    ],
+    "focus": "optical layout"
+   },
+   "keywords": {
+    "en": [
+     "single-point vibrometer",
+     "Bragg cell"
+    ],
+    "course": []
+   }
+  }
+ },
+ "cases": [
+  [
+   "base",
+   "base",
+   "exact"
+  ],
+  [
+   "scan",
+   "base",
+   "generic"
+  ],
+  [
+   "diff",
+   "base",
+   "generic"
+  ],
+  [
+   "scan",
+   "scan",
+   "exact"
+  ],
+  [
+   "base",
+   "scan",
+   "specialized"
+  ],
+  [
+   "diff",
+   "scan",
+   "conflict"
+  ],
+  [
+   "cont",
+   "scan",
+   "conflict"
+  ],
+  [
+   "cont",
+   "cont_scan",
+   "exact"
+  ],
+  [
+   "scan",
+   "cont_scan",
+   "exact_mixed"
+  ],
+  [
+   "rot",
+   "rot_in_name",
+   "exact_mixed"
+  ],
+  [
+   "diff",
+   "diff_in_name",
+   "exact_mixed"
+  ],
+  [
+   "scan",
+   "two_variants",
+   "multi"
+  ],
+  [
+   "diff",
+   "two_variants",
+   "multi"
+  ],
+  [
+   "rot",
+   "two_variants",
+   "conflict"
+  ],
+  [
+   "inplane",
+   "inplane_spaced",
+   "exact"
+  ],
+  [
+   "scan",
+   "scan_chart",
+   "representation"
+  ],
+  [
+   "rot",
+   "rot_photo",
+   "exact"
+  ],
+  [
+   "base",
+   "accelerometer",
+   "none"
+  ],
+  [
+   "diff",
+   "different",
+   "conflict"
+  ],
+  [
+   "scan",
+   "old_depicts_version",
+   "generic"
+  ],
+  [
+   "scan",
+   "legacy_scan",
+   "legacy"
+  ],
+  [
+   "diff",
+   "legacy_scan",
+   "generic"
+  ],
+  [
+   "base",
+   "legacy_base",
+   "base_implicit"
+  ],
+  [
+   "impact",
+   "hammer_setup",
+   "exact"
+  ],
+  [
+   "shaker",
+   "hammer_setup",
+   "conflict"
+  ],
+  [
+   "shaker",
+   "shaker_setup",
+   "exact"
+  ],
+  [
+   "impact",
+   "shaker_setup",
+   "conflict"
+  ],
+  [
+   "hammer_chain",
+   "hammer_setup_named",
+   "exact_mixed"
+  ],
+  [
+   "hammer_chain",
+   "shaker_setup",
+   "conflict"
+  ],
+  [
+   "scan_in_object",
+   "scan",
+   "exact"
+  ],
+  [
+   "scan_in_object",
+   "base",
+   "generic"
+  ],
+  [
+   "scan_in_object",
+   "rot_in_name",
+   "conflict"
+  ],
+  [
+   "base",
+   "ldv_spectrum",
+   "off_topic"
+  ],
+  [
+   "shaker_short",
+   "shaker_system",
+   "exact_mixed"
+  ],
+  [
+   "shaker_short",
+   "hammer_setup_named",
+   "conflict"
+  ],
+  [
+   "track",
+   "velocimeter_tracking",
+   "none"
+  ],
+  [
+   "base",
+   "overview",
+   "multi"
+  ],
+  [
+   "base",
+   "single_point",
+   "exact"
+  ],
+  [
+   "multi",
+   "single_point",
+   "generic"
+  ],
+  [
+   "diff",
+   "overview",
+   "multi"
+  ]
+ ]
+}
