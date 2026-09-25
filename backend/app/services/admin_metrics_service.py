@@ -227,6 +227,14 @@ async def _cost(db: AsyncSession, *, cutoff_7d: datetime, cutoff_30d: datetime) 
             CourseLesson.figures_gap_checked_at,
             (),
         ),
+        # Piano delle figure: fabbisogni per lezione (PROMPT 22), cumulativo
+        # per lezione e datato all'ultimo calcolo.
+        (
+            "figure_needs",
+            CourseLesson.figure_needs_usage,
+            CourseLesson.figure_needs_checked_at,
+            (),
+        ),
     ]
     by_phase: list[CostByPhase] = []
     total_usd = 0.0

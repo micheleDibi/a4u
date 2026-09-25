@@ -716,6 +716,17 @@ async def _clone_course_structure(
                 ),
                 # Verdetto del revisore: per asset_id, che non cambiano.
                 content_figure_review=_deepcopy_json(src_lesson.content_figure_review),
+                # Piano delle figure: i fabbisogni pronti si copiano con la
+                # loro impronta (se la copia è tradotta l'impronta non torna
+                # e si ricalcolano alla prossima richiesta); il costo no.
+                figure_needs=(
+                    _deepcopy_json(src_lesson.figure_needs)
+                    if src_lesson.figure_needs_status == "ready"
+                    else None
+                ),
+                figure_needs_status=(
+                    "ready" if src_lesson.figure_needs_status == "ready" else None
+                ),
                 content_attempts=0,
                 content_tokens=None,
                 content_error=None,

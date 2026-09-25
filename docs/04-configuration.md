@@ -283,7 +283,7 @@ proprio nel prompt di Fase 3.
 | `FIGURE_SOURCE_MAX_LESSONS_PER_FIGURE` | `2` | Riuso limitato: una figura di fonte compare in al più N lezioni del corso, mai due volte nella stessa. Le figure già collocate in una lezione restano sue anche alla rigenerazione. `1` = una sola lezione per le figure nuove (come prima); le collocazioni già esistenti restano. Fra lezioni generate in parallelo il tetto può essere superato (al più di tante lezioni quante ne finiscono insieme) fino al lock di corso del piano delle figure. |
 | `FIGURE_RESOLUTION_RULES_ENABLED` | `true` | Risoluzione effettiva delle figure di fonte (doc 18 §22): classe good/acceptable/low/unusable misurata alla larghezza di riferimento, stampa mai sotto 100 ppi in dispensa (sui pixel d'informazione noti: le figure estratte prima del ri-ritaglio contano i pixel del render), ingrandimento ≤ 1,25 in slide e frame, figure `unusable` fuori da catalogo e selettore. `false` = regola di stampa precedente (solo dispensa) e nessun filtro. |
 | `FIGURE_EXTRACTION_NATIVE_CROP_ENABLED` | `true` | Ritaglio v2 delle figure estratte (doc 18 §22): il raster si rende sulla sua griglia di pixel nativa (niente pavimento a 150 dpi né soffitto a 300), con i tratti vettoriali sopra a k volte il nativo; PNG senza perdita per schemi e grafici; per DOCX e PPTX ritaglio, ribaltamenti e rotazioni del documento. `false` = ritaglio precedente (`crop_version` 1). Non cambia l'impronta dell'estrazione: le figure già estratte passano alla v2 solo col ri-ritaglio. |
-| `FIGURE_WAIT_MAX_MINUTES` | `15` | Attesa massima della Fase 3 per le estrazioni ancora in corso dei documenti del corso; è anche la finestra oltre la quale un'estrazione in coda non blocca più la letteratura aperta (doc 18 §22.1). |
+| `FIGURE_WAIT_MAX_MINUTES` | `15` | Attesa massima della Fase 3 per le estrazioni ancora in corso dei documenti del corso; è anche la finestra oltre la quale un'estrazione in coda non blocca più la letteratura aperta (doc 18 §22.1). Con il piano delle figure è anche il tetto dell'attesa dei fabbisogni delle lezioni sorelle, contato dalla richiesta della lezione stessa (doc 18 §23.1). |
 | `FIGURE_EXTRACTION_ENABLED` | `true` (codice) / `false` (compose) | Estrazione delle figure dai documenti. In produzione va accesa solo dopo la misura M0 sulla VM (torch senza AVX). Spenta: all'upload lo stato resta `NULL`, i `pending` passano a `skipped(extraction_disabled)`. |
 | `FIGURE_EXTRACTION_ENGINE` | `docling` | `docling` (layout + classificatore, CPU) oppure `heuristic` (pdfplumber + pypdfium2, senza torch, qualità minore). |
 | `FIGURE_EXTRACTION_THREADS` | `1` | Thread del processo figlio (OMP/MKL/OPENBLAS e Docling). |
@@ -336,6 +336,16 @@ proprio nel prompt di Fase 3.
 | `OPENAI_FIGURE_RELEVANCE_REASONING_EFFORT` | _(vuoto)_ | Solo per modelli reasoning. |
 | `OPENAI_FIGURE_RELEVANCE_MAX_TOKENS` | `800` | Tetto dell'output. |
 | `OPENAI_FIGURE_RELEVANCE_TIMEOUT_SECONDS` | `60` | Timeout di una chiamata. |
+| `FIGURE_PLAN_ENABLED` | `true` | Piano delle figure di fonte (doc 18 §23): fabbisogni per lezione (PROMPT 22), calcolati quando si chiede la Fase 3 e validi finché la struttura della lezione non cambia. `false` = catalogo lessicale come prima. |
+| `OPENAI_FIGURE_NEEDS_MODEL` | `gpt-5.5` | Modello del PROMPT 22; deve stare a listino. Scelto con la misura M-N1 (doc 18 §23.1): `gpt-4.1-mini` chiedeva figure di fonte anche per una lezione matematica e spezzava la sequenza delle tipologie. |
+| `OPENAI_FIGURE_NEEDS_REASONING_EFFORT` | `none` | Solo per modelli reasoning (vuoto per `gpt-4.1-mini`). |
+| `OPENAI_FIGURE_NEEDS_MAX_TOKENS` | `4500` | Tetto dell'output del PROMPT 22 (con `gpt-5.5` circa 250-280 token a fabbisogno; a 2500 una lezione con 10 fabbisogni usciva troncata). |
+| `OPENAI_FIGURE_NEEDS_TIMEOUT_SECONDS` | `90` | Timeout di una chiamata. |
+| `FIGURE_NEEDS_CONCURRENCY` | `4` | Lezioni calcolate in parallelo dal worker dei fabbisogni. |
+| `FIGURE_NEEDS_AUTO_RETRY_MAX` | `3` | Ripetizioni sugli errori recuperabili, poi `failed` (la Fase 3 procede comunque). |
+| `FIGURE_NEEDS_POLL_INTERVAL_SECONDS` | `5` | Pausa fra i giri del worker. |
+| `FIGURE_NEEDS_MAX_PER_LESSON` | `10` | Fabbisogni per lezione (al più 8 `must`; al taglio si tengono i `must`). |
+| `FIGURE_NEEDS_MAX_PER_INTRO_LESSON` | `3` | Fabbisogni nella lezione introduttiva. |
 
 **Formato `tikz` (WP6).** Figure vettoriali compilate con XeLaTeX nella sandbox del container (limiti di processo, ambiente senza segreti, TeX paranoico, autotest all'avvio: se fallisce il formato non si offre). Spento di default: TeX Live entra nell'immagine solo con `docker compose -f docker-compose.yml -f docker-compose.prod.yml build --build-arg INSTALL_TEX=true backend` (circa +550 MB, misura M5). Vedi `docs/courses/18-literature-figures.md`.
 

@@ -29,6 +29,7 @@ from app.services import (
     course_duplication_worker,
     course_lesson_avatar_video_worker,
     course_lesson_content_worker,
+    course_lesson_figure_needs_worker,
     course_lesson_figures_gap_worker,
     course_lesson_pdf_worker,
     course_lesson_slides_pdf_worker,
@@ -105,6 +106,9 @@ async def lifespan(app: FastAPI):
     # Buchi di figure di fonte e letteratura aperta (WP5): parte solo con
     # FIGURE_SOURCE_ENABLED e FIGURE_LITERATURE_ENABLED.
     course_lesson_figures_gap_worker.start_worker()
+    # Piano delle figure: fabbisogni per lezione (PROMPT 22), in coda solo
+    # quando si chiede la Fase 3. Parte con FIGURE_PLAN_ENABLED.
+    course_lesson_figure_needs_worker.start_worker()
     # Worker generazione architettura corso (Fase 1 della pipeline AI).
     course_architecture_worker.start_worker()
     # Worker generazione struttura lezioni (Fase 2 — §5). Dispatch parallelo
@@ -160,6 +164,7 @@ async def lifespan(app: FastAPI):
         await course_lesson_slides_worker.stop_worker()
         await course_lesson_content_worker.stop_worker()
         await course_lesson_figures_gap_worker.stop_worker()
+        await course_lesson_figure_needs_worker.stop_worker()
         await course_lesson_structure_worker.stop_worker()
         await course_architecture_worker.stop_worker()
         await course_document_figures_worker.stop_worker()

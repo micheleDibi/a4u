@@ -60,6 +60,7 @@ from app.services import (
     course_glossary_service,
     course_lesson_content_service,
     document_citation_guard,
+    figure_plan_service,
     openai_lesson_content_service,
     source_figure_catalog,
     source_figure_fusion,
@@ -969,11 +970,15 @@ def _pending_lessons_query() -> Select[tuple[uuid.UUID]]:
     `FIGURE_WAIT_MAX_MINUTES`: così il catalogo include le figure appena
     richieste. Con la letteratura aperta accesa (WP5) aspetta anche la
     verifica dei buchi della lezione (`figures_gap_status` in coda o in
-    corso, stesso tetto dalla richiesta). Oltre il tetto si parte comunque."""
+    corso, stesso tetto dalla richiesta). Con il piano delle figure aspetta
+    anche i fabbisogni delle lezioni in coda dello stesso corso
+    (`figure_plan_service.waiting_clause`, tetto dalla propria richiesta).
+    Oltre il tetto si parte comunque."""
     settings = get_settings()
     query = select(CourseLesson.id).where(CourseLesson.content_status == "pending")
     if not settings.figure_source_enabled:
         return query
+    query = query.where(figure_plan_service.waiting_clause())
     cutoff = datetime.now(UTC) - timedelta(minutes=int(settings.figure_wait_max_minutes))
     if settings.figure_extraction_enabled:
         extracting = (

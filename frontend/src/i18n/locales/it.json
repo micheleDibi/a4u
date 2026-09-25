@@ -2590,7 +2590,8 @@
           "slides": "Slide",
           "speech": "Discorso",
           "document_figures": "Figure di fonte",
-          "figures_gap": "Figure dalla letteratura aperta"
+          "figures_gap": "Figure dalla letteratura aperta",
+          "figure_needs": "Piano delle figure (fabbisogni)"
         }
       },
       "loginActivity": {

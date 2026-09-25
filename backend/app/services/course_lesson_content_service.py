@@ -52,6 +52,7 @@ from app.schemas.course_lesson_content import (
 )
 from app.services import (
     document_citation_guard,
+    figure_plan_service,
     lesson_coverage_resolver,
     lesson_document_selection,
     openai_lesson_content_service,
@@ -776,6 +777,7 @@ async def request_lesson_generation(
 
     attempts_reset_from = _reset_attempts_for_request(lesson)
     _reset_figure_gap(lesson)
+    figure_plan_service.request_needs(course, lesson)
     lesson.content_status = "pending"
     lesson.content_error = None
     lesson.content_progress = 0
@@ -839,6 +841,7 @@ async def request_all_lessons_generation(
         if _reset_attempts_for_request(lesson) is not None:
             attempts_reset += 1
         _reset_figure_gap(lesson)
+        figure_plan_service.request_needs(course, lesson)
         lesson.content_status = "pending"
         lesson.content_error = None
         lesson.content_progress = 0
@@ -901,6 +904,7 @@ async def request_missing_lessons_generation(
         if _reset_attempts_for_request(lesson) is not None:
             attempts_reset += 1
         _reset_figure_gap(lesson)
+        figure_plan_service.request_needs(course, lesson)
         lesson.content_status = "pending"
         lesson.content_error = None
         lesson.content_progress = 0

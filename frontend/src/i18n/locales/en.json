@@ -2590,7 +2590,8 @@
           "slides": "Slides",
           "speech": "Speech",
           "document_figures": "Source figures",
-          "figures_gap": "Figures from open literature"
+          "figures_gap": "Figures from open literature",
+          "figure_needs": "Figure plan (needs)"
         }
       },
       "loginActivity": {

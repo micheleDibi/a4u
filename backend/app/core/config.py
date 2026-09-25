@@ -482,6 +482,21 @@ class Settings(BaseSettings):
     openai_figure_relevance_max_tokens: int = 800
     openai_figure_relevance_timeout_seconds: int = 60
 
+    # Piano delle figure di fonte (doc 18 §23): fabbisogni per lezione
+    # (PROMPT 22), calcolati quando si chiede la Fase 3 e validi finché la
+    # struttura della lezione non cambia. Il modello deve stare a listino.
+    figure_plan_enabled: bool = True
+    openai_figure_needs_model: str = "gpt-5.5"
+    openai_figure_needs_reasoning_effort: str | None = "none"
+    openai_figure_needs_max_tokens: int = 4500
+    openai_figure_needs_timeout_seconds: int = 90
+    figure_needs_concurrency: int = 4
+    figure_needs_auto_retry_max: int = 3
+    figure_needs_poll_interval_seconds: int = 5
+    # Fabbisogni per lezione (al più 8 must) e nella lezione introduttiva.
+    figure_needs_max_per_lesson: int = 10
+    figure_needs_max_per_intro_lesson: int = 3
+
     # Formato `tikz` (WP6): figure vettoriali (schemi di strumenti, circuiti
     # IEC, catene di misura) compilate con XeLaTeX nella sandbox del
     # container (SBX-2: limiti di processo, ambiente senza segreti, TeX
