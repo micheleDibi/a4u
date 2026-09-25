@@ -14,6 +14,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -124,6 +125,17 @@ class CourseLesson(UUIDPKMixin, TimestampMixin, Base):
             "figures_gap_status IS NULL OR figures_gap_status IN "
             "('pending','processing','done','skipped','failed')",
             name="ck_course_lesson_figures_gap_status",
+        ),
+        # Piano delle figure (migrazione 0040): fabbisogni per lezione.
+        CheckConstraint(
+            "figure_needs_status IS NULL OR figure_needs_status IN "
+            "('pending','processing','ready','failed','skipped')",
+            name="ck_course_lesson_figure_needs_status",
+        ),
+        Index(
+            "ix_course_lesson_figure_needs_pending",
+            "figure_needs_requested_at",
+            postgresql_where=text("figure_needs_status = 'pending'"),
         ),
         CheckConstraint(
             "pdf_status IN ('empty','pending','processing','ready','failed')",
@@ -276,6 +288,27 @@ class CourseLesson(UUIDPKMixin, TimestampMixin, Base):
         JSONB(none_as_null=True), nullable=True
     )
     figures_gap_stats: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB(none_as_null=True), nullable=True
+    )
+    # Piano delle figure di fonte (migrazione 0040, doc 18 §23): fabbisogni
+    # della lezione (PROMPT 22) con l'impronta dell'input che li ha
+    # prodotti: `{v, fingerprint, model, needs, dropped}`. Si calcolano
+    # quando si chiede la Fase 3 (`figure_needs_requested_at`, che conta
+    # il tetto dell'attesa); `usage` è il costo cumulativo.
+    figure_needs: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB(none_as_null=True), nullable=True
+    )
+    figure_needs_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    figure_needs_attempts: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, default=0, server_default="0"
+    )
+    figure_needs_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    figure_needs_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    figure_needs_usage: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB(none_as_null=True), nullable=True
     )
     content_attempts: Mapped[int] = mapped_column(
