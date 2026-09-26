@@ -1116,12 +1116,17 @@ async def _drop_source_figures(
 async def _inline_needs(
     db: AsyncSession, course_full: Any, lesson: CourseLesson, lesson_id: uuid.UUID
 ) -> None:
-    """Ripiego inline dei fabbisogni, coordinato col worker dei fabbisogni:
-    nessuna chiamata se il worker li sta calcolando ora (doppia spesa e
+    """Ripiego inline dei fabbisogni già chiesti, coordinato col worker dei
+    fabbisogni: nessuna chiamata se il worker li sta calcolando ora (doppia spesa e
     fabbisogni diversi da quelli dell'offerta); se sono in coda, la lezione
     si prende con un UPDATE condizionale (il worker non la prende più) e,
     se il calcolo non riesce, torna in coda."""
     status = lesson.figure_needs_status
+    if status is None:
+        # Fabbisogni mai chiesti (piano spento alla richiesta, lezione messa in
+        # coda senza `request_*`): la lezione procede senza piano, nessuna
+        # chiamata. Il ripiego vale per quelli chiesti, in coda, falliti o vecchi.
+        return
     if status == "processing":
         log.info("lesson_content_figure_needs_busy", lesson_id=str(lesson_id))
         return

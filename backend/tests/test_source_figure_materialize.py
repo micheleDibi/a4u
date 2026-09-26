@@ -1154,6 +1154,13 @@ async def test_missing_needs_are_computed_inline_before_the_offer(
     _plan_settings(monkeypatch)
     setup = await _setup(seeded_db)
     need = await _with_needs(seeded_db, setup, store=False)
+    # Fabbisogni chiesti ma falliti (il worker ha esaurito i tentativi).
+    await seeded_db.execute(
+        update(CourseLesson)
+        .where(CourseLesson.id == setup["lesson_id"])
+        .values(figure_needs_status="failed")
+    )
+    await seeded_db.commit()
     calls: list[Any] = []
 
     async def generate(item: Any, *, max_total: int) -> Any:
@@ -1365,3 +1372,26 @@ async def test_the_inline_fallback_respects_the_needs_worker(
     assert "catalogo del piano" not in fakes["calls"][0]["user_prompt"]
     assert len(calls) == (0 if status == "processing" else 1)
     assert lesson.figure_needs_status == status
+
+
+async def test_needs_never_requested_are_not_computed_inline(
+    seeded_db: AsyncSession, fakes: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Lezione messa in coda senza richiesta dei fabbisogni: nessuna chiamata
+    PROMPT 22 (e i test che portano una lezione in coda a mano non escono in
+    rete)."""
+    from app.services import openai_figure_needs_service as needs_svc
+
+    _plan_settings(monkeypatch)
+    setup = await _setup(seeded_db)
+    calls: list[Any] = []
+
+    async def generate(item: Any, *, max_total: int) -> Any:
+        calls.append(item)
+        raise AssertionError("chiamata inattesa")
+
+    monkeypatch.setattr(needs_svc, "generate_needs", generate)
+    await worker._process_one(setup["lesson_id"])
+    lesson = await _lesson(seeded_db, setup["lesson_id"])
+    assert lesson.content_status == "ready", lesson.content_error
+    assert calls == [] and lesson.figure_needs_status is None
