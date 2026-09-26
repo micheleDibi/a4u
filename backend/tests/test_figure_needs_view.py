@@ -77,6 +77,8 @@ def test_states_are_computed_at_read_time() -> None:
         "needs": 4,
         "musts": 3,
         "musts_placed": 2,
+        "shoulds": 1,
+        "shoulds_placed": 0,
         "uncovered": 2,
         "misplaced": 1,
         "dismissed": 0,
@@ -198,6 +200,7 @@ async def test_links_api(client: AsyncClient, seeded_db: AsyncSession) -> None:
     out = _lesson_out(res.json(), s["lesson"].id)
     (need,) = out["figure_needs_view"]
     assert need["status"] == "placed" and need["linked"] is True
+    assert out["figure_needs_status"] == "ready"
     assert out["figure_needs_summary"]["musts_placed"] == 1
     res = await client.put(f"{s['url']}/n1", json={"state": "dismissed"}, headers=headers)
     assert _lesson_out(res.json(), s["lesson"].id)["figure_needs_view"][0]["status"] == "dismissed"

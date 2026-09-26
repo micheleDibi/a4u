@@ -214,14 +214,20 @@ def figure_needs_view(lesson: Any) -> list[dict[str, Any]] | None:
 
 
 def summary(view: list[dict[str, Any]] | None) -> dict[str, int] | None:
-    """Conteggi per l'etichetta della lezione (must coperti su must attivi)."""
+    """Conteggi per l'etichetta della lezione: obbligatorie e consigliate
+    attive (le «Non serve» fuori) e quante sono nel testo."""
     if view is None:
         return None
-    musts = [v for v in view if v.get("priority") == "must" and v["status"] != "dismissed"]
+    active = [v for v in view if v["status"] != "dismissed"]
+    musts = [v for v in active if v.get("priority") == "must"]
+    shoulds = [v for v in active if v.get("priority") != "must"]
+    in_text = ("placed", "misplaced")
     return {
         "needs": len(view),
         "musts": len(musts),
-        "musts_placed": sum(1 for v in musts if v["status"] in ("placed", "misplaced")),
+        "musts_placed": sum(1 for v in musts if v["status"] in in_text),
+        "shoulds": len(shoulds),
+        "shoulds_placed": sum(1 for v in shoulds if v["status"] in in_text),
         "uncovered": sum(1 for v in view if v["status"] in ("uncovered", "missing")),
         "misplaced": sum(1 for v in view if v["status"] == "misplaced"),
         "dismissed": sum(1 for v in view if v["status"] == "dismissed"),
