@@ -243,6 +243,53 @@ export interface LessonFigureReview {
   >;
 }
 
+/** Stato di un fabbisogno di figura della lezione (doc 18 §23.7), calcolato
+ *  dal backend alla lettura: il frontend non lo ricalcola. */
+export type LessonFigureNeedStatus =
+  | "placed"
+  | "misplaced"
+  | "missing"
+  | "uncovered"
+  | "dismissed";
+
+export interface LessonFigureNeedView {
+  need_id: string;
+  /** N1…Nn nell'ordine delle sezioni. */
+  label: string;
+  section_id: string;
+  subject: string;
+  priority: "must" | "should" | null;
+  representation: string | null;
+  sequence_group: string | null;
+  sequence_index: number | null;
+  status: LessonFigureNeedStatus;
+  /** placed/misplaced: asset della lezione che copre il fabbisogno. */
+  asset_id?: string;
+  /** Sezione in cui l'asset è citato ("" = introduzione o sintesi). */
+  cited_in?: string | null;
+  /** true se il collegamento l'ha fatto il docente. */
+  linked?: boolean;
+  /** uncovered: no_candidate, reuse_cap, budget, not_planned. */
+  reason?: string;
+  /** uncovered: esito della ricerca in letteratura aperta, se c'è. */
+  literature?: string | null;
+}
+
+export interface LessonFigureNeedsSummary {
+  needs: number;
+  musts: number;
+  musts_placed: number;
+  uncovered: number;
+  misplaced: number;
+  dismissed: number;
+}
+
+export interface FigureNeedLinkInput {
+  /** null = torna allo stato calcolato dal piano. */
+  state: "dismissed" | "linked" | null;
+  asset_id?: string | null;
+}
+
 /** Figura di fonte del corso (`GET …/document-figures`). La riga
  *  «Fonte» (`attribution`) è calcolata dal backend: il frontend la mostra
  *  così com'è, non la ricompone mai. */
@@ -800,6 +847,10 @@ export interface CourseLessonOut {
   /** Verdetto del revisore delle figure di fonte (PROMPT 19): avvisi per
    *  l'editor, mai applicati al contenuto. */
   content_figure_review?: LessonFigureReview | null;
+  /** Fabbisogni di figure della lezione (piano delle figure): null senza
+   *  fabbisogni pronti. Stato e riassunto calcolati dal backend. */
+  figure_needs_view?: LessonFigureNeedView[] | null;
+  figure_needs_summary?: LessonFigureNeedsSummary | null;
   // Stale-detection — set solo da CRUD manuale, non dai worker AI.
   lesson_structure_modified_at: string | null;
   content_modified_at: string | null;
@@ -1798,6 +1849,21 @@ export const coursesApi = {
     ): Promise<CourseOut> => {
       const res = await apiClient.patch<CourseOut>(
         `${base(orgId)}/${courseId}/lessons/${lessonId}/content`,
+        payload
+      );
+      return res.data;
+    },
+    /** «Non serve», figura collegata o ritorno allo stato calcolato per un
+     *  fabbisogno di figura. Non modifica il contenuto della lezione. */
+    updateFigureNeedLink: async (
+      orgId: string,
+      courseId: string,
+      lessonId: string,
+      needId: string,
+      payload: FigureNeedLinkInput
+    ): Promise<CourseOut> => {
+      const res = await apiClient.put<CourseOut>(
+        `${base(orgId)}/${courseId}/lessons/${lessonId}/figure-needs/${encodeURIComponent(needId)}`,
         payload
       );
       return res.data;

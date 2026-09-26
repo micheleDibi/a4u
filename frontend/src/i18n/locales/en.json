@@ -1981,6 +1981,49 @@
         "superseded": "Superseded extraction",
         "unknown": "Not selectable"
       }
+    },
+    "figureNeeds": {
+      "title": "Recommended figures",
+      "description": "The figures the plan considers useful for each section of the lesson and where they are in the content. Actions here do not change the lesson text.",
+      "chip": "Figures {{placed}}/{{total}}",
+      "chipOptional_one": "{{count}} recommended figure",
+      "chipOptional_other": "{{count}} recommended figures",
+      "chipTitle": "Required figures in the content: {{placed}} of {{total}}; still to find: {{uncovered}}; outside their section: {{misplaced}}",
+      "priority": {
+        "must": "Required",
+        "should": "Recommended"
+      },
+      "sequence": "sequence, no. {{index}}",
+      "status": {
+        "placed": "In the content",
+        "misplaced": "In another section",
+        "missing": "Not inserted",
+        "uncovered": "To find",
+        "dismissed": "Not needed"
+      },
+      "reasons": {
+        "no_candidate": "No suitable figure in the course documents",
+        "reuse_cap": "The suitable figures are already used in other lessons",
+        "budget": "Beyond the lesson's number of figures",
+        "not_planned": "The plan was not active at generation"
+      },
+      "literature": {
+        "found": "found in open literature: it will be used at the next regeneration",
+        "not_found": "not found in open literature",
+        "not_searched": "not searched in open literature (search limit)"
+      },
+      "citedIn": "cited in “{{section}}”",
+      "outsideSections": "introduction or summary",
+      "linkedByYou": "linked by you",
+      "missingHint": "The plan had a figure, but the model did not insert it",
+      "link": "Link",
+      "dismiss": "Not needed",
+      "restore": "Restore",
+      "uncoveredHint": "To cover a figure still to find: in the lesson editor upload an image or choose a figure from the course documents, then link it here.",
+      "toast": {
+        "updated": "Recommended figure updated",
+        "error": "Unable to update the recommended figure"
+      }
     }
   },
   "courseSettings": {

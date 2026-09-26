@@ -76,7 +76,7 @@ def _flatten(node: dict, prefix: str = "") -> set[str]:
 
 def test_new_i18n_keys_exist_in_italian_and_english() -> None:
     pattern = re.compile(
-        r"t\(\s*[\"'`]((?:courses\.sourceFigures|courses\.docs\.figures\.meta|"
+        r"t\(\s*[\"'`]((?:courses\.sourceFigures|courses\.figureNeeds|courses\.docs\.figures\.meta|"
         r"courses\.docs\.figures\.licenses|courseSettings\.figureLicensePolicy|"
         r"courseSettings\.fields\.figureLicensePolicy)[\w.]*)[\"'`]"
     )
@@ -122,6 +122,15 @@ def test_new_i18n_keys_exist_in_italian_and_english() -> None:
             assert f"courses.sourceFigures.reasons.{reason}" in keys, (language, reason)
         for level in ("low", "unusable", "detail"):
             assert f"courses.sourceFigures.resolution.{level}" in keys, (language, level)
+        # Piano delle figure (doc 18 §23.7): stati, motivi ed esiti della
+        # letteratura sono chiavi dinamiche del pannello.
+        for status in ("placed", "misplaced", "missing", "uncovered", "dismissed"):
+            assert f"courses.figureNeeds.status.{status}" in keys, (language, status)
+        for reason in ("no_candidate", "reuse_cap", "budget", "not_planned"):
+            assert f"courses.figureNeeds.reasons.{reason}" in keys, (language, reason)
+        for outcome in ("found", "not_found", "not_searched"):
+            assert f"courses.figureNeeds.literature.{outcome}" in keys, (language, outcome)
+        assert "courses.figureNeeds.chipOptional" in keys, language
 
 
 def test_resolution_badge_shows_only_backend_values() -> None:
@@ -157,3 +166,17 @@ def test_image_rev_is_in_every_image_cache_key_and_request() -> None:
         assert calls and all("image_rev" in call for call in calls), relative
     api = (_FRONTEND / "api" / "courses.ts").read_text(encoding="utf-8")
     assert re.search(r"params\.rev\s*=\s*rev", api)
+
+
+def test_figure_needs_panel_shows_only_backend_state() -> None:
+    """Il pannello delle figure consigliate mostra stato e motivo calcolati
+    dal backend e scrive solo i collegamenti (mai il contenuto)."""
+    panel = (_FRONTEND / "pages/org/courses/components/LessonFigureNeedsPanel.tsx").read_text(
+        encoding="utf-8"
+    )
+    assert "figure_needs_view" in panel and "updateFigureNeedLink" in panel
+    assert "lessonContent.updateLesson" not in panel
+    view = (_FRONTEND / "pages/org/courses/components/CourseLessonContentView.tsx").read_text(
+        encoding="utf-8"
+    )
+    assert "LessonFigureNeedsPanel" in view and "LessonFigureNeedsChip" in view

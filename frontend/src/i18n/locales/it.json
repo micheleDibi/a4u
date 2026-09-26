@@ -1981,6 +1981,49 @@
         "superseded": "Estrazione superata",
         "unknown": "Non proponibile"
       }
+    },
+    "figureNeeds": {
+      "title": "Figure consigliate",
+      "description": "Le figure che il piano ritiene utili per ogni sezione della lezione e dove sono nel contenuto. Le azioni qui non modificano il testo della lezione.",
+      "chip": "Figure {{placed}}/{{total}}",
+      "chipOptional_one": "{{count}} figura consigliata",
+      "chipOptional_other": "{{count}} figure consigliate",
+      "chipTitle": "Figure obbligatorie nel contenuto: {{placed}} su {{total}}; da trovare: {{uncovered}}; fuori dalla propria sezione: {{misplaced}}",
+      "priority": {
+        "must": "Obbligatoria",
+        "should": "Consigliata"
+      },
+      "sequence": "sequenza, {{index}}ª",
+      "status": {
+        "placed": "Nel contenuto",
+        "misplaced": "In un'altra sezione",
+        "missing": "Non inserita",
+        "uncovered": "Da trovare",
+        "dismissed": "Non serve"
+      },
+      "reasons": {
+        "no_candidate": "Nessuna figura adatta nei documenti del corso",
+        "reuse_cap": "Le figure adatte sono già usate in altre lezioni",
+        "budget": "Oltre il numero di figure della lezione",
+        "not_planned": "Il piano non era attivo alla generazione"
+      },
+      "literature": {
+        "found": "trovata in letteratura aperta: entrerà alla prossima rigenerazione",
+        "not_found": "non trovata in letteratura aperta",
+        "not_searched": "non cercata in letteratura aperta (limite di ricerca)"
+      },
+      "citedIn": "citata in «{{section}}»",
+      "outsideSections": "introduzione o sintesi",
+      "linkedByYou": "collegata da te",
+      "missingHint": "Il piano aveva una figura, ma il modello non l'ha inserita",
+      "link": "Collega",
+      "dismiss": "Non serve",
+      "restore": "Ripristina",
+      "uncoveredHint": "Per coprire una figura da trovare: nell'editor della lezione carica un'immagine o scegli una figura dai documenti del corso, poi collegala qui.",
+      "toast": {
+        "updated": "Figura consigliata aggiornata",
+        "error": "Impossibile aggiornare la figura consigliata"
+      }
     }
   },
   "courseSettings": {

@@ -58,6 +58,10 @@ import {
 } from "./LessonContentGenerateDialog";
 import { LessonContentView } from "./LessonContentView";
 import {
+  LessonFigureNeedsChip,
+  LessonFigureNeedsPanel,
+} from "./LessonFigureNeedsPanel";
+import {
   LessonPdfExportDialog,
   type LessonPdfExportMode,
 } from "./LessonPdfExportDialog";
@@ -1330,6 +1334,9 @@ function LessonContentRow({
           </span>
         </button>
         <LessonContentStatusBadge status={status} />
+        {!isAssessment && isReady && (
+          <LessonFigureNeedsChip summary={lesson.figure_needs_summary} />
+        )}
         {status === "approved" && (
           <ApprovalBadge
             level="lessonContent"
@@ -1468,7 +1475,10 @@ function LessonContentRow({
           {isAssessmentRaw(lesson.content_raw) ? (
             <LessonAssessmentView assessment={lesson.content_raw} />
           ) : (
-            <LessonContentView content={lesson.content_raw} />
+            <div className="space-y-4">
+              <LessonFigureNeedsPanel lesson={lesson} canEdit={canEdit} />
+              <LessonContentView content={lesson.content_raw} />
+            </div>
           )}
         </div>
       )}
