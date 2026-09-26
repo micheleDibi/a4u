@@ -253,3 +253,101 @@ def test_unspoken_sources_is_a_soft_check() -> None:
     # Una parola del titolo da sola («laser») non basta.
     silent = [("s1", "Ecco la catena."), ("s2", "Lo schema mostra il laser.")]
     assert figure_provenance.unspoken_sources(lesson.slides_raw, silent, keys) == ["s2"]
+
+
+# --- piano delle figure: sequenze nelle Fasi 4 e 5 (doc 18 §23.7) --------------------
+
+
+def _with_sequence(lesson: CourseLesson) -> CourseLesson:
+    raw = lesson.content_raw
+    raw["sections"] = [
+        {"section_id": "S1", "title": "A", "content": "Prima [FIG:SRC-b2] poi [FIG:SRC-a1]."},
+    ]
+    raw["visual_assets"] = [
+        *raw.get("visual_assets", []),
+        {"asset_id": "SRC-a1", "format": "source_figure", "content": FIG_UUID},
+        {
+            "asset_id": "SRC-b2",
+            "format": "source_figure",
+            "content": "bbbbbbbb-0000-4000-8000-000000000002",
+        },
+    ]
+    lesson.section_outline = [{"section_id": "S1"}]
+    lesson.figure_needs_status = "ready"
+    lesson.figure_needs = {
+        "needs": [
+            {
+                "need_id": "n1",
+                "section_id": "S1",
+                "subject": "Punto",
+                "priority": "must",
+                "sequence_group": "tipologie",
+                "sequence_index": 1,
+            },
+            {
+                "need_id": "n2",
+                "section_id": "S1",
+                "subject": "Scansione",
+                "priority": "must",
+                "sequence_group": "tipologie",
+                "sequence_index": 2,
+            },
+        ]
+    }
+    lesson.figure_assignment = {
+        "state": "settled",
+        "offers": {
+            "n1": {"figure_id": FIG_UUID},
+            "n2": {"figure_id": "bbbbbbbb-0000-4000-8000-000000000002"},
+        },
+    }
+    lesson.figure_need_links = None
+    lesson.figures_gap_stats = None
+    return lesson
+
+
+def test_sequences_add_a_slide_block_and_speech_timings_only_when_present() -> None:
+    from app.services.figure_needs_view import figure_sequences
+
+    course, lesson = _lesson_for_prompts()
+    before_slides = slides_svc.build_user_prompt(course, lesson)
+    before_speech = speech_svc.build_user_prompt(course, lesson)
+    assert "stessa enumerazione" not in before_slides
+    assert "sequenza di figure" not in before_speech
+    lesson = _with_sequence(lesson)
+    assert figure_sequences(lesson) == [("tipologie", ["SRC-a1", "SRC-b2"])]
+    slides_prompt = slides_svc.build_user_prompt(course, lesson)
+    assert "Le figure SRC-a1, SRC-b2 mostrano, in quest'ordine" in slides_prompt
+    speech_prompt = speech_svc.build_user_prompt(course, lesson)
+    assert "sequenza di figure (SRC-a1, SRC-b2): 20-35 secondi" in speech_prompt
+
+
+def test_repaired_figure_slides_follow_the_citation_order() -> None:
+    from app.schemas.course_lesson_slides import LessonSlidesOutput
+
+    output = LessonSlidesOutput.model_validate(
+        {
+            "lesson_id": "M1.L1",
+            "total_slides": 1,
+            "slides": [
+                {
+                    "slide_number": 1,
+                    "slide_id": "s1",
+                    "type": "concept",
+                    "title": "A",
+                    "source_section_id": "S1",
+                }
+            ],
+            "new_assets": [],
+        }
+    )
+    content_raw = {
+        "sections": [{"section_id": "S1", "content": "[FIG:SRC-b2] e poi [FIG:SRC-a1]"}],
+        "visual_assets": [
+            {"asset_id": "SRC-a1", "caption": "A"},
+            {"asset_id": "SRC-b2", "caption": "B"},
+        ],
+    }
+    added = slides_svc.repair_figure_coverage(output, content_raw, ["SRC-a1", "SRC-b2"], "L")
+    order = [s.references_assets for s in output.slides if s.slide_id in added]
+    assert order == [["SRC-b2"], ["SRC-a1"]]

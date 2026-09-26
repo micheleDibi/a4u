@@ -64,6 +64,8 @@ class RedundancyOut(BaseModel):
     coherence: Coherence = "coerente"
     reason: str = ""
     pairs: list[RedundancyPair] = []
+    # Solo con una figura legata a un fabbisogno del piano (v2, doc 18 §23.7).
+    subject_match: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -84,6 +86,9 @@ class RedundancyInput:
     section_text: str
     others: tuple[OtherFigure, ...]
     language_code: str
+    # Soggetto del fabbisogno del piano a cui la figura è legata (v2): senza,
+    # messaggio e schema restano quelli di prima, byte per byte.
+    need_subject: str | None = None
 
 
 _SYSTEM_REDUNDANCY_IT = """\
@@ -152,12 +157,21 @@ def _system_prompt(language_code: str) -> str:
     return _SYSTEM_PROMPTS["it" if _is_it(language_code) else "en"]
 
 
-def build_json_schema(other_ids: list[str]) -> dict[str, Any]:
-    """Schema strict; `other` ristretto agli id delle altre figure (enum)."""
+_SUBJECT_INSTRUCTION = (
+    "La figura è stata scelta per la FIGURA RICHIESTA DAL PIANO qui sotto. "
+    "Rispondi anche `subject_match`: true se la figura mostra quella figura "
+    "richiesta (stesso oggetto e, se indicata, stessa variante), che è la "
+    "risposta predefinita anche nel dubbio; false solo se mostra altro."
+)
+
+
+def build_json_schema(other_ids: list[str], *, with_subject: bool = False) -> dict[str, Any]:
+    """Schema strict; `other` ristretto agli id delle altre figure (enum);
+    `subject_match` solo con una figura legata a un fabbisogno."""
     other: dict[str, Any] = {"type": "string"}
     if other_ids:
         other["enum"] = list(other_ids)
-    return {
+    out: dict[str, Any] = {
         "name": "figure_redundancy",
         "strict": True,
         "schema": {
@@ -186,6 +200,11 @@ def build_json_schema(other_ids: list[str]) -> dict[str, Any]:
             "additionalProperties": False,
         },
     }
+    if with_subject:
+        schema = out["schema"]
+        schema["properties"]["subject_match"] = {"type": "boolean"}
+        schema["required"] = [*schema["required"], "subject_match"]
+    return out
 
 
 def build_user_message(item: RedundancyInput) -> str:
@@ -218,6 +237,17 @@ def build_user_message(item: RedundancyInput) -> str:
             ),
             data_block("ALTRE FIGURE DELLA LEZIONE", others),
         ]
+        + (
+            [
+                _SUBJECT_INSTRUCTION,
+                data_block(
+                    "FIGURA RICHIESTA DAL PIANO",
+                    neutralize_third_party_text(item.need_subject, _TEXT_CAP) or "(assente)",
+                ),
+            ]
+            if item.need_subject
+            else []
+        )
     )
 
 
@@ -232,7 +262,9 @@ async def review_redundancy(item: RedundancyInput) -> tuple[RedundancyOut, dict[
         ],
         "response_format": {
             "type": "json_schema",
-            "json_schema": build_json_schema([o.asset_id for o in item.others]),
+            "json_schema": build_json_schema(
+                [o.asset_id for o in item.others], with_subject=bool(item.need_subject)
+            ),
         },
         "max_completion_tokens": settings.openai_figure_redundancy_max_tokens,
     }
@@ -262,4 +294,5 @@ async def review_redundancy(item: RedundancyInput) -> tuple[RedundancyOut, dict[
         ) from exc
     valid = {o.asset_id for o in item.others}
     pairs = [p for p in parsed.pairs if p.other in valid]
-    return parsed.model_copy(update={"pairs": pairs}), usage
+    subject_match = parsed.subject_match if item.need_subject else None
+    return parsed.model_copy(update={"pairs": pairs, "subject_match": subject_match}), usage

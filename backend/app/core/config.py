@@ -437,6 +437,9 @@ class Settings(BaseSettings):
     openai_figure_redundancy_model: str = "gpt-4o-mini"
     openai_figure_redundancy_reasoning_effort: str | None = None
     openai_figure_redundancy_max_tokens: int = 1_500
+    # PROMPT 19 v2 (doc 18 §23.7): per una figura legata a un fabbisogno del
+    # piano chiede anche se mostra la figura richiesta (`subject_match`).
+    figure_redundancy_subject_check_enabled: bool = True
 
     # Fase 4: inserisce in modo deterministico la slide dedicata mancante
     # per ogni figura di Fase 3 (generate e di fonte). False = output di

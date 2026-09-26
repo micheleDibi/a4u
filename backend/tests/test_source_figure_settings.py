@@ -59,6 +59,7 @@ _DEFAULTS: dict[str, object] = {
     "openai_figure_redundancy_model": "gpt-4o-mini",
     "openai_figure_redundancy_reasoning_effort": None,
     "openai_figure_redundancy_max_tokens": 1500,
+    "figure_redundancy_subject_check_enabled": True,
     "figure_slides_coverage_repair_enabled": True,
     "figure_literature_enabled": True,
     "figure_literature_max_candidates_per_lesson": 15,

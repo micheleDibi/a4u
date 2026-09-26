@@ -45,6 +45,7 @@ from app.models.course_module import CourseModule
 from app.schemas.course_lesson_speech import LessonSpeechOutput
 from app.services import document_citation_guard
 from app.services.course_architecture_service import _term_label
+from app.services.figure_needs_view import figure_sequences
 from app.services.figure_provenance import prompt_view, spoken_sources_block
 from app.services.openai_lesson_speech_service import words_per_minute
 
@@ -318,6 +319,16 @@ def build_user_prompt(
         "  (tolleranza ±5%)",
         "- testo TTS-friendly come da regole",
     ]
+    # Piano delle figure (doc 18 §23.7): con una sequenza di figure di fonte
+    # le loro slide hanno tempi propri; senza, il messaggio è quello di prima.
+    sequences = figure_sequences(lesson)
+    if sequences:
+        blocks.append(
+            "- slide di una figura di fonte: 25-45 secondi; le slide successive "
+            "di una sequenza di figure ("
+            + "; ".join(", ".join(assets) for _group, assets in sequences)
+            + "): 20-35 secondi, dicendo che cosa distingue ciascuna dalla precedente"
+        )
 
     if lesson.speech_raw:
         blocks.extend(

@@ -685,7 +685,10 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                     figure_review,
                     redundancy_usage,
                 ) = await asset_validation_service.review_source_figure_redundancy(
-                    content_output, infos, language_code=course_full.language_code
+                    content_output,
+                    infos,
+                    language_code=course_full.language_code,
+                    need_subjects=_need_subjects(catalog, placement),
                 )
             except Exception as exc:
                 figure_review, redundancy_usage = None, []
@@ -1050,6 +1053,25 @@ async def _drop_source_figures(
             metadata=metadata,
         )
     return figure_review, dropped
+
+
+def _need_subjects(catalog: Any, placement: dict[str, Any] | None) -> dict[str, str]:
+    """asset_id → soggetto del fabbisogno a cui la figura è legata (PROMPT 19
+    v2); vuoto senza il piano nel prompt."""
+    plan = getattr(catalog, "catalog", None)
+    if (
+        not isinstance(plan, PlanCatalog)
+        or not placement
+        or not get_settings().figure_redundancy_subject_check_enabled
+    ):
+        return {}
+    subjects = {str(n.get("need_id")): str(n.get("subject") or "") for n in plan.needs}
+    out: dict[str, str] = {}
+    for need_id, info in (placement.get("needs") or {}).items():
+        asset_id = info.get("asset_id") if isinstance(info, dict) else None
+        if asset_id and subjects.get(need_id):
+            out[str(asset_id)] = subjects[need_id]
+    return out
 
 
 def _fused_source_figures(content_output: Any) -> dict[str, uuid.UUID]:

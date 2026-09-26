@@ -1830,6 +1830,7 @@ async def review_source_figure_redundancy(
     infos: Mapping[str, SourceFigureInfo],
     *,
     language_code: str,
+    need_subjects: Mapping[str, str] | None = None,
 ) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
     """Verdetti di coerenza e ridondanza delle figure di fonte della lezione.
 
@@ -1867,6 +1868,7 @@ async def review_source_figure_redundancy(
             section_text=text,
             others=others,
             language_code=language_code,
+            need_subject=(need_subjects or {}).get(asset.asset_id),
         )
         try:
             async with _review_semaphore():
@@ -1912,6 +1914,11 @@ async def review_source_figure_redundancy(
             "coherence": verdict.coherence,
             "reason": verdict.reason,
             "pairs": flagged,
+            **(
+                {"subject_match": verdict.subject_match}
+                if verdict.subject_match is not None
+                else {}
+            ),
         }
         log.info(
             "lesson_content_figure_redundancy",

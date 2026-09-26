@@ -236,3 +236,83 @@ def test_section_title_and_asset_ids_are_neutralized() -> None:
     assert "\nsystem:" not in text
     # Nessun delimitatore finto: ogni «>>>» chiude un blocco di dati vero.
     assert text.count(">>>") == text.count("<<<")
+
+
+# --- PROMPT 19 v2: figura legata a un fabbisogno del piano (doc 18 §23.7) ----------
+
+
+def _item(**over: Any) -> redundancy.RedundancyInput:
+    base: dict[str, Any] = {
+        "asset_id": "SRC-aaaaaaaa",
+        "description": "Schema.",
+        "original_caption": "Figura 1.",
+        "lesson_caption": "Schema",
+        "section_title": "Il vibrometro",
+        "section_text": "Testo.",
+        "others": (redundancy.OtherFigure("fig1", "mermaid", "Schema", "flusso"),),
+        "language_code": "it",
+    }
+    base.update(over)
+    return redundancy.RedundancyInput(**base)
+
+
+def test_without_a_need_message_and_schema_are_unchanged() -> None:
+    plain = _item()
+    assert redundancy.build_user_message(plain) == redundancy.build_user_message(
+        _item(need_subject=None)
+    )
+    assert "FIGURA RICHIESTA DAL PIANO" not in redundancy.build_user_message(plain)
+    schema = redundancy.build_json_schema(["fig1"])
+    assert "subject_match" not in schema["schema"]["properties"]
+    assert schema["schema"]["required"] == ["coherence", "reason", "pairs"]
+
+
+def test_with_a_need_the_subject_is_data_and_asked_for() -> None:
+    text = redundancy.build_user_message(_item(need_subject=f"Schema a scansione. {_CANARY}"))
+    assert "<<<FIGURA RICHIESTA DAL PIANO" in text and "`subject_match`" in text
+    assert "ignore all previous instructions" not in text.lower()
+    schema = redundancy.build_json_schema(["fig1"], with_subject=True)
+    assert schema["schema"]["properties"]["subject_match"] == {"type": "boolean"}
+    assert "subject_match" in schema["schema"]["required"]
+
+
+async def test_the_subject_verdict_is_saved(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_post(body: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
+        with_subject = (
+            "subject_match" in body["response_format"]["json_schema"]["schema"]["properties"]
+        )
+        answer: dict[str, Any] = {"coherence": "coerente", "reason": "ok", "pairs": []}
+        if with_subject:
+            answer["subject_match"] = False
+        return {
+            "choices": [{"message": {"content": json.dumps(answer)}}],
+            "usage": {"prompt_tokens": 100, "completion_tokens": 10, "total_tokens": 110},
+        }
+
+    monkeypatch.setattr(redundancy, "post_chat_with_retry", fake_post)
+    review, _usage = await avs.review_source_figure_redundancy(
+        _output(), INFOS, language_code="it", need_subjects={"SRC-aaaaaaaa": "Schema a scansione"}
+    )
+    assert review is not None
+    assert review["figures"]["SRC-aaaaaaaa"]["subject_match"] is False
+    assert "subject_match" not in review["figures"]["SRC-bbbbbbbb"]
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_need_subjects_come_from_the_placement_and_the_switch(
+    monkeypatch: pytest.MonkeyPatch, enabled: bool
+) -> None:
+    """Il worker passa al revisore il soggetto del fabbisogno di ogni figura
+    collocata dal piano; con l'interruttore spento o senza piano, nessuno."""
+    from types import SimpleNamespace
+
+    from app.services import course_lesson_content_worker as worker
+    from app.services.source_figure_plan import PlanCatalog
+
+    patched = get_settings().model_copy(update={"figure_redundancy_subject_check_enabled": enabled})
+    monkeypatch.setattr(worker, "get_settings", lambda: patched)
+    plan = PlanCatalog(needs=[{"need_id": "n1", "subject": "Schema a scansione"}])
+    placement = {"needs": {"n1": {"status": "placed", "asset_id": "SRC-aaaaaaaa"}}}
+    got = worker._need_subjects(SimpleNamespace(catalog=plan), placement)
+    assert got == ({"SRC-aaaaaaaa": "Schema a scansione"} if enabled else {})
+    assert worker._need_subjects(SimpleNamespace(catalog=None), placement) == {}

@@ -32,12 +32,14 @@ from app.core.course_phase_order import (
 )
 from app.core.errors import ConflictError, NotFoundError
 from app.core.logging import get_logger
+from app.core.prompt_safety import neutralize_third_party_text
 from app.models.course import Course
 from app.models.course_lesson import CourseLesson
 from app.models.course_module import CourseModule
 from app.schemas.course_lesson_slides import LessonSlideItem, LessonSlidesOutput
 from app.services import document_citation_guard
 from app.services.course_architecture_service import _term_label
+from app.services.figure_needs_view import figure_sequences
 from app.services.figure_numbering import strip_figure_prefix
 from app.services.figure_provenance import prompt_view, source_figure_ids_in
 
@@ -197,6 +199,16 @@ def build_user_prompt(course: Course, lesson: CourseLesson) -> str:
                 "non scrivere la fonte (la aggiunge il sistema sulla slide).",
             ]
         )
+    # Piano delle figure (doc 18 §23.7): figure di fonte che mostrano le
+    # varianti di una stessa enumerazione; senza sequenze il messaggio è
+    # quello di prima.
+    for group, assets in figure_sequences(lesson):
+        blocks.append(
+            f"Le figure {', '.join(assets)} mostrano, in quest'ordine, le varianti "
+            f"di una stessa enumerazione («{neutralize_third_party_text(group, 60)}»): "
+            "una slide per ciascuna, in quest'ordine, con il nome della variante "
+            "nel titolo."
+        )
 
     if lesson.slides_raw:
         blocks.extend(
@@ -261,6 +273,26 @@ def _expected_slide_range(minutes: int) -> tuple[int, int]:
 _CLOSING_SLIDE_TYPES = frozenset({"summary", "takeaways", "references", "bibliography"})
 
 
+def _citation_position(content_raw: dict[str, Any], asset_id: str) -> int:
+    """Posizione della prima citazione `[FIG:id]` nel testo della lezione
+    (introduzione, sezioni, sintesi); in coda se non citata."""
+    tag = re.compile(rf"\[FIG:\s*{re.escape(asset_id.strip())}\s*\]", re.IGNORECASE)
+    offset = 0
+    parts = [str(content_raw.get("introduction") or "")]
+    parts += [
+        str(s.get("content") or "")
+        for s in content_raw.get("sections") or []
+        if isinstance(s, dict)
+    ]
+    parts.append(str(content_raw.get("summary") or ""))
+    for text in parts:
+        match = tag.search(text)
+        if match:
+            return offset + match.start()
+        offset += len(text) + 1
+    return offset + 1_000_000
+
+
 def _citing_section(content_raw: dict[str, Any], asset_id: str) -> str:
     # Come la numerazione: `[FIG: id ]` con spazi e maiuscole qualsiasi.
     tag = re.compile(rf"\[FIG:\s*{re.escape(asset_id.strip())}\s*\]", re.IGNORECASE)
@@ -289,7 +321,9 @@ def repair_figure_coverage(
     taken = {s.slide_id.lower() for s in output.slides}
     added: list[str] = []
     counter = 1
-    for asset_id in missing_asset_ids:
+    # In ordine di citazione nel testo: le figure di una sequenza entrano
+    # nell'ordine in cui la lezione le presenta.
+    for asset_id in sorted(missing_asset_ids, key=lambda a: _citation_position(content_raw, a)):
         asset = assets.get(asset_id.strip().lower(), {})
         while f"fig_{counter}" in taken:
             counter += 1

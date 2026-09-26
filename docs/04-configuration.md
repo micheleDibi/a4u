@@ -313,6 +313,7 @@ proprio nel prompt di Fase 3.
 | `OPENAI_FIGURE_REDUNDANCY_MODEL` | `gpt-4o-mini` | Modello del revisore (solo testo). |
 | `OPENAI_FIGURE_REDUNDANCY_REASONING_EFFORT` | _(vuoto)_ | Solo per modelli reasoning. |
 | `OPENAI_FIGURE_REDUNDANCY_MAX_TOKENS` | `1500` | Tetto dell'output del revisore. |
+| `FIGURE_REDUNDANCY_SUBJECT_CHECK_ENABLED` | `true` | PROMPT 19 v2: per una figura di fonte legata a un fabbisogno del piano il revisore dice anche se mostra la figura richiesta (`subject_match`, solo avviso). Spento: messaggio e schema come prima. |
 | `FIGURE_SLIDES_COVERAGE_REPAIR_ENABLED` | `true` | Fase 4: inserisce la slide dedicata mancante per ogni figura di Fase 3 (generate e di fonte). `false` = output di Fase 4 identico a prima. |
 
 **Letteratura aperta (WP5).** Una lezione ordinaria con meno di `FIGURE_SOURCE_MIN_PER_LESSON` figure di fonte pertinenti riceve, prima della Fase 3, figure da Wikimedia Commons e (con `OPENALEX_API_KEY` ed estrazione accesa) dai PDF open access di OpenAlex: solo ritagli nel catalogo del corso, mai documenti. Download con `safe_http` (niente indirizzi interni, redirect ricontrollati, tetti di byte e di tempo, tipo verificato dai primi byte). Vedi `docs/courses/18-literature-figures.md`.
