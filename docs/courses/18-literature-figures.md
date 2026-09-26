@@ -1436,7 +1436,7 @@ attivo:
 - **PROMPT 5:** riceve «una slide per ciascuna, in quest'ordine, con il
   nome della variante nel titolo»;
 - **PROMPT 6:** riceve i tempi: 25-45 s per la slide di una figura di
-  fonte, 20-35 s per le successive di una sequenza;
+  fonte, 15-25 s per le successive di una sequenza (M-S, §23.8);
 - **8c:** aggiunge le slide mancanti nell'ordine di citazione nel testo.
 
 Senza sequenze, o col piano spento, entrambi i messaggi restano identici.
@@ -1464,3 +1464,40 @@ Oggi il percorso è: editor della lezione (upload o selettore delle figure
 di fonte), poi «Collega». M-S (misura di slide e durata) non è stata
 eseguita: i tempi del PROMPT 6 sono quelli del piano.
 
+### 23.8 Prova finale sulla copia del corso (WP10, 26/09/2026)
+Copia locale del corso del docente, codice finale, configurazione di
+produzione (gpt-5.5, reasoning `none`). Fase 3 di 5 lezioni dalla versione
+del docente, Fasi 4 e 5 di M4.L6, M4.L7 e M5.L7; dispense, PDF delle slide e
+frame esportati e misurati. Spesa della prova: 3,04 $.
+
+| Criterio | Soglia | Esito |
+|---|---|---|
+| M4.L6, le 6 tipologie | 6 su 6 nella propria sezione e in ordine, o dichiarate | **6 su 6** `placed`, nessun avviso d'ordine (prima: 2 figure di fonte) |
+| Generica sopra un fabbisogno di variante (H2) | 0 | 0 (relazioni `exact`, `exact_mixed`, `specialized`) |
+| Lezioni di riferimento: must coperti o dichiarati | tutti | M4.L7 3/3 (3 should scoperti, `no_candidate`), M5.L7 3/3 (1 scoperto), M5.L1 1/1 |
+| M3.L4 (controllo) | ≤1 must di fonte; budget (a) ±1 | nessun fabbisogno; figure generate 5 contro 4 del docente (±1) |
+| Figure di fonte in stampa | 0 sotto 100 ppi | 0 (15 ≥200, 5 fra 150 e 199) |
+| Frame | ingrandimento ≤1,25 | massimo 1,239 |
+| PDF delle slide | ≥135 ppi | minimo 137 |
+| Costo della Fase 3 per lezione | entro M-A4 +50% | 0,27-0,34 $ con il piano (0,35-0,45 $ senza, M7b braccio A) |
+
+**M-S (tempi di slide e discorso, 15 minuti).**
+
+| Lezione | Slide (prima → dopo) | Slide di figura | Secondi medi per slide di concetto |
+|---|---|---|---|
+| M4.L6 | 20 → 25 | 9 → 13 | 46,1 → 38,1 (−17%) |
+| M4.L7 | 24 → 21 | 9 → 9 | 40,4 → 47,9 (+19%) |
+| M5.L7 | 21 → 26 | 8 → 12 | 57,6 → 33,4 (**−42%**) |
+
+- **Regola del piano:** oltre il 25% i tempi delle slide di sequenza
+  successive scendono a 15-25 s nel PROMPT 6. Il cambio è applicato, ma
+  l'effetto è minimo: la normalizzazione a 900 s riscala tutte le durate,
+  e le slide di sequenza restano a 28-30 s.
+- **Secondo passo non applicato:** il tetto morbido per should e residuo a
+  3 non è stato introdotto, per due motivi:
+  - toglierebbe una sola figura a M5.L7;
+  - il confronto con la versione del docente non è omogeneo, perché nel
+    discorso di produzione le slide delle figure di fonte avevano 0 s.
+
+  Decisione lasciata al docente, con il limite dichiarato: con 6-8 figure
+  a 15 minuti le slide di concetto hanno meno tempo.

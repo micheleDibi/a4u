@@ -2122,7 +2122,7 @@ Vincoli da rispettare:
 - somma delle estimated_duration_seconds = {lesson_duration_minutes} * 60
   (tolleranza ±5%)
 - testo TTS-friendly come da regole
-- slide di una figura di fonte: 25-45 secondi; le slide successive di una sequenza di figure ({asset_id, …; …}): 20-35 secondi, dicendo che cosa distingue ciascuna dalla precedente      (solo con sequenze del piano delle figure)
+- slide di una figura di fonte: 25-45 secondi; le slide successive di una sequenza di figure ({asset_id, …; …}): 15-25 secondi, dicendo che cosa distingue ciascuna dalla precedente      (solo con sequenze del piano delle figure)
 ```
 
 L'ultima riga dei vincoli entra solo col piano attivo e se il contenuto ha almeno una sequenza di due o più figure di fonte distinte (`figure_needs_view.figure_sequences`, doc 18 §23.7); senza, il messaggio è byte-identico.
