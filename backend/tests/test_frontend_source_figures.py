@@ -129,7 +129,7 @@ def test_new_i18n_keys_exist_in_italian_and_english() -> None:
             assert f"courses.figureNeeds.reasons.{reason}" in keys, (language, reason)
         for outcome in ("found", "not_found", "not_searched"):
             assert f"courses.figureNeeds.literature.{outcome}" in keys, (language, outcome)
-        for state in ("computing", "notPlanned", "failed", "regenerate", "none"):
+        for state in ("computing", "notPlanned", "failed", "notYet", "none", "off"):
             assert f"courses.figureNeeds.state.{state}" in keys, (language, state)
         for plural in ("summary.draft", "toast.inserted"):
             assert f"courses.figureNeeds.{plural}" in keys, (language, plural)
@@ -193,3 +193,15 @@ def test_figure_needs_panel_shows_only_backend_state() -> None:
         encoding="utf-8"
     )
     assert "<LessonFigureNeedsPanel" in dialog and "onInsert" in dialog
+    # Gruppo sempre presente nella modifica (anche senza piano) e finestra
+    # che aspetta gli inserimenti prima di salvare o chiudere.
+    assert "{figureNeedsLesson && (" in dialog
+    assert "onBusyChange={setFiguresBusy}" in dialog and "figuresBusy" in dialog
+    # Etichetta sempre presente con la funzione attiva: nessun'altra uscita
+    # vuota oltre alla funzione spenta.
+    chip = panel[panel.index("function useChipState") : panel.index("interface PanelProps")]
+    assert chip.count("return null") == 2 and "figure_plan_active" in chip
+    # «Inserisci»: bozza cambiata durante la richiesta → niente sovrascrittura;
+    # finestra chiusa → il ciclo si ferma; ordine delle serie nella bozza.
+    assert "live !== sent" in panel and "courses.figureNeeds.toast.changed" in panel
+    assert "aliveRef.current" in panel and "draft_assets" in panel

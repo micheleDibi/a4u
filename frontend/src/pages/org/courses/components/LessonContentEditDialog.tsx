@@ -162,6 +162,9 @@ export function LessonContentEditDialog({
   // cade, le successive scalano) così un errore non scivola sulla card
   // sbagliata prima del salvataggio seguente.
   const [localAssetErrors, setLocalAssetErrors] = useState(assetErrors);
+  // «Inserisci» in corso nel pannello delle figure: salvataggio e chiusura
+  // aspettano (la bozza sta per cambiare).
+  const [figuresBusy, setFiguresBusy] = useState(false);
   useEffect(() => {
     setLocalAssetErrors(assetErrors);
   }, [assetErrors]);
@@ -438,7 +441,9 @@ export function LessonContentEditDialog({
   return (
     <Dialog
       open={open}
-      onOpenChange={(v) => (!v && !isPending ? onClose() : undefined)}
+      onOpenChange={(v) =>
+        !v && !isPending && !figuresBusy ? onClose() : undefined
+      }
     >
       <DialogContent className="max-w-5xl max-h-[92vh] overflow-y-auto">
         <DialogHeader>
@@ -574,6 +579,7 @@ export function LessonContentEditDialog({
                 sections={sections}
                 assetIds={visualAssets.map((a) => a.asset_id)}
                 disabled={isPending}
+                onBusyChange={setFiguresBusy}
                 onInsert={(sectionId, sectionText, asset) => {
                   setSections((prev) =>
                     prev.map((s) =>
@@ -1190,10 +1196,10 @@ export function LessonContentEditDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="ghost" onClick={onClose} disabled={isPending}>
+          <Button variant="ghost" onClick={onClose} disabled={isPending || figuresBusy}>
             {t("common.cancel")}
           </Button>
-          <Button onClick={handleSubmit} disabled={isPending}>
+          <Button onClick={handleSubmit} disabled={isPending || figuresBusy}>
             <Save className="size-4" />
             {isPending
               ? t("courses.lessonsContent.dialog.edit.saving")

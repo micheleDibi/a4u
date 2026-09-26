@@ -1985,28 +1985,48 @@
     "figureNeeds": {
       "title": "Figure dalle fonti",
       "chip": {
-        "computing": "Figure dalle fonti: calcolo in corso…",
+        "computing": "Figure dalle fonti: ricerca in corso…",
         "notPlanned": "Figure dalle fonti: non previste",
-        "regenerate": "Figure dalle fonti: rigenera per calcolarle",
+        "failed": "Figure dalle fonti: ricerca non riuscita",
+        "notYet": "Figure dalle fonti: non ancora cercate",
+        "allDismissed": "Figure dalle fonti: tutte escluse da te",
         "none": "Nessuna figura dalle fonti necessaria",
         "musts": "Figure dalle fonti: {{placed}} di {{total}} obbligatorie",
-        "shoulds": "Figure dalle fonti: {{placed}} di {{total}} consigliate",
-        "details": "Obbligatorie nel testo: {{musts}} di {{mustsTotal}} · Consigliate nel testo: {{shoulds}} di {{shouldsTotal}} · Da trovare: {{toFind}} · In un'altra sezione: {{elsewhere}} · Escluse da te: {{dismissed}}"
+        "shoulds": "Figure dalle fonti: {{placed}} di {{total}} consigliate"
+      },
+      "details": {
+        "musts": "obbligatorie nel testo: {{placed}} di {{total}}",
+        "shoulds": "consigliate nel testo: {{placed}} di {{total}}",
+        "toFind_one": "{{count}} da trovare",
+        "toFind_other": "{{count}} da trovare",
+        "notCited_one": "{{count}} nella lezione ma non citata",
+        "notCited_other": "{{count}} nella lezione ma non citate",
+        "elsewhere_one": "{{count}} in un'altra sezione",
+        "elsewhere_other": "{{count}} in un'altra sezione",
+        "dismissed_one": "{{count}} esclusa da te",
+        "dismissed_other": "{{count}} escluse da te"
       },
       "state": {
-        "computing": "Il sistema sta calcolando quali figure dai documenti del corso e dalla letteratura servono a questa lezione: riapri tra poco.",
-        "notPlanned": "Per questa lezione il piano delle figure non è previsto: la lezione non ha una scaletta di sezioni.",
-        "failed": "Il calcolo delle figure per questa lezione non è riuscito: rigenera le dispense della lezione per riprovare.",
-        "regenerate": "La lezione è stata generata prima del piano delle figure: rigenera le dispense della lezione per sapere quali figure dai documenti del corso e dalla letteratura servono.",
-        "none": "Per questa lezione non servono figure dai documenti del corso o dalla letteratura: bastano le figure generate."
+        "computing": "Il sistema sta cercando quali figure dai documenti del corso e dalla letteratura servono a questa lezione: riapri tra poco.",
+        "notPlanned": "Per questa lezione non si cercano figure dalle fonti: la lezione non ha una scaletta di sezioni.",
+        "failed": "La ricerca delle figure per questa lezione non è riuscita: rigenera le dispense della lezione per riprovare.",
+        "notYet": "Le figure dalle fonti non sono ancora state cercate per questa lezione: si cercano quando generi o rigeneri le dispense.",
+        "none": "Per questa lezione non servono figure dai documenti del corso o dalla letteratura: bastano le figure generate.",
+        "off": "La ricerca delle figure dalle fonti non è attiva.",
+        "allDismissed_one": "Hai escluso l'unica figura dalle fonti prevista",
+        "allDismissed_other": "Hai escluso tutte le {{count}} figure dalle fonti previste"
       },
       "summary": {
-        "musts": "{{placed}} di {{total}} figure obbligatorie sono nel testo",
-        "shoulds": "{{placed}} di {{total}} figure consigliate sono nel testo",
+        "musts_one": "Nel testo: {{placed}} su 1 figura obbligatoria",
+        "musts_other": "Nel testo: {{placed}} su {{count}} figure obbligatorie",
+        "shoulds_one": "Nel testo: {{placed}} su 1 figura consigliata",
+        "shoulds_other": "Nel testo: {{placed}} su {{count}} figure consigliate",
         "draft_one": "{{count}} figura inserita nella bozza: salva per confermare",
         "draft_other": "{{count}} figure inserite nella bozza: salva per confermare"
       },
-      "insertAll": "Inserisci tutte le figure proposte ({{count}})",
+      "insertAll_one": "Inserisci la figura proposta",
+      "insertAll_other": "Inserisci tutte le figure proposte ({{count}})",
+      "howItWorks": "«Inserisci» aggiunge alla bozza la figura con la frase che la introduce: conferma con «Salva». «Non serve» e «Ripristina» si salvano subito.",
       "insert": "Inserisci",
       "dismiss": "Non serve",
       "restore": "Ripristina",
@@ -2021,7 +2041,9 @@
         "introOrSummary": "Nel testo, ma nell'introduzione o nella sintesi",
         "dismissed": "Non serve: l'hai esclusa tu",
         "notCited": "È fra le figure della lezione, ma il testo non la cita",
-        "available": "C'è una figura adatta nei documenti del corso",
+        "availableDocuments": "C'è una figura adatta nei documenti del corso",
+        "availableLiterature": "C'è una figura adatta trovata in letteratura aperta",
+        "searching": "Ricerca di una figura adatta…",
         "planGone": "La figura prevista non è più disponibile",
         "sequence": "{{index}}ª di una serie"
       },
@@ -2029,18 +2051,19 @@
         "no_candidate": "Non trovata nei documenti del corso",
         "reuse_cap": "Le figure adatte sono già usate in altre lezioni",
         "budget": "La lezione ha già il numero massimo di figure",
-        "duplicate_in_lesson": "La figura adatta è già usata per un'altra figura di questa lezione",
-        "not_planned": "Il piano non era attivo quando la lezione è stata generata: rigenerala"
+        "duplicate_in_lesson": "L'unica figura adatta è già usata per un'altra voce di questa lezione",
+        "not_planned": "La lezione è stata generata prima di questa funzione: rigenerala per cercarla"
       },
       "literature": {
-        "found": "trovata in letteratura aperta: entrerà da sola",
+        "found": "trovata anche in letteratura aperta, ma qui non è utilizzabile (esclusa o già usata in altre lezioni)",
         "not_found": "cercata anche in letteratura aperta, senza risultato",
         "not_searched": "non cercata in letteratura aperta (limite di ricerca)"
       },
       "uncoveredHint": "Se il corso non ha una figura adatta, caricala o sceglila dai documenti negli asset visivi e citala nel testo della sezione.",
       "toast": {
-        "updated": "Figura aggiornata",
-        "error": "Impossibile aggiornare la figura",
+        "dismissed": "Segnata come non necessaria (salvato)",
+        "restored": "Ripristinata (salvato)",
+        "error": "Operazione non riuscita",
         "changed": "La sezione è cambiata durante l'inserimento: premi di nuovo «Inserisci»",
         "inserted_one": "{{count}} figura inserita nella bozza: salva per confermare",
         "inserted_other": "{{count}} figure inserite nella bozza: salva per confermare"

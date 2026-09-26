@@ -1985,28 +1985,48 @@
     "figureNeeds": {
       "title": "Figures from sources",
       "chip": {
-        "computing": "Figures from sources: computing…",
+        "computing": "Figures from sources: searching…",
         "notPlanned": "Figures from sources: not planned",
-        "regenerate": "Figures from sources: regenerate to compute them",
+        "failed": "Figures from sources: search failed",
+        "notYet": "Figures from sources: not searched yet",
+        "allDismissed": "Figures from sources: all excluded by you",
         "none": "No figures from sources needed",
         "musts": "Figures from sources: {{placed}} of {{total}} required",
-        "shoulds": "Figures from sources: {{placed}} of {{total}} recommended",
-        "details": "Required in the text: {{musts}} of {{mustsTotal}} · Recommended in the text: {{shoulds}} of {{shouldsTotal}} · To find: {{toFind}} · In another section: {{elsewhere}} · Excluded by you: {{dismissed}}"
+        "shoulds": "Figures from sources: {{placed}} of {{total}} recommended"
+      },
+      "details": {
+        "musts": "required in the text: {{placed}} of {{total}}",
+        "shoulds": "recommended in the text: {{placed}} of {{total}}",
+        "toFind_one": "{{count}} to find",
+        "toFind_other": "{{count}} to find",
+        "notCited_one": "{{count}} in the lesson but not cited",
+        "notCited_other": "{{count}} in the lesson but not cited",
+        "elsewhere_one": "{{count}} in another section",
+        "elsewhere_other": "{{count}} in another section",
+        "dismissed_one": "{{count}} excluded by you",
+        "dismissed_other": "{{count}} excluded by you"
       },
       "state": {
-        "computing": "The system is working out which figures from the course documents and the literature this lesson needs: reopen shortly.",
-        "notPlanned": "The figure plan is not available for this lesson: the lesson has no section outline.",
-        "failed": "Working out the figures for this lesson failed: regenerate the lesson notes to try again.",
-        "regenerate": "The lesson was generated before the figure plan: regenerate the lesson notes to find out which figures from the course documents and the literature it needs.",
-        "none": "This lesson needs no figures from the course documents or the literature: the generated figures are enough."
+        "computing": "The system is looking for the figures from the course documents and the literature that this lesson needs: reopen shortly.",
+        "notPlanned": "No figures from sources are searched for this lesson: it has no section outline.",
+        "failed": "The search for figures for this lesson failed: regenerate the lesson notes to try again.",
+        "notYet": "Figures from sources have not been searched for this lesson yet: they are searched when you generate or regenerate the lesson notes.",
+        "none": "This lesson needs no figures from the course documents or the literature: the generated figures are enough.",
+        "off": "The search for figures from sources is not active.",
+        "allDismissed_one": "You excluded the only planned figure from sources",
+        "allDismissed_other": "You excluded all {{count}} planned figures from sources"
       },
       "summary": {
-        "musts": "{{placed}} of {{total}} required figures are in the text",
-        "shoulds": "{{placed}} of {{total}} recommended figures are in the text",
+        "musts_one": "In the text: {{placed}} of 1 required figure",
+        "musts_other": "In the text: {{placed}} of {{count}} required figures",
+        "shoulds_one": "In the text: {{placed}} of 1 recommended figure",
+        "shoulds_other": "In the text: {{placed}} of {{count}} recommended figures",
         "draft_one": "{{count}} figure inserted into the draft: save to confirm",
         "draft_other": "{{count}} figures inserted into the draft: save to confirm"
       },
-      "insertAll": "Insert all proposed figures ({{count}})",
+      "insertAll_one": "Insert the proposed figure",
+      "insertAll_other": "Insert all proposed figures ({{count}})",
+      "howItWorks": "«Insert» adds the figure with its introducing sentence to the draft: confirm with «Save». «Not needed» and «Restore» are saved immediately.",
       "insert": "Insert",
       "dismiss": "Not needed",
       "restore": "Restore",
@@ -2021,7 +2041,9 @@
         "introOrSummary": "In the text, but in the introduction or summary",
         "dismissed": "Not needed: excluded by you",
         "notCited": "It is among the lesson figures, but the text does not cite it",
-        "available": "There is a suitable figure in the course documents",
+        "availableDocuments": "There is a suitable figure in the course documents",
+        "availableLiterature": "There is a suitable figure found in open literature",
+        "searching": "Looking for a suitable figure…",
         "planGone": "The planned figure is no longer available",
         "sequence": "no. {{index}} of a series"
       },
@@ -2029,18 +2051,19 @@
         "no_candidate": "Not found in the course documents",
         "reuse_cap": "The suitable figures are already used in other lessons",
         "budget": "The lesson already has the maximum number of figures",
-        "duplicate_in_lesson": "The suitable figure is already used for another figure of this lesson",
-        "not_planned": "The plan was not active when the lesson was generated: regenerate it"
+        "duplicate_in_lesson": "The only suitable figure is already used for another item of this lesson",
+        "not_planned": "The lesson was generated before this feature: regenerate it to search"
       },
       "literature": {
-        "found": "found in open literature: it will be added automatically",
+        "found": "also found in open literature, but not usable here (excluded or already used in other lessons)",
         "not_found": "also searched in open literature, without results",
         "not_searched": "not searched in open literature (search limit)"
       },
       "uncoveredHint": "If the course has no suitable figure, upload it or choose it from the documents in the visual assets and cite it in the section text.",
       "toast": {
-        "updated": "Figure updated",
-        "error": "Unable to update the figure",
+        "dismissed": "Marked as not needed (saved)",
+        "restored": "Restored (saved)",
+        "error": "Operation failed",
         "changed": "The section changed during the insertion: press «Insert» again",
         "inserted_one": "{{count}} figure inserted into the draft: save to confirm",
         "inserted_other": "{{count}} figures inserted into the draft: save to confirm"

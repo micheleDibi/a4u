@@ -282,6 +282,8 @@ export interface LessonFigureNeedsSummary {
   musts_placed: number;
   shoulds: number;
   shoulds_placed: number;
+  /** Nella lezione ma non citate dal testo (comprese in `uncovered`). */
+  not_cited?: number;
   uncovered: number;
   misplaced: number;
   dismissed: number;
@@ -294,6 +296,8 @@ export interface FigureNeedCandidate {
   caption: string;
   relation: string;
   tier: number;
+  /** `uploaded` = documenti del corso; `openalex`/`wikimedia` = letteratura. */
+  source_kind: string;
 }
 
 /** «Inserisci»: testo della sezione (bozza) con frase e figura, e l'asset
@@ -879,6 +883,8 @@ export interface CourseLessonOut {
     | "failed"
     | "skipped"
     | null;
+  /** Funzione «figure dalle fonti» attiva (interruttori del piano). */
+  figure_plan_active?: boolean;
   figure_needs_summary?: LessonFigureNeedsSummary | null;
   // Stale-detection — set solo da CRUD manuale, non dai worker AI.
   lesson_structure_modified_at: string | null;
@@ -1912,7 +1918,12 @@ export const coursesApi = {
       courseId: string,
       lessonId: string,
       needId: string,
-      payload: { figure_id: string; section_text: string; asset_ids: string[] }
+      payload: {
+        figure_id: string;
+        section_text: string;
+        asset_ids: string[];
+        draft_assets?: Record<string, string>;
+      }
     ): Promise<FigureNeedInsertOut> => {
       const res = await apiClient.post<FigureNeedInsertOut>(
         `${base(orgId)}/${courseId}/lessons/${lessonId}/figure-needs/${encodeURIComponent(needId)}/insert`,
