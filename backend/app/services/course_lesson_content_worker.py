@@ -584,6 +584,7 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
         # l'usage con le chiamate degli asset (`content_tokens.assets`).
         fusion: source_figure_fusion.FusionReport | None = None
         placement: dict[str, Any] | None = None
+        intros: dict[str, str] = {}
         if isinstance(content_output, LessonContentOutput):
             # Figure di fonte scelte → asset `source_figure` (prima della
             # validazione, che le salta: non sono in RENDERABLE_FORMATS).
@@ -609,8 +610,10 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                     content_output, catalog.catalog, max_items=catalog.budget
                 )
                 # Frase che introduce ogni figura inserita dalla collocazione
-                # (PROMPT 23): il testo la richiama a parole, mai muta.
-                lesson.figure_needs_usage = await _introduce_auto_placed(
+                # (PROMPT 23): si scrive ora, entra nel testo solo prima della
+                # materializzazione e solo per le figure sopravvissute ai
+                # ricontrolli (mai una frase senza figura).
+                intros, lesson.figure_needs_usage = await _write_intros(
                     content_output,
                     catalog.catalog,
                     placement,
@@ -947,6 +950,8 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                     if placement is not None:
                         usage["source_figures"]["plan"] = placement["counts"]
 
+        if intros and isinstance(content_output, LessonContentOutput):
+            _apply_intros(content_output, intros)
         try:
             if lesson.is_assessment:
                 await course_lesson_content_service.materialize_lesson_assessment(
@@ -1123,19 +1128,20 @@ async def _drop_source_figures(
     return figure_review, dropped
 
 
-async def _introduce_auto_placed(
+async def _write_intros(
     output: LessonContentOutput,
     plan_catalog: PlanCatalog,
     placement: dict[str, Any],
     language_code: str,
     usage_total: Any,
-) -> Any:
-    """Frase introduttiva (PROMPT 23 o ripiego) prima del tag di ogni figura
-    `auto_placed`. Ritorna l'usage cumulativo del piano aggiornato."""
+) -> tuple[dict[str, str], Any]:
+    """Frase introduttiva (PROMPT 23 o ripiego) per ogni figura `auto_placed`,
+    dal testo che la precede: (asset_id → frase, usage del piano)."""
     from app.services.openai_figure_intro_service import IntroInput, intro_or_fallback
 
     subjects = {str(n.get("need_id")): str(n.get("subject") or "") for n in plan_catalog.needs}
     sections = {s.section_id: s for s in output.sections}
+    intros: dict[str, str] = {}
     for need_id, info in (placement.get("needs") or {}).items():
         if not isinstance(info, dict) or info.get("status") != "auto_placed":
             continue
@@ -1155,9 +1161,19 @@ async def _introduce_auto_placed(
             ),
             caption,
         )
-        section.content = add_intro(text, ref, sentence)
+        if sentence:
+            intros[ref] = sentence
         usage_total = figure_plan_service.merge_usage(usage_total, usage)
-    return usage_total
+    return intros, usage_total
+
+
+def _apply_intros(output: LessonContentOutput, intros: dict[str, str]) -> None:
+    """Frasi prima dei tag delle figure ancora presenti dopo i ricontrolli."""
+    present = {a.asset_id.lower() for a in output.visual_assets if a.format == SOURCE_FIGURE_FORMAT}
+    for section in output.sections:
+        for ref, sentence in intros.items():
+            if ref.lower() in present and f"[FIG:{ref}]" in (section.content or ""):
+                section.content = add_intro(section.content or "", ref, sentence)
 
 
 async def _inline_needs(

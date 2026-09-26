@@ -1416,3 +1416,28 @@ async def test_an_auto_placed_figure_gets_its_intro_sentence(
     tag = f"[FIG:{info['asset_id']}]"
     assert "La figura seguente mostra" in content
     assert content.index("La figura seguente mostra") < content.index(tag)
+
+
+async def test_no_orphan_intro_when_the_auto_placed_figure_is_dropped(
+    seeded_db: AsyncSession, fakes: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """La figura inserita dalla collocazione viene tolta al ricontrollo sotto
+    il lock: la sua frase introduttiva non entra nel testo."""
+    _plan_settings(monkeypatch)
+    setup = await _setup(seeded_db)
+    await _with_needs(seeded_db, setup)
+    fakes["pick"] = lambda refs: []
+    original = source_figure_catalog.over_reuse_cap
+    calls: list[int] = []
+
+    async def over_at_the_lock(db: AsyncSession, course: Any, ids: Any, **kw: Any) -> Any:
+        calls.append(1)
+        found = await original(db, course, ids, **kw)
+        return set(ids) if len(calls) == 2 else found
+
+    monkeypatch.setattr(source_figure_catalog, "over_reuse_cap", over_at_the_lock)
+    await worker._process_one(setup["lesson_id"])
+    lesson = await _lesson(seeded_db, setup["lesson_id"])
+    assert lesson.content_status == "ready", lesson.content_error
+    assert not [a for a in lesson.content_raw["visual_assets"] if a["format"] == "source_figure"]
+    assert "La figura seguente mostra" not in lesson.content_raw["sections"][0]["content"]

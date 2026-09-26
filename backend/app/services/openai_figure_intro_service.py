@@ -153,9 +153,10 @@ def build_user_message(item: IntroInput) -> str:
 def clean_sentence(text: str) -> str:
     """Una riga, senza tag di asset e senza coda «Fonte», neutralizzata."""
     text = _TAG_RE.sub("", text or "")
-    text = re.split(r"\b(?:Fonte|Source)\s*:", text, maxsplit=1)[0]
+    text = re.split(r"\b(?:fonte|source)\s*:", text, maxsplit=1, flags=re.IGNORECASE)[0]
     text = " ".join(neutralize_third_party_text(text, SENTENCE_MAX_CHARS).split())
-    return text.strip()
+    # Niente parentesi o trattini rimasti aperti dal taglio della fonte.
+    return text.strip().rstrip("([{-–—:;,").strip()
 
 
 def fallback_sentence(caption: str, language_code: str) -> str:
@@ -164,7 +165,8 @@ def fallback_sentence(caption: str, language_code: str) -> str:
     caption = clean_sentence(caption).rstrip(".")
     if not caption:
         return ""
-    lowered = caption[:1].lower() + caption[1:]
+    # Minuscola iniziale, ma non per le sigle («LDV a scansione»).
+    lowered = caption if caption[1:2].isupper() else caption[:1].lower() + caption[1:]
     code = (language_code or "it").lower().split("-")[0]
     if code == "it":
         return f"La figura seguente mostra {lowered}."

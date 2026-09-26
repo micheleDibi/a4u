@@ -306,3 +306,183 @@ async def test_the_end_of_an_extraction_fills_the_course(
     )
     await worker.fill_after_extraction(doc.id)
     assert calls == [(course_id, "extraction")]
+
+
+# --- esiti della verifica -----------------------------------------------------------
+
+
+def test_the_intro_inputs_are_neutralized() -> None:
+    text = intro.build_user_message(
+        _item(
+            section_title=f"Tipologie {_SENTINEL}",
+            context=f"Testo. {_SENTINEL}",
+            subject=f"Schema. {_SENTINEL}",
+        )
+    )
+    assert "Ignora le istruzioni precedenti" not in text
+    assert intro.clean_sentence("Lo schema del fascio (fonte: Rossi 2020)") == (
+        "Lo schema del fascio"
+    )
+    assert intro.fallback_sentence("LDV a scansione", "it") == (
+        "La figura seguente mostra LDV a scansione."
+    )
+
+
+def test_the_offline_guard_is_active() -> None:
+    assert intro.write_intro is not real_write_intro
+
+
+async def test_insert_links_the_need_so_the_fill_adds_no_second_figure(
+    client: AsyncClient, seeded_db: AsyncSession, settings: Any
+) -> None:
+    from tests.test_admin_user_management import _bearer
+
+    s = await _api_env(seeded_db, settings)
+    headers = _bearer(s["user"])
+    (cand,) = (await client.get(f"{s['url']}/candidates", headers=headers)).json()
+    res = await client.post(
+        f"{s['url']}/{cand['need_id']}/insert",
+        json={"figure_id": cand["figure_id"], "section_text": "Testo.", "asset_ids": []},
+        headers=headers,
+    )
+    out = res.json()
+    # Il docente salva la bozza con la figura inserita.
+    lesson = await seeded_db.get(CourseLesson, s["lesson"].id, populate_existing=True)
+    assert lesson is not None
+    raw = dict(lesson.content_raw)
+    raw["sections"] = [{**raw["sections"][0], "content": out["section_text"]}]
+    raw["visual_assets"] = [out["asset"]]
+    lesson.content_raw = raw
+    lesson.content_modified_at = datetime.now(UTC)
+    await seeded_db.commit()
+    lesson = await seeded_db.get(CourseLesson, s["lesson"].id, populate_existing=True)
+    assert lesson is not None
+    (entry,) = lesson.figure_needs_view
+    assert entry["status"] == "placed" and entry["linked"] is True
+    full = await content_svc.load_course_full(seeded_db, course_id=lesson.course_id)
+    assert full is not None
+    target = next(les for m in full.modules for les in m.lessons if les.id == lesson.id)
+    assert await fill.fill_lesson(seeded_db, full, target, trigger="test") == []
+
+
+async def test_the_fill_gives_way_to_changes_made_meanwhile(
+    seeded_db: AsyncSession, settings: Any, monkeypatch: pytest.MonkeyPatch, _engine: Any
+) -> None:
+    """Un'approvazione arrivata mentre si scrive la frase vince: il
+    completamento non scrive nulla (il prossimo evento ci riprova)."""
+    from sqlalchemy import update
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    env = await _course(seeded_db)
+    course, lesson, _ = await _ready_lesson(seeded_db, env)
+    original = fill.intro_or_fallback
+
+    async def approve_meanwhile(item: Any, caption: str) -> Any:
+        factory = async_sessionmaker(_engine, expire_on_commit=False)
+        async with factory() as other:
+            await other.execute(
+                update(CourseLesson)
+                .where(CourseLesson.id == lesson.id)
+                .values(content_status="approved")
+            )
+            await other.commit()
+        return await original(item, caption)
+
+    monkeypatch.setattr(fill, "intro_or_fallback", approve_meanwhile)
+    assert await fill.fill_lesson(seeded_db, course, lesson, trigger="test") == []
+    await seeded_db.commit()
+    fresh = await seeded_db.get(CourseLesson, lesson.id, populate_existing=True)
+    assert fresh is not None and fresh.content_status == "approved"
+    assert fresh.content_raw["visual_assets"] == []
+
+
+async def test_fill_course_goes_on_after_an_error(
+    seeded_db: AsyncSession, settings: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    env = await _course(seeded_db)
+    course, first, _n1 = await _ready_lesson(seeded_db, env)
+    second = env["second"]
+    _store(course, second, [_need("S1", "Schema differenziale", "differential")])
+    second.content_status = "ready"
+    second.content_generated_at = datetime.now(UTC) - timedelta(hours=1)
+    second.content_raw = {
+        "sections": [{"section_id": "S1", "title": "T", "content": "Testo."}],
+        "visual_assets": [],
+    }
+    await seeded_db.commit()
+    real = fill.fill_lesson
+    calls: list[str] = []
+
+    async def flaky(db: AsyncSession, course_: Any, lesson: Any, *, trigger: str) -> Any:
+        calls.append(lesson.lesson_code)
+        if lesson.id == first.id:
+            raise RuntimeError("errore su una lezione")
+        return await real(db, course_, lesson, trigger=trigger)
+
+    monkeypatch.setattr(fill, "fill_lesson", flaky)
+    inserted = await fill.fill_course(seeded_db, course, trigger="test")
+    assert len(calls) == 2 and inserted == 1
+
+
+async def test_candidates_respect_budget_cap_and_priority(
+    seeded_db: AsyncSession, settings: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.services import source_figure_assignment_service as svc
+    from app.services import source_figure_catalog as catalog_
+
+    env = await _course(seeded_db)
+    course, lesson, _ = await _ready_lesson(seeded_db, env)
+    should = _need("S1", "Schema differenziale", "differential", must=False)
+    must = _need("S1", "Schema a scansione", "scanning")
+    _store(course, lesson, [should, must])
+    await seeded_db.commit()
+    found = await fill.candidates(seeded_db, course, lesson, within_budget=False)
+    assert [c.need_id for c in found] == [must["need_id"], should["need_id"]]
+    monkeypatch.setattr(svc, "plan_budget", lambda *a: 1)
+    found = await fill.candidates(seeded_db, course, lesson, within_budget=True)
+    assert [c.need_id for c in found] == [must["need_id"]]
+    # Figura al tetto K nel contenuto di un'altra lezione: fuori.
+    monkeypatch.setattr(catalog_, "reuse_cap", lambda: 1)
+    second = env["second"]
+    second.content_raw = {
+        "sections": [],
+        "visual_assets": [
+            {
+                "asset_id": "SRC-x",
+                "format": "source_figure",
+                "content": str(env["figures"]["scan"].id),
+            }
+        ],
+    }
+    await seeded_db.commit()
+    found = await fill.candidates(seeded_db, course, lesson, within_budget=False)
+    assert [c.need_id for c in found] == [should["need_id"]]
+
+
+async def test_a_found_figure_triggers_the_fill_of_that_lesson(
+    seeded_db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.services import course_lesson_figures_gap_worker as gap_worker
+    from app.services import literature_figures_service as gaps
+    from tests.course_builders import build_course, find_lesson
+
+    course_id, _o, _u = await build_course(seeded_db, modules=1, lessons_per_module=1)
+    course = await content_svc.load_course_full(seeded_db, course_id=course_id)
+    assert course is not None
+    lesson = find_lesson(course, "M1.L1")
+    lesson.figures_gap_status = "processing"
+    await seeded_db.commit()
+
+    async def found(db: AsyncSession, item: Any) -> Any:
+        return gaps.GapOutcome("done", {"needs": {"n1": {"status": "found"}}}, None)
+
+    calls: list[Any] = []
+
+    async def record(db: AsyncSession, course_: Any, *, trigger: str, lesson_ids: Any) -> int:
+        calls.append((trigger, lesson_ids))
+        return 0
+
+    monkeypatch.setattr(gaps, "check_lesson", found)
+    monkeypatch.setattr(fill, "fill_course", record)
+    await gap_worker.process_lesson(seeded_db, lesson)
+    assert calls == [("literature", {lesson.id})]

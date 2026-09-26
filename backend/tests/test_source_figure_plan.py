@@ -377,3 +377,14 @@ def test_an_auto_placed_sequence_member_follows_the_previous_one() -> None:
     assert content.index(r(F[0])) < content.index(r(F[1])) < content.index(r(F[2]))
     assert not content.rstrip().endswith(f"[FIG:{r(F[1])}]")
     assert report["order_warning"] == []
+
+
+def test_with_room_for_one_the_must_is_auto_placed_before_the_should() -> None:
+    needs = [_need("n4", "S3", must=False), _need("n3", "S3")]
+    figures = {f: _fig(f) for f in F[:6]}
+    plan = sp.build_plan_catalog(needs, _offer({"n3": F[2], "n4": F[3]}), figures, [], OUTLINE)
+    assert plan is not None
+    out = _output({"S1": "t", "S2": "t", "S3": "Testo."}, [])
+    report = sp.apply_placement(out, plan, max_items=1)
+    assert report["needs"]["n3"]["status"] == "auto_placed"
+    assert report["needs"]["n4"] == {"status": "missing", "reason": "budget"}

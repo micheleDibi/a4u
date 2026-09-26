@@ -22,11 +22,13 @@ Nessuna figura entra se il docente ha detto «Non serve» (fabbisogni attivi).
 
 from __future__ import annotations
 
+import json
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -255,24 +257,39 @@ def _settle_filled(lesson: CourseLesson, placed: list[tuple[FillCandidate, str]]
     lesson.figure_assignment = data
 
 
+def _fingerprint(lesson: CourseLesson) -> tuple[Any, ...]:
+    """Ciò che non deve cambiare fra la lettura e la scrittura del
+    completamento: stato, date, contenuto e fabbisogni."""
+    return (
+        lesson.content_status,
+        lesson.content_generated_at,
+        lesson.content_modified_at,
+        json.dumps(lesson.content_raw, sort_keys=True, default=str),
+        (lesson.figure_needs or {}).get("fingerprint")
+        if isinstance(lesson.figure_needs, dict)
+        else None,
+        json.dumps(lesson.figure_need_links, sort_keys=True, default=str),
+    )
+
+
 async def fill_lesson(
     db: AsyncSession, course: Course, lesson: CourseLesson, *, trigger: str
 ) -> list[str]:
     """Completamento automatico: inserisce nella lezione le figure adatte ai
     fabbisogni scoperti, entro il budget del piano. Solo lezioni `ready`
-    (mai approvate, in generazione o superate), sotto il lock di corso.
-    Non fa commit (lo fa il chiamante). Ritorna gli asset inseriti."""
+    (mai approvate, in generazione o superate). Le frasi (PROMPT 23) si
+    scrivono PRIMA di prendere il lock di corso; poi, sotto il lock e con la
+    riga bloccata, si scrive solo se stato, contenuto e collegamenti sono
+    quelli letti (un'approvazione, un salvataggio del docente o una
+    rigenerazione arrivati nel frattempo vincono: il prossimo evento ci
+    riprova) e se le figure stanno ancora nel tetto di riuso. Non fa commit
+    (lo fa il chiamante). Ritorna gli asset inseriti."""
     settings = get_settings()
     if not (settings.figure_auto_fill_enabled and plan.plan_active()):
         return []
+    await db.refresh(lesson)
     if lesson.is_assessment or lesson.figure_needs_status != "ready":
         return []
-    if not await assignment.course_lock(db, course.id):
-        log.info("figure_fill_lock_busy", lesson_id=str(lesson.id))
-        return []
-    # Sotto il lock: stato e contenuto riletti (una generazione o un
-    # salvataggio del docente possono essere arrivati nel frattempo).
-    await db.refresh(lesson)
     if lesson.content_status != "ready" or not isinstance(lesson.content_raw, dict):
         return []
     if _content_stale(course, lesson):
@@ -280,9 +297,10 @@ async def fill_lesson(
     found = await candidates(db, course, lesson, within_budget=True)
     if not found:
         return []
-    raw = dict(lesson.content_raw)
-    raw["sections"] = [dict(s) for s in raw.get("sections") or [] if isinstance(s, dict)]
-    assets = [dict(a) for a in raw.get("visual_assets") or [] if isinstance(a, dict)]
+    seen = _fingerprint(lesson)
+    raw = json.loads(json.dumps(lesson.content_raw, default=str))
+    raw["sections"] = [s for s in raw.get("sections") or [] if isinstance(s, dict)]
+    assets = [a for a in raw.get("visual_assets") or [] if isinstance(a, dict)]
     taken = {str(a.get("asset_id") or "").lower() for a in assets}
     asset_of = _placed_assets(lesson)
     placed: list[tuple[FillCandidate, str]] = []
@@ -309,25 +327,45 @@ async def fill_lesson(
         usage_total = plan.merge_usage(usage_total, usage)
     if not placed:
         return []
+    if not await assignment.course_lock(db, course.id):
+        log.info("figure_fill_lock_busy", lesson_id=str(lesson.id))
+        return []
+    locked = (
+        await db.execute(
+            select(CourseLesson)
+            .where(CourseLesson.id == lesson.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one()
+    if _fingerprint(locked) != seen:
+        log.info("figure_fill_changed_meanwhile", lesson_id=str(lesson.id))
+        return []
+    over = await catalog.over_reuse_cap(
+        db, course, [c.figure_id for c, _ref in placed], lesson_id=lesson.id
+    )
+    if over:
+        log.info("figure_fill_reuse_cap", lesson_id=str(lesson.id), figures=len(over))
+        return []
     raw["visual_assets"] = assets
-    lesson.content_raw = raw
-    flag_modified(lesson, "content_raw")
-    lesson.figure_needs_usage = usage_total
+    locked.content_raw = raw
+    flag_modified(locked, "content_raw")
+    locked.figure_needs_usage = usage_total
     # Aggiornamento del sistema: il timestamp del worker (mai il
     # `content_modified_at` dei CRUD manuali); PDF e slide risultano da
     # riesportare.
-    lesson.content_generated_at = _now()
-    _settle_filled(lesson, placed)
+    locked.content_generated_at = _now()
+    _settle_filled(locked, placed)
     await write_audit(
         db,
         action="course.lesson.content.figures_filled",
         actor_user_id=None,
         organization_id=course.organization_id,
         target_type="course_lesson",
-        target_id=str(lesson.id),
+        target_id=str(locked.id),
         metadata={
             "course_id": str(course.id),
-            "lesson_code": lesson.lesson_code,
+            "lesson_code": locked.lesson_code,
             "trigger": trigger,
             "inserted": [
                 {"need_id": c.need_id, "asset_id": ref, "figure_id": str(c.figure_id)}
@@ -337,7 +375,7 @@ async def fill_lesson(
     )
     log.info(
         "figure_fill_applied",
-        lesson_id=str(lesson.id),
+        lesson_id=str(locked.id),
         trigger=trigger,
         inserted=len(placed),
     )
@@ -348,21 +386,36 @@ async def fill_course(
     db: AsyncSession, course: Course, *, trigger: str, lesson_ids: set[uuid.UUID] | None = None
 ) -> int:
     """Completamento delle lezioni del corso (tutte o `lesson_ids`), una
-    alla volta con un commit ciascuna. Un errore su una lezione non ferma
-    le altre. Ritorna le figure inserite."""
-    total = 0
+    alla volta con un commit ciascuna. Il corso si ricarica per ogni lezione
+    (dopo un rollback gli oggetti della sessione scadono): un errore su una
+    lezione non ferma le altre. Ritorna le figure inserite."""
+    from app.services.course_lesson_content_service import load_course_full
+
+    course_id = course.id
     targets = [
-        lesson
+        lesson.id
         for module in course.modules or []
         for lesson in module.lessons or []
-        if lesson_ids is None or lesson.id in lesson_ids
+        if (lesson_ids is None or lesson.id in lesson_ids)
+        and lesson.content_status == "ready"
+        and lesson.figure_needs_status == "ready"
     ]
-    for lesson in targets:
-        if lesson.content_status != "ready" or lesson.figure_needs_status != "ready":
-            continue
-        lesson_id = lesson.id
+    total = 0
+    for lesson_id in targets:
         try:
-            inserted = await fill_lesson(db, course, lesson, trigger=trigger)
+            fresh = await load_course_full(db, course_id=course_id)
+            lesson = next(
+                (
+                    les
+                    for m in (fresh.modules if fresh else [])
+                    for les in m.lessons or []
+                    if les.id == lesson_id
+                ),
+                None,
+            )
+            if fresh is None or lesson is None:
+                continue
+            inserted = await fill_lesson(db, fresh, lesson, trigger=trigger)
             await db.commit()
             total += len(inserted)
         except Exception as exc:
@@ -398,4 +451,11 @@ async def draft_insertion(
         lesson, course, section_text, title, cand, ref, _placed_assets(lesson)
     )
     lesson.figure_needs_usage = plan.merge_usage(lesson.figure_needs_usage, usage)
+    # Legame fabbisogno → figura: vale quando il docente salva la bozza con
+    # l'asset (vista e piano lo verificano); con la bozza scartata resta
+    # inerte. Così il completamento non ne inserisce una seconda.
+    links = dict(lesson.figure_need_links) if isinstance(lesson.figure_need_links, dict) else {}
+    links[need_id] = {"state": "linked", "asset_id": ref}
+    lesson.figure_need_links = links
+    flag_modified(lesson, "figure_need_links")
     return {"section_id": cand.section_id, "section_text": text, "asset": _asset(ref, cand)}
