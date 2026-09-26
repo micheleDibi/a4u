@@ -151,3 +151,39 @@ export function SourceFigure({
 }
 
 export default SourceFigure;
+
+/** Miniatura di una figura di fonte del corso (anteprima dall'endpoint
+ *  autenticato, come `SourceFigure`), per le figure proposte nell'editor.
+ *  Nessuna riga «Fonte»: la figura non è ancora nella lezione. */
+export function SourceFigureThumbnail({
+  figureId,
+  alt,
+  className,
+}: {
+  figureId: string;
+  alt: string;
+  className?: string;
+}) {
+  const figures = useCourseFigures();
+  const figure = useMemo(
+    () => figures.data?.find((f) => f.id === figureId.trim()),
+    [figures.data, figureId],
+  );
+  const image = useFigureImage(figure, true);
+  if (!image.url) {
+    return (
+      <div
+        className={cn("size-16 shrink-0 rounded border bg-muted", className)}
+        aria-hidden="true"
+      />
+    );
+  }
+  return (
+    <img
+      src={image.url}
+      alt={alt}
+      className={cn("h-16 w-auto max-w-28 shrink-0 rounded border bg-white object-contain", className)}
+      loading="lazy"
+    />
+  );
+}

@@ -1339,7 +1339,7 @@ function LessonContentRow({
         </button>
         <LessonContentStatusBadge status={status} />
         {!isAssessment && isReady && (
-          <LessonFigureNeedsChip summary={lesson.figure_needs_summary} />
+          <LessonFigureNeedsChip lesson={lesson} />
         )}
         {status === "approved" && (
           <ApprovalBadge

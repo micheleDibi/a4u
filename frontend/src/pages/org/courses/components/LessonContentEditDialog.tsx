@@ -561,31 +561,30 @@ export function LessonContentEditDialog({
           </SectionGroup>
 
           {/* === Figure consigliate (piano delle figure) === */}
-          {figureNeedsLesson?.figure_needs_view &&
-            figureNeedsLesson.figure_needs_view.length > 0 && (
-              <SectionGroup
-                title={t("courses.figureNeeds.title")}
-                open={openGroups.figureNeeds}
-                onToggle={() => toggleGroup("figureNeeds")}
-              >
-                <LessonFigureNeedsPanel
-                  orgId={orgId}
-                  courseId={courseId}
-                  lesson={figureNeedsLesson}
-                  sections={sections}
-                  assetIds={visualAssets.map((a) => a.asset_id)}
-                  disabled={isPending}
-                  onInsert={(sectionId, sectionText, asset) => {
-                    setSections((prev) =>
-                      prev.map((s) =>
-                        s.section_id === sectionId ? { ...s, content: sectionText } : s,
-                      ),
-                    );
-                    setVisualAssets((prev) => [...prev, asset]);
-                  }}
-                />
-              </SectionGroup>
-            )}
+          {figureNeedsLesson && (
+            <SectionGroup
+              title={t("courses.figureNeeds.title")}
+              open={openGroups.figureNeeds}
+              onToggle={() => toggleGroup("figureNeeds")}
+            >
+              <LessonFigureNeedsPanel
+                orgId={orgId}
+                courseId={courseId}
+                lesson={figureNeedsLesson}
+                sections={sections}
+                assetIds={visualAssets.map((a) => a.asset_id)}
+                disabled={isPending}
+                onInsert={(sectionId, sectionText, asset) => {
+                  setSections((prev) =>
+                    prev.map((s) =>
+                      s.section_id === sectionId ? { ...s, content: sectionText } : s,
+                    ),
+                  );
+                  setVisualAssets((prev) => [...prev, asset]);
+                }}
+              />
+            </SectionGroup>
+          )}
 
           {/* === Asset visivi === */}
           <SectionGroup

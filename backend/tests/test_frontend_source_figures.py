@@ -122,15 +122,17 @@ def test_new_i18n_keys_exist_in_italian_and_english() -> None:
             assert f"courses.sourceFigures.reasons.{reason}" in keys, (language, reason)
         for level in ("low", "unusable", "detail"):
             assert f"courses.sourceFigures.resolution.{level}" in keys, (language, level)
-        # Piano delle figure (doc 18 §23.7): stati, motivi ed esiti della
-        # letteratura sono chiavi dinamiche del pannello.
-        for status in ("placed", "misplaced", "missing", "uncovered", "dismissed"):
-            assert f"courses.figureNeeds.status.{status}" in keys, (language, status)
+        # Piano delle figure (doc 18 §23.7, §24): motivi ed esiti della
+        # letteratura sono chiavi dinamiche del pannello; stati del piano e
+        # plurali usati con `count`.
         for reason in ("no_candidate", "reuse_cap", "budget", "duplicate_in_lesson", "not_planned"):
             assert f"courses.figureNeeds.reasons.{reason}" in keys, (language, reason)
         for outcome in ("found", "not_found", "not_searched"):
             assert f"courses.figureNeeds.literature.{outcome}" in keys, (language, outcome)
-        assert "courses.figureNeeds.chipOptional" in keys, language
+        for state in ("computing", "notPlanned", "failed", "regenerate", "none"):
+            assert f"courses.figureNeeds.state.{state}" in keys, (language, state)
+        for plural in ("summary.draft", "toast.inserted"):
+            assert f"courses.figureNeeds.{plural}" in keys, (language, plural)
 
 
 def test_resolution_badge_shows_only_backend_values() -> None:
@@ -169,20 +171,24 @@ def test_image_rev_is_in_every_image_cache_key_and_request() -> None:
 
 
 def test_figure_needs_panel_shows_only_backend_state() -> None:
-    """Il pannello delle figure consigliate mostra stato e motivo calcolati
-    dal backend, sta nella finestra di modifica (non nella vista della
-    lezione) e «Inserisci» modifica solo la bozza: salva il docente."""
+    """Etichetta e pannello «Figure dalle fonti» mostrano stato, conteggi e
+    motivi calcolati dal backend (mai ricalcolati), l'etichetta c'è sempre
+    (anche senza piano), il pannello sta nella finestra di modifica e
+    «Inserisci» modifica solo la bozza: salva il docente."""
     panel = (_FRONTEND / "pages/org/courses/components/LessonFigureNeedsPanel.tsx").read_text(
         encoding="utf-8"
     )
-    assert "figure_needs_view" in panel and "updateFigureNeedLink" in panel
+    assert "figure_needs_view" in panel and "figure_needs_summary" in panel
+    assert "figure_needs_status" in panel and "updateFigureNeedLink" in panel
     assert "insertFigureForNeed" in panel and "figureNeedCandidates" in panel
+    assert "SourceFigureThumbnail" in panel
     assert "lessonContent.updateLesson" not in panel
     assert '"courses.figureNeeds.link"' not in panel  # «Collega» tolto
     view = (_FRONTEND / "pages/org/courses/components/CourseLessonContentView.tsx").read_text(
         encoding="utf-8"
     )
-    assert "LessonFigureNeedsChip" in view and "<LessonFigureNeedsPanel" not in view
+    assert "<LessonFigureNeedsChip lesson={lesson}" in view
+    assert "<LessonFigureNeedsPanel" not in view
     dialog = (_FRONTEND / "pages/org/courses/components/LessonContentEditDialog.tsx").read_text(
         encoding="utf-8"
     )

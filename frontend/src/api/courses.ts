@@ -280,6 +280,8 @@ export interface LessonFigureNeedsSummary {
   needs: number;
   musts: number;
   musts_placed: number;
+  shoulds: number;
+  shoulds_placed: number;
   uncovered: number;
   misplaced: number;
   dismissed: number;
@@ -868,6 +870,15 @@ export interface CourseLessonOut {
   /** Fabbisogni di figure della lezione (piano delle figure): null senza
    *  fabbisogni pronti. Stato e riassunto calcolati dal backend. */
   figure_needs_view?: LessonFigureNeedView[] | null;
+  /** Stato del calcolo dei fabbisogni: null = mai chiesto (lezione generata
+   *  prima del piano), `skipped` = lezione senza scaletta. */
+  figure_needs_status?:
+    | "pending"
+    | "processing"
+    | "ready"
+    | "failed"
+    | "skipped"
+    | null;
   figure_needs_summary?: LessonFigureNeedsSummary | null;
   // Stale-detection — set solo da CRUD manuale, non dai worker AI.
   lesson_structure_modified_at: string | null;

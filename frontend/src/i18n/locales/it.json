@@ -1983,54 +1983,68 @@
       }
     },
     "figureNeeds": {
-      "title": "Figure consigliate",
-      "description": "Le figure che il piano ritiene utili per ogni sezione. Il sistema inserisce da solo quelle disponibili; qui puoi inserire nella bozza quelle proposte, con la frase che le introduce, o dire che una non serve. Le figure inserite si salvano con «Salva».",
-      "chip": "Figure {{placed}}/{{total}}",
-      "chipOptional_one": "{{count}} figura consigliata",
-      "chipOptional_other": "{{count}} figure consigliate",
-      "chipTitle": "Figure obbligatorie nel contenuto: {{placed}} su {{total}}; da trovare: {{uncovered}}; fuori dalla propria sezione: {{misplaced}}",
-      "priority": {
-        "must": "Obbligatoria",
-        "should": "Consigliata"
+      "title": "Figure dalle fonti",
+      "chip": {
+        "computing": "Figure dalle fonti: calcolo in corso…",
+        "notPlanned": "Figure dalle fonti: non previste",
+        "regenerate": "Figure dalle fonti: rigenera per calcolarle",
+        "none": "Nessuna figura dalle fonti necessaria",
+        "musts": "Figure dalle fonti: {{placed}} di {{total}} obbligatorie",
+        "shoulds": "Figure dalle fonti: {{placed}} di {{total}} consigliate",
+        "details": "Obbligatorie nel testo: {{musts}} di {{mustsTotal}} · Consigliate nel testo: {{shoulds}} di {{shouldsTotal}} · Da trovare: {{toFind}} · In un'altra sezione: {{elsewhere}} · Escluse da te: {{dismissed}}"
       },
-      "sequence": "sequenza, {{index}}ª",
-      "status": {
-        "placed": "Nel contenuto",
-        "misplaced": "In un'altra sezione",
-        "missing": "Non inserita",
-        "uncovered": "Da trovare",
-        "dismissed": "Non serve"
+      "state": {
+        "computing": "Il sistema sta calcolando quali figure dai documenti del corso e dalla letteratura servono a questa lezione: riapri tra poco.",
+        "notPlanned": "Per questa lezione il piano delle figure non è previsto: la lezione non ha una scaletta di sezioni.",
+        "failed": "Il calcolo delle figure per questa lezione non è riuscito: rigenera le dispense della lezione per riprovare.",
+        "regenerate": "La lezione è stata generata prima del piano delle figure: rigenera le dispense della lezione per sapere quali figure dai documenti del corso e dalla letteratura servono.",
+        "none": "Per questa lezione non servono figure dai documenti del corso o dalla letteratura: bastano le figure generate."
       },
-      "reasons": {
-        "no_candidate": "Nessuna figura adatta nei documenti del corso",
-        "reuse_cap": "Le figure adatte sono già usate in altre lezioni",
-        "budget": "Oltre il numero di figure della lezione",
-        "duplicate_in_lesson": "La figura adatta copre già un altro fabbisogno della lezione",
-        "not_planned": "Il piano non era attivo alla generazione"
+      "summary": {
+        "musts": "{{placed}} di {{total}} figure obbligatorie sono nel testo",
+        "shoulds": "{{placed}} di {{total}} figure consigliate sono nel testo",
+        "draft_one": "{{count}} figura inserita nella bozza: salva per confermare",
+        "draft_other": "{{count}} figure inserite nella bozza: salva per confermare"
       },
-      "literature": {
-        "found": "trovata in letteratura aperta: entrerà alla prossima rigenerazione",
-        "not_found": "non trovata in letteratura aperta",
-        "not_searched": "non cercata in letteratura aperta (limite di ricerca)"
-      },
-      "citedIn": "citata in «{{section}}»",
-      "outsideSections": "introduzione o sintesi",
-      "linkedByYou": "scelta da te",
-      "missingHint": "Il piano aveva una figura, ma il modello non l'ha inserita",
-      "notCitedHint": "La figura è nella lezione ma il testo non la cita",
+      "insertAll": "Inserisci tutte le figure proposte ({{count}})",
+      "insert": "Inserisci",
       "dismiss": "Non serve",
       "restore": "Ripristina",
+      "priority": {
+        "must": "obbligatoria",
+        "should": "consigliata"
+      },
+      "row": {
+        "draft": "Inserita nella bozza: salva per confermare",
+        "inText": "Nel testo, nella sua sezione",
+        "elsewhere": "Nel testo, ma nella sezione «{{section}}»",
+        "introOrSummary": "Nel testo, ma nell'introduzione o nella sintesi",
+        "dismissed": "Non serve: l'hai esclusa tu",
+        "notCited": "È fra le figure della lezione, ma il testo non la cita",
+        "available": "C'è una figura adatta nei documenti del corso",
+        "planGone": "La figura prevista non è più disponibile",
+        "sequence": "{{index}}ª di una serie"
+      },
+      "reasons": {
+        "no_candidate": "Non trovata nei documenti del corso",
+        "reuse_cap": "Le figure adatte sono già usate in altre lezioni",
+        "budget": "La lezione ha già il numero massimo di figure",
+        "duplicate_in_lesson": "La figura adatta è già usata per un'altra figura di questa lezione",
+        "not_planned": "Il piano non era attivo quando la lezione è stata generata: rigenerala"
+      },
+      "literature": {
+        "found": "trovata in letteratura aperta: entrerà da sola",
+        "not_found": "cercata anche in letteratura aperta, senza risultato",
+        "not_searched": "non cercata in letteratura aperta (limite di ricerca)"
+      },
       "uncoveredHint": "Se il corso non ha una figura adatta, caricala o sceglila dai documenti negli asset visivi e citala nel testo della sezione.",
       "toast": {
-        "updated": "Figura consigliata aggiornata",
-        "error": "Impossibile aggiornare la figura consigliata",
-        "inserted": "Figura inserita nella bozza: salva per confermare",
-        "changed": "La sezione è cambiata durante l'inserimento: premi di nuovo «Inserisci»"
-      },
-      "insert": "Inserisci",
-      "proposed": "Figura proposta: {{caption}}",
-      "inserted": "Inserita, da salvare",
-      "empty": "Nessuna figura consigliata per questa lezione."
+        "updated": "Figura aggiornata",
+        "error": "Impossibile aggiornare la figura",
+        "changed": "La sezione è cambiata durante l'inserimento: premi di nuovo «Inserisci»",
+        "inserted_one": "{{count}} figura inserita nella bozza: salva per confermare",
+        "inserted_other": "{{count}} figure inserite nella bozza: salva per confermare"
+      }
     }
   },
   "courseSettings": {
