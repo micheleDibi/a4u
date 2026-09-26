@@ -243,77 +243,6 @@ export interface LessonFigureReview {
   >;
 }
 
-/** Stato di un fabbisogno di figura della lezione (doc 18 §23.7), calcolato
- *  dal backend alla lettura: il frontend non lo ricalcola. */
-export type LessonFigureNeedStatus =
-  | "placed"
-  | "misplaced"
-  | "missing"
-  | "uncovered"
-  | "dismissed";
-
-export interface LessonFigureNeedView {
-  need_id: string;
-  /** N1…Nn nell'ordine delle sezioni. */
-  label: string;
-  section_id: string;
-  subject: string;
-  priority: "must" | "should" | null;
-  representation: string | null;
-  sequence_group: string | null;
-  sequence_index: number | null;
-  status: LessonFigureNeedStatus;
-  /** placed/misplaced: asset della lezione che copre il fabbisogno. */
-  asset_id?: string;
-  /** Sezione in cui l'asset è citato ("" = introduzione o sintesi). */
-  cited_in?: string | null;
-  /** true se il collegamento l'ha fatto il docente. */
-  linked?: boolean;
-  /** uncovered: no_candidate, reuse_cap, budget, duplicate_in_lesson,
-   *  not_planned; missing: not_cited (figura nel contenuto ma non citata). */
-  reason?: string;
-  /** uncovered: esito della ricerca in letteratura aperta, se c'è. */
-  literature?: string | null;
-}
-
-export interface LessonFigureNeedsSummary {
-  needs: number;
-  musts: number;
-  musts_placed: number;
-  shoulds: number;
-  shoulds_placed: number;
-  /** Nella lezione ma non citate dal testo (comprese in `uncovered`). */
-  not_cited?: number;
-  uncovered: number;
-  misplaced: number;
-  dismissed: number;
-}
-
-/** Figura del corso adatta a un fabbisogno scoperto (per «Inserisci»). */
-export interface FigureNeedCandidate {
-  need_id: string;
-  figure_id: string;
-  caption: string;
-  relation: string;
-  tier: number;
-  /** `uploaded` = documenti del corso; `openalex`/`wikimedia` = letteratura. */
-  source_kind: string;
-}
-
-/** «Inserisci»: testo della sezione (bozza) con frase e figura, e l'asset
- *  da aggiungere. Il contenuto non è salvato: lo salva il docente. */
-export interface FigureNeedInsertOut {
-  section_id: string;
-  section_text: string;
-  asset: LessonContentVisualAsset;
-}
-
-export interface FigureNeedLinkInput {
-  /** null = torna allo stato calcolato dal piano. */
-  state: "dismissed" | "linked" | null;
-  asset_id?: string | null;
-}
-
 /** Figura di fonte del corso (`GET …/document-figures`). La riga
  *  «Fonte» (`attribution`) è calcolata dal backend: il frontend la mostra
  *  così com'è, non la ricompone mai. */
@@ -871,21 +800,6 @@ export interface CourseLessonOut {
   /** Verdetto del revisore delle figure di fonte (PROMPT 19): avvisi per
    *  l'editor, mai applicati al contenuto. */
   content_figure_review?: LessonFigureReview | null;
-  /** Fabbisogni di figure della lezione (piano delle figure): null senza
-   *  fabbisogni pronti. Stato e riassunto calcolati dal backend. */
-  figure_needs_view?: LessonFigureNeedView[] | null;
-  /** Stato del calcolo dei fabbisogni: null = mai chiesto (lezione generata
-   *  prima del piano), `skipped` = lezione senza scaletta. */
-  figure_needs_status?:
-    | "pending"
-    | "processing"
-    | "ready"
-    | "failed"
-    | "skipped"
-    | null;
-  /** Funzione «figure dalle fonti» attiva (interruttori del piano). */
-  figure_plan_active?: boolean;
-  figure_needs_summary?: LessonFigureNeedsSummary | null;
   // Stale-detection — set solo da CRUD manuale, non dai worker AI.
   lesson_structure_modified_at: string | null;
   content_modified_at: string | null;
@@ -1884,49 +1798,6 @@ export const coursesApi = {
     ): Promise<CourseOut> => {
       const res = await apiClient.patch<CourseOut>(
         `${base(orgId)}/${courseId}/lessons/${lessonId}/content`,
-        payload
-      );
-      return res.data;
-    },
-    /** «Non serve», figura collegata o ritorno allo stato calcolato per un
-     *  fabbisogno di figura. Non modifica il contenuto della lezione. */
-    updateFigureNeedLink: async (
-      orgId: string,
-      courseId: string,
-      lessonId: string,
-      needId: string,
-      payload: FigureNeedLinkInput
-    ): Promise<CourseOut> => {
-      const res = await apiClient.put<CourseOut>(
-        `${base(orgId)}/${courseId}/lessons/${lessonId}/figure-needs/${encodeURIComponent(needId)}`,
-        payload
-      );
-      return res.data;
-    },
-    figureNeedCandidates: async (
-      orgId: string,
-      courseId: string,
-      lessonId: string
-    ): Promise<FigureNeedCandidate[]> => {
-      const res = await apiClient.get<FigureNeedCandidate[]>(
-        `${base(orgId)}/${courseId}/lessons/${lessonId}/figure-needs/candidates`
-      );
-      return res.data;
-    },
-    insertFigureForNeed: async (
-      orgId: string,
-      courseId: string,
-      lessonId: string,
-      needId: string,
-      payload: {
-        figure_id: string;
-        section_text: string;
-        asset_ids: string[];
-        draft_assets?: Record<string, string>;
-      }
-    ): Promise<FigureNeedInsertOut> => {
-      const res = await apiClient.post<FigureNeedInsertOut>(
-        `${base(orgId)}/${courseId}/lessons/${lessonId}/figure-needs/${encodeURIComponent(needId)}/insert`,
         payload
       );
       return res.data;

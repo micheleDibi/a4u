@@ -76,7 +76,7 @@ def _flatten(node: dict, prefix: str = "") -> set[str]:
 
 def test_new_i18n_keys_exist_in_italian_and_english() -> None:
     pattern = re.compile(
-        r"t\(\s*[\"'`]((?:courses\.sourceFigures|courses\.figureNeeds|courses\.docs\.figures\.meta|"
+        r"t\(\s*[\"'`]((?:courses\.sourceFigures|courses\.docs\.figures\.meta|"
         r"courses\.docs\.figures\.licenses|courseSettings\.figureLicensePolicy|"
         r"courseSettings\.fields\.figureLicensePolicy)[\w.]*)[\"'`]"
     )
@@ -122,17 +122,6 @@ def test_new_i18n_keys_exist_in_italian_and_english() -> None:
             assert f"courses.sourceFigures.reasons.{reason}" in keys, (language, reason)
         for level in ("low", "unusable", "detail"):
             assert f"courses.sourceFigures.resolution.{level}" in keys, (language, level)
-        # Piano delle figure (doc 18 §23.7, §24): motivi ed esiti della
-        # letteratura sono chiavi dinamiche del pannello; stati del piano e
-        # plurali usati con `count`.
-        for reason in ("no_candidate", "reuse_cap", "budget", "duplicate_in_lesson", "not_planned"):
-            assert f"courses.figureNeeds.reasons.{reason}" in keys, (language, reason)
-        for outcome in ("found", "not_found", "not_searched"):
-            assert f"courses.figureNeeds.literature.{outcome}" in keys, (language, outcome)
-        for state in ("computing", "notPlanned", "failed", "notYet", "none", "off"):
-            assert f"courses.figureNeeds.state.{state}" in keys, (language, state)
-        for plural in ("summary.draft", "toast.inserted"):
-            assert f"courses.figureNeeds.{plural}" in keys, (language, plural)
 
 
 def test_resolution_badge_shows_only_backend_values() -> None:
@@ -170,38 +159,13 @@ def test_image_rev_is_in_every_image_cache_key_and_request() -> None:
     assert re.search(r"params\.rev\s*=\s*rev", api)
 
 
-def test_figure_needs_panel_shows_only_backend_state() -> None:
-    """Etichetta e pannello «Figure dalle fonti» mostrano stato, conteggi e
-    motivi calcolati dal backend (mai ricalcolati), l'etichetta c'è sempre
-    (anche senza piano), il pannello sta nella finestra di modifica e
-    «Inserisci» modifica solo la bozza: salva il docente."""
-    panel = (_FRONTEND / "pages/org/courses/components/LessonFigureNeedsPanel.tsx").read_text(
-        encoding="utf-8"
-    )
-    assert "figure_needs_view" in panel and "figure_needs_summary" in panel
-    assert "figure_needs_status" in panel and "updateFigureNeedLink" in panel
-    assert "insertFigureForNeed" in panel and "figureNeedCandidates" in panel
-    assert "SourceFigureThumbnail" in panel
-    assert "lessonContent.updateLesson" not in panel
-    assert '"courses.figureNeeds.link"' not in panel  # «Collega» tolto
-    view = (_FRONTEND / "pages/org/courses/components/CourseLessonContentView.tsx").read_text(
-        encoding="utf-8"
-    )
-    assert "<LessonFigureNeedsChip lesson={lesson}" in view
-    assert "<LessonFigureNeedsPanel" not in view
-    dialog = (_FRONTEND / "pages/org/courses/components/LessonContentEditDialog.tsx").read_text(
-        encoding="utf-8"
-    )
-    assert "<LessonFigureNeedsPanel" in dialog and "onInsert" in dialog
-    # Gruppo sempre presente nella modifica (anche senza piano) e finestra
-    # che aspetta gli inserimenti prima di salvare o chiudere.
-    assert "{figureNeedsLesson && (" in dialog
-    assert "onBusyChange={setFiguresBusy}" in dialog and "figuresBusy" in dialog
-    # Etichetta sempre presente con la funzione attiva: nessun'altra uscita
-    # vuota oltre alla funzione spenta.
-    chip = panel[panel.index("function useChipState") : panel.index("interface PanelProps")]
-    assert chip.count("return null") == 2 and "figure_plan_active" in chip
-    # «Inserisci»: bozza cambiata durante la richiesta → niente sovrascrittura;
-    # finestra chiusa → il ciclo si ferma; ordine delle serie nella bozza.
-    assert "live !== sent" in panel and "courses.figureNeeds.toast.changed" in panel
-    assert "aliveRef.current" in panel and "draft_assets" in panel
+def test_no_figure_needs_label_or_panel() -> None:
+    """Etichetta e pannello delle figure consigliate e obbligatorie tolti il
+    26/09/2026: il piano lavora dietro le quinte, l'editor non ne mostra
+    nulla (né chiavi i18n né chiamate agli endpoint tolti)."""
+    for path, text in _sources().items():
+        for marker in ("figureNeeds", "FigureNeed", "figure-needs", "figure_needs"):
+            assert marker not in text, (path.name, marker)
+    for language in ("it", "en"):
+        keys = _flatten(json.loads((_LOCALES / f"{language}.json").read_text(encoding="utf-8")))
+        assert not [k for k in keys if k.startswith("courses.figureNeeds.")], language

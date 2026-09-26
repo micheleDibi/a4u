@@ -20,7 +20,6 @@ import { isLegacyFormat } from "@/lib/figureFormats";
 import { roundTrips } from "@/lib/figureNumbering";
 
 import {
-  type CourseLessonOut,
   type LessonContentEquation,
   type LessonContentExample,
   type LessonContentRaw,
@@ -55,8 +54,6 @@ import { RichTextEditor } from "@/components/shared/RichTextEditor";
 import { TableEditor } from "@/components/shared/TableEditor";
 import { VisualAssetEditor } from "@/components/shared/VisualAssetEditor";
 
-import { LessonFigureNeedsPanel } from "./LessonFigureNeedsPanel";
-
 // Tipi di asset equazione (mirror dello schema BE). Etichette localizzate
 // in `courses.theorem.kind.*`.
 const EQUATION_KINDS = [
@@ -82,8 +79,6 @@ interface Props {
   orgId: string;
   /** Verdetto del revisore delle figure di fonte (avvisi sulle card). */
   figureReview?: LessonFigureReview | null;
-  /** Lezione per il pannello «Figure consigliate» (piano delle figure). */
-  figureNeedsLesson?: CourseLessonOut;
   courseId: string;
   onClose: () => void;
   onSubmit: (payload: LessonContentUpdateInput) => void;
@@ -116,7 +111,6 @@ export function LessonContentEditDialog({
   onSubmit,
   assetErrors,
   figureReview,
-  figureNeedsLesson,
 }: Props) {
   const { t } = useTranslation();
   // Avvisi del revisore per asset (solo testo; mai applicati al contenuto).
@@ -162,9 +156,6 @@ export function LessonContentEditDialog({
   // cade, le successive scalano) così un errore non scivola sulla card
   // sbagliata prima del salvataggio seguente.
   const [localAssetErrors, setLocalAssetErrors] = useState(assetErrors);
-  // «Inserisci» in corso nel pannello delle figure: salvataggio e chiusura
-  // aspettano (la bozza sta per cambiare).
-  const [figuresBusy, setFiguresBusy] = useState(false);
   useEffect(() => {
     setLocalAssetErrors(assetErrors);
   }, [assetErrors]);
@@ -191,7 +182,6 @@ export function LessonContentEditDialog({
   // prima occorrenza del token (es. equazione → gruppo "Equazioni").
   type GroupKey =
     | "text"
-    | "figureNeeds"
     | "visualAssets"
     | "tables"
     | "equations"
@@ -199,7 +189,6 @@ export function LessonContentEditDialog({
     | "references";
   const [openGroups, setOpenGroups] = useState<Record<GroupKey, boolean>>({
     text: true,
-    figureNeeds: true,
     visualAssets: false,
     tables: false,
     equations: false,
@@ -441,9 +430,7 @@ export function LessonContentEditDialog({
   return (
     <Dialog
       open={open}
-      onOpenChange={(v) =>
-        !v && !isPending && !figuresBusy ? onClose() : undefined
-      }
+      onOpenChange={(v) => (!v && !isPending ? onClose() : undefined)}
     >
       <DialogContent className="max-w-5xl max-h-[92vh] overflow-y-auto">
         <DialogHeader>
@@ -564,33 +551,6 @@ export function LessonContentEditDialog({
               </Button>
             </div>
           </SectionGroup>
-
-          {/* === Figure consigliate (piano delle figure) === */}
-          {figureNeedsLesson && (
-            <SectionGroup
-              title={t("courses.figureNeeds.title")}
-              open={openGroups.figureNeeds}
-              onToggle={() => toggleGroup("figureNeeds")}
-            >
-              <LessonFigureNeedsPanel
-                orgId={orgId}
-                courseId={courseId}
-                lesson={figureNeedsLesson}
-                sections={sections}
-                assetIds={visualAssets.map((a) => a.asset_id)}
-                disabled={isPending}
-                onBusyChange={setFiguresBusy}
-                onInsert={(sectionId, sectionText, asset) => {
-                  setSections((prev) =>
-                    prev.map((s) =>
-                      s.section_id === sectionId ? { ...s, content: sectionText } : s,
-                    ),
-                  );
-                  setVisualAssets((prev) => [...prev, asset]);
-                }}
-              />
-            </SectionGroup>
-          )}
 
           {/* === Asset visivi === */}
           <SectionGroup
@@ -1196,10 +1156,10 @@ export function LessonContentEditDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="ghost" onClick={onClose} disabled={isPending || figuresBusy}>
+          <Button variant="ghost" onClick={onClose} disabled={isPending}>
             {t("common.cancel")}
           </Button>
-          <Button onClick={handleSubmit} disabled={isPending || figuresBusy}>
+          <Button onClick={handleSubmit} disabled={isPending}>
             <Save className="size-4" />
             {isPending
               ? t("courses.lessonsContent.dialog.edit.saving")
