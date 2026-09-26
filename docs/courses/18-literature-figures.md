@@ -1017,9 +1017,8 @@ ripiego inline), `course_lesson_figure_needs_worker.py` (worker).
   l'assegnazione globale (WP6) vede la domanda di tutte le lezioni chieste
   insieme. Il ripiego inline `ensure_lesson_needs` (una chiamata, per
   fabbisogni mancanti o vecchi al momento della generazione; se fallisce
-  la Fase 3 procede senza piano) è pronto ma lo collega alla Fase 3 il
-  blocco del piano (WP8): in WP4 i fabbisogni si calcolano e si aspettano
-  soltanto.
+  la Fase 3 procede senza piano) lo chiama il worker della Fase 3 prima di
+  `reserve`, solo con il piano nel prompt.
 - **Costo**: `figure_needs_usage` cumulativo, fase admin `figure_needs`.
   Duplicazione: i fabbisogni `ready` si copiano con la loro impronta (in
   una copia tradotta l'impronta non torna e si ricalcolano), il costo no.
@@ -1235,17 +1234,33 @@ vede le varianti scoperte, D1) ma `check_lesson_needs`:
   `found_for_lesson_id`/`found_for_need_id` (riserva per l'assegnazione) e la
   ricerca del fabbisogno si ferma; una figura pertinente che non lo copre
   resta nel catalogo del corso (`kept_not_covering`).
-- **Tetti**: `FIGURE_LITERATURE_MAX_CANDIDATES_PER_NEED` (3, 1 per gli
-  should), `FIGURE_LITERATURE_MAX_CANDIDATES_PER_LESSON` (15),
-  `FIGURE_LITERATURE_MAX_COST_USD_PER_CHECK` (0,08 $, Vision e copie
-  OpenAlex), `FIGURE_LITERATURE_MAX_PAID_PDF_PER_LESSON` (3), tetto di corso
-  = max(`FIGURE_LITERATURE_MAX_PER_COURSE`, fabbisogni pronti del corso)
-  contando solo le figure esterne pronte e non escluse. La copia OpenAlex
+- **Tetti**:
+  - candidate: `FIGURE_LITERATURE_MAX_CANDIDATES_PER_NEED` (3, 1 per gli
+    should) e `FIGURE_LITERATURE_MAX_CANDIDATES_PER_LESSON` (15);
+  - dollari: `FIGURE_LITERATURE_MAX_COST_USD_PER_CHECK` (0,08 $, Vision e
+    copie OpenAlex);
+  - PDF a pagamento: `FIGURE_LITERATURE_MAX_PAID_PDF_PER_LESSON` (3);
+  - corso: max(`FIGURE_LITERATURE_MAX_PER_COURSE`, fabbisogni pronti del
+    corso), contando solo le figure esterne pronte e non escluse.
+
+  Il tetto in dollari vale **per verifica**, retry compresi: la spesa dei
+  tentativi precedenti si salva con l'errore (`spent_usd`) e riparte da lì.
+  Ci si ferma **prima** di una Vision che lo supererebbe, stimandone il
+  costo con la più cara vista nel giro (almeno 0,0012 $). La copia OpenAlex
   (0,01 $) entra nel costo della verifica (`openalex_copies`), non fra le
-  chiamate AI.
+  chiamate AI. Una copia già pagata nel giro non si ripaga, e un lavoro
+  ritrovato dalla seconda ricerca per lo stesso fabbisogno non si
+  riestrae. Gli stessi tetti in dollari e di PDF valgono anche per la
+  verifica senza piano, dove il tetto di candidate è salito da 8 a 15.
 - **Esiti** in `figures_gap_stats.needs[need_id]` (`found` con la figura,
-  `not_found`, `not_searched`), fusi fra i giri (un trovato resta trovato);
-  `needs_fp` è l'impronta dei fabbisogni verificati.
+  `not_found`, `not_searched`), fusi fra i giri anche dopo un tentativo
+  fallito (un trovato resta trovato); `needs_fp` è l'impronta dei
+  fabbisogni verificati. Con fabbisogni pronti ma vecchi (scaletta cambiata
+  dopo il calcolo, nuova versione del prompt) la verifica usa il criterio
+  di prima e registra comunque la loro impronta: il tick non la riapre a
+  ogni giro (prima ripartiva all'infinito e la Fase 3 non partiva, rilievo
+  della verifica di WP7). Si riapre quando i fabbisogni vengono
+  ricalcolati.
 - **Richiesta e riapertura** (`_request_figure_gaps` nel tick della Fase 3):
   la verifica si chiede quando i fabbisogni non sono più in calcolo; una
   verifica `done` con un `needs_fp` diverso dall'impronta attuale (o fatta
@@ -1298,6 +1313,29 @@ per lo stesso fabbisogno resta la prima citata. L'esito va nella fotografia
 
 Interruttore `FIGURE_PLAN_IN_PROMPT_ENABLED=false`: nessuna offerta, catalogo
 lessicale come prima (test).
+
+**Correzioni dalla verifica avversariale di WP7-WP8.** Ogni correzione ha un
+test.
+- **Alternative e residuo.** Non si offre una figura assegnata a
+  un'altra lezione del giro se la porterebbe oltre il tetto K (le figure
+  già nel contenuto della lezione passano). Il modello l'avrebbe scelta, il
+  ricontrollo l'avrebbe tolta e il must sarebbe rimasto scoperto.
+  L'offerta le elenca in `held_elsewhere`.
+- **Taglio al budget.** Con il piano tiene prima le figure dei must, poi
+  degli should, poi il residuo; la seconda figura di uno stesso fabbisogno
+  viene dopo tutte le altre. Senza piano resta l'ordine di citazione.
+- **Collocazione dopo i ricontrolli.** Una figura tolta per politica o
+  tetto di riuso riporta il suo fabbisogno a `missing`
+  (`dropped_<motivo>`). La fotografia lega ogni fabbisogno alla figura
+  davvero collocata, anche un'alternativa.
+- **Worker.**
+  - `reserve` e il catalogo del piano stanno in savepoint separati; un
+    errore del catalogo lascia quello lessicale;
+  - dopo un rollback la lezione si rilegge;
+  - l'annullamento durante l'attesa del lock si registra prima del
+    rollback (prima: MissingGreenlet).
+- **Titoli di sezione.** Id e titolo della scaletta nel blocco del piano
+  sono neutralizzati e su una riga: non possono chiudere il blocco dati.
 
 **M7b (26/09/2026, copia locale del corso, 3,86 $).** Rigenerazione reale
 della Fase 3 (gpt-5.5) di M4.L6, M4.L7, M5.L7, M5.L1 e M3.L4 (controllo) in
