@@ -1626,8 +1626,29 @@ risultano da riesportare. La fotografia dell'assegnazione registra il legame
 `course.lesson.content.figures_filled` con il motivo (`literature`,
 `extraction`).
 
+**Etichetta nella riga della lezione** (`LessonFigureNeedsChip`, dal
+26/09 sempre presente sulle lezioni pronte, in parole):
+- «Figure dalle fonti: X di Y obbligatorie» (verde se tutte nel testo,
+  ambra se ne mancano); senza obbligatorie «X di Y consigliate»;
+- «Nessuna figura dalle fonti necessaria» (piano calcolato, nessun
+  fabbisogno);
+- «Figure dalle fonti: calcolo in corso…», «rigenera per calcolarle»
+  (lezione generata prima del piano o calcolo fallito), «non previste»
+  (lezione senza scaletta).
+
+Il DTO della lezione espone `figure_needs_status`; il riassunto conta anche
+le consigliate (`shoulds`, `shoulds_placed`). Nel tooltip il dettaglio
+(obbligatorie e consigliate nel testo, da trovare, in un'altra sezione,
+escluse dal docente).
+
 **Editor** (`LessonContentEditDialog.tsx` → `LessonFigureNeedsPanel`).
-Nuovo gruppo «Figure consigliate» nella finestra di modifica:
+Gruppo «Figure dalle fonti» nella finestra di modifica, sempre presente
+(senza piano spiega perché e che cosa fare). In cima il riepilogo
+(«X di Y figure obbligatorie sono nel testo») e «Inserisci tutte le figure
+proposte»; per sezione ogni figura con lo stato in parole (nel testo, in
+un'altra sezione, c'è una figura adatta, non trovata con il motivo, esclusa)
+e l'azione giusta, senza codici tecnici; accanto a «Inserisci» la miniatura
+della figura proposta:
 - per ogni figura scoperta per cui il corso ha una candidata
   (`GET …/figure-needs/candidates`) compare «Figura proposta: …» e
   «Inserisci»;
