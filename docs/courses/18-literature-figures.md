@@ -1035,7 +1035,8 @@ ripiego inline), `course_lesson_figure_needs_worker.py` (worker).
   insieme. Il ripiego inline `ensure_lesson_needs` (una chiamata, per
   fabbisogni mancanti o vecchi al momento della generazione; se fallisce
   la Fase 3 procede senza piano) lo chiama il worker della Fase 3 prima di
-  `reserve`, solo con il piano nel prompt.
+  `reserve`, solo con il piano nel prompt e solo per fabbisogni già chiesti
+  (in coda, falliti o vecchi): una lezione mai pianificata procede senza.
 - **Costo**: `figure_needs_usage` cumulativo, fase admin `figure_needs`.
   Duplicazione: i fabbisogni non si copiano (la copia è sempre in un'altra
   lingua; si ricalcolano alla prima richiesta di Fase 3, §23.9).
@@ -1449,7 +1450,8 @@ attivo:
 
 Senza sequenze, o col piano spento, entrambi i messaggi restano identici.
 
-**Ripiego inline e worker dei fabbisogni.** Se il worker sta calcolando i
+**Ripiego inline e worker dei fabbisogni.** Il ripiego vale solo per
+fabbisogni già chiesti (stato non nullo). Se il worker sta calcolando i
 fabbisogni della lezione (`processing`), la Fase 3 non li ricalcola e
 procede col catalogo lessicale. Se sono in coda (`pending`), la Fase 3 li
 prende con un UPDATE condizionale; se il calcolo non riesce tornano in
