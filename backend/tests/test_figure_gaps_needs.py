@@ -449,3 +449,27 @@ async def test_with_the_plan_off_ready_needs_do_not_keep_the_check_open(
     assert fresh.figures_gap_status == "skipped"
     assert fresh.figures_gap_stats["reason"] == "phase3_started"
     assert need_env["calls"] == []
+
+
+async def test_a_failed_attempt_saves_what_it_spent(
+    seeded_db: AsyncSession, need_env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Un tentativo che fallisce dopo una Vision pagata salva la spesa con
+    l'errore (`spent_usd`): il retry riparte da lì, non da zero."""
+    first = _need("Schema a scansione", "scanning")
+    second = _need("Schema rotazionale", "rotational", group="")
+    _course, lesson = await _plan_lesson(seeded_db, [first, second])
+    need_env["files"] = [_file(700 + i, f"Scanning rotational vibrometer {i}") for i in range(2)]
+    need_env["images"].update({700 + i: _image(70 + i) for i in range(2)})
+    seen: list[int] = []
+
+    async def assess(image: bytes, context: Any, **kwargs: Any) -> Any:
+        seen.append(1)
+        if len(seen) == 2:
+            raise relevance.OpenAIFigureRelevanceError(429, "rate limited")
+        return _verdict_for("other"), dict(USAGE)
+
+    monkeypatch.setattr(relevance, "assess_candidate", assess)
+    fresh = await _check(seeded_db, lesson)
+    assert fresh.figures_gap_status == "pending"
+    assert fresh.figures_gap_stats["spent_usd"] == pytest.approx(USAGE["cost_usd"])

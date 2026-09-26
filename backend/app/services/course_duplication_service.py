@@ -736,6 +736,14 @@ async def _clone_course_structure(
                     if src_lesson.figure_needs_status == "ready"
                     else None
                 ),
+                # Fotografia finale dell'assegnazione (sola lettura per la
+                # vista dei fabbisogni), con le figure rimappate; un'offerta
+                # in corso non si copia.
+                figure_assignment=(
+                    _remap_assignment(_deepcopy_json(src_lesson.figure_assignment), fig_map)
+                    if src_lesson.figure_needs_status == "ready"
+                    else None
+                ),
                 content_attempts=0,
                 content_tokens=None,
                 content_error=None,
@@ -977,6 +985,36 @@ def _remap_source_figures(content_raw: Any, fig_map: dict[uuid.UUID, uuid.UUID])
         if fid is not None and fid in fig_map:
             asset["content"] = str(fig_map[fid])
     return content_raw
+
+
+def _remap_assignment(data: Any, fig_map: dict[uuid.UUID, uuid.UUID]) -> Any:
+    """Fotografia `settled` dell'assegnazione con gli id delle figure
+    clonate (offerte, alternative, legami, figure collocate); gli asset_id
+    della collocazione non cambiano. None per un'offerta non chiusa."""
+    if not isinstance(data, dict) or data.get("state") != "settled":
+        return None
+
+    def remap(value: Any) -> Any:
+        try:
+            fid = uuid.UUID(str(value))
+        except (TypeError, ValueError):
+            return value
+        return str(fig_map[fid]) if fid in fig_map else value
+
+    for offer in (data.get("offers") or {}).values():
+        if isinstance(offer, dict) and "figure_id" in offer:
+            offer["figure_id"] = remap(offer["figure_id"])
+    for items in (data.get("alternatives") or {}).values():
+        for item in items or []:
+            if isinstance(item, dict) and "figure_id" in item:
+                item["figure_id"] = remap(item["figure_id"])
+    if isinstance(data.get("bound"), dict):
+        data["bound"] = {need: remap(fid) for need, fid in data["bound"].items()}
+    for key in ("placed", "held_elsewhere"):
+        if isinstance(data.get(key), list):
+            data[key] = [remap(fid) for fid in data[key]]
+    data.pop("run_token", None)
+    return data
 
 
 async def _translate_document_figures(

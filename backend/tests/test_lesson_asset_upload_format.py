@@ -66,3 +66,30 @@ async def test_preserve_format_never_passes_the_bytes_through(
     )
     assert path.endswith(ext)
     assert store.files[remote_storage.uploads_key(path)] != original
+
+
+def test_the_lesson_asset_endpoint_keeps_the_format() -> None:
+    """L'endpoint delle figure di lezione chiede il formato conservato (gli
+    altri caricamenti restano come prima)."""
+    import ast
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[1] / "app" / "api" / "v1" / "courses.py").read_text(
+        encoding="utf-8"
+    )
+    tree = ast.parse(source)
+    endpoint = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "upload_lesson_asset"
+    )
+    calls = [
+        node
+        for node in ast.walk(endpoint)
+        if isinstance(node, ast.Call) and getattr(node.func, "attr", "") == "save_upload_image"
+    ]
+    assert calls
+    for call in calls:
+        keywords = {k.arg: k.value for k in call.keywords}
+        value = keywords.get("preserve_format")
+        assert isinstance(value, ast.Constant) and value.value is True

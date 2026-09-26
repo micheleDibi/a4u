@@ -557,3 +557,61 @@ async def test_literature_found_for_a_need_follows_the_cloned_lesson(
     assert clone.found_for_lesson_id == new_lesson.id
     assert clone.found_for_need_id == "n1234abcd"
     assert new_lesson.figure_assignment is None
+
+
+@pytest.mark.parametrize("state", ["settled", "offered"])
+async def test_needs_links_and_the_settled_snapshot_follow_the_clone(
+    seeded_db: AsyncSession, storage: _Storage, state: str
+) -> None:
+    """Piano delle figure (WP9): con i fabbisogni pronti la copia riceve i
+    collegamenti del docente e la fotografia chiusa con le figure clonate
+    (la vista dei fabbisogni resta coerente); un'offerta aperta no."""
+    db = seeded_db
+    s = await _source(db, storage)
+    lesson = (
+        (await db.execute(select(CourseLesson).where(CourseLesson.course_id == s["course_id"])))
+        .scalars()
+        .one()
+    )
+    fig_id = str(s["fig"].id)
+    lesson.figure_needs = {"fingerprint": "fp", "needs": [{"need_id": "n1", "section_id": "S1"}]}
+    lesson.figure_needs_status = "ready"
+    lesson.figure_need_links = {"n2": {"state": "dismissed"}}
+    lesson.figure_assignment = {
+        "state": state,
+        "run_token": "giro",
+        "offers": {"n1": {"figure_id": fig_id}},
+        "alternatives": {"n1": [{"figure_id": fig_id}]},
+        "bound": {"n1": fig_id},
+        "placed": [fig_id],
+        "placement": {"needs": {"n1": {"status": "placed", "asset_id": "SRC-a"}}},
+    }
+    await db.commit()
+    source = await dup.load_source_full(db, course_id=s["course_id"])
+    assert source is not None
+    job = CourseDuplicationJob(
+        source_course_id=source.id, target_language_code="en", requested_by_user_id=None
+    )
+    db.add(job)
+    await db.flush()
+    target = await dup._clone_course_structure(
+        db, source=source, target_language_code="en", job=job
+    )
+    await db.commit()
+    new_lesson = (
+        (await db.execute(select(CourseLesson).where(CourseLesson.course_id == target.id)))
+        .scalars()
+        .one()
+    )
+    assert new_lesson.figure_need_links == {"n2": {"state": "dismissed"}}
+    if state == "offered":
+        assert new_lesson.figure_assignment is None
+        return
+    data = new_lesson.figure_assignment
+    clone_id = new_lesson.content_raw["visual_assets"][0]["content"]
+    assert clone_id != fig_id
+    assert data["offers"]["n1"]["figure_id"] == clone_id
+    assert data["alternatives"]["n1"][0]["figure_id"] == clone_id
+    assert data["bound"] == {"n1": clone_id} and data["placed"] == [clone_id]
+    assert data["placement"]["needs"]["n1"]["asset_id"] == "SRC-a"
+    assert "run_token" not in data

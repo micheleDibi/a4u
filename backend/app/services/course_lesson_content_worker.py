@@ -388,7 +388,7 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                 # (attesa scaduta, scaletta cambiata in coda) si calcolano
                 # ora, con una chiamata; un errore lascia la lezione senza.
                 try:
-                    await figure_plan_service.ensure_lesson_needs(course_full, lesson)
+                    await _inline_needs(db, course_full, lesson, lesson_id)
                 except Exception as exc:
                     log.warning(
                         "lesson_content_figure_needs_inline_failed",
@@ -1111,6 +1111,38 @@ async def _drop_source_figures(
             metadata=metadata,
         )
     return figure_review, dropped
+
+
+async def _inline_needs(
+    db: AsyncSession, course_full: Any, lesson: CourseLesson, lesson_id: uuid.UUID
+) -> None:
+    """Ripiego inline dei fabbisogni, coordinato col worker dei fabbisogni:
+    nessuna chiamata se il worker li sta calcolando ora (doppia spesa e
+    fabbisogni diversi da quelli dell'offerta); se sono in coda, la lezione
+    si prende con un UPDATE condizionale (il worker non la prende più) e,
+    se il calcolo non riesce, torna in coda."""
+    status = lesson.figure_needs_status
+    if status == "processing":
+        log.info("lesson_content_figure_needs_busy", lesson_id=str(lesson_id))
+        return
+    claimed = False
+    if status == "pending":
+        result = await db.execute(
+            update(CourseLesson)
+            .where(CourseLesson.id == lesson_id, CourseLesson.figure_needs_status == "pending")
+            .values(figure_needs_status="processing")
+        )
+        await db.commit()
+        if getattr(result, "rowcount", 0) != 1:
+            return
+        await db.refresh(lesson, ["figure_needs_status"])
+        claimed = True
+    ready: list[dict[str, Any]] | None = None
+    try:
+        ready = await figure_plan_service.ensure_lesson_needs(course_full, lesson)
+    finally:
+        if claimed and ready is None and lesson.figure_needs_status == "processing":
+            lesson.figure_needs_status = "pending"
 
 
 def _need_subjects(catalog: Any, placement: dict[str, Any] | None) -> dict[str, str]:

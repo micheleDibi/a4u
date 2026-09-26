@@ -217,3 +217,105 @@ async def test_extra_fields_are_rejected(client: AsyncClient, seeded_db: AsyncSe
         f"{s['url']}/n1", json={"state": "dismissed", "x": 1}, headers=_bearer(s["user"])
     )
     assert res.status_code == 422
+
+
+F3 = "33333333-0000-4000-8000-000000000003"
+
+
+def test_the_snapshot_binding_wins_over_the_offer() -> None:
+    """Il modello ha scelto l'alternativa F3 per n1 (verifica WP9): la vista
+    segue il legame della fotografia, non la figura offerta."""
+    lesson = _lesson()
+    lesson.figure_assignment = {
+        **lesson.figure_assignment,
+        "offers": {"n1": {"figure_id": F1}, "n2": {"figure_id": F2}},
+        "alternatives": {"n1": [{"figure_id": F3}]},
+        "bound": {"n1": F3, "n2": F2},
+    }
+    lesson.content_raw["sections"][0]["content"] = "Testo [FIG:SRC-c]."
+    lesson.content_raw["visual_assets"][0] = {
+        "asset_id": "SRC-c",
+        "format": "source_figure",
+        "content": F3,
+    }
+    by = {v["need_id"]: v for v in figure_needs_view(lesson) or []}
+    assert by["n1"]["status"] == "placed" and by["n1"]["asset_id"] == "SRC-c"
+    # Anche senza `bound` (fotografia di prima): l'alternativa nel contenuto.
+    lesson.figure_assignment.pop("bound")
+    by = {v["need_id"]: v for v in figure_needs_view(lesson) or []}
+    assert by["n1"]["status"] == "placed"
+
+
+def test_an_uncited_figure_is_not_counted_as_placed() -> None:
+    lesson = _lesson(figure_need_links={"n4": {"state": "linked", "asset_id": "img-2"}})
+    lesson.content_raw["visual_assets"].append(
+        {"asset_id": "img-2", "format": "image", "content": "y.png"}
+    )
+    view = figure_needs_view(lesson)
+    assert view is not None
+    by = {v["need_id"]: v for v in view}
+    assert by["n4"]["status"] == "missing" and by["n4"]["reason"] == "not_cited"
+    assert summary(view)["musts_placed"] == 2  # n1 e n2, non n4
+
+
+def test_a_figure_cited_inside_an_example_belongs_to_its_section() -> None:
+    lesson = _lesson()
+    lesson.content_raw["sections"][0]["content"] = "Testo con [EX:ex_1]."
+    lesson.content_raw["examples"] = [{"example_id": "ex_1", "content": "Vedi [FIG:SRC-a]."}]
+    by = {v["need_id"]: v for v in figure_needs_view(lesson) or []}
+    assert by["n1"]["status"] == "placed" and by["n1"]["cited_in"] == "S1"
+
+
+def test_a_dismissed_must_leaves_the_label_denominator() -> None:
+    view = figure_needs_view(_lesson(figure_need_links={"n4": {"state": "dismissed"}}))
+    counts = summary(view)
+    assert counts is not None
+    assert counts["musts"] == 2 and counts["musts_placed"] == 2 and counts["dismissed"] == 1
+
+
+def _sequence_lesson(**over: Any) -> SimpleNamespace:
+    needs = [
+        {
+            "need_id": "n1",
+            "section_id": "S1",
+            "subject": "A",
+            "priority": "must",
+            "sequence_group": "tipologie",
+            "sequence_index": 1,
+        },
+        {
+            "need_id": "n2",
+            "section_id": "S2",
+            "subject": "B",
+            "priority": "must",
+            "sequence_group": "tipologie",
+            "sequence_index": 2,
+        },
+    ]
+    lesson = _lesson(figure_needs={"needs": needs}, **over)
+    lesson.content_raw["sections"][1]["content"] = "Scansione [FIG:SRC-b]."
+    return lesson
+
+
+def test_sequences_need_two_distinct_cited_figures() -> None:
+    from app.services.figure_needs_view import figure_sequences
+
+    assert figure_sequences(_sequence_lesson()) == [("tipologie", ["SRC-a", "SRC-b"])]
+    # Un gruppo con una sola figura nel contenuto: nessuna sequenza.
+    lesson = _sequence_lesson()
+    lesson.content_raw["sections"][1]["content"] = "Nessuna figura."
+    lesson.content_raw["sections"][2]["content"] = "Nessuna figura."
+    assert figure_sequences(lesson) == []
+    # Lo stesso asset collegato a due voci della sequenza: una sola figura.
+    lesson = _sequence_lesson(figure_need_links={"n2": {"state": "linked", "asset_id": "SRC-a"}})
+    assert figure_sequences(lesson) == []
+
+
+def test_sequences_follow_the_plan_switch(monkeypatch: Any) -> None:
+    from app.core.config import get_settings
+    from app.services import figure_plan_service as plan
+    from app.services.figure_needs_view import figure_sequences
+
+    off = get_settings().model_copy(update={"figure_plan_enabled": False})
+    monkeypatch.setattr(plan, "get_settings", lambda: off)
+    assert figure_sequences(_sequence_lesson()) == []

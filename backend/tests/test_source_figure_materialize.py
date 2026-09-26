@@ -158,6 +158,8 @@ def fakes(monkeypatch: pytest.MonkeyPatch, _engine: Any) -> dict[str, Any]:
         if state["on_generate"] is not None:
             await state["on_generate"]()
         refs = list(kwargs.get("source_figure_refs") or []) if state["choose"] else []
+        if state.get("pick") is not None:
+            refs = state["pick"](refs)
         usage = {"model": "gpt-5.5", "total": 10, "prompt": 5, "completion": 5, "cost_usd": 0.1}
         # Il codice della lezione dal messaggio user (riga «ID: M1.L2»).
         found = re.search(r"(?m)^ID: (\S+)", str(kwargs.get("user_prompt") or ""))
@@ -170,7 +172,11 @@ def fakes(monkeypatch: pytest.MonkeyPatch, _engine: Any) -> dict[str, Any]:
 
     async def review_transport(body: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
         state.setdefault("review_calls", []).append(body)
-        answer = {"coherence": "coerente", "reason": "ok", "pairs": []}
+        answer: dict[str, Any] = {"coherence": "coerente", "reason": "ok", "pairs": []}
+        # PROMPT 19 v2: con una figura legata a un fabbisogno lo schema chiede
+        # anche `subject_match`.
+        if "subject_match" in body["response_format"]["json_schema"]["schema"]["properties"]:
+            answer["subject_match"] = True
         return {
             "choices": [{"message": {"content": json.dumps(answer)}}],
             "usage": {"prompt_tokens": 100, "completion_tokens": 10, "total_tokens": 110},
@@ -1035,6 +1041,9 @@ async def test_the_plan_catalog_drives_the_prompt_and_the_snapshot_is_settled(
     assert data["bound"] == {need["need_id"]: str(good.id)}
     assert data["placement"]["needs"][need["need_id"]]["status"] == "placed"
     assert lesson.content_tokens["source_figures"]["plan"]["placed"] == 1
+    # PROMPT 19 v2: il revisore ha ricevuto il soggetto del fabbisogno.
+    asset = data["placement"]["needs"][need["need_id"]]["asset_id"]
+    assert lesson.content_figure_review["figures"][asset]["subject_match"] is True
 
 
 async def test_plan_out_of_the_prompt_keeps_the_lexical_catalog(
@@ -1232,3 +1241,127 @@ async def test_regenerating_does_not_offer_an_unusable_figure_it_already_has(
     lesson.content_raw = {"introduction": "T.", "sections": [], "visual_assets": [_placed(tiny.id)]}
     await seeded_db.commit()
     assert tiny.id not in await _catalog_order(seeded_db, setup)
+
+
+def _scanning(fig: Any) -> Any:
+    fig.depicts = {
+        "v": 1,
+        "items": [{"object_en": "laser Doppler vibrometer", "variant_en": "scanning"}],
+        "focus": "optical layout",
+    }
+    return fig
+
+
+async def test_the_budget_cut_keeps_the_must_in_the_worker(
+    seeded_db: AsyncSession, fakes: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Col piano il worker passa le priorità alla fusione: con posto per una
+    figura sola resta quella del must anche se il modello cita prima una
+    figura facoltativa del residuo."""
+    from app.services import source_figure_assignment_service as svc
+
+    _plan_settings(monkeypatch)
+    monkeypatch.setattr(svc, "plan_budget", lambda *args: 1)
+    setup = await _setup(seeded_db)
+    residual = _extra_figure(setup)
+    seeded_db.add(residual)
+    await seeded_db.commit()
+    need = await _with_needs(seeded_db, setup)
+    fakes["pick"] = lambda refs: list(reversed(refs))
+    await worker._process_one(setup["lesson_id"])
+    lesson = await _lesson(seeded_db, setup["lesson_id"])
+    assert lesson.content_status == "ready", lesson.content_error
+    prompt = fakes["calls"][0]["user_prompt"]
+    assert "Figure facoltative" in prompt
+    kept = [
+        a["content"] for a in lesson.content_raw["visual_assets"] if a["format"] == "source_figure"
+    ]
+    assert kept == [str(setup["figures"]["good"].id)]
+    assert lesson.figure_assignment["placement"]["needs"][need["need_id"]]["status"] == "placed"
+
+
+async def test_the_snapshot_binds_the_alternative_the_model_chose(
+    seeded_db: AsyncSession, fakes: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _plan_settings(monkeypatch)
+    setup = await _setup(seeded_db)
+    alternative = _scanning(_extra_figure(setup))
+    seeded_db.add(alternative)
+    await seeded_db.commit()
+    need = await _with_needs(seeded_db, setup)
+    # La figura offerta viene per prima nel catalogo del piano: il modello
+    # sceglie l'alternativa.
+    fakes["pick"] = lambda refs: refs[1:2]
+    await worker._process_one(setup["lesson_id"])
+    lesson = await _lesson(seeded_db, setup["lesson_id"])
+    assert lesson.content_status == "ready", lesson.content_error
+    data = lesson.figure_assignment
+    chosen = data["offers"][need["need_id"]]["figure_id"]
+    other = {str(setup["figures"]["good"].id), str(alternative.id)} - {chosen}
+    assert data["bound"] == {need["need_id"]: other.pop()}
+    assert data["missed"] == []
+
+
+async def test_a_figure_dropped_at_the_lock_marks_its_need_missing(
+    seeded_db: AsyncSession, fakes: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _plan_settings(monkeypatch)
+    setup = await _setup(seeded_db)
+    need = await _with_needs(seeded_db, setup)
+    original = source_figure_catalog.over_reuse_cap
+    calls: list[int] = []
+
+    async def over_at_the_lock(db: AsyncSession, course: Any, ids: Any, **kw: Any) -> Any:
+        calls.append(1)
+        found = await original(db, course, ids, **kw)
+        # Primo ricontrollo pulito; al lock un'altra lezione ha raggiunto K.
+        return set(ids) if len(calls) == 2 else found
+
+    monkeypatch.setattr(source_figure_catalog, "over_reuse_cap", over_at_the_lock)
+    await worker._process_one(setup["lesson_id"])
+    lesson = await _lesson(seeded_db, setup["lesson_id"])
+    assert lesson.content_status == "ready", lesson.content_error
+    assert len(calls) == 2
+    data = lesson.figure_assignment
+    assert data["placement"]["needs"][need["need_id"]] == {
+        "status": "missing",
+        "reason": "dropped_reuse_cap",
+    }
+    assert data["bound"] == {} and data["missed"] == [need["need_id"]]
+    assert lesson.content_tokens["source_figures"]["plan"]["missing"] == 1
+
+
+@pytest.mark.parametrize("status", ["processing", "pending"])
+async def test_the_inline_fallback_respects_the_needs_worker(
+    seeded_db: AsyncSession,
+    fakes: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    status: str,
+) -> None:
+    """Fabbisogni in calcolo nel worker: nessuna chiamata inline (doppia
+    spesa). In coda: la Fase 3 li prende; se il calcolo non riesce tornano
+    in coda per il worker."""
+    from app.services import openai_figure_needs_service as needs_svc
+
+    _plan_settings(monkeypatch)
+    setup = await _setup(seeded_db)
+    await _with_needs(seeded_db, setup, store=False)
+    await seeded_db.execute(
+        update(CourseLesson)
+        .where(CourseLesson.id == setup["lesson_id"])
+        .values(figure_needs_status=status)
+    )
+    await seeded_db.commit()
+    calls: list[Any] = []
+
+    async def failing(item: Any, *, max_total: int) -> Any:
+        calls.append(item)
+        raise needs_svc.OpenAIFigureNeedsError(500, "errore del modello")
+
+    monkeypatch.setattr(needs_svc, "generate_needs", failing)
+    await worker._process_one(setup["lesson_id"])
+    lesson = await _lesson(seeded_db, setup["lesson_id"])
+    assert lesson.content_status == "ready", lesson.content_error
+    assert "catalogo del piano" not in fakes["calls"][0]["user_prompt"]
+    assert len(calls) == (0 if status == "processing" else 1)
+    assert lesson.figure_needs_status == status
