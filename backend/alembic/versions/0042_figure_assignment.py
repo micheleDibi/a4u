@@ -15,8 +15,9 @@ Piano delle figure (doc 18 §23.4):
 from __future__ import annotations
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.dialects import postgresql
+
+from alembic import op
 
 revision: str = "0042"
 down_revision: str | None = "0041"

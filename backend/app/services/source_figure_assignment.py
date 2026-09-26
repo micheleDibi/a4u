@@ -123,6 +123,10 @@ class _State:
         self.in_lesson: dict[uuid.UUID, set[uuid.UUID]] = defaultdict(set)
         self.count: dict[uuid.UUID, int] = defaultdict(int)
         self.musts_open: dict[uuid.UUID, int] = defaultdict(int)
+        # Posto tenuto per i must ancora coperibili (spento nella seconda
+        # passata) ed eccezione U1 limitata alle figure già tenute.
+        self.reserve_musts = True
+        self.own_frozen = False
         for key, demand in demands.items():
             if demand.must and arcs_by_need.get(key):
                 self.musts_open[demand.lesson_id] += 1
@@ -136,7 +140,12 @@ class _State:
 
     def own(self, lesson_id: uuid.UUID, figure_id: uuid.UUID) -> bool:
         slot = self.lessons.get(lesson_id)
-        return slot is not None and figure_id in slot.own
+        if slot is None or figure_id not in slot.own:
+            return False
+        # Dopo la passata delle figure già nella lezione, l'eccezione al tetto
+        # vale solo per quelle che la lezione ha tenuto: una figura lasciata
+        # conta come le altre (mai K superato da chi non la aveva già).
+        return not self.own_frozen or figure_id in self.in_lesson[lesson_id]
 
     def capacity_ok(self, arc: Arc) -> bool:
         if self.own(arc.lesson_id, arc.figure_id):
@@ -151,7 +160,8 @@ class _State:
         used = self.count[arc.lesson_id]
         if self.demands[arc.key].must:
             return used < slot.budget
-        return used + self.musts_open[arc.lesson_id] < slot.budget
+        reserved = self.musts_open[arc.lesson_id] if self.reserve_musts else 0
+        return used + max(0, reserved) < slot.budget
 
     def blocked_by(self, arc: Arc) -> str | None:
         if arc.key in self.out.chosen:
@@ -226,9 +236,14 @@ def assign(
             state.take(arc)
     _repair(state)
     # Seconda passata: i must rimasti scoperti non hanno più una figura
-    # assegnabile (il posto che tenevano torna agli should) e le figure già
-    # nella lezione che la lezione non ha tenuto tornano libere.
-    state.musts_open.clear()
+    # assegnabile e il posto che tenevano torna agli should. Prima le figure
+    # già nella lezione (col loro posto ancora tenuto); poi quelle che la
+    # lezione non ha tenuto tornano libere e senza eccezione al tetto.
+    state.reserve_musts = False
+    for arc in ordered:
+        if state.own(arc.lesson_id, arc.figure_id) and state.blocked_by(arc) is None:
+            state.take(arc)
+    state.own_frozen = True
     state.keepers.clear()
     for arc in ordered:
         if state.blocked_by(arc) is None:
@@ -252,22 +267,32 @@ def assign(
 
 
 def _reserved_literature(state: _State) -> None:
-    for supply in sorted(state.supplies.values(), key=lambda s: str(s.figure_id)):
-        if not supply.literature or supply.found_for not in state.demands:
-            continue
-        key = supply.found_for
+    """Per ogni fabbisogno con figure della letteratura trovate PER lui, la
+    migliore (stessa chiave del greedy) se lo copre e nessuna figura di
+    documento lo copre con livello uguale o maggiore."""
+    wanted = {
+        s.found_for
+        for s in state.supplies.values()
+        if s.literature and s.found_for in state.demands
+    }
+    for key in sorted(wanted, key=lambda k: (str(k[0]), k[1])):
         options = state.arcs_by_need.get(key, [])
-        own_arc = next((a for a in options if a.figure_id == supply.figure_id), None)
-        if own_arc is None:
-            continue  # la figura trovata non copre il fabbisogno: nessuna riserva
+        found = sorted(
+            (a for a in options if state.supplies[a.figure_id].found_for == key),
+            key=lambda a: _sort_key(state, a),
+        )
+        if not found:
+            continue  # le figure trovate non coprono il fabbisogno: nessuna riserva
         best_document = max(
             (a.tier for a in options if not state.supplies[a.figure_id].literature), default=0
         )
-        if best_document >= own_arc.tier:
-            continue
-        if state.blocked_by(own_arc) is None:
-            state.take(own_arc)
-            state.out.reserved.add(key)
+        for arc in found:
+            if best_document >= arc.tier:
+                break
+            if state.blocked_by(arc) is None:
+                state.take(arc)
+                state.out.reserved.add(key)
+                break
 
 
 def _repair(state: _State) -> None:
@@ -290,7 +315,9 @@ def _swap_for(state: _State, arc: Arc) -> bool:
     holders = [
         held
         for held in state.out.chosen.values()
-        if held.figure_id == figure and not state.own(held.lesson_id, figure)
+        if held.figure_id == figure
+        and not state.own(held.lesson_id, figure)
+        and held.key not in state.out.reserved
     ]
     for held in sorted(holders, key=lambda a: (str(a.lesson_id), a.need_id)):
         current = state.supplies[figure]

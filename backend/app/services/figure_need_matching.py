@@ -154,6 +154,17 @@ def _variant_tokens(text: str) -> frozenset[str]:
     return frozenset(t for t in tokens(text) if t not in _GENERIC)
 
 
+# Parole generiche che però DISTINGUONO una variante da un'altra: tolte per
+# riconoscere la forma base, ma se la variante chiesta le contiene devono
+# esserci anche nella figura («on-axis» non è «off-axis», «single-axis» non
+# è «three-axis»).
+_DISTINGUISHING = frozenset({"on", "with", "single", "point"})
+
+
+def _required_words(text: str) -> frozenset[str]:
+    return frozenset(t for t in tokens(text) if t in _DISTINGUISHING)
+
+
 @dataclass(frozen=True)
 class Match:
     relation: str
@@ -180,6 +191,9 @@ class NeedKey:
     family: str | None
     terms: frozenset[str]
     topic: frozenset[str] = frozenset()
+    # Per ogni forma della variante, le parole distintive tolte che la
+    # figura deve comunque avere (allineato a `variants`).
+    required: tuple[frozenset[str], ...] = ()
 
     @classmethod
     def from_need(cls, need: Mapping[str, Any]) -> NeedKey:
@@ -192,8 +206,13 @@ class NeedKey:
         heads = frozenset({stem(head)}) if head else frozenset()
         variant_texts = [str(need.get("variant_en") or "")]
         variant_texts += [str(t) for t in need.get("variant_terms") or []]
-        variants = tuple(v for v in (_variant_tokens(x) for x in variant_texts) if v)
-        is_base = bool(need.get("is_base")) or not variants
+        forms = [(_variant_tokens(x), _required_words(x)) for x in variant_texts]
+        forms = [(v, r) for v, r in forms if v]
+        variants = tuple(v for v, _r in forms)
+        required = tuple(r for _v, r in forms)
+        # Base se la variante, tolte le parole generiche, è vuota: il flag
+        # `is_base` da solo non basta (fabbisogno incoerente del modello).
+        is_base = not variants
         # L'oggetto del fabbisogno può contenere la variante («scanning laser
         # Doppler vibrometer»): per riconoscere la variante scritta nel nome
         # dell'oggetto della FIGURA conta solo l'oggetto base.
@@ -220,6 +239,7 @@ class NeedKey:
             object_tokens=frozenset().union(*object_phrases) if object_phrases else frozenset(),
             object_phrases=object_phrases,
             variants=() if is_base else variants,
+            required=() if is_base else required,
             is_base=is_base,
             family=_FAMILY.get(str(need.get("representation") or "")),
             terms=terms,
@@ -237,8 +257,17 @@ def _same_object(key: NeedKey, obj: frozenset[str], head: str) -> bool:
     return any(phrase <= obj for phrase in key.object_phrases if phrase)
 
 
-def _has_variant(key: NeedKey, figure_variant: frozenset[str]) -> bool:
-    return any(v <= figure_variant for v in key.variants)
+def _has_variant(
+    key: NeedKey, figure_variant: frozenset[str], figure_words: frozenset[str] | None = None
+) -> bool:
+    """Una forma della variante chiesta sta nella variante della figura (con
+    le sue parole distintive fra le parole della figura)."""
+    words = figure_words if figure_words is not None else figure_variant
+    required = key.required or tuple(frozenset() for _ in key.variants)
+    return any(
+        v <= figure_variant and need <= words
+        for v, need in zip(key.variants, required, strict=True)
+    )
 
 
 def _family_penalty(key: NeedKey, kind: str | None) -> int | None:
@@ -272,6 +301,7 @@ class DepictedView:
     obj: frozenset[str]
     head: str
     declared: frozenset[str]
+    declared_words: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -299,6 +329,7 @@ class FigureView:
                         obj=tokens(obj_text),
                         head=stem(_last_word(obj_text)),
                         declared=_variant_tokens(str(item.get("variant_en") or "")),
+                        declared_words=tokens(str(item.get("variant_en") or "")),
                     )
                 )
             items = tuple(views)
@@ -332,7 +363,7 @@ def match(need: Mapping[str, Any] | NeedKey, fig: Any, *, legacy: bool = True) -
         # Un fabbisogno base («grafico di confronto delle prestazioni del
         # vibrometro») non è coperto da QUALUNQUE figura dell'oggetto: serve
         # almeno un termine del tema, oltre all'oggetto, nel testo della figura.
-        if key.is_base and relation in COVERING and not (key.topic & view.text):
+        if key.is_base and key.topic and relation in COVERING and not (key.topic & view.text):
             relation = "off_topic"
     elif legacy:
         relation = _legacy_relation(key, view.text, score)
@@ -353,23 +384,37 @@ def _depicts_relation(key: NeedKey, items: tuple[DepictedView, ...]) -> str:
         obj, head, declared = item.obj, item.head, item.declared
         if not _same_object(key, obj, head):
             continue
-        seen_object = True
         # Variante scritta nel nome dell'oggetto («rotational vibrometer»).
         in_name = frozenset(t for t in obj - key.object_tokens - {head} if t not in _GENERIC)
+        # Stessa testa ma oggetto diverso («force sensor» / «pressure
+        # sensor»): i qualificatori dei due oggetti non si toccano, salvo che
+        # il qualificatore della figura sia proprio la variante chiesta
+        # («fiber optic differential vibrometer» per il vibrometro differenziale).
+        need_quals = key.object_tokens - key.object_heads - _GENERIC
+        figure_quals = obj - {head} - _GENERIC
+        if (
+            need_quals
+            and figure_quals
+            and not (need_quals & figure_quals)
+            and not (not key.is_base and _has_variant(key, figure_quals, obj))
+        ):
+            continue
+        seen_object = True
         if key.is_base:
             if not declared and not in_name:
                 exact = True
             else:
                 seen_other_variant = True
             continue
-        if _has_variant(key, declared):
+        words = item.declared_words | obj
+        if _has_variant(key, declared, item.declared_words):
             # Esatta solo se la figura non è più specifica della variante
             # chiesta (scansione continua per «scansione»: un livello sotto).
             if any(v <= declared and not (declared - v - key.object_tokens) for v in key.variants):
                 exact = True
             else:
                 mixed = True
-        elif _has_variant(key, declared | in_name):
+        elif _has_variant(key, declared | in_name, words):
             mixed = True
         elif declared or in_name:
             seen_other_variant = True

@@ -213,3 +213,70 @@ def test_the_result_does_not_depend_on_the_input_order() -> None:
         rng.shuffle(demands)
         again = sa.assign(slots, demands, supplies, arcs, cap=1)
         assert again.chosen == first.chosen and again.unassigned == first.unassigned
+
+
+def _instance_with_own(seed: int) -> tuple[list, list, list, list, int]:
+    rng = random.Random(seed)
+    lessons = [uuid.UUID(int=1 + i) for i in range(rng.randint(1, 3))]
+    figures = F[: rng.randint(1, 4)]
+    slots = [
+        sa.LessonSlot(lid, rng.randint(1, 3), frozenset(f for f in figures if rng.random() < 0.3))
+        for lid in lessons
+    ]
+    demands = [
+        sa.Demand(rng.choice(lessons), f"n{i}", rng.random() < 0.6)
+        for i in range(rng.randint(2, 7))
+    ]
+    demands = list({d.key: d for d in demands}.values())
+    supplies = [
+        sa.Supply(
+            f,
+            fixed_uses=rng.choice((0, 0, 1, 2)),
+            resolution=rng.choice((None, "low")),
+            literature=rng.random() < 0.3,
+            found_for=(rng.choice(demands).key if rng.random() < 0.2 else None),
+        )
+        for f in figures
+    ]
+    arcs = [
+        sa.Arc(d.lesson_id, d.need_id, f, rng.randint(1, 4))
+        for d in demands
+        for f in figures
+        if rng.random() < 0.6
+    ]
+    return slots, demands, supplies, arcs, rng.randint(1, 3)
+
+
+@pytest.mark.parametrize("seed", range(3000))
+def test_invariants_hold_with_figures_already_in_the_lessons(seed: int) -> None:
+    """Budget per lezione, una figura per lezione e il tetto K: oltre K solo
+    se TUTTI i detentori oltre gli usi fissi avevano già la figura (U1)."""
+    slots, demands, supplies, arcs, cap = _instance_with_own(seed)
+    out = sa.assign(slots, demands, supplies, arcs, cap=cap)
+    by_lesson: dict[uuid.UUID, list[uuid.UUID]] = {}
+    holders: dict[uuid.UUID, set[uuid.UUID]] = {}
+    for key, arc in out.chosen.items():
+        by_lesson.setdefault(key[0], []).append(arc.figure_id)
+        holders.setdefault(arc.figure_id, set()).add(key[0])
+    budget = {s.lesson_id: s.budget for s in slots}
+    own = {s.lesson_id: s.own for s in slots}
+    fixed = {s.figure_id: s.fixed_uses for s in supplies}
+    for lesson, figs in by_lesson.items():
+        assert len(figs) == len(set(figs))
+        assert len(figs) <= budget[lesson]
+    for fig, lessons in holders.items():
+        non_own = {lesson for lesson in lessons if fig not in own[lesson]}
+        # Chi non aveva la figura non la prende mai oltre K.
+        assert fixed[fig] + len(lessons) <= cap or not non_own
+
+
+def test_the_best_found_figure_is_reserved() -> None:
+    supplies = _supplies(
+        **{
+            "0": {"literature": True, "found_for": (L1, "n1")},
+            "1": {"literature": True, "found_for": (L1, "n1")},
+        }
+    )
+    arcs = [sa.Arc(L1, "n1", F[0], 2), sa.Arc(L1, "n1", F[1], 4)]
+    out = sa.assign(_slots(L1), [sa.Demand(L1, "n1", True)], supplies, arcs, cap=1)
+    assert out.chosen[(L1, "n1")].figure_id == F[1] and (L1, "n1") in out.reserved

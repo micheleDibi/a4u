@@ -206,6 +206,76 @@
    "representation": "schematic",
    "terms_en": [],
    "terms_course": []
+  },
+  "on_axis": {
+   "object_en": "accelerometer",
+   "object_terms": [],
+   "variant_en": "on-axis",
+   "variant_terms": [
+    "on-axis"
+   ],
+   "is_base": false,
+   "representation": "schematic",
+   "terms_en": [],
+   "terms_course": []
+  },
+  "single_axis": {
+   "object_en": "accelerometer",
+   "object_terms": [],
+   "variant_en": "single-axis",
+   "variant_terms": [
+    "single-axis"
+   ],
+   "is_base": false,
+   "representation": "schematic",
+   "terms_en": [],
+   "terms_course": []
+  },
+  "with_feedback": {
+   "object_en": "shaker",
+   "object_terms": [],
+   "variant_en": "with feedback",
+   "variant_terms": [
+    "with feedback"
+   ],
+   "is_base": false,
+   "representation": "schematic",
+   "terms_en": [],
+   "terms_course": []
+  },
+  "force_sensor": {
+   "object_en": "force sensor",
+   "object_terms": [],
+   "variant_en": "",
+   "variant_terms": [],
+   "is_base": true,
+   "representation": "schematic",
+   "terms_en": [],
+   "terms_course": []
+  },
+  "force_sensor_piezo": {
+   "object_en": "force sensor",
+   "object_terms": [],
+   "variant_en": "piezoelectric",
+   "variant_terms": [
+    "piezoelectric"
+   ],
+   "is_base": false,
+   "representation": "schematic",
+   "terms_en": [],
+   "terms_course": []
+  },
+  "flagged_base": {
+   "object_en": "laser Doppler vibrometer",
+   "object_terms": [],
+   "variant_en": "scanning",
+   "variant_terms": [
+    "scanning"
+   ],
+   "is_base": true,
+   "representation": "schematic",
+   "terms_en": [],
+   "terms_course": []
   }
  },
  "figures": {
@@ -565,6 +635,122 @@
     ],
     "course": []
    }
+  },
+  "off_axis": {
+   "kind": "schematic",
+   "depicts": {
+    "v": 1,
+    "items": [
+     {
+      "object_en": "accelerometer",
+      "variant_en": "off-axis"
+     }
+    ],
+    "focus": ""
+   },
+   "keywords": {
+    "en": [
+     "accelerometer"
+    ],
+    "course": []
+   }
+  },
+  "three_axis": {
+   "kind": "schematic",
+   "depicts": {
+    "v": 1,
+    "items": [
+     {
+      "object_en": "accelerometer",
+      "variant_en": "three-axis"
+     }
+    ],
+    "focus": ""
+   },
+   "keywords": {
+    "en": [
+     "accelerometer"
+    ],
+    "course": []
+   }
+  },
+  "without_feedback": {
+   "kind": "schematic",
+   "depicts": {
+    "v": 1,
+    "items": [
+     {
+      "object_en": "shaker",
+      "variant_en": "without feedback"
+     }
+    ],
+    "focus": ""
+   },
+   "keywords": {
+    "en": [
+     "shaker"
+    ],
+    "course": []
+   }
+  },
+  "pressure_sensor": {
+   "kind": "schematic",
+   "depicts": {
+    "v": 1,
+    "items": [
+     {
+      "object_en": "pressure sensor",
+      "variant_en": ""
+     }
+    ],
+    "focus": ""
+   },
+   "keywords": {
+    "en": [
+     "pressure sensor",
+     "force"
+    ],
+    "course": []
+   }
+  },
+  "pressure_sensor_piezo": {
+   "kind": "schematic",
+   "depicts": {
+    "v": 1,
+    "items": [
+     {
+      "object_en": "pressure sensor",
+      "variant_en": "piezoelectric"
+     }
+    ],
+    "focus": ""
+   },
+   "keywords": {
+    "en": [
+     "pressure sensor"
+    ],
+    "course": []
+   }
+  },
+  "force_sensor_fig": {
+   "kind": "schematic",
+   "depicts": {
+    "v": 1,
+    "items": [
+     {
+      "object_en": "force sensor",
+      "variant_en": ""
+     }
+    ],
+    "focus": ""
+   },
+   "keywords": {
+    "en": [
+     "force sensor",
+     "load cell"
+    ],
+    "course": []
+   }
   }
  },
  "cases": [
@@ -726,7 +912,7 @@
   [
    "scan_in_object",
    "rot_in_name",
-   "conflict"
+   "none"
   ],
   [
    "base",
@@ -767,6 +953,46 @@
    "diff",
    "overview",
    "multi"
+  ],
+  [
+   "on_axis",
+   "off_axis",
+   "conflict"
+  ],
+  [
+   "single_axis",
+   "three_axis",
+   "conflict"
+  ],
+  [
+   "with_feedback",
+   "without_feedback",
+   "conflict"
+  ],
+  [
+   "force_sensor",
+   "pressure_sensor",
+   "none"
+  ],
+  [
+   "force_sensor_piezo",
+   "pressure_sensor_piezo",
+   "none"
+  ],
+  [
+   "force_sensor",
+   "force_sensor_fig",
+   "exact"
+  ],
+  [
+   "flagged_base",
+   "rot_in_name",
+   "none"
+  ],
+  [
+   "flagged_base",
+   "scan",
+   "exact"
   ]
  ]
 }
