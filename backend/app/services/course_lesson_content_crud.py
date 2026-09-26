@@ -617,3 +617,78 @@ async def update_lesson_assessment(
     from app.services import course_lesson_content_service
 
     return await course_lesson_content_service._refresh_full(db, course)
+
+
+FIGURE_NEED_LINK_STATES = ("dismissed", "linked")
+
+
+async def update_figure_need_link(
+    db: AsyncSession,
+    *,
+    course: Course,
+    lesson: CourseLesson,
+    need_id: str,
+    state: str | None,
+    asset_id: str | None,
+    actor_id: uuid.UUID,
+) -> Course:
+    """Collegamento manuale del docente a un fabbisogno di figura (doc 18
+    §23.7): «Non serve» (`dismissed`), una figura della lezione collegata
+    (`linked`, `asset_id` fra i `visual_assets`), oppure nessuno (`None`,
+    si torna allo stato calcolato). Non tocca `content_raw` e quindi non
+    segna la lezione come modificata."""
+    from sqlalchemy.orm.attributes import flag_modified
+
+    needs = lesson.figure_needs.get("needs") if isinstance(lesson.figure_needs, dict) else None
+    known = {str(n.get("need_id")) for n in needs or [] if isinstance(n, dict)}
+    if lesson.figure_needs_status != "ready" or need_id not in known:
+        raise ValidationAppError(
+            "Fabbisogno di figura sconosciuto per questa lezione.",
+            code="figure_need_unknown",
+            meta={"errors": [{"loc": ["path", "need_id"], "msg": "sconosciuto"}]},
+        )
+    if state is not None and state not in FIGURE_NEED_LINK_STATES:
+        raise ValidationAppError(
+            "Stato del collegamento non valido.",
+            code="figure_need_state_invalid",
+            meta={"errors": [{"loc": ["body", "state"], "msg": "non valido"}]},
+        )
+    entry: dict[str, Any] | None = None
+    if state == "dismissed":
+        entry = {"state": "dismissed"}
+    elif state == "linked":
+        assets = (lesson.content_raw or {}).get("visual_assets") or []
+        ids = {str(a.get("asset_id")) for a in assets if isinstance(a, dict)}
+        if not asset_id or asset_id not in ids:
+            raise ValidationAppError(
+                "La figura da collegare non è nella lezione.",
+                code="figure_need_asset_unknown",
+                meta={"errors": [{"loc": ["body", "asset_id"], "msg": "non nella lezione"}]},
+            )
+        entry = {"state": "linked", "asset_id": asset_id}
+    links = dict(lesson.figure_need_links or {})
+    if entry is None:
+        links.pop(need_id, None)
+    else:
+        links[need_id] = entry
+    lesson.figure_need_links = links or None
+    flag_modified(lesson, "figure_need_links")
+    await write_audit(
+        db,
+        action="course.lesson.figure_need.updated",
+        actor_user_id=actor_id,
+        organization_id=course.organization_id,
+        target_type="course_lesson",
+        target_id=str(lesson.id),
+        metadata={
+            "course_id": str(course.id),
+            "lesson_code": lesson.lesson_code,
+            "need_id": need_id,
+            "state": state,
+            **({"asset_id": asset_id} if state == "linked" else {}),
+        },
+    )
+    await db.commit()
+    from app.services import course_lesson_content_service
+
+    return await course_lesson_content_service._refresh_full(db, course)

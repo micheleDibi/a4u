@@ -729,6 +729,13 @@ async def _clone_course_structure(
                 figure_needs_status=(
                     "ready" if src_lesson.figure_needs_status == "ready" else None
                 ),
+                # Collegamenti del docente: stessi need_id e asset_id nella
+                # copia, validi solo se i fabbisogni si copiano.
+                figure_need_links=(
+                    _deepcopy_json(src_lesson.figure_need_links)
+                    if src_lesson.figure_needs_status == "ready"
+                    else None
+                ),
                 content_attempts=0,
                 content_tokens=None,
                 content_error=None,

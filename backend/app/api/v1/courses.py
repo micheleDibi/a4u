@@ -4,7 +4,7 @@ import asyncio
 import urllib.parse
 import uuid
 from datetime import datetime
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast
 
 from fastapi import (
     APIRouter,
@@ -16,7 +16,7 @@ from fastapi import (
     UploadFile,
     status,
 )
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 
 from app.core.config import get_settings
@@ -1978,6 +1978,50 @@ async def update_lesson_content(
     return CourseOut.model_validate(course)
 
 
+class FigureNeedLinkInput(BaseModel):
+    """Collegamento manuale a un fabbisogno di figura (doc 18 §23.7)."""
+
+    model_config = ConfigDict(extra="forbid")
+    state: Literal["dismissed", "linked"] | None = None
+    asset_id: str | None = Field(default=None, max_length=120)
+
+
+@router.put(
+    "/{course_id}/lessons/{lesson_id}/figure-needs/{need_id}",
+    response_model=CourseOut,
+)
+async def update_figure_need_link(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    lesson_id: uuid.UUID,
+    need_id: str,
+    payload: FigureNeedLinkInput,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_EDIT),
+) -> CourseOut:
+    """«Non serve», figura collegata o ritorno allo stato calcolato per un
+    fabbisogno di figura della lezione. Non modifica il contenuto."""
+    await _ensure_org(db, org_id)
+    course = cast(
+        Course,
+        await _load_course_for_edit(db, org_id=org_id, course_id=course_id, current=current),
+    )
+    lesson = await course_lesson_content_service.get_lesson_or_404(
+        db, course=course, lesson_id=lesson_id
+    )
+    course = await course_lesson_content_crud.update_figure_need_link(
+        db,
+        course=course,
+        lesson=lesson,
+        need_id=need_id[:40],
+        state=payload.state,
+        asset_id=payload.asset_id,
+        actor_id=current.id,
+    )
+    return CourseOut.model_validate(course)
+
+
 @router.patch(
     "/{course_id}/lessons/{lesson_id}/assessment",
     response_model=CourseOut,
@@ -2929,6 +2973,7 @@ async def upload_lesson_asset(
         file,
         subdir=f"lesson_assets/{course_id}",
         max_dimension=2400,
+        preserve_format=True,
     )
     rel = public_path.removeprefix("/uploads/")
     return _LessonAssetUploadOut(path=rel, url=public_path)

@@ -143,6 +143,7 @@ async def save_upload_image(
     max_dimension: int = 4096,
     filename_stem: str | None = None,
     square: bool = False,
+    preserve_format: bool = False,
 ) -> str:
     """Salva un upload immagine validato, ri-encoded da Pillow per strippare metadata.
 
@@ -153,6 +154,10 @@ async def save_upload_image(
     di salvarla — usato per l'immagine avatar, così le clip MiniMax
     image-to-video (che seguono le proporzioni dell'immagine sorgente)
     risultano quadrate.
+    `preserve_format=True` (figure delle lezioni, doc 18 §23.7): il formato
+    è quello del file caricato, letto prima della rotazione EXIF (che crea
+    un'immagine nuova senza formato): un PNG resta PNG, sempre ricodificato
+    (niente byte passati tali e quali), invece di diventare JPEG q85.
     """
     settings = get_settings()
     safe_subdir = _validate_subdir(subdir)
@@ -172,10 +177,13 @@ async def save_upload_image(
 
     try:
         with Image.open(BytesIO(raw)) as img:
+            source_format = (img.format or "").upper()
             img = ImageOps.exif_transpose(img)
             if square:
                 img = _center_crop_square(img)
             fmt = (img.format or "").upper()
+            if preserve_format and source_format in ALLOWED_IMAGE_EXT_BY_FORMAT:
+                fmt = source_format
             if fmt not in ALLOWED_IMAGE_EXT_BY_FORMAT:
                 fmt = "PNG" if img.mode in ("RGBA", "LA") else "JPEG"
             ext = ALLOWED_IMAGE_EXT_BY_FORMAT[fmt]

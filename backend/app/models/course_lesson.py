@@ -319,6 +319,25 @@ class CourseLesson(UUIDPKMixin, TimestampMixin, Base):
     figure_assignment: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB(none_as_null=True), nullable=True
     )
+    # Collegamenti manuali del docente ai fabbisogni (WP9, migrazione 0043):
+    # {need_id: {"state": "dismissed"} | {"state": "linked", "asset_id"}}.
+    # Li scrive solo il CRUD; la vista dello stato si calcola alla lettura.
+    figure_need_links: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB(none_as_null=True), nullable=True
+    )
+
+    @property
+    def figure_needs_view(self) -> list[dict[str, Any]] | None:
+        """Stato dei fabbisogni per l'editor (calcolato, mai salvato)."""
+        from app.services.figure_needs_view import figure_needs_view
+
+        return figure_needs_view(self)
+
+    @property
+    def figure_needs_summary(self) -> dict[str, int] | None:
+        from app.services.figure_needs_view import summary
+
+        return summary(self.figure_needs_view)
     content_attempts: Mapped[int] = mapped_column(
         SmallInteger, nullable=False, default=0, server_default="0"
     )
