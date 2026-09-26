@@ -692,6 +692,14 @@ Errori:
 
 Collegamento del docente a un fabbisogno di figura del piano ([18 § 23.7](18-literature-figures.md)). Permesso `course.edit`. Corpo `{"state": "dismissed" | "linked" | null, "asset_id": string | null}` (campi extra rifiutati): `dismissed` = «Non serve», `linked` = figura della lezione (`asset_id` di `content_raw.visual_assets`), `null` = ritorno allo stato calcolato. Risponde `CourseOut`; `content_raw` e `content_modified_at` non cambiano; audit `course.lesson.figure_need.updated`. Errori 422 con `meta.errors[{loc, msg}]`: `figure_need_unknown` (fabbisogno non fra quelli pronti), `figure_need_state_invalid`, `figure_need_asset_unknown` (asset non nella lezione). Il DTO della lezione espone `figure_needs_view` (stato per fabbisogno) e `figure_needs_summary` (conteggi dell'etichetta), calcolati alla lettura.
 
+### `GET /orgs/{org_id}/courses/{course_id}/lessons/{lesson_id}/figure-needs/candidates`
+
+Figure del corso adatte ai fabbisogni scoperti della lezione, una per fabbisogno ([18 § 24](18-literature-figures.md)). Permesso `course.edit`. Risponde `[{"need_id", "figure_id", "caption", "relation", "tier"}]`: stesso abbinamento e tetto di riuso del piano, esclusi i fabbisogni «Non serve» e le figure già nella lezione.
+
+### `POST /orgs/{org_id}/courses/{course_id}/lessons/{lesson_id}/figure-needs/{need_id}/insert`
+
+«Inserisci» dell'editor. Permesso `course.edit`. Corpo `{"figure_id", "section_text", "asset_ids"}` (testo della sezione nella bozza e id degli asset della bozza, per non ripetere un id). Risponde `{"section_id", "section_text", "asset"}`: testo con la frase che introduce la figura (PROMPT 23) e il tag nella posizione giusta, più l'asset `source_figure` da aggiungere. Non salva il contenuto (lo salva il docente); il costo del PROMPT 23 si somma a `figure_needs_usage`. 422 `figure_need_candidate_unknown` se la figura non è una candidata del fabbisogno.
+
 ### `PATCH /orgs/{org_id}/courses/{course_id}/lessons/{lesson_id}/assessment`
 
 `course:edit`. Patch manuale della **verifica delle competenze** — il

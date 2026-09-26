@@ -602,6 +602,7 @@ Nessun rilievo di gravità alta. Correzioni:
 | §23.5 buchi per fabbisogno | `test_figure_gaps_needs` (tetti, impronta vecchia senza ciclo, esiti fusi dopo un errore, spesa fra i tentativi, piano spento) |
 | §23.6 blocco del piano, collocazione | `test_source_figure_plan`, `test_source_figure_materialize` (catalogo del piano, errore del catalogo, ripiego inline, annullamento durante il lock), `test_source_figure_prompt_schema` (I1 senza piano) |
 | §23.7 editor, PROMPT 19 v2, sequenze, upload | `test_figure_needs_view` (0043, PUT), `test_source_figure_redundancy`, `test_slides_source_figures`, `test_lesson_asset_upload_format`, `test_frontend_source_figures` |
+| §24 figure inserite in automatico, PROMPT 23, «Inserisci» | `test_source_figure_fill`, `test_source_figure_plan`, `test_source_figure_materialize`, `test_frontend_source_figures` |
 
 **Test con dipendenze pesanti**. Docling, TeX e Chromium si provano nel
 container `test` del Dockerfile, con `A4U_REQUIRED_DEPS`: lì uno skip
@@ -1422,12 +1423,11 @@ JSONB). Li scrive solo il CRUD, con
 - **Etichetta nella riga della lezione:** «Figure x/y», cioè i must nel
   contenuto su quelli attivi. Nel tooltip ci sono le figure da trovare e
   quelle fuori sezione.
-- **Pannello «Figure consigliate»:** si apre con la lezione ed elenca i
-  fabbisogni per sezione, con stato e motivo come arrivano dal backend. Le
-  azioni sono «Non serve», «Ripristina» e «Collega» (a una figura della
-  lezione).
-- **Figura da trovare:** il docente la carica o la sceglie dai documenti
-  nell'editor della lezione, poi la collega dal pannello.
+- **Pannello «Figure consigliate»:** dal 26/09 sta nella finestra di
+  modifica, non più nella vista della lezione (§24). Elenca i fabbisogni per
+  sezione con stato e motivo come arrivano dal backend; le azioni sono
+  «Inserisci», «Non serve» e «Ripristina». «Collega» è stato tolto (l'API
+  resta per i collegamenti già salvati).
 - **Upload di lezione** (`upload_lesson_asset`): conserva il PNG
   (`save_upload_image(preserve_format=True)`) invece di ricodificarlo in
   JPEG. L'EXIF si toglie e il tetto dei pixel resta.
@@ -1565,3 +1565,83 @@ Rilievi bassi dichiarati, senza correzione:
   non lo mostra.
 - **Etichette N1…Nn.** Quelle del catalogo nel PROMPT 3 (solo i fabbisogni
   coperti) non coincidono con quelle del pannello.
+
+## 24. Figure inserite in automatico e «Inserisci» (26/09/2026)
+
+Richiesta del docente dopo il rilascio del piano: le figure devono finire
+nella lezione da sole, e il pannello deve stare nella modifica. Scelte
+dell'utente: pannello nella modifica con «Inserisci»; estrazione dei
+documenti manuale come prima; una figura trovata dopo la generazione entra
+da sola solo nelle lezioni non approvate; le figure consigliate entrano da
+sole entro il budget; ogni figura inserita dal sistema ha la frase che la
+introduce.
+
+**Fine della Fase 3** (`source_figure_plan.apply_placement`). Le figure del
+piano che il PROMPT 3 non ha citato entrano nella loro sezione: prima le
+obbligatorie, poi le consigliate, finché c'è posto nel budget del piano. Un
+membro di una sequenza entra subito dopo la figura del membro precedente
+citato nella sezione, o prima del paragrafo che introduce il successivo;
+altrimenti in fondo alla sezione. La didascalia è la prima frase della
+descrizione della figura.
+
+**Frase che introduce la figura** (PROMPT 23,
+`openai_figure_intro_service.py`). Il testo delle dispense colloca ogni
+figura con `[FIG:id]` su una riga propria, dopo il paragrafo che la
+introduce, e la richiama a parole. Per ogni figura inserita dal sistema una
+chiamata breve (`gpt-4.1-mini`) scrive una o due frasi nella lingua del
+corso, dal testo che precede e dalla descrizione della figura; la frase
+entra come paragrafo subito prima del tag. Output ripulito (niente tag,
+niente «Fonte») e neutralizzato. Ripiego senza chiamata, su errore o con
+`FIGURE_INTRO_SENTENCE_ENABLED=false`: «La figura seguente mostra …» /
+«The following figure shows …»; nelle altre lingue la figura entra senza
+frase. Costo in `figure_needs_usage` (fase `figure_needs` della dashboard).
+
+**Completamento dopo la generazione** (`source_figure_fill.fill_lesson`,
+`FIGURE_AUTO_FILL_ENABLED`). Parte quando una figura adatta arriva dopo:
+- la verifica dei buchi trova una figura per un fabbisogno (worker dei
+  buchi, solo quella lezione);
+- finisce l'estrazione di un documento (worker delle figure, tutte le
+  lezioni del corso, fuori da `HEAVY_JOB_LOCK`).
+
+Condizioni: piano attivo, lezione `ready` (mai `approved`, in coda o in
+generazione), contenuto non superato da modifiche a struttura o
+architettura, fabbisogni pronti; lock di corso (se occupato si salta: il
+prossimo evento ci riprova); lo stato si rilegge sotto il lock. Per ogni
+fabbisogno scoperto e non «Non serve» la figura migliore del corso (stesso
+abbinamento, tetto di riuso K e budget del piano; prima i must, a parità di
+livello prima le figure non a bassa risoluzione) entra nella sezione con la
+sua frase. Il sistema aggiorna `content_generated_at` (mai
+`content_modified_at`, riservato alle modifiche manuali): PDF e slide
+risultano da riesportare. La fotografia dell'assegnazione registra il legame
+(`bound`, collocazione `auto_placed` con `filled: true`); audit
+`course.lesson.content.figures_filled` con il motivo (`literature`,
+`extraction`).
+
+**Editor** (`LessonContentEditDialog.tsx` → `LessonFigureNeedsPanel`).
+Nuovo gruppo «Figure consigliate» nella finestra di modifica:
+- per ogni figura scoperta per cui il corso ha una candidata
+  (`GET …/figure-needs/candidates`) compare «Figura proposta: …» e
+  «Inserisci»;
+- «Inserisci» (`POST …/figure-needs/{need_id}/insert`) riceve il testo
+  della sezione nella bozza e restituisce il testo con frase e figura, più
+  l'asset da aggiungere: la bozza si aggiorna, il contenuto si salva con
+  «Salva» (PATCH del contenuto, come ogni modifica manuale);
+- «Non serve» e «Ripristina» restano; nella vista della lezione resta solo
+  l'etichetta «Figure x/y».
+
+**Test**: `test_source_figure_fill.py` (PROMPT 23, inserimento, lezioni
+escluse, endpoint, agganci), `test_source_figure_plan.py` (consigliate
+entro il budget), `test_source_figure_materialize.py` (frase della figura
+inserita a fine Fase 3), `test_frontend_source_figures.py` (pannello nella
+modifica). Nei test il PROMPT 23 non esce mai in rete (fixture in
+`conftest.py`).
+
+**Limiti.**
+- Una figura trovata dopo entra con la sola frase introduttiva: il resto
+  del testo della sezione non la cita. Per un discorso integrato serve la
+  rigenerazione.
+- Con il completamento il sistema modifica il contenuto di lezioni non
+  approvate senza un'azione del docente; l'audit e la fotografia dicono
+  che cosa è entrato. Una lezione approvata non cambia mai.
+- Se il docente salva una bozza aperta prima del completamento, il suo
+  salvataggio sostituisce il contenuto (vince la versione del docente).
