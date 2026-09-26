@@ -3728,7 +3728,7 @@ Temi: {temi obbligatori, al più 8}
 Obiettivi: {obiettivi, al più 6}
 >>>
 
-<<<FIGURA CERCATA            (solo pertinenza, con il piano delle figure)
+<<<FIGURA CERCATA            (solo pertinenza, con il piano delle figure; «WANTED FIGURE» per i corsi non in italiano, come nel system prompt EN)
 Soggetto: {soggetto del fabbisogno, lingua del corso}
 Oggetto: {object_en}
 Variante: {variant_en, se c'è}

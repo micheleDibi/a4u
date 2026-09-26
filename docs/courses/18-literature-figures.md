@@ -627,6 +627,14 @@ con il motivo esplicito (`[dep:tex]`, `[dep:docling]`).
    in coda anche le fonti riservate saltate con la regola precedente e i
    documenti incompleti (§20).
 5. Migrazione 0039 e ri-ritaglio delle figure già estratte: §22.6.
+6. **Piano delle figure** (§23): migrazioni 0040-0043 prima dell'avvio.
+   Sui corsi esistenti, **prima di rigenerare**, completare `depicts`:
+   `scripts/redescribe_figure_depicts.py --course <id>` (conteggio), poi
+   `--apply --max-usd N`, oppure `--all`. Una Vision per figura (~0,001 $).
+   Senza, le figure dei documenti non coprono nessun fabbisogno: la Fase 3
+   usa il catalogo lessicale e la verifica dei buchi non cerca nella
+   letteratura (`depicts_missing`, §23.9). Commons richiede
+   `PAPERS_POLITE_EMAIL` nel `.env`.
 
 ## 19. Revisione avversariale (Fase D)
 
@@ -1029,8 +1037,8 @@ ripiego inline), `course_lesson_figure_needs_worker.py` (worker).
   la Fase 3 procede senza piano) lo chiama il worker della Fase 3 prima di
   `reserve`, solo con il piano nel prompt.
 - **Costo**: `figure_needs_usage` cumulativo, fase admin `figure_needs`.
-  Duplicazione: i fabbisogni `ready` si copiano con la loro impronta (in
-  una copia tradotta l'impronta non torna e si ricalcolano), il costo no.
+  Duplicazione: i fabbisogni non si copiano (la copia è sempre in un'altra
+  lingua; si ricalcolano alla prima richiesta di Fase 3, §23.9).
 - **Migrazione 0040**: `figure_needs`, `figure_needs_status` (CHECK),
   `figure_needs_attempts`, `figure_needs_requested_at`,
   `figure_needs_checked_at`, `figure_needs_usage`, indice parziale sulle
@@ -1214,10 +1222,10 @@ revisore delle ridondanze e il docente vedono comunque la figura.
   all'offerta, mancati, collocazione) solo dopo una materializzazione
   riuscita e solo per l'offerta di quel giro (`run_token`). Il catalogo del PROMPT 3 resta quello lessicale
   fino al blocco del piano (WP8).
-- **Duplicazione**: `found_for_*` rimappati sulle lezioni del corso nuovo;
-  di `figure_assignment` si copia solo la fotografia chiusa (`settled`),
-  con le figure rimappate e senza `run_token`, per la vista dei fabbisogni
-  (§23.7); un'offerta aperta no.
+- **Duplicazione**: `found_for_*` rimappati sulle lezioni del corso nuovo.
+  La copia è sempre in un'altra lingua, quindi fabbisogni, collegamenti e
+  `figure_assignment` non si copiano (soggetti e need_id sono nella lingua
+  del sorgente): si ricalcolano alla prima richiesta di Fase 3 (Fase D).
 - **Misure Q3** (copia del corso, 35 lezioni con fabbisogni tutte in coda,
   2225 figure, 4120 archi): greedy + riparazione = ottimo dei must (flusso
   massimo) con K = 1, 2, 3 (63 must su 63 con candidate; 36 must senza
@@ -1406,8 +1414,8 @@ JSONB). Li scrive solo il CRUD, con
   `figure_need_asset_unknown`;
 - `content_raw` e `content_modified_at` restano invariati. L'azione va
   nell'audit come `course.lesson.figure_need.updated`;
-- la duplicazione copia i collegamenti e la fotografia chiusa insieme ai
-  fabbisogni pronti.
+- la duplicazione non copia fabbisogni né collegamenti (copia in un'altra
+  lingua, §23.4).
 
 **Editor** (`LessonFigureNeedsPanel.tsx`):
 - **Etichetta nella riga della lezione:** «Figure x/y», cioè i must nel
@@ -1450,8 +1458,8 @@ salvati.
 
 **Correzioni dalla verifica di WP9** (tutte con test): legame della
 fotografia nella vista, figure non citate, citazioni in esempi e tabelle,
-sequenze senza doppioni e con l'interruttore del piano, fotografia copiata
-nella duplicazione, motivo `duplicate_in_lesson` tradotto, coordinamento
+sequenze senza doppioni e con l'interruttore del piano, motivo
+`duplicate_in_lesson` tradotto, coordinamento
 del ripiego inline; test del collegamento nel worker (taglio per priorità,
 PROMPT 19 v2, fotografia con un'alternativa, collocazione dopo il lock).
 
@@ -1501,3 +1509,57 @@ frame esportati e misurati. Spesa della prova: 3,04 $.
 
   Decisione lasciata al docente, con il limite dichiarato: con 6-8 figure
   a 15 minuti le slide di concetto hanno meno tempo.
+
+### 23.9 Revisione finale (Fase D, WP10)
+Cinque revisori in sola lettura (correttezza, costo e prestazioni,
+attribuzione, tipografia, lingue), al più tre in parallelo, e un
+confutatore per ogni rilievo medio o alto: 9 rilievi confermati (nessuno
+alto) e 11 bassi. Corretti, con test:
+- **Lezioni partite insieme.** I worker della Fase 3 prendono più lezioni
+  nello stesso giro. Una lezione `processing` senza offerta valida
+  partecipa ora all'assegnazione: prima la prima offerta ignorava la
+  domanda delle altre.
+- **Figure nel contenuto di altre lezioni.** Nella seconda passata
+  dell'assegnazione torna libero solo il posto della lezione corrente
+  (`release`). Le figure nel contenuto delle altre restano occupate finché
+  quelle non si rigenerano, come al ricontrollo sotto il lock.
+- **Offerte in corso.** Le offerte valide delle lezioni in generazione
+  escludono le figure al tetto K dal residuo del catalogo del piano
+  (`held_elsewhere`) e dal catalogo lessicale (`offered_saturated`).
+- **Decisioni del docente.** «Non serve» e le figure collegate dal docente
+  escono da assegnazione, budget, catalogo del piano, collocazione e
+  verifica dei buchi (`figure_plan_service.active_needs`).
+- **Corsi esistenti senza `depicts`.** Se più del 20% delle figure dei
+  documenti non ha `depicts` corrente, la verifica per fabbisogno non
+  cerca nella letteratura (`reason: depicts_missing`, nessuna spesa) e
+  registra l'impronta dei fabbisogni. Passo manuale: §18.6.
+- **Coda dei buchi.** Prima le verifiche che bloccano una Fase 3 in coda,
+  poi quelle che servono solo alla rigenerazione successiva.
+- **Figure inserite dalla collocazione.** La didascalia è la prima frase
+  della descrizione della figura, non il testo della richiesta («Schema
+  pubblicato o foto…»). Un membro di una sequenza entra dopo il paragrafo
+  del membro precedente, non in fondo alla sezione.
+- **Duplicazione.** Fabbisogni, collegamenti e fotografia non si copiano
+  (copia in un'altra lingua).
+- **Offerta aperta.** Una rigenerazione in corso, fallita o annullata non
+  fa risultare «mancanti» le figure ancora nel contenuto: l'offerta porta
+  la fotografia chiusa precedente (`previous`).
+- **Indice** su `found_for_lesson_id` (FK con ON DELETE SET NULL, nella
+  0042 non ancora rilasciata).
+- **PROMPT 20.** Il blocco del fabbisogno si chiama «WANTED FIGURE» nei
+  corsi non in italiano, come nel system prompt inglese.
+
+Rilievi bassi dichiarati, senza correzione:
+- **Worker dei fabbisogni.** Lavora a lotti con barriera, a circa metà
+  della portata misurata in M-N2. Una richiesta nuova durante il calcolo
+  può far pagare il PROMPT 22 due volte.
+- **Attese.** L'attesa dei fabbisogni e quella dei buchi si sommano: la
+  Fase 3 può aspettare fino a circa 2× `FIGURE_WAIT_MAX_MINUTES`.
+- **OpenAlex.** Lo stesso lavoro si ri-estrae per fabbisogni diversi. La
+  copia pagata invece non si ripaga.
+- **Slide aggiunte da 8c.** Con copertura parziale di una sequenza le
+  slide mancanti finiscono dopo l'ultima slide della sezione.
+- **`subject_match`.** Il verdetto del PROMPT 19 v2 si salva ma l'editor
+  non lo mostra.
+- **Etichette N1…Nn.** Quelle del catalogo nel PROMPT 3 (solo i fabbisogni
+  coperti) non coincidono con quelle del pannello.
