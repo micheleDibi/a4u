@@ -517,6 +517,16 @@ class Settings(BaseSettings):
     # nessuna offerta, catalogo lessicale come prima; i fabbisogni servono
     # solo a editor e buchi.
     figure_plan_in_prompt_enabled: bool = True
+    # Completamento automatico (doc 18 §24): una figura adatta trovata dopo la
+    # generazione (letteratura, estrazione) entra da sola nelle lezioni non
+    # approvate, nella sezione del suo fabbisogno.
+    figure_auto_fill_enabled: bool = True
+    # Frase che introduce le figure inserite dal sistema (PROMPT 23). Spento:
+    # frase fissa dalla didascalia (italiano e inglese), nessuna chiamata.
+    figure_intro_sentence_enabled: bool = True
+    openai_figure_intro_model: str = "gpt-4.1-mini"
+    openai_figure_intro_reasoning_effort: str | None = None
+    openai_figure_intro_max_tokens: int = 400
 
     # Formato `tikz` (WP6): figure vettoriali (schemi di strumenti, circuiti
     # IEC, catene di misura) compilate con XeLaTeX nella sandbox del

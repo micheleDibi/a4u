@@ -54,6 +54,7 @@ from typing import cast
 
 from app.services import openai_asset_fix_service as fix_service
 from app.services import openai_figure_describe_service as describe_service
+from app.services import openai_figure_intro_service as intro_service
 from app.services import openai_figure_needs_service as needs_service
 from app.services import openai_figure_redundancy_service as redundancy_service
 from app.services import openai_figure_relevance_service as relevance_service
@@ -220,6 +221,10 @@ def render_needs(language: str) -> str:
     return needs_service.system_prompt(language)
 
 
+def render_intro(language: str) -> str:
+    return intro_service.system_prompt(language)
+
+
 def render_tikz_review(language: str) -> str:
     return tikz_review_service._system_prompt(language)
 
@@ -293,6 +298,13 @@ _RENDERERS: tuple[tuple[str, int, str | None, Callable[[], str]], ...] = (
         22,
         "_SYSTEM_NEEDS_EN",
         lambda: render_needs("en"),
+    ),
+    ("PROMPT 23 — frase che introduce una figura IT", 23, None, lambda: render_intro("it")),
+    (
+        "PROMPT 23 — frase che introduce una figura EN",
+        23,
+        "_SYSTEM_INTRO_EN",
+        lambda: render_intro("en"),
     ),
 )
 

@@ -103,3 +103,16 @@ async def client(_engine) -> AsyncIterator[AsyncClient]:
 @pytest.fixture
 def random_email() -> str:
     return f"user-{uuid.uuid4().hex[:8]}@a4u-tests.it"
+
+
+@pytest.fixture(autouse=True)
+def _offline_figure_intro(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Il PROMPT 23 (frase che introduce una figura) non esce mai in rete nei
+    test: vale il ripiego senza chiamata. I test del servizio usano la
+    funzione vera con un trasporto simulato."""
+    from app.services import openai_figure_intro_service as intro
+
+    async def offline(item: object) -> tuple[str, dict[str, object]]:
+        raise intro.OpenAIFigureIntroError(None, "PROMPT 23 non simulato nel test")
+
+    monkeypatch.setattr(intro, "write_intro", offline)
