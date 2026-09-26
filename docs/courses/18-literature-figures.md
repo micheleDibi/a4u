@@ -1298,3 +1298,98 @@ per lo stesso fabbisogno resta la prima citata. L'esito va nella fotografia
 
 Interruttore `FIGURE_PLAN_IN_PROMPT_ENABLED=false`: nessuna offerta, catalogo
 lessicale come prima (test).
+
+**M7b (26/09/2026, copia locale del corso, 3,86 $).** Rigenerazione reale
+della Fase 3 (gpt-5.5) di M4.L6, M4.L7, M5.L7, M5.L1 e M3.L4 (controllo) in
+due bracci: A con il piano fuori dal prompt (catalogo lessicale), B con il
+piano nel prompt.
+
+| Lezione | Generate A → B | Di fonte A → B | Collocazione (B) |
+|---|---|---|---|
+| M4.L6 | 5 → 5 (stessi formati) | 3 → 6 | 6 su 6 `placed`, nessun fabbisogno scoperto |
+| M4.L7 | 5 → 5 (stessi formati) | 3 → 3 | 3 su 3 `placed` |
+| M5.L7 | 4 → 4 (un dot diventa mermaid) | 3 → 4 | 4 su 4 `placed` |
+| M5.L1 | 4 → 4 (stessi formati) | 2 → 4 | 3 su 3 `placed`, più una facoltativa |
+| M3.L4 | 4 → 5 | 3 → 3 | nessun piano (nessuna offerta) |
+
+- **Budget (a).** Il numero delle figure generate non cambia nelle 4 lezioni
+  col piano; M3.L4, che non ha il piano, varia di ±1 per la varianza del
+  modello.
+- **Collocazione.** C1 = 16/16 nella propria sezione, con 0 `misplaced`,
+  0 `auto_placed` e 0 `missing`.
+- **Costo.** Il costo del PROMPT 3 per lezione non cambia: 0,37-0,45 $ in
+  entrambi i bracci.
+
+### 23.7 Editor, revisore, slide e discorso (WP9)
+**Vista dei fabbisogni** (`services/figure_needs_view.py`, funzione pura
+calcolata alla lettura e mai salvata; esposta nel DTO della lezione come
+`figure_needs_view` e `figure_needs_summary`). Per ogni fabbisogno pronto,
+nell'ordine delle sezioni, con etichetta N1…Nn, combina:
+- l'offerta o la fotografia dell'assegnazione;
+- il contenuto attuale, che il docente può aver modificato;
+- l'esito della letteratura (`figures_gap_stats.needs`);
+- i collegamenti del docente.
+
+Gli stati possibili sono:
+- `placed`: nel contenuto, citata nella sua sezione;
+- `misplaced`: citata in un'altra sezione;
+- `missing`: il piano aveva una figura che nel contenuto non c'è;
+- `uncovered`: nessuna figura, con il motivo (`no_candidate`, `reuse_cap`,
+  `budget`, `not_planned`) e l'esito della letteratura (`found`,
+  `not_found`, `not_searched`);
+- `dismissed`: il docente ha detto «Non serve».
+
+La vista non contiene nomi di documenti.
+
+**Collegamenti del docente** (migrazione 0043, `course_lesson.figure_need_links`
+JSONB). Li scrive solo il CRUD, con
+`PUT /courses/{id}/lessons/{lesson_id}/figure-needs/{need_id}` e corpo
+`{state: "dismissed" | "linked" | null, asset_id}`:
+- `null` torna allo stato calcolato;
+- `linked` richiede un asset della lezione. Gli errori sono 422 con
+  `meta.errors[].loc`: `figure_need_unknown`, `figure_need_state_invalid`,
+  `figure_need_asset_unknown`;
+- `content_raw` e `content_modified_at` restano invariati. L'azione va
+  nell'audit come `course.lesson.figure_need.updated`;
+- la duplicazione copia i collegamenti insieme ai fabbisogni pronti.
+
+**Editor** (`LessonFigureNeedsPanel.tsx`):
+- **Etichetta nella riga della lezione:** «Figure x/y», cioè i must nel
+  contenuto su quelli attivi. Nel tooltip ci sono le figure da trovare e
+  quelle fuori sezione.
+- **Pannello «Figure consigliate»:** si apre con la lezione ed elenca i
+  fabbisogni per sezione, con stato e motivo come arrivano dal backend. Le
+  azioni sono «Non serve», «Ripristina» e «Collega» (a una figura della
+  lezione).
+- **Figura da trovare:** il docente la carica o la sceglie dai documenti
+  nell'editor della lezione, poi la collega dal pannello.
+- **Upload di lezione** (`upload_lesson_asset`): conserva il PNG
+  (`save_upload_image(preserve_format=True)`) invece di ricodificarlo in
+  JPEG. L'EXIF si toglie e il tetto dei pixel resta.
+
+**PROMPT 19 v2** (`FIGURE_REDUNDANCY_SUBJECT_CHECK_ENABLED`, default true).
+Vale per una figura di fonte che la collocazione lega a un fabbisogno:
+- il revisore riceve il soggetto fra delimitatori di dati;
+- risponde anche `subject_match`, salvato nel verdetto come avviso.
+
+Senza legame il messaggio e lo schema sono quelli di prima, byte per byte.
+
+**Fase 4 e 5.** `figure_sequences(lesson)` restituisce i gruppi di sequenza
+con almeno due figure di fonte nel contenuto:
+- **PROMPT 5:** riceve «una slide per ciascuna, in quest'ordine, con il
+  nome della variante nel titolo»;
+- **PROMPT 6:** riceve i tempi: 25-45 s per la slide di una figura di
+  fonte, 20-35 s per le successive di una sequenza;
+- **8c:** aggiunge le slide mancanti nell'ordine di citazione nel testo.
+
+Senza sequenze entrambi i messaggi restano identici.
+
+**Non fatto (dichiarato).** Mancano tre parti del progetto:
+- un endpoint dei candidati per fabbisogno;
+- l'upload diretto dal pannello;
+- il badge «già usata in».
+
+Oggi il percorso è: editor della lezione (upload o selettore delle figure
+di fonte), poi «Collega». M-S (misura di slide e durata) non è stata
+eseguita: i tempi del PROMPT 6 sono quelli del piano.
+

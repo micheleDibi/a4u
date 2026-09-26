@@ -688,6 +688,10 @@ Errori:
   stesso tetto vive nello schema (l'output AI è scartato e la lezione
   rigenerata).
 
+### `PUT /orgs/{org_id}/courses/{course_id}/lessons/{lesson_id}/figure-needs/{need_id}`
+
+Collegamento del docente a un fabbisogno di figura del piano ([18 § 23.7](18-literature-figures.md)). Permesso `course.edit`. Corpo `{"state": "dismissed" | "linked" | null, "asset_id": string | null}` (campi extra rifiutati): `dismissed` = «Non serve», `linked` = figura della lezione (`asset_id` di `content_raw.visual_assets`), `null` = ritorno allo stato calcolato. Risponde `CourseOut`; `content_raw` e `content_modified_at` non cambiano; audit `course.lesson.figure_need.updated`. Errori 422 con `meta.errors[{loc, msg}]`: `figure_need_unknown` (fabbisogno non fra quelli pronti), `figure_need_state_invalid`, `figure_need_asset_unknown` (asset non nella lezione). Il DTO della lezione espone `figure_needs_view` (stato per fabbisogno) e `figure_needs_summary` (conteggi dell'etichetta), calcolati alla lettura.
+
 ### `PATCH /orgs/{org_id}/courses/{course_id}/lessons/{lesson_id}/assessment`
 
 `course:edit`. Patch manuale della **verifica delle competenze** — il

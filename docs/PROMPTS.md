@@ -1775,6 +1775,8 @@ In rigenerazione: `## Versione attuale delle slide (DA RIVEDERE)` (solo se esist
 
 Figure di fonte (solo se la dispensa ne ha; altrimenti il messaggio è byte-identico): nel JSON di Fase 3 il `content` degli asset `source_figure` (UUID interno) è sostituito da «(figura tratta dai documenti del corso; la fonte la aggiunge il sistema)» (`figure_provenance.prompt_view`), e in coda al compito entra: «Le figure con `format: source_figure` sono immagini tratte dai documenti del corso: dedica a ciascuna una slide, come alle altre figure (in `references_assets`), non ricrearle in `new_assets` e non scrivere la fonte (la aggiunge il sistema sulla slide).» Figure `tikz` (WP6): nel JSON di Fase 3 il sorgente TeX è sostituito da «(schema TikZ; etichette: …)» con i testi dei nodi (stessa `prompt_view`); senza figure di fonte né `tikz` il JSON è quello originale. Dopo la validazione, 8c (`FIGURE_SLIDES_COVERAGE_REPAIR_ENABLED`, default true) aggiunge una slide dedicata a ogni figura di Fase 3 che nessuna slide cita, dopo l'ultima slide della sua sezione, e rinumera; con il flag spento l'output è quello del modello. Scan SOFT dei documenti riservati nel testo delle slide (audit `course.lesson.slides.reserved_leak`).
 
+Sequenze del piano delle figure (doc 18 §23.7; solo se nel contenuto ci sono almeno due figure di fonte dello stesso `sequence_group` del PROMPT 22, altrimenti il messaggio è byte-identico): dopo la riga delle figure di fonte entra, per ogni gruppo, «Le figure {asset_id, …} mostrano, in quest'ordine, le varianti di una stessa enumerazione («{gruppo, neutralizzato, ≤60 caratteri}»): una slide per ciascuna, in quest'ordine, con il nome della variante nel titolo.» (`figure_needs_view.figure_sequences`). 8c aggiunge le slide mancanti nell'ordine di citazione nel testo della lezione (`_citation_position`), non più nell'ordine degli asset.
+
 **JSON schema** (`LESSON_SLIDES_JSON_SCHEMA`) — la costante è la base; `build_lesson_slides_json_schema(visual_formats=available_formats())` ne fa un `deepcopy` e restringe l'`enum` di `new_assets[].format` ai formati disponibili sul server meno `function` (A1) e `tikz` (WP6: le slide referenziano le figure `tikz` della dispensa, non ne creano; anche il PATCH delle slide le rifiuta). Il vecchio `asset_type` e i formati legacy `image_prompt|image_search_query|description` non fanno più parte dello schema strict (restano accettati in lettura dal Pydantic):
 
 ```python
@@ -2120,7 +2122,10 @@ Vincoli da rispettare:
 - somma delle estimated_duration_seconds = {lesson_duration_minutes} * 60
   (tolleranza ±5%)
 - testo TTS-friendly come da regole
+- slide di una figura di fonte: 25-45 secondi; le slide successive di una sequenza di figure ({asset_id, …; …}): 20-35 secondi, dicendo che cosa distingue ciascuna dalla precedente      (solo con sequenze del piano delle figure)
 ```
+
+L'ultima riga dei vincoli entra solo se il contenuto ha almeno una sequenza di figure di fonte del piano (`figure_needs_view.figure_sequences`, doc 18 §23.7); senza, il messaggio è byte-identico.
 
 In rigenerazione: `## Versione attuale del discorso (DA RIVEDERE)` (solo se esiste già `speech_raw`) + `## Indicazioni del docente per la rigenerazione` (se c'è un hint; entra anche su lezioni mai generate, senza `REGENERATION_SUFFIX`).
 
@@ -3536,6 +3541,18 @@ FIGURA DI FONTE: {asset_id, es. SRC-1a2b3c4d}
 Tetto di lotto `FIGURE_REDUNDANCY_TIMEOUT_SECONDS`: i verdetti già arrivati restano, solo le chiamate ancora in corso si annullano. Nel worker il revisore gira PRIMA del ricontrollo TOCTOU (con la politica di licenza riletta) e di un terzo controllo di annullamento; un suo errore vale «nessun avviso».
 
 **Output** — json_schema strict `figure_redundancy`: `{"coherence": "coerente" | "incoerente", "reason": string, "pairs": [{"other": enum degli id delle altre figure, "verdict": "distinta" | "complementare" | "ridondante", "reason": string}]}`, validato da `RedundancyOut`. Persistito come `{"version": 1, "model", "reviewed_at", "figures": {asset_id: {"coherence", "reason", "pairs": [solo complementare/ridondante]}}}`; log `lesson_content_figure_redundancy`. Costo: voci `phase="redundancy"` in `content_tokens.assets` (anche per le risposte 200 inutilizzabili).
+
+**v2 — figura richiesta dal piano** (doc 18 §23.7; `FIGURE_REDUNDANCY_SUBJECT_CHECK_ENABLED`, default true): solo per una figura di fonte che la collocazione del PROMPT 3 lega a un fabbisogno del piano (`course_lesson_content_worker._need_subjects`, dal report della fusione), in coda al messaggio user entrano
+
+```
+La figura è stata scelta per la FIGURA RICHIESTA DAL PIANO qui sotto. Rispondi anche `subject_match`: true se la figura mostra quella figura richiesta (stesso oggetto e, se indicata, stessa variante), che è la risposta predefinita anche nel dubbio; false solo se mostra altro.
+
+<<<FIGURA RICHIESTA DAL PIANO
+{soggetto del fabbisogno, neutralizzato}
+>>>
+```
+
+e lo schema strict aggiunge `subject_match: boolean` (obbligatorio). Il verdetto si salva in `figures[asset_id].subject_match` ed è solo un avviso. Senza fabbisogno legato, piano spento o interruttore spento, messaggio e schema sono quelli di prima, byte per byte.
 
 ---
 

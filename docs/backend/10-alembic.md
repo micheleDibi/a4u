@@ -767,6 +767,23 @@ Toglie la FK e le tre colonne; ciclo `upgrade → downgrade → upgrade`
 eseguito sulla copia usa-e-getta; un test verifica colonne aggiunte = tolte
 e la FK nel modello.
 
+## `alembic/versions/0043_figure_need_links.py`
+
+Collegamenti manuali del docente ai fabbisogni di figura (doc 18 §23.7).
+
+### Sequenza `upgrade()`
+
+1. `course_lesson.figure_need_links` (JSONB): per fabbisogno «Non serve» o
+   la figura della lezione collegata; la scrive solo il CRUD
+   (`PUT …/figure-needs/{need_id}`), lo stato si calcola alla lettura.
+
+Solo ADD.
+
+### Sequenza `downgrade()`
+
+Toglie la colonna; ciclo `upgrade → downgrade → upgrade` eseguito sulla
+copia usa-e-getta; un test verifica colonna aggiunta = tolta.
+
 ---
 
 ## Workflow per nuove migrazioni
