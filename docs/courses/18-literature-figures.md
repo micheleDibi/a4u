@@ -601,8 +601,8 @@ Nessun rilievo di gravità alta. Correzioni:
 | §23.4 assegnazione globale | `test_source_figure_assignment` (oracolo, proprietà, figure proprie, riserva della letteratura), `test_source_figure_assignment_db` (offerta, lock, partecipanti, alternative e residuo al tetto, `settle`, 0042) |
 | §23.5 buchi per fabbisogno | `test_figure_gaps_needs` (tetti, impronta vecchia senza ciclo, esiti fusi dopo un errore, spesa fra i tentativi, piano spento) |
 | §23.6 blocco del piano, collocazione | `test_source_figure_plan`, `test_source_figure_materialize` (catalogo del piano, errore del catalogo, ripiego inline, annullamento durante il lock), `test_source_figure_prompt_schema` (I1 senza piano) |
-| §23.7 editor, PROMPT 19 v2, sequenze, upload | `test_figure_needs_view` (0043, PUT), `test_source_figure_redundancy`, `test_slides_source_figures`, `test_lesson_asset_upload_format`, `test_frontend_source_figures` |
-| §24 figure inserite in automatico, PROMPT 23, «Inserisci» | `test_source_figure_fill`, `test_source_figure_plan`, `test_source_figure_materialize`, `test_frontend_source_figures` |
+| §23.7 vista, PROMPT 19 v2, sequenze, upload | `test_figure_needs_view` (0043, vista fuori dal DTO), `test_source_figure_redundancy`, `test_slides_source_figures`, `test_lesson_asset_upload_format`, `test_frontend_source_figures` |
+| §24 figure inserite in automatico, PROMPT 23, niente etichetta né pannello | `test_source_figure_fill`, `test_source_figure_plan`, `test_source_figure_materialize`, `test_frontend_source_figures` |
 
 **Test con dipendenze pesanti**. Docling, TeX e Chromium si provano nel
 container `test` del Dockerfile, con `A4U_REQUIRED_DEPS`: lì uno skip
@@ -1381,8 +1381,9 @@ piano nel prompt.
 
 ### 23.7 Editor, revisore, slide e discorso (WP9)
 **Vista dei fabbisogni** (`services/figure_needs_view.py`, funzione pura
-calcolata alla lettura e mai salvata; esposta nel DTO della lezione come
-`figure_needs_view` e `figure_needs_summary`). Per ogni fabbisogno pronto,
+calcolata alla lettura e mai salvata; la usano il completamento automatico
+e le sequenze di slide e discorso, e dal 26/09/2026 non è più nel DTO della
+lezione, §24). Per ogni fabbisogno pronto,
 nell'ordine delle sezioni, con etichetta N1…Nn, combina:
 - la fotografia dell'assegnazione: prima il legame (`bound`, anche con
   un'alternativa scelta dal modello), poi l'asset della collocazione, poi
@@ -1407,7 +1408,9 @@ Gli stati possibili sono:
 La vista non contiene nomi di documenti.
 
 **Collegamenti del docente** (migrazione 0043, `course_lesson.figure_need_links`
-JSONB). Li scrive solo il CRUD, con
+JSONB). Dal 26/09/2026 nessuno li scrive più: l'endpoint e il pannello sono
+stati tolti (§24); quelli già salvati valgono ancora per vista, completamento
+e sequenze. Li scriveva il CRUD, con
 `PUT /courses/{id}/lessons/{lesson_id}/figure-needs/{need_id}` e corpo
 `{state: "dismissed" | "linked" | null, asset_id}`:
 - `null` torna allo stato calcolato;
@@ -1419,15 +1422,10 @@ JSONB). Li scrive solo il CRUD, con
 - la duplicazione non copia fabbisogni né collegamenti (copia in un'altra
   lingua, §23.4).
 
-**Editor** (`LessonFigureNeedsPanel.tsx`):
-- **Etichetta nella riga della lezione:** «Figure x/y», cioè i must nel
-  contenuto su quelli attivi. Nel tooltip ci sono le figure da trovare e
-  quelle fuori sezione.
-- **Pannello «Figure consigliate»:** dal 26/09 sta nella finestra di
-  modifica, non più nella vista della lezione (§24). Elenca i fabbisogni per
-  sezione con stato e motivo come arrivano dal backend; le azioni sono
-  «Inserisci», «Non serve» e «Ripristina». «Collega» è stato tolto (l'API
-  resta per i collegamenti già salvati).
+**Editor:**
+- **Etichetta e pannello «Figure consigliate»:** tolti il 26/09/2026 su
+  richiesta dell'utente (§24). L'editor non mostra fabbisogni, obbligatorie
+  né consigliate.
 - **Upload di lezione** (`upload_lesson_asset`): conserva il PNG
   (`save_upload_image(preserve_format=True)`) invece di ricodificarlo in
   JPEG. L'EXIF si toglie e il tetto dei pixel resta.
@@ -1564,17 +1562,30 @@ Rilievi bassi dichiarati, senza correzione:
 - **`subject_match`.** Il verdetto del PROMPT 19 v2 si salva ma l'editor
   non lo mostra.
 - **Etichette N1…Nn.** Quelle del catalogo nel PROMPT 3 (solo i fabbisogni
-  coperti) non coincidono con quelle del pannello.
+  coperti) non coincidevano con quelle del pannello, tolto il 26/09 (§24).
 
-## 24. Figure inserite in automatico e «Inserisci» (26/09/2026)
+## 24. Figure inserite in automatico (26/09/2026)
 
 Richiesta del docente dopo il rilascio del piano: le figure devono finire
-nella lezione da sole, e il pannello deve stare nella modifica. Scelte
-dell'utente: pannello nella modifica con «Inserisci»; estrazione dei
-documenti manuale come prima; una figura trovata dopo la generazione entra
-da sola solo nelle lezioni non approvate; le figure consigliate entrano da
-sole entro il budget; ogni figura inserita dal sistema ha la frase che la
-introduce.
+nella lezione da sole. Scelte dell'utente: estrazione dei documenti manuale
+come prima; una figura trovata dopo la generazione entra da sola solo nelle
+lezioni non approvate; le figure consigliate entrano da sole entro il
+budget; ogni figura inserita dal sistema ha la frase che la introduce.
+
+**Niente etichetta né pannello** (26/09/2026, sera). L'utente non vuole
+vedere figure consigliate e obbligatorie: l'interfaccia torna com'era prima
+del piano. Tolti l'etichetta nella riga della lezione, il pannello nella
+finestra di modifica («Inserisci», «Inserisci tutte», «Non serve»,
+«Ripristina»), i tre endpoint `…/figure-needs/…` (collegamenti, candidate,
+inserimento) e i campi del DTO della lezione (`figure_needs_status`,
+`figure_plan_active`, `figure_needs_view`, `figure_needs_summary`,
+`figure_need_links`). Il meccanismo resta invariato e lavora dietro le
+quinte: fabbisogni, assegnazione, collocazione di fine Fase 3, completamento
+automatico e frasi introduttive. Nessuna migrazione: le colonne restano,
+i collegamenti già salvati valgono ancora. Le descrizioni di etichetta ed
+editor più sotto sono storiche. Un test statico
+(`test_no_figure_needs_label_or_panel`) controlla che il frontend non li
+reintroduca.
 
 **Fine della Fase 3** (`source_figure_plan.apply_placement`). Le figure del
 piano che il PROMPT 3 non ha citato entrano nella loro sezione: prima le
@@ -1626,8 +1637,8 @@ risultano da riesportare. La fotografia dell'assegnazione registra il legame
 `course.lesson.content.figures_filled` con il motivo (`literature`,
 `extraction`).
 
-**Etichetta nella riga della lezione** (`LessonFigureNeedsChip`, dal
-26/09 sempre presente sulle lezioni pronte, in parole):
+**Etichetta nella riga della lezione** (storico, tolta la sera del 26/09;
+`LessonFigureNeedsChip`, sempre presente sulle lezioni pronte, in parole):
 - «Figure dalle fonti: X di Y obbligatorie» (verde se tutte nel testo,
   ambra se ne mancano); senza obbligatorie «X di Y consigliate»;
 - «Nessuna figura dalle fonti necessaria» (piano calcolato, nessun
@@ -1653,8 +1664,9 @@ proposta (documenti o letteratura, `source_kind`), testi che promettevano un
 inserimento automatico non garantito, plurali, accessibilità
 dell'etichetta e azioni per le voci collegate.
 
-**Editor** (`LessonContentEditDialog.tsx` → `LessonFigureNeedsPanel`).
-Gruppo «Figure dalle fonti» nella finestra di modifica, sempre presente
+**Editor** (storico, tolto la sera del 26/09; `LessonContentEditDialog.tsx`
+→ `LessonFigureNeedsPanel`). Gruppo «Figure dalle fonti» nella finestra di
+modifica, sempre presente
 (senza piano spiega perché e che cosa fare). In cima il riepilogo
 («X di Y figure obbligatorie sono nel testo») e «Inserisci tutte le figure
 proposte»; per sezione ogni figura con lo stato in parole (nel testo, in
@@ -1677,10 +1689,10 @@ della figura proposta:
   l'etichetta «Figure x/y».
 
 **Test**: `test_source_figure_fill.py` (PROMPT 23, inserimento, lezioni
-escluse, endpoint, agganci), `test_source_figure_plan.py` (consigliate
-entro il budget), `test_source_figure_materialize.py` (frase della figura
-inserita a fine Fase 3), `test_frontend_source_figures.py` (pannello nella
-modifica). Nei test il PROMPT 23 non esce mai in rete (fixture in
+escluse, ordine delle serie, agganci), `test_source_figure_plan.py`
+(consigliate entro il budget), `test_source_figure_materialize.py` (frase
+della figura inserita a fine Fase 3), `test_frontend_source_figures.py`
+(nessuna etichetta né pannello). Nei test il PROMPT 23 non esce mai in rete (fixture in
 `conftest.py`).
 
 **Limiti.**

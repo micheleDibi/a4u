@@ -774,8 +774,10 @@ Collegamenti manuali del docente ai fabbisogni di figura (doc 18 §23.7).
 ### Sequenza `upgrade()`
 
 1. `course_lesson.figure_need_links` (JSONB): per fabbisogno «Non serve» o
-   la figura della lezione collegata; la scrive solo il CRUD
-   (`PUT …/figure-needs/{need_id}`), lo stato si calcola alla lettura.
+   la figura della lezione collegata; la scriveva solo il CRUD
+   (`PUT …/figure-needs/{need_id}`, tolto il 26/09/2026 con il pannello:
+   la colonna resta e i collegamenti salvati valgono ancora), lo stato si
+   calcola alla lettura.
 
 Solo ADD.
 
