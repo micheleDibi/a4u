@@ -1214,8 +1214,10 @@ revisore delle ridondanze e il docente vedono comunque la figura.
   all'offerta, mancati, collocazione) solo dopo una materializzazione
   riuscita e solo per l'offerta di quel giro (`run_token`). Il catalogo del PROMPT 3 resta quello lessicale
   fino al blocco del piano (WP8).
-- **Duplicazione**: `found_for_*` rimappati sulle lezioni del corso nuovo,
-  `figure_assignment` non si copia.
+- **Duplicazione**: `found_for_*` rimappati sulle lezioni del corso nuovo;
+  di `figure_assignment` si copia solo la fotografia chiusa (`settled`),
+  con le figure rimappate e senza `run_token`, per la vista dei fabbisogni
+  (§23.7); un'offerta aperta no.
 - **Misure Q3** (copia del corso, 35 lezioni con fabbisogni tutte in coda,
   2225 figure, 4120 archi): greedy + riparazione = ottimo dei must (flusso
   massimo) con K = 1, 2, 3 (63 must su 63 con candidate; 36 must senza
@@ -1372,18 +1374,24 @@ piano nel prompt.
 calcolata alla lettura e mai salvata; esposta nel DTO della lezione come
 `figure_needs_view` e `figure_needs_summary`). Per ogni fabbisogno pronto,
 nell'ordine delle sezioni, con etichetta N1…Nn, combina:
-- l'offerta o la fotografia dell'assegnazione;
+- la fotografia dell'assegnazione: prima il legame (`bound`, anche con
+  un'alternativa scelta dal modello), poi l'asset della collocazione, poi
+  la figura offerta e le alternative;
 - il contenuto attuale, che il docente può aver modificato;
 - l'esito della letteratura (`figures_gap_stats.needs`);
 - i collegamenti del docente.
 
 Gli stati possibili sono:
-- `placed`: nel contenuto, citata nella sua sezione;
-- `misplaced`: citata in un'altra sezione;
-- `missing`: il piano aveva una figura che nel contenuto non c'è;
+- `placed`: nel contenuto, citata nella sua sezione (anche dentro un
+  esempio o una tabella citati nella sezione);
+- `misplaced`: citata in un'altra sezione, o nell'introduzione o nella
+  sintesi;
+- `missing`: il piano aveva una figura che nel contenuto non c'è, oppure la
+  figura c'è ma il testo non la cita (`not_cited`, non conta come
+  collocata);
 - `uncovered`: nessuna figura, con il motivo (`no_candidate`, `reuse_cap`,
-  `budget`, `not_planned`) e l'esito della letteratura (`found`,
-  `not_found`, `not_searched`);
+  `budget`, `duplicate_in_lesson`, `not_planned`) e l'esito della
+  letteratura (`found`, `not_found`, `not_searched`);
 - `dismissed`: il docente ha detto «Non serve».
 
 La vista non contiene nomi di documenti.
@@ -1398,7 +1406,8 @@ JSONB). Li scrive solo il CRUD, con
   `figure_need_asset_unknown`;
 - `content_raw` e `content_modified_at` restano invariati. L'azione va
   nell'audit come `course.lesson.figure_need.updated`;
-- la duplicazione copia i collegamenti insieme ai fabbisogni pronti.
+- la duplicazione copia i collegamenti e la fotografia chiusa insieme ai
+  fabbisogni pronti.
 
 **Editor** (`LessonFigureNeedsPanel.tsx`):
 - **Etichetta nella riga della lezione:** «Figure x/y», cioè i must nel
@@ -1422,14 +1431,29 @@ Vale per una figura di fonte che la collocazione lega a un fabbisogno:
 Senza legame il messaggio e lo schema sono quelli di prima, byte per byte.
 
 **Fase 4 e 5.** `figure_sequences(lesson)` restituisce i gruppi di sequenza
-con almeno due figure di fonte nel contenuto:
+con almeno due figure **distinte** citate nel contenuto, solo col piano
+attivo:
 - **PROMPT 5:** riceve «una slide per ciascuna, in quest'ordine, con il
   nome della variante nel titolo»;
 - **PROMPT 6:** riceve i tempi: 25-45 s per la slide di una figura di
   fonte, 20-35 s per le successive di una sequenza;
 - **8c:** aggiunge le slide mancanti nell'ordine di citazione nel testo.
 
-Senza sequenze entrambi i messaggi restano identici.
+Senza sequenze, o col piano spento, entrambi i messaggi restano identici.
+
+**Ripiego inline e worker dei fabbisogni.** Se il worker sta calcolando i
+fabbisogni della lezione (`processing`), la Fase 3 non li ricalcola e
+procede col catalogo lessicale. Se sono in coda (`pending`), la Fase 3 li
+prende con un UPDATE condizionale; se il calcolo non riesce tornano in
+coda. Così non si paga due volte e l'offerta usa gli stessi fabbisogni
+salvati.
+
+**Correzioni dalla verifica di WP9** (tutte con test): legame della
+fotografia nella vista, figure non citate, citazioni in esempi e tabelle,
+sequenze senza doppioni e con l'interruttore del piano, fotografia copiata
+nella duplicazione, motivo `duplicate_in_lesson` tradotto, coordinamento
+del ripiego inline; test del collegamento nel worker (taglio per priorità,
+PROMPT 19 v2, fotografia con un'alternativa, collocazione dopo il lock).
 
 **Non fatto (dichiarato).** Mancano tre parti del progetto:
 - un endpoint dei candidati per fabbisogno;
