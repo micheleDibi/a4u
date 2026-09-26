@@ -163,7 +163,11 @@ async def process_lesson(db: AsyncSession, lesson: CourseLesson) -> None:
         fresh.figures_gap_status = "failed" if terminal else "pending"
         fresh.figures_gap_checked_at = _now()
         fresh.figures_gap_usage = _merged(previous_usage, exc.usage)
-        fresh.figures_gap_stats = {**exc.stats, "error": str(exc)[:500]}
+        # Esiti per fabbisogno fusi anche qui: un «trovato» dei giri
+        # precedenti non si perde con un tentativo fallito.
+        fresh.figures_gap_stats = merge_need_stats(
+            fresh.figures_gap_stats, {**exc.stats, "error": str(exc)[:500]}
+        )
         await db.commit()
         log.warning(
             "figures_gap_retry" if not terminal else "figures_gap_failed",
@@ -196,7 +200,12 @@ def merge_need_stats(previous: Any, stats: dict[str, Any]) -> dict[str, Any]:
     out = dict(stats)
     old = previous.get("needs") if isinstance(previous, dict) else None
     new = stats.get("needs")
-    if not isinstance(old, dict) or not isinstance(new, dict):
+    if not isinstance(old, dict):
+        return out
+    if not isinstance(new, dict):
+        # Giro senza esiti per fabbisogno (errore, criterio di prima): si
+        # tengono quelli dei giri precedenti.
+        out["needs"] = dict(old)
         return out
     merged = dict(old)
     for need_id, value in new.items():
@@ -259,7 +268,9 @@ async def _process_next() -> bool:
                     fresh.figures_gap_attempts = attempts
                     fresh.figures_gap_status = "failed" if attempts > limit else "pending"
                     fresh.figures_gap_checked_at = _now()
-                    fresh.figures_gap_stats = {"error": str(exc)[:500]}
+                    fresh.figures_gap_stats = merge_need_stats(
+                        fresh.figures_gap_stats, {"error": str(exc)[:500]}
+                    )
                     await db.commit()
             return True
         except Exception as exc:  # pragma: no cover

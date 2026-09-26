@@ -249,7 +249,10 @@ async def test_the_dollar_cap_stops_the_check(
     need_env["images"].update({500 + i: _image(40 + i) for i in range(4)})
     fresh = await _check(seeded_db, lesson)
     stats = fresh.figures_gap_stats
-    assert stats["evaluated"] == 2  # 0,001 $ a chiamata: la seconda porta oltre il tetto
+    # 0,001 $ a chiamata e stima minima 0,0012 $: la seconda porterebbe oltre
+    # il tetto, quindi non parte (fermata prima della spesa).
+    assert stats["evaluated"] == 1
+    assert stats["cost_usd"] <= 0.0015
     assert stats["needs"][second["need_id"]]["status"] == "not_searched"
 
 
@@ -344,8 +347,105 @@ async def test_the_openalex_copy_is_paid_and_capped(monkeypatch: pytest.MonkeyPa
 
     monkeypatch.setattr(openalex_client, "content_pdf_available", lambda work: True)
     monkeypatch.setattr(openalex_client, "download_content_pdf", content)
-    work = openalex_client.OpenAlexWork.__new__(openalex_client.OpenAlexWork)
-    assert await gaps._work_pdf(run, work, None, max_bytes=10) == b"%PDF-1.4"
+
+    def work(work_id: str) -> openalex_client.OpenAlexWork:
+        item = openalex_client.OpenAlexWork.__new__(openalex_client.OpenAlexWork)
+        object.__setattr__(item, "id", work_id)
+        return item
+
+    assert await gaps._work_pdf(run, work("W1"), None, max_bytes=10) == b"%PDF-1.4"
     assert run.usage == {"cost_usd": 0.01, "openalex_copies": 1}
-    assert await gaps._work_pdf(run, work, None, max_bytes=10) is None
+    # Lo stesso lavoro nello stesso giro (altra ricerca): non si ripaga.
+    assert await gaps._work_pdf(run, work("W1"), None, max_bytes=10) == b"%PDF-1.4"
+    assert run.usage == {"cost_usd": 0.01, "openalex_copies": 1}
+    assert await gaps._work_pdf(run, work("W2"), None, max_bytes=10) is None
     assert run.stats["paid_pdf_cap"] == 1
+
+
+async def test_stale_needs_do_not_reopen_the_check_in_a_loop(
+    seeded_db: AsyncSession, need_env: dict[str, Any]
+) -> None:
+    """Fabbisogni pronti ma vecchi (scaletta cambiata dopo il calcolo): la
+    verifica usa il criterio di prima e registra la loro impronta, così il
+    tick non la riapre a ogni giro (rilievo alto della verifica WP7)."""
+    _course, lesson = await _plan_lesson(seeded_db, [_need("Schema", "scanning")])
+    lesson.title = "Titolo cambiato dopo il calcolo dei fabbisogni"
+    await seeded_db.commit()
+    fresh = await _check(seeded_db, lesson)
+    assert fresh.figures_gap_status == "done"
+    assert fresh.figures_gap_stats["needs_fp"] == fresh.figure_needs["fingerprint"]
+    calls = len(need_env["calls"])
+    for _ in range(2):
+        async with gap_worker.async_session_factory() as db:
+            await content_worker._request_figure_gaps(db)
+        fresh = await _check(seeded_db, lesson)
+        assert fresh.figures_gap_status == "done"
+    assert len(need_env["calls"]) == calls
+
+
+async def test_a_found_outcome_survives_a_failed_round(
+    seeded_db: AsyncSession, need_env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _course, lesson = await _plan_lesson(seeded_db, [_need("Schema", "scanning")])
+    lesson.figures_gap_stats = {"needs": {"nA": {"status": "found", "figure_id": "x"}}}
+    await seeded_db.commit()
+
+    async def failing(db: AsyncSession, item: CourseLesson) -> Any:
+        raise gaps.GapRetryError(
+            "429", None, {"mode": "needs", "needs": {"nB": {"status": "not_found"}}}
+        )
+
+    monkeypatch.setattr(gaps, "check_lesson", failing)
+    fresh = await _check(seeded_db, lesson)
+    assert fresh.figures_gap_status == "pending"
+    assert fresh.figures_gap_stats["needs"]["nA"]["status"] == "found"
+
+    async def succeeding(db: AsyncSession, item: CourseLesson) -> Any:
+        return gaps.GapOutcome("done", {"needs": {"nB": {"status": "not_found"}}}, None)
+
+    monkeypatch.setattr(gaps, "check_lesson", succeeding)
+    async with gap_worker.async_session_factory() as db:
+        fresh = await db.get(CourseLesson, lesson.id)
+        assert fresh is not None
+        fresh.figures_gap_checked_at = None  # niente attesa di backoff nel test
+        await db.commit()
+    fresh = await _check(seeded_db, lesson)
+    assert fresh.figures_gap_status == "done"
+    assert set(fresh.figures_gap_stats["needs"]) == {"nA", "nB"}
+
+
+async def test_the_dollar_cap_counts_the_previous_attempts(
+    seeded_db: AsyncSession, need_env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = need_env["settings"].model_copy(
+        update={"figure_literature_max_cost_usd_per_check": 0.0015}
+    )
+    for module in (gaps, gap_worker, content_worker, plan):
+        monkeypatch.setattr(module, "get_settings", lambda: settings)
+    scan = _need("Schema a scansione", "scanning")
+    _course, lesson = await _plan_lesson(seeded_db, [scan])
+    # Secondo tentativo della stessa verifica: il primo ha già speso il tetto.
+    lesson.figures_gap_attempts = 1
+    lesson.figures_gap_stats = {"spent_usd": 0.0015, "error": "429"}
+    await seeded_db.commit()
+    need_env["files"] = [_file(600, "Scanning vibrometer")]
+    need_env["images"].update({600: _image(60)})
+    fresh = await _check(seeded_db, lesson)
+    assert not [c for c in need_env["calls"] if c[0] == "assess"]
+    assert fresh.figures_gap_stats["needs"][scan["need_id"]]["status"] == "not_searched"
+
+
+async def test_with_the_plan_off_ready_needs_do_not_keep_the_check_open(
+    seeded_db: AsyncSession, need_env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Piano spento: fabbisogni pronti rimasti da prima non tengono aperta
+    la verifica dopo l'avvio della Fase 3 (si chiude senza costi)."""
+    off = need_env["settings"].model_copy(update={"figure_plan_enabled": False})
+    monkeypatch.setattr(plan, "get_settings", lambda: off)
+    _course, lesson = await _plan_lesson(seeded_db, [_need("Schema", "scanning")])
+    lesson.content_status = "processing"
+    await seeded_db.commit()
+    fresh = await _check(seeded_db, lesson)
+    assert fresh.figures_gap_status == "skipped"
+    assert fresh.figures_gap_stats["reason"] == "phase3_started"
+    assert need_env["calls"] == []

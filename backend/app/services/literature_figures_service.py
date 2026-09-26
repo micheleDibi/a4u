@@ -190,6 +190,11 @@ class _NeedSearch:
         return str(self.need.get("need_id") or "")
 
 
+# Stima minima del costo di una Vision del PROMPT 20 (gpt-4.1-mini, 768 px),
+# finché il giro non ne ha misurata una più cara.
+VISION_ESTIMATE_USD = 0.0012
+
+
 @dataclass
 class _Run:
     # Solo valori semplici: dopo un rollback gli oggetti ORM scadono e
@@ -218,10 +223,21 @@ class _Run:
     max_cost_usd: float | None = None
     paid_pdfs: int = 0
     max_paid_pdfs: int | None = None
+    # Costo già speso nei tentativi precedenti della STESSA verifica (i
+    # retry): il tetto in dollari vale per verifica, non per tentativo.
+    spent_before_usd: float = 0.0
+    # Costo della Vision più cara vista nel giro: stima della prossima, per
+    # fermarsi PRIMA di superare il tetto.
+    vision_estimate_usd: float = VISION_ESTIMATE_USD
+    # Copie OpenAlex già pagate nel giro (per lavoro) e lavori già estratti
+    # per il fabbisogno in corso: la seconda ricerca non ripaga né riestrae.
+    paid_copies: dict[str, bytes] = field(default_factory=dict)
+    seen_works: set[tuple[str, str]] = field(default_factory=set)
+    cost_capped: bool = False
 
     @property
     def cost_usd(self) -> float:
-        return float((self.usage or {}).get("cost_usd") or 0.0)
+        return self.spent_before_usd + float((self.usage or {}).get("cost_usd") or 0.0)
 
     @property
     def exhausted(self) -> bool:
@@ -231,6 +247,14 @@ class _Run:
             or self.evaluated >= self.max_candidates
             or time.monotonic() > self.deadline
             or (self.max_cost_usd is not None and self.cost_usd >= self.max_cost_usd)
+            or self.cost_capped
+        )
+
+    def vision_over_cap(self) -> bool:
+        """La prossima Vision porterebbe la verifica oltre il tetto."""
+        return (
+            self.max_cost_usd is not None
+            and self.cost_usd + self.vision_estimate_usd > self.max_cost_usd
         )
 
     @property
@@ -246,6 +270,11 @@ class _Run:
 
     def count(self, key: str) -> None:
         self.stats[key] = int(self.stats.get(key) or 0) + 1
+
+
+def _spent(run: _Run) -> float:
+    """Costo della verifica fino a qui (tentativi precedenti compresi)."""
+    return round(run.cost_usd, 6)
 
 
 async def _course_hashes(db: AsyncSession, course_id: uuid.UUID) -> list[str]:
@@ -385,10 +414,16 @@ async def _consider(
     if _unusable(inputs):
         run.count("rejected_resolution")
         return False
+    if run.vision_over_cap():
+        # Tetto in dollari della verifica: ci si ferma prima della spesa.
+        run.count("cost_cap")
+        run.cost_capped = True
+        return False
     run.evaluated += 1
     current = run.current
     if current is not None:
         current.evaluated += 1
+    before = run.cost_usd
     try:
         # Senza piano la chiamata resta quella di prima (nessun fabbisogno).
         extra: dict[str, Any] = {"need": current.need} if current is not None else {}
@@ -402,6 +437,7 @@ async def _consider(
         run.count("vision_errors")
         return False
     run.usage = merge_usage(run.usage, usage)
+    run.vision_estimate_usd = max(run.vision_estimate_usd, run.cost_usd - before)
     if not relevance.text_language_allowed(verdict.text_language, run.context.language_code):
         run.count("rejected_language")
         return False
@@ -709,6 +745,10 @@ async def _work_pdf(
         else:
             run.count("downloads_publisher")
             return pdf
+    if work.id in run.paid_copies:
+        # Copia già pagata in questo giro (un altro fabbisogno o l'altra
+        # ricerca): non si ripaga.
+        return run.paid_copies[work.id]
     if run.content_off or not openalex_client.content_pdf_available(work):
         run.count("download_errors")
         return None
@@ -731,6 +771,7 @@ async def _work_pdf(
     # La copia ospitata costa 0,01 $ sulla API key: nel costo della verifica
     # (dashboard admin), senza contarla come chiamata AI.
     run.paid_pdfs += 1
+    run.paid_copies[work.id] = pdf
     usage = dict(run.usage or {})
     usage["cost_usd"] = round(float(usage.get("cost_usd") or 0.0) + OPENALEX_COPY_USD, 8)
     usage["openalex_copies"] = int(usage.get("openalex_copies") or 0) + 1
@@ -777,6 +818,13 @@ async def _from_openalex(
             if not (title or authors):
                 run.count("attribution_missing")
                 continue
+            seen = (work.id, run.current.need_id if run.current is not None else "")
+            if seen in run.seen_works:
+                # Ritrovato dalla seconda ricerca per lo stesso fabbisogno:
+                # stesse figure, già valutate.
+                run.count("works_repeated")
+                continue
+            run.seen_works.add(seen)
             pdf = await _work_pdf(
                 run,
                 work,
@@ -976,7 +1024,13 @@ async def _ready_needs_in_course(db: AsyncSession, course: Course) -> int:
 
 
 async def check_lesson_needs(
-    db: AsyncSession, course: Course, lesson: CourseLesson, needs: list[dict[str, Any]], fp: str
+    db: AsyncSession,
+    course: Course,
+    lesson: CourseLesson,
+    needs: list[dict[str, Any]],
+    fp: str,
+    *,
+    spent_before_usd: float = 0.0,
 ) -> GapOutcome:
     """Verifica con il piano delle figure: si cercano SOLO i fabbisogni
     scoperti per l'assegnazione (nessuna figura li copre o sono tutte al
@@ -1022,6 +1076,7 @@ async def check_lesson_needs(
         lesson_id=lesson_id,
         max_cost_usd=float(settings.figure_literature_max_cost_usd_per_check),
         max_paid_pdfs=max(0, int(settings.figure_literature_max_paid_pdf_per_lesson)),
+        spent_before_usd=spent_before_usd,
     )
     per_need = max(0, int(settings.figure_literature_max_candidates_per_need))
     ordered = sorted(uncovered, key=lambda n: 0 if n.get("priority") == "must" else 1)
@@ -1064,11 +1119,15 @@ async def check_lesson_needs(
             run.usage,
         )
     except GapRetryError as exc:
-        raise GapRetryError(str(exc), run.usage, {**run.stats, "needs": outcome}) from exc
+        raise GapRetryError(
+            str(exc), run.usage, {**run.stats, "needs": outcome, "spent_usd": _spent(run)}
+        ) from exc
     except Exception as exc:
         log.warning("figures_gap_unexpected_error", lesson_id=str(lesson_id), error=str(exc))
         raise GapRetryError(
-            f"errore inatteso: {exc}", run.usage, {**run.stats, "needs": outcome}
+            f"errore inatteso: {exc}",
+            run.usage,
+            {**run.stats, "needs": outcome, "spent_usd": _spent(run)},
         ) from exc
     run.stats.update(
         kept=run.kept,
@@ -1089,6 +1148,12 @@ async def check_lesson(db: AsyncSession, lesson: CourseLesson) -> GapOutcome:
     settings = get_settings()
     # Valori semplici subito: dopo un rollback l'oggetto ORM è scaduto.
     lesson_id = lesson.id
+    # Retry della stessa verifica: il tetto in dollari conta anche la spesa
+    # dei tentativi precedenti (salvata con l'errore).
+    previous = lesson.figures_gap_stats if isinstance(lesson.figures_gap_stats, dict) else {}
+    spent_before = (
+        float(previous.get("spent_usd") or 0.0) if (lesson.figures_gap_attempts or 0) > 0 else 0.0
+    )
     course = await db.get(Course, lesson.course_id)
     if course is None:
         return GapOutcome("skipped", {"reason": "course_missing"}, None)
@@ -1102,6 +1167,11 @@ async def check_lesson(db: AsyncSession, lesson: CourseLesson) -> GapOutcome:
     # vede le varianti scoperte).
     from app.services import figure_plan_service as plan
 
+    # Fabbisogni pronti ma calcolati su un input diverso (scaletta cambiata,
+    # nuova versione del prompt): la verifica procede col criterio di prima
+    # ma registra la loro impronta, così il tick non la riapre a ogni giro;
+    # si riapre quando i fabbisogni vengono ricalcolati.
+    stale_fp: str | None = None
     if plan.plan_active():
         full = await _course_with_lessons(db, course.id)
         target = next(
@@ -1118,9 +1188,16 @@ async def check_lesson(db: AsyncSession, lesson: CourseLesson) -> GapOutcome:
             fp = plan.fingerprint(item_input, plan.max_needs(target))
             ready = plan.current_needs(target, fp)
             if ready is not None:
-                return await check_lesson_needs(db, full, target, ready, fp)
+                return await check_lesson_needs(
+                    db, full, target, ready, fp, spent_before_usd=spent_before
+                )
+        if target is not None and target.figure_needs_status == "ready":
+            stored = target.figure_needs if isinstance(target.figure_needs, dict) else {}
+            stale_fp = str(stored.get("fingerprint") or "") or None
     pertinent = await pertinent_figures(db, course, lesson)
     stats: dict[str, Any] = {"pertinent_before": pertinent, "budget": budget}
+    if stale_fp is not None:
+        stats["needs_fp"] = stale_fp
     if pertinent >= int(settings.figure_source_min_per_lesson):
         return GapOutcome("done", {**stats, "reason": "enough"}, None)
     extracting = await documents_extracting(db, course.id)
@@ -1146,6 +1223,11 @@ async def check_lesson(db: AsyncSession, lesson: CourseLesson) -> GapOutcome:
         hashes=await _course_hashes(db, course.id),
         known_ids=await _course_external_ids(db, course.id),
         stats=dict(stats),
+        # Stessi tetti in dollari e di PDF a pagamento della verifica per
+        # fabbisogno (il tetto di candidate per lezione vale per entrambe).
+        max_cost_usd=float(settings.figure_literature_max_cost_usd_per_check),
+        max_paid_pdfs=max(0, int(settings.figure_literature_max_paid_pdf_per_lesson)),
+        spent_before_usd=spent_before,
     )
     if run.done:
         # Niente posto o nessuna candidata ammessa: nessuna chiamata AI.
@@ -1170,12 +1252,14 @@ async def check_lesson(db: AsyncSession, lesson: CourseLesson) -> GapOutcome:
         return GapOutcome("skipped", {**run.stats, "reason": "openai_not_configured"}, run.usage)
     except GapRetryError as exc:
         # L'usage già pagato si conserva anche se la lezione torna in coda.
-        raise GapRetryError(str(exc), run.usage, run.stats) from exc
+        raise GapRetryError(str(exc), run.usage, {**run.stats, "spent_usd": _spent(run)}) from exc
     except Exception as exc:
         # Qualunque altro errore (figlio, storage, rete): stessa strada dei
         # recuperabili, con il costo già pagato (G9) e il tetto dei tentativi.
         log.warning("figures_gap_unexpected_error", lesson_id=str(lesson_id), error=str(exc))
-        raise GapRetryError(f"errore inatteso: {exc}", run.usage, run.stats) from exc
+        raise GapRetryError(
+            f"errore inatteso: {exc}", run.usage, {**run.stats, "spent_usd": _spent(run)}
+        ) from exc
     run.stats.update(
         kept=run.kept,
         evaluated=run.evaluated,

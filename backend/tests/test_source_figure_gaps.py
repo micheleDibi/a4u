@@ -144,6 +144,12 @@ async def _isolate_gap_queue(seeded_db: AsyncSession) -> None:
         )
         .values(figures_gap_status="done")
     )
+    # Né la riapertura per impronta dei fabbisogni (piano delle figure).
+    await seeded_db.execute(
+        update(CourseLesson)
+        .where(CourseLesson.figure_needs_status.is_not(None))
+        .values(figure_needs_status=None)
+    )
     await seeded_db.commit()
 
 
