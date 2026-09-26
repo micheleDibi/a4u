@@ -327,7 +327,7 @@ def build_user_prompt(
             "- slide di una figura di fonte: 25-45 secondi; le slide successive "
             "di una sequenza di figure ("
             + "; ".join(", ".join(assets) for _group, assets in sequences)
-            + "): 20-35 secondi, dicendo che cosa distingue ciascuna dalla precedente"
+            + "): 15-25 secondi, dicendo che cosa distingue ciascuna dalla precedente"
         )
 
     if lesson.speech_raw:

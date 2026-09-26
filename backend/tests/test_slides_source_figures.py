@@ -319,7 +319,7 @@ def test_sequences_add_a_slide_block_and_speech_timings_only_when_present() -> N
     slides_prompt = slides_svc.build_user_prompt(course, lesson)
     assert "Le figure SRC-a1, SRC-b2 mostrano, in quest'ordine" in slides_prompt
     speech_prompt = speech_svc.build_user_prompt(course, lesson)
-    assert "sequenza di figure (SRC-a1, SRC-b2): 20-35 secondi" in speech_prompt
+    assert "sequenza di figure (SRC-a1, SRC-b2): 15-25 secondi" in speech_prompt
 
 
 def test_repaired_figure_slides_follow_the_citation_order() -> None:
