@@ -852,9 +852,10 @@ Piano: `~/.claude/plans/pasted-content-id-3136-prompt-structured-stardust.md`
 - **Riuso limitato**: una figura di fonte in al più
   `FIGURE_SOURCE_MAX_LESSONS_PER_FIGURE` lezioni (default 2; 1 = come
   prima per le figure nuove), mai due volte nella stessa. Le figure già
-  collocate in una lezione restano sue alla rigenerazione. Fra lezioni
-  generate in parallelo il tetto può essere superato (al più di tante
-  lezioni quante ne finiscono insieme): nessun lock di corso. Audit `source_figures_dropped` con `reason` (`reuse_cap`,
+  collocate in una lezione restano sue alla rigenerazione. Con WP6 (§23.4)
+  il ricontrollo alla materializzazione avviene sotto il lock di corso: le
+  lezioni generate in parallelo non superano più il tetto (resta possibile
+  solo se il lock non si prende entro 20 s). Audit `source_figures_dropped` con `reason` (`reuse_cap`,
   `not_selectable_at_materialize`).
 - PATCH: doppioni e tetto come in §7.
 
@@ -1144,19 +1145,25 @@ inglesi del fabbisogno; nessuna chiamata AI.
 **Misura M-A3** (4 lezioni di riferimento, 20 fabbisogni, figure etichettate
 a vista; braccio A = solo testo, B = `depicts`):
 
-| | A | B, primo giro | B finale |
-|---|---|---|---|
-| precisione della figura scelta (17 fabbisogni con figura assegnata) | 0,53 | 0,76 | 0,88 |
-| recall sui fabbisogni con una figura corretta fra le candidate | 0,53 | — | 0,88 |
-| M4.L6: sei tipologie coperte dalla figura giusta | 3/6 | 5/6 | 6/6 |
+| | A | B, primo giro | B dopo le correzioni | B dopo la verifica WP6 |
+|---|---|---|---|---|
+| precisione della figura scelta | 9/17 = 0,53 | 13/17 = 0,76 | 15/17 = 0,88 | 15/16 = 0,94 |
+| recall sui fabbisogni con una figura corretta fra le candidate | 0,53 | — | 0,88 | 15/17 = 0,88 |
+| M4.L6: sei tipologie coperte dalla figura giusta | 3/6 | 5/6 | 6/6 | 6/6 |
 
 Le correzioni fra il primo giro e il finale: PROMPT 22 v2 e v3 (§23.1),
 oggetto base senza le parole della variante, panoramiche a livello 2,
 forma standard come base, sinonimo «velocimeter» tolto. Restano due
 errori: una figura d'allineamento CSLDV che la Vision descrive come
 «scanning» e un grafico ODS proposto per un confronto forme modali/ODS.
-Soglia del piano (0,95) non raggiunta: limite dichiarato; il revisore delle
-ridondanze e il docente vedono comunque la figura.
+Dopo la verifica di WP6 il matcher esige anche le parole distintive della
+variante chiesta («on-axis» non è «off-axis», «single-axis» non è
+«three-axis») e, fra oggetti con la stessa testa, qualificatori comuni o
+la variante chiesta nel nome («force sensor» non è «pressure sensor»); un
+fabbisogno con variante non vuota non è mai base. Rigiocata M-A3: un should
+perde la figura (l'oggetto della figura era diverso), un altro passa a una
+figura corretta. Soglia del piano (0,95) sfiorata: limite dichiarato; il
+revisore delle ridondanze e il docente vedono comunque la figura.
 
 ### 23.4 Assegnazione globale (`source_figure_assignment.py`, `…_service.py`, WP6)
 - **Vincoli**: una figura al più una volta per lezione e per fabbisogno;
@@ -1173,10 +1180,17 @@ ridondanze e il docente vedono comunque la figura.
   specificità (regola del committente, anche uno should più specifico
   batte un must generico di un'altra lezione), poi il documento del corso
   prima della letteratura. Prima la riserva della letteratura
-  (`found_for_*`: la figura trovata per quel fabbisogno, se lo copre e
-  nessuna figura di documento lo copre meglio), dopo una riparazione a
-  scambio singolo (mai a livello o classe inferiori) e una seconda
-  passata.
+  (`found_for_*`: fra le figure trovate per quel fabbisogno la migliore, se
+  lo copre e nessuna figura di documento lo copre meglio), dopo una
+  riparazione a scambio singolo (mai a livello o classe inferiori, mai su
+  una riserva) e una seconda passata: prima le figure già nella lezione,
+  poi le altre senza il posto tenuto per i must; da lì l'eccezione al
+  tetto vale solo per le figure che la lezione ha tenuto (test di
+  proprietà su 3000 istanze con figure già nelle lezioni: budget, unicità e
+  K mai superato da chi non aveva già la figura; il codice di prima
+  falliva 4 casi). Le figure già nel contenuto di una lezione partecipante
+  che nessun suo fabbisogno usa contano come usi fissi, come nel
+  ricontrollo sotto il lock.
 - **Partecipanti**: la lezione che parte e quelle del corso in coda per la
   Fase 3 con i fabbisogni pronti; una lezione in generazione tiene le
   figure della sua offerta per `OFFER_TTL` (2 h).
@@ -1186,9 +1200,11 @@ ridondanze e il docente vedono comunque la figura.
   un'eccezione); alla materializzazione il lock si riprende fino al commit:
   il tetto di riuso si ricontrolla lì (prima due lezioni generate insieme
   potevano superarlo entrambe, ora la seconda toglie la figura con audit
-  `reuse_cap`; test con la mutazione senza lock che fallisce) e `settle`
-  scrive la fotografia finale (figure collocate, fabbisogni legati
-  all'offerta, mancati). Il catalogo del PROMPT 3 resta quello lessicale
+  `reuse_cap`; test con una barriera nella materializzazione che senza lock
+  fallisce sempre); dopo l'attesa del lock si ricontrolla l'annullamento;
+  `settle` scrive la fotografia finale (figure collocate, fabbisogni legati
+  all'offerta, mancati, collocazione) solo dopo una materializzazione
+  riuscita e solo per l'offerta di quel giro (`run_token`). Il catalogo del PROMPT 3 resta quello lessicale
   fino al blocco del piano (WP8).
 - **Duplicazione**: `found_for_*` rimappati sulle lezioni del corso nuovo,
   `figure_assignment` non si copia.
@@ -1251,3 +1267,34 @@ vede le varianti scoperte, D1) ma `check_lesson_needs`:
   i documenti estratti, M4.L6 e M5.L1 risultano coperte (`covered`, nessuna
   chiamata); restano scoperti tre should (M4.L7 microstrutture e validazione
   modale, M5.L7 certificato di taratura).
+
+### 23.6 Blocco del piano nella Fase 3 (`source_figure_plan.py`, WP8)
+Con il piano attivo, un'offerta per la lezione e
+`FIGURE_PLAN_IN_PROMPT_ENABLED=true`, il catalogo delle figure di fonte del
+messaggio user del PROMPT 3 è il **catalogo del piano**:
+
+- per sezione, per ogni fabbisogno coperto la figura assegnata e al più 2
+  alternative (le figure assegnate si riservano prima: un'alternativa non
+  toglie la figura assegnata a un altro fabbisogno), in coda al più 2
+  figure facoltative del catalogo lessicale; i fabbisogni scoperti non
+  compaiono; tetto 8000 caratteri con taglio che non tocca mai la figura
+  assegnata a un must; soggetti neutralizzati;
+- riga del budget (b) con preambolo e coda identici alla riga senza piano
+  (M7) e, in mezzo, le regole del piano (figura assegnata nella sua
+  sezione, sequenze in ordine, mai due figure per la stessa voce);
+- la versione attuale della lezione (rigenerazione) dice a quale voce del
+  piano corrisponde ogni figura di fonte già collocata;
+- schema `source_figures` invariato (cambia solo l'elenco degli id).
+
+Dopo la fusione, `apply_placement` confronta le scelte col piano senza
+spostare nulla nel testo: `placed` (nella sua sezione), `misplaced` (in
+un'altra), `auto_placed` (must non scelto, inserito in fondo alla sua
+sezione se la sezione c'è e il budget lo consente, con il soggetto come
+didascalia), `missing` (con il motivo: `no_anchor`, `budget`),
+`order_warning` sui gruppi di sequenza citati fuori ordine; di due figure
+per lo stesso fabbisogno resta la prima citata. L'esito va nella fotografia
+(`figure_assignment.placement`) e nei conteggi di
+`content_tokens.source_figures.plan`.
+
+Interruttore `FIGURE_PLAN_IN_PROMPT_ENABLED=false`: nessuna offerta, catalogo
+lessicale come prima (test).
