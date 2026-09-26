@@ -219,8 +219,9 @@ async def _cost(db: AsyncSession, *, cutoff_7d: datetime, cutoff_30d: datetime) 
             (),
         ),
         # Buchi di figure di fonte (WP5): termini di ricerca e pertinenza
-        # delle figure della letteratura aperta (PROMPT 20), cumulativo per
-        # lezione e datato all'ultima verifica.
+        # delle figure della letteratura aperta (PROMPT 20) più le copie dei
+        # PDF ospitate da OpenAlex (0,01 $, `openalex_copies`), cumulativo
+        # per lezione e datato all'ultima verifica.
         (
             "figures_gap",
             CourseLesson.figures_gap_usage,

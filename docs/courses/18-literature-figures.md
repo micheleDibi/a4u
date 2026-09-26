@@ -593,6 +593,15 @@ Nessun rilievo di gravità alta. Correzioni:
 | I4 Fase 4 | `test_slides_source_figures` |
 | WP5 rete | `test_safe_fetch`, `test_image_limits`, `test_wikimedia_client`, `test_openalex_figures` |
 | WP6 | `test_tikz_validator`, `test_tikz_sandbox`, `test_tikz_render`, `test_tikz_registry`, `test_tikz_phase3`, `test_tikz_render_review`, `test_tikz_endpoint`, `test_frontend_figure_templates` |
+| §22 risoluzione effettiva, ritaglio v2, ri-ritaglio | `test_source_figure_resolution`, `test_source_figure_crop_native`, `test_source_figure_recrop`, `test_source_figure_render`, `test_source_figure_band`, `test_source_figure_filters`, `test_frontend_source_figures` (badge, `image_rev`) |
+| §22.1 riuso limitato (K) e doppioni | `test_source_figure_materialize` (tetto parametrizzato, lezioni in parallelo sotto il lock), `test_source_figure_gaps` (documenti mai estratti) |
+| §23.1 fabbisogni (PROMPT 22) | `test_figure_needs_service`, `test_figure_plan` (richiesta, worker, attesa della Fase 3, ripiego inline, 0040) |
+| §23.2 `depicts` | `test_figure_depicts`, `test_source_figure_vision`, `test_source_figure_relevance` |
+| §23.3 abbinamento | `test_figure_need_matching` + `fixtures/figure_need_matching_cases.json` |
+| §23.4 assegnazione globale | `test_source_figure_assignment` (oracolo, proprietà, figure proprie, riserva della letteratura), `test_source_figure_assignment_db` (offerta, lock, partecipanti, alternative e residuo al tetto, `settle`, 0042) |
+| §23.5 buchi per fabbisogno | `test_figure_gaps_needs` (tetti, impronta vecchia senza ciclo, esiti fusi dopo un errore, spesa fra i tentativi, piano spento) |
+| §23.6 blocco del piano, collocazione | `test_source_figure_plan`, `test_source_figure_materialize` (catalogo del piano, errore del catalogo, ripiego inline, annullamento durante il lock), `test_source_figure_prompt_schema` (I1 senza piano) |
+| §23.7 editor, PROMPT 19 v2, sequenze, upload | `test_figure_needs_view` (0043, PUT), `test_source_figure_redundancy`, `test_slides_source_figures`, `test_lesson_asset_upload_format`, `test_frontend_source_figures` |
 
 **Test con dipendenze pesanti**. Docling, TeX e Chromium si provano nel
 container `test` del Dockerfile, con `A4U_REQUIRED_DEPS`: lì uno skip
@@ -842,8 +851,8 @@ strutturale»: figure sgranate e poche. Diagnosi sui dati di produzione
   partita (un documento mai estratto la bloccava), catalogo esclusivo.
 
 Piano: `~/.claude/plans/pasted-content-id-3136-prompt-structured-stardust.md`
-(WP1-WP3 rilasciati; il piano delle figure per fabbisogno, WP4-WP10, non
-è ancora implementato).
+(WP1-WP3 rilasciati il 25/09; il piano delle figure per fabbisogno,
+WP4-WP10, è descritto in §23).
 
 ### 22.1 Correzioni rapide (WP1)
 - Un documento con estrazione **mai richiesta** non blocca più la
@@ -956,9 +965,9 @@ Piano: `~/.claude/plans/pasted-content-id-3136-prompt-structured-stardust.md`
 
 ### 22.8 Limiti
 - La copertura **per concetto** (una figura per tipologia, nella sua
-  sezione e in ordine, e i buchi dichiarati al docente) richiede il piano
-  delle figure (WP4-WP8), non ancora implementato: oggi il catalogo resta
-  lessicale.
+  sezione e in ordine, e i buchi dichiarati al docente) la dà il piano
+  delle figure (§23); senza piano (`FIGURE_PLAN_ENABLED=false` o
+  `FIGURE_PLAN_IN_PROMPT_ENABLED=false`) il catalogo resta lessicale.
 - Una figura mista sotto il minimo già collocata resta col ritaglio v1.
 
 ## 23. Piano delle figure: copertura per concetto (WP4-WP10)
