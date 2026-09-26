@@ -298,3 +298,127 @@ async def test_concurrent_reserves_are_serialized_by_the_course_lock(
     assert len(offered) == 1
     loser = two if offered[0] is one else one
     assert loser["unassigned"] == {need["need_id"]: "reuse_cap"}
+
+
+async def test_alternatives_and_residual_skip_figures_held_at_the_cap(
+    seeded_db: AsyncSession, settings: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Un'alternativa (o una figura del residuo) assegnata a un'altra lezione
+    del giro e già al tetto K non si offre: il modello la sceglierebbe, il
+    ricontrollo la toglierebbe e il must resterebbe scoperto (verifica WP8)."""
+    from app.services.lesson_figure_selection import FigureCandidate, FigureCatalog
+
+    monkeypatch.setattr(catalog, "reuse_cap", lambda: 1)
+    env = await _course(seeded_db)
+    course, first, second = env["course"], env["first"], env["second"]
+    other = build_document_figure(
+        course.id,
+        env["figures"]["scan"].document_id,
+        license="cc_by",
+        kind="schematic",
+        description="Altro schema del vibrometro a scansione",
+        keywords={"course": ["vibrometro"], "en": ["laser Doppler vibrometer"]},
+        depicts={
+            "v": 1,
+            "items": [{"object_en": "laser Doppler vibrometer", "variant_en": "scanning"}],
+            "focus": "optical layout",
+        },
+    )
+    seeded_db.add(other)
+    _store(course, first, [_need("S1", "Schema a scansione", "scanning")])
+    _store(course, second, [_need("S1", "Schema a scansione", "scanning")])
+    await seeded_db.commit()
+    data = await svc.reserve(seeded_db, course, first)
+    await seeded_db.commit()
+    assert data is not None
+    mine = {v["figure_id"] for v in data["offers"].values()}
+    both = {str(env["figures"]["scan"].id), str(other.id)}
+    held = both - mine
+    assert len(mine) == 1 and len(held) == 1
+    offered_alternatives = {a["figure_id"] for v in data["alternatives"].values() for a in v}
+    assert not offered_alternatives & held
+    assert set(data["held_elsewhere"]) == held
+    held_id = uuid.UUID(next(iter(held)))
+    lexical = catalog.CatalogResult(
+        catalog=FigureCatalog(
+            candidates=[FigureCandidate(held_id, "SRC-held", 3.0, 2, True, "riga")]
+        ),
+        budget=4,
+        license_policy="cite_all",
+    )
+    built = await svc.plan_catalog(seeded_db, course, first, data, lexical)
+    assert built is not None
+    assert held_id not in {c.figure_id for c in built.catalog.candidates}
+
+
+async def test_an_own_figure_without_arcs_counts_as_a_fixed_use(
+    seeded_db: AsyncSession, settings: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Una figura nel contenuto di una lezione partecipante che nessun suo
+    fabbisogno usa resta lì finché la lezione non si rigenera: conta come
+    uso fisso nell'offerta delle altre."""
+    monkeypatch.setattr(catalog, "reuse_cap", lambda: 1)
+    env = await _course(seeded_db)
+    course, first, second = env["course"], env["first"], env["second"]
+    scan = env["figures"]["scan"]
+    second.content_raw = {
+        "sections": [],
+        "visual_assets": [
+            {
+                "asset_id": "SRC-scan",
+                "format": "source_figure",
+                "content": str(scan.id),
+                "caption": "c",
+                "alt_text": "a",
+            }
+        ],
+    }
+    _store(course, first, [_need("S1", "Schema a scansione", "scanning")])
+    _store(course, second, [_need("S1", "Schema rotazionale", "rotational")])
+    await seeded_db.commit()
+    data = await svc.reserve(seeded_db, course, first)
+    await seeded_db.commit()
+    assert data is not None and data["stats"]["participants"] == 2
+    assert data["offers"] == {}
+    assert list(data["unassigned"].values()) == ["reuse_cap"]
+
+
+def test_settle_ignores_an_offer_of_another_run() -> None:
+    from types import SimpleNamespace
+
+    lesson = SimpleNamespace(
+        figure_assignment={"state": "offered", "run_token": "giro-a", "offers": {}}
+    )
+    assert svc.settle(lesson, set(), run_token="giro-b") is None  # type: ignore[arg-type]
+    assert svc.settle(lesson, set(), run_token="giro-a") is not None  # type: ignore[arg-type]
+
+
+def test_settle_binds_the_need_to_the_placed_alternative() -> None:
+    """Con la collocazione il legame viene dalla figura davvero collocata,
+    anche un'alternativa scelta dal modello (non «missed»)."""
+    from types import SimpleNamespace
+
+    assigned, alternative = uuid.uuid4(), uuid.uuid4()
+    lesson = SimpleNamespace(
+        figure_assignment={
+            "state": "offered",
+            "run_token": "giro",
+            "offers": {"n1": {"figure_id": str(assigned)}, "n2": {"figure_id": str(uuid.uuid4())}},
+        }
+    )
+    placement = {
+        "needs": {
+            "n1": {"status": "placed", "asset_id": "SRC-alt", "section": "S1"},
+            "n2": {"status": "missing", "reason": "dropped_reuse_cap"},
+        }
+    }
+    data = svc.settle(
+        lesson,  # type: ignore[arg-type]
+        {alternative},
+        placement,
+        run_token="giro",
+        assets={"SRC-alt": alternative},
+    )
+    assert data is not None
+    assert data["bound"] == {"n1": str(alternative)}
+    assert data["missed"] == ["n2"]

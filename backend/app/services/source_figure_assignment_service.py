@@ -30,6 +30,7 @@ import asyncio
 import hashlib
 import time
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -123,6 +124,12 @@ class Snapshot:
     budgets: dict[uuid.UUID, int]
     participants: list[uuid.UUID]
     stats: dict[str, Any] = field(default_factory=dict)
+    # Usi fissi per figura (lezioni fuori dal giro e figure proprie senza
+    # archi), figure già nel contenuto di ogni partecipante e tetto K: per
+    # filtrare alternative e residuo dell'offerta.
+    fixed: dict[uuid.UUID, int] = field(default_factory=dict)
+    own: dict[uuid.UUID, frozenset[uuid.UUID]] = field(default_factory=dict)
+    cap: int = 1
 
 
 async def _course_lessons(db: AsyncSession, course_id: uuid.UUID) -> list[CourseLesson]:
@@ -240,12 +247,13 @@ async def snapshot(db: AsyncSession, course: Course, current: CourseLesson) -> S
             )
             for s in supplies
         ]
+    cap = catalog.reuse_cap()
     assignment = sa.assign(
         slots,
         demands,
         supplies,
         [a for group in arcs.values() for a in group],
-        cap=catalog.reuse_cap(),
+        cap=cap,
     )
     return Snapshot(
         assignment=assignment,
@@ -253,6 +261,9 @@ async def snapshot(db: AsyncSession, course: Course, current: CourseLesson) -> S
         arcs=arcs,
         budgets=budgets,
         participants=[lesson.id for lesson in participants],
+        fixed={s.figure_id: s.fixed_uses for s in supplies if s.fixed_uses},
+        own={slot.lesson_id: slot.own for slot in slots},
+        cap=cap,
         stats={
             "participants": len(participants),
             "figures": len(figures),
@@ -265,6 +276,20 @@ async def snapshot(db: AsyncSession, course: Course, current: CourseLesson) -> S
 def offer_payload(snap: Snapshot, lesson: CourseLesson, *, locked: bool) -> dict[str, Any]:
     chosen = snap.assignment.chosen
     taken_here = {a.figure_id for k, a in chosen.items() if k[0] == lesson.id}
+    # Figure assegnate ad altre lezioni del giro: un'alternativa (o il
+    # residuo) che le porterebbe oltre il tetto K le toglierebbe a un loro
+    # fabbisogno, o verrebbe tolta al ricontrollo lasciando scoperto il must
+    # di questa lezione. Le figure già nel contenuto della lezione passano.
+    holders: dict[uuid.UUID, set[uuid.UUID]] = {}
+    for (holder, _need), held in chosen.items():
+        if holder != lesson.id:
+            holders.setdefault(held.figure_id, set()).add(holder)
+    own = snap.own.get(lesson.id, frozenset())
+
+    def has_room(figure_id: uuid.UUID) -> bool:
+        uses = snap.fixed.get(figure_id, 0) + len(holders.get(figure_id, ()))
+        return figure_id in own or uses < snap.cap
+
     offers: dict[str, Any] = {}
     alternatives: dict[str, list[dict[str, Any]]] = {}
     unassigned: dict[str, str] = {}
@@ -284,7 +309,9 @@ def offer_payload(snap: Snapshot, lesson: CourseLesson, *, locked: bool) -> dict
         others = [
             a
             for a in snap.arcs.get(key, [])
-            if a.figure_id not in taken_here and (arc is None or a.figure_id != arc.figure_id)
+            if a.figure_id not in taken_here
+            and (arc is None or a.figure_id != arc.figure_id)
+            and has_room(a.figure_id)
         ]
         if others:
             alternatives[need_id] = [
@@ -301,6 +328,8 @@ def offer_payload(snap: Snapshot, lesson: CourseLesson, *, locked: bool) -> dict
         "offers": offers,
         "alternatives": alternatives,
         "unassigned": unassigned,
+        # Fuori anche dal residuo del catalogo del piano.
+        "held_elsewhere": sorted(str(fid) for fid in holders if not has_room(fid)),
         "stats": snap.stats,
     }
 
@@ -361,7 +390,8 @@ async def plan_catalog(
     figures = {row.id: row for row in rows if row.course_id == course.id}
     residual: list[Any] = []
     if lexical is not None:
-        by_id = {c.figure_id for c in lexical.catalog.candidates}
+        held = {_as_uuid(v) for v in offer.get("held_elsewhere") or []}
+        by_id = {c.figure_id for c in lexical.catalog.candidates} - held
         residual = list(
             (
                 await db.execute(
@@ -389,9 +419,12 @@ def settle(
     placement: dict[str, Any] | None = None,
     *,
     run_token: str | None = None,
+    assets: Mapping[str, uuid.UUID] | None = None,
 ) -> dict[str, Any] | None:
     """Fotografia finale nella transazione della materializzazione, solo per
-    l'offerta del giro in corso (`run_token`)."""
+    l'offerta del giro in corso (`run_token`). Con la collocazione e gli
+    asset fusi (asset_id → figura), il legame fabbisogno → figura viene
+    dalla collocazione (anche un'alternativa scelta dal modello)."""
     data = dict(lesson.figure_assignment) if isinstance(lesson.figure_assignment, dict) else {}
     if not data or data.get("state") != "offered":
         return None
@@ -403,6 +436,15 @@ def settle(
         for need_id, offer in offers.items()
         if isinstance(offer, dict) and _as_uuid(offer.get("figure_id")) in placed
     }
+    if placement is not None and assets is not None:
+        by_asset = {aid.lower(): fid for aid, fid in assets.items()}
+        bound = {}
+        for need_id, info in (placement.get("needs") or {}).items():
+            if not isinstance(info, dict) or info.get("status") == "missing":
+                continue
+            fid = by_asset.get(str(info.get("asset_id") or "").lower())
+            if fid is not None:
+                bound[need_id] = str(fid)
     data.update(
         state="settled",
         settled_at=_now().isoformat(),

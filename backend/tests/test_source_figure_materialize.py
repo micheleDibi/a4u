@@ -969,8 +969,11 @@ def _plan_settings(monkeypatch: pytest.MonkeyPatch, **updates: Any) -> None:
         monkeypatch.setattr(module, "get_settings", lambda: patched)
 
 
-async def _with_needs(db: AsyncSession, setup: dict[str, Any]) -> dict[str, Any]:
-    """Fabbisogno must in S1 coperto dalla figura buona (depicts scanning)."""
+async def _with_needs(
+    db: AsyncSession, setup: dict[str, Any], *, store: bool = True
+) -> dict[str, Any]:
+    """Fabbisogno must in S1 coperto dalla figura buona (depicts scanning);
+    con `store=False` il fabbisogno non si salva (lo calcola il ripiego)."""
     from app.services import figure_plan_service as plan
     from app.services import openai_figure_needs_service as needs_svc
 
@@ -1002,13 +1005,14 @@ async def _with_needs(db: AsyncSession, setup: dict[str, Any]) -> dict[str, Any]
     }
     item = plan.needs_input(course, lesson)
     assert item is not None
-    plan.store_needs(
-        lesson,
-        result=needs_svc.NeedsResult([need], {}),
-        fp=plan.fingerprint(item, plan.max_needs(lesson)),
-        model="test",
-        usage=None,
-    )
+    if store:
+        plan.store_needs(
+            lesson,
+            result=needs_svc.NeedsResult([need], {}),
+            fp=plan.fingerprint(item, plan.max_needs(lesson)),
+            model="test",
+            usage=None,
+        )
     await db.commit()
     return need
 
@@ -1073,26 +1077,86 @@ async def test_a_cancel_during_the_lock_wait_is_not_overwritten(
     monkeypatch: pytest.MonkeyPatch,
     _engine: Any,
 ) -> None:
+    import sys
+
     from app.services import source_figure_assignment_service as svc
 
+    _plan_settings(monkeypatch)
     setup = await _setup(seeded_db)
+    await _with_needs(seeded_db, setup)
     original = svc.course_lock
+    callers: list[str] = []
 
     async def cancel_then_lock(db: AsyncSession, course_id: uuid.UUID, **kw: Any) -> bool:
-        factory = async_sessionmaker(_engine, expire_on_commit=False)
-        async with factory() as other:
-            await other.execute(
-                update(CourseLesson)
-                .where(CourseLesson.id == setup["lesson_id"])
-                .values(content_status="failed", content_error="annullata")
-            )
-            await other.commit()
+        # Annullamento solo all'attesa del lock della materializzazione
+        # (chiamata da `_process_one`), non a quella di `reserve`.
+        caller = sys._getframe(1).f_code.co_name
+        callers.append(caller)
+        if caller == "_process_one":
+            factory = async_sessionmaker(_engine, expire_on_commit=False)
+            async with factory() as other:
+                await other.execute(
+                    update(CourseLesson)
+                    .where(CourseLesson.id == setup["lesson_id"])
+                    .values(content_status="failed", content_error="annullata")
+                )
+                await other.commit()
         return await original(db, course_id, **kw)
 
     monkeypatch.setattr(svc, "course_lock", cancel_then_lock)
     await worker._process_one(setup["lesson_id"])
+    assert callers == ["reserve", "_process_one"]
+    assert len(fakes["calls"]) == 1  # la generazione è avvenuta
     lesson = await _lesson(seeded_db, setup["lesson_id"])
     assert lesson.content_status == "failed" and lesson.content_raw is None
+    assert (lesson.figure_assignment or {}).get("state") != "settled"
+
+
+async def test_a_plan_catalog_error_leaves_the_lexical_catalog(
+    seeded_db: AsyncSession, fakes: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Un errore del catalogo del piano dopo `reserve` non blocca la lezione:
+    resta il catalogo lessicale e la lezione arriva a `ready`."""
+    from app.services import source_figure_assignment_service as svc
+
+    _plan_settings(monkeypatch)
+    setup = await _setup(seeded_db)
+    await _with_needs(seeded_db, setup)
+
+    async def broken(*args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("dati inattesi")
+
+    monkeypatch.setattr(svc, "plan_catalog", broken)
+    await worker._process_one(setup["lesson_id"])
+    lesson = await _lesson(seeded_db, setup["lesson_id"])
+    assert lesson.content_status == "ready", lesson.content_error
+    prompt = fakes["calls"][0]["user_prompt"]
+    assert "## Figure di fonte disponibili (catalogo)" in prompt
+    assert lesson.figure_assignment["state"] == "settled"
+
+
+async def test_missing_needs_are_computed_inline_before_the_offer(
+    seeded_db: AsyncSession, fakes: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fabbisogni mancanti all'avvio della Fase 3: il ripiego inline li
+    calcola (una chiamata) e la lezione riceve il catalogo del piano."""
+    from app.services import openai_figure_needs_service as needs_svc
+
+    _plan_settings(monkeypatch)
+    setup = await _setup(seeded_db)
+    need = await _with_needs(seeded_db, setup, store=False)
+    calls: list[Any] = []
+
+    async def generate(item: Any, *, max_total: int) -> Any:
+        calls.append(item)
+        return needs_svc.NeedsResult([need], {}), {"model": "test", "cost_usd": 0.001}
+
+    monkeypatch.setattr(needs_svc, "generate_needs", generate)
+    await worker._process_one(setup["lesson_id"])
+    lesson = await _lesson(seeded_db, setup["lesson_id"])
+    assert lesson.content_status == "ready", lesson.content_error
+    assert len(calls) == 1 and lesson.figure_needs_status == "ready"
+    assert "## Figure di fonte per sezione (catalogo del piano)" in fakes["calls"][0]["user_prompt"]
 
 
 # --- risoluzione effettiva nel catalogo (doc 18 §22) --------------------------------

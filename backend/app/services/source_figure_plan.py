@@ -70,6 +70,10 @@ class PlanCatalog(FigureCatalog):
         return {refs[ref]: need for ref, need in self.need_by_ref.items() if ref in refs}
 
 
+def _one_line(text: str, cap: int) -> str:
+    return " ".join(neutralize_third_party_text(str(text or ""), cap).split())
+
+
 def _subject(need: Mapping[str, Any]) -> str:
     return " ".join(
         neutralize_third_party_text(str(need.get("subject") or ""), _SUBJECT_CAP).split()
@@ -203,8 +207,12 @@ def build_plan_catalog(
         for entry in [e for e in kept if e["role"] != "residual"]:
             if entry["section"] != current_section:
                 current_section = entry["section"]
-                title = titles.get(current_section, "")
-                lines.append(f"### Sezione {current_section}" + (f" — {title}" if title else ""))
+                # Id e titolo della scaletta dentro il blocco dati: come i
+                # soggetti, neutralizzati e su una riga (mai un «>>>» che
+                # chiuda il blocco).
+                title = _one_line(titles.get(current_section, ""), 200)
+                label = _one_line(current_section, 40)
+                lines.append(f"### Sezione {label}" + (f" — {title}" if title else ""))
             if entry["need_id"] not in seen_needs:
                 seen_needs.add(entry["need_id"])
                 need = entry["need"]
@@ -272,6 +280,43 @@ def build_plan_catalog(
 
 
 # --- collocazione -------------------------------------------------------------------
+
+
+def cut_priority(plan: PlanCatalog) -> tuple[dict[str, int], dict[str, str]]:
+    """Per il taglio al budget della fusione: rango di ogni id del catalogo
+    (0 figure di un must, 1 di uno should, 2 residuo) e fabbisogno di ogni
+    id (una figura sola per fabbisogno entra prima delle seconde)."""
+    priority_of = {str(n.get("need_id")): n.get("priority") for n in plan.needs}
+    rank: dict[str, int] = {}
+    groups: dict[str, str] = {}
+    for candidate in plan.candidates:
+        ref = candidate.ref.lower()
+        need_id = plan.need_by_ref.get(candidate.ref)
+        if need_id is None:
+            rank[ref] = 2
+            continue
+        groups[ref] = need_id
+        rank[ref] = 0 if priority_of.get(need_id) == "must" else 1
+    return rank, groups
+
+
+_PLACED_STATES = ("placed", "misplaced", "auto_placed", "missing")
+
+
+def placement_after_drops(placement: dict[str, Any], reasons: Mapping[str, str]) -> None:
+    """Collocazione aggiornata dopo i ricontrolli che tolgono figure già
+    fuse (politica, tetto di riuso): il fabbisogno la cui figura è uscita
+    torna `missing` con il motivo, e i conteggi si ricalcolano."""
+    lowered = {aid.lower(): reason for aid, reason in reasons.items()}
+    needs = placement.get("needs") or {}
+    for need_id, info in list(needs.items()):
+        aid = str(info.get("asset_id") or "").lower() if isinstance(info, dict) else ""
+        if aid and aid in lowered:
+            needs[need_id] = {"status": "missing", "reason": f"dropped_{lowered[aid]}"}
+    placement["counts"] = {
+        state: sum(1 for v in needs.values() if isinstance(v, dict) and v.get("status") == state)
+        for state in _PLACED_STATES
+    }
 
 
 def _cited_sections(output: LessonContentOutput) -> dict[str, tuple[str, int]]:

@@ -68,7 +68,12 @@ from app.services import (
 )
 from app.services.heavy_job_lock import HEAVY_JOB_LOCK
 from app.services.openai_client import OpenAINotConfiguredError
-from app.services.source_figure_plan import PlanCatalog, apply_placement
+from app.services.source_figure_plan import (
+    PlanCatalog,
+    apply_placement,
+    cut_priority,
+    placement_after_drops,
+)
 
 log = get_logger("app.course_lesson_content.worker")
 
@@ -367,34 +372,64 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                 async with db.begin_nested():
                     catalog = await source_figure_catalog.build_catalog(db, course_full, lesson)
             except Exception as exc:
+                # Dopo il rollback del savepoint l'oggetto può essere scaduto:
+                # nel log l'id del parametro, poi si rilegge la lezione.
                 log.warning(
                     "lesson_content_source_catalog_failed",
-                    lesson_id=str(lesson.id),
+                    lesson_id=str(lesson_id),
                     error=str(exc)[:300],
                 )
+                await db.refresh(lesson)
             # Piano delle figure (WP6): offerta della lezione, calcolata sotto
             # il lock di corso sull'assegnazione globale; il commit che segue
             # la salva e rilascia il lock. Un errore qui non blocca la lezione.
+            if source_figure_assignment_service.plan_in_prompt():
+                # Ripiego inline (doc 18 §23.1): fabbisogni mancanti o vecchi
+                # (attesa scaduta, scaletta cambiata in coda) si calcolano
+                # ora, con una chiamata; un errore lascia la lezione senza.
+                try:
+                    await figure_plan_service.ensure_lesson_needs(course_full, lesson)
+                except Exception as exc:
+                    log.warning(
+                        "lesson_content_figure_needs_inline_failed",
+                        lesson_id=str(lesson_id),
+                        error=str(exc)[:300],
+                    )
             if figure_plan_service.plan_active():
+                offer: dict[str, Any] | None = None
                 try:
                     async with db.begin_nested():
                         offer = await source_figure_assignment_service.reserve(
                             db, course_full, lesson
                         )
-                        offer_token = str(offer.get("run_token") or "") if offer else ""
-                        # Blocco del piano (WP8): il catalogo del PROMPT 3
-                        # diventa quello del piano, per sezione e fabbisogno.
-                        plan_catalog = await source_figure_assignment_service.plan_catalog(
-                            db, course_full, lesson, offer, catalog
-                        )
-                        if plan_catalog is not None:
-                            catalog = plan_catalog
+                    offer_token = str(offer.get("run_token") or "") if offer else ""
                 except Exception as exc:
+                    offer, offer_token = None, ""
                     log.warning(
                         "lesson_content_figure_assignment_failed",
-                        lesson_id=str(lesson.id),
+                        lesson_id=str(lesson_id),
                         error=str(exc)[:300],
                     )
+                    await db.refresh(lesson)
+                if offer:
+                    # Blocco del piano (WP8): il catalogo del PROMPT 3 diventa
+                    # quello del piano, per sezione e fabbisogno. Se fallisce
+                    # resta il catalogo lessicale; l'offerta salvata si chiude
+                    # comunque alla materializzazione (fotografia finale).
+                    try:
+                        async with db.begin_nested():
+                            plan_catalog = await source_figure_assignment_service.plan_catalog(
+                                db, course_full, lesson, offer, catalog
+                            )
+                        if plan_catalog is not None:
+                            catalog = plan_catalog
+                    except Exception as exc:
+                        log.warning(
+                            "lesson_content_plan_catalog_failed",
+                            lesson_id=str(lesson_id),
+                            error=str(exc)[:300],
+                        )
+                        await db.refresh(lesson)
         # Formati offerti a questo tentativo: gli stessi per schema e
         # messaggio user (`tikz` solo se proposto, non appena fallito e non
         # durante un'estrazione Docling, che occupa la sandbox TeX: la
@@ -551,10 +586,20 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
         if isinstance(content_output, LessonContentOutput):
             # Figure di fonte scelte → asset `source_figure` (prima della
             # validazione, che le salta: non sono in RENDERABLE_FORMATS).
+            plan_cut = (
+                cut_priority(catalog.catalog)
+                if catalog is not None and isinstance(catalog.catalog, PlanCatalog)
+                else None
+            )
             fusion = source_figure_fusion.fuse_source_figures(
                 content_output,
                 catalog.catalog.refs if catalog else {},
                 max_items=catalog.budget if catalog else 0,
+                # Col piano il taglio al budget tiene prima le figure dei
+                # must, poi degli should, poi il residuo (mai uno should al
+                # posto di un must).
+                priority=plan_cut[0] if plan_cut else None,
+                groups=plan_cut[1] if plan_cut else None,
             )
             if catalog is not None and isinstance(catalog.catalog, PlanCatalog):
                 # Collocazione rispetto al piano: nessuno spostamento; un must
@@ -746,6 +791,10 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                     db, course_full, lesson, content_output, figure_review, fused, reason_by
                 )
                 fusion.added = [a for a in fusion.added if a not in dropped]
+                if placement is not None:
+                    placement_after_drops(
+                        placement, {aid: reason_by[fused[aid]] for aid in dropped}
+                    )
         if catalog is not None:
             usage["source_figures"] = {
                 "catalog": len(catalog.catalog.candidates),
@@ -854,12 +903,13 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
             # frattempo non va sovrascritto (il rollback rilascia il lock).
             await db.refresh(lesson, ["content_status"])
             if lesson.content_status != "processing":
-                await db.rollback()
+                # Log prima del rollback, che fa scadere l'oggetto.
                 log.info(
                     "lesson_content_cancelled_during_lock",
-                    lesson_id=str(lesson.id),
+                    lesson_id=str(lesson_id),
                     lesson_code=lesson.lesson_code,
                 )
+                await db.rollback()
                 return
         if fused_now and isinstance(content_output, LessonContentOutput):
             try:
@@ -878,8 +928,14 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                 figure_review, _gone = await _drop_source_figures(
                     db, course_full, lesson, content_output, figure_review, fused_now, reuse_by
                 )
+                if placement is not None:
+                    placement_after_drops(
+                        placement, {aid: reuse_by[fused_now[aid]] for aid in _gone}
+                    )
                 if isinstance(usage.get("source_figures"), dict):
                     usage["source_figures"]["dropped_at_lock"] = len(_gone)
+                    if placement is not None:
+                        usage["source_figures"]["plan"] = placement["counts"]
 
         try:
             if lesson.is_assessment:
@@ -905,11 +961,13 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                 # e solo per l'offerta di QUESTO giro (stessa transazione,
                 # ancora sotto il lock di corso).
                 if offer_token:
+                    final = _fused_source_figures(content_output)
                     source_figure_assignment_service.settle(
                         lesson,
-                        set(_fused_source_figures(content_output).values()),
+                        set(final.values()),
                         placement,
                         run_token=offer_token,
+                        assets=final,
                     )
         except Exception as exc:
             settings = get_settings()

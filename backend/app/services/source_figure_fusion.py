@@ -153,9 +153,15 @@ def fuse_source_figures(
     refs: Mapping[str, uuid.UUID],
     *,
     max_items: int,
+    priority: Mapping[str, int] | None = None,
+    groups: Mapping[str, str] | None = None,
 ) -> FusionReport:
     """Porta le scelte di `output.source_figures` in `output.visual_assets`
-    e svuota `source_figures`. `refs`: id del catalogo → id della figura."""
+    e svuota `source_figures`. `refs`: id del catalogo → id della figura.
+
+    Oltre il budget restano le prime citate; con `priority` (id minuscolo →
+    rango, catalogo del piano) prima il rango più basso e la prima figura
+    di ogni fabbisogno (`groups`), poi l'ordine di citazione."""
     report = FusionReport(renamed_generated=rename_generated_src_ids(output))
     catalog = {ref.lower(): (ref, fid) for ref, fid in refs.items()}
     report.renamed_catalog_collisions = sorted(set(report.renamed_generated) & set(catalog))
@@ -181,8 +187,22 @@ def fuse_source_figures(
         ref, fid = catalog[key]
         chosen.append((first_citation[key], ref, fid, choice.caption, choice.alt_text))
     chosen.sort(key=lambda item: item[0])
-    kept = chosen[: max(0, max_items)]
-    report.dropped_over_budget = [ref for _, ref, *_ in chosen[max(0, max_items) :]]
+    if priority is not None:
+        first_of_group: set[str] = set()
+        ranked: list[tuple[int, int, int, str]] = []
+        for pos, ref, *_rest in chosen:
+            key = ref.lower()
+            group = (groups or {}).get(key)
+            later = 1 if group is not None and group in first_of_group else 0
+            if group is not None:
+                first_of_group.add(group)
+            ranked.append((later, priority.get(key, 3), pos, key))
+        keep = {key for *_k, key in sorted(ranked)[: max(0, max_items)]}
+        kept = [item for item in chosen if item[1].lower() in keep]
+        report.dropped_over_budget = [ref for _, ref, *_ in chosen if ref.lower() not in keep]
+    else:
+        kept = chosen[: max(0, max_items)]
+        report.dropped_over_budget = [ref for _, ref, *_ in chosen[max(0, max_items) :]]
 
     for _, ref, fid, caption, alt_text in kept:
         caption, trimmed = clean_caption(caption)

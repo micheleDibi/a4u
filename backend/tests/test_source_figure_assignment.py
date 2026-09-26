@@ -280,3 +280,53 @@ def test_the_best_found_figure_is_reserved() -> None:
     arcs = [sa.Arc(L1, "n1", F[0], 2), sa.Arc(L1, "n1", F[1], 4)]
     out = sa.assign(_slots(L1), [sa.Demand(L1, "n1", True)], supplies, arcs, cap=1)
     assert out.chosen[(L1, "n1")].figure_id == F[1] and (L1, "n1") in out.reserved
+
+
+def test_the_lesson_keeps_its_own_figures_first() -> None:
+    """Prima passata sulle figure già nella lezione (regressione dalla
+    verifica WP7-WP8: istanza reale del test di proprietà in cui, senza la
+    passata, la lezione perdeva la figura 103 che aveva nel contenuto)."""
+    f = {i: uuid.UUID(int=i) for i in (100, 101, 102, 103)}
+    supplies = [
+        sa.Supply(f[100], literature=True, resolution="low", fixed_uses=1),
+        sa.Supply(f[101], fixed_uses=2),
+        sa.Supply(f[102], resolution="low", fixed_uses=2),
+        sa.Supply(f[103], fixed_uses=2, found_for=(L1, "n4")),
+    ]
+    demands = [
+        sa.Demand(L1, need, must)
+        for need, must in (("n0", True), ("n1", False), ("n2", True), ("n3", True), ("n4", False))
+    ]
+    arcs = [
+        sa.Arc(L1, need, f[fid], tier)
+        for need, fid, tier in (
+            ("n0", 100, 1),
+            ("n0", 102, 4),
+            ("n1", 100, 3),
+            ("n1", 102, 1),
+            ("n1", 103, 2),
+            ("n2", 100, 2),
+            ("n2", 101, 4),
+            ("n3", 100, 2),
+            ("n4", 101, 2),
+        )
+    ]
+    slots = [sa.LessonSlot(L1, 3, frozenset({f[101], f[103]}))]
+    out = sa.assign(slots, demands, supplies, arcs, cap=1)
+    assert {f[101], f[103]} <= {a.figure_id for a in out.chosen.values()}
+
+
+def test_repair_never_moves_a_reserved_literature_figure() -> None:
+    """La riparazione non scambia una figura della letteratura riservata al
+    fabbisogno per cui è stata trovata, anche se lo scambio coprirebbe un
+    altro fabbisogno."""
+    supplies = [
+        sa.Supply(F[0], literature=True, found_for=(L1, "n1")),
+        sa.Supply(F[1], literature=True),
+    ]
+    demands = [sa.Demand(L1, "n1", True), sa.Demand(L2, "n1", True)]
+    arcs = [sa.Arc(L1, "n1", F[0], 3), sa.Arc(L1, "n1", F[1], 3), sa.Arc(L2, "n1", F[0], 3)]
+    out = sa.assign(_slots(L1, L2), demands, supplies, arcs, cap=1)
+    assert out.chosen[(L1, "n1")].figure_id == F[0]
+    assert (L1, "n1") in out.reserved
+    assert out.unassigned[(L2, "n1")] == "reuse_cap"
