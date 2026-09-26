@@ -217,7 +217,11 @@ def assign(
     arcs: Iterable[Arc],
     *,
     cap: int,
+    release: frozenset[uuid.UUID] | None = None,
 ) -> Assignment:
+    """Assegnazione deterministica (greedy + riparazione). `release`: lezioni
+    il cui contenuto sta per essere sostituito; nella seconda passata solo le
+    loro figure non tenute tornano libere (None = tutte le lezioni)."""
     lesson_map = {s.lesson_id: s for s in lessons}
     demand_map = {d.key: d for d in demands if d.lesson_id in lesson_map}
     supply_map = {s.figure_id: s for s in supplies}
@@ -244,7 +248,11 @@ def assign(
         if state.own(arc.lesson_id, arc.figure_id) and state.blocked_by(arc) is None:
             state.take(arc)
     state.own_frozen = True
-    state.keepers.clear()
+    if release is None:
+        state.keepers.clear()
+    else:
+        for figure, keepers in state.keepers.items():
+            state.keepers[figure] = keepers - release
     for arc in ordered:
         if state.blocked_by(arc) is None:
             state.take(arc)

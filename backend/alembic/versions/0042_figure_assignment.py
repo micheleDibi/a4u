@@ -45,9 +45,18 @@ def upgrade() -> None:
         ["id"],
         ondelete="SET NULL",
     )
+    # ON DELETE SET NULL cerca le righe della lezione cancellata.
+    op.create_index(
+        "ix_course_document_figure_found_for_lesson_id",
+        "course_document_figure",
+        ["found_for_lesson_id"],
+    )
 
 
 def downgrade() -> None:
+    op.drop_index(
+        "ix_course_document_figure_found_for_lesson_id", table_name="course_document_figure"
+    )
     op.drop_constraint(
         "fk_course_document_figure_found_for_lesson_id_course_lesson",
         "course_document_figure",

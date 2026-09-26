@@ -330,3 +330,19 @@ def test_repair_never_moves_a_reserved_literature_figure() -> None:
     assert out.chosen[(L1, "n1")].figure_id == F[0]
     assert (L1, "n1") in out.reserved
     assert out.unassigned[(L2, "n1")] == "reuse_cap"
+
+
+def test_only_the_released_lesson_frees_the_figures_it_does_not_keep() -> None:
+    """Fase D: L ha F nel contenuto ma per il suo fabbisogno prende G (più
+    specifica). Finché L non si rigenera F resta nel suo contenuto: con
+    `release` = solo la lezione corrente M, F non va al must di M (il
+    ricontrollo sotto il lock gliela toglierebbe)."""
+    supplies = _supplies()
+    demands = [sa.Demand(L1, "n1", True), sa.Demand(L2, "n1", True)]
+    arcs = [sa.Arc(L1, "n1", F[1], 4), sa.Arc(L1, "n1", F[0], 2), sa.Arc(L2, "n1", F[0], 4)]
+    slots = _slots(L1, L2, own={L1: [F[0]]})
+    free = sa.assign(slots, demands, supplies, arcs, cap=1)
+    assert free.chosen[(L2, "n1")].figure_id == F[0]
+    kept = sa.assign(slots, demands, supplies, arcs, cap=1, release=frozenset({L2}))
+    assert kept.chosen[(L1, "n1")].figure_id == F[1]
+    assert (L2, "n1") not in kept.chosen and kept.unassigned[(L2, "n1")] == "reuse_cap"

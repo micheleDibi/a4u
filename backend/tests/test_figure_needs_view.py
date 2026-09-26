@@ -319,3 +319,17 @@ def test_sequences_follow_the_plan_switch(monkeypatch: Any) -> None:
     off = get_settings().model_copy(update={"figure_plan_enabled": False})
     monkeypatch.setattr(plan, "get_settings", lambda: off)
     assert figure_sequences(_sequence_lesson()) == []
+
+
+def test_an_open_offer_reads_the_previous_snapshot() -> None:
+    """Rigenerazione in corso, fallita o annullata: il contenuto è quello
+    della fotografia chiusa precedente, non quello dell'offerta nuova."""
+    lesson = _lesson()
+    lesson.figure_assignment = {
+        "state": "offered",
+        "offers": {"n1": {"figure_id": F3}, "n2": {"figure_id": F3}},
+        "previous": {"bound": {"n1": F1, "n2": F2}, "placement": None},
+    }
+    by = {v["need_id"]: v for v in figure_needs_view(lesson) or []}
+    assert by["n1"]["status"] == "placed" and by["n1"]["asset_id"] == "SRC-a"
+    assert by["n2"]["status"] == "misplaced"

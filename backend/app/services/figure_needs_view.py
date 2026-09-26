@@ -80,12 +80,22 @@ def _plan_asset(
     """(asset nel contenuto, figura del piano) del fabbisogno. Prima il
     legame della fotografia (anche un'alternativa scelta dal modello), poi
     l'asset della collocazione, poi la figura offerta e le alternative."""
-    bound = assignment.get("bound") if assignment.get("state") == "settled" else None
+    # Con un'offerta aperta (giro in corso, fallito o annullato) il contenuto
+    # è ancora quello della fotografia chiusa precedente.
+    previous = assignment.get("previous")
+    settled: Mapping[str, Any] = (
+        assignment
+        if assignment.get("state") == "settled"
+        else previous
+        if isinstance(previous, Mapping)
+        else {}
+    )
+    bound = settled.get("bound")
     if isinstance(bound, Mapping) and bound.get(need_id):
         figure = str(bound[need_id])
         if figure in by_figure:
             return by_figure[figure], figure
-    placement = assignment.get("placement")
+    placement = settled.get("placement")
     needs = placement.get("needs") if isinstance(placement, Mapping) else None
     info = needs.get(need_id) if isinstance(needs, Mapping) else None
     if isinstance(info, Mapping) and info.get("status") in _SETTLED_WITH:

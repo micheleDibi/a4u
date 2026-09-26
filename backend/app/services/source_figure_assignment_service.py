@@ -145,7 +145,8 @@ def _ready_needs(course: Course, lesson: CourseLesson) -> list[dict[str, Any]]:
     item = plan.needs_input(course, lesson)
     if item is None:
         return []
-    return plan.current_needs(lesson, plan.fingerprint(item, plan.max_needs(lesson))) or []
+    ready = plan.current_needs(lesson, plan.fingerprint(item, plan.max_needs(lesson))) or []
+    return plan.active_needs(lesson, ready)
 
 
 async def snapshot(db: AsyncSession, course: Course, current: CourseLesson) -> Snapshot | None:
@@ -161,7 +162,11 @@ async def snapshot(db: AsyncSession, course: Course, current: CourseLesson) -> S
     for lesson in lessons:
         if lesson.is_assessment:
             continue
-        if lesson.id == current.id or lesson.content_status == "pending":
+        # Partecipano la lezione corrente, quelle in coda e quelle partite
+        # insieme a lei che non hanno ancora un'offerta (i worker della Fase 3
+        # prendono più lezioni nello stesso giro): la loro domanda conta.
+        starting = lesson.content_status == "processing" and valid_offer(lesson, now) is None
+        if lesson.id == current.id or lesson.content_status == "pending" or starting:
             ready = _ready_needs(course, lesson if lesson.id != current.id else current)
             if ready:
                 needs[lesson.id] = ready
@@ -254,6 +259,9 @@ async def snapshot(db: AsyncSession, course: Course, current: CourseLesson) -> S
         supplies,
         [a for group in arcs.values() for a in group],
         cap=cap,
+        # Solo la lezione corrente sostituisce ora il suo contenuto: le figure
+        # nel contenuto delle altre restano occupate (come al ricontrollo).
+        release=frozenset({current.id}),
     )
     return Snapshot(
         assignment=assignment,
@@ -328,8 +336,12 @@ def offer_payload(snap: Snapshot, lesson: CourseLesson, *, locked: bool) -> dict
         "offers": offers,
         "alternatives": alternatives,
         "unassigned": unassigned,
-        # Fuori anche dal residuo del catalogo del piano.
-        "held_elsewhere": sorted(str(fid) for fid in holders if not has_room(fid)),
+        # Fuori anche dal residuo del catalogo del piano: figure assegnate ad
+        # altre lezioni del giro, o già al tetto per gli usi fissi (contenuti
+        # e offerte valide delle lezioni in generazione).
+        "held_elsewhere": sorted(
+            str(fid) for fid in set(holders) | set(snap.fixed) if not has_room(fid)
+        ),
         "stats": snap.stats,
     }
 
@@ -349,7 +361,19 @@ async def reserve(db: AsyncSession, course: Course, lesson: CourseLesson) -> dic
     if snap is None:
         lesson.figure_assignment = None
         return None
-    lesson.figure_assignment = offer_payload(snap, lesson, locked=locked)
+    payload = offer_payload(snap, lesson, locked=locked)
+    # Fotografia chiusa precedente: finché il giro non si materializza il
+    # contenuto resta quello vecchio, e la vista dei fabbisogni lo legge con
+    # questa (anche se il giro fallisce o viene annullato).
+    previous = lesson.figure_assignment if isinstance(lesson.figure_assignment, dict) else {}
+    if previous.get("state") == "settled":
+        payload["previous"] = {
+            "bound": previous.get("bound") or {},
+            "placement": previous.get("placement"),
+        }
+    elif isinstance(previous.get("previous"), dict):
+        payload["previous"] = previous["previous"]
+    lesson.figure_assignment = payload
     log.info(
         "figure_assignment_offered",
         lesson_id=str(lesson.id),

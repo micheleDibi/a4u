@@ -359,10 +359,12 @@ class CourseDocumentFigure(UUIDPKMixin, TimestampMixin, Base):
     # trovata PER questo fabbisogno di questa lezione; l'assegnazione le
     # riserva il posto se lo copre e nessuna figura di documento lo copre
     # meglio. Rimappati in duplicazione.
+    # Indice: ON DELETE SET NULL cerca le righe di una lezione cancellata.
     found_for_lesson_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("course_lesson.id", ondelete="SET NULL"),
         nullable=True,
+        index=True,
     )
     found_for_need_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
 

@@ -264,6 +264,11 @@ def test_migration_0042_matches_the_models() -> None:
     assert fk.column.table.name == "course_lesson" and fk.ondelete == "SET NULL"
     assert fk.constraint is not None
     assert fk.constraint.name == "fk_course_document_figure_found_for_lesson_id_course_lesson"
+    # Indice della FK (ON DELETE SET NULL): nel modello e nella migrazione.
+    names = {index.name for index in CourseDocumentFigure.__table__.indexes}
+    assert "ix_course_document_figure_found_for_lesson_id" in names
+    text = path.read_text(encoding="utf-8")
+    assert text.count("ix_course_document_figure_found_for_lesson_id") == 2
 
 
 async def test_concurrent_reserves_are_serialized_by_the_course_lock(
@@ -422,3 +427,91 @@ def test_settle_binds_the_need_to_the_placed_alternative() -> None:
     assert data is not None
     assert data["bound"] == {"n1": str(alternative)}
     assert data["missed"] == ["n2"]
+
+
+async def test_a_sister_started_together_competes_before_its_offer(
+    seeded_db: AsyncSession, settings: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fase D: due lezioni prese nello stesso giro dei worker sono entrambe
+    `processing`; la prima `reserve` vede la domanda della seconda, che non
+    ha ancora un'offerta (il must batte lo should)."""
+    monkeypatch.setattr(catalog, "reuse_cap", lambda: 1)
+    env = await _course(seeded_db)
+    course, first, second = env["course"], env["first"], env["second"]
+    should = _need("S1", "Schema a scansione", "scanning", must=False)
+    must = _need("S1", "Schema a scansione", "scanning", must=True)
+    _store(course, first, [should])
+    _store(course, second, [must])
+    first.content_status = "processing"
+    second.content_status = "processing"
+    await seeded_db.commit()
+    data = await svc.reserve(seeded_db, course, first)
+    await seeded_db.commit()
+    assert data is not None and data["stats"]["participants"] == 2
+    assert data["unassigned"] == {should["need_id"]: "reuse_cap"}
+
+
+async def test_an_offer_in_progress_is_held_for_the_residual_and_the_lexical_catalog(
+    seeded_db: AsyncSession, settings: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(catalog, "reuse_cap", lambda: 1)
+    env = await _course(seeded_db)
+    course, first, second = env["course"], env["first"], env["second"]
+    scan = env["figures"]["scan"]
+    second.content_status = "processing"
+    second.figure_assignment = {
+        "state": "offered",
+        "at": datetime.now(UTC).isoformat(),
+        "offers": {"nX": {"figure_id": str(scan.id)}},
+    }
+    _store(course, first, [_need("S1", "Schema differenziale", "differential")])
+    await seeded_db.commit()
+    data = await svc.reserve(seeded_db, course, first)
+    await seeded_db.commit()
+    assert data is not None and str(scan.id) in data["held_elsewhere"]
+    held = await catalog.offered_saturated(seeded_db, course.id, first.id)
+    assert held == {scan.id}
+    assert await catalog.offered_saturated(seeded_db, course.id, second.id) == set()
+
+
+async def test_dismissed_and_linked_needs_leave_the_plan(
+    seeded_db: AsyncSession, settings: Any
+) -> None:
+    env = await _course(seeded_db)
+    course, lesson = env["course"], env["first"]
+    scan = _need("S1", "Schema a scansione", "scanning")
+    diff = _need("S1", "Schema differenziale", "differential")
+    _store(course, lesson, [scan, diff])
+    lesson.content_raw = {
+        "sections": [],
+        "visual_assets": [{"asset_id": "img-1", "format": "image", "content": "x.png"}],
+    }
+    lesson.figure_need_links = {
+        scan["need_id"]: {"state": "dismissed"},
+        diff["need_id"]: {"state": "linked", "asset_id": "img-1"},
+    }
+    await seeded_db.commit()
+    data = await svc.reserve(seeded_db, course, lesson)
+    await seeded_db.commit()
+    # Nessun fabbisogno attivo: nessuna offerta (la lezione esce dal piano).
+    assert data is None and lesson.figure_assignment is None
+
+
+async def test_reserve_keeps_the_previous_settled_snapshot(
+    seeded_db: AsyncSession, settings: Any
+) -> None:
+    env = await _course(seeded_db)
+    course, lesson = env["course"], env["first"]
+    _store(course, lesson, [_need("S1", "Schema a scansione", "scanning")])
+    lesson.figure_assignment = {
+        "state": "settled",
+        "bound": {"n0": "x"},
+        "placement": {"needs": {}},
+    }
+    await seeded_db.commit()
+    data = await svc.reserve(seeded_db, course, lesson)
+    await seeded_db.commit()
+    assert data is not None and data["previous"] == {
+        "bound": {"n0": "x"},
+        "placement": {"needs": {}},
+    }

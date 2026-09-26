@@ -123,6 +123,49 @@ async def saturated_figures(
     return {fid for fid, lessons in uses.items() if len(lessons) >= cap} - own
 
 
+async def offered_saturated(
+    db: AsyncSession, course_id: uuid.UUID, lesson_id: uuid.UUID
+) -> set[uuid.UUID]:
+    """Figure che, contando anche le offerte valide delle lezioni in
+    generazione (piano delle figure), sono già al tetto di riuso per altre
+    lezioni: il catalogo non le propone (l'altra lezione le sta collocando e
+    il ricontrollo sotto il lock le toglierebbe a chi arriva secondo)."""
+    from app.services.source_figure_assignment_service import _offered_ids, valid_offer
+
+    rows = (
+        (
+            await db.execute(
+                select(CourseLesson).where(
+                    CourseLesson.course_id == course_id,
+                    CourseLesson.content_status == "processing",
+                    CourseLesson.id != lesson_id,
+                    CourseLesson.figure_assignment.is_not(None),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    # Per codice di lezione, come `figure_lesson_uses`: una lezione in
+    # generazione che ha la figura sia nell'offerta sia nel contenuto vecchio
+    # conta una volta.
+    offered: dict[uuid.UUID, set[str]] = {}
+    for row in rows:
+        offer = valid_offer(row)
+        for fid in _offered_ids(offer) if offer else set():
+            offered.setdefault(fid, set()).add(row.lesson_code)
+    if not offered:
+        return set()
+    cap = reuse_cap()
+    uses = await document_figures_service.figure_lesson_uses(
+        db, course_id, except_lesson_id=lesson_id
+    )
+    own = await document_figures_service.lesson_figure_ids(db, lesson_id)
+    return {
+        fid for fid, holders in offered.items() if len(holders | set(uses.get(fid, []))) >= cap
+    } - own
+
+
 async def selectable_figures(
     db: AsyncSession,
     course: Course,
@@ -144,7 +187,12 @@ async def selectable_figures(
         )
     )
     docs = await _documents(db, course.id)
-    taken = await saturated_figures(db, course.id, lesson_id) if lesson_id is not None else set()
+    taken = (
+        await saturated_figures(db, course.id, lesson_id)
+        | await offered_saturated(db, course.id, lesson_id)
+        if lesson_id is not None
+        else set()
+    )
     out = []
     for fig in rows.scalars().all():
         if fig.kind in EXCLUDED_KINDS or fig.id in taken:

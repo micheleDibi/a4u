@@ -148,6 +148,32 @@ def current_needs(lesson: CourseLesson, fp: str | None = None) -> list[dict[str,
     return [n for n in needs if isinstance(n, dict)] if isinstance(needs, list) else None
 
 
+def active_needs(lesson: CourseLesson, needs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Fabbisogni che il piano deve ancora coprire: fuori quelli per cui il
+    docente ha detto «Non serve» e quelli che ha collegato a una figura
+    ancora nella lezione (doc 18 §23.7). Valgono per assegnazione, budget,
+    catalogo del piano, collocazione e verifica dei buchi."""
+    links = lesson.figure_need_links if isinstance(lesson.figure_need_links, dict) else {}
+    if not links:
+        return needs
+    raw = lesson.content_raw if isinstance(lesson.content_raw, dict) else {}
+    assets = {
+        str(a.get("asset_id") or "").lower()
+        for a in raw.get("visual_assets") or []
+        if isinstance(a, dict)
+    }
+    out: list[dict[str, Any]] = []
+    for need in needs:
+        link = links.get(str(need.get("need_id") or ""))
+        if isinstance(link, dict):
+            if link.get("state") == "dismissed":
+                continue
+            if link.get("state") == "linked" and str(link.get("asset_id") or "").lower() in assets:
+                continue
+        out.append(need)
+    return out
+
+
 def request_needs(course: Course, lesson: CourseLesson) -> bool:
     """Richiesta esplicita di Fase 3 per la lezione: annota l'ora (tetto
     dell'attesa) e mette in coda i fabbisogni se mancano o se l'impronta è
