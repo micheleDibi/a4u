@@ -344,7 +344,9 @@ def build_relevance_message(
         data_block("LEZIONE", lesson.as_text()),
     ]
     if need is not None:
-        parts.append(data_block("FIGURA CERCATA", wanted_figure_text(need)))
+        # Stesso nome del blocco citato dal system prompt della lingua.
+        label = "FIGURA CERCATA" if _is_it(lesson.language_code or "it") else "WANTED FIGURE"
+        parts.append(data_block(label, wanted_figure_text(need)))
     parts += [
         data_block("TITOLO DELLA FONTE", title),
         data_block("DESCRIZIONE O DIDASCALIA DELLA FONTE", text),

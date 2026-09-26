@@ -324,6 +324,11 @@ def test_the_wanted_figure_is_data_and_neutralized() -> None:
     assert "FIGURA CERCATA" not in without
     assert "FIGURA CERCATA" in relevance._SYSTEM_RELEVANCE_IT
     assert "WANTED FIGURE" in relevance._SYSTEM_RELEVANCE_EN
+    english = relevance.LessonContext(title="LDV", topics=(), objectives=(), language_code="en")
+    message = relevance.build_relevance_message(
+        english, source_title=None, source_text=None, need=need
+    )
+    assert "<<<WANTED FIGURE" in message and "FIGURA CERCATA" not in message
 
 
 async def test_the_openalex_copy_is_paid_and_capped(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -473,3 +478,45 @@ async def test_a_failed_attempt_saves_what_it_spent(
     fresh = await _check(seeded_db, lesson)
     assert fresh.figures_gap_status == "pending"
     assert fresh.figures_gap_stats["spent_usd"] == pytest.approx(USAGE["cost_usd"])
+
+
+async def test_without_depicts_the_documents_are_described_first(
+    seeded_db: AsyncSession, need_env: dict[str, Any]
+) -> None:
+    """Fase D (deploy sui corsi esistenti): figure dei documenti senza
+    `depicts` non coprono nessun fabbisogno; la verifica non cerca a
+    pagamento nella letteratura finché non si esegue il redescribe."""
+    from tests.course_builders import build_course_document
+    from tests.source_figure_builders import build_document_figure
+
+    scan = _need("Schema a scansione", "scanning")
+    course, lesson = await _plan_lesson(seeded_db, [scan])
+    doc = build_course_document(course.id, filename="ldv.pdf", policy="citable")
+    seeded_db.add(doc)
+    await seeded_db.flush()
+    seeded_db.add_all(
+        build_document_figure(course.id, doc.id, license="cc_by", page=i + 1) for i in range(3)
+    )
+    await seeded_db.commit()
+    need_env["files"] = [_file(800, "Scanning vibrometer")]
+    need_env["images"].update({800: _image(80)})
+    fresh = await _check(seeded_db, lesson)
+    assert fresh.figures_gap_status == "done"
+    assert fresh.figures_gap_stats["reason"] == "depicts_missing"
+    assert fresh.figures_gap_stats["needs_fp"] == fresh.figure_needs["fingerprint"]
+    assert need_env["calls"] == []
+
+
+async def test_checks_that_block_a_phase_3_come_first(
+    seeded_db: AsyncSession, need_env: dict[str, Any]
+) -> None:
+    _course, started = await _plan_lesson(seeded_db, [_need("Schema", "scanning")])
+    _course2, waiting = await _plan_lesson(seeded_db, [_need("Schema", "rotational")])
+    now = datetime.now(UTC)
+    started.content_status = "processing"  # la verifica serve solo alla rigenerazione
+    started.figures_gap_requested_at = now.replace(year=now.year - 1)
+    waiting.figures_gap_requested_at = now
+    await seeded_db.commit()
+    async with gap_worker.async_session_factory() as db:
+        claimed = await gap_worker.claim_next(db)
+    assert claimed is not None and claimed.id == waiting.id

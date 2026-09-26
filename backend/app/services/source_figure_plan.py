@@ -63,6 +63,9 @@ class PlanCatalog(FigureCatalog):
     role_by_ref: dict[str, str] = field(default_factory=dict)
     needs: list[dict[str, Any]] = field(default_factory=list)
     labels: dict[str, str] = field(default_factory=dict)
+    # Didascalia neutra per le figure inserite dalla collocazione: dalla
+    # descrizione della figura, non dalla richiesta del fabbisogno.
+    captions: dict[str, str] = field(default_factory=dict)
 
     @property
     def figure_need(self) -> dict[uuid.UUID, str]:
@@ -72,6 +75,14 @@ class PlanCatalog(FigureCatalog):
 
 def _one_line(text: str, cap: int) -> str:
     return " ".join(neutralize_third_party_text(str(text or ""), cap).split())
+
+
+def _figure_caption(fig: Any) -> str:
+    """Prima frase della descrizione della figura (Vision, già nella lingua
+    del corso), neutralizzata e su una riga; "" senza descrizione."""
+    text = _one_line(str(getattr(fig, "description", "") or ""), 400)
+    first = re.split(r"(?<=[.!?])\s", text, maxsplit=1)[0]
+    return first[:200].rstrip()
 
 
 def _subject(need: Mapping[str, Any]) -> str:
@@ -276,10 +287,52 @@ def build_plan_catalog(
         role_by_ref={e["ref"]: e["role"] for e in kept},
         needs=[n for n in covered if any(e["need_id"] == n["need_id"] for e in kept)],
         labels={k: v for k, v in labels.items() if any(e["need_id"] == k for e in kept)},
+        captions={e["ref"]: _figure_caption(figures.get(e["fid"])) for e in kept if e["need_id"]},
     )
 
 
 # --- collocazione -------------------------------------------------------------------
+
+
+def _insert_in_sequence(
+    content: str,
+    ref: str,
+    need: Mapping[str, Any],
+    plan: PlanCatalog,
+    status: Mapping[str, Mapping[str, Any]],
+) -> str:
+    """Testo della sezione con `[FIG:ref]`: per un membro di una sequenza,
+    subito dopo il paragrafo del membro precedente già citato nella sezione
+    (o prima di quello successivo), così la numerazione segue l'ordine del
+    testo; altrimenti in fondo alla sezione."""
+    tag = f"[FIG:{ref}]"
+    group = str(need.get("sequence_group") or "")
+    index = int(need.get("sequence_index") or 0)
+    if group:
+        before: list[tuple[int, str]] = []
+        after: list[tuple[int, str]] = []
+        for other in plan.needs:
+            if str(other.get("sequence_group") or "") != group or other is need:
+                continue
+            asset = (status.get(str(other.get("need_id"))) or {}).get("asset_id")
+            if not asset:
+                continue
+            other_index = int(other.get("sequence_index") or 0)
+            (before if other_index < index else after).append((other_index, str(asset)))
+        for _i, asset in sorted(before, reverse=True):
+            match = re.search(rf"\[FIG:\s*{re.escape(asset)}\s*\]", content, re.IGNORECASE)
+            if match:
+                end = content.find("\n\n", match.end())
+                end = len(content) if end == -1 else end
+                return content[:end].rstrip() + f"\n\n{tag}" + content[end:]
+        for _i, asset in sorted(after):
+            match = re.search(rf"\[FIG:\s*{re.escape(asset)}\s*\]", content, re.IGNORECASE)
+            if match:
+                start = content.rfind("\n\n", 0, match.start())
+                if start == -1:
+                    return f"{tag}\n\n{content.lstrip()}"
+                return content[:start].rstrip() + f"\n\n{tag}\n\n" + content[start:].lstrip()
+    return content.rstrip() + f"\n\n{tag}"
 
 
 def cut_priority(plan: PlanCatalog) -> tuple[dict[str, int], dict[str, str]]:
@@ -388,7 +441,7 @@ def apply_placement(
                 "no_anchor" if target is None else "budget" if used >= max_items else "no_figure"
             )
             continue
-        caption, _trimmed = clean_caption(_subject(need))
+        caption, _trimmed = clean_caption(plan.captions.get(assigned) or _subject(need))
         output.visual_assets.append(
             LessonContentVisualAsset(
                 asset_id=assigned,
@@ -398,7 +451,7 @@ def apply_placement(
                 alt_text=caption[:400],
             )
         )
-        target.content = (target.content or "").rstrip() + f"\n\n[FIG:{assigned}]"
+        target.content = _insert_in_sequence(target.content or "", assigned, need, plan, status)
         used += 1
         status[need_id] = {
             "status": "auto_placed",

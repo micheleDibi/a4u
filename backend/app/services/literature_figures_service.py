@@ -71,7 +71,7 @@ from app.services.figure_attribution import figure_number_from_label
 from app.services.figure_need_matching import NeedKey, match, tokens
 from app.services.lesson_document_selection import build_query_profile, terms
 from app.services.openai_client import OpenAINotConfiguredError
-from app.services.openai_figure_describe_service import depicts_payload
+from app.services.openai_figure_describe_service import depicts_current, depicts_payload
 from app.services.remote_storage import StorageError
 from app.services.safe_http import SafeFetchError
 from app.services.source_caption import third_party_credit
@@ -270,6 +270,25 @@ class _Run:
 
     def count(self, key: str) -> None:
         self.stats[key] = int(self.stats.get(key) or 0) + 1
+
+
+# Quota massima di figure dei documenti senza `depicts` corrente oltre la
+# quale la verifica per fabbisogno non cerca nella letteratura.
+DEPICTS_MISSING_MAX_SHARE = 0.2
+
+
+async def _depicts_missing(db: AsyncSession, course_id: uuid.UUID) -> tuple[int, int]:
+    """(figure dei documenti pronte senza `depicts` corrente, figure pronte)."""
+    rows = await db.execute(
+        select(CourseDocumentFigure.depicts).where(
+            CourseDocumentFigure.course_id == course_id,
+            CourseDocumentFigure.status == "ready",
+            CourseDocumentFigure.source_kind == "uploaded",
+            CourseDocumentFigure.excluded_by_user.is_(False),
+        )
+    )
+    values = list(rows.scalars().all())
+    return sum(1 for v in values if not depicts_current(v)), len(values)
 
 
 def _spent(run: _Run) -> float:
@@ -1052,6 +1071,22 @@ async def check_lesson_needs(
     stats["needs_uncovered"] = len(uncovered)
     if not uncovered:
         return GapOutcome("done", {**stats, "reason": "covered", "needs": {}}, None)
+    missing, total = await _depicts_missing(db, course.id)
+    if total and missing > DEPICTS_MISSING_MAX_SHARE * total:
+        # Figure dei documenti descritte prima della 0041: senza `depicts` non
+        # coprono nessun fabbisogno e la ricerca pagherebbe la letteratura per
+        # tutti (deploy sui corsi esistenti). Prima `redescribe_figure_depicts`.
+        log.info(
+            "figures_gap_depicts_missing",
+            lesson_id=str(lesson_id),
+            missing=missing,
+            total=total,
+        )
+        return GapOutcome(
+            "done",
+            {**stats, "reason": "depicts_missing", "depicts_missing": missing, "needs": {}},
+            None,
+        )
     extracting = await documents_extracting(db, course.id)
     if extracting:
         return GapOutcome(
@@ -1188,8 +1223,14 @@ async def check_lesson(db: AsyncSession, lesson: CourseLesson) -> GapOutcome:
             fp = plan.fingerprint(item_input, plan.max_needs(target))
             ready = plan.current_needs(target, fp)
             if ready is not None:
+                # «Non serve» e figure collegate dal docente: non si cercano.
                 return await check_lesson_needs(
-                    db, full, target, ready, fp, spent_before_usd=spent_before
+                    db,
+                    full,
+                    target,
+                    plan.active_needs(target, ready),
+                    fp,
+                    spent_before_usd=spent_before,
                 )
         if target is not None and target.figure_needs_status == "ready":
             stored = target.figure_needs if isinstance(target.figure_needs, dict) else {}

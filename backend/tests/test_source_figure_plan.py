@@ -338,3 +338,39 @@ def test_a_section_id_cannot_close_the_data_block() -> None:
     block = "\n".join(content_svc._source_figure_plan_block(plan.text))
     body = block.split("<<<CATALOGO", 1)[1]
     assert body.count(">>>") == 1 and body.rstrip().endswith(">>>")
+
+
+def test_auto_placed_caption_comes_from_the_figure_not_the_request() -> None:
+    needs = [_need("n1", "S1", subject="Schema pubblicato o foto del vibrometro")]
+    fig = _fig(F[0])
+    fig.description = "Schema ottico del vibrometro con la cella di Bragg. Seconda frase."
+    plan = sp.build_plan_catalog(needs, _offer({"n1": F[0]}), {F[0]: fig}, [], OUTLINE)
+    assert plan is not None
+    out = _output({"S1": "Testo senza figure.", "S2": "t", "S3": "t"}, [])
+    report = sp.apply_placement(out, plan, max_items=4)
+    assert report["needs"]["n1"]["status"] == "auto_placed"
+    (asset,) = [a for a in out.visual_assets if a.format == SOURCE_FIGURE_FORMAT]
+    assert asset.caption == "Schema ottico del vibrometro con la cella di Bragg."
+    assert "pubblicato" not in asset.caption
+
+
+def test_an_auto_placed_sequence_member_follows_the_previous_one() -> None:
+    needs = [
+        {**_need("a", "S1", index=1), "sequence_group": "tipi"},
+        {**_need("b", "S1", index=2), "sequence_group": "tipi"},
+        {**_need("c", "S1", index=3), "sequence_group": "tipi"},
+    ]
+    figures = {f: _fig(f) for f in F[:3]}
+    plan = sp.build_plan_catalog(
+        needs, _offer({"a": F[0], "b": F[1], "c": F[2]}), figures, [], OUTLINE
+    )
+    assert plan is not None
+    r = figure_ref
+    text = f"Tipo A.\n\n[FIG:{r(F[0])}]\n\nTipo B.\n\nTipo C.\n\n[FIG:{r(F[2])}]\n\nConclusione."
+    out = _output({"S1": text, "S2": "t", "S3": "t"}, [(r(F[0]), F[0]), (r(F[2]), F[2])])
+    report = sp.apply_placement(out, plan, max_items=4)
+    assert report["needs"]["b"]["status"] == "auto_placed"
+    content = out.sections[0].content
+    assert content.index(r(F[0])) < content.index(r(F[1])) < content.index(r(F[2]))
+    assert not content.rstrip().endswith(f"[FIG:{r(F[1])}]")
+    assert report["order_warning"] == []

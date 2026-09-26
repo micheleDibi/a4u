@@ -557,7 +557,7 @@ async def test_admin_costs_include_the_figure_needs_phase(
     assert phases["figure_needs"] >= 0.0008
 
 
-async def test_duplication_copies_ready_needs_without_the_cost(
+async def test_duplication_does_not_copy_the_needs(
     seeded_db: AsyncSession, settings: Any
 ) -> None:
     from app.models.course_duplication_job import CourseDuplicationJob
@@ -588,10 +588,11 @@ async def test_duplication_copies_ready_needs_without_the_cost(
             await seeded_db.execute(select(CourseLesson).where(CourseLesson.course_id == target.id))
         ).scalars()
     }
-    assert clones["M1.L1"].figure_needs == ready.figure_needs
-    assert clones["M1.L1"].figure_needs_status == "ready"
-    assert clones["M1.L1"].figure_needs_usage is None
-    assert clones["M1.L2"].figure_needs is None and clones["M1.L2"].figure_needs_status is None
+    # Fase D: la copia è in un'altra lingua (in produzione sempre), quindi i
+    # fabbisogni si ricalcolano alla prima richiesta di Fase 3; il costo no.
+    for code in ("M1.L1", "M1.L2"):
+        assert clones[code].figure_needs is None and clones[code].figure_needs_status is None
+        assert clones[code].figure_needs_usage is None
 
 
 # --- migrazione 0040 ------------------------------------------------------------------

@@ -29,7 +29,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import false, or_, select, true, update
+from sqlalchemy import case, false, or_, select, true, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -118,7 +118,12 @@ async def claim_next(db: AsyncSession) -> CourseLesson | None:
                     or_(CourseLesson.content_status == "pending", _needs_ready()),
                     ~_extracting_documents(),
                 )
-                .order_by(CourseLesson.figures_gap_requested_at.asc().nulls_first())
+                # Prima le verifiche che bloccano una Fase 3 in coda; quelle che
+                # servono solo alla rigenerazione successiva vengono dopo.
+                .order_by(
+                    case((CourseLesson.content_status == "pending", 0), else_=1),
+                    CourseLesson.figures_gap_requested_at.asc().nulls_first(),
+                )
                 .limit(20)
             )
         )
