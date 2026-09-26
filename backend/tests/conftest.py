@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 
 import pytest
 import pytest_asyncio
@@ -106,13 +106,17 @@ def random_email() -> str:
 
 
 @pytest.fixture(autouse=True)
-def _offline_figure_intro(monkeypatch: pytest.MonkeyPatch) -> None:
+def _offline_figure_intro() -> Iterator[None]:
     """Il PROMPT 23 (frase che introduce una figura) non esce mai in rete nei
     test: vale il ripiego senza chiamata. I test del servizio usano la
-    funzione vera con un trasporto simulato."""
+    funzione vera con un trasporto simulato. Un `MonkeyPatch` proprio, non
+    la fixture condivisa: istanziarla qui ne sposterebbe il ripristino dopo
+    le pulizie delle fixture dei singoli test."""
     from app.services import openai_figure_intro_service as intro
 
     async def offline(item: object) -> tuple[str, dict[str, object]]:
         raise intro.OpenAIFigureIntroError(None, "PROMPT 23 non simulato nel test")
 
-    monkeypatch.setattr(intro, "write_intro", offline)
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(intro, "write_intro", offline)
+        yield
