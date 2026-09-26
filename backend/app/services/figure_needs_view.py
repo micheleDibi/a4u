@@ -1,4 +1,4 @@
-"""Vista dei fabbisogni di figure della lezione per l'editor (WP9, doc 18 §23.7).
+"""Vista dei fabbisogni di figure della lezione (WP9, doc 18 §23.7).
 
 Funzione pura, calcolata alla LETTURA (mai salvata): combina i fabbisogni
 pronti (`figure_needs`), l'offerta o la fotografia dell'assegnazione
@@ -17,6 +17,9 @@ Stati:
 - `uncovered`: nessuna figura (motivo: `no_candidate`, `reuse_cap`,
   `budget`, esito della letteratura);
 - `dismissed`: il docente ha detto che non serve.
+
+La usano il completamento automatico e le sequenze di slide e discorso;
+dal 26/09/2026 non è più esposta nel DTO (niente etichetta né pannello).
 
 Solo testo già neutralizzato dalla validazione del PROMPT 22; nessun nome di
 documento (la «Fonte» la scrive il render).
@@ -211,29 +214,6 @@ def figure_needs_view(lesson: Any) -> list[dict[str, Any]] | None:
             }
         )
     return out
-
-
-def summary(view: list[dict[str, Any]] | None) -> dict[str, int] | None:
-    """Conteggi per l'etichetta della lezione: obbligatorie e consigliate
-    attive (le «Non serve» fuori) e quante sono nel testo."""
-    if view is None:
-        return None
-    active = [v for v in view if v["status"] != "dismissed"]
-    musts = [v for v in active if v.get("priority") == "must"]
-    shoulds = [v for v in active if v.get("priority") != "must"]
-    in_text = ("placed", "misplaced")
-    return {
-        "needs": len(view),
-        "musts": len(musts),
-        "musts_placed": sum(1 for v in musts if v["status"] in in_text),
-        "shoulds": len(shoulds),
-        "shoulds_placed": sum(1 for v in shoulds if v["status"] in in_text),
-        # Nella lezione ma non citate dal testo (fra le `uncovered`).
-        "not_cited": sum(1 for v in active if v.get("reason") == "not_cited"),
-        "uncovered": sum(1 for v in view if v["status"] in ("uncovered", "missing")),
-        "misplaced": sum(1 for v in view if v["status"] == "misplaced"),
-        "dismissed": sum(1 for v in view if v["status"] == "dismissed"),
-    }
 
 
 def figure_sequences(lesson: Any) -> list[tuple[str, list[str]]]:

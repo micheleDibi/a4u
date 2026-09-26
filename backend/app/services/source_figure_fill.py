@@ -13,9 +13,7 @@ l'estrazione di un documento la aggiunge al catalogo. Questo modulo:
 - lo fa da solo (`fill_lesson`) solo nelle lezioni pronte e non approvate,
   col contenuto non superato da modifiche a monte, sotto il lock di corso;
   aggiorna `content_generated_at` (PDF e slide risultano da riesportare) e
-  la fotografia dell'assegnazione;
-- prepara l'inserimento per «Inserisci» dell'editor (`draft_insertion`),
-  che modifica solo la bozza: salva il docente.
+  la fotografia dell'assegnazione.
 
 Nessuna figura entra se il docente ha detto «Non serve» (fabbisogni attivi).
 """
@@ -67,8 +65,6 @@ class FillCandidate:
     caption: str
     description: str
     subject: str
-    # `uploaded` (documenti del corso), `openalex`, `wikimedia` (letteratura).
-    source_kind: str = "uploaded"
 
 
 def _now() -> datetime:
@@ -140,7 +136,6 @@ async def candidates(
                 caption=figure_caption(fig) or str(entry.get("subject") or ""),
                 description=str(getattr(fig, "description", "") or ""),
                 subject=str(entry.get("subject") or ""),
-                source_kind=str(getattr(fig, "source_kind", "") or "uploaded"),
             )
         )
     if within_budget:
@@ -425,43 +420,3 @@ async def fill_course(
             await db.rollback()
             log.warning("figure_fill_failed", lesson_id=str(lesson_id), error=str(exc)[:300])
     return total
-
-
-async def draft_insertion(
-    db: AsyncSession,
-    course: Course,
-    lesson: CourseLesson,
-    *,
-    need_id: str,
-    figure_id: uuid.UUID,
-    section_text: str,
-    taken_ids: list[str],
-    draft_assets: dict[str, str] | None = None,
-) -> dict[str, Any] | None:
-    """«Inserisci» dell'editor: testo della sezione (della bozza) con frase e
-    figura, e l'asset da aggiungere. Non salva il contenuto (lo fa il
-    docente); il costo del PROMPT 23 si somma a `figure_needs_usage`. None
-    se la figura non è una candidata del fabbisogno."""
-    found = await candidates(db, course, lesson, within_budget=False)
-    cand = next((c for c in found if c.need_id == need_id and c.figure_id == figure_id), None)
-    if cand is None:
-        return None
-    section = _section(
-        lesson.content_raw if isinstance(lesson.content_raw, dict) else {}, cand.section_id
-    )
-    title = str((section or {}).get("title") or "")
-    ref = _unique_ref(figure_id, {t.lower() for t in taken_ids})
-    # Vicini della serie: le figure nel contenuto salvato e quelle già
-    # inserite nella bozza (più «Inserisci» di fila restano in ordine).
-    asset_of = _placed_assets(lesson)
-    asset_of.update({str(k)[:40]: str(v)[:120] for k, v in (draft_assets or {}).items()})
-    text, usage = await _place(lesson, course, section_text, title, cand, ref, asset_of)
-    lesson.figure_needs_usage = plan.merge_usage(lesson.figure_needs_usage, usage)
-    # Legame fabbisogno → figura: vale quando il docente salva la bozza con
-    # l'asset (vista e piano lo verificano); con la bozza scartata resta
-    # inerte. Così il completamento non ne inserisce una seconda.
-    links = dict(lesson.figure_need_links) if isinstance(lesson.figure_need_links, dict) else {}
-    links[need_id] = {"state": "linked", "asset_id": ref}
-    lesson.figure_need_links = links
-    flag_modified(lesson, "figure_need_links")
-    return {"section_id": cand.section_id, "section_text": text, "asset": _asset(ref, cand)}

@@ -8,19 +8,18 @@
 - completamento automatico: solo lezioni pronte, non approvate, non
   superate, fabbisogni attivi, entro il budget; asset, frase, fotografia,
   `content_generated_at` e audit;
-- endpoint dei candidati e di «Inserisci» (bozza, nessun salvataggio);
+- serie: il secondo membro dopo il primo, il terzo dopo il secondo appena
+  inserito;
 - agganci: verifica dei buchi con una figura trovata, fine estrazione.
 """
 
 from __future__ import annotations
 
 import json
-import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
-from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,6 +29,7 @@ from app.services import course_lesson_content_service as content_svc
 from app.services import openai_figure_intro_service as intro
 from app.services import source_figure_fill as fill
 from app.services import source_figure_plan as sp
+from app.services.figure_needs_view import figure_needs_view
 from app.services.openai_figure_intro_service import write_intro as real_write_intro
 from tests.test_source_figure_assignment_db import _course, _need, _store
 from tests.test_source_figure_assignment_db import settings as settings  # fixture
@@ -173,7 +173,7 @@ async def test_a_figure_found_later_enters_the_lesson(
     assert fresh.content_generated_at > before
     assert fresh.content_modified_at is None
     assert fresh.figure_assignment["bound"] == {need["need_id"]: str(env["figures"]["scan"].id)}
-    (entry,) = fresh.figure_needs_view
+    (entry,) = figure_needs_view(fresh) or []
     assert entry["status"] == "placed"
     audits = (
         (
@@ -208,65 +208,6 @@ async def test_the_fill_leaves_some_lessons_alone(
         lesson.lesson_structure_modified_at = datetime.now(UTC)
     await seeded_db.commit()
     assert await fill.fill_lesson(seeded_db, course, lesson, trigger="test") == []
-
-
-# --- endpoint dell'editor -----------------------------------------------------------
-
-
-async def _api_env(db: AsyncSession, settings: Any) -> dict[str, Any]:
-    from app.core.permissions import R
-    from app.models.course import Course
-    from tests.test_permissions import _setup_user_membership
-
-    user, org, _m = await _setup_user_membership(db, role_code=R.MANAGER)
-    env = await _course(db)
-    course_row = await db.get(Course, env["course"].id)
-    assert course_row is not None
-    course_row.organization_id = org.id
-    course_row.assignee_user_id = user.id
-    await db.commit()
-    course, lesson, need = await _ready_lesson(db, env)
-    return {
-        "user": user.id,
-        "lesson": lesson,
-        "need": need,
-        "figures": env["figures"],
-        "url": f"/api/v1/orgs/{org.id}/courses/{course.id}/lessons/{lesson.id}/figure-needs",
-    }
-
-
-async def test_candidates_and_insert_in_the_draft(
-    client: AsyncClient, seeded_db: AsyncSession, settings: Any
-) -> None:
-    from tests.test_admin_user_management import _bearer
-
-    s = await _api_env(seeded_db, settings)
-    headers = _bearer(s["user"])
-    res = await client.get(f"{s['url']}/candidates", headers=headers)
-    assert res.status_code == 200, res.text
-    (cand,) = res.json()
-    assert cand["need_id"] == s["need"]["need_id"]
-    assert cand["figure_id"] == str(s["figures"]["scan"].id)
-    body = {
-        "figure_id": cand["figure_id"],
-        "section_text": "Testo della bozza.\n\nAltro.",
-        "asset_ids": ["fig1"],
-    }
-    res = await client.post(f"{s['url']}/{cand['need_id']}/insert", json=body, headers=headers)
-    assert res.status_code == 200, res.text
-    out = res.json()
-    assert out["section_id"] == "S1"
-    ref = out["asset"]["asset_id"]
-    assert out["section_text"].startswith("Testo della bozza.")
-    assert out["section_text"].index("La figura seguente mostra") < out["section_text"].index(
-        f"[FIG:{ref}]"
-    )
-    # Il contenuto salvato non cambia: salva il docente.
-    fresh = await seeded_db.get(CourseLesson, s["lesson"].id, populate_existing=True)
-    assert fresh is not None and fresh.content_raw["visual_assets"] == []
-    body["figure_id"] = str(uuid.uuid4())
-    res = await client.post(f"{s['url']}/{cand['need_id']}/insert", json=body, headers=headers)
-    assert res.status_code == 422 and res.json()["code"] == "figure_need_candidate_unknown"
 
 
 # --- agganci ------------------------------------------------------------------------
@@ -330,39 +271,6 @@ def test_the_intro_inputs_are_neutralized() -> None:
 
 def test_the_offline_guard_is_active() -> None:
     assert intro.write_intro is not real_write_intro
-
-
-async def test_insert_links_the_need_so_the_fill_adds_no_second_figure(
-    client: AsyncClient, seeded_db: AsyncSession, settings: Any
-) -> None:
-    from tests.test_admin_user_management import _bearer
-
-    s = await _api_env(seeded_db, settings)
-    headers = _bearer(s["user"])
-    (cand,) = (await client.get(f"{s['url']}/candidates", headers=headers)).json()
-    res = await client.post(
-        f"{s['url']}/{cand['need_id']}/insert",
-        json={"figure_id": cand["figure_id"], "section_text": "Testo.", "asset_ids": []},
-        headers=headers,
-    )
-    out = res.json()
-    # Il docente salva la bozza con la figura inserita.
-    lesson = await seeded_db.get(CourseLesson, s["lesson"].id, populate_existing=True)
-    assert lesson is not None
-    raw = dict(lesson.content_raw)
-    raw["sections"] = [{**raw["sections"][0], "content": out["section_text"]}]
-    raw["visual_assets"] = [out["asset"]]
-    lesson.content_raw = raw
-    lesson.content_modified_at = datetime.now(UTC)
-    await seeded_db.commit()
-    lesson = await seeded_db.get(CourseLesson, s["lesson"].id, populate_existing=True)
-    assert lesson is not None
-    (entry,) = lesson.figure_needs_view
-    assert entry["status"] == "placed" and entry["linked"] is True
-    full = await content_svc.load_course_full(seeded_db, course_id=lesson.course_id)
-    assert full is not None
-    target = next(les for m in full.modules for les in m.lessons if les.id == lesson.id)
-    assert await fill.fill_lesson(seeded_db, full, target, trigger="test") == []
 
 
 async def test_the_fill_gives_way_to_changes_made_meanwhile(
@@ -488,12 +396,10 @@ async def test_a_found_figure_triggers_the_fill_of_that_lesson(
     assert calls == [("literature", {lesson.id})]
 
 
-async def test_two_inserts_in_the_same_draft_keep_the_series_order(
-    seeded_db: AsyncSession, settings: Any
-) -> None:
-    """«Inserisci tutte»: il primo membro della serie è già nel contenuto;
-    il secondo entra dopo di lui e il terzo dopo il secondo appena inserito
-    nella bozza (non subito dopo il primo, verifica delle etichette)."""
+async def test_the_fill_keeps_the_series_order(seeded_db: AsyncSession, settings: Any) -> None:
+    """Il primo membro della serie è già nel contenuto: il secondo entra dopo
+    di lui e il terzo dopo il secondo appena inserito (non subito dopo il
+    primo)."""
     from tests.source_figure_builders import build_document_figure
 
     env = await _course(seeded_db)
@@ -536,30 +442,12 @@ async def test_two_inserts_in_the_same_draft_keep_the_series_order(
         c.need_id: c for c in await fill.candidates(seeded_db, course, lesson, within_budget=False)
     }
     assert found[series[1]["need_id"]].figure_id == diff.id
-    assert found[series[1]["need_id"]].source_kind == "uploaded"
-    text = lesson.content_raw["sections"][0]["content"]
-    out2 = await fill.draft_insertion(
-        seeded_db,
-        course,
-        lesson,
-        need_id=series[1]["need_id"],
-        figure_id=diff.id,
-        section_text=text,
-        taken_ids=["SRC-a"],
-    )
-    assert out2 is not None
-    ref2 = out2["asset"]["asset_id"]
-    out3 = await fill.draft_insertion(
-        seeded_db,
-        course,
-        lesson,
-        need_id=series[2]["need_id"],
-        figure_id=rot.id,
-        section_text=out2["section_text"],
-        taken_ids=["SRC-a", ref2],
-        draft_assets={series[1]["need_id"]: ref2},
-    )
-    assert out3 is not None
-    final = out3["section_text"]
-    ref3 = out3["asset"]["asset_id"]
+    inserted = await fill.fill_lesson(seeded_db, course, lesson, trigger="test")
+    await seeded_db.commit()
+    assert len(inserted) == 2
+    fresh = await seeded_db.get(CourseLesson, lesson.id, populate_existing=True)
+    assert fresh is not None
+    ref_of = {a["content"]: a["asset_id"] for a in fresh.content_raw["visual_assets"]}
+    final = fresh.content_raw["sections"][0]["content"]
+    ref2, ref3 = ref_of[str(diff.id)], ref_of[str(rot.id)]
     assert final.index("[FIG:SRC-a]") < final.index(f"[FIG:{ref2}]") < final.index(f"[FIG:{ref3}]")

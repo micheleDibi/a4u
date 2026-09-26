@@ -106,15 +106,6 @@ class CourseLessonOut(ORMModel):
     content_modified_at: datetime | None = None
     # Output AI completo (verbatim §6.3) — nullable finché non generato.
     content_raw: dict[str, Any] | None = None
-    # Piano delle figure (doc 18 §23.7): stato dei fabbisogni calcolato alla
-    # lettura, conteggi per l'etichetta della lezione, collegamenti manuali.
-    # Stato del calcolo dei fabbisogni (None = mai chiesto): l'etichetta della
-    # lezione distingue «in calcolo», «da rigenerare» e «non previste».
-    figure_needs_status: str | None = None
-    figure_plan_active: bool = False
-    figure_needs_view: list[dict[str, Any]] | None = None
-    figure_needs_summary: dict[str, int] | None = None
-    figure_need_links: dict[str, Any] | None = None
 
     # §7 — Export PDF della lezione
     pdf_status: str = "empty"

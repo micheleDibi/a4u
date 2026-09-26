@@ -1,13 +1,13 @@
 """Frase che introduce una figura inserita dal sistema (PROMPT 23).
 
 Il piano delle figure inserisce figure di fonte che il PROMPT 3 non ha
-citato (fine della Fase 3, completamento dopo la generazione, «Inserisci»
-dell'editor). Il testo delle dispense colloca ogni figura con il tag
-`[FIG:id]` su una riga propria DOPO il paragrafo che la introduce e la
-richiama a parole: senza quel paragrafo la figura resterebbe muta nel
-discorso. Una chiamata SOLO TESTO per figura scrive una o due frasi nella
-lingua del corso, dal contesto della sezione e dalla descrizione della
-figura (Vision, già neutralizzata).
+citato (fine della Fase 3, completamento dopo la generazione). Il testo
+delle dispense colloca ogni figura con il tag `[FIG:id]` su una riga
+propria DOPO il paragrafo che la introduce e la richiama a parole: senza
+quel paragrafo la figura resterebbe muta nel discorso. Una chiamata SOLO
+TESTO per figura scrive una o due frasi nella lingua del corso, dal
+contesto della sezione e dalla descrizione della figura (Vision, già
+neutralizzata).
 
 I testi passano da `prompt_safety` e stanno fra delimitatori; l'output si
 ripulisce (niente tag, niente fonte) e si neutralizza, perché finisce nel

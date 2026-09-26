@@ -28,6 +28,7 @@ from app.models.course_lesson import CourseLesson
 from app.services import course_duplication_service as dup
 from app.services import remote_storage
 from app.services.document_figures import storage as figure_storage
+from app.services.figure_needs_view import figure_needs_view
 from app.services.source_figure_service import resolve_source_figures
 from tests.course_builders import build_course, build_course_document
 from tests.source_figure_builders import build_document_figure
@@ -596,4 +597,4 @@ async def test_the_plan_of_the_figures_is_not_copied(
     )
     assert new_lesson.figure_needs is None and new_lesson.figure_needs_status is None
     assert new_lesson.figure_need_links is None and new_lesson.figure_assignment is None
-    assert new_lesson.figure_needs_view is None
+    assert figure_needs_view(new_lesson) is None

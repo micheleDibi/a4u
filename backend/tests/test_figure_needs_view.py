@@ -1,10 +1,9 @@
-"""Vista dei fabbisogni per l'editor e collegamenti del docente (WP9, doc 18 §23.7).
+"""Vista dei fabbisogni e collegamenti del docente (WP9, doc 18 §23.7).
 
 - stati calcolati alla lettura: placed, misplaced, missing, uncovered (con il
-  motivo), dismissed; figura collegata a mano; conteggi dell'etichetta;
-- PUT dei collegamenti: 422 con `loc` per fabbisogno sconosciuto e figura non
-  nella lezione, «Non serve» e ritorno allo stato calcolato, `content_raw` e
-  `content_modified_at` invariati; esposto nel DTO della lezione;
+  motivo), dismissed; figura collegata a mano (collegamenti già salvati);
+- la vista non è nel DTO della lezione (etichetta e pannello tolti il
+  26/09/2026);
 - migrazione 0043 aggiunge e toglie la stessa colonna.
 """
 
@@ -15,12 +14,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from httpx import AsyncClient
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.course_lesson import CourseLesson
-from app.services.figure_needs_view import figure_needs_view, summary
+from app.schemas.course_architecture import CourseLessonOut
+from app.services.figure_needs_view import figure_needs_view
 
 F1, F2 = "11111111-0000-4000-8000-000000000001", "22222222-0000-4000-8000-000000000002"
 
@@ -72,18 +68,6 @@ def test_states_are_computed_at_read_time() -> None:
     assert by["n3"] == {**by["n3"], "status": "uncovered", "reason": "no_candidate"}
     assert by["n3"]["literature"] == "not_found"
     assert by["n4"]["reason"] == "reuse_cap"
-    counts = summary(view)
-    assert counts == {
-        "needs": 4,
-        "musts": 3,
-        "musts_placed": 2,
-        "shoulds": 1,
-        "shoulds_placed": 0,
-        "not_cited": 0,
-        "uncovered": 2,
-        "misplaced": 1,
-        "dismissed": 0,
-    }
 
 
 def test_a_removed_figure_is_missing_and_links_win() -> None:
@@ -134,94 +118,11 @@ def test_migration_0043_adds_and_drops_the_links() -> None:
     assert "figure_need_links" in CourseLesson.__table__.columns
 
 
-# --- API ------------------------------------------------------------------------------
-
-
-async def _api_setup(db: AsyncSession) -> dict[str, Any]:
-    from app.core.permissions import R
-    from app.models.course import Course
-    from tests.course_builders import build_course
-    from tests.test_permissions import _setup_user_membership
-
-    user, org, _m = await _setup_user_membership(db, role_code=R.MANAGER)
-    course_id, _o, _u = await build_course(
-        db, modules=1, lessons_per_module=1, content_status="ready"
-    )
-    course = await db.get(Course, course_id)
-    assert course is not None
-    course.organization_id = org.id
-    course.assignee_user_id = user.id
-    lesson = (
-        (await db.execute(select(CourseLesson).where(CourseLesson.course_id == course_id)))
-        .scalars()
-        .one()
-    )
-    lesson.figure_needs_status = "ready"
-    lesson.figure_needs = {
-        "needs": [{"need_id": "n1", "section_id": "S1", "subject": "Base", "priority": "must"}]
-    }
-    lesson.content_raw = {
-        "introduction": "x",
-        "sections": [{"section_id": "S1", "content": "Testo [FIG:img-1]."}],
-        "visual_assets": [{"asset_id": "img-1", "format": "image", "content": "x.png"}],
-    }
-    await db.commit()
-    return {
-        "user": user.id,
-        "lesson": lesson,
-        "url": f"/api/v1/orgs/{org.id}/courses/{course_id}/lessons/{lesson.id}/figure-needs",
-    }
-
-
-def _lesson_out(body: dict[str, Any], lesson_id: Any) -> dict[str, Any]:
-    for module in body["modules"]:
-        for lesson in module["lessons"]:
-            if lesson["id"] == str(lesson_id):
-                return lesson
-    raise AssertionError("lezione assente")
-
-
-async def test_links_api(client: AsyncClient, seeded_db: AsyncSession) -> None:
-    from tests.test_admin_user_management import _bearer
-
-    s = await _api_setup(seeded_db)
-    headers = _bearer(s["user"])
-    before = (s["lesson"].content_raw, s["lesson"].content_modified_at)
-    res = await client.put(f"{s['url']}/nX", json={"state": "dismissed"}, headers=headers)
-    assert res.status_code == 422 and res.json()["code"] == "figure_need_unknown"
-    res = await client.put(
-        f"{s['url']}/n1", json={"state": "linked", "asset_id": "nope"}, headers=headers
-    )
-    assert res.status_code == 422
-    assert res.json()["meta"]["errors"][0]["loc"] == ["body", "asset_id"]
-    res = await client.put(
-        f"{s['url']}/n1", json={"state": "linked", "asset_id": "img-1"}, headers=headers
-    )
-    assert res.status_code == 200, res.text
-    out = _lesson_out(res.json(), s["lesson"].id)
-    (need,) = out["figure_needs_view"]
-    assert need["status"] == "placed" and need["linked"] is True
-    assert out["figure_needs_status"] == "ready"
-    assert out["figure_plan_active"] is True
-    assert out["figure_needs_summary"]["musts_placed"] == 1
-    res = await client.put(f"{s['url']}/n1", json={"state": "dismissed"}, headers=headers)
-    assert _lesson_out(res.json(), s["lesson"].id)["figure_needs_view"][0]["status"] == "dismissed"
-    res = await client.put(f"{s['url']}/n1", json={"state": None}, headers=headers)
-    out = _lesson_out(res.json(), s["lesson"].id)
-    assert out["figure_need_links"] is None
-    assert out["figure_needs_view"][0]["status"] == "uncovered"
-    fresh = await seeded_db.get(CourseLesson, s["lesson"].id, populate_existing=True)
-    assert fresh is not None and (fresh.content_raw, fresh.content_modified_at) == before
-
-
-async def test_extra_fields_are_rejected(client: AsyncClient, seeded_db: AsyncSession) -> None:
-    from tests.test_admin_user_management import _bearer
-
-    s = await _api_setup(seeded_db)
-    res = await client.put(
-        f"{s['url']}/n1", json={"state": "dismissed", "x": 1}, headers=_bearer(s["user"])
-    )
-    assert res.status_code == 422
+def test_the_lesson_dto_does_not_expose_the_plan() -> None:
+    """Niente etichetta né pannello nell'editor: lo stato del piano resta
+    interno (completamento automatico, sequenze di slide e discorso)."""
+    fields = set(CourseLessonOut.model_fields)
+    assert not {f for f in fields if f.startswith(("figure_need", "figure_plan"))}
 
 
 F3 = "33333333-0000-4000-8000-000000000003"
@@ -260,7 +161,6 @@ def test_an_uncited_figure_is_not_counted_as_placed() -> None:
     assert view is not None
     by = {v["need_id"]: v for v in view}
     assert by["n4"]["status"] == "missing" and by["n4"]["reason"] == "not_cited"
-    assert summary(view)["musts_placed"] == 2  # n1 e n2, non n4
 
 
 def test_a_figure_cited_inside_an_example_belongs_to_its_section() -> None:
@@ -269,13 +169,6 @@ def test_a_figure_cited_inside_an_example_belongs_to_its_section() -> None:
     lesson.content_raw["examples"] = [{"example_id": "ex_1", "content": "Vedi [FIG:SRC-a]."}]
     by = {v["need_id"]: v for v in figure_needs_view(lesson) or []}
     assert by["n1"]["status"] == "placed" and by["n1"]["cited_in"] == "S1"
-
-
-def test_a_dismissed_must_leaves_the_label_denominator() -> None:
-    view = figure_needs_view(_lesson(figure_need_links={"n4": {"state": "dismissed"}}))
-    counts = summary(view)
-    assert counts is not None
-    assert counts["musts"] == 2 and counts["musts_placed"] == 2 and counts["dismissed"] == 1
 
 
 def _sequence_lesson(**over: Any) -> SimpleNamespace:
@@ -338,20 +231,3 @@ def test_an_open_offer_reads_the_previous_snapshot() -> None:
     by = {v["need_id"]: v for v in figure_needs_view(lesson) or []}
     assert by["n1"]["status"] == "placed" and by["n1"]["asset_id"] == "SRC-a"
     assert by["n2"]["status"] == "misplaced"
-
-
-def test_the_summary_counts_shoulds_and_leaves_out_dismissed() -> None:
-    lesson = _lesson(figure_need_links={"n4": {"state": "dismissed"}})
-    lesson.content_raw["sections"][2]["content"] = "Qui [FIG:SRC-b] e [FIG:img-1] e [FIG:SRC-d]."
-    lesson.content_raw["visual_assets"].append(
-        {"asset_id": "SRC-d", "format": "source_figure", "content": F3}
-    )
-    lesson.figure_assignment = {
-        **lesson.figure_assignment,
-        "bound": {"n1": F1, "n2": F2, "n3": F3},
-    }
-    counts = summary(figure_needs_view(lesson))
-    assert counts is not None
-    assert counts["musts"] == 2 and counts["musts_placed"] == 2
-    assert counts["shoulds"] == 1 and counts["shoulds_placed"] == 1
-    assert counts["dismissed"] == 1
