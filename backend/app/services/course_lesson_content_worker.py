@@ -68,6 +68,7 @@ from app.services import (
 )
 from app.services.heavy_job_lock import HEAVY_JOB_LOCK
 from app.services.openai_client import OpenAINotConfiguredError
+from app.services.source_figure_plan import PlanCatalog, apply_placement
 
 log = get_logger("app.course_lesson_content.worker")
 
@@ -358,6 +359,9 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
         # Catalogo delle figure di fonte (budget (b), IN AGGIUNTA alle figure
         # generate): un errore qui non blocca la lezione, che resta senza.
         catalog: source_figure_catalog.CatalogResult | None = None
+        # Offerta del piano di questo giro (WP6): la fotografia finale vale solo
+        # per lei, non per un'offerta vecchia rimasta nella riga.
+        offer_token = ""
         if not lesson.is_assessment:
             try:
                 async with db.begin_nested():
@@ -374,7 +378,17 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
             if figure_plan_service.plan_active():
                 try:
                     async with db.begin_nested():
-                        await source_figure_assignment_service.reserve(db, course_full, lesson)
+                        offer = await source_figure_assignment_service.reserve(
+                            db, course_full, lesson
+                        )
+                        offer_token = str(offer.get("run_token") or "") if offer else ""
+                        # Blocco del piano (WP8): il catalogo del PROMPT 3
+                        # diventa quello del piano, per sezione e fabbisogno.
+                        plan_catalog = await source_figure_assignment_service.plan_catalog(
+                            db, course_full, lesson, offer, catalog
+                        )
+                        if plan_catalog is not None:
+                            catalog = plan_catalog
                 except Exception as exc:
                     log.warning(
                         "lesson_content_figure_assignment_failed",
@@ -533,6 +547,7 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
         # `references`) e di `materialize_lesson_content`, che riceve
         # l'usage con le chiamate degli asset (`content_tokens.assets`).
         fusion: source_figure_fusion.FusionReport | None = None
+        placement: dict[str, Any] | None = None
         if isinstance(content_output, LessonContentOutput):
             # Figure di fonte scelte → asset `source_figure` (prima della
             # validazione, che le salta: non sono in RENDERABLE_FORMATS).
@@ -541,6 +556,17 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                 catalog.catalog.refs if catalog else {},
                 max_items=catalog.budget if catalog else 0,
             )
+            if catalog is not None and isinstance(catalog.catalog, PlanCatalog):
+                # Collocazione rispetto al piano: nessuno spostamento; un must
+                # non scelto si inserisce in fondo alla sua sezione.
+                placement = apply_placement(
+                    content_output, catalog.catalog, max_items=catalog.budget
+                )
+                fusion.added = [
+                    a.asset_id
+                    for a in content_output.visual_assets
+                    if a.format == SOURCE_FIGURE_FORMAT
+                ]
             if fusion.as_json():
                 log.info(
                     "lesson_content_source_figures_fused",
@@ -724,6 +750,7 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                 "budget": catalog.budget,
                 "license_policy": catalog.license_policy,
                 **(fusion.as_json() if fusion else {}),
+                **({"plan": placement["counts"]} if placement else {}),
             }
 
         # Terzo cancel-check: il revisore delle ridondanze e il ricontrollo
@@ -818,8 +845,19 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
         # parallelo (prima due lezioni potevano superarlo insieme), e la
         # fotografia dell'assegnazione si scrive nella stessa transazione.
         fused_now = _fused_source_figures(content_output)
-        if fused_now or (not lesson.is_assessment and lesson.figure_assignment):
+        if fused_now or (not lesson.is_assessment and offer_token):
             await source_figure_assignment_service.course_lock(db, course_full.id)
+            # L'attesa del lock può durare: un annullamento arrivato nel
+            # frattempo non va sovrascritto (il rollback rilascia il lock).
+            await db.refresh(lesson, ["content_status"])
+            if lesson.content_status != "processing":
+                await db.rollback()
+                log.info(
+                    "lesson_content_cancelled_during_lock",
+                    lesson_id=str(lesson.id),
+                    lesson_code=lesson.lesson_code,
+                )
+                return
         if fused_now and isinstance(content_output, LessonContentOutput):
             try:
                 over = await source_figure_catalog.over_reuse_cap(
@@ -839,10 +877,6 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                 )
                 if isinstance(usage.get("source_figures"), dict):
                     usage["source_figures"]["dropped_at_lock"] = len(_gone)
-        if not lesson.is_assessment:
-            source_figure_assignment_service.settle(
-                lesson, set(_fused_source_figures(content_output).values())
-            )
 
         try:
             if lesson.is_assessment:
@@ -864,6 +898,16 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                     usage=usage,
                     figure_review=figure_review,
                 )
+                # Fotografia finale solo dopo una materializzazione riuscita
+                # e solo per l'offerta di QUESTO giro (stessa transazione,
+                # ancora sotto il lock di corso).
+                if offer_token:
+                    source_figure_assignment_service.settle(
+                        lesson,
+                        set(_fused_source_figures(content_output).values()),
+                        placement,
+                        run_token=offer_token,
+                    )
         except Exception as exc:
             settings = get_settings()
             terminal = not _apply_failure(

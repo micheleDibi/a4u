@@ -93,6 +93,7 @@ _DEFAULTS: dict[str, object] = {
     "figure_plan_max_per_lesson": 8,
     "figure_source_minutes_per_figure": 4,
     "figure_plan_legacy_match_enabled": False,
+    "figure_plan_in_prompt_enabled": True,
     "figure_tikz_enabled": False,
     "figure_tikz_propose_enabled": False,
     "figure_tikz_max_chars": 8000,

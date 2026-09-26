@@ -220,10 +220,11 @@ async def over_reuse_cap(
     """Figure scelte che intanto altre lezioni hanno portato al tetto di
     riuso (le figure già collocate nella lezione stessa passano).
 
-    Il ricontrollo non è serializzato fra lezioni generate in parallelo:
-    due lezioni che scelgono la stessa figura possono passarlo entrambe
-    prima del commit dell'altra, e la figura finire in K+1 lezioni. Il lock
-    di corso attorno ad assegnazione e materializzazione arriva con WP6."""
+    Il worker di Fase 3 lo ripete sotto il lock di corso, tenuto fino al
+    commit della materializzazione (`source_figure_assignment_service.
+    course_lock`, doc 18 §23.4): le lezioni generate in parallelo si
+    serializzano. Resta possibile superare K solo se il lock non si prende
+    entro 20 s (si procede senza, con un avviso nel log)."""
     wanted = set(figure_ids)
     if not wanted:
         return set()

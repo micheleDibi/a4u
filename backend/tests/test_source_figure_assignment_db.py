@@ -264,3 +264,37 @@ def test_migration_0042_matches_the_models() -> None:
     assert fk.column.table.name == "course_lesson" and fk.ondelete == "SET NULL"
     assert fk.constraint is not None
     assert fk.constraint.name == "fk_course_document_figure_found_for_lesson_id_course_lesson"
+
+
+async def test_concurrent_reserves_are_serialized_by_the_course_lock(
+    seeded_db: AsyncSession, settings: Any, monkeypatch: pytest.MonkeyPatch, _engine: Any
+) -> None:
+    """Due lezioni in generazione chiedono la stessa figura (K=1): la seconda
+    aspetta il commit della prima, ne vede l'offerta e resta scoperta."""
+    import asyncio
+
+    monkeypatch.setattr(catalog, "reuse_cap", lambda: 1)
+    env = await _course(seeded_db)
+    course, first, second = env["course"], env["first"], env["second"]
+    need = _need("S1", "Schema a scansione", "scanning")
+    _store(course, first, [need])
+    _store(course, second, [need])
+    first.content_status = second.content_status = "processing"
+    await seeded_db.commit()
+    factory = async_sessionmaker(_engine, expire_on_commit=False)
+
+    async def run(code: str) -> dict[str, Any] | None:
+        async with factory() as db:
+            loaded = await content_svc.load_course_full(db, course_id=course.id)
+            assert loaded is not None
+            data = await svc.reserve(db, loaded, find_lesson(loaded, code))
+            await asyncio.sleep(0.3)  # la transazione (e il lock) resta aperta
+            await db.commit()
+            return data
+
+    one, two = await asyncio.gather(run("M1.L1"), run("M1.L2"))
+    assert one is not None and two is not None
+    offered = [d for d in (one, two) if need["need_id"] in d["offers"]]
+    assert len(offered) == 1
+    loser = two if offered[0] is one else one
+    assert loser["unassigned"] == {need["need_id"]: "reuse_cap"}

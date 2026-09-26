@@ -21,6 +21,7 @@ validazione degli asset sono sostituiti. Oracoli:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import re
 import uuid
@@ -921,6 +922,22 @@ async def test_parallel_lessons_respect_the_reuse_cap_under_the_course_lock(
         await asyncio.wait_for(both_generated.wait(), timeout=30)
 
     fakes["on_generate"] = wait_for_both
+    # Barriera dentro la materializzazione: senza lock entrano tutte e due
+    # (e tengono la figura), col lock la seconda aspetta la prima e la
+    # barriera scade dopo 1 s.
+    inside = asyncio.Event()
+    entered: list[uuid.UUID] = []
+    original = content_svc.materialize_lesson_content
+
+    async def barrier(db: AsyncSession, **kwargs: Any) -> Any:
+        entered.append(kwargs["lesson"].id)
+        if len(entered) >= 2:
+            inside.set()
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(inside.wait(), timeout=1.0)
+        return await original(db, **kwargs)
+
+    monkeypatch.setattr(content_svc, "materialize_lesson_content", barrier)
     await asyncio.gather(worker._process_one(first.id), worker._process_one(other.id))
     lessons = [await _lesson(seeded_db, lid) for lid in (first.id, other.id)]
     assert all(lesson.content_status == "ready" for lesson in lessons), [
@@ -936,6 +953,146 @@ async def test_parallel_lessons_respect_the_reuse_cap_under_the_course_lock(
     loser = next(lesson for lesson in lessons if lesson not in holders)
     audits = await _dropped_audits(seeded_db, loser.id)
     assert [a.payload["reason"] for a in audits] == ["reuse_cap"]
+
+
+# --- piano delle figure nella Fase 3 (WP6, WP8) --------------------------------------
+
+
+def _plan_settings(monkeypatch: pytest.MonkeyPatch, **updates: Any) -> None:
+    from app.services import figure_plan_service as plan
+    from app.services import source_figure_assignment_service as svc
+
+    patched = get_settings().model_copy(
+        update={"figure_source_enabled": True, "figure_plan_enabled": True, **updates}
+    )
+    for module in (plan, svc, source_figure_catalog):
+        monkeypatch.setattr(module, "get_settings", lambda: patched)
+
+
+async def _with_needs(db: AsyncSession, setup: dict[str, Any]) -> dict[str, Any]:
+    """Fabbisogno must in S1 coperto dalla figura buona (depicts scanning)."""
+    from app.services import figure_plan_service as plan
+    from app.services import openai_figure_needs_service as needs_svc
+
+    good = setup["figures"]["good"]
+    good.depicts = {
+        "v": 1,
+        "items": [{"object_en": "laser Doppler vibrometer", "variant_en": "scanning"}],
+        "focus": "optical layout",
+    }
+    course = await content_svc.load_course_full(db, course_id=setup["course_id"])
+    assert course is not None
+    lesson = find_lesson(course, "M1.L1")
+    need = {
+        "need_id": needs_svc.need_id("S1", "Schema a scansione"),
+        "section_id": "S1",
+        "subject": "Schema del vibrometro a scansione",
+        "representation": "schematic",
+        "focus": "",
+        "priority": "must",
+        "object_en": "laser Doppler vibrometer",
+        "object_terms": ["LDV"],
+        "variant_en": "scanning",
+        "variant_terms": ["scanning"],
+        "is_base": False,
+        "sequence_group": "",
+        "sequence_index": 0,
+        "terms_course": ["vibrometro"],
+        "terms_en": ["Bragg cell"],
+    }
+    item = plan.needs_input(course, lesson)
+    assert item is not None
+    plan.store_needs(
+        lesson,
+        result=needs_svc.NeedsResult([need], {}),
+        fp=plan.fingerprint(item, plan.max_needs(lesson)),
+        model="test",
+        usage=None,
+    )
+    await db.commit()
+    return need
+
+
+async def test_the_plan_catalog_drives_the_prompt_and_the_snapshot_is_settled(
+    seeded_db: AsyncSession, fakes: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _plan_settings(monkeypatch)
+    setup = await _setup(seeded_db)
+    good = setup["figures"]["good"]
+    need = await _with_needs(seeded_db, setup)
+    await worker._process_one(setup["lesson_id"])
+    lesson = await _lesson(seeded_db, setup["lesson_id"])
+    assert lesson.content_status == "ready", lesson.content_error
+    prompt = fakes["calls"][0]["user_prompt"]
+    assert "## Figure di fonte per sezione (catalogo del piano)" in prompt
+    assert "### Sezione S1" in prompt and "N1 (obbligatoria)" in prompt
+    data = lesson.figure_assignment
+    assert data["state"] == "settled"
+    assert data["bound"] == {need["need_id"]: str(good.id)}
+    assert data["placement"]["needs"][need["need_id"]]["status"] == "placed"
+    assert lesson.content_tokens["source_figures"]["plan"]["placed"] == 1
+
+
+async def test_plan_out_of_the_prompt_keeps_the_lexical_catalog(
+    seeded_db: AsyncSession, fakes: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _plan_settings(monkeypatch, figure_plan_in_prompt_enabled=False)
+    setup = await _setup(seeded_db)
+    await _with_needs(seeded_db, setup)
+    await worker._process_one(setup["lesson_id"])
+    lesson = await _lesson(seeded_db, setup["lesson_id"])
+    assert lesson.content_status == "ready", lesson.content_error
+    prompt = fakes["calls"][0]["user_prompt"]
+    assert "catalogo del piano" not in prompt
+    assert "## Figure di fonte disponibili (catalogo)" in prompt
+    assert lesson.figure_assignment is None
+
+
+async def test_a_failed_materialization_leaves_no_settled_snapshot(
+    seeded_db: AsyncSession, fakes: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.core.errors import ConflictError
+
+    _plan_settings(monkeypatch)
+    setup = await _setup(seeded_db)
+    await _with_needs(seeded_db, setup)
+
+    async def broken(db: AsyncSession, **kwargs: Any) -> Any:
+        raise ConflictError("obiettivi non coperti", code="x")
+
+    monkeypatch.setattr(content_svc, "materialize_lesson_content", broken)
+    await worker._process_one(setup["lesson_id"])
+    lesson = await _lesson(seeded_db, setup["lesson_id"])
+    assert lesson.content_status in ("pending", "failed")
+    assert (lesson.figure_assignment or {}).get("state") != "settled"
+
+
+async def test_a_cancel_during_the_lock_wait_is_not_overwritten(
+    seeded_db: AsyncSession,
+    fakes: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    _engine: Any,
+) -> None:
+    from app.services import source_figure_assignment_service as svc
+
+    setup = await _setup(seeded_db)
+    original = svc.course_lock
+
+    async def cancel_then_lock(db: AsyncSession, course_id: uuid.UUID, **kw: Any) -> bool:
+        factory = async_sessionmaker(_engine, expire_on_commit=False)
+        async with factory() as other:
+            await other.execute(
+                update(CourseLesson)
+                .where(CourseLesson.id == setup["lesson_id"])
+                .values(content_status="failed", content_error="annullata")
+            )
+            await other.commit()
+        return await original(db, course_id, **kw)
+
+    monkeypatch.setattr(svc, "course_lock", cancel_then_lock)
+    await worker._process_one(setup["lesson_id"])
+    lesson = await _lesson(seeded_db, setup["lesson_id"])
+    assert lesson.content_status == "failed" and lesson.content_raw is None
 
 
 # --- risoluzione effettiva nel catalogo (doc 18 §22) --------------------------------

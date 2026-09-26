@@ -352,6 +352,7 @@ proprio nel prompt di Fase 3.
 | `FIGURE_PLAN_MAX_PER_LESSON` | `8` | Tetto del budget (b) del piano: figure di fonte per lezione con i fabbisogni pronti (doc 18 §23.4). |
 | `FIGURE_SOURCE_MINUTES_PER_FIGURE` | `4` | Minuti di lezione per figura di fonte nel budget morbido del piano, fra il budget senza piano (`FIGURE_SOURCE_MAX_PER_LESSON`) e `FIGURE_PLAN_MAX_PER_LESSON`; i must pronti lo alzano fino al tetto. |
 | `FIGURE_PLAN_LEGACY_MATCH_ENABLED` | `false` | Abbinamento fabbisogno-figura dal solo testo (didascalia, parole chiave) per le figure senza `depicts`. Spento: precisione 0,53 contro 0,88 con `depicts` (misura M-A3, doc 18 §23.3); le figure vecchie si completano con `scripts/redescribe_figure_depicts.py`. |
+| `FIGURE_PLAN_IN_PROMPT_ENABLED` | `true` | Blocco del piano delle figure nel messaggio user del PROMPT 3 (figure assegnate per sezione e fabbisogno, doc 18 §23.6). Spento: nessuna offerta e catalogo lessicale come prima; fabbisogni e verifica dei buchi restano. |
 
 **Formato `tikz` (WP6).** Figure vettoriali compilate con XeLaTeX nella sandbox del container (limiti di processo, ambiente senza segreti, TeX paranoico, autotest all'avvio: se fallisce il formato non si offre). Spento di default: TeX Live entra nell'immagine solo con `docker compose -f docker-compose.yml -f docker-compose.prod.yml build --build-arg INSTALL_TEX=true backend` (circa +550 MB, misura M5). Vedi `docs/courses/18-literature-figures.md`.
 

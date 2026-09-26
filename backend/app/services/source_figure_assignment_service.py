@@ -219,6 +219,27 @@ async def snapshot(db: AsyncSession, course: Course, current: CourseLesson) -> S
                 sa.Arc(lesson.id, need_id, fid, found.tier, found.score, found.relation)
                 for fid, found in index.covering(need)
             ]
+    # Le figure già nel contenuto di una lezione partecipante che nessun suo
+    # fabbisogno usa restano lì finché la lezione non si rigenera: contano
+    # come usi fissi (lo stesso conto del ricontrollo sotto il lock).
+    with_arcs: dict[uuid.UUID, set[uuid.UUID]] = {}
+    for (lesson_id, _need), group in arcs.items():
+        with_arcs.setdefault(lesson_id, set()).update(a.figure_id for a in group)
+    extra_fixed: dict[uuid.UUID, int] = {}
+    for slot in slots:
+        for fid in slot.own - with_arcs.get(slot.lesson_id, set()):
+            extra_fixed[fid] = extra_fixed.get(fid, 0) + 1
+    if extra_fixed:
+        supplies = [
+            sa.Supply(
+                figure_id=s.figure_id,
+                literature=s.literature,
+                resolution=s.resolution,
+                fixed_uses=s.fixed_uses + extra_fixed.get(s.figure_id, 0),
+                found_for=s.found_for,
+            )
+            for s in supplies
+        ]
     assignment = sa.assign(
         slots,
         demands,
@@ -284,10 +305,15 @@ def offer_payload(snap: Snapshot, lesson: CourseLesson, *, locked: bool) -> dict
     }
 
 
+def plan_in_prompt() -> bool:
+    return plan.plan_active() and bool(get_settings().figure_plan_in_prompt_enabled)
+
+
 async def reserve(db: AsyncSession, course: Course, lesson: CourseLesson) -> dict[str, Any] | None:
     """Offerta della lezione all'avvio della Fase 3 (senza commit: il commit
-    del chiamante salva l'offerta e rilascia il lock)."""
-    if not plan.plan_active() or lesson.is_assessment:
+    del chiamante salva l'offerta e rilascia il lock). Con il piano fuori dal
+    prompt (`FIGURE_PLAN_IN_PROMPT_ENABLED=false`) nessuna offerta."""
+    if not plan_in_prompt() or lesson.is_assessment:
         return None
     locked = await course_lock(db, course.id)
     snap = await snapshot(db, course, lesson)
@@ -305,10 +331,71 @@ async def reserve(db: AsyncSession, course: Course, lesson: CourseLesson) -> dic
     return lesson.figure_assignment
 
 
-def settle(lesson: CourseLesson, placed: set[uuid.UUID]) -> dict[str, Any] | None:
-    """Fotografia finale nella transazione della materializzazione."""
+async def plan_catalog(
+    db: AsyncSession,
+    course: Course,
+    lesson: CourseLesson,
+    offer: dict[str, Any] | None,
+    lexical: catalog.CatalogResult | None,
+) -> catalog.CatalogResult | None:
+    """Catalogo del piano per il PROMPT 3 dall'offerta (figure assegnate e
+    alternative, rilette ora), più il residuo del catalogo lessicale."""
+    from app.models.course_document_figure import CourseDocumentFigure
+    from app.services.source_figure_plan import build_plan_catalog
+
+    if not offer or not offer.get("offers"):
+        return None
+    ids: set[uuid.UUID] = set()
+    for value in (offer.get("offers") or {}).values():
+        if isinstance(value, dict) and (fid := _as_uuid(value.get("figure_id"))):
+            ids.add(fid)
+    for values in (offer.get("alternatives") or {}).values():
+        for value in values or []:
+            if isinstance(value, dict) and (fid := _as_uuid(value.get("figure_id"))):
+                ids.add(fid)
+    rows = (
+        (await db.execute(select(CourseDocumentFigure).where(CourseDocumentFigure.id.in_(ids))))
+        .scalars()
+        .all()
+    )
+    figures = {row.id: row for row in rows if row.course_id == course.id}
+    residual: list[Any] = []
+    if lexical is not None:
+        by_id = {c.figure_id for c in lexical.catalog.candidates}
+        residual = list(
+            (
+                await db.execute(
+                    select(CourseDocumentFigure).where(CourseDocumentFigure.id.in_(by_id))
+                )
+            )
+            .scalars()
+            .all()
+        )
+        order = {c.figure_id: i for i, c in enumerate(lexical.catalog.candidates)}
+        residual.sort(key=lambda row: order.get(row.id, 0))
+    needs = _ready_needs(course, lesson)
+    built = build_plan_catalog(needs, offer, figures, residual, list(lesson.section_outline or []))
+    if built is None:
+        return None
+    policy = lexical.license_policy if lexical else await catalog.license_policy_for(db, course)
+    return catalog.CatalogResult(
+        catalog=built, budget=int(offer.get("budget") or 0), license_policy=policy
+    )
+
+
+def settle(
+    lesson: CourseLesson,
+    placed: set[uuid.UUID],
+    placement: dict[str, Any] | None = None,
+    *,
+    run_token: str | None = None,
+) -> dict[str, Any] | None:
+    """Fotografia finale nella transazione della materializzazione, solo per
+    l'offerta del giro in corso (`run_token`)."""
     data = dict(lesson.figure_assignment) if isinstance(lesson.figure_assignment, dict) else {}
-    if not data:
+    if not data or data.get("state") != "offered":
+        return None
+    if run_token is not None and data.get("run_token") != run_token:
         return None
     offers = data.get("offers") or {}
     bound = {
@@ -323,6 +410,8 @@ def settle(lesson: CourseLesson, placed: set[uuid.UUID]) -> dict[str, Any] | Non
         bound=bound,
         missed=sorted(n for n in offers if n not in bound),
     )
+    if placement is not None:
+        data["placement"] = placement
     lesson.figure_assignment = data
     return data
 

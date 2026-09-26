@@ -510,6 +510,10 @@ class Settings(BaseSettings):
     # Abbinamento dal solo testo per le figure senza `depicts` (descritte
     # prima della 0041): spento, precisione 0,53 nella misura M-A3.
     figure_plan_legacy_match_enabled: bool = False
+    # Blocco del piano nel messaggio user del PROMPT 3 (doc 18 §23.6). Spento:
+    # nessuna offerta, catalogo lessicale come prima; i fabbisogni servono
+    # solo a editor e buchi.
+    figure_plan_in_prompt_enabled: bool = True
 
     # Formato `tikz` (WP6): figure vettoriali (schemi di strumenti, circuiti
     # IEC, catene di misura) compilate con XeLaTeX nella sandbox del
