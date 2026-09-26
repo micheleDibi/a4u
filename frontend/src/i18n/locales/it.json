@@ -2005,6 +2005,7 @@
         "no_candidate": "Nessuna figura adatta nei documenti del corso",
         "reuse_cap": "Le figure adatte sono già usate in altre lezioni",
         "budget": "Oltre il numero di figure della lezione",
+        "duplicate_in_lesson": "La figura adatta copre già un altro fabbisogno della lezione",
         "not_planned": "Il piano non era attivo alla generazione"
       },
       "literature": {
@@ -2016,6 +2017,7 @@
       "outsideSections": "introduzione o sintesi",
       "linkedByYou": "collegata da te",
       "missingHint": "Il piano aveva una figura, ma il modello non l'ha inserita",
+      "notCitedHint": "La figura è nella lezione ma il testo non la cita",
       "link": "Collega",
       "dismiss": "Non serve",
       "restore": "Ripristina",

@@ -164,7 +164,11 @@ export function LessonFigureNeedsPanel({
         .filter(Boolean)
         .join(" · ");
     }
-    if (need.status === "missing") return t("courses.figureNeeds.missingHint");
+    if (need.status === "missing") {
+      return need.reason === "not_cited"
+        ? t("courses.figureNeeds.notCitedHint")
+        : t("courses.figureNeeds.missingHint");
+    }
     if (need.status === "uncovered") {
       const reason = t(`courses.figureNeeds.reasons.${need.reason ?? "no_candidate"}`, {
         defaultValue: t("courses.figureNeeds.reasons.no_candidate"),

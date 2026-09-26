@@ -126,7 +126,7 @@ def test_new_i18n_keys_exist_in_italian_and_english() -> None:
         # letteratura sono chiavi dinamiche del pannello.
         for status in ("placed", "misplaced", "missing", "uncovered", "dismissed"):
             assert f"courses.figureNeeds.status.{status}" in keys, (language, status)
-        for reason in ("no_candidate", "reuse_cap", "budget", "not_planned"):
+        for reason in ("no_candidate", "reuse_cap", "budget", "duplicate_in_lesson", "not_planned"):
             assert f"courses.figureNeeds.reasons.{reason}" in keys, (language, reason)
         for outcome in ("found", "not_found", "not_searched"):
             assert f"courses.figureNeeds.literature.{outcome}" in keys, (language, outcome)

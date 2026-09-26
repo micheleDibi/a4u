@@ -269,7 +269,8 @@ export interface LessonFigureNeedView {
   cited_in?: string | null;
   /** true se il collegamento l'ha fatto il docente. */
   linked?: boolean;
-  /** uncovered: no_candidate, reuse_cap, budget, not_planned. */
+  /** uncovered: no_candidate, reuse_cap, budget, duplicate_in_lesson,
+   *  not_planned; missing: not_cited (figura nel contenuto ma non citata). */
   reason?: string;
   /** uncovered: esito della ricerca in letteratura aperta, se c'è. */
   literature?: string | null;

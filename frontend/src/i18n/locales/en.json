@@ -2005,6 +2005,7 @@
         "no_candidate": "No suitable figure in the course documents",
         "reuse_cap": "The suitable figures are already used in other lessons",
         "budget": "Beyond the lesson's number of figures",
+        "duplicate_in_lesson": "The suitable figure already covers another need of the lesson",
         "not_planned": "The plan was not active at generation"
       },
       "literature": {
@@ -2016,6 +2017,7 @@
       "outsideSections": "introduction or summary",
       "linkedByYou": "linked by you",
       "missingHint": "The plan had a figure, but the model did not insert it",
+      "notCitedHint": "The figure is in the lesson but the text does not cite it",
       "link": "Link",
       "dismiss": "Not needed",
       "restore": "Restore",
