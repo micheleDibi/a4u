@@ -2015,7 +2015,7 @@
       },
       "citedIn": "citata in «{{section}}»",
       "outsideSections": "introduzione o sintesi",
-      "linkedByYou": "collegata da te",
+      "linkedByYou": "scelta da te",
       "missingHint": "Il piano aveva una figura, ma il modello non l'ha inserita",
       "notCitedHint": "La figura è nella lezione ma il testo non la cita",
       "dismiss": "Non serve",
@@ -2024,7 +2024,8 @@
       "toast": {
         "updated": "Figura consigliata aggiornata",
         "error": "Impossibile aggiornare la figura consigliata",
-        "inserted": "Figura inserita nella bozza: salva per confermare"
+        "inserted": "Figura inserita nella bozza: salva per confermare",
+        "changed": "La sezione è cambiata durante l'inserimento: premi di nuovo «Inserisci»"
       },
       "insert": "Inserisci",
       "proposed": "Figura proposta: {{caption}}",

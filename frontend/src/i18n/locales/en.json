@@ -2015,7 +2015,7 @@
       },
       "citedIn": "cited in “{{section}}”",
       "outsideSections": "introduction or summary",
-      "linkedByYou": "linked by you",
+      "linkedByYou": "chosen by you",
       "missingHint": "The plan had a figure, but the model did not insert it",
       "notCitedHint": "The figure is in the lesson but the text does not cite it",
       "dismiss": "Not needed",
@@ -2024,7 +2024,8 @@
       "toast": {
         "updated": "Recommended figure updated",
         "error": "Unable to update the recommended figure",
-        "inserted": "Figure inserted into the draft: save to confirm"
+        "inserted": "Figure inserted into the draft: save to confirm",
+        "changed": "The section changed during the insertion: press «Insert» again"
       },
       "insert": "Insert",
       "proposed": "Proposed figure: {{caption}}",

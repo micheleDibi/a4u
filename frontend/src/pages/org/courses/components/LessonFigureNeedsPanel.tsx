@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -102,6 +102,10 @@ export function LessonFigureNeedsPanel({
   const view = lesson.figure_needs_view;
   // Voci inserite nella bozza in questa sessione (da salvare).
   const [inserted, setInserted] = useState<Record<string, string>>({});
+  // Sezioni della bozza sempre aggiornate: «Inserisci» applica il testo
+  // restituito solo se la sezione non è cambiata durante la richiesta.
+  const sectionsRef = useRef(sections);
+  sectionsRef.current = sections;
 
   const candidatesQuery = useQuery({
     queryKey: ["figure-need-candidates", orgId, courseId, lesson.id],
@@ -142,25 +146,30 @@ export function LessonFigureNeedsPanel({
   });
 
   const insertMut = useMutation({
-    mutationFn: ({ needId, figureId, sectionId }: {
+    mutationFn: async ({ needId, figureId, sectionId }: {
       needId: string;
       figureId: string;
       sectionId: string;
     }) => {
-      const section = sections.find((s) => s.section_id === sectionId);
-      return coursesApi.lessonContent.insertFigureForNeed(
+      const sent =
+        sectionsRef.current.find((s) => s.section_id === sectionId)?.content ?? "";
+      const out = await coursesApi.lessonContent.insertFigureForNeed(
         orgId,
         courseId,
         lesson.id,
         needId,
-        {
-          figure_id: figureId,
-          section_text: section?.content ?? "",
-          asset_ids: assetIds,
-        },
+        { figure_id: figureId, section_text: sent, asset_ids: assetIds },
       );
+      return { out, sent };
     },
-    onSuccess: (out, vars) => {
+    onSuccess: ({ out, sent }, vars) => {
+      const current = sectionsRef.current.find(
+        (s) => s.section_id === out.section_id,
+      )?.content;
+      if (current !== sent) {
+        toast.error(t("courses.figureNeeds.toast.changed"));
+        return;
+      }
       onInsert(out.section_id, out.section_text, out.asset);
       setInserted((prev) => ({ ...prev, [vars.needId]: out.asset.asset_id }));
       toast.success(t("courses.figureNeeds.toast.inserted"));
