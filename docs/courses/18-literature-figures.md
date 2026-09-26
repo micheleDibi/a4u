@@ -1631,15 +1631,27 @@ risultano da riesportare. La fotografia dell'assegnazione registra il legame
 - «Figure dalle fonti: X di Y obbligatorie» (verde se tutte nel testo,
   ambra se ne mancano); senza obbligatorie «X di Y consigliate»;
 - «Nessuna figura dalle fonti necessaria» (piano calcolato, nessun
-  fabbisogno);
-- «Figure dalle fonti: calcolo in corso…», «rigenera per calcolarle»
-  (lezione generata prima del piano o calcolo fallito), «non previste»
-  (lezione senza scaletta).
+  fabbisogno); «tutte escluse da te» se il docente le ha escluse tutte;
+- «Figure dalle fonti: ricerca in corso…», «non ancora cercate» (mai
+  chieste: lezione generata prima della funzione, corso duplicato; si
+  cercano generando o rigenerando le dispense), «ricerca non riuscita»,
+  «non previste» (lezione senza scaletta);
+- nessuna etichetta con la funzione spenta (`figure_plan_active` falso).
 
-Il DTO della lezione espone `figure_needs_status`; il riassunto conta anche
-le consigliate (`shoulds`, `shoulds_placed`). Nel tooltip il dettaglio
-(obbligatorie e consigliate nel testo, da trovare, in un'altra sezione,
-escluse dal docente).
+Il DTO della lezione espone `figure_needs_status` e `figure_plan_active`; il
+riassunto conta anche le consigliate (`shoulds`, `shoulds_placed`) e le
+figure nella lezione ma non citate (`not_cited`). Nel tooltip, e per gli
+screen reader, il dettaglio delle sole voci diverse da zero. I testi non
+usano gergo interno («piano», «fabbisogno»).
+
+Verifica delle etichette (3 verificatori): corretti «Inserisci tutte» che
+proseguiva a finestra chiusa (ora la finestra aspetta e il ciclo si
+ferma), l'ordine delle serie con più inserimenti di fila (il backend riceve
+le figure già inserite nella bozza, `draft_assets`), le proposte non
+aggiornate dopo «Non serve»/«Ripristina», la provenienza della figura
+proposta (documenti o letteratura, `source_kind`), testi che promettevano un
+inserimento automatico non garantito, plurali, accessibilità
+dell'etichetta e azioni per le voci collegate.
 
 **Editor** (`LessonContentEditDialog.tsx` → `LessonFigureNeedsPanel`).
 Gruppo «Figure dalle fonti» nella finestra di modifica, sempre presente
