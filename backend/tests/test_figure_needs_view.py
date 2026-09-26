@@ -79,6 +79,7 @@ def test_states_are_computed_at_read_time() -> None:
         "musts_placed": 2,
         "shoulds": 1,
         "shoulds_placed": 0,
+        "not_cited": 0,
         "uncovered": 2,
         "misplaced": 1,
         "dismissed": 0,
@@ -201,6 +202,7 @@ async def test_links_api(client: AsyncClient, seeded_db: AsyncSession) -> None:
     (need,) = out["figure_needs_view"]
     assert need["status"] == "placed" and need["linked"] is True
     assert out["figure_needs_status"] == "ready"
+    assert out["figure_plan_active"] is True
     assert out["figure_needs_summary"]["musts_placed"] == 1
     res = await client.put(f"{s['url']}/n1", json={"state": "dismissed"}, headers=headers)
     assert _lesson_out(res.json(), s["lesson"].id)["figure_needs_view"][0]["status"] == "dismissed"
@@ -336,3 +338,20 @@ def test_an_open_offer_reads_the_previous_snapshot() -> None:
     by = {v["need_id"]: v for v in figure_needs_view(lesson) or []}
     assert by["n1"]["status"] == "placed" and by["n1"]["asset_id"] == "SRC-a"
     assert by["n2"]["status"] == "misplaced"
+
+
+def test_the_summary_counts_shoulds_and_leaves_out_dismissed() -> None:
+    lesson = _lesson(figure_need_links={"n4": {"state": "dismissed"}})
+    lesson.content_raw["sections"][2]["content"] = "Qui [FIG:SRC-b] e [FIG:img-1] e [FIG:SRC-d]."
+    lesson.content_raw["visual_assets"].append(
+        {"asset_id": "SRC-d", "format": "source_figure", "content": F3}
+    )
+    lesson.figure_assignment = {
+        **lesson.figure_assignment,
+        "bound": {"n1": F1, "n2": F2, "n3": F3},
+    }
+    counts = summary(figure_needs_view(lesson))
+    assert counts is not None
+    assert counts["musts"] == 2 and counts["musts_placed"] == 2
+    assert counts["shoulds"] == 1 and counts["shoulds_placed"] == 1
+    assert counts["dismissed"] == 1

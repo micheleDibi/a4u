@@ -327,6 +327,14 @@ class CourseLesson(UUIDPKMixin, TimestampMixin, Base):
     )
 
     @property
+    def figure_plan_active(self) -> bool:
+        """Funzione «figure dalle fonti» accesa (interruttori del piano): con
+        la funzione spenta l'editor non mostra etichetta né pannello."""
+        from app.services.figure_plan_service import plan_active
+
+        return plan_active()
+
+    @property
     def figure_needs_view(self) -> list[dict[str, Any]] | None:
         """Stato dei fabbisogni per l'editor (calcolato, mai salvato)."""
         from app.services.figure_needs_view import figure_needs_view

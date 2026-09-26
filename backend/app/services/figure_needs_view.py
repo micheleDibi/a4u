@@ -228,6 +228,8 @@ def summary(view: list[dict[str, Any]] | None) -> dict[str, int] | None:
         "musts_placed": sum(1 for v in musts if v["status"] in in_text),
         "shoulds": len(shoulds),
         "shoulds_placed": sum(1 for v in shoulds if v["status"] in in_text),
+        # Nella lezione ma non citate dal testo (fra le `uncovered`).
+        "not_cited": sum(1 for v in active if v.get("reason") == "not_cited"),
         "uncovered": sum(1 for v in view if v["status"] in ("uncovered", "missing")),
         "misplaced": sum(1 for v in view if v["status"] == "misplaced"),
         "dismissed": sum(1 for v in view if v["status"] == "dismissed"),

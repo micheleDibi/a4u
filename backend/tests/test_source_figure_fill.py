@@ -486,3 +486,80 @@ async def test_a_found_figure_triggers_the_fill_of_that_lesson(
     monkeypatch.setattr(fill, "fill_course", record)
     await gap_worker.process_lesson(seeded_db, lesson)
     assert calls == [("literature", {lesson.id})]
+
+
+async def test_two_inserts_in_the_same_draft_keep_the_series_order(
+    seeded_db: AsyncSession, settings: Any
+) -> None:
+    """«Inserisci tutte»: il primo membro della serie è già nel contenuto;
+    il secondo entra dopo di lui e il terzo dopo il secondo appena inserito
+    nella bozza (non subito dopo il primo, verifica delle etichette)."""
+    from tests.source_figure_builders import build_document_figure
+
+    env = await _course(seeded_db)
+    course, lesson, _ = await _ready_lesson(seeded_db, env)
+    scan, diff = env["figures"]["scan"], env["figures"]["diff"]
+    rot = build_document_figure(
+        course.id,
+        scan.document_id,
+        license="cc_by",
+        kind="schematic",
+        description="Schema del vibrometro rotational",
+        keywords={"course": ["vibrometro"], "en": ["laser Doppler vibrometer"]},
+        depicts={
+            "v": 1,
+            "items": [{"object_en": "laser Doppler vibrometer", "variant_en": "rotational"}],
+            "focus": "optical layout",
+        },
+    )
+    seeded_db.add(rot)
+    series = [
+        {**_need("S1", f"Schema {v}", v), "sequence_group": "tipi", "sequence_index": i}
+        for i, v in enumerate(("scanning", "differential", "rotational"), start=1)
+    ]
+    _store(course, lesson, series)
+    lesson.content_raw = {
+        "sections": [
+            {
+                "section_id": "S1",
+                "title": "Tipologie",
+                "content": "Scansione.\n\n[FIG:SRC-a]\n\nFine sezione.",
+            }
+        ],
+        "visual_assets": [
+            {"asset_id": "SRC-a", "format": "source_figure", "content": str(scan.id)}
+        ],
+    }
+    lesson.figure_assignment = {"state": "settled", "bound": {series[0]["need_id"]: str(scan.id)}}
+    await seeded_db.commit()
+    found = {
+        c.need_id: c for c in await fill.candidates(seeded_db, course, lesson, within_budget=False)
+    }
+    assert found[series[1]["need_id"]].figure_id == diff.id
+    assert found[series[1]["need_id"]].source_kind == "uploaded"
+    text = lesson.content_raw["sections"][0]["content"]
+    out2 = await fill.draft_insertion(
+        seeded_db,
+        course,
+        lesson,
+        need_id=series[1]["need_id"],
+        figure_id=diff.id,
+        section_text=text,
+        taken_ids=["SRC-a"],
+    )
+    assert out2 is not None
+    ref2 = out2["asset"]["asset_id"]
+    out3 = await fill.draft_insertion(
+        seeded_db,
+        course,
+        lesson,
+        need_id=series[2]["need_id"],
+        figure_id=rot.id,
+        section_text=out2["section_text"],
+        taken_ids=["SRC-a", ref2],
+        draft_assets={series[1]["need_id"]: ref2},
+    )
+    assert out3 is not None
+    final = out3["section_text"]
+    ref3 = out3["asset"]["asset_id"]
+    assert final.index("[FIG:SRC-a]") < final.index(f"[FIG:{ref2}]") < final.index(f"[FIG:{ref3}]")

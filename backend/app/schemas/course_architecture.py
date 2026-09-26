@@ -111,6 +111,7 @@ class CourseLessonOut(ORMModel):
     # Stato del calcolo dei fabbisogni (None = mai chiesto): l'etichetta della
     # lezione distingue «in calcolo», «da rigenerare» e «non previste».
     figure_needs_status: str | None = None
+    figure_plan_active: bool = False
     figure_needs_view: list[dict[str, Any]] | None = None
     figure_needs_summary: dict[str, int] | None = None
     figure_need_links: dict[str, Any] | None = None

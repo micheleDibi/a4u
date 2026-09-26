@@ -67,6 +67,8 @@ class FillCandidate:
     caption: str
     description: str
     subject: str
+    # `uploaded` (documenti del corso), `openalex`, `wikimedia` (letteratura).
+    source_kind: str = "uploaded"
 
 
 def _now() -> datetime:
@@ -138,6 +140,7 @@ async def candidates(
                 caption=figure_caption(fig) or str(entry.get("subject") or ""),
                 description=str(getattr(fig, "description", "") or ""),
                 subject=str(entry.get("subject") or ""),
+                source_kind=str(getattr(fig, "source_kind", "") or "uploaded"),
             )
         )
     if within_budget:
@@ -433,6 +436,7 @@ async def draft_insertion(
     figure_id: uuid.UUID,
     section_text: str,
     taken_ids: list[str],
+    draft_assets: dict[str, str] | None = None,
 ) -> dict[str, Any] | None:
     """«Inserisci» dell'editor: testo della sezione (della bozza) con frase e
     figura, e l'asset da aggiungere. Non salva il contenuto (lo fa il
@@ -447,9 +451,11 @@ async def draft_insertion(
     )
     title = str((section or {}).get("title") or "")
     ref = _unique_ref(figure_id, {t.lower() for t in taken_ids})
-    text, usage = await _place(
-        lesson, course, section_text, title, cand, ref, _placed_assets(lesson)
-    )
+    # Vicini della serie: le figure nel contenuto salvato e quelle già
+    # inserite nella bozza (più «Inserisci» di fila restano in ordine).
+    asset_of = _placed_assets(lesson)
+    asset_of.update({str(k)[:40]: str(v)[:120] for k, v in (draft_assets or {}).items()})
+    text, usage = await _place(lesson, course, section_text, title, cand, ref, asset_of)
     lesson.figure_needs_usage = plan.merge_usage(lesson.figure_needs_usage, usage)
     # Legame fabbisogno → figura: vale quando il docente salva la bozza con
     # l'asset (vista e piano lo verificano); con la bozza scartata resta

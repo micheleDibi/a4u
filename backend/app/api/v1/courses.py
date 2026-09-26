@@ -2030,6 +2030,7 @@ class FigureNeedCandidateOut(BaseModel):
     caption: str
     relation: str
     tier: int
+    source_kind: str
 
 
 @router.get(
@@ -2064,6 +2065,7 @@ async def list_figure_need_candidates(
             caption=c.caption,
             relation=c.relation,
             tier=c.tier,
+            source_kind=c.source_kind,
         )
         for c in found
     ]
@@ -2076,6 +2078,9 @@ class FigureNeedInsertInput(BaseModel):
     figure_id: uuid.UUID
     section_text: str = Field(max_length=200_000)
     asset_ids: list[str] = Field(default_factory=list, max_length=500)
+    # Figure già inserite nella bozza (need_id → asset_id), per l'ordine
+    # delle serie con più inserimenti di fila.
+    draft_assets: dict[str, str] = Field(default_factory=dict, max_length=200)
 
 
 class FigureNeedInsertOut(BaseModel):
@@ -2120,6 +2125,7 @@ async def insert_figure_for_need(
         figure_id=payload.figure_id,
         section_text=payload.section_text,
         taken_ids=[a[:120] for a in payload.asset_ids],
+        draft_assets=payload.draft_assets,
     )
     if out is None:
         raise ValidationAppError(
