@@ -1171,9 +1171,33 @@ async def _tick() -> None:
                 fresh = await db.get(CourseDocument, doc_id, populate_existing=True)
                 if fresh is not None and fresh.figures_status == "processing":
                     await _recoverable(db, fresh, "crashed", str(exc))
+            else:
+                await fill_after_extraction(doc_id)
         except Exception as exc:  # pragma: no cover
             await db.rollback()
             log.warning("document_figures_tick_failed", error=str(exc))
+
+
+async def fill_after_extraction(doc_id: uuid.UUID) -> None:
+    """Piano delle figure (doc 18 §24): le figure appena estratte entrano da
+    sole nelle lezioni pronte e non approvate del corso che ne avevano
+    bisogno. Fuori da `HEAVY_JOB_LOCK`; un errore non tocca l'estrazione."""
+    from app.services import course_lesson_content_service as content_svc
+    from app.services.source_figure_fill import fill_course
+
+    try:
+        async with async_session_factory() as db:
+            doc = await db.get(CourseDocument, doc_id)
+            if doc is None or doc.figures_status != "ready" or not doc.figures_count:
+                return
+            course = await content_svc.load_course_full(db, course_id=doc.course_id)
+            if course is None:
+                return
+            inserted = await fill_course(db, course, trigger="extraction")
+            if inserted:
+                log.info("document_figures_filled", doc_id=str(doc_id), inserted=inserted)
+    except Exception as exc:
+        log.warning("document_figures_fill_failed", doc_id=str(doc_id), error=str(exc)[:300])
 
 
 _worker_task: asyncio.Task[None] | None = None

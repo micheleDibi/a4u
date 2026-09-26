@@ -66,6 +66,8 @@ class PlanCatalog(FigureCatalog):
     # Didascalia neutra per le figure inserite dalla collocazione: dalla
     # descrizione della figura, non dalla richiesta del fabbisogno.
     captions: dict[str, str] = field(default_factory=dict)
+    # Descrizione della figura (Vision) per la frase che la introduce.
+    descriptions: dict[str, str] = field(default_factory=dict)
 
     @property
     def figure_need(self) -> dict[uuid.UUID, str]:
@@ -77,7 +79,7 @@ def _one_line(text: str, cap: int) -> str:
     return " ".join(neutralize_third_party_text(str(text or ""), cap).split())
 
 
-def _figure_caption(fig: Any) -> str:
+def figure_caption(fig: Any) -> str:
     """Prima frase della descrizione della figura (Vision, già nella lingua
     del corso), neutralizzata e su una riga; "" senza descrizione."""
     text = _one_line(str(getattr(fig, "description", "") or ""), 400)
@@ -287,52 +289,86 @@ def build_plan_catalog(
         role_by_ref={e["ref"]: e["role"] for e in kept},
         needs=[n for n in covered if any(e["need_id"] == n["need_id"] for e in kept)],
         labels={k: v for k, v in labels.items() if any(e["need_id"] == k for e in kept)},
-        captions={e["ref"]: _figure_caption(figures.get(e["fid"])) for e in kept if e["need_id"]},
+        captions={e["ref"]: figure_caption(figures.get(e["fid"])) for e in kept if e["need_id"]},
+        descriptions={
+            e["ref"]: str(getattr(figures.get(e["fid"]), "description", "") or "")
+            for e in kept
+            if e["need_id"]
+        },
     )
 
 
 # --- collocazione -------------------------------------------------------------------
 
 
-def _insert_in_sequence(
-    content: str,
-    ref: str,
+def sequence_neighbors(
     need: Mapping[str, Any],
-    plan: PlanCatalog,
-    status: Mapping[str, Mapping[str, Any]],
-) -> str:
-    """Testo della sezione con `[FIG:ref]`: per un membro di una sequenza,
-    subito dopo il paragrafo del membro precedente già citato nella sezione
-    (o prima di quello successivo), così la numerazione segue l'ordine del
-    testo; altrimenti in fondo alla sezione."""
-    tag = f"[FIG:{ref}]"
+    needs: Sequence[Mapping[str, Any]],
+    asset_of: Mapping[str, str],
+) -> tuple[list[str], list[str]]:
+    """Asset già collocati dei membri della stessa sequenza: prima i
+    precedenti (dal più vicino), poi i successivi (dal più vicino)."""
     group = str(need.get("sequence_group") or "")
+    if not group:
+        return [], []
     index = int(need.get("sequence_index") or 0)
-    if group:
-        before: list[tuple[int, str]] = []
-        after: list[tuple[int, str]] = []
-        for other in plan.needs:
-            if str(other.get("sequence_group") or "") != group or other is need:
-                continue
-            asset = (status.get(str(other.get("need_id"))) or {}).get("asset_id")
-            if not asset:
-                continue
-            other_index = int(other.get("sequence_index") or 0)
-            (before if other_index < index else after).append((other_index, str(asset)))
-        for _i, asset in sorted(before, reverse=True):
-            match = re.search(rf"\[FIG:\s*{re.escape(asset)}\s*\]", content, re.IGNORECASE)
-            if match:
-                end = content.find("\n\n", match.end())
-                end = len(content) if end == -1 else end
-                return content[:end].rstrip() + f"\n\n{tag}" + content[end:]
-        for _i, asset in sorted(after):
-            match = re.search(rf"\[FIG:\s*{re.escape(asset)}\s*\]", content, re.IGNORECASE)
-            if match:
-                start = content.rfind("\n\n", 0, match.start())
-                if start == -1:
-                    return f"{tag}\n\n{content.lstrip()}"
-                return content[:start].rstrip() + f"\n\n{tag}\n\n" + content[start:].lstrip()
-    return content.rstrip() + f"\n\n{tag}"
+    before: list[tuple[int, str]] = []
+    after: list[tuple[int, str]] = []
+    for other in needs:
+        if str(other.get("sequence_group") or "") != group or other is need:
+            continue
+        asset = asset_of.get(str(other.get("need_id")))
+        if not asset:
+            continue
+        other_index = int(other.get("sequence_index") or 0)
+        (before if other_index < index else after).append((other_index, str(asset)))
+    return (
+        [a for _i, a in sorted(before, reverse=True)],
+        [a for _i, a in sorted(after)],
+    )
+
+
+def _tag_match(content: str, asset: str) -> re.Match[str] | None:
+    return re.search(rf"\[FIG:\s*{re.escape(asset)}\s*\]", content, re.IGNORECASE)
+
+
+def insert_figure_block(
+    content: str, block: str, *, before: Sequence[str] = (), after: Sequence[str] = ()
+) -> str:
+    """Testo della sezione con `block` (frase introduttiva e `[FIG:ref]`):
+    subito dopo la figura del membro precedente della sequenza citato nella
+    sezione, oppure prima del paragrafo che introduce quella del membro
+    successivo, così la numerazione segue l'ordine del testo; altrimenti in
+    fondo alla sezione."""
+    for asset in before:
+        match = _tag_match(content, asset)
+        if match:
+            end = content.find("\n\n", match.end())
+            end = len(content) if end == -1 else end
+            return content[:end].rstrip() + f"\n\n{block}" + content[end:]
+    for asset in after:
+        match = _tag_match(content, asset)
+        if match:
+            # Prima del paragrafo che introduce la figura successiva (il tag
+            # sta su una riga sua, dopo il paragrafo che la introduce).
+            tag_start = content.rfind("\n\n", 0, match.start())
+            start = content.rfind("\n\n", 0, tag_start) if tag_start > 0 else -1
+            if start == -1:
+                return f"{block}\n\n{content.lstrip()}"
+            return content[:start].rstrip() + f"\n\n{block}\n\n" + content[start:].lstrip()
+    return content.rstrip() + f"\n\n{block}"
+
+
+def add_intro(content: str, ref: str, sentence: str) -> str:
+    """Frase introduttiva, come paragrafo proprio, subito prima del tag
+    `[FIG:ref]` (il testo richiama la figura a parole, mai col tag)."""
+    match = _tag_match(content, ref)
+    if match is None or not sentence.strip():
+        return content
+    start = content.rfind("\n\n", 0, match.start())
+    head = content[:start].rstrip() if start != -1 else ""
+    tail = content[match.start() :]
+    return (f"{head}\n\n" if head else "") + f"{sentence.strip()}\n\n" + tail
 
 
 def cut_priority(plan: PlanCatalog) -> tuple[dict[str, int], dict[str, str]]:
@@ -419,13 +455,17 @@ def apply_placement(
             status[need_id] = {"status": state, "asset_id": aid, "section": where}
         else:
             status[need_id] = {"status": "missing"}
-    # Must mancanti: inserimento in fondo alla loro sezione se c'è e se c'è posto.
+    # Figure mancanti: prima i must, poi gli should (entro il budget), nella
+    # loro sezione se c'è, dopo il membro precedente della sequenza.
     used = len([a for a in output.visual_assets if a.format == SOURCE_FIGURE_FORMAT])
     sections = {s.section_id: s for s in output.sections}
     refs = plan.refs
-    for need in plan.needs:
+    ordered = [n for n in plan.needs if n.get("priority") == "must"] + [
+        n for n in plan.needs if n.get("priority") != "must"
+    ]
+    for need in ordered:
         need_id = str(need["need_id"])
-        if need.get("priority") != "must" or status[need_id]["status"] != "missing":
+        if status[need_id]["status"] != "missing":
             continue
         target = sections.get(str(need.get("section_id")))
         assigned = next(
@@ -451,7 +491,14 @@ def apply_placement(
                 alt_text=caption[:400],
             )
         )
-        target.content = _insert_in_sequence(target.content or "", assigned, need, plan, status)
+        before, after = sequence_neighbors(
+            need,
+            plan.needs,
+            {nid: str(info["asset_id"]) for nid, info in status.items() if info.get("asset_id")},
+        )
+        target.content = insert_figure_block(
+            target.content or "", f"[FIG:{assigned}]", before=before, after=after
+        )
         used += 1
         status[need_id] = {
             "status": "auto_placed",

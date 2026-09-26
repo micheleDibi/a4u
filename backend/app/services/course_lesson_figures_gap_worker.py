@@ -188,7 +188,10 @@ async def process_lesson(db: AsyncSession, lesson: CourseLesson) -> None:
     fresh.figures_gap_checked_at = _now()
     fresh.figures_gap_usage = _merged(previous_usage, outcome.usage)
     fresh.figures_gap_stats = merge_need_stats(fresh.figures_gap_stats, outcome.stats)
+    course_id = fresh.course_id
     await db.commit()
+    if _found_any(outcome.stats):
+        await _fill_after_check(db, course_id, lesson_id)
     log.info(
         "figures_gap_checked",
         lesson_id=str(lesson_id),
@@ -196,6 +199,28 @@ async def process_lesson(db: AsyncSession, lesson: CourseLesson) -> None:
         kept=outcome.stats.get("kept"),
         reason=outcome.stats.get("reason"),
     )
+
+
+def _found_any(stats: dict[str, Any]) -> bool:
+    needs = stats.get("needs")
+    return isinstance(needs, dict) and any(
+        isinstance(v, dict) and v.get("status") == "found" for v in needs.values()
+    )
+
+
+async def _fill_after_check(db: AsyncSession, course_id: uuid.UUID, lesson_id: uuid.UUID) -> None:
+    """Piano delle figure (doc 18 §24): la figura trovata entra da sola nella
+    lezione, se è pronta e non approvata. Un errore non tocca la verifica."""
+    from app.services import course_lesson_content_service as content_svc
+    from app.services.source_figure_fill import fill_course
+
+    try:
+        course = await content_svc.load_course_full(db, course_id=course_id)
+        if course is not None:
+            await fill_course(db, course, trigger="literature", lesson_ids={lesson_id})
+    except Exception as exc:
+        await db.rollback()
+        log.warning("figures_gap_fill_failed", lesson_id=str(lesson_id), error=str(exc)[:300])
 
 
 def merge_need_stats(previous: Any, stats: dict[str, Any]) -> dict[str, Any]:

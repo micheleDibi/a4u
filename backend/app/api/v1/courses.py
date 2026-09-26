@@ -2022,6 +2022,115 @@ async def update_figure_need_link(
     return CourseOut.model_validate(course)
 
 
+class FigureNeedCandidateOut(BaseModel):
+    """Figura del corso adatta a un fabbisogno scoperto della lezione."""
+
+    need_id: str
+    figure_id: uuid.UUID
+    caption: str
+    relation: str
+    tier: int
+
+
+@router.get(
+    "/{course_id}/lessons/{lesson_id}/figure-needs/candidates",
+    response_model=list[FigureNeedCandidateOut],
+)
+async def list_figure_need_candidates(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    lesson_id: uuid.UUID,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_EDIT),
+) -> list[FigureNeedCandidateOut]:
+    """Per ogni fabbisogno scoperto la figura del corso che lo copre meglio
+    (stesso abbinamento e tetto di riuso del piano), per «Inserisci»."""
+    from app.services import source_figure_fill
+
+    await _ensure_org(db, org_id)
+    course = cast(
+        Course,
+        await _load_course_for_edit(db, org_id=org_id, course_id=course_id, current=current),
+    )
+    lesson = await course_lesson_content_service.get_lesson_or_404(
+        db, course=course, lesson_id=lesson_id
+    )
+    found = await source_figure_fill.candidates(db, course, lesson, within_budget=False)
+    return [
+        FigureNeedCandidateOut(
+            need_id=c.need_id,
+            figure_id=c.figure_id,
+            caption=c.caption,
+            relation=c.relation,
+            tier=c.tier,
+        )
+        for c in found
+    ]
+
+
+class FigureNeedInsertInput(BaseModel):
+    """«Inserisci»: la figura scelta e il testo della sezione nella bozza."""
+
+    model_config = ConfigDict(extra="forbid")
+    figure_id: uuid.UUID
+    section_text: str = Field(max_length=200_000)
+    asset_ids: list[str] = Field(default_factory=list, max_length=500)
+
+
+class FigureNeedInsertOut(BaseModel):
+    section_id: str
+    section_text: str
+    asset: dict[str, str]
+
+
+@router.post(
+    "/{course_id}/lessons/{lesson_id}/figure-needs/{need_id}/insert",
+    response_model=FigureNeedInsertOut,
+)
+async def insert_figure_for_need(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    lesson_id: uuid.UUID,
+    need_id: str,
+    payload: FigureNeedInsertInput,
+    db: DbSession,
+    current: CurrentUser,
+    _=require(P.COURSE_EDIT),
+) -> FigureNeedInsertOut:
+    """Testo della sezione (della bozza) con la figura e la frase che la
+    introduce, e l'asset da aggiungere. Non salva il contenuto: lo salva il
+    docente dall'editor. 422 se la figura non è una candidata del
+    fabbisogno."""
+    from app.services import source_figure_fill
+
+    await _ensure_org(db, org_id)
+    course = cast(
+        Course,
+        await _load_course_for_edit(db, org_id=org_id, course_id=course_id, current=current),
+    )
+    lesson = await course_lesson_content_service.get_lesson_or_404(
+        db, course=course, lesson_id=lesson_id
+    )
+    out = await source_figure_fill.draft_insertion(
+        db,
+        course,
+        lesson,
+        need_id=need_id[:40],
+        figure_id=payload.figure_id,
+        section_text=payload.section_text,
+        taken_ids=[a[:120] for a in payload.asset_ids],
+    )
+    if out is None:
+        raise ValidationAppError(
+            "La figura non è una candidata per questo fabbisogno.",
+            code="figure_need_candidate_unknown",
+            meta={"errors": [{"loc": ["body", "figure_id"], "msg": "figura non candidata"}]},
+        )
+    await db.commit()
+    return FigureNeedInsertOut(**out)
+
+
 @router.patch(
     "/{course_id}/lessons/{lesson_id}/assessment",
     response_model=CourseOut,

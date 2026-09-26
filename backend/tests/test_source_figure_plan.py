@@ -187,10 +187,13 @@ def test_placement_states_and_one_figure_per_need() -> None:
     assert status["n2"]["status"] == "misplaced" and status["n2"]["section"] == "S3"
     assert report["dropped_same_need"] == [r(F[4])]
     assert r(F[4]) not in {a.asset_id for a in out.visual_assets}
-    # n3 (must) non scelto: inserito in fondo a S3; n4 (should) resta mancante.
+    # n3 (must) e poi n4 (should) non scelti: inseriti in fondo a S3, prima il
+    # must; il budget (4) lo consente.
     assert status["n3"]["status"] == "auto_placed"
-    assert out.sections[2].content.endswith(f"[FIG:{r(F[2])}]")
-    assert status["n4"]["status"] == "missing"
+    assert status["n4"]["status"] == "auto_placed"
+    content = out.sections[2].content
+    assert content.index(f"[FIG:{r(F[2])}]") < content.index(f"[FIG:{r(F[3])}]")
+    assert content.endswith(f"[FIG:{r(F[3])}]")
 
 
 def test_auto_placement_needs_an_anchor_and_budget() -> None:
@@ -294,7 +297,7 @@ def test_placement_after_drops_marks_the_need_missing() -> None:
     assert placement["counts"]["placed"] == 3
     sp.placement_after_drops(placement, {r(F[1]): "reuse_cap"})
     assert placement["needs"]["n2"] == {"status": "missing", "reason": "dropped_reuse_cap"}
-    assert placement["counts"]["placed"] == 2 and placement["counts"]["missing"] == 2
+    assert placement["counts"]["placed"] == 2 and placement["counts"]["missing"] == 1
 
 
 def test_section_ids_and_titles_cannot_close_the_data_block() -> None:

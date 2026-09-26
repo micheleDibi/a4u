@@ -1395,3 +1395,24 @@ async def test_needs_never_requested_are_not_computed_inline(
     lesson = await _lesson(seeded_db, setup["lesson_id"])
     assert lesson.content_status == "ready", lesson.content_error
     assert calls == [] and lesson.figure_needs_status is None
+
+
+async def test_an_auto_placed_figure_gets_its_intro_sentence(
+    seeded_db: AsyncSession, fakes: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Il modello non cita la figura del must: la collocazione la inserisce
+    nella sua sezione preceduta dalla frase che la introduce (PROMPT 23; nei
+    test il ripiego senza chiamata)."""
+    _plan_settings(monkeypatch)
+    setup = await _setup(seeded_db)
+    need = await _with_needs(seeded_db, setup)
+    fakes["pick"] = lambda refs: []
+    await worker._process_one(setup["lesson_id"])
+    lesson = await _lesson(seeded_db, setup["lesson_id"])
+    assert lesson.content_status == "ready", lesson.content_error
+    info = lesson.figure_assignment["placement"]["needs"][need["need_id"]]
+    assert info["status"] == "auto_placed"
+    content = lesson.content_raw["sections"][0]["content"]
+    tag = f"[FIG:{info['asset_id']}]"
+    assert "La figura seguente mostra" in content
+    assert content.index("La figura seguente mostra") < content.index(tag)

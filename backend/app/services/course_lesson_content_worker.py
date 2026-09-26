@@ -70,6 +70,7 @@ from app.services.heavy_job_lock import HEAVY_JOB_LOCK
 from app.services.openai_client import OpenAINotConfiguredError
 from app.services.source_figure_plan import (
     PlanCatalog,
+    add_intro,
     apply_placement,
     cut_priority,
     placement_after_drops,
@@ -607,6 +608,15 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
                 placement = apply_placement(
                     content_output, catalog.catalog, max_items=catalog.budget
                 )
+                # Frase che introduce ogni figura inserita dalla collocazione
+                # (PROMPT 23): il testo la richiama a parole, mai muta.
+                lesson.figure_needs_usage = await _introduce_auto_placed(
+                    content_output,
+                    catalog.catalog,
+                    placement,
+                    course_full.language_code or "it",
+                    lesson.figure_needs_usage,
+                )
                 fusion.added = [
                     a.asset_id
                     for a in content_output.visual_assets
@@ -1111,6 +1121,43 @@ async def _drop_source_figures(
             metadata=metadata,
         )
     return figure_review, dropped
+
+
+async def _introduce_auto_placed(
+    output: LessonContentOutput,
+    plan_catalog: PlanCatalog,
+    placement: dict[str, Any],
+    language_code: str,
+    usage_total: Any,
+) -> Any:
+    """Frase introduttiva (PROMPT 23 o ripiego) prima del tag di ogni figura
+    `auto_placed`. Ritorna l'usage cumulativo del piano aggiornato."""
+    from app.services.openai_figure_intro_service import IntroInput, intro_or_fallback
+
+    subjects = {str(n.get("need_id")): str(n.get("subject") or "") for n in plan_catalog.needs}
+    sections = {s.section_id: s for s in output.sections}
+    for need_id, info in (placement.get("needs") or {}).items():
+        if not isinstance(info, dict) or info.get("status") != "auto_placed":
+            continue
+        ref = str(info.get("asset_id") or "")
+        section = sections.get(str(info.get("section") or ""))
+        if not ref or section is None:
+            continue
+        text = section.content or ""
+        caption = plan_catalog.captions.get(ref) or subjects.get(need_id, "")
+        sentence, usage = await intro_or_fallback(
+            IntroInput(
+                section_title=section.title or "",
+                context=text[: text.find(f"[FIG:{ref}]")],
+                description=plan_catalog.descriptions.get(ref) or caption,
+                subject=subjects.get(need_id, ""),
+                language_code=language_code,
+            ),
+            caption,
+        )
+        section.content = add_intro(text, ref, sentence)
+        usage_total = figure_plan_service.merge_usage(usage_total, usage)
+    return usage_total
 
 
 async def _inline_needs(
