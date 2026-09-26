@@ -1582,7 +1582,10 @@ obbligatorie, poi le consigliate, finché c'è posto nel budget del piano. Un
 membro di una sequenza entra subito dopo la figura del membro precedente
 citato nella sezione, o prima del paragrafo che introduce il successivo;
 altrimenti in fondo alla sezione. La didascalia è la prima frase della
-descrizione della figura.
+descrizione della figura. Le frasi introduttive si scrivono subito dopo la
+collocazione ma entrano nel testo solo prima della materializzazione e solo
+per le figure sopravvissute ai ricontrolli (politica, tetto di riuso sotto
+il lock): mai una frase senza la sua figura.
 
 **Frase che introduce la figura** (PROMPT 23,
 `openai_figure_intro_service.py`). Il testo delle dispense colloca ogni
@@ -1605,8 +1608,14 @@ frase. Costo in `figure_needs_usage` (fase `figure_needs` della dashboard).
 
 Condizioni: piano attivo, lezione `ready` (mai `approved`, in coda o in
 generazione), contenuto non superato da modifiche a struttura o
-architettura, fabbisogni pronti; lock di corso (se occupato si salta: il
-prossimo evento ci riprova); lo stato si rilegge sotto il lock. Per ogni
+architettura, fabbisogni pronti. Le frasi (PROMPT 23) si scrivono PRIMA di
+prendere il lock di corso; poi, sotto il lock e con la riga bloccata
+(`SELECT … FOR UPDATE`), si scrive solo se stato, date, contenuto,
+fabbisogni e collegamenti sono quelli letti e se le figure stanno ancora
+nel tetto di riuso. Un'approvazione, un salvataggio del docente o una
+rigenerazione arrivati nel frattempo vincono; lock occupato o riga cambiata:
+si salta e il prossimo evento ci riprova. Il giro sul corso ricarica il
+corso per ogni lezione: un errore su una lezione non ferma le altre. Per ogni
 fabbisogno scoperto e non «Non serve» la figura migliore del corso (stesso
 abbinamento, tetto di riuso K e budget del piano; prima i must, a parità di
 livello prima le figure non a bassa risoluzione) entra nella sezione con la
@@ -1625,7 +1634,12 @@ Nuovo gruppo «Figure consigliate» nella finestra di modifica:
 - «Inserisci» (`POST …/figure-needs/{need_id}/insert`) riceve il testo
   della sezione nella bozza e restituisce il testo con frase e figura, più
   l'asset da aggiungere: la bozza si aggiorna, il contenuto si salva con
-  «Salva» (PATCH del contenuto, come ogni modifica manuale);
+  «Salva» (PATCH del contenuto, come ogni modifica manuale). L'endpoint
+  registra anche il legame fabbisogno → figura (`figure_need_links`, stato
+  `linked`): vale quando la figura entra nel contenuto salvato (la voce
+  risulta collocata e il completamento non ne aggiunge una seconda), resta
+  inerte se la bozza si scarta. Se la sezione cambia mentre la richiesta è
+  in corso, il testo restituito non si applica (avviso: premere di nuovo);
 - «Non serve» e «Ripristina» restano; nella vista della lezione resta solo
   l'etichetta «Figure x/y».
 
@@ -1644,4 +1658,20 @@ modifica). Nei test il PROMPT 23 non esce mai in rete (fixture in
   approvate senza un'azione del docente; l'audit e la fotografia dicono
   che cosa è entrato. Una lezione approvata non cambia mai.
 - Se il docente salva una bozza aperta prima del completamento, il suo
-  salvataggio sostituisce il contenuto (vince la versione del docente).
+  salvataggio sostituisce il contenuto (vince la versione del docente); se
+  salva durante il completamento, il completamento si annulla.
+- Dashboard: il completamento aggiorna `content_generated_at`, che data
+  anche il costo della Fase 3 (si sposta nelle finestre 7/30 giorni, non si
+  somma due volte); il costo del PROMPT 23 sta in `figure_needs_usage`,
+  datato all'ultimo calcolo dei fabbisogni.
+
+**Verifica (3 verificatori in sola lettura).** Corretti con test: legame
+fabbisogno → figura all'«Inserisci» (prima la voce restava scoperta e il
+completamento ne aggiungeva una seconda); approvazione, salvataggio o
+rigenerazione durante il completamento (prima venivano sovrascritti: ora
+frasi fuori dal lock e ricontrollo a riga bloccata); giro sul corso che si
+fermava dopo un errore; frase introduttiva orfana a fine Fase 3; «Inserisci»
+che sovrascriveva il testo scritto durante la richiesta; `clean_sentence`
+(«fonte:» minuscolo, parentesi aperte) e ripiego che abbassava le sigle.
+Dichiarati: le slide mancanti di una sequenza aggiunte da 8c dopo l'ultima
+della sezione e la datazione dei costi in dashboard (sopra).
