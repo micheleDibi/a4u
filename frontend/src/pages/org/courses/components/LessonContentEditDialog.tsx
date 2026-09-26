@@ -20,6 +20,7 @@ import { isLegacyFormat } from "@/lib/figureFormats";
 import { roundTrips } from "@/lib/figureNumbering";
 
 import {
+  type CourseLessonOut,
   type LessonContentEquation,
   type LessonContentExample,
   type LessonContentRaw,
@@ -54,6 +55,8 @@ import { RichTextEditor } from "@/components/shared/RichTextEditor";
 import { TableEditor } from "@/components/shared/TableEditor";
 import { VisualAssetEditor } from "@/components/shared/VisualAssetEditor";
 
+import { LessonFigureNeedsPanel } from "./LessonFigureNeedsPanel";
+
 // Tipi di asset equazione (mirror dello schema BE). Etichette localizzate
 // in `courses.theorem.kind.*`.
 const EQUATION_KINDS = [
@@ -79,6 +82,8 @@ interface Props {
   orgId: string;
   /** Verdetto del revisore delle figure di fonte (avvisi sulle card). */
   figureReview?: LessonFigureReview | null;
+  /** Lezione per il pannello «Figure consigliate» (piano delle figure). */
+  figureNeedsLesson?: CourseLessonOut;
   courseId: string;
   onClose: () => void;
   onSubmit: (payload: LessonContentUpdateInput) => void;
@@ -111,6 +116,7 @@ export function LessonContentEditDialog({
   onSubmit,
   assetErrors,
   figureReview,
+  figureNeedsLesson,
 }: Props) {
   const { t } = useTranslation();
   // Avvisi del revisore per asset (solo testo; mai applicati al contenuto).
@@ -182,6 +188,7 @@ export function LessonContentEditDialog({
   // prima occorrenza del token (es. equazione → gruppo "Equazioni").
   type GroupKey =
     | "text"
+    | "figureNeeds"
     | "visualAssets"
     | "tables"
     | "equations"
@@ -189,6 +196,7 @@ export function LessonContentEditDialog({
     | "references";
   const [openGroups, setOpenGroups] = useState<Record<GroupKey, boolean>>({
     text: true,
+    figureNeeds: true,
     visualAssets: false,
     tables: false,
     equations: false,
@@ -551,6 +559,33 @@ export function LessonContentEditDialog({
               </Button>
             </div>
           </SectionGroup>
+
+          {/* === Figure consigliate (piano delle figure) === */}
+          {figureNeedsLesson?.figure_needs_view &&
+            figureNeedsLesson.figure_needs_view.length > 0 && (
+              <SectionGroup
+                title={t("courses.figureNeeds.title")}
+                open={openGroups.figureNeeds}
+                onToggle={() => toggleGroup("figureNeeds")}
+              >
+                <LessonFigureNeedsPanel
+                  orgId={orgId}
+                  courseId={courseId}
+                  lesson={figureNeedsLesson}
+                  sections={sections}
+                  assetIds={visualAssets.map((a) => a.asset_id)}
+                  disabled={isPending}
+                  onInsert={(sectionId, sectionText, asset) => {
+                    setSections((prev) =>
+                      prev.map((s) =>
+                        s.section_id === sectionId ? { ...s, content: sectionText } : s,
+                      ),
+                    );
+                    setVisualAssets((prev) => [...prev, asset]);
+                  }}
+                />
+              </SectionGroup>
+            )}
 
           {/* === Asset visivi === */}
           <SectionGroup

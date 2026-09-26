@@ -1984,7 +1984,7 @@
     },
     "figureNeeds": {
       "title": "Recommended figures",
-      "description": "The figures the plan considers useful for each section of the lesson and where they are in the content. Actions here do not change the lesson text.",
+      "description": "The figures the plan considers useful for each section. The system inserts the available ones by itself; here you can insert the proposed ones into the draft, with the sentence that introduces them, or say that one is not needed. Inserted figures are saved with «Save».",
       "chip": "Figures {{placed}}/{{total}}",
       "chipOptional_one": "{{count}} recommended figure",
       "chipOptional_other": "{{count}} recommended figures",
@@ -2018,14 +2018,18 @@
       "linkedByYou": "linked by you",
       "missingHint": "The plan had a figure, but the model did not insert it",
       "notCitedHint": "The figure is in the lesson but the text does not cite it",
-      "link": "Link",
       "dismiss": "Not needed",
       "restore": "Restore",
-      "uncoveredHint": "To cover a figure still to find: in the lesson editor upload an image or choose a figure from the course documents, then link it here.",
+      "uncoveredHint": "If the course has no suitable figure, upload it or choose it from the documents in the visual assets and cite it in the section text.",
       "toast": {
         "updated": "Recommended figure updated",
-        "error": "Unable to update the recommended figure"
-      }
+        "error": "Unable to update the recommended figure",
+        "inserted": "Figure inserted into the draft: save to confirm"
+      },
+      "insert": "Insert",
+      "proposed": "Proposed figure: {{caption}}",
+      "inserted": "Inserted, to be saved",
+      "empty": "No recommended figures for this lesson."
     }
   },
   "courseSettings": {

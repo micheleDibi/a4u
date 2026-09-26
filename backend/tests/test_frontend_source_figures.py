@@ -170,13 +170,20 @@ def test_image_rev_is_in_every_image_cache_key_and_request() -> None:
 
 def test_figure_needs_panel_shows_only_backend_state() -> None:
     """Il pannello delle figure consigliate mostra stato e motivo calcolati
-    dal backend e scrive solo i collegamenti (mai il contenuto)."""
+    dal backend, sta nella finestra di modifica (non nella vista della
+    lezione) e «Inserisci» modifica solo la bozza: salva il docente."""
     panel = (_FRONTEND / "pages/org/courses/components/LessonFigureNeedsPanel.tsx").read_text(
         encoding="utf-8"
     )
     assert "figure_needs_view" in panel and "updateFigureNeedLink" in panel
+    assert "insertFigureForNeed" in panel and "figureNeedCandidates" in panel
     assert "lessonContent.updateLesson" not in panel
+    assert '"courses.figureNeeds.link"' not in panel  # «Collega» tolto
     view = (_FRONTEND / "pages/org/courses/components/CourseLessonContentView.tsx").read_text(
         encoding="utf-8"
     )
-    assert "LessonFigureNeedsPanel" in view and "LessonFigureNeedsChip" in view
+    assert "LessonFigureNeedsChip" in view and "<LessonFigureNeedsPanel" not in view
+    dialog = (_FRONTEND / "pages/org/courses/components/LessonContentEditDialog.tsx").read_text(
+        encoding="utf-8"
+    )
+    assert "<LessonFigureNeedsPanel" in dialog and "onInsert" in dialog

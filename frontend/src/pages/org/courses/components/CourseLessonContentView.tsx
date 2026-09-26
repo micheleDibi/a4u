@@ -57,10 +57,7 @@ import {
   type LessonContentGenerateMode,
 } from "./LessonContentGenerateDialog";
 import { LessonContentView } from "./LessonContentView";
-import {
-  LessonFigureNeedsChip,
-  LessonFigureNeedsPanel,
-} from "./LessonFigureNeedsPanel";
+import { LessonFigureNeedsChip } from "./LessonFigureNeedsPanel";
 import {
   LessonPdfExportDialog,
   type LessonPdfExportMode,
@@ -923,6 +920,13 @@ export function CourseLessonContentView({
             lessonLabel={lessonLabel(editDialog.lesson.lesson_code)}
             initial={editDialog.lesson.content_raw}
             figureReview={editDialog.lesson.content_figure_review}
+            // Lezione aggiornata dalla cache (dopo «Non serve» il pannello
+            // delle figure consigliate si rinfresca); il contenuto della
+            // bozza resta quello di apertura.
+            figureNeedsLesson={
+              allLessons.find((l) => l.id === editDialog.lesson.id) ??
+              editDialog.lesson
+            }
             orgId={orgId}
             courseId={course.id}
             isPending={updateLessonMut.isPending}
@@ -1475,10 +1479,7 @@ function LessonContentRow({
           {isAssessmentRaw(lesson.content_raw) ? (
             <LessonAssessmentView assessment={lesson.content_raw} />
           ) : (
-            <div className="space-y-4">
-              <LessonFigureNeedsPanel lesson={lesson} canEdit={canEdit} />
-              <LessonContentView content={lesson.content_raw} />
-            </div>
+            <LessonContentView content={lesson.content_raw} />
           )}
         </div>
       )}

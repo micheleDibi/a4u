@@ -1,37 +1,33 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { Link2, RotateCcw, X } from "lucide-react";
+import { ImagePlus, Loader2, RotateCcw, X } from "lucide-react";
 
 import {
   coursesApi,
-  isAssessmentRaw,
   type CourseLessonOut,
   type CourseOut,
   type FigureNeedLinkInput,
+  type LessonContentSection,
+  type LessonContentVisualAsset,
   type LessonFigureNeedStatus,
   type LessonFigureNeedView,
   type LessonFigureNeedsSummary,
 } from "@/api/courses";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { useCourseRef } from "@/contexts/CourseRefContext";
 import { extractApiError } from "@/lib/errors";
 
 /**
- * Piano delle figure della lezione (doc 18 §23.7): etichetta nella riga e
- * pannello «Figure consigliate». Stato, motivo ed esito della letteratura
- * arrivano già calcolati dal backend (`figure_needs_view`); il frontend non
- * li ricalcola e non mostra mai nomi di documenti (la «Fonte» la scrive il
- * render). Le azioni scrivono solo i collegamenti del docente («Non serve»,
- * figura collegata, ripristino): il contenuto della lezione non cambia.
+ * Piano delle figure della lezione (doc 18 §23.7, §24): etichetta nella
+ * riga della lezione e, nella finestra di modifica, il pannello «Figure
+ * consigliate». Stato, motivo ed esito della letteratura arrivano già
+ * calcolati dal backend (`figure_needs_view`); il frontend non li
+ * ricalcola e non mostra mai nomi di documenti (la «Fonte» la scrive il
+ * render). Il sistema inserisce da solo le figure disponibili; qui il
+ * docente inserisce nella bozza quelle proposte («Inserisci»: frase e
+ * figura nella sezione, si salva con «Salva») o dice che una non serve.
  */
 
 const STATUS_VARIANT: Record<
@@ -77,17 +73,46 @@ export function LessonFigureNeedsChip({
   );
 }
 
-export function LessonFigureNeedsPanel({
-  lesson,
-  canEdit,
-}: {
+interface PanelProps {
+  orgId: string;
+  courseId: string;
   lesson: CourseLessonOut;
-  canEdit: boolean;
-}) {
+  /** Sezioni e asset della BOZZA: «Inserisci» parte dal testo attuale. */
+  sections: LessonContentSection[];
+  assetIds: string[];
+  disabled: boolean;
+  onInsert: (
+    sectionId: string,
+    sectionText: string,
+    asset: LessonContentVisualAsset,
+  ) => void;
+}
+
+export function LessonFigureNeedsPanel({
+  orgId,
+  courseId,
+  lesson,
+  sections,
+  assetIds,
+  disabled,
+  onInsert,
+}: PanelProps) {
   const { t } = useTranslation();
   const qc = useQueryClient();
-  const courseRef = useCourseRef();
   const view = lesson.figure_needs_view;
+  // Voci inserite nella bozza in questa sessione (da salvare).
+  const [inserted, setInserted] = useState<Record<string, string>>({});
+
+  const candidatesQuery = useQuery({
+    queryKey: ["figure-need-candidates", orgId, courseId, lesson.id],
+    queryFn: () =>
+      coursesApi.lessonContent.figureNeedCandidates(orgId, courseId, lesson.id),
+    enabled: !!view && view.length > 0,
+    staleTime: 0,
+  });
+  const candidateOf = new Map(
+    (candidatesQuery.data ?? []).map((c) => [c.need_id, c]),
+  );
 
   const linkMut = useMutation({
     mutationFn: ({
@@ -96,19 +121,16 @@ export function LessonFigureNeedsPanel({
     }: {
       needId: string;
       payload: FigureNeedLinkInput;
-    }) => {
-      if (!courseRef) throw new Error("missing course ref");
-      return coursesApi.lessonContent.updateFigureNeedLink(
-        courseRef.orgId,
-        courseRef.courseId,
+    }) =>
+      coursesApi.lessonContent.updateFigureNeedLink(
+        orgId,
+        courseId,
         lesson.id,
         needId,
         payload,
-      );
-    },
+      ),
     onSuccess: (fresh: CourseOut) => {
-      if (!courseRef) return;
-      const detailKey = ["courses", "detail", courseRef.orgId, courseRef.courseId];
+      const detailKey = ["courses", "detail", orgId, courseId];
       qc.setQueryData(detailKey, fresh);
       qc.invalidateQueries({ queryKey: detailKey });
       toast.success(t("courses.figureNeeds.toast.updated"));
@@ -119,17 +141,46 @@ export function LessonFigureNeedsPanel({
       ),
   });
 
-  if (!view || view.length === 0) return null;
+  const insertMut = useMutation({
+    mutationFn: ({ needId, figureId, sectionId }: {
+      needId: string;
+      figureId: string;
+      sectionId: string;
+    }) => {
+      const section = sections.find((s) => s.section_id === sectionId);
+      return coursesApi.lessonContent.insertFigureForNeed(
+        orgId,
+        courseId,
+        lesson.id,
+        needId,
+        {
+          figure_id: figureId,
+          section_text: section?.content ?? "",
+          asset_ids: assetIds,
+        },
+      );
+    },
+    onSuccess: (out, vars) => {
+      onInsert(out.section_id, out.section_text, out.asset);
+      setInserted((prev) => ({ ...prev, [vars.needId]: out.asset.asset_id }));
+      toast.success(t("courses.figureNeeds.toast.inserted"));
+    },
+    onError: (err) =>
+      toast.error(
+        extractApiError(err).message ?? t("courses.figureNeeds.toast.error"),
+      ),
+  });
 
-  const raw =
-    lesson.content_raw && !isAssessmentRaw(lesson.content_raw)
-      ? lesson.content_raw
-      : null;
-  const assets = raw?.visual_assets ?? [];
-  const captionOf = (assetId: string | undefined) =>
-    assets.find((a) => a.asset_id.toLowerCase() === assetId?.toLowerCase())
-      ?.caption ?? "";
+  if (!view || view.length === 0) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        {t("courses.figureNeeds.empty")}
+      </p>
+    );
+  }
+
   const sectionTitle = (sectionId: string) =>
+    sections.find((s) => s.section_id === sectionId)?.title ??
     lesson.section_outline.find((s) => s.section_id === sectionId)?.title ??
     sectionId;
 
@@ -140,14 +191,10 @@ export function LessonFigureNeedsPanel({
     if (last && last.sectionId === need.section_id) last.needs.push(need);
     else groups.push({ sectionId: need.section_id, needs: [need] });
   }
-  const hasUncovered = view.some(
-    (n) => n.status === "uncovered" || n.status === "missing",
-  );
-  const busy = linkMut.isPending;
+  const busy = disabled || linkMut.isPending || insertMut.isPending;
 
   const detail = (need: LessonFigureNeedView): string | null => {
     if (need.status === "placed" || need.status === "misplaced") {
-      const caption = captionOf(need.asset_id);
       const where =
         need.status === "misplaced"
           ? t("courses.figureNeeds.citedIn", {
@@ -156,11 +203,7 @@ export function LessonFigureNeedsPanel({
                 : t("courses.figureNeeds.outsideSections"),
             })
           : null;
-      return [
-        need.linked ? t("courses.figureNeeds.linkedByYou") : null,
-        caption || need.asset_id,
-        where,
-      ]
+      return [need.linked ? t("courses.figureNeeds.linkedByYou") : null, where]
         .filter(Boolean)
         .join(" · ");
     }
@@ -184,16 +227,10 @@ export function LessonFigureNeedsPanel({
   };
 
   return (
-    <section
-      className="space-y-3 rounded-md border bg-background px-3 py-3"
-      aria-label={t("courses.figureNeeds.title")}
-    >
-      <div>
-        <h5 className="text-sm font-semibold">{t("courses.figureNeeds.title")}</h5>
-        <p className="text-xs text-muted-foreground">
-          {t("courses.figureNeeds.description")}
-        </p>
-      </div>
+    <section className="space-y-3" aria-label={t("courses.figureNeeds.title")}>
+      <p className="text-xs text-muted-foreground">
+        {t("courses.figureNeeds.description")}
+      </p>
       {groups.map((group) => (
         <div key={group.sectionId} className="space-y-1.5">
           <div className="text-xs font-medium text-muted-foreground">
@@ -201,13 +238,16 @@ export function LessonFigureNeedsPanel({
           </div>
           <ul className="space-y-1.5">
             {group.needs.map((need) => {
-              const info = detail(need);
+              const insertedAs = inserted[need.need_id];
+              const open =
+                !insertedAs &&
+                (need.status === "uncovered" ||
+                  (need.status === "missing" && need.reason !== "not_cited"));
+              const candidate = open ? candidateOf.get(need.need_id) : undefined;
+              const info = insertedAs ? null : detail(need);
               const canDismiss =
-                need.status !== "dismissed" && !need.linked;
+                !insertedAs && need.status !== "dismissed" && !need.linked;
               const canRestore = need.status === "dismissed" || !!need.linked;
-              const canLink =
-                (need.status === "uncovered" || need.status === "missing") &&
-                assets.length > 0;
               return (
                 <li
                   key={need.need_id}
@@ -234,91 +274,93 @@ export function LessonFigureNeedsPanel({
                       ) : null}
                       {info ? <span>· {info}</span> : null}
                     </div>
+                    {candidate ? (
+                      <div className="text-[11px]">
+                        {t("courses.figureNeeds.proposed", {
+                          caption: candidate.caption,
+                        })}
+                      </div>
+                    ) : null}
                   </div>
                   <Badge
-                    variant={STATUS_VARIANT[need.status]}
+                    variant={insertedAs ? "success" : STATUS_VARIANT[need.status]}
                     className="text-[11px]"
                   >
-                    {t(`courses.figureNeeds.status.${need.status}`)}
+                    {insertedAs
+                      ? t("courses.figureNeeds.inserted")
+                      : t(`courses.figureNeeds.status.${need.status}`)}
                   </Badge>
-                  {canEdit && (
-                    <div className="flex items-center gap-1">
-                      {canLink && (
-                        <Select
-                          value=""
-                          disabled={busy}
-                          onValueChange={(assetId) =>
-                            linkMut.mutate({
-                              needId: need.need_id,
-                              payload: { state: "linked", asset_id: assetId },
-                            })
-                          }
-                        >
-                          <SelectTrigger
-                            className="h-7 w-auto gap-1 text-xs"
-                            aria-label={t("courses.figureNeeds.link")}
-                          >
-                            <Link2 className="size-3.5" />
-                            <SelectValue placeholder={t("courses.figureNeeds.link")} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {assets.map((asset) => (
-                              <SelectItem key={asset.asset_id} value={asset.asset_id}>
-                                {asset.caption || asset.asset_id}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
-                      {canDismiss && (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 text-xs"
-                          disabled={busy}
-                          onClick={() =>
-                            linkMut.mutate({
-                              needId: need.need_id,
-                              payload: { state: "dismissed" },
-                            })
-                          }
-                        >
-                          <X className="size-3.5" />
-                          {t("courses.figureNeeds.dismiss")}
-                        </Button>
-                      )}
-                      {canRestore && (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 text-xs"
-                          disabled={busy}
-                          onClick={() =>
-                            linkMut.mutate({
-                              needId: need.need_id,
-                              payload: { state: null },
-                            })
-                          }
-                        >
-                          <RotateCcw className="size-3.5" />
-                          {t("courses.figureNeeds.restore")}
-                        </Button>
-                      )}
-                    </div>
-                  )}
+                  <div className="flex items-center gap-1">
+                    {candidate && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs"
+                        disabled={busy}
+                        onClick={() =>
+                          insertMut.mutate({
+                            needId: need.need_id,
+                            figureId: candidate.figure_id,
+                            sectionId: need.section_id,
+                          })
+                        }
+                      >
+                        {insertMut.isPending &&
+                        insertMut.variables?.needId === need.need_id ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : (
+                          <ImagePlus className="size-3.5" />
+                        )}
+                        {t("courses.figureNeeds.insert")}
+                      </Button>
+                    )}
+                    {canDismiss && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 text-xs"
+                        disabled={busy}
+                        onClick={() =>
+                          linkMut.mutate({
+                            needId: need.need_id,
+                            payload: { state: "dismissed" },
+                          })
+                        }
+                      >
+                        <X className="size-3.5" />
+                        {t("courses.figureNeeds.dismiss")}
+                      </Button>
+                    )}
+                    {canRestore && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 text-xs"
+                        disabled={busy}
+                        onClick={() =>
+                          linkMut.mutate({
+                            needId: need.need_id,
+                            payload: { state: null },
+                          })
+                        }
+                      >
+                        <RotateCcw className="size-3.5" />
+                        {t("courses.figureNeeds.restore")}
+                      </Button>
+                    )}
+                  </div>
                 </li>
               );
             })}
           </ul>
         </div>
       ))}
-      {hasUncovered && canEdit && (
-        <p className="text-xs text-muted-foreground">
-          {t("courses.figureNeeds.uncoveredHint")}
-        </p>
-      )}
+      <p className="text-xs text-muted-foreground">
+        {t("courses.figureNeeds.uncoveredHint")}
+      </p>
     </section>
   );
 }

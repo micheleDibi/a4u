@@ -285,6 +285,23 @@ export interface LessonFigureNeedsSummary {
   dismissed: number;
 }
 
+/** Figura del corso adatta a un fabbisogno scoperto (per «Inserisci»). */
+export interface FigureNeedCandidate {
+  need_id: string;
+  figure_id: string;
+  caption: string;
+  relation: string;
+  tier: number;
+}
+
+/** «Inserisci»: testo della sezione (bozza) con frase e figura, e l'asset
+ *  da aggiungere. Il contenuto non è salvato: lo salva il docente. */
+export interface FigureNeedInsertOut {
+  section_id: string;
+  section_text: string;
+  asset: LessonContentVisualAsset;
+}
+
 export interface FigureNeedLinkInput {
   /** null = torna allo stato calcolato dal piano. */
   state: "dismissed" | "linked" | null;
@@ -1865,6 +1882,29 @@ export const coursesApi = {
     ): Promise<CourseOut> => {
       const res = await apiClient.put<CourseOut>(
         `${base(orgId)}/${courseId}/lessons/${lessonId}/figure-needs/${encodeURIComponent(needId)}`,
+        payload
+      );
+      return res.data;
+    },
+    figureNeedCandidates: async (
+      orgId: string,
+      courseId: string,
+      lessonId: string
+    ): Promise<FigureNeedCandidate[]> => {
+      const res = await apiClient.get<FigureNeedCandidate[]>(
+        `${base(orgId)}/${courseId}/lessons/${lessonId}/figure-needs/candidates`
+      );
+      return res.data;
+    },
+    insertFigureForNeed: async (
+      orgId: string,
+      courseId: string,
+      lessonId: string,
+      needId: string,
+      payload: { figure_id: string; section_text: string; asset_ids: string[] }
+    ): Promise<FigureNeedInsertOut> => {
+      const res = await apiClient.post<FigureNeedInsertOut>(
+        `${base(orgId)}/${courseId}/lessons/${lessonId}/figure-needs/${encodeURIComponent(needId)}/insert`,
         payload
       );
       return res.data;

@@ -1984,7 +1984,7 @@
     },
     "figureNeeds": {
       "title": "Figure consigliate",
-      "description": "Le figure che il piano ritiene utili per ogni sezione della lezione e dove sono nel contenuto. Le azioni qui non modificano il testo della lezione.",
+      "description": "Le figure che il piano ritiene utili per ogni sezione. Il sistema inserisce da solo quelle disponibili; qui puoi inserire nella bozza quelle proposte, con la frase che le introduce, o dire che una non serve. Le figure inserite si salvano con «Salva».",
       "chip": "Figure {{placed}}/{{total}}",
       "chipOptional_one": "{{count}} figura consigliata",
       "chipOptional_other": "{{count}} figure consigliate",
@@ -2018,14 +2018,18 @@
       "linkedByYou": "collegata da te",
       "missingHint": "Il piano aveva una figura, ma il modello non l'ha inserita",
       "notCitedHint": "La figura è nella lezione ma il testo non la cita",
-      "link": "Collega",
       "dismiss": "Non serve",
       "restore": "Ripristina",
-      "uncoveredHint": "Per coprire una figura da trovare: nell'editor della lezione carica un'immagine o scegli una figura dai documenti del corso, poi collegala qui.",
+      "uncoveredHint": "Se il corso non ha una figura adatta, caricala o sceglila dai documenti negli asset visivi e citala nel testo della sezione.",
       "toast": {
         "updated": "Figura consigliata aggiornata",
-        "error": "Impossibile aggiornare la figura consigliata"
-      }
+        "error": "Impossibile aggiornare la figura consigliata",
+        "inserted": "Figura inserita nella bozza: salva per confermare"
+      },
+      "insert": "Inserisci",
+      "proposed": "Figura proposta: {{caption}}",
+      "inserted": "Inserita, da salvare",
+      "empty": "Nessuna figura consigliata per questa lezione."
     }
   },
   "courseSettings": {
