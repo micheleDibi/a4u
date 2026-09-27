@@ -237,6 +237,10 @@ schema con `create_all`. La parità modello↔migrazione è verificata da
   - `SourceFigure.tsx` è il punto unico: immagine come Blob
     dall'endpoint autenticato, mai l'URL dello storage;
   - `SourceFigurePicker` sceglie dal catalogo;
+  - «Ingrandisci» (`SourceFigureZoom`, dal 27/09/2026): nel selettore
+    dell'editor (dispense e slide) e nel riassunto strutturato la miniatura
+    apre la figura a piena risoluzione, con didascalia, descrizione e riga
+    «Fonte»; l'immagine intera si scarica solo all'apertura;
   - badge, polling ed estrazione nell'uploader; `DocumentSourceDialog`
     per bibliografia, licenza e «proprio»;
   - politica di organizzazione in `CourseSettingsPage`.
