@@ -1980,6 +1980,11 @@
         "file_missing": "File missing",
         "superseded": "Superseded extraction",
         "unknown": "Not selectable"
+      },
+      "zoom": {
+        "open": "Enlarge the figure",
+        "title": "Enlarged figure",
+        "hint": "Full-resolution image. Press Esc or the X to go back."
       }
     }
   },

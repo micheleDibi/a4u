@@ -14,6 +14,7 @@ import {
 import { useCourseRef } from "@/contexts/CourseRefContext";
 
 import { FigureLoading } from "./FigureFrame";
+import { SourceFigureZoom } from "./SourceFigure";
 import { SourceFigureResolutionBadge } from "./SourceFigureResolutionBadge";
 import { useCourseFigures } from "./useCourseFigures";
 
@@ -71,6 +72,7 @@ function Thumbnail({ figure }: { figure: DocumentFigure }) {
 
 export function SourceFigurePicker({ open, onClose, onPick }: SourceFigurePickerProps) {
   const { t } = useTranslation();
+  const courseRef = useCourseRef();
   const figures = useCourseFigures();
   // Le figure a bassa risoluzione in coda: si usano solo senza alternative
   // migliori (sotto il minimo il backend non le rende proponibili).
@@ -92,7 +94,17 @@ export function SourceFigurePicker({ open, onClose, onPick }: SourceFigurePicker
           <ul className="grid gap-3 sm:grid-cols-2">
             {selectable.map((figure) => (
               <li key={figure.id} className="space-y-2 rounded-md border bg-muted/20 p-2">
-                <Thumbnail figure={figure} />
+                {courseRef ? (
+                  <SourceFigureZoom
+                    orgId={courseRef.orgId}
+                    courseId={courseRef.courseId}
+                    figure={figure}
+                  >
+                    <Thumbnail figure={figure} />
+                  </SourceFigureZoom>
+                ) : (
+                  <Thumbnail figure={figure} />
+                )}
                 <SourceFigureResolutionBadge resolution={figure.resolution} />
                 <div className="text-xs">
                   {figure.source_caption || figure.description}

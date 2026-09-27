@@ -8,6 +8,7 @@ import {
   type CourseDocumentOut,
   type DocumentFigure,
 } from "@/api/courses";
+import { SourceFigureZoom } from "@/components/shared/SourceFigure";
 import { SourceFigureResolutionBadge } from "@/components/shared/SourceFigureResolutionBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -142,7 +143,9 @@ export function DocumentFiguresSection({ orgId, courseId, doc, canEdit }: Props)
             key={figure.id}
             className="flex flex-col gap-2 rounded-md border border-border p-2"
           >
-            <Thumbnail orgId={orgId} courseId={courseId} figure={figure} />
+            <SourceFigureZoom orgId={orgId} courseId={courseId} figure={figure}>
+              <Thumbnail orgId={orgId} courseId={courseId} figure={figure} />
+            </SourceFigureZoom>
             <div className="flex flex-wrap items-center gap-1.5 text-xs">
               {figure.page !== null && (
                 <Badge variant="secondary">

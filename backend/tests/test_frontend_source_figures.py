@@ -169,3 +169,19 @@ def test_no_figure_needs_label_or_panel() -> None:
     for language in ("it", "en"):
         keys = _flatten(json.loads((_LOCALES / f"{language}.json").read_text(encoding="utf-8")))
         assert not [k for k in keys if k.startswith("courses.figureNeeds.")], language
+
+
+def test_zoom_opens_the_full_image_in_the_picker_and_the_summary() -> None:
+    """«Ingrandisci»: il selettore dell'editor e il riassunto strutturato
+    usano lo stesso zoom di `SourceFigure.tsx`, che scarica l'immagine intera
+    (non l'anteprima) solo all'apertura della finestra."""
+    source = (_FRONTEND / "components/shared/SourceFigure.tsx").read_text(encoding="utf-8")
+    zoom = source[source.index("export function SourceFigureZoom") :]
+    assert "useFigureObjectUrl(orgId, courseId, figure, false, open)" in zoom
+    assert 'aria-label={t("courses.sourceFigures.zoom.open")}' in zoom
+    for relative in (
+        "components/shared/SourceFigurePicker.tsx",
+        "pages/org/courses/components/DocumentFiguresSection.tsx",
+    ):
+        text = (_FRONTEND / relative).read_text(encoding="utf-8")
+        assert "<SourceFigureZoom" in text, relative

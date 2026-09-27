@@ -1,8 +1,16 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { ZoomIn } from "lucide-react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { coursesApi, type DocumentFigure } from "@/api/courses";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useCourseRef } from "@/contexts/CourseRefContext";
 import { cn } from "@/lib/utils";
 
@@ -40,26 +48,20 @@ export interface SourceFigureProps {
   preview?: boolean;
 }
 
-function useFigureImage(figure: DocumentFigure | undefined, preview: boolean) {
-  const courseRef = useCourseRef();
+/** Immagine della figura (Blob dall'endpoint autenticato) come object URL.
+ *  Chiave condivisa con i render della lezione: una sola richiesta. */
+function useFigureObjectUrl(
+  orgId: string | undefined,
+  courseId: string | undefined,
+  figure: DocumentFigure | undefined,
+  preview: boolean,
+  enabled: boolean,
+) {
   const query = useQuery({
-    queryKey: [
-      "document-figure-image",
-      courseRef?.orgId,
-      courseRef?.courseId,
-      figure?.id,
-      preview,
-      figure?.image_rev,
-    ],
+    queryKey: ["document-figure-image", orgId, courseId, figure?.id, preview, figure?.image_rev],
     queryFn: () =>
-      coursesApi.documentFigures.image(
-        courseRef!.orgId,
-        courseRef!.courseId,
-        figure!.id,
-        preview,
-        figure!.image_rev,
-      ),
-    enabled: Boolean(courseRef && figure && figure.renderable && figure.attribution),
+      coursesApi.documentFigures.image(orgId!, courseId!, figure!.id, preview, figure!.image_rev),
+    enabled: Boolean(orgId && courseId && figure) && enabled,
     staleTime: Infinity,
     gcTime: 10 * 60_000,
     retry: 1,
@@ -75,6 +77,17 @@ function useFigureImage(figure: DocumentFigure | undefined, preview: boolean) {
     return () => URL.revokeObjectURL(objectUrl);
   }, [query.data]);
   return { url, isError: query.isError, isLoading: query.isLoading };
+}
+
+function useFigureImage(figure: DocumentFigure | undefined, preview: boolean) {
+  const courseRef = useCourseRef();
+  return useFigureObjectUrl(
+    courseRef?.orgId,
+    courseRef?.courseId,
+    figure,
+    preview,
+    Boolean(figure?.renderable && figure.attribution),
+  );
 }
 
 export function SourceFigure({
@@ -151,3 +164,82 @@ export function SourceFigure({
 }
 
 export default SourceFigure;
+
+/**
+ * «Ingrandisci» per le miniature piccole (selettore dell'editor, riassunto
+ * strutturato): la miniatura diventa un pulsante che apre la figura a piena
+ * risoluzione in una finestra, con didascalia, descrizione e riga «Fonte» del
+ * backend. L'immagine intera (non l'anteprima) si scarica solo all'apertura.
+ * Dentro un'altra finestra (il selettore) Esc chiude solo lo zoom.
+ */
+export function SourceFigureZoom({
+  orgId,
+  courseId,
+  figure,
+  children,
+}: {
+  orgId: string;
+  courseId: string;
+  figure: DocumentFigure;
+  children: ReactNode;
+}) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const image = useFigureObjectUrl(orgId, courseId, figure, false, open);
+  const caption = figure.source_caption?.trim() ?? "";
+  const description = figure.description?.trim() ?? "";
+  const attribution = figure.attribution.trim();
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-label={t("courses.sourceFigures.zoom.open")}
+        title={t("courses.sourceFigures.zoom.open")}
+        className="group relative block w-full cursor-zoom-in rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        {children}
+        <span
+          aria-hidden="true"
+          className="absolute right-1 top-1 rounded-md border bg-background/90 p-1 text-muted-foreground shadow-sm transition-colors group-hover:text-foreground"
+        >
+          <ZoomIn className="size-4" />
+        </span>
+      </button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-h-[95vh] w-[95vw] max-w-5xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{t("courses.sourceFigures.zoom.title")}</DialogTitle>
+            <DialogDescription>{t("courses.sourceFigures.zoom.hint")}</DialogDescription>
+          </DialogHeader>
+          {image.url ? (
+            <div className="flex justify-center rounded border bg-white p-2">
+              <img
+                src={image.url}
+                alt={description || caption}
+                className="block h-auto max-h-[70vh] w-auto max-w-full object-contain"
+              />
+            </div>
+          ) : image.isError ? (
+            <div className="flex min-h-48 items-center justify-center rounded bg-muted/40 text-sm text-muted-foreground">
+              {t("courses.figures.renderError")}
+            </div>
+          ) : (
+            <FigureLoading className="h-48" />
+          )}
+          {(caption || description || attribution) && (
+            <div className="space-y-1">
+              {caption && <p className="text-sm leading-relaxed">{caption}</p>}
+              {description && description !== caption && (
+                <p className="text-xs leading-relaxed text-muted-foreground">{description}</p>
+              )}
+              {attribution && (
+                <p className="text-[0.7rem] text-muted-foreground">{attribution}</p>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
