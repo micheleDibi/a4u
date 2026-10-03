@@ -37,16 +37,13 @@ const RECENT_WINDOW_MS = 90 * 60_000;
  * pronti (`*_generated_at`).
  *
  * Robusto al refresh della pagina (i timestamp arrivano dal backend).
- * Auto-ricalibra man mano che nuovi task si completano. Re-renderizza
- * ogni 5 secondi così il countdown scorre anche senza polling nuovo.
+ * Auto-ricalibra man mano che nuovi task si completano. Con almeno un task
+ * attivo re-renderizza ogni 5 secondi così il countdown scorre anche senza
+ * polling nuovo; senza task attivi non c'è nessun tick (le viste mostrano
+ * l'ETA solo durante un batch, quindi non serve ridisegnare).
  */
 export function useBatchEta(tasks: BatchEtaTask[]): BatchEtaResult {
-  // Tick periodico per re-render del display (ETA decrescente, "fa N min").
   const [, force] = useState(0);
-  useEffect(() => {
-    const id = setInterval(() => force((n) => n + 1), 5_000);
-    return () => clearInterval(id);
-  }, []);
 
   let completed = 0;
   let active = 0;
@@ -66,6 +63,15 @@ export function useBatchEta(tasks: BatchEtaTask[]): BatchEtaResult {
       active += 1;
     }
   }
+
+  // Tick periodico per re-render del display (ETA decrescente), attivo solo
+  // finché c'è almeno un task in coda o in elaborazione.
+  const hasActive = active > 0;
+  useEffect(() => {
+    if (!hasActive) return;
+    const id = setInterval(() => force((n) => n + 1), 5_000);
+    return () => clearInterval(id);
+  }, [hasActive]);
 
   const total = completed + active;
   const remaining = active;

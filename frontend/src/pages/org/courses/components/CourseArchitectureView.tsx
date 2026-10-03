@@ -64,10 +64,12 @@ export function CourseArchitectureView({ course, canEdit, orgId }: Props) {
   const detailKey = ["courses", "detail", orgId, course.id];
 
   const setCache = (fresh: CourseOut) => {
+    // La risposta della mutazione è già il dettaglio aggiornato e
+    // `setQueryData` notifica gli observer: niente invalidate della detail
+    // key (sarebbe un secondo GET del corso intero). Si invalida lo stato
+    // leggero così il poll riparte subito a 2 s se è partito un job.
     qc.setQueryData(detailKey, fresh);
-    // Force a refetch as a safety net: garantisce che la UI si aggiorni
-    // anche se l'observer principale non si rinfresca per qualche motivo.
-    qc.invalidateQueries({ queryKey: detailKey });
+    qc.invalidateQueries({ queryKey: ["courses", "status", orgId, course.id] });
     qc.invalidateQueries({ queryKey: ["courses", "list", orgId] });
   };
 

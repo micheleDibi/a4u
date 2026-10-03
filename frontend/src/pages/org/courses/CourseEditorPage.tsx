@@ -80,6 +80,7 @@ const TAXONOMY_TYPES_USED: readonly TaxonomyType[] = [
   "content_depth",
 ] as const;
 import { useTaskEta } from "@/hooks/useTaskEta";
+import { useCourseStatus } from "@/hooks/useCourseStatus";
 import { flagFor } from "@/i18n/flags";
 import { extractApiError } from "@/lib/errors";
 import { formatDuration } from "@/lib/formatDuration";
@@ -227,98 +228,15 @@ export default function CourseEditorPage({ mode }: Props) {
   // L'assegnatario viene letto da `course?.assignee` ed è calcolato sotto
   // dopo che `courseQuery` ha caricato i dati.
 
+  // Nessun polling sul dettaglio (~1,5 MB su un corso da 72 lezioni): polla
+  // solo lo stato leggero (`useCourseStatus`), che ricarica il dettaglio ai
+  // cambi sostanziali e ne aggiorna in cache l'avanzamento dei job.
   const courseQuery = useQuery({
     queryKey: ["courses", "detail", orgId, courseId],
     queryFn: () => coursesApi.get(orgId, courseId!),
     enabled: mode === "edit" && !!courseId,
-    // Polling: quando un documento è in elaborazione, oppure il corso è
-    // in `architecture_pending` (worker sta generando), oppure almeno un
-    // modulo è in elaborazione per la struttura delle lezioni (Fase 2).
-    refetchInterval: (q) => {
-      const data = q.state.data;
-      if (!data) return false;
-      if (data.status === "architecture_pending") return 5000;
-      const anyActiveDoc = (data.documents ?? []).some(
-        (d) =>
-          d.summary_status === "pending" || d.summary_status === "processing"
-      );
-      if (anyActiveDoc) return 5000;
-      const anyActiveLessonStructure = (data.modules ?? []).some(
-        (m) =>
-          m.lessons_structure_status === "pending" ||
-          m.lessons_structure_status === "processing"
-      );
-      if (anyActiveLessonStructure) return 5000;
-      const anyActiveLessonContent = (data.modules ?? []).some((m) =>
-        (m.lessons ?? []).some(
-          (l) =>
-            l.content_status === "pending" || l.content_status === "processing"
-        )
-      );
-      if (anyActiveLessonContent) return 5000;
-      const anyActiveLessonPdf = (data.modules ?? []).some((m) =>
-        (m.lessons ?? []).some(
-          (l) =>
-            l.pdf_status === "pending" || l.pdf_status === "processing"
-        )
-      );
-      if (anyActiveLessonPdf) return 4000;
-      const anyActiveLessonSlides = (data.modules ?? []).some((m) =>
-        (m.lessons ?? []).some(
-          (l) =>
-            l.slides_status === "pending" ||
-            l.slides_status === "processing"
-        )
-      );
-      if (anyActiveLessonSlides) return 5000;
-      const anyActiveSlidesPdf = (data.modules ?? []).some((m) =>
-        (m.lessons ?? []).some(
-          (l) =>
-            l.slides_pdf_status === "pending" ||
-            l.slides_pdf_status === "processing"
-        )
-      );
-      if (anyActiveSlidesPdf) return 4000;
-      const anyActiveLessonSpeech = (data.modules ?? []).some((m) =>
-        (m.lessons ?? []).some(
-          (l) =>
-            l.speech_status === "pending" ||
-            l.speech_status === "processing"
-        )
-      );
-      if (anyActiveLessonSpeech) return 5000;
-      const anyActiveSpeechPdf = (data.modules ?? []).some((m) =>
-        (m.lessons ?? []).some(
-          (l) =>
-            l.speech_pdf_status === "pending" ||
-            l.speech_pdf_status === "processing"
-        )
-      );
-      if (anyActiveSpeechPdf) return 4000;
-      if (
-        data.glossary_status === "pending" ||
-        data.glossary_status === "processing"
-      ) {
-        return 5000;
-      }
-      // Figure di fonte (ultimo controllo, il più lento): polling solo con
-      // estrazioni in coda o in corso, ogni 10 s e più di rado quando
-      // l'estrazione dura (i PDF lunghi richiedono decine di minuti).
-      const activeFigures = (data.documents ?? []).filter(
-        (d) => d.figures_status === "pending" || d.figures_status === "processing"
-      );
-      if (activeFigures.length > 0) {
-        const oldest = Math.min(
-          ...activeFigures.map((d) =>
-            d.figures_requested_at ? Date.parse(d.figures_requested_at) : Date.now()
-          )
-        );
-        const minutes = (Date.now() - oldest) / 60000;
-        return minutes < 3 ? 10000 : minutes < 15 ? 20000 : 30000;
-      }
-      return false;
-    },
   });
+  useCourseStatus(orgId, courseId, mode === "edit");
 
   const course = courseQuery.data ?? null;
   // Lock del setup didattico (Tab 1 + Tab 2). Quando confermato, gli
@@ -528,6 +446,8 @@ export default function CourseEditorPage({ mode }: Props) {
       coursesApi.architecture.generate(orgId, courseId!, hint),
     onSuccess: (fresh) => {
       qc.setQueryData(["courses", "detail", orgId, courseId], fresh);
+      // Job avviato: il poll dello stato riparte subito a 2 s.
+      qc.invalidateQueries({ queryKey: ["courses", "status", orgId, courseId] });
       qc.invalidateQueries({ queryKey: ["courses", "list", orgId] });
       toast.success(t("courses.architecture.requested"));
       setArchDialogOpen(false);

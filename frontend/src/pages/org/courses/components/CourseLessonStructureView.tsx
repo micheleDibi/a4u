@@ -84,9 +84,13 @@ export function CourseLessonStructureView({
   );
 
   const detailKey = ["courses", "detail", orgId, course.id];
+  // La risposta della mutazione è già il dettaglio aggiornato: niente
+  // invalidate della detail key (sarebbe un secondo GET del corso intero).
+  // Si invalida lo stato leggero così il poll riparte subito a 2 s se la
+  // mutazione ha avviato un job.
   const setCache = (fresh: CourseOut) => {
     qc.setQueryData(detailKey, fresh);
-    qc.invalidateQueries({ queryKey: detailKey });
+    qc.invalidateQueries({ queryKey: ["courses", "status", orgId, course.id] });
     qc.invalidateQueries({ queryKey: ["courses", "list", orgId] });
   };
 

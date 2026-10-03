@@ -1048,6 +1048,99 @@ export interface CourseOut {
   updated_at: string;
 }
 
+// Stato leggero del corso (`GET .../courses/{id}/status`, contratto
+// `docs/contracts/perf-l1-course-status.md`): solo stati, avanzamento e
+// timestamp, per il polling dell'editor. I tipi sono ricavati con `Pick`
+// da quelli del dettaglio, così nomi e tipi restano identici per contratto.
+
+/** Campi di una lezione esposti da `/status` (come in `CourseLessonOut`). */
+type CourseStatusLessonField =
+  | "id"
+  | "lesson_structure_modified_at"
+  | `${"content" | "slides" | "speech"}_${
+      | "status"
+      | "progress"
+      | "progress_phase"
+      | "error"
+      | "attempts"
+      | "generated_at"
+      | "approved_at"
+      | "modified_at"}`
+  | `${"pdf" | "slides_pdf" | "speech_pdf"}_${
+      | "status"
+      | "progress"
+      | "progress_phase"
+      | "error"
+      | "attempts"
+      | "generated_at"}`;
+
+/** `Required`: i campi `speech_pdf_*` sono opzionali nel dettaglio, ma
+ *  `/status` li restituisce sempre. */
+export interface CourseStatusLessonOut
+  extends Required<Pick<CourseLessonOut, CourseStatusLessonField>> {
+  /** Colonne di `CourseLesson`: assenti dal dettaglio. */
+  video_status: LessonVideoStatus;
+  avatar_video_status: LessonAvatarVideoStatus;
+}
+
+export interface CourseStatusModuleOut
+  extends Pick<
+    CourseModuleOut,
+    | "id"
+    | "lessons_structure_status"
+    | "lessons_structure_progress"
+    | "lessons_structure_progress_phase"
+    | "lessons_structure_error"
+    | "lessons_structure_attempts"
+    | "lessons_structure_generated_at"
+    | "lessons_structure_approved_at"
+    | "architecture_modified_at"
+  > {
+  /** Ordinate per `position`. */
+  lessons: CourseStatusLessonOut[];
+}
+
+export type CourseStatusDocumentOut = Pick<
+  CourseDocumentOut,
+  | "id"
+  | "summary_status"
+  | "summary_generated_at"
+  | "summary_error"
+  | "summary_attempts"
+  | "summary_coverage"
+  | "summary_chunks_total"
+  | "summary_chunks_done"
+  | "figures_status"
+  | "figures_error_code"
+  | "figures_count"
+  | "figures_coverage"
+  | "figures_pages_total"
+  | "figures_pages_done"
+  | "figures_progress"
+  | "figures_requested_at"
+>;
+
+export interface CourseStatusOut
+  extends Pick<
+    CourseOut,
+    | "status"
+    | "updated_at"
+    | "architecture_progress"
+    | "architecture_progress_phase"
+    | "architecture_error"
+    | "architecture_attempts"
+    | "architecture_generated_at"
+    | "glossary_status"
+    | "glossary_generated_at"
+    | "glossary_error"
+  > {
+  course_id: string;
+  /** Ordinati per `created_at, id`: abbinare sempre per id. */
+  documents: CourseStatusDocumentOut[];
+  /** Ordinati per `position`. */
+  modules: CourseStatusModuleOut[];
+}
+
 export interface CourseCreateInput {
   title: string;
   objectives?: string;
@@ -1205,6 +1298,21 @@ export const coursesApi = {
   },
   get: async (orgId: string, courseId: string): Promise<CourseOut> => {
     const res = await apiClient.get<CourseOut>(`${base(orgId)}/${courseId}`);
+    return res.data;
+  },
+  /** Stato leggero del corso per il polling (vedi `CourseStatusOut`).
+   *  `signal`: un poll annullato da react-query interrompe la request. Il
+   *  304 dell'ETag lo gestisce il browser: qui arriva sempre un 200 col
+   *  corpo. */
+  getStatus: async (
+    orgId: string,
+    courseId: string,
+    signal?: AbortSignal,
+  ): Promise<CourseStatusOut> => {
+    const res = await apiClient.get<CourseStatusOut>(
+      `${base(orgId)}/${courseId}/status`,
+      { signal },
+    );
     return res.data;
   },
   create: async (

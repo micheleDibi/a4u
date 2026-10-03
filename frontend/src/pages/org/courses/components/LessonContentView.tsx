@@ -35,12 +35,14 @@ interface Props {
  * blocchi, come nel PDF. `orgId`/`courseId` per le figure `function`
  * arrivano dal `CourseRefContext` del container (A21), non da qui.
  *
- * NB: il contenitore della lezione fa polling (refetchInterval) finché
- * un'altra lezione/PDF è in elaborazione. A ogni tick react-query
- * restituisce un nuovo oggetto `content` con identità diversa ma stesso
- * contenuto: senza memoizzazione l'intero markdown (immagini comprese)
- * verrebbe ri-renderizzato a ripetizione, con flicker visibile. Per
- * questo il componente è `memo`-izzato con confronto sul contenuto reale.
+ * NB: mentre un'altra lezione/PDF è in elaborazione il dettaglio del corso
+ * si aggiorna spesso (patch di avanzamento dal poll di `/status`, ricariche
+ * ai cambi di stato). `content` mantiene però la stessa identità finché
+ * non cambia davvero: la patch crea oggetti nuovi solo per le entità
+ * cambiate e react-query, con lo structural sharing, conserva i
+ * sotto-alberi invariati anche dopo una ricarica. Il `memo` con confronto
+ * per riferimento basta quindi a evitare di ri-renderizzare l'intero
+ * markdown (immagini comprese) a ogni aggiornamento, con flicker visibile.
  */
 function LessonContentViewImpl({ content }: Props) {
   const { t } = useTranslation();
@@ -86,11 +88,10 @@ function LessonContentViewImpl({ content }: Props) {
 
 export const LessonContentView = memo(
   LessonContentViewImpl,
-  // Salta il re-render quando il contenuto è strutturalmente invariato
-  // (stessa identità logica, nuovo oggetto dal polling). content_raw è
-  // JSON serializzabile, quindi la firma è deterministica ed economica.
-  (prev, next) =>
-    JSON.stringify(prev.content) === JSON.stringify(next.content),
+  // Confronto per riferimento: l'identità di `content` è stabile finché il
+  // contenuto non cambia (vedi NB sopra). Serializzare a ogni render
+  // l'intero content_raw costava più del re-render evitato.
+  (prev, next) => prev.content === next.content,
 );
 
 interface TailOpts {

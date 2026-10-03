@@ -58,6 +58,11 @@ export function useGenerateLessonAvatarVideo() {
         vars.lessonId,
       ),
     onSuccess: (_data, vars) => {
+      // Stato leggero del corso (`useCourseStatus`): il poll riparte
+      // subito a 2 s con il job avviato (regola 6 del contratto /status).
+      void qc.invalidateQueries({
+        queryKey: ["courses", "status", vars.orgId, vars.courseId],
+      });
       void qc.invalidateQueries({
         queryKey: courseStatusKey(vars.orgId, vars.courseId),
       });
@@ -74,6 +79,11 @@ export function useGenerateAllAvatarVideos() {
     mutationFn: async (vars: { orgId: string; courseId: string }) =>
       coursesApi.lessonAvatarVideo.generateBatch(vars.orgId, vars.courseId),
     onSuccess: (_data, vars) => {
+      // Stato leggero del corso (`useCourseStatus`): il poll riparte
+      // subito a 2 s con il job avviato (regola 6 del contratto /status).
+      void qc.invalidateQueries({
+        queryKey: ["courses", "status", vars.orgId, vars.courseId],
+      });
       void qc.invalidateQueries({
         queryKey: courseStatusKey(vars.orgId, vars.courseId),
       });
