@@ -73,7 +73,10 @@ export function preloadRehypeKatex(): void {
  * senza un render a vuoto), altrimenti `null` e un nuovo render quando arriva.
  */
 function useLoaded<T>(current: T | null, load: () => Promise<T>): T | null {
-  const [value, setValue] = useState<T | null>(current);
+  // inizializzatore pigro: `rehype-katex` è una funzione e `useState(fn)` la
+  // eseguirebbe, mettendo nello stato il transformer restituito al posto del
+  // plugin (unified poi lo chiama senza albero: «"children" in undefined»)
+  const [value, setValue] = useState<T | null>(() => current);
   useEffect(() => {
     if (value) return;
     let alive = true;
