@@ -13,6 +13,9 @@ services:
       dockerfile: Dockerfile
     image: a4u-backend:latest
     restart: unless-stopped
+    # PID 1 = tini (init di Docker): raccoglie i processi Chromium orfani
+    # di Playwright, che con uvicorn come PID 1 restano zombie.
+    init: true
     depends_on:
       postgres:
         condition: service_healthy

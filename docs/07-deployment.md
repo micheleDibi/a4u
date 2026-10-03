@@ -335,6 +335,19 @@ BACKEND_PORT=9001
   `register_font_directory`.
 - `ffmpeg` per l'encoding del video MP4 della lezione e l'overlay
   dell'avatar (Fasi 6/6b).
+- `init: true`: Docker mette un init minimale (tini) come PID 1 del
+  container, con uvicorn come figlio. Senza init, uvicorn è PID 1 e non
+  raccoglie i processi orfani: ogni Chromium headless di Playwright che
+  termina lascia figli in stato zombie (in produzione 2529 in 44 h).
+  Serve ricreare il container, un `restart` non basta:
+  `docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env up -d`.
+  Verifica (l'immagine non ha `ps`: i comandi `ps` vanno lanciati
+  sull'host, che vede anche i processi del container):
+  `ps -eo stat | grep -c ^Z` deve restare vicino a 0 anche durante la
+  generazione; dentro il container l'equivalente è
+  `docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env exec backend sh -c 'grep -l "^State:.Z" /proc/[0-9]*/status | wc -l'`.
+  `docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env exec backend cat /proc/1/comm`
+  deve stampare `docker-init`, non `uvicorn`.
 - Tutti gli env knob significativi (MiniMax, RunPod TTS + MuseTalk, R2,
   OpenAI per ogni fase, worker concurrency/auto-retry, reasoning_effort,
   encoding video, overlay avatar) sono forwardati con `${VAR:-default}`
