@@ -101,10 +101,14 @@ def configure_logging(settings: Settings) -> None:
     root.handlers = [handler]
     root.setLevel(settings.log_level.upper())
 
+    # `uvicorn.access` a WARNING: ogni request ha già la sua riga `http_request`
+    # (middleware/access_log.py), la riga di uvicorn sarebbe un doppione.
     for noisy in ("uvicorn", "uvicorn.access", "uvicorn.error", "sqlalchemy.engine"):
         logging.getLogger(noisy).handlers = [handler]
         logging.getLogger(noisy).propagate = False
-        logging.getLogger(noisy).setLevel("INFO" if noisy.startswith("uvicorn") else "WARNING")
+        logging.getLogger(noisy).setLevel(
+            "INFO" if noisy in ("uvicorn", "uvicorn.error") else "WARNING"
+        )
     # httpx scrive a INFO l'URL completo di ogni richiesta, query string
     # compresa: la API key di OpenAlex (`api_key=…`) finirebbe nei log.
     for client_logger in ("httpx", "httpcore"):

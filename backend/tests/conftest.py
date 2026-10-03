@@ -29,10 +29,13 @@ os.environ.setdefault(
 async def _engine():
     from app.core.config import get_settings
     from app.db.base import Base
+    from app.db.session import ENGINE_CONNECT_ARGS
     import app.models  # noqa: F401  registra i metadata di tutti i modelli
 
     settings = get_settings()
-    engine = create_async_engine(settings.database_url, future=True)
+    engine = create_async_engine(
+        settings.database_url, future=True, connect_args=ENGINE_CONNECT_ARGS
+    )
     async with engine.begin() as conn:
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS citext"))
         await conn.run_sync(Base.metadata.drop_all)

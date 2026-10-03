@@ -14,6 +14,7 @@ from app.api.v1 import api_router
 from app.core.config import get_settings
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging, get_logger
+from app.core.loop_monitor import start_monitor, stop_monitor
 from app.core.rate_limit import limiter, rate_limit_handler
 from app.db.seed import ensure_seed
 from app.db.session import async_session_factory, engine
@@ -151,9 +152,12 @@ async def lifespan(app: FastAPI):
     course_duplication_worker.start_worker()
 
     log.info("startup_complete", env=settings.env)
+    # Misura del ritardo dell'event loop condiviso da API e worker (log `event_loop_lag`).
+    start_monitor()
     try:
         yield
     finally:
+        await stop_monitor()
         await course_duplication_worker.stop_worker()
         await course_lesson_avatar_video_worker.stop_worker()
         await course_lesson_video_worker.stop_worker()
