@@ -17,7 +17,6 @@ In caso di errore: status torna a `draft` con `architecture_error` valorizzato.
 from __future__ import annotations
 
 import asyncio
-import time
 
 from sqlalchemy import select
 
@@ -31,6 +30,7 @@ from app.services import (
     openai_architecture_service,
 )
 from app.services.openai_client import OpenAINotConfiguredError
+from app.services.progress_ticker import run_progress_ticker
 
 log = get_logger("app.course_architecture.worker")
 
@@ -46,37 +46,22 @@ async def _set_progress(db, course: Course, *, pct: int, phase: str | None) -> N
 async def _progress_ticker(
     course_id, *, start_pct: int, end_pct: int, duration_sec: float
 ) -> None:
-    """Incrementa gradualmente `architecture_progress` da `start_pct` verso
-    `end_pct` su `duration_sec` secondi. Si ferma se cancellato.
-
-    Usa una sessione DB indipendente per non interferire con la transazione
-    principale del worker (che potrebbe essere in attesa della risposta HTTP).
-    """
-    from app.models.course import Course as CourseModel
-
-    started = time.monotonic()
-    span = max(1, end_pct - start_pct)
-    try:
-        while True:
-            await asyncio.sleep(2.0)
-            elapsed = time.monotonic() - started
-            ratio = min(1.0, elapsed / duration_sec)
-            # Curva ease-out: avanza veloce all'inizio e rallenta verso end_pct.
-            eased = 1 - (1 - ratio) ** 2
-            target = start_pct + int(span * eased)
-            target = min(end_pct, target)
-            async with async_session_factory() as tdb:
-                row = await tdb.get(CourseModel, course_id)
-                if row is None or row.status != "architecture_pending":
-                    return
-                # Non sovrascrivere se il worker ha già scritto un valore più alto.
-                if row.architecture_progress < target:
-                    row.architecture_progress = target
-                    await tdb.commit()
-            if target >= end_pct:
-                return
-    except asyncio.CancelledError:
-        return
+    """Fa salire `architecture_progress` da `start_pct` verso `end_pct - 1` finché
+    `status` vale `architecture_pending`: curva ease-out su `duration_sec`, poi
+    almeno un punto ogni `MAX_STALL_SEC` (vedi `progress_ticker`). Si ferma
+    se cancellato o se lo status cambia; non legge la riga."""
+    await run_progress_ticker(
+        session_factory=async_session_factory,
+        model=Course,
+        row_id=course_id,
+        status_attr="status",
+        active_status="architecture_pending",
+        progress_attr="architecture_progress",
+        start_pct=start_pct,
+        end_pct=end_pct,
+        duration_sec=duration_sec,
+        tick_sec=2.0,
+    )
 
 
 async def _process_one(db, course: Course) -> None:
@@ -94,10 +79,11 @@ async def _process_one(db, course: Course) -> None:
 
     await _set_progress(db, course, pct=15, phase="calling_openai")
 
-    # Ticker di sfondo: incrementa il progresso da 15 a 85 in ~75s.
-    # Se la chiamata OpenAI è più rapida, ci fermiamo prima.
+    # Ticker di sfondo: curva da 15 su 110 s (produzione: p50 75 s, p90
+    # 103 s), poi avanza fino a 84 finché la chiamata è in corso. Se la
+    # chiamata OpenAI è più rapida, ci fermiamo prima.
     ticker_task = asyncio.create_task(
-        _progress_ticker(course.id, start_pct=15, end_pct=85, duration_sec=75.0)
+        _progress_ticker(course.id, start_pct=15, end_pct=85, duration_sec=110.0)
     )
 
     try:

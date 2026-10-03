@@ -28,7 +28,6 @@ e mostra una progress bar live + aggregate progress in header.
 from __future__ import annotations
 
 import asyncio
-import time
 import uuid
 
 from sqlalchemy import select
@@ -44,6 +43,7 @@ from app.services import (
     openai_lesson_structure_service,
 )
 from app.services.openai_client import OpenAINotConfiguredError
+from app.services.progress_ticker import run_progress_ticker
 
 log = get_logger("app.course_lesson_structure.worker")
 
@@ -142,32 +142,22 @@ async def _progress_ticker(
     end_pct: int,
     duration_sec: float,
 ) -> None:
-    """Incrementa gradualmente `lessons_structure_progress` da
-    `start_pct` verso `end_pct` su `duration_sec` secondi (ease-out).
-
-    Si ferma se cancellato o se lo status non è più `processing`.
-    """
-    started = time.monotonic()
-    span = max(1, end_pct - start_pct)
-    try:
-        while True:
-            await asyncio.sleep(2.0)
-            elapsed = time.monotonic() - started
-            ratio = min(1.0, elapsed / duration_sec)
-            eased = 1 - (1 - ratio) ** 2
-            target = start_pct + int(span * eased)
-            target = min(end_pct, target)
-            async with async_session_factory() as tdb:
-                row = await tdb.get(CourseModule, module_id)
-                if row is None or row.lessons_structure_status != "processing":
-                    return
-                if row.lessons_structure_progress < target:
-                    row.lessons_structure_progress = target
-                    await tdb.commit()
-            if target >= end_pct:
-                return
-    except asyncio.CancelledError:
-        return
+    """Fa salire `lessons_structure_progress` da `start_pct` verso `end_pct - 1` finché
+    `lessons_structure_status` vale `processing`: curva ease-out su `duration_sec`, poi
+    almeno un punto ogni `MAX_STALL_SEC` (vedi `progress_ticker`). Si ferma
+    se cancellato o se lo status cambia; non legge la riga."""
+    await run_progress_ticker(
+        session_factory=async_session_factory,
+        model=CourseModule,
+        row_id=module_id,
+        status_attr="lessons_structure_status",
+        active_status="processing",
+        progress_attr="lessons_structure_progress",
+        start_pct=start_pct,
+        end_pct=end_pct,
+        duration_sec=duration_sec,
+        tick_sec=2.0,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -238,10 +228,10 @@ async def _process_one(module_id: uuid.UUID) -> None:
         module.lessons_structure_progress_phase = "calling_openai"
         await db.commit()
 
+        # Ticker: curva su 100 s (produzione: p50 73 s, p90 83 s), poi
+        # avanza fino a 84 finché la chiamata è in corso.
         ticker_task = asyncio.create_task(
-            _progress_ticker(
-                module.id, start_pct=15, end_pct=85, duration_sec=40.0
-            )
+            _progress_ticker(module.id, start_pct=15, end_pct=85, duration_sec=100.0)
         )
 
         try:

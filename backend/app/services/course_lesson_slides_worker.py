@@ -26,7 +26,6 @@ Il progresso (0-100%) e la fase corrente sono persistiti su
 from __future__ import annotations
 
 import asyncio
-import time
 import uuid
 
 from sqlalchemy import select
@@ -44,6 +43,7 @@ from app.services import (
 )
 from app.services.course_architecture_service import didactic_style_labels
 from app.services.openai_client import OpenAINotConfiguredError
+from app.services.progress_ticker import run_progress_ticker
 
 log = get_logger("app.course_lesson_slides.worker")
 
@@ -139,32 +139,22 @@ async def _progress_ticker(
     end_pct: int,
     duration_sec: float,
 ) -> None:
-    """Incrementa gradualmente `slides_progress` da `start_pct` verso
-    `end_pct` su `duration_sec` secondi (ease-out).
-
-    Si ferma se cancellato o se lo status non è più `processing`.
-    """
-    started = time.monotonic()
-    span = max(1, end_pct - start_pct)
-    try:
-        while True:
-            await asyncio.sleep(3.0)
-            elapsed = time.monotonic() - started
-            ratio = min(1.0, elapsed / duration_sec)
-            eased = 1 - (1 - ratio) ** 2
-            target = start_pct + int(span * eased)
-            target = min(end_pct, target)
-            async with async_session_factory() as tdb:
-                row = await tdb.get(CourseLesson, lesson_id)
-                if row is None or row.slides_status != "processing":
-                    return
-                if row.slides_progress < target:
-                    row.slides_progress = target
-                    await tdb.commit()
-            if target >= end_pct:
-                return
-    except asyncio.CancelledError:
-        return
+    """Fa salire `slides_progress` da `start_pct` verso `end_pct - 1` finché
+    `slides_status` vale `processing`: curva ease-out su `duration_sec`, poi
+    almeno un punto ogni `MAX_STALL_SEC` (vedi `progress_ticker`). Si ferma
+    se cancellato o se lo status cambia; non legge la riga."""
+    await run_progress_ticker(
+        session_factory=async_session_factory,
+        model=CourseLesson,
+        row_id=lesson_id,
+        status_attr="slides_status",
+        active_status="processing",
+        progress_attr="slides_progress",
+        start_pct=start_pct,
+        end_pct=end_pct,
+        duration_sec=duration_sec,
+        tick_sec=3.0,
+    )
 
 
 # ---------------------------------------------------------------------------

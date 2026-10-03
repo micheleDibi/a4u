@@ -11,7 +11,6 @@ Stato per lezione: `course_lesson.speech_pdf_status`:
 from __future__ import annotations
 
 import asyncio
-import time
 import uuid
 
 from sqlalchemy import select
@@ -23,6 +22,7 @@ from app.db.session import async_session_factory
 from app.models.course_lesson import CourseLesson
 from app.services import course_lesson_speech_pdf_service
 from app.services import course_lesson_speech_service
+from app.services.progress_ticker import run_progress_ticker
 
 log = get_logger("app.course_lesson_speech_pdf.worker")
 
@@ -79,27 +79,22 @@ async def _progress_ticker(
     end_pct: int,
     duration_sec: float,
 ) -> None:
-    started = time.monotonic()
-    span = max(1, end_pct - start_pct)
-    try:
-        while True:
-            await asyncio.sleep(2.0)
-            elapsed = time.monotonic() - started
-            ratio = min(1.0, elapsed / duration_sec)
-            eased = 1 - (1 - ratio) ** 2
-            target = start_pct + int(span * eased)
-            target = min(end_pct, target)
-            async with async_session_factory() as tdb:
-                row = await tdb.get(CourseLesson, lesson_id)
-                if row is None or row.speech_pdf_status != "processing":
-                    return
-                if row.speech_pdf_progress < target:
-                    row.speech_pdf_progress = target
-                    await tdb.commit()
-            if target >= end_pct:
-                return
-    except asyncio.CancelledError:
-        return
+    """Fa salire `speech_pdf_progress` da `start_pct` verso `end_pct - 1` finché
+    `speech_pdf_status` vale `processing`: curva ease-out su `duration_sec`, poi
+    almeno un punto ogni `MAX_STALL_SEC` (vedi `progress_ticker`). Si ferma
+    se cancellato o se lo status cambia; non legge la riga."""
+    await run_progress_ticker(
+        session_factory=async_session_factory,
+        model=CourseLesson,
+        row_id=lesson_id,
+        status_attr="speech_pdf_status",
+        active_status="processing",
+        progress_attr="speech_pdf_progress",
+        start_pct=start_pct,
+        end_pct=end_pct,
+        duration_sec=duration_sec,
+        tick_sec=2.0,
+    )
 
 
 async def _set_progress(

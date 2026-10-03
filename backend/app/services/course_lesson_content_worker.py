@@ -35,7 +35,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import time
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -68,6 +67,7 @@ from app.services import (
 )
 from app.services.heavy_job_lock import HEAVY_JOB_LOCK
 from app.services.openai_client import OpenAINotConfiguredError
+from app.services.progress_ticker import run_progress_ticker
 from app.services.source_figure_plan import (
     PlanCatalog,
     add_intro,
@@ -204,32 +204,22 @@ async def _progress_ticker(
     end_pct: int,
     duration_sec: float,
 ) -> None:
-    """Incrementa gradualmente `content_progress` da `start_pct` verso
-    `end_pct` su `duration_sec` secondi (ease-out).
-
-    Si ferma se cancellato o se lo status non è più `processing`.
-    """
-    started = time.monotonic()
-    span = max(1, end_pct - start_pct)
-    try:
-        while True:
-            await asyncio.sleep(3.0)
-            elapsed = time.monotonic() - started
-            ratio = min(1.0, elapsed / duration_sec)
-            eased = 1 - (1 - ratio) ** 2
-            target = start_pct + int(span * eased)
-            target = min(end_pct, target)
-            async with async_session_factory() as tdb:
-                row = await tdb.get(CourseLesson, lesson_id)
-                if row is None or row.content_status != "processing":
-                    return
-                if row.content_progress < target:
-                    row.content_progress = target
-                    await tdb.commit()
-            if target >= end_pct:
-                return
-    except asyncio.CancelledError:
-        return
+    """Fa salire `content_progress` da `start_pct` verso `end_pct - 1` finché
+    `content_status` vale `processing`: curva ease-out su `duration_sec`, poi
+    almeno un punto ogni `MAX_STALL_SEC` (vedi `progress_ticker`). Si ferma
+    se cancellato o se lo status cambia; non legge la riga."""
+    await run_progress_ticker(
+        session_factory=async_session_factory,
+        model=CourseLesson,
+        row_id=lesson_id,
+        status_attr="content_status",
+        active_status="processing",
+        progress_attr="content_progress",
+        start_pct=start_pct,
+        end_pct=end_pct,
+        duration_sec=duration_sec,
+        tick_sec=3.0,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -461,9 +451,10 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
         lesson.content_progress_phase = "calling_openai"
         await db.commit()
 
-        # Ticker ease-out più lento di Fase 2: lezione completa ~60-120s.
+        # Ticker: curva su 150 s (produzione: p50 100 s, p90 124 s, max
+        # 155 s), poi avanza fino a 84 finché la chiamata è in corso.
         ticker_task = asyncio.create_task(
-            _progress_ticker(lesson.id, start_pct=15, end_pct=85, duration_sec=90.0)
+            _progress_ticker(lesson.id, start_pct=15, end_pct=85, duration_sec=150.0)
         )
 
         try:
