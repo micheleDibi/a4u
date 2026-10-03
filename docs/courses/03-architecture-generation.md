@@ -21,7 +21,8 @@ status=architecture_pending, progress=5%, phase=preparing_prompt
 progress=15%, phase=calling_openai
    │
    │  ┌──────────────────────────────────────────────┐
-   │  │ ticker background: ease-out 15→85% in 75s    │
+   │  │ ticker background: curva 15→74% in 110s,     │
+   │  │ poi +1 punto ogni ≤10s fino a 84%            │
    │  │ con sessione DB indipendente                 │
    │  └──────────────────────────────────────────────┘
    │  generate_architecture (§4.1 system + §4.3 schema)
@@ -48,7 +49,7 @@ Polling: `SELECT WHERE status = 'architecture_pending'`. Per ogni corso:
 1. `_set_progress(course, pct=5, phase='preparing_prompt')` con commit immediato
 2. Build user prompt da `course_architecture_service.build_user_prompt`
 3. `_set_progress(pct=15, phase='calling_openai')`
-4. **Ticker background**: `_progress_ticker(course_id, 15→85, 75s)` —
+4. **Ticker background**: `_progress_ticker(course_id, 15→85, 110s)` —
    `asyncio.create_task` con sessione DB autonoma per non bloccare la
    transazione del worker mentre attende OpenAI
 5. Chiamata `openai_architecture_service.generate_architecture`
@@ -57,9 +58,18 @@ Polling: `SELECT WHERE status = 'architecture_pending'`. Per ogni corso:
 8. `materialize_architecture` (drop + recreate)
 9. `progress=100`, `phase=NULL`, audit `course.architecture.generated`, commit
 
-Curva ease-out del ticker: `eased = 1 - (1 - ratio)²`. Avanza veloce
-all'inizio, rallenta verso il limite. Aggiornamento ogni 2s. Si ferma se
-trova lo status diverso da `architecture_pending` o se viene cancellato.
+Il ticker è l'helper comune `progress_ticker.run_progress_ticker` (lo
+stesso degli altri sette worker con `_progress_ticker`). Curva ease-out
+`eased = 1 - (1 - ratio)²` sull'85% dello span (`CURVE_SHARE`): avanza
+veloce all'inizio e arriva a 74% in 110s (in produzione la chiamata dura
+p50 75s, p90 103s). Poi, e ovunque la curva rallenti, sale di almeno un
+punto ogni `MAX_STALL_SEC` = 10s fino al tetto `end_pct - 1` = 84%: il
+90% e il 100% li scrive solo il worker. Tick ogni 2s. Non legge la riga:
+scrive con una `UPDATE` condizionata (`status = 'architecture_pending'
+AND architecture_progress < target`, quindi non abbassa mai un valore
+già scritto dal worker); se la `UPDATE` non tocca righe legge la sola
+colonna `status` e si ferma se è cambiata. Si ferma anche se viene
+cancellato.
 
 ## Service di orchestrazione — `course_architecture_service.py`
 

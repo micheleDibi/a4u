@@ -80,7 +80,8 @@ messaggio "Genera prima il contenuto" — non viene ritentato.
   ├─► lesson.slides_status = "processing", attempts++
   ├─► build_user_prompt(course, lesson) = §7.2 + §9.4 se rigenerazione
   │    (include content_raw + bibliografia + hint utente)
-  ├─► progress ticker (background) ease-out 15→85%
+  ├─► progress ticker (background, `progress_ticker`): curva 15→74% in 60s,
+  │    poi +1 punto ogni ≤10s fino a 84% (UPDATE condizionata, niente lettura riga)
   ├─► openai_lesson_slides_service.generate_lesson_slides(...)
   │    ├─► system prompt §7.1 + REGENERATION_SUFFIX se rigenerazione
   │    ├─► response_format json_schema strict (§7.3)

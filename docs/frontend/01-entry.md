@@ -21,7 +21,10 @@ Logo testuale `a4u` su quadrato blu primario.
 - `server.proxy`:
   - `/api` → `http://localhost:8000`.
   - `/uploads` → `http://localhost:8000`.
-- `build.sourcemap = true`, `target = es2022`.
+- `build.sourcemap = false` (nessuna sourcemap pubblicata in produzione), `target = es2022`.
+- `build.rollupOptions.output.manualChunks`: i vendor stabili del primo paint in chunk
+  propri (`vendor-react`, `vendor-router`, `vendor-query`), così restano in cache fra i
+  deploy che toccano solo il codice dell'app.
 - `resolve.alias` `@ → /src`.
 
 ## `frontend/tsconfig.json` / `tsconfig.app.json` / `tsconfig.node.json`

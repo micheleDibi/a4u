@@ -248,21 +248,31 @@ Debounce 1500ms su `draft` change. Stable diff via `JSON.stringify(draft) === JS
 
 ### Polling
 
-`refetchInterval` su `useQuery` — copertura completa pipeline AI:
-- 5s se `course.status === 'architecture_pending'` (mostra `architecture_progress`)
-- 5s se almeno un documento è in `pending`/`processing`
-- 5s se almeno un modulo è in `lessons_structure_status ∈ {pending, processing}` (Fase 2)
-- 5s se almeno una lezione è in `content_status ∈ {pending, processing}` (Fase 3)
-- 4s se almeno una lezione è in `pdf_status ∈ {pending, processing}` (§7)
-- 5s se almeno una lezione è in `slides_status ∈ {pending, processing}` (Fase 4)
-- 4s se almeno una lezione è in `slides_pdf_status ∈ {pending, processing}` (Fase 4 PDF)
-- 5s se almeno una lezione è in `speech_status ∈ {pending, processing}` (Fase 5)
-- 4s se almeno una lezione è in `speech_pdf_status ∈ {pending, processing}` (Fase 5 PDF)
-- 5s se `glossary_status ∈ {pending, processing}` (§10.1)
-- altrimenti `false`
+La query del dettaglio (`["courses","detail",orgId,courseId]`) **non** ha
+`refetchInterval`: su un corso grande ogni GET pesa ~1,5 MB. L'editor polla
+lo stato leggero `GET …/courses/{id}/status` con `useCourseStatus`
+(dettagli in [Frontend 08 — Hooks](../frontend/08-hooks.md), contratto in
+`docs/contracts/perf-l1-course-status.md`):
+- **2s** se il corso è attivo, cioè: `course.status === 'architecture_pending'`;
+  `glossary_status`, un documento (`summary_status`/`figures_status`), un
+  modulo (`lessons_structure_status`) o una lezione (contenuti, slide,
+  discorso, i tre PDF, video, avatar video) in `pending`/`processing`
+- backoff **2 → 4 → 8 → 10s** se la risposta non cambia; torna a 2s al primo
+  cambiamento
+- **30s** a riposo; fermo con la scheda nascosta
+
+A ogni poll lo stato si confronta con il dettaglio in cache: avanzamento
+(`*_progress`, `*_progress_phase`, `*_attempts`, chunk e pagine delle
+figure, `pending` ↔ `processing`) → patch locale della cache, senza request;
+cambi sostanziali (stati in entrata/uscita da `pending`/`processing`,
+`*_generated_at`, `*_approved_at`, `*_modified_at`, errori, figure, `status`
+del corso, id aggiunti o rimossi) → una ricarica del dettaglio. Le
+mutazioni che avviano un job scrivono in cache la risposta (dettaglio
+fresco) e invalidano la status key, così il poll riparte subito a 2s senza
+un secondo GET del dettaglio.
 
 I tab **Video** (Fase 6) e **Video con avatar** (Fase 6b) hanno un
-polling proprio, indipendente dal `useQuery` del corso: gli hook
+polling proprio, indipendente da `useCourseStatus`: gli hook
 `useCourseVideoStatus` / `useCourseAvatarVideoStatus` interrogano gli
 endpoint `*-video/status` e rinfrescano ogni **2s** finché almeno una
 lezione è in flight (`pending`/`processing`), poi si fermano.
@@ -531,7 +541,9 @@ Layout:
 - `updateLessonMut` (PATCH lezione → struttura)
 
 Tutte aggiornano la cache TanStack via `qc.setQueryData(detailKey, fresh)` +
-invalidano la lista corsi.
+invalidano la status key (`["courses","status",orgId,courseId]`, il poll
+riparte a 2s) e la lista corsi; il dettaglio non si invalida, la risposta è
+già quella aggiornata.
 
 ## `LessonStructureEditDialog.tsx` (Fase 2)
 

@@ -870,9 +870,14 @@ versioning).
 2. `_prerender_visual_assets_for_lesson(content_raw, language=…)` →
    `{asset_id: RenderedFigure(svg, metrics)}` via `render_figure_map`
    (una sessione Playwright per lezione solo se ci sono Mermaid;
-   Vega-Lite, DOT e `function` offline);
-3. `_prerender_math_for_lesson(content_raw)` → `{(latex, display): svg}`
-   (una sessione Playwright MathJax `tex-svg`, solo se la lezione
+   Vega-Lite, DOT e `function` offline), poi `render_chain_variants` con
+   il box `lesson_mermaid_box_mm(pdf_template, …)`, calcolato in
+   `asyncio.to_thread` perché scarica sfondo e loghi del template dallo
+   storage (SFTP in produzione);
+3. `_prerender_math_for_lesson(content_raw)` → `{(latex, display): svg}`:
+   raccolta delle chiavi (`_collect_math_from_content`, parse markdown-it)
+   in `asyncio.to_thread`, poi la batch MathJax `_prerender_math_keys`
+   sul loop (una sessione Playwright `tex-svg`, solo se la lezione
    contiene formule);
 4. `render_lesson_html(... visual_svg_map=..., math_svg_map=...,
    teacher_name=...)` → HTML completo con SVG MathJax (fallback MathML) +
@@ -903,8 +908,11 @@ LEZIONE:
   default `2` (WeasyPrint è CPU-bound; il pre-render mermaid è I/O-bound
   e dura solo se ci sono diagrammi)
 - Polling: `course_lesson_pdf_poll_interval_seconds` (default `4`)
-- Ticker progresso: ease-out 10→85% in ~20s (`pdf_progress` aggiornato
-  ogni 2s)
+- Ticker progresso (`progress_ticker`, lo stesso dei worker AI): curva
+  ease-out 10→73% in 20s, poi almeno un punto ogni 10s fino al tetto 84%
+  finché la lezione è `processing`; `pdf_progress` è scritto ogni 2s al
+  più con una `UPDATE` condizionata, senza leggere la riga. I worker del
+  PDF slide e del PDF discorso fanno lo stesso (20s e 15s)
 - **Cancel-check post-rendering**: dopo `materialize_lesson_pdf`, ricarica
   `pdf_status` dal DB; se è stato spostato a `failed` (cancel-all),
   scarta il path appena scritto e non aggiorna `lesson.pdf_path` (il
@@ -1321,8 +1329,10 @@ fonde gli asset di Fase 3 e i `new_assets` di Fase 4 e delega a
   `_prerender_math_for_slides`, che fonde le equazioni/tabelle/esempi
   delle Dispense (`content_raw`) con i nuovi asset di Fase 4
   (`slides_raw.new_equations|new_tables|new_examples`) e, da WP4, con
-  titolo, prosa e bullet delle slide (`inline_texts`), e delega a
-  `base_pdf._prerender_math_for_lesson`. Fallback MathML identico.
+  titolo, prosa e bullet delle slide (`inline_texts`): le chiavi sono
+  raccolte in un solo `asyncio.to_thread` (`_collect_math_for_slides_sync`)
+  e la batch è quella della dispensa (`base_pdf._prerender_math_keys`).
+  Fallback MathML identico.
 - Prosa e riferimenti (WP4): titolo, prosa e bullet passano da
   `render_markdown_inline` con autoescape acceso; le formule della prosa
   entrano nel budget della figura (`_prose_for_budget` →
@@ -1428,8 +1438,9 @@ suffisso `_speech.pdf`.
 **WeasyPrint** + **Jinja2**, niente pre-render di figure (il discorso è
 prosa pura, niente asset visivi) ma, da WP4, il pre-render MathJax delle
 formule di testo, note e titoli di slide (`_prerender_math_for_speech`,
-collector della dispensa su `inline_texts`, `_log_math_fallbacks` dopo
-il render): i tre campi passano da `render_markdown_inline`. Template
+collector della dispensa su `inline_texts` eseguito in `asyncio.to_thread`
+sui soli JSON della lezione, `_log_math_fallbacks` dopo il render): i tre
+campi passano da `render_markdown_inline`. Template
 `pdf_templates` (stesso del PDF lezione testo, perché il discorso è
 anch'esso testo single-column block-flow A4 portrait). Il piè di pagina
 (`@bottom-center`, stringa CSS) riceve `footer_title_css`, i titoli con

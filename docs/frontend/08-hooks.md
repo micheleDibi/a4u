@@ -7,6 +7,7 @@ li espongono.
 - `useAuth()` → `auth/AuthContext.tsx` (inline).
 - `useHasPermission(code, orgId?)` → `auth/PermissionGate.tsx` (inline).
 - `useEffectiveOrgId()` → `src/hooks/useEffectiveOrgId.ts`.
+- `useCourseStatus(orgId, courseId, enabled)` → `src/hooks/useCourseStatus.ts` (polling dello stato leggero del corso nell'editor).
 - `useBatchEta(tasks)` → `src/hooks/useBatchEta.ts` (ETA per batch AI).
 - `useTaskEta(key, isActive, progress)` → `src/hooks/useTaskEta.ts` (ETA per task singolo).
 - `useLessonVideo*` → `src/hooks/useLessonVideo.ts` (query/mutation del video MP4 della lezione, Fase 6).
@@ -53,6 +54,86 @@ Usato da `Sidebar.tsx`, `OrgSwitcher.tsx` e (di default) dai
 
 ---
 
+## `useCourseStatus(orgId, courseId, enabled)` — `src/hooks/useCourseStatus.ts`
+
+**Scopo**: tenere aggiornato l'editor del corso mentre girano i job AI
+senza ripollare il dettaglio completo (`GET /courses/{id}`, ~1,5 MB
+compressi su un corso da 72 lezioni). Polla solo lo stato leggero
+`GET /courses/{id}/status` (`coursesApi.getStatus`, vedi
+[02 — API client](02-api-client.md)) e allinea da lì il dettaglio in
+cache. Contratto: `docs/contracts/perf-l1-course-status.md`.
+
+### Firma
+
+```ts
+function useCourseStatus(
+  orgId: string,
+  courseId: string | undefined,
+  enabled?: boolean,          // default true; CourseEditorPage: mode === "edit"
+): UseQueryResult<CourseStatusOut>;
+```
+
+Query key `["courses", "status", orgId, courseId]`. Il chiamante non ha
+bisogno di leggere il risultato: `CourseEditorPage` lo invoca e basta,
+così la pagina non si ri-renderizza a ogni poll.
+
+### Intervalli
+
+- Corso **attivo** (`isCourseActive`: architettura in
+  `architecture_pending`, glossario, riassunti o figure dei documenti,
+  struttura dei moduli, oppure un qualsiasi job di lezione — contenuti,
+  slide, discorso, i tre PDF, video, avatar video — in
+  `pending`/`processing`): **2 s**; se il corpo resta identico, backoff
+  2 → 4 → 8 → 10 s, e torna a 2 s al primo cambiamento.
+- Corso **fermo**: **30 s**.
+- Scheda nascosta: poll fermo (default TanStack).
+
+### Allineamento del dettaglio
+
+A ogni poll la risposta si confronta con il dettaglio **in cache**
+(`["courses", "detail", orgId, courseId]`), non solo con il poll
+precedente:
+
+- **Ricarica** (una sola `invalidateQueries` della detail key) se
+  cambiano gli insiemi di id di documenti, moduli o lezioni, oppure se
+  il dettaglio non riflette un campo sostanziale: `*_status`,
+  `*_generated_at`, `*_approved_at`, `*_modified_at`, `*_error`,
+  `figures_error_code`, `figures_count`, `figures_coverage`, `status`
+  del corso. Così, dopo una mutazione, la risposta già scritta in cache
+  non provoca un secondo GET, mentre un reload fallito o una risposta
+  arrivata in ritardo vengono corretti al poll successivo.
+- **Patch locale** (`setQueryData`, nessuna request) per l'avanzamento:
+  `*_progress`, `*_progress_phase`, `*_attempts`, `summary_chunks_*`,
+  `figures_pages_*`, `figures_progress`, e il passaggio di un
+  `*_status` fra `pending` e `processing`. La patch crea oggetti nuovi
+  solo per le entità cambiate: le righe ferme (e il loro `content_raw`)
+  mantengono l'identità e non si ri-renderizzano.
+- `video_status`/`avatar_video_status` contano per "attivo" ma non
+  ricaricano né patchano: il dettaglio non li contiene (i tab video
+  hanno il loro polling, vedi sotto).
+- Se il dettaglio sta già scaricando non si invalida di nuovo; se il
+  GET di `/status` fallisce, il dettaglio non viene toccato.
+
+### Implementazione
+
+- La logica gira nel `queryFn`, una volta per fetch: un `useEffect` sui
+  dati costringerebbe l'editor a ri-renderizzare a ogni poll.
+- Funzioni pure esportate: `isCourseActive`, `pollIntervalMs`,
+  `classifyStatusField`, `diffCourseStatus(status, detail)`,
+  `needsDetailReload(diff)`, `applyProgressPatch(detail, status)`,
+  `statusPollInterval(data, queryStatus, streak)` (il `refetchInterval`:
+  30 s di riprova se il primo GET fallisce), `detailEventEffect(event)`
+  (esito di un evento della detail key per il flag anti-eco).
+- Una sottoscrizione alla `queryCache` fa ripartire subito il poll a
+  2 s quando un altro componente ricarica il dettaglio e questo risulta
+  attivo (upload e import di documenti, estrazione figure invalidano
+  solo il dettaglio). Ignora le `setQueryData` e i reload avviati dal
+  hook stesso.
+- Le mutazioni che avviano un job invalidano anche la status key (vedi
+  `setCache` nelle viste delle fasi), così il poll riparte subito a 2 s.
+
+---
+
 ## `useBatchEta(tasks)` — `src/hooks/useBatchEta.ts`
 
 **Scopo**: stimare il **tempo rimanente** di un batch AI long-running
@@ -90,7 +171,9 @@ function useBatchEta(tasks: BatchEtaTask[]): BatchEtaResult;
    completamenti). Senza almeno 2 timestamp, ritorna `null`.
 3. `etaMs = avgPerTaskMs × remaining` se entrambi disponibili e remaining > 0.
 4. Tick interno via `setInterval(5_000)` per re-render del display
-   (countdown decrescente anche tra polling TanStack).
+   (countdown decrescente anche tra un poll e l'altro), attivo **solo
+   con almeno un task attivo** (`active > 0`): senza job nessun
+   re-render periodico (le viste mostrano l'ETA solo durante un batch).
 
 ### Esempio
 

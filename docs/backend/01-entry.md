@@ -75,15 +75,19 @@ lifespan (startup + shutdown).
      (Fase 6b): orchestra il subprocess MuseTalk di lip-sync su RunPod
      GPU + overlay ffmpeg (cap 1 di default).
 7. Logga `startup_complete`.
+8. Avvia il monitor del lag dell'event loop (`start_monitor()` di
+   `app/core/loop_monitor.py`, vedi [Backend 02](02-core.md)): log
+   `event_loop_lag` / `event_loop_lag_summary`.
 
 **Sezione shutdown**:
 
-1. `await ..._worker.stop_worker()` per tutti i worker, in ordine
+1. `await stop_monitor()`: ferma il monitor del lag.
+2. `await ..._worker.stop_worker()` per tutti i worker, in ordine
    inverso rispetto allo startup (da `course_lesson_avatar_video_worker`
    a `avatar_clip_worker`): ogni `stop_worker()` cancella il task e ne
    attende il join.
-2. `await engine.dispose()`.
-3. Logga `shutdown_complete`.
+3. `await engine.dispose()`.
+4. Logga `shutdown_complete`.
 
 ### `create_app() -> FastAPI`
 

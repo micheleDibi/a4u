@@ -233,7 +233,40 @@ $70` sono prosa) e `allow_digits=True` (`2$^{10}$` è math), la rule
 e la guardia anti-importi (`$50/$70`, `5$, 10$`, `US$50 e US$70`). Senza
 delimitatori riconosciuti ritorna il solo segmento di testo, identico
 all'ingresso. Il consumatore è `components/shared/InlineMath.tsx`, che
-monta ogni formula con `katex.render` via ref (mai HTML da stringa).
+monta ogni formula con `katex.render` via ref (mai HTML da stringa), con
+KaTeX caricato su richiesta da `lib/katexLoader.ts`.
+
+---
+
+## `src/lib/katexLoader.ts`
+
+Caricamento su richiesta di KaTeX (JS + `katex/dist/katex.min.css` con i
+font) e di `rehype-katex`, che finiscono nei chunk separati `katex-*.js` /
+`katex-*.css` invece che in quello delle pagine corso.
+
+```ts
+loadKatex(): Promise<Katex>            // JS + CSS, memorizzata
+loadRehypeKatex(): Promise<RehypeKatex> // plugin + loadKatex()
+preloadKatex(): void                   // avvia il download, senza attesa
+preloadRehypeKatex(): void
+useKatex(): Katex | null               // null finché non c'è, poi re-render
+useRehypeKatexPlugins(): RehypePlugins // [rehypeKatex] oppure [], array stabili
+```
+
+- La promessa di `loadKatex` si risolve solo quando anche il CSS è
+  caricato (il preload di Vite attende il `load` del `<link>`): nessuna
+  formula senza stile. Su errore si azzera e il prossimo componente
+  montato riprova; un componente che ha già visto l'errore resta sul
+  fallback fino al remount.
+- I consumer (`InlineMath`, `LatexEditor`, `FunctionEditor`,
+  `MarkdownRenderer`, `DocumentSummaryDialog`) chiamano `preload*()` al
+  livello di modulo: il download parte con il chunk della pagina, in
+  parallelo alla fetch dei dati, quindi il fallback si vede di rado.
+- Fallback finché KaTeX non c'è: sorgente LaTeX come testo nello stesso
+  span inline (`InlineMath`, `FunctionEditor`); riquadro `min-h-[5rem]`
+  con spinner (anteprima di `LatexEditor`); il `<pre>` col sorgente
+  (`DocumentSummaryDialog`); `<code class="language-math">` di
+  `remark-math` (`MarkdownRenderer`, senza plugin rehype).
 
 ---
 

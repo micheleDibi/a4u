@@ -13,7 +13,7 @@ Avviabile con `npm run start` (alias di `vite`).
 ```
 frontend/
 ├── package.json                   # script start/build/lint/type-check
-├── vite.config.ts                 # proxy /api e /uploads → :8000
+├── vite.config.ts                 # proxy /api e /uploads → :8000, chunk vendor
 ├── tsconfig.json                  # references a app + node
 ├── tsconfig.app.json              # config per src
 ├── tsconfig.node.json             # config per vite.config.ts
@@ -21,7 +21,7 @@ frontend/
 ├── index.html                     # entry HTML, link Google Fonts
 ├── public/favicon.svg
 ├── Dockerfile                     # multi-stage node→nginx
-├── nginx.conf                     # serve dist + proxy api/uploads
+├── nginx.conf                     # serve dist + proxy api/uploads, cache /assets 1 anno
 ├── .env.example
 └── src/
     ├── main.tsx                   # ReactDOM.createRoot
@@ -34,11 +34,11 @@ frontend/
     ├── contexts/                  # React context (tema, CourseRefContext per i renderer che chiamano il backend)
     ├── providers/                 # ThemeProvider
     ├── hooks/                     # useBatchEta, useTaskEta, useLessonVideo, useLessonAvatarVideo, ...
-    ├── lib/                       # permissions, errors, format, logger, staleness, utils/cn, figureTheme/figureNumbering/figureFormats/functionSpec (figure, doc courses/17)
+    ├── lib/                       # permissions, errors, format, logger, staleness, utils/cn, katexLoader (KaTeX su richiesta), figureTheme/figureNumbering/figureFormats/functionSpec (figure, doc courses/17)
     ├── pages/                     # auth, admin, org, RootRedirect
-    ├── routes/                    # router.tsx
+    ├── routes/                    # router.tsx (pagine lazy), RouteFallback.tsx
     ├── types/                     # tipi condivisi
-    └── i18n/                      # i18next (IT/EN canonici, altre 22 lingue auto-tradotte in-app)
+    └── i18n/                      # i18next (IT/EN canonici e nel bundle, altre 22 lingue auto-tradotte in-app e caricate su richiesta), bandiere
 ```
 
 ## Documentazione per file

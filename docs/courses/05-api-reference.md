@@ -89,6 +89,70 @@ contatori sono tutti 0 (la UI lo visualizza con "—").
 `course:view`. Ritorna `CourseOut` con tutto il dettaglio (documents, modules,
 taxonomies, architettura meta + progress).
 
+### `GET /orgs/{org_id}/courses/{course_id}/status`
+
+`course:view`. Stato leggero del corso, pensato per il polling dell'editor: solo stati,
+avanzamento e timestamp, senza i JSONB pesanti (`*_raw`, `*_tokens`, riassunti,
+bibliografie). Un corso da 96 lezioni pesa al massimo 200 KB non compressi, mentre il
+dettaglio arriva a 1,5 MB compressi. Contratto completo:
+[`docs/contracts/perf-l1-course-status.md`](../contracts/perf-l1-course-status.md).
+
+- **Autorizzazione ed errori:** gli stessi del dettaglio. Senza `course:view` o senza
+  membership nell'org → 403 (anche se l'org non esiste: i permessi si controllano prima).
+  Corso inesistente, di un'altra org o non visibile → 404 `course_not_found`. Un membro
+  senza `course:view_all` vede solo i corsi assegnati a sé. Il platform admin ha tutti i
+  permessi: per lui un'org inesistente dà 404 `organization_not_found`.
+- **Ordinamento:** moduli e lezioni per `position`, documenti per `created_at, id`.
+- **Cache HTTP:** ogni risposta porta `ETag` (`"` + sha256 esadecimale del corpo + `"`) e
+  `Cache-Control: no-cache`. Con un `If-None-Match` che combacia la risposta è `304` senza
+  corpo. Il confronto è debole e accetta `W/"…"`, liste separate da virgole e `*`. Il
+  browser rivalida da solo, il client non deve gestire il 304.
+
+`200` → `CourseStatusOut`. I campi sono sempre presenti e i valori assenti valgono `null`.
+Nomi, tipi e default sono quelli di `CourseOut` / `CourseLessonOut`:
+
+```jsonc
+{
+  "course_id": "uuid", "status": "architecture_pending", "updated_at": "2026-10-03T07:44:08Z",
+  "architecture_progress": 15, "architecture_progress_phase": "calling_openai",
+  "architecture_error": null, "architecture_attempts": 1, "architecture_generated_at": null,
+  "glossary_status": "empty", "glossary_generated_at": null, "glossary_error": null,
+  "documents": [{
+    "id": "uuid", "summary_status": "ready", "summary_generated_at": "…",
+    "summary_error": null, "summary_attempts": 1, "summary_coverage": "full",
+    "summary_chunks_total": 4, "summary_chunks_done": 4,
+    "figures_status": null, "figures_error_code": null, "figures_count": null,
+    "figures_coverage": null, "figures_pages_total": null, "figures_pages_done": null,
+    "figures_progress": null, "figures_requested_at": null
+  }],
+  "modules": [{
+    "id": "uuid", "lessons_structure_status": "approved", "lessons_structure_progress": 100,
+    "lessons_structure_progress_phase": null, "lessons_structure_error": null,
+    "lessons_structure_attempts": 1, "lessons_structure_generated_at": "…",
+    "lessons_structure_approved_at": "…", "architecture_modified_at": null,
+    "lessons": [{
+      "id": "uuid", "lesson_structure_modified_at": null,
+      // P ∈ content, slides, speech: P_status, P_progress, P_progress_phase, P_error,
+      //   P_attempts, P_generated_at, P_approved_at, P_modified_at
+      // Q ∈ pdf, slides_pdf, speech_pdf: Q_status, Q_progress, Q_progress_phase, Q_error,
+      //   Q_attempts, Q_generated_at
+      "video_status": "empty", "avatar_video_status": "empty"
+    }]
+  }]
+}
+```
+
+Esempio di rivalidazione:
+
+```http
+GET /api/v1/orgs/{org_id}/courses/{course_id}/status
+If-None-Match: "3f2a…c9"
+
+HTTP/1.1 304 Not Modified
+ETag: "3f2a…c9"
+Cache-Control: no-cache
+```
+
 ### `PATCH /orgs/{org_id}/courses/{course_id}`
 
 `course:edit`. Body parziale come `CourseUpdateInput`. Auto-save 1.5s debounce dal frontend.
@@ -1221,6 +1285,12 @@ rinfresca ogni 2 s mentre c'è almeno un job in flight.
 `course:view`. 200 → `LessonVideoBatchOut` — aggregato pagina-corso
 (`items`, contatori, `eligible_count`, `aggregate_progress`) pronto per
 la scheda "Video".
+
+Nei DTO video, `voice_sample_available` viene da un controllo sullo storage che il backend tiene
+in cache per chiave. Dopo un caricamento o una rimozione del campione vocale può essere
+indietro fino a 60 s se il file c'era e fino a 10 s se mancava (`VOICE_SAMPLE_EXISTS_TTL_S`,
+`VOICE_SAMPLE_MISSING_TTL_S` in `courses.py`). Le precondizioni dei `generate` non usano la
+cache: controllano `Avatar.audio_path`.
 
 ## Video con avatar (Fase 6b)
 

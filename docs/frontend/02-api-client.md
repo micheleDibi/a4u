@@ -393,7 +393,7 @@ dei namespace esposti:
 
 ```ts
 coursesApi.{
-  list, create, get, update, updateAssignee, delete: del,
+  list, create, get, getStatus, update, updateAssignee, delete: del,
   setup: { confirmDidactic, unlock },
   documents: { upload, list, get, reprocess, delete },
   papers: { search, aiSummary, importMany },
@@ -415,6 +415,27 @@ troppo basso.
 `CourseLessonOut`, `RecommendedBibliographyItem`, `DocumentSummaryOut`,
 `PaperOut`, `PaperType`, `PaperSearchFilters`, `PaperSearchInput`,
 `PaperSearchResultsOut`, `PaperAISummaryOut`, `PaperImportResultOut`.
+
+### `coursesApi.getStatus` — stato leggero per il polling
+
+```ts
+coursesApi.getStatus(orgId, courseId, signal?): Promise<CourseStatusOut>
+// GET /orgs/{org}/courses/{course}/status
+```
+
+Solo stati, avanzamento e timestamp di corso, documenti, moduli e
+lezioni (nessun `*_raw`, `*_tokens`, riassunto o bibliografia): pochi KB
+contro gli ~1,5 MB del dettaglio. Tipi `CourseStatusOut`,
+`CourseStatusDocumentOut`, `CourseStatusModuleOut`,
+`CourseStatusLessonOut`, ricavati con `Pick` da quelli del dettaglio
+(nomi e tipi identici); le lezioni hanno in più `video_status` e
+`avatar_video_status`. Documenti ordinati per `created_at, id`, moduli e
+lezioni per `position`: le entità si abbinano sempre per id. `signal`
+lo passa react-query, così un poll annullato interrompe la request. Il
+backend risponde con `ETag` e `304` (gestito dal browser: al client
+arriva sempre il corpo). Lo usa solo `useCourseStatus`, vedi
+[08 — Hooks](08-hooks.md); contratto in
+`docs/contracts/perf-l1-course-status.md`.
 
 ### `coursesApi.list` — params + tipo restituito
 

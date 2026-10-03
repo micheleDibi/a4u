@@ -6,6 +6,37 @@
 `<ProtectedRoute>`; quelle che richiedono platform admin hanno
 `<ProtectedRoute requirePlatformAdmin>`.
 
+### Pagine caricate in modo pigro
+
+Sono importati staticamente solo `ProtectedRoute`, `AppLayout`,
+`LoginPage` e `RootRedirect` (servono al primo paint; `RootRedirect` fa
+solo un redirect e da pigro aggiungerebbe un round-trip). Le altre 23
+pagine sono `lazyPage(() => import(...))` (`React.lazy`), un chunk per
+pagina, e ogni elemento è avvolto da `suspended(...)`: un `<Suspense>`
+col segnaposto di `src/routes/RouteFallback.tsx` (spinner con
+`role="status"` e testo `common.loading` per gli screen reader). Dentro
+`AppLayout` il segnaposto occupa solo l'area del contenuto
+(`min-h-[50vh]`), così barra laterale e intestazione restano ferme; per
+`/invitations/:token`, fuori dal layout, è a tutta altezza.
+
+**Reload su chunk mancante.** Dopo un deploy i chunk del build precedente
+non esistono più: una scheda aperta che naviga verso una pagina non
+ancora caricata riceverebbe un errore di import. `lazyPage` in quel caso
+ricarica la pagina **una volta** (`index.html` non è in cache, vedi
+`nginx.conf`, quindi arriva quello nuovo):
+
+- solo per errori di **caricamento** del modulo (Chrome/Edge «Failed to
+  fetch dynamically imported module», Firefox «error loading dynamically
+  imported module», Safari «Importing a module script failed», «Unable to
+  preload CSS» del preload di Vite); un'eccezione del codice della pagina
+  viene rilanciata;
+- il flag `sessionStorage["a4u:chunk-reload"]` ferma il ciclo: al secondo
+  errore si rilancia e si vede l'error element di default del router (non
+  c'è un `errorElement` dedicato); si ricarica solo se il flag è stato
+  davvero scritto (storage pieno o non disponibile → nessun reload);
+- il flag è tolto a ogni import riuscito, così un deploy successivo nella
+  stessa scheda può di nuovo ricaricare.
+
 ### Mappa rotte
 
 ```

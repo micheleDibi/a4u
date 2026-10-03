@@ -92,7 +92,8 @@ Riusato sia nel system prompt sia nella validazione (`materialize_lesson_speech`
   ├─► lesson.speech_status = "processing", attempts++
   ├─► build_user_prompt(course, lesson) = §8.3 + §9.5 se rigenerazione
   │    (include content_raw + slides_raw + bibliografia + hint)
-  ├─► progress ticker (background) ease-out 15→85%
+  ├─► progress ticker (background, `progress_ticker`): curva 15→74% in 60s,
+  │    poi +1 punto ogni ≤10s fino a 84% (UPDATE condizionata, niente lettura riga)
   ├─► openai_lesson_speech_service.generate_lesson_speech(...)
   │    ├─► system prompt §8.2 + REGENERATION_SUFFIX se rigenerazione
   │    ├─► response_format json_schema strict (§8.4)

@@ -167,9 +167,14 @@ class DocumentSummaryOut(BaseModel):
     fallisce per testo non-LaTeX)
   - No footer tecnico (rimosso per non confondere l'utente)
 
-- **`CourseEditorPage.tsx`** — `useQuery` con `refetchInterval` di 5s quando
-  almeno un documento è in stato `pending` o `processing`. Si ferma quando
-  tutti sono `ready`/`failed`.
+- **`CourseEditorPage.tsx`** — il dettaglio del corso non ha più
+  `refetchInterval`: l'editor polla lo stato leggero `GET …/status` con
+  `useCourseStatus` (vedi [Frontend 08 — Hooks](../frontend/08-hooks.md)),
+  ogni 2 s (backoff fino a 10 s se non cambia nulla) finché almeno un
+  documento ha `summary_status` o `figures_status` in `pending`/`processing`,
+  ogni 30 s a riposo. L'avanzamento a blocchi (`summary_chunks_*`) si
+  aggiorna in cache senza ricaricare il dettaglio; il dettaglio si ricarica
+  quando il riassunto passa a `ready`/`failed`.
 
 ## Configurazione
 

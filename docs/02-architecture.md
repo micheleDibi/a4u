@@ -343,6 +343,28 @@ terminali.
 > scalare in orizzontale serviranno lock distribuiti (advisory lock di
 > Postgres o coda esterna). Non è ancora un problema operativo.
 
+### Un solo processo, un solo event loop
+
+Il container backend avvia `uvicorn app.main:app` senza `--workers` (`backend/Dockerfile`):
+API e worker condividono **un solo processo e un solo event loop**. Una chiamata sincrona
+dentro una funzione `async` (router, servizio o worker) ferma, finché non termina, tutte le
+request di tutti gli utenti e tutti gli altri worker.
+
+Regola (contratto [`perf-l1-conventions.md`](contracts/perf-l1-conventions.md)): **niente
+I/O o CPU sincroni sul loop**. Si spostano con `await asyncio.to_thread(fn, *args)`,
+avvolgendo una volta sola il blocco più alto possibile:
+
+- chiamate allo storage (`remote_storage.get_storage()`: `download_bytes`, `upload_bytes`,
+  `exists`, `delete`, …): con `STORAGE_BACKEND=ovh_sftp` ogni chiamata apre una connessione;
+- Pillow, pypdf, `zipfile`, `soundfile` e decode audio;
+- parse markdown-it, render Jinja, misure geometriche SVG, `json.dumps`/`json.loads` di
+  payload oltre 100 KB.
+
+Al thread si passano valori (str, bytes, dataclass), mai `AsyncSession` né, di norma, oggetti
+ORM. Le cache in memoria si leggono e scrivono sul loop. Il monitor del lag
+(`event_loop_lag`, [Backend 02](backend/02-core.md)) segnala nei log quando il loop resta
+fermo oltre 100 ms.
+
 ## Frontend: data flow
 
 ```

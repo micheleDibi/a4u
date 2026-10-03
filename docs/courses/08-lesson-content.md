@@ -278,7 +278,8 @@ video / preview FE):
   math inline `$..$` / `$$..$$` nei campi testo (introduction, summary,
   sezioni, esempi, `statement` e `proof[].text` delle equazioni).
   Validate con **`latex2mathml`** (motore dell'export PDF/video, sync e
-  offline — gate duro) **E** con **KaTeX** (motore del preview FE): una
+  offline — gate duro; tutte le formule della lezione in un solo
+  `asyncio.to_thread`) **E** con **KaTeX** (motore del preview FE): una
   formula è valida solo se passa entrambi.
 - **Figure** — `visual_assets[].format` in `figure_render_service.
   RENDERABLE_FORMATS` (`mermaid`, `vegalite`, `dot`, `function`), ciascuna
@@ -665,8 +666,11 @@ scoped a livello LEZIONE:
 - Glossary auto-trigger: al primo task del corso, se
   `glossary_status not in ('ready','approved')`, chiama sync
   `course_glossary_service.ensure_glossary_ready` (~10-20s).
-- Ticker progress: ease-out 15→85% in ~90s (lezione più lunga di
-  Fase 2 → ticker più lento).
+- Ticker progress (`progress_ticker`, comune ai worker): curva ease-out
+  15→74% in 150s (in produzione la chiamata dura p50 100s, p90 124s, max
+  155s), poi almeno un punto ogni 10s fino al tetto 84% finché la
+  lezione è `processing`. Scrive con una `UPDATE` condizionata, senza
+  leggere la riga (dettagli in [07 — Struttura](07-lesson-structure.md)).
 - **Costo degli asset** (D16): dopo `validate_and_fix_content_assets`
   l'usage della chiamata di Fase 3 riceve `assets` e `assets_cost_usd`
   (`merge_assets_usage`), prima del filtro delle fonti riservate e di
@@ -986,7 +990,9 @@ usato anche dal dialog delle slide):
 **Cleanup file orfani** (`course_lesson_content_crud._cleanup_removed_image_assets`):
 al PATCH `content_raw`, il service confronta `old_visual_assets` con
 `new_visual_assets` e per ogni asset rimosso con `format="image"`
-esegue `os.unlink` best-effort dopo `db.commit()`. Safety check: il
+esegue `storage.delete` best-effort dopo `db.commit()`, in un solo
+`asyncio.to_thread` (con lo storage SFTP ogni delete apre una
+connessione). Safety check: il
 path deve essere sotto `lesson_assets/{course_id}/`, niente `..` o
 slash strani — niente cancellazioni cross-tenant o path traversal.
 

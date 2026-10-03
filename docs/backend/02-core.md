@@ -184,11 +184,53 @@ Configura structlog + stdlib `logging`.
 - Bound logger filtra a `LOG_LEVEL`.
 - Handler stdout (`StreamHandler`).
 - Reindirizza i logger noti (`uvicorn`, `uvicorn.access`, `uvicorn.error`,
-  `sqlalchemy.engine`) sullo stesso handler con livelli sensati.
+  `sqlalchemy.engine`) sullo stesso handler: `uvicorn` e `uvicorn.error` a
+  INFO, `uvicorn.access` e `sqlalchemy.engine` a WARNING. Per ogni request
+  resta così una sola riga, `http_request` di `AccessLogMiddleware`
+  ([Backend 03](03-middleware.md)).
 
 #### `get_logger(name: str | None = None) -> Any`
 
 Wrapper di `structlog.get_logger`.
+
+---
+
+## `app/core/loop_monitor.py`
+
+**Scopo**: misurare il ritardo (lag) dell'event loop, condiviso da API e
+worker ([02 — Architecture](../02-architecture.md)), e scriverlo nel log. Un
+`asyncio.sleep` che si sveglia in ritardo indica una chiamata sincrona sul
+loop.
+
+### Costanti
+
+- `LOOP_LAG_INTERVAL_S = 0.5`: durata dello sleep di misura; ogni campione è
+  il ritardo oltre questo valore.
+- `LOOP_LAG_THRESHOLD_MS = 100`: oltre questa soglia il campione genera un
+  WARNING.
+- `LOOP_LAG_SUMMARY_INTERVAL_S = 60.0`: periodo del riepilogo.
+
+### Log
+
+- `event_loop_lag` (WARNING), per ogni campione oltre soglia: `lag_ms`,
+  `threshold_ms`.
+- `event_loop_lag_summary` (INFO), ogni 60 s: `samples`, `p50_ms`, `p99_ms`,
+  `max_ms` dei campioni raccolti nell'intervallo.
+
+### Funzioni
+
+#### `start_monitor(*, interval_s, threshold_ms, summary_interval_s) -> None`
+
+Crea il task `event_loop_lag_monitor` sul loop corrente. È idempotente. I
+parametri hanno come default le costanti e servono ai test.
+
+#### `stop_monitor() -> None` _(async)_
+
+Cancella il task e ne attende la fine, senza riepilogo finale. È idempotente
+e non propaga errori: lo spegnimento dell'app non si blocca.
+
+Il lifespan lo avvia dopo `startup_complete` e lo ferma per primo nello
+shutdown ([Backend 01](01-entry.md)).
 
 ---
 

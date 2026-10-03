@@ -59,9 +59,15 @@ e nelle response per tracciamento.
 2. Esegue `call_next`. In caso di eccezione il log viene comunque emesso
    (durata calcolata in `finally`), default `status=500`.
 3. Logga `http_request` con: `method`, `path`, `status`, `duration_ms`
-   (round 2 decimali), `ip` (`request.client.host`), `user_agent`.
+   (round 2 decimali), `response_bytes`, `ip` (`request.client.host`),
+   `user_agent`. `response_bytes` è il `Content-Length` della response
+   (`int`); vale `null` se l'header manca (es. streaming) o se la
+   richiesta finisce in eccezione.
 
 > Il `request_id` arriva automaticamente dal context-var.
+>
+> È l'unica riga di log per request: `configure_logging` porta
+> `uvicorn.access` a WARNING ([Backend 02](02-core.md)).
 
 ---
 

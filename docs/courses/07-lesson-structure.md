@@ -37,7 +37,8 @@ status='processing', progress=5%, phase=preparing_prompt
    ▼
 progress=15%, phase=calling_openai
    │   ┌──────────────────────────────────────────────┐
-   │   │ ticker background: ease-out 15→85% in 40s    │
+   │   │ ticker background: curva 15→74% in 100s,     │
+   │   │ poi +1 punto ogni ≤10s fino a 84%            │
    │   │ con sessione DB indipendente                 │
    │   └──────────────────────────────────────────────┘
    │   generate_lesson_structure (§5.1 system + §5.3 schema)
@@ -154,28 +155,33 @@ Il **ticker di progresso** (`_progress_ticker`) ha la sua sessione DB autonoma p
 non bloccare la transazione del task durante l'attesa OpenAI:
 
 ```python
-async def _progress_ticker(module_id: uuid.UUID, start: int, end: int, total_seconds: float):
-    interval = 2.0
-    elapsed = 0.0
-    while elapsed < total_seconds:
-        await asyncio.sleep(interval)
-        elapsed += interval
-        ratio = min(1.0, elapsed / total_seconds)
-        eased = 1 - (1 - ratio) ** 2
-        pct = int(start + (end - start) * eased)
-        async with AsyncSessionLocal() as t_db:
-            await t_db.execute(
-                update(CourseModule)
-                .where(
-                    CourseModule.id == module_id,
-                    CourseModule.lessons_structure_status == "processing",
-                )
-                .values(lessons_structure_progress=pct)
-            )
-            await t_db.commit()
+async def _progress_ticker(
+    module_id: uuid.UUID, *, start_pct: int, end_pct: int, duration_sec: float
+) -> None:
+    await run_progress_ticker(  # app/services/progress_ticker.py
+        session_factory=async_session_factory,
+        model=CourseModule,
+        row_id=module_id,
+        status_attr="lessons_structure_status",
+        active_status="processing",
+        progress_attr="lessons_structure_progress",
+        start_pct=start_pct,
+        end_pct=end_pct,
+        duration_sec=duration_sec,
+        tick_sec=2.0,
+    )
 ```
 
-Curva ease-out: `eased = 1 - (1 - ratio)²`. Aggiornamento ogni 2s, fascia 15→85%.
+L'helper è comune agli otto worker con ticker. Curva ease-out
+`eased = 1 - (1 - ratio)²` sull'85% della fascia 15→85% in
+`duration_sec` = 100s (in produzione la chiamata dura p50 73s, p90 83s):
+74% a fine curva. Poi, e ovunque la curva rallenti, almeno un punto ogni
+10s (`MAX_STALL_SEC`) fino al tetto 84% (`end_pct - 1`): il 90% e il 100%
+li scrive il worker. Tick ogni 2s. Ogni punto in più è una `UPDATE`
+condizionata (`lessons_structure_status = 'processing' AND
+lessons_structure_progress < target`), senza leggere la riga; se non
+tocca righe il ticker legge la sola colonna di status e si ferma se è
+cambiata.
 
 ## Service di orchestrazione — `course_lesson_structure_service.py`
 

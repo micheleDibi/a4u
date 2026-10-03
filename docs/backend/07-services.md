@@ -346,7 +346,8 @@ Dettagli del contratto:
   payload di `/run`. Il worker GPU lo scarica via HTTP.
 - L'handler restituisce l'audio **per chunk** (FLAC base64, con
   `chunk_index` per segment): il client li raggruppa per `segment_id`,
-  li ordina e li concatena.
+  li ordina e li concatena (`_assemble_segments_audio`, decode compreso,
+  in un solo `asyncio.to_thread`).
 - Consuma lo **stream incrementale** `/stream/{job_id}` per il progress
   per-segment; a job `COMPLETED` continua a drenare lo stream finché una
   risposta torna senza nuovi item (altrimenti perde i chunk finali
@@ -378,6 +379,9 @@ L'audio sintetizzato viene salvato come un WAV per segment
   assente/diverso/incompleto/corrotto.
 - `save(course_id, lesson_id, *, cache_key, audio_per_segment) -> None`:
   sovrascrive la cache della lezione (un WAV per segment + manifest).
+
+Funzioni sincrone (hash del campione, soundfile): il worker video le
+chiama in `asyncio.to_thread`.
 
 ---
 
@@ -1565,6 +1569,8 @@ in quattro punti:
 
 - **Lifecycle**: registrati in `app/main.py` lifespan; ognuno espone `start_worker()` (idempotente) + `async stop_worker()` (gracefully attende task in flight con timeout 15s).
 - **Concorrenza**: `asyncio.Semaphore(N)` con N da env `COURSE_LESSON_*_MAX_CONCURRENCY`. Cap separati per ogni fase (5 struttura, 3 content/slides/speech, 2 PDF, 1 video e 1 avatar-video — un job GPU per volta).
+- **Ticker di avanzamento** (`progress_ticker.py`): gli otto worker con `_progress_ticker` (architettura, struttura, dispense, slide, discorso e i tre PDF) tengono nome e firma e delegano a `run_progress_ticker`, passando la propria `async_session_factory`. Curva ease-out sull'85% dello span (`CURVE_SHARE`) in `duration_sec` (architettura 110s, struttura 100s, dispense 150s, slide e discorso 60s, PDF 20s, PDF discorso 15s), poi almeno un punto ogni `MAX_STALL_SEC` = 10s fino al tetto `end_pct - 1`: il valore finale lo scrive solo il worker. Ogni punto in più è una `UPDATE` condizionata (status attivo e progress più basso), mai una lettura della riga; se non tocca righe legge la sola colonna di status e si ferma se è cambiata. `updated_at` avanza come prima (onupdate di colonna). Funzioni pure `curve_target`/`next_target`; `_monotonic`/`_sleep` sostituibili nei test.
+- **Event loop condiviso**: API e worker girano su un solo loop (contratto `docs/contracts/perf-l1-conventions.md` §1). Il lavoro sincrono va in `asyncio.to_thread`, un salto per gruppo di passi, con al thread solo valori (mai `AsyncSession`, oggetti ORM solo per eccezione motivata) e le cache lette e scritte sul loop. Livello 1: box del template e raccolta delle formule dei tre PDF; delete delle immagini rimosse dalla dispensa (`course_lesson_content_crud`); PIL dei servizi vision (`openai_figure_describe_service`, `openai_figure_relevance_service`, `openai_tikz_render_review_service`); misura degli SVG stringa in `render_figure_map` (`_as_figures`, fuori da semaforo e timeout); latex2mathml e misure del revisore in `asset_validation_service`; storage di `avatar_service` e `avatar_clip_worker`; cache audio, decode FLAC e pulizia della cartella di lavoro del video (`course_lesson_video_worker`, `runpod_tts_client`).
 - I worker delle **Fasi 6 e 6b** (`course_lesson_video_worker`, `course_lesson_avatar_video_worker`) condividono lo stesso scheletro (semaphore + `_inflight` + claim atomico + auto-retry + cancel-check tra fasi) pur non chiamando OpenAI; il loro `_apply_failure` ha `auto_retry_max` default 3.
 - **Atomic claim** (anti-double-dispatch): `_inflight: set[UUID]` + `_inflight_lock: asyncio.Lock` con claim **PRIMA** del semaforo (pattern fix `87fbf70`). Evita che task in coda dietro al semaforo vengano ri-dispatched dal tick successivo.
 - **Auto-retry trasparente**: helper `_apply_failure(lesson, *, error, recoverable, auto_retry_max)`. Errori recuperabili (rate-limit OpenAI, validazione, materializzazione) tornano a `pending` finché `attempts < auto_retry_max` (default 5). La UI vede solo "in elaborazione" finché passa.
