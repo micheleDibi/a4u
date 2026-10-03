@@ -11,14 +11,16 @@ Pattern:
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import UploadFile
-from sqlalchemy import delete, func, or_, select, update
+from pydantic import BaseModel
+from sqlalchemy import Row, delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import load_only, raiseload, selectinload
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.audit import write_audit
@@ -45,6 +47,12 @@ from app.schemas.course import (
     CourseDocumentUpdate,
     CourseUpdateInput,
     TaxonomyAssignments,
+)
+from app.schemas.course_status import (
+    CourseStatusDocumentOut,
+    CourseStatusLessonOut,
+    CourseStatusModuleOut,
+    CourseStatusOut,
 )
 from app.schemas.document_bibliography import DocumentBibliography
 from app.services import document_figures_service, file_service
@@ -329,15 +337,201 @@ async def get_course(
         .options(*_eager_options())
     )
     course = (await db.execute(q)).scalar_one_or_none()
-    if course is None:
-        raise NotFoundError("Corso non trovato.", code="course_not_found")
-    # Filtro membro: visibilità al di fuori dei propri corsi richiede
-    # course:view_all (separato da course:edit dopo lo split del 2026-05-11).
-    if (
-        not current_user.is_platform_admin
-        and P.COURSE_VIEW_ALL not in granted_permissions
-        and course.assignee_user_id != current_user.id
+    if course is None or not _can_view_course(
+        course.assignee_user_id, current_user, granted_permissions
     ):
+        raise NotFoundError("Corso non trovato.", code="course_not_found")
+    return course
+
+
+def _can_view_course(
+    assignee_user_id: uuid.UUID | None, current_user: User, granted_permissions: set[str]
+) -> bool:
+    """Regola di visibilità di un singolo corso (dettaglio, stato leggero, video).
+
+    Filtro membro: la visibilità al di fuori dei propri corsi richiede
+    course:view_all (separato da course:edit dopo lo split del 2026-05-11).
+    Platform admin vede tutto.
+    """
+    return (
+        current_user.is_platform_admin
+        or P.COURSE_VIEW_ALL in granted_permissions
+        or assignee_user_id == current_user.id
+    )
+
+
+async def load_visible_course_row(
+    db: AsyncSession,
+    *,
+    organization_id: uuid.UUID,
+    course_id: uuid.UUID,
+    current_user: User,
+    granted_permissions: set[str],
+    columns: Sequence[Any] = (),
+) -> Row[Any]:
+    """Controllo d'accesso leggero: stesse regole e stessi errori di `get_course`, ma legge
+    solo `assignee_user_id` più le colonne scalari indicate (nessun eager load, nessun JSONB).
+
+    Ritorna la riga con `assignee_user_id` seguito da `columns`; 404 `course_not_found` se il
+    corso non esiste in questa organizzazione o non è visibile all'utente.
+    """
+    q = select(Course.assignee_user_id, *columns).where(
+        Course.id == course_id, Course.organization_id == organization_id
+    )
+    row = (await db.execute(q)).one_or_none()
+    if row is None or not _can_view_course(row.assignee_user_id, current_user, granted_permissions):
+        raise NotFoundError("Corso non trovato.", code="course_not_found")
+    return row
+
+
+def _status_columns(model: Any, schema: type[BaseModel], *skip: str) -> list[Any]:
+    """Colonne del modello con lo stesso nome dei campi dello schema (tranne `skip`)."""
+    return [getattr(model, name) for name in schema.model_fields if name not in skip]
+
+
+async def get_course_status(
+    db: AsyncSession,
+    *,
+    organization_id: uuid.UUID,
+    course_id: uuid.UUID,
+    current_user: User,
+    granted_permissions: set[str],
+) -> CourseStatusOut:
+    """Stato leggero del corso per il polling (`GET …/courses/{id}/status`).
+
+    Quattro SELECT di sole colonne scalari (corso, documenti, moduli, lezioni): nessuna entità
+    ORM, quindi nessun eager load, nessun accesso lazy e nessun JSONB grande. Contratto:
+    `docs/contracts/perf-l1-course-status.md`.
+    """
+    from app.models.course_module import CourseModule  # local import: avoid cycle
+
+    course_row = await load_visible_course_row(
+        db,
+        organization_id=organization_id,
+        course_id=course_id,
+        current_user=current_user,
+        granted_permissions=granted_permissions,
+        columns=[
+            Course.id.label("course_id"),
+            *_status_columns(Course, CourseStatusOut, "course_id", "documents", "modules"),
+        ],
+    )
+    doc_rows = await db.execute(
+        select(*_status_columns(CourseDocument, CourseStatusDocumentOut))
+        .where(CourseDocument.course_id == course_id)
+        .order_by(CourseDocument.created_at, CourseDocument.id)
+    )
+    module_rows = await db.execute(
+        select(*_status_columns(CourseModule, CourseStatusModuleOut, "lessons"))
+        .where(CourseModule.course_id == course_id)
+        .order_by(CourseModule.position, CourseModule.id)
+    )
+    # Lezioni per `module_id` (come `CourseModule.lessons` del dettaglio), non per `course_id`:
+    # con dati incoerenti /status e dettaglio restano uguali e il client non ricarica a vuoto.
+    lesson_rows = await db.execute(
+        select(CourseLesson.module_id, *_status_columns(CourseLesson, CourseStatusLessonOut))
+        .where(
+            CourseLesson.module_id.in_(
+                select(CourseModule.id).where(CourseModule.course_id == course_id)
+            )
+        )
+        .order_by(CourseLesson.position, CourseLesson.id)
+    )
+
+    lessons_by_module: dict[uuid.UUID, list[CourseStatusLessonOut]] = {}
+    for row in lesson_rows:
+        lessons_by_module.setdefault(row.module_id, []).append(
+            CourseStatusLessonOut.model_validate(row._mapping)
+        )
+    modules = [
+        CourseStatusModuleOut.model_validate(
+            {**row._mapping, "lessons": lessons_by_module.get(row.id, [])}
+        )
+        for row in module_rows
+    ]
+    documents = [CourseStatusDocumentOut.model_validate(row._mapping) for row in doc_rows]
+    return CourseStatusOut.model_validate(
+        {**course_row._mapping, "documents": documents, "modules": modules}
+    )
+
+
+# Colonne di `CourseLesson` lette dai DTO di stato del video e del video con avatar
+# (`build_status_out`, `build_batch_out`, `is_lesson_eligible`, `_is_stale` dei due servizi)
+# più identità e ordinamento. Nessun JSONB grande: solo i piccoli `video_tokens`.
+_VIDEO_STATUS_LESSON_COLUMNS: tuple[Any, ...] = (
+    CourseLesson.id,
+    CourseLesson.module_id,
+    CourseLesson.course_id,
+    CourseLesson.position,
+    CourseLesson.lesson_code,
+    CourseLesson.is_assessment,
+    CourseLesson.slides_status,
+    CourseLesson.slides_approved_at,
+    CourseLesson.slides_modified_at,
+    CourseLesson.speech_status,
+    CourseLesson.speech_approved_at,
+    CourseLesson.speech_modified_at,
+    CourseLesson.video_status,
+    CourseLesson.video_progress,
+    CourseLesson.video_progress_phase,
+    CourseLesson.video_path,
+    CourseLesson.video_attempts,
+    CourseLesson.video_error,
+    CourseLesson.video_generated_at,
+    CourseLesson.video_tokens,
+    CourseLesson.avatar_video_status,
+    CourseLesson.avatar_video_progress,
+    CourseLesson.avatar_video_progress_phase,
+    CourseLesson.avatar_video_path,
+    CourseLesson.avatar_video_attempts,
+    CourseLesson.avatar_video_error,
+    CourseLesson.avatar_video_generated_at,
+    CourseLesson.avatar_video_tokens,
+)
+
+
+async def load_course_for_video_status(
+    db: AsyncSession,
+    *,
+    organization_id: uuid.UUID,
+    course_id: uuid.UUID,
+    current_user: User,
+    granted_permissions: set[str],
+) -> Course:
+    """Corso per gli endpoint di stato del video e del video con avatar (polling).
+
+    Stesse regole di visibilità e stessi errori di `get_course` (`load_visible_course_row`),
+    ma il `Course` ha solo `id`/`assignee_user_id`, i moduli solo `id`/`position` e le lezioni
+    solo `_VIDEO_STATUS_LESSON_COLUMNS`, nello stesso ordine del dettaglio. Le altre colonne e
+    relazioni sono in `raiseload`: leggerle solleva un errore invece di un caricamento lazy.
+    """
+    from app.models.course_module import CourseModule  # local import: avoid cycle
+
+    await load_visible_course_row(
+        db,
+        organization_id=organization_id,
+        course_id=course_id,
+        current_user=current_user,
+        granted_permissions=granted_permissions,
+    )
+    q = (
+        select(Course)
+        .where(Course.id == course_id)
+        .options(
+            load_only(Course.id, Course.assignee_user_id, raiseload=True),
+            raiseload("*"),
+            selectinload(Course.modules).options(
+                load_only(CourseModule.id, CourseModule.position, raiseload=True),
+                raiseload("*"),
+                selectinload(CourseModule.lessons).options(
+                    load_only(*_VIDEO_STATUS_LESSON_COLUMNS, raiseload=True),
+                    raiseload("*"),
+                ),
+            ),
+        )
+    )
+    course = (await db.execute(q)).scalar_one_or_none()
+    if course is None:  # cancellato fra le due query
         raise NotFoundError("Corso non trovato.", code="course_not_found")
     return course
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import time
 import urllib.parse
 import uuid
 from datetime import datetime
@@ -18,6 +20,7 @@ from fastapi import (
 )
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+from sqlalchemy.orm import load_only, raiseload, selectinload
 
 from app.core.config import get_settings
 from app.core.deps import CurrentUser, DbSession
@@ -30,6 +33,8 @@ from app.core.errors import (
 from app.core.permissions import P, require, require_membership, resolve_permissions
 from app.core.rate_limit import limiter
 from app.models.course import Course
+from app.models.course_lesson import CourseLesson
+from app.models.course_module import CourseModule
 from app.models.membership import Membership
 from app.models.organization import Organization
 from app.schemas.common import Page, PageMeta
@@ -86,6 +91,7 @@ from app.schemas.course_lesson_video import (
     LessonVideoGenerateInput,
     LessonVideoStatusOut,
 )
+from app.schemas.course_status import CourseStatusOut
 from app.schemas.document_figures import (
     DocumentFigureOut,
     DocumentFigureUpdate,
@@ -261,6 +267,56 @@ async def get_course(
         granted_permissions=granted,
     )
     return CourseOut.model_validate(course)
+
+
+# Il browser rivalida a ogni poll con `If-None-Match`: se lo stato non è cambiato
+# risponde 304 senza corpo e il client riusa la copia in cache.
+_STATUS_CACHE_CONTROL = "no-cache"
+
+
+def _etag_matches(if_none_match: str | None, etag: str) -> bool:
+    """Confronto debole di `If-None-Match` (RFC 9110 §13.1.2): lista separata da virgole,
+    `*` combacia sempre, `W/"…"` vale come `"…"` (nginx con gzip rende deboli gli ETag)."""
+    if not if_none_match:
+        return False
+    for raw in if_none_match.split(","):
+        candidate = raw.strip()
+        if candidate == "*":
+            return True
+        if candidate.startswith("W/"):
+            candidate = candidate[2:]
+        if candidate == etag:
+            return True
+    return False
+
+
+@router.get("/{course_id}/status", response_model=CourseStatusOut)
+async def get_course_status(
+    org_id: uuid.UUID,
+    course_id: uuid.UUID,
+    request: Request,
+    db: DbSession,
+    current: CurrentUser,
+    granted: set[str] = require(P.COURSE_VIEW),
+) -> Response:
+    """Stato leggero del corso per il polling dell'editor: solo stati, avanzamento e
+    timestamp (pochi KB invece del dettaglio completo). Stesse autorizzazioni ed errori del
+    dettaglio; `ETag` sul corpo e 304 con `If-None-Match`. Contratto:
+    `docs/contracts/perf-l1-course-status.md`."""
+    await _ensure_org(db, org_id)
+    payload = await course_service.get_course_status(
+        db,
+        organization_id=org_id,
+        course_id=course_id,
+        current_user=current,
+        granted_permissions=granted,
+    )
+    body = payload.model_dump_json().encode()
+    etag = f'"{hashlib.sha256(body).hexdigest()}"'
+    headers = {"ETag": etag, "Cache-Control": _STATUS_CACHE_CONTROL}
+    if _etag_matches(request.headers.get("if-none-match"), etag):
+        return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers=headers)
+    return Response(content=body, media_type="application/json", headers=headers)
 
 
 def _ensure_can_edit_basic(course, current, granted: set[str]) -> None:
@@ -3224,6 +3280,49 @@ def _content_disposition_attachment(filename: str) -> str:
     return f'attachment; filename="{ascii_fallback}"; filename*=UTF-8\'\'{encoded}'
 
 
+async def _load_course_for_pdf_bundle(db: DbSession, *, course_id: uuid.UUID) -> Course | None:
+    """Corso con moduli e lezioni per i bundle PDF, con le sole colonne lette dai controlli di
+    prontezza, dai nomi file e dai segnalibri (`course_module_pdf_service`). Niente JSONB delle
+    lezioni (`*_raw`), che su un corso grande sono MB decodificati sul loop. Le altre colonne e
+    relazioni sono in `raiseload`: leggerle solleva un errore invece di un caricamento lazy."""
+    q = (
+        select(Course)
+        .where(Course.id == course_id)
+        .options(
+            load_only(Course.id, Course.organization_id, Course.title, raiseload=True),
+            raiseload("*"),
+            selectinload(Course.modules).options(
+                load_only(
+                    CourseModule.id,
+                    CourseModule.position,
+                    CourseModule.module_code,
+                    CourseModule.title,
+                    raiseload=True,
+                ),
+                raiseload("*"),
+                selectinload(CourseModule.lessons).options(
+                    load_only(
+                        CourseLesson.id,
+                        CourseLesson.position,
+                        CourseLesson.lesson_code,
+                        CourseLesson.title,
+                        CourseLesson.is_assessment,
+                        CourseLesson.pdf_status,
+                        CourseLesson.pdf_path,
+                        CourseLesson.slides_pdf_status,
+                        CourseLesson.slides_pdf_path,
+                        CourseLesson.speech_pdf_status,
+                        CourseLesson.speech_pdf_path,
+                        raiseload=True,
+                    ),
+                    raiseload("*"),
+                ),
+            ),
+        )
+    )
+    return (await db.execute(q)).scalar_one_or_none()
+
+
 async def _load_course_module_or_404(
     db: DbSession,
     *,
@@ -3232,11 +3331,9 @@ async def _load_course_module_or_404(
     module_id: uuid.UUID,
 ) -> tuple[Any, Any]:
     """Carica corso (con moduli + lezioni) e ritorna `(course, module)`.
-    Usa `course_lesson_pdf_service.load_course_full` (eager-load) e
-    cerca il modulo nel grafo. 404 se non trovato."""
-    course = await course_lesson_pdf_service.load_course_full(
-        db, course_id=course_id
-    )
+    Usa `_load_course_for_pdf_bundle` e cerca il modulo nel grafo.
+    404 se non trovato."""
+    course = await _load_course_for_pdf_bundle(db, course_id=course_id)
     if course is None or course.organization_id != org_id:
         raise NotFoundError("Corso non trovato.", code="course_not_found")
     module = next(
@@ -3300,7 +3397,7 @@ async def download_module_pdf_merged(
     course, module = await _load_course_module_or_404(
         db, org_id=org_id, course_id=course_id, module_id=module_id
     )
-    content = course_module_pdf_service.merge_module_pdfs(
+    content = await course_module_pdf_service.merge_module_pdfs(
         kind="content", course=course, module=module
     )
     filename = course_module_pdf_service.module_merged_filename(
@@ -3327,7 +3424,7 @@ async def download_module_pdf_zip(
     course, module = await _load_course_module_or_404(
         db, org_id=org_id, course_id=course_id, module_id=module_id
     )
-    content = course_module_pdf_service.zip_module_pdfs(
+    content = await course_module_pdf_service.zip_module_pdfs(
         kind="content", course=course, module=module
     )
     filename = course_module_pdf_service.module_zip_filename(
@@ -3356,7 +3453,7 @@ async def download_module_slides_pdf_merged(
     course, module = await _load_course_module_or_404(
         db, org_id=org_id, course_id=course_id, module_id=module_id
     )
-    content = course_module_pdf_service.merge_module_pdfs(
+    content = await course_module_pdf_service.merge_module_pdfs(
         kind="slides", course=course, module=module
     )
     filename = course_module_pdf_service.module_merged_filename(
@@ -3382,7 +3479,7 @@ async def download_module_slides_pdf_zip(
     course, module = await _load_course_module_or_404(
         db, org_id=org_id, course_id=course_id, module_id=module_id
     )
-    content = course_module_pdf_service.zip_module_pdfs(
+    content = await course_module_pdf_service.zip_module_pdfs(
         kind="slides", course=course, module=module
     )
     filename = course_module_pdf_service.module_zip_filename(
@@ -3411,7 +3508,7 @@ async def download_module_speech_pdf_merged(
     course, module = await _load_course_module_or_404(
         db, org_id=org_id, course_id=course_id, module_id=module_id
     )
-    content = course_module_pdf_service.merge_module_pdfs(
+    content = await course_module_pdf_service.merge_module_pdfs(
         kind="speech", course=course, module=module
     )
     filename = course_module_pdf_service.module_merged_filename(
@@ -3437,7 +3534,7 @@ async def download_module_speech_pdf_zip(
     course, module = await _load_course_module_or_404(
         db, org_id=org_id, course_id=course_id, module_id=module_id
     )
-    content = course_module_pdf_service.zip_module_pdfs(
+    content = await course_module_pdf_service.zip_module_pdfs(
         kind="speech", course=course, module=module
     )
     filename = course_module_pdf_service.module_zip_filename(
@@ -3454,28 +3551,22 @@ async def download_module_speech_pdf_zip(
 async def _load_course_full_or_404(
     db: DbSession, *, org_id: uuid.UUID, course_id: uuid.UUID
 ) -> Any:
-    course = await course_lesson_pdf_service.load_course_full(
-        db, course_id=course_id
-    )
+    course = await _load_course_for_pdf_bundle(db, course_id=course_id)
     if course is None or course.organization_id != org_id:
         raise NotFoundError("Corso non trovato.", code="course_not_found")
     return course
 
 
-def _course_merged_response(
-    kind: course_module_pdf_service.PdfKind, course: Any
-) -> Response:
-    content = course_module_pdf_service.merge_course_pdfs(kind=kind, course=course)
+async def _course_merged_response(kind: course_module_pdf_service.PdfKind, course: Any) -> Response:
+    content = await course_module_pdf_service.merge_course_pdfs(kind=kind, course=course)
     filename = course_module_pdf_service.course_merged_filename(kind, course)
     return _module_pdf_response(
         content=content, filename=filename, media_type="application/pdf"
     )
 
 
-def _course_zip_response(
-    kind: course_module_pdf_service.PdfKind, course: Any
-) -> Response:
-    content = course_module_pdf_service.zip_course_pdfs(kind=kind, course=course)
+async def _course_zip_response(kind: course_module_pdf_service.PdfKind, course: Any) -> Response:
+    content = await course_module_pdf_service.zip_course_pdfs(kind=kind, course=course)
     filename = course_module_pdf_service.course_zip_filename(kind, course)
     return _module_pdf_response(
         content=content, filename=filename, media_type="application/zip"
@@ -3493,7 +3584,7 @@ async def download_course_pdf_merged(
     """PDF unico con tutte le lezioni (Contenuti) di tutti i moduli."""
     await _ensure_org(db, org_id)
     course = await _load_course_full_or_404(db, org_id=org_id, course_id=course_id)
-    return _course_merged_response("content", course)
+    return await _course_merged_response("content", course)
 
 
 @router.get("/{course_id}/lessons-pdf/download-all-zip")
@@ -3507,7 +3598,7 @@ async def download_course_pdf_zip(
     """ZIP (Contenuti) di tutto il corso, una cartella per modulo."""
     await _ensure_org(db, org_id)
     course = await _load_course_full_or_404(db, org_id=org_id, course_id=course_id)
-    return _course_zip_response("content", course)
+    return await _course_zip_response("content", course)
 
 
 @router.get("/{course_id}/lessons-slides-pdf/download-all-merged")
@@ -3520,7 +3611,7 @@ async def download_course_slides_pdf_merged(
 ) -> Response:
     await _ensure_org(db, org_id)
     course = await _load_course_full_or_404(db, org_id=org_id, course_id=course_id)
-    return _course_merged_response("slides", course)
+    return await _course_merged_response("slides", course)
 
 
 @router.get("/{course_id}/lessons-slides-pdf/download-all-zip")
@@ -3533,7 +3624,7 @@ async def download_course_slides_pdf_zip(
 ) -> Response:
     await _ensure_org(db, org_id)
     course = await _load_course_full_or_404(db, org_id=org_id, course_id=course_id)
-    return _course_zip_response("slides", course)
+    return await _course_zip_response("slides", course)
 
 
 @router.get("/{course_id}/lessons-speech-pdf/download-all-merged")
@@ -3546,7 +3637,7 @@ async def download_course_speech_pdf_merged(
 ) -> Response:
     await _ensure_org(db, org_id)
     course = await _load_course_full_or_404(db, org_id=org_id, course_id=course_id)
-    return _course_merged_response("speech", course)
+    return await _course_merged_response("speech", course)
 
 
 @router.get("/{course_id}/lessons-speech-pdf/download-all-zip")
@@ -3559,7 +3650,7 @@ async def download_course_speech_pdf_zip(
 ) -> Response:
     await _ensure_org(db, org_id)
     course = await _load_course_full_or_404(db, org_id=org_id, course_id=course_id)
-    return _course_zip_response("speech", course)
+    return await _course_zip_response("speech", course)
 
 
 # ---------------------------------------------------------------------------
@@ -3567,17 +3658,53 @@ async def download_course_speech_pdf_zip(
 # ---------------------------------------------------------------------------
 
 
+# Per quanti secondi vale l'esito di `storage.exists` del campione vocale (per chiave). Il
+# polling dello stato video lo chiede a ogni giro e con SFTP ogni chiamata apre una
+# connessione (p50 533 ms in produzione). Esito positivo: 60 s (un campione rimosso si vede
+# al più dopo questo intervallo).
+VOICE_SAMPLE_EXISTS_TTL_S = 60.0
+# Esito negativo: 10 s, perché dopo il caricamento del campione la UI deve accorgersene
+# in fretta.
+VOICE_SAMPLE_MISSING_TTL_S = 10.0
+# chiave di storage → (istante della verifica, esito). Letta e scritta solo sul loop.
+_voice_sample_exists_cache: dict[str, tuple[float, bool]] = {}
+# Orologio della cache (sostituibile nei test senza toccare quello dell'event loop).
+_cache_clock = time.monotonic
+
+
+def _voice_sample_ttl(exists: bool) -> float:
+    return VOICE_SAMPLE_EXISTS_TTL_S if exists else VOICE_SAMPLE_MISSING_TTL_S
+
+
+async def _voice_sample_exists(key: str) -> bool:
+    """`storage.exists(key)` in un thread, con l'esito in cache per
+    `VOICE_SAMPLE_EXISTS_TTL_S` secondi (positivo) o `VOICE_SAMPLE_MISSING_TTL_S` (negativo)."""
+    now = _cache_clock()
+    hit = _voice_sample_exists_cache.get(key)
+    if hit is not None and now - hit[0] < _voice_sample_ttl(hit[1]):
+        return hit[1]
+    exists = await asyncio.to_thread(lambda: remote_storage.get_storage().exists(key))
+    now = _cache_clock()
+    # Pulizia delle voci scadute: la cache resta grande quanto i campioni in uso.
+    for stale in [
+        k
+        for k, (at, found) in _voice_sample_exists_cache.items()
+        if now - at >= _voice_sample_ttl(found)
+    ]:
+        del _voice_sample_exists_cache[stale]
+    _voice_sample_exists_cache[key] = (now, exists)
+    return exists
+
+
 async def _video_assignee_context(db, course: object) -> dict[str, Any]:
     """Helper: risolve il campione vocale dell'assegnatario per costruire
     i DTO video. La disponibilità è verificata sul layer di storage (OVH in
-    produzione), non sul filesystem locale."""
+    produzione), non sul filesystem locale, con l'esito in cache (vedi
+    `_voice_sample_exists`)."""
     ref = await course_lesson_video_service.resolve_voice_sample_ref(
         db, assignee_user_id=course.assignee_user_id
     )
-    available = bool(ref) and await asyncio.to_thread(
-        remote_storage.get_storage().exists,
-        remote_storage.uploads_key(ref),
-    )
+    available = bool(ref) and await _voice_sample_exists(remote_storage.uploads_key(ref))
     return {
         "voice_sample_ref": ref,
         "voice_sample_available": available,
@@ -3733,13 +3860,17 @@ async def get_lesson_video_status(
     lesson_id: uuid.UUID,
     db: DbSession,
     current: CurrentUser,
-    _=require(P.COURSE_VIEW),
+    granted: set[str] = require(P.COURSE_VIEW),
 ) -> LessonVideoStatusOut:
     """Polling-friendly status di una singola lezione (usato dal FE per
     aggiornare progress bar + ETA mentre il worker lavora)."""
     await _ensure_org(db, org_id)
-    course = await _load_course_for_edit(
-        db, org_id=org_id, course_id=course_id, current=current
+    course = await course_service.load_course_for_video_status(
+        db,
+        organization_id=org_id,
+        course_id=course_id,
+        current_user=current,
+        granted_permissions=granted,
     )
     lesson = await course_lesson_video_service.get_lesson_or_404(
         course=course, lesson_id=lesson_id
@@ -3760,13 +3891,17 @@ async def get_course_videos_status(
     course_id: uuid.UUID,
     db: DbSession,
     current: CurrentUser,
-    _=require(P.COURSE_VIEW),
+    granted: set[str] = require(P.COURSE_VIEW),
 ) -> LessonVideoBatchOut:
     """Aggregato pagina-corso: contatori + items per costruire la tab
     Video del CourseEditorPage."""
     await _ensure_org(db, org_id)
-    course = await _load_course_for_edit(
-        db, org_id=org_id, course_id=course_id, current=current
+    course = await course_service.load_course_for_video_status(
+        db,
+        organization_id=org_id,
+        course_id=course_id,
+        current_user=current,
+        granted_permissions=granted,
     )
     ctx = await _video_assignee_context(db, course)
     return course_lesson_video_service.build_batch_out(
@@ -3946,12 +4081,16 @@ async def get_lesson_avatar_video_status(
     lesson_id: uuid.UUID,
     db: DbSession,
     current: CurrentUser,
-    _=require(P.COURSE_VIEW),
+    granted: set[str] = require(P.COURSE_VIEW),
 ) -> LessonAvatarVideoStatusOut:
     """Polling-friendly status di una singola lezione."""
     await _ensure_org(db, org_id)
-    course = await _load_course_for_edit(
-        db, org_id=org_id, course_id=course_id, current=current
+    course = await course_service.load_course_for_video_status(
+        db,
+        organization_id=org_id,
+        course_id=course_id,
+        current_user=current,
+        granted_permissions=granted,
     )
     lesson = await course_lesson_avatar_video_service.get_lesson_or_404(
         course=course, lesson_id=lesson_id
@@ -3972,13 +4111,17 @@ async def get_course_avatar_videos_status(
     course_id: uuid.UUID,
     db: DbSession,
     current: CurrentUser,
-    _=require(P.COURSE_VIEW),
+    granted: set[str] = require(P.COURSE_VIEW),
 ) -> LessonAvatarVideoBatchOut:
     """Aggregato pagina-corso: contatori + items per la scheda
     «Video con Avatar» del CourseEditorPage."""
     await _ensure_org(db, org_id)
-    course = await _load_course_for_edit(
-        db, org_id=org_id, course_id=course_id, current=current
+    course = await course_service.load_course_for_video_status(
+        db,
+        organization_id=org_id,
+        course_id=course_id,
+        current_user=current,
+        granted_permissions=granted,
     )
     ctx = await _avatar_video_context(db, course)
     return course_lesson_avatar_video_service.build_batch_out(

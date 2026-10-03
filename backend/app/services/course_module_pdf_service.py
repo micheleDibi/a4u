@@ -14,12 +14,18 @@ manca anche solo una lezione → ``ConflictError`` (l'utente deve aspettare
 che i worker abbiano completato l'export).
 
 Pipeline supportate: ``"content"``, ``"slides"``, ``"speech"``.
+
+Event loop: i controlli e i nomi (dati già caricati) restano sul loop; download dallo storage
+(SFTP in produzione), ``pypdf`` e ``zipfile`` girano in un thread (``asyncio.to_thread``),
+con uno snapshot di dati semplici (``_PdfItem``), mai oggetti ORM.
 """
 from __future__ import annotations
 
+import asyncio
 import io
 import re
 import zipfile
+from dataclasses import dataclass
 from typing import Literal
 
 from pypdf import PdfWriter
@@ -70,20 +76,56 @@ def _lesson_pdf_path(kind: PdfKind, lesson: CourseLesson) -> str | None:
     return lesson.speech_pdf_path
 
 
-def _read_lesson_pdf(kind: PdfKind, rel: str, lesson: CourseLesson) -> bytes:
+@dataclass(frozen=True)
+class _PdfItem:
+    """Snapshot di una lezione da unire o zippare: solo stringhe, passabile a un thread."""
+
+    rel: str  # `*_pdf_path` della lezione
+    lesson_code: str
+    outline: str  # voce di segnalibro nel PDF unito
+    zip_name: str  # percorso del file dentro lo zip
+
+
+def _read_lesson_pdf(rel: str, lesson_code: str) -> bytes:
     """Scarica i bytes del PDF di una lezione dallo storage attivo (RETR su
     OVH, read locale altrimenti). Tutti e tre i `kind` condividono la stessa
-    root: il `kind` è già nel suffisso del nome file."""
-    del kind  # parametro mantenuto per coerenza API
+    root: il `kind` è già nel suffisso del nome file. Bloccante: solo da thread."""
     try:
-        return remote_storage.get_storage().download_bytes(
-            remote_storage.pdf_key(rel)
-        )
+        return remote_storage.get_storage().download_bytes(remote_storage.pdf_key(rel))
     except remote_storage.StorageFileNotFound as exc:
         raise NotFoundError(
-            f"File PDF mancante sullo storage per la lezione {lesson.lesson_code}.",
+            f"File PDF mancante sullo storage per la lezione {lesson_code}.",
             code="module_pdf_file_missing",
         ) from exc
+
+
+def _merge_items_sync(items: list[_PdfItem]) -> bytes:
+    """Scarica e concatena i PDF (``pypdf.PdfWriter.append``, che preserva
+    metadati, font, immagini incorporate e segnalibri di partenza). Bloccante."""
+    writer = PdfWriter()
+    for item in items:
+        data = _read_lesson_pdf(item.rel, item.lesson_code)
+        writer.append(io.BytesIO(data), outline_item=item.outline)
+    buf = io.BytesIO()
+    writer.write(buf)
+    writer.close()
+    return buf.getvalue()
+
+
+def _zip_items_sync(items: list[_PdfItem]) -> bytes:
+    """Scarica i PDF e li mette in uno ZIP (deflate) con i nomi dello snapshot. Bloccante."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for item in items:
+            zf.writestr(item.zip_name, _read_lesson_pdf(item.rel, item.lesson_code))
+    return buf.getvalue()
+
+
+def _item(kind: PdfKind, lesson: CourseLesson, *, outline: str, zip_name: str) -> _PdfItem:
+    rel = _lesson_pdf_path(kind, lesson)
+    # rel non può essere None qui (validato in _ensure_*_pdfs_ready)
+    assert rel is not None
+    return _PdfItem(rel=rel, lesson_code=lesson.lesson_code, outline=outline, zip_name=zip_name)
 
 
 def _lesson_pdf_filename(kind: PdfKind, course_title: str, lesson: CourseLesson) -> str:
@@ -185,47 +227,31 @@ def module_zip_filename(
 # === Public API =============================================================
 
 
-def merge_module_pdfs(
-    *, kind: PdfKind, course: Course, module: CourseModule
-) -> bytes:
-    """Concatena tutti i PDF della pipeline `kind` del modulo in ordine
-    lezione. Ritorna i bytes del PDF risultante.
-
-    Usa ``pypdf.PdfWriter.append(...)`` che preserva metadati, font,
-    immagini incorporate e segnalibri di partenza di ogni PDF lezione.
-    """
-    lessons = _ensure_all_pdfs_ready(kind, module)
-    writer = PdfWriter()
-    for lesson in lessons:
-        rel = _lesson_pdf_path(kind, lesson)
-        # rel non può essere None qui (validato in _ensure_all_pdfs_ready)
-        assert rel is not None
-        data = _read_lesson_pdf(kind, rel, lesson)
-        writer.append(
-            io.BytesIO(data), outline_item=lesson.title or lesson.lesson_code
+def _module_items(kind: PdfKind, course: Course, module: CourseModule) -> list[_PdfItem]:
+    return [
+        _item(
+            kind,
+            lesson,
+            outline=lesson.title or lesson.lesson_code,
+            zip_name=_lesson_pdf_filename(kind, course.title, lesson),
         )
-
-    buf = io.BytesIO()
-    writer.write(buf)
-    writer.close()
-    return buf.getvalue()
+        for lesson in _ensure_all_pdfs_ready(kind, module)
+    ]
 
 
-def zip_module_pdfs(
-    *, kind: PdfKind, course: Course, module: CourseModule
-) -> bytes:
+async def merge_module_pdfs(*, kind: PdfKind, course: Course, module: CourseModule) -> bytes:
+    """Concatena tutti i PDF della pipeline `kind` del modulo in ordine
+    lezione. Ritorna i bytes del PDF risultante (download e merge in un thread).
+    """
+    items = _module_items(kind, course, module)
+    return await asyncio.to_thread(_merge_items_sync, items)
+
+
+async def zip_module_pdfs(*, kind: PdfKind, course: Course, module: CourseModule) -> bytes:
     """Crea uno ZIP con un PDF per ogni lezione del modulo, con il nome
     file user-friendly (uguale a quello del download per-lezione)."""
-    lessons = _ensure_all_pdfs_ready(kind, module)
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for lesson in lessons:
-            rel = _lesson_pdf_path(kind, lesson)
-            assert rel is not None
-            data = _read_lesson_pdf(kind, rel, lesson)
-            filename = _lesson_pdf_filename(kind, course.title, lesson)
-            zf.writestr(filename, data)
-    return buf.getvalue()
+    items = _module_items(kind, course, module)
+    return await asyncio.to_thread(_zip_items_sync, items)
 
 
 # === Aggregazione a livello CORSO (tutti i moduli) ==========================
@@ -291,37 +317,33 @@ def course_zip_filename(kind: PdfKind, course: Course) -> str:
     return f"{_safe_segment(course.title)} — corso completo ({_kind_label(kind)}).zip"
 
 
-def merge_course_pdfs(*, kind: PdfKind, course: Course) -> bytes:
-    """Concatena in un unico PDF tutte le lezioni di tutti i moduli del
-    corso, in ordine modulo → lezione."""
-    groups = _ensure_course_pdfs_ready(kind, course)
-    writer = PdfWriter()
-    for module, lessons in groups:
+def _course_items(kind: PdfKind, course: Course) -> list[_PdfItem]:
+    """Snapshot in ordine modulo → lezione; nello zip una sottocartella per modulo."""
+    items: list[_PdfItem] = []
+    for module, lessons in _ensure_course_pdfs_ready(kind, course):
+        folder = f"{module.module_code} {_safe_segment(module.title)}"
         for lesson in lessons:
-            rel = _lesson_pdf_path(kind, lesson)
-            assert rel is not None
-            data = _read_lesson_pdf(kind, rel, lesson)
-            outline = f"{module.module_code} — {lesson.title or lesson.lesson_code}"
-            writer.append(io.BytesIO(data), outline_item=outline)
+            filename = _lesson_pdf_filename(kind, course.title, lesson)
+            items.append(
+                _item(
+                    kind,
+                    lesson,
+                    outline=f"{module.module_code} — {lesson.title or lesson.lesson_code}",
+                    zip_name=f"{folder}/{filename}",
+                )
+            )
+    return items
 
-    buf = io.BytesIO()
-    writer.write(buf)
-    writer.close()
-    return buf.getvalue()
+
+async def merge_course_pdfs(*, kind: PdfKind, course: Course) -> bytes:
+    """Concatena in un unico PDF tutte le lezioni di tutti i moduli del
+    corso, in ordine modulo → lezione (download e merge in un thread)."""
+    items = _course_items(kind, course)
+    return await asyncio.to_thread(_merge_items_sync, items)
 
 
-def zip_course_pdfs(*, kind: PdfKind, course: Course) -> bytes:
+async def zip_course_pdfs(*, kind: PdfKind, course: Course) -> bytes:
     """Crea uno ZIP di tutto il corso: una sottocartella per modulo, un
     PDF per ogni lezione (stesso filename del download per-lezione)."""
-    groups = _ensure_course_pdfs_ready(kind, course)
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for module, lessons in groups:
-            folder = f"{module.module_code} {_safe_segment(module.title)}"
-            for lesson in lessons:
-                rel = _lesson_pdf_path(kind, lesson)
-                assert rel is not None
-                data = _read_lesson_pdf(kind, rel, lesson)
-                filename = _lesson_pdf_filename(kind, course.title, lesson)
-                zf.writestr(f"{folder}/{filename}", data)
-    return buf.getvalue()
+    items = _course_items(kind, course)
+    return await asyncio.to_thread(_zip_items_sync, items)

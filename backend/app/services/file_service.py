@@ -18,6 +18,11 @@ log = get_logger("app.files")
 
 ALLOWED_IMAGE_MIME_TYPES = {"image/png", "image/jpeg", "image/webp"}
 ALLOWED_IMAGE_EXT_BY_FORMAT = {"PNG": ".png", "JPEG": ".jpg", "WEBP": ".webp"}
+# Tetto di pixel (larghezza × altezza) di un'immagine caricata, controllato sull'intestazione
+# prima di decodificare. Un PNG di pochi KB può dichiarare centinaia di megapixel (~0,5 GB per
+# decodifica, con più decodifiche in parallelo nei thread). 50 MP lascia passare le foto da
+# smartphone (48 MP).
+UPLOAD_IMAGE_MAX_PIXELS = 50_000_000
 
 # MIME accettati per audio: copertura per upload tipici e per i file emessi
 # da MediaRecorder (Chromium → audio/webm; Safari → audio/mp4).
@@ -136,6 +141,54 @@ def _center_crop_square(img: Image.Image) -> Image.Image:
     return img.crop((left, top, left + side, top + side))
 
 
+def _reencode_image_sync(
+    raw: bytes, *, max_dimension: int, square: bool, preserve_format: bool
+) -> tuple[bytes, str]:
+    """Ricodifica Pillow di `save_upload_image` (bloccante: chiamarla via `to_thread`).
+
+    Ritorna `(payload, estensione)`; `invalid_image` se Pillow non riconosce il file,
+    `image_too_large` oltre `UPLOAD_IMAGE_MAX_PIXELS` (prima di decodificare i pixel).
+    """
+    try:
+        with Image.open(BytesIO(raw)) as img:
+            # `Image.open` legge solo l'intestazione: il controllo precede la decodifica.
+            width, height = img.size
+            if width * height > UPLOAD_IMAGE_MAX_PIXELS:
+                raise ValidationAppError(
+                    f"Immagine troppo grande ({width}×{height} pixel, massimo "
+                    f"{UPLOAD_IMAGE_MAX_PIXELS // 1_000_000} megapixel).",
+                    code="image_too_large",
+                )
+            source_format = (img.format or "").upper()
+            img = ImageOps.exif_transpose(img)
+            if square:
+                img = _center_crop_square(img)
+            fmt = (img.format or "").upper()
+            if preserve_format and source_format in ALLOWED_IMAGE_EXT_BY_FORMAT:
+                fmt = source_format
+            if fmt not in ALLOWED_IMAGE_EXT_BY_FORMAT:
+                fmt = "PNG" if img.mode in ("RGBA", "LA") else "JPEG"
+            ext = ALLOWED_IMAGE_EXT_BY_FORMAT[fmt]
+            if max(img.size) > max_dimension:
+                img.thumbnail((max_dimension, max_dimension))
+            buffer = BytesIO()
+            save_kwargs: dict = {"optimize": True}
+            if fmt == "JPEG":
+                if img.mode != "RGB":
+                    img = img.convert("RGB")
+                save_kwargs["quality"] = 85
+            img.save(buffer, format=fmt, **save_kwargs)
+            return buffer.getvalue(), ext
+    except UnidentifiedImageError as exc:
+        raise ValidationAppError("Il file non è un'immagine valida.", code="invalid_image") from exc
+    except Image.DecompressionBombError as exc:
+        # Oltre il doppio di `Image.MAX_IMAGE_PIXELS` Pillow rifiuta già in `Image.open`.
+        raise ValidationAppError(
+            f"Immagine troppo grande (massimo {UPLOAD_IMAGE_MAX_PIXELS // 1_000_000} megapixel).",
+            code="image_too_large",
+        ) from exc
+
+
 async def save_upload_image(
     upload: UploadFile,
     *,
@@ -175,32 +228,15 @@ async def save_upload_image(
             f"File troppo grande (max {settings.upload_max_mb}MB).", code="file_too_large"
         )
 
-    try:
-        with Image.open(BytesIO(raw)) as img:
-            source_format = (img.format or "").upper()
-            img = ImageOps.exif_transpose(img)
-            if square:
-                img = _center_crop_square(img)
-            fmt = (img.format or "").upper()
-            if preserve_format and source_format in ALLOWED_IMAGE_EXT_BY_FORMAT:
-                fmt = source_format
-            if fmt not in ALLOWED_IMAGE_EXT_BY_FORMAT:
-                fmt = "PNG" if img.mode in ("RGBA", "LA") else "JPEG"
-            ext = ALLOWED_IMAGE_EXT_BY_FORMAT[fmt]
-            if max(img.size) > max_dimension:
-                img.thumbnail((max_dimension, max_dimension))
-            buffer = BytesIO()
-            save_kwargs: dict = {"optimize": True}
-            if fmt == "JPEG":
-                if img.mode != "RGB":
-                    img = img.convert("RGB")
-                save_kwargs["quality"] = 85
-            img.save(buffer, format=fmt, **save_kwargs)
-            payload = buffer.getvalue()
-    except UnidentifiedImageError as exc:
-        raise ValidationAppError(
-            "Il file non è un'immagine valida.", code="invalid_image"
-        ) from exc
+    # Decodifica, rotazione EXIF, ritaglio, ridimensionamento e ricodifica Pillow: lavoro
+    # CPU bloccante, fuori dall'event loop.
+    payload, ext = await asyncio.to_thread(
+        _reencode_image_sync,
+        raw,
+        max_dimension=max_dimension,
+        square=square,
+        preserve_format=preserve_format,
+    )
 
     stem = filename_stem or uuid.uuid4().hex
     filename = f"{stem}{ext}"
