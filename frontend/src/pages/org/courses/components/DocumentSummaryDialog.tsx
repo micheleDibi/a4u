@@ -2,8 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Loader2 } from "lucide-react";
-import katex from "katex";
-import "katex/dist/katex.min.css";
 import {
   coursesApi,
   type CourseDocumentDetailOut,
@@ -18,8 +16,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { preloadKatex, useKatex } from "@/lib/katexLoader";
 import { cn } from "@/lib/utils";
 import { DocumentFiguresSection } from "./DocumentFiguresSection";
+
+// KaTeX è caricato su richiesta (vedi `lib/katexLoader.ts`).
+preloadKatex();
 
 interface Props {
   orgId: string;
@@ -57,8 +59,11 @@ function LatexBlock({ source }: { source: string }) {
     [source],
   );
 
+  // Finché KaTeX non è caricato `html` resta null e si vede il sorgente nel
+  // `<pre>` qui sotto (lo stesso fallback di una formula non parsabile).
+  const katex = useKatex();
   const html = useMemo(() => {
-    if (!looksLikeLatex) return null;
+    if (!looksLikeLatex || !katex) return null;
     try {
       return katex.renderToString(source, {
         displayMode: true,
@@ -68,7 +73,7 @@ function LatexBlock({ source }: { source: string }) {
     } catch {
       return null;
     }
-  }, [source, looksLikeLatex]);
+  }, [katex, source, looksLikeLatex]);
 
   if (!looksLikeLatex) {
     // Testo in linguaggio naturale: rendi come prosa leggibile.
@@ -79,7 +84,8 @@ function LatexBlock({ source }: { source: string }) {
     );
   }
   if (!html) {
-    // Sembrava LaTeX ma KaTeX non l'ha parsato: mostra il sorgente raw.
+    // Sembrava LaTeX ma KaTeX non l'ha parsato (o non è ancora caricato):
+    // mostra il sorgente raw.
     return (
       <pre className="overflow-x-auto rounded bg-muted/40 p-2 font-mono text-xs">
         {source}

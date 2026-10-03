@@ -1,11 +1,14 @@
+import { Loader2 } from "lucide-react";
 import { useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import katex from "katex";
-import "katex/dist/katex.min.css";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { preloadKatex, useKatex } from "@/lib/katexLoader";
 import { cn } from "@/lib/utils";
+
+// KaTeX è caricato su richiesta (vedi `lib/katexLoader.ts`).
+preloadKatex();
 
 interface LatexEditorProps {
   value: string;
@@ -243,9 +246,10 @@ interface LatexPreviewProps {
 
 function LatexPreview({ latex }: LatexPreviewProps) {
   const { t } = useTranslation();
+  const katex = useKatex();
   const { html, error } = useMemo(() => {
     const code = (latex || "").trim();
-    if (!code) return { html: "", error: null as string | null };
+    if (!code || !katex) return { html: "", error: null as string | null };
     try {
       const html = katex.renderToString(code, {
         displayMode: true,
@@ -258,12 +262,25 @@ function LatexPreview({ latex }: LatexPreviewProps) {
       const msg = err instanceof Error ? err.message : String(err);
       return { html: "", error: msg };
     }
-  }, [latex]);
+  }, [katex, latex]);
 
   if (!latex.trim()) {
     return (
       <div className="flex min-h-[5rem] items-center justify-center rounded-md border border-dashed bg-muted/20 px-3 py-2 text-xs italic text-muted-foreground">
         {t("courses.lessonsContent.editorUI.latex.previewEmpty")}
+      </div>
+    );
+  }
+  if (!katex) {
+    // KaTeX non ancora caricato: stessa altezza minima dello stato vuoto.
+    return (
+      <div
+        role="status"
+        aria-live="polite"
+        className="flex min-h-[5rem] items-center justify-center rounded-md border bg-muted/20 px-3 py-2"
+      >
+        <Loader2 aria-hidden="true" className="size-4 animate-spin text-muted-foreground" />
+        <span className="sr-only">{t("common.loading")}</span>
       </div>
     );
   }
@@ -280,7 +297,6 @@ function LatexPreview({ latex }: LatexPreviewProps) {
   return (
     <div
       className="overflow-x-auto rounded-md border bg-muted/20 px-3 py-2 text-sm"
-      // eslint-disable-next-line react/no-danger
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );

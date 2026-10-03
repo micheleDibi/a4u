@@ -4,9 +4,8 @@ import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
-import rehypeKatex from "rehype-katex";
-import "katex/dist/katex.min.css";
 
+import { preloadRehypeKatex, useRehypeKatexPlugins } from "@/lib/katexLoader";
 import { mediaUrl } from "@/lib/media";
 
 import type {
@@ -24,6 +23,12 @@ import { FunctionFigure } from "./FunctionFigure";
 import { SourceFigure } from "./SourceFigure";
 import { TikzFigure } from "./TikzFigure";
 import { InlineMath } from "./InlineMath";
+
+// `rehype-katex` (e KaTeX col suo CSS) è caricato su richiesta: il download
+// parte con il chunk che contiene questo modulo. Finché non arriva, i
+// `ReactMarkdown` qui sotto girano senza il plugin (vedi
+// `useRehypeKatexPlugins`).
+preloadRehypeKatex();
 
 const MermaidDiagram = lazy(() => import("./MermaidDiagram"));
 const VegaLiteDiagram = lazy(() => import("./VegaLiteDiagram"));
@@ -118,6 +123,7 @@ export function MarkdownRenderer({
   cite,
   className,
 }: MarkdownRendererProps) {
+  const rehypePlugins = useRehypeKatexPlugins();
   const { preprocessed } = useMemo(
     () => preprocessAssetRefs(normalizeMathDelimiters(source || "")),
     [source],
@@ -180,7 +186,7 @@ export function MarkdownRenderer({
     <div className={cn("lesson-prose max-w-none", className)}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[rehypeKatex]}
+        rehypePlugins={rehypePlugins}
         components={components}
       >
         {preprocessed}
@@ -376,6 +382,7 @@ function TableBlock({
   cite?: (text: string) => string;
 }) {
   const { t } = useTranslation();
+  const rehypePlugins = useRehypeKatexPlugins();
   const label =
     number != null
       ? t("courses.figures.table.label", { n: number })
@@ -388,7 +395,7 @@ function TableBlock({
             prose e negli esempi, non lasciato come testo grezzo. */}
         <ReactMarkdown
           remarkPlugins={[remarkGfm, remarkMath]}
-          rehypePlugins={[rehypeKatex]}
+          rehypePlugins={rehypePlugins}
         >
           {table.markdown}
         </ReactMarkdown>
@@ -433,11 +440,12 @@ function normalizeLatex(latex: string): string {
 
 /** Formula in display mode (KaTeX); `null` se vuota. */
 function KatexDisplay({ latex }: { latex: string }) {
+  const rehypePlugins = useRehypeKatexPlugins();
   const inner = normalizeLatex(latex);
   if (!inner) return null;
   return (
     <div className="lesson-prose flex justify-center py-1">
-      <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+      <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={rehypePlugins}>
         {`$$${inner}$$`}
       </ReactMarkdown>
     </div>
@@ -446,11 +454,12 @@ function KatexDisplay({ latex }: { latex: string }) {
 
 /** Testo markdown (statement / passo dimostrazione) con math inline. */
 function ProseMarkdown({ source }: { source: string }) {
+  const rehypePlugins = useRehypeKatexPlugins();
   return (
     <div className="lesson-prose">
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[rehypeKatex]}
+        rehypePlugins={rehypePlugins}
       >
         {source}
       </ReactMarkdown>
@@ -565,6 +574,7 @@ function ExampleBlock({
   cite?: (text: string) => string;
 }) {
   const { t } = useTranslation();
+  const rehypePlugins = useRehypeKatexPlugins();
   const label =
     number != null
       ? t("courses.figures.example.label", { n: number })
@@ -580,7 +590,7 @@ function ExampleBlock({
       <div className="lesson-prose px-4 py-3">
         <ReactMarkdown
           remarkPlugins={[remarkGfm, remarkMath]}
-          rehypePlugins={[rehypeKatex]}
+          rehypePlugins={rehypePlugins}
         >
           {example.content}
         </ReactMarkdown>

@@ -1,31 +1,12 @@
-import i18n from "i18next";
+import i18n, { type BackendModule } from "i18next";
 import LanguageDetector from "i18next-browser-languagedetector";
 import { initReactI18next } from "react-i18next";
 
-import bg from "./locales/bg.json";
-import cs from "./locales/cs.json";
-import da from "./locales/da.json";
-import de from "./locales/de.json";
-import el from "./locales/el.json";
+// Solo italiano (lingua di fallback) ed inglese stanno nel bundle principale.
+// Le altre 22 lingue (16-21 KB minificati l'una) sono chunk separati caricati quando
+// servono: vedi `lazyLocaleBackend` più sotto.
 import en from "./locales/en.json";
-import es from "./locales/es.json";
-import et from "./locales/et.json";
-import fi from "./locales/fi.json";
-import fr from "./locales/fr.json";
-import ga from "./locales/ga.json";
-import hr from "./locales/hr.json";
-import hu from "./locales/hu.json";
 import it from "./locales/it.json";
-import lt from "./locales/lt.json";
-import lv from "./locales/lv.json";
-import mt from "./locales/mt.json";
-import nl from "./locales/nl.json";
-import pl from "./locales/pl.json";
-import pt from "./locales/pt.json";
-import ro from "./locales/ro.json";
-import sk from "./locales/sk.json";
-import sl from "./locales/sl.json";
-import sv from "./locales/sv.json";
 
 /**
  * Lista bundled (statica al build): usata come fallback offline e per il
@@ -63,30 +44,82 @@ export const SUPPORTED_LANGS = [
 export type LangCode = string;
 
 const bundledResources = {
-  bg: { translation: bg },
-  cs: { translation: cs },
-  da: { translation: da },
-  de: { translation: de },
-  el: { translation: el },
   en: { translation: en },
-  es: { translation: es },
-  et: { translation: et },
-  fi: { translation: fi },
-  fr: { translation: fr },
-  ga: { translation: ga },
-  hr: { translation: hr },
-  hu: { translation: hu },
   it: { translation: it },
-  lt: { translation: lt },
-  lv: { translation: lv },
-  mt: { translation: mt },
-  nl: { translation: nl },
-  pl: { translation: pl },
-  pt: { translation: pt },
-  ro: { translation: ro },
-  sk: { translation: sk },
-  sl: { translation: sl },
-  sv: { translation: sv },
+};
+
+/** Loader dei locale non inclusi nel bundle, per percorso (`./locales/de.json`). */
+const lazyLocales = import.meta.glob<Record<string, unknown>>(
+  ["./locales/*.json", "!./locales/it.json", "!./locales/en.json"],
+  { import: "default" },
+);
+
+/**
+ * Tentativi di i18next su un chunk di lingua che non arriva, e attesa prima
+ * del primo (raddoppia a ogni tentativo). Budget volutamente corto: finché i
+ * tentativi non finiscono `changeLanguage` non cambia lingua e, all'avvio, la
+ * pagina resta vuota. Chromium tiene in cache l'`import()` fallito (misurato:
+ * una sola richiesta anche con 5 tentativi), quindi lì un tentativo in più è
+ * solo attesa (~11 s con i default di i18next); serve ai browser che rifanno
+ * la richiesta.
+ */
+const LOCALE_LOAD_RETRIES = 1;
+const LOCALE_RETRY_DELAY_MS = 300;
+
+/** Un solo caricamento per lingua, condiviso da i18next e da `fetchAndMerge`. */
+const localeLoads = new Map<string, Promise<void>>();
+
+/**
+ * Porta nello store il bundle statico di `lng`, se esiste fra i chunk.
+ * Il merge è profondo e SENZA sovrascrittura: se gli override dal DB sono già
+ * arrivati (per esempio `reloadDbTranslations` su una lingua non ancora
+ * aperta) restano loro a vincere, come quando tutti i bundle erano statici.
+ * Su errore (chunk irraggiungibile, deploy nel mezzo) la voce si toglie dalla
+ * mappa PRIMA che il backend qui sotto risponda a i18next, così ognuno dei
+ * suoi tentativi rifà davvero l'`import()` (alcuni browser tengono comunque in
+ * cache l'import fallito: lì riprova solo un reload della pagina).
+ */
+function loadLocaleBundle(lng: string): Promise<void> {
+  let pending = localeLoads.get(lng);
+  if (!pending) {
+    const loader = lazyLocales[`./locales/${lng}.json`];
+    pending = loader
+      ? loader().then((data) => {
+          i18n.addResourceBundle(lng, "translation", data, true, false);
+        })
+      : Promise.resolve();
+    pending.catch(() => localeLoads.delete(lng));
+    localeLoads.set(lng, pending);
+  }
+  return pending;
+}
+
+/**
+ * Backend di i18next per i locale non inclusi nel bundle. Con
+ * `partialBundledLanguages` i18next lo interroga per ogni lingua che non ha
+ * già nello store, e `changeLanguage` cambia lingua (ed emette
+ * `languageChanged`) solo DOPO il caricamento: chi chiama `changeLanguage`
+ * non deve fare nulla di diverso. Il bundle lo aggiunge `loadLocaleBundle`,
+ * quindi qui si restituisce `null` (nessun secondo merge da parte di i18next).
+ *
+ * Su errore si risponde `(err, true)`: per i18next è il segnale «riprova»,
+ * e il Connector ripete la lettura fino a `maxRetries` volte con attesa che
+ * raddoppia da `retryTimeout` (costanti qui sopra). Finiti i tentativi la
+ * lingua resta marcata come «da ricaricare» (stato 0, non -1):
+ * `changeLanguage` cambia comunque lingua, l'interfaccia mostra il fallback
+ * italiano e una nuova selezione della stessa lingua riprova il caricamento
+ * (in Chromium l'import fallito resta tale fino al reload della pagina). Con
+ * `(err, null)` la lingua restava marcata come fallita per tutta la sessione.
+ */
+const lazyLocaleBackend: BackendModule = {
+  type: "backend",
+  init: () => undefined,
+  read: (lng, _ns, callback) => {
+    loadLocaleBundle(lng).then(
+      () => callback(null, null),
+      (err: unknown) => callback(err instanceof Error ? err : String(err), true),
+    );
+  },
 };
 
 /** Converte un dict di chiavi flat (es. `{"a.b.c": "x"}`) in nested. */
@@ -106,10 +139,15 @@ export function flatToNested(flat: Record<string, string>): Record<string, unkno
 }
 
 void i18n
+  .use(lazyLocaleBackend)
   .use(LanguageDetector)
   .use(initReactI18next)
   .init({
     resources: bundledResources,
+    // Le lingue assenti da `resources` passano dal backend qui sopra.
+    partialBundledLanguages: true,
+    maxRetries: LOCALE_LOAD_RETRIES,
+    retryTimeout: LOCALE_RETRY_DELAY_MS,
     fallbackLng: "it",
     nonExplicitSupportedLngs: true,
     debug: import.meta.env.DEV,
@@ -136,9 +174,14 @@ async function fetchAndMerge(lng: string): Promise<void> {
   if (fetchedLangs.has(lng)) return;
   fetchedLangs.add(lng);
   try {
-    const r = await fetch(`${apiBase}/i18n/translations/${lng}`, {
-      credentials: "include",
-    });
+    // Il bundle statico deve essere nello store PRIMA degli override: se ci
+    // arrivassero prima gli override, i18next considererebbe la lingua già
+    // caricata e il bundle statico non entrerebbe più. Le due richieste
+    // partono insieme; un errore del bundle non ferma gli override.
+    const [r] = await Promise.all([
+      fetch(`${apiBase}/i18n/translations/${lng}`, { credentials: "include" }),
+      loadLocaleBundle(lng).catch(() => undefined),
+    ]);
     if (!r.ok) return;
     const data = (await r.json()) as { code: string; translations: Record<string, string> };
     if (!data.translations || Object.keys(data.translations).length === 0) return;

@@ -1,5 +1,44 @@
-import * as ALL_FLAGS from "country-flag-icons/react/3x2";
-import EU from "country-flag-icons/react/3x2/EU";
+// Import NOMINATIVI, non `import * as`: il pacchetto tiene tutte le 272
+// bandiere in un solo modulo (~331 KB) e con l'import a namespace, letto con
+// una chiave dinamica, Rollup non poteva scartarne nessuna. Così nel bundle
+// entrano solo quelle elencate qui.
+import {
+  BG,
+  CN,
+  CZ,
+  DE,
+  DK,
+  EE,
+  ES,
+  EU,
+  FI,
+  FR,
+  GB,
+  GR,
+  HR,
+  HU,
+  IE,
+  IL,
+  IN,
+  IT,
+  JP,
+  KR,
+  LT,
+  LV,
+  MT,
+  NL,
+  NO,
+  PL,
+  PT,
+  RO,
+  RU,
+  SA,
+  SE,
+  SI,
+  SK,
+  TR,
+  UA,
+} from "country-flag-icons/react/3x2";
 
 import type { ComponentType, CSSProperties } from "react";
 
@@ -11,7 +50,16 @@ export type FlagComp = ComponentType<{
   style?: CSSProperties;
 }>;
 
-const FLAGS = ALL_FLAGS as unknown as Record<string, FlagComp>;
+/**
+ * Bandiere disponibili: i paesi di `LANG_TO_COUNTRY` qui sotto (che sono anche
+ * i `flag_country_code` del seed). Un `flag_country_code` impostato
+ * dall'admin fuori da questo elenco ricade sulla bandiera della lingua e poi
+ * su quella UE: per mostrarlo va aggiunto qui (import e mappa).
+ */
+const FLAGS = {
+  BG, CN, CZ, DE, DK, EE, ES, FI, FR, GB, GR, HR, HU, IE, IL, IN, IT, JP,
+  KR, LT, LV, MT, NL, NO, PL, PT, RO, RU, SA, SE, SI, SK, TR, UA,
+} as unknown as Record<string, FlagComp>;
 const FALLBACK = EU as unknown as FlagComp;
 
 /**
@@ -38,7 +86,7 @@ const LANG_TO_COUNTRY: Record<string, string> = {
  * Mappa codice lingua + (opzionale) codice paese → componente bandiera.
  *
  * Priorità di risoluzione:
- *   1. `countryCode` esplicito (qualsiasi ISO 3166-1 alpha-2 supportato dal pacchetto).
+ *   1. `countryCode` esplicito, se è fra le bandiere di `FLAGS`.
  *   2. Mappa fallback `LANG_TO_COUNTRY` per i 24 idiomi UE.
  *   3. Bandiera UE per codici sconosciuti.
  */

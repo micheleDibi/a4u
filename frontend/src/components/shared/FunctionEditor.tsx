@@ -1,6 +1,4 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import katex from "katex";
-import "katex/dist/katex.min.css";
 import { Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -55,9 +53,13 @@ import {
   toWireSpec,
   type AnnotationKind,
 } from "@/lib/functionSpec";
+import { preloadKatex, useKatex } from "@/lib/katexLoader";
 import { cn } from "@/lib/utils";
 
 import { FigureErrorBox, FigureFrame, FigureLoading } from "./FigureFrame";
+
+// KaTeX è caricato su richiesta (vedi `lib/katexLoader.ts`).
+preloadKatex();
 
 /**
  * Editor a campi di una figura `function` (D9): il docente compila tipo di
@@ -269,7 +271,9 @@ function CsvNumbersField({
   );
 }
 
-/** Formula KaTeX in linea, montata nel DOM tramite ref (`katex.render`). */
+/** Formula KaTeX in linea, montata nel DOM tramite ref (`katex.render`).
+ *  Finché KaTeX non è caricato lo span mostra il sorgente LaTeX come testo
+ *  (stesso elemento inline, nessun salto di layout). */
 function KatexInline({
   latex,
   className,
@@ -277,17 +281,22 @@ function KatexInline({
   latex: string;
   className?: string;
 }) {
+  const katex = useKatex();
   const ref = useRef<HTMLSpanElement | null>(null);
   useEffect(() => {
-    if (!ref.current) return;
+    if (!ref.current || !katex) return;
     katex.render(latex, ref.current, {
       throwOnError: false,
       trust: false,
       displayMode: false,
       strict: "ignore",
     });
-  }, [latex]);
-  return <span ref={ref} className={className} />;
+  }, [katex, latex]);
+  return (
+    <span ref={ref} className={className}>
+      {katex ? null : latex}
+    </span>
+  );
 }
 
 export function FunctionEditor({
