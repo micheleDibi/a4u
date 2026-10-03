@@ -2527,6 +2527,17 @@ def _as_figure(
     return None
 
 
+def _as_figures(
+    items: Sequence[object], renderer: object, asset_ids: Sequence[str]
+) -> list[RenderedFigure | None]:
+    """`_as_figure` su tutto il batch di un formato, in ordine. Pensata per
+    girare in un thread: `RenderedFigure.from_svg` e la misura geometrica
+    degli SVG stringa sono CPU sincrona. Non tocca le cache."""
+    return [
+        _as_figure(item, renderer, asset_id=aid) for item, aid in zip(items, asset_ids, strict=True)
+    ]
+
+
 async def render_svg_map(assets: Sequence[Mapping[str, Any]], *, language: str) -> dict[str, str]:
     """`{asset_id: svg}`: proiezione `.svg` di `render_figure_map`."""
     figures = await render_figure_map(assets, language=language)
@@ -2631,8 +2642,14 @@ async def render_figure_map(
                 got=len(svgs),
             )
             svgs = (svgs + [None] * len(items))[: len(items)]
-        for (aid, _s, key), item in zip(items, svgs, strict=True):
-            fig = _as_figure(item, renderer, asset_id=aid)
+        # La misura degli SVG stringa (renderer che non restituiscono già un
+        # `RenderedFigure`) è CPU sincrona: in un thread, fuori dal semaforo
+        # e dal timeout del batch come prima. Le cache restano sul loop.
+        if any(isinstance(item, str) for item in svgs):
+            figs = await asyncio.to_thread(_as_figures, svgs, renderer, ids)
+        else:
+            figs = _as_figures(svgs, renderer, ids)
+        for (aid, _s, key), fig in zip(items, figs, strict=True):
             if fig is not None:
                 _cache_put(key, fig)
                 result[aid] = fig

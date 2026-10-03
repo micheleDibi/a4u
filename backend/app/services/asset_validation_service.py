@@ -344,6 +344,12 @@ def validate_latex_mathml(latex: str) -> tuple[bool, str]:
     return (True, "")
 
 
+def _validate_latex_slots_sync(items: list[tuple[int, str]]) -> dict[int, tuple[bool, str]]:
+    """`validate_latex_mathml` di più formule, `{indice dello slot: esito}`.
+    Pensata per girare in un thread: latex2mathml è CPU sincrona."""
+    return {i: validate_latex_mathml(src) for i, src in items}
+
+
 # ---------------------------------------------------------------------------
 # Estrazione math inline ($...$ / $$...$$) — conservativa, offset-based
 # ---------------------------------------------------------------------------
@@ -690,6 +696,12 @@ async def _validate_slots(slots: list[_Slot]) -> list[AssetCheck]:
             js_pos[i] = len(js_items)
             js_items.append((s.kind, s.current))
     js_results = await _validate_js_batch(js_items)
+    # latex2mathml di tutte le formule: CPU sincrona, un solo salto fuori
+    # dal loop (nessuno se la lezione non ha formule).
+    latex_items = [(i, s.current) for i, s in enumerate(slots) if s.kind == "latex"]
+    latex_results = (
+        await asyncio.to_thread(_validate_latex_slots_sync, latex_items) if latex_items else {}
+    )
     formats = available_formats()
     render_timeout = float(get_settings().figure_render_timeout_seconds)
     tikz_timeout = tikz_timeout_seconds()
@@ -697,7 +709,7 @@ async def _validate_slots(slots: list[_Slot]) -> list[AssetCheck]:
     checks: list[AssetCheck] = []
     for i, slot in enumerate(slots):
         if slot.kind == "latex":
-            ok_m, err_m = validate_latex_mathml(slot.current)
+            ok_m, err_m = latex_results[i]
             if not ok_m:
                 checks.append(AssetCheck(slot.id, "latex", False, f"latex2mathml: {err_m}"))
                 continue
@@ -1229,6 +1241,15 @@ def _figure_measure(fmt: str, source: str, fig: RenderedFigure | None) -> Figure
     )
 
 
+def _figure_measures(
+    items: list[tuple[str, str, RenderedFigure | None]],
+) -> list[FigureMeasure]:
+    """`_figure_measure` di più figure `(formato, sorgente, resa)`, in ordine.
+    Pensata per girare in un thread: sanificazione, conteggio di nodi e
+    archi e misura dell'SVG sono CPU sincrona; nessuna cache toccata."""
+    return [_figure_measure(fmt, source, fig) for fmt, source, fig in items]
+
+
 def _defect_codes(defects: tuple[str, ...]) -> Counter[str]:
     """Difetti contati per codice (`codice: dettaglio`): il dettaglio cita le
     etichette, che una riscrittura legittima può cambiare."""
@@ -1586,12 +1607,18 @@ async def _judge_candidates(
             rendered=len(figures),
             duration_ms=int((time.monotonic() - started) * 1000),
         )
+        # Misure di originale e riscrittura di ogni grafo: CPU sincrona, un
+        # solo salto fuori dal loop.
+        pairs: list[tuple[str, str, RenderedFigure | None]] = []
         for i in graphs:
             item, candidate = candidates[i]
-            original_fig = figures.get(item.key)
-            candidate_fig = figures.get(item.key + _REVIEW_SUFFIX)
-            before = _figure_measure(item.fmt, item.original, original_fig)
-            after = _figure_measure(item.fmt, candidate, candidate_fig)
+            pairs.append((item.fmt, item.original, figures.get(item.key)))
+            pairs.append((item.fmt, candidate, figures.get(item.key + _REVIEW_SUFFIX)))
+        measures = await asyncio.to_thread(_figure_measures, pairs)
+        for n, i in enumerate(graphs):
+            item, _candidate = candidates[i]
+            original_fig, candidate_fig = pairs[2 * n][2], pairs[2 * n + 1][2]
+            before, after = measures[2 * n], measures[2 * n + 1]
             ok, reason = review_acceptance(
                 item.fmt,
                 before if original_fig is not None else None,
@@ -1729,6 +1756,11 @@ async def _review_figures(
         rendered=len(rendered),
         duration_ms=int((time.monotonic() - started) * 1000),
     )
+    # Misure degli originali: CPU sincrona, un solo salto fuori dal loop.
+    measures = await asyncio.to_thread(
+        _figure_measures,
+        [(a.format, a.content, rendered.get(key)) for a, key in zip(assets, keys, strict=True)],
+    )
     items = [
         _ReviewItem(
             asset=a,
@@ -1736,9 +1768,9 @@ async def _review_figures(
             fmt=a.format,
             original=a.content,
             context=_review_context(output, a.asset_id),
-            measure=_figure_measure(a.format, a.content, rendered.get(key)),
+            measure=measure,
         )
-        for a, key in zip(assets, keys, strict=True)
+        for a, key, measure in zip(assets, keys, measures, strict=True)
     ]
     graphs = [it for it in items if it.fmt in GRAPH_FORMATS]
     if graphs and not any(it.measure.rendered for it in graphs):

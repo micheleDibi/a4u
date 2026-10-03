@@ -248,11 +248,40 @@ def _math_content_for_speech(lesson: CourseLesson, *, language: str = "it") -> d
     (`base_pdf.lesson_asset_refs` su `content_raw`), gli stessi che il
     renderer applica ai campi inline: senza, una formula a cavallo di un
     rimando avrebbe chiavi diverse nelle due letture."""
-    timeline = _speech_timeline(lesson.speech_raw or {}, lesson.slides_raw or {})
+    return _speech_math_content(
+        lesson.speech_raw, lesson.slides_raw, lesson.content_raw, language=language
+    )
+
+
+def _speech_math_content(
+    speech_raw: dict[str, Any] | None,
+    slides_raw: dict[str, Any] | None,
+    content_raw: dict[str, Any] | None,
+    *,
+    language: str,
+) -> dict[str, Any]:
+    """`_math_content_for_speech` sui soli valori JSON della lezione: è la
+    forma che può girare in un thread (nessun oggetto ORM)."""
+    timeline = _speech_timeline(speech_raw or {}, slides_raw or {})
     return {
         "inline_texts": _speech_inline_texts(timeline),
-        "asset_refs": base_pdf.lesson_asset_refs(lesson.content_raw, language=language),
+        "asset_refs": base_pdf.lesson_asset_refs(content_raw, language=language),
     }
+
+
+def _collect_math_for_speech_sync(
+    speech_raw: dict[str, Any] | None,
+    slides_raw: dict[str, Any] | None,
+    content_raw: dict[str, Any] | None,
+    *,
+    language: str,
+) -> list[tuple[str, str]]:
+    """Chiavi math del discorso (eseguita in un thread). Il collector gira
+    con la sua lingua di default come prima: i rimandi arrivano già risolti
+    in `asset_refs` nella lingua del corso."""
+    return base_pdf._collect_math_from_content(
+        _speech_math_content(speech_raw, slides_raw, content_raw, language=language)
+    )
 
 
 async def _prerender_math_for_speech(
@@ -260,9 +289,17 @@ async def _prerender_math_for_speech(
 ) -> base_pdf.MathSvgMap:
     """Pre-render LaTeX → SVG (MathJax) delle formule del discorso, con il
     collector e la batch della dispensa. WeasyPrint non rende il MathML."""
-    return await base_pdf._prerender_math_for_lesson(
-        _math_content_for_speech(lesson, language=language)
+    # Timeline, numerazione della dispensa e parse markdown-it: CPU
+    # sincrona, un solo salto fuori dal loop. Al thread vanno i tre JSON
+    # letti qui sul loop, non la riga ORM.
+    items = await asyncio.to_thread(
+        _collect_math_for_speech_sync,
+        lesson.speech_raw,
+        lesson.slides_raw,
+        lesson.content_raw,
+        language=language,
     )
+    return await base_pdf._prerender_math_keys(items)
 
 
 def render_speech_html(

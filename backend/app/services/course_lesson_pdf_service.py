@@ -1807,7 +1807,16 @@ async def _prerender_math_for_lesson(
     assenti ricadono sul MathML, loggate da `_render_math_by_key`.
     `language` è la lingua del corso, la stessa di `render_lesson_html`
     (vedi `_collect_math_from_content`)."""
-    items = _collect_math_from_content(content, language=language)
+    # Il parse markdown-it di tutti i campi è CPU sincrona: fuori dal loop,
+    # che API e worker condividono.
+    items = await asyncio.to_thread(_collect_math_from_content, content, language=language)
+    return await _prerender_math_keys(items)
+
+
+async def _prerender_math_keys(items: list[tuple[str, str]]) -> MathSvgMap:
+    """Batch MathJax delle chiavi già raccolte da `_collect_math_from_content`:
+    la parte async di `_prerender_math_for_lesson`, riusata da slide e
+    discorso, che raccolgono le chiavi nel loro thread."""
     out = MathSvgMap(requested=len(items))
     if not items:
         return out
@@ -2660,15 +2669,21 @@ async def materialize_lesson_pdf(
     visual_svg_map = await _prerender_visual_assets_for_lesson(
         raw_content, language=language, raise_on_busy=True
     )
+    # Box della figura: il template scarica sfondo e loghi dallo storage
+    # (SFTP in produzione, una connessione per file) e va fuori dal loop.
+    # Eccezione ORM ammessa (contratto perf-l1 §1): `pdf_template` è solo
+    # letto, colonne già caricate e nessuna relazione, ed è lo stesso
+    # oggetto che `render_lesson_html` riceve già in un thread qui sotto.
+    box_mm = await asyncio.to_thread(
+        lesson_mermaid_box_mm, pdf_template, language=language, public_base_url=public_base_url
+    )
     # Direzione delle catene (D15): per le sole figure Mermaid che escono
     # sotto la banda e il cui sorgente è una catena orizzontale si rende
     # anche la variante verticale; la misura del fit sceglie fra le due.
     visual_svg_map = await figure_render_service.render_chain_variants(
         [a for a in raw_content.get("visual_assets") or [] if isinstance(a, dict)],
         visual_svg_map,
-        box_mm=lesson_mermaid_box_mm(
-            pdf_template, language=language, public_base_url=public_base_url
-        ),
+        box_mm=box_mm,
         variant="lesson",
         language=language,
         lesson_code=lesson.lesson_code,

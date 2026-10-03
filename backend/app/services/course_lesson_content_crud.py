@@ -12,6 +12,7 @@ correzioni granulari.
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from collections import Counter
 from datetime import UTC, datetime
@@ -510,9 +511,11 @@ async def update_lesson_content(
     # Cleanup file orfani dopo il commit: se l'update ha sostituito o
     # rimosso asset di tipo `image`, eliminiamo i file dal filesystem.
     # Eseguito dopo il commit per evitare di perdere file in caso di
-    # rollback. Best-effort, log warning se qualcosa fallisce.
+    # rollback. Best-effort, log warning se qualcosa fallisce. Le delete
+    # sullo storage (SFTP in produzione) vanno in un thread: un solo salto.
     if "visual_assets" in changed:
-        _cleanup_removed_image_assets(
+        await asyncio.to_thread(
+            _cleanup_removed_image_assets,
             old_visual_assets=old_visual_assets,
             new_visual_assets=current_raw.get("visual_assets"),
             course_id=course.id,

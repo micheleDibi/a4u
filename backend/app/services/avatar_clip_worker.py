@@ -87,7 +87,8 @@ async def _normalize_clip_to_square(data: bytes) -> bytes:
     tmp_dir = Path(tempfile.mkdtemp(prefix="a4u_clip_"))
     try:
         src = tmp_dir / "in.mp4"
-        src.write_bytes(data)
+        # I/O su disco (MB di video) e pulizia della cartella: fuori dal loop.
+        await asyncio.to_thread(src.write_bytes, data)
         dims = await _probe_video_dims(src)
         if dims is None:
             log.warning("clip_probe_failed")
@@ -118,12 +119,12 @@ async def _normalize_clip_to_square(data: bytes) -> bytes:
             )
             return data
         log.info("clip_squared", original=f"{w}x{h}")
-        return dst.read_bytes()
+        return await asyncio.to_thread(dst.read_bytes)
     except Exception as exc:  # pragma: no cover — non bloccare la clip
         log.warning("clip_normalize_error", error=str(exc))
         return data
     finally:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+        await asyncio.to_thread(shutil.rmtree, tmp_dir, ignore_errors=True)
 
 
 async def _start_pending(db: AsyncSession, clip: AvatarClip, avatar: Avatar) -> None:
@@ -172,7 +173,9 @@ async def _poll_processing(db: AsyncSession, clip: AvatarClip, avatar: Avatar) -
             return
         # Normalizza a 1:1 — stesse proporzioni dell'immagine avatar.
         data = await _normalize_clip_to_square(data)
-        path = storage_service.save_bytes(
+        # Upload sullo storage (SFTP in produzione): fuori dal loop.
+        path = await asyncio.to_thread(
+            storage_service.save_bytes,
             subdir=f"avatars/{avatar.user_id}/clips",
             filename=f"{clip.id}.mp4",
             data=data,

@@ -576,7 +576,24 @@ async def _prerender_math_for_slides(
     `_math_content_for_slides`. Riusa il collector + batch MathJax del PDF
     lezione (`base_pdf`); la lingua del corso decide il testo dei rimandi
     riscritti, che può finire dentro una formula."""
-    return await base_pdf._prerender_math_for_lesson(
+    # Numerazione della dispensa e parse markdown-it: CPU sincrona, un solo
+    # salto fuori dal loop; resta sul loop solo la batch MathJax.
+    items = await asyncio.to_thread(
+        _collect_math_for_slides_sync, content_raw, slides_raw, language=language
+    )
+    return await base_pdf._prerender_math_keys(items)
+
+
+def _collect_math_for_slides_sync(
+    content_raw: dict[str, Any] | None,
+    slides_raw: dict[str, Any] | None,
+    *,
+    language: str,
+) -> list[tuple[str, str]]:
+    """Chiavi math delle slide (eseguita in un thread). Il collector gira con
+    la sua lingua di default come prima: i rimandi arrivano già risolti in
+    `asset_refs` nella lingua del corso."""
+    return base_pdf._collect_math_from_content(
         _math_content_for_slides(content_raw, slides_raw, language=language)
     )
 

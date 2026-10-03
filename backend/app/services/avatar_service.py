@@ -11,6 +11,7 @@ cambia immagine, i clip vengono ricreati (status pending).
 """
 from __future__ import annotations
 
+import asyncio
 import uuid
 from pathlib import Path
 
@@ -84,7 +85,8 @@ async def upsert_my_avatar(
             square=True,
         )
         if existing and existing.image_path and existing.image_path != new_image_path:
-            storage_service.delete(existing.image_path)
+            # Storage (SFTP in produzione): fuori dal loop.
+            await asyncio.to_thread(storage_service.delete, existing.image_path)
         image_changed = True
     else:
         assert existing is not None
@@ -97,7 +99,7 @@ async def upsert_my_avatar(
             filename_stem="audio",
         )
         if existing and existing.audio_path and existing.audio_path != new_audio_path:
-            storage_service.delete(existing.audio_path)
+            await asyncio.to_thread(storage_service.delete, existing.audio_path)
     else:
         assert existing is not None
         new_audio_path = existing.audio_path
@@ -145,9 +147,13 @@ async def _reset_clips(db: AsyncSession, avatar: Avatar) -> None:
     res = await db.execute(
         select(AvatarClip).where(AvatarClip.avatar_id == avatar.id)
     )
-    for clip in res.scalars().all():
-        if clip.video_path:
-            storage_service.delete(clip.video_path)
+    clips = list(res.scalars().all())
+    # Delete dei video sullo storage (una connessione SFTP ciascuna): un
+    # solo salto fuori dal loop, poi i record.
+    paths = [clip.video_path for clip in clips if clip.video_path]
+    if paths:
+        await asyncio.to_thread(_delete_paths, paths)
+    for clip in clips:
         await db.delete(clip)
     await db.flush()
 
@@ -225,13 +231,16 @@ async def delete_my_avatar(
     res = await db.execute(
         select(AvatarClip).where(AvatarClip.avatar_id == avatar.id)
     )
-    for clip in res.scalars().all():
-        if clip.video_path:
-            storage_service.delete(clip.video_path)
-    storage_service.delete(avatar.image_path)
-    storage_service.delete(avatar.audio_path)
-    storage_service.delete_directory(_clips_subdir(user_id))
-    storage_service.delete_directory(_user_subdir(user_id))
+    clip_paths = [clip.video_path for clip in res.scalars().all() if clip.video_path]
+    # Tutte le delete sullo storage in un solo salto fuori dal loop, nello
+    # stesso ordine di prima; al thread vanno solo i path.
+    await asyncio.to_thread(
+        _delete_avatar_files,
+        clip_paths=clip_paths,
+        image_path=avatar.image_path,
+        audio_path=avatar.audio_path,
+        user_id=user_id,
+    )
     await db.delete(avatar)
     await db.flush()
     await write_audit(
@@ -241,6 +250,23 @@ async def delete_my_avatar(
         target_type="avatar",
         target_id=str(avatar.id),
     )
+
+
+def _delete_paths(paths: list[str]) -> None:
+    """`storage_service.delete` di più file, in ordine (eseguita in un
+    thread: ogni delete apre una connessione allo storage)."""
+    for path in paths:
+        storage_service.delete(path)
+
+
+def _delete_avatar_files(
+    *, clip_paths: list[str], image_path: str | None, audio_path: str | None, user_id: uuid.UUID
+) -> None:
+    """File dell'avatar: clip, immagine, audio e le due cartelle (eseguita
+    in un thread). Best effort come `storage_service.delete*`."""
+    _delete_paths([*clip_paths, *(p for p in (image_path, audio_path) if p)])
+    storage_service.delete_directory(_clips_subdir(user_id))
+    storage_service.delete_directory(_user_subdir(user_id))
 
 
 def aggregate_clips_status(statuses: list[str]) -> str:

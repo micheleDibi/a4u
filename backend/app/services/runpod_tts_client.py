@@ -79,6 +79,36 @@ def _decode_segment_audio(audio_b64: str) -> np.ndarray:
     return arr.reshape(-1)
 
 
+def _assemble_segments_audio(outputs: list[Any]) -> dict[str, np.ndarray]:
+    """Audio per segment dagli output del job (eseguita in un thread).
+
+    Gli output sono CHUNK audio (più chunk per `segment_id`, ciascuno con
+    `chunk_index`). Raggruppa per segment, ordina i chunk e concatena.
+    Retro-compatibile con l'handler vecchio (1 output per segment, senza
+    `chunk_index` → trattato come chunk 0). Un output con `error` solleva
+    `RunpodJobFailedError`."""
+    chunks_by_segment: dict[str, list[tuple[int, np.ndarray]]] = {}
+    for out in outputs:
+        if not isinstance(out, dict):
+            continue
+        if out.get("error"):
+            raise RunpodJobFailedError(f"Worker TTS RunPod: {out['error']}")
+        sid = str(out.get("segment_id") or "")
+        audio_b64 = out.get("audio_b64")
+        if not sid or not audio_b64:
+            continue
+        chunk_index = int(out.get("chunk_index") or 0)
+        chunks_by_segment.setdefault(sid, []).append(
+            (chunk_index, _decode_segment_audio(audio_b64))
+        )
+
+    audio_per_segment: dict[str, np.ndarray] = {}
+    for sid, parts in chunks_by_segment.items():
+        parts.sort(key=lambda p: p[0])
+        audio_per_segment[sid] = np.concatenate([a for _idx, a in parts])
+    return audio_per_segment
+
+
 async def synthesize_lesson_audio(
     *,
     speech_raw: dict[str, Any],
@@ -163,29 +193,9 @@ async def synthesize_lesson_audio(
             on_segment_progress=on_segment_progress,
         )
 
-    # Gli output sono CHUNK audio (più chunk per `segment_id`, ciascuno
-    # con `chunk_index`). Raggruppa per segment, ordina i chunk e
-    # concatena. Retro-compatibile con l'handler vecchio (1 output per
-    # segment, senza `chunk_index` → trattato come chunk 0).
-    chunks_by_segment: dict[str, list[tuple[int, np.ndarray]]] = {}
-    for out in outputs:
-        if not isinstance(out, dict):
-            continue
-        if out.get("error"):
-            raise RunpodJobFailedError(f"Worker TTS RunPod: {out['error']}")
-        sid = str(out.get("segment_id") or "")
-        audio_b64 = out.get("audio_b64")
-        if not sid or not audio_b64:
-            continue
-        chunk_index = int(out.get("chunk_index") or 0)
-        chunks_by_segment.setdefault(sid, []).append(
-            (chunk_index, _decode_segment_audio(audio_b64))
-        )
-
-    audio_per_segment: dict[str, np.ndarray] = {}
-    for sid, parts in chunks_by_segment.items():
-        parts.sort(key=lambda p: p[0])
-        audio_per_segment[sid] = np.concatenate([a for _idx, a in parts])
+    # Decode FLAC (base64 + soundfile) e concatenazione di tutta la
+    # lezione: CPU sincrona, un solo salto fuori dal loop.
+    audio_per_segment = await asyncio.to_thread(_assemble_segments_audio, outputs)
 
     if not audio_per_segment:
         raise RunpodJobFailedError("Il job RunPod non ha prodotto alcun audio.")

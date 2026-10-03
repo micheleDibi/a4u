@@ -171,12 +171,16 @@ async def _run_tts_phase(
         raise asyncio.CancelledError("Generazione annullata")
 
     # Cache hit: riusa l'audio già sintetizzato (stesso discorso/voce).
-    cache_key = lesson_audio_cache.compute_cache_key(
+    # Hash del campione vocale e lettura dei WAV (soundfile): fuori dal loop.
+    cache_key = await asyncio.to_thread(
+        lesson_audio_cache.compute_cache_key,
         speech_raw=speech_raw,
         voice_sample_path=voice_sample_path,
         language_code=language_code,
     )
-    cached = lesson_audio_cache.load(course_id, lesson_id, cache_key=cache_key)
+    cached = await asyncio.to_thread(
+        lesson_audio_cache.load, course_id, lesson_id, cache_key=cache_key
+    )
     if cached is not None:
         log.info(
             "lesson_video_tts_cache_hit",
@@ -206,7 +210,9 @@ async def _run_tts_phase(
     # Salva in cache per le rigenerazioni future. Best effort: un errore
     # qui non deve far fallire la generazione del video.
     try:
-        lesson_audio_cache.save(
+        # Scrittura dei WAV (soundfile): fuori dal loop.
+        await asyncio.to_thread(
+            lesson_audio_cache.save,
             course_id,
             lesson_id,
             cache_key=cache_key,
@@ -646,7 +652,8 @@ async def _process_one(lesson_id: uuid.UUID) -> None:
         try:
             import shutil
 
-            shutil.rmtree(work_dir, ignore_errors=True)
+            # Cartella di lavoro (PNG, WAV, MP4): fuori dal loop.
+            await asyncio.to_thread(shutil.rmtree, work_dir, ignore_errors=True)
         except Exception:  # pragma: no cover
             pass
 

@@ -25,6 +25,7 @@ su una risposta 200 inutilizzabile l'eccezione porta con sé l'usage pagato.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import time
@@ -455,7 +456,9 @@ async def assess_candidate(
 ) -> tuple[FigureRelevance, dict[str, Any]]:
     """Pertinenza e descrizione di una candidata. Ritorna `(esito, usage)`."""
     settings = get_settings()
-    encoded = base64.b64encode(vision_image(image)).decode("ascii")
+    # PIL (decode, riduzione, JPEG) è CPU sincrona: fuori dal loop.
+    jpeg = await asyncio.to_thread(vision_image, image)
+    encoded = base64.b64encode(jpeg).decode("ascii")
     body: dict[str, Any] = {
         "model": settings.openai_figure_relevance_model,
         "messages": [

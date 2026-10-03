@@ -23,6 +23,7 @@ inutilizzabile: l'eccezione lo porta con sé e il chiamante lo somma in
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import io
 import json
@@ -404,7 +405,9 @@ async def describe_figure(item: DescribeInput) -> tuple[FigureDescription, dict[
     o `OpenAINotConfiguredError`."""
     settings = get_settings()
     model = settings.openai_figure_describe_model
-    image = base64.b64encode(vision_image(item.image)).decode("ascii")
+    # PIL (decode, riduzione, JPEG) è CPU sincrona: fuori dal loop.
+    jpeg = await asyncio.to_thread(vision_image, item.image)
+    image = base64.b64encode(jpeg).decode("ascii")
     body: dict[str, Any] = {
         "model": model,
         "messages": [

@@ -22,6 +22,7 @@ inutilizzabile l'eccezione porta con sé l'usage pagato.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import time
@@ -204,7 +205,9 @@ async def review_render(
     """Verdetto sulla resa di una figura `tikz`. Ritorna `(verdetto, usage)`."""
     settings = get_settings()
     model = settings.openai_tikz_review_model
-    encoded = base64.b64encode(vision_image(png)).decode("ascii")
+    # PIL (decode, riduzione, JPEG) è CPU sincrona: fuori dal loop.
+    jpeg = await asyncio.to_thread(vision_image, png)
+    encoded = base64.b64encode(jpeg).decode("ascii")
     body: dict[str, Any] = {
         "model": model,
         "messages": [
